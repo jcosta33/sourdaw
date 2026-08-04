@@ -1289,12 +1289,94 @@ describe('bridgeLlmToolCalls', () => {
                 call: { name: 'setClipLoop', arguments: { clipId: 'clip-verse', enabled: true } },
                 action: { type: 'setClipLoop', payload: { clipId: 'clip-verse', enabled: true } },
             },
+            {
+                call: {
+                    name: 'normalizeClip',
+                    arguments: { clipId: 'clip-verse', mode: 'lufs', targetDb: -14 },
+                },
+                action: {
+                    type: 'normalizeClip',
+                    payload: { clipId: 'clip-verse', mode: 'lufs', targetDb: -14 },
+                },
+            },
         ] as const;
 
         const results = cases.map(({ call }) => bridge({ calls: [call] }));
 
         expect(results.map(({ actions }) => actions[0])).toEqual(cases.map(({ action }) => action));
         expect(results.flatMap(({ rejections }) => rejections)).toEqual([]);
+    });
+
+    it('canonicalizes default peak normalization and rejects unsafe normalization calls', () => {
+        const defaultPeak = bridge({
+            calls: [{ name: 'normalizeClip', arguments: { clipId: 'clip-verse' } }],
+        });
+        const midiContext = replaceTrack(projectContext, 'track-vocals', (track) => ({
+            ...track,
+            clips: track.clips.map((clip) => ({ ...clip, type: 'midi', noteCount: 4 })),
+        }));
+        const lockedContext = replaceTrack(projectContext, 'track-vocals', (track) => ({
+            ...track,
+            clips: track.clips.map((clip) => ({ ...clip, locked: true })),
+        }));
+        const rejected = [
+            bridge({ calls: [{ name: 'normalizeClip', arguments: { clipId: 'missing' } }] }),
+            bridge({
+                context: midiContext,
+                calls: [{ name: 'normalizeClip', arguments: { clipId: 'clip-verse' } }],
+            }),
+            bridge({
+                context: lockedContext,
+                calls: [{ name: 'normalizeClip', arguments: { clipId: 'clip-verse' } }],
+            }),
+            bridge({
+                calls: [{ name: 'normalizeClip', arguments: { clipId: 'clip-verse', mode: 'momentary' } }],
+            }),
+            bridge({
+                calls: [{ name: 'normalizeClip', arguments: { clipId: 'clip-verse', mode: 'peak', targetDb: -14 } }],
+            }),
+            bridge({
+                calls: [{ name: 'normalizeClip', arguments: { clipId: 'clip-verse', mode: 'lufs', targetDb: -60.01 } }],
+            }),
+            bridge({
+                calls: [{ name: 'normalizeClip', arguments: { clipId: 'clip-verse', mode: 'rms', targetDb: 0.01 } }],
+            }),
+            bridge({
+                calls: [
+                    {
+                        name: 'normalizeClip',
+                        arguments: { clipId: 'clip-verse', mode: 'lufs', targetDb: -14, extra: true },
+                    },
+                ],
+            }),
+        ];
+
+        expect(defaultPeak).toEqual({
+            actions: [{ type: 'normalizeClip', payload: { clipId: 'clip-verse' } }],
+            rejections: [],
+        });
+        expect(rejected.flatMap(({ actions }) => actions)).toEqual([]);
+        expect(rejected.flatMap(({ rejections }) => rejections).map(({ name }) => name)).toEqual(
+            Array.from({ length: rejected.length }, () => 'normalizeClip')
+        );
+    });
+
+    it('rejects normalization that collides with clip gain or lifecycle writes in either order', () => {
+        const normalize = { name: 'normalizeClip', arguments: { clipId: 'clip-verse' } };
+        const conflicts = [
+            { name: 'setClipGain', arguments: { clipId: 'clip-verse', gain: 1.25 } },
+            { name: 'removeClip', arguments: { clipId: 'clip-verse' } },
+        ];
+        const results = conflicts.flatMap((conflict) => [
+            bridge({ calls: [normalize, conflict] }),
+            bridge({ calls: [conflict, normalize] }),
+        ]);
+
+        expect(results.every((result) => result.actions.length === 1)).toBe(true);
+        expect(results.every((result) => result.rejections.length === 1)).toBe(true);
+        expect(results.flatMap(({ rejections }) => rejections).map(({ reason }) => reason)).toEqual(
+            Array.from({ length: results.length }, () => 'Provider batch writes the same target field more than once')
+        );
     });
 
     it('converts crossfade commands for two distinct unlocked clips with explicit or default duration', () => {
@@ -1541,6 +1623,7 @@ describe('bridgeLlmToolCalls', () => {
                 { name: 'setClipColor', arguments: { clipId: 'clip-verse', color: '#ff5500' } },
                 { name: 'setClipFade', arguments: { clipId: 'clip-verse', fadeInBeats: 1, fadeOutBeats: 2 } },
                 { name: 'setClipLoop', arguments: { clipId: 'clip-verse', enabled: true } },
+                { name: 'normalizeClip', arguments: { clipId: 'clip-verse' } },
             ],
         });
         const unlock = bridge({
@@ -1560,6 +1643,7 @@ describe('bridgeLlmToolCalls', () => {
             'setClipColor',
             'setClipFade',
             'setClipLoop',
+            'normalizeClip',
         ]);
         expect(unlock).toEqual({
             actions: [{ type: 'lockClip', payload: { clipId: 'clip-verse', locked: false } }],

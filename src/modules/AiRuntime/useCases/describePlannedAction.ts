@@ -25,6 +25,21 @@ export function describePlannedAction({ action, context }: DescribePlannedAction
             return `Remove clip "${clip.name}"`;
         }
     }
+    if (action.type === 'normalizeClip') {
+        const clip = context.tracks
+            .flatMap((track) => track.clips)
+            .find((candidate) => candidate.id === action.payload.clipId);
+        const target = clip ? ` clip "${clip.name}"` : ' clip';
+        const mode = action.payload.mode ?? 'peak';
+        if (mode === 'peak') {
+            return `Normalize${target} using peak measurement`;
+        }
+        const targetDb = action.payload.targetDb ?? -14;
+        if (mode === 'lufs') {
+            return `Normalize${target} to ${String(targetDb)} LUFS`;
+        }
+        return `Normalize${target} to ${String(targetDb)} dB RMS`;
+    }
     if (action.type === 'removeMarker') {
         const marker = markerStore.value?.markers.find((candidate) => candidate.id === action.payload.markerId);
         if (marker) {

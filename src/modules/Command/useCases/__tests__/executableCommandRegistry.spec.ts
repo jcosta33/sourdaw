@@ -206,6 +206,27 @@ const EXPECTED_COMMANDS = [
         false
     ),
     expectedCommand(
+        'normalizeClip',
+        'Non-destructively normalize one unlocked audio clip.',
+        {
+            clipId: { type: 'string', description: 'Existing unlocked audio clip ID' },
+            mode: {
+                type: 'string',
+                enum: ['peak', 'rms', 'lufs'],
+                description: 'Normalization measurement; defaults to peak',
+            },
+            targetDb: {
+                type: 'number',
+                minimum: -60,
+                maximum: 0,
+                description: 'Optional RMS or LUFS target from -60 through 0 dB; defaults to -14',
+            },
+        },
+        ['clipId'],
+        'destructive-reversible',
+        true
+    ),
+    expectedCommand(
         'quantizeNotes',
         'Snap every note in one MIDI clip to an explicit beat grid.',
         {
@@ -992,6 +1013,29 @@ const EXPECTED_GROUNDING = [
                 kind: 'boolean-intent',
                 truePhrases: ['enable clip loop'],
                 falsePhrases: ['disable clip loop'],
+            },
+        ],
+    },
+    {
+        actionType: 'normalizeClip',
+        intentPhrases: ['normalize clip', 'normalise clip', 'normalize the clip', 'normalise the clip'],
+        targetRules: [{ argument: 'clipId', capability: 'editable-audio-clip' }],
+        valueRules: [
+            {
+                argument: 'mode',
+                kind: 'enum-if-present',
+                values: ['peak', 'rms', 'lufs'],
+                defaultWhenUnmentioned: 'peak',
+                mayOmitWhenUnmentioned: true,
+            },
+            {
+                argument: 'targetDb',
+                kind: 'number-if-present',
+                defaultWhenUnmentioned: -14,
+                mayOmitWhenUnmentioned: true,
+                match: 'exact',
+                connector: 'to',
+                keywords: ['target', 'at'],
             },
         ],
     },

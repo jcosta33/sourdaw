@@ -1,11 +1,16 @@
-import { getCachedAudioBuffer } from '#/modules/AudioEngine/useCases';
-
 import { getTrackState } from '../../repositories/track/getTrackState';
 import { updateClip } from '../../repositories/track/updateClip';
 import { resolveEligibleClipWriteTarget } from '../../stores/resolveEligibleClipWriteTarget';
-import { computeNormalizationScale, type NormalizationMode } from '../../transformers/clipDspTransformers';
+import { type NormalizationMode } from '../../transformers/clipDspTransformers';
+
+import { getClipNormalizationTargetGain } from './getClipNormalizationTargetGain';
 
 export function normalizeClip(clipId: string, mode: NormalizationMode = 'peak', targetDb?: number): boolean {
+    const targetGain = getClipNormalizationTargetGain(clipId, mode, targetDb);
+    if (targetGain === null) {
+        return false;
+    }
+
     const target = resolveEligibleClipWriteTarget({ clipId });
     if (target.status !== 'eligible' || !('clipId' in target)) {
         return false;
@@ -22,15 +27,9 @@ export function normalizeClip(clipId: string, mode: NormalizationMode = 'peak', 
         return false;
     }
 
-    const buffer = getCachedAudioBuffer({ bufferId: clip.audioBufferId });
-    if (!buffer) {
+    if (Object.is(clip.gain, targetGain)) {
         return false;
     }
 
-    const scale = computeNormalizationScale(buffer, mode, targetDb);
-    if (scale === null) {
-        return false;
-    }
-
-    return updateClip(target.clipId, (context) => ({ ...context, gain: context.gain * scale }));
+    return updateClip(target.clipId, (context) => ({ ...context, gain: targetGain }));
 }

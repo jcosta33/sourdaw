@@ -16,6 +16,7 @@ type AgentReferenceCapability =
     | 'automation-lane'
     | 'clip'
     | 'editable-clip'
+    | 'editable-audio-clip'
     | 'editable-midi-clip';
 
 type ResolveAgentReferenceInput = {
@@ -66,6 +67,11 @@ const reservedClipReferenceWords: ReadonlySet<string> = new Set([
     'nudge',
     'gain',
     'volume',
+    'normalize',
+    'normalise',
+    'peak',
+    'rms',
+    'lufs',
 ]);
 
 function normalizeReferenceText(value: string): string {
@@ -125,7 +131,12 @@ function containsQualifiedClipReference(prompt: string, reference: string): bool
 }
 
 function isClipCapability(capability: AgentReferenceCapability): boolean {
-    return capability === 'clip' || capability === 'editable-clip' || capability === 'editable-midi-clip';
+    return (
+        capability === 'clip' ||
+        capability === 'editable-clip' ||
+        capability === 'editable-audio-clip' ||
+        capability === 'editable-midi-clip'
+    );
 }
 
 type TrackOwnerReference = { status: 'none' } | { status: 'unique'; id: string } | { status: 'ambiguous' };
@@ -397,10 +408,19 @@ export function resolveAgentReference(input: ResolveAgentReferenceInput): Resolv
         const clip = input.context.tracks
             .flatMap((track) => track.clips)
             .find((candidate) => candidate.id === input.assertedId);
-        const requiresEditableClip = input.capability === 'editable-clip' || input.capability === 'editable-midi-clip';
+        const requiresEditableClip =
+            input.capability === 'editable-clip' ||
+            input.capability === 'editable-audio-clip' ||
+            input.capability === 'editable-midi-clip';
+        const hasEligibleAudioContent = input.capability !== 'editable-audio-clip' || clip?.type === 'audio';
         const hasEligibleMidiContent =
             input.capability !== 'editable-midi-clip' || (clip?.type === 'midi' && clip.noteCount > 0);
-        if (!clip || (requiresEditableClip && clip.locked === true) || !hasEligibleMidiContent) {
+        if (
+            !clip ||
+            (requiresEditableClip && clip.locked === true) ||
+            !hasEligibleAudioContent ||
+            !hasEligibleMidiContent
+        ) {
             return { status: 'rejected', reason: 'ungrounded-target' };
         }
         const ownerReference = resolveTrackOwnerReference(input.prompt, input.context);

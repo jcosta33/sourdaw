@@ -61,7 +61,7 @@ describe('normalizeClip', () => {
         mocks.updateClip.mockReturnValue(true);
     });
 
-    it('should read the source buffer through AudioEngine and update gain by the normalization scale', () => {
+    it('should read the source buffer through AudioEngine and set gain to the normalization scale', () => {
         const clip = ClipDummy.create({
             id: 'clip-1',
             audioBufferId: 'buffer-1',
@@ -87,9 +87,66 @@ describe('normalizeClip', () => {
 
         expect(updater(clip)).toEqual({
             ...clip,
-            gain: 0.875,
+            gain: 1.75,
         });
     });
+
+    it('does not write when the clip already has the normalization gain', () => {
+        const clip = ClipDummy.create({
+            id: 'clip-1',
+            audioBufferId: 'buffer-1',
+            gain: 1.75,
+        });
+        const cached_buffer: CachedBuffer = { marker: 'cached-buffer' };
+        mocks.getTrackState.mockReturnValue(create_track_state(clip));
+        mocks.getCachedAudioBuffer.mockReturnValue(cached_buffer);
+        mocks.computeNormalizationScale.mockReturnValue(1.75);
+
+        const didWrite = normalizeClip('clip-1', 'rms', -18);
+
+        expect(didWrite).toBe(false);
+        expect(mocks.computeNormalizationScale).toHaveBeenCalledWith(cached_buffer, 'rms', -18);
+        expect(mocks.updateClip).not.toHaveBeenCalled();
+    });
+
+    it('caps normalization at the supported clip gain ceiling', () => {
+        const clip = ClipDummy.create({
+            id: 'clip-1',
+            audioBufferId: 'buffer-1',
+            gain: 0.5,
+        });
+        mocks.getTrackState.mockReturnValue(create_track_state(clip));
+        mocks.getCachedAudioBuffer.mockReturnValue({ marker: 'cached-buffer' });
+        mocks.computeNormalizationScale.mockReturnValue(4);
+
+        const didWrite = normalizeClip('clip-1');
+
+        expect(didWrite).toBe(true);
+        const updater = mocks.updateClip.mock.calls[0]?.[1];
+        if (!updater) {
+            throw new Error('Expected normalizeClip to pass an updater to updateClip');
+        }
+        expect(updater(clip).gain).toBe(2);
+    });
+
+    it.each([Number.NaN, Number.POSITIVE_INFINITY, 0, -1])(
+        'rejects an invalid normalization gain of %s',
+        (invalidGain) => {
+            const clip = ClipDummy.create({
+                id: 'clip-1',
+                audioBufferId: 'buffer-1',
+                gain: 0.5,
+            });
+            mocks.getTrackState.mockReturnValue(create_track_state(clip));
+            mocks.getCachedAudioBuffer.mockReturnValue({ marker: 'cached-buffer' });
+            mocks.computeNormalizationScale.mockReturnValue(invalidGain);
+
+            const didWrite = normalizeClip('clip-1');
+
+            expect(didWrite).toBe(false);
+            expect(mocks.updateClip).not.toHaveBeenCalled();
+        }
+    );
 
     it('should not update gain when the source buffer is missing', () => {
         const clip = ClipDummy.create({

@@ -101,6 +101,30 @@ describe('describePlannedAction', () => {
         ).toBe('Remove clip');
     });
 
+    it('names the normalization target, measurement, and optional level', () => {
+        expect(
+            describePlannedAction({
+                action: { type: 'normalizeClip', payload: { clipId: 'clip-verse' } },
+                context,
+            })
+        ).toBe('Normalize clip "Verse Lead" using peak measurement');
+        expect(
+            describePlannedAction({
+                action: {
+                    type: 'normalizeClip',
+                    payload: { clipId: 'clip-verse', mode: 'lufs', targetDb: -14 },
+                },
+                context,
+            })
+        ).toBe('Normalize clip "Verse Lead" to -14 LUFS');
+        expect(
+            describePlannedAction({
+                action: { type: 'normalizeClip', payload: { clipId: 'missing', mode: 'rms' } },
+                context,
+            })
+        ).toBe('Normalize clip to -14 dB RMS');
+    });
+
     it('names the exact local marker removal target and falls back when it is unavailable', () => {
         mocks.markerStoreValue.value = {
             markers: [{ id: 'marker-chorus', beat: 16, name: 'Chorus', color: 'oklch(0.40 0.07 200)' }],
