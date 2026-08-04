@@ -1,0 +1,56 @@
+src/modules/AiRuntime/useCases/__tests__/parsePromptToActions.spec.ts
+  s_bc88af7d3b054c::t_ff15758349c55c 227-280
+src/modules/AiRuntime/useCases/validateActionPayload.ts
+  s_bc88af7d3b054c::t_ff15758349c55c 451-457
+src/modules/Command/useCases/__tests__/executableCommandRegistry.spec.ts
+  s_bc88af7d3b054c::t_ce62b95a5d7a2d 877-887
+  s_bc88af7d3b054c::t_ff15758349c55c 171-185,867-876
+  s_bc88af7d3b054c::t_1f27b8da02aa63 170
+  s_bc88af7d3b054c::t_9202d794f0bedb 888
+src/utils/handlerContract.ts
+  s_bc88af7d3b054c::t_8b78baed0cf1a2 607
+src/modules/Arrangement/handlers/clip/handleCrossfadeClips.ts
+  s_bc88af7d3b054c::t_8b78baed0cf1a2 17
+src/modules/AiRuntime/useCases/agentReference/bridgeGroundedLlmToolCalls.ts
+  s_bc88af7d3b054c::t_ce62b95a5d7a2d 1617-1623,1646-1649,1655
+src/modules/AiRuntime/transformers/llmActionBridge.ts
+  s_bc88af7d3b054c::t_ff15758349c55c 928-980,1371-1374,1397,1399,1573-1580,1879-1887,1899-1901,1904-1906,1910-1911,1992,2001
+  s_bc88af7d3b054c::t_2cd090fa7f3603 1902,1959-1961
+  s_bc88af7d3b054c::t_971886b79a897d 1962-1964
+src/modules/AiRuntime/useCases/__tests__/validateActionPayload.spec.ts
+  s_bc88af7d3b054c::t_ff15758349c55c 159-169
+  s_bc88af7d3b054c::t_1d28973d7d397e 158
+src/modules/AiRuntime/useCases/agentReference/__tests__/bridgeGroundedLlmToolCalls.spec.ts
+  s_bc88af7d3b054c::t_165623bf6a1305 313,315-317,364-369
+  s_bc88af7d3b054c::t_4eb98bf667491d 172-175,304,309,314,319,324,330,335,340,345,350
+  s_bc88af7d3b054c::t_e842b7d1fb9829 301
+  s_bc88af7d3b054c::t_ff15758349c55c 302-303,305-308,310-312,318,320-323,325-329,331-334,336-339,341-344,346-349,351-363,370-375
+src/modules/Arrangement/handlers/clip/__tests__/handleCrossfadeClips.spec.ts
+  s_bc88af7d3b054c::t_8b78baed0cf1a2 73-82
+src/modules/AiRuntime/transformers/__tests__/llmActionBridge.spec.ts
+  s_bc88af7d3b054c::t_da7e7724f6e247 923,925-926,932-935,938-939,942-960
+  s_bc88af7d3b054c::t_8065796df75323 927-931,936-937,941
+  s_bc88af7d3b054c::t_dd9ad2ab7bcade 186-189,844,848,851-860,882-885,888,890-892,905,940
+  s_bc88af7d3b054c::t_ff15758349c55c 162-185,839-843,845-847,849-850,861-881,886-887,889,893-904,906-922
+  s_bc88af7d3b054c::t_fb21437fbff368 924
+src/modules/Command/useCases/executableAppActionRegistry.ts
+  s_bc88af7d3b054c::t_ff15758349c55c 374-386,396-408
+  s_bc88af7d3b054c::t_ce62b95a5d7a2d 45,387-395
+  s_bc88af7d3b054c::t_17fd94d6482c50 373
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.20",
+  "base_commit_sha": "ebc56378a50b1e8653e654b1b357842d18e3ec58",
+  "prompts": {},
+  "sessions": {
+    "s_bc88af7d3b054c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f9b4a-11a2-7f61-8dfb-76eed0eb2a9c",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
