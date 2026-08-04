@@ -1,0 +1,36 @@
+src/app/prepareOfflineDeviceSetup.ts
+  s_ac9b259eab20ba::t_f1f682c2775e39 12-13,54
+src/modules/Toaster/useCases/prepareOfflineToaster.ts
+  s_ac9b259eab20ba::t_f1f682c2775e39 1-2,10-11,29-34,36-41
+src/app/__tests__/prepareOfflineDeviceSetup.spec.ts
+  s_ac9b259eab20ba::t_de12e0aa514ff5 227,229,233
+src/modules/AudioEngine/useCases/__tests__/buildDeviceChainOfflineInstrumentSetup.spec.ts
+  s_ac9b259eab20ba::t_de12e0aa514ff5 94,155-173
+  s_ac9b259eab20ba::t_6b7a6b884c5fc8 174-175
+src/modules/Toaster/useCases/__tests__/toasterLiveOfflineParity.spec.ts
+  s_ac9b259eab20ba::t_d37c3db2806015 28-29,165-169,176
+  s_ac9b259eab20ba::t_de12e0aa514ff5 164,170-174,177-178,197-200,204-206
+  s_ac9b259eab20ba::t_9ffcf796f18cfa 175
+src/modules/AudioEngine/useCases/buildDeviceChain.ts
+  s_ac9b259eab20ba::t_f1f682c2775e39 128
+src/modules/AudioEngine/engine/audioDeviceRuntimeSink.ts
+  s_ac9b259eab20ba::t_f1f682c2775e39 75-76
+src/modules/AudioEngine/models/TrackViewTypes.ts
+  s_ac9b259eab20ba::t_f1f682c2775e39 12-13
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.20",
+  "base_commit_sha": "b77c510308691d07b290bcdd61e6ceec241b8c9a",
+  "prompts": {},
+  "sessions": {
+    "s_ac9b259eab20ba": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8699-3865-7842-8c54-afbac6cfd266",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
