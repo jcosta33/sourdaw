@@ -37,6 +37,7 @@ export { setAiBackendPreference } from './llmOrchestration/backendResolution/set
 
 export { generateToolCalls } from './llmOrchestration/generateToolCalls';
 export { getMidiNoteGenerationToolSchemas } from './getMidiNoteGenerationToolSchemas';
+export { requireMidiNoteGenerationToolCall } from './requireMidiNoteGenerationToolCall';
 
 export { initEngine } from './llmOrchestration/lifecycle/initEngine';
 export { unloadEngine } from './llmOrchestration/lifecycle/unloadEngine';

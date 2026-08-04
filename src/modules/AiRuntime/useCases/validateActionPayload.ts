@@ -119,6 +119,10 @@ function hasClipId(param: unknown): param is { clipId: string } {
 function isAddNotesNote(param: unknown): param is PayloadOf<'addNotes'>['notes'][number] {
     return (
         isObj(param) &&
+        hasOnlyKeys(param, ['pitch', 'startBeat', 'duration', 'velocity']) &&
+        Object.hasOwn(param, 'pitch') &&
+        Object.hasOwn(param, 'startBeat') &&
+        Object.hasOwn(param, 'duration') &&
         isInRange(param.pitch, 0, 127) &&
         isNonNegativeNumber(param.startBeat) &&
         isPositiveNumber(param.duration) &&
@@ -420,7 +424,12 @@ const validators = {
     scaleAllVelocities: 'unchecked',
     setAllVelocities: 'unchecked',
     addNotes: (param): param is PayloadOf<'addNotes'> =>
-        isObj(param) && isString(param.clipId) && Array.isArray(param.notes) && param.notes.every(isAddNotesNote),
+        isObj(param) &&
+        hasExactKeys(param, ['clipId', 'notes']) &&
+        isNonEmptyString(param.clipId) &&
+        Array.isArray(param.notes) &&
+        param.notes.length > 0 &&
+        param.notes.every(isAddNotesNote),
     arpeggiate: 'unchecked',
 
     // Automation secondary ops
