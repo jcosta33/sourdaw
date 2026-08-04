@@ -1393,20 +1393,43 @@ const kneadDescriptor: WasmDeviceDescriptor = {
     matches: isKneadDevice,
     create({ context, deviceId, deviceType, transportSAB, signal, onLoaded }) {
         const pendingParams: Array<[string, number | number[]]> = [];
+        // `AudioEngine.syncKneadState` fans out to every device node on the
+        // strip with no readiness gate, so a loading Knead is a reachable
+        // target — and the only push a freshly added one gets is the trackStore
+        // mutation that added it, which lands while this load is still in
+        // flight. Nothing re-pushes on load, so an unlatched write leaves the
+        // clip playing unshifted until some unrelated edit happens to sync
+        // again. One slot, not a queue: the payload is a whole-track clip
+        // snapshot rebuilt per call, so the newest one supersedes every earlier
+        // one and replaying an older one would undo later edits.
+        let pendingState: Record<string, unknown> | null = null;
         const placeholder = loadingBypassNode(context, deviceId, deviceType);
-        placeholder.kneadControls = {
+        const loadingControls: NonNullable<BuiltinDeviceNode['kneadControls']> = {
             ready: false,
-            updateState: () => {},
+            updateState: (clips) => {
+                pendingState = clips;
+            },
             setParam: (name, value) => {
                 pendingParams.push([name, value]);
             },
             setBypass: () => {},
             destroy: () => {},
         };
+        placeholder.kneadControls = loadingControls;
+        // An aborted or failed load leaves this placeholder on the strip —
+        // TrackNode only marks the device failed — so its `updateState` keeps
+        // being called for the lifetime of the track. Drop the slot and stop
+        // capturing on the way out, or a device that will never load pins the
+        // last clip snapshot, note blobs included, until the track is removed.
+        const abandonPendingState = (): void => {
+            pendingState = null;
+            loadingControls.updateState = () => {};
+        };
         const loadPromise = createKneadNode(context, transportSAB, signal)
             .then(async (result: KneadNodeResult) => {
                 const readyData = await waitForDeviceReady({ deviceType, result, signal });
                 if (readyData === null) {
+                    abandonPendingState();
                     return;
                 }
                 // Knead delays its track by a whole analysis frame even at zero
@@ -1418,6 +1441,13 @@ const kneadDescriptor: WasmDeviceDescriptor = {
                 for (const [name, value] of pendingParams) {
                     result.setParam(name, value);
                 }
+                // Strictly after the readiness gate: an aborted load has already
+                // destroyed `result`, and pushing a snapshot into it would post
+                // to a closed worklet port.
+                if (pendingState) {
+                    result.updateState(pendingState);
+                }
+                pendingState = null;
                 // Removing the device must retract its PDC entry; a stale entry
                 // keeps compensating a delay that is no longer in the graph.
                 // TrackNode.removeDevice prefers controller.destroy over dispose,
@@ -1451,6 +1481,7 @@ const kneadDescriptor: WasmDeviceDescriptor = {
                 return;
             })
             .catch((error) => {
+                abandonPendingState();
                 logger.warn(`[WebAudioEngine] ${deviceType} failed: ${error}`);
                 return;
             });
