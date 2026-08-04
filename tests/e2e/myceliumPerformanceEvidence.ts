@@ -5,7 +5,9 @@ import { setupWorkspace, wait_for_workspace_ready } from './e2eUtils';
 
 const AUDIO_USE_CASES_PATH = '/src/modules/AudioEngine/useCases/index.ts';
 const ARRANGEMENT_STORES_PATH = '/src/modules/Arrangement/stores/index.ts';
+const PROJECT_STORES_PATH = '/src/modules/Project/stores/index.ts';
 const PROJECT_USE_CASES_PATH = '/src/modules/Project/useCases/index.ts';
+const TRANSPORT_STORES_PATH = '/src/modules/Transport/stores/index.ts';
 const TRANSPORT_USE_CASES_PATH = '/src/modules/Transport/useCases/index.ts';
 const LONG_TASK_LIMIT = 20;
 const LONG_TASK_WINDOW_KEY = '__sourdawMyceliumLongTaskWindow';
@@ -22,9 +24,13 @@ export type RuntimeSnapshot = {
     capturedAtMs: number;
     audio: unknown;
     health: unknown;
+    livePlayheadPosition: number;
+    projectDirty: boolean | null;
+    probeDurationMs: Record<string, number>;
     readiness: unknown;
     scheduler: unknown;
     transport: unknown;
+    visibilityState: DocumentVisibilityState;
 };
 
 export type PlayableDeviceWait = {
@@ -455,6 +461,210 @@ async function waitForTransportPlaying(page: Page, expected: boolean): Promise<v
         .toBe(expected);
 }
 
+const WARM_PLAYBACK_BEFORE_REPLACEMENT_MS = 30_000;
+const WARM_PLAYBACK_SAMPLE_INTERVAL_MS = 5_000;
+const WARM_MINIMUM_REALTIME_RATIO = 0.8;
+const WARM_SCHEDULER_LOOKAHEAD_MS = 100;
+
+type WarmPlaybackBeforeReplacementInput = {
+    expectedAudioDeviceCount: number;
+    onSnapshot?: (snapshot: RuntimeSnapshot) => void;
+    readSnapshot: () => Promise<RuntimeSnapshot>;
+    wait: (durationMs: number) => Promise<void>;
+};
+
+function assertWarmCounterStable({
+    baseline,
+    current,
+    label,
+    requireCleanBaseline = true,
+}: {
+    baseline: number;
+    current: number;
+    label: string;
+    requireCleanBaseline?: boolean;
+}): void {
+    if (requireCleanBaseline && baseline !== 0) {
+        throw new Error(`Warm playback baseline already contained ${label}: ${baseline}`);
+    }
+    if (current < baseline) {
+        throw new Error(`Warm playback ${label} counter reset: ${baseline} -> ${current}`);
+    }
+    if (current > baseline) {
+        throw new Error(`Warm playback recorded ${label}: ${baseline} -> ${current}`);
+    }
+}
+
+function validateWarmPlaybackSnapshot({
+    baseline,
+    current,
+    expectedAudioDeviceCount,
+    previousCapturedAtMs,
+    previousPlaybackTotalDuration,
+    previousPlayheadPosition,
+}: {
+    baseline: RuntimeSnapshot;
+    current: RuntimeSnapshot;
+    expectedAudioDeviceCount: number;
+    previousCapturedAtMs?: number;
+    previousPlaybackTotalDuration?: number;
+    previousPlayheadPosition?: number;
+}): { capturedAtMs: number; playbackTotalDuration: number; playheadPosition: number } {
+    const capturedAtMs = current.capturedAtMs;
+    if (!Number.isFinite(capturedAtMs)) {
+        throw new TypeError('Warm runtime snapshot must expose a finite monotonic capture timestamp');
+    }
+    if (previousCapturedAtMs !== undefined && capturedAtMs <= previousCapturedAtMs) {
+        throw new Error('Warm runtime snapshot timestamp did not advance during the preparation window');
+    }
+    const transport = getRecord(current.transport, 'Warm transport state');
+    if (current.visibilityState !== 'visible') {
+        throw new Error(`Warm playback page became ${current.visibilityState}`);
+    }
+    if (transport.isPlaying !== true) {
+        throw new Error('Warm playback transport stopped during the preparation window');
+    }
+    const playheadPosition = current.livePlayheadPosition;
+    if (!Number.isFinite(playheadPosition)) {
+        throw new TypeError('Warm transport state must expose a finite live playhead position');
+    }
+    if (previousPlayheadPosition !== undefined && playheadPosition <= previousPlayheadPosition) {
+        throw new Error('Warm playback playhead stalled during the preparation window');
+    }
+
+    const audio = getRecord(current.audio, 'Warm audio diagnostics');
+    const context = getRecord(audio.context, 'Warm AudioContext diagnostics');
+    if (context.state !== 'running') {
+        throw new Error(`Warm AudioContext entered ${String(context.state)} state`);
+    }
+    const graph = getRecord(audio.graph, 'Warm audio graph diagnostics');
+    if (getNumber(graph, 'deviceInstances', 'Warm audio graph diagnostics') !== expectedAudioDeviceCount) {
+        throw new Error('Warm audio graph no longer matches the expected Mycelium device count');
+    }
+    for (const name of ['pendingDeviceInstances', 'failedDeviceInstances']) {
+        if (getNumber(graph, name, 'Warm audio graph diagnostics') !== 0) {
+            throw new Error(`Warm audio graph reported ${name}`);
+        }
+    }
+
+    const readiness = getRecord(current.readiness, 'Warm device readiness diagnostics');
+    const baselineReadiness = getRecord(baseline.readiness, 'Baseline warm device readiness diagnostics');
+    if (getReadinessGeneration(readiness) !== getReadinessGeneration(baselineReadiness)) {
+        throw new Error('Warm device readiness generation changed during the preparation window');
+    }
+    const readinessCounts = getRecord(readiness.counts, 'Warm device readiness counts');
+    const requested = getNumber(readinessCounts, 'requested', 'Warm device readiness counts');
+    const playableReady = getNumber(readinessCounts, 'playableReady', 'Warm device readiness counts');
+    const failed = getNumber(readinessCounts, 'failed', 'Warm device readiness counts');
+    const cancelled = getNumber(readinessCounts, 'cancelled', 'Warm device readiness counts');
+    if (
+        expectedAudioDeviceCount <= 0 ||
+        requested !== expectedAudioDeviceCount ||
+        playableReady !== expectedAudioDeviceCount ||
+        failed !== 0 ||
+        cancelled !== 0
+    ) {
+        throw new Error('Warm device readiness stopped being completely playable');
+    }
+
+    const health = getRecord(current.health, 'Warm audio health');
+    if (health.workletReady !== true || health.lastInitError !== null || health.lastResumeError !== null) {
+        throw new Error('Warm audio engine reported a worklet, initialization, or resume fault');
+    }
+    const baselineHealth = getRecord(baseline.health, 'Baseline warm audio health');
+    const dropouts = getRecord(health.dropouts, 'Warm audio dropout counters');
+    const baselineDropouts = getRecord(baselineHealth.dropouts, 'Baseline warm audio dropout counters');
+    for (const name of ['detectedUnderrunBlocks', 'silentFrames']) {
+        assertWarmCounterStable({
+            baseline: getNumber(baselineDropouts, name, 'Baseline warm audio dropout counters'),
+            current: getNumber(dropouts, name, 'Warm audio dropout counters'),
+            label: name,
+            requireCleanBaseline: false,
+        });
+    }
+
+    const playback = getRecord(audio.playback, 'Warm Chrome playback statistics');
+    const playbackTotalDuration = getNumber(playback, 'totalDuration', 'Warm Chrome playback statistics');
+    if (previousPlaybackTotalDuration !== undefined && playbackTotalDuration <= previousPlaybackTotalDuration) {
+        throw new Error('Warm Chrome playback statistics did not advance during the preparation window');
+    }
+    if (previousPlaybackTotalDuration !== undefined && previousCapturedAtMs !== undefined) {
+        const playbackDurationAdvance = playbackTotalDuration - previousPlaybackTotalDuration;
+        const elapsedSeconds = (capturedAtMs - previousCapturedAtMs) / 1_000;
+        const minimumPlaybackDurationAdvance = elapsedSeconds * WARM_MINIMUM_REALTIME_RATIO;
+        if (playbackDurationAdvance < minimumPlaybackDurationAdvance) {
+            throw new Error(
+                `Warm Chrome playback statistics advanced too slowly: ${playbackDurationAdvance.toFixed(3)}s ` +
+                    `for a required ${minimumPlaybackDurationAdvance.toFixed(3)}s`
+            );
+        }
+    }
+    const baselineAudio = getRecord(baseline.audio, 'Baseline warm audio diagnostics');
+    const baselinePlayback = getRecord(baselineAudio.playback, 'Baseline warm Chrome playback statistics');
+    for (const name of ['underrunDuration', 'underrunEvents']) {
+        assertWarmCounterStable({
+            baseline: getNumber(baselinePlayback, name, 'Baseline warm Chrome playback statistics'),
+            current: getNumber(playback, name, 'Warm Chrome playback statistics'),
+            label: `Chrome ${name}`,
+            requireCleanBaseline: false,
+        });
+    }
+
+    const scheduler = getRecord(current.scheduler, 'Warm scheduler diagnostics');
+    const baselineScheduler = getRecord(baseline.scheduler, 'Baseline warm scheduler diagnostics');
+    for (const name of ['sequenceGaps', 'outOfOrderMessages', 'ticksSkippedInFlight']) {
+        assertWarmCounterStable({
+            baseline: getNumber(baselineScheduler, name, 'Baseline warm scheduler diagnostics'),
+            current: getNumber(scheduler, name, 'Warm scheduler diagnostics'),
+            label: `scheduler ${name}`,
+        });
+    }
+    const mainDeliveryLateness = getRecord(scheduler.mainDeliveryLatenessMs, 'Warm scheduler delivery latency');
+    const maximumDeliveryLatenessMs = getNumber(mainDeliveryLateness, 'max', 'Warm scheduler delivery latency');
+    if (maximumDeliveryLatenessMs > WARM_SCHEDULER_LOOKAHEAD_MS) {
+        throw new Error(
+            `Warm scheduler delivery breached its ${String(WARM_SCHEDULER_LOOKAHEAD_MS)}ms look-ahead horizon: ` +
+                `${maximumDeliveryLatenessMs.toFixed(3)}ms`
+        );
+    }
+
+    return { capturedAtMs, playbackTotalDuration, playheadPosition };
+}
+
+export async function warmPlaybackBeforeReplacement({
+    expectedAudioDeviceCount,
+    onSnapshot,
+    readSnapshot,
+    wait,
+}: WarmPlaybackBeforeReplacementInput): Promise<RuntimeSnapshot[]> {
+    const baseline = await readSnapshot();
+    onSnapshot?.(baseline);
+    const snapshots = [baseline];
+    let previousProgress = validateWarmPlaybackSnapshot({
+        baseline,
+        current: baseline,
+        expectedAudioDeviceCount,
+    });
+    let elapsedMs = 0;
+    while (elapsedMs < WARM_PLAYBACK_BEFORE_REPLACEMENT_MS) {
+        const waitMs = Math.min(WARM_PLAYBACK_SAMPLE_INTERVAL_MS, WARM_PLAYBACK_BEFORE_REPLACEMENT_MS - elapsedMs);
+        await wait(waitMs);
+        elapsedMs += waitMs;
+        const current = await readSnapshot();
+        onSnapshot?.(current);
+        previousProgress = validateWarmPlaybackSnapshot({
+            baseline,
+            current,
+            expectedAudioDeviceCount,
+            previousCapturedAtMs: previousProgress.capturedAtMs,
+            previousPlaybackTotalDuration: previousProgress.playbackTotalDuration,
+            previousPlayheadPosition: previousProgress.playheadPosition,
+        });
+        snapshots.push(current);
+    }
+    return snapshots;
+}
+
 export async function startMyceliumPlaybackForReadiness(page: Page): Promise<void> {
     await page.getByRole('button', { name: 'Play', exact: true }).click({ timeout: 12_000 });
     await waitForTransportPlaying(page, true);
@@ -823,9 +1033,11 @@ export async function waitForPlayableDevices({
 
 export async function readRuntimeSnapshot(page: Page): Promise<RuntimeSnapshot> {
     return page.evaluate(
-        async ({ audioPath, transportPath }) => {
+        async ({ audioPath, projectStoresPath, transportPath, transportStoresPath }) => {
             const audioModule: unknown = await import(audioPath);
+            const projectStoresModule: unknown = await import(projectStoresPath);
             const transportModule: unknown = await import(transportPath);
+            const transportStoresModule: unknown = await import(transportStoresPath);
             const call = (moduleValue: unknown, name: string): unknown => {
                 if (typeof moduleValue !== 'object' || moduleValue === null) {
                     throw new TypeError(`${name} contract is not an object`);
@@ -838,16 +1050,54 @@ export async function readRuntimeSnapshot(page: Page): Promise<RuntimeSnapshot> 
                 }
                 return operation();
             };
+            if (typeof transportStoresModule !== 'object' || transportStoresModule === null) {
+                throw new TypeError('Transport stores contract is not an object');
+            }
+            const playheadPositionRef: unknown = Reflect.get(transportStoresModule, 'playheadPositionRef');
+            const livePlayheadPosition: unknown =
+                typeof playheadPositionRef === 'object' && playheadPositionRef !== null
+                    ? Reflect.get(playheadPositionRef, 'current')
+                    : null;
+            if (typeof livePlayheadPosition !== 'number' || !Number.isFinite(livePlayheadPosition)) {
+                throw new TypeError('Transport stores contract does not expose a finite live playhead position');
+            }
+            if (typeof projectStoresModule !== 'object' || projectStoresModule === null) {
+                throw new TypeError('Project stores contract is not an object');
+            }
+            const projectStore: unknown = Reflect.get(projectStoresModule, 'projectStore');
+            const projectState: unknown =
+                typeof projectStore === 'object' && projectStore !== null ? Reflect.get(projectStore, 'value') : null;
+            const projectDirty: unknown =
+                typeof projectState === 'object' && projectState !== null ? Reflect.get(projectState, 'dirty') : null;
+            if (projectDirty !== null && typeof projectDirty !== 'boolean') {
+                throw new TypeError('Project store dirty state must be boolean or null');
+            }
+            const probeDurationMs: Record<string, number> = {};
+            const timedCall = (moduleValue: unknown, name: string): unknown => {
+                const startedAtMs = performance.now();
+                const result = call(moduleValue, name);
+                probeDurationMs[name] = performance.now() - startedAtMs;
+                return result;
+            };
             return {
                 capturedAtMs: performance.timeOrigin + performance.now(),
-                audio: call(audioModule, 'getEngineDiagnostics'),
-                health: call(audioModule, 'getEngineHealth'),
-                readiness: call(audioModule, 'getDeviceReadinessDiagnostics'),
-                scheduler: call(transportModule, 'getSchedulerTimingDiagnostics'),
-                transport: call(transportModule, 'getTransportState'),
+                audio: timedCall(audioModule, 'getEngineDiagnostics'),
+                health: timedCall(audioModule, 'getEngineHealth'),
+                livePlayheadPosition,
+                projectDirty,
+                probeDurationMs,
+                readiness: timedCall(audioModule, 'getDeviceReadinessDiagnostics'),
+                scheduler: timedCall(transportModule, 'getSchedulerTimingDiagnostics'),
+                transport: timedCall(transportModule, 'getTransportState'),
+                visibilityState: document.visibilityState,
             };
         },
-        { audioPath: AUDIO_USE_CASES_PATH, transportPath: TRANSPORT_USE_CASES_PATH }
+        {
+            audioPath: AUDIO_USE_CASES_PATH,
+            projectStoresPath: PROJECT_STORES_PATH,
+            transportPath: TRANSPORT_USE_CASES_PATH,
+            transportStoresPath: TRANSPORT_STORES_PATH,
+        }
     );
 }
 

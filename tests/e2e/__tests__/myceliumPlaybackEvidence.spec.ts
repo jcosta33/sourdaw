@@ -41,9 +41,13 @@ function snapshot(input: {
                 lastUnderrunAtFrame: 9_600,
             },
         },
+        livePlayheadPosition: 0,
+        projectDirty: false,
+        probeDurationMs: {},
         readiness: {},
         scheduler: { messagesReceived: input.messagesReceived ?? 8, ticksSettled: input.ticksSettled ?? 7 },
         transport: { isPlaying: input.isPlaying ?? false },
+        visibilityState: 'visible',
     };
 }
 

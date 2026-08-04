@@ -9,6 +9,7 @@ const mocks = vi.hoisted(() => ({
     projectStoreValue: { value: null as ProjectStoreState | null },
     projectStoreSet: vi.fn<(value: ProjectStoreState) => void>(),
     persistCrdtProject: vi.fn<() => Promise<void>>(),
+    captureProjectRevision: vi.fn<() => string>(),
     addToRecentProjects: vi.fn<(name: string, key: string) => void>(),
     loggerWarn: vi.fn<(...args: unknown[]) => void>(),
     notifyUser: vi.fn<(message: string, level?: 'info' | 'success' | 'warning' | 'error') => void>(),
@@ -29,6 +30,7 @@ vi.mock('../../../../stores/projectStore', () => ({
 }));
 
 vi.mock('#/modules/CrdtDocument/useCases', () => ({
+    captureProjectRevision: mocks.captureProjectRevision,
     persistCrdtProject: mocks.persistCrdtProject,
 }));
 
@@ -60,6 +62,7 @@ describe('saveProject', () => {
         installFakeIndexedDb();
         mocks.projectStoreValue.value = makeProject();
         mocks.persistCrdtProject.mockResolvedValue(undefined);
+        mocks.captureProjectRevision.mockReturnValue('saved-revision');
         mocks.buildProjectData.mockResolvedValue({ data: { version: 1, meta: { name: 'My Song' } } });
     });
 
@@ -68,7 +71,7 @@ describe('saveProject', () => {
     });
 
     it('keys the recent-project entry by the stable project id, not the display name', async () => {
-        saveProject();
+        void saveProject();
 
         await vi.waitFor(() => {
             expect(mocks.addToRecentProjects).toHaveBeenCalledTimes(1);
@@ -86,7 +89,7 @@ describe('saveProject', () => {
     it('does not record a recent-project entry when CRDT persistence rejects', async () => {
         mocks.persistCrdtProject.mockRejectedValue(new Error('disk full'));
 
-        saveProject();
+        void saveProject();
 
         await vi.waitFor(() => {
             expect(mocks.loggerWarn).toHaveBeenCalled();
@@ -102,7 +105,7 @@ describe('saveProject', () => {
             })
         );
 
-        saveProject();
+        void saveProject();
 
         // Not recorded synchronously before persistence settles.
         expect(mocks.addToRecentProjects).not.toHaveBeenCalled();

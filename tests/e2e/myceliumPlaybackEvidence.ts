@@ -472,7 +472,7 @@ export async function waitForPlaybackStatsRefresh({
     throw new Error('Chrome playback statistics did not publish a fresh snapshot');
 }
 
-async function refreshPagePlaybackStats(
+export async function refreshPagePlaybackStats(
     page: Page,
     previous: RuntimeSnapshot,
     requiredIsPlaying: boolean

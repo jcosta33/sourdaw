@@ -11,6 +11,7 @@ import { syncKneadToEngine } from '#/modules/Knead/useCases';
 import { initWebMidi } from '#/modules/MIDI/useCases';
 import { registerProModulationEffects } from '#/modules/PluginHost/useCases';
 import { preferencesStore } from '#/modules/Preferences/stores';
+import { projectStore } from '#/modules/Project/stores';
 import { loadProject, saveProject } from '#/modules/Project/useCases';
 import { restoreLibrary, seedFactoryLibrary } from '#/modules/SampleLibrary/useCases';
 import { registerProSynthInstruments } from '#/modules/Synth/useCases';
@@ -138,8 +139,12 @@ export const useAppInitialization = (): void => {
             }
             const intervalMs = prefs?.autoSaveIntervalMs ?? 30_000;
             interval = setInterval(() => {
-                // Fire-and-forget: saveProject notifies the user itself on failure.
-                void saveProject();
+                const requiresSnapshot = projectStore.value?.dirty === true;
+                const transportIsPlaying = getTransportState()?.isPlaying === true;
+                if (requiresSnapshot && !transportIsPlaying) {
+                    // saveProject reports full-snapshot failures to the user.
+                    void saveProject();
+                }
             }, intervalMs);
         };
 
