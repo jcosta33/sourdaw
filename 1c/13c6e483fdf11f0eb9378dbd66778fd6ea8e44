@@ -1,0 +1,19 @@
+src/modules/AiRuntime/presentations/components/mixAnalysis/__tests__/MixAnalysisSectionsBranches.spec.tsx
+  s_a25fc74dcafeff::t_1b7d54ab7160fb 1-196
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.20",
+  "base_commit_sha": "1c13c6e483fdf11f0eb9378dbd66778fd6ea8e44",
+  "prompts": {},
+  "sessions": {
+    "s_a25fc74dcafeff": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-a14f68a55bbc0ea42",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
