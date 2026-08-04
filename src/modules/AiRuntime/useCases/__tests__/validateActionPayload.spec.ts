@@ -696,9 +696,12 @@ describe('validateActionPayload / PAYLOAD_VALIDATORS', () => {
             }
 
             expect(guard({ clipId: 'clip-1', gridSize: 0.25 })).toBe(true);
+            expect(guard({ clipId: 'clip-1', gridSize: 0.03125 })).toBe(true);
             expect(guard({ clipId: 'clip-1', gridSize: 64 })).toBe(true);
             expect(guard({ clipId: '', gridSize: 0.25 })).toBe(false);
             expect(guard({ clipId: 'clip-1', gridSize: 0 })).toBe(false);
+            expect(guard({ clipId: 'clip-1', gridSize: 0.03124 })).toBe(false);
+            expect(guard({ clipId: 'clip-1', gridSize: Number.MIN_VALUE })).toBe(false);
             expect(guard({ clipId: 'clip-1', gridSize: 65 })).toBe(false);
             expect(guard({ clipId: 'clip-1', gridSize: Number.NaN })).toBe(false);
             expect(guard({ clipId: 'clip-1', gridSize: Number.POSITIVE_INFINITY })).toBe(false);

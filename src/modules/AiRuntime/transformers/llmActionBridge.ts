@@ -581,13 +581,13 @@ function bridgeToolCall({
             !hasExactKeys(args, ['clipId', 'gridSize']) ||
             !target ||
             !isFiniteNumber(args.gridSize) ||
-            args.gridSize <= 0 ||
+            args.gridSize < 0.03125 ||
             args.gridSize > 64
         ) {
             return rejection(
                 index,
                 call.name,
-                'Expected an unlocked non-empty MIDI clip and a finite gridSize greater than 0 and at most 64'
+                'Expected an unlocked non-empty MIDI clip and a finite gridSize from 0.03125 through 64'
             );
         }
         return { type: 'quantizeNoteLengths', payload: { clipId: target.clip.id, gridSize: args.gridSize } };

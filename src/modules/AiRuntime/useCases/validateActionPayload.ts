@@ -272,8 +272,7 @@ const validators = {
         isObj(param) &&
         hasExactKeys(param, ['clipId', 'gridSize']) &&
         isNonEmptyString(param.clipId) &&
-        isPositiveNumber(param.gridSize) &&
-        param.gridSize <= 64,
+        isInRange(param.gridSize, 0.03125, 64),
     scaleAllVelocities: (param): param is PayloadOf<'scaleAllVelocities'> =>
         isObj(param) &&
         hasExactKeys(param, ['clipId', 'factor']) &&

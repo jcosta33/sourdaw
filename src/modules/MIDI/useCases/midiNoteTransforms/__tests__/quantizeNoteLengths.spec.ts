@@ -52,6 +52,13 @@ describe('quantizeNoteLengths', () => {
         expect(midiStore.value?.notesByClipId.clip1?.[0]?.duration).toBe(0.25);
     });
 
+    it('should preserve finite durations when given a subnormal grid', () => {
+        quantizeNoteLengths('clip1', Number.MIN_VALUE);
+
+        expect(midiStore.value?.notesByClipId.clip1?.map((node) => node.duration)).toEqual([0.11, 0.4]);
+        expect(midiStore.value?.notesByClipId.clip1?.every((node) => Number.isFinite(node.duration))).toBe(true);
+    });
+
     it('should not run when the clip is empty or missing', () => {
         quantizeNoteLengths('missing', 0.25);
         midiStore.set({

@@ -540,6 +540,12 @@ describe('bridgeLlmToolCalls', () => {
                 context: midiContext,
             }),
             bridge({
+                calls: [
+                    { name: 'quantizeNoteLengths', arguments: { clipId: 'clip-midi', gridSize: Number.MIN_VALUE } },
+                ],
+                context: midiContext,
+            }),
+            bridge({
                 calls: [{ name: 'invertNotes', arguments: { clipId: 'clip-midi', extra: true } }],
                 context: midiContext,
             }),
@@ -556,6 +562,7 @@ describe('bridgeLlmToolCalls', () => {
             'transposeNotes',
             'scaleAllVelocities',
             'setAllVelocities',
+            'quantizeNoteLengths',
             'quantizeNoteLengths',
             'invertNotes',
         ]);

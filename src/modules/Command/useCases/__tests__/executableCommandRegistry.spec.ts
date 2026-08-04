@@ -170,9 +170,9 @@ const EXPECTED_COMMANDS = [
             clipId: { type: 'string', description: 'Existing unlocked non-empty MIDI clip ID' },
             gridSize: {
                 type: 'number',
-                exclusiveMinimum: 0,
+                minimum: 0.03125,
                 maximum: 64,
-                description: 'Beat grid greater than 0 and at most 64',
+                description: 'Beat grid from 0.03125 through 64',
             },
         },
         ['clipId', 'gridSize'],
