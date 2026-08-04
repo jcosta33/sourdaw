@@ -37,7 +37,25 @@ printf '%s\n' \
     '    case " $* " in *" --include=dev "*) ;; *) exit 42 ;; esac' \
     'fi' \
     > "$fake_bin/npm"
-chmod +x "$fake_bin/pnpm" "$fake_bin/npm"
+printf '%s\n' \
+    '#!/bin/sh' \
+    'set -eu' \
+    'printf "cargo %s\n" "$*" >> "$COMMAND_LOG"' \
+    'case "${1:-}" in' \
+    '    clippy) exit "${FAKE_CARGO_CLIPPY_STATUS:-0}" ;;' \
+    '    test) exit "${FAKE_CARGO_TEST_STATUS:-0}" ;;' \
+    'esac' \
+    > "$fake_bin/cargo"
+chmod +x "$fake_bin/pnpm" "$fake_bin/npm" "$fake_bin/cargo"
+
+# A PATH that has the fake npm but no cargo at all, used to prove the missing
+# toolchain precondition. `sh` and `dirname` are the only external commands
+# needed to reach the precondition, so they are the only ones linked in.
+no_cargo_bin="$temp_root/bin-no-cargo"
+mkdir -p "$no_cargo_bin"
+cp "$fake_bin/npm" "$no_cargo_bin/npm"
+ln -s "$(command -v sh)" "$no_cargo_bin/sh"
+ln -s "$(command -v dirname)" "$no_cargo_bin/dirname"
 
 set +e
 lint_output=$(PATH="$fake_bin:$PATH" \
@@ -101,11 +119,59 @@ PATH="$fake_bin:$PATH" \
 printf '%s\n' \
     'npm --prefix server ls --depth=0 --silent --include=dev' \
     'npm run build' \
+    'cargo clippy --workspace --exclude sourdaw --all-targets --all-features' \
+    'cargo test --workspace --exclude sourdaw --all-features' \
     > "$temp_root/expected-server-success.log"
 diff -u "$temp_root/expected-server-success.log" "$temp_root/server-success.log"
+
+# A missing Rust toolchain must be reported before any build runs, not
+# discovered after the collaboration server has already been built.
+set +e
+no_cargo_output=$(PATH="$no_cargo_bin" \
+    COMMAND_LOG="$temp_root/no-cargo.log" \
+    sh "$temp_root/scripts/health-gates-server.sh" 2>&1)
+no_cargo_status=$?
+set -e
+test "$no_cargo_status" -eq 1
+case "$no_cargo_output" in
+    *'error: cargo is not on PATH'*) ;;
+    *) exit 1 ;;
+esac
+printf '%s\n' 'npm --prefix server ls --depth=0 --silent --include=dev' > "$temp_root/expected-no-cargo.log"
+diff -u "$temp_root/expected-no-cargo.log" "$temp_root/no-cargo.log"
+
+# A failing Rust workspace must fail the gate with cargo's own exit code, and
+# must stop before the remaining legs run.
+set +e
+PATH="$fake_bin:$PATH" \
+    COMMAND_LOG="$temp_root/cargo-clippy-failure.log" \
+    FAKE_CARGO_CLIPPY_STATUS=101 \
+    sh "$temp_root/scripts/health-gates-server.sh" >/dev/null 2>&1
+cargo_clippy_status=$?
+set -e
+test "$cargo_clippy_status" -eq 101
+printf '%s\n' \
+    'npm --prefix server ls --depth=0 --silent --include=dev' \
+    'npm run build' \
+    'cargo clippy --workspace --exclude sourdaw --all-targets --all-features' \
+    > "$temp_root/expected-cargo-clippy-failure.log"
+diff -u "$temp_root/expected-cargo-clippy-failure.log" "$temp_root/cargo-clippy-failure.log"
+
+set +e
+PATH="$fake_bin:$PATH" \
+    COMMAND_LOG="$temp_root/cargo-test-failure.log" \
+    FAKE_CARGO_TEST_STATUS=134 \
+    sh "$temp_root/scripts/health-gates-server.sh" >/dev/null 2>&1
+cargo_test_status=$?
+set -e
+test "$cargo_test_status" -eq 134
 
 printf '%s\n' \
     "lint heartbeat exit: $lint_status" \
     'lint heartbeat and early stop: PASS' \
     "missing server dependencies exit: $server_status" \
-    'server remediation and production build dependency sequence: PASS'
+    'server remediation and production build dependency sequence: PASS' \
+    "missing cargo exit: $no_cargo_status" \
+    "cargo clippy failure exit: $cargo_clippy_status" \
+    "cargo test failure exit (SIGABRT): $cargo_test_status" \
+    'rust workspace gate failure propagation: PASS'
