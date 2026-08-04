@@ -1,0 +1,16 @@
+src/modules/Arrangement/services/__tests__/reconcileRoutingAfterRemoval.spec.ts
+  h_1228e573df1f42 1-205
+src/modules/Automation/useCases/automation/__tests__/transformAutomationPoints.spec.ts
+  h_1228e573df1f42 1-278
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.20",
+  "base_commit_sha": "a276c932d03e7a02aae36be629784bd5cacad5e8",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
