@@ -213,7 +213,12 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         'src/modules/GrandBoule/useCases/setGrandBouleStretchAmount.ts': 1,
         'src/modules/GrandBoule/useCases/setGrandBouleSympatheticSend.ts': 1,
         'src/modules/GrandBoule/useCases/setGrandBouleVelocityCurve.ts': 1,
-        'src/modules/Levain/useCases/levainParamBridge/helpers.ts': 11,
+        // Count provenance: measured 10, was 11. Registration no longer routes
+        // patch initialization through the rAF write batcher: it applies the
+        // complete runtime patch synchronously before sample loading and performs
+        // no project persistence. The retired match was that registration-time
+        // `queueParam` path; explicit user edits remain the only persisted sinks.
+        'src/modules/Levain/useCases/levainParamBridge/helpers.ts': 10,
         // Count provenance: measured 1, was 0 (new file). The single match is a
         // doc-comment mention of `setParam` — this file holds no device write at
         // all. It reads the persisted chain order off the project and posts one
