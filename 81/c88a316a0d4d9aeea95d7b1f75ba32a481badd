@@ -1,0 +1,82 @@
+src/modules/AiRuntime/useCases/__tests__/parsePromptToActions.spec.ts
+  s_bc88af7d3b054c::t_a24c972f901351 433-487
+src/modules/AiRuntime/useCases/describePlannedAction.ts
+  s_bc88af7d3b054c::t_e5d4aee5e1ac11 43-49
+src/modules/AiRuntime/useCases/__tests__/describePlannedAction.spec.ts
+  s_bc88af7d3b054c::t_b77a9a395f582b 128-142
+src/modules/AiRuntime/transformers/llmActionBridge.ts
+  s_bc88af7d3b054c::t_e5d4aee5e1ac11 925-938,941,1865
+  s_bc88af7d3b054c::t_3454b7e77e908f 939-940
+  s_bc88af7d3b054c::t_314df2164f99cf 942
+  s_bc88af7d3b054c::t_9a6c8c60cfb80d 1864
+  s_bc88af7d3b054c::t_ff59a8b4852495 1866
+  s_bc88af7d3b054c::t_e50823689c5d0a 1659,1854
+src/modules/AiRuntime/useCases/validateActionPayload.ts
+  s_bc88af7d3b054c::t_e5d4aee5e1ac11 444-448
+src/modules/Command/useCases/__tests__/executableCommandRegistry.spec.ts
+  s_bc88af7d3b054c::t_df0a2f3e2353e3 1068-1076
+  s_bc88af7d3b054c::t_b77a9a395f582b 230-244,1058-1059,1067
+  s_bc88af7d3b054c::t_255465cbfa2c18 1060-1066
+  s_bc88af7d3b054c::t_332d8c4dd8891a 229
+  s_bc88af7d3b054c::t_32f6481b94d30d 1077
+src/modules/Arrangement/handlers/clipStretch/__tests__/handleSetClipStretchRatio.integration.spec.ts
+  s_bc88af7d3b054c::t_28cb8b7ee84ac4 1-72,105
+  s_bc88af7d3b054c::t_a1431fde297c9f 73-104
+src/modules/Arrangement/handlers/clipStretch/__tests__/handleRestoreClipStretchState.spec.ts
+  s_bc88af7d3b054c::t_01372590e4b02e 19,26,40,56,70-88,90-92
+  s_bc88af7d3b054c::t_36a13a5fa2e2f4 1-18,20-25,27-39,41-55,57-69,89,93-102
+src/modules/Arrangement/useCases/clipStretch/restoreClipStretchState.ts
+  s_bc88af7d3b054c::t_319bc1f3ab522f 12
+  s_bc88af7d3b054c::t_74bce32d8a6ef8 1-11,13-25
+src/modules/Arrangement/handlers/clipStretch/handleSetClipStretchRatio.ts
+  s_bc88af7d3b054c::t_74bce32d8a6ef8 2,4,6,9-17,19-34,36-41,46-50,55-58,60-75
+  s_bc88af7d3b054c::t_319bc1f3ab522f 18,35
+  s_bc88af7d3b054c::t_7c11fb8e9d059f 51-54,59
+src/modules/Arrangement/useCases/getArrangementHandlers.ts
+  s_bc88af7d3b054c::t_74bce32d8a6ef8 6,157
+src/modules/Arrangement/handlers/clipStretch/__tests__/handleSetClipStretchRatio.spec.ts
+  s_bc88af7d3b054c::t_7c11fb8e9d059f 39,48,58
+  s_bc88af7d3b054c::t_28cb8b7ee84ac4 6,14-17,21-22,40-47,49-57,59-63,65-69,71-81,83-87,89-103
+  s_bc88af7d3b054c::t_319bc1f3ab522f 64,70,82,88
+src/modules/AiRuntime/useCases/agentReference/bridgeGroundedLlmToolCalls.ts
+  s_bc88af7d3b054c::t_8e177c9c6cd6ee 1369,1373,1376-1386,1469-1475
+  s_bc88af7d3b054c::t_746d70f65e32f3 1370-1372
+  s_bc88af7d3b054c::t_df0a2f3e2353e3 1374-1375,1387-1388
+src/modules/AiRuntime/useCases/__tests__/validateActionPayload.spec.ts
+  s_bc88af7d3b054c::t_b77a9a395f582b 247-257
+  s_bc88af7d3b054c::t_0a6dc6410d872e 246
+src/modules/AiRuntime/useCases/agentReference/__tests__/bridgeGroundedLlmToolCalls.spec.ts
+  s_bc88af7d3b054c::t_8e177c9c6cd6ee 1004-1013,1015-1019
+  s_bc88af7d3b054c::t_df0a2f3e2353e3 984-1003,1020-1022,1028-1031
+  s_bc88af7d3b054c::t_b6bbab0affe432 966-983,1014,1023-1027,1032
+  s_bc88af7d3b054c::t_085a55c1a5144f 963-965
+src/utils/handlerContract.ts
+  s_bc88af7d3b054c::t_319bc1f3ab522f 106
+  s_bc88af7d3b054c::t_74bce32d8a6ef8 105,107-110,790-798
+src/modules/Command/useCases/executableAppActionRegistry.ts
+  s_bc88af7d3b054c::t_255465cbfa2c18 524-530
+  s_bc88af7d3b054c::t_e5d4aee5e1ac11 521-523,531,541-553
+  s_bc88af7d3b054c::t_df0a2f3e2353e3 56,532-540
+  s_bc88af7d3b054c::t_7887668b311374 520
+src/modules/Arrangement/handlers/clipStretch/handleRestoreClipStretchState.ts
+  s_bc88af7d3b054c::t_74bce32d8a6ef8 1-9,11-16,18-25,27-55
+  s_bc88af7d3b054c::t_319bc1f3ab522f 10,17,26
+src/modules/AiRuntime/transformers/__tests__/llmActionBridge.spec.ts
+  s_bc88af7d3b054c::t_6219c668a072f9 1302-1305,1386-1417
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "81c88a316a0d4d9aeea95d7b1f75ba32a481badd",
+  "prompts": {},
+  "sessions": {
+    "s_bc88af7d3b054c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f9b4a-11a2-7f61-8dfb-76eed0eb2a9c",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
