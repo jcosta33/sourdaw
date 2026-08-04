@@ -211,8 +211,17 @@ pub struct UnisonOsc {
 
 impl UnisonOsc {
     pub fn new() -> Self {
+        // Capacity for the whole clamp range that `set_voices` accepts, not for
+        // the one voice it starts with. `set_voices` is reachable from
+        // `note_on` on the audio thread — a steal hands the incoming note a
+        // freshly built `Voice` from the crossfade pool, so its unison `Vec` is
+        // at count 1 and the early return does not fire — and `resize_with`
+        // would then reallocate inside `process`. Reserving 16 up front means
+        // it can only ever write into storage that already exists.
+        let mut voices = Vec::with_capacity(16);
+        voices.push(WavetableOsc::new());
         Self {
-            voices: vec![WavetableOsc::new()],
+            voices,
             detune_cents: 0.0,
             stereo_spread: 0.5,
             voice_count: 1,
