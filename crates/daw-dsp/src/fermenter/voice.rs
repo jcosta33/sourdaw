@@ -410,6 +410,25 @@ impl Voice {
         self.stealing = true;
     }
 
+    /// Remaining gain multiplier of the de-click fade, 1.0 before it starts and
+    /// decaying towards zero once `start_steal` has been called.
+    pub fn steal_fade(&self) -> f32 {
+        self.steal_fade
+    }
+
+    /// Silence the voice at once and hand its slot back.
+    ///
+    /// This is the one path that does cut a waveform, so it exists only for
+    /// cases where there is nothing left to fade into: a hard reset, or a
+    /// crossfade slot that has to be recycled because every one of them is
+    /// still sounding.
+    pub fn kill(&mut self) {
+        self.active = false;
+        self.held = false;
+        self.stealing = false;
+        self.steal_fade = 1.0;
+    }
+
     pub fn get_amp_level(&self) -> f32 {
         self.amp_env.get_level()
     }

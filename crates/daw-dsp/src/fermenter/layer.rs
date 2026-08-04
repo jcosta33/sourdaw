@@ -13,6 +13,26 @@ const MAX_SCRATCH_FRAMES: usize = 4096;
 
 pub struct Layer {
     pub voices: Vec<Voice>,
+    /// Preallocated outgoing voices that carry a stolen note through its
+    /// de-click fade. A steal swaps the displaced voice in here and starts the
+    /// incoming note on the freed playable slot immediately, so no note is
+    /// delayed and the outgoing one is never jump-cut.
+    ///
+    /// One slot per playable voice: a burst of steals can displace the whole
+    /// pool before the first fade has finished, and reusing a slot that is
+    /// still sounding is the very click this exists to remove. The swap itself
+    /// moves 896 bytes of already-owned storage and allocates nothing.
+    ///
+    /// A tail is a dying note, so `note_off`, MPE expression and the per-voice
+    /// setters deliberately pass over it: it renders with the settings it was
+    /// carrying and the layer's live block params, and is gone within the
+    /// fade. Retuning or re-engining a voice that is on its way out would only
+    /// put a discontinuity back into the fade.
+    steal_tails: Vec<Voice>,
+    /// Dense indices of the tails currently fading. Capacity is fixed with the
+    /// tail pool, so activating and retiring tails neither scans every idle
+    /// slot per block nor grows storage on the audio thread.
+    active_steal_tails: Vec<usize>,
     pub mod_matrix: ModMatrix,
 
     // Per-layer settings
@@ -118,12 +138,16 @@ pub struct Layer {
 impl Layer {
     pub fn new(sample_rate: f32) -> Self {
         let mut voices = Vec::with_capacity(MAX_VOICES_PER_LAYER);
+        let mut steal_tails = Vec::with_capacity(MAX_VOICES_PER_LAYER);
         for _ in 0..MAX_VOICES_PER_LAYER {
             voices.push(Voice::new(sample_rate));
+            steal_tails.push(Voice::new(sample_rate));
         }
 
         Self {
             voices,
+            steal_tails,
+            active_steal_tails: Vec::with_capacity(MAX_VOICES_PER_LAYER),
             mod_matrix: ModMatrix::new(),
             engine: 0,
             osc_waveform: 1, // Saw
@@ -229,8 +253,13 @@ impl Layer {
                     best_idx = i;
                 }
             }
+            // The displaced voice moves aside before the slot is reused.
+            // Starting its fade in place did nothing: `note_on` below resets
+            // `steal_fade` to 1.0 on the same struct, so the fade never
+            // rendered a single sample and every steal cut the note at full
+            // gain.
+            self.move_voice_to_steal_tail(best_idx);
             target = Some(best_idx);
-            self.voices[best_idx].start_steal();
         }
 
         if let Some(idx) = target {
@@ -284,6 +313,80 @@ impl Layer {
                 voice.trigger_sampler(pitch_ratio);
             }
         }
+    }
+
+    /// Move the voice at `index` into a crossfade slot and start its fade,
+    /// leaving `self.voices[index]` free for the incoming note on the same
+    /// sample.
+    ///
+    /// The tails are a pool, not a per-voice pairing: pairing tail `i` with
+    /// voice `i` would truncate an unrelated fade whenever the same slot is
+    /// stolen twice in quick succession while other tails sit idle.
+    fn move_voice_to_steal_tail(&mut self, index: usize) {
+        let (tail_index, tail_was_idle) = self.select_steal_tail_slot();
+        if !tail_was_idle {
+            // Reached only when all 16 fades are in flight at once, i.e. the
+            // whole pool was displaced inside one 10 ms fade. Cutting the
+            // quietest of them is the least audible bounded loss available.
+            self.steal_tails[tail_index].kill();
+        }
+        std::mem::swap(&mut self.voices[index], &mut self.steal_tails[tail_index]);
+        self.steal_tails[tail_index].start_steal();
+        if tail_was_idle {
+            self.active_steal_tails.push(tail_index);
+        }
+    }
+
+    /// Pick a crossfade slot: an idle one if there is one, otherwise the fade
+    /// that has decayed furthest. The scan is bounded by the tail pool and
+    /// allocates nothing.
+    fn select_steal_tail_slot(&self) -> (usize, bool) {
+        let mut quietest_index = 0;
+        let mut quietest_fade = f32::INFINITY;
+        for (index, tail) in self.steal_tails.iter().enumerate() {
+            if !tail.is_active() {
+                return (index, true);
+            }
+            let fade = tail.steal_fade();
+            if fade < quietest_fade {
+                quietest_fade = fade;
+                quietest_index = index;
+            }
+        }
+        (quietest_index, false)
+    }
+
+    /// Render every fading tail and retire the ones that have reached silence.
+    ///
+    /// Takes the fields rather than `&mut self` so callers can hold a borrow of
+    /// the scratch buffers and the mod matrix at the same time.
+    fn render_steal_tails(
+        steal_tails: &mut [Voice],
+        active_steal_tails: &mut Vec<usize>,
+        left: &mut [f32],
+        right: &mut [f32],
+        voice_params: &VoiceParams,
+    ) {
+        let mut position = 0;
+        while position < active_steal_tails.len() {
+            let tail_index = active_steal_tails[position];
+            let tail = &mut steal_tails[tail_index];
+            if tail.is_active() {
+                tail.render(left, right, voice_params);
+            }
+            if tail.is_active() {
+                position += 1;
+            } else {
+                active_steal_tails.swap_remove(position);
+            }
+        }
+    }
+
+    /// How many crossfade slots are still sounding. The synth's lifecycle check
+    /// adds this to the playable voice count so a fade cannot be truncated by
+    /// the render path going to sleep underneath it.
+    pub fn fading_steal_tail_count(&self) -> usize {
+        self.active_steal_tails.len()
     }
 
     pub fn note_off(&mut self, note: u8) {
@@ -467,6 +570,13 @@ impl Layer {
                     voice.render(left, right, &voice_params);
                 }
             }
+            Self::render_steal_tails(
+                &mut self.steal_tails,
+                &mut self.active_steal_tails,
+                left,
+                right,
+                &voice_params,
+            );
         } else {
             // Reuse construction-time scratch. Chunking keeps large offline
             // blocks bounded without growing or allocating on the audio thread.
@@ -484,6 +594,13 @@ impl Layer {
                         voice.render(scratch_left, scratch_right, &voice_params);
                     }
                 }
+                Self::render_steal_tails(
+                    &mut self.steal_tails,
+                    &mut self.active_steal_tails,
+                    scratch_left,
+                    scratch_right,
+                    &voice_params,
+                );
 
                 for index in 0..chunk_size {
                     left[chunk_start + index] += scratch_left[index] * gain_l;

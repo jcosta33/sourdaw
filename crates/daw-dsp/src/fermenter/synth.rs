@@ -786,7 +786,11 @@ impl MasterSynth {
         self.layers[..self.num_active_layers]
             .iter()
             .filter(|layer| !layer.muted && (!any_solo || layer.solo))
-            .map(|layer| layer.active_voice_count())
+            // A stolen voice fading out in a crossfade slot is still audible
+            // output. Counting only playable voices would let the lifecycle
+            // check sleep the render path mid-fade, which reintroduces the
+            // discontinuity the fade exists to remove.
+            .map(|layer| layer.active_voice_count() + layer.fading_steal_tail_count())
             .sum()
     }
 

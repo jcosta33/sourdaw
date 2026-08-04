@@ -601,6 +601,67 @@ fn fermenter_scheduled_note_offsets_do_not_allocate() {
     );
 }
 
+/// The voice-stealing path, held open deliberately.
+///
+/// `fermenter_process_does_not_allocate_with_voices_sounding` never reaches it:
+/// `FermenterInstance::note_on` applies immediately, so its four notes are
+/// allocated on the caller's thread before the interceptor is armed. The
+/// worklet does not work that way — it queues note-ons and `process` applies
+/// them, so the pool saturates and steals *inside* the render callback, where a
+/// steal swaps the displaced voice into a preallocated crossfade slot.
+///
+/// `fermenter_scheduled_note_offsets_do_not_allocate` does reach it, but only
+/// by accident: its release tails pile up under the default release time until
+/// the pool happens to fill. Shorten that release, or change which notes it
+/// cycles, and the steal path silently stops being covered while the test keeps
+/// passing. This one saturates the pool by construction and asserts it *is*
+/// saturated before the interceptor arms, so it cannot go blind the same way.
+/// Eight steals per block also exhausts all 16 crossfade slots well inside the
+/// first 10 ms fade, covering the slot-recycling branch.
+#[test]
+fn fermenter_voice_stealing_does_not_allocate() {
+    use daw_dsp::fermenter::FermenterInstance;
+
+    let mut instance = FermenterInstance::new(SAMPLE_RATE, 16);
+    instance.set_param("cutoff", 4_000.0);
+    instance.set_param("resonance", 0.4);
+    instance.set_param("amp_sustain", 1.0);
+    instance.set_param("amp_release", 2.0);
+
+    // Saturate the 16-slot pool outside the guard, so every guarded note-on is
+    // a steal rather than a fill.
+    for note in 36_u8..52 {
+        instance.note_on(note, 100);
+    }
+    let warmup = unsafe { read_output(instance.process(BLOCK as u32), BLOCK) };
+    assert_all_finite(&warmup, "fermenter steal");
+    assert_eq!(
+        instance.active_voices(),
+        16,
+        "the pool is not full, so the guarded blocks would allocate free slots \
+         instead of stealing"
+    );
+
+    let mut note = 52_u8;
+    assert_no_alloc(|| {
+        for _ in 0..GUARDED_BLOCKS {
+            for slot in 0..8_u32 {
+                assert!(instance.push_note_on(note, 100, 0, slot * 16));
+                note = if note >= 96 { 52 } else { note + 1 };
+            }
+            instance.process(BLOCK as u32);
+        }
+    });
+
+    let out = unsafe { read_output(instance.process(BLOCK as u32), BLOCK) };
+    assert_all_finite(&out, "fermenter steal");
+    assert!(
+        peak(&out) > 1e-4,
+        "fermenter produced silence under sustained stealing, so the guarded \
+         region did not exercise the steal path"
+    );
+}
+
 #[test]
 fn gluten_process_does_not_allocate_while_compressing() {
     use daw_dsp::gluten::GlutenInstance;
