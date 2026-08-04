@@ -124,6 +124,7 @@ export const parsePromptToActions = inject({ logger })(
                 const toolCalls = planningOutcome.toolCalls;
                 const markerSignatures = (markerStore.value?.markers ?? []).map((marker) => ({
                     beat: marker.beat,
+                    color: marker.color,
                     markerId: marker.id,
                     name: marker.name,
                 }));

@@ -1,6 +1,7 @@
 import { markerStore } from '#/modules/Arrangement/stores';
 import { describeAction } from '#/modules/Command/useCases';
 import { type AppAction } from '#/utils/handlerContract';
+import { resolveMarkerColorName } from '#/utils/markerColorPalette';
 
 import { type ProjectContext } from '../models/ProjectContext';
 
@@ -28,6 +29,13 @@ export function describePlannedAction({ action, context }: DescribePlannedAction
         const marker = markerStore.value?.markers.find((candidate) => candidate.id === action.payload.markerId);
         if (marker) {
             return `Remove marker "${marker.name}" at beat ${String(marker.beat)} (${marker.id})`;
+        }
+    }
+    if (action.type === 'setMarkerColor') {
+        const marker = markerStore.value?.markers.find((candidate) => candidate.id === action.payload.markerId);
+        if (marker) {
+            const color = resolveMarkerColorName(action.payload.color) ?? action.payload.color;
+            return `Set marker "${marker.name}" at beat ${String(marker.beat)} (${marker.id}) color to ${color}`;
         }
     }
     if (action.type === 'addSection') {

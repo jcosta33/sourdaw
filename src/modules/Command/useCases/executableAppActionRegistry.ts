@@ -1,4 +1,5 @@
 import { type AppActionType } from '#/utils/handlerContract';
+import { getMarkerColorNames } from '#/utils/markerColorPalette';
 
 export type ExecutableAppActionRisk =
     'bounded-reversible' | 'broad-reversible' | 'destructive-reversible' | 'authority-sensitive';
@@ -56,6 +57,7 @@ export type ExecutableAppActionValueRule =
     | { argument: string; kind: 'marker-name' }
     | { argument: string; kind: 'marker-reference' }
     | { argument: string; kind: 'marker-beat' }
+    | { argument: string; kind: 'marker-color'; values: readonly string[] }
     | { argument: string; kind: 'section-start-beat' }
     | { argument: string; kind: 'section-end-beat' }
     | { argument: string; kind: 'section-name' }
@@ -69,6 +71,8 @@ export type ExecutableAppActionValueRule =
           requiredInPrompt?: boolean;
       }
     | { argument: string; denominatorArgument: string; kind: 'time-signature' };
+
+const MARKER_COLOR_NAMES = getMarkerColorNames();
 
 export type ExecutableAppActionDirectionalIntent = {
     carrierPhrases: readonly string[];
@@ -900,6 +904,26 @@ export const executableAppActionDescriptors = [
                 name: { type: 'string', description: 'Exact visible marker label' },
             },
             required: ['beat', 'name'],
+        },
+    },
+    {
+        actionType: 'setMarkerColor',
+        risk: 'bounded-reversible',
+        description: 'Set one existing arrangement marker to a named palette color.',
+        intentPhrases: ['set marker color', 'set the marker color', 'change marker color', 'recolor marker'],
+        targetRules: [],
+        valueRules: [
+            { argument: 'beat', kind: 'marker-beat' },
+            { argument: 'name', kind: 'marker-reference' },
+            { argument: 'color', kind: 'marker-color', values: MARKER_COLOR_NAMES },
+        ],
+        parameters: {
+            properties: {
+                beat: { type: 'number', minimum: 0, description: 'Exact beat of the existing marker' },
+                name: { type: 'string', description: 'Exact visible marker label' },
+                color: { type: 'string', enum: MARKER_COLOR_NAMES, description: 'Named marker palette color' },
+            },
+            required: ['beat', 'name', 'color'],
         },
     },
     {

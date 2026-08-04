@@ -306,4 +306,15 @@ describe('marker action handlers', () => {
 
         expect(desc.inverseAction).toBeNull();
     });
+
+    it('handleSetMarkerColor reports truthful no-write execution', () => {
+        mocks.setMarkerColor.mockReturnValue(false);
+
+        const result = handleSetMarkerColor.execute({
+            type: 'setMarkerColor',
+            payload: { markerId: 'missing', color: '#new' },
+        });
+
+        expect(result).toEqual({ status: 'no-write' });
+    });
 });

@@ -5,6 +5,8 @@
  * constants so the palette stays in sync across the entire module.
  */
 
+import { MARKER_COLOR_PRESET_VALUES } from '#/utils/markerColorPalette';
+
 // ── Full track palette (12 colors) ──────────────────────────────────
 
 export const TRACK_COLOR_PALETTE = [
@@ -35,17 +37,7 @@ export const SECTION_COLORS = [
 
 // ── Marker color presets ────────────────────────────────────────────
 
-export const MARKER_COLOR_PRESETS = [
-    'oklch(0.40 0.07 200)', // deep teal
-    'oklch(0.40 0.08 150)', // deep sage
-    'oklch(0.40 0.08 70)', // deep amber
-    'oklch(0.38 0.08 340)', // deep rose
-    'oklch(0.38 0.08 270)', // deep indigo
-    'oklch(0.38 0.09 20)', // deep coral
-    'oklch(0.40 0.08 250)', // deep blue
-    'oklch(0.39 0.08 45)', // deep terracotta
-    'oklch(0.38 0.08 300)', // deep plum
-] as const;
+export const MARKER_COLOR_PRESETS = MARKER_COLOR_PRESET_VALUES;
 
 // ── Clip color options (empty string = inherit track color) ─────────
 

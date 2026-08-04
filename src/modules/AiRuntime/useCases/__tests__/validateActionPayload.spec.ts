@@ -352,6 +352,20 @@ const guardedPayloadContractCases = [
         ],
     }),
     guardedPayloadCase({
+        actionType: 'setMarkerColor',
+        validPayload: { markerId: 'marker-chorus', color: 'oklch(0.40 0.08 70)' },
+        invalidPayloads: [
+            {},
+            { markerId: '', color: 'oklch(0.40 0.08 70)' },
+            { markerId: 'marker-chorus', color: '' },
+            { markerId: 'marker-chorus', color: 70 },
+            { markerId: 'marker-chorus', color: 'amber' },
+            { markerId: 'marker-chorus', color: '#ff8800' },
+            { markerId: 'marker-chorus', color: 'oklch(0.40 0.08)' },
+            { markerId: 'marker-chorus', color: 'oklch(0.40 0.08 70)', extra: true },
+        ],
+    }),
+    guardedPayloadCase({
         actionType: 'addSection',
         validPayload: { startBeat: 8, endBeat: 16, name: 'Verse' },
         invalidPayloads: [

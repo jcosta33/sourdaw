@@ -1,15 +1,17 @@
 import { getTrackStrip } from '#/modules/AudioEngine/useCases';
 
+import { findReadyToasterControlsOnStrip } from './toasterParamBridge/findReadyToasterControlsOnStrip';
 import { findDeviceRef } from './toasterParamBridge/helpers';
 
-type GetToasterControlsOutput = {
-    setPadParam: (pad: number, name: string, value: number) => void;
-    setParam: (name: string, value: number) => void;
-} | null;
+type GetToasterControlsOutput = ReturnType<typeof findReadyToasterControlsOnStrip>;
 
 export function getToasterControls(deviceId: string): GetToasterControlsOutput {
-    // Scope the lookup to THIS device. Picking the first toaster track (the
-    // old behavior) routed instance B's controls onto instance A's worklet.
+    // Owner lookup differs from the param-bridge callers on purpose: this path
+    // takes the first track owning the device with no eligibility gate, where
+    // `resolveEligibleDeviceWriteTarget` also demands a globally unique device
+    // and a track kind that accepts device updates. That difference is upstream
+    // of the strip; the strip-level selection is shared so the predicate cannot
+    // drift apart across the three call sites again.
     const ref = findDeviceRef(deviceId);
     if (!ref) {
         return null;
@@ -20,6 +22,5 @@ export function getToasterControls(deviceId: string): GetToasterControlsOutput {
         return null;
     }
 
-    const dn = strip.deviceNodes.find((data) => data.deviceId === deviceId && data.toasterControls?.ready);
-    return dn?.toasterControls ?? null;
+    return findReadyToasterControlsOnStrip({ strip, deviceId });
 }

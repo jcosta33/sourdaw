@@ -448,6 +448,22 @@ const EXPECTED_COMMANDS = [
         true
     ),
     expectedCommand(
+        'setMarkerColor',
+        'Set one existing arrangement marker to a named palette color.',
+        {
+            beat: { type: 'number', minimum: 0, description: 'Exact beat of the existing marker' },
+            name: { type: 'string', description: 'Exact visible marker label' },
+            color: {
+                type: 'string',
+                enum: ['teal', 'sage', 'amber', 'rose', 'indigo', 'coral', 'blue', 'terracotta', 'plum'],
+                description: 'Named marker palette color',
+            },
+        },
+        ['beat', 'name', 'color'],
+        'bounded-reversible',
+        false
+    ),
+    expectedCommand(
         'addSection',
         'Add a named arrangement section spanning one explicit beat range.',
         {
@@ -1215,6 +1231,20 @@ const EXPECTED_GROUNDING = [
         valueRules: [
             { argument: 'beat', kind: 'marker-beat' },
             { argument: 'name', kind: 'marker-reference' },
+        ],
+    },
+    {
+        actionType: 'setMarkerColor',
+        intentPhrases: ['set marker color', 'set the marker color', 'change marker color', 'recolor marker'],
+        targetRules: [],
+        valueRules: [
+            { argument: 'beat', kind: 'marker-beat' },
+            { argument: 'name', kind: 'marker-reference' },
+            {
+                argument: 'color',
+                kind: 'marker-color',
+                values: ['teal', 'sage', 'amber', 'rose', 'indigo', 'coral', 'blue', 'terracotta', 'plum'],
+            },
         ],
     },
     {

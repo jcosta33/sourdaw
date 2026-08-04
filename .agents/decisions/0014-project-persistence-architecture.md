@@ -2,8 +2,9 @@
 type: adr
 id: 0014
 title: Project persistence architecture — project-as-directory (Option C), recommended
-status: proposed
+status: accepted
 date: 2026-08-01
+accepted: 2026-08-04
 owner: The Sourdaw team
 sources:
   - .agents/artifacts/sourdaw/RESEARCH-project-persistence.md
@@ -11,13 +12,21 @@ sources:
   - .agents/decisions/0013-retire-the-flat-json-project-snapshot.md
 ---
 
-# 0014 — Project persistence architecture (proposed)
+# 0014 — Project persistence architecture (accepted)
 
-**Status is `proposed`.** The gates in §Gates have all reported or been formally deferred, and the
-two load-bearing decisions are settled — the durability model and the project shape, both recorded
-below with their provenance. What keeps this `proposed` rather than `accepted` is the three items
-still listed under *Still open*: whether audio belongs to a project or a shared library, version
-policy, and the desktop store's budget.
+**Status is `accepted` as of 2026-08-04**, on this ADR's own stated criterion. It previously read:
+*"What keeps this `proposed` rather than `accepted` is the three items still listed under Still
+open: whether audio belongs to a project or a shared library, version policy, and the desktop
+store's budget."*
+
+Two of those three were ratified by the owner on 2026-08-04 and are recorded below — **audio
+ownership** (the project owns it; the library is browse-and-import only) and **version policy**
+(forward-only, no retained pre-migration generation, with the no-recourse cost stated and accepted).
+
+The third — **the desktop store's budget** — is **blocked rather than pending**: ADR 0016 defers
+desktop entirely, so it is a question about work nobody is doing. It becomes answerable when desktop
+returns to scope, and it is listed as blocked rather than treated as satisfied. Everything the web
+build needs is now settled.
 
 Phases 1–3 are buildable on the settled parts. ADR 0013's cleanup was always safe and prejudges none
 of this.
@@ -301,5 +310,7 @@ doing. It remains listed in `open-decision-docket.md`.
 
 ## Status
 
-proposed — layout amended after M6; gates M1–M10 reported or formally deferred; the durability model
-and the project shape are ratified. Remaining owner decisions listed above.
+accepted (2026-08-04) — layout amended after M6; gates M1–M10 reported or formally deferred; the
+durability model, the project shape, the per-asset audio mode, audio ownership and version policy
+are all ratified. The one remaining owner decision — the desktop store's budget — is **blocked by
+ADR 0016's deferral of desktop**, not outstanding against this ADR.

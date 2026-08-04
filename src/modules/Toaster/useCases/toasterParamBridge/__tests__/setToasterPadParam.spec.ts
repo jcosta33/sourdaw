@@ -11,6 +11,11 @@ type ToasterControls = {
 
 type TrackStrip = {
     deviceNodes: Array<{
+        // Real device nodes always carry an id — the selector keys on it so a
+        // track hosting two Toasters routes each edit to the right one. The
+        // fixture omitted it, which let a selector that ignored `deviceId`
+        // look correct here.
+        deviceId?: string;
         toasterControls?: ToasterControls;
     }>;
 };
@@ -54,7 +59,7 @@ describe('setToasterPadParam', () => {
     function wireReadyToasterControls(): void {
         setPadParam = vi.fn<SetPadParam>();
         mockGetTrackStrip.mockReturnValue({
-            deviceNodes: [{ toasterControls: { ready: true, setPadParam } }],
+            deviceNodes: [{ deviceId: 'dev-1', toasterControls: { ready: true, setPadParam } }],
         });
     }
 
@@ -80,6 +85,41 @@ describe('setToasterPadParam', () => {
     it('should expose only setToasterPadParam from the defining file', async () => {
         const moduleExports = await import('../setToasterPadParam');
         expect(Object.keys(moduleExports).sort()).toEqual(['setToasterPadParam']);
+    });
+
+    it('should flush the pad param to the addressed Toaster, not the first one on the track', () => {
+        // The rAF flush is the path every ToasterPanel knob drag takes. It has
+        // `entry.deviceId` in hand and must key on it: a track can host two
+        // Toasters, and taking the first one retunes instance A from instance
+        // B's panel.
+        const otherSetPadParam = vi.fn<SetPadParam>();
+        mockGetTrackStrip.mockReturnValue({
+            deviceNodes: [
+                { deviceId: 'dev-other', toasterControls: { ready: true, setPadParam: otherSetPadParam } },
+                { deviceId: 'dev-1', toasterControls: { ready: true, setPadParam } },
+            ],
+        });
+
+        setToasterPadParam('dev-1', 3, 'tune', 9);
+        flushFrame();
+
+        expect(setPadParam).toHaveBeenCalledWith(3, 'tune', 9);
+        expect(otherSetPadParam).not.toHaveBeenCalled();
+    });
+
+    it('should skip a Toaster that is still loading rather than writing into its placeholder', () => {
+        // A loading device's placeholder `setPadParam` is an empty function, so
+        // the write is dropped rather than buffered — unlike the kit path's
+        // `setParam`, which is replayed on load.
+        const loadingSetPadParam = vi.fn<SetPadParam>();
+        mockGetTrackStrip.mockReturnValue({
+            deviceNodes: [{ deviceId: 'dev-1', toasterControls: { ready: false, setPadParam: loadingSetPadParam } }],
+        });
+
+        setToasterPadParam('dev-1', 3, 'tune', 9);
+        flushFrame();
+
+        expect(loadingSetPadParam).not.toHaveBeenCalled();
     });
 
     it('should write numeric pad keys to the store before runtime dispatch', () => {

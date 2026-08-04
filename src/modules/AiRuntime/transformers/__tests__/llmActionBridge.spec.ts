@@ -508,6 +508,116 @@ describe('bridgeLlmToolCalls', () => {
         ]);
     });
 
+    it('resolves setMarkerColor through one local signature and maps the named palette color', () => {
+        const markerSignatures = [
+            {
+                markerId: 'marker-chorus',
+                beat: 16,
+                name: 'Chorus',
+                color: 'oklch(0.40 0.07 200)',
+            },
+        ];
+        const result = bridge({
+            calls: [{ name: 'setMarkerColor', arguments: { beat: 16, name: ' chorus ', color: 'amber' } }],
+            markerSignatures,
+        });
+
+        expect(result.actions).toEqual([
+            {
+                type: 'setMarkerColor',
+                payload: { markerId: 'marker-chorus', color: 'oklch(0.40 0.08 70)' },
+            },
+        ]);
+        expect(result.rejections).toEqual([]);
+    });
+
+    it('rejects invalid, invented, ambiguous, provider-owned, and unchanged marker color calls', () => {
+        const markerSignatures = [
+            {
+                markerId: 'marker-chorus',
+                beat: 16,
+                name: 'Chorus',
+                color: 'oklch(0.40 0.08 70)',
+            },
+        ];
+        const rejected = [
+            bridge({
+                calls: [{ name: 'setMarkerColor', arguments: { beat: 16, name: 'Chorus', color: 'orange' } }],
+                markerSignatures,
+            }),
+            bridge({
+                calls: [{ name: 'setMarkerColor', arguments: { beat: 8, name: 'Chorus', color: 'teal' } }],
+                markerSignatures,
+            }),
+            bridge({
+                calls: [
+                    {
+                        name: 'setMarkerColor',
+                        arguments: { beat: 16, name: 'Chorus', color: 'teal', markerId: 'provider-id' },
+                    },
+                ],
+                markerSignatures,
+            }),
+            bridge({
+                calls: [{ name: 'setMarkerColor', arguments: { beat: 16, name: 'Chorus', color: 'teal' } }],
+                markerSignatures: [
+                    ...markerSignatures,
+                    {
+                        markerId: 'marker-duplicate',
+                        beat: 16,
+                        name: 'Chorus',
+                        color: 'oklch(0.38 0.08 340)',
+                    },
+                ],
+            }),
+            bridge({
+                calls: [{ name: 'setMarkerColor', arguments: { beat: 16, name: 'Chorus', color: 'amber' } }],
+                markerSignatures,
+            }),
+        ];
+
+        expect(rejected.every((result) => result.actions.length === 0)).toBe(true);
+    });
+
+    it('rejects repeated marker color writes and marker removal in either action order', () => {
+        const markerSignatures = [
+            {
+                markerId: 'marker-chorus',
+                beat: 16,
+                name: 'Chorus',
+                color: 'oklch(0.40 0.07 200)',
+            },
+        ];
+        const repeated = bridge({
+            calls: [
+                { name: 'setMarkerColor', arguments: { beat: 16, name: 'Chorus', color: 'amber' } },
+                { name: 'setMarkerColor', arguments: { beat: 16, name: 'Chorus', color: 'rose' } },
+            ],
+            markerSignatures,
+        });
+        const removeThenColor = bridge({
+            calls: [
+                { name: 'removeMarker', arguments: { beat: 16, name: 'Chorus' } },
+                { name: 'setMarkerColor', arguments: { beat: 16, name: 'Chorus', color: 'amber' } },
+            ],
+            markerSignatures,
+        });
+        const colorThenRemove = bridge({
+            calls: [
+                { name: 'setMarkerColor', arguments: { beat: 16, name: 'Chorus', color: 'amber' } },
+                { name: 'removeMarker', arguments: { beat: 16, name: 'Chorus' } },
+            ],
+            markerSignatures,
+        });
+
+        expect(repeated.actions).toHaveLength(1);
+        expect(repeated.rejections).toHaveLength(1);
+        expect(removeThenColor.actions).toHaveLength(1);
+        expect(removeThenColor.rejections).toHaveLength(1);
+        expect(colorThenRemove.actions).toHaveLength(1);
+        expect(colorThenRemove.rejections).toHaveLength(1);
+    });
+
     it('bridges addSection with an exact finite range and safe name', () => {
         const result = bridge({
             calls: [{ name: 'addSection', arguments: { startBeat: 16, endBeat: 32, name: 'Chorus' } }],
