@@ -725,6 +725,12 @@ describe('validateActionPayload / PAYLOAD_VALIDATORS', () => {
             expect(
                 guard({
                     clipId: 'clip-1',
+                    notes: [{ id: 'command-owned', pitch: 60, startBeat: 0, duration: 1 }],
+                })
+            ).toBe(false);
+            expect(
+                guard({
+                    clipId: 'clip-1',
                     notes: [{ pitch: 60, startBeat: 0, duration: 1 }],
                     replace: true,
                 })
@@ -771,6 +777,8 @@ describe('validateActionPayload / PAYLOAD_VALIDATORS', () => {
                 return;
             }
             expect(guard({ trackId: 't-1', startBeat: 0, endBeat: 4, name: 'Clip' })).toBe(true);
+            expect(guard({ id: 'command-owned', trackId: 't-1', startBeat: 0, endBeat: 4, name: 'Clip' })).toBe(false);
+            expect(guard({ trackId: 't-1', startBeat: 0, endBeat: 4, name: 'Clip', muted: true })).toBe(false);
             // name is required by the payload type but was previously unchecked.
             expect(guard({ trackId: 't-1', startBeat: 0, endBeat: 4 })).toBe(false);
             expect(guard({ trackId: 't-1', startBeat: 0, endBeat: 4, name: 1 })).toBe(false);

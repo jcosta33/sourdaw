@@ -30,6 +30,15 @@ describe('batchAddMidiNotes', () => {
         expect(midiStore.value?.notesByClipId.c1).toHaveLength(2);
     });
 
+    it('should preserve a command-owned note id', () => {
+        const created = batchAddMidiNotes('c1', [
+            { id: 'note-stable', pitch: 60, startBeat: 0, duration: 0.25, velocity: 96 },
+        ]);
+
+        expect(created[0]?.id).toBe('note-stable');
+        expect(midiStore.value?.notesByClipId.c1?.[0]?.id).toBe('note-stable');
+    });
+
     it('should throw when the MIDI store is not initialized', () => {
         midiStore.set(null);
         expect(() => batchAddMidiNotes('c1', [{ pitch: 60, startBeat: 0, duration: 0.25 }])).toThrow();

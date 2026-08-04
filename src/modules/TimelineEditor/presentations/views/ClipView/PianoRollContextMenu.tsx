@@ -7,7 +7,6 @@ import { type ReactElement, useRef, useState } from 'react';
 import { DawContextMenuSurface } from '#/components/daw/DawContextMenuSurface';
 import { DawMenuButton, DawMenuSectionLabel, DawMenuSeparator } from '#/components/daw/DawMenuParts';
 import { logger } from '#/infra/logger/appLogger';
-import { generateMidiAI } from '#/modules/AiGeneration/useCases';
 import { copySelectedNotes, pasteNotes } from '#/modules/Arrangement/useCases';
 import { executeAppAction, pushUndoEntry } from '#/modules/Command/useCases';
 import {
@@ -23,7 +22,6 @@ import {
     getGrooveTemplate,
     getStraightGrooveTemplateId,
 } from '#/modules/MIDI/useCases';
-import { isTauri } from '#/utils/tauriRuntime';
 import { useContextMenuDismiss } from '#/utils/UI/useContextMenuDismiss';
 
 import { type MidiNote } from '../../../models/MidiNoteViewTypes';
@@ -61,24 +59,12 @@ export const PianoRollContextMenu = ({
 
     const handleAIGenerate = async (): Promise<void> => {
         try {
-            const clipNotes = getNotesForClip(clipId);
-            const seed = clipNotes
-                .slice(-8)
-                .map(
-                    (node) =>
-                        [Math.floor(node.pitch), node.velocity, node.startBeat, node.duration] as [
-                            number,
-                            number,
-                            number,
-                            number,
-                        ]
-                );
-            const res = await generateMidiAI(seed, 16);
-            for (const note of res.notes) {
-                addMidiNote(clipId, note.pitch, note.start_beat, note.duration_beats, note.velocity);
-            }
-        } catch {
-            logger.warn('AI Generation requires native backend');
+            await executeAppAction(
+                { type: 'completeMidi', payload: { clipId, direction: 'forward', bars: 4 } },
+                { source: 'ai' }
+            );
+        } catch (error) {
+            logger.warn('AI MIDI completion failed', error);
         }
     };
 
@@ -305,11 +291,6 @@ export const PianoRollContextMenu = ({
             <DawMenuButton
                 role="menuitem"
                 className="font-medium text-[var(--color-accent-lavender)]"
-                trailingContent={
-                    <span className="rounded border border-current px-1 text-[9px] opacity-60">
-                        {isTauri() ? 'Desktop' : 'Web'}
-                    </span>
-                }
                 onClick={() => {
                     void handleAIGenerate();
                     onClose();

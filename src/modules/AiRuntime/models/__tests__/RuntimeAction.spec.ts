@@ -25,6 +25,8 @@ describe('RuntimeAction', () => {
 
     it('derives initiating payloads without exposing command-owned replay fields', () => {
         type EmptyCollabSessionPayloadAllowed = {} extends RuntimePayload<'createCollabSession'> ? true : false;
+        type RuntimeAddNotesNote = RuntimePayload<'addNotes'>['notes'][number];
+        type RuntimeAddNotesNoteHasId = 'id' extends keyof RuntimeAddNotesNote ? true : false;
         const actions: RuntimeAction[] = [
             { type: 'duplicateClip', payload: { clipId: 'clip-1' } },
             {
@@ -75,6 +77,7 @@ describe('RuntimeAction', () => {
         expectTypeOf<PayloadHasKey<'scaleAutomation', 'anchor'>>().toEqualTypeOf<false>();
         expectTypeOf<PayloadHasKey<'stretchAutomation', 'anchorBeat'>>().toEqualTypeOf<false>();
         expectTypeOf<PayloadHasKey<'createVcaGroup', 'vcaGroupId'>>().toEqualTypeOf<false>();
+        expectTypeOf<RuntimeAddNotesNoteHasId>().toEqualTypeOf<false>();
         expectTypeOf<EmptyCollabSessionPayloadAllowed>().toEqualTypeOf<false>();
     });
 });
