@@ -14,6 +14,7 @@ export type ExecutableAppActionTargetCapability =
     | 'device-host-track'
     | 'device'
     | 'device-parameter'
+    | 'vca-group'
     | 'automation-lane'
     | 'clip'
     | 'editable-clip'
@@ -857,6 +858,28 @@ export const executableAppActionDescriptors = [
         parameters: {
             properties: { gain: { type: 'number', description: '0.0 to 1.0' } },
             required: ['gain'],
+        },
+    },
+    {
+        actionType: 'setVcaGain',
+        risk: 'authority-sensitive',
+        description: 'Set an existing VCA group gain from 0.0 through 2.0.',
+        intentPhrases: [
+            'set vca gain',
+            'set the vca gain',
+            'change vca gain',
+            'set vca volume',
+            'set the vca volume',
+            'change vca volume',
+        ],
+        targetRules: [{ argument: 'vcaGroupId', capability: 'vca-group' }],
+        valueRules: [{ argument: 'gain', kind: 'number-if-present', requiredInPrompt: true, scale: 'percentage-only' }],
+        parameters: {
+            properties: {
+                vcaGroupId: { type: 'string', description: 'Existing VCA group ID' },
+                gain: { type: 'number', description: '0.0 to 2.0' },
+            },
+            required: ['vcaGroupId', 'gain'],
         },
     },
 

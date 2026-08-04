@@ -25,6 +25,7 @@ import {
     setArrangementEventBus,
     setOfflineRenderDependencies,
     setTimeOperationDependencies,
+    setVcaRuntimeProjectionDependencies,
     getSongStructureHandlers,
 } from '#/modules/Arrangement/useCases';
 import { getAnalysisHandlers, setMixAnalysisDisplayLifecycle } from '#/modules/AudioAnalysis/useCases';
@@ -134,6 +135,7 @@ import {
     prepareTimelineMapTimeOperation,
     prepareTimelineMapStateRestore,
     setStopPlaybackCallback,
+    reconcileVcaGroupRuntimeGain,
     stopPlayback,
 } from '#/modules/Transport/useCases';
 import { updateTunerTelemetry } from '#/modules/Tuner/stores';
@@ -191,6 +193,7 @@ setOfflineRenderDependencies({
     selectMidiEventProbability: shouldPlayMidiEvent,
     createChordPitchProjector,
 });
+setVcaRuntimeProjectionDependencies({ reconcileVcaGroupRuntimeGain });
 setToasterGrooveAssignmentExecutor({ execute: executeAppAction });
 setArrangementEventBus(eventBus);
 setWorkspaceEventBus(eventBus);

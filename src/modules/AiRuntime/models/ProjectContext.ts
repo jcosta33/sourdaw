@@ -10,6 +10,7 @@ export type ProjectContext = {
     availableDeviceTypes?: ProjectContextAvailableDeviceType[];
     automationLanes?: ProjectContextAutomationLane[];
     sidechainRoutes?: ProjectContextSidechainRoute[];
+    vcaGroups?: ProjectContextVcaGroup[];
     tracks: ProjectContextTrack[];
     selectedTrackId: string | null;
     selectedClipId: string | null;
@@ -47,6 +48,14 @@ export type ProjectContextSidechainRoute = {
     targetDeviceId: string;
     targetParameterId: string;
     gain: number;
+};
+
+export type ProjectContextVcaGroup = {
+    id: string;
+    name: string;
+    gain: number;
+    muted: boolean;
+    trackIds: string[];
 };
 
 export type ProjectContextClip = {
@@ -100,6 +109,7 @@ export type ProjectContextTrack = {
     gain: number;
     pan: number;
     automationMode: 'read' | 'write' | 'touch' | 'latch' | 'off';
+    vcaGroupId?: string | null;
     outputId?: string;
     clipCount: number;
     deviceCount: number;

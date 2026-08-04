@@ -1,4 +1,4 @@
-import { clipSelectionStore, trackStore } from '#/modules/Arrangement/stores';
+import { clipSelectionStore, trackStore, vcaGroupStore } from '#/modules/Arrangement/stores';
 import { getPlatformPlugins, getPluginById } from '#/modules/Arrangement/useCases';
 import { automationStore } from '#/modules/Automation/stores';
 import { midiStore } from '#/modules/MIDI/stores';
@@ -19,6 +19,7 @@ export type {
     ProjectContextSend,
     ProjectContextSidechainRoute,
     ProjectContextTrack,
+    ProjectContextVcaGroup,
 } from '../models/ProjectContext';
 
 // §92.2 — Memoize the context by the identity of the backing store
@@ -34,6 +35,7 @@ const contextCache: {
     selection: unknown;
     midi: unknown;
     sidechain: unknown;
+    vca: unknown;
     context: ProjectContext | null;
 } = {
     track: null,
@@ -43,6 +45,7 @@ const contextCache: {
     selection: null,
     midi: null,
     sidechain: null,
+    vca: null,
     context: null,
 };
 
@@ -56,6 +59,7 @@ export function getProjectContext(): ProjectContext {
     // project at ~20 clips each that's 2000 store dereferences → 1.
     const midiState = midiStore.value;
     const sidechainState = sidechainStore.value;
+    const vcaState = vcaGroupStore.value;
     const notesByClipId = midiState?.notesByClipId;
 
     if (
@@ -66,7 +70,8 @@ export function getProjectContext(): ProjectContext {
         contextCache.workspace === workspaceState &&
         contextCache.selection === selectionState &&
         contextCache.midi === midiState &&
-        contextCache.sidechain === sidechainState
+        contextCache.sidechain === sidechainState &&
+        contextCache.vca === vcaState
     ) {
         return contextCache.context;
     }
@@ -111,6 +116,13 @@ export function getProjectContext(): ProjectContext {
             targetParameterId: route.targetParameterId,
             gain: route.gain,
         })),
+        vcaGroups: (vcaState?.groups ?? []).map((group) => ({
+            id: group.id,
+            name: group.name,
+            gain: group.gain,
+            muted: group.muted,
+            trackIds: [...group.trackIds],
+        })),
         tracks: (trackState?.tracks ?? []).map((time) => ({
             id: time.id,
             name: time.name,
@@ -122,6 +134,7 @@ export function getProjectContext(): ProjectContext {
             gain: time.gain,
             pan: time.pan,
             automationMode: time.automationMode,
+            vcaGroupId: time.vcaGroupId ?? null,
             outputId: time.outputId,
             clipCount: time.clips.length,
             deviceCount: time.devices.length,
@@ -192,6 +205,7 @@ export function getProjectContext(): ProjectContext {
     contextCache.selection = selectionState;
     contextCache.midi = midiState;
     contextCache.sidechain = sidechainState;
+    contextCache.vca = vcaState;
     contextCache.context = built;
     return built;
 }
