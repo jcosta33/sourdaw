@@ -234,6 +234,15 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         'src/modules/Toaster/useCases/loadToasterKit.ts': 3,
         'src/modules/Toaster/useCases/projectToasterKitToEngineMessages.ts': 4,
         'src/modules/Toaster/useCases/setPadParamImmediate.ts': 1,
+        // Count provenance: this is the shared device-node selector for the two
+        // pad-param paths. Its one hit is the `setPadParam` field in the
+        // controls type it returns, not a call — the same reason
+        // `getToasterControls.ts` counts 2. The two call sites keep their own
+        // count of 1 each; the sink did not move, only the lookup in front of
+        // it. The file exists because that lookup was duplicated three ways and
+        // two copies still ignored `deviceId`, writing pad edits to the wrong
+        // Toaster on a track hosting more than one.
+        'src/modules/Toaster/useCases/toasterParamBridge/findReadyToasterControlsOnStrip.ts': 1,
         'src/modules/Toaster/useCases/toasterParamBridge/setPadEngineImmediate.ts': 1,
         'src/modules/Toaster/useCases/toasterParamBridge/setToasterKitParam.ts': 1,
         'src/modules/Toaster/useCases/toasterParamBridge/setToasterPadParam.ts': 1,

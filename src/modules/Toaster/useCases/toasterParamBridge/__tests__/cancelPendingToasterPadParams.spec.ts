@@ -11,6 +11,9 @@ type ToasterControls = {
 
 type TrackStrip = {
     deviceNodes: Array<{
+        // Real device nodes always carry an id, and the selector keys on it so
+        // a track hosting two Toasters routes each edit to the right one.
+        deviceId?: string;
         toasterControls?: ToasterControls;
     }>;
 };
@@ -97,16 +100,30 @@ describe('cancelPendingToasterPadParams', () => {
         }));
         mockGetTrackStrip.mockImplementation((trackId) => {
             if (trackId === 'track-dev') {
-                return { deviceNodes: [{ toasterControls: { ready: true, setPadParam: setPadParamDev } }] };
+                return {
+                    deviceNodes: [{ deviceId: 'dev', toasterControls: { ready: true, setPadParam: setPadParamDev } }],
+                };
             }
             if (trackId === 'track-dev_1') {
-                return { deviceNodes: [{ toasterControls: { ready: true, setPadParam: setPadParamDevUnderscore } }] };
+                return {
+                    deviceNodes: [
+                        { deviceId: 'dev_1', toasterControls: { ready: true, setPadParam: setPadParamDevUnderscore } },
+                    ],
+                };
             }
             if (trackId === 'track-dev-1') {
-                return { deviceNodes: [{ toasterControls: { ready: true, setPadParam: setPadParamDev1 } }] };
+                return {
+                    deviceNodes: [
+                        { deviceId: 'dev-1', toasterControls: { ready: true, setPadParam: setPadParamDev1 } },
+                    ],
+                };
             }
             if (trackId === 'track-dev-2') {
-                return { deviceNodes: [{ toasterControls: { ready: true, setPadParam: setPadParamDev2 } }] };
+                return {
+                    deviceNodes: [
+                        { deviceId: 'dev-2', toasterControls: { ready: true, setPadParam: setPadParamDev2 } },
+                    ],
+                };
             }
             return undefined;
         });

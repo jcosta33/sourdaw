@@ -11,6 +11,11 @@ type ToasterControls = {
 
 type TrackStrip = {
     deviceNodes: Array<{
+        // Real device nodes always carry an id — the selector keys on it so a
+        // track hosting two Toasters routes each edit to the right one. The
+        // fixture omitted it, which let a selector that ignored `deviceId`
+        // look correct here.
+        deviceId?: string;
         toasterControls?: ToasterControls;
     }>;
 };
@@ -54,7 +59,7 @@ describe('setToasterPadParam', () => {
     function wireReadyToasterControls(): void {
         setPadParam = vi.fn<SetPadParam>();
         mockGetTrackStrip.mockReturnValue({
-            deviceNodes: [{ toasterControls: { ready: true, setPadParam } }],
+            deviceNodes: [{ deviceId: 'dev-1', toasterControls: { ready: true, setPadParam } }],
         });
     }
 

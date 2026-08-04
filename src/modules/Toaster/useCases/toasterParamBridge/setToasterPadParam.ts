@@ -4,6 +4,7 @@ import { getTrackStrip } from '#/modules/AudioEngine/useCases';
 import { type PadState } from '../../models/ToasterKit';
 import { updatePad } from '../../stores/toasterStore';
 
+import { findReadyToasterControlsOnStrip } from './findReadyToasterControlsOnStrip';
 import { padLatest, padPending } from './toasterPadParamQueue';
 
 const STRING_FIELDS = new Set(['engineType', 'name', 'color']);
@@ -25,9 +26,7 @@ function flushPadParam(cacheKey: string): void {
     if (!strip) {
         return;
     }
-    const toasterControls = strip.deviceNodes.find(
-        (data) => data.toasterControls?.ready !== undefined
-    )?.toasterControls;
+    const toasterControls = findReadyToasterControlsOnStrip({ strip, deviceId: entry.deviceId });
     if (toasterControls) {
         toasterControls.setPadParam(entry.pad, entry.name, entry.value);
     }
