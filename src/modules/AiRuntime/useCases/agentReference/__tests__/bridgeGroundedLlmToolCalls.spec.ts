@@ -169,6 +169,10 @@ function createClipContext(): ProjectContext {
     };
 }
 
+function crossfadeCall(argumentsPayload: Record<string, unknown>) {
+    return { name: 'crossfadeClips', arguments: argumentsPayload };
+}
+
 function createMidiClipContext(): ProjectContext {
     const context = createClipContext();
     const sourceTrack = context.tracks.find((track) => track.id === 'track-vocals');
@@ -292,6 +296,81 @@ describe('bridgeGroundedLlmToolCalls', () => {
             },
         ]);
         expect(qualifiedFade.rejections).toEqual([]);
+    });
+
+    it('grounds two crossfade targets with explicit, omitted, or schema-default duration', () => {
+        const context = createClipContext();
+        const explicit = bridge(
+            [crossfadeCall({ clipAId: 'clip-intro', clipBId: 'clip-chorus', durationBeats: 1 })],
+            'crossfade Intro into Chorus for 1 beat',
+            context
+        );
+        const defaultDuration = bridge(
+            [crossfadeCall({ clipAId: 'clip-intro', clipBId: 'clip-chorus' })],
+            'crossfade Intro into Chorus',
+            context
+        );
+        const schemaDefaultDuration = bridge(
+            [crossfadeCall({ clipAId: 'clip-intro', clipBId: 'clip-chorus', durationBeats: 0.5 })],
+            'crossfade Intro into Chorus',
+            context
+        );
+        const inventedDuration = bridge(
+            [crossfadeCall({ clipAId: 'clip-intro', clipBId: 'clip-chorus', durationBeats: 2 })],
+            'crossfade Intro into Chorus',
+            context
+        );
+        const mismatchedDuration = bridge(
+            [crossfadeCall({ clipAId: 'clip-intro', clipBId: 'clip-chorus', durationBeats: 2 })],
+            'crossfade Intro into Chorus for 1 beat',
+            context
+        );
+        const unsafe = [
+            bridge(
+                [crossfadeCall({ clipAId: 'clip-intro', clipBId: 'clip-chorus' })],
+                'crossfade Intro into Chorus for 1 beat',
+                context
+            ),
+            bridge(
+                [crossfadeCall({ clipAId: 'clip-chorus', clipBId: 'clip-intro' })],
+                'crossfade Intro into Chorus',
+                context
+            ),
+            bridge(
+                [crossfadeCall({ clipAId: 'clip-intro', clipBId: 'clip-chorus' })],
+                'crossfade Intro and Chorus',
+                context
+            ),
+            bridge(
+                [crossfadeCall({ clipAId: 'clip-intro', clipBId: 'clip-chorus' })],
+                'do not crossfade Intro into Chorus',
+                context
+            ),
+            bridge(
+                [crossfadeCall({ clipAId: 'clip-intro', clipBId: 'clip-chorus' })],
+                'crossfade Intro into Chorus, actually cancel that command',
+                context
+            ),
+        ];
+
+        expect(explicit.actions).toEqual([
+            {
+                type: 'crossfadeClips',
+                payload: { clipAId: 'clip-intro', clipBId: 'clip-chorus', durationBeats: 1 },
+            },
+        ]);
+        expect(defaultDuration.actions).toEqual([
+            { type: 'crossfadeClips', payload: { clipAId: 'clip-intro', clipBId: 'clip-chorus' } },
+        ]);
+        expect(schemaDefaultDuration.actions).toEqual([
+            {
+                type: 'crossfadeClips',
+                payload: { clipAId: 'clip-intro', clipBId: 'clip-chorus', durationBeats: 0.5 },
+            },
+        ]);
+        expect(inventedDuration.actions).toEqual([]);
+        expect(mismatchedDuration.actions).toEqual([]);
+        expect(unsafe.every((result) => result.actions.length === 0)).toBe(true);
     });
 
     it('allows explicit clip unlock while rejecting edits to a locked clip', () => {

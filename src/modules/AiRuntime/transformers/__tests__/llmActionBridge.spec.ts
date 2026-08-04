@@ -159,6 +159,34 @@ function bridge({ calls, context = projectContext }: BridgeInput) {
     return bridgeLlmToolCalls({ calls, context });
 }
 
+function createCrossfadeContext(): ProjectContext {
+    const sourceTrack = projectContext.tracks[0]!;
+    return {
+        ...projectContext,
+        tracks: [
+            {
+                ...sourceTrack,
+                clipCount: 2,
+                clips: [
+                    sourceTrack.clips[0]!,
+                    {
+                        ...sourceTrack.clips[0]!,
+                        id: 'clip-chorus',
+                        name: 'Chorus',
+                        startBeat: 8,
+                        endBeat: 16,
+                    },
+                ],
+            },
+            ...projectContext.tracks.slice(1),
+        ],
+    };
+}
+
+function crossfadeCall(argumentsPayload: Record<string, unknown>) {
+    return { name: 'crossfadeClips', arguments: argumentsPayload };
+}
+
 function createSidechainContext(routes: NonNullable<ProjectContext['sidechainRoutes']> = []): ProjectContext {
     const source = {
         ...projectContext.tracks[0]!,
@@ -806,6 +834,128 @@ describe('bridgeLlmToolCalls', () => {
 
         expect(results.map(({ actions }) => actions[0])).toEqual(cases.map(({ action }) => action));
         expect(results.flatMap(({ rejections }) => rejections)).toEqual([]);
+    });
+
+    it('converts crossfade commands for two distinct unlocked clips with explicit or default duration', () => {
+        const crossfadeContext = createCrossfadeContext();
+
+        const explicit = bridge({
+            context: crossfadeContext,
+            calls: [crossfadeCall({ clipAId: 'clip-verse', clipBId: 'clip-chorus', durationBeats: 1 })],
+        });
+        const defaultDuration = bridge({
+            context: crossfadeContext,
+            calls: [crossfadeCall({ clipAId: 'clip-verse', clipBId: 'clip-chorus' })],
+        });
+
+        expect(explicit.actions).toEqual([
+            {
+                type: 'crossfadeClips',
+                payload: { clipAId: 'clip-verse', clipBId: 'clip-chorus', durationBeats: 1 },
+            },
+        ]);
+        expect(defaultDuration.actions).toEqual([
+            { type: 'crossfadeClips', payload: { clipAId: 'clip-verse', clipBId: 'clip-chorus' } },
+        ]);
+        expect([...explicit.rejections, ...defaultDuration.rejections]).toEqual([]);
+    });
+
+    it('rejects malformed, unsafe, reversed, no-op, and non-overlapping crossfade calls', () => {
+        const context = createCrossfadeContext();
+        const gapContext: ProjectContext = {
+            ...context,
+            tracks: context.tracks.map((track) => ({
+                ...track,
+                clips: track.clips.map((clip) =>
+                    clip.id === 'clip-chorus' ? { ...clip, startBeat: 10, endBeat: 18 } : clip
+                ),
+            })),
+        };
+        const lockedContext: ProjectContext = {
+            ...context,
+            tracks: context.tracks.map((track) => ({
+                ...track,
+                clips: track.clips.map((clip) => (clip.id === 'clip-chorus' ? { ...clip, locked: true } : clip)),
+            })),
+        };
+        const cases = [
+            { context, call: crossfadeCall({ clipAId: 'missing', clipBId: 'clip-chorus' }) },
+            { context, call: crossfadeCall({ clipAId: 'clip-verse', clipBId: 'clip-verse' }) },
+            { context, call: crossfadeCall({ clipAId: 'clip-chorus', clipBId: 'clip-verse' }) },
+            { context, call: crossfadeCall({ clipAId: 'clip-verse', clipBId: 'clip-chorus', durationBeats: -0.5 }) },
+            {
+                context,
+                call: crossfadeCall({ clipAId: 'clip-verse', clipBId: 'clip-chorus', durationBeats: 0, extra: true }),
+            },
+            { context, call: crossfadeCall({ clipAId: 'clip-verse', clipBId: 'clip-chorus', durationBeats: 0 }) },
+            { context: gapContext, call: crossfadeCall({ clipAId: 'clip-verse', clipBId: 'clip-chorus' }) },
+            { context: lockedContext, call: crossfadeCall({ clipAId: 'clip-verse', clipBId: 'clip-chorus' }) },
+        ];
+
+        const results = cases.map((testCase) => bridge({ context: testCase.context, calls: [testCase.call] }));
+
+        expect(results.flatMap(({ actions }) => actions)).toEqual([]);
+        expect(results.flatMap(({ rejections }) => rejections).map(({ name }) => name)).toEqual(
+            Array.from({ length: cases.length }, () => 'crossfadeClips')
+        );
+    });
+
+    it('rejects crossfades that collide with lifecycle, lock, geometry, or fade writes in either order', () => {
+        const context = createCrossfadeContext();
+        const crossfade = crossfadeCall({ clipAId: 'clip-verse', clipBId: 'clip-chorus', durationBeats: 1 });
+        const conflicts = [
+            { name: 'setClipFade', arguments: { clipId: 'clip-verse', fadeInBeats: 1, fadeOutBeats: 1 } },
+            { name: 'trimClipStart', arguments: { clipId: 'clip-chorus', newStartBeat: 7.5 } },
+            { name: 'lockClip', arguments: { clipId: 'clip-chorus', locked: true } },
+            { name: 'removeClip', arguments: { clipId: 'clip-verse' } },
+        ];
+
+        const results = conflicts.flatMap((conflict) => [
+            bridge({ context, calls: [crossfade, conflict] }),
+            bridge({ context, calls: [conflict, crossfade] }),
+        ]);
+
+        expect(results.every((result) => result.actions.length === 1)).toBe(true);
+        expect(results.every((result) => result.rejections.length === 1)).toBe(true);
+        expect(results.flatMap(({ rejections }) => rejections).map(({ reason }) => reason)).toEqual(
+            Array.from({ length: results.length }, () => 'Provider batch writes the same target field more than once')
+        );
+    });
+
+    it('rejects crossfades with removal of either target track in either order', () => {
+        const sameTrackContext = createCrossfadeContext();
+        const [sourceTrack, destinationTrack, ...remainingTracks] = sameTrackContext.tracks;
+        const [sourceClip, destinationClip] = sourceTrack?.clips ?? [];
+        if (!sourceTrack || !destinationTrack || !sourceClip || !destinationClip) {
+            throw new Error('Expected two tracks and two crossfade clips');
+        }
+        const context: ProjectContext = {
+            ...sameTrackContext,
+            tracks: [
+                { ...sourceTrack, clipCount: 1, clips: [sourceClip] },
+                { ...destinationTrack, kind: 'audio', clipCount: 1, clips: [destinationClip] },
+                ...remainingTracks,
+            ],
+        };
+        const crossfade = crossfadeCall({ clipAId: sourceClip.id, clipBId: destinationClip.id, durationBeats: 1 });
+        const removals = [sourceTrack.id, destinationTrack.id].map((trackId) => ({
+            name: 'removeTrack',
+            arguments: { trackId },
+        }));
+
+        const results = removals.flatMap((removeTrack) => [
+            bridge({ context, calls: [crossfade, removeTrack] }),
+            bridge({ context, calls: [removeTrack, crossfade] }),
+        ]);
+
+        expect(results.every((result) => result.actions.length === 1)).toBe(true);
+        expect(results.every((result) => result.rejections.length === 1)).toBe(true);
+        expect(results.flatMap(({ rejections }) => rejections).map(({ reason }) => reason)).toEqual(
+            Array.from(
+                { length: results.length },
+                () => 'Provider batch mixes clip writes with removal of a target track'
+            )
+        );
     });
 
     it('rejects unavailable clip targets and non-exact clip command payloads', () => {

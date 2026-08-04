@@ -1614,6 +1614,13 @@ function getAutomationLaneValueRange(
     return lane;
 }
 
+function numbersMatch(valueRule: NumberValueRule, expected: number, asserted: number): boolean {
+    if (valueRule.match === 'exact') {
+        return Object.is(expected, asserted);
+    }
+    return Math.abs(expected - asserted) < 0.000_001;
+}
+
 function validateNumberValue(
     valueRule: NumberValueRule,
     assertedValue: unknown,
@@ -1636,17 +1643,16 @@ function validateNumberValue(
         return getValueMismatchReason(valueRule.argument);
     }
     if (valueRule.mayOmitWhenUnmentioned === true && expectedNumbers.length === 0) {
+        const defaultValue = valueRule.defaultWhenUnmentioned;
+        if (defaultValue !== undefined && numbersMatch(valueRule, defaultValue, assertedValue)) {
+            return null;
+        }
         return getValueMismatchReason(valueRule.argument);
     }
     if (valueRule.requiredInPrompt === true && expectedNumbers.length === 0) {
         return getValueMismatchReason(valueRule.argument);
     }
-    const matchesExpectedValue = expectedNumbers.some((expected) => {
-        if (valueRule.match === 'exact') {
-            return Object.is(expected, assertedValue);
-        }
-        return Math.abs(expected - assertedValue) < 0.000_001;
-    });
+    const matchesExpectedValue = expectedNumbers.some((expected) => numbersMatch(valueRule, expected, assertedValue));
     if (expectedNumbers.length > 0 && !matchesExpectedValue) {
         return getValueMismatchReason(valueRule.argument);
     }

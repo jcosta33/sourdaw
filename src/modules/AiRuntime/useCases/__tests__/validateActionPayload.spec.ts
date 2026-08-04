@@ -156,6 +156,18 @@ const guardedPayloadContractCases = [
         ],
     }),
     guardedPayloadCase({
+        actionType: 'crossfadeClips',
+        validPayload: { clipAId: 'clip-a', clipBId: 'clip-b' },
+        invalidPayloads: [
+            { clipAId: '', clipBId: 'clip-b' },
+            { clipAId: 'clip-a', clipBId: '' },
+            { clipAId: 'clip-a', clipBId: 'clip-a' },
+            { clipAId: 'clip-a', clipBId: 'clip-b', durationBeats: -0.01 },
+            { clipAId: 'clip-a', clipBId: 'clip-b', durationBeats: Number.NaN },
+            { clipAId: 'clip-a', clipBId: 'clip-b', extra: true },
+        ],
+    }),
+    guardedPayloadCase({
         actionType: 'setClipGain',
         validPayload: { clipId: 'clip-1', gain: 1.25 },
         invalidPayloads: [

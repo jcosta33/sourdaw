@@ -604,7 +604,7 @@ export type AppAction =
     | { type: 'reverseClip'; payload: { clipId: string } }
     | { type: 'glueClips'; payload: { clipIds: string[] } }
     | { type: 'nudgeClip'; payload: { clipId: string; beats: number } }
-    | { type: 'crossfadeClips'; payload: { clipAId: string; clipBId: string; durationBeats: number } }
+    | { type: 'crossfadeClips'; payload: { clipAId: string; clipBId: string; durationBeats?: number } }
     | {
           type: 'restoreCrossfadeClips';
           payload: {
