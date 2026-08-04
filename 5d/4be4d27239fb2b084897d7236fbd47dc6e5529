@@ -1,0 +1,73 @@
+src/modules/BrowserAi/useCases/rave/registerFactoryModels.ts
+  s_66d4924c65dcd2::t_abf77cdef13a37 3-9
+src/app/__tests__/bootstrap.spec.ts
+  s_66d4924c65dcd2::t_debf05be4acb81 38
+  s_66d4924c65dcd2::t_dfc6decda81b19 159
+  s_66d4924c65dcd2::t_fee94b900cc2af 478-484
+  s_66d4924c65dcd2::t_d6883494f5d8de 63
+src/modules/BrowserAi/useCases/index.ts
+  s_66d4924c65dcd2::t_c26a46498bae83 12
+src/modules/BrowserAi/useCases/rave/__tests__/loadModel.spec.ts
+  s_66d4924c65dcd2::t_61528e290ab0b6 57-87
+  s_66d4924c65dcd2::t_bf7bb0d582644e 22
+src/modules/BrowserAi/useCases/__tests__/initRaveModels.spec.ts
+  s_66d4924c65dcd2::t_9f09f90af1125e 1-119
+src/modules/BrowserAi/useCases/initRaveModels.ts
+  s_66d4924c65dcd2::t_5cf52e8df3adbd 54
+  s_66d4924c65dcd2::t_7db3d1a02bac9d 4-5
+  s_66d4924c65dcd2::t_34c61774383e3f 1-3
+  s_66d4924c65dcd2::t_4798398d1a5a4a 6-8,51-53
+  s_66d4924c65dcd2::t_00315e20953ee9 55-56
+  s_48552e623fb7f5::t_6a8d4b774d593b 9-50
+src/modules/CommandInterface/presentations/views/__tests__/commandRegistry.spec.ts
+  s_66d4924c65dcd2::t_d1eba1519eb47c 30-91
+  s_66d4924c65dcd2::t_5c3e44394a7d70 1,3-6
+src/modules/BrowserAi/stores/index.ts
+  s_66d4924c65dcd2::t_5b893d911b9717 3
+src/app/bootstrap.ts
+  s_66d4924c65dcd2::t_76a6859ce45dbb 438-443
+  s_66d4924c65dcd2::t_b9a109c5ba6c17 58
+src/modules/BrowserAi/useCases/rave/decodeLatent.ts
+  s_66d4924c65dcd2::t_5277b0d4498178 4-12
+src/modules/BrowserAi/stores/rave.ts
+  s_66d4924c65dcd2::t_6db14fdc80c570 6-11,13-14
+  s_66d4924c65dcd2::t_9ccb03d6038062 59-65
+src/modules/CommandInterface/useCases/commands/AiCommands.ts
+  s_66d4924c65dcd2::t_b57b6fbd59cc01 230
+  s_66d4924c65dcd2::t_dd6ca0ab637f55 222
+  s_66d4924c65dcd2::t_bccbdb38595b9a 1,8-16
+  s_66d4924c65dcd2::t_3f36c820aa1f83 17
+src/modules/BrowserAi/useCases/rave/loadModel.ts
+  s_66d4924c65dcd2::t_41be62d4d3f4a2 3-11,17-19
+  s_66d4924c65dcd2::t_8403f704d56e69 20-21
+src/modules/BrowserAi/useCases/rave/encodeAudio.ts
+  s_66d4924c65dcd2::t_fbdc047f7342f6 4,6-14
+src/modules/CommandInterface/models/CommandEntry.ts
+  s_66d4924c65dcd2::t_ccbf7f04126e2c 12-22
+src/modules/CommandInterface/useCases/searchCommandRegistry.ts
+  s_66d4924c65dcd2::t_b106e475a6a88b 14-18,20-27
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.20",
+  "base_commit_sha": "5d4be4d27239fb2b084897d7236fbd47dc6e5529",
+  "prompts": {},
+  "sessions": {
+    "s_48552e623fb7f5": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-aa382587a700b71cf",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_66d4924c65dcd2": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "dad7ceb6-cb31-44b9-91db-bb71a71cbc38",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
