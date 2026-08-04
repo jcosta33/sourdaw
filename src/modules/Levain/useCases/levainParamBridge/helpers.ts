@@ -9,7 +9,9 @@ import { createRafBatcher } from '#/utils/DOM/createRafBatcher';
 import { getArticulationId, isArticulationType, type LevainPatch } from '../../models/LevainPatch';
 import { defaultLevainState, levainStore, setLevainParam, setMacro } from '../../stores/levainStore';
 import { type autoLoadLevainSamples } from '../autoLoadSamples';
+import { getLevainProjectParameterId } from '../getLevainProjectParameterId';
 import { hydrateLevainStateFromProject } from '../hydrateLevainStateFromProject';
+import { projectLevainPatchToEngineParameters } from '../projectLevainPatchToEngineParameters';
 
 import { camelToSnake } from './camelToSnake';
 
@@ -69,7 +71,7 @@ export function createLevainBridge(deps: LevainBridgeDeps) {
 
         const rustKey = parts.slice(1).join(':');
         setRuntimeParam(deviceId, rustKey, value);
-        deps.persistDeviceParam(deviceId, rustKey, value);
+        deps.persistDeviceParam(deviceId, getLevainProjectParameterId(rustKey), value);
     }
 
     function queueParam(deviceId: string, rustKey: string, value: number): void {
@@ -173,23 +175,10 @@ export function createLevainBridge(deps: LevainBridgeDeps) {
                 levainStore.set({ ...instances, [deviceId]: state });
             }
 
-            contentSettlement = loadSamplesForInstrument(deviceId, state.patch.instrumentId);
-            queueParam(deviceId, 'master_gain', state.patch.masterGain);
-            setRuntimeParam(deviceId, 'current_articulation', getArticulationId(state.patch.currentArticulation));
-            queueParam(deviceId, 'legato_enabled', state.patch.legato.enabled ? 1 : 0);
-            queueParam(deviceId, 'humanize_amount', state.patch.humanize.amount);
-            // vibratoDepthMax is in cents (default 40, range 0-50). Send it to the
-            // cents slot 'expression_vibrato_depth_max' — the same key the runtime
-            // panel path uses (setLevainParamWithAudio expands expression.vibratoDepthMax
-            // to this key). The CC-scaled slot 'vibrato_depth' expects a normalized
-            // 0-1 value and would saturate a cents value to ~2x configured depth.
-            queueParam(deviceId, 'expression_vibrato_depth_max', state.patch.expression.vibratoDepthMax);
-
-            for (const [i, m] of state.patch.micPositions.entries()) {
-                queueParam(deviceId, `mic_${i}_volume`, m.volume);
-                queueParam(deviceId, `mic_${i}_pan`, m.pan);
-                queueParam(deviceId, `mic_${i}_enabled`, m.enabled ? 1 : 0);
+            for (const parameter of projectLevainPatchToEngineParameters(state.patch)) {
+                setRuntimeParam(deviceId, parameter.name, parameter.value);
             }
+            contentSettlement = loadSamplesForInstrument(deviceId, state.patch.instrumentId);
         }
         return contentSettlement;
     }
@@ -331,10 +320,7 @@ export function createLevainBridge(deps: LevainBridgeDeps) {
             return;
         }
 
-        const device = getDevice(deviceId);
-        if (device) {
-            device.setParam(`mic_${micIndex}_${param}`, value);
-        }
+        queueParam(deviceId, `mic_${micIndex}_${param}`, value);
     }
 
     return {

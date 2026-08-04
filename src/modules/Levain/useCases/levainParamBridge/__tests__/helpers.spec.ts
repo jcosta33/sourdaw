@@ -4,6 +4,7 @@ import { type DeviceWriteTargetResolution } from '#/modules/Arrangement/stores';
 
 import { createDefaultPatch } from '../../../models/LevainPatch';
 import { defaultLevainState, levainStore } from '../../../stores/levainStore';
+import { projectLevainPatchToEngineParameters } from '../../projectLevainPatchToEngineParameters';
 import { createLevainBridge, type LevainDevice } from '../helpers';
 
 // ---------------------------------------------------------------------------
@@ -210,21 +211,25 @@ describe('createLevainBridge', () => {
         );
     });
 
-    describe('fix 1 — register-time vibrato uses the cents slot, not the CC slot', () => {
-        // vibratoDepthMax is in cents (default 40). The CC-scaled slot
-        // 'vibrato_depth' would saturate it to ~2x; the runtime panel path sends
-        // 'expression_vibrato_depth_max'. Register-time must match that key.
-        it('forwards vibratoDepthMax to expression_vibrato_depth_max', () => {
-            const deps = makeDeps();
+    describe('registration patch ordering', () => {
+        it('applies the complete patch before loading samples without persisting initialization', () => {
+            const device = makeDevice();
+            let engineCallsWhenLoading: Parameters<LevainDevice['setParam']>[] = [];
+            const deps = makeDeps(() => {
+                engineCallsWhenLoading = [...device.setParam.mock.calls];
+                return Promise.resolve();
+            });
             const bridge = createLevainBridge(deps);
-            const port = {} as MessagePort;
+            const patch = createDefaultPatch('violin-1');
 
-            void bridge.registerLevainDevice('d1', makeDevice(), port);
+            void bridge.registerLevainDevice('d1', device, {} as MessagePort);
+
+            expect(engineCallsWhenLoading).toEqual(
+                projectLevainPatchToEngineParameters(patch).map(({ name, value }) => [name, value])
+            );
+            expect(deps.persistDeviceParam).not.toHaveBeenCalled();
             flushRaf();
-
-            const cents = createDefaultPatch('violin-1').expression.vibratoDepthMax;
-            expect(deps.persistDeviceParam).toHaveBeenCalledWith('d1', 'expression_vibrato_depth_max', cents);
-            expect(deps.persistDeviceParam).not.toHaveBeenCalledWith('d1', 'vibrato_depth', expect.anything());
+            expect(deps.persistDeviceParam).not.toHaveBeenCalled();
         });
     });
 
@@ -313,8 +318,8 @@ describe('createLevainBridge', () => {
 
             expect(device.setParam).toHaveBeenCalledWith('legato_enabled', 0);
             expect(device.setParam).toHaveBeenCalledWith('legato_slow_threshold_ms', 275);
-            expect(deps.persistDeviceParam).toHaveBeenCalledWith('d1', 'legato_enabled', 0);
-            expect(deps.persistDeviceParam).toHaveBeenCalledWith('d1', 'legato_slow_threshold_ms', 275);
+            expect(deps.persistDeviceParam).toHaveBeenCalledWith('d1', 'legatoEnabled', 0);
+            expect(deps.persistDeviceParam).toHaveBeenCalledWith('d1', 'legatoSlowThresholdMs', 275);
         });
     });
 

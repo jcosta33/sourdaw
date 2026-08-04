@@ -4,6 +4,8 @@ import { fromLevainDeviceState } from '../models/LevainDeviceState';
 import { createDefaultPatch } from '../models/LevainPatch';
 import { defaultLevainState, type LevainState } from '../stores/levainStore';
 
+import { hydrateLevainPatchFromParameterValues } from './hydrateLevainPatchFromParameterValues';
+
 /**
  * Read back the Levain state project truth holds for a device, or `null` when it
  * holds none.
@@ -21,9 +23,11 @@ import { defaultLevainState, type LevainState } from '../stores/levainStore';
  * mirror the freshly loaded patch straight back into the document and dirty a
  * project nobody had touched.
  *
- * Only the instrument identity is restored here. The patch's numbers already
- * round-trip through `Device.parameterValues`, and the rest of the patch is derived
- * from the instrument by `createDefaultPatch`.
+ * Instrument identity comes from `Device.deviceState` when the user selected one;
+ * otherwise the module default remains the identity. Numeric patch values come from
+ * `Device.parameterValues` and overlay that instrument's defaults, so reopening a
+ * project reconstructs the same engine state that live registration and offline
+ * rendering apply even when an older file has no opaque Levain chunk.
  */
 export function hydrateLevainStateFromProject(deviceId: string): LevainState | null {
     const tracks = trackStore.value?.tracks;
@@ -37,17 +41,18 @@ export function hydrateLevainStateFromProject(deviceId: string): LevainState | n
                 continue;
             }
             const identity = fromLevainDeviceState(device.deviceState);
-            if (!identity) {
-                return null;
-            }
-            const patch = createDefaultPatch(identity.instrumentId);
-            const entry = patch.articulations.find(
-                (articulation) => articulation.type === identity.currentArticulation
-            );
+            const instrumentId = identity?.instrumentId ?? defaultLevainState.patch.instrumentId;
+            const defaultPatch = createDefaultPatch(instrumentId);
+            const currentArticulation = identity?.currentArticulation ?? defaultPatch.currentArticulation;
+            const patch = hydrateLevainPatchFromParameterValues({
+                patch: { ...defaultPatch, currentArticulation },
+                parameterValues: device.parameterValues,
+            });
+            const entry = patch.articulations.find((articulation) => articulation.type === currentArticulation);
             return {
                 ...defaultLevainState,
-                patch: { ...patch, currentArticulation: identity.currentArticulation },
-                currentArticulationDisplay: entry ? entry.name : identity.currentArticulation,
+                patch,
+                currentArticulationDisplay: entry ? entry.name : currentArticulation,
             };
         }
     }
