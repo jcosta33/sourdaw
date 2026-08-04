@@ -92,7 +92,7 @@ function dropDrumSeeds(name: string, startBeat: number, endBeat: number, cadence
     const patterns: Record<string, DropPattern> = {
         Kick: { offsets: [0], step: 1, duration: 0.12, velocity: 124 },
         Snare: { offsets: [1, 3], step: 4, duration: 0.12, velocity: 104 },
-        'Closed HH': { offsets: [0.5], step: 1, duration: 0.08, velocity: 86 },
+        'Closed HH': { offsets: [0.5], step: 2, duration: 0.08, velocity: 86 },
         'Open HH': { offsets: [1.5], step: 2, duration: 0.16, velocity: 90 },
         Crash: { offsets: [0], step: cadence, duration: 0.24, velocity: 106 },
         Ride: { offsets: [2.75], step: 8, duration: 0.12, velocity: 78 },
@@ -149,7 +149,7 @@ function drumSeeds(name: string, section: RhythmSection): NoteSeed[] {
             ];
         }
         if (name === 'Open HH') {
-            return [...stepped(162.5, 176, 4, 0.12, 81), ...stepped(176.75, 191.75, 2, 0.12, 89)];
+            return [...stepped(162.75, 176, 4, 0.12, 81), ...stepped(176.75, 191.75, 2, 0.12, 89)];
         }
         if (['Clap', 'Rim', 'Low Tom', 'Mid Tom', 'Hi Tom'].includes(name)) {
             return [...fillSeeds(name, 160, 176, 16), ...fillSeeds(name, 176, 191.75, 8)];
@@ -223,7 +223,7 @@ function bassSeeds(name: string, section: RhythmSection): NoteSeed[] {
     }
     if (section.key === 'drop-one' || section.key === 'drop-two') {
         const ranges = section.key === 'drop-one' ? DROP_ONE_RANGES : DROP_TWO_RANGES;
-        const offset = name === 'Sub Mycelium' ? 0.25 : 1.75;
+        const offset = name === 'Sub Mycelium' ? 0.75 : 1.75;
         return ranges.flatMap(([startBeat, endBeat]) => stepped(startBeat + offset, endBeat, 4, 0.22, 91));
     }
     if (name === 'Acid Tendril' && section.key === 'pressure') {

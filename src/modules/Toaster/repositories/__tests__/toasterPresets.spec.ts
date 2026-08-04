@@ -120,7 +120,7 @@ describe('TOASTER_PRESETS', () => {
             engineType: 'kick-909',
             volume: 1,
             pan: 0,
-            decay: 0.24,
+            decay: 0.12,
             sendReverb: 0,
             sendDelay: 0,
         });

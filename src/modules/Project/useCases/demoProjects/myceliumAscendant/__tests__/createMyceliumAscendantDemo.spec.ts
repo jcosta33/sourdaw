@@ -42,7 +42,7 @@ describe('createMyceliumAscendantDemo', () => {
 
         expect(data.arrangement.tracks).toHaveLength(43);
         expect(clipCount).toBe(119);
-        expect(noteCount).toBe(3985);
+        expect(noteCount).toBe(3873);
         expect(data.automation.lanes).toHaveLength(115);
         expect(data.sidechainRoutes).toHaveLength(1);
         expect(activeArrangement?.markers?.sections).toHaveLength(8);

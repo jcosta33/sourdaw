@@ -136,6 +136,7 @@ describe('createMyceliumRhythmPerformance', () => {
         const openHat = getNotes(projectData, ['Open HH']);
         const foundation = getNotes(projectData, ['Kick', 'Snare', 'Closed HH', 'Open HH']);
         const ornamentation = getNotes(projectData, PAD_NAMES.slice(4));
+        const sub = getNotes(projectData, ['Sub Mycelium']);
         const dropKickBeats = [
             ...Array.from({ length: 96 }, (_, index) => 192 + index),
             ...Array.from({ length: 128 }, (_, index) => 416 + index),
@@ -154,6 +155,11 @@ describe('createMyceliumRhythmPerformance', () => {
         expect(new Set(rolling.map((note) => note.velocity)).size).toBeGreaterThan(3);
         expect(new Set(rolling.map((note) => note.duration)).size).toBeGreaterThan(2);
         expect(getNotes(projectData, BASS_NAMES).every((note) => note.absoluteBeat % 1 >= 0.25)).toBe(true);
+        expect([...inRange(sub, 192, 288), ...inRange(sub, 416, 544)].map((note) => note.absoluteBeat % 4)).toEqual(
+            Array.from({ length: 56 }, () => 0.75)
+        );
+        const openHatBeats = new Set(openHat.map((note) => note.absoluteBeat));
+        expect(closedHat.every((note) => !openHatBeats.has(note.absoluteBeat))).toBe(true);
         for (const [startBeat, endBeat] of [
             [192, 288],
             [416, 544],
@@ -162,7 +168,7 @@ describe('createMyceliumRhythmPerformance', () => {
                 Array.from({ length: (endBeat - startBeat) / 2 }, (_, index) => startBeat + 1 + index * 2)
             );
             expect(inRange(closedHat, startBeat, endBeat).map((note) => note.absoluteBeat)).toEqual(
-                Array.from({ length: endBeat - startBeat }, (_, index) => startBeat + 0.5 + index)
+                Array.from({ length: (endBeat - startBeat) / 2 }, (_, index) => startBeat + 0.5 + index * 2)
             );
             expect(inRange(openHat, startBeat, endBeat).map((note) => note.absoluteBeat)).toEqual(
                 Array.from({ length: (endBeat - startBeat) / 2 }, (_, index) => startBeat + 1.5 + index * 2)

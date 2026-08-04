@@ -296,7 +296,7 @@ export const TOASTER_PRESETS: ToasterKitPreset[] = [
                     engineType: 'kick-909',
                     volume: 1,
                     tune: -1,
-                    decay: 0.24,
+                    decay: 0.12,
                     filterCutoff: 12_000,
                     filterResonance: 0.7,
                     sendReverb: 0,
