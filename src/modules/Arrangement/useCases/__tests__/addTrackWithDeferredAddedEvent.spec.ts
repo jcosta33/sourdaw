@@ -60,6 +60,21 @@ describe('addTrackWithDeferredAddedEvent', () => {
         expect(mocks.publishTrackAdded).toHaveBeenCalledTimes(1);
     });
 
+    it('forwards a caller-owned stable track id', () => {
+        const track = createTrack({ id: 'track-ai-stable', name: 'Bass', kind: 'midi' });
+        mocks.addTrack.mockReturnValue(track);
+
+        const result = addTrackWithDeferredAddedEvent({ id: 'track-ai-stable', name: 'Bass', kind: 'midi' });
+
+        expect(result?.track.id).toBe('track-ai-stable');
+        expect(mocks.addTrack).toHaveBeenCalledWith({
+            id: 'track-ai-stable',
+            name: 'Bass',
+            kind: 'midi',
+            suppressAddedEvent: true,
+        });
+    });
+
     it('returns null without deferred effects when track creation fails', () => {
         mocks.addTrack.mockReturnValue(null);
 

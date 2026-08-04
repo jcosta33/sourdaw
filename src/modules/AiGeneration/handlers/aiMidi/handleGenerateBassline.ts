@@ -3,18 +3,108 @@ import { captureAutomergeStorageTransactionScope } from '#/infra/store/storage/c
 import { generateToolCalls } from '#/modules/AiRuntime/useCases';
 import { type Clip, type Track } from '#/modules/Arrangement/stores';
 import { addClip, addTrackWithDeferredAddedEvent, getTrackStoreState } from '#/modules/Arrangement/useCases';
-import { addMidiNote } from '#/modules/MIDI/useCases';
+import { addMidiNote, setNotesForClip } from '#/modules/MIDI/useCases';
 import { createHandler } from '#/utils/createHandler';
+import { type AppAction, type MidiClipNoteSnapshot } from '#/utils/handlerContract';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { createMidiGenerationSourceGuard } from './createMidiGenerationSourceGuard';
 import { hasDurableMidiGenerationResult } from './hasDurableMidiGenerationResult';
 import { llmGenerateNotes } from './llmNoteHelpers';
 
+type GenerateBasslineAction = Extract<AppAction, { type: 'generateBassline' }>;
+type MidiGenerationSource = NonNullable<ReturnType<typeof createMidiGenerationSourceGuard>>;
+
+type GeneratedClipSnapshot = {
+    id: string;
+    name: string;
+    startBeat: number;
+    endBeat: number;
+    type: string;
+};
+
+type GenerateBasslineState = {
+    sourceNotes: MidiClipNoteSnapshot[];
+    isOriginalSourceCurrent: () => boolean;
+    resultNotes: MidiClipNoteSnapshot[];
+    materialized: boolean;
+    targetTrackId: string;
+    targetClipId: string;
+    trackInverse: { trackId: string };
+    clipInverse: { clipId: string };
+    generatedClip: GeneratedClipSnapshot | null;
+};
+
+const generateBasslineStates = new WeakMap<GenerateBasslineAction, GenerateBasslineState>();
+
+function ensureGenerateBasslineState(
+    action: GenerateBasslineAction,
+    source: MidiGenerationSource
+): GenerateBasslineState {
+    const existing = generateBasslineStates.get(action);
+    if (existing) {
+        return existing;
+    }
+    const targetTrackId = action.payload.trackId ?? `track-ai-${crypto.randomUUID()}`;
+    const targetClipId = `clip-ai-${crypto.randomUUID()}`;
+    const state: GenerateBasslineState = {
+        sourceNotes: source.notes.map((note) => ({ ...note })),
+        isOriginalSourceCurrent: source.isCurrent,
+        resultNotes: [],
+        materialized: false,
+        targetTrackId,
+        targetClipId,
+        trackInverse: { trackId: targetTrackId },
+        clipInverse: { clipId: targetClipId },
+        generatedClip: null,
+    };
+    generateBasslineStates.set(action, state);
+    return state;
+}
+
+function hasExactResult(state: GenerateBasslineState): boolean {
+    if (!state.generatedClip) {
+        return false;
+    }
+    return hasDurableMidiGenerationResult({
+        trackId: state.targetTrackId,
+        clip: state.generatedClip,
+        notes: state.resultNotes,
+        noteMatch: 'exact',
+    });
+}
+
+function createWrittenResult(input: {
+    style: string;
+    state: GenerateBasslineState;
+    trackCreation: ReturnType<typeof addTrackWithDeferredAddedEvent>;
+}) {
+    const logSuccess = (): void => {
+        logger.info(`[AI MIDI] Generated ${input.style} bassline with ${String(input.state.resultNotes.length)} notes`);
+    };
+    return {
+        status: 'written' as const,
+        afterCommit: async () => {
+            await input.trackCreation?.afterCommit();
+            logSuccess();
+        },
+        afterAmbiguousCommit: async () => {
+            if (hasExactResult(input.state)) {
+                await input.trackCreation?.afterAmbiguousCommit();
+                logSuccess();
+            }
+        },
+    };
+}
+
 export const handleGenerateBassline = createHandler<'generateBassline'>({
     execute: async (alpha) => {
+        const existingState = generateBasslineStates.get(alpha);
         const source = createMidiGenerationSourceGuard(alpha.payload.clipId);
         if (!source) {
+            if (existingState?.materialized) {
+                return { status: 'conflict' };
+            }
             notifyUser('Bassline generation failed: source clip not found', 'error');
             return { status: 'no-write' };
         }
@@ -23,14 +113,80 @@ export const handleGenerateBassline = createHandler<'generateBassline'>({
         if (alpha.payload.trackId) {
             const targetTrack = getTrackStoreState()?.tracks.find((track) => track.id === alpha.payload.trackId);
             if (!targetTrack || targetTrack.kind !== 'midi') {
+                if (existingState?.materialized) {
+                    return { status: 'conflict' };
+                }
                 notifyUser('Bassline generation failed: target MIDI track not found', 'error');
                 return { status: 'no-write' };
             }
         }
 
+        const state = ensureGenerateBasslineState(alpha, source);
+        const transactionScope = captureAutomergeStorageTransactionScope();
+
+        if (state.materialized) {
+            if (hasExactResult(state)) {
+                return { status: 'no-write' };
+            }
+            if (!state.isOriginalSourceCurrent()) {
+                return { status: 'conflict' };
+            }
+            const currentState = getTrackStoreState();
+            const currentTargetTrack = currentState?.tracks.find((track) => track.id === state.targetTrackId);
+            if (currentTargetTrack?.clips.some((clip) => clip.id === state.targetClipId)) {
+                return { status: 'conflict' };
+            }
+            if (alpha.payload.trackId) {
+                if (currentTargetTrack?.kind !== 'midi') {
+                    return { status: 'conflict' };
+                }
+            } else if (currentTargetTrack) {
+                return { status: 'conflict' };
+            }
+
+            const replayResult = transactionScope(() => {
+                let targetTrack = currentTargetTrack ?? null;
+                let trackCreation: ReturnType<typeof addTrackWithDeferredAddedEvent> = null;
+                if (!alpha.payload.trackId) {
+                    trackCreation = addTrackWithDeferredAddedEvent({
+                        id: state.targetTrackId,
+                        name: `Bass (${style})`,
+                        kind: 'midi',
+                    });
+                    targetTrack = trackCreation?.track ?? null;
+                }
+                if (!targetTrack || targetTrack.id !== state.targetTrackId) {
+                    return { status: 'conflict' as const, trackCreation };
+                }
+                const generatedClip = state.generatedClip;
+                if (!generatedClip) {
+                    return { status: 'conflict' as const, trackCreation };
+                }
+                const targetClip = addClip({
+                    id: state.targetClipId,
+                    trackId: targetTrack.id,
+                    startBeat: generatedClip.startBeat,
+                    endBeat: generatedClip.endBeat,
+                    name: generatedClip.name,
+                    type: 'midi',
+                });
+                if (!targetClip || targetClip.id !== state.targetClipId) {
+                    return { status: 'conflict' as const, trackCreation };
+                }
+                setNotesForClip(
+                    targetClip.id,
+                    state.resultNotes.map((note) => ({ ...note }))
+                );
+                return { status: 'written' as const, trackCreation };
+            });
+            if (replayResult.status === 'conflict') {
+                return { status: 'conflict' };
+            }
+            return createWrittenResult({ style, state, trackCreation: replayResult.trackCreation });
+        }
+
         const instruction = `Generate a ${style} bassline that harmonically fits these chord/melody notes. The bass should be in octave 2-3 (MIDI 36-59). Use a "${style}" pattern. Output the bass notes using addNotes.`;
 
-        const transactionScope = captureAutomergeStorageTransactionScope();
         const notes = await llmGenerateNotes(generateToolCalls, instruction, source.notes, alpha.payload.clipId);
         if (!source.isCurrent()) {
             return { status: 'conflict' };
@@ -46,6 +202,7 @@ export const handleGenerateBassline = createHandler<'generateBassline'>({
                 }
             } else {
                 trackCreation = addTrackWithDeferredAddedEvent({
+                    id: state.targetTrackId,
                     name: `Bass (${style})`,
                     kind: 'midi',
                 });
@@ -56,6 +213,7 @@ export const handleGenerateBassline = createHandler<'generateBassline'>({
             }
 
             const targetClip: Clip | null = addClip({
+                id: state.targetClipId,
                 trackId: targetTrack.id,
                 startBeat: source.clip.startBeat,
                 endBeat: source.clip.endBeat,
@@ -91,32 +249,40 @@ export const handleGenerateBassline = createHandler<'generateBassline'>({
         const completedTrack = writeResult.track;
         const completedClip = writeResult.clip;
         const writtenNotes = writeResult.notes;
-        const logSuccess = (): void => {
-            logger.info(`[AI MIDI] Generated ${style} bassline with ${String(writtenNotes.length)} notes`);
+        state.targetTrackId = completedTrack.id;
+        state.trackInverse.trackId = completedTrack.id;
+        state.targetClipId = completedClip.id;
+        state.clipInverse.clipId = completedClip.id;
+        state.generatedClip = {
+            id: completedClip.id,
+            name: completedClip.name,
+            startBeat: completedClip.startBeat,
+            endBeat: completedClip.endBeat,
+            type: completedClip.type,
         };
-        const isDurable = (): boolean =>
-            hasDurableMidiGenerationResult({
-                trackId: completedTrack.id,
-                clip: completedClip,
-                notes: writtenNotes,
-                noteMatch: 'contains',
-            });
-        const publishEffects = async (): Promise<void> => {
-            await writeResult.trackCreation?.afterCommit();
-            logSuccess();
-        };
+        state.resultNotes.splice(0, state.resultNotes.length, ...writtenNotes.map((note) => ({ ...note })));
+        state.materialized = true;
 
+        return createWrittenResult({ style, state, trackCreation: writeResult.trackCreation });
+    },
+    describe: (action) => {
+        const label = `AI: generate ${action.payload.style ?? 'root-fifth'} bassline`;
+        const source = createMidiGenerationSourceGuard(action.payload.clipId);
+        if (!source) {
+            return { label, inverseAction: null };
+        }
+        const state = ensureGenerateBasslineState(action, source);
+        if (action.payload.trackId) {
+            return {
+                label,
+                inverseAction: { type: 'discardDuplicatedClip', payload: state.clipInverse },
+            };
+        }
         return {
-            status: 'written',
-            afterCommit: publishEffects,
-            afterAmbiguousCommit: async () => {
-                if (isDurable()) {
-                    await writeResult.trackCreation?.afterAmbiguousCommit();
-                    logSuccess();
-                }
-            },
+            label,
+            inverseAction: { type: 'discardCreatedTrack', payload: state.trackInverse },
         };
     },
-    describe: (alpha) => ({ label: `AI: generate ${alpha.payload.style ?? 'root-fifth'} bassline` }),
+    requiresAbortCompensation: false,
     undoable: true,
 });
