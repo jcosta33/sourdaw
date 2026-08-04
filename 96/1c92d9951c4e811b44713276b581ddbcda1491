@@ -1,0 +1,14 @@
+src/components/daw/__tests__/DawPluginToggleAndSelect.spec.tsx
+  h_1228e573df1f42 1-106
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.20",
+  "base_commit_sha": "961c92d9951c4e811b44713276b581ddbcda1491",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
