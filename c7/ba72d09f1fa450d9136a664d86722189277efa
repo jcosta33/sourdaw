@@ -1,0 +1,53 @@
+src/modules/AiGeneration/handlers/aiMidi/__tests__/handleVariationMidi.spec.ts
+  s_bc88af7d3b054c::t_0d110d37a4d507 215-224,227-242
+  s_bc88af7d3b054c::t_7fbf7070eceab1 225-226
+src/modules/AiGeneration/handlers/aiMidi/handleCompleteMidi.ts
+  s_bc88af7d3b054c::t_c9f14eec2426b4 16,38,98-99,110,112,120,342-353,419
+  s_bc88af7d3b054c::t_29d4b83014e82e 43-91,100-106,406
+src/utils/handlerContract.ts
+  s_bc88af7d3b054c::t_07a3998739acff 296-333,853
+src/modules/AiGeneration/handlers/aiMidi/__tests__/handleGenerateBassline.spec.ts
+  s_bc88af7d3b054c::t_ea6b4035bad961 503-520
+src/modules/AiGeneration/useCases/__tests__/getAiMidiHandlers.spec.ts
+  s_bc88af7d3b054c::t_a2cbaa3478ca93 5,17
+src/modules/AiGeneration/handlers/aiMidi/handleVariationMidi.ts
+  s_bc88af7d3b054c::t_84028c29d48b76 14,24,34-35,39,41,43-58,165
+src/modules/Command/stores/undoStore.ts
+  s_bc88af7d3b054c::t_5c8a3b26b65d39 37-40,78-82,114-116
+src/modules/AiGeneration/handlers/aiMidi/__tests__/handleCompleteMidi.spec.ts
+  s_bc88af7d3b054c::t_afef052b3d1bac 406
+  s_bc88af7d3b054c::t_ea6b4035bad961 211-228,398-405,407-416
+src/modules/AiRuntime/models/__tests__/RuntimeAction.spec.ts
+  s_bc88af7d3b054c::t_74e7cfab5a95c3 23
+src/modules/AiGeneration/useCases/getAiMidiHandlers.ts
+  s_bc88af7d3b054c::t_a2cbaa3478ca93 6,21,37
+src/modules/AiGeneration/handlers/aiMidi/handleReplayGeneratedMidi.ts
+  s_bc88af7d3b054c::t_a2cbaa3478ca93 1-145
+src/modules/AiGeneration/handlers/aiMidi/handleGenerateBassline.ts
+  s_bc88af7d3b054c::t_8aa4183e69359e 17,44,59-106,108,110,123,333-347,382,388
+src/modules/Command/stores/__tests__/undoStore.spec.ts
+  s_bc88af7d3b054c::t_705a6b3eee8d25 211-216
+  s_bc88af7d3b054c::t_661685190b53b5 73-91,119
+  s_bc88af7d3b054c::t_0d110d37a4d507 100,113-118,120-123,209
+  s_bc88af7d3b054c::t_53165dae134a67 98-99
+  s_bc88af7d3b054c::t_00e76109830b52 207-208
+  s_bc88af7d3b054c::t_2b415d923dd017 210
+src/modules/AiGeneration/handlers/aiMidi/__tests__/handleReplayGeneratedMidi.spec.ts
+  s_bc88af7d3b054c::t_74e7cfab5a95c3 1-152
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.20",
+  "base_commit_sha": "c7ba72d09f1fa450d9136a664d86722189277efa",
+  "prompts": {},
+  "sessions": {
+    "s_bc88af7d3b054c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f9b4a-11a2-7f61-8dfb-76eed0eb2a9c",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
