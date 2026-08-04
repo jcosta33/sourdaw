@@ -2,13 +2,21 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { Container } from '#/infra/di/Container';
 import { injectDependencies } from '#/infra/di/testing/injectDependencies';
-import { defaultTrackState, sanitizeTrackSnapshot, trackStore, type Track } from '#/modules/Arrangement/stores';
+import {
+    defaultTrackState,
+    persistDeviceParam,
+    resolveEligibleDeviceWriteTarget,
+    sanitizeTrackSnapshot,
+    trackStore,
+    type Track,
+} from '#/modules/Arrangement/stores';
 import { getArrangementHandlers } from '#/modules/Arrangement/useCases';
 import { clearHandlerRegistry, registerHandlerMap } from '#/modules/Command/stores';
 
-import { defaultLevainState, levainStore } from '../../stores/levainStore';
+import { defaultLevainState, levainStore, updateMicPosition } from '../../stores/levainStore';
 import { hydrateLevainStateFromProject } from '../hydrateLevainStateFromProject';
 import { initLevainDeviceStatePersistence } from '../initLevainDeviceStatePersistence';
+import { createLevainBridge } from '../levainParamBridge/helpers';
 import { levainBridge } from '../levainParamBridge/levainBridge';
 import { registerLevainDevice } from '../levainParamBridge/registerLevainDevice';
 import { loadInstrument } from '../loadPreset';
@@ -101,6 +109,7 @@ describe('Levain instrument persistence round trip', () => {
 
     afterEach(() => {
         stopPersistence();
+        vi.unstubAllGlobals();
     });
 
     it('carries the instrument the user picked through a reload, into playback and the export', async () => {
@@ -136,7 +145,7 @@ describe('Levain instrument persistence round trip', () => {
         const { port, posted } = fakePort();
         await prepareOfflineLevain({ deviceId: DEVICE_ID, port });
 
-        expect(posted).toEqual([{ type: 'param', name: 'current_articulation', value: 13 }]);
+        expect(posted).toContainEqual({ type: 'param', name: 'current_articulation', value: 13 });
         expect(mocks.autoLoadLevainSamples).toHaveBeenCalledWith(DEVICE_ID, port, 'cello', undefined);
     });
 
@@ -153,8 +162,123 @@ describe('Levain instrument persistence round trip', () => {
 
         await prepareOfflineLevain({ deviceId: DEVICE_ID, port });
 
-        expect(posted).toEqual([{ type: 'param', name: 'current_articulation', value: 0 }]);
+        expect(posted).toContainEqual({ type: 'param', name: 'current_articulation', value: 0 });
         expect(mocks.autoLoadLevainSamples).toHaveBeenCalledWith(DEVICE_ID, port, 'cello', undefined);
+    });
+
+    it('prefers canonical project ids over conflicting legacy engine ids after reload', () => {
+        const tracks = makeLevainTracks({ version: 1, data: { instrumentId: 'cello' } });
+        const device = tracks[0]?.devices[0];
+        if (!device) {
+            throw new Error('Expected the Levain persistence fixture device');
+        }
+        device.parameterValues = {
+            masterGain: 0.42,
+            master_gain: 1.4,
+            humanize: 0.23,
+            humanize_amount: 0.91,
+            legatoEnabled: 0,
+            legato_enabled: 1,
+        };
+        trackStore.set({ ...defaultTrackState, tracks });
+        levainStore.set({});
+
+        const hydrated = hydrateLevainStateFromProject(DEVICE_ID);
+
+        expect(hydrated?.patch.masterGain).toBe(0.42);
+        expect(hydrated?.patch.humanize.amount).toBe(0.23);
+        expect(hydrated?.patch.legato.enabled).toBe(false);
+    });
+
+    it('round-trips live patch edits through project truth into the complete offline engine state', async () => {
+        const rafCallbacks: FrameRequestCallback[] = [];
+        vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
+            rafCallbacks.push(callback);
+            return rafCallbacks.length;
+        });
+        vi.stubGlobal('cancelAnimationFrame', vi.fn());
+        const bridge = createLevainBridge({
+            getAllTracks: () => trackStore.value?.tracks ?? [],
+            persistDeviceParam,
+            resolveEligibleDeviceWriteTarget,
+            autoLoadLevainSamples: vi.fn().mockResolvedValue(undefined),
+        });
+        await bridge.registerLevainDevice(DEVICE_ID, { setParam: vi.fn(), handleCc: vi.fn() }, fakePort().port);
+
+        bridge.setLevainParamWithAudio(DEVICE_ID, 'masterGain', 0.47);
+        bridge.setLevainParamWithAudio(DEVICE_ID, 'expression', {
+            ...defaultLevainState.patch.expression,
+            dynamicCrossfadeTime: 0.16,
+            vibratoRateMin: 3.4,
+            vibratoRateMax: 6.8,
+            vibratoDepthMax: 19,
+            vibratoOnsetDelay: 0.12,
+        });
+        bridge.setLevainParamWithAudio(DEVICE_ID, 'legato', {
+            ...defaultLevainState.patch.legato,
+            enabled: false,
+            adaptiveSpeed: false,
+            slowThresholdMs: 420,
+            fastThresholdMs: 80,
+            portamentoVelocityThreshold: 88,
+        });
+        bridge.setLevainParamWithAudio(DEVICE_ID, 'humanize', {
+            ...defaultLevainState.patch.humanize,
+            amount: 0.28,
+            timingMaxMs: 8,
+            tuningMaxCents: 4,
+            dynamicMax: 0.07,
+            vibratoVarMax: 0.12,
+        });
+        updateMicPosition(DEVICE_ID, 0, { volume: 0.34, pan: -0.25, enabled: false });
+        bridge.sendMicParamToEngine(DEVICE_ID, 0, 'volume', 0.34);
+        bridge.sendMicParamToEngine(DEVICE_ID, 0, 'pan', -0.25);
+        bridge.sendMicParamToEngine(DEVICE_ID, 0, 'enabled', 0);
+        for (const callback of rafCallbacks.splice(0)) {
+            callback(0);
+        }
+
+        const savedParameters = trackStore.value?.tracks[0]?.devices[0]?.parameterValues;
+        expect(savedParameters).toEqual(
+            expect.objectContaining({
+                masterGain: 0.47,
+                humanize: 0.28,
+                legatoEnabled: 0,
+                expressionDynamicCrossfadeTime: 0.16,
+                mic0Volume: 0.34,
+            })
+        );
+
+        const projected = sanitizeTrackSnapshot(trackStore.value);
+        trackStore.set({ ...defaultTrackState, tracks: projected.tracks });
+        levainStore.set({});
+        const { port, posted } = fakePort();
+
+        await prepareOfflineLevain({ deviceId: DEVICE_ID, port });
+
+        expect(posted).toEqual(
+            expect.arrayContaining([
+                { type: 'param', name: 'master_gain', value: 0.47 },
+                { type: 'param', name: 'expression_dynamic_crossfade_time', value: 0.16 },
+                { type: 'param', name: 'expression_vibrato_rate_min', value: 3.4 },
+                { type: 'param', name: 'expression_vibrato_rate_max', value: 6.8 },
+                { type: 'param', name: 'expression_vibrato_depth_max', value: 19 },
+                { type: 'param', name: 'expression_vibrato_onset_delay', value: 0.12 },
+                { type: 'param', name: 'legato_enabled', value: 0 },
+                { type: 'param', name: 'legato_adaptive_speed', value: 0 },
+                { type: 'param', name: 'legato_slow_threshold_ms', value: 420 },
+                { type: 'param', name: 'legato_fast_threshold_ms', value: 80 },
+                { type: 'param', name: 'legato_portamento_velocity_threshold', value: 88 },
+                { type: 'param', name: 'humanize_amount', value: 0.28 },
+                { type: 'param', name: 'humanize_timing_max_ms', value: 8 },
+                { type: 'param', name: 'humanize_tuning_max_cents', value: 4 },
+                { type: 'param', name: 'humanize_dynamic_max', value: 0.07 },
+                { type: 'param', name: 'humanize_vibrato_var_max', value: 0.12 },
+                { type: 'param', name: 'mic_0_volume', value: 0.34 },
+                { type: 'param', name: 'mic_0_pan', value: -0.25 },
+                { type: 'param', name: 'mic_0_enabled', value: 0 },
+            ])
+        );
     });
 
     it('still reaches the module default for a device project truth holds no chunk for', async () => {
@@ -165,7 +289,7 @@ describe('Levain instrument persistence round trip', () => {
 
         await prepareOfflineLevain({ deviceId: DEVICE_ID, port });
 
-        expect(posted).toEqual([{ type: 'param', name: 'current_articulation', value: 0 }]);
+        expect(posted).toContainEqual({ type: 'param', name: 'current_articulation', value: 0 });
     });
 
     it('registers a reloaded device onto the saved instrument, not onto the default', async () => {

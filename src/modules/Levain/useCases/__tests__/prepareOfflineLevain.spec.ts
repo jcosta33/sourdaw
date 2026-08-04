@@ -41,8 +41,84 @@ describe('prepareOfflineLevain', () => {
 
         await prepareOfflineLevain({ deviceId: 'device-a', port });
 
-        expect(posted).toEqual([{ type: 'param', name: 'current_articulation', value: 13 }]);
+        expect(posted).toContainEqual({ type: 'param', name: 'current_articulation', value: 13 });
         expect(mocks.autoLoadLevainSamples).toHaveBeenCalledWith('device-a', port, 'cello', undefined);
+    });
+
+    it('applies the complete numeric patch before the offline sample bank starts loading', async () => {
+        const { port, posted } = fakePort();
+        const postedWhenLoadStarted: PostedMessage[] = [];
+        const patch = {
+            ...defaultLevainState.patch,
+            masterGain: 0.61,
+            currentArticulation: 'tremolo' as const,
+            legato: {
+                ...defaultLevainState.patch.legato,
+                enabled: false,
+                adaptiveSpeed: false,
+                slowThresholdMs: 410,
+                fastThresholdMs: 85,
+                portamentoVelocityThreshold: 91,
+            },
+            humanize: {
+                ...defaultLevainState.patch.humanize,
+                amount: 0.27,
+                timingMaxMs: 9,
+                tuningMaxCents: 3,
+                dynamicMax: 0.06,
+                vibratoVarMax: 0.11,
+            },
+            expression: {
+                ...defaultLevainState.patch.expression,
+                dynamicCrossfadeTime: 0.18,
+                vibratoRateMin: 3.2,
+                vibratoRateMax: 6.4,
+                vibratoDepthMax: 18,
+                vibratoOnsetDelay: 0.14,
+            },
+            micPositions: defaultLevainState.patch.micPositions.map((mic, index) => ({
+                ...mic,
+                volume: [0.2, 0.3, 0.4][index] ?? mic.volume,
+                pan: [-0.4, 0, 0.4][index] ?? mic.pan,
+                enabled: index !== 1,
+            })),
+        };
+        levainStore.set({ 'device-a': { ...defaultLevainState, patch } });
+        mocks.autoLoadLevainSamples.mockImplementation(() => {
+            postedWhenLoadStarted.push(...posted);
+            return Promise.resolve();
+        });
+
+        await prepareOfflineLevain({ deviceId: 'device-a', port });
+
+        expect(postedWhenLoadStarted).toEqual([
+            { type: 'param', name: 'master_gain', value: 0.61 },
+            { type: 'param', name: 'current_articulation', value: 13 },
+            { type: 'param', name: 'legato_enabled', value: 0 },
+            { type: 'param', name: 'legato_adaptive_speed', value: 0 },
+            { type: 'param', name: 'legato_slow_threshold_ms', value: 410 },
+            { type: 'param', name: 'legato_fast_threshold_ms', value: 85 },
+            { type: 'param', name: 'legato_portamento_velocity_threshold', value: 91 },
+            { type: 'param', name: 'humanize_amount', value: 0.27 },
+            { type: 'param', name: 'humanize_timing_max_ms', value: 9 },
+            { type: 'param', name: 'humanize_tuning_max_cents', value: 3 },
+            { type: 'param', name: 'humanize_dynamic_max', value: 0.06 },
+            { type: 'param', name: 'humanize_vibrato_var_max', value: 0.11 },
+            { type: 'param', name: 'expression_dynamic_crossfade_time', value: 0.18 },
+            { type: 'param', name: 'expression_vibrato_rate_min', value: 3.2 },
+            { type: 'param', name: 'expression_vibrato_rate_max', value: 6.4 },
+            { type: 'param', name: 'expression_vibrato_depth_max', value: 18 },
+            { type: 'param', name: 'expression_vibrato_onset_delay', value: 0.14 },
+            { type: 'param', name: 'mic_0_volume', value: 0.2 },
+            { type: 'param', name: 'mic_0_pan', value: -0.4 },
+            { type: 'param', name: 'mic_0_enabled', value: 1 },
+            { type: 'param', name: 'mic_1_volume', value: 0.3 },
+            { type: 'param', name: 'mic_1_pan', value: 0 },
+            { type: 'param', name: 'mic_1_enabled', value: 0 },
+            { type: 'param', name: 'mic_2_volume', value: 0.4 },
+            { type: 'param', name: 'mic_2_pan', value: 0.4 },
+            { type: 'param', name: 'mic_2_enabled', value: 1 },
+        ]);
     });
 
     it('leaves instrument identity and sample-bank replacement in one loader transaction', async () => {
@@ -55,7 +131,7 @@ describe('prepareOfflineLevain', () => {
 
         await prepareOfflineLevain({ deviceId: 'device-a', port });
 
-        expect(postedWhenLoadStarted).toEqual([{ type: 'param', name: 'current_articulation', value: 0 }]);
+        expect(postedWhenLoadStarted).toContainEqual({ type: 'param', name: 'current_articulation', value: 0 });
     });
 
     it('loads the selected instrument into that device port, forwarding the abort signal', async () => {
@@ -75,7 +151,7 @@ describe('prepareOfflineLevain', () => {
 
         await prepareOfflineLevain({ deviceId: 'never-opened', port });
 
-        expect(posted).toEqual([{ type: 'param', name: 'current_articulation', value: 0 }]);
+        expect(posted).toContainEqual({ type: 'param', name: 'current_articulation', value: 0 });
         expect(mocks.autoLoadLevainSamples).toHaveBeenCalledWith(
             'never-opened',
             port,

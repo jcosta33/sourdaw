@@ -1,8 +1,8 @@
-import { getArticulationId } from '../models/LevainPatch';
 import { defaultLevainState, levainStore } from '../stores/levainStore';
 
 import { autoLoadLevainSamples } from './autoLoadSamples';
 import { hydrateLevainStateFromProject } from './hydrateLevainStateFromProject';
+import { projectLevainPatchToEngineParameters } from './projectLevainPatchToEngineParameters';
 
 export type PrepareOfflineLevainInput = {
     /** Id of the device being rendered; keys the patch that selects the instrument. */
@@ -32,19 +32,20 @@ export type PrepareOfflineLevainInput = {
  * setup. Progress and errors remain keyed to the same device id so export
  * failures reach the user instead of disappearing into a log line.
  *
- * **Where the instrument comes from.** The live patch when the session holds one,
- * then project truth, then the module default. `Device.parameterValues` holds
- * numbers only, so the id rides `Device.deviceState` instead; the middle branch is
- * what makes a bounce from a freshly reopened project render the instrument that
- * was saved rather than violin-1. The default branch stays reachable for a device
- * nobody has ever pointed at an instrument, and is the same one live registration
- * seeds.
+ * **Where the patch comes from.** The live patch when the session holds one, then
+ * project truth, then the module default. Instrument identity rides
+ * `Device.deviceState`; numeric patch fields ride `Device.parameterValues`. The
+ * middle branch therefore reconstructs the complete saved engine state after a
+ * reload. The default branch stays reachable for a device nobody has configured
+ * and matches the state seeded by live registration.
  */
 export async function prepareOfflineLevain({ deviceId, port, signal }: PrepareOfflineLevainInput): Promise<void> {
     const instances = levainStore.value ?? {};
     const state = instances[deviceId] ?? hydrateLevainStateFromProject(deviceId) ?? defaultLevainState;
-    const { currentArticulation, instrumentId } = state.patch;
+    const { instrumentId } = state.patch;
 
-    port.postMessage({ type: 'param', name: 'current_articulation', value: getArticulationId(currentArticulation) });
+    for (const parameter of projectLevainPatchToEngineParameters(state.patch)) {
+        port.postMessage({ type: 'param', ...parameter });
+    }
     await autoLoadLevainSamples(deviceId, port, instrumentId, signal);
 }
