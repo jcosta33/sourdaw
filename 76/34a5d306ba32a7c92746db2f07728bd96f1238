@@ -1,0 +1,19 @@
+src/modules/AiRuntime/presentations/components/__tests__/GenerativeParamGridsBranches.spec.tsx
+  s_8e1f1269a320e2::t_e322649885edcc 1-89
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.20",
+  "base_commit_sha": "7634a5d306ba32a7c92746db2f07728bd96f1238",
+  "prompts": {},
+  "sessions": {
+    "s_8e1f1269a320e2": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fca41-4fa0-7a23-b423-04c4a4c7416f",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
