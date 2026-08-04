@@ -1,0 +1,14 @@
+src/modules/Crust/presentations/components/__tests__/CrustMeteringStripBranches.spec.tsx
+  h_1228e573df1f42 1-108
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.20",
+  "base_commit_sha": "08e5ca65ec555721a68417637ba844f71e8a602d",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
