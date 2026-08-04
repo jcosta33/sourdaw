@@ -1,0 +1,14 @@
+src/modules/MIDI/useCases/midiNoteCrud/__tests__/midiTimeStateCodec.spec.ts
+  h_1228e573df1f42 1-264
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.20",
+  "base_commit_sha": "eded42e9913fcb89612f15a14aaff7a73c3c3657",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
