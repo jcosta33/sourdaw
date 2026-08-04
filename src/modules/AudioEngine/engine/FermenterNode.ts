@@ -126,6 +126,8 @@ export async function createFermenterNode(
 
     signal?.throwIfAborted();
 
+    const schedulingMode =
+        typeof OfflineAudioContext !== 'undefined' && ctx instanceof OfflineAudioContext ? 'offline' : 'live';
     let node: AudioWorkletNode;
     try {
         node = new AudioWorkletNode(ctx, 'fermenter-processor', {
@@ -134,7 +136,7 @@ export async function createFermenterNode(
             outputChannelCount: [2],
             channelCount: 2,
             channelCountMode: 'explicit',
-            processorOptions: { wasmModule: wasmLease.module },
+            processorOptions: { wasmModule: wasmLease.module, schedulingMode },
         });
         wasmLease.commit();
     } catch (error) {

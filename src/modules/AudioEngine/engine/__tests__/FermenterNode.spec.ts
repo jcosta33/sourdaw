@@ -258,6 +258,39 @@ describe('createFermenterNode message surface & lifecycle', () => {
         expect(resume).toHaveBeenCalledTimes(1);
     });
 
+    it('declares live and offline scheduling modes in processor options', async () => {
+        const processorOptions: unknown[] = [];
+        const port = {
+            postMessage: vi.fn(),
+            close: vi.fn(),
+            onmessage: null,
+        };
+        class CapturingWorkletNode {
+            port = port;
+            connect = vi.fn();
+            disconnect = vi.fn();
+
+            constructor(_context: BaseAudioContext, _name: string, options: AudioWorkletNodeOptions) {
+                processorOptions.push(options.processorOptions);
+            }
+        }
+        class FakeOfflineAudioContext {}
+        vi.stubGlobal('AudioWorkletNode', CapturingWorkletNode);
+        vi.stubGlobal('OfflineAudioContext', FakeOfflineAudioContext);
+
+        const liveContext = { state: 'running' } as unknown as BaseAudioContext;
+        const offlineContext = { state: 'suspended' } as unknown as BaseAudioContext;
+        Object.setPrototypeOf(offlineContext, FakeOfflineAudioContext.prototype);
+
+        await createFermenterNode(liveContext);
+        await createFermenterNode(offlineContext);
+
+        expect(processorOptions).toEqual([
+            expect.objectContaining({ schedulingMode: 'live' }),
+            expect.objectContaining({ schedulingMode: 'offline' }),
+        ]);
+    });
+
     it('aborts WASM fetching before allocating an AudioWorkletNode', async () => {
         const workletInit = await import('#/infra/audioWorklet/workletInitShared');
         vi.mocked(workletInit.fetchWasmModule).mockImplementationOnce(

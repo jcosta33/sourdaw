@@ -27,6 +27,14 @@ import { WasmView } from './wasmView';
 
 const AUTOMATION_PARAM_COUNT = 15;
 
+// The live transport schedules 100 ms ahead. At Web Audio's maximum valid
+// 96 kHz context rate that spans 75 128-frame quanta; Fermenter's Rust engine
+// can accept 256 events per quantum. 32,768 therefore covers more than the
+// maximum on-time event throughput of one complete live look-ahead window
+// (19,200) without allowing a malformed or hostile producer to grow the
+// AudioWorklet heap forever. Overflow is a runtime fault, never a silent drop.
+const MAX_PENDING_SCHEDULED_EVENTS = 32_768;
+
 // Fermenter telemetry SAB layout. Duplicated (not imported) from
 // engine/telemetryAllocator.ts on purpose — worklet code stays isolated from app
 // modules, so both sides pin the same literals and the processor specs assert
@@ -110,6 +118,17 @@ type FermenterScheduledEvent =
     | (NoteExpressionMsg & { sampleFrame: number });
 
 type FermenterQueued = FermenterScheduledEvent & { queueSequence: number };
+type FermenterSchedulingMode = 'live' | 'offline';
+
+function resolveSchedulingMode(options: unknown): FermenterSchedulingMode {
+    if (options && typeof options === 'object' && 'processorOptions' in options) {
+        const processorOptions = options.processorOptions;
+        if (processorOptions && typeof processorOptions === 'object' && 'schedulingMode' in processorOptions) {
+            return processorOptions.schedulingMode === 'offline' ? 'offline' : 'live';
+        }
+    }
+    return 'live';
+}
 
 function queuedEventComesBefore(left: FermenterQueued, right: FermenterQueued): boolean {
     if (left.sampleFrame !== right.sampleFrame) {
@@ -123,6 +142,7 @@ class FermenterProcessor extends AudioWorkletProcessor {
     _memory: WebAssembly.Memory | null = null;
     _ready = false;
     _faulted = false;
+    _schedulingMode: FermenterSchedulingMode;
     _queue: FermenterQueued[] = [];
     _nextQueueSequence = 0;
     _paramAutomation: ParamAutomationSchedule[] = [];
@@ -138,8 +158,12 @@ class FermenterProcessor extends AudioWorkletProcessor {
 
     constructor(...args: unknown[]) {
         super();
+        this._schedulingMode = resolveSchedulingMode(args[0]);
         let wasmModule = resolveProcessorWasmModule(args[0]);
         this.port.onmessage = (event: MessageEvent<FermenterMsg>) => {
+            if (this._faulted) {
+                return;
+            }
             const msg = event.data;
             try {
                 if (msg.type === 'init') {
@@ -154,7 +178,7 @@ class FermenterProcessor extends AudioWorkletProcessor {
                 } else if (msg.type === 'init-sab') {
                     this._telemetryView = new Float32Array(msg.sab, msg.byteOffset, TELEMETRY_SLOT_FLOATS);
                     this._telemetrySeqView = new Int32Array(msg.sab, msg.byteOffset, TELEMETRY_SLOT_FLOATS);
-                } else if (this._ready && !this._faulted) {
+                } else if (this._ready) {
                     this._handleMessage(msg);
                 }
             } catch (error) {
@@ -182,6 +206,11 @@ class FermenterProcessor extends AudioWorkletProcessor {
     }
 
     _enqueue(msg: FermenterScheduledEvent): void {
+        if (this._schedulingMode === 'live' && this._queue.length >= MAX_PENDING_SCHEDULED_EVENTS) {
+            throw new RangeError(
+                `Fermenter scheduled-event queue exceeded ${MAX_PENDING_SCHEDULED_EVENTS} pending events`
+            );
+        }
         const queued: FermenterQueued = { ...msg, queueSequence: this._nextQueueSequence++ };
         let index = this._queue.length;
         this._queue.push(queued);
@@ -214,12 +243,9 @@ class FermenterProcessor extends AudioWorkletProcessor {
         }
 
         let index = 0;
-        while (true) {
-            const leftIndex = index * 2 + 1;
-            const left = this._queue[leftIndex];
-            if (!left) {
-                break;
-            }
+        let leftIndex = index * 2 + 1;
+        let left = this._queue[leftIndex];
+        while (left) {
             const rightIndex = leftIndex + 1;
             const right = this._queue[rightIndex];
             const childIndex = right && queuedEventComesBefore(right, left) ? rightIndex : leftIndex;
@@ -229,6 +255,8 @@ class FermenterProcessor extends AudioWorkletProcessor {
             }
             this._queue[index] = child;
             index = childIndex;
+            leftIndex = index * 2 + 1;
+            left = this._queue[leftIndex];
         }
         this._queue[index] = tail;
         return first;

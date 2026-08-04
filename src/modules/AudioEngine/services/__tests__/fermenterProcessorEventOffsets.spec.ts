@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach, type Mock } from 'vitest';
 
 import {
     RealFloat32Array,
@@ -32,10 +32,16 @@ type AppliedEvent = {
 };
 
 type FermenterProcessorLike = {
-    port: { onmessage: ((event: { data: unknown }) => void) | null; postMessage: ReturnType<typeof vi.fn> };
+    port: { onmessage: ((event: { data: unknown }) => void) | null; postMessage: Mock<(message: unknown) => void> };
+    _faulted: boolean;
     _queue: unknown[];
+    _telemetryView: Float32Array | null;
     process(inputs: Float32Array[][], outputs: Float32Array[][]): boolean;
 };
+
+function isErrorMessage(value: unknown): boolean {
+    return Boolean(value && typeof value === 'object' && 'type' in value && value.type === 'error');
+}
 
 const { registry } = installWorkletGlobals<FermenterProcessorLike>();
 
@@ -129,13 +135,13 @@ vi.mock('../../wasm/daw_dsp.js', () => ({
 
 const MINIMAL_WASM_MODULE = new WebAssembly.Module(new Uint8Array([0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00]));
 
-async function loadProcessor(): Promise<FermenterProcessorLike> {
+async function loadProcessor(schedulingMode: 'live' | 'offline' = 'live'): Promise<FermenterProcessorLike> {
     await import('../fermenterProcessor');
     const Ctor = registry.get('fermenter-processor');
     if (!Ctor) {
         throw new Error('fermenter-processor was not registered');
     }
-    const proc = new Ctor({ processorOptions: { wasmModule: MINIMAL_WASM_MODULE } });
+    const proc = new Ctor({ processorOptions: { wasmModule: MINIMAL_WASM_MODULE, schedulingMode } });
     proc.port.onmessage?.({ data: { type: 'init' } });
     applied.length = 0;
     pendingEventCount = 0;
@@ -343,6 +349,59 @@ describe('FermenterProcessor scheduled-note sample offsets', () => {
 
             expect(proc._queue).toHaveLength(1);
         }
+    });
+
+    it('faults once instead of growing without bound under sustained producer overload', async () => {
+        const proc = await loadProcessor();
+        const queueCapacity = 32_768;
+
+        for (let index = 0; index <= queueCapacity; index++) {
+            send(proc, {
+                type: 'noteOn',
+                note: 60,
+                velocity: 100,
+                sampleFrame: index + FRAMES,
+            });
+        }
+
+        expect(proc._queue).toHaveLength(queueCapacity);
+        expect(proc._faulted).toBe(true);
+        expect(proc.port.postMessage.mock.calls.filter(([message]) => isErrorMessage(message))).toEqual([
+            [
+                {
+                    type: 'error',
+                    message: `Fermenter scheduled-event queue exceeded ${queueCapacity} pending events`,
+                },
+            ],
+        ]);
+
+        send(proc, { type: 'noteOn', note: 61, velocity: 100, sampleFrame: queueCapacity + FRAMES + 1 });
+        send(proc, {
+            type: 'init-sab',
+            sab: new SharedArrayBuffer(160 * Float32Array.BYTES_PER_ELEMENT),
+            byteOffset: 0,
+        });
+
+        expect(proc._queue).toHaveLength(queueCapacity);
+        expect(proc._telemetryView).toBeNull();
+        expect(proc.port.postMessage.mock.calls.filter(([message]) => isErrorMessage(message))).toHaveLength(1);
+    });
+
+    it('leaves complete-project prequeue capacity to explicit offline scheduling mode', async () => {
+        const proc = await loadProcessor('offline');
+        const liveQueueCapacity = 32_768;
+
+        for (let index = 0; index <= liveQueueCapacity; index++) {
+            send(proc, {
+                type: 'noteOn',
+                note: 60,
+                velocity: 100,
+                sampleFrame: index + FRAMES,
+            });
+        }
+
+        expect(proc._queue).toHaveLength(liveQueueCapacity + 1);
+        expect(proc._faulted).toBe(false);
     });
 
     it('rejects invalid absolute sample frames instead of pinning or immediately firing them', async () => {
