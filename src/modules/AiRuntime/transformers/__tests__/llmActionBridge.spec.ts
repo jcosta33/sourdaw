@@ -454,6 +454,60 @@ describe('bridgeLlmToolCalls', () => {
         ]);
     });
 
+    it('resolves removeMarker only through one exact local beat-and-name signature', () => {
+        const markerSignatures = [{ markerId: 'marker-chorus', beat: 16, name: 'Chorus' }];
+        const removed = bridge({
+            calls: [{ name: 'removeMarker', arguments: { beat: 16, name: ' chorus ' } }],
+            context: projectContext,
+            markerSignatures,
+        });
+        const rejected = [
+            bridge({
+                calls: [{ name: 'removeMarker', arguments: { beat: 8, name: 'Chorus' } }],
+                context: projectContext,
+                markerSignatures,
+            }),
+            bridge({
+                calls: [{ name: 'removeMarker', arguments: { beat: 16, name: 'Verse' } }],
+                context: projectContext,
+                markerSignatures,
+            }),
+            bridge({
+                calls: [{ name: 'removeMarker', arguments: { beat: 16, name: 'Chorus', markerId: 'provider-id' } }],
+                context: projectContext,
+                markerSignatures,
+            }),
+            bridge({
+                calls: [{ name: 'removeMarker', arguments: { beat: 16, name: 'Chorus' } }],
+                context: projectContext,
+                markerSignatures: [...markerSignatures, { markerId: 'marker-duplicate', beat: 16, name: 'Chorus' }],
+            }),
+        ];
+
+        expect(removed.actions).toEqual([{ type: 'removeMarker', payload: { markerId: 'marker-chorus' } }]);
+        expect(rejected.every((result) => result.actions.length === 0)).toBe(true);
+    });
+
+    it('rejects duplicate removeMarker writes to the same resolved marker', () => {
+        const result = bridge({
+            calls: [
+                { name: 'removeMarker', arguments: { beat: 16, name: 'Chorus' } },
+                { name: 'removeMarker', arguments: { beat: 16, name: 'Chorus' } },
+            ],
+            context: projectContext,
+            markerSignatures: [{ markerId: 'marker-chorus', beat: 16, name: 'Chorus' }],
+        });
+
+        expect(result.actions).toEqual([{ type: 'removeMarker', payload: { markerId: 'marker-chorus' } }]);
+        expect(result.rejections).toEqual([
+            {
+                index: 1,
+                name: 'removeMarker',
+                reason: 'Provider batch writes the same target field more than once',
+            },
+        ]);
+    });
+
     it('converts allowlisted provider calls into typed runtime actions', () => {
         const result = bridge({
             calls: [

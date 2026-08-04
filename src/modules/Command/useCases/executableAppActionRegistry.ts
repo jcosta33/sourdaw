@@ -54,6 +54,8 @@ export type ExecutableAppActionValueRule =
       }
     | { argument: string; kind: 'string-literal' }
     | { argument: string; kind: 'marker-name' }
+    | { argument: string; kind: 'marker-reference' }
+    | { argument: string; kind: 'marker-beat' }
     | { argument: string; kind: 'enum-if-present'; values: readonly string[]; requiredInPrompt?: boolean }
     | {
           argument: string;
@@ -866,13 +868,31 @@ export const executableAppActionDescriptors = [
         ],
         targetRules: [],
         valueRules: [
-            { argument: 'beat', kind: 'number-if-present', connector: 'beat', match: 'exact', requiredInPrompt: true },
+            { argument: 'beat', kind: 'marker-beat' },
             { argument: 'name', kind: 'marker-name' },
         ],
         parameters: {
             properties: {
                 beat: { type: 'number', minimum: 0, description: 'Marker beat position (bar 1 = beat 0)' },
                 name: { type: 'string', description: 'Explicit marker label' },
+            },
+            required: ['beat', 'name'],
+        },
+    },
+    {
+        actionType: 'removeMarker',
+        risk: 'destructive-reversible',
+        description: 'Delete one existing arrangement marker identified by its exact beat and label.',
+        intentPhrases: ['remove marker', 'remove the marker', 'delete marker', 'delete the marker'],
+        targetRules: [],
+        valueRules: [
+            { argument: 'beat', kind: 'marker-beat' },
+            { argument: 'name', kind: 'marker-reference' },
+        ],
+        parameters: {
+            properties: {
+                beat: { type: 'number', minimum: 0, description: 'Exact beat of the existing marker' },
+                name: { type: 'string', description: 'Exact visible marker label' },
             },
             required: ['beat', 'name'],
         },

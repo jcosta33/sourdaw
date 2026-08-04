@@ -437,6 +437,17 @@ const EXPECTED_COMMANDS = [
         false
     ),
     expectedCommand(
+        'removeMarker',
+        'Delete one existing arrangement marker identified by its exact beat and label.',
+        {
+            beat: { type: 'number', minimum: 0, description: 'Exact beat of the existing marker' },
+            name: { type: 'string', description: 'Exact visible marker label' },
+        },
+        ['beat', 'name'],
+        'destructive-reversible',
+        true
+    ),
+    expectedCommand(
         'setLoopEnabled',
         'Enable or disable the project loop.',
         { enabled: { type: 'boolean', description: 'true=enable looping, false=disable looping' } },
@@ -1156,8 +1167,17 @@ const EXPECTED_GROUNDING = [
         ],
         targetRules: [],
         valueRules: [
-            { argument: 'beat', kind: 'number-if-present', connector: 'beat', match: 'exact', requiredInPrompt: true },
+            { argument: 'beat', kind: 'marker-beat' },
             { argument: 'name', kind: 'marker-name' },
+        ],
+    },
+    {
+        actionType: 'removeMarker',
+        intentPhrases: ['remove marker', 'remove the marker', 'delete marker', 'delete the marker'],
+        targetRules: [],
+        valueRules: [
+            { argument: 'beat', kind: 'marker-beat' },
+            { argument: 'name', kind: 'marker-reference' },
         ],
     },
     {

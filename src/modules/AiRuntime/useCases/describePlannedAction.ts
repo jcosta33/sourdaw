@@ -1,3 +1,4 @@
+import { markerStore } from '#/modules/Arrangement/stores';
 import { describeAction } from '#/modules/Command/useCases';
 import { type AppAction } from '#/utils/handlerContract';
 
@@ -21,6 +22,12 @@ export function describePlannedAction({ action, context }: DescribePlannedAction
             .find((candidate) => candidate.id === action.payload.clipId);
         if (clip) {
             return `Remove clip "${clip.name}"`;
+        }
+    }
+    if (action.type === 'removeMarker') {
+        const marker = markerStore.value?.markers.find((candidate) => candidate.id === action.payload.markerId);
+        if (marker) {
+            return `Remove marker "${marker.name}" at beat ${String(marker.beat)} (${marker.id})`;
         }
     }
     if (

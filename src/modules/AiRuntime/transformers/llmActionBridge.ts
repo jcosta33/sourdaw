@@ -24,6 +24,7 @@ export type LlmActionBridgeResult = {
 
 export type MarkerPlanningSignature = {
     beat: number;
+    markerId?: string;
     name: string;
 };
 
@@ -360,6 +361,28 @@ function bridgeToolCall({
             return rejection(index, call.name, 'Requested marker already exists at that beat');
         }
         return { type: 'addMarker', payload: { beat: args.beat, name } };
+    }
+
+    if (call.name === 'removeMarker') {
+        const name = normalizeSafeProjectName(args.name);
+        if (!hasExactKeys(args, ['beat', 'name']) || !isFiniteNumber(args.beat) || args.beat < 0 || !name) {
+            return rejection(
+                index,
+                call.name,
+                'Expected only a nonnegative finite beat and a safe explicit marker name'
+            );
+        }
+        const matches = markerSignatures.filter(
+            (marker) =>
+                marker.markerId !== undefined &&
+                marker.beat === args.beat &&
+                normalizeMarkerName(marker.name) === normalizeMarkerName(name)
+        );
+        const match = matches[0];
+        if (matches.length !== 1 || match?.markerId === undefined) {
+            return rejection(index, call.name, 'Requested marker does not resolve to exactly one local marker');
+        }
+        return { type: 'removeMarker', payload: { markerId: match.markerId } };
     }
 
     if (call.name === 'setLoopEnabled') {
@@ -1484,6 +1507,9 @@ function getMutationKeys(action: RuntimeAction, context: ProjectContext): string
     }
     if (action.type === 'addMarker') {
         return [`marker:${String(action.payload.beat)}:${normalizeMarkerName(action.payload.name)}`];
+    }
+    if (action.type === 'removeMarker') {
+        return [`marker:${action.payload.markerId}:membership`];
     }
     if (action.type === 'setTempo' || action.type === 'setTimeSignature' || action.type === 'reorderTrack') {
         return [action.type];
