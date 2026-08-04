@@ -1416,11 +1416,15 @@ const kneadDescriptor: WasmDeviceDescriptor = {
             destroy: () => {},
         };
         placeholder.kneadControls = loadingControls;
-        // An aborted or failed load leaves this placeholder on the strip —
-        // TrackNode only marks the device failed — so its `updateState` keeps
-        // being called for the lifetime of the track. Drop the slot and stop
-        // capturing on the way out, or a device that will never load pins the
-        // last clip snapshot, note blobs included, until the track is removed.
+        // This placeholder outlives the load on every outcome, not just the bad
+        // ones: an abort or a failure leaves it on the strip because TrackNode
+        // only marks the device failed, and even a *successful* promotion can
+        // put it straight back — `rollbackPromotedDevice` reinstates this exact
+        // object when the post-promotion rebuild throws. Either way its
+        // `updateState` keeps being called for the lifetime of the track, with
+        // the load promise settled and nothing left to drain the slot, so a
+        // still-capturing latch pins the last clip snapshot — note blobs and
+        // their per-blob pitch curves included — until the track is removed.
         const abandonPendingState = (): void => {
             pendingState = null;
             loadingControls.updateState = () => {};
@@ -1447,7 +1451,6 @@ const kneadDescriptor: WasmDeviceDescriptor = {
                 if (pendingState) {
                     result.updateState(pendingState);
                 }
-                pendingState = null;
                 // Removing the device must retract its PDC entry; a stale entry
                 // keeps compensating a delay that is no longer in the graph.
                 // TrackNode.removeDevice prefers controller.destroy over dispose,
@@ -1478,6 +1481,15 @@ const kneadDescriptor: WasmDeviceDescriptor = {
                         destroy,
                     },
                 });
+                // The replay has happened (or the promotion was rejected and
+                // there is nothing left to replay into), so the loading latch
+                // must go inert whatever promotion did with the node. The
+                // sibling descriptors capture `onLoaded`'s return to gate the
+                // work that follows it; here the only work that follows is this
+                // abandon, and it is right on both outcomes — gating it would
+                // leave a rejected promotion capturing forever, which is the
+                // one case that most needs it.
+                abandonPendingState();
                 return;
             })
             .catch((error) => {

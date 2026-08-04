@@ -5,7 +5,7 @@ import { createMockAudioContext, type MockAudioContext } from '#/helpers/__tests
 import { createAudioEngine } from '../createWebAudioEngine';
 
 import type { KneadNodeResult } from '../../engine/KneadNode';
-import type { AudioEngine } from '../../models/AudioEngineState';
+import type { AudioEngine, BuiltinDeviceNode } from '../../models/AudioEngineState';
 
 const kneadFactory = vi.hoisted(() => ({ createKneadNode: vi.fn() }));
 
@@ -35,14 +35,18 @@ function asWorkletNode(node: FakeWorkletNode): AudioWorkletNode {
 
 type KneadDouble = {
     result: KneadNodeResult;
+    /** The same node as `result.workletNode`, kept at its concrete type so a
+     * test can drive its `connect` spy. */
+    workletNode: FakeWorkletNode;
     resolveReady: (data: Record<string, unknown>) => void;
     rejectReady: (error: Error) => void;
 };
 
 function stubKneadNode(): KneadDouble {
     const ready = Promise.withResolvers<Record<string, unknown>>();
+    const workletNode = new FakeWorkletNode();
     const result: KneadNodeResult = {
-        workletNode: asWorkletNode(new FakeWorkletNode()),
+        workletNode: asWorkletNode(workletNode),
         setParam: vi.fn(),
         setBypass: vi.fn(),
         updateState: vi.fn(),
@@ -50,7 +54,16 @@ function stubKneadNode(): KneadDouble {
         ready: ready.promise,
     };
     kneadFactory.createKneadNode.mockResolvedValue(result);
-    return { result, resolveReady: ready.resolve, rejectReady: ready.reject };
+    return { result, workletNode, resolveReady: ready.resolve, rejectReady: ready.reject };
+}
+
+/** The single Knead device node currently occupying track `t1`'s strip. */
+function kneadDeviceNode(engine: AudioEngine): BuiltinDeviceNode {
+    const deviceNode = engine.getTrackStrip('t1')?.deviceNodes.find((device) => device.deviceId === 'knead-1');
+    if (!deviceNode) {
+        throw new Error('knead-1 is not on the strip');
+    }
+    return deviceNode;
 }
 
 /** Drain the descriptor's promise chain (factory → readiness → publish). */
@@ -140,6 +153,49 @@ describe('Knead state synced while its device is still loading', () => {
 
         expect(knead.result.updateState).not.toHaveBeenCalled();
         expect(knead.result.destroy).toHaveBeenCalled();
+    });
+
+    // Promotion is not permanent. `completePendingDeviceLoad` schedules the
+    // rebuild in a microtask that still sees a resolved pending load, so a
+    // throwing `rebuildChain` runs `rollbackPromotedDevice`, which puts *this
+    // exact placeholder object* back on the strip and destroys the real node.
+    // From then on every `syncKneadState` lands on the placeholder's
+    // `kneadControls` for the lifetime of the track. If the success path only
+    // nulls `pendingState` and leaves the capturing closure installed, each of
+    // those writes re-pins a whole-track clip snapshot — note blobs and their
+    // per-blob `pitchCurveCents` included — with the load promise long settled
+    // and nothing left to drain it.
+    it('stops the placeholder latch capturing once the load resolves, even after a rollback puts it back', async () => {
+        const knead = stubKneadNode();
+        engine.addDeviceToStrip('t1', 'knead-1', 'knead');
+        const placeholder = kneadDeviceNode(engine);
+        const latchDuringLoad = placeholder.kneadControls?.updateState;
+
+        engine.syncKneadState('t1', kneadSnapshot(2));
+
+        // Only `rebuildChain` reaches the promoted node's `connect`; the
+        // promotion itself never does, so the throw lands in the scheduled
+        // microtask rather than inside `completePendingDeviceLoad`'s own try.
+        knead.workletNode.connect.mockImplementation(() => {
+            throw new Error('graph rebuild failed');
+        });
+        knead.resolveReady({ latency: 0 });
+        await settleDeviceLoad();
+
+        // The reference under test is demonstrably the capturing one: it is
+        // what latched the snapshot that was just replayed.
+        expect(knead.result.updateState).toHaveBeenCalledWith(kneadSnapshot(2));
+        // ...and the rollback really did reinstate that same placeholder.
+        expect(kneadDeviceNode(engine)).toBe(placeholder);
+        expect(placeholder.kneadControls?.ready).toBe(false);
+        expect(knead.result.destroy).toHaveBeenCalled();
+
+        const latchAfterRollback = placeholder.kneadControls?.updateState;
+        engine.syncKneadState('t1', kneadSnapshot(9));
+
+        expect(latchAfterRollback).not.toBe(latchDuringLoad);
+        // Inert, not merely re-wrapped: the write above changed nothing.
+        expect(placeholder.kneadControls?.updateState).toBe(latchAfterRollback);
     });
 
     // A readiness rejection destroys the node inside `waitForDeviceReady` and
