@@ -1,0 +1,14 @@
+src/components/daw/visualizers/__tests__/CompressorCurve.spec.tsx
+  h_1228e573df1f42 1-6,10-25,27-99
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.20",
+  "base_commit_sha": "aa5c33f2d88967325378e9781eaabdf085b5034a",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
