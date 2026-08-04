@@ -1,0 +1,40 @@
+src/modules/Arrangement/useCases/restoreTrackAtIndexWithDeferredAddedEvent.ts
+  s_bc88af7d3b054c::t_f6fd9bceb13a3c 1-50,53,55-60,62-64,70-72,74-75,77-82
+  s_bc88af7d3b054c::t_c85fe9eec66271 51-52,54,61,65-69,73,76
+src/modules/Arrangement/useCases/__tests__/restoreTrackAtIndexWithDeferredAddedEvent.spec.ts
+  s_bc88af7d3b054c::t_26244ed8e317f7 1-85
+src/modules/AiGeneration/handlers/aiMidi/handleGenerateBassline.ts
+  s_bc88af7d3b054c::t_26244ed8e317f7 346,355-356
+  s_bc88af7d3b054c::t_f6fd9bceb13a3c 100-101,348-354,357
+  s_bc88af7d3b054c::t_474c08719c465b 358
+  s_bc88af7d3b054c::t_42c2531f5a0791 371
+src/modules/AiGeneration/handlers/aiMidi/handleReplayGeneratedMidi.ts
+  s_bc88af7d3b054c::t_c85fe9eec66271 1,35
+  s_bc88af7d3b054c::t_f6fd9bceb13a3c 12-34,36-52,155-156,159,162-164,166,169-172
+src/modules/Arrangement/useCases/index.ts
+  s_bc88af7d3b054c::t_f6fd9bceb13a3c 22
+src/modules/AiGeneration/handlers/aiMidi/__tests__/handleReplayGeneratedMidi.spec.ts
+  s_bc88af7d3b054c::t_26244ed8e317f7 11,19,70-90,101-102,116-118,120
+src/modules/AiGeneration/handlers/aiMidi/__tests__/handleGenerateBassline.spec.ts
+  s_bc88af7d3b054c::t_26244ed8e317f7 508,521-535
+  s_bc88af7d3b054c::t_3bf346dd6f2309 536-538
+src/utils/handlerContract.ts
+  s_bc88af7d3b054c::t_f6fd9bceb13a3c 329
+  s_bc88af7d3b054c::t_001652590f0ac5 330
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.20",
+  "base_commit_sha": "93e0c03d783ae3ca7c28dbcf3fed714c9b837d0b",
+  "prompts": {},
+  "sessions": {
+    "s_bc88af7d3b054c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f9b4a-11a2-7f61-8dfb-76eed0eb2a9c",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
