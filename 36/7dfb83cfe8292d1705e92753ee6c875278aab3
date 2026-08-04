@@ -1,0 +1,27 @@
+src/modules/AudioEngine/engine/__tests__/wasmDeviceRegistryDescriptors.spec.ts
+  s_ac9b259eab20ba::t_933f7d0a493dac 169
+public/wasm/daw-dsp/daw_dsp.d.ts
+  s_ac9b259eab20ba::t_e29af0766e3823 1
+public/wasm/daw-dsp/daw_dsp_bg.wasm.d.ts
+  s_ac9b259eab20ba::t_3e60e6dec51f12 1
+public/wasm/manifest.json
+  s_ac9b259eab20ba::t_d91e4a1f6d8bc3 12,16-18,21
+src/modules/AudioEngine/wasm/daw_dsp.d.ts
+  s_ac9b259eab20ba::t_0045db3715d3e5 1
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.20",
+  "base_commit_sha": "367dfb83cfe8292d1705e92753ee6c875278aab3",
+  "prompts": {},
+  "sessions": {
+    "s_ac9b259eab20ba": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8699-3865-7842-8c54-afbac6cfd266",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
