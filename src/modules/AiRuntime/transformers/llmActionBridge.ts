@@ -719,6 +719,97 @@ function bridgeToolCall({
         return { type: 'setClipGain', payload: { clipId: source.clip.id, gain: args.gain } };
     }
 
+    if (call.name === 'muteClip') {
+        const source = findClip(context, args.clipId);
+        if (
+            !hasExactKeys(args, ['clipId', 'muted']) ||
+            !source ||
+            source.clip.locked === true ||
+            typeof args.muted !== 'boolean' ||
+            args.muted === (source.clip.muted ?? false)
+        ) {
+            return rejection(index, call.name, 'Expected an unlocked clipId and a changed boolean muted value');
+        }
+        return { type: 'muteClip', payload: { clipId: source.clip.id, muted: args.muted } };
+    }
+
+    if (call.name === 'setClipColor') {
+        const source = findClip(context, args.clipId);
+        if (
+            !hasExactKeys(args, ['clipId', 'color']) ||
+            !source ||
+            source.clip.locked === true ||
+            !isSafeTrackColor(args.color)
+        ) {
+            return rejection(index, call.name, 'Expected an unlocked clipId and a changed six-digit hexadecimal color');
+        }
+        const color = args.color.toLowerCase();
+        if (color === (source.clip.color ?? '').toLowerCase()) {
+            return rejection(index, call.name, 'Expected an unlocked clipId and a changed six-digit hexadecimal color');
+        }
+        return { type: 'setClipColor', payload: { clipId: source.clip.id, color } };
+    }
+
+    if (call.name === 'setClipFade') {
+        const source = findClip(context, args.clipId);
+        const clipDuration = source ? source.clip.endBeat - source.clip.startBeat : 0;
+        const maximumFadeDuration = clipDuration / 2;
+        if (
+            !hasExactKeys(args, ['clipId', 'fadeInBeats', 'fadeOutBeats']) ||
+            !source ||
+            source.clip.locked === true ||
+            !isFiniteNumber(args.fadeInBeats) ||
+            !isFiniteNumber(args.fadeOutBeats) ||
+            args.fadeInBeats < 0 ||
+            args.fadeOutBeats < 0 ||
+            args.fadeInBeats > maximumFadeDuration ||
+            args.fadeOutBeats > maximumFadeDuration ||
+            (args.fadeInBeats === (source.clip.fadeInBeats ?? 0) &&
+                args.fadeOutBeats === (source.clip.fadeOutBeats ?? 0))
+        ) {
+            return rejection(
+                index,
+                call.name,
+                'Expected an unlocked clipId and changed finite non-negative fades no longer than half the clip'
+            );
+        }
+        return {
+            type: 'setClipFade',
+            payload: {
+                clipId: source.clip.id,
+                fadeInBeats: args.fadeInBeats,
+                fadeOutBeats: args.fadeOutBeats,
+            },
+        };
+    }
+
+    if (call.name === 'lockClip') {
+        const source = findClip(context, args.clipId);
+        if (
+            !hasExactKeys(args, ['clipId', 'locked']) ||
+            !source ||
+            typeof args.locked !== 'boolean' ||
+            args.locked === (source.clip.locked ?? false)
+        ) {
+            return rejection(index, call.name, 'Expected an available clipId and a changed boolean locked value');
+        }
+        return { type: 'lockClip', payload: { clipId: source.clip.id, locked: args.locked } };
+    }
+
+    if (call.name === 'setClipLoop') {
+        const source = findClip(context, args.clipId);
+        if (
+            !hasExactKeys(args, ['clipId', 'enabled']) ||
+            !source ||
+            source.clip.locked === true ||
+            typeof args.enabled !== 'boolean' ||
+            args.enabled === (source.clip.loopEnabled ?? false)
+        ) {
+            return rejection(index, call.name, 'Expected an unlocked clipId and a changed boolean loop value');
+        }
+        return { type: 'setClipLoop', payload: { clipId: source.clip.id, enabled: args.enabled } };
+    }
+
     if (call.name === 'renameTrack') {
         if (!hasExactKeys(args, ['trackId', 'name']) || !hasTrack(context, args.trackId)) {
             return rejection(index, call.name, 'Expected an available trackId and name');
@@ -1072,6 +1163,11 @@ function getClipTargetId(action: RuntimeAction): string | null {
         action.type === 'trimClipEnd' ||
         action.type === 'nudgeClip' ||
         action.type === 'setClipGain' ||
+        action.type === 'muteClip' ||
+        action.type === 'setClipColor' ||
+        action.type === 'setClipFade' ||
+        action.type === 'lockClip' ||
+        action.type === 'setClipLoop' ||
         action.type === 'quantizeNotes' ||
         action.type === 'transposeNotes' ||
         action.type === 'invertNotes' ||
@@ -1187,6 +1283,11 @@ function getMutationKeys(action: RuntimeAction): string[] {
             `clip:${action.payload.clipId}:name`,
             `clip:${action.payload.clipId}:geometry`,
             `clip:${action.payload.clipId}:gain`,
+            `clip:${action.payload.clipId}:muted`,
+            `clip:${action.payload.clipId}:color`,
+            `clip:${action.payload.clipId}:fades`,
+            `clip:${action.payload.clipId}:lock`,
+            `clip:${action.payload.clipId}:loop`,
             `clip:${action.payload.clipId}:notes`,
         ];
     }
@@ -1198,6 +1299,21 @@ function getMutationKeys(action: RuntimeAction): string[] {
     }
     if (action.type === 'setClipGain') {
         return [`clip:${action.payload.clipId}:gain`];
+    }
+    if (action.type === 'muteClip') {
+        return [`clip:${action.payload.clipId}:muted`];
+    }
+    if (action.type === 'setClipColor') {
+        return [`clip:${action.payload.clipId}:color`];
+    }
+    if (action.type === 'setClipFade') {
+        return [`clip:${action.payload.clipId}:fades`];
+    }
+    if (action.type === 'lockClip') {
+        return [`clip:${action.payload.clipId}:lock`];
+    }
+    if (action.type === 'setClipLoop') {
+        return [`clip:${action.payload.clipId}:loop`];
     }
     if (
         action.type === 'quantizeNotes' ||
@@ -1430,6 +1546,7 @@ export function bridgeLlmToolCalls({ calls, context }: BridgeLlmToolCallsInput):
     const mutationKeys = new Set<string>();
     const clipTargetIds = new Set<string>();
     const removedClipIds = new Set<string>();
+    const lockClipTargetIds = new Set<string>();
     const clipTrackIds = new Set<string>();
     const removedClipTrackIds = new Set<string>();
     const deviceTargetIds = new Set<string>();
@@ -1457,6 +1574,10 @@ export function bridgeLlmToolCalls({ calls, context }: BridgeLlmToolCallsInput):
             const hasClipLifecycleConflict =
                 clipTargetId !== null &&
                 ((result.type === 'removeClip' && clipTargetIds.has(clipTargetId)) || removedClipIds.has(clipTargetId));
+            const hasClipLockConflict =
+                clipTargetId !== null &&
+                ((result.type === 'lockClip' && clipTargetIds.has(clipTargetId)) ||
+                    lockClipTargetIds.has(clipTargetId));
             const conflictingMutationKey = mutationKeysForAction.find((mutationKey) => mutationKeys.has(mutationKey));
             const hasMutationConflict = conflictingMutationKey !== undefined;
             const hasRippleCouplingConflict =
@@ -1510,7 +1631,7 @@ export function bridgeLlmToolCalls({ calls, context }: BridgeLlmToolCallsInput):
                 );
                 continue;
             }
-            if (hasClipLifecycleConflict || hasMutationConflict) {
+            if (hasClipLifecycleConflict || hasClipLockConflict || hasMutationConflict) {
                 rejections.push(
                     rejection(index, call.name, 'Provider batch writes the same target field more than once')
                 );
@@ -1541,6 +1662,9 @@ export function bridgeLlmToolCalls({ calls, context }: BridgeLlmToolCallsInput):
                 clipTargetIds.add(clipTargetId);
                 if (result.type === 'removeClip') {
                     removedClipIds.add(clipTargetId);
+                }
+                if (result.type === 'lockClip') {
+                    lockClipTargetIds.add(clipTargetId);
                 }
             }
             if (clipTrackId !== null) {
@@ -1651,6 +1775,11 @@ export function buildLlmActionUserMessage({ prompt, context }: { prompt: string;
                 endBeat: clip.endBeat,
                 gain: clip.gain,
                 locked: clip.locked,
+                muted: clip.muted ?? false,
+                color: clip.color ?? '',
+                fadeInBeats: clip.fadeInBeats ?? 0,
+                fadeOutBeats: clip.fadeOutBeats ?? 0,
+                loopEnabled: clip.loopEnabled ?? false,
             })),
         })),
     };

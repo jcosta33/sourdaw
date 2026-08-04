@@ -56,6 +56,11 @@ export type ProjectContextClip = {
     endBeat: number;
     gain?: number;
     locked?: boolean;
+    muted?: boolean;
+    color?: string;
+    fadeInBeats?: number;
+    fadeOutBeats?: number;
+    loopEnabled?: boolean;
     noteCount: number;
 };
 

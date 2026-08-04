@@ -386,7 +386,12 @@ const validators = {
         hasExactKeys(param, ['clipId', 'newEndBeat']) &&
         isNonEmptyString(param.clipId) &&
         isPositiveNumber(param.newEndBeat),
-    setClipFade: 'unchecked',
+    setClipFade: (param): param is PayloadOf<'setClipFade'> =>
+        isObj(param) &&
+        hasExactKeys(param, ['clipId', 'fadeInBeats', 'fadeOutBeats']) &&
+        isNonEmptyString(param.clipId) &&
+        isNonNegativeNumber(param.fadeInBeats) &&
+        isNonNegativeNumber(param.fadeOutBeats),
     copyClip: 'unchecked',
     cutClip: 'unchecked',
     pasteClip: 'unchecked',
@@ -395,15 +400,32 @@ const validators = {
         hasExactKeys(param, ['clipId', 'gain']) &&
         isNonEmptyString(param.clipId) &&
         isInRange(param.gain, 0, 2),
-    setClipColor: 'unchecked',
-    lockClip: 'unchecked',
-    muteClip: 'unchecked',
+    setClipColor: (param): param is PayloadOf<'setClipColor'> =>
+        isObj(param) &&
+        hasExactKeys(param, ['clipId', 'color']) &&
+        isNonEmptyString(param.clipId) &&
+        isString(param.color) &&
+        /^#[\dA-Fa-f]{6}$/.test(param.color),
+    lockClip: (param): param is PayloadOf<'lockClip'> =>
+        isObj(param) &&
+        hasExactKeys(param, ['clipId', 'locked']) &&
+        isNonEmptyString(param.clipId) &&
+        typeof param.locked === 'boolean',
+    muteClip: (param): param is PayloadOf<'muteClip'> =>
+        isObj(param) &&
+        hasExactKeys(param, ['clipId', 'muted']) &&
+        isNonEmptyString(param.clipId) &&
+        typeof param.muted === 'boolean',
     renameClip: (param): param is PayloadOf<'renameClip'> =>
         isObj(param) &&
         hasExactKeys(param, ['clipId', 'name']) &&
         isNonEmptyString(param.clipId) &&
         normalizeSafeProjectName(param.name) !== null,
-    setClipLoop: 'unchecked',
+    setClipLoop: (param): param is PayloadOf<'setClipLoop'> =>
+        isObj(param) &&
+        hasExactKeys(param, ['clipId', 'enabled']) &&
+        isNonEmptyString(param.clipId) &&
+        typeof param.enabled === 'boolean',
     setClipLoopLength: 'unchecked',
     setClipStretchMode: 'unchecked',
     setClipStretchRatio: 'unchecked',

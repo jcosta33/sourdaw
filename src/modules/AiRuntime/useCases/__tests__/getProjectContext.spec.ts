@@ -126,7 +126,20 @@ describe('getProjectContext', () => {
                     automationMode: 'touch',
                     outputId: 'master',
                     clips: [
-                        { id: 'c1', name: 'Vox 1', type: 'audio', startBeat: 0, endBeat: 4, gain: 1.2, locked: false },
+                        {
+                            id: 'c1',
+                            name: 'Vox 1',
+                            type: 'audio',
+                            startBeat: 0,
+                            endBeat: 4,
+                            gain: 1.2,
+                            locked: false,
+                            muted: true,
+                            color: '#ff5500',
+                            fadeInBeats: 0.5,
+                            fadeOutBeats: 1,
+                            loopEnabled: true,
+                        },
                     ],
                     devices: [
                         {
@@ -235,6 +248,11 @@ describe('getProjectContext', () => {
             endBeat: 4,
             gain: 1.2,
             locked: false,
+            muted: true,
+            color: '#ff5500',
+            fadeInBeats: 0.5,
+            fadeOutBeats: 1,
+            loopEnabled: true,
             noteCount: 0,
         });
         expect(context.tracks[0]?.devices[0]).toEqual({

@@ -147,6 +147,58 @@ const guardedPayloadContractCases = [
         ],
     }),
     guardedPayloadCase({
+        actionType: 'muteClip',
+        validPayload: { clipId: 'clip-1', muted: true },
+        invalidPayloads: [
+            { clipId: '', muted: true },
+            { clipId: 'clip-1', muted: 'yes' },
+            { clipId: 'clip-1', muted: true, expectedMuted: false },
+        ],
+    }),
+    guardedPayloadCase({
+        actionType: 'setClipColor',
+        validPayload: { clipId: 'clip-1', color: '#ff5500' },
+        invalidPayloads: [
+            { clipId: '', color: '#ff5500' },
+            { clipId: 'clip-1', color: 'red' },
+            { clipId: 'clip-1', color: '#ff5500', expectedColor: '#000000' },
+        ],
+    }),
+    guardedPayloadCase({
+        actionType: 'setClipFade',
+        validPayload: { clipId: 'clip-1', fadeInBeats: 1, fadeOutBeats: 2 },
+        invalidPayloads: [
+            { clipId: '', fadeInBeats: 1, fadeOutBeats: 2 },
+            { clipId: 'clip-1', fadeInBeats: -1, fadeOutBeats: 2 },
+            { clipId: 'clip-1', fadeInBeats: 1, fadeOutBeats: Number.POSITIVE_INFINITY },
+            {
+                clipId: 'clip-1',
+                fadeInBeats: 1,
+                fadeOutBeats: 2,
+                expectedFadeInBeats: 0,
+                expectedFadeOutBeats: 0,
+            },
+        ],
+    }),
+    guardedPayloadCase({
+        actionType: 'lockClip',
+        validPayload: { clipId: 'clip-1', locked: true },
+        invalidPayloads: [
+            { clipId: '', locked: true },
+            { clipId: 'clip-1', locked: 1 },
+            { clipId: 'clip-1', locked: true, expectedLocked: false },
+        ],
+    }),
+    guardedPayloadCase({
+        actionType: 'setClipLoop',
+        validPayload: { clipId: 'clip-1', enabled: true },
+        invalidPayloads: [
+            { clipId: '', enabled: true },
+            { clipId: 'clip-1', enabled: 'yes' },
+            { clipId: 'clip-1', enabled: true, expectedEnabled: false },
+        ],
+    }),
+    guardedPayloadCase({
         actionType: 'splitClip',
         validPayload: { clipId: 'clip-1', beat: 4 },
         invalidPayloads: [

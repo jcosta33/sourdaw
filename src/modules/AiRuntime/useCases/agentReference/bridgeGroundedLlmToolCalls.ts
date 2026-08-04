@@ -736,15 +736,58 @@ function maskProjectReferences(prompt: string, context: ProjectContext): string 
     return maskedPrompt;
 }
 
+function isClipFadeValueSeparator({
+    maskedPrompt,
+    separatorEnd,
+    separatorStart,
+    start,
+}: {
+    maskedPrompt: string;
+    separatorEnd: number;
+    separatorStart: number;
+    start: number;
+}): boolean {
+    const prefix = normalizePromptText(maskedPrompt.slice(start, separatorStart));
+    if (!/\bset clip fades?\b/u.test(prefix)) {
+        return false;
+    }
+    const suffix = normalizePromptText(maskedPrompt.slice(separatorEnd));
+    return /^(?:fade in|fade out)(?: to| at)? -?\d/u.test(suffix);
+}
+
+function hasInvalidNamedClipFadeField(prompt: string): boolean {
+    for (const clause of getPromptClauses(prompt, prompt)) {
+        const normalizedClause = normalizePromptText(clause.text);
+        for (const field of normalizedClause.matchAll(/\bfade (?:in|out)\b/gu)) {
+            const suffix = normalizedClause.slice(field.index + field[0].length);
+            if (!/^(?: to| at)? -?\d/u.test(suffix) || isNegatedIntent(clause.text, field[0])) {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
 function getPromptClauses(prompt: string, maskedPrompt: string): PromptClause[] {
     const clauses: PromptClause[] = [];
     const separatorPattern = /\s+(?:and then|then|and|but)\s+|[;,\n]+|(?<!\d)\.|\.(?!\d)/giu;
     let start = 0;
     for (const match of maskedPrompt.matchAll(separatorPattern)) {
+        const separatorEnd = match.index + match[0].length;
+        if (
+            isClipFadeValueSeparator({
+                maskedPrompt,
+                separatorEnd,
+                separatorStart: match.index,
+                start,
+            })
+        ) {
+            continue;
+        }
         if (prompt.slice(start, match.index).trim().length > 0) {
             clauses.push({ text: prompt.slice(start, match.index), masked: maskedPrompt.slice(start, match.index) });
         }
-        start = match.index + match[0].length;
+        start = separatorEnd;
     }
     if (prompt.slice(start).trim().length > 0) {
         clauses.push({ text: prompt.slice(start), masked: maskedPrompt.slice(start) });
@@ -1051,7 +1094,11 @@ function resolveActionPromptScope({
     sameActionCallCount,
 }: ResolveActionPromptScopeInput): ActionPromptScope | null {
     const groundingRules = getExecutableAppActionGroundingRules(actionName);
-    if (!groundingRules || hasTrailingIntentCancellation(prompt, actionName, catalog, plannedActionNames)) {
+    if (
+        !groundingRules ||
+        hasTrailingIntentCancellation(prompt, actionName, catalog, plannedActionNames) ||
+        (actionName === 'setClipFade' && hasInvalidNamedClipFadeField(prompt))
+    ) {
         return null;
     }
     const maskedPrompt = groundingRules.targetRules.length === 0 ? prompt : maskProjectReferences(prompt, context);
@@ -1171,6 +1218,29 @@ function findNamedConnectorBoundNumber(
     return null;
 }
 
+function findKeywordBoundNumber(
+    maskedScope: string,
+    numbers: readonly PromptNumber[],
+    keywords: readonly string[]
+): PromptNumber | null {
+    for (const keyword of keywords) {
+        const keywordPattern = escapeRegExp(keyword).replaceAll(' ', '\\s+');
+        for (const match of maskedScope.matchAll(new RegExp(`\\b${keywordPattern}\\b`, 'giu'))) {
+            const keywordEnd = match.index + match[0].length;
+            const number = numbers.find((candidate) => {
+                if (candidate.index < keywordEnd) {
+                    return false;
+                }
+                return /^[\s:=]*(?:(?:to|at)\s*)?$/iu.test(maskedScope.slice(keywordEnd, candidate.index));
+            });
+            if (number) {
+                return number;
+            }
+        }
+    }
+    return null;
+}
+
 function findDirectionBoundNumber(maskedScope: string, numbers: readonly PromptNumber[]): PromptNumber | null {
     return numbers.find((number) => /^\s*(?:left|right)\b/iu.test(maskedScope.slice(number.end))) ?? null;
 }
@@ -1245,6 +1315,15 @@ function getExpectedNumbers(
     }));
     if (numbers.length === 0) {
         return [];
+    }
+    if (valueRule.keywords) {
+        const keywordBoundNumber = findKeywordBoundNumber(actionScope.masked, numbers, valueRule.keywords);
+        if (keywordBoundNumber) {
+            return [normalizePromptNumber(keywordBoundNumber, actionScope, valueRule, automationLane)];
+        }
+        if (!valueRule.connector) {
+            return null;
+        }
     }
     if (valueRule.connector) {
         const connectorBoundNumber = findNamedConnectorBoundNumber(actionScope.masked, numbers, valueRule.connector);
