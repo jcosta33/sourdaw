@@ -1,0 +1,14 @@
+src/modules/FactorySynthesis/useCases/__tests__/drumsAcoustic.spec.ts
+  h_1228e573df1f42 1-80
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "9656714cabe73c2ebb856c52f0490dd8094f72a5",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
