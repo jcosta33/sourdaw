@@ -1,6 +1,15 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { audioBufferCache } from '../audioBufferCache';
+// Loaded fresh per test. The cache holds one IndexedDB connection for the life
+// of the module (audit M-045), and these tests install a new `indexedDB` double
+// per test — without the reset, every test after the first would keep talking to
+// the first test's double through the memoized connection.
+let audioBufferCache: typeof import('../audioBufferCache').audioBufferCache;
+
+beforeEach(async () => {
+    vi.resetModules();
+    ({ audioBufferCache } = await import('../audioBufferCache'));
+});
 
 /** Minimal AudioBuffer double backed by real Float32 channel data. */
 function createAudioBuffer({

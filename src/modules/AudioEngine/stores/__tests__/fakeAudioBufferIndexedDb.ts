@@ -13,6 +13,11 @@ import { vi } from 'vitest';
  *    "the write landed" and "the request succeeded" are distinguishable.
  * 3. A transaction can abort **bare** — firing `abort` and no `error` — which is
  *    what leaves an `onabort`-less promise pending forever.
+ * 4. Every `open()` yields a **distinct** connection over shared stored data, and
+ *    a connection that has been closed refuses `transaction()` with
+ *    `InvalidStateError` (IDB 3.0 §3.3.1). A caller that keeps using a handle it
+ *    already closed therefore fails here the way it fails in a browser, instead
+ *    of quietly working against a single immortal double.
  */
 
 export type StoredAudioBuffer = {
@@ -37,6 +42,24 @@ export type FakeAudioIndexedDbControls = {
     abortWrites: () => void;
     /** Number of readwrite transactions opened against the database. */
     writeTransactionCount: () => number;
+    /** Number of `indexedDB.open` calls issued against the fake. */
+    openRequestCount: () => number;
+    /** Number of `close()` calls across every connection handed out. */
+    closeCount: () => number;
+    /** Connections opened and not yet closed — a leaked handle shows up here. */
+    liveConnectionCount: () => number;
+    /**
+     * Fire `versionchange` on the most recently opened connection, as a
+     * competing upgrade or a `deleteDatabase` in another tab would.
+     */
+    fireVersionChange: () => void;
+    /**
+     * Fire `close` on the most recently opened connection, as an abnormal
+     * termination (storage eviction, backing-store failure) would. Real IDB has
+     * already closed the connection by the time this fires, so the fake closes
+     * it too — without counting a `close()` the code under test did not make.
+     */
+    fireAbnormalClose: () => void;
 };
 
 class FakeTransaction {
@@ -197,28 +220,81 @@ class FakeObjectStore {
     }
 }
 
+type FakeConnection = {
+    objectStoreNames: { contains: () => boolean };
+    createObjectStore: () => undefined;
+    onclose: (() => void) | null;
+    onversionchange: (() => void) | null;
+    close: () => void;
+    transaction: (storeName: string, mode?: IDBTransactionMode) => FakeTransaction;
+    isClosed: () => boolean;
+};
+
 export function installFakeAudioIndexedDb(): FakeAudioIndexedDbControls {
     const committed = new Map<string, StoredAudioBuffer>();
     let abortWrites = false;
     let writeTransactionCount = 0;
+    let openRequestCount = 0;
+    let closeCount = 0;
 
-    const database = {
-        objectStoreNames: { contains: () => true },
-        createObjectStore: () => undefined,
-        close: () => undefined,
-        transaction: (_storeName: string, mode: IDBTransactionMode = 'readonly') => {
-            const isWrite = mode === 'readwrite';
-            if (isWrite) {
-                writeTransactionCount++;
-            }
-            return new FakeTransaction(committed, new Map<string, StoredAudioBuffer | null>(), isWrite && abortWrites);
-        },
-    };
+    // Every `open()` yields its own connection over the shared committed data,
+    // exactly as a browser does. Closing one must not disturb the others.
+    const connections: FakeConnection[] = [];
+
+    function createConnection(): FakeConnection {
+        let closed = false;
+        const connection: FakeConnection = {
+            objectStoreNames: { contains: () => true },
+            createObjectStore: () => undefined,
+            onclose: null,
+            onversionchange: null,
+            close: () => {
+                if (closed) {
+                    return;
+                }
+                closed = true;
+                closeCount++;
+            },
+            transaction: (_storeName: string, mode: IDBTransactionMode = 'readonly') => {
+                if (closed) {
+                    // What a browser throws for a transaction on a closed
+                    // connection. Reusing a handle after `close()` is a bug the
+                    // double must surface, not absorb.
+                    throw new DOMException(
+                        'Failed to execute transaction on IDBDatabase: The database connection is closing.',
+                        'InvalidStateError'
+                    );
+                }
+                const isWrite = mode === 'readwrite';
+                if (isWrite) {
+                    writeTransactionCount++;
+                }
+                return new FakeTransaction(
+                    committed,
+                    new Map<string, StoredAudioBuffer | null>(),
+                    isWrite && abortWrites
+                );
+            },
+            isClosed: () => closed,
+        };
+        return connection;
+    }
+
+    function latestConnection(): FakeConnection {
+        const connection = connections.at(-1);
+        if (!connection) {
+            throw new Error('fakeAudioBufferIndexedDb: no connection has been opened yet');
+        }
+        return connection;
+    }
 
     vi.stubGlobal('indexedDB', {
         open: () => {
+            openRequestCount++;
+            const connection = createConnection();
+            connections.push(connection);
             const request = {
-                result: database,
+                result: connection,
                 error: null,
                 onsuccess: null as (() => void) | null,
                 onerror: null as (() => void) | null,
@@ -238,6 +314,20 @@ export function installFakeAudioIndexedDb(): FakeAudioIndexedDbControls {
             abortWrites = true;
         },
         writeTransactionCount: () => writeTransactionCount,
+        openRequestCount: () => openRequestCount,
+        closeCount: () => closeCount,
+        liveConnectionCount: () => connections.filter((connection) => !connection.isClosed()).length,
+        fireVersionChange: () => {
+            latestConnection().onversionchange?.();
+        },
+        fireAbnormalClose: () => {
+            const connection = latestConnection();
+            // The browser has already torn the connection down when `close`
+            // fires, so the handle is dead before the handler runs.
+            connection.close();
+            closeCount--;
+            connection.onclose?.();
+        },
     };
 }
 
