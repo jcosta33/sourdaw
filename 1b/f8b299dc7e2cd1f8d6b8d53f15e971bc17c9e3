@@ -1,0 +1,19 @@
+src/modules/AiRuntime/handlers/aiOrganization/__tests__/handleAutoOrganizeProjectBranches.spec.ts
+  s_03ad5bb9d5e499::t_b6eaf7fa353973 1-93
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "1bf8b299dc7e2cd1f8d6b8d53f15e971bc17c9e3",
+  "prompts": {},
+  "sessions": {
+    "s_03ad5bb9d5e499": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-a4b16797315c9b3b2",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
