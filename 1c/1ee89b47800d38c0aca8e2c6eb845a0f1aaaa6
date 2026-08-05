@@ -1,0 +1,14 @@
+src/modules/CommandInterface/useCases/keyboardShortcutActions/clipShortcuts/__tests__/duplicateSelectedClipsForward.spec.ts
+  h_1228e573df1f42 1-132
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "1c1ee89b47800d38c0aca8e2c6eb845a0f1aaaa6",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
