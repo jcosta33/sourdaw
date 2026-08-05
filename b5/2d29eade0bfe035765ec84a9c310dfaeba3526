@@ -1,0 +1,18 @@
+src/modules/AiRuntime/models/PresetActions/Presets/__tests__/Generate.spec.ts
+  h_1228e573df1f42 1-89
+src/modules/AiRuntime/models/PresetActions/Presets/__tests__/Track.spec.ts
+  h_1228e573df1f42 1-172
+src/modules/AiRuntime/models/PresetActions/__tests__/Registry.spec.ts
+  h_1228e573df1f42 1-43
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "b52d29eade0bfe035765ec84a9c310dfaeba3526",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
