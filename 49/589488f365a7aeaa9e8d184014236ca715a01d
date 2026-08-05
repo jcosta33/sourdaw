@@ -1,0 +1,57 @@
+src/modules/AiRuntime/useCases/agentReference/__tests__/bridgeGroundedLlmToolCalls.spec.ts
+  s_bc88af7d3b054c::t_0b0871f7253f6d 1036-1053,1059,1077-1081,1088
+  s_bc88af7d3b054c::t_f0a699f6341602 1054-1058,1060-1076,1082-1087
+  s_bc88af7d3b054c::t_3c4a80d574ee10 1033-1035
+src/modules/Command/useCases/__tests__/executableCommandRegistry.spec.ts
+  s_bc88af7d3b054c::t_55b899c65e2dbe 230-243,1073-1090,1095-1097
+  s_bc88af7d3b054c::t_f0a699f6341602 1091-1094
+  s_bc88af7d3b054c::t_9b4e3615b1988c 229
+  s_bc88af7d3b054c::t_a0b16e8e031b8c 1098
+src/modules/AiRuntime/useCases/__tests__/validateActionPayload.spec.ts
+  s_bc88af7d3b054c::t_55b899c65e2dbe 247-255
+  s_bc88af7d3b054c::t_87341565873784 246
+src/modules/Arrangement/handlers/clipStretch/__tests__/handleSetClipStretchMode.integration.spec.ts
+  s_bc88af7d3b054c::t_bf81984e8d97f6 1-81
+src/modules/AiRuntime/useCases/__tests__/parsePromptToActions.spec.ts
+  s_bc88af7d3b054c::t_0b0871f7253f6d 433,438,441-443,483-486,493-497
+src/modules/AiRuntime/transformers/__tests__/llmActionBridge.spec.ts
+  s_bc88af7d3b054c::t_55b899c65e2dbe 1303-1311,1428-1456,1460-1465
+  s_bc88af7d3b054c::t_917eb53c327e26 1457-1459
+  s_bc88af7d3b054c::t_169f96d67b63bf 1302
+  s_bc88af7d3b054c::t_70aa378cd474f6 1466-1467
+src/modules/AiRuntime/useCases/validateActionPayload.ts
+  s_bc88af7d3b054c::t_27b16e455b4b65 443-447
+src/modules/AiRuntime/useCases/agentReference/bridgeGroundedLlmToolCalls.ts
+  s_bc88af7d3b054c::t_f0a699f6341602 2047-2050
+src/modules/Arrangement/handlers/clipStretch/handleSetClipStretchMode.ts
+  s_bc88af7d3b054c::t_27b16e455b4b65 2,5,8-23,28-60
+src/modules/AiRuntime/useCases/__tests__/describePlannedAction.spec.ts
+  s_bc88af7d3b054c::t_55b899c65e2dbe 143-157
+src/modules/AiRuntime/transformers/llmActionBridge.ts
+  s_bc88af7d3b054c::t_27b16e455b4b65 943-950,956-959,1676,1885,1887
+  s_bc88af7d3b054c::t_917eb53c327e26 951-955,1886
+src/modules/Arrangement/handlers/clipStretch/__tests__/handleSetClipStretchMode.spec.ts
+  s_bc88af7d3b054c::t_bf81984e8d97f6 6,14-17,21-22,39-91
+src/modules/AiRuntime/useCases/describePlannedAction.ts
+  s_bc88af7d3b054c::t_27b16e455b4b65 50-56
+src/modules/Command/useCases/executableAppActionRegistry.ts
+  s_bc88af7d3b054c::t_27b16e455b4b65 522-540,545-559
+  s_bc88af7d3b054c::t_f0a699f6341602 72,541-544
+  s_bc88af7d3b054c::t_64d9e94322c0e7 521
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "49589488f365a7aeaa9e8d184014236ca715a01d",
+  "prompts": {},
+  "sessions": {
+    "s_bc88af7d3b054c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f9b4a-11a2-7f61-8dfb-76eed0eb2a9c",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
