@@ -28,6 +28,55 @@ Option A, 0009 pattern-morph determinism).
 Item format: decision statement · options/tradeoff · blocks code work? ·
 source citation.
 
+## Decisions taken 2026-08-04/05 (ultracode campaign)
+
+Recorded here so the docket stays the ledger of what was settled, not only of
+what is open. Neither was engineering's to take unilaterally.
+
+- **Rust gating shape — owner chose: extend `scripts/health-gates-server.sh`.**
+  Options were a separate CI job, extending the existing gate script, or leaving
+  the workspace ungated. The script keeps one definition of green for local and
+  CI so the two cannot drift, which is how the web side already works. Landed
+  #1097 (`cargo clippy --all-targets`, `cargo test`, both debug — the
+  `assert_no_alloc` interceptor is compiled out in release) and #1136 (the
+  `cargo fmt --check` leg, after #1098 reformatted 96 files so the leg could
+  pass). `-D warnings` deliberately **not** set: 239 pre-existing warning sites,
+  and `#[allow]` would be evasion. `src-tauri` excluded from the build legs — it
+  cannot compile on `ubuntu-latest`.
+  Context the decision did not change: `health-gates.yml` is
+  `on: workflow_dispatch` only because the account's Actions billing is
+  suspended, so *nothing* runs automatically today. Restoring it is one `on:`
+  block whenever billing is.
+
+- **Parameter-automation coverage — owner chose: its own spec, not folded into
+  Phase 2 and not built now.** Phase 2 measured that Fermenter reaches 15 of its
+  105 parameters declared `automatable: true` (~106 parameter-level gaps
+  overall). Written as `SPEC-parameter-automation-coverage`, `status: draft`,
+  with the audit as its first acceptance criterion — because a param declared
+  automatable may be *structurally* unschedulable, in which case the descriptor
+  is the defect and the real number is far below 106.
+
+### Corrections to rows above, from campaign work
+
+- **RAVE timbre-transfer** (row in "Unbuilt feature subsystems"): the stated
+  options were "wire the RAVE UI/flow, or remove the 9 use cases". #1075 took
+  neither — it **gated the surface on real model presence**. The palette
+  entries and `loadModel` now require weights actually registered from OPFS, so
+  nothing is advertised that cannot run, and the entries return by themselves if
+  weights ever land. The use cases survive unwired. The row stays open as a
+  finish-or-remove question; what changed is that the *dishonesty* is closed —
+  `encodeAudio`/`decodeLatent` were a `Math.sin`/`Math.tanh` transform returning
+  0.718-peak audio while logging "RAVE model loaded".
+  Note for whoever finishes it: the probe asks OPFS for `rave/<model.id>` while
+  the catalog declares `models/rave/strings.onnx`, and `downloadModel` is never
+  called with `family: 'rave'` — so shipping RAVE needs a download entry keyed to
+  that family, not merely weights appearing.
+
+- **Smaller dormant features → Bacteria**: two more inert controls found and not
+  previously listed — `crossoverSlope` and `crossoverMode` reach an explicit
+  `=> {}` no-op arm in `bacteria/engine.rs:795`, so every value behaves
+  identically.
+
 ## Unbuilt feature subsystems (finish-or-remove)
 
 Whole subsystems that are **dead or dormant in production today** — each an
