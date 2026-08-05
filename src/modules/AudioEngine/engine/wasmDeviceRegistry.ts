@@ -1393,20 +1393,47 @@ const kneadDescriptor: WasmDeviceDescriptor = {
     matches: isKneadDevice,
     create({ context, deviceId, deviceType, transportSAB, signal, onLoaded }) {
         const pendingParams: Array<[string, number | number[]]> = [];
+        // `AudioEngine.syncKneadState` fans out to every device node on the
+        // strip with no readiness gate, so a loading Knead is a reachable
+        // target — and the only push a freshly added one gets is the trackStore
+        // mutation that added it, which lands while this load is still in
+        // flight. Nothing re-pushes on load, so an unlatched write leaves the
+        // clip playing unshifted until some unrelated edit happens to sync
+        // again. One slot, not a queue: the payload is a whole-track clip
+        // snapshot rebuilt per call, so the newest one supersedes every earlier
+        // one and replaying an older one would undo later edits.
+        let pendingState: Record<string, unknown> | null = null;
         const placeholder = loadingBypassNode(context, deviceId, deviceType);
-        placeholder.kneadControls = {
+        const loadingControls: NonNullable<BuiltinDeviceNode['kneadControls']> = {
             ready: false,
-            updateState: () => {},
+            updateState: (clips) => {
+                pendingState = clips;
+            },
             setParam: (name, value) => {
                 pendingParams.push([name, value]);
             },
             setBypass: () => {},
             destroy: () => {},
         };
+        placeholder.kneadControls = loadingControls;
+        // This placeholder outlives the load on every outcome, not just the bad
+        // ones: an abort or a failure leaves it on the strip because TrackNode
+        // only marks the device failed, and even a *successful* promotion can
+        // put it straight back — `rollbackPromotedDevice` reinstates this exact
+        // object when the post-promotion rebuild throws. Either way its
+        // `updateState` keeps being called for the lifetime of the track, with
+        // the load promise settled and nothing left to drain the slot, so a
+        // still-capturing latch pins the last clip snapshot — note blobs and
+        // their per-blob pitch curves included — until the track is removed.
+        const abandonPendingState = (): void => {
+            pendingState = null;
+            loadingControls.updateState = () => {};
+        };
         const loadPromise = createKneadNode(context, transportSAB, signal)
             .then(async (result: KneadNodeResult) => {
                 const readyData = await waitForDeviceReady({ deviceType, result, signal });
                 if (readyData === null) {
+                    abandonPendingState();
                     return;
                 }
                 // Knead delays its track by a whole analysis frame even at zero
@@ -1417,6 +1444,12 @@ const kneadDescriptor: WasmDeviceDescriptor = {
 
                 for (const [name, value] of pendingParams) {
                     result.setParam(name, value);
+                }
+                // Strictly after the readiness gate: an aborted load has already
+                // destroyed `result`, and pushing a snapshot into it would post
+                // to a closed worklet port.
+                if (pendingState) {
+                    result.updateState(pendingState);
                 }
                 // Removing the device must retract its PDC entry; a stale entry
                 // keeps compensating a delay that is no longer in the graph.
@@ -1448,9 +1481,19 @@ const kneadDescriptor: WasmDeviceDescriptor = {
                         destroy,
                     },
                 });
+                // The replay has happened (or the promotion was rejected and
+                // there is nothing left to replay into), so the loading latch
+                // must go inert whatever promotion did with the node. The
+                // sibling descriptors capture `onLoaded`'s return to gate the
+                // work that follows it; here the only work that follows is this
+                // abandon, and it is right on both outcomes — gating it would
+                // leave a rejected promotion capturing forever, which is the
+                // one case that most needs it.
+                abandonPendingState();
                 return;
             })
             .catch((error) => {
+                abandonPendingState();
                 logger.warn(`[WebAudioEngine] ${deviceType} failed: ${error}`);
                 return;
             });
