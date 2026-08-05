@@ -1,0 +1,20 @@
+src/modules/Project/useCases/projectTemplates/templateFiles/__tests__/edm.spec.ts
+  h_1228e573df1f42 1-95
+src/modules/Project/useCases/projectTemplates/templateFiles/__tests__/hipHopTrap.spec.ts
+  h_1228e573df1f42 1-93
+src/modules/Project/useCases/projectTemplates/templateFiles/__tests__/podcast.spec.ts
+  h_1228e573df1f42 1-71
+src/modules/Project/useCases/projectTemplates/templateFiles/__tests__/rockBand.spec.ts
+  h_1228e573df1f42 1-90
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "7d77d5e6ab396cf5b31ba743a4548f20bc913414",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
