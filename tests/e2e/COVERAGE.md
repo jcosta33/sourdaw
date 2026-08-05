@@ -548,8 +548,24 @@ hydrateCrumbsStateFromProject, projectDeviceTails.
   flatten/bounce/arm/solo/mute/group/ungroup + 5 declarative actions) — 20 tests.
 - **PR #1193**: EditCommands — 7 commands (undo/redo/copy/cut/paste/select/deselect)
   — 7 tests. Completes ALL 11 command interface files with behavioral coverage.
+- **PR #1195**: deviceLayoutRegistry — exact/prefix resolution priority, filterParams — 8 tests.
+- **PR #1196**: clampDeviceParameterValue + isDeviceParameterAutomatable adapter wrappers — 4 tests.
+- **PR #1197**: planPromptActions — revision invalidation guard, abort skip, empty-actions passthrough — 4 tests.
 
-**Campaign total to date: 124 PRs, ~1720 assertions across pure-logic models,
+### Threshold Raise #2 (PR #1198)
+
+Re-measured full suite coverage after 73 additional PRs since the initial threshold raise (PR #1055):
+
+| Metric | Old Threshold | Actual (PR #1055) | Actual (now) | New Threshold |
+|--------|--------------|-------------------|--------------|---------------|
+| Lines | 87 | 89.16% | **89.87%** | 88 |
+| Statements | 84 | 85.93% | **86.62%** | 85 |
+| Branches | 72 | 74.95% | **75.65%** | 74 |
+| Functions | 84 | 86.75% | **87.57%** | 86 |
+
+All four metrics measurably increased (+0.7-0.8% each). New thresholds set with ~1.5-2% headroom.
+
+**Campaign total to date: 127 PRs, ~1736 assertions across pure-logic models,
 services, transformers, store-coupled handlers, useCases, components,
 cross-cutting infrastructure, project templates, ALL 14 template helpers,
-ALL 9 device layouts, and ALL 11 command interface files.**
+ALL 9 device layouts, ALL 11 command interface files, and the device layout registry.**
