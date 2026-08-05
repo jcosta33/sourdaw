@@ -1,0 +1,16 @@
+src/modules/Collaboration/presentations/components/__tests__/PresenceMarker.spec.tsx
+  h_1228e573df1f42 2,12-61
+src/modules/PluginHost/useCases/faustEngine/__tests__/getFaustErrorMessage.spec.ts
+  h_1228e573df1f42 1-24
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "b652b00ddb8434753d3e020bc2a009f4d46612f6",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
