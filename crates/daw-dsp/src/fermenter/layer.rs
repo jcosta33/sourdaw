@@ -269,6 +269,10 @@ impl Layer {
             voice.set_ks_damping(self.ks_damping);
             voice.set_noise(self.noise_level, self.noise_color);
             voice.set_unison(self.unison_voices, self.unison_detune, self.unison_spread);
+            // A voice starting inside this block was not active when
+            // `advance_block_params` ran, so this is the only place its
+            // waveform can be set before it renders its first sample.
+            voice.set_waveform(self.osc_waveform);
             voice.set_pulse_width(self.pulse_width);
             voice.set_portamento(self.portamento_time, self.sample_rate);
             voice.set_granular_params(
@@ -471,6 +475,10 @@ impl Layer {
             );
             voice.set_noise(self.noise_level, self.noise_color);
             voice.set_unison(self.unison_voices, self.unison_detune, self.unison_spread);
+            // Per block, not only at note-on, so moving the selector rewrites
+            // notes that are already sounding — the same live behaviour the
+            // engine, unison and noise settings above already have.
+            voice.set_waveform(self.osc_waveform);
             voice.set_engine(self.engine, self.sample_rate);
             voice.set_pulse_width(self.pulse_width);
             voice.set_portamento(self.portamento_time, self.sample_rate);

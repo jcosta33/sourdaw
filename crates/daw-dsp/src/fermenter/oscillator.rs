@@ -207,6 +207,11 @@ pub struct UnisonOsc {
     detune_cents: f32,  // 0-100
     stereo_spread: f32, // 0-1
     voice_count: usize,
+    /// The bank's waveform, held here as well as on each voice so that growing
+    /// the bank cannot resurrect `WavetableOsc::new`'s saw default. Without it
+    /// the fix would depend on `set_waveform` being called after `set_voices`
+    /// at every call site.
+    table_index: usize,
 }
 
 impl UnisonOsc {
@@ -225,6 +230,7 @@ impl UnisonOsc {
             detune_cents: 0.0,
             stereo_spread: 0.5,
             voice_count: 1,
+            table_index: 1,
         }
     }
 
@@ -235,7 +241,16 @@ impl UnisonOsc {
             return;
         }
         self.voice_count = count;
-        self.voices.resize_with(count, WavetableOsc::new);
+        // Appended oscillators are born on `WavetableOsc::new`'s saw default,
+        // so they are stamped with the bank's waveform as they are created.
+        // Without this the bank's waveform would depend on every caller
+        // ordering `set_waveform` after `set_voices`.
+        let table_index = self.table_index;
+        self.voices.resize_with(count, || {
+            let mut osc = WavetableOsc::new();
+            osc.set_waveform(table_index);
+            osc
+        });
     }
 
     pub fn set_detune(&mut self, cents: f32) {
@@ -247,8 +262,9 @@ impl UnisonOsc {
     }
 
     pub fn set_waveform(&mut self, index: usize) {
+        self.table_index = index.min(3);
         for v in &mut self.voices {
-            v.set_waveform(index);
+            v.set_waveform(self.table_index);
         }
     }
 
@@ -364,5 +380,69 @@ fn poly_blep(t: f32, dt: f32) -> f32 {
         t * t + 2.0 * t + 1.0
     } else {
         0.0
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{UnisonOsc, Wavetable};
+
+    const SAMPLE_RATE: f32 = 48_000.0;
+    const FRAMES: usize = 256;
+    /// Any table other than saw, so that a voice left on `WavetableOsc::new`'s
+    /// default is distinguishable from one carrying the bank's waveform.
+    const SINE: usize = 0;
+
+    fn tables() -> Vec<Wavetable> {
+        vec![
+            Wavetable::sine(),
+            Wavetable::saw(),
+            Wavetable::square(),
+            Wavetable::triangle(),
+        ]
+    }
+
+    fn render(osc: &mut UnisonOsc, tables: &[Wavetable]) -> Vec<f32> {
+        let mut left = vec![0.0f32; FRAMES];
+        let mut right = vec![0.0f32; FRAMES];
+        osc.process_stereo(440.0, SAMPLE_RATE, tables, &mut left, &mut right, FRAMES);
+        left
+    }
+
+    /// Growing the bank must not drop the waveform it was already set to.
+    ///
+    /// `set_voices` appends `WavetableOsc::new` oscillators, which start on
+    /// saw. If it did not stamp them with the bank's waveform, this order of
+    /// calls would leave three of four voices on the wrong table — and the
+    /// engine's two callers would be silently required to always order
+    /// `set_waveform` last.
+    #[test]
+    fn growing_the_bank_keeps_the_waveform_it_was_set_to() {
+        let tables = tables();
+
+        let mut grown_after_selection = UnisonOsc::new();
+        grown_after_selection.set_spread(0.0);
+        grown_after_selection.set_waveform(SINE);
+        grown_after_selection.set_voices(4);
+
+        let mut selected_after_growth = UnisonOsc::new();
+        selected_after_growth.set_spread(0.0);
+        selected_after_growth.set_voices(4);
+        selected_after_growth.set_waveform(SINE);
+
+        let grown = render(&mut grown_after_selection, &tables);
+        let selected = render(&mut selected_after_growth, &tables);
+
+        let peak = selected.iter().fold(0.0f32, |best, s| best.max(s.abs()));
+        assert!(
+            peak > 0.1,
+            "the reference bank should be audible; peaked at {peak:.5}"
+        );
+
+        assert_eq!(
+            grown, selected,
+            "setting the waveform before growing the bank should render the \
+             same as setting it after"
+        );
     }
 }
