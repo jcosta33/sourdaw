@@ -208,6 +208,160 @@ fn an_unknown_parameter_name_is_ignored_rather_than_silencing_the_engine() {
     assert_proportional_to(&left, &pcm[..BLOCK], "left channel after an unknown param");
 }
 
+// ── Filter resonance ───────────────────────────────────────────────────
+
+/// The frequency the resonance guards park both the tone and the cutoff on. A
+/// lowpass SVF's magnitude response *at* its own cutoff is its Q, so the peak of
+/// a steady tone sitting there reads back the Q the engine actually resolved —
+/// the only observable that separates one `Reso` knob position from another.
+const RESONANT_TONE_HZ: f32 = 1_000.0;
+
+/// Long enough for the ~10 ms master-gain smoother to settle and for the
+/// resonator to reach steady state at the top of the knob (ring-down ≈ Q/(π·fc),
+/// ~6 ms at Q 20 and 1 kHz).
+const SETTLE_BLOCKS: usize = 32;
+
+/// The knob's own bounds, as `CrumbsControls` publishes them (`min={0.5}`,
+/// `max={20}`, `defaultValue={1}`) and as `ToasterKit` documents for the
+/// identically-shaped parameter: "0.5-20", i.e. Q — not a normalised 0–1.
+const RESO_KNOB_MIN: f32 = 0.5;
+const RESO_KNOB_DEFAULT: f32 = 1.0;
+const RESO_KNOB_MAX: f32 = 20.0;
+
+fn steady_tone(frames: usize, tone_hz: f32) -> Vec<f32> {
+    (0..frames)
+        .map(|i| 0.5 * (i as f32 / SAMPLE_RATE * tone_hz * std::f32::consts::TAU).sin())
+        .collect()
+}
+
+/// Peak of a steady 1 kHz tone rendered with the cutoff parked on the tone and
+/// the `Reso` knob at `knob_position`, expressed in the knob's own units.
+fn peak_at_resonance_knob(knob_position: f32) -> f32 {
+    let pcm = steady_tone((SETTLE_BLOCKS + 2) * BLOCK, RESONANT_TONE_HZ);
+    let mut instance = instance_with_fixture(&pcm);
+    // Both filter params have to land before `note_on`: `Voice::trigger` is what
+    // copies them into the per-voice SVF, so a value set afterwards never
+    // reaches the sounding voice and every reading here would be the default.
+    instance.set_param("filterCutoff", RESONANT_TONE_HZ);
+    instance.set_param("filterResonance", knob_position);
+    instance.note_on(60, 100);
+
+    for _ in 0..SETTLE_BLOCKS {
+        instance.process(BLOCK as u32);
+    }
+    peak(&unsafe { read_channel(instance.process(BLOCK as u32), BLOCK) })
+}
+
+/// The same tone with the filter genuinely out of circuit — the shipped 20 kHz
+/// cutoff and an untouched resonance leave `Voice::filter_enabled` false — so
+/// the readings above have an absolute reference and not merely each other.
+fn peak_with_filter_out_of_circuit() -> f32 {
+    let pcm = steady_tone((SETTLE_BLOCKS + 2) * BLOCK, RESONANT_TONE_HZ);
+    let mut instance = instance_with_fixture(&pcm);
+    instance.note_on(60, 100);
+
+    for _ in 0..SETTLE_BLOCKS {
+        instance.process(BLOCK as u32);
+    }
+    peak(&unsafe { read_channel(instance.process(BLOCK as u32), BLOCK) })
+}
+
+#[test]
+fn the_resonance_knob_separates_its_default_from_its_maximum() {
+    let at_default = peak_at_resonance_knob(RESO_KNOB_DEFAULT);
+    let at_maximum = peak_at_resonance_knob(RESO_KNOB_MAX);
+
+    // The knob travels 0.5 → 20 and ships at 1, so 19 of its 19.5 units sit at
+    // or above the default. An engine that read those units as a normalised 0–1
+    // clamps every one of them onto the same coefficients and these two renders
+    // come back bit-identical.
+    let ratio = at_maximum / at_default;
+    assert!(
+        ratio > 3.0,
+        "Reso {RESO_KNOB_DEFAULT} rendered peak {at_default} and Reso \
+         {RESO_KNOB_MAX} rendered peak {at_maximum} ({ratio}× apart) — the top of \
+         the knob's travel is not reaching the filter"
+    );
+}
+
+#[test]
+fn the_knobs_ends_land_on_the_q_range_the_filter_documents() {
+    // Where the ends actually land, not merely that they differ. A knob whose
+    // ends resolved a narrower Q span than the SVF's documented 0.5–20 would
+    // clear every relative check above while quietly shortening the control's
+    // reach — and the two constants that set that span are read by both the
+    // mapping and its inverse, so they stay self-consistent under a change and
+    // nothing white-box can see it.
+    let out_of_circuit = peak_with_filter_out_of_circuit();
+    assert!(
+        out_of_circuit > 0.05,
+        "the reference render is ~silent ({out_of_circuit}), so this proves nothing"
+    );
+
+    // A lowpass' magnitude at its own cutoff is its Q, so these lifts read back
+    // the Q each end resolved: Q 0.5 halves the tone (measured 0.50×), Q 20
+    // lifts it about tenfold (measured 9.99× — short of 20 because Q > 10
+    // engages the SVF's 2× oversampling path, which halves its input).
+    let floor_lift = peak_at_resonance_knob(RESO_KNOB_MIN) / out_of_circuit;
+    assert!(
+        (0.4..0.65).contains(&floor_lift),
+        "Reso {RESO_KNOB_MIN} lifted the tone {floor_lift}× over its unfiltered \
+         peak — the bottom of the knob is not the filter's documented Q \
+         {RESO_KNOB_MIN}"
+    );
+
+    let top_lift = peak_at_resonance_knob(RESO_KNOB_MAX) / out_of_circuit;
+    assert!(
+        top_lift > 8.0,
+        "Reso {RESO_KNOB_MAX} lifted the tone {top_lift}× over its unfiltered \
+         peak — the top of the knob is not the filter's documented Q \
+         {RESO_KNOB_MAX}"
+    );
+}
+
+#[test]
+fn the_shipped_resonance_default_leaves_the_response_flat_at_the_cutoff() {
+    let out_of_circuit = peak_with_filter_out_of_circuit();
+    let at_default = peak_at_resonance_knob(RESO_KNOB_DEFAULT);
+
+    assert!(
+        out_of_circuit > 0.05,
+        "the reference render is ~silent ({out_of_circuit}), so this proves nothing"
+    );
+    // Q 1 is a ~1 dB shelf at the cutoff, not a resonant peak. A build that read
+    // the shipped default of 1 as full normalised resonance puts Q 20 here and
+    // lands an order of magnitude high; one that mis-scaled the mapping lands
+    // somewhere in between.
+    let ratio = at_default / out_of_circuit;
+    assert!(
+        (0.8..1.25).contains(&ratio),
+        "Reso {RESO_KNOB_DEFAULT} rendered {ratio}× the unfiltered peak \
+         ({at_default} vs {out_of_circuit}) — the shipped default is not the \
+         gentle filter the knob position claims"
+    );
+}
+
+#[test]
+fn resonance_outside_the_knobs_travel_pins_to_its_ends() {
+    // `CrumbsDescriptor` advertises a wider automation range than the knob draws
+    // (minValue 0.1), and an automation curve can be dragged past either end, so
+    // both ends have to saturate rather than run the mapping off into a Q the SVF
+    // was never designed for.
+    let below_floor = peak_at_resonance_knob(0.1);
+    let at_floor = peak_at_resonance_knob(RESO_KNOB_MIN);
+    assert_eq!(
+        below_floor, at_floor,
+        "Reso 0.1 rendered differently from the knob floor {RESO_KNOB_MIN}"
+    );
+
+    let above_ceiling = peak_at_resonance_knob(40.0);
+    let at_ceiling = peak_at_resonance_knob(RESO_KNOB_MAX);
+    assert_eq!(
+        above_ceiling, at_ceiling,
+        "Reso 40 rendered differently from the knob ceiling {RESO_KNOB_MAX}"
+    );
+}
+
 #[test]
 fn a_stereo_sample_keeps_its_channels_apart() {
     // Interleaved L/R where the right channel is the left inverted, so a

@@ -60,6 +60,23 @@ describe('clampDeviceParameterValue', () => {
         );
     });
 
+    it('pins a Crumbs resonance to the Q floor its knob and its filter share, not below it', () => {
+        // The opposite case to the LFO rates above: here the declared floor was
+        // *below* the engine's domain, not above it. `filterResonance` is a Q,
+        // and `crumbs::filter` resolves Q 0.5 at rest — so the 0.1 the lane used
+        // to advertise bought 0.4 units of automation travel that produced
+        // identical coefficients, and a learned MIDI CC (which scales 0..127
+        // across the declared span) spent part of its resolution on them.
+        expect(
+            clampDeviceParameterValue({ deviceType: 'builtin-crumbs', paramId: 'filterResonance', value: 0.3 })
+        ).toBe(0.5);
+        // The top of the same span is the SVF's self-oscillation Q and is real
+        // travel, so it still admits values right up to it.
+        expect(
+            clampDeviceParameterValue({ deviceType: 'builtin-crumbs', paramId: 'filterResonance', value: 19.4 })
+        ).toBe(19.4);
+    });
+
     it('still pins a rate below the widened engine floor', () => {
         // Widening the floor to the engine's domain is not removing it: a
         // negative LFO rate is still refused.

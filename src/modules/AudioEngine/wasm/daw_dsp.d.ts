@@ -1,4 +1,4 @@
-// @wasm-bindgen-dts crate-source: sha256:ec81e93716616f6cec86d9ec65e4dac5afd4bddb702e3dbf6d945367233d3f1b
+// @wasm-bindgen-dts crate-source: sha256:13c13d33aa6ce3b45ffdcf5dbad64dd142b74546dfa15038e0f6064e52a67a6e
 /* tslint:disable */
 /* eslint-disable */
 
@@ -887,6 +887,20 @@ export interface InitOutput {
     readonly kneadinstance_new: (a: number) => number;
     readonly kneadinstance_process: (a: number, b: number) => number;
     readonly kneadinstance_set_shift_semitones: (a: number, b: number) => void;
+    readonly __wbg_bacteriainstance_free: (a: number, b: number) => void;
+    readonly bacteriainstance_add_macro_mapping: (a: number, b: number, c: number, d: number, e: number) => void;
+    readonly bacteriainstance_add_mod_assignment: (a: number, b: number, c: number, d: number) => void;
+    readonly bacteriainstance_get_band_levels_ptr: (a: number) => number;
+    readonly bacteriainstance_get_input_db: (a: number) => number;
+    readonly bacteriainstance_get_input_left_ptr: (a: number) => number;
+    readonly bacteriainstance_get_input_right_ptr: (a: number) => number;
+    readonly bacteriainstance_get_latency_samples: (a: number) => number;
+    readonly bacteriainstance_get_nan_flush_count: (a: number) => number;
+    readonly bacteriainstance_get_output_db: (a: number) => number;
+    readonly bacteriainstance_get_right_ptr: (a: number) => number;
+    readonly bacteriainstance_new: (a: number) => number;
+    readonly bacteriainstance_process: (a: number, b: number) => number;
+    readonly bacteriainstance_set_param: (a: number, b: number, c: number, d: number) => void;
     readonly __wbg_fermenterinstance_free: (a: number, b: number) => void;
     readonly __wbg_grinderinstance_free: (a: number, b: number) => void;
     readonly fermenterinstance_active_voices: (a: number) => number;
@@ -927,7 +941,24 @@ export interface InitOutput {
     readonly grinderinstance_process: (a: number, b: number) => number;
     readonly grinderinstance_process_automated: (a: number, b: number) => number;
     readonly grinderinstance_set_param: (a: number, b: number, c: number, d: number) => void;
+    readonly __wbg_gluteninstance_free: (a: number, b: number) => void;
+    readonly gluteninstance_get_crest: (a: number) => number;
+    readonly gluteninstance_get_gr_db: (a: number) => number;
+    readonly gluteninstance_get_input_db: (a: number) => number;
+    readonly gluteninstance_get_input_left_ptr: (a: number) => number;
+    readonly gluteninstance_get_input_right_ptr: (a: number) => number;
+    readonly gluteninstance_get_latency_samples: (a: number) => number;
+    readonly gluteninstance_get_nan_flush_count: (a: number) => number;
+    readonly gluteninstance_get_output_db: (a: number) => number;
+    readonly gluteninstance_get_phase_corr: (a: number) => number;
+    readonly gluteninstance_get_right_ptr: (a: number) => number;
+    readonly gluteninstance_get_sc_left_ptr: (a: number) => number;
+    readonly gluteninstance_get_sc_right_ptr: (a: number) => number;
+    readonly gluteninstance_new: (a: number) => number;
+    readonly gluteninstance_process: (a: number, b: number) => number;
+    readonly gluteninstance_set_param: (a: number, b: number, c: number, d: number) => void;
     readonly __wbg_proofinstance_free: (a: number, b: number) => void;
+    readonly init_panic_hook: () => void;
     readonly proofinstance_get_ab_gain_offset: (a: number) => number;
     readonly proofinstance_get_correlation: (a: number) => number;
     readonly proofinstance_get_dynamics_gr: (a: number, b: number) => number;
@@ -951,37 +982,6 @@ export interface InitOutput {
     readonly proofinstance_reorder: (a: number, b: number, c: number, d: number, e: number, f: number) => void;
     readonly proofinstance_reset_integrated: (a: number) => void;
     readonly proofinstance_set_param: (a: number, b: number, c: number, d: number) => void;
-    readonly __wbg_gluteninstance_free: (a: number, b: number) => void;
-    readonly gluteninstance_get_crest: (a: number) => number;
-    readonly gluteninstance_get_gr_db: (a: number) => number;
-    readonly gluteninstance_get_input_db: (a: number) => number;
-    readonly gluteninstance_get_input_left_ptr: (a: number) => number;
-    readonly gluteninstance_get_input_right_ptr: (a: number) => number;
-    readonly gluteninstance_get_latency_samples: (a: number) => number;
-    readonly gluteninstance_get_nan_flush_count: (a: number) => number;
-    readonly gluteninstance_get_output_db: (a: number) => number;
-    readonly gluteninstance_get_phase_corr: (a: number) => number;
-    readonly gluteninstance_get_right_ptr: (a: number) => number;
-    readonly gluteninstance_get_sc_left_ptr: (a: number) => number;
-    readonly gluteninstance_get_sc_right_ptr: (a: number) => number;
-    readonly gluteninstance_new: (a: number) => number;
-    readonly gluteninstance_process: (a: number, b: number) => number;
-    readonly gluteninstance_set_param: (a: number, b: number, c: number, d: number) => void;
-    readonly __wbg_bacteriainstance_free: (a: number, b: number) => void;
-    readonly bacteriainstance_add_macro_mapping: (a: number, b: number, c: number, d: number, e: number) => void;
-    readonly bacteriainstance_add_mod_assignment: (a: number, b: number, c: number, d: number) => void;
-    readonly bacteriainstance_get_band_levels_ptr: (a: number) => number;
-    readonly bacteriainstance_get_input_db: (a: number) => number;
-    readonly bacteriainstance_get_input_left_ptr: (a: number) => number;
-    readonly bacteriainstance_get_input_right_ptr: (a: number) => number;
-    readonly bacteriainstance_get_latency_samples: (a: number) => number;
-    readonly bacteriainstance_get_nan_flush_count: (a: number) => number;
-    readonly bacteriainstance_get_output_db: (a: number) => number;
-    readonly bacteriainstance_get_right_ptr: (a: number) => number;
-    readonly bacteriainstance_new: (a: number) => number;
-    readonly bacteriainstance_process: (a: number, b: number) => number;
-    readonly bacteriainstance_set_param: (a: number, b: number, c: number, d: number) => void;
-    readonly init_panic_hook: () => void;
     readonly __wbindgen_free: (a: number, b: number, c: number) => void;
     readonly __wbindgen_malloc: (a: number, b: number) => number;
     readonly __wbindgen_realloc: (a: number, b: number, c: number, d: number) => number;

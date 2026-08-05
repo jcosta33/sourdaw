@@ -439,8 +439,14 @@ fn crumbs_process_does_not_allocate_with_a_sample_playing() {
     instance.set_param("loopMode", 1.0);
     // Engage the filter as well: it is bypassed at the shipped 20 kHz default,
     // so leaving it there would exclude the SVF from the guarded path.
+    //
+    // `filterResonance` reads Q, so this was written as `0.4` back when the
+    // setter clamped a Q reading into 0–1: 8.3 is the Q that 0.4 resolved to
+    // (`0.5 + 0.4 × 19.5`), i.e. the same filter state this guard has always
+    // run against, restated in the parameter's real units. In Q it would have
+    // been below the knob's 0.5 floor and pinned to the least resonant setting.
     instance.set_param("filterCutoff", 2_000.0);
-    instance.set_param("filterResonance", 0.4);
+    instance.set_param("filterResonance", 8.3);
 
     instance.note_on(60, 100);
     instance.note_on(67, 90);
@@ -514,8 +520,12 @@ fn crumbs_voice_stealing_does_not_allocate() {
     // compile time — so this is defence in depth rather than the load-bearing
     // check. It still costs nothing to steal with the filter engaged, the
     // envelope shaped and eight stacked voices per note-on instead of one.
+    //
+    // `filterResonance` is in Q; 8.3 is the Q the previous literal `0.4`
+    // resolved to under the old clamp-as-normalised setter, so the guarded
+    // filter state is unchanged.
     instance.set_param("filterCutoff", 2_000.0);
-    instance.set_param("filterResonance", 0.4);
+    instance.set_param("filterResonance", 8.3);
     instance.set_param("attack", 0.05);
     instance.set_param("hold", 0.02);
     instance.set_param("decay", 0.3);
