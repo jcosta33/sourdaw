@@ -1,0 +1,14 @@
+src/modules/TimelineEditor/presentations/views/Inspector/__tests__/deviceLayoutRegistry.spec.ts
+  h_1228e573df1f42 1-76
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "b9d2d081c5b5f00d3abc4ea02bd32b6cafe2d936",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
