@@ -1,0 +1,21 @@
+src/modules/Arrangement/models/PluginDescriptors/CrustDescriptor.ts
+  s_66d4924c65dcd2::t_3a562dfbcd870e 15-20,22
+src/modules/AudioEngine/wasm/__tests__/dawDspCrustInspectorTimeControls.spec.ts
+  s_66d4924c65dcd2::t_13391624be691f 1-217
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "e84644f937727f358c9b793ecf8da6c67675a7f6",
+  "prompts": {},
+  "sessions": {
+    "s_66d4924c65dcd2": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "dad7ceb6-cb31-44b9-91db-bb71a71cbc38",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
