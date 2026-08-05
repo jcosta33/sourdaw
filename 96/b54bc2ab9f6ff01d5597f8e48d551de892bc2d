@@ -1,0 +1,16 @@
+src/modules/Arrangement/useCases/__tests__/clampDeviceParameterValue.spec.ts
+  h_1228e573df1f42 1-23
+src/modules/Arrangement/useCases/__tests__/isDeviceParameterAutomatable.spec.ts
+  h_1228e573df1f42 1-21
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "96b54bc2ab9f6ff01d5597f8e48d551de892bc2d",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
