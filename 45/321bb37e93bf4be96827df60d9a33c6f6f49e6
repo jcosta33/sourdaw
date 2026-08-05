@@ -1,0 +1,14 @@
+src/infra/events/internal/__tests__/createSubscriptionRegistry.spec.ts
+  h_1228e573df1f42 1-109
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "45321bb37e93bf4be96827df60d9a33c6f6f49e6",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
