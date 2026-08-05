@@ -1,0 +1,91 @@
+src/modules/Arrangement/models/DeviceTailTypes.ts
+  s_ac9b259eab20ba::t_878851b1aa2e12 72-73,78-80,85-86,89-90
+  s_ac9b259eab20ba::t_1db2281bc16fba 62-71,74-77,81-82,91-95
+  s_ac9b259eab20ba::t_f5d55d943fec41 83-84,87-88
+src/modules/AudioRendering/presentations/views/__tests__/ExportDialog.spec.tsx
+  s_ac9b259eab20ba::t_ef6f7fd49d90c6 105,163,315-325
+  s_ac9b259eab20ba::t_35fea1a5fa4f48 372,384-386,388-390,392-394
+  s_ac9b259eab20ba::t_52cc038283ad9c 326,374-383,387,391
+  s_ac9b259eab20ba::t_aa6812413f2951 54-61,66,78-79,98-99,117-118,152-156,298-299,327-346,355-367,371
+  s_ac9b259eab20ba::t_83520e97d9b1a0 290
+  s_ac9b259eab20ba::t_d58ef54e1116fd 234,239-240,347-354,368-370
+  s_ac9b259eab20ba::t_c21922aa41c093 72,111
+  s_ac9b259eab20ba::t_3c9c4d17ec1dd1 157-158
+  s_ac9b259eab20ba::t_2034e03a7a1d08 373
+src/modules/AudioEngine/services/toasterProcessor.ts
+  s_ac9b259eab20ba::t_f5d55d943fec41 115-124,351-354
+src/modules/Arrangement/useCases/freezeBounce/freezeTrack.ts
+  s_ac9b259eab20ba::t_cfe815ce054c38 2,69
+src/modules/AudioEngine/services/__tests__/estimateRenderTailSeconds.spec.ts
+  s_ac9b259eab20ba::t_fad6526b5b3026 271-324
+src/modules/Project/useCases/demoProjects/myceliumAscendant/__tests__/createMyceliumTopology.spec.ts
+  s_ac9b259eab20ba::t_9a5e995e813ba5 3,330-331
+  s_ac9b259eab20ba::t_ef6f7fd49d90c6 4,324-329,332-333,335
+  s_ac9b259eab20ba::t_b079d9da9ae6b4 334
+  s_ac9b259eab20ba::t_512225f65b7499 336-337
+src/modules/AudioEngine/services/estimateRenderTailSeconds.ts
+  s_ac9b259eab20ba::t_e5a054c4c9c65a 164
+  s_ac9b259eab20ba::t_f55faec06e76b2 53,58-59,63,71-72,108,112,116-120,126,131,135,163,165,167,169-173,181,184,187-188
+  s_ac9b259eab20ba::t_e2667e658d8917 48-52,54-57,60-61,64-65,70,109-111,113-115,121-125,127-130,132-134,136-144,152-157,159-162,168,174-180,182-183,185-186,189-191,203-214
+  s_ac9b259eab20ba::t_f5d55d943fec41 62
+src/modules/AudioEngine/useCases/offlineRender/getAutoDetectedTailSeconds.ts
+  s_ac9b259eab20ba::t_7fc236f78b7c50 11,31-32,46-55,73-77,79,98,120,130-132,175-177
+  s_ac9b259eab20ba::t_9a5e995e813ba5 27-30,118-119,122,147
+src/modules/Arrangement/models/PluginDescriptors/ToasterDescriptor.ts
+  s_ac9b259eab20ba::t_1db2281bc16fba 15-24,26-30,33-41,44-45,48-50
+  s_ac9b259eab20ba::t_f5d55d943fec41 31,46
+  s_ac9b259eab20ba::t_878851b1aa2e12 25,32,42-43,47
+src/modules/AudioEngine/useCases/offlineRender/projectDeviceTails.ts
+  s_ac9b259eab20ba::t_a6afe2ae46c53b 9,50
+  s_ac9b259eab20ba::t_8cee9512dacc98 1,69-72
+  s_ac9b259eab20ba::t_e4f7be54362c05 2
+  s_ac9b259eab20ba::t_04c901edcffd59 6,15,25-34,45-47,54-68,73-77
+  s_ac9b259eab20ba::t_625f3415b57c0e 78
+src/modules/AudioEngine/services/__tests__/toasterProcessor.spec.ts
+  s_ac9b259eab20ba::t_3e6023ed60804c 483-496
+src/modules/AudioRendering/presentations/views/ExportDialog.tsx
+  s_ac9b259eab20ba::t_9a5e995e813ba5 19,34,70,119-125,135-142,146-149,151-154,156-161,163-166,172,177,224-226,230,974,981,999-1003,1005-1006
+  s_ac9b259eab20ba::t_abc76da4ce2196 150,155,162,173
+  s_ac9b259eab20ba::t_83d90d7223d26e 1004
+  s_ac9b259eab20ba::t_5f9da2027607e1 64-68,223,227-229,232,239,433-437,441
+  s_ac9b259eab20ba::t_e5a054c4c9c65a 31
+  s_ac9b259eab20ba::t_35fea1a5fa4f48 178
+  s_ac9b259eab20ba::t_e7d13bb4e79f87 195,438
+  s_ac9b259eab20ba::t_206f693e5afaf3 69
+src/modules/AudioEngine/services/__tests__/deviceTailConformance.spec.ts
+  s_ac9b259eab20ba::t_36a698038ebffc 11
+  s_ac9b259eab20ba::t_2f5bff14d1f9f0 50-51,60,412,426-454,456-460
+  s_ac9b259eab20ba::t_a6afe2ae46c53b 94-99
+  s_ac9b259eab20ba::t_f5a3f536e31635 455
+  s_ac9b259eab20ba::t_fad6526b5b3026 47-49,52,59,395-409
+  s_ac9b259eab20ba::t_e538b51bf95deb 103-116,241-253
+  s_ac9b259eab20ba::t_a24dd96096b5a9 254,410,413-425,461-462
+  s_ac9b259eab20ba::t_058fb8d96b688c 255
+  s_ac9b259eab20ba::t_d8d960ab5470e8 411
+src/modules/AudioEngine/useCases/offlineRender/getDeviceChainTailSeconds.ts
+  s_ac9b259eab20ba::t_a6afe2ae46c53b 6,8-12
+  s_ac9b259eab20ba::t_a4c81fc0e8025c 7,14,35,37-39
+src/modules/AudioEngine/useCases/offlineRender/__tests__/getAutoDetectedTailSeconds.spec.ts
+  s_ac9b259eab20ba::t_2e4ae6e6b36376 31-42,52-54,99-105,118,121
+  s_ac9b259eab20ba::t_c21922aa41c093 45,56
+  s_ac9b259eab20ba::t_bc7e33026f1db6 489,492,494
+  s_ac9b259eab20ba::t_2a0c3bb6758cfa 134-146,148-168,170-171
+  s_ac9b259eab20ba::t_d14a8b6234f110 169
+  s_ac9b259eab20ba::t_3fb7339b7d93ce 147
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "a90d58430451fef8c968832fe84b8506a6a9ef85",
+  "prompts": {},
+  "sessions": {
+    "s_ac9b259eab20ba": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8699-3865-7842-8c54-afbac6cfd266",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
