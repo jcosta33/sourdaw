@@ -1,0 +1,21 @@
+src/modules/TimelineEditor/presentations/views/ClipView/WaveformEditor.tsx
+  s_66d4924c65dcd2::t_10dc818e5da3ff 196-207
+src/modules/TimelineEditor/presentations/views/ClipView/__tests__/WaveformEditor.spec.tsx
+  s_66d4924c65dcd2::t_135951b141abf1 286-332
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "47fa3433bf70e8372cdb01fdf3cdf8eee8651686",
+  "prompts": {},
+  "sessions": {
+    "s_66d4924c65dcd2": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "dad7ceb6-cb31-44b9-91db-bb71a71cbc38",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
