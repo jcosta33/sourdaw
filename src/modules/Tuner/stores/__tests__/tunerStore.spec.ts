@@ -42,9 +42,9 @@ describe('updateTunerTelemetry', () => {
         tunerStore.set({});
     });
 
-    it('preserves user-set mode and a4Reference while overwriting telemetry fields', () => {
-        // Seed a device whose user preferences differ from the defaults.
-        mergeDeviceState('d1', { mode: 'strobe', a4Reference: 432 });
+    it('preserves the user-set display mode while overwriting telemetry fields', () => {
+        // Seed a device whose display preference differs from the default.
+        mergeDeviceState('d1', { mode: 'strobe' });
 
         updateTunerTelemetry('d1', { frequency: 329.6, cents: -4.2, confidence: 0.9, active: true });
 
@@ -54,19 +54,20 @@ describe('updateTunerTelemetry', () => {
         expect(state?.cents).toBe(-4.2);
         expect(state?.confidence).toBe(0.9);
         expect(state?.active).toBe(true);
-        // User preferences preserved across the telemetry tick.
+        // The one user preference this store owns, preserved across the tick.
+        // (The concert-A reference is not one of them — it is a DSP input and
+        // lives on `Device.parameterValues`; see `models/A4Reference.ts`.)
         expect(state?.mode).toBe('strobe');
-        expect(state?.a4Reference).toBe(432);
     });
 
     it('does not disturb other devices in the record', () => {
-        mergeDeviceState('d1', { a4Reference: 432 });
-        mergeDeviceState('d2', { a4Reference: 444 });
+        mergeDeviceState('d1', { mode: 'strobe' });
+        mergeDeviceState('d2', { mode: 'poly' });
 
         updateTunerTelemetry('d1', { frequency: 220 });
 
-        expect(tunerStore.value?.d2?.a4Reference).toBe(444);
-        expect(tunerStore.value?.d1?.a4Reference).toBe(432);
+        expect(tunerStore.value?.d2?.mode).toBe('poly');
+        expect(tunerStore.value?.d1?.mode).toBe('strobe');
         expect(tunerStore.value?.d1?.frequency).toBe(220);
     });
 });

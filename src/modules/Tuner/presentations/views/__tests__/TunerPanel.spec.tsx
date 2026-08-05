@@ -1,56 +1,81 @@
-import { render, screen, act } from '@testing-library/react';
+import { render, screen, act, fireEvent } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { useStoreSelector } from '#/infra/store/useStoreSelector';
 
+import { DEFAULT_A4_REFERENCE_HZ, MAX_A4_REFERENCE_HZ, MIN_A4_REFERENCE_HZ } from '../../../models/A4Reference';
 import { getTunerState } from '../../../stores/tunerStore';
+import { setA4Reference } from '../../../useCases/setA4Reference';
 import { TunerPanel } from '../TunerPanel';
 
-// Shared sentinels — hoisted so both the tunerStore mock and the
-// useStoreSelector mock close over the SAME store reference, letting the selector
-// mock branch on identity.
-const { TUNER_STORE_SENTINEL, fixtureInstances, fixtureState } = vi.hoisted(() => {
-    const fixtureState: {
-        noteName: string;
-        octave: number;
-        cents: number;
-        confidence: number;
-        active: boolean;
-        mode: 'needle' | 'strobe' | 'poly';
-        a4Reference: number;
-        frequency: number;
-    } = {
-        noteName: 'A',
-        octave: 4,
-        cents: 0,
-        confidence: 0.95,
-        active: true,
-        mode: 'needle',
-        a4Reference: 440,
-        frequency: 440,
-    };
-    // Fixture record the tunerStore subscription resolves against. The
-    // component selects `instances[deviceId]`, so the mock runs the real
-    // selector against this record rather than returning a flat fixture.
-    const fixtureInstances: Record<string, typeof fixtureState> = { 'device-123': fixtureState };
-    return {
-        TUNER_STORE_SENTINEL: { name: 'tunerStore' },
-        fixtureState,
-        fixtureInstances,
-    };
-});
+// Shared sentinels — hoisted so both store mocks and the useStoreSelector mock
+// close over the SAME store references, letting the selector mock branch on
+// identity.
+const { TUNER_STORE_SENTINEL, TRACK_STORE_SENTINEL, fixtureInstances, fixtureState, fixtureTrackState, knobProps } =
+    vi.hoisted(() => {
+        const fixtureState: {
+            noteName: string;
+            octave: number;
+            cents: number;
+            confidence: number;
+            active: boolean;
+            mode: 'needle' | 'strobe' | 'poly';
+            frequency: number;
+        } = {
+            noteName: 'A',
+            octave: 4,
+            cents: 0,
+            confidence: 0.95,
+            active: true,
+            mode: 'needle',
+            frequency: 440,
+        };
+        // Fixture record the tunerStore subscription resolves against. The
+        // component selects `instances[deviceId]`, so the mock runs the real
+        // selector against this record rather than returning a flat fixture.
+        const fixtureInstances: Record<string, typeof fixtureState> = { 'device-123': fixtureState };
+        // Authoritative project row for the same device. The stored reference is
+        // 432 Hz — deliberately NOT the descriptor default — so a panel reading
+        // its fallback instead of the device row shows 440 and reds.
+        const fixtureTrackState: {
+            tracks: { id: string; devices: { id: string; parameterValues: Record<string, number> }[] }[];
+        } = {
+            tracks: [
+                {
+                    id: 'track-1',
+                    devices: [{ id: 'device-123', parameterValues: { a4_hz: 432 } }],
+                },
+            ],
+        };
+        return {
+            TUNER_STORE_SENTINEL: { name: 'tunerStore' },
+            TRACK_STORE_SENTINEL: { name: 'trackStore' },
+            fixtureState,
+            fixtureInstances,
+            fixtureTrackState,
+            knobProps: { last: null as { min: number; max: number; defaultValue: number; value: number } | null },
+        };
+    });
 
-// Mock the selector subscription. Branch on the store argument: only the
-// tunerStore sentinel resolves against `fixtureInstances`. A subscription to
-// any other store is a test bug — surface it loudly instead of silently feeding
-// the tuner fixture (which would mask a wrong-store subscription).
+// Mock the selector subscription. Branch on the store argument: the tunerStore
+// sentinel resolves against `fixtureInstances`, the trackStore sentinel against
+// the project fixture. A subscription to any other store is a test bug —
+// surface it loudly instead of silently feeding one of the two fixtures (which
+// would mask a wrong-store subscription).
 vi.mock('#/infra/store/useStoreSelector', () => ({
     useStoreSelector: vi.fn((store: unknown, selector: (state: unknown) => unknown) => {
-        if (store !== TUNER_STORE_SENTINEL) {
-            throw new Error('useStoreSelector called with an unexpected store');
+        if (store === TUNER_STORE_SENTINEL) {
+            return selector(fixtureInstances);
         }
-        return selector(fixtureInstances);
+        if (store === TRACK_STORE_SENTINEL) {
+            return selector(fixtureTrackState);
+        }
+        throw new Error('useStoreSelector called with an unexpected store');
     }),
+}));
+
+vi.mock('#/modules/Arrangement/stores', () => ({
+    trackStore: TRACK_STORE_SENTINEL,
 }));
 
 vi.mock('../../../stores/tunerStore', () => ({
@@ -107,15 +132,33 @@ vi.mock('#/components/daw/DawPluginSectionCard', () => ({
     ),
 }));
 
+// `type="number"` rather than `range`: jsdom sanitizes a range input's value
+// against its default 0..100 bounds, which would clamp every Hz reading this
+// panel drives to 100 and make the routing assertions meaningless.
 vi.mock('#/components/daw/RotaryKnob', () => ({
-    RotaryKnob: ({ value, onChange }: { value: number; onChange: (val: number) => void }) => (
-        <input
-            type="range"
-            value={value}
-            onChange={(e) => onChange(Number(e.target.value))}
-            data-testid="rotary-knob"
-        />
-    ),
+    RotaryKnob: ({
+        value,
+        onChange,
+        min,
+        max,
+        defaultValue,
+    }: {
+        value: number;
+        onChange: (val: number) => void;
+        min: number;
+        max: number;
+        defaultValue: number;
+    }) => {
+        knobProps.last = { min, max, defaultValue, value };
+        return (
+            <input
+                type="number"
+                value={value}
+                onChange={(e) => onChange(Number(e.target.value))}
+                data-testid="rotary-knob"
+            />
+        );
+    },
 }));
 
 describe('TunerPanel', () => {
@@ -142,6 +185,50 @@ describe('TunerPanel', () => {
         // Get all "Reference" texts and check that at least one exists
         expect(screen.getAllByText(/Reference/i).length).toBeGreaterThan(0);
         expect(screen.getByTestId('rotary-knob')).toBeInTheDocument();
+    });
+
+    // The reference readout is the device's stored `a4_hz` — the same row the
+    // engine is fed — not a panel-local mirror. The fixture stores 432 while the
+    // descriptor default is 440, so reading the wrong source shows 440.
+    it('reads the reference off the device parameter row, not the descriptor default', () => {
+        render(<TunerPanel deviceId={mockDeviceId} />);
+
+        expect(screen.getAllByText('432 Hz').length).toBeGreaterThan(0);
+        expect(screen.queryByText(`${DEFAULT_A4_REFERENCE_HZ} Hz`)).not.toBeInTheDocument();
+    });
+
+    // A device with no row in the project falls back to the descriptor default
+    // rather than to another device's reading.
+    it('falls back to the descriptor default for a device absent from the project', () => {
+        render(<TunerPanel deviceId="missing-device" />);
+
+        expect(screen.getAllByText(`${DEFAULT_A4_REFERENCE_HZ} Hz`).length).toBeGreaterThan(0);
+        expect(screen.queryByText('432 Hz')).not.toBeInTheDocument();
+    });
+
+    // Moving the knob has to reach `setA4Reference`, which is the only path to
+    // the DSP's `a4_hz`. Whole Hz: the descriptor is continuous, so the panel is
+    // what quantises, and a fractional reading would land in the project file.
+    it('routes a knob move to setA4Reference as a whole number of hertz', () => {
+        render(<TunerPanel deviceId={mockDeviceId} />);
+
+        fireEvent.change(screen.getByTestId('rotary-knob'), { target: { value: '415.6' } });
+
+        expect(setA4Reference).toHaveBeenCalledWith(mockDeviceId, 416);
+    });
+
+    // The knob's sweep is the descriptor's declared range (welded to the
+    // registry in models/__tests__/A4Reference.spec.ts). A wider sweep would
+    // offer readings the write door silently pins.
+    it('sweeps the declared reference range', () => {
+        render(<TunerPanel deviceId={mockDeviceId} />);
+
+        expect(knobProps.last).toEqual({
+            min: MIN_A4_REFERENCE_HZ,
+            max: MAX_A4_REFERENCE_HZ,
+            defaultValue: DEFAULT_A4_REFERENCE_HZ,
+            value: 432,
+        });
     });
 
     it('should display current note when active', () => {

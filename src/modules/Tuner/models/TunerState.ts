@@ -1,5 +1,13 @@
 /**
  * Tuner state types.
+ *
+ * Everything here is either telemetry pushed *out* of the analyser or the
+ * display-mode preference, which is pure panel chrome. The concert-A reference
+ * is deliberately absent: it is an input to the DSP, so it lives on
+ * `Device.parameterValues` as `a4_hz` (see `models/A4Reference.ts`). Mirroring
+ * it here as well gave the panel a second copy that the engine never read and
+ * the project-open reset cleared, which is how the reference knob came to move
+ * a number on screen and nothing else.
  */
 
 export type DisplayMode = 'needle' | 'strobe' | 'poly';
@@ -14,7 +22,6 @@ export type TunerState = {
     noteName: string;
     active: boolean;
     mode: DisplayMode;
-    a4Reference: number;
 };
 
 export const DEFAULT_TUNER_STATE: TunerState = {
@@ -27,5 +34,4 @@ export const DEFAULT_TUNER_STATE: TunerState = {
     noteName: 'A',
     active: false,
     mode: 'needle',
-    a4Reference: 440,
 };

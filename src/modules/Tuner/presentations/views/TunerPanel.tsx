@@ -7,8 +7,15 @@ import { DawPluginMetricTile } from '#/components/daw/DawPluginMetricTile';
 import { DawPluginSectionCard } from '#/components/daw/DawPluginSectionCard';
 import { RotaryKnob } from '#/components/daw/RotaryKnob';
 import { useStoreSelector } from '#/infra/store/useStoreSelector';
+import { trackStore, type TrackStoreState } from '#/modules/Arrangement/stores';
 import { createCompactFloatBuffer } from '#/utils/createCompactFloatBuffer';
 
+import {
+    A4_REFERENCE_PARAM_ID,
+    DEFAULT_A4_REFERENCE_HZ,
+    MAX_A4_REFERENCE_HZ,
+    MIN_A4_REFERENCE_HZ,
+} from '../../models/A4Reference';
 import { tunerStore, getTunerState, type DisplayMode } from '../../stores/tunerStore';
 import { setA4Reference } from '../../useCases/setA4Reference';
 import { setDisplayMode } from '../../useCases/setDisplayMode';
@@ -22,6 +29,27 @@ const MODES: ReadonlyArray<{ id: DisplayMode; label: string; detail: string }> =
 const GUITAR_STRINGS = ['E2', 'A2', 'D3', 'G3', 'B3', 'E4'] as const;
 
 const ANNOUNCE_DEBOUNCE_MS = 750;
+
+/**
+ * The reference this device's DSP is actually tuning to.
+ *
+ * Read from the authoritative device row rather than from `tunerStore` so the
+ * readout cannot disagree with the engine: `a4_hz` is what the worklet was sent
+ * and what a strip rebuild replays, and a panel-local mirror would survive
+ * neither a project reload nor an undo. Returns a plain number so
+ * `useStoreSelector`'s `Object.is` cache holds across unrelated track edits.
+ */
+function selectA4Reference(state: TrackStoreState | null, deviceId: string): number {
+    for (const track of state?.tracks ?? []) {
+        for (const device of track.devices) {
+            if (device.id === deviceId) {
+                return device.parameterValues[A4_REFERENCE_PARAM_ID] ?? DEFAULT_A4_REFERENCE_HZ;
+            }
+        }
+    }
+
+    return DEFAULT_A4_REFERENCE_HZ;
+}
 
 /**
  * Returns the latest `message` only after it has stayed unchanged for
@@ -70,8 +98,9 @@ export const TunerPanel = ({ deviceId }: { deviceId: string }): ReactElement => 
     // re-render every mounted TunerPanel on any device's telemetry tick (the
     // producer polls via requestAnimationFrame, ~60/s on a 60 Hz display).
     const state = useStoreSelector(tunerStore, (instances) => instances?.[deviceId] ?? getTunerState(deviceId));
+    const a4Reference = useStoreSelector(trackStore, (tracks) => selectA4Reference(tracks, deviceId));
 
-    const { noteName, octave, cents, confidence, active, mode, a4Reference, frequency } = state;
+    const { noteName, octave, cents, confidence, active, mode, frequency } = state;
     // The worklet emits confidence in [0,1] by contract, but nothing between the SAB
     // read and here enforces it. Clamp before any display use so the Conf tile cannot
     // read e.g. 120% and the needle alpha stays in range.
@@ -159,10 +188,10 @@ export const TunerPanel = ({ deviceId }: { deviceId: string }): ReactElement => 
                         <RotaryKnob
                             value={a4Reference}
                             onChange={(value) => setA4Reference(deviceId, Math.round(value))}
-                            min={400}
-                            max={490}
+                            min={MIN_A4_REFERENCE_HZ}
+                            max={MAX_A4_REFERENCE_HZ}
                             step={1}
-                            defaultValue={440}
+                            defaultValue={DEFAULT_A4_REFERENCE_HZ}
                             size="md"
                             tone="indigo"
                         />
