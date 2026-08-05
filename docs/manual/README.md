@@ -16,6 +16,8 @@ Organized by what a device does, not by its name.
 
 **Dynamics** — [Gluten](./devices/07-gluten.md) (compressor)
 
+**Amp and distortion** — [Grinder](./devices/11-grinder.md) (guitar amp and cabinet)
+
 ## Conventions used in this manual
 
 Sourdaw is in active development. Where a feature is incomplete, this manual says so at the point
