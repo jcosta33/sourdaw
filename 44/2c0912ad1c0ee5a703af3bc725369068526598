@@ -1,0 +1,18 @@
+src/modules/Arrangement/useCases/__tests__/quantiseDeviceParameterValue.spec.ts
+  h_1228e573df1f42 1-24
+src/modules/Levain/useCases/__tests__/getLevainProjectParameterId.spec.ts
+  h_1228e573df1f42 1-25
+src/modules/Toaster/useCases/__tests__/getToasterPresetDeviceState.spec.ts
+  h_1228e573df1f42 1-36
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "442c0912ad1c0ee5a703af3bc725369068526598",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
