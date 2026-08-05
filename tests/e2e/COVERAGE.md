@@ -507,6 +507,18 @@ hydrateCrumbsStateFromProject, projectDeviceTails.
 - **PR #1170**: isValidDynCrossoverFreqs validator (finite/range/strict-order branches)
   + ProofEqSection deepened (module toggle, band enable immutability, freq kHz
   formatting, gain +/- formatting, band-type/channel-mode select wiring) — 15 new tests.
+- **PR #1172**: CollaborationBlock deepened (conditional header rendering, children
+  pass-through), InspectorDetailHeader deepened (title/backLabel wiring, actions slot),
+  Mix/File/Workspace preset tables (action types, null-return contract, payloads) — 14 tests.
+- **PR #1173**: Track preset table (24 presets — creation/mute/solo/arm/hide/disable/fold
+  pairs, remove-track master guard, global actions), Generate preset table (15 presets —
+  drum/melody/chord styles, trackId forwarding), Registry (CATEGORY_ORDER completeness,
+  PRESET_ACTIONS category coverage, unique ids) — 19 tests.
+- **PR #1174**: getFaustErrorMessage (AppError/Error/non-Error branches), PresenceMarker
+  deepened (variant label positioning, track dot conditional rendering) — 8 tests.
+- **PR #1175**: createSubscriptionRegistry (on/off, once auto-remove, onAny wildcard,
+  snapshot independence, empty-event handling) — 9 tests.
 
-**Campaign total to date: 103 PRs, ~1503 assertions across pure-logic models,
-services, transformers, store-coupled handlers, useCases, and components.**
+**Campaign total to date: 109 PRs, ~1568 assertions across pure-logic models,
+services, transformers, store-coupled handlers, useCases, components, and
+cross-cutting infrastructure.**
