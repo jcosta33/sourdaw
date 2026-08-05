@@ -540,6 +540,16 @@ hydrateCrumbsStateFromProject, projectDeviceTails.
   (default-color/append/preserve-sections), addSections (default-color/append/preserve-markers),
   setGroove (subdivision-selection/empty-offsets) — 14 tests.
 
-**Campaign total to date: 120 PRs, ~1682 assertions across pure-logic models,
+- **PR #1190**: CompressorLayout — final device layout (registration, parameter grid,
+  curve defaults/live values) — 4 tests.
+- **PR #1191**: ClipCommands — 6 untested commands (split/normalize/reverse/glue/
+  consolidate/loop) with selection guards — 7 tests.
+- **PR #1192**: TrackCommands — 18 untested commands (duplicate/delete/freeze/unfreeze/
+  flatten/bounce/arm/solo/mute/group/ungroup + 5 declarative actions) — 20 tests.
+- **PR #1193**: EditCommands — 7 commands (undo/redo/copy/cut/paste/select/deselect)
+  — 7 tests. Completes ALL 11 command interface files with behavioral coverage.
+
+**Campaign total to date: 124 PRs, ~1720 assertions across pure-logic models,
 services, transformers, store-coupled handlers, useCases, components,
-cross-cutting infrastructure, project templates, and ALL 14 template helpers.**
+cross-cutting infrastructure, project templates, ALL 14 template helpers,
+ALL 9 device layouts, and ALL 11 command interface files.**
