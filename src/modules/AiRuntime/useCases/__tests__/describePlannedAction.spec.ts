@@ -140,6 +140,21 @@ describe('describePlannedAction', () => {
         ).toBe('Set clip stretch ratio to 0.5×');
     });
 
+    it('names the playback stretch target and mode', () => {
+        expect(
+            describePlannedAction({
+                action: { type: 'setClipStretchMode', payload: { clipId: 'clip-verse', mode: 'timestretch' } },
+                context,
+            })
+        ).toBe('Set clip "Verse Lead" stretch mode to timestretch');
+        expect(
+            describePlannedAction({
+                action: { type: 'setClipStretchMode', payload: { clipId: 'missing', mode: 'off' } },
+                context,
+            })
+        ).toBe('Set clip stretch mode to off');
+    });
+
     it('names the exact local marker removal target and falls back when it is unavailable', () => {
         mocks.markerStoreValue.value = {
             markers: [{ id: 'marker-chorus', beat: 16, name: 'Chorus', color: 'oklch(0.40 0.07 200)' }],

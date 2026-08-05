@@ -940,6 +940,23 @@ function bridgeToolCall({
         return { type: 'setClipStretchRatio', payload: { clipId: target.clip.id, ratio: args.ratio } };
     }
 
+    if (call.name === 'setClipStretchMode') {
+        const target = findEditableAudioClip(context, args.clipId);
+        const mode = args.mode;
+        if (
+            !hasExactKeys(args, ['clipId', 'mode']) ||
+            !target ||
+            (mode !== 'off' && mode !== 'repitch' && mode !== 'timestretch')
+        ) {
+            return rejection(
+                index,
+                call.name,
+                'Expected one unlocked audio clip and off, repitch, or timestretch mode'
+            );
+        }
+        return { type: 'setClipStretchMode', payload: { clipId: target.clip.id, mode } };
+    }
+
     if (call.name === 'quantizeNotes') {
         const target = findEditableMidiClip(context, args.clipId);
         if (
@@ -1656,6 +1673,7 @@ function getClipTargetIds(action: RuntimeAction): string[] {
         action.type === 'lockClip' ||
         action.type === 'setClipLoop' ||
         action.type === 'normalizeClip' ||
+        action.type === 'setClipStretchMode' ||
         action.type === 'setClipStretchRatio' ||
         action.type === 'quantizeNotes' ||
         action.type === 'transposeNotes' ||
@@ -1862,6 +1880,9 @@ function getMutationKeys(
         return [`clip:${action.payload.clipId}:geometry`];
     }
     if (action.type === 'setClipStretchRatio') {
+        return [`clip:${action.payload.clipId}:geometry`, `clip:${action.payload.clipId}:stretch`];
+    }
+    if (action.type === 'setClipStretchMode') {
         return [`clip:${action.payload.clipId}:geometry`, `clip:${action.payload.clipId}:stretch`];
     }
     if (action.type === 'setClipGain' || action.type === 'normalizeClip') {

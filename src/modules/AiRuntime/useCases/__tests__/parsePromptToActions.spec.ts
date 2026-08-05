@@ -430,13 +430,16 @@ describe('parsePromptToActions', () => {
         expect(result.executionMode).toBe('atomic');
     });
 
-    it('proposes a grounded non-destructive clip stretch ratio as one atomic action', async () => {
+    it('proposes grounded non-destructive clip stretch controls as atomic actions', async () => {
         const actualBridge = await vi.importActual<typeof import('../agentReference/bridgeGroundedLlmToolCalls')>(
             '../agentReference/bridgeGroundedLlmToolCalls'
         );
         mockBridgeGroundedLlmToolCalls.mockImplementation(actualBridge.bridgeGroundedLlmToolCalls);
-        vi.mocked(generateToolCalls).mockResolvedValue(
+        vi.mocked(generateToolCalls).mockResolvedValueOnce(
             completePlan([{ name: 'setClipStretchRatio', arguments: { clipId: 'clip-intro', ratio: 1.5 } }])
+        );
+        vi.mocked(generateToolCalls).mockResolvedValueOnce(
+            completePlan([{ name: 'setClipStretchMode', arguments: { clipId: 'clip-intro', mode: 'timestretch' } }])
         );
         const providerContext: ProjectContext = {
             ...baseContext,
@@ -477,12 +480,21 @@ describe('parsePromptToActions', () => {
         };
 
         const result = await parsePromptToActions('set the Intro clip stretch ratio to 1.5', providerContext);
+        const modeResult = await parsePromptToActions(
+            'set the Intro clip stretch mode to timestretch',
+            providerContext
+        );
 
         expect(result.actions).toEqual([
             { type: 'setClipStretchRatio', payload: { clipId: 'clip-intro', ratio: 1.5 } },
         ]);
         expect(result.requiresConfirmation).toBe(true);
         expect(result.executionMode).toBe('atomic');
+        expect(modeResult.actions).toEqual([
+            { type: 'setClipStretchMode', payload: { clipId: 'clip-intro', mode: 'timestretch' } },
+        ]);
+        expect(modeResult.requiresConfirmation).toBe(true);
+        expect(modeResult.executionMode).toBe('atomic');
     });
 
     it('proposes a grounded two-clip crossfade as one confirmable atomic action', async () => {

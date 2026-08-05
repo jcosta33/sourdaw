@@ -440,7 +440,11 @@ const validators = {
         isNonEmptyString(param.clipId) &&
         typeof param.enabled === 'boolean',
     setClipLoopLength: 'unchecked',
-    setClipStretchMode: 'unchecked',
+    setClipStretchMode: (param): param is PayloadOf<'setClipStretchMode'> =>
+        isObj(param) &&
+        hasExactKeys(param, ['clipId', 'mode']) &&
+        isNonEmptyString(param.clipId) &&
+        (param.mode === 'off' || param.mode === 'repitch' || param.mode === 'timestretch'),
     setClipStretchRatio: (param): param is PayloadOf<'setClipStretchRatio'> =>
         isObj(param) &&
         hasExactKeys(param, ['clipId', 'ratio']) &&

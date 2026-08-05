@@ -1300,6 +1300,16 @@ describe('bridgeLlmToolCalls', () => {
                 },
             },
             {
+                call: {
+                    name: 'setClipStretchMode',
+                    arguments: { clipId: 'clip-verse', mode: 'timestretch' },
+                },
+                action: {
+                    type: 'setClipStretchMode',
+                    payload: { clipId: 'clip-verse', mode: 'timestretch' },
+                },
+            },
+            {
                 call: { name: 'setClipStretchRatio', arguments: { clipId: 'clip-verse', ratio: 1.5 } },
                 action: { type: 'setClipStretchRatio', payload: { clipId: 'clip-verse', ratio: 1.5 } },
             },
@@ -1413,6 +1423,46 @@ describe('bridgeLlmToolCalls', () => {
         expect(rejected.every((result) => result.actions.length === 0)).toBe(true);
         expect(geometryConflicts.every((result) => result.actions.length === 1)).toBe(true);
         expect(geometryConflicts.every((result) => result.rejections.length === 1)).toBe(true);
+    });
+
+    it('rejects unsafe stretch modes and conflicting stretch or lifecycle writes', () => {
+        const midiContext = replaceTrack(projectContext, 'track-vocals', (track) => ({
+            ...track,
+            clips: track.clips.map((clip) => ({ ...clip, type: 'midi', noteCount: 4 })),
+        }));
+        const lockedContext = replaceTrack(projectContext, 'track-vocals', (track) => ({
+            ...track,
+            clips: track.clips.map((clip) => ({ ...clip, locked: true })),
+        }));
+        const mode = {
+            name: 'setClipStretchMode',
+            arguments: { clipId: 'clip-verse', mode: 'timestretch' },
+        };
+        const rejected = [
+            bridge({ calls: [{ name: 'setClipStretchMode', arguments: { clipId: 'missing', mode: 'timestretch' } }] }),
+            bridge({ context: midiContext, calls: [mode] }),
+            bridge({ context: lockedContext, calls: [mode] }),
+            bridge({ calls: [{ name: 'setClipStretchMode', arguments: { clipId: 'clip-verse', mode: 'elastic' } }] }),
+            bridge({
+                calls: [
+                    {
+                        name: 'setClipStretchMode',
+                        arguments: { clipId: 'clip-verse', mode: 'repitch', extra: true },
+                    },
+                ],
+            }),
+        ];
+        const conflicts = [
+            { name: 'setClipStretchRatio', arguments: { clipId: 'clip-verse', ratio: 1.5 } },
+            { name: 'trimClipStart', arguments: { clipId: 'clip-verse', newStartBeat: 1 } },
+            { name: 'trimClipEnd', arguments: { clipId: 'clip-verse', newEndBeat: 7 } },
+            { name: 'nudgeClip', arguments: { clipId: 'clip-verse', beats: 1 } },
+            { name: 'removeClip', arguments: { clipId: 'clip-verse' } },
+        ].flatMap((conflict) => [bridge({ calls: [mode, conflict] }), bridge({ calls: [conflict, mode] })]);
+
+        expect(rejected.every((result) => result.actions.length === 0)).toBe(true);
+        expect(conflicts.every((result) => result.actions.length === 1)).toBe(true);
+        expect(conflicts.every((result) => result.rejections.length === 1)).toBe(true);
     });
 
     it('converts crossfade commands for two distinct unlocked clips with explicit or default duration', () => {
