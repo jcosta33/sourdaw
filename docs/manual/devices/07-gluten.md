@@ -1,9 +1,11 @@
 # Gluten — Compressor
 
-Gluten is a dynamics processor built around four selectable compressor topologies, each with its
-own timing behaviour and colour. Reach for it for bus glue, for level control on individual tracks,
-and for the deliberate pumping and harmonic character that hardware-modelled compressors produce. A
-second topology can be blended in behind the first when one stage is not enough.
+Gluten is a compressor with four selectable topologies, each with its own timing behaviour and
+colour. Reach for it for bus glue, for level control on individual tracks, and for the deliberate
+pumping and harmonic character that hardware-modelled compressors produce. When one stage is not
+enough, a second topology can be blended in behind the first.
+
+Picking the topology is most of the work. The rest of this page is what each one listens to.
 
 **Type** Audio effect · **Category** Dynamics · **Load from** Sidebar → Effects → Gluten
 

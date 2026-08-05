@@ -47,9 +47,12 @@ control, the table says which.
 
 ## Names
 
-This manual uses the names printed on screen. Some of those names are unusual — devices are named
-after baking, not after what they do — so every device page title states the category alongside the
-name, and the device reference above is grouped by category.
+This manual uses the names printed on screen.
 
-Internal names occasionally surface in places the interface does not control, such as the contents
-of a saved project file. When the manual gains a glossary, those will be listed there.
+The devices are named after baking. The interface does not explain why, and neither does this
+manual, so every device page states its category next to its name and the reference above is
+grouped by what things do rather than what they are called. You will not have to know that Gluten
+is a compressor to find a compressor.
+
+Internal names occasionally surface where the interface has no say — inside a saved project file,
+for instance. When the manual gains a glossary, those go there.
