@@ -458,3 +458,16 @@ PhaseCorrelationDisplay, StringVibrationView.
 | Statements | 52 | 85.93% | 84 |
 | Branches | 40 | 74.95% | 72 |
 | Functions | 50 | 86.75% | 84 |
+
+### Item 4: Store-coupled handlers + integration paths (PRs #1121-#1155, ~227 assertions)
+
+33 PRs covering store-coupled commit/hydrate/restore handlers, handler-map getters,
+and untested useCases: chordTrack restore/mutation/noop/toggle, automation
+restore/lane/remove/add/transform-undo, crossfade restore, master gain set/restore,
+groove apply/assign/create/rename, marker add/remove/section, soloSafe set/restore,
+trackSoloStates restore, addNotes NaN guards/clamping, addChordEvent sanitization,
+quantizeNotes/transposeNotes delegation, autoOrganizeProject mutations,
+createMidiGenerationSourceGuard, hasDurableMidiGenerationResult,
+adjustmentLayerHandlers withFreezeStaleness wrapper, handler-map getters
+(PunchRecording/Project/WebMidiInput), commitYeastGrooveExtraction,
+hydrateCrumbsStateFromProject, projectDeviceTails.
