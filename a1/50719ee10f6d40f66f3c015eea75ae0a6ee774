@@ -1,0 +1,16 @@
+src/modules/Proof/presentations/components/__tests__/ProofEqSection.spec.tsx
+  h_1228e573df1f42 1,4,7-10,81-211
+src/modules/Proof/services/__tests__/isValidDynCrossoverFreqs.spec.ts
+  h_1228e573df1f42 1-34
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "a150719ee10f6d40f66f3c015eea75ae0a6ee774",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
