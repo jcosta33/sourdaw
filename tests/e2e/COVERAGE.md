@@ -528,6 +528,18 @@ hydrateCrumbsStateFromProject, projectDeviceTails.
   edm (C minor/i-VI-III-VII/4 VCAs/kick sidechain), hipHopTrap (F minor/4 VCAs/808
   sidechain), rockBand (E minor/Em-C-G-D/4 VCAs) — 15 tests.
 
-**Campaign total to date: 115 PRs, ~1619 assertions across pure-logic models,
+- **PR #1184**: getLevainProjectParameterId (override/snake-to-camel), quantiseDeviceParameterValue
+  (builtin clamp/unknown passthrough), getToasterPresetDeviceState (serialize/null/clone-immunity) — 9 tests.
+- **PR #1185**: createAudioTrack (overrides/devices), projectLevainPatchToEngineParameters
+  (base fields/articulation-id/mic-positions/empty-mics) — 9 tests.
+- **PR #1186**: 4 template helpers — buildDevice (defaults/unique-ids), createInstrumentTrack
+  (device-chain/overrides), createBus (devices/overrides), createFolder (color/collapsed) — 15 tests.
+- **PR #1187**: 4 more helpers — addDeviceChain (append/preserve), addSend (busId/replace/dedup),
+  setChordProgression (repeat/wrap/clamp/unique-ids), setMasterChain (presets/replace/all-9) — 16 tests.
+- **PR #1188**: Final 4 helpers — attachSidechainCompressor (defaults/overrides), addMarkers
+  (default-color/append/preserve-sections), addSections (default-color/append/preserve-markers),
+  setGroove (subdivision-selection/empty-offsets) — 14 tests.
+
+**Campaign total to date: 120 PRs, ~1682 assertions across pure-logic models,
 services, transformers, store-coupled handlers, useCases, components,
-cross-cutting infrastructure, and project templates.**
+cross-cutting infrastructure, project templates, and ALL 14 template helpers.**
