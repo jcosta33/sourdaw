@@ -1,0 +1,14 @@
+src/modules/AiRuntime/useCases/__tests__/planPromptActions.spec.ts
+  h_1228e573df1f42 1-61
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "65a02767c7644f2c28891caeb28cb15ed4c44375",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
