@@ -1,0 +1,25 @@
+src/modules/AudioEngine/stores/__tests__/audioBufferCache.spec.ts
+  s_66d4924c65dcd2::t_8cb0577e3ec3e8 516-526,529,533
+src/modules/AudioEngine/stores/__tests__/audioBufferCacheConnectionChurn.spec.ts
+  s_66d4924c65dcd2::t_27f452502da29c 1-222
+src/modules/AudioEngine/stores/__tests__/fakeAudioBufferIndexedDb.ts
+  s_66d4924c65dcd2::t_03b77cc4f28ac6 40-45,210-211,216-220,232,254-258
+src/modules/AudioEngine/stores/audioBufferCache.ts
+  s_66d4924c65dcd2::t_7aa7832d5d7c63 152-162,171-181,186-206,304-316,318-323,505-507,529-532,659-665
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "c0eb74ec14e3d8468369d22ba2fd9e4627bd9725",
+  "prompts": {},
+  "sessions": {
+    "s_66d4924c65dcd2": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "dad7ceb6-cb31-44b9-91db-bb71a71cbc38",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
