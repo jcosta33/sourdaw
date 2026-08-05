@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 
-import { FACTORY_PRESETS, DRUM_KIT_PRESETS } from '../presets/factoryPresets';
+import { FACTORY_PRESETS } from '../presets/factoryPresets';
 
 describe('factoryPresets', () => {
     it('exports a non-empty array of presets', () => {
@@ -8,16 +8,21 @@ describe('factoryPresets', () => {
         expect(FACTORY_PRESETS.length).toBeGreaterThan(0);
     });
 
-    it('contains drum kit presets with correct properties', () => {
-        expect(DRUM_KIT_PRESETS.length).toBeGreaterThan(0);
-        const kit = DRUM_KIT_PRESETS[0];
-        if (!kit) {
-            throw new Error('expected at least one drum kit preset');
+    it('contains the four drum kit presets with correct properties', () => {
+        // The drum kits are deliberately not exported on their own (audit
+        // M-020): the aggregate is the single surface, so derive them from it.
+        const drumKits = FACTORY_PRESETS.filter((preset) => preset.id.startsWith('factory-drumkit-'));
+        expect(drumKits.map((preset) => preset.id).sort()).toEqual([
+            'factory-drumkit-808',
+            'factory-drumkit-acoustic',
+            'factory-drumkit-analog',
+            'factory-drumkit-electronic',
+        ]);
+        for (const kit of drumKits) {
+            expect(kit.category).toBe('drums');
+            expect(kit.trackKind).toBe('midi');
+            expect(kit.devices.length).toBeGreaterThan(0);
         }
-        expect(kit.id).toBeDefined();
-        expect(kit.category).toBe('drums');
-        expect(kit.trackKind).toBe('midi');
-        expect(kit.devices.length).toBeGreaterThan(0);
     });
 
     it('ensures all factory presets have isFactory: true', () => {

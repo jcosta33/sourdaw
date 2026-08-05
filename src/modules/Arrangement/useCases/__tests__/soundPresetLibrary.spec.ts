@@ -17,6 +17,31 @@ describe('soundPresetLibrary', () => {
         expect(fermenter_presets.every((preset) => factory_preset_ids.has(preset.id))).toBe(true);
     });
 
+    it('lists every preset id exactly once — drum kits included once, not twice (audit M-020)', () => {
+        const idCounts = new Map<string, number>();
+        for (const preset of getFactoryPresets()) {
+            idCounts.set(preset.id, (idCounts.get(preset.id) ?? 0) + 1);
+        }
+
+        const duplicatedIds = [...idCounts.entries()]
+            .filter(([, count]) => count > 1)
+            .map(([id]) => id)
+            .sort();
+        expect(duplicatedIds).toEqual([]);
+
+        // Presence pin (ADR 0015): a dedupe that dropped the drum kits outright
+        // would also be a defect, so each kit must appear exactly once.
+        const drumKitIds = [
+            'factory-drumkit-808',
+            'factory-drumkit-analog',
+            'factory-drumkit-electronic',
+            'factory-drumkit-acoustic',
+        ];
+        for (const id of drumKitIds) {
+            expect(idCounts.get(id)).toBe(1);
+        }
+    });
+
     it('returns a stable array reference on repeat calls within the same platform', () => {
         const first = getFactoryPresets();
         const second = getFactoryPresets();

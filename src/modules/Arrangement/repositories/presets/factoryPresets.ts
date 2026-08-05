@@ -100,11 +100,12 @@ export const FACTORY_PRESETS: SoundPreset[] = [
     ...padPresets,
     ...keysPresets,
     ...stringsPresets,
+    // Single inclusion point for the drum kits. They are deliberately not
+    // exported separately: a second export let the library concatenate them
+    // on top of this aggregate, duplicating their ids (audit M-020).
     ...DRUM_KIT_PRESETS,
     ...EXPANDED_FX_PRESETS,
     ...EXPANDED_SYNTH_PRESETS,
     ...FAUST_INSTRUMENT_PRESETS,
     ...FAUST_EFFECT_PRESETS,
 ];
-
-export { DRUM_KIT_PRESETS };
