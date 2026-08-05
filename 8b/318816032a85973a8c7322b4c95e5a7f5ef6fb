@@ -1,0 +1,19 @@
+src/modules/MIDI/handlers/groove/__tests__/handleCreateGrooveTemplate.spec.ts
+  s_5beaab2565d975::t_e6dabe6ac2d89b 1-89
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "8b318816032a85973a8c7322b4c95e5a7f5ef6fb",
+  "prompts": {},
+  "sessions": {
+    "s_5beaab2565d975": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-a5b416d6d47daae05",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
