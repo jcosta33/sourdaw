@@ -1,0 +1,20 @@
+src/modules/Project/useCases/projectTemplates/templateHelpers/__tests__/addMarkers.spec.ts
+  h_1228e573df1f42 1-41
+src/modules/Project/useCases/projectTemplates/templateHelpers/__tests__/addSections.spec.ts
+  h_1228e573df1f42 1-43
+src/modules/Project/useCases/projectTemplates/templateHelpers/__tests__/attachSidechainCompressor.spec.ts
+  h_1228e573df1f42 1-65
+src/modules/Project/useCases/projectTemplates/templateHelpers/__tests__/setGroove.spec.ts
+  h_1228e573df1f42 1-61
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "f681fa54438fb6a4872adab33a1ed1aa11ebb1a8",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
