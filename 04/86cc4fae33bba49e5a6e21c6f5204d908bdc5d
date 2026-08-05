@@ -1,0 +1,41 @@
+crates/daw-dsp/src/grand_boule/engine.rs
+  s_66d4924c65dcd2::t_71ff3e94b4b647 475-477,1875-1922
+crates/daw-dsp/src/grand_boule/pedals.rs
+  s_66d4924c65dcd2::t_a5ed4f03c44a3f 21-30,103-105,115,123-136,203,220,301-355
+public/wasm/daw-dsp/daw_dsp.d.ts
+  s_66d4924c65dcd2::t_92b73fce01a7a8 1,785-838,840,861-888
+public/wasm/daw-dsp/daw_dsp_bg.wasm.d.ts
+  s_66d4924c65dcd2::t_7cb7813abe7f4a 1,5-58,60,81-108
+public/wasm/manifest.json
+  s_66d4924c65dcd2::t_d0d6e0c769ee4f 12,16-18,21,26,40,54
+src/modules/Arrangement/stores/__tests__/deviceWriteBoundaryClosure.spec.ts
+  s_66d4924c65dcd2::t_4ad2160bdf3cab 224-232
+src/modules/AudioEngine/wasm/daw_dsp.d.ts
+  s_66d4924c65dcd2::t_234fe3941b6b75 1,785-838,840,861-888
+src/modules/GrandBoule/presentations/views/GrandBoulePanel.tsx
+  s_66d4924c65dcd2::t_0a3231bcbd5762 463,465
+src/modules/GrandBoule/useCases/calibrateGrandBouleMidi/__tests__/resetMidiCalibration.spec.ts
+  s_66d4924c65dcd2::t_bce4ab4f63dbd8 1,3-5,7,10-39,41-51
+src/modules/GrandBoule/useCases/calibrateGrandBouleMidi/__tests__/setSustainThreshold.spec.ts
+  s_66d4924c65dcd2::t_d56b642dcd3b23 1,3-4,8-31,33-55
+src/modules/GrandBoule/useCases/calibrateGrandBouleMidi/resetMidiCalibration.ts
+  s_66d4924c65dcd2::t_048c59b1cb96b1 4,9-14,19,22,24-27
+src/modules/GrandBoule/useCases/calibrateGrandBouleMidi/setSustainThreshold.ts
+  s_66d4924c65dcd2::t_679436c2d2202d 3,8-23,25-31
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "0486cc4fae33bba49e5a6e21c6f5204d908bdc5d",
+  "prompts": {},
+  "sessions": {
+    "s_66d4924c65dcd2": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "dad7ceb6-cb31-44b9-91db-bb71a71cbc38",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
