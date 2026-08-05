@@ -1,0 +1,19 @@
+src/modules/PunchRecording/useCases/__tests__/getPunchRecordingHandlers.spec.ts
+  s_5beaab2565d975::t_d02450d41ed774 1-33
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "c98a46bc7333ba7550bb3358e1862f1cd34f7ad0",
+  "prompts": {},
+  "sessions": {
+    "s_5beaab2565d975": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-a5b416d6d47daae05",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
