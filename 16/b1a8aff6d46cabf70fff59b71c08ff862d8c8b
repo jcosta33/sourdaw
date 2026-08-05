@@ -1,0 +1,21 @@
+src/components/daw/Fader.tsx
+  s_66d4924c65dcd2::t_49ebfda78caaa1 1,75-77,91-140,153,188-189,201,207-208
+src/components/daw/__tests__/Fader.spec.tsx
+  s_66d4924c65dcd2::t_1bee14a6e39e96 6-12,134-216
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "16b1a8aff6d46cabf70fff59b71c08ff862d8c8b",
+  "prompts": {},
+  "sessions": {
+    "s_66d4924c65dcd2": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "dad7ceb6-cb31-44b9-91db-bb71a71cbc38",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
