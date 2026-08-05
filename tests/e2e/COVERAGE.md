@@ -518,7 +518,16 @@ hydrateCrumbsStateFromProject, projectDeviceTails.
   deepened (variant label positioning, track dot conditional rendering) — 8 tests.
 - **PR #1175**: createSubscriptionRegistry (on/off, once auto-remove, onAny wildcard,
   snapshot independence, empty-event handling) — 9 tests.
+- **PR #1177**: raceAbortSignal (no-signal passthrough, pre-abort, in-flight abort,
+  unhandled-rejection swallow) — 7 tests.
+- **PR #1178**: generateAcousticKit (8 samples, ids, names, tags, buffer shape) — 4 tests.
+- **PR #1179-#1181**: Project templates — createAmbientTemplate (groove/buses/chords/
+  sections), createSingerSongwriterTemplate (G-Em-C-D/sections/sends),
+  createLofiTemplate (MPC-60 groove/dorian progression/sections) — 18 tests.
+- **PR #1182**: Remaining 4 templates — podcast (chromatic/sidechain ducking),
+  edm (C minor/i-VI-III-VII/4 VCAs/kick sidechain), hipHopTrap (F minor/4 VCAs/808
+  sidechain), rockBand (E minor/Em-C-G-D/4 VCAs) — 15 tests.
 
-**Campaign total to date: 109 PRs, ~1568 assertions across pure-logic models,
-services, transformers, store-coupled handlers, useCases, components, and
-cross-cutting infrastructure.**
+**Campaign total to date: 115 PRs, ~1619 assertions across pure-logic models,
+services, transformers, store-coupled handlers, useCases, components,
+cross-cutting infrastructure, and project templates.**
