@@ -1,0 +1,71 @@
+src/modules/TimelineEditor/presentations/views/Inspector/DeviceParameterControl.tsx
+  s_66d4924c65dcd2::t_825c831db5b958 315
+  s_66d4924c65dcd2::t_d8e22963c8913a 143-148,150-151,156-165,167-177
+  s_66d4924c65dcd2::t_aaeca46ed1ce45 149
+  s_66d4924c65dcd2::t_3e121f067320c0 183
+  s_66d4924c65dcd2::t_550f202544dc83 7
+  s_66d4924c65dcd2::t_3f3e41aba82ce4 134-137
+  s_66d4924c65dcd2::t_7d42af97861290 166
+src/modules/TimelineEditor/presentations/views/Inspector/__tests__/DeviceParameterControl.spec.tsx
+  s_66d4924c65dcd2::t_41bb6f4d7fb30f 252-261,263-309,311-326
+  s_66d4924c65dcd2::t_0d0fc78b7ea7a8 262
+  s_66d4924c65dcd2::t_e6d1be3b56af1f 310
+  s_66d4924c65dcd2::t_28cea48bbd88c5 4-5
+src/modules/Crust/models/CrustPatch.ts
+  s_66d4924c65dcd2::t_710b49eb4e4c65 33
+  s_66d4924c65dcd2::t_136dd6f5d0841b 19-32,34-36
+  s_66d4924c65dcd2::t_359eda0cb164c2 67
+src/modules/Arrangement/useCases/snapToDeclaredLegalValue.ts
+  s_66d4924c65dcd2::t_99df57d3c3e94e 1-10
+src/modules/Crust/useCases/__tests__/crustPresets.spec.ts
+  s_66d4924c65dcd2::t_8b79cb456fe64a 3
+  s_66d4924c65dcd2::t_160ede801af740 39-42
+src/modules/Arrangement/useCases/index.ts
+  s_66d4924c65dcd2::t_b0bc2e7fc3e2de 241
+src/modules/Crust/presentations/views/CrustPanel.tsx
+  s_66d4924c65dcd2::t_5278a3659cd31a 385
+  s_66d4924c65dcd2::t_1b986f69c15fff 15
+src/modules/Arrangement/models/DeviceParameterLaw.ts
+  s_66d4924c65dcd2::t_5e72718712e02f 89-90,92
+  s_66d4924c65dcd2::t_8d58a94847f9bc 67-88,91,93-96
+  s_66d4924c65dcd2::t_c3b1270dd91ce6 149-171
+  s_66d4924c65dcd2::t_07c83fbae79730 179-182
+  s_66d4924c65dcd2::t_ce078278bfb58e 66
+src/modules/Arrangement/models/__tests__/DeviceParameterLaw.spec.ts
+  s_66d4924c65dcd2::t_baca086c4fadc8 127-163,170-175,177-186
+  s_66d4924c65dcd2::t_0b00ae37f05dd5 164-169
+  s_66d4924c65dcd2::t_bd9b81eca1d0ae 176
+src/modules/Crust/presentations/views/__tests__/CrustPanel.spec.tsx
+  s_66d4924c65dcd2::t_f874bd17778c5d 4
+  s_66d4924c65dcd2::t_2f7618d6ed08f1 168-187
+  s_66d4924c65dcd2::t_00addb39093e83 12-16
+src/modules/Crust/models/__tests__/CrustPatch.spec.ts
+  s_66d4924c65dcd2::t_8c274b9b1eae20 1-26
+src/modules/AudioEngine/wasm/__tests__/dawDspCrustOversampling.spec.ts
+  s_66d4924c65dcd2::t_46aae03ae4eb76 1-162
+src/modules/TimelineEditor/models/PluginDescriptorViewTypes.ts
+  s_66d4924c65dcd2::t_9a52a641b92df5 18-23
+src/modules/Arrangement/models/PluginDescriptors/CrustDescriptor.ts
+  s_66d4924c65dcd2::t_0b91d61e9138a8 19-32,34
+  s_66d4924c65dcd2::t_9dd52958120f29 57
+  s_66d4924c65dcd2::t_7b7cb09f700d85 33
+src/modules/Arrangement/models/DeviceParameterTypes.ts
+  s_66d4924c65dcd2::t_c3d538651638d7 45-67
+  s_66d4924c65dcd2::t_587ed4a4f92c50 92-93
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "e1d3395f39f493d9c50dcefc6f73b3521bf27787",
+  "prompts": {},
+  "sessions": {
+    "s_66d4924c65dcd2": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "dad7ceb6-cb31-44b9-91db-bb71a71cbc38",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
