@@ -47,6 +47,13 @@ export function describePlannedAction({ action, context }: DescribePlannedAction
         const target = clip ? ` clip "${clip.name}"` : ' clip';
         return `Set${target} stretch ratio to ${String(action.payload.ratio)}×`;
     }
+    if (action.type === 'setClipStretchMode') {
+        const clip = context.tracks
+            .flatMap((track) => track.clips)
+            .find((candidate) => candidate.id === action.payload.clipId);
+        const target = clip ? ` clip "${clip.name}"` : ' clip';
+        return `Set${target} stretch mode to ${action.payload.mode}`;
+    }
     if (action.type === 'removeMarker') {
         const marker = markerStore.value?.markers.find((candidate) => candidate.id === action.payload.markerId);
         if (marker) {

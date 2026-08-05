@@ -244,6 +244,16 @@ const guardedPayloadContractCases = [
         ],
     }),
     guardedPayloadCase({
+        actionType: 'setClipStretchMode',
+        validPayload: { clipId: 'clip-1', mode: 'timestretch' },
+        invalidPayloads: [
+            { clipId: '', mode: 'timestretch' },
+            { clipId: 'clip-1' },
+            { clipId: 'clip-1', mode: 'elastic' },
+            { clipId: 'clip-1', mode: 'repitch', extra: true },
+        ],
+    }),
+    guardedPayloadCase({
         actionType: 'setClipStretchRatio',
         validPayload: { clipId: 'clip-1', ratio: 1.5 },
         invalidPayloads: [

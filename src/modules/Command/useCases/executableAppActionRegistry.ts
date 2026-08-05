@@ -69,6 +69,7 @@ export type ExecutableAppActionValueRule =
           argument: string;
           kind: 'enum-if-present';
           values: readonly string[];
+          aliases?: Readonly<Record<string, readonly string[]>>;
           requiredInPrompt?: boolean;
           defaultWhenUnmentioned?: string;
           mayOmitWhenUnmentioned?: boolean;
@@ -515,6 +516,45 @@ export const executableAppActionDescriptors = [
                 },
             },
             required: ['clipId'],
+        },
+    },
+    {
+        actionType: 'setClipStretchMode',
+        risk: 'broad-reversible',
+        description: 'Set the playback stretch mode of one unlocked audio clip.',
+        intentPhrases: [
+            'set clip stretch mode',
+            'set the clip stretch mode',
+            'set clip to repitch',
+            'set the clip to repitch',
+            'set clip to timestretch',
+            'set the clip to timestretch',
+            'set clip stretch off',
+            'set the clip stretch off',
+        ],
+        targetRules: editableAudioClipTargetRules,
+        valueRules: [
+            {
+                argument: 'mode',
+                kind: 'enum-if-present',
+                values: ['off', 'repitch', 'timestretch'],
+                aliases: {
+                    repitch: ['re-pitch', 're pitch'],
+                    timestretch: ['time-stretch', 'time stretch'],
+                },
+                requiredInPrompt: true,
+            },
+        ],
+        parameters: {
+            properties: {
+                clipId: { type: 'string', description: 'Existing unlocked audio clip ID' },
+                mode: {
+                    type: 'string',
+                    enum: ['off', 'repitch', 'timestretch'],
+                    description: 'Playback stretch mode',
+                },
+            },
+            required: ['clipId', 'mode'],
         },
     },
     {

@@ -2044,7 +2044,10 @@ function validateEnumValue(
     assertedValue: unknown,
     actionScope: ActionPromptScope
 ): string | null {
-    const mentionedValues = valueRule.values.filter((value) => getIntentPhraseIndex(actionScope.masked, value) >= 0);
+    const mentionedValues = valueRule.values.filter((value) => {
+        const phrases = [value, ...(valueRule.aliases?.[value] ?? [])];
+        return phrases.some((phrase) => getIntentPhraseIndex(actionScope.masked, phrase) >= 0);
+    });
     if (mentionedValues.length > 1) {
         return getValueMismatchReason(valueRule.argument);
     }

@@ -1033,6 +1033,62 @@ describe('bridgeGroundedLlmToolCalls', () => {
         expect(rejected.every((result) => result.rejections[0]?.reason.includes('does not match'))).toBe(true);
     });
 
+    it('grounds only an explicit supported clip stretch mode', () => {
+        const context = createClipContext();
+        const accepted = bridge(
+            [{ name: 'setClipStretchMode', arguments: { clipId: 'clip-intro', mode: 'timestretch' } }],
+            'set the Intro clip stretch mode to timestretch',
+            context
+        );
+        const rejected = [
+            bridge(
+                [{ name: 'setClipStretchMode', arguments: { clipId: 'clip-intro', mode: 'repitch' } }],
+                'set the Intro clip stretch mode to timestretch',
+                context
+            ),
+            bridge(
+                [{ name: 'setClipStretchMode', arguments: { clipId: 'clip-intro', mode: 'timestretch' } }],
+                'set the Intro clip stretch mode',
+                context
+            ),
+            bridge(
+                [{ name: 'setClipStretchMode', arguments: { clipId: 'clip-intro', mode: 'timestretch' } }],
+                'set the Intro clip stretch mode to time stretch or re-pitch',
+                context
+            ),
+        ];
+        const aliasResults = [
+            bridge(
+                [{ name: 'setClipStretchMode', arguments: { clipId: 'clip-intro', mode: 'timestretch' } }],
+                'set the Intro clip stretch mode to time stretch',
+                context
+            ),
+            bridge(
+                [{ name: 'setClipStretchMode', arguments: { clipId: 'clip-intro', mode: 'timestretch' } }],
+                'set the Intro clip stretch mode to time-stretch',
+                context
+            ),
+            bridge(
+                [{ name: 'setClipStretchMode', arguments: { clipId: 'clip-intro', mode: 'repitch' } }],
+                'set the Intro clip stretch mode to re-pitch',
+                context
+            ),
+        ];
+
+        expect(accepted.actions).toEqual([
+            { type: 'setClipStretchMode', payload: { clipId: 'clip-intro', mode: 'timestretch' } },
+        ]);
+        expect(accepted.rejections).toEqual([]);
+        expect(aliasResults.flatMap((result) => result.actions)).toEqual([
+            { type: 'setClipStretchMode', payload: { clipId: 'clip-intro', mode: 'timestretch' } },
+            { type: 'setClipStretchMode', payload: { clipId: 'clip-intro', mode: 'timestretch' } },
+            { type: 'setClipStretchMode', payload: { clipId: 'clip-intro', mode: 'repitch' } },
+        ]);
+        expect(aliasResults.flatMap((result) => result.rejections)).toEqual([]);
+        expect(rejected.every((result) => result.actions.length === 0)).toBe(true);
+        expect(rejected.every((result) => result.rejections[0]?.reason.includes('does not match'))).toBe(true);
+    });
+
     it('allows explicit clip unlock while rejecting edits to a locked clip', () => {
         const base = createClipContext();
         const context: ProjectContext = {

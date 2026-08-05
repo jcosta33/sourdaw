@@ -227,6 +227,21 @@ const EXPECTED_COMMANDS = [
         true
     ),
     expectedCommand(
+        'setClipStretchMode',
+        'Set the playback stretch mode of one unlocked audio clip.',
+        {
+            clipId: { type: 'string', description: 'Existing unlocked audio clip ID' },
+            mode: {
+                type: 'string',
+                enum: ['off', 'repitch', 'timestretch'],
+                description: 'Playback stretch mode',
+            },
+        },
+        ['clipId', 'mode'],
+        'broad-reversible',
+        true
+    ),
+    expectedCommand(
         'setClipStretchRatio',
         'Set the non-destructive time-stretch ratio of one unlocked audio clip.',
         {
@@ -1052,6 +1067,32 @@ const EXPECTED_GROUNDING = [
                 match: 'exact',
                 connector: 'to',
                 keywords: ['target', 'at'],
+            },
+        ],
+    },
+    {
+        actionType: 'setClipStretchMode',
+        intentPhrases: [
+            'set clip stretch mode',
+            'set the clip stretch mode',
+            'set clip to repitch',
+            'set the clip to repitch',
+            'set clip to timestretch',
+            'set the clip to timestretch',
+            'set clip stretch off',
+            'set the clip stretch off',
+        ],
+        targetRules: [{ argument: 'clipId', capability: 'editable-audio-clip' }],
+        valueRules: [
+            {
+                argument: 'mode',
+                kind: 'enum-if-present',
+                values: ['off', 'repitch', 'timestretch'],
+                aliases: {
+                    repitch: ['re-pitch', 're pitch'],
+                    timestretch: ['time-stretch', 'time stretch'],
+                },
+                requiredInPrompt: true,
             },
         ],
     },
