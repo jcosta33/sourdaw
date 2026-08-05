@@ -476,9 +476,24 @@ impl CrumbsEngine {
 
             self.voices[voice_index].trigger(&params);
 
-            // Apply stacking detune and pan after trigger
+            // Pitch lives on the voice, not on the engine: `trigger` derives
+            // `speed` from the voice's *own* `tune_cents`, and this loop is the
+            // only thing that ever writes that field. So the global Tune has to
+            // be pushed down here — and unconditionally.
+            //
+            // Under the old `if count > 1` guard it never was: `set_param`
+            // stored `CrumbsParam::Tune` in `self.tune_cents` and nothing read
+            // it back, so at the shipped stack count of 1 the Tune knob was
+            // inert at every setting. The same guard left a second hole —
+            // `trigger` does not reset the voice's `tune_cents`, so a voice last
+            // used by a stacked note carried that note's detune into its next
+            // trigger at stack count 1. One unconditional write closes both.
+            self.voices[voice_index].set_tune(self.tune_cents + detune_cents);
+
+            // Stack pan stays conditional. Unlike tune there is no engine-wide
+            // pan behind it — `CrumbsParam::Pan` is a separate matter — so this
+            // is only the spread across a stack and means nothing at count 1.
             if count > 1 {
-                self.voices[voice_index].set_tune(detune_cents);
                 self.voices[voice_index].set_pan(stack_pan);
             }
 
@@ -787,7 +802,13 @@ impl CrumbsEngine {
             // Slice mode has no root note — a slice plays at the pitch it was
             // recorded at, whichever key it is mapped to.
             CrumbsParam::RootNote => self.quick.root_note = (value as u8).min(127),
-            CrumbsParam::Tune => self.tune_cents = value.clamp(-2400.0, 2400.0),
+            // The wire value is **semitones**, which is what the Crumbs knob
+            // shows ("st", ±24) and the unit Toaster's `tune` already carries
+            // through this same parameter pipeline. ±24 st is exactly the
+            // ±2400 cents this arm has always bounded; only the conversion is
+            // new. Stored in cents because that is what `CrumbsVoice::set_tune`
+            // takes and what the field is named for.
+            CrumbsParam::Tune => self.tune_cents = value.clamp(-24.0, 24.0) * 100.0,
             CrumbsParam::Pan => {
                 // Pan is set per-voice; this sets the default for new voices.
                 // Existing voices are not affected.

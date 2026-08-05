@@ -147,9 +147,19 @@ export const CRUMBS_DESCRIPTOR: PluginDescriptor = {
             type: 'float',
             value: 0,
             defaultValue: 0,
-            minValue: -100,
-            maxValue: 100,
-            unit: 'cents',
+            // Semitones, ±24 — the travel and unit the Crumbs Tune knob has
+            // always shown ("st"), and the unit `CrumbsEngine::set_param` reads
+            // this parameter in. The declared range was ±100 "cents", which
+            // agreed with nothing: `clampDeviceParameterValue` is what binds an
+            // automation curve or a loaded preset, so a lane drawn on this
+            // parameter could deliver 100 to an engine whose knob stops at 24,
+            // and could not reach the bottom two thirds of the knob's travel in
+            // the units it actually reads. Nobody noticed because the engine
+            // stored the value and never read it — see the Tune arm in
+            // `crates/daw-dsp/src/crumbs/engine.rs`.
+            minValue: -24,
+            maxValue: 24,
+            unit: 'st',
             automatable: true,
             hasAutomation: false,
         },

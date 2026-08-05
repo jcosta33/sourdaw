@@ -65,7 +65,8 @@ fn assert_proportional_to(rendered: &[f32], expected_source: &[f32], what: &str)
     let scale = scale_factor(rendered, expected_source);
     assert!(
         scale > 0.05,
-        "{what}: rendered output is ~silent (scale {scale}), so nothing reached the output"
+        "{what}: rendered output does not track this source (scale {scale}) — \
+         it is ~silent, polarity-inverted, or reading somewhere else entirely"
     );
     for (frame, (out, src)) in rendered.iter().zip(expected_source.iter()).enumerate() {
         let expected = src * scale;
@@ -128,6 +129,87 @@ fn an_octave_above_the_root_reads_the_sample_at_double_rate() {
     // unity-rate test above.
     let every_other: Vec<f32> = (0..BLOCK).map(|i| pcm[i * 2]).collect();
     assert_proportional_to(&left, &every_other, "left channel one octave up");
+}
+
+/// The `tune` parameter shipped write-only. `set_param` stored it in
+/// `CrumbsEngine::tune_cents` and nothing ever read that field back: pitch is
+/// computed in `CrumbsVoice::trigger` from the *voice's* own `tune_cents`, and
+/// the only writer of that was the voice-stacking detune under `if count > 1`.
+/// At the stack count of 1 the device ships with, the knob moved nothing.
+///
+/// All three cases drive the knob *between* values rather than parking it at
+/// its default — an assertion taken at `tune = 0` agrees with a dead parameter.
+#[test]
+fn tune_of_plus_twelve_semitones_reads_the_sample_at_double_rate() {
+    let pcm = fixture_pcm(4 * BLOCK);
+    let mut instance = instance_with_fixture(&pcm);
+
+    // Deliberately left at the default stack count of 1 — the state the device
+    // ships in, and the one where the stacking `set_tune` never runs. A guard
+    // taken at `stackCount > 1` would pass against the write-only engine.
+    instance.set_param("tune", 12.0);
+    instance.note_on(60, 100);
+
+    let left = unsafe { read_channel(instance.process(BLOCK as u32), BLOCK) };
+
+    // +12 st is the transposition note 72 asks for above, so the expected block
+    // is the same one: every other source frame. Comparing against
+    // `pcm[..BLOCK]` would only prove "something changed"; this pins the
+    // transposition to the amount the knob asked for, which is what makes the
+    // unit load-bearing — read as *cents*, 12 would be a rate of 1.007 and
+    // return essentially the untransposed block.
+    let every_other: Vec<f32> = (0..BLOCK).map(|i| pcm[i * 2]).collect();
+    assert_proportional_to(&left, &every_other, "left channel with tune +12 st");
+}
+
+#[test]
+fn tune_of_minus_twelve_semitones_reads_the_sample_at_half_rate() {
+    let pcm = fixture_pcm(4 * BLOCK);
+    let mut instance = instance_with_fixture(&pcm);
+
+    instance.set_param("tune", -12.0);
+    instance.note_on(60, 100);
+
+    let left = unsafe { read_channel(instance.process(BLOCK as u32), BLOCK) };
+
+    // Rate 0.5 puts every second output frame on an exact source frame and the
+    // ones between on a half-frame the interpolator reconstructs. Only the
+    // exact ones are compared, so this pins the direction and amount of the
+    // transposition without asserting anything about the sinc kernel.
+    let even_output: Vec<f32> = (0..BLOCK / 2).map(|i| left[i * 2]).collect();
+    assert_proportional_to(
+        &even_output,
+        &pcm[..BLOCK / 2],
+        "even output frames with tune -12 st",
+    );
+}
+
+#[test]
+fn tune_is_bounded_at_the_twenty_four_semitones_the_knob_travels() {
+    let pcm = fixture_pcm(4 * BLOCK);
+
+    let mut at_limit = instance_with_fixture(&pcm);
+    at_limit.set_param("tune", 24.0);
+    at_limit.note_on(60, 100);
+    let bounded = unsafe { read_channel(at_limit.process(BLOCK as u32), BLOCK) };
+
+    let mut beyond_limit = instance_with_fixture(&pcm);
+    beyond_limit.set_param("tune", 100.0);
+    beyond_limit.note_on(60, 100);
+    let clamped = unsafe { read_channel(beyond_limit.process(BLOCK as u32), BLOCK) };
+
+    // +24 st is rate 4, which reads every fourth source frame; the fixture is
+    // 4 × BLOCK long, so the whole block stays in range.
+    let every_fourth: Vec<f32> = (0..BLOCK).map(|i| pcm[i * 4]).collect();
+    assert_proportional_to(&bounded, &every_fourth, "left channel with tune +24 st");
+    // The wire value is semitones, so the bound is ±24 — not the ±2400 a cents
+    // reading would want. An over-range write (a stale project, an automation
+    // curve authored against a wider declared range) is pinned to the top of
+    // the knob's travel instead of transposing 100 semitones into aliasing.
+    assert_eq!(
+        bounded, clamped,
+        "tune 100 was not clamped to the +24 st limit"
+    );
 }
 
 #[test]
