@@ -64,6 +64,37 @@ export function clampDeviceParameterValue({ deviceType, paramId, value }: ClampD
 }
 
 /**
+ * The member of a declared legal set that a value resolves to.
+ *
+ * Separate from {@link quantiseDeviceParameterValue} because the set has two
+ * consumers and they must not disagree: the delivery path snaps onto it, and a
+ * control that offers the set has to know which member is currently in force in
+ * order to show it. A control computing that itself is how the two drift.
+ *
+ * Floors — the greatest member at or below `value`, and the smallest member for
+ * anything under it. See {@link quantiseDeviceParameterValue} for why the
+ * direction is not "nearest". `legalValues` is required ascending
+ * (`DeviceParameterLaw.spec.ts` holds the registry to it), so the scan can
+ * stop at the first member above the value.
+ */
+export function snapToDeclaredLegalValue({
+    legalValues,
+    value,
+}: {
+    legalValues: readonly number[];
+    value: number;
+}): number {
+    let snapped = legalValues[0] ?? value;
+    for (const legal of legalValues) {
+        if (legal > value) {
+            break;
+        }
+        snapped = legal;
+    }
+    return snapped;
+}
+
+/**
  * The value a **delivery** to the DSP is allowed to carry, given the declared
  * type.
  *
@@ -115,22 +146,38 @@ export function clampDeviceParameterValue({ deviceType, paramId, value }: ClampD
  * the declared range.
  *
  * It does **not** follow that every integer in that range is a distinct legal
- * setting, and three parameters are known not to satisfy it:
- * `crust/oversampling` (declared 1..32, legal factors `{1,2,4,8,16,32}` —
- * `crates/daw-dsp/src/crust/oversample.rs` `normalize_factor`),
- * `gluten/oversampling` (declared 1..4, legal `{1,2,4}` —
- * `crates/daw-dsp/src/gluten/oversample.rs` `set_rate`, whose `_ => 4` arm
- * swallows 3), and `dutch-oven/algorithm` (declared 0..6, where 4 and 5 are
- * documented reserved wire values that fall through to Plate). A glide across
- * any of them is delivered an integer the engine then re-snaps itself, so the
- * audible result is a legal setting either way; what is wrong is only the
- * declaration. Closing it properly means declaring the legal set on the
- * descriptor rather than special-casing it here, which is a separate change.
+ * setting, and a parameter that knows it is not says so with `legalValues`,
+ * which this function snaps onto instead of rounding. `crust/oversampling` is
+ * the first: it declares 1..32 and legal factors `{1,2,4,8,16,32}`, because its
+ * cascade only builds powers of two
+ * (`crates/daw-dsp/src/crust/oversample.rs` `normalize_factor`). Measured
+ * through the checked-in wasm, the other 26 integers render bit-identical to a
+ * neighbour (`dawDspCrustOversampling.spec.ts`).
+ *
+ * **The snap goes down, not to the nearest.** `normalize_factor` floors, and so
+ * does the truncation ahead of it (`engine.rs` `value.max(1.0) as usize`), so
+ * flooring here delivers exactly what the engine was already going to use. A
+ * nearest-neighbour snap would not: a project storing `oversampling: 30` — a
+ * value the 1..32 knob could produce before the legal set was declared — sounds
+ * like 16 today, and rounding it up to 32 would change how an existing project
+ * renders. The declaration is being corrected; the audio is not.
+ *
+ * Two parameters in the same shape are still undeclared: `gluten/oversampling`
+ * (declared 1..4, legal `{1,2,4}` — `crates/daw-dsp/src/gluten/oversample.rs`
+ * `set_rate`, whose `_ => 4` arm swallows 3) and `dutch-oven/algorithm`
+ * (declared 0..6, where 4 and 5 are documented reserved wire values that fall
+ * through to Plate). For those two the engine still re-snaps a delivered
+ * integer itself, so the audible result is a legal setting either way; what is
+ * wrong is only the declaration.
  */
 export function quantiseDeviceParameterValue({ deviceType, paramId, value }: ClampDeviceParameterValueInput): number {
     const descriptor = findParameterDescriptor({ deviceType, paramId });
     if (!descriptor || descriptor.type === 'float') {
         return value;
+    }
+
+    if (descriptor.legalValues) {
+        return snapToDeclaredLegalValue({ legalValues: descriptor.legalValues, value });
     }
 
     const rounded = Math.round(value);

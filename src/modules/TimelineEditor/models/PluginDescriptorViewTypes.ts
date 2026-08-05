@@ -15,6 +15,12 @@ export type DeviceParameterView = {
     defaultValue: number;
     minValue: number;
     maxValue: number;
+    /**
+     * The settings the engine distinguishes, when they are not every integer in
+     * the range. Present means the control offers exactly these and nothing
+     * between them.
+     */
+    legalValues?: readonly number[];
     unit: string;
     scaling?: 'log' | 'linear';
     choices?: string[];

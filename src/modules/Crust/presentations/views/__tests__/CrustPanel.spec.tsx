@@ -1,6 +1,7 @@
 import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+import { CRUST_OVERSAMPLE_FACTORS } from '../../../models/CrustPatch';
 import { crustStore, defaultCrustState, type CrustState } from '../../../stores/crustStore';
 import { CrustPanel } from '../CrustPanel';
 
@@ -8,6 +9,11 @@ const useCaseMocks = vi.hoisted(() => ({
     resetCrustPanelMeters: vi.fn(),
     resetCrustTruePeakIndicator: vi.fn(),
     setCrustPanelUiLevel: vi.fn(),
+    setCrustParamWithAudio: vi.fn(),
+}));
+
+vi.mock('../../../useCases/crustParamBridge/setCrustParamWithAudio', () => ({
+    setCrustParamWithAudio: useCaseMocks.setCrustParamWithAudio,
 }));
 
 vi.mock('../../../useCases/resetCrustPanelMeters', () => ({
@@ -158,5 +164,25 @@ describe('CrustPanel', () => {
         fireEvent.click(screen.getByRole('button', { name: 'Reset true peak indicator' }));
 
         expect(useCaseMocks.resetCrustTruePeakIndicator).toHaveBeenCalledTimes(1);
+    });
+
+    it('offers a chip for every oversampling factor the engine builds a stage for', () => {
+        // Enumerated from the model's list, not retyped here — the retyped copy
+        // this replaces is how 2x went missing from the panel while the cascade
+        // in `crates/daw-dsp/src/crust/oversample.rs` had a stage for it.
+        render(<CrustPanel deviceId="crust-1" />);
+
+        for (const factor of CRUST_OVERSAMPLE_FACTORS) {
+            const label = factor === 1 ? 'OS off' : `${factor}×`;
+            expect(screen.getByRole('button', { name: label })).toBeInTheDocument();
+        }
+    });
+
+    it('writes the 2x factor the panel could not previously reach', () => {
+        render(<CrustPanel deviceId="crust-1" />);
+
+        fireEvent.click(screen.getByRole('button', { name: '2×' }));
+
+        expect(useCaseMocks.setCrustParamWithAudio).toHaveBeenCalledWith('crust-1', 'oversampling', 2);
     });
 });

@@ -4,7 +4,7 @@ import { DawCompactSelect } from '#/components/daw/DawCompactSelect';
 import { BipolarSlider } from '#/components/ui/bipolar-slider';
 import { useStore } from '#/infra/store/useStore';
 import { trackStore } from '#/modules/Arrangement/stores';
-import { setDeviceParameter } from '#/modules/Arrangement/useCases';
+import { setDeviceParameter, snapToDeclaredLegalValue } from '#/modules/Arrangement/useCases';
 import { automationStore, modulationStore, modulationRuntimeStore } from '#/modules/Automation/stores';
 import { addAutomationLane, removeAutomationLane } from '#/modules/Automation/useCases';
 import { MidiLearnButton, MidiLearnRotaryKnob as RotaryKnob } from '#/modules/ControlSurface/presentations/views';
@@ -131,22 +131,56 @@ export const DeviceParameterControl = ({ param, device, trackId }: DeviceParamet
         setDeviceParameter(device.id, param.id, value1);
     };
 
-    const handleChoiceChange = (event: ChangeEvent<HTMLSelectElement>) => {
+    // Shared by both select branches, which put different numbers in `value`:
+    // a `choice` option carries its index, a legal-set option carries the
+    // setting itself. Either way what the option carries is what gets written.
+    const handleSelectChange = (event: ChangeEvent<HTMLSelectElement>) => {
         setDeviceParameter(device.id, param.id, Number(event.target.value));
     };
 
     const isChoice = param.type === 'choice' && param.choices && param.choices.length > 0;
 
+    // A parameter that declares a legal set is offered as that set and nothing
+    // between. A knob would step by 1 over the declared span
+    // (`deriveStep`), and for `crust/oversampling` that is 32 positions the
+    // engine resolves to 6 — 26 drags that move the readout and render an
+    // identical signal.
+    const legalValues = param.legalValues;
+    const isLegalSet = !!legalValues && legalValues.length > 0;
+    const isDiscrete = isChoice || isLegalSet;
+
     const isSlider = param.unit === 'dB';
     const isLog = param.scaling === 'log';
 
     const renderSliderOrKnob = () => {
+        if (isLegalSet) {
+            return (
+                <DawCompactSelect
+                    className="w-[80px] bg-surface px-1.5 focus-visible:ring-primary"
+                    // Shown at the member actually in force, not the raw stored
+                    // number: a project saved before the set was declared, or a
+                    // MIDI CC scaled across the range, can hold a value between
+                    // two members, and the select would otherwise show the wrong
+                    // one while the engine ran another.
+                    value={snapToDeclaredLegalValue({ legalValues, value })}
+                    onChange={handleSelectChange}
+                    aria-label={param.name}
+                >
+                    {legalValues.map((legal) => (
+                        <option key={legal} value={legal}>
+                            {`${legal}${param.unit}`}
+                        </option>
+                    ))}
+                </DawCompactSelect>
+            );
+        }
+
         if (isChoice) {
             return (
                 <DawCompactSelect
                     className="w-[80px] bg-surface px-1.5 focus-visible:ring-primary"
                     value={Math.round(value)}
-                    onChange={handleChoiceChange}
+                    onChange={handleSelectChange}
                     aria-label={param.name}
                 >
                     {param.choices!.map((label, index) => (
@@ -278,7 +312,7 @@ export const DeviceParameterControl = ({ param, device, trackId }: DeviceParamet
                     <label className="text-[10px] font-medium text-foreground truncate w-full" title={param.name}>
                         {param.name}
                     </label>
-                    {!isChoice ? (
+                    {!isDiscrete ? (
                         <span className="text-[10px] font-mono text-muted-foreground">
                             {displayValue}
                             {param.unit ? ` ${param.unit}` : ''}

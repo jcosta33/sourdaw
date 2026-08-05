@@ -141,6 +141,66 @@ describe('quantiseDeviceParameterValue', () => {
         }
     });
 
+    it('snaps onto a declared legal set instead of rounding to the nearest integer', () => {
+        // `crust/oversampling` declares 1..32 with legal factors
+        // {1,2,4,8,16,32}. 20 is reachable and stored: the old 1..32 knob
+        // stepped by 1, and a learned MIDI CC scales 0..127 across the same
+        // span. Rounding delivered 20; the engine then floored it to 16 in
+        // Rust, so the declaration and the DSP disagreed about what the
+        // parameter was set to.
+        expect(quantiseDeviceParameterValue({ deviceType: 'crust', paramId: 'oversampling', value: 20 })).toBe(16);
+        // Floors rather than rounds to the nearest — 30 is 2 away from 32 and
+        // 14 away from 16, and it must still deliver 16, because that is what
+        // the engine has always played for a project holding 30.
+        expect(quantiseDeviceParameterValue({ deviceType: 'crust', paramId: 'oversampling', value: 30 })).toBe(16);
+        // Fractional inputs (the live automation slew) floor the same way, so
+        // 3.9 is 2x and not 4x — matching `value.max(1.0) as usize` ahead of
+        // `normalize_factor`.
+        expect(quantiseDeviceParameterValue({ deviceType: 'crust', paramId: 'oversampling', value: 3.9 })).toBe(2);
+        // A declared member passes through as itself, and below the smallest
+        // member the smallest member is delivered.
+        expect(quantiseDeviceParameterValue({ deviceType: 'crust', paramId: 'oversampling', value: 4 })).toBe(4);
+        expect(quantiseDeviceParameterValue({ deviceType: 'crust', paramId: 'oversampling', value: 0.4 })).toBe(1);
+        // A stepped parameter on the same device that declares no legal set is
+        // still rounded, so this is not "crust stopped being quantised".
+        expect(quantiseDeviceParameterValue({ deviceType: 'crust', paramId: 'scHpfFreq', value: 91.6 })).toBe(92);
+    });
+
+    it('holds every declared legal set to the range it sits inside', () => {
+        // Derived from the registry, not a list of the parameters that have one
+        // — the next parameter to declare a legal set is held to the same shape
+        // without anyone remembering to add it here.
+        //
+        // `snapToDeclaredLegalValue` scans ascending and stops at the first
+        // member above the value, so an unsorted set would snap wrong. A set
+        // that did not reach an endpoint would make that endpoint unreachable
+        // while `minValue`/`maxValue` still claimed it, and a default outside
+        // the set would mean a device boots at a setting its own control cannot
+        // offer.
+        const declaring = BUILTIN_PLUGINS.flatMap((plugin) =>
+            plugin.parameters.flatMap((parameter) => {
+                if (!parameter.legalValues) {
+                    return [];
+                }
+                return [{ identity: `${plugin.id}:${parameter.id}`, parameter, legalValues: parameter.legalValues }];
+            })
+        );
+
+        // Presence pin: an extraction that goes blind would satisfy every
+        // assertion below forever.
+        expect(declaring.map((entry) => entry.identity)).toEqual(['crust:oversampling']);
+
+        for (const { identity, parameter, legalValues } of declaring) {
+            expect(parameter.type, `${identity} declares a legal set on a float`).not.toBe('float');
+            expect([...legalValues], `${identity} is not ascending or not unique`).toEqual([
+                ...new Set([...legalValues].sort((left, right) => left - right)),
+            ]);
+            expect(legalValues[0], `${identity} does not reach its declared minimum`).toBe(parameter.minValue);
+            expect(legalValues.at(-1), `${identity} does not reach its declared maximum`).toBe(parameter.maxValue);
+            expect(legalValues, `${identity} boots at a value it does not offer`).toContain(parameter.defaultValue);
+        }
+    });
+
     it('leaves a `float` parameter fractional', () => {
         // Bacteria's `mix` declares step 0.01, which the descriptor builders map
         // to `float`. Rounding it would quantise a continuous wet/dry to on/off.

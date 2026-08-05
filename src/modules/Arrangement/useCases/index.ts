@@ -238,6 +238,7 @@ export { getPlatformPlugins } from './getPlatformPlugins';
 export { getPluginById } from './getPluginById';
 export { clampDeviceParameterValue } from './clampDeviceParameterValue';
 export { quantiseDeviceParameterValue } from './quantiseDeviceParameterValue';
+export { snapToDeclaredLegalValue } from './snapToDeclaredLegalValue';
 export { isDeviceParameterAutomatable } from './isDeviceParameterAutomatable';
 
 // ── Command handler access ────────────────────────────────────────────────────

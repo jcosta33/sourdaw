@@ -16,6 +16,24 @@ export type CrustDither = 'off' | 'tpdf16' | 'tpdf24' | 'powr1' | 'powr2' | 'pow
 
 export type CrustScrollSpeed = 'slow' | 'normal' | 'fast';
 
+/**
+ * The oversampling factors the engine distinguishes, ascending.
+ *
+ * One list, because it had been three: the panel offered `[1, 4, 8, 16, 32]`,
+ * this type spelled the same five out, and the preset spec kept its own copy —
+ * so 2x, which `crates/daw-dsp/src/crust/oversample.rs` has always built a
+ * stage for, was unreachable from every surface in the product. The panel row,
+ * the patch type and the preset guard now all read this.
+ *
+ * The Arrangement descriptor declares the same set a second time
+ * (`PluginDescriptors/CrustDescriptor.ts` — models do not cross module
+ * boundaries, so that duplication is deliberate); `CrustPatch.spec.ts` holds
+ * the two to each other.
+ */
+export const CRUST_OVERSAMPLE_FACTORS = [1, 2, 4, 8, 16, 32] as const;
+
+export type CrustOversampleFactor = (typeof CRUST_OVERSAMPLE_FACTORS)[number];
+
 export type CrustStreamingPreset =
     | 'spotify'
     | 'youtube'
@@ -46,7 +64,7 @@ export type CrustPatch = {
     channelLinkTransient: number; // 0 – 100 %
     channelLinkRelease: number; // 0 – 100 %
     truePeak: boolean;
-    oversampling: 1 | 4 | 8 | 16 | 32;
+    oversampling: CrustOversampleFactor;
 
     // Level 3 — BUILD
     satEnabled: boolean;

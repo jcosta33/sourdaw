@@ -12,7 +12,7 @@ import { DawPluginSectionHeader } from '#/components/daw/DawPluginSectionHeader'
 import { DawReadoutRow } from '#/components/daw/DawReadoutRow';
 import { useStore } from '#/infra/store/useStore';
 
-import { type CrustPatch, type CrustStreamingPreset } from '../../models/CrustPatch';
+import { CRUST_OVERSAMPLE_FACTORS, type CrustPatch, type CrustStreamingPreset } from '../../models/CrustPatch';
 import { crustStore, defaultCrustState } from '../../stores/crustStore';
 import { loadCrustPatchWithAudio } from '../../useCases/crustParamBridge/loadCrustPatchWithAudio';
 import { setCrustParamWithAudio } from '../../useCases/crustParamBridge/setCrustParamWithAudio';
@@ -56,8 +56,6 @@ type StreamingPreset = (typeof STREAMING_PRESETS)[number];
 type MissingStreamingPreset = Exclude<CrustStreamingPreset, StreamingPreset['id']>;
 const _assertAllPresetsPresent: MissingStreamingPreset extends never ? true : never = true;
 void _assertAllPresetsPresent;
-
-const OVERSAMPLE_OPTIONS = [1, 4, 8, 16, 32] as const;
 
 function getLufsTarget(presetId: string): number | null {
     // 'custom' has no fixed loudness goal: the panel skips its ceiling write and
@@ -384,7 +382,7 @@ export const CrustPanel = ({ deviceId }: { deviceId: string }): ReactElement => 
 
                 {patch.uiLevel >= 2 ? (
                     <div className="flex flex-wrap gap-1.5">
-                        {OVERSAMPLE_OPTIONS.map((option) => (
+                        {CRUST_OVERSAMPLE_FACTORS.map((option) => (
                             <DawPluginChip
                                 key={option}
                                 active={patch.oversampling === option}

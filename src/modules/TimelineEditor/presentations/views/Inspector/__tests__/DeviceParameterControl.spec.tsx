@@ -1,6 +1,8 @@
 import { render, screen, fireEvent } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+import { getPluginById } from '#/modules/Arrangement/useCases';
+
 import { DeviceParameterControl } from '../DeviceParameterControl';
 import { TrackAutomationSection } from '../TrackAutomationSection';
 
@@ -245,6 +247,81 @@ describe('DeviceParameterControl', () => {
         render(<DeviceParameterControl param={choiceParam} device={mockDevice} trackId="track-1" />);
         fireEvent.change(screen.getByTestId('compact-select'), { target: { value: '1' } });
         expect(mockSetDeviceParameter).toHaveBeenCalledWith('device-1', 'gain', 1);
+    });
+
+    // ── A parameter whose engine distinguishes fewer settings than its range ──
+    //
+    // `crust/oversampling` declares 1..32 and a legal set of {1,2,4,8,16,32}.
+    // Read out of the shipped registry rather than fixtured: a fixture would
+    // let the control agree with a declaration the product does not have.
+    function crustOversamplingParam(): DeviceParameterView {
+        const parameter = getPluginById('crust')?.parameters.find((candidate) => candidate.id === 'oversampling');
+        if (!parameter) {
+            throw new Error('crust/oversampling is not in the plugin registry');
+        }
+        return parameter;
+    }
+
+    const crustDevice: Device = {
+        id: 'device-crust',
+        name: 'Crust',
+        type: 'crust',
+        bypassed: false,
+        parameterValues: { oversampling: 4 },
+    };
+
+    it('offers a declared legal set as itself, with no position between its members', () => {
+        const param = crustOversamplingParam();
+        render(<DeviceParameterControl param={param} device={crustDevice} trackId="track-1" />);
+
+        const select = screen.getByTestId('compact-select') as HTMLSelectElement;
+        expect([...select.options].map((option) => option.value)).toEqual(
+            (param.legalValues ?? []).map((legal) => String(legal))
+        );
+        // The narrowing is the whole point: the knob this replaces stepped by 1
+        // over the declared span, so it offered 32 positions for 6 settings.
+        expect(select.options.length).toBeLessThan(param.maxValue - param.minValue + 1);
+    });
+
+    it('writes the factor a legal-set option names, not its index', () => {
+        // 2x is the case that motivated this: the engine has always built a 2x
+        // stage, and no surface in the product could ask for it. Under the
+        // index semantics `choice` uses, '2' would have written 2 meaning "the
+        // third option" — 4x.
+        render(<DeviceParameterControl param={crustOversamplingParam()} device={crustDevice} trackId="track-1" />);
+
+        fireEvent.change(screen.getByTestId('compact-select'), { target: { value: '2' } });
+        expect(mockSetDeviceParameter).toHaveBeenCalledWith('device-crust', 'oversampling', 2);
+    });
+
+    it('shows the member in force when the stored value sits between two of them', () => {
+        // 20 is reachable and stored — the old 1..32 knob stepped by 1, and a
+        // learned MIDI CC scales 0..127 across the declared span. The engine
+        // floors it to 16, so the control has to say 16 rather than blanking or
+        // showing its first option.
+        render(
+            <DeviceParameterControl
+                param={crustOversamplingParam()}
+                device={{ ...crustDevice, parameterValues: { oversampling: 20 } }}
+                trackId="track-1"
+            />
+        );
+
+        expect(screen.getByTestId('compact-select')).toHaveValue('16');
+    });
+
+    it('still gives a stepped parameter with no declared legal set the knob', () => {
+        // Presence pin: without this the select branch could have swallowed
+        // every `int` parameter and these cases would still pass.
+        const stepped = getPluginById('crust')?.parameters.find((candidate) => candidate.id === 'scHpfFreq');
+        expect(stepped?.type).toBe('int');
+        expect(stepped?.legalValues).toBeUndefined();
+
+        render(
+            <DeviceParameterControl param={stepped as DeviceParameterView} device={crustDevice} trackId="track-1" />
+        );
+        expect(screen.getByTestId('rotary-knob')).toBeInTheDocument();
+        expect(screen.queryByTestId('compact-select')).not.toBeInTheDocument();
     });
 
     it('should render bipolar slider for dB unit parameters', () => {

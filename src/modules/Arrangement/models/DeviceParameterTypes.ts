@@ -42,6 +42,29 @@ export type DeviceParameter = {
      */
     minValue: number;
     maxValue: number;
+    /**
+     * The settings the engine actually distinguishes, when they are *not* every
+     * integer in `[minValue, maxValue]`.
+     *
+     * `minValue`/`maxValue` say how far a write may travel; for a stepped
+     * parameter the implied legal set is "every integer in between", and for
+     * most of them that is true. It is not true of a parameter whose engine
+     * snaps its input to a coarser lattice — `crust/oversampling` declares
+     * 1..32 but its cascade only builds powers of two, so 26 of those 32
+     * integers render bit-identical to a neighbour. Declaring the set here
+     * makes those positions unofferable rather than inert: the control offers
+     * exactly these values, and `quantiseDeviceParameterValue` snaps a delivery
+     * onto them.
+     *
+     * Must be ascending, unique, and span `minValue`..`maxValue` inclusive —
+     * held to that over the whole registry in `DeviceParameterLaw.spec.ts`,
+     * because a set that does not reach an endpoint would make the endpoint
+     * unreachable while the range still claims it.
+     *
+     * Omitted means "every integer in the range is its own setting", which is
+     * what a stepped parameter without this field asserts.
+     */
+    legalValues?: readonly number[];
     unit: string;
     scaling?: 'log' | 'linear';
     choices?: string[];
@@ -66,6 +89,8 @@ export type PluginParamDef = {
     unit: string;
     step?: number;
     scaling?: 'log' | 'linear';
+    /** See `DeviceParameter.legalValues`; descriptor builders copy it through. */
+    legalValues?: readonly number[];
 };
 
 export type PluginFormat = 'builtin' | 'vst3' | 'clap' | 'au';
