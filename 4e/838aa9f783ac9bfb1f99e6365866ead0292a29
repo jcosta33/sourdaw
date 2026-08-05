@@ -1,0 +1,14 @@
+src/modules/Levain/presentations/components/__tests__/ArticulationList.spec.tsx
+  h_1228e573df1f42 1-2,4,7-13,49-112
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "4e838aa9f783ac9bfb1f99e6365866ead0292a29",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
