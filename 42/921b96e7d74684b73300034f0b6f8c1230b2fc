@@ -1,0 +1,14 @@
+src/modules/Project/useCases/projectTemplates/templateFiles/__tests__/ambient.spec.ts
+  h_1228e573df1f42 1-119
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "42921b96e7d74684b73300034f0b6f8c1230b2fc",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
