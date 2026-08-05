@@ -1,0 +1,28 @@
+src/modules/TimelineEditor/presentations/hooks/__tests__/usePianoRollInteractions.spec.tsx
+  s_66d4924c65dcd2::t_c30ab39d9cbcac 534-540
+  s_66d4924c65dcd2::t_8db49fb2e3ade3 512-517,526-527
+  s_66d4924c65dcd2::t_c91c0aa666b40c 528
+src/modules/TimelineEditor/presentations/views/ClipView/__tests__/PianoRoll.spec.tsx
+  s_66d4924c65dcd2::t_783ded438c4251 260-271,279,281-287
+  s_66d4924c65dcd2::t_41b95ca6ce75b5 308
+src/modules/TimelineEditor/presentations/hooks/usePianoRollInteractions.ts
+  s_66d4924c65dcd2::t_5732ab360477e1 3,242-246,253,256-259,265
+src/modules/TimelineEditor/presentations/views/ClipView/PianoRoll.tsx
+  s_66d4924c65dcd2::t_8258a6c7153a61 265-269
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "907e7c3b649eafca17073c376efdb6c48d6bf651",
+  "prompts": {},
+  "sessions": {
+    "s_66d4924c65dcd2": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "dad7ceb6-cb31-44b9-91db-bb71a71cbc38",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
