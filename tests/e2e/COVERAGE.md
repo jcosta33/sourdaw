@@ -471,3 +471,26 @@ createMidiGenerationSourceGuard, hasDurableMidiGenerationResult,
 adjustmentLayerHandlers withFreezeStaleness wrapper, handler-map getters
 (PunchRecording/Project/WebMidiInput), commitYeastGrooveExtraction,
 hydrateCrumbsStateFromProject, projectDeviceTails.
+
+### Item 5: Remaining model/service/transformer gaps (PRs #1156-#1164, ~92 assertions)
+
+9 PRs covering the last pure-logic gaps identified by exhaustive symbol-level scans:
+
+- **PR #1156-#1161**: invokeCancelableNativeLlm (abort/timeout/cancel),
+  hydrateLevainPatchFromParameterValues, telemetrySeqlock (seqlock writer).
+- **PR #1162**: createAddNotesToolSchema (2×2 branch matrix for
+  allowNegativeStartBeat/expectedClipId), trackAction/clipAction preset builders
+  (null-return guard), ArpPattern factories (defaultStep shape + independence,
+  createDefaultPattern length/edge).
+- **PR #1163**: 8 MIDI pure transformers (invertMidiNotes axis mirror + clamp,
+  retrogradeMidiNotes time-reversal, normalizeMidiNoteInput clamp/round/default,
+  midiNotesEqual 11-field deep equality, quantizeMidiNoteLengths grid snap +
+  threshold/zero branches, setMidiVelocities clamp, scaleMidiVelocities multiply +
+  clamp, transposeMidiNotes shift + clamp) — 29 tests.
+- **PR #1164**: getGrooveProjection factory — memoization identity, assignment
+  routing (match/missing-template/passthrough), loop-wrap segmentation (drop
+  above-loop, absolute vs relative, clip-boundary clipping, two-segment wrap,
+  zero-duration, groove-already-applied bypass) — 11 tests.
+
+**Campaign total to date: 97 PRs, ~1433 assertions across pure-logic models,
+services, transformers, store-coupled handlers, useCases, and components.**
