@@ -3,8 +3,15 @@ import { estimateRenderTailSeconds, type TailDeclarationLike } from '../../servi
 import { projectDeviceTails } from './projectDeviceTails';
 
 export type GetDeviceChainTailSecondsInput = {
-    devices: ReadonlyArray<{ type: string; parameterValues: Record<string, number>; bypassed: boolean }>;
+    devices: ReadonlyArray<{
+        id: string;
+        type: string;
+        parameterValues: Record<string, number>;
+        deviceState?: unknown;
+        bypassed: boolean;
+    }>;
     tailForDeviceType: (deviceType: string) => TailDeclarationLike | undefined;
+    automationLanes?: ReadonlyArray<{ parameterId: string; enabled?: boolean }>;
 };
 
 /**
@@ -25,6 +32,9 @@ export type GetDeviceChainTailSecondsInput = {
 export function getDeviceChainTailSeconds({
     devices,
     tailForDeviceType,
+    automationLanes,
 }: GetDeviceChainTailSecondsInput): ReturnType<typeof estimateRenderTailSeconds> {
-    return estimateRenderTailSeconds([{ devices: projectDeviceTails({ devices, tailForDeviceType }) }]);
+    return estimateRenderTailSeconds([
+        { devices: projectDeviceTails({ devices, automationLanes, tailForDeviceType }) },
+    ]);
 }

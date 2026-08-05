@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
-import { getBuiltinPlugins } from '#/modules/Arrangement/useCases';
+import { getBuiltinPlugins, getPluginById } from '#/modules/Arrangement/useCases';
+import { getAutoDetectedTailSeconds } from '#/modules/AudioEngine/useCases';
 import { createOfflineYeastMidiProcessor } from '#/modules/Yeast/useCases';
 
 import { isHydratableProjectData } from '../../../projectPersistence/helpers/isHydratableProjectData';
@@ -318,6 +319,20 @@ describe('createMyceliumTopology', () => {
             )
         ).toBe(true);
         expect(deviceTypes).not.toContain('crumbs');
+    });
+
+    it('reserves the routed Mycelium effect decay instead of the former two-second export default', () => {
+        const { projectData } = createMyceliumAscendantBlueprint();
+
+        const detected = getAutoDetectedTailSeconds({
+            tailForDeviceType: (deviceType) => getPluginById(deviceType)?.tail,
+            honorMuted: true,
+            tracks: projectData.arrangement.tracks,
+            soloMode: 'sip',
+        });
+
+        expect(detected.seconds).toBeGreaterThan(2);
+        expect(detected.clamped).toBe(false);
     });
 
     it('compresses Triplet Helix velocity through the configured offline Yeast runtime', () => {

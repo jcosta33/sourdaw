@@ -8,6 +8,7 @@ import { projectDeviceTails } from './projectDeviceTails';
 import { shouldCreateOfflineStrip } from './shouldCreateOfflineStrip';
 
 type DeviceTailLookup = (deviceType: string) => TailDeclarationLike | undefined;
+type TailAutomationLane = { trackId: string; parameterId: string; enabled?: boolean };
 
 type GetAutoDetectedTailSecondsInput = {
     /**
@@ -23,6 +24,12 @@ type GetAutoDetectedTailSecondsInput = {
      * own `honorMuted`: a mixdown bakes mute in, a stem set deliberately does not.
      */
     honorMuted: boolean;
+    /** Explicit project snapshot for pure callers; defaults to the live store. */
+    tracks?: readonly Track[];
+    /** Explicit solo mode paired with `tracks`; defaults to the live workspace. */
+    soloMode?: Parameters<typeof deriveEffectiveAudibility>[0]['soloMode'];
+    /** Enabled automation lanes that can turn a state-backed effect on during this render. */
+    automationLanes?: readonly TailAutomationLane[];
 };
 
 /**
@@ -36,8 +43,16 @@ type GetAutoDetectedTailSecondsInput = {
  * processing that no longer runs; reading nothing at all would cut the decay
  * the buffer actually carries.
  */
-function projectDevices(track: Track, tailForDeviceType: DeviceTailLookup) {
-    return projectDeviceTails({ devices: track.devices, tailForDeviceType });
+function projectDevices(
+    track: Track,
+    tailForDeviceType: DeviceTailLookup,
+    automationLanes: readonly TailAutomationLane[]
+) {
+    return projectDeviceTails({
+        devices: track.devices,
+        automationLanes: automationLanes.filter((lane) => lane.trackId === track.id),
+        tailForDeviceType,
+    });
 }
 
 /**
@@ -55,9 +70,13 @@ function projectRouting(track: Track) {
     };
 }
 
-function projectTrack(track: Track, tailForDeviceType: DeviceTailLookup) {
+function projectTrack(
+    track: Track,
+    tailForDeviceType: DeviceTailLookup,
+    automationLanes: readonly TailAutomationLane[]
+) {
     if (track.freezeState.status !== 'frozen') {
-        return { ...projectRouting(track), devices: projectDevices(track, tailForDeviceType) };
+        return { ...projectRouting(track), devices: projectDevices(track, tailForDeviceType, automationLanes) };
     }
 
     const baked = resolveFrozenBufferTail(track.freezeState.renderSettings);
@@ -76,7 +95,7 @@ function projectTrack(track: Track, tailForDeviceType: DeviceTailLookup) {
     // would otherwise re-enter as exactly the ceiling, and the outer clamp check
     // (`> MAX_AUTO_TAIL_SECONDS`) would read false for a truncated estimate.
     const chainOnly = estimateRenderTailSeconds([
-        { devices: projectDevices(track, tailForDeviceType) },
+        { devices: projectDevices(track, tailForDeviceType, automationLanes) },
     ]).uncappedSeconds;
     return {
         ...projectRouting(track),
@@ -96,8 +115,11 @@ function projectTrack(track: Track, tailForDeviceType: DeviceTailLookup) {
 export function getAutoDetectedTailSeconds({
     tailForDeviceType,
     honorMuted,
+    tracks: explicitTracks,
+    soloMode: explicitSoloMode,
+    automationLanes = [],
 }: GetAutoDetectedTailSecondsInput): ReturnType<typeof estimateRenderTailSeconds> {
-    const tracks = trackStore.value?.tracks ?? [];
+    const tracks = explicitTracks ?? trackStore.value?.tracks ?? [];
     const busIds = new Set(tracks.filter((track) => track.kind === 'bus').map((track) => track.id));
     const renderable = tracks.filter((track) => !track.disabled && shouldCreateOfflineStrip(track));
 
@@ -105,7 +127,9 @@ export function getAutoDetectedTailSeconds({
         // Stems carry the session's full content: `exportStems` builds strips
         // with `honorMuted: false`, so mute and solo change nothing about which
         // chains run and every renderable track keeps its tail.
-        return estimateRenderTailSeconds(renderable.map((track) => projectTrack(track, tailForDeviceType)));
+        return estimateRenderTailSeconds(
+            renderable.map((track) => projectTrack(track, tailForDeviceType, automationLanes))
+        );
     }
 
     // Audibility is not re-derived here. `deriveEffectiveAudibility` is the same
@@ -120,7 +144,7 @@ export function getAutoDetectedTailSeconds({
     );
     const { audibleByTrackId, soloGatedByTrackId } = deriveEffectiveAudibility({
         tracks,
-        soloMode: workspaceStore.value?.soloMode ?? 'sip',
+        soloMode: explicitSoloMode ?? workspaceStore.value?.soloMode ?? 'sip',
         stripTrackIds,
     });
 
@@ -148,5 +172,7 @@ export function getAutoDetectedTailSeconds({
         return track.sends.some((send) => send.preFader && busIds.has(send.busId));
     });
 
-    return estimateRenderTailSeconds(contributing.map((track) => projectTrack(track, tailForDeviceType)));
+    return estimateRenderTailSeconds(
+        contributing.map((track) => projectTrack(track, tailForDeviceType, automationLanes))
+    );
 }

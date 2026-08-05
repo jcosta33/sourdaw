@@ -51,21 +51,32 @@ type TestClipSelectionState = {
     marqueeSelection: null;
 };
 
+type TestAutomationState = {
+    lanes: Array<{ trackId: string; parameterId: string; enabled: boolean }>;
+};
+
+type TestWorkspaceState = {
+    soloMode: 'sip' | 'pfl';
+};
+
 type ExportDialogMocks = {
     audioContext: BaseAudioContext | null;
     encodeWav: ReturnType<typeof vi.fn>;
     getAudioContext: ReturnType<typeof vi.fn<() => BaseAudioContext | null>>;
+    getAutoDetectedTailSeconds: ReturnType<typeof vi.fn>;
     isExportActive: ReturnType<typeof vi.fn<() => boolean>>;
     loggerError: ReturnType<typeof vi.fn>;
     loggerWarn: ReturnType<typeof vi.fn>;
     notifyUser: ReturnType<typeof vi.fn>;
     renderOffline: ReturnType<typeof vi.fn>;
-    restoreCachedAudioBuffersFromIdb: ReturnType<typeof vi.fn>;
+    restoreCachedAudioBuffersFromIdb: ReturnType<typeof vi.fn<() => Promise<number>>>;
     selectNativeAudioExportFile: ReturnType<typeof vi.fn>;
     trackStore: TestStore<TestTrackStoreState>;
     transportStore: TestStore<TestTransportState>;
     useStore: ReturnType<typeof vi.fn<(store: TestStore<unknown>, defaultValue?: unknown) => unknown>>;
     clipSelectionStore: TestStore<TestClipSelectionState>;
+    automationStore: TestStore<TestAutomationState>;
+    workspaceStore: TestStore<TestWorkspaceState>;
     writeNativeAudioMixdownFile: ReturnType<typeof vi.fn>;
     exportStems: ReturnType<typeof vi.fn>;
     selectNativeAudioExportDirectory: ReturnType<typeof vi.fn>;
@@ -84,22 +95,27 @@ const mocks = vi.hoisted((): ExportDialogMocks => {
     const clipSelectionStore: TestStore<TestClipSelectionState> = {
         value: { marqueeSelection: null },
     };
+    const automationStore: TestStore<TestAutomationState> = { value: { lanes: [] } };
+    const workspaceStore: TestStore<TestWorkspaceState> = { value: { soloMode: 'sip' } };
 
     return {
         audioContext: null,
         encodeWav: vi.fn(),
         getAudioContext: vi.fn<() => BaseAudioContext | null>(() => null),
+        getAutoDetectedTailSeconds: vi.fn(() => ({ seconds: 2, uncappedSeconds: 2, clamped: false })),
         isExportActive: vi.fn(() => false),
         loggerError: vi.fn(),
         loggerWarn: vi.fn(),
         notifyUser: vi.fn(),
         renderOffline: vi.fn(),
-        restoreCachedAudioBuffersFromIdb: vi.fn(),
+        restoreCachedAudioBuffersFromIdb: vi.fn<() => Promise<number>>(),
         selectNativeAudioExportFile: vi.fn(),
         trackStore,
         transportStore,
         useStore: vi.fn((store: TestStore<unknown>, defaultValue?: unknown) => store.value ?? defaultValue),
         clipSelectionStore,
+        automationStore,
+        workspaceStore,
         writeNativeAudioMixdownFile: vi.fn(),
         exportStems: vi.fn(),
         selectNativeAudioExportDirectory: vi.fn(),
@@ -133,11 +149,18 @@ vi.mock('#/modules/Arrangement/stores', () => ({
     clipSelectionStore: mocks.clipSelectionStore,
 }));
 
+vi.mock('#/modules/Automation/stores', () => ({ automationStore: mocks.automationStore }));
+
+vi.mock('#/modules/WorkspaceShell/stores', () => ({
+    defaultWorkspaceState: { soloMode: 'sip' },
+    workspaceStore: mocks.workspaceStore,
+}));
+
 vi.mock('#/modules/AudioEngine/useCases', () => ({
     cancelExport: vi.fn(),
     exportStems: mocks.exportStems,
     getAudioContext: mocks.getAudioContext,
-    getAutoDetectedTailSeconds: vi.fn(() => ({ seconds: 2, clamped: false })),
+    getAutoDetectedTailSeconds: mocks.getAutoDetectedTailSeconds,
     isExportActive: mocks.isExportActive,
     renderOffline: mocks.renderOffline,
     restoreCachedAudioBuffersFromIdb: mocks.restoreCachedAudioBuffersFromIdb,
@@ -208,13 +231,13 @@ vi.mock('../exportSettings', async (importOriginal) => ({
     saveExportSettings: vi.fn(),
 }));
 
-function createClip(input: { id: string; audioBufferId?: string }): TestClip {
+function createClip(input: { id: string; audioBufferId?: string; startBeat?: number; endBeat?: number }): TestClip {
     return {
         id: input.id,
         trackId: 'track-1',
         name: input.id,
-        startBeat: 0,
-        endBeat: 4,
+        startBeat: input.startBeat ?? 0,
+        endBeat: input.endBeat ?? 4,
         type: 'audio',
         audioBufferId: input.audioBufferId,
         fadeInBeats: 0,
@@ -264,6 +287,7 @@ describe('ExportDialog', () => {
         vi.clearAllMocks();
         mocks.audioContext = asBaseAudioContext(createMockAudioContext());
         mocks.getAudioContext.mockImplementation(() => mocks.audioContext);
+        mocks.getAutoDetectedTailSeconds.mockReturnValue({ seconds: 2, uncappedSeconds: 2, clamped: false });
         mocks.restoreCachedAudioBuffersFromIdb.mockResolvedValue(0);
         mocks.selectNativeAudioExportFile.mockResolvedValue('/tmp/sourdaw-export.wav');
         mocks.renderOffline.mockResolvedValue(MockAudioBuffer.create(2, 128, 44100));
@@ -271,6 +295,8 @@ describe('ExportDialog', () => {
         mocks.writeNativeAudioMixdownFile.mockResolvedValue(undefined);
         mocks.selectNativeAudioExportDirectory.mockResolvedValue('/tmp/sourdaw-stems');
         mocks.writeNativeAudioStemFile.mockResolvedValue(undefined);
+        mocks.automationStore.value = { lanes: [] };
+        mocks.workspaceStore.value = { soloMode: 'sip' };
         setProjectClips([
             createClip({ id: 'clip-1', audioBufferId: 'buffer-1' }),
             createClip({ id: 'clip-2', audioBufferId: 'buffer-2' }),
@@ -283,6 +309,86 @@ describe('ExportDialog', () => {
         expect(mocks.restoreCachedAudioBuffersFromIdb).toHaveBeenCalledWith({
             audioContext: mocks.audioContext,
             bufferIds: ['buffer-1', 'buffer-2'],
+        });
+    });
+
+    it('uses the detected project tail for a default mixdown export', async () => {
+        mocks.getAutoDetectedTailSeconds.mockReturnValue({
+            seconds: 9.25,
+            uncappedSeconds: 9.25,
+            clamped: false,
+        });
+
+        await startMixdownExport();
+
+        expect(screen.getByRole('checkbox', { name: /auto-detect/i })).toBeChecked();
+        expect(mocks.renderOffline).toHaveBeenCalledWith(expect.objectContaining({ tailSeconds: 9.25 }));
+        expect(mocks.getAutoDetectedTailSeconds).toHaveBeenCalledTimes(2);
+    });
+
+    it('re-reads the project snapshot for tail detection after async export preparation', async () => {
+        let finishRestore: (() => void) | undefined;
+        mocks.restoreCachedAudioBuffersFromIdb.mockImplementation(
+            () =>
+                new Promise<number>((resolve) => {
+                    finishRestore = () => resolve(0);
+                })
+        );
+        mocks.getAutoDetectedTailSeconds.mockImplementation((input: { tracks?: readonly TestTrack[] }) => {
+            const isUpdated = input.tracks?.some((track) => track.id === 'late-track') ?? false;
+            const seconds = isUpdated ? 11 : 2;
+            return { seconds, uncappedSeconds: seconds, clamped: false };
+        });
+
+        render(<ExportDialog open={true} onClose={vi.fn()} />);
+        fireEvent.click(screen.getByRole('button', { name: /start baking/i }));
+        await waitFor(() => expect(mocks.restoreCachedAudioBuffersFromIdb).toHaveBeenCalledTimes(1));
+
+        setProjectTracks([
+            {
+                id: 'late-track',
+                name: 'Late Track',
+                kind: 'audio',
+                clips: [createClip({ id: 'late-clip', endBeat: 64 })],
+            },
+        ]);
+        mocks.workspaceStore.value = { soloMode: 'pfl' };
+        mocks.automationStore.value = {
+            lanes: [{ trackId: 'late-track', parameterId: 'delay-1:delayMix', enabled: true }],
+        };
+        finishRestore?.();
+
+        await waitFor(() => expect(mocks.renderOffline).toHaveBeenCalledTimes(1));
+        expect(mocks.getAutoDetectedTailSeconds).toHaveBeenLastCalledWith(
+            expect.objectContaining({
+                tracks: mocks.trackStore.value.tracks,
+                soloMode: 'pfl',
+                automationLanes: mocks.automationStore.value.lanes,
+            })
+        );
+        expect(mocks.renderOffline).toHaveBeenCalledWith(
+            expect.objectContaining({ durationBeats: 64, tailSeconds: 11 })
+        );
+    });
+
+    it('preserves the previous two-second safety floor when detection returns zero', async () => {
+        mocks.getAutoDetectedTailSeconds.mockReturnValue({ seconds: 0, uncappedSeconds: 0, clamped: false });
+
+        await startMixdownExport();
+
+        expect(screen.getByText('2.00s minimum (0.00s detected)')).toBeInTheDocument();
+        expect(mocks.renderOffline).toHaveBeenCalledWith(expect.objectContaining({ tailSeconds: 2 }));
+    });
+
+    it('allows a manual tail up to the declared 60-second limit when auto-detect is disabled', async () => {
+        render(<ExportDialog open={true} onClose={vi.fn()} />);
+
+        fireEvent.click(screen.getByRole('checkbox', { name: /auto-detect/i }));
+        fireEvent.change(screen.getByRole('spinbutton', { name: /tail seconds/i }), { target: { value: '60' } });
+        fireEvent.click(screen.getByRole('button', { name: /start baking/i }));
+
+        await waitFor(() => {
+            expect(mocks.renderOffline).toHaveBeenCalledWith(expect.objectContaining({ tailSeconds: 60 }));
         });
     });
 

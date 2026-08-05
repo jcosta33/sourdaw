@@ -112,6 +112,16 @@ const KIT_PARAM_MAP: Record<string, string> = {
     lofiMix: 'lofi_mix',
 };
 
+function toEngineKitParamValue(name: string, value: number): number {
+    // ToasterKit persists delayTime in milliseconds; StereoDelay::set_param
+    // consumes seconds and multiplies by sample rate. Both the live camelCase
+    // write and the hydrated/offline snake_case write converge here.
+    if (name === 'delay_time') {
+        return value / 1000;
+    }
+    return value;
+}
+
 type ToasterMsg =
     | { type: 'init' }
     | { type: 'init-sab'; sab: SharedArrayBuffer; byteOffset: number }
@@ -338,7 +348,10 @@ class ToasterProcessor extends AudioWorkletProcessor {
                 }
                 break;
             case 'param':
-                inst.set_param(KIT_PARAM_MAP[msg.name] ?? msg.name, msg.value);
+                {
+                    const name = KIT_PARAM_MAP[msg.name] ?? msg.name;
+                    inst.set_param(name, toEngineKitParamValue(name, msg.value));
+                }
                 break;
             case 'paramAutomation':
                 break;

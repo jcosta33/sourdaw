@@ -28,17 +28,32 @@ const DELAY_TAIL = {
 } as const;
 
 const REVERB_TAIL = { kind: 'decaySeconds', parameterId: 'rev-decay', defaultSeconds: 2 } as const;
+const STATEFUL_DELAY_TAIL = {
+    kind: 'stateFeedbackLoop',
+    feedbackPath: ['data', 'kit', 'delayFeedback'],
+    defaultFeedback: 0.35,
+    maxFeedback: 0.95,
+    loopPath: ['data', 'kit', 'delayTime'],
+    loopUnit: 'ms',
+    defaultLoopSeconds: 0.375,
+    enabledPath: ['data', 'kit', 'delayMix'],
+    defaultEnabledValue: 0,
+    automatableEnabledParameterId: 'delayMix',
+} as const;
 
 /** Stands in for the descriptor lookup the export dialog injects. */
-const tailForDeviceType = (deviceType: string) => {
+function tailForDeviceType(deviceType: string) {
     if (deviceType === 'builtin-reverb') {
         return REVERB_TAIL;
     }
     if (deviceType === 'builtin-delay') {
         return DELAY_TAIL;
     }
+    if (deviceType === 'stateful-delay') {
+        return STATEFUL_DELAY_TAIL;
+    }
     return undefined;
-};
+}
 
 type MutableTrackStore = { value: { tracks: unknown[] } | null };
 const mockTrackStore = trackStore as unknown as MutableTrackStore;
@@ -81,7 +96,13 @@ function makeFreezeState(overrides: TrackOverrides) {
 }
 
 function makeTrack(
-    devices: Array<{ type: string; parameterValues?: Record<string, number>; bypassed?: boolean }>,
+    devices: Array<{
+        id?: string;
+        type: string;
+        parameterValues?: Record<string, number>;
+        deviceState?: unknown;
+        bypassed?: boolean;
+    }>,
     overrides: TrackOverrides = {}
 ) {
     return {
@@ -94,8 +115,10 @@ function makeTrack(
         outputId: overrides.outputId,
         sends: overrides.sends ?? [],
         devices: devices.map((d) => ({
+            id: d.id ?? `${d.type}-1`,
             type: d.type,
             parameterValues: d.parameterValues ?? {},
+            deviceState: d.deviceState,
             bypassed: d.bypassed ?? false,
         })),
     };
@@ -106,6 +129,44 @@ describe('getAutoDetectedTailSeconds', () => {
         mockTrackStore.value = null;
         mockWorkspaceStore.value = { soloMode: 'sip' };
         vi.restoreAllMocks();
+    });
+
+    it('uses an enabled final-bar device lane as evidence that a zero snapshot mix can open', () => {
+        const tracks = [
+            makeTrack([
+                {
+                    id: 'delay-1',
+                    type: 'stateful-delay',
+                    parameterValues: { delayMix: 0 },
+                    deviceState: {
+                        data: { kit: { delayMix: 0, delayTime: 2_000, delayFeedback: 0.95 } },
+                    },
+                },
+            ]),
+        ];
+        mockTrackStore.value = { tracks };
+
+        const withoutLane = getAutoDetectedTailSeconds({
+            tailForDeviceType,
+            honorMuted: true,
+            soloMode: 'sip',
+            automationLanes: [],
+        });
+        const withFinalBarLane = getAutoDetectedTailSeconds({
+            tailForDeviceType,
+            honorMuted: true,
+            soloMode: 'sip',
+            automationLanes: [
+                {
+                    trackId: 'track-1',
+                    parameterId: 'delay-1:delayMix',
+                    enabled: true,
+                },
+            ],
+        });
+
+        expect(withoutLane.seconds).toBe(0);
+        expect(withFinalBarLane.seconds).toBe(estimateMod.MAX_AUTO_TAIL_SECONDS);
     });
 
     it('keeps a muted track that PFL solo makes audible', () => {
@@ -425,9 +486,12 @@ describe('getAutoDetectedTailSeconds', () => {
                 sends: [],
                 devices: [
                     {
+                        id: 'builtin-delay-1',
                         type: 'builtin-delay',
                         parameterValues: { 'delay-time': 300 },
+                        deviceState: undefined,
                         bypassed: false,
+                        automatedParameterIds: [],
                         tail: {
                             kind: 'feedbackLoop',
                             feedbackParameterId: 'delay-feedback',
