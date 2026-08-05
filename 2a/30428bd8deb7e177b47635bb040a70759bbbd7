@@ -1,0 +1,16 @@
+src/modules/AiRuntime/validators/__tests__/normalizeSafeProjectName.spec.ts
+  h_1228e573df1f42 1-56
+src/modules/Project/useCases/projectPersistence/helpers/__tests__/collectProjectAudioBufferIds.spec.ts
+  h_1228e573df1f42 1-158
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "2a30428bd8deb7e177b47635bb040a70759bbbd7",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
