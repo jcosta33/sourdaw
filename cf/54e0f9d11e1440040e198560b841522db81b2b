@@ -1,0 +1,35 @@
+src/modules/AudioEngine/wasm/daw_dsp.d.ts
+  s_66d4924c65dcd2::t_4aacfd6d93f214 1,890-903,944-959,961
+public/wasm/daw-dsp/daw_dsp_bg.wasm.d.ts
+  s_66d4924c65dcd2::t_4aacfd6d93f214 1,110-123,164-179,181
+public/wasm/daw-dsp/daw_dsp.d.ts
+  s_66d4924c65dcd2::t_4aacfd6d93f214 1,890-903,944-959,961
+public/wasm/manifest.json
+  s_66d4924c65dcd2::t_d2a38a27cbf6cd 12,16-18,21,26,40,54
+crates/daw-dsp/src/crumbs/engine.rs
+  s_66d4924c65dcd2::t_ad416455ae16de 478-489,491-494,796-801
+  s_66d4924c65dcd2::t_cc0e0d2ed57ce1 490
+  s_66d4924c65dcd2::t_c7755cee75e328 802
+crates/daw-dsp/tests/crumbs_render_signal.rs
+  s_66d4924c65dcd2::t_09515a054d46fb 68-69,134-214
+src/modules/Arrangement/models/PluginDescriptors/CrumbsDescriptor.ts
+  s_66d4924c65dcd2::t_920a6d81c1b718 145-157
+src/modules/Arrangement/models/PluginDescriptors/__tests__/crumbsTuneRange.spec.ts
+  s_66d4924c65dcd2::t_8849978996cfac 1-135
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "cf54e0f9d11e1440040e198560b841522db81b2b",
+  "prompts": {},
+  "sessions": {
+    "s_66d4924c65dcd2": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "dad7ceb6-cb31-44b9-91db-bb71a71cbc38",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
