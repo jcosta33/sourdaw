@@ -460,9 +460,9 @@ export const GrandBoulePanel = ({ deviceId }: { deviceId: string }): ReactElemen
                             onVelocityFloorChange={(value) => setVelocityFloor({ store, value })}
                             onVelocityCeilingChange={(value) => setVelocityCeiling({ store, value })}
                             onCcSmoothingMsChange={(value) => setCcSmoothingMs({ store, value })}
-                            onSustainThresholdChange={(value) => setSustainThreshold({ store, value })}
+                            onSustainThresholdChange={(value) => setSustainThreshold({ engine, store, value })}
                             onAfterTouchSensitivityChange={(value) => setAfterTouchSensitivity({ store, value })}
-                            onReset={() => resetMidiCalibration({ store })}
+                            onReset={() => resetMidiCalibration({ engine, store })}
                         />
                     </SectionCard>
                 </aside>

@@ -472,6 +472,9 @@ impl GrandBouleEngine {
             "tone_color" => self.tone_color = value.clamp(-1.0, 1.0),
             "stretch_amount" => self.stretch_amount = value.clamp(0.0, 2.0),
             "attack_bite" => self.attack_bite = value.clamp(0.0, 2.0),
+            // Half-pedal damper-lift point (research §7.3 `threshold_low`),
+            // calibrated per controller from the MIDI calibration panel.
+            "sustain_threshold" => self.pedals.set_half_pedal_low(value),
             _ => {}
         }
     }
@@ -1868,5 +1871,53 @@ mod tests {
         let pressed = render_engine(&mut expressive, 40);
 
         assert_eq!(plain, pressed);
+    }
+
+    // ── Half-pedal engagement threshold (`sustain_threshold`) ──────────────
+    //
+    // Research §7.3 fixes the damper curve at `smoothstep(CC64, low, high)`
+    // with `low = 0.15`. The Grand Boule MIDI-calibration panel exposes that
+    // `low` edge as "Sus Thresh" so a pedal whose travel or rest position
+    // differs from the reference can be calibrated to it. These prove the
+    // parameter reaches rendered audio, not merely an engine field.
+
+    /// Tail energy of a pedal-sustained note at a fixed pedal position,
+    /// varying only the calibrated half-pedal threshold. The pedal sits at
+    /// 0.6 in both runs, so every sample of difference is the threshold's.
+    fn pedal_sustained_tail_energy(sustain_threshold: f32) -> f32 {
+        let mut engine = GrandBouleEngine::new(48_000.0, 8);
+        engine.set_param("sustain_threshold", sustain_threshold);
+        // Above the 0.5 note-off catch, so the key release hands the voice to
+        // the pedal (`release_key`) and the damper — not the 150 ms note-off
+        // amplitude ramp — governs how the tail decays.
+        engine.set_sustain(0.6);
+        engine.note_on(60, 0.8);
+        engine.note_off(60);
+        let _ = render_engine(&mut engine, 60); // skip the attack
+        let tail = render_engine(&mut engine, 130); // ~0.35 s of damper decay
+        tail.iter().map(|s| s * s).sum()
+    }
+
+    #[test]
+    fn sustain_threshold_moves_the_half_pedal_lift_point() {
+        // Threshold at the bottom of its range: 0.6 is well past the lift
+        // point, the dampers are largely clear, the string rings on.
+        let early_lift = pedal_sustained_tail_energy(0.0);
+        // Threshold at the top of its range: 0.6 has only just entered the
+        // band, the dampers are still mostly down, the string is choked.
+        let late_lift = pedal_sustained_tail_energy(0.5);
+
+        assert!(
+            early_lift > 1.0e-9,
+            "the pedal-sustained note was silent before the tail window: {early_lift}"
+        );
+        // Measured 5.900 vs 0.00723 — an 816x energy ratio. The bar is set at
+        // 4x so an ordinary damper-curve retune does not trip it; only the
+        // threshold ceasing to reach the audio does.
+        assert!(
+            early_lift > late_lift * 4.0,
+            "the calibrated threshold did not move the damper lift point: \
+             early_lift={early_lift} late_lift={late_lift}"
+        );
     }
 }

@@ -221,6 +221,15 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         'src/modules/Toaster/useCases/createDrumTrackStack.ts': 2,
     },
     'direct-built-in': {
+        // Count provenance: measured 1 each with `grep -o`, both new entries.
+        // The Grand Boule "Sus Thresh" knob was a store-only write: its value is
+        // `threshold_low` of the DSP half-pedal damper curve, so it now
+        // dispatches `sustain_threshold` to the engine, and the reset chip
+        // returns the engine to the default alongside the readout. One
+        // executable call apiece and no persistence sink — MIDI calibration is
+        // live per-instance state, not project truth.
+        'src/modules/GrandBoule/useCases/calibrateGrandBouleMidi/resetMidiCalibration.ts': 1,
+        'src/modules/GrandBoule/useCases/calibrateGrandBouleMidi/setSustainThreshold.ts': 1,
         'src/modules/GrandBoule/useCases/loadGrandBoulePreset.ts': 4,
         // Count provenance: measured 3 with `grep -o`, was 2. The two
         // executable hits are unchanged — the `setParam` handle on the returned

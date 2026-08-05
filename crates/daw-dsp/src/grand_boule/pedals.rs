@@ -18,8 +18,16 @@ pub const UNA_CORDA_STIFFNESS_SCALE: f32 = 0.7;
 /// Sympathetic coupling scaling to un-excited strings under una-corda.
 pub const UNA_CORDA_SYMPATHETIC_COUPLING: f32 = 0.3;
 
-/// Smoothstep lower threshold for the half-pedal curve.
-const HALF_PEDAL_LOW: f32 = 0.15;
+/// Reference smoothstep lower threshold for the half-pedal curve — the pedal
+/// position at which the dampers start to leave the strings. Calibratable at
+/// runtime via `PedalState::set_half_pedal_low`; this is the value a
+/// reference pedal is measured at.
+pub const DEFAULT_HALF_PEDAL_LOW: f32 = 0.15;
+
+/// Upper bound accepted for the calibrated lower threshold. Mirrors the
+/// `sustainThreshold` range in `GrandBouleMidiCalibration.ts`, and keeps the
+/// smoothstep span non-degenerate whatever a caller asks for.
+pub const MAX_HALF_PEDAL_LOW: f32 = 0.5;
 
 /// Smoothstep upper threshold.
 const HALF_PEDAL_HIGH: f32 = 0.85;
@@ -92,6 +100,9 @@ pub struct PedalState {
     sostenuto: bool,
     /// Keys currently held by the performer.
     keys_held: KeyBitset,
+    /// Calibrated lower edge of the half-pedal smoothstep — the pedal
+    /// position at which the dampers begin to lift.
+    half_pedal_low: f32,
 }
 
 impl PedalState {
@@ -101,11 +112,26 @@ impl PedalState {
             una_corda: false,
             sostenuto: false,
             keys_held: KeyBitset::EMPTY,
+            half_pedal_low: DEFAULT_HALF_PEDAL_LOW,
         }
     }
 
     pub fn sustain_position(&self) -> f32 {
         self.sustain_position
+    }
+
+    pub fn half_pedal_low(&self) -> f32 {
+        self.half_pedal_low
+    }
+
+    /// Calibrate the pedal position at which the dampers start to lift.
+    ///
+    /// Sustain pedals differ in travel and rest position, so the reference
+    /// `DEFAULT_HALF_PEDAL_LOW` is not right for every controller. Raising it
+    /// delays the lift (a pedal that rests part-way down stops bleeding
+    /// sustain); lowering it makes the dampers respond earlier in the travel.
+    pub fn set_half_pedal_low(&mut self, threshold: f32) {
+        self.half_pedal_low = threshold.clamp(0.0, MAX_HALF_PEDAL_LOW);
     }
 
     pub fn una_corda(&self) -> bool {
@@ -174,7 +200,7 @@ impl PedalState {
         if self.sostenuto && sostenuto_captured {
             return 0.0;
         }
-        let lifted = smoothstep(HALF_PEDAL_LOW, HALF_PEDAL_HIGH, self.sustain_position);
+        let lifted = smoothstep(self.half_pedal_low, HALF_PEDAL_HIGH, self.sustain_position);
         let max_damp = DAMPER_MAX_HZ * (damper_strength(key) / damper_strength(1));
         max_damp * (1.0 - lifted)
     }
@@ -191,7 +217,7 @@ impl PedalState {
     /// Damping mix supplied to the sympathetic bank. 1.0 = fully damped
     /// (sustain fully up), 0.0 = fully undamped (sustain fully down).
     pub fn sympathetic_damping(&self) -> f32 {
-        1.0 - smoothstep(HALF_PEDAL_LOW, HALF_PEDAL_HIGH, self.sustain_position)
+        1.0 - smoothstep(self.half_pedal_low, HALF_PEDAL_HIGH, self.sustain_position)
     }
 }
 
@@ -271,5 +297,60 @@ mod tests {
         let bw_down = pedals.damper_bandwidth_for_key(40, false, false);
         assert!(bw_up > bw_half);
         assert!(bw_half > bw_down);
+    }
+
+    #[test]
+    fn calibrated_threshold_moves_where_the_dampers_start_to_lift() {
+        // One pedal position, two calibrations. 0.30 sits above the reference
+        // lift point and below a raised one, so the same physical pedal
+        // travel reads as partly lifted or fully down depending on calibration.
+        let mut pedals = PedalState::new();
+        pedals.set_sustain(0.30);
+        let at_reference = pedals.damper_bandwidth_for_key(40, false, false);
+
+        pedals.set_half_pedal_low(0.45);
+        let raised = pedals.damper_bandwidth_for_key(40, false, false);
+        assert!(
+            raised > at_reference,
+            "raising the threshold past the pedal position must keep the \
+             dampers down: raised={raised} at_reference={at_reference}"
+        );
+
+        pedals.set_half_pedal_low(0.0);
+        let lowered = pedals.damper_bandwidth_for_key(40, false, false);
+        assert!(
+            lowered < at_reference,
+            "lowering the threshold must lift the dampers earlier: \
+             lowered={lowered} at_reference={at_reference}"
+        );
+    }
+
+    #[test]
+    fn calibrated_threshold_also_gates_the_sympathetic_bank() {
+        // The sympathetic bank reads the same smoothstep, so a calibration
+        // that lifts the dampers must open sympathetic resonance with them.
+        let mut pedals = PedalState::new();
+        pedals.set_sustain(0.30);
+        let at_reference = pedals.sympathetic_damping();
+
+        pedals.set_half_pedal_low(0.0);
+        assert!(
+            pedals.sympathetic_damping() < at_reference,
+            "lowering the threshold must undamp the sympathetic bank too: \
+             {} vs {at_reference}",
+            pedals.sympathetic_damping()
+        );
+    }
+
+    #[test]
+    fn calibrated_threshold_is_clamped_to_the_published_range() {
+        let mut pedals = PedalState::new();
+        assert_eq!(pedals.half_pedal_low(), DEFAULT_HALF_PEDAL_LOW);
+
+        pedals.set_half_pedal_low(-1.0);
+        assert_eq!(pedals.half_pedal_low(), 0.0);
+
+        pedals.set_half_pedal_low(9.0);
+        assert_eq!(pedals.half_pedal_low(), MAX_HALF_PEDAL_LOW);
     }
 }
