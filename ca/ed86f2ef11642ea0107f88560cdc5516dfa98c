@@ -1,0 +1,20 @@
+src/modules/Arrangement/models/PluginDescriptors/CrustDescriptor.ts
+  s_66d4924c65dcd2::t_bf581dbec44d6f 27
+  s_66d4924c65dcd2::t_e7f299db43f4a8 20-26
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "caed86f2ef11642ea0107f88560cdc5516dfa98c",
+  "prompts": {},
+  "sessions": {
+    "s_66d4924c65dcd2": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "dad7ceb6-cb31-44b9-91db-bb71a71cbc38",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
