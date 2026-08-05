@@ -1299,6 +1299,10 @@ describe('bridgeLlmToolCalls', () => {
                     payload: { clipId: 'clip-verse', mode: 'lufs', targetDb: -14 },
                 },
             },
+            {
+                call: { name: 'setClipStretchRatio', arguments: { clipId: 'clip-verse', ratio: 1.5 } },
+                action: { type: 'setClipStretchRatio', payload: { clipId: 'clip-verse', ratio: 1.5 } },
+            },
         ] as const;
 
         const results = cases.map(({ call }) => bridge({ calls: [call] }));
@@ -1377,6 +1381,38 @@ describe('bridgeLlmToolCalls', () => {
         expect(results.flatMap(({ rejections }) => rejections).map(({ reason }) => reason)).toEqual(
             Array.from({ length: results.length }, () => 'Provider batch writes the same target field more than once')
         );
+    });
+
+    it('rejects unsafe stretch ratios and conflicting clip geometry writes', () => {
+        const midiContext = replaceTrack(projectContext, 'track-vocals', (track) => ({
+            ...track,
+            clips: track.clips.map((clip) => ({ ...clip, type: 'midi', noteCount: 4 })),
+        }));
+        const lockedContext = replaceTrack(projectContext, 'track-vocals', (track) => ({
+            ...track,
+            clips: track.clips.map((clip) => ({ ...clip, locked: true })),
+        }));
+        const stretch = { name: 'setClipStretchRatio', arguments: { clipId: 'clip-verse', ratio: 1.5 } };
+        const rejected = [
+            bridge({ calls: [{ name: 'setClipStretchRatio', arguments: { clipId: 'missing', ratio: 1.5 } }] }),
+            bridge({ context: midiContext, calls: [stretch] }),
+            bridge({ context: lockedContext, calls: [stretch] }),
+            bridge({ calls: [{ name: 'setClipStretchRatio', arguments: { clipId: 'clip-verse', ratio: 0.249 } }] }),
+            bridge({ calls: [{ name: 'setClipStretchRatio', arguments: { clipId: 'clip-verse', ratio: 4.001 } }] }),
+            bridge({
+                calls: [{ name: 'setClipStretchRatio', arguments: { clipId: 'clip-verse', ratio: 1.5, extra: true } }],
+            }),
+        ];
+        const geometryConflicts = [
+            { name: 'trimClipStart', arguments: { clipId: 'clip-verse', newStartBeat: 1 } },
+            { name: 'trimClipEnd', arguments: { clipId: 'clip-verse', newEndBeat: 7 } },
+            { name: 'nudgeClip', arguments: { clipId: 'clip-verse', beats: 1 } },
+            { name: 'removeClip', arguments: { clipId: 'clip-verse' } },
+        ].flatMap((conflict) => [bridge({ calls: [stretch, conflict] }), bridge({ calls: [conflict, stretch] })]);
+
+        expect(rejected.every((result) => result.actions.length === 0)).toBe(true);
+        expect(geometryConflicts.every((result) => result.actions.length === 1)).toBe(true);
+        expect(geometryConflicts.every((result) => result.rejections.length === 1)).toBe(true);
     });
 
     it('converts crossfade commands for two distinct unlocked clips with explicit or default duration', () => {

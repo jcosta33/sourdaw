@@ -430,6 +430,61 @@ describe('parsePromptToActions', () => {
         expect(result.executionMode).toBe('atomic');
     });
 
+    it('proposes a grounded non-destructive clip stretch ratio as one atomic action', async () => {
+        const actualBridge = await vi.importActual<typeof import('../agentReference/bridgeGroundedLlmToolCalls')>(
+            '../agentReference/bridgeGroundedLlmToolCalls'
+        );
+        mockBridgeGroundedLlmToolCalls.mockImplementation(actualBridge.bridgeGroundedLlmToolCalls);
+        vi.mocked(generateToolCalls).mockResolvedValue(
+            completePlan([{ name: 'setClipStretchRatio', arguments: { clipId: 'clip-intro', ratio: 1.5 } }])
+        );
+        const providerContext: ProjectContext = {
+            ...baseContext,
+            tracks: [
+                {
+                    id: 'track-vocals',
+                    name: 'Vocals',
+                    kind: 'audio',
+                    muted: false,
+                    soloed: false,
+                    soloSafe: false,
+                    armed: false,
+                    gain: 0.8,
+                    pan: 0,
+                    automationMode: 'read',
+                    outputId: 'master',
+                    clipCount: 1,
+                    deviceCount: 0,
+                    clips: [
+                        {
+                            id: 'clip-intro',
+                            name: 'Intro',
+                            type: 'audio',
+                            startBeat: 0,
+                            endBeat: 8,
+                            gain: 1,
+                            locked: false,
+                            noteCount: 0,
+                        },
+                    ],
+                    devices: [],
+                    sends: [],
+                },
+            ],
+            selectedTrackId: 'track-vocals',
+            selectedClipId: 'clip-intro',
+            selectedClipIds: ['clip-intro'],
+        };
+
+        const result = await parsePromptToActions('set the Intro clip stretch ratio to 1.5', providerContext);
+
+        expect(result.actions).toEqual([
+            { type: 'setClipStretchRatio', payload: { clipId: 'clip-intro', ratio: 1.5 } },
+        ]);
+        expect(result.requiresConfirmation).toBe(true);
+        expect(result.executionMode).toBe('atomic');
+    });
+
     it('proposes a grounded two-clip crossfade as one confirmable atomic action', async () => {
         const actualBridge = await vi.importActual<typeof import('../agentReference/bridgeGroundedLlmToolCalls')>(
             '../agentReference/bridgeGroundedLlmToolCalls'

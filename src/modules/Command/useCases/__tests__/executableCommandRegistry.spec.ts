@@ -227,6 +227,22 @@ const EXPECTED_COMMANDS = [
         true
     ),
     expectedCommand(
+        'setClipStretchRatio',
+        'Set the non-destructive time-stretch ratio of one unlocked audio clip.',
+        {
+            clipId: { type: 'string', description: 'Existing unlocked audio clip ID' },
+            ratio: {
+                type: 'number',
+                minimum: 0.25,
+                maximum: 4,
+                description: 'Time-stretch ratio from 0.25 through 4',
+            },
+        },
+        ['clipId', 'ratio'],
+        'broad-reversible',
+        true
+    ),
+    expectedCommand(
         'quantizeNotes',
         'Snap every note in one MIDI clip to an explicit beat grid.',
         {
@@ -1036,6 +1052,26 @@ const EXPECTED_GROUNDING = [
                 match: 'exact',
                 connector: 'to',
                 keywords: ['target', 'at'],
+            },
+        ],
+    },
+    {
+        actionType: 'setClipStretchRatio',
+        intentPhrases: [
+            'set clip stretch ratio',
+            'set the clip stretch ratio',
+            'time stretch clip',
+            'time stretch the clip',
+            'stretch clip',
+        ],
+        targetRules: [{ argument: 'clipId', capability: 'editable-audio-clip' }],
+        valueRules: [
+            {
+                argument: 'ratio',
+                kind: 'number-if-present',
+                requiredInPrompt: true,
+                match: 'exact',
+                unit: 'stretch-ratio',
             },
         ],
     },

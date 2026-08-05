@@ -963,6 +963,76 @@ describe('bridgeGroundedLlmToolCalls', () => {
         expect(rejected.every((result) => result.rejections[0]?.reason.includes('does not match'))).toBe(true);
     });
 
+    it('grounds an explicit clip stretch ratio without allowing provider invention or omission', () => {
+        const context = createClipContext();
+        const accepted = bridge(
+            [{ name: 'setClipStretchRatio', arguments: { clipId: 'clip-intro', ratio: 1.5 } }],
+            'set the Intro clip stretch ratio to 1.5',
+            context
+        );
+        const rejected = [
+            bridge(
+                [{ name: 'setClipStretchRatio', arguments: { clipId: 'clip-intro', ratio: 2 } }],
+                'set the Intro clip stretch ratio to 1.5',
+                context
+            ),
+            bridge(
+                [{ name: 'setClipStretchRatio', arguments: { clipId: 'clip-intro', ratio: 1.5 } }],
+                'time stretch the Intro clip',
+                context
+            ),
+            bridge(
+                [{ name: 'setClipStretchRatio', arguments: { clipId: 'clip-intro', ratio: 2 } }],
+                'time stretch the Intro clip to 2 bars',
+                context
+            ),
+            bridge(
+                [{ name: 'setClipStretchRatio', arguments: { clipId: 'clip-intro', ratio: 2 } }],
+                'time stretch the Intro clip at beat 2',
+                context
+            ),
+            bridge(
+                [{ name: 'setClipStretchRatio', arguments: { clipId: 'clip-intro', ratio: 2 } }],
+                'time stretch the Intro clip to 2 seconds',
+                context
+            ),
+            bridge(
+                [{ name: 'setClipStretchRatio', arguments: { clipId: 'clip-intro', ratio: 2 } }],
+                'time stretch the Intro clip to duration 2',
+                context
+            ),
+            bridge(
+                [{ name: 'setClipStretchRatio', arguments: { clipId: 'clip-intro', ratio: 2 } }],
+                'time stretch the Intro clip 2x or 3x',
+                context
+            ),
+            bridge(
+                [{ name: 'setClipStretchRatio', arguments: { clipId: 'clip-intro', ratio: 2 } }],
+                'set the Intro clip stretch ratio to 2 or 3',
+                context
+            ),
+        ];
+        const explicitNotations = [
+            'time stretch the Intro clip 2x',
+            'time stretch the Intro clip 2×',
+            'time stretch the Intro clip 2 times',
+        ];
+        const notationResults = explicitNotations.map((prompt) =>
+            bridge([{ name: 'setClipStretchRatio', arguments: { clipId: 'clip-intro', ratio: 2 } }], prompt, context)
+        );
+
+        expect(accepted.actions).toEqual([
+            { type: 'setClipStretchRatio', payload: { clipId: 'clip-intro', ratio: 1.5 } },
+        ]);
+        expect(accepted.rejections).toEqual([]);
+        expect(notationResults.flatMap((result) => result.actions)).toEqual(
+            explicitNotations.map(() => ({ type: 'setClipStretchRatio', payload: { clipId: 'clip-intro', ratio: 2 } }))
+        );
+        expect(notationResults.flatMap((result) => result.rejections)).toEqual([]);
+        expect(rejected.every((result) => result.actions.length === 0)).toBe(true);
+        expect(rejected.every((result) => result.rejections[0]?.reason.includes('does not match'))).toBe(true);
+    });
+
     it('allows explicit clip unlock while rejecting edits to a locked clip', () => {
         const base = createClipContext();
         const context: ProjectContext = {

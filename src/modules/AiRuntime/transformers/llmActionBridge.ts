@@ -922,6 +922,24 @@ function bridgeToolCall({
         };
     }
 
+    if (call.name === 'setClipStretchRatio') {
+        const target = findEditableAudioClip(context, args.clipId);
+        if (
+            !hasExactKeys(args, ['clipId', 'ratio']) ||
+            !target ||
+            !isFiniteNumber(args.ratio) ||
+            args.ratio < 0.25 ||
+            args.ratio > 4
+        ) {
+            return rejection(
+                index,
+                call.name,
+                'Expected one unlocked audio clip and a finite ratio from 0.25 through 4'
+            );
+        }
+        return { type: 'setClipStretchRatio', payload: { clipId: target.clip.id, ratio: args.ratio } };
+    }
+
     if (call.name === 'quantizeNotes') {
         const target = findEditableMidiClip(context, args.clipId);
         if (
@@ -1638,6 +1656,7 @@ function getClipTargetIds(action: RuntimeAction): string[] {
         action.type === 'lockClip' ||
         action.type === 'setClipLoop' ||
         action.type === 'normalizeClip' ||
+        action.type === 'setClipStretchRatio' ||
         action.type === 'quantizeNotes' ||
         action.type === 'transposeNotes' ||
         action.type === 'invertNotes' ||
@@ -1832,6 +1851,7 @@ function getMutationKeys(
             `clip:${action.payload.clipId}:fades`,
             `clip:${action.payload.clipId}:lock`,
             `clip:${action.payload.clipId}:loop`,
+            `clip:${action.payload.clipId}:stretch`,
             `clip:${action.payload.clipId}:notes`,
         ];
     }
@@ -1840,6 +1860,9 @@ function getMutationKeys(
     }
     if (action.type === 'trimClipStart' || action.type === 'trimClipEnd' || action.type === 'nudgeClip') {
         return [`clip:${action.payload.clipId}:geometry`];
+    }
+    if (action.type === 'setClipStretchRatio') {
+        return [`clip:${action.payload.clipId}:geometry`, `clip:${action.payload.clipId}:stretch`];
     }
     if (action.type === 'setClipGain' || action.type === 'normalizeClip') {
         return [`clip:${action.payload.clipId}:gain`];

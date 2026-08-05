@@ -102,6 +102,12 @@ export type ClipSnapshot = {
     readonly startBeat: number;
     readonly endBeat: number;
 };
+export type ClipStretchStateSnapshot = {
+    readonly startBeat: number;
+    readonly endBeat: number;
+    readonly mode: { readonly present: boolean; readonly value: 'off' | 'repitch' | 'timestretch' };
+    readonly ratio: { readonly present: boolean; readonly value: number };
+};
 export type AutomationLaneSnapshot = { readonly id: string; readonly trackId: string };
 /** A captured automation point, carried by the `restoreAutomationLanePoints` inverse
  *  action. Command cannot import Automation's `AutomationPoint` model (model isolation),
@@ -781,6 +787,15 @@ export type AppAction =
     | { type: 'applyGroove'; payload: { clipId: string; grooveId: string; amount?: number } }
     | { type: 'setClipStretchMode'; payload: { clipId: string; mode: 'off' | 'repitch' | 'timestretch' } }
     | { type: 'setClipStretchRatio'; payload: { clipId: string; ratio: number } }
+    | {
+          /** Internal guarded inverse for exact clip-stretch state and repitch geometry. */
+          type: 'restoreClipStretchState';
+          payload: {
+              clipId: string;
+              expected: ClipStretchStateSnapshot;
+              replacement: ClipStretchStateSnapshot;
+          };
+      }
     | { type: 'fitClipToBeats'; payload: { clipId: string; targetBeats: number } }
     | { type: 'analyzeMix'; payload?: undefined }
     | { type: 'autoFixMix'; payload?: undefined }

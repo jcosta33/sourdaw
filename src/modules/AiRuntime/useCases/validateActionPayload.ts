@@ -441,7 +441,11 @@ const validators = {
         typeof param.enabled === 'boolean',
     setClipLoopLength: 'unchecked',
     setClipStretchMode: 'unchecked',
-    setClipStretchRatio: 'unchecked',
+    setClipStretchRatio: (param): param is PayloadOf<'setClipStretchRatio'> =>
+        isObj(param) &&
+        hasExactKeys(param, ['clipId', 'ratio']) &&
+        isNonEmptyString(param.clipId) &&
+        isInRange(param.ratio, 0.25, 4),
     fitClipToBeats: 'unchecked',
     duplicateClipToNextBar: hasClipId,
     normalizeClip: (param): param is PayloadOf<'normalizeClip'> => {
