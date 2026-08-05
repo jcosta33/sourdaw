@@ -12,6 +12,42 @@ export const TOASTER_DESCRIPTOR: PluginDescriptor = {
     format: 'builtin',
     category: 'instrument',
     hasCustomUI: true,
+    // Toaster's global send effects are persisted inside its opaque kit state,
+    // not in the generic parameter map. Reverb and delay run in parallel; each
+    // declaration follows the coefficient/time law used by the Rust engine.
+    tail: {
+        kind: 'parallel',
+        tails: [
+            {
+                kind: 'stateFeedbackLoop',
+                feedbackPath: ['data', 'kit', 'reverbDecay'],
+                defaultFeedback: 0.5,
+                minFeedback: 0.1,
+                maxFeedback: 0.99,
+                loopUnit: 's',
+                defaultLoopSeconds: 1812 / 44_100,
+                enabledPath: ['data', 'kit', 'reverbMix'],
+                defaultEnabledValue: 0.15,
+                automatableEnabledParameterId: 'reverbMix',
+                stateGuard: { path: ['version'], equals: 1 },
+            },
+            {
+                kind: 'stateFeedbackLoop',
+                feedbackPath: ['data', 'kit', 'delayFeedback'],
+                defaultFeedback: 0.35,
+                maxFeedback: 0.95,
+                loopPath: ['data', 'kit', 'delayTime'],
+                loopUnit: 'ms',
+                defaultLoopSeconds: 0.375,
+                minLoopSeconds: 1 / 44_100,
+                maxLoopSeconds: 2,
+                enabledPath: ['data', 'kit', 'delayMix'],
+                defaultEnabledValue: 0,
+                automatableEnabledParameterId: 'delayMix',
+                stateGuard: { path: ['version'], equals: 1 },
+            },
+        ],
+    },
     parameters: [
         {
             id: 'masterGain',

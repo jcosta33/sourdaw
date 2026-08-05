@@ -1,4 +1,5 @@
 import { cacheAudioBuffer, getCompensationDelay, getDeviceChainTailSeconds } from '#/modules/AudioEngine/useCases';
+import { getAutomationLanes } from '#/modules/Automation/useCases';
 import { FREEZE_BAKE_VERSION } from '#/utils/frozenBufferTail';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
@@ -65,6 +66,7 @@ export async function freezeTrack(trackId: string): Promise<boolean> {
         // with tempo because beats are not seconds.
         const tailSeconds = getDeviceChainTailSeconds({
             devices: track.devices,
+            automationLanes: getAutomationLanes().filter((lane) => lane.trackId === track.id),
             tailForDeviceType: (deviceType) => getPluginById(deviceType)?.tail,
         }).seconds;
 

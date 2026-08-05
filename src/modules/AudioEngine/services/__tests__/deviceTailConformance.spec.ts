@@ -8,7 +8,7 @@ import { getBuiltinPlugins, getPluginById } from '#/modules/Arrangement/useCases
 
 import { applyParams } from '../../repositories/applyParams';
 import { createOfflineDeviceNode } from '../../repositories/deviceNodeFactory';
-import { estimateRenderTailSeconds } from '../estimateRenderTailSeconds';
+import { estimateRenderTailSeconds, MAX_AUTO_TAIL_SECONDS } from '../estimateRenderTailSeconds';
 
 /**
  * Descriptor/estimator cross-conformance for declared device tails.
@@ -44,13 +44,20 @@ beforeAll(() => {
 });
 
 /** Builds the projection `getAutoDetectedTailSeconds` hands to the estimator. */
-function tailForDevice(deviceType: string, parameterValues: Record<string, number> = {}): number {
+function tailForDevice(
+    deviceType: string,
+    parameterValues: Record<string, number> = {},
+    deviceState?: unknown,
+    automatedParameterIds: readonly string[] = []
+): number {
     return estimateRenderTailSeconds([
         {
             devices: [
                 {
                     type: deviceType,
                     parameterValues,
+                    deviceState,
+                    automatedParameterIds,
                     bypassed: false,
                     tail: getPluginById(deviceType)?.tail,
                 },
@@ -84,7 +91,27 @@ function citedParameterIds(tail: NonNullable<ReturnType<typeof getPluginById>>['
     if (tail.kind === 'decaySeconds' || tail.kind === 'mappedDecaySeconds') {
         return [tail.parameterId, ...(tail.predelayMsParameterId === undefined ? [] : [tail.predelayMsParameterId])];
     }
+    if (tail.kind === 'parallel') {
+        return tail.tails.flatMap(citedParameterIds);
+    }
+    if (tail.kind === 'stateFeedbackLoop') {
+        return [];
+    }
     return [tail.loopParameterId, tail.feedbackParameterId];
+}
+
+/** Parameters whose automation means a zero state snapshot is not a stable gate. */
+function automatableEnabledParameterIds(tail: NonNullable<ReturnType<typeof getPluginById>>['tail']): string[] {
+    if (!tail) {
+        return [];
+    }
+    if (tail.kind === 'parallel') {
+        return tail.tails.flatMap(automatableEnabledParameterIds);
+    }
+    if (tail.kind !== 'stateFeedbackLoop' || tail.automatableEnabledParameterId === undefined) {
+        return [];
+    }
+    return [tail.automatableEnabledParameterId];
 }
 
 /**
@@ -177,7 +204,6 @@ const NO_TAIL_EXEMPTIONS: Record<string, string> = {
     'builtin-drum-machine-analog': 'one-shot samples end within the rendered region',
     'builtin-drum-machine-electronic': 'one-shot samples end within the rendered region',
     'builtin-drum-machine-acoustic': 'one-shot samples end within the rendered region',
-    toaster: 'one-shot drum voices end within the rendered region',
     levain: 'orchestral samples end within the rendered region',
     'grand-boule': 'physical-model ring-out is bounded by its note release',
 };
@@ -210,6 +236,21 @@ describe('device tail declarations — descriptor/estimator conformance', () => 
         }
 
         expect(unresolved).toEqual([]);
+    });
+
+    it('resolves every automated state-tail gate to an automatable device parameter', () => {
+        const invalid: string[] = [];
+
+        for (const plugin of getBuiltinPlugins()) {
+            for (const parameterId of automatableEnabledParameterIds(plugin.tail)) {
+                const parameter = plugin.parameters.find((candidate) => candidate.id === parameterId);
+                if (!parameter?.automatable) {
+                    invalid.push(`${plugin.id}.${parameterId}`);
+                }
+            }
+        }
+
+        expect(invalid).toEqual([]);
     });
 
     it('cites only parameters that actually move the DSP, for every graph-resident device', () => {
@@ -349,6 +390,74 @@ describe('device tail declarations — descriptor/estimator conformance', () => 
         expect(tailForDevice('faust-tape-delay', { delay: 0.4, feedback: 0.5 })).toBeCloseTo(3.986, 3);
         expect(tailForDevice('builtin-convolution-reverb')).toBe(6);
         expect(tailForDevice('builtin-crumbs', { release: 2 })).toBe(2);
+    });
+
+    it('sizes a configured Toaster delay from its persisted kit state', () => {
+        const configuredKitState = {
+            version: 1,
+            data: {
+                kit: {
+                    reverbMix: 0,
+                    reverbDecay: 0.5,
+                    delayMix: 1,
+                    delayTime: 2_000,
+                    delayFeedback: 0.95,
+                },
+            },
+        };
+
+        expect(tailForDevice('toaster', {}, configuredKitState)).toBe(MAX_AUTO_TAIL_SECONDS);
+    });
+
+    it('reserves a zero-snapshot Toaster delay only with actual automation-lane evidence', () => {
+        const automatedLateKitState = {
+            version: 1,
+            data: {
+                kit: {
+                    reverbMix: 0,
+                    reverbDecay: 0.5,
+                    delayMix: 0,
+                    delayTime: 2_000,
+                    delayFeedback: 0.95,
+                },
+            },
+        };
+
+        expect(tailForDevice('toaster', {}, automatedLateKitState)).toBe(0);
+        expect(tailForDevice('toaster', {}, automatedLateKitState, ['delayMix'])).toBe(MAX_AUTO_TAIL_SECONDS);
+    });
+
+    it('falls back from an unknown Toaster state version exactly as the kit codec does', () => {
+        const unknownVersionState = {
+            version: 99,
+            data: {
+                kit: {
+                    reverbMix: 1,
+                    reverbDecay: 0,
+                    delayMix: 1,
+                    delayTime: -10,
+                    delayFeedback: 0,
+                },
+            },
+        };
+
+        expect(tailForDevice('toaster', {}, unknownVersionState)).toBe(tailForDevice('toaster'));
+    });
+
+    it('clamps finite Toaster state values with the same lower bounds as Rust', () => {
+        const outOfRangeState = {
+            version: 1,
+            data: {
+                kit: {
+                    reverbMix: 1,
+                    reverbDecay: -1,
+                    delayMix: 0,
+                    delayFeedback: 0,
+                },
+            },
+        };
+
+        expect(tailForDevice('toaster', {}, outOfRangeState)).toBeGreaterThan(0);
     });
 
     it('adds the tails of devices chained in series on one track', () => {

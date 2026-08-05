@@ -16,6 +16,7 @@ import {
     defaultClipSelectionState,
     defaultTrackState,
     trackStore,
+    type Track,
 } from '#/modules/Arrangement/stores';
 import { getPluginById } from '#/modules/Arrangement/useCases';
 import {
@@ -27,8 +28,10 @@ import {
     renderOffline,
     restoreCachedAudioBuffersFromIdb,
 } from '#/modules/AudioEngine/useCases';
+import { automationStore, type AutomationLane } from '#/modules/Automation/stores';
 import { isNativeProjectRuntimeAvailable } from '#/modules/Project/useCases';
 import { transportStore, defaultTransportState } from '#/modules/Transport/stores';
+import { defaultWorkspaceState, workspaceStore, type WorkspaceState } from '#/modules/WorkspaceShell/stores';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { audioBufferToFlac as encodeFlac } from '../../useCases/audioBufferToFlac';
@@ -58,6 +61,13 @@ import { resolveExportDither } from './resolveExportDither';
 
 type ExportMode = 'mixdown' | 'stems' | 'render-to-clip';
 type ExportRange = 'project' | 'loop' | 'marquee';
+type TailDetectionSnapshot = {
+    tracks: readonly Track[];
+    soloMode: WorkspaceState['soloMode'];
+    automationLanes: readonly AutomationLane[];
+};
+
+const DEFAULT_EXPORT_TAIL_SECONDS = 2;
 
 type ExportDialogProps = {
     open: boolean;
@@ -106,7 +116,13 @@ const resolveExportMime = (isZip: boolean, primaryExt: string): string => {
  * the difference matters: clamped means the render is shorter than the project
  * actually needs, so the export gets cut.
  */
-const DetectedTailLabel = ({ detected }: { detected: { seconds: number; clamped: boolean } }): ReactElement => {
+const DetectedTailLabel = ({
+    detected,
+    minimumSeconds,
+}: {
+    detected: { seconds: number; clamped: boolean };
+    minimumSeconds: number;
+}): ReactElement => {
     if (detected.clamped) {
         return (
             <span className="text-[10px] text-amber-400">
@@ -116,7 +132,36 @@ const DetectedTailLabel = ({ detected }: { detected: { seconds: number; clamped:
         );
     }
 
+    if (detected.seconds < minimumSeconds) {
+        return (
+            <span className="text-[10px] text-orange-400/70">
+                {minimumSeconds.toFixed(2)}s minimum ({detected.seconds.toFixed(2)}s detected)
+            </span>
+        );
+    }
+
     return <span className="text-[10px] text-orange-400/70">{detected.seconds.toFixed(2)}s detected</span>;
+};
+
+const AutoDetectedTailLabel = ({
+    honorMuted,
+    tracks,
+    soloMode,
+    automationLanes,
+}: {
+    honorMuted: boolean;
+    tracks: readonly Track[];
+    soloMode: WorkspaceState['soloMode'];
+    automationLanes: readonly AutomationLane[];
+}): ReactElement => {
+    const detected = getAutoDetectedTailSeconds({
+        tailForDeviceType: (deviceType) => getPluginById(deviceType)?.tail,
+        honorMuted,
+        tracks,
+        soloMode,
+        automationLanes,
+    });
+    return <DetectedTailLabel detected={detected} minimumSeconds={DEFAULT_EXPORT_TAIL_SECONDS} />;
 };
 
 export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement => {
@@ -124,11 +169,13 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
     const transport = useStore(transportStore, defaultTransportState);
     const clipSelection = useStore(clipSelectionStore, defaultClipSelectionState);
     const tracksState = useStore(trackStore, defaultTrackState);
+    const workspace = useStore(workspaceStore, defaultWorkspaceState);
+    const automation = useStore(automationStore, { lanes: [] });
     const [formats, setFormats] = useState<Set<ExportFormat>>(() => new Set(defaults.formats));
     const [mode, setMode] = useState<ExportMode>('mixdown');
     const [range, setRange] = useState<ExportRange>('project');
-    const [tailSeconds, setTailSeconds] = useState(2);
-    const [autoTail, setAutoTail] = useState(false);
+    const [tailSeconds, setTailSeconds] = useState(DEFAULT_EXPORT_TAIL_SECONDS);
+    const [autoTail, setAutoTail] = useState(true);
     const [renderTargetTrackId, setRenderTargetTrackId] = useState<string>('new');
     const [sampleRate, setSampleRate] = useState(defaults.sampleRate);
     const [bitDepth, setBitDepth] = useState(defaults.bitDepth);
@@ -145,8 +192,7 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
     const marqueeAvailable = clipSelection.marqueeSelection !== null;
     const audioTracks = tracksState.tracks.filter((t) => t.kind === 'audio');
 
-    const resolveRange = (): { startBeat: number; durationBeats: number } => {
-        const tracks = tracksState.tracks;
+    const resolveRange = (tracks: readonly Track[]): { startBeat: number; durationBeats: number } => {
         const projectMaxBeat = Math.max(16, ...tracks.flatMap((t) => t.clips.map((c) => c.endBeat)));
         if (range === 'loop' && loopAvailable) {
             return {
@@ -174,17 +220,23 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
      * a mixdown silences muted tracks, a stem set deliberately does not, so a
      * muted track's chain lengthens a stem render but not a mixdown.
      */
-    const detectTail = (honorMuted: boolean) =>
-        getAutoDetectedTailSeconds({ tailForDeviceType: deviceTailFor, honorMuted });
+    const detectTail = (honorMuted: boolean, snapshot: TailDetectionSnapshot) =>
+        getAutoDetectedTailSeconds({
+            tailForDeviceType: deviceTailFor,
+            honorMuted,
+            tracks: snapshot.tracks,
+            soloMode: snapshot.soloMode,
+            automationLanes: snapshot.automationLanes,
+        });
 
-    const effectiveTailSeconds = (honorMuted: boolean): number => {
+    const effectiveTailSeconds = (honorMuted: boolean, snapshot: TailDetectionSnapshot): number => {
         if (!autoTail) {
             return Math.max(0, Math.min(MAX_MANUAL_TAIL_SECONDS, tailSeconds));
         }
         // The estimator already caps the detected tail at its own
         // ceiling. Re-clamping here to a second, lower number is what used to
         // truncate long reverbs back to 30 s.
-        return Math.max(0, detectTail(honorMuted).seconds);
+        return Math.max(DEFAULT_EXPORT_TAIL_SECONDS, detectTail(honorMuted, snapshot).seconds);
     };
 
     const toggleFormat = (freq: ExportFormat) => {
@@ -378,10 +430,15 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
             }
 
             const tracks = trackStore.value?.tracks ?? [];
-            const { startBeat, durationBeats } = resolveRange();
+            const tailSnapshot: TailDetectionSnapshot = {
+                tracks,
+                soloMode: workspaceStore.value?.soloMode ?? defaultWorkspaceState.soloMode,
+                automationLanes: automationStore.value?.lanes ?? [],
+            };
+            const { startBeat, durationBeats } = resolveRange(tracks);
             // Stems keep muted tracks, so they may need a longer tail than the
             // mixdown of the same project.
-            const tail = effectiveTailSeconds(mode !== 'stems');
+            const tail = effectiveTailSeconds(mode !== 'stems', tailSnapshot);
             const bd = resolveExportBitDepths({ formats, selectedBitDepth: bitDepth }).bitDepth;
             // Every encoder gets the same dither decision, so a seeded
             // or undithered export is reproducible in all selected formats.
@@ -914,14 +971,14 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                                 <input
                                     type="number"
                                     min={0}
-                                    max={30}
+                                    max={MAX_MANUAL_TAIL_SECONDS}
                                     step={0.1}
                                     value={autoTail ? '' : tailSeconds}
                                     disabled={exporting || autoTail}
                                     onChange={(e) => {
                                         const next = Number(e.target.value);
                                         if (Number.isFinite(next)) {
-                                            setTailSeconds(Math.max(0, Math.min(30, next)));
+                                            setTailSeconds(Math.max(0, Math.min(MAX_MANUAL_TAIL_SECONDS, next)));
                                         }
                                     }}
                                     aria-label="Tail seconds"
@@ -939,7 +996,14 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                                 />
                                 Auto-detect
                             </label>
-                            {autoTail ? <DetectedTailLabel detected={detectTail(mode !== 'stems')} /> : null}
+                            {autoTail ? (
+                                <AutoDetectedTailLabel
+                                    honorMuted={mode !== 'stems'}
+                                    tracks={tracksState.tracks}
+                                    soloMode={workspace.soloMode}
+                                    automationLanes={automation.lanes}
+                                />
+                            ) : null}
                         </div>
                     </DawDialogSection>
 

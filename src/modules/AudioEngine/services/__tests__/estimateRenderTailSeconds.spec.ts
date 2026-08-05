@@ -268,4 +268,58 @@ describe('estimateRenderTailSeconds', () => {
         // The previous ceiling clipped long reverbs at 30 s.
         expect(MAX_AUTO_TAIL_SECONDS).toBeGreaterThan(30);
     });
+
+    it('takes the longest enabled tail declared from opaque device state', () => {
+        const result = estimateRenderTailSeconds([
+            {
+                devices: [
+                    {
+                        type: 'stateful-drum-machine',
+                        parameterValues: {},
+                        deviceState: {
+                            data: {
+                                kit: {
+                                    reverbMix: 0,
+                                    reverbDecay: 0.8,
+                                    delayMix: 1,
+                                    delayTime: 2_000,
+                                    delayFeedback: 0.95,
+                                },
+                            },
+                        },
+                        bypassed: false,
+                        tail: {
+                            kind: 'parallel',
+                            tails: [
+                                {
+                                    kind: 'stateFeedbackLoop',
+                                    feedbackPath: ['data', 'kit', 'reverbDecay'],
+                                    defaultFeedback: 0.5,
+                                    maxFeedback: 0.99,
+                                    loopUnit: 's',
+                                    defaultLoopSeconds: 0.041,
+                                    enabledPath: ['data', 'kit', 'reverbMix'],
+                                    defaultEnabledValue: 0.15,
+                                },
+                                {
+                                    kind: 'stateFeedbackLoop',
+                                    feedbackPath: ['data', 'kit', 'delayFeedback'],
+                                    defaultFeedback: 0.35,
+                                    maxFeedback: 0.95,
+                                    loopPath: ['data', 'kit', 'delayTime'],
+                                    loopUnit: 'ms',
+                                    defaultLoopSeconds: 0.375,
+                                    enabledPath: ['data', 'kit', 'delayMix'],
+                                    defaultEnabledValue: 0,
+                                },
+                            ],
+                        },
+                    },
+                ],
+            },
+        ]);
+
+        expect(result.seconds).toBe(MAX_AUTO_TAIL_SECONDS);
+        expect(result.clamped).toBe(true);
+    });
 });

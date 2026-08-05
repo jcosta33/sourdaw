@@ -45,11 +45,31 @@ export type TailDeclarationLike =
           loopParameterId: string;
           loopUnit: 'ms' | 's';
           defaultLoopSeconds: number;
-      };
+      }
+    | {
+          kind: 'stateFeedbackLoop';
+          feedbackPath: readonly string[];
+          defaultFeedback: number;
+          minFeedback?: number;
+          maxFeedback: number;
+          loopPath?: readonly string[];
+          loopUnit: 'ms' | 's';
+          defaultLoopSeconds: number;
+          minLoopSeconds?: number;
+          maxLoopSeconds?: number;
+          enabledPath?: readonly string[];
+          defaultEnabledValue?: number;
+          automatableEnabledParameterId?: string;
+          stateGuard?: { path: readonly string[]; equals: string | number };
+      }
+    | { kind: 'parallel'; tails: readonly TailDeclarationLike[] };
 
 type DeviceLike = {
     type: string;
     parameterValues: Record<string, number>;
+    deviceState?: unknown;
+    /** Enabled automation parameters actually projected for this device. */
+    automatedParameterIds?: readonly string[];
     bypassed: boolean;
     /** Declared by the device's descriptor; absent means the device has no tail. */
     tail?: TailDeclarationLike;
@@ -85,28 +105,90 @@ function readParameter(device: DeviceLike, parameterId: string, fallback: number
     return value;
 }
 
+function readStateValue(deviceState: unknown, path: readonly string[]): unknown {
+    let value = deviceState;
+    for (const key of path) {
+        if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+            return undefined;
+        }
+        value = (value as Record<string, unknown>)[key];
+    }
+    return value;
+}
+
+function readStateNumber(deviceState: unknown, path: readonly string[], fallback: number): number {
+    const value = readStateValue(deviceState, path);
+    return typeof value === 'number' && Number.isFinite(value) ? value : fallback;
+}
+
+function feedbackTailSeconds({
+    feedback,
+    minFeedback = 0,
+    maxFeedback,
+    loopSeconds,
+}: {
+    feedback: number;
+    minFeedback?: number;
+    maxFeedback: number;
+    loopSeconds: number;
+}): number {
+    const boundedFeedback = Math.min(maxFeedback, Math.max(minFeedback, feedback));
+    if (boundedFeedback <= 0) {
+        return 0;
+    }
+
+    const repeatsToSilence = Math.log(MINUS_60_DB) / Math.log(boundedFeedback);
+    const tailSeconds = loopSeconds * repeatsToSilence;
+    return Number.isFinite(tailSeconds) ? tailSeconds : 0;
+}
+
 function evaluateFeedbackLoop(
     device: DeviceLike,
     tail: Extract<TailDeclarationLike, { kind: 'feedbackLoop' }>
 ): number {
-    const declaredFeedback = readParameter(device, tail.feedbackParameterId, tail.defaultFeedback);
-    const feedback = Math.min(tail.maxFeedback, Math.max(0, declaredFeedback));
-    if (feedback <= 0) {
-        // No feedback means the signal passes once; that repeat is inside the
-        // rendered region, so it adds no tail.
-        return 0;
-    }
-
     const defaultLoop = tail.loopUnit === 'ms' ? tail.defaultLoopSeconds * 1000 : tail.defaultLoopSeconds;
     const declaredLoop = readParameter(device, tail.loopParameterId, defaultLoop);
     const loopSeconds = tail.loopUnit === 'ms' ? declaredLoop / 1000 : declaredLoop;
+    return feedbackTailSeconds({
+        feedback: readParameter(device, tail.feedbackParameterId, tail.defaultFeedback),
+        maxFeedback: tail.maxFeedback,
+        loopSeconds,
+    });
+}
 
-    const repeatsToSilence = Math.log(MINUS_60_DB) / Math.log(feedback);
-    const tailSeconds = loopSeconds * repeatsToSilence;
-    if (!Number.isFinite(tailSeconds)) {
-        return 0;
+function evaluateStateFeedbackLoop(
+    device: DeviceLike,
+    tail: Extract<TailDeclarationLike, { kind: 'stateFeedbackLoop' }>
+): number {
+    let deviceState = device.deviceState;
+    if (tail.stateGuard !== undefined && readStateValue(deviceState, tail.stateGuard.path) !== tail.stateGuard.equals) {
+        deviceState = undefined;
     }
-    return tailSeconds;
+
+    if (tail.enabledPath !== undefined) {
+        const enabled = readStateNumber(deviceState, tail.enabledPath, tail.defaultEnabledValue ?? 0);
+        const automationCanEnable =
+            tail.automatableEnabledParameterId !== undefined &&
+            device.automatedParameterIds?.includes(tail.automatableEnabledParameterId) === true;
+        if (enabled <= 0 && !automationCanEnable) {
+            return 0;
+        }
+    }
+
+    let loopSeconds = tail.defaultLoopSeconds;
+    if (tail.loopPath !== undefined) {
+        const defaultLoop = tail.loopUnit === 'ms' ? tail.defaultLoopSeconds * 1000 : tail.defaultLoopSeconds;
+        const declaredLoop = readStateNumber(deviceState, tail.loopPath, defaultLoop);
+        loopSeconds = tail.loopUnit === 'ms' ? declaredLoop / 1000 : declaredLoop;
+    }
+    loopSeconds = Math.max(tail.minLoopSeconds ?? 0, Math.min(tail.maxLoopSeconds ?? Infinity, loopSeconds));
+
+    return feedbackTailSeconds({
+        feedback: readStateNumber(deviceState, tail.feedbackPath, tail.defaultFeedback),
+        minFeedback: tail.minFeedback,
+        maxFeedback: tail.maxFeedback,
+        loopSeconds,
+    });
 }
 
 /** Pre-delay shifts the whole tail later, so it adds to the sounding length. */
@@ -118,6 +200,18 @@ function withPredelay(device: DeviceLike, seconds: number, predelayMsParameterId
 }
 
 function evaluateDeclaration(device: DeviceLike, tail: TailDeclarationLike): number {
+    if (tail.kind === 'parallel') {
+        let longest = 0;
+        for (const child of tail.tails) {
+            longest = Math.max(longest, evaluateDeclaration(device, child));
+        }
+        return longest;
+    }
+
+    if (tail.kind === 'stateFeedbackLoop') {
+        return evaluateStateFeedbackLoop(device, tail);
+    }
+
     if (tail.kind === 'fixed') {
         return withPredelay(device, tail.seconds, tail.predelayMsParameterId);
     }

@@ -59,4 +59,38 @@ export type DeviceTailDeclaration =
           loopParameterId: string;
           loopUnit: 'ms' | 's';
           defaultLoopSeconds: number;
+      }
+    /**
+     * A feedback loop whose controls live in the device's opaque state chunk
+     * rather than the generic automation parameter map. Paths are data-only so
+     * the descriptor stays serialisable and the evaluator remains device-neutral.
+     */
+    | {
+          kind: 'stateFeedbackLoop';
+          feedbackPath: readonly string[];
+          defaultFeedback: number;
+          /** Optional lower clamp applied by the DSP before feedback enters the loop. */
+          minFeedback?: number;
+          maxFeedback: number;
+          loopPath?: readonly string[];
+          loopUnit: 'ms' | 's';
+          defaultLoopSeconds: number;
+          /** Optional DSP clamps, expressed in seconds after unit conversion. */
+          minLoopSeconds?: number;
+          maxLoopSeconds?: number;
+          enabledPath?: readonly string[];
+          defaultEnabledValue?: number;
+          /**
+           * Generic parameter that can automate the state-backed enable value.
+           * The estimator reserves a zero-snapshot effect only when the caller
+           * projects an actual enabled lane targeting this parameter.
+           */
+          automatableEnabledParameterId?: string;
+          /** Reject the opaque state and use declaration defaults when this guard does not match. */
+          stateGuard?: { path: readonly string[]; equals: string | number };
+      }
+    /** Parallel internal effects ring simultaneously, so only the longest counts. */
+    | {
+          kind: 'parallel';
+          tails: readonly DeviceTailDeclaration[];
       };

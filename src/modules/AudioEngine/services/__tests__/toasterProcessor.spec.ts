@@ -480,6 +480,20 @@ describe('ToasterProcessor dispatch paths & process guards', () => {
         expect(padParamCalls).toContainEqual([2, 'unknownPad', 0.4]);
     });
 
+    it('converts persisted Toaster delay milliseconds to the Rust engine seconds contract', async () => {
+        const proc = await loadProcessor();
+        send(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });
+
+        // Live edits arrive camelCase while kit hydration/offline projection
+        // already uses snake_case. Both carry ToasterKit.delayTime in ms; Rust's
+        // StereoDelay::set_param multiplies delay_time by sample rate as seconds.
+        send(proc, { type: 'param', name: 'delayTime', value: 375 });
+        send(proc, { type: 'param', name: 'delay_time', value: 500 });
+
+        expect(kitParamCalls).toContainEqual(['delay_time', 0.375]);
+        expect(kitParamCalls).toContainEqual(['delay_time', 0.5]);
+    });
+
     /**
      * This processor is the camelCase/snake_case boundary, and both runtimes cross
      * it. A panel edit reaches `ToasterNode.setPadParam` with the `PadState` key —
