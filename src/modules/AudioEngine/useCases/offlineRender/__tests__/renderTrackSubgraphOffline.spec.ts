@@ -680,7 +680,12 @@ describe('renderTrackSubgraphOffline', () => {
             vi.stubGlobal('OfflineAudioContext', StalledRenderContext);
         }
 
-        it('rejects a wedged render once its wall-clock budget is spent instead of hanging forever', async () => {
+        // SPEC-offline-live-collapse AC-10: the freeze path's backstop is now
+        // the no-progress watchdog rather than a total-elapsed budget. This
+        // case previously advanced past the 60 s floor and asserted a "timed
+        // out" rejection — a wedged render is still rejected, but for making no
+        // progress, and after 10 s rather than 60.
+        it('rejects a wedged render once it stops making progress instead of hanging forever', async () => {
             vi.useFakeTimers();
             stubStalledContext();
             const track = TrackDummy.create({ id: 'track-1', kind: 'audio' });
@@ -691,11 +696,10 @@ describe('renderTrackSubgraphOffline', () => {
                 startBeat: 0,
                 endBeat: 4,
             });
-            const settled = expect(rendering).rejects.toThrow(/timed out/);
+            const settled = expect(rendering).rejects.toThrow(/made no progress/);
 
-            // Past the 60 s floor the export paths already apply. Without a
-            // backstop this promise never settles at all.
-            await vi.advanceTimersByTimeAsync(70_000);
+            // Without a backstop this promise never settles at all.
+            await vi.advanceTimersByTimeAsync(15_000);
             await settled;
 
             vi.useRealTimers();
@@ -922,6 +926,280 @@ describe('renderTrackSubgraphOffline', () => {
             });
 
             expect(onScheduled).toHaveBeenCalledWith({ scheduledNotes: 0, scheduledBuffers: [] });
+        });
+    });
+
+    // ── SPEC-offline-live-collapse AC-9 and AC-1 ───────────────────────────
+    //
+    // Both are properties of the *context this path constructs*, so they share
+    // a stub that allocates nothing: the real freeze path builds its
+    // `OfflineAudioContext` immediately after the clamp, and a 2^30-frame
+    // context is ~8.6 GB, which fails allocation long before the assertion
+    // could run. `RenderHarnessContext` above also allocates its channel in
+    // `startRendering`, so it cannot be reused here either.
+    describe('the context it constructs', () => {
+        /** Every `addModule` specifier this render registered, in call order. */
+        let registeredModules: string[] = [];
+        /** Frame counts the render asked its context for, in construction order. */
+        let requestedFrameCounts: number[] = [];
+
+        class ProbeContext {
+            readonly destination = createNode();
+            readonly audioWorklet = {
+                addModule: (specifier: string): Promise<void> => {
+                    registeredModules.push(specifier);
+                    return Promise.resolve();
+                },
+            };
+
+            constructor(
+                readonly numberOfChannels: number,
+                readonly length: number,
+                readonly sampleRate: number
+            ) {
+                requestedFrameCounts.push(length);
+            }
+
+            createGain() {
+                return { ...createNode(), gain: createParam(1) };
+            }
+            createStereoPanner() {
+                return { ...createNode(), pan: createParam(0) };
+            }
+            createDelay() {
+                return { ...createNode(), delayTime: createParam(0) };
+            }
+            createBufferSource() {
+                return { ...createNode(), buffer: null, playbackRate: createParam(1), start: vi.fn(), stop: vi.fn() };
+            }
+            createOscillator() {
+                return { ...createNode(), type: 'sine', frequency: createParam(440), start: vi.fn(), stop: vi.fn() };
+            }
+            suspend(): Promise<void> {
+                return Promise.resolve();
+            }
+            resume(): Promise<void> {
+                return Promise.resolve();
+            }
+            startRendering(): Promise<AudioBuffer> {
+                // One frame of nothing. The assertions here read what the render
+                // *built*, never what it rendered, so the buffer is a stub.
+                return Promise.resolve({
+                    duration: 0,
+                    length: 1,
+                    numberOfChannels: 1,
+                    sampleRate: this.sampleRate,
+                    getChannelData: () => new Float32Array(1),
+                } as unknown as AudioBuffer);
+            }
+        }
+
+        beforeEach(() => {
+            registeredModules = [];
+            requestedFrameCounts = [];
+            vi.stubGlobal('OfflineAudioContext', ProbeContext);
+        });
+
+        /**
+         * AC-9. The clamp is shared so the truncation is *reported*; the frame
+         * count itself is deliberately not asserted, because both sides would
+         * read it from `MAX_OFFLINE_FRAMES` and the comparison would survive
+         * the only mutation available (re-inlining the `Math.min` leaves the
+         * count correct and the warning gone). ADR 0015 rule 3.
+         */
+        it('reports the truncation when the requested timeline exceeds the renderer cap', async () => {
+            const onWarning = vi.fn();
+            // 2^30 frames at 44 100 Hz is ~6.8 h; at 120 bpm a beat is 0.5 s, so
+            // 200 000 beats (~27.8 h) is comfortably past the cap.
+            const track = TrackDummy.create({ id: 'track-1', kind: 'audio' });
+
+            await renderTrackSubgraphOffline({
+                targetTrackId: track.id,
+                renderTracks: [track],
+                startBeat: 0,
+                endBeat: 200_000,
+                onWarning,
+            });
+
+            expect(onWarning).toHaveBeenCalledWith(expect.stringContaining('Export truncated to'));
+        });
+
+        /**
+         * AC-1. The freeze/bounce path builds a bare context and registers
+         * neither out-of-band module, so freezing a sidechained track bakes
+         * self-keyed compression and freezing a bitcrusher bakes no decimation
+         * — both silently, because `onWarning` lives on a `prepared` record
+         * that was never created.
+         */
+        it('registers the sidechain key module before any strip is built', async () => {
+            const { sidechainStore } = await import('#/modules/Routing/stores');
+            const source = TrackDummy.create({ id: 'source-1', kind: 'audio' });
+            const target = TrackDummy.create({
+                id: 'track-1',
+                kind: 'audio',
+                devices: [
+                    {
+                        id: 'sc-1',
+                        name: 'Sidechain',
+                        type: 'builtin-sidechain-compressor',
+                        bypassed: false,
+                        parameterValues: {},
+                    },
+                ],
+            });
+            sidechainStore.set({
+                ...sidechainStore.value!,
+                routes: [
+                    {
+                        id: 'route-1',
+                        sourceTrackId: 'source-1',
+                        targetTrackId: 'track-1',
+                        targetDeviceId: 'sc-1',
+                        targetParameterId: 'threshold',
+                        gain: 1,
+                    },
+                ],
+            });
+
+            await renderTrackSubgraphOffline({
+                targetTrackId: target.id,
+                renderTracks: [target, source],
+                startBeat: 0,
+                endBeat: 4,
+            });
+
+            expect(registeredModules).toContain('/audio/worklets/sidechain-compressor-processor.js');
+        });
+
+        it('registers the bitcrusher rate module when the subgraph carries a bitcrusher', async () => {
+            const track = TrackDummy.create({
+                id: 'track-1',
+                kind: 'audio',
+                devices: [
+                    {
+                        id: 'bc-1',
+                        name: 'Bitcrusher',
+                        type: 'builtin-bitcrusher',
+                        bypassed: false,
+                        parameterValues: {},
+                    },
+                ],
+            });
+
+            await renderTrackSubgraphOffline({
+                targetTrackId: track.id,
+                renderTracks: [track],
+                startBeat: 0,
+                endBeat: 4,
+            });
+
+            expect(registeredModules).toHaveLength(1);
+        });
+
+        /**
+         * The negative half. A prepare that ran unconditionally would satisfy
+         * both assertions above while making every freeze pay two module
+         * fetches, so the population half is pinned too.
+         */
+        it('registers neither module for a subgraph that carries neither device', async () => {
+            const track = TrackDummy.create({ id: 'track-1', kind: 'audio' });
+
+            await renderTrackSubgraphOffline({
+                targetTrackId: track.id,
+                renderTracks: [track],
+                startBeat: 0,
+                endBeat: 4,
+            });
+
+            expect(registeredModules).toEqual([]);
+        });
+
+        // ── SPEC-offline-live-collapse AC-2 ───────────────────────────────
+        //
+        // The three exits are asserted separately because they are three
+        // different ways out of the same function, and a teardown written after
+        // the returned buffer satisfies only the first. A render that times out
+        // or is cancelled built exactly as many devices as one that finished,
+        // and every metered one is holding a telemetry slot that only
+        // `destroy()` gives back.
+        describe('device teardown', () => {
+            function meteredDevice() {
+                return {
+                    id: 'gluten-1',
+                    name: 'Gluten',
+                    type: 'gluten',
+                    bypassed: false,
+                    parameterValues: {},
+                };
+            }
+
+            /** A chain entry whose strategy records its own teardown. */
+            function meteredEntry(destroy: ReturnType<typeof vi.fn>): DeviceNodeEntry {
+                return {
+                    deviceId: 'gluten-1',
+                    deviceType: 'gluten',
+                    node: {} as DeviceNodeEntry['node'],
+                    strategy: { destroy } as unknown as DeviceNodeEntry['strategy'],
+                };
+            }
+
+            it('destroys what it built when the render succeeds', async () => {
+                const destroy = vi.fn();
+                mocks.buildDeviceChain.mockResolvedValue([meteredEntry(destroy)]);
+                const track = TrackDummy.create({ id: 'track-1', kind: 'audio', devices: [meteredDevice()] });
+
+                await renderTrackSubgraphOffline({
+                    targetTrackId: track.id,
+                    renderTracks: [track],
+                    startBeat: 0,
+                    endBeat: 4,
+                });
+
+                expect(destroy).toHaveBeenCalledTimes(1);
+            });
+
+            it('destroys what it built when the render fails', async () => {
+                const destroy = vi.fn();
+                mocks.buildDeviceChain.mockResolvedValue([meteredEntry(destroy)]);
+                class FailingContext extends ProbeContext {
+                    override startRendering(): Promise<AudioBuffer> {
+                        return Promise.reject(new Error('rendering failed'));
+                    }
+                }
+                vi.stubGlobal('OfflineAudioContext', FailingContext);
+                const track = TrackDummy.create({ id: 'track-1', kind: 'audio', devices: [meteredDevice()] });
+
+                await expect(
+                    renderTrackSubgraphOffline({
+                        targetTrackId: track.id,
+                        renderTracks: [track],
+                        startBeat: 0,
+                        endBeat: 4,
+                    })
+                ).rejects.toThrow();
+
+                expect(destroy).toHaveBeenCalledTimes(1);
+            });
+
+            it('destroys what it built when the caller cancels', async () => {
+                const destroy = vi.fn();
+                mocks.buildDeviceChain.mockResolvedValue([meteredEntry(destroy)]);
+                const controller = new AbortController();
+                controller.abort();
+                const track = TrackDummy.create({ id: 'track-1', kind: 'audio', devices: [meteredDevice()] });
+
+                await expect(
+                    renderTrackSubgraphOffline({
+                        targetTrackId: track.id,
+                        renderTracks: [track],
+                        startBeat: 0,
+                        endBeat: 4,
+                        abortSignal: controller.signal,
+                    })
+                ).rejects.toThrow();
+
+                expect(destroy).toHaveBeenCalledTimes(1);
+            });
         });
     });
 });

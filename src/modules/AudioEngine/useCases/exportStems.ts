@@ -7,8 +7,6 @@ import {
 import { sidechainStore } from '#/modules/Routing/stores';
 
 import { createExportError } from '../errors/ExportError';
-import { prepareOfflineSidechainCompressor } from '../repositories/devices/dynamics/prepareOfflineSidechainCompressor';
-import { prepareOfflineBitcrusherRate } from '../repositories/devices/toneShaping/prepareOfflineBitcrusherRate';
 import { connectOfflineSidechainRoutes } from '../repositories/offlineRouting/connectOfflineSidechainRoutes';
 
 import { type DeviceNodeEntry } from './buildDeviceChain';
@@ -20,7 +18,9 @@ import { collectDeviceRuntimeFailures } from './offlineRender/collectDeviceRunti
 import { connectOfflineToasterPadRoutes } from './offlineRender/connectOfflineToasterPadRoutes';
 import { MIN_RENDER_TIMEOUT_MS, RENDER_TIMEOUT_MULTIPLIER } from './offlineRender/constants';
 import { createOfflineTrackStrip } from './offlineRender/createOfflineTrackStrip';
+import { destroyOfflineDeviceStrategies } from './offlineRender/destroyOfflineDeviceStrategies';
 import { isCancelRequested } from './offlineRender/isCancelRequested';
+import { prepareOfflineContext } from './offlineRender/prepareOfflineContext';
 import { renderInSegments } from './offlineRender/renderInSegments';
 import { resetCancelFlag } from './offlineRender/resetCancelFlag';
 import { resolveRenderContext } from './offlineRender/resolveRenderContext';
@@ -240,194 +240,192 @@ export const exportStems: ExportStemsFn = async function exportStems(
             ];
             const trackStripsById = new Map<string, OfflineTrackStrip>();
             const deviceEntriesByTrack = new Map<string, DeviceNodeEntry[]>();
-
-            // FX-9 — plan the keys before any strip exists: the compressor node is
-            // built by `createOfflineTrackStrip`, and it only becomes a keyable
-            // worklet if this context was prepared first (same order as the mixdown).
-            const stemSidechain = planStemSidechain({
-                routes: sidechainRoutes,
-                stemTrackIds: new Set(groupedTracks.map((groupedTrack) => groupedTrack.id)),
-                allTracks: tracks.tracks,
-            });
-            if (stemSidechain.targetDevices.size > 0) {
-                try {
-                    await prepareOfflineSidechainCompressor({
-                        offlineCtx,
-                        onWarning,
-                        targetDevices: stemSidechain.targetDevices,
-                    });
-                } catch (error) {
-                    const reason = error instanceof Error ? error.message : String(error);
-                    onWarning?.(`Sidechain processor unavailable; using the offline compressor fallback. ${reason}`);
-                }
-            }
-            // Same ordering constraint: the bitcrusher builds its sample-and-hold
-            // node synchronously inside the strip, so the module has to be
-            // registered before `createOfflineTrackStrip` runs or the stem loses
-            // rate reduction that playback has.
-            const hasBitcrusher = groupedTracks.some((groupedTrack) =>
-                groupedTrack.devices.some((device) => device.type === 'builtin-bitcrusher' && !device.bypassed)
-            );
-            if (hasBitcrusher) {
-                try {
-                    await prepareOfflineBitcrusherRate(offlineCtx);
-                } catch (error) {
-                    const reason = error instanceof Error ? error.message : String(error);
-                    onWarning?.(`Bitcrusher rate reduction unavailable; rendering without it. ${reason}`);
-                }
-            }
-            for (const groupedTrack of groupedTracks) {
-                // Stems carry the track's content even when muted (see the
-                // eligibility comment above) — only the mixdown bakes mute in.
-                // A stem is a level, not a monitoring snapshot: the track's own
-                // fader is already baked in, and its VCA group master is part of
-                // the same balance, so it composes in here too. (Mute and solo
-                // stay ignored above — those are monitoring state, not level.)
-                const groupedStrip = await createOfflineTrackStrip(offlineCtx, groupedTrack, {
-                    honorMuted: false,
-                    vcaMultiplier: deriveVcaMultiplier({ vcaGroupId: groupedTrack.vcaGroupId, groups: vcaGroups }),
-                    onWarning,
-                });
-                trackStripsById.set(groupedTrack.id, groupedStrip);
-                deviceEntriesByTrack.set(groupedTrack.id, groupedStrip.deviceEntries);
-            }
-            const strip = trackStripsById.get(track.id)!;
-            if (groupedPads.length > 0) {
-                connectOfflineToasterPadRoutes({
-                    tracks: groupedTopology,
-                    trackStripsById,
-                    deviceEntriesByTrack,
-                });
-                for (const pad of groupedPads) {
-                    trackStripsById.get(pad.id)?.outputNode.connect(strip.inputNode);
-                }
-            }
-            strip.outputNode.connect(offlineCtx.destination);
-
-            // FX-9 — the key sources: built and scheduled so the detector sees real
-            // program, but deliberately never connected to `offlineCtx.destination`.
-            // They shape this stem through the compressor's sidechain input only;
-            // their own audio must not appear in it.
-            //
-            // Mute and solo are ignored here for the same reason the stem itself
-            // ignores them (`honorMuted: false`): a stem set is "the session's full
-            // content, track by track", so its keys are derived from that same full
-            // content rather than from the monitoring state at export time.
-            for (const keySourceTrack of stemSidechain.keySourceTracks) {
-                // The live compressor keys off a post-fader signal, which rides
-                // the key track's VCA group, so the offline key does too.
-                const keyStrip = await createOfflineTrackStrip(offlineCtx, keySourceTrack, {
-                    honorMuted: false,
-                    vcaMultiplier: deriveVcaMultiplier({ vcaGroupId: keySourceTrack.vcaGroupId, groups: vcaGroups }),
-                    onWarning,
-                });
-                trackStripsById.set(keySourceTrack.id, keyStrip);
-                deviceEntriesByTrack.set(keySourceTrack.id, keyStrip.deviceEntries);
-            }
-            if (stemSidechain.routes.length > 0) {
-                connectOfflineSidechainRoutes({
-                    offlineCtx,
-                    routes: stemSidechain.routes,
-                    trackStripsById,
-                    deviceEntriesByTrack,
-                    // FX-5 — the same alignment resolver the mixdown and the live
-                    // graph use, so a stem ducks on the phase it was monitored at.
-                    keyDelaySecFor: getSidechainKeyDelay,
-                });
-            }
-            for (const groupedTrack of groupedTracks) {
-                const groupedStrip = trackStripsById.get(groupedTrack.id)!;
-                await scheduleTrackClips({
-                    offlineCtx,
-                    track: groupedTrack === track ? track : { ...groupedTrack, clips: [] },
-                    midi,
-                    trackInputNode: groupedStrip.inputNode,
-                    trackGainNode: groupedStrip.faderNode,
-                    trackPanNode: groupedStrip.panNode,
-                    destination: offlineCtx.destination,
-                    durationSeconds,
-                    defaultTempo,
-                    changes,
-                    projections: {
-                        projectMidiEvents,
-                        projectPpqEndpoints,
-                        processYeastMidi,
-                        selectMidiEventProbability,
-                        projectChordPitch,
-                        evaluateAutomationValue,
-                    },
-                    onWarning,
-                    pendingWorkletEvents,
-                    allTracks: groupedTopology,
-                    deviceEntriesByTrack,
-                    honorMuted: false,
-                    regionStartBeat: startBeat,
-                    vcaMultiplier: deriveVcaMultiplier({ vcaGroupId: groupedTrack.vcaGroupId, groups: vcaGroups }),
-                });
-            }
-
-            // FX-9 — a key strip with no program would duck nothing, so the key
-            // sources are scheduled like any other track. `destination` is still the
-            // context's, matching the grouped calls: it is the scheduler's reference
-            // for tail/limit handling, not a connection of this strip's output.
-            for (const keySourceTrack of stemSidechain.keySourceTracks) {
-                const keyStrip = trackStripsById.get(keySourceTrack.id)!;
-                await scheduleTrackClips({
-                    offlineCtx,
-                    track: keySourceTrack,
-                    midi,
-                    trackInputNode: keyStrip.inputNode,
-                    trackGainNode: keyStrip.faderNode,
-                    trackPanNode: keyStrip.panNode,
-                    destination: offlineCtx.destination,
-                    durationSeconds,
-                    defaultTempo,
-                    changes,
-                    projections: {
-                        projectMidiEvents,
-                        projectPpqEndpoints,
-                        processYeastMidi,
-                        selectMidiEventProbability,
-                        projectChordPitch,
-                        evaluateAutomationValue,
-                    },
-                    onWarning,
-                    pendingWorkletEvents,
+            // Per stem, because each stem builds its own context and its own
+            // devices. A stem set of N tracks would otherwise leak N stems'
+            // worth of telemetry slots, and the pool is 64 for the whole page.
+            try {
+                // FX-9 — plan the keys before any strip exists: the compressor node is
+                // built by `createOfflineTrackStrip`, and it only becomes a keyable
+                // worklet if this context was prepared first (same order as the mixdown).
+                const stemSidechain = planStemSidechain({
+                    routes: sidechainRoutes,
+                    stemTrackIds: new Set(groupedTracks.map((groupedTrack) => groupedTrack.id)),
                     allTracks: tracks.tracks,
-                    deviceEntriesByTrack,
-                    honorMuted: false,
-                    regionStartBeat: startBeat,
-                    vcaMultiplier: deriveVcaMultiplier({ vcaGroupId: keySourceTrack.vcaGroupId, groups: vcaGroups }),
                 });
+                // Same ordering constraint the mixdown and the freeze path apply,
+                // through the same function: both out-of-band devices build their
+                // worklet node synchronously inside `createOfflineTrackStrip`, so a
+                // module registered afterwards is registered too late.
+                await prepareOfflineContext({
+                    offlineCtx,
+                    tracks: groupedTracks,
+                    sidechainTargetDevices: stemSidechain.targetDevices,
+                    onWarning,
+                });
+                for (const groupedTrack of groupedTracks) {
+                    // Stems carry the track's content even when muted (see the
+                    // eligibility comment above) — only the mixdown bakes mute in.
+                    // A stem is a level, not a monitoring snapshot: the track's own
+                    // fader is already baked in, and its VCA group master is part of
+                    // the same balance, so it composes in here too. (Mute and solo
+                    // stay ignored above — those are monitoring state, not level.)
+                    const groupedStrip = await createOfflineTrackStrip(offlineCtx, groupedTrack, {
+                        honorMuted: false,
+                        vcaMultiplier: deriveVcaMultiplier({ vcaGroupId: groupedTrack.vcaGroupId, groups: vcaGroups }),
+                        onWarning,
+                    });
+                    trackStripsById.set(groupedTrack.id, groupedStrip);
+                    deviceEntriesByTrack.set(groupedTrack.id, groupedStrip.deviceEntries);
+                }
+                const strip = trackStripsById.get(track.id)!;
+                if (groupedPads.length > 0) {
+                    connectOfflineToasterPadRoutes({
+                        tracks: groupedTopology,
+                        trackStripsById,
+                        deviceEntriesByTrack,
+                    });
+                    for (const pad of groupedPads) {
+                        trackStripsById.get(pad.id)?.outputNode.connect(strip.inputNode);
+                    }
+                }
+                strip.outputNode.connect(offlineCtx.destination);
+
+                // FX-9 — the key sources: built and scheduled so the detector sees real
+                // program, but deliberately never connected to `offlineCtx.destination`.
+                // They shape this stem through the compressor's sidechain input only;
+                // their own audio must not appear in it.
+                //
+                // Mute and solo are ignored here for the same reason the stem itself
+                // ignores them (`honorMuted: false`): a stem set is "the session's full
+                // content, track by track", so its keys are derived from that same full
+                // content rather than from the monitoring state at export time.
+                for (const keySourceTrack of stemSidechain.keySourceTracks) {
+                    // The live compressor keys off a post-fader signal, which rides
+                    // the key track's VCA group, so the offline key does too.
+                    const keyStrip = await createOfflineTrackStrip(offlineCtx, keySourceTrack, {
+                        honorMuted: false,
+                        vcaMultiplier: deriveVcaMultiplier({
+                            vcaGroupId: keySourceTrack.vcaGroupId,
+                            groups: vcaGroups,
+                        }),
+                        onWarning,
+                    });
+                    trackStripsById.set(keySourceTrack.id, keyStrip);
+                    deviceEntriesByTrack.set(keySourceTrack.id, keyStrip.deviceEntries);
+                }
+                if (stemSidechain.routes.length > 0) {
+                    connectOfflineSidechainRoutes({
+                        offlineCtx,
+                        routes: stemSidechain.routes,
+                        trackStripsById,
+                        deviceEntriesByTrack,
+                        // FX-5 — the same alignment resolver the mixdown and the live
+                        // graph use, so a stem ducks on the phase it was monitored at.
+                        keyDelaySecFor: getSidechainKeyDelay,
+                    });
+                }
+                for (const groupedTrack of groupedTracks) {
+                    const groupedStrip = trackStripsById.get(groupedTrack.id)!;
+                    await scheduleTrackClips({
+                        offlineCtx,
+                        track: groupedTrack === track ? track : { ...groupedTrack, clips: [] },
+                        midi,
+                        trackInputNode: groupedStrip.inputNode,
+                        trackGainNode: groupedStrip.faderNode,
+                        trackPanNode: groupedStrip.panNode,
+                        destination: offlineCtx.destination,
+                        durationSeconds,
+                        defaultTempo,
+                        changes,
+                        projections: {
+                            projectMidiEvents,
+                            projectPpqEndpoints,
+                            processYeastMidi,
+                            selectMidiEventProbability,
+                            projectChordPitch,
+                            evaluateAutomationValue,
+                        },
+                        onWarning,
+                        pendingWorkletEvents,
+                        allTracks: groupedTopology,
+                        deviceEntriesByTrack,
+                        honorMuted: false,
+                        regionStartBeat: startBeat,
+                        vcaMultiplier: deriveVcaMultiplier({ vcaGroupId: groupedTrack.vcaGroupId, groups: vcaGroups }),
+                    });
+                }
+
+                // FX-9 — a key strip with no program would duck nothing, so the key
+                // sources are scheduled like any other track. `destination` is still the
+                // context's, matching the grouped calls: it is the scheduler's reference
+                // for tail/limit handling, not a connection of this strip's output.
+                for (const keySourceTrack of stemSidechain.keySourceTracks) {
+                    const keyStrip = trackStripsById.get(keySourceTrack.id)!;
+                    await scheduleTrackClips({
+                        offlineCtx,
+                        track: keySourceTrack,
+                        midi,
+                        trackInputNode: keyStrip.inputNode,
+                        trackGainNode: keyStrip.faderNode,
+                        trackPanNode: keyStrip.panNode,
+                        destination: offlineCtx.destination,
+                        durationSeconds,
+                        defaultTempo,
+                        changes,
+                        projections: {
+                            projectMidiEvents,
+                            projectPpqEndpoints,
+                            processYeastMidi,
+                            selectMidiEventProbability,
+                            projectChordPitch,
+                            evaluateAutomationValue,
+                        },
+                        onWarning,
+                        pendingWorkletEvents,
+                        allTracks: tracks.tracks,
+                        deviceEntriesByTrack,
+                        honorMuted: false,
+                        regionStartBeat: startBeat,
+                        vcaMultiplier: deriveVcaMultiplier({
+                            vcaGroupId: keySourceTrack.vcaGroupId,
+                            groups: vcaGroups,
+                        }),
+                    });
+                }
+
+                schedulePendingSuspends(offlineCtx, pendingWorkletEvents, durationSeconds);
+
+                // Emit scheduling-done progress (40% of this stem's slot) before the render blocks.
+                const fractAfterSchedule = (done + 0.4) / eligible.length;
+                onProgress?.(fractAfterSchedule);
+                await yieldToMain();
+
+                // Same segmented kernel the mixdown uses, so a stem
+                // render aborts at a real boundary instead of running to completion
+                // in the background (up to MAX_CONCURRENT_RENDERS of them at once),
+                // and this stem's slot advances on measured render progress rather
+                // than an eased timer.
+                const stemSpan = 1 / eligible.length;
+                const stemTimeoutMs = Math.max(
+                    MIN_RENDER_TIMEOUT_MS,
+                    durationSeconds * RENDER_TIMEOUT_MULTIPLIER * 1000
+                );
+                const buffer = await renderInSegments({
+                    offlineCtx,
+                    durationSeconds,
+                    timeoutMs: stemTimeoutMs,
+                    ...collectDeviceRuntimeFailures(deviceEntriesByTrack),
+                    onRenderProgress: onProgress
+                        ? (fraction) => onProgress(fractAfterSchedule + fraction * (stemSpan * 0.6))
+                        : undefined,
+                });
+
+                stems.set(track.id, buffer);
+                done++;
+                onProgress?.(done / eligible.length);
+            } finally {
+                destroyOfflineDeviceStrategies(deviceEntriesByTrack);
             }
-
-            schedulePendingSuspends(offlineCtx, pendingWorkletEvents, durationSeconds);
-
-            // Emit scheduling-done progress (40% of this stem's slot) before the render blocks.
-            const fractAfterSchedule = (done + 0.4) / eligible.length;
-            onProgress?.(fractAfterSchedule);
-            await yieldToMain();
-
-            // Same segmented kernel the mixdown uses, so a stem
-            // render aborts at a real boundary instead of running to completion
-            // in the background (up to MAX_CONCURRENT_RENDERS of them at once),
-            // and this stem's slot advances on measured render progress rather
-            // than an eased timer.
-            const stemSpan = 1 / eligible.length;
-            const stemTimeoutMs = Math.max(MIN_RENDER_TIMEOUT_MS, durationSeconds * RENDER_TIMEOUT_MULTIPLIER * 1000);
-            const buffer = await renderInSegments({
-                offlineCtx,
-                durationSeconds,
-                timeoutMs: stemTimeoutMs,
-                ...collectDeviceRuntimeFailures(deviceEntriesByTrack),
-                onRenderProgress: onProgress
-                    ? (fraction) => onProgress(fractAfterSchedule + fraction * (stemSpan * 0.6))
-                    : undefined,
-            });
-
-            stems.set(track.id, buffer);
-            done++;
-            onProgress?.(done / eligible.length);
         });
 
         // Run exports concurrently up to the thread limit.

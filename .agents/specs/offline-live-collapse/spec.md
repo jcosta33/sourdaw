@@ -2,7 +2,7 @@
 type: spec
 id: SPEC-offline-live-collapse
 subject: make the bounce the same program as the monitor, and prove it per device
-status: ready
+status: partially landed — stop condition 3 reported, AC-0 not built
 repo: sourdaw
 date: 2026-08-03
 blocked_by: SPEC-project-durability, SPEC-render-parity-instrumentation
@@ -151,6 +151,105 @@ brief is explicit: re-derive before acting.
 
 Re-derivation means: reproduce the stated behaviour from the code on this branch and paste the
 output. If one fails, report it — survey stop condition 10 counts failures across the 37.
+
+## Outcome — first implementation pass
+
+Branch `feat/offline-live-collapse-ultracode`, three commits. Full suite `--dir src` run twice,
+exit 0 and exit 0, 3102 files / 19401 tests. `oxlint` 0, `eslint` 0, `typecheck` 0,
+`typecheck:test` 0, `deps:validate` 0. No Rust touched, so `cargo` was not run.
+
+| AC | State | Evidence |
+| --- | --- | --- |
+| AC-0 | **Not built.** | The browser-hosted per-device null harness. Sized below; nothing in this pass depends on it, and no claim here rests on it. |
+| AC-1 | **Landed.** | `prepareOfflineContext.ts` shared by all three render paths; `__tests__/offlineContextPreparation.spec.ts` census. Mutations verified: dropping the freeze call reds the census; disabling one prepare reds the registry count. |
+| AC-2 | **Landed.** | `destroyOfflineDeviceStrategies.ts` in a `finally` on all three paths; `TelemetryAllocator.occupiedSlotCount()` and the `releaseSlot` membership check. Mutation verified: moving teardown onto the success path reds the failure and cancellation cases and leaves the success case green. Browser leg (evidence 3) belongs to AC-0 and is not done. |
+| AC-3 | **STOP CONDITION 3 FIRED. Not built.** | Measured before writing any census: 20 asserted verdicts against **285** reasoned exemption rows, 14:1. See below. |
+| AC-4 | **Not started.** Blocked by AC-3. | The census is what makes each fix provable per device; it is the spec's own mandated ordering. |
+| AC-5 | **Not started.** | Both findings re-derived and confirmed (below). Defect 1's proof is AC-0's null. |
+| AC-6 | **Not started.** | Its time-source design question is untouched. |
+| AC-7 | **Not started.** | Its evidence 3 is an AC-0 null. |
+| AC-8 | **Landed.** | `ProofNode.setParam` forwards regardless of bypass; `ProofNodeCreate.spec.ts`. Mutation verified: restoring `!bypassed` reds two cases. The AC-0 null half is not done. |
+| AC-9 | **Landed.** | Freeze path calls `clampRenderFrameCount`; warning asserted, frame count deliberately not, per the AC's own instruction. Mutation verified with AC-1's. |
+| AC-10 | **Landed.** | Monotonic `performance.now()` no-progress watchdog replaces the total-elapsed `Date.now()` budget and the racing `setTimeout`. Mutations verified: restoring the elapsed budget reds evidences 1 and 3; removing the no-progress check reds evidence 2 and the wedge case. |
+
+### Re-derivations — both findings survive
+
+Required before AC-5 and AC-10 could be built. Both confirmed on this branch.
+
+- **`grinder-offline-settargetattime-glide` — CONFIRMED.** `GrinderNode.ts:168` replays initial state
+  with `param.setTargetAtTime(value, ctx.currentTime, 0.01)`. On an `OfflineAudioContext`
+  `currentTime` is 0 until `startRendering()`, so the glide starts at frame 0. The rAF half is also
+  confirmed: `GrinderNode.ts:114` `const canCoalesce = typeof requestAnimationFrame === 'function'`,
+  with the "No rAF (offline render / non-DOM host)" escape hatch at `:126` unreachable on a main
+  thread.
+- **`offline-render-arbitrary-wall-clock-budget` — CONFIRMED.** Enforced twice over one render:
+  `renderInSegments.ts:222` `Date.now() - startedAt >= timeoutMs`, and `renderWithTimeout.ts:13-15`'s
+  `setTimeout`, whose own header (`:4-9`) states it "does NOT cancel the render itself".
+
+Survey stop condition 10 counts zero failures from this phase's two.
+
+### Stop condition 3 — the census population is wrong, and by an order of magnitude
+
+Measured by enumerating `NATIVE_DSP_DEVICE_FACTORIES` × each factory's `getBuiltinPlugins()`
+descriptor's `automatable: true` parameters, and intersecting with the three nodes that declare
+`acceptsScheduledParam`:
+
+```
+FACTORIES=13   VERDICTS=20   EXEMPTIONS=285
+fermenter:      automatable=105  covered=15  gap=90
+toaster:        automatable=4    covered=3   gap=1
+levain:         automatable=4    covered=0   gap=4
+builtin-crumbs: automatable=10   covered=0   gap=10
+grand-boule:    automatable=3    covered=0   gap=3
+gluten:         automatable=43   covered=0   gap=43
+crust:          automatable=13   covered=0   gap=13
+bacteria:       automatable=62   covered=0   gap=62
+grinder:        automatable=41   covered=0   gap=41
+proof:          automatable=3    covered=0   gap=3
+dutch-oven:     automatable=17   covered=2   gap=15
+native-scoring: automatable=0    covered=0   gap=0
+knead:          NO DESCRIPTOR
+```
+
+The 20 is independently confirmed by counting the three maps directly:
+`FERMENTER_AUTOMATION_PARAM_IDS` 15 + `TOASTER_AUTOMATION_PARAM_IDS` 3 +
+`PROOF_CHAMBER_AUTOMATION_PARAM_IDS` 2 = 20.
+
+**This is the spec's own stop condition 3, and it fires by 14:1.** The spec anticipated "several
+dozen pairs"; the real figure is 285. Writing 285 reasoned rows would produce exactly the artefact
+the stop condition names — an allow-list by another name — so AC-3 was not built.
+
+Three further things the measurement establishes, none of which the spec anticipated:
+
+1. **The population is 13, not 12.** AC-0's enumeration omits `crust`, which is in
+   `NATIVE_DSP_DEVICE_FACTORIES`. Any AC-0 population list must be re-derived from the registry.
+2. **The gaps are two structurally different classes, not one.** 265 pairs across 9 devices are
+   *device-level* — the node supplies no `scheduleParam` at all, so every automatable parameter is
+   dead, and one reason covers the whole device. The other ~106 are *parameter-level* on the three
+   devices the census calls capable: Fermenter covers 15 of 105, ProofChamber 2 of 17, Toaster 3 of 4.
+   A census at device granularity is 13 rows with 3 capable; the per-parameter gaps inside a capable
+   device are a **separate, unfiled finding** — Fermenter's 90 dead automatable parameters are not
+   named anywhere in the survey and are not AC-4's subject.
+3. **Knead has no plugin descriptor**, which corroborates the spec's own note that it is absent from
+   the automation population.
+
+**Recommended resolution, for the re-spec rather than decided here:** the census population should be
+the *device* (verdict `full | partial | none`, 13 rows), with the parameter-level shortfall inside a
+capable device filed as its own finding and its own AC. That keeps the enumeration registry-driven,
+keeps every row a verdict rather than an exemption, and does not bury a 90-parameter gap on the
+flagship synth inside a table nobody will read.
+
+### AC-0, sized
+
+Not built, and it is the largest item in the spec. What it needs, none of which exists today: a
+Playwright-hosted page under cross-origin isolation (`telemetryAllocator.ts`'s `ensureInit` calls
+`new SharedArrayBuffer` with no availability guard, so an unisolated page throws); `pnpm wasm:all`
+artefacts for 13 device types; both the live `TrackNode` builder and `createOfflineTrackStrip` driven
+on the same `OfflineAudioContext`; `TrackNode` and `wasmDeviceRegistry` widened from `AudioContext`
+to `BaseAudioContext`; a re-derived exit-2 vocabulary that excludes load average; per-device
+occupancy reporting against AC-2's new `occupiedSlotCount()`; and a committed broken fixture that
+breaks at the state-application path on a wasm device. It is a phase of its own and should be specced
+and sized as one rather than carried as an item inside this list.
 
 ## Acceptance criteria
 

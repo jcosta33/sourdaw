@@ -245,12 +245,22 @@ export function createTelemetryReader<TSnapshot>({
 class TelemetryAllocator {
     private sab: SharedArrayBuffer | null = null;
     private freeSlots: number[] = [];
+    /**
+     * Membership set for the free list, so a release can tell "this slot is
+     * out" from "this slot is already back".
+     *
+     * Held beside `freeSlots` rather than replacing it because allocation order
+     * matters to nothing and `pop()` is what the existing reuse test pins, but
+     * an `indexOf` scan per release would be O(n) on a hot-ish path.
+     */
+    private freeSlotIndices = new Set<number>();
 
     private ensureInit(): SharedArrayBuffer {
         if (!this.sab) {
             this.sab = new SharedArrayBuffer(MAX_SLOTS * BYTES_PER_SLOT);
             for (let index = MAX_SLOTS - 1; index >= 0; index--) {
                 this.freeSlots.push(index);
+                this.freeSlotIndices.add(index);
             }
         }
         return this.sab;
@@ -263,6 +273,7 @@ class TelemetryAllocator {
             logger.warn('[TelemetryAllocator] No free telemetry slots (max 64 active plugins)');
             return null;
         }
+        this.freeSlotIndices.delete(slotIndex);
         const byteOffset = slotIndex * BYTES_PER_SLOT;
         const view = new Float32Array(sab, byteOffset, FLOATS_PER_SLOT);
         const seqView = new Int32Array(sab, byteOffset, FLOATS_PER_SLOT);
@@ -270,11 +281,49 @@ class TelemetryAllocator {
         return { sab, byteOffset, view, seqView };
     }
 
+    /**
+     * Slots currently handed out.
+     *
+     * Exists so "this render returned the pool to the occupancy it started at"
+     * is an assertable property. Before it, `freeSlots` was private with no
+     * accessor, so the offline leak this pairs with — every metered device an
+     * export builds taking a slot that nothing ever gives back — was invisible
+     * to any test and only observable as meters reading zero after roughly
+     * sixty-four devices' worth of exports.
+     *
+     * Reads zero before the first allocation, when the SAB has not been minted
+     * yet and nothing is out.
+     */
+    occupiedSlotCount(): number {
+        if (!this.sab) {
+            return 0;
+        }
+        return MAX_SLOTS - this.freeSlots.length;
+    }
+
+    /**
+     * Return a slot to the pool.
+     *
+     * **A release of a slot that is already free is refused.** Without the
+     * membership check a double release pushed one index onto the free list
+     * twice and the next two allocations handed two devices the same bytes, so
+     * each overwrote the other's telemetry. That was unreachable while nothing
+     * called `destroy()`; the offline render teardown is the second caller that
+     * makes it reachable, so the check lands with it.
+     *
+     * A byte offset that never named a pool slot — a wide slot's `0`, a
+     * negative, a non-stride value — is ignored, as before.
+     */
     releaseSlot(byteOffset: number): void {
         const slotIndex = byteOffset / BYTES_PER_SLOT;
-        if (Number.isInteger(slotIndex) && slotIndex >= 0 && slotIndex < MAX_SLOTS) {
-            this.freeSlots.push(slotIndex);
+        if (!Number.isInteger(slotIndex) || slotIndex < 0 || slotIndex >= MAX_SLOTS) {
+            return;
         }
+        if (this.freeSlotIndices.has(slotIndex)) {
+            return;
+        }
+        this.freeSlots.push(slotIndex);
+        this.freeSlotIndices.add(slotIndex);
     }
 }
 

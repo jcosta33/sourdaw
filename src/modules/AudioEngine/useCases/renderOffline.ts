@@ -3,8 +3,6 @@ import { sidechainStore } from '#/modules/Routing/stores';
 import { workspaceStore } from '#/modules/WorkspaceShell/stores';
 
 import { createExportError } from '../errors/ExportError';
-import { prepareOfflineSidechainCompressor } from '../repositories/devices/dynamics/prepareOfflineSidechainCompressor';
-import { prepareOfflineBitcrusherRate } from '../repositories/devices/toneShaping/prepareOfflineBitcrusherRate';
 import { connectOfflineSidechainRoutes } from '../repositories/offlineRouting/connectOfflineSidechainRoutes';
 
 import { type DeviceNodeEntry } from './buildDeviceChain';
@@ -17,6 +15,8 @@ import { connectOfflineToasterPadRoutes } from './offlineRender/connectOfflineTo
 import { MIN_RENDER_TIMEOUT_MS, RENDER_TIMEOUT_MULTIPLIER } from './offlineRender/constants';
 import { createOfflineBusStrip } from './offlineRender/createOfflineBusStrip';
 import { createOfflineTrackStrip } from './offlineRender/createOfflineTrackStrip';
+import { destroyOfflineDeviceStrategies } from './offlineRender/destroyOfflineDeviceStrategies';
+import { prepareOfflineContext } from './offlineRender/prepareOfflineContext';
 import { renderInSegments } from './offlineRender/renderInSegments';
 import { resetCancelFlag } from './offlineRender/resetCancelFlag';
 import { resolveRenderContext } from './offlineRender/resolveRenderContext';
@@ -41,6 +41,13 @@ export const renderOffline: RenderOfflineFn = async function renderOffline(
     maybeSampleRate?: number
 ): Promise<AudioBuffer> {
     const releaseLock = acquireRenderLock();
+    // Declared outside the try so the teardown in `finally` can reach it on
+    // every exit. Every metered native device this render builds takes a slot
+    // from the shared 64-slot telemetry pool at construction, and `destroy()`
+    // is the only thing that returns one — a garbage-collected
+    // `OfflineAudioContext` returns nothing, so a leak here is permanent for
+    // the page session and kills every meter added afterwards.
+    const deviceEntriesByTrack = new Map<string, DeviceNodeEntry[]>();
 
     try {
         // Reset cancel token inside the try so it is never reset when acquireRenderLock throws.
@@ -131,33 +138,18 @@ export const renderOffline: RenderOfflineFn = async function renderOffline(
                 routableSidechainTargets.add(targetDevice);
             }
         }
-        if (routableSidechainTargets.size > 0) {
-            try {
-                await prepareOfflineSidechainCompressor({
-                    offlineCtx,
-                    onWarning,
-                    targetDevices: routableSidechainTargets,
-                });
-            } catch (error) {
-                const reason = error instanceof Error ? error.message : String(error);
-                onWarning?.(`Sidechain processor unavailable; using the offline compressor fallback. ${reason}`);
-            }
-        }
-        // Same ordering constraint as the sidechain prepare above: the bitcrusher
-        // builds its sample-and-hold node synchronously inside the strip, so the
-        // module has to be registered before any strip exists or the bounce loses
-        // rate reduction that playback has.
-        const hasBitcrusher = allRenderableTracks.some((track) =>
-            track.devices.some((device) => device.type === 'builtin-bitcrusher' && !device.bypassed)
-        );
-        if (hasBitcrusher) {
-            try {
-                await prepareOfflineBitcrusherRate(offlineCtx);
-            } catch (error) {
-                const reason = error instanceof Error ? error.message : String(error);
-                onWarning?.(`Bitcrusher rate reduction unavailable; rendering without it. ${reason}`);
-            }
-        }
+        // Before any strip exists: both out-of-band devices build their worklet
+        // node synchronously inside `createOfflineTrackStrip`, so a module
+        // registered afterwards is registered too late and the device degrades
+        // to its fallback. Shared with the stem path and the freeze path — the
+        // three used to carry this ordering constraint in three copies, and the
+        // freeze path carried neither prepare at all.
+        await prepareOfflineContext({
+            offlineCtx,
+            tracks: allRenderableTracks,
+            sidechainTargetDevices: routableSidechainTargets,
+            onWarning,
+        });
         let scheduled = 0;
         const pendingWorkletEvents: PendingWorkletEvent[] = [];
 
@@ -167,7 +159,6 @@ export const renderOffline: RenderOfflineFn = async function renderOffline(
         // their owning track input so the persisted device chain and mixer state
         // are applied before the bus output reaches master.
         const trackStripsById = new Map<string, OfflineTrackStrip>();
-        const deviceEntriesByTrack = new Map<string, DeviceNodeEntry[]>();
         const busStripsById = new Map<string, OfflineBusStrip>();
 
         // FX-8 — a muted track is silenced by its own `postFaderGain`, which sits
@@ -343,6 +334,7 @@ export const renderOffline: RenderOfflineFn = async function renderOffline(
         onProgress?.(1);
         return buffer;
     } finally {
+        destroyOfflineDeviceStrategies(deviceEntriesByTrack);
         releaseLock();
     }
 };
