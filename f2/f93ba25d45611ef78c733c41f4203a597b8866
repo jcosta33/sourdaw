@@ -1,0 +1,50 @@
+public/wasm/manifest.json
+  s_66d4924c65dcd2::t_f3a488b5ce244f 12,16-18,21
+crates/daw-dsp/tests/crumbs_render_signal.rs
+  s_66d4924c65dcd2::t_661906f96bafc0 284-310,313,317-318
+  s_66d4924c65dcd2::t_36dd695f3d560d 311-312,314-316
+  s_66d4924c65dcd2::t_ad174f4e743a4d 211-283,319-364
+crates/daw-dsp/src/crumbs/filter.rs
+  s_66d4924c65dcd2::t_2591c183178f06 215-240
+  s_66d4924c65dcd2::t_f1541942d9b54f 196-197
+  s_66d4924c65dcd2::t_3eb11a5ec88293 12-14,16-17,19-35,37-38
+  s_66d4924c65dcd2::t_8fb9d7ea156cde 36
+  s_66d4924c65dcd2::t_191296f915a15f 18
+  s_66d4924c65dcd2::t_9cb0b93b736c5a 15
+crates/daw-dsp/src/crumbs/engine.rs
+  s_66d4924c65dcd2::t_86e3ae5bcca676 734-741
+  s_66d4924c65dcd2::t_83de863ea2d64d 742
+  s_66d4924c65dcd2::t_0b91b59c10c893 38
+src/modules/Arrangement/models/PluginDescriptors/CrumbsDescriptor.ts
+  s_66d4924c65dcd2::t_321a79f3bedcfa 126-130
+  s_66d4924c65dcd2::t_4e255b8f10f15f 137
+public/wasm/daw-dsp/daw_dsp_bg.wasm.d.ts
+  s_66d4924c65dcd2::t_dd94ce4f0d6a9b 1,110-123,164-179,181
+src/modules/AudioEngine/wasm/daw_dsp.d.ts
+  s_66d4924c65dcd2::t_dd94ce4f0d6a9b 1,890-903,944-959,961
+crates/daw-dsp/tests/device_process_rt.rs
+  s_66d4924c65dcd2::t_31c08c7c6ebedd 523-526,528
+  s_66d4924c65dcd2::t_2f13322db4e31d 442-447,449
+src/modules/Arrangement/models/__tests__/DeviceParameterLaw.spec.ts
+  s_66d4924c65dcd2::t_fa1aee79933e86 64-69,73-74,78-79
+  s_66d4924c65dcd2::t_b6ff9c22c9a7d2 63
+  s_66d4924c65dcd2::t_c913a0e31ec7b4 70-72,75-77
+public/wasm/daw-dsp/daw_dsp.d.ts
+  s_66d4924c65dcd2::t_dd94ce4f0d6a9b 1,890-903,944-959,961
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "f2f93ba25d45611ef78c733c41f4203a597b8866",
+  "prompts": {},
+  "sessions": {
+    "s_66d4924c65dcd2": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "dad7ceb6-cb31-44b9-91db-bb71a71cbc38",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
