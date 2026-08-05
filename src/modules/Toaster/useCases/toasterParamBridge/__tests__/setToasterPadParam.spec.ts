@@ -133,6 +133,40 @@ describe('setToasterPadParam', () => {
         expect(setPadParam).toHaveBeenCalledWith(2, 'tune', 7);
     });
 
+    /**
+     * Mute is the one control where the store and the engine disagree about the
+     * type: `PadState.muted` is a boolean and the wire is numeric. Both halves
+     * are asserted here because each has its own failure mode — a store write of
+     * `1` survives the session and is dropped by the kit chunk on the next load
+     * (`readPads` only accepts `typeof stored.muted === 'boolean'`), and a
+     * missing engine write leaves the pad audible.
+     */
+    it('should narrow a boolean pad field for the store while the engine keeps the numeric flag', () => {
+        setToasterPadParam('dev-1', 4, 'muted', 1);
+
+        expect(mockUpdatePad).toHaveBeenCalledWith('dev-1', 4, { muted: true });
+
+        flushFrame();
+
+        expect(setPadParam).toHaveBeenCalledWith(4, 'muted', 1);
+    });
+
+    it('should narrow the un-mute write back to false rather than storing 0', () => {
+        setToasterPadParam('dev-1', 4, 'muted', 0);
+
+        expect(mockUpdatePad).toHaveBeenCalledWith('dev-1', 4, { muted: false });
+
+        flushFrame();
+
+        expect(setPadParam).toHaveBeenCalledWith(4, 'muted', 0);
+    });
+
+    it('should narrow every boolean pad field, not just the one the mixer routes today', () => {
+        setToasterPadParam('dev-1', 4, 'soloed', 1);
+
+        expect(mockUpdatePad).toHaveBeenCalledWith('dev-1', 4, { soloed: true });
+    });
+
     it('should skip store writes for string pad fields', () => {
         const stringFields = ['engineType', 'name', 'color'] as const;
 

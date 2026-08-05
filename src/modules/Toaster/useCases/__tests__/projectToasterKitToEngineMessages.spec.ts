@@ -72,12 +72,12 @@ describe('projectToasterKitToEngineMessages — kit-level params', () => {
 });
 
 describe('projectToasterKitToEngineMessages — per-pad messages', () => {
-    it('emits 10 padParam messages per pad (engine_type + 9 params)', () => {
+    it('emits 12 padParam messages per pad (engine_type + 11 params)', () => {
         const kit = makeKit([makePad(0)]);
         const messages = projectToasterKitToEngineMessages({ kit });
         const padParams = messages.filter((m) => m.type === 'padParam' && m.pad === 0);
-        // engine_type + volume + pan + tune + decay + tone + drive + filter_cutoff + filter_resonance + send_reverb + send_delay = 11
-        expect(padParams).toHaveLength(11);
+        // engine_type + volume + pan + muted + tune + decay + tone + drive + filter_cutoff + filter_resonance + send_reverb + send_delay = 12
+        expect(padParams).toHaveLength(12);
     });
 
     it('emits messages with correct pad index for each pad', () => {
@@ -117,6 +117,47 @@ describe('projectToasterKitToEngineMessages — per-pad messages', () => {
         expect(padParams.findIndex((message) => message.name === 'tone')).toBeLessThan(
             padParams.findIndex((message) => message.name === 'mod_amount')
         );
+    });
+});
+
+describe('projectToasterKitToEngineMessages — pad mute', () => {
+    /**
+     * `muted` is the pad's only silencing control and the DSP reads it as a
+     * trigger gate (`ToasterEngine::note_on` returns before allocating a voice).
+     * The engine's own `Pad::new` default is unmuted, so a kit that omits the
+     * field leaves a muted pad audible after every device reload, preset load and
+     * offline render — this projection is the one answer all three consume.
+     */
+    it('emits muted=1 for a muted pad', () => {
+        const kit = makeKit([makePad(0, { muted: true })]);
+        const messages = projectToasterKitToEngineMessages({ kit });
+        const muted = messages.find((m) => m.type === 'padParam' && m.pad === 0 && m.name === 'muted');
+        expect(muted?.type === 'padParam' && muted.value).toBe(1);
+    });
+
+    /**
+     * The engine keeps pad state across kit loads, so the unmuted case has to be
+     * stated rather than omitted: a pad muted under the previous kit would stay
+     * muted under the next one if the projection only spoke up for `true`.
+     */
+    it('emits muted=0 for an unmuted pad so a stale engine mute is cleared', () => {
+        const kit = makeKit([makePad(0, { muted: false })]);
+        const messages = projectToasterKitToEngineMessages({ kit });
+        const muted = messages.find((m) => m.type === 'padParam' && m.pad === 0 && m.name === 'muted');
+        expect(muted?.type === 'padParam' && muted.value).toBe(0);
+    });
+
+    it('addresses mute per pad rather than muting the kit', () => {
+        const kit = makeKit([makePad(0, { muted: false }), makePad(1, { muted: true }), makePad(2, { muted: false })]);
+        const messages = projectToasterKitToEngineMessages({ kit });
+        const mutedByPad = messages
+            .filter((m) => m.type === 'padParam' && m.name === 'muted')
+            .map((m) => (m.type === 'padParam' ? [m.pad, m.value] : []));
+        expect(mutedByPad).toEqual([
+            [0, 0],
+            [1, 1],
+            [2, 0],
+        ]);
     });
 });
 
@@ -168,17 +209,17 @@ describe('projectToasterKitToEngineMessages — NaN/Infinity filter', () => {
 });
 
 describe('projectToasterKitToEngineMessages — total message count', () => {
-    it('produces 9 + pads * 11 messages for pads without hihat', () => {
+    it('produces 9 + pads * 12 messages for pads without hihat', () => {
         const kit = makeKit([makePad(0), makePad(1)]);
         const messages = projectToasterKitToEngineMessages({ kit });
-        // 9 kit params + 2 pads * 11 pad params = 31
-        expect(messages).toHaveLength(31);
+        // 9 kit params + 2 pads * 12 pad params = 33
+        expect(messages).toHaveLength(33);
     });
 
     it('adds +1 per hihat pad for the open flag', () => {
         const kit = makeKit([makePad(0, { engineType: 'hihat-open' }), makePad(1, { engineType: 'hihat-closed' })]);
         const messages = projectToasterKitToEngineMessages({ kit });
-        // 9 + 2*11 + 2 (open flags) = 33
-        expect(messages).toHaveLength(33);
+        // 9 + 2*12 + 2 (open flags) = 35
+        expect(messages).toHaveLength(35);
     });
 });

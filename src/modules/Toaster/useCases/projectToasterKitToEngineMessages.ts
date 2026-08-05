@@ -79,6 +79,13 @@ export function projectToasterKitToEngineMessages({
 
         messages.push({ type: 'padParam', pad: index, name: 'volume', value: pad.volume });
         messages.push({ type: 'padParam', pad: index, name: 'pan', value: pad.pan });
+
+        // Stated for both values, never omitted. Saying nothing on `true` is what
+        // let a muted pad keep sounding after a device reload, a preset load or an
+        // offline render; saying nothing on `false` would be the mirror defect,
+        // because the engine keeps pad state across kit loads, so a pad muted under
+        // the outgoing kit would stay muted under the incoming one.
+        messages.push({ type: 'padParam', pad: index, name: 'muted', value: pad.muted ? 1 : 0 });
         messages.push({ type: 'padParam', pad: index, name: 'tune', value: pad.tune });
         messages.push({ type: 'padParam', pad: index, name: 'decay', value: pad.decay });
         messages.push({ type: 'padParam', pad: index, name: 'tone', value: pad.tone });
