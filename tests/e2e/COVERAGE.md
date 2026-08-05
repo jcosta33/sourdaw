@@ -491,6 +491,22 @@ hydrateCrumbsStateFromProject, projectDeviceTails.
   routing (match/missing-template/passthrough), loop-wrap segmentation (drop
   above-loop, absolute vs relative, clip-boundary clipping, two-segment wrap,
   zero-duration, groove-already-applied bypass) — 11 tests.
+- **PR #1166**: normalizeSafeProjectName validator (non-string/empty/overlength/
+  HTML-char/control-char rejection, unicode/emoji pass-through) + collectProjectAudioBufferIds
+  (bufferId/audioBufferId fallback, frozenBufferId precedence, alternatives traversal,
+  dedup, active-arrangement routing) — 17 tests.
+- **PR #1167**: ProofImagerSection deepened — band width Mono/% formatting, module
+  toggle ON/OFF + callback, auto-mono-bass toggle + callback, frequency Hz formatting,
+  correlation readout (positive/negative) — 9 new tests.
+- **PR #1168**: ProofExciterSection deepened — module/band toggle ON/OFF labels +
+  callbacks, saturation type select onChange + immutability, band enable immutability —
+  6 new tests.
+- **PR #1169**: ArticulationList deepened — enabled filter, keyswitch MIDI-note-name
+  formatting, null-keyswitch branch, compact sidebar mode rendering + onSelect,
+  active state routing — 7 new tests.
+- **PR #1170**: isValidDynCrossoverFreqs validator (finite/range/strict-order branches)
+  + ProofEqSection deepened (module toggle, band enable immutability, freq kHz
+  formatting, gain +/- formatting, band-type/channel-mode select wiring) — 15 new tests.
 
-**Campaign total to date: 97 PRs, ~1433 assertions across pure-logic models,
+**Campaign total to date: 103 PRs, ~1503 assertions across pure-logic models,
 services, transformers, store-coupled handlers, useCases, and components.**
