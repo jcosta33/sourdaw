@@ -1,5 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 
+import { clampDeviceParameterValue, quantiseDeviceParameterValue } from '#/modules/Arrangement/useCases';
 import { evaluateAutomationCurve } from '#/utils/automationCurve';
 
 import { asBaseAudioContext, createMockAudioContext } from '../../../../../helpers/__tests__/audioContext.mock';
@@ -755,6 +756,10 @@ describe('scheduleTrackAutomation', () => {
             deviceParameterLaw: {
                 acceptsAutomation: () => true,
                 clampValue: ({ value }) => Math.min(1, Math.max(0, value)),
+                // Identity: this case is about *where* the clamp lands in the
+                // recurrence. A rounding quantiser would collapse the 0.8 / 1
+                // sequence it exists to observe.
+                quantiseValue: ({ value }) => value,
             },
             durationSeconds: 10,
             defaultTempo: 120,
@@ -938,5 +943,158 @@ describe('scheduleTrackAutomation', () => {
         });
 
         expect(gain.setValueAtTime).not.toHaveBeenCalled();
+    });
+});
+
+/**
+ * AU-2 / F1: a **stepped** device parameter has to leave the offline render as
+ * the same integer the monitor delivers.
+ *
+ * The live applier filters continuously and quantises once at the delivery
+ * (`applyAutomation`: `slewStep` → clamp → `quantiseDeviceParameterValue` →
+ * `updateDeviceParam`). Offline built its slew from `clampValue` alone and
+ * emitted the smoothed number verbatim, so a lane on `bacteria/bitDepth`
+ * (declared `int`, 1..24) had the monitor stepping down 14, 13, 12 while the
+ * bounce handed the worklet 14.4, 13.44, 12.864, 12.5184 — the exact class of
+ * monitor/bounce divergence AU-2 exists to close.
+ *
+ * The sequence below is arithmetic on the shared kernel, not a transcript of
+ * whatever the code currently emits. α = 0.4 from 16 toward 12:
+ *   14.4, 13.44, 12.864, 12.5184, 12.31104, 12.186624, …
+ * `Math.round` of those is 14, 13, 13, 13, 12, 12 — note the 12.5184 → 13,
+ * which is why the ride visits 13 three times before it reaches 12.
+ *
+ * The leading 16 is the seed, not a delivery: offline emits it as the `set`
+ * event that holds the parameter before the glide starts, and live's engine is
+ * already holding the same stored base (its seed tick is sub-epsilon and
+ * dispatches nothing). It is asserted because the seed goes through the same
+ * emission path and would otherwise be the one unquantised value in the stream.
+ */
+const BIT_DEPTH_LIVE_DELIVERY = [16, 14, 13, 12] as const;
+
+/** Consecutive duplicates collapsed — the sequence of *distinct* indices. */
+function distinctRun(values: readonly number[]): number[] {
+    const run: number[] = [];
+    for (const value of values) {
+        if (run.at(-1) !== value) {
+            run.push(value);
+        }
+    }
+    return run;
+}
+
+describe('scheduleTrackAutomation — stepped device parameters offline', () => {
+    /** Arrangement's shipped law for `bacteria/bitDepth`, as bootstrap injects it. */
+    const bitDepthLaw = {
+        acceptsAutomation: () => true,
+        clampValue: ({ value }: { deviceType: string; paramId: string; value: number }) =>
+            clampDeviceParameterValue({ deviceType: 'bacteria', paramId: 'bitDepth', value }),
+        quantiseValue: ({ value }: { deviceType: string; paramId: string; value: number }) =>
+            quantiseDeviceParameterValue({ deviceType: 'bacteria', paramId: 'bitDepth', value }),
+    };
+
+    it('emits the integers live delivers on a worklet (segments) lane, not the filter state', () => {
+        const scheduleParam = vi.fn();
+
+        scheduleTrackAutomationFixture({
+            lanes: [
+                makeLane({
+                    // 16 is the parameter's default and 12 is not, so the two
+                    // endpoints disagree under rounding; a ride parked at the
+                    // default would satisfy an integer assertion vacuously.
+                    parameterId: 'bacteria-1:bitDepth',
+                    points: [
+                        { beat: 0, value: 16, curve: 'step', tension: 0 },
+                        { beat: 2, value: 12, curve: 'step', tension: 0 },
+                    ],
+                }),
+            ],
+            trackId: 'track-1',
+            trackGainNode: { gain: makeParam() } as unknown as GainNode,
+            trackPanNode: { pan: makeParam() } as unknown as StereoPannerNode,
+            deviceEntries: [
+                {
+                    deviceId: 'bacteria-1',
+                    deviceType: 'bacteria',
+                    strategy: {
+                        resolveOfflineAutomation: (name: string) =>
+                            name === 'bitDepth'
+                                ? {
+                                      kind: 'segments',
+                                      apply: (compiled) => {
+                                          scheduleParam(compiled);
+                                      },
+                                  }
+                                : null,
+                    },
+                },
+            ],
+            deviceParameterLaw: bitDepthLaw,
+            durationSeconds: 3,
+            defaultTempo: 120,
+            changes: [],
+            sampleRate: 1_000,
+        });
+
+        type Segment = { startFrame: number; endFrame: number; startValue: number; endValue: number };
+        const segments = scheduleParam.mock.calls[0]![0] as Segment[];
+        const emitted = segments.map((segment) => segment.startValue);
+
+        expect(emitted.filter((value) => !Number.isInteger(value))).toEqual([]);
+        expect(distinctRun(emitted)).toEqual([...BIT_DEPTH_LIVE_DELIVERY]);
+    });
+
+    it('quantises an AudioParam-backed lane in device space, then maps forward through the binding', () => {
+        const audioParam = makeParam();
+        // A binding whose affine is not the identity: the quantiser is a law on
+        // the *device* value, so it has to run before scale/offset, exactly where
+        // `clampScaledStep` already puts the clamp. Quantising in AudioParam
+        // units instead would snap to a grid of 1 *there* — a tenth of a bit.
+        const scale = 10;
+        const offset = 3;
+
+        scheduleTrackAutomationFixture({
+            lanes: [
+                makeLane({
+                    parameterId: 'bacteria-1:bitDepth',
+                    points: [
+                        { beat: 0, value: 16, curve: 'step', tension: 0 },
+                        { beat: 2, value: 12, curve: 'step', tension: 0 },
+                    ],
+                }),
+            ],
+            trackId: 'track-1',
+            trackGainNode: { gain: makeParam() } as unknown as GainNode,
+            trackPanNode: { pan: makeParam() } as unknown as StereoPannerNode,
+            deviceEntries: [
+                {
+                    deviceId: 'bacteria-1',
+                    deviceType: 'bacteria',
+                    strategy: {
+                        resolveOfflineAutomation: (name: string) =>
+                            name === 'bitDepth'
+                                ? {
+                                      kind: 'audioParam',
+                                      targets: [{ audioParam: audioParam as unknown as AudioParam, scale, offset }],
+                                  }
+                                : null,
+                    },
+                },
+            ],
+            deviceParameterLaw: bitDepthLaw,
+            durationSeconds: 3,
+            defaultTempo: 120,
+            changes: [],
+        });
+
+        const ramps = audioParam.linearRampToValueAtTime.mock.calls.map((call) => call[0] as number);
+        const deviceSpace = ramps.map((value) => (value - offset) / scale);
+
+        // Mapping back through the affine reintroduces float error at the 1e-15
+        // level, so the integrality check is made at 1e-9, well below the 1.0
+        // grid it is testing for and well above the noise.
+        const rounded = deviceSpace.map((value) => Math.round(value * 1e9) / 1e9);
+        expect(rounded.filter((value) => !Number.isInteger(value))).toEqual([]);
+        expect(distinctRun(rounded)).toEqual([...BIT_DEPTH_LIVE_DELIVERY]);
     });
 });

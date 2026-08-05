@@ -22,6 +22,15 @@ export type OfflineDeviceParameterAutomatablePredicate = (input: { deviceType: s
 export type OfflineDeviceParameterClamp = (input: { deviceType: string; paramId: string; value: number }) => number;
 
 /**
+ * The declared *type* law — `quantiseDeviceParameterValue`. Separate from the
+ * clamp because the two are applied in different places: the clamp is the slew's
+ * feedback, the quantiser is the emitted value only. Rounding the filter state
+ * would dead-zone the glide (α = 0.4: `slewStep(5, 6)` = 5.4 → rounds back to
+ * 5 for ever), which is why live keeps them apart too.
+ */
+export type OfflineDeviceParameterQuantise = (input: { deviceType: string; paramId: string; value: number }) => number;
+
+/**
  * Unset means no law was injected, not "anything goes". The render then has no
  * basis to decide whether a parameter may be automated at all, so the caller
  * refuses device automation rather than substituting a looser rule than live's
@@ -31,7 +40,9 @@ export type OfflineDeviceParameterClamp = (input: { deviceType: string; paramId:
 export const offlineDeviceParameterLawState: {
     isAutomatable: OfflineDeviceParameterAutomatablePredicate | null;
     clampValue: OfflineDeviceParameterClamp | null;
+    quantiseValue: OfflineDeviceParameterQuantise | null;
 } = {
     isAutomatable: null,
     clampValue: null,
+    quantiseValue: null,
 };

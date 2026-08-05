@@ -19,7 +19,13 @@ const GLUTEN_PARAMS: readonly PluginParamDef[] = [
     { id: 'threshold', label: 'Threshold', min: -60, max: 0, default: -18, unit: 'dB', step: 0.5 },
     { id: 'ratio', label: 'Ratio', min: 1, max: 20, default: 4, unit: ':1', step: 0.5 },
     { id: 'attack', label: 'Attack', min: 0.02, max: 250, default: 10, unit: 'ms', step: 0.1, scaling: 'log' },
-    { id: 'release', label: 'Release', min: 25, max: 5000, default: 300, unit: 'ms', step: 1, scaling: 'log' },
+    // No `step`. The builder below reuses `step` as a *type* oracle
+    // (`step === 1 ? 'int' : 'float'`), and `int` declares that the only legal
+    // values are the integers in the range — but `fet.rs`/`vca.rs` hold this as
+    // `self.release_ms = value.clamp(25.0, 5000.0)`, and a 1 ms grid at the
+    // 25 ms end of a log control is 4% of the setting. The knob's own step comes
+    // from `deriveStep` and is overridden for log controls regardless.
+    { id: 'release', label: 'Release', min: 25, max: 5000, default: 300, unit: 'ms', scaling: 'log' },
     { id: 'knee', label: 'Knee', min: 0, max: 30, default: 6, unit: 'dB', step: 0.5 },
     { id: 'makeup', label: 'Makeup', min: -12, max: 24, default: 0, unit: 'dB', step: 0.5 },
     { id: 'mix', label: 'Mix', min: 0, max: 1, default: 1, unit: '', step: 0.01 },
@@ -30,7 +36,10 @@ const GLUTEN_PARAMS: readonly PluginParamDef[] = [
     { id: 'lookahead', label: 'Lookahead', min: 0, max: 20, default: 0, unit: 'ms', step: 0.5 },
     { id: 'deltaListen', label: 'Delta Listen', min: 0, max: 1, default: 0, unit: '', step: 1 },
     // Sidechain
-    { id: 'scHpfFreq', label: 'SC HPF', min: 20, max: 500, default: 80, unit: 'Hz', step: 1, scaling: 'log' },
+    // No `step`, same reason — and note `scLpfFreq` and `scEqFreq` two lines
+    // below already carry non-unit steps and are `float` today; this makes the
+    // three sidechain filter corners agree instead of one of them being `int`.
+    { id: 'scHpfFreq', label: 'SC HPF', min: 20, max: 500, default: 80, unit: 'Hz', scaling: 'log' },
     { id: 'scHpfEnabled', label: 'SC HPF On', min: 0, max: 1, default: 1, unit: '', step: 1 },
     { id: 'thrust', label: 'Thrust', min: 0, max: 2, default: 0, unit: '', step: 1 },
     { id: 'detection', label: 'Detection', min: 0, max: 1, default: 0, unit: '', step: 1 },

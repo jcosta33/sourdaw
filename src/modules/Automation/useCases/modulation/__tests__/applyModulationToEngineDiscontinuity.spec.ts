@@ -31,6 +31,10 @@ describe('applyModulationToEngine transport discontinuity (AU-4 modulation)', ()
         setModulationDependencies({
             updateDeviceParam: mocks.updateDeviceParam,
             getPluginParamRange: () => null,
+            // Identity: these cases assert the discontinuity snap on a device
+            // that declares no contract at all, so the delivered value is the
+            // filter value and the snap stays observable.
+            quantiseValue: ({ value }) => value,
         });
         modulationStore.set({
             modulators: [

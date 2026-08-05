@@ -1,5 +1,9 @@
 import { getTrackEligibility, resolveEligibleDeviceWriteTarget, trackStore } from '#/modules/Arrangement/stores';
-import { clampDeviceParameterValue, isDeviceParameterAutomatable } from '#/modules/Arrangement/useCases';
+import {
+    clampDeviceParameterValue,
+    isDeviceParameterAutomatable,
+    quantiseDeviceParameterValue,
+} from '#/modules/Arrangement/useCases';
 import {
     getCompensationDelay,
     getCurrentTime,
@@ -251,27 +255,66 @@ export function applyAutomation(currentBeat: number): Set<string> {
                 // stored curve can ask for anything. The declared range binds
                 // here just as it does on a direct write.
                 const smoothed = clampDeviceParameterValue({ deviceType: device.type, paramId, value: slewed });
+                // The slew state stays in the *continuous* domain deliberately.
+                // A parameter the descriptor declares `int`/`bool`/`choice` may
+                // only be delivered as an integer, but rounding the value the
+                // filter feeds itself puts a dead zone in the recurrence — at
+                // α = 0.4, `slewStep(5, 6)` is 5.4, which rounds back to 5 for
+                // ever — so a ride to engine index 6 would stall at 5. Filter
+                // continuously, quantise once on the way out.
                 laneSlew.set(device.id, smoothed);
+                const delivered = quantiseDeviceParameterValue({
+                    deviceType: device.type,
+                    paramId,
+                    value: smoothed,
+                });
                 // Record the applied value even when the dispatch below
                 // is suppressed as sub-epsilon — the engine still holds this
                 // value (within epsilon), so it is the correct base for the
-                // modulation write that follows in this same tick.
+                // modulation write that follows in this same tick. It is the
+                // *delivered* value that is recorded: that is what the engine
+                // actually holds once the parameter is stepped.
                 let appliedByParameter = appliedAutomationBases.get(device.id);
                 if (!appliedByParameter) {
                     appliedByParameter = new Map<string, number>();
                     appliedAutomationBases.set(device.id, appliedByParameter);
                 }
-                appliedByParameter.set(paramId, smoothed);
-                if (isDiscontinuity || Math.abs(smoothed - prev) > SLEW_EPSILON) {
+                appliedByParameter.set(paramId, delivered);
+                // A stepped parameter's filter keeps moving long after the
+                // delivered integer has stopped changing, so the sub-epsilon
+                // gate alone would re-send an identical index to the worklet on
+                // every tick of the glide. Suppressing a repeat is the same rule
+                // the epsilon gate already states — do not write a value the
+                // engine is already holding — read on the delivered domain. For
+                // a `float` parameter `delivered === smoothed` and
+                // `previousDelivered === prev`, so this changes nothing there.
+                //
+                // Known cost, deliberately accepted: this widens the window in
+                // which a *foreign* write to the same parameter goes
+                // un-re-asserted. The slew cannot strand a value — at α = 0.4 it
+                // clears SLEW_EPSILON within two ticks of any real movement — but
+                // `pluginParamSlew` is only dropped on a gate edge or an
+                // AutoMatch release, never on a device reload or a bypass
+                // toggle, so on a slow ramp across an index a value another
+                // writer clobbered can stay clobbered for roughly a second
+                // rather than ~10 ms. Closing that means clearing the slew on
+                // those two events, which is a scheduler-lifecycle change and
+                // not part of this one.
+                const previousDelivered = quantiseDeviceParameterValue({
+                    deviceType: device.type,
+                    paramId,
+                    value: prev,
+                });
+                if (isDiscontinuity || (Math.abs(smoothed - prev) > SLEW_EPSILON && delivered !== previousDelivered)) {
                     if (device.type === 'fermenter') {
                         // Fermenter params use camelCase ids that must be mapped to
                         // their snake_case DSP ids before reaching the WASM node —
                         // the same translation the UI bridge applies. Runtime
                         // automation bypasses UI state and persistence so the
                         // user's manual base and CRDT history remain unchanged.
-                        applyFermenterRuntimeParam({ deviceId: device.id, paramId, value: smoothed });
+                        applyFermenterRuntimeParam({ deviceId: device.id, paramId, value: delivered });
                     } else {
-                        updateDeviceParam(targetOwner.trackId, targetOwner.deviceId, paramId, smoothed);
+                        updateDeviceParam(targetOwner.trackId, targetOwner.deviceId, paramId, delivered);
                     }
                 }
                 continue;
@@ -291,11 +334,13 @@ export function applyAutomation(currentBeat: number): Set<string> {
 
                 // The owning MIDI FX is found by key presence, but whether a
                 // curve may drive that key is the descriptor's call, exactly as
-                // it is for a device param forty lines above. No MIDI FX type
-                // carries a descriptor today, so both calls pass through
-                // untouched — which is the point: the branch is bound to the
-                // same law now instead of quietly diverging from it the day one
-                // does.
+                // it is for a device param forty lines above. Note what this
+                // gate can actually decide today: `fx.type` is a Yeast
+                // `ProcessorType` and the lookup keys on `PluginDescriptor.id`,
+                // so it resolves nothing and the permissive "no declared
+                // contract" branch is the only one reachable. It stays because
+                // it is the gate a `ProcessorType`-keyed descriptor would flow
+                // through — but it is not enforcing anything right now.
                 if (!isDeviceParameterAutomatable({ deviceType: fx.type, paramId: lane.parameterId })) {
                     break;
                 }
@@ -312,6 +357,21 @@ export function applyAutomation(currentBeat: number): Set<string> {
                     value: slewedFxValue,
                 });
                 laneSlew.set(fx.id, smoothed);
+                // MIDI FX parameters are delivered UNQUANTISED, and that is a
+                // statement of fact rather than a policy: `fx.type` is a Yeast
+                // `ProcessorType` ('arpeggiator', 'euclidean', …), and the
+                // quantiser keys on `PluginDescriptor.id`. The two name spaces
+                // are disjoint (asserted in Yeast's `ProcessorCatalog.spec.ts`),
+                // so `getPluginById(fx.type)` is `undefined` for every processor
+                // that exists and a quantise call here could never do anything.
+                // Writing one anyway would read as coverage this branch does not
+                // have.
+                //
+                // Some of these parameters really are stepped —
+                // `EuclideanGenerator` uses `steps`/`hits` as loop bounds and a
+                // modulus, so a slewed 12.6 builds a 12-long pattern and walks it
+                // 13 wide. Closing that needs descriptors keyed by
+                // `ProcessorType`, which is its own change; it is not closed here.
                 if (isDiscontinuity || Math.abs(smoothed - prev) > SLEW_EPSILON) {
                     updateMidiFxParam(lane.trackId, fx.id, lane.parameterId, smoothed);
                 }

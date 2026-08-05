@@ -361,6 +361,13 @@ export async function scheduleTrackClips({
                 },
                 clampValue: ({ deviceType, paramId, value }) =>
                     offlineDeviceParameterLawState.clampValue?.({ deviceType, paramId, value }) ?? value,
+                // The declared *type*, applied to the emitted value only. Without
+                // it the bounce rendered the slew's continuous filter state for a
+                // parameter the monitor delivers as an integer — a lane on
+                // `bacteria/bitDepth` played 16, 14, 13, 12 and bounced 14.4,
+                // 13.44, 12.864.
+                quantiseValue: ({ deviceType, paramId, value }) =>
+                    offlineDeviceParameterLawState.quantiseValue?.({ deviceType, paramId, value }) ?? value,
             },
             regionStartSeconds: regionStartSec,
             projectBeatToSeconds,

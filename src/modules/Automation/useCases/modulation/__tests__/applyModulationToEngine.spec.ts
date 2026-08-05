@@ -130,6 +130,10 @@ describe('applyModulationToEngine', () => {
                     automatable: paramDef.automatable !== false,
                 };
             },
+            // Identity: every case in this file rides `builtin-filter/cutoff`,
+            // whose descriptor mock declares no type, and the assertions are on
+            // the continuous combined value. The stepped law has its own file.
+            quantiseValue: ({ value }) => value,
         });
 
         mocks.trackStore.value = {

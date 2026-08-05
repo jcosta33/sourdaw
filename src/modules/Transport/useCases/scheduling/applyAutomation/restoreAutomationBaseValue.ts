@@ -1,5 +1,9 @@
 import { resolveEligibleDeviceWriteTarget } from '#/modules/Arrangement/stores';
-import { getEffectiveGain, isDeviceParameterAutomatable } from '#/modules/Arrangement/useCases';
+import {
+    getEffectiveGain,
+    isDeviceParameterAutomatable,
+    quantiseDeviceParameterValue,
+} from '#/modules/Arrangement/useCases';
 import {
     scheduleTrackGain,
     scheduleTrackPan,
@@ -96,11 +100,23 @@ export function restoreAutomationBaseValue({ lane, track, landTime }: RestoreAut
         if (baseValue === undefined) {
             return;
         }
+        // A restore is a delivery, so it carries the delivery law. The stored
+        // base is not guaranteed integral even for a parameter the descriptor
+        // declares stepped — `setDeviceParameter` clamps and never rounds, and a
+        // MIDI CC arrives already scaled across the declared span (CC 64 on
+        // `bacteria/bitDepth` persists 12.59). Without this, a lane that had been
+        // delivering integers handed the worklet a fractional index back on the
+        // one tick it stopped driving — an audible discontinuity precisely at the
+        // driving → not-driving edge.
+        //
+        // `device.parameterValues` is deliberately left alone: rounding project
+        // truth is the failure this whole change is drawn to avoid.
+        const delivered = quantiseDeviceParameterValue({ deviceType: device.type, paramId, value: baseValue });
         if (device.type === 'fermenter') {
-            applyFermenterRuntimeParam({ deviceId: device.id, paramId, value: baseValue });
+            applyFermenterRuntimeParam({ deviceId: device.id, paramId, value: delivered });
             return;
         }
-        updateDeviceParam(targetOwner.trackId, targetOwner.deviceId, paramId, baseValue);
+        updateDeviceParam(targetOwner.trackId, targetOwner.deviceId, paramId, delivered);
         return;
     }
 
@@ -115,7 +131,11 @@ export function restoreAutomationBaseValue({ lane, track, landTime }: RestoreAut
         }
 
         // Same acceptance law as the MIDI-FX apply branch: a lane that may not
-        // drive the parameter may not restore it either.
+        // drive the parameter may not restore it either — and, as there, the
+        // base is delivered UNQUANTISED. `fx.type` is a Yeast `ProcessorType`
+        // and both laws key on `PluginDescriptor.id`, so neither resolves for
+        // any processor that exists (`ProcessorCatalog.spec.ts`). The gate stays
+        // as the seam a `ProcessorType`-keyed descriptor would flow through.
         if (isDeviceParameterAutomatable({ deviceType: fx.type, paramId: lane.parameterId })) {
             updateMidiFxParam(lane.trackId, fx.id, lane.parameterId, baseValue);
         }

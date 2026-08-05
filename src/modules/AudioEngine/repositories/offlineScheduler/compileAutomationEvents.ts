@@ -24,6 +24,19 @@ type SlewConfig = {
      * renders a different curve. Omit for a lane with no declared range.
      */
     clampStep?: (value: number) => number;
+    /**
+     * Applied to every **emitted** sample and to nothing else — never fed back
+     * into the recurrence, which is exactly where it differs from `clampStep`.
+     *
+     * This is the offline half of the live delivery law
+     * (`applyAutomation`: `laneSlew.set(smoothed)` then
+     * `updateDeviceParam(quantise(smoothed))`). A parameter the descriptor
+     * declares `int`/`bool`/`choice` may only reach the DSP as an integer, but
+     * rounding the filter's own state dead-zones it: at α = 0.4 `slewStep(5, 6)`
+     * is 5.4, which rounds back to 5 for ever. Filter continuously, quantise on
+     * the way out. Omit for a lane with no declared type (gain, pan, `float`).
+     */
+    quantiseEmit?: (value: number) => number;
 };
 type ActiveWindowSeconds = { startSeconds: number; endSeconds: number };
 export type CompileAutomationEventsOptions = {
@@ -113,7 +126,7 @@ function appendEvent(events: CompiledAutomationEvent[], event: CompiledAutomatio
 
 function slewEvents(
     events: CompiledAutomationEvent[],
-    { alpha, tickSeconds, clampStep }: SlewConfig,
+    { alpha, tickSeconds, clampStep, quantiseEmit }: SlewConfig,
     windowEndSeconds: number
 ): CompiledAutomationEvent[] {
     if (events.length <= 1 || tickSeconds <= 0) {
@@ -135,6 +148,7 @@ function slewEvents(
     // what the live path reads and y[n] matches it sample-for-sample. Emit the
     // slewed samples as linear ramps.
     const clamp = clampStep ?? ((value: number) => value);
+    const quantise = quantiseEmit ?? ((value: number) => value);
     const finalTarget = events.at(-1)!.value;
     // The value the glide can actually settle on. Live never dispatches past the
     // declared bound either, so an out-of-range tail settles at the bound.
@@ -158,7 +172,9 @@ function slewEvents(
     // The live seed is `prev ?? value`, so its first tick emits `slewStep(value,
     // value)` = value and then clamps it. Clamp the seed here for the same reason.
     let smoothed = clamp(sampleAt(startTime));
-    const slewed: CompiledAutomationEvent[] = [{ type: 'set', timeSeconds: startTime, value: smoothed }];
+    // `smoothed` is the filter state and stays continuous throughout; every
+    // `value` written into `slewed` below goes through `quantise` instead.
+    const slewed: CompiledAutomationEvent[] = [{ type: 'set', timeSeconds: startTime, value: quantise(smoothed) }];
     const sampleCount = Math.ceil((endTime - startTime) / tickSeconds);
     for (let index = 1; index <= sampleCount; index++) {
         const time = Math.min(endTime, startTime + index * tickSeconds);
@@ -170,8 +186,15 @@ function slewEvents(
         // target and stop. WebAudio holds it, and the live path has settled too.
         // If the window ends first (short clip), the loop stops mid-glide and the
         // param holds that value — matching the live clip-bounds skip.
+        // Settling is decided on the continuous pair, so a stepped lane still
+        // stops the moment the *filter* has arrived rather than the moment two
+        // consecutive rounded samples happen to agree.
         const settledHold = time > lastEventTime && Math.abs(smoothed - settledTarget) <= SLEW_SETTLE_EPSILON;
-        appendEvent(slewed, { type: 'linear', timeSeconds: time, value: settledHold ? settledTarget : smoothed });
+        appendEvent(slewed, {
+            type: 'linear',
+            timeSeconds: time,
+            value: quantise(settledHold ? settledTarget : smoothed),
+        });
         if (settledHold) {
             break;
         }

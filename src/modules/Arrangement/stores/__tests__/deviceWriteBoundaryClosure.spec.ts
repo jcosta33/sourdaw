@@ -53,6 +53,15 @@ const SINK_DEFINITIONS: Record<SinkFamily, SinkDefinition> = {
 const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
     'persistence-runtime': {
         'src/app/bootstrap.ts': 9,
+        // Count provenance: new file entry, measured 1 — a single doc-comment
+        // mention of `persistDeviceParam`, and no write. Measured with `grep -o`
+        // over the four sink identifiers: persistDeviceParam 1, the other three
+        // 0. `quantiseDeviceParameterValue` explains why quantisation is applied
+        // at delivery instead of inside `clampDeviceParameterValue`, and half
+        // that reason is which callers of the clamp persist: rounding on the
+        // persistence path would silently rewrite stored project data for every
+        // stepped parameter. The file is a pure model and reaches no sink.
+        'src/modules/Arrangement/models/DeviceParameterLaw.ts': 1,
         'src/modules/Arrangement/stores/index.ts': 2,
         // Count provenance: measured 3, all three doc-comment mentions — this
         // file holds no write at all. `clampDeviceParamWrite` resolves a device
@@ -75,6 +84,23 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         'src/modules/Arrangement/useCases/setTrackGainPan/setTrackPan.ts': 2,
         'src/modules/AudioEngine/models/AudioEngineState.ts': 2,
         'src/modules/AudioEngine/repositories/createWebAudioEngine.ts': 2,
+        // Count provenance: new file entry, measured 2 — both doc-comment
+        // mentions of `updateDeviceParam`, and no write. Measured with `grep -o`
+        // over the four sink identifiers: updateDeviceParam 2, the other three
+        // 0. Both name the live delivery this offline path is being made to
+        // match: `applyAutomation` filters continuously and calls
+        // `updateDeviceParam(quantise(smoothed))`, and the two comments say why
+        // the quantiser is passed as `quantiseEmit` (emitted value only) rather
+        // than folded into `clampStep` (the recurrence's feedback). This is a
+        // repository scheduling AudioParams and worklet segments; it holds no
+        // device write of its own.
+        'src/modules/AudioEngine/repositories/offlineScheduler/automationScheduling.ts': 2,
+        // Count provenance: new file entry, measured 1 — one doc-comment mention
+        // of `updateDeviceParam` on the `quantiseEmit` option, naming the live
+        // call the option replicates. The other three sink identifiers score 0.
+        // The file compiles automation points into timed events and writes
+        // nothing.
+        'src/modules/AudioEngine/repositories/offlineScheduler/compileAutomationEvents.ts': 1,
         // Count provenance: measured 3, was 2. The declared-range law now binds
         // at this use case — the single door every device-param write reaches
         // the DSP through — so the file gained a doc-comment mention of the
@@ -289,6 +315,13 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
     'load-compile-hydration': {
         'src/app/bootstrap.ts': 1,
         'src/app/registerDependencies.ts': 1,
+        // Count provenance: new file entry, measured 1 — a doc-comment
+        // cross-reference to `compileAutomationEvents`, naming the second of the
+        // two callers that feed `clampDeviceParameterValue`'s result back in as
+        // the state of a one-pole IIR slew. That is why
+        // `quantiseDeviceParameterValue` is a separate function: rounding inside
+        // the clamp would dead-zone both recurrences. The model holds no write.
+        'src/modules/Arrangement/models/DeviceParameterLaw.ts': 1,
         // Count provenance: doc-comment cross-reference to `compileAutomationEvents`
         // in the editor-readout evaluator's AU-1 delegation note (#747) — the
         // transformer computes curve values only, holds no device writes.
