@@ -123,13 +123,18 @@ export const CRUMBS_DESCRIPTOR: PluginDescriptor = {
             scaling: 'log',
         },
         {
+            // Q, matching the `Reso` knob in `CrumbsControls` and the Q span the
+            // engine's SVF resolves (`crumbs::filter`: 0.5 at rest, 20 at the
+            // onset of self-oscillation). The floor was 0.1, which the engine
+            // saturates to the same coefficients as 0.5 — the bottom 0.4 of an
+            // automation lane that drew as usable travel and was not.
             id: 'filterResonance',
             deviceId: 'builtin-crumbs',
             name: 'Filter Resonance',
             type: 'float',
             value: 1,
             defaultValue: 1,
-            minValue: 0.1,
+            minValue: 0.5,
             maxValue: 20,
             unit: '',
             automatable: true,

@@ -35,6 +35,7 @@ impl Default for CrumbsMetering {
 }
 
 use super::allocator::{StealPriority, VoiceAllocator};
+use super::filter::normalized_resonance_from_q;
 use super::modes::drum::DrumMode;
 use super::modes::quick::QuickMode;
 use super::modes::slice::SliceMode;
@@ -730,7 +731,15 @@ impl CrumbsEngine {
                 self.slice.filter_cutoff = cutoff;
             }
             CrumbsParam::FilterResonance => {
-                let resonance = value.clamp(0.0, 1.0);
+                // Arrives in Q, the unit every surface that writes it carries —
+                // the `Reso` knob (0.5–20, shipping at 1), `CrumbsDescriptor`'s
+                // automation lane, and Toaster's identical pad field. The mode
+                // structs hold the SVF's normalised 0–1 instead, so the two have
+                // to be converted between; this used to `clamp(0.0, 1.0)` a Q
+                // reading, which pinned every knob position from the default
+                // upward — 19 of its 19.5 units — onto identical coefficients and
+                // left the shipped default self-oscillating at Q 20.
+                let resonance = normalized_resonance_from_q(value);
                 self.quick.filter_resonance = resonance;
                 self.slice.filter_resonance = resonance;
             }
