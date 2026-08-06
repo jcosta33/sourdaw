@@ -1,0 +1,14 @@
+src/modules/AiRuntime/presentations/components/__tests__/AiTaskResultCard.spec.tsx
+  h_1228e573df1f42 8-17,21,28-73
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "5433746d06d03ea39cf5685c43ca5f7df54ed1e7",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
