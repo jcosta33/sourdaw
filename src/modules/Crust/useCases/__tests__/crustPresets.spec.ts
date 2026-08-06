@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 
-import { DEFAULT_CRUST_PATCH } from '../../models/CrustPatch';
+import { CRUST_OVERSAMPLE_FACTORS, DEFAULT_CRUST_PATCH } from '../../models/CrustPatch';
 import { CRUST_PRESETS } from '../crustPresets';
 
 describe('CRUST_PRESETS', () => {
@@ -36,8 +36,10 @@ describe('CRUST_PRESETS', () => {
             expect(patch.channelLinkTransient).toBeLessThanOrEqual(100);
             expect(patch.channelLinkRelease).toBeGreaterThanOrEqual(0);
             expect(patch.channelLinkRelease).toBeLessThanOrEqual(100);
-            // oversampling must be a valid value
-            expect([1, 4, 8, 16, 32]).toContain(patch.oversampling);
+            // oversampling must be a factor the engine distinguishes. Read from
+            // the model's list rather than a copy of it — the copy that used to
+            // sit here was one of the three places 2x had gone missing.
+            expect(CRUST_OVERSAMPLE_FACTORS).toContain(patch.oversampling);
             // crossovers in Hz
             expect(patch.crossover1).toBeGreaterThan(0);
             expect(patch.crossover2).toBeGreaterThan(0);

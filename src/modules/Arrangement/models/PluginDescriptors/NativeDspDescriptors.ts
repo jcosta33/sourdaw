@@ -294,6 +294,12 @@ export const NATIVE_DSP_DESCRIPTORS: PluginDescriptor[] = [
                 // it just stops the declared range from contradicting both of
                 // its neighbours, which at `maxValue: 5` it did.
                 maxValue: 6,
+                // The set, said where the range cannot say it. `maxValue: 6`
+                // makes 4 and 5 look like settings; they are the `_ =>` arm of
+                // `crates/proof-chamber/src/lib.rs`, which is Plate. `fallback`
+                // rather than `floor` because a `match` has no neighbours —
+                // 4 lands on Plate, not on the Spring below it.
+                legalSet: { values: [0, 1, 2, 3, 6], resolution: 'fallback', fallback: 0 },
                 unit: '',
                 automatable: false,
                 hasAutomation: false,

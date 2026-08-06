@@ -16,6 +16,44 @@ export type CrustDither = 'off' | 'tpdf16' | 'tpdf24' | 'powr1' | 'powr2' | 'pow
 
 export type CrustScrollSpeed = 'slow' | 'normal' | 'fast';
 
+/**
+ * The oversampling factors the engine distinguishes, ascending.
+ *
+ * One list, because it had been three: the panel offered `[1, 4, 8, 16, 32]`,
+ * this type spelled the same five out, and the preset spec kept its own copy —
+ * so 2x, which `crates/daw-dsp/src/crust/oversample.rs` has always built a
+ * stage for, was unreachable from every surface in the product. The panel row,
+ * the patch type and the preset guard now all read this.
+ *
+ * The Arrangement descriptor declares the same set a second time
+ * (`PluginDescriptors/CrustDescriptor.ts` — models do not cross module
+ * boundaries, so that duplication is deliberate); `CrustPatch.spec.ts` holds
+ * the two to each other.
+ */
+export const CRUST_OVERSAMPLE_FACTORS = [1, 2, 4, 8, 16, 32] as const;
+
+export type CrustOversampleFactor = (typeof CRUST_OVERSAMPLE_FACTORS)[number];
+
+/**
+ * `value` as a declared factor, or `null` if it is not one.
+ *
+ * A membership narrowing and nothing more — deliberately *not* a second copy of
+ * the resolution law. Which factor an out-of-set value becomes is declared once,
+ * on the Arrangement descriptor, and asked of `quantiseDeviceParameterValue`;
+ * this only turns that answer back into `CrustOversampleFactor`, which a model
+ * can do without reaching across a module boundary.
+ *
+ * `null` means the descriptor's declared set and this list have diverged, which
+ * `CrustPatch.spec.ts` makes impossible by driving the law across the whole
+ * declared range and asserting every answer is a member. Callers therefore
+ * treat `null` as "leave the value alone" rather than inventing a replacement
+ * for it: the spec is what reports the divergence, not a silent substitution at
+ * load time.
+ */
+export function asCrustOversampleFactor(value: number): CrustOversampleFactor | null {
+    return CRUST_OVERSAMPLE_FACTORS.find((factor) => factor === value) ?? null;
+}
+
 export type CrustStreamingPreset =
     | 'spotify'
     | 'youtube'
@@ -46,7 +84,7 @@ export type CrustPatch = {
     channelLinkTransient: number; // 0 – 100 %
     channelLinkRelease: number; // 0 – 100 %
     truePeak: boolean;
-    oversampling: 1 | 4 | 8 | 16 | 32;
+    oversampling: CrustOversampleFactor;
 
     // Level 3 — BUILD
     satEnabled: boolean;

@@ -51,7 +51,22 @@ const GLUTEN_PARAMS: readonly PluginParamDef[] = [
     { id: 'scEqEnabled', label: 'SC EQ On', min: 0, max: 1, default: 0, unit: '', step: 1 },
     { id: 'extSidechain', label: 'Ext SC', min: 0, max: 1, default: 0, unit: '', step: 1 },
     // Quality
-    { id: 'oversampling', label: 'OS', min: 1, max: 4, default: 2, unit: '', step: 1 },
+    // `ConfigurableOversample` in `crates/daw-dsp/src/gluten/oversample.rs`
+    // implements 1x, 2x and 4x, so 3 is a position with no stage behind it.
+    // Gluten's own panel and `clampOversampling` have offered and stored only
+    // {1,2,4} for as long as they have existed; this is the same set said where
+    // the generic Inspector, automation and the model action bridge can read
+    // it, which is where 3 was still reachable.
+    {
+        id: 'oversampling',
+        label: 'OS',
+        min: 1,
+        max: 4,
+        default: 2,
+        unit: '',
+        step: 1,
+        legalSet: { values: [1, 2, 4], resolution: 'floor' },
+    },
     // Stereo
     { id: 'stereoLink', label: 'Stereo Link', min: 0, max: 1, default: 1, unit: '', step: 0.01 },
     { id: 'stereoMode', label: 'Stereo Mode', min: 0, max: 3, default: 0, unit: '', step: 1 },
@@ -93,6 +108,7 @@ export const GLUTEN_DESCRIPTOR: PluginDescriptor = {
         defaultValue: param.default,
         minValue: param.min,
         maxValue: param.max,
+        legalSet: param.legalSet,
         unit: param.unit,
         scaling: param.scaling,
         automatable: true,

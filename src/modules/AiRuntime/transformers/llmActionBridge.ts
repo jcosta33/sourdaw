@@ -72,6 +72,13 @@ function isValidParameterValue(
     if (value < parameter.minValue || value > parameter.maxValue) {
         return false;
     }
+    // A range is not a list of settings. `crust/oversampling` spans 1..32 and
+    // has six settings; a model asking for 9 is asking for a position the
+    // cascade does not build, and passing it would have the engine resolve it
+    // to 8 while the model was told 9 landed.
+    if (parameter.legalValues && !parameter.legalValues.includes(value)) {
+        return false;
+    }
     if (parameter.type === 'bool') {
         return value === 0 || value === 1;
     }

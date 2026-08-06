@@ -1,4 +1,4 @@
-// @wasm-bindgen-dts crate-source: sha256:b0a12192d2a68c25f75cd7903d3aa1181819c5f880f3dc967d45f30d898d1d5b
+// @wasm-bindgen-dts crate-source: sha256:c6408a03d8c2a6f12e6d08ee0c21860144e32be2459163cbcfd4da2492a6ccad
 /* tslint:disable */
 /* eslint-disable */
 export const memory: WebAssembly.Memory;
@@ -56,22 +56,6 @@ export const bacteriainstance_get_right_ptr: (a: number) => number;
 export const bacteriainstance_new: (a: number) => number;
 export const bacteriainstance_process: (a: number, b: number) => number;
 export const bacteriainstance_set_param: (a: number, b: number, c: number, d: number) => void;
-export const __wbg_gluteninstance_free: (a: number, b: number) => void;
-export const gluteninstance_get_crest: (a: number) => number;
-export const gluteninstance_get_gr_db: (a: number) => number;
-export const gluteninstance_get_input_db: (a: number) => number;
-export const gluteninstance_get_input_left_ptr: (a: number) => number;
-export const gluteninstance_get_input_right_ptr: (a: number) => number;
-export const gluteninstance_get_latency_samples: (a: number) => number;
-export const gluteninstance_get_nan_flush_count: (a: number) => number;
-export const gluteninstance_get_output_db: (a: number) => number;
-export const gluteninstance_get_phase_corr: (a: number) => number;
-export const gluteninstance_get_right_ptr: (a: number) => number;
-export const gluteninstance_get_sc_left_ptr: (a: number) => number;
-export const gluteninstance_get_sc_right_ptr: (a: number) => number;
-export const gluteninstance_new: (a: number) => number;
-export const gluteninstance_process: (a: number, b: number) => number;
-export const gluteninstance_set_param: (a: number, b: number, c: number, d: number) => void;
 export const __wbg_crumbsinstance_free: (a: number, b: number) => void;
 export const __wbg_crustinstance_free: (a: number, b: number) => void;
 export const __wbg_levaininstance_free: (a: number, b: number) => void;
@@ -202,6 +186,22 @@ export const proofinstance_process: (a: number, b: number) => number;
 export const proofinstance_reorder: (a: number, b: number, c: number, d: number, e: number, f: number) => void;
 export const proofinstance_reset_integrated: (a: number) => void;
 export const proofinstance_set_param: (a: number, b: number, c: number, d: number) => void;
+export const __wbg_gluteninstance_free: (a: number, b: number) => void;
+export const gluteninstance_get_crest: (a: number) => number;
+export const gluteninstance_get_gr_db: (a: number) => number;
+export const gluteninstance_get_input_db: (a: number) => number;
+export const gluteninstance_get_input_left_ptr: (a: number) => number;
+export const gluteninstance_get_input_right_ptr: (a: number) => number;
+export const gluteninstance_get_latency_samples: (a: number) => number;
+export const gluteninstance_get_nan_flush_count: (a: number) => number;
+export const gluteninstance_get_output_db: (a: number) => number;
+export const gluteninstance_get_phase_corr: (a: number) => number;
+export const gluteninstance_get_right_ptr: (a: number) => number;
+export const gluteninstance_get_sc_left_ptr: (a: number) => number;
+export const gluteninstance_get_sc_right_ptr: (a: number) => number;
+export const gluteninstance_new: (a: number) => number;
+export const gluteninstance_process: (a: number, b: number) => number;
+export const gluteninstance_set_param: (a: number, b: number, c: number, d: number) => void;
 export const __wbindgen_free: (a: number, b: number, c: number) => void;
 export const __wbindgen_malloc: (a: number, b: number) => number;
 export const __wbindgen_realloc: (a: number, b: number, c: number, d: number) => number;

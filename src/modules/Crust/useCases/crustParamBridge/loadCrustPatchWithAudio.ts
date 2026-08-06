@@ -1,4 +1,6 @@
-import { type CrustPatch } from '../../models/CrustPatch';
+import { quantiseDeviceParameterValue } from '#/modules/Arrangement/useCases';
+
+import { asCrustOversampleFactor, type CrustPatch } from '../../models/CrustPatch';
 import { loadCrustPatch } from '../../stores/crustStore';
 
 import { createFlushHandlers } from './createFlushHandlers';
@@ -6,10 +8,30 @@ import { crustBridgeDeps, encodeCrustValue, paramBatcher } from './helpers';
 
 const { pushParamImmediately: pushCrustParamImmediately } = createFlushHandlers(crustBridgeDeps);
 
-export function loadCrustPatchWithAudio(deviceId: string, patch: CrustPatch): void {
+export function loadCrustPatchWithAudio(deviceId: string, rawPatch: CrustPatch): void {
     const target = crustBridgeDeps.resolveEligibleDeviceWriteTarget(deviceId);
     if (target.status !== 'eligible') {
         return;
+    }
+
+    // Resolve oversampling onto a factor the cascade builds before it reaches
+    // the store or the engine. `CrustOversampleFactor` is a compile-time claim
+    // and a loaded patch is runtime data — a hand-edited project, an import, or
+    // a preset authored against the pre-2x list can carry 20 or 30, which the
+    // engine would floor to 16 while `CrustPanel`'s chip row lit nothing and
+    // the store kept the number nobody was playing. Gluten's loader has guarded
+    // this since it shipped; Crust's did not.
+    //
+    // Asked of the Arrangement descriptor's declared legal set rather than a
+    // second list here: the set, its resolution direction and the engine that
+    // answers it are welded together in `DeviceLegalParameterValues.json`, and
+    // a copy in this module would be a fourth place to drift.
+    let patch = rawPatch;
+    const declared = asCrustOversampleFactor(
+        quantiseDeviceParameterValue({ deviceType: 'crust', paramId: 'oversampling', value: rawPatch.oversampling })
+    );
+    if (declared !== null && declared !== rawPatch.oversampling) {
+        patch = { ...rawPatch, oversampling: declared };
     }
 
     loadCrustPatch(patch);

@@ -15,6 +15,17 @@ export type DeviceParameterView = {
     defaultValue: number;
     minValue: number;
     maxValue: number;
+    /**
+     * The settings the engine distinguishes, when they are not every integer in
+     * the range. Present means the control offers exactly these and nothing
+     * between them.
+     *
+     * Deliberately narrower than the Arrangement model's `LegalValueSet`, which
+     * also declares *how* a non-member resolves. The control never resolves one
+     * itself — it asks `quantiseDeviceParameterValue` — so it has no use for the
+     * direction and does not restate it.
+     */
+    legalSet?: { readonly values: readonly number[] };
     unit: string;
     scaling?: 'log' | 'linear';
     choices?: string[];

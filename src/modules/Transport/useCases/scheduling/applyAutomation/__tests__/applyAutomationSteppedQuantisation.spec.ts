@@ -218,6 +218,38 @@ describe('applyAutomation — stepped device parameters', () => {
         expect(scheduleTrackPan).not.toHaveBeenCalled();
     });
 
+    it("delivers only factors the cascade builds to Crust's oversampling while riding 1 → 32", () => {
+        // An integer is not enough for a parameter whose engine distinguishes
+        // fewer settings than its range. `crust/oversampling` declares 1..32,
+        // and `crates/daw-dsp/src/crust/oversample.rs` builds {1,2,4,8,16,32};
+        // before the legal set was declared this ride handed the node 9, 14,
+        // 21 and 26, each of which the engine silently re-snapped while the
+        // Inspector and the lane both read back the number nobody was playing.
+        seedSteppedLane({
+            deviceId: 'device-c1',
+            deviceType: 'crust',
+            paramId: 'oversampling',
+            startValue: 1,
+        });
+
+        ride({ startValue: 1, endValue: 32 });
+
+        const delivered = vi.mocked(updateDeviceParam).mock.calls.map(([, , , value]) => value);
+        const legal = [1, 2, 4, 8, 16, 32];
+
+        expect(delivered.filter((value) => !legal.includes(value))).toEqual([]);
+        // Pinned in full, because "every delivery is legal" is satisfied by a
+        // ride that never leaves its starting factor. The slew (α = 0.4) runs
+        // 13.4, 20.8, 25.3, 28.0, 29.6, 30.6, 31.1, 31.5, 31.7, … which the
+        // integer law rounds to 13, 21, 25, 28, 30, 31, 31, 32 — every one of
+        // the first six an oversampling factor the cascade cannot build, and
+        // exactly what this node used to be handed. Resolved onto the set and
+        // deduped by the repeat gate, the same ride is three factors. It still
+        // arrives at 32 rather than stalling under it.
+        expect(delivered).toEqual([8, 16, 32]);
+        expect(scheduleTrackPan).not.toHaveBeenCalled();
+    });
+
     it('leaves a float device parameter unrounded while riding 0 → 0.75', () => {
         // The complement, so the fix cannot be "round everything": Bacteria's
         // `mix` is declared `float` (step 0.01), and its slewed ride must still

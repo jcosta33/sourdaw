@@ -1,5 +1,5 @@
 import { getPluginById } from './DeviceParameter';
-import { type DeviceParameter } from './DeviceParameterTypes';
+import { type DeviceParameter, type LegalValueSet } from './DeviceParameterTypes';
 
 /**
  * What a device parameter's declared contract means at the moment of writing.
@@ -63,6 +63,49 @@ export function clampDeviceParameterValue({ deviceType, paramId, value }: ClampD
     return value;
 }
 
+type SnapToDeclaredLegalValueInput = {
+    legalSet: LegalValueSet;
+    value: number;
+};
+
+/**
+ * The member of a declared legal set that an integer resolves to.
+ *
+ * Not exported past this module. It is the second half of
+ * {@link quantiseDeviceParameterValue} and has no independent meaning: it
+ * assumes `value` has already been rounded, because the `fallback` resolution
+ * asks whether the value *is* a member and a fraction never is. Anything that
+ * wants "the setting actually in force" — the delivery path, and the control
+ * that has to display it — calls `quantiseDeviceParameterValue`, so there is
+ * one answer rather than two that can drift.
+ *
+ * `values` is required ascending (`DeviceParameterLaw.spec.ts` holds the
+ * registry to it), so the `floor` scan can stop at the first member above the
+ * value.
+ */
+function snapToDeclaredLegalValue({ legalSet, value }: SnapToDeclaredLegalValueInput): number {
+    if (legalSet.resolution === 'fallback') {
+        // Returns the *member*, not the input that matched it. `Math.round`
+        // upstream produces `-0` for a ride through zero, and `-0` matches the
+        // member `0` here, so returning the input would let `-0` out of a
+        // function whose whole job is to answer with a declared setting.
+        const member = legalSet.values.find((legal) => legal === value);
+        if (member !== undefined) {
+            return member;
+        }
+        return legalSet.fallback;
+    }
+
+    let snapped = legalSet.values[0] ?? value;
+    for (const legal of legalSet.values) {
+        if (legal > value) {
+            break;
+        }
+        snapped = legal;
+    }
+    return snapped;
+}
+
 /**
  * The value a **delivery** to the DSP is allowed to carry, given the declared
  * type.
@@ -115,17 +158,33 @@ export function clampDeviceParameterValue({ deviceType, paramId, value }: ClampD
  * the declared range.
  *
  * It does **not** follow that every integer in that range is a distinct legal
- * setting, and three parameters are known not to satisfy it:
- * `crust/oversampling` (declared 1..32, legal factors `{1,2,4,8,16,32}` —
- * `crates/daw-dsp/src/crust/oversample.rs` `normalize_factor`),
- * `gluten/oversampling` (declared 1..4, legal `{1,2,4}` —
- * `crates/daw-dsp/src/gluten/oversample.rs` `set_rate`, whose `_ => 4` arm
- * swallows 3), and `dutch-oven/algorithm` (declared 0..6, where 4 and 5 are
- * documented reserved wire values that fall through to Plate). A glide across
- * any of them is delivered an integer the engine then re-snaps itself, so the
- * audible result is a legal setting either way; what is wrong is only the
- * declaration. Closing it properly means declaring the legal set on the
- * descriptor rather than special-casing it here, which is a separate change.
+ * setting, and a parameter that knows it is not says so with a
+ * {@link LegalValueSet}, which this function resolves onto **after** rounding.
+ * Three declare one today: `crust/oversampling` (1..32, factors
+ * `{1,2,4,8,16,32}`), `gluten/oversampling` (1..4, factors `{1,2,4}`) and
+ * `dutch-oven/algorithm` (0..6, wire values `{0,1,2,3,6}`).
+ *
+ * **Rounding comes first, and the order is load-bearing.** This function is
+ * the delivery boundary, so the engine only ever sees what it returns; a
+ * fraction is resolved here or nowhere. Rounding first means a live automation
+ * slew crossing 15.6 on `crust/oversampling` delivers 16, which is exactly what
+ * it delivered before any legal set was declared (round to 16, engine keeps
+ * 16). Resolving the raw 15.6 instead would deliver 8 — a change in what an
+ * existing automation lane sounds like, smuggled in under a declaration fix.
+ *
+ * **What the resolution direction is for.** It mirrors the engine, it is not a
+ * preference: an out-of-set value still arrives from a project file, a preset
+ * or a learned MIDI CC by routes that are clamped and not quantised, and the
+ * engine resolves those itself. So `crust` floors because `normalize_factor`
+ * floors — a project storing `oversampling: 30` has always sounded like 16, and
+ * a nearest-member snap would move it to 32. `dutch-oven` falls back because
+ * its dispatch is a `match` whose `_ =>` arm is Plate, so its reserved 4 and 5
+ * resolve to 0 rather than to the neighbouring Spring. The declaration is being
+ * corrected; the audio is not.
+ *
+ * `DeviceLegalParameterValues.json` holds this to the engines value by value,
+ * from both sides: `DeviceLegalParameterValues.spec.ts` here, and
+ * `legal_parameter_values.rs` in `daw-dsp` and `proof-chamber`.
  */
 export function quantiseDeviceParameterValue({ deviceType, paramId, value }: ClampDeviceParameterValueInput): number {
     const descriptor = findParameterDescriptor({ deviceType, paramId });
@@ -134,6 +193,13 @@ export function quantiseDeviceParameterValue({ deviceType, paramId, value }: Cla
     }
 
     const rounded = Math.round(value);
+    if (descriptor.legalSet) {
+        // The `-0` canonicalisation below is not repeated here:
+        // `snapToDeclaredLegalValue` answers with a member of the declared set
+        // in every branch, and a declared set holds `0`, never `-0`.
+        return snapToDeclaredLegalValue({ legalSet: descriptor.legalSet, value: rounded });
+    }
+
     if (Object.is(rounded, -0)) {
         // `Math.round(-0.2)` is `-0`, and the input is reachable: three stepped
         // parameters declare a negative minimum (`fermenter/oscCoarse` -24..24,
