@@ -24,6 +24,7 @@ const mocks = vi.hoisted(() => ({
     createAndAssignVcaGroup: vi.fn(),
     getVcaGroups: vi.fn<() => TestVcaGroup[]>(() => []),
     confirmUser: vi.fn<() => Promise<boolean>>(),
+    releaseTouchAutomation: vi.fn(),
 }));
 
 vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => ({
@@ -38,6 +39,11 @@ vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => ({
     toggleVcaMembership: mocks.toggleVcaMembership,
     createAndAssignVcaGroup: mocks.createAndAssignVcaGroup,
     getVcaGroups: mocks.getVcaGroups,
+}));
+
+vi.mock('#/modules/Automation/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Automation/useCases')>()),
+    releaseTouchAutomation: mocks.releaseTouchAutomation,
 }));
 
 vi.mock('#/modules/Command/useCases', () => ({
@@ -103,6 +109,26 @@ describe('ExpandedChannelStrip', () => {
         expect(screen.getByText('audio')).toBeInTheDocument();
         expect(screen.getByText('0.0 dB')).toBeInTheDocument();
         expect(screen.getByText('C')).toBeInTheDocument();
+    });
+
+    // audit M-083: the gain fader is keyboard-operable now, and a keyboard write emits
+    // no pointerup — the touch-automation release has to be wired to keyup as well or
+    // the lane stays latched until transport stop.
+    it('releases touch gain automation only once the fader key is released', () => {
+        renderWithTooltip(
+            <ExpandedChannelStrip
+                track={{ ...mockTrack, automationMode: 'touch' }}
+                isSelected={false}
+                widthClass="w-40"
+            />
+        );
+
+        const fader = screen.getByRole('slider', { name: 'Track 1 gain' });
+        fireEvent.keyDown(fader, { key: 'ArrowUp' });
+        expect(mocks.releaseTouchAutomation).not.toHaveBeenCalled();
+
+        fireEvent.keyUp(fader, { key: 'ArrowUp' });
+        expect(mocks.releaseTouchAutomation).toHaveBeenCalledWith('track-1', 'gain');
     });
 
     it('applies the selection ring when isSelected is true', () => {

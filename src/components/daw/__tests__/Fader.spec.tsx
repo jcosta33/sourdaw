@@ -97,6 +97,180 @@ describe('Fader', () => {
         expect(onChange).not.toHaveBeenCalled();
     });
 
+    // audit M-083 — the root was a bare div: no role, no value, no name, no focus.
+    describe('assistive-technology contract (audit M-083)', () => {
+        it('should expose the slider role carrying its value and bounds', () => {
+            render(<Fader value={-10} onChange={vi.fn()} min={-70} max={6} />);
+            const slider = screen.getByRole('slider');
+            expect(slider).toHaveAttribute('aria-valuenow', '-10');
+            expect(slider).toHaveAttribute('aria-valuemin', '-70');
+            expect(slider).toHaveAttribute('aria-valuemax', '6');
+            expect(slider).toHaveAttribute('aria-orientation', 'vertical');
+        });
+
+        it('should clamp the reported value into the declared bounds', () => {
+            render(<Fader value={99} onChange={vi.fn()} min={-70} max={6} />);
+            expect(screen.getByRole('slider')).toHaveAttribute('aria-valuenow', '6');
+        });
+
+        it('should take its accessible name from the aria-label prop', () => {
+            render(<Fader value={0} onChange={vi.fn()} aria-label="Master gain" />);
+            expect(screen.getByRole('slider', { name: 'Master gain' })).toHaveAttribute('aria-valuenow', '0');
+        });
+
+        it('should announce a unit-qualified value when a unit is supplied', () => {
+            render(<Fader value={-10} onChange={vi.fn()} min={-70} max={6} unit="dB" />);
+            expect(screen.getByRole('slider')).toHaveAttribute('aria-valuetext', '-10 dB');
+        });
+
+        it('should omit aria-valuetext when no unit is supplied', () => {
+            render(<Fader value={-10} onChange={vi.fn()} min={-70} max={6} />);
+            expect(screen.getByRole('slider')).not.toHaveAttribute('aria-valuetext');
+        });
+
+        it('should be reachable by keyboard focus', () => {
+            render(<Fader value={0} onChange={vi.fn()} />);
+            const slider = screen.getByRole('slider');
+            slider.focus();
+            expect(document.activeElement).toBe(slider);
+        });
+    });
+
+    // audit M-083 — APG slider keys: arrows step, Home/End bound, PageUp/PageDown coarse.
+    describe('keyboard control (audit M-083)', () => {
+        const renderFader = (value: number): ReturnType<typeof vi.fn> => {
+            const onChange = vi.fn();
+            render(<Fader value={value} onChange={onChange} min={-70} max={6} step={0.5} fineStep={0.1} />);
+            return onChange;
+        };
+
+        it('should raise the value by one step on ArrowUp', () => {
+            const onChange = renderFader(-10);
+            fireEvent.keyDown(screen.getByRole('slider'), { key: 'ArrowUp' });
+            expect(onChange).toHaveBeenCalledWith(-9.5);
+        });
+
+        it('should raise the value by one step on ArrowRight', () => {
+            const onChange = renderFader(-10);
+            fireEvent.keyDown(screen.getByRole('slider'), { key: 'ArrowRight' });
+            expect(onChange).toHaveBeenCalledWith(-9.5);
+        });
+
+        it('should lower the value by one step on ArrowDown', () => {
+            const onChange = renderFader(-10);
+            fireEvent.keyDown(screen.getByRole('slider'), { key: 'ArrowDown' });
+            expect(onChange).toHaveBeenCalledWith(-10.5);
+        });
+
+        it('should lower the value by one step on ArrowLeft', () => {
+            const onChange = renderFader(-10);
+            fireEvent.keyDown(screen.getByRole('slider'), { key: 'ArrowLeft' });
+            expect(onChange).toHaveBeenCalledWith(-10.5);
+        });
+
+        it('should use the fine step while shift is held', () => {
+            const onChange = renderFader(-10);
+            fireEvent.keyDown(screen.getByRole('slider'), { key: 'ArrowUp', shiftKey: true });
+            expect(onChange).toHaveBeenCalledWith(-9.9);
+        });
+
+        it('should jump to the minimum on Home and the maximum on End', () => {
+            const onChange = renderFader(-10);
+            const slider = screen.getByRole('slider');
+            fireEvent.keyDown(slider, { key: 'Home' });
+            expect(onChange).toHaveBeenCalledWith(-70);
+            fireEvent.keyDown(slider, { key: 'End' });
+            expect(onChange).toHaveBeenCalledWith(6);
+        });
+
+        it('should move a coarse step on PageUp and PageDown', () => {
+            const onChange = renderFader(-10);
+            const slider = screen.getByRole('slider');
+            fireEvent.keyDown(slider, { key: 'PageUp' });
+            expect(onChange).toHaveBeenCalledWith(-5);
+            fireEvent.keyDown(slider, { key: 'PageDown' });
+            expect(onChange).toHaveBeenCalledWith(-15);
+        });
+
+        it('should quantise a keyboard step onto the step grid without float residue', () => {
+            const onChange = vi.fn();
+            // `Math.round(5.1 / 0.1) * 0.1` is 5.1000000000000005 — invisible in the
+            // readout, permanent in the project. The emitted value must be exactly 5.1.
+            render(<Fader value={5} onChange={onChange} min={0} max={10} step={0.1} />);
+            fireEvent.keyDown(screen.getByRole('slider'), { key: 'ArrowUp' });
+            expect(onChange).toHaveBeenCalledWith(5.1);
+        });
+
+        it('should not emit a change when already at the bound', () => {
+            const onChange = renderFader(6);
+            fireEvent.keyDown(screen.getByRole('slider'), { key: 'ArrowUp' });
+            expect(onChange).not.toHaveBeenCalled();
+        });
+
+        it('should ignore keys outside the slider contract', () => {
+            const onChange = renderFader(-10);
+            fireEvent.keyDown(screen.getByRole('slider'), { key: 'a' });
+            expect(onChange).not.toHaveBeenCalled();
+        });
+    });
+
+    // audit M-082 — a drag that ends by anything other than pointerup left draggingRef
+    // stuck true, so plain hover afterwards kept writing the value.
+    describe('drag finalization (audit M-082)', () => {
+        const startDrag = (): { slider: HTMLElement; onChange: ReturnType<typeof vi.fn> } => {
+            const onChange = vi.fn();
+            render(<Fader value={0} onChange={onChange} min={-70} max={6} height={100} />);
+            const slider = screen.getByRole('slider');
+            const cap = slider.querySelector('[data-role="fader-cap"]') as HTMLElement;
+            fireEvent.pointerDown(cap, { button: 0, pointerId: 7, clientY: 50 });
+            onChange.mockClear();
+            return { slider, onChange };
+        };
+
+        it('should stop tracking the pointer after pointercancel', () => {
+            const { slider, onChange } = startDrag();
+            fireEvent.pointerCancel(slider, { pointerId: 7 });
+            fireEvent.pointerMove(slider, { pointerId: 7, clientY: 10 });
+            expect(onChange).not.toHaveBeenCalled();
+        });
+
+        it('should stop tracking the pointer after capture is lost', () => {
+            const { slider, onChange } = startDrag();
+            fireEvent.lostPointerCapture(slider, { pointerId: 7 });
+            fireEvent.pointerMove(slider, { pointerId: 7, clientY: 10 });
+            expect(onChange).not.toHaveBeenCalled();
+        });
+
+        it('should stop tracking the pointer when the window loses focus mid-drag', () => {
+            const { slider, onChange } = startDrag();
+            fireEvent(window, new Event('blur'));
+            fireEvent.pointerMove(slider, { pointerId: 7, clientY: 10 });
+            expect(onChange).not.toHaveBeenCalled();
+        });
+
+        it('should stop tracking the pointer when the document is hidden mid-drag', () => {
+            const { slider, onChange } = startDrag();
+            const visibility = vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('hidden');
+            fireEvent(document, new Event('visibilitychange'));
+            visibility.mockRestore();
+            fireEvent.pointerMove(slider, { pointerId: 7, clientY: 10 });
+            expect(onChange).not.toHaveBeenCalled();
+        });
+
+        it('should stop tracking the pointer when focus leaves the control mid-drag', () => {
+            const { slider, onChange } = startDrag();
+            fireEvent.blur(slider);
+            fireEvent.pointerMove(slider, { pointerId: 7, clientY: 10 });
+            expect(onChange).not.toHaveBeenCalled();
+        });
+
+        it('should keep dragging while the pointer is still down', () => {
+            const { slider, onChange } = startDrag();
+            fireEvent.pointerMove(slider, { pointerId: 7, clientY: 10 });
+            expect(onChange).toHaveBeenCalledWith(6);
+        });
+    });
+
     it('should apply every tone variant while dragging', () => {
         const tones = [
             'neutral',
