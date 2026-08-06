@@ -4,29 +4,28 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { usePresence } from '../../hooks/usePresence';
 import { PresenceOverlay } from '../PresenceOverlay';
 
-// Mock external dependencies
 vi.mock('../../hooks/usePresence', () => ({
     usePresence: vi.fn(),
 }));
 
-describe('PresenceOverlay', () => {
-    const defaultProps = {
-        beatToX: (beat: number) => beat * 10,
-        trackIdToY: (_id: string) => 100,
-        trackHeight: 80,
-    };
+const defaultProps = {
+    beatToX: (beat: number) => beat * 10,
+    trackIdToY: (_id: string) => 100,
+    trackHeight: 80,
+};
 
+describe('PresenceOverlay', () => {
     beforeEach(() => {
         vi.clearAllMocks();
     });
 
-    it('should render without crashing', () => {
+    it('should render without crashing when no peers are present', () => {
         vi.mocked(usePresence).mockReturnValue([]);
         const { container } = render(<PresenceOverlay {...defaultProps} />);
         expect(container.firstChild).toBeTruthy();
     });
 
-    it('should render collaborator cursors', () => {
+    it('renders both playhead and cursor markers when a peer has both', () => {
         vi.mocked(usePresence).mockReturnValue([
             {
                 peerId: 'peer-1',
@@ -36,6 +35,14 @@ describe('PresenceOverlay', () => {
                 cursorBeat: 20,
                 cursorTrackId: 'track-1',
             },
+        ]);
+        render(<PresenceOverlay {...defaultProps} />);
+        // Alice's name appears on both the playhead marker and the cursor marker
+        expect(screen.getAllByText('Alice').length).toBe(2);
+    });
+
+    it('renders only cursor marker when playhead beat is null', () => {
+        vi.mocked(usePresence).mockReturnValue([
             {
                 peerId: 'peer-2',
                 name: 'Bob',
@@ -46,9 +53,54 @@ describe('PresenceOverlay', () => {
             },
         ]);
         render(<PresenceOverlay {...defaultProps} />);
+        // Bob has no playhead — only cursor marker
+        expect(screen.getAllByText('Bob').length).toBe(1);
+    });
 
-        // Cursors are rendered by PresenceMarker which usually shows the name
-        expect(screen.getAllByText('Alice').length).toBeGreaterThan(0);
-        expect(screen.getAllByText('Bob').length).toBeGreaterThan(0);
+    it('renders only playhead marker when cursor beat is null', () => {
+        vi.mocked(usePresence).mockReturnValue([
+            {
+                peerId: 'peer-3',
+                name: 'Carol',
+                color: '#0000ff',
+                playheadBeat: 5,
+                cursorBeat: null,
+                cursorTrackId: null,
+            },
+        ]);
+        render(<PresenceOverlay {...defaultProps} />);
+        expect(screen.getAllByText('Carol').length).toBe(1);
+    });
+
+    it('renders no markers for a peer with both playhead and cursor null', () => {
+        vi.mocked(usePresence).mockReturnValue([
+            {
+                peerId: 'peer-4',
+                name: 'Dave',
+                color: '#ffffff',
+                playheadBeat: null,
+                cursorBeat: null,
+                cursorTrackId: null,
+            },
+        ]);
+        render(<PresenceOverlay {...defaultProps} />);
+        expect(screen.queryByText('Dave')).toBeNull();
+    });
+
+    it('positions cursor at beatToX(cursorBeat)', () => {
+        vi.mocked(usePresence).mockReturnValue([
+            {
+                peerId: 'peer-5',
+                name: 'Eve',
+                color: '#ff00ff',
+                playheadBeat: null,
+                cursorBeat: 15,
+                cursorTrackId: 'track-1',
+            },
+        ]);
+        render(<PresenceOverlay {...defaultProps} />);
+        // beatToX(15) = 150 → label positioned at left + offset = 152
+        const label = screen.getByText('Eve');
+        expect(label.getAttribute('style')).toContain('left: 152px');
     });
 });
