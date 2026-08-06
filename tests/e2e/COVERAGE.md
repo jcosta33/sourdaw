@@ -609,10 +609,21 @@ zero-coverage files require heavy mocking (CRDT/AudioContext/WebGPU/canvas/DOM-e
   extracted, straight, invalid-source, empty) — 6 tests.
 - **PR #1216**: createPopSongTemplate — groove, I-vi-IV-V progression, sections, VCAs,
   sidechain. Completes ALL 9 project templates with dedicated specs — 6 tests.
+- **PR #1218**: handleDeleteGrooveTemplate + handleSetDeviceState handlers — 9 tests.
+- **PR #1219**: executePlayheadSeek — first hardest-tier file (transport scheduler mocking,
+  recording flush, scheduler restart gating, error recovery) — 7 tests.
+- **PR #1221**: grandBouleEngineHandle — disconnected handle factory — 4 tests.
+- **PR #1222**: deviceNodeFactory — factory lookup + gain delegation — 4 tests.
+- **PR #1224**: AiTaskResultCard deepened — type formatting, status branches, duration — 8 tests.
+- **PR #1225**: sanitizePersistedActionHistoryBundle — Automerge-mocked CRDT sanitization,
+  incremental folding, deletion — 6 tests.
+- **PR #1226**: EmptyState + InstrumentCard component specs deepened — 4 tests.
 
-**Campaign total to date: 140 PRs, ~1825 assertions across pure-logic models,
+**Campaign total to date: 147 PRs, ~1868 assertions across pure-logic models,
 services, transformers, store-coupled handlers, useCases, components,
 cross-cutting infrastructure, ALL 9 project templates, ALL 14 template helpers,
 ALL 9 device layouts, ALL 11 command interface files, the device layout registry,
 groove extraction/restoration, offline render preparation, device-state commit paths,
-crossfade restore, Toaster groove projection, and cloud request abort linking.**
+crossfade restore, Toaster groove projection, cloud request abort linking,
+transport seek orchestration, CRDT action-history sanitization, and deepened
+component specs.**
