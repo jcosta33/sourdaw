@@ -1,0 +1,30 @@
+src/modules/Crust/useCases/crustParamBridge/loadCrustPatchWithAudio.ts
+  s_14f2bbc9f385dd::t_6c6edde80316b7 1-3,11,17-34
+  s_14f2bbc9f385dd::t_dd2325bf19b7d4 35-36
+src/modules/Crust/models/__tests__/CrustPatch.spec.ts
+  s_14f2bbc9f385dd::t_e783d59dc4c90d 27-62
+  s_14f2bbc9f385dd::t_27b4e06bf8b8c2 3,5
+src/modules/Crust/models/CrustPatch.ts
+  s_14f2bbc9f385dd::t_56d42aa36e26d2 37-56
+src/modules/Crust/useCases/crustParamBridge/__tests__/loadCrustPatchWithAudio.spec.ts
+  s_14f2bbc9f385dd::t_e9e8f60d94e1f4 42
+  s_14f2bbc9f385dd::t_1e52a49cb30144 144-149
+  s_14f2bbc9f385dd::t_8c845181fadc02 130-143,150-152,154-167
+  s_14f2bbc9f385dd::t_6d01fac0b2d8e7 153
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "5dba3da3cd0e564f63cfaee9753628d6a4837650",
+  "prompts": {},
+  "sessions": {
+    "s_14f2bbc9f385dd": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f9a61a1d-66b3-4146-938d-a04f45f4b060",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
