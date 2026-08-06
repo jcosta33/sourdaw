@@ -1,0 +1,35 @@
+src/modules/Arrangement/models/PluginDescriptors/CrustDescriptor.ts
+  s_14f2bbc9f385dd::t_a0fd079b374b36 55
+  s_14f2bbc9f385dd::t_b90fe79e6ee194 49-54
+  s_14f2bbc9f385dd::t_b12670e27a42f4 15-23,25-29
+crates/daw-dsp/src/crust/engine.rs
+  s_14f2bbc9f385dd::t_e9e33a647d9c7c 1154-1266
+  s_14f2bbc9f385dd::t_d9e78532e9d039 1267-1268
+src/modules/AudioEngine/wasm/__tests__/dawDspCrustGates.spec.ts
+  s_14f2bbc9f385dd::t_2cc55f8d22e27a 1-147,151-202
+  s_14f2bbc9f385dd::t_586a397fe0ad87 148-150
+public/wasm/daw-dsp/daw_dsp.d.ts
+  s_14f2bbc9f385dd::t_c2ddb27091a240 1
+public/wasm/daw-dsp/daw_dsp_bg.wasm.d.ts
+  s_14f2bbc9f385dd::t_c694df0a4bd42f 1
+public/wasm/manifest.json
+  s_14f2bbc9f385dd::t_505d44e51e5dda 12,17-18,21
+src/modules/AudioEngine/wasm/daw_dsp.d.ts
+  s_14f2bbc9f385dd::t_d4c03ff9ec4544 1
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "da7994d6725ea83392fc8bf0d60d642022b0f2d3",
+  "prompts": {},
+  "sessions": {
+    "s_14f2bbc9f385dd": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f9a61a1d-66b3-4146-938d-a04f45f4b060",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
