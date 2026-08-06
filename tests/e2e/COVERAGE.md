@@ -583,8 +583,30 @@ All four metrics measurably increased (+0.7-0.8% each). New thresholds set with 
 - **PR #1206**: commitCrumbsDeviceState (store guard, executeAppAction dispatch)
   + getScopedGrooveAssignment (scoped/legacy fallback) — 6 tests.
 
-**Campaign total to date: 134 PRs, ~1790 assertions across pure-logic models,
+### Coverage re-measurement (PR #1211, post #1198 thresholds)
+
+Re-measured after 12 additional PRs since threshold raise #2 (PR #1198):
+
+| Metric | Threshold | Actual (#1198) | Actual (now) | Delta |
+|--------|-----------|----------------|--------------|-------|
+| Lines | 88 | 89.87% | **89.92%** | +0.05% |
+| Statements | 85 | 86.62% | **86.67%** | +0.05% |
+| Branches | 74 | 75.65% | **75.69%** | +0.04% |
+| Functions | 86 | 87.57% | **87.61%** | +0.04% |
+
+Small gains — thresholds not raised (headroom unchanged at ~1.6-1.9%). The remaining
+zero-coverage files require heavy mocking (CRDT/AudioContext/WebGPU/canvas/DOM-events).
+
+- **PR #1208**: restoreCrossfadeClips — 7 branch paths (same-id, eligibility, finite,
+  negative, not-found, no-change, mutation) — 7 tests.
+- **PR #1209**: projectToasterPatternGroove — 4 paths (unassigned passthrough, status
+  failure, missing-template, groove application) — 4 tests.
+- **PR #1210**: linkCloudRequestAbort — AbortSignal linking (no-caller, pre-aborted,
+  deferred abort, cleanup, unlink isolation) — 5 tests.
+
+**Campaign total to date: 137 PRs, ~1806 assertions across pure-logic models,
 services, transformers, store-coupled handlers, useCases, components,
 cross-cutting infrastructure, project templates, ALL 14 template helpers,
 ALL 9 device layouts, ALL 11 command interface files, the device layout registry,
-groove extraction/restoration, offline render preparation, and device-state commit paths.**
+groove extraction/restoration, offline render preparation, device-state commit paths,
+crossfade restore, Toaster groove projection, and cloud request abort linking.**
