@@ -1,0 +1,14 @@
+src/modules/SampleLibrary/presentations/components/__tests__/SampleRow.spec.tsx
+  h_1228e573df1f42 1,7,11,13,19,23-30,35-36,42-45,48-110,112-138,140-142
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "72afd4b3100254aeddeef0474c60cd60ca481259",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
