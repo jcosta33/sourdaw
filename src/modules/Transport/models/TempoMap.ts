@@ -55,7 +55,13 @@ function getGoverningTempoFromSorted(
     if (!previous) {
         return { change: sortedChanges[0]!, rampTarget: undefined };
     }
-    if (!next || previous.curve === 'instant') {
+    // `beat === previous.beat` is the ramp's own start point. The interpolation
+    // factor there is 0, so `getTempoAtBeat` returns `previous.tempo` exactly —
+    // the readout *is* that event's value and a write to it is well defined.
+    // Reporting a ramp target there made a map whose first change sits at beat 0
+    // with `curve: 'linear'` read-only at the default playhead position, and a
+    // map of all-`linear` changes read-only everywhere but after the last one.
+    if (!next || previous.curve === 'instant' || beat === previous.beat) {
         return { change: previous, rampTarget: undefined };
     }
     return { change: previous, rampTarget: next };

@@ -164,10 +164,38 @@ describe('transport handlers', () => {
         });
         // The null inverse is only sound because nothing is written: an entry with
         // a null inverse is dropped by `undo`, which then undoes an unrelated
-        // earlier action.
-        expect(handleSetTempo.execute({ type: 'setTempo', payload: { bpm: 111 } })).toEqual({ status: 'no-write' });
+        // earlier action. The refusal itself throws rather than returning
+        // `no-write`, which `executeAppAction` swallows into a silent abort — an
+        // AI caller then reported the action as dispatched having changed nothing.
+        expect(() => handleSetTempo.execute({ type: 'setTempo', payload: { bpm: 111 } })).toThrowError(/tempo ramp/i);
         expect(tempoOf('tc-a')).toBe(90);
         expect(tempoOf('tc-b')).toBe(130);
+    });
+
+    it('handleSetTempo does not call a ramp refusal a no-op, which would swallow it just as quietly', () => {
+        tempoMapRef.value = {
+            changes: [
+                { id: 'tc-a', beat: 0, tempo: 90, curve: 'linear' },
+                { id: 'tc-b', beat: 8, tempo: 130, curve: 'instant' },
+            ],
+        };
+        seekTo(4);
+
+        // 110 is the interpolated tempo in force at beat 4. Comparing the request
+        // against it made `isNoop` true, so `executeAppAction` returned before
+        // `execute` ever ran and the refusal never surfaced. 111 is the same
+        // refusal reached through the other branch.
+        expect(handleSetTempo.isNoop?.({ type: 'setTempo', payload: { bpm: 110 } })).toBe(false);
+        expect(handleSetTempo.isNoop?.({ type: 'setTempo', payload: { bpm: 111 } })).toBe(false);
+    });
+
+    it('handleSetTempo still treats a genuinely equal map tempo as a no-op', () => {
+        // Guards the clause above against being written as a blanket `false`:
+        // outside a ramp the no-op comparison has to keep working.
+        tempoMapRef.value = { changes: [{ id: 'tc-a', beat: 0, tempo: 90, curve: 'instant' }] };
+        seekTo(4);
+
+        expect(handleSetTempo.isNoop?.({ type: 'setTempo', payload: { bpm: 90 } })).toBe(true);
     });
 
     it('handleSetTempo emits no inverse when transport state is missing', () => {

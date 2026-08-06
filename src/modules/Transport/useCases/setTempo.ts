@@ -1,4 +1,5 @@
 import { createInvalidTempoError } from '../errors/InvalidTempoError';
+import { createTempoRampWriteError } from '../errors/TempoRampWriteError';
 import { updateTransportState } from '../repositories/transport/updateTransportState';
 import { MIN_TEMPO_MAP_TEMPO, MAX_TEMPO_MAP_TEMPO, tempoMapStore } from '../stores/tempoMapStore';
 
@@ -20,10 +21,12 @@ export type SetTempoInput = {
 
 export type SetTempoOutput = {
     /**
-     * `no-write` when nothing changed — no transport state, a named change that
-     * no longer exists, or a playhead sitting on a `linear` ramp segment where no
-     * single event carries the tempo being reported. The caller must not record
-     * an undo entry for a `no-write`.
+     * `no-write` when there was nothing to write to — no transport state, or a
+     * named change that no longer exists. Both are "the destination is gone",
+     * which undo and redo replay hit legitimately, so they stay a status rather
+     * than an error. The caller must not record an undo entry for a `no-write`.
+     *
+     * A *refused* write — the playhead inside a `linear` ramp — throws instead.
      */
     status: 'written' | 'no-write';
 };
@@ -50,12 +53,18 @@ export type SetTempoOutput = {
  * playhead. Pro Tools is the outlier: it makes the field read-only whenever
  * the Conductor is enabled. No DAW makes the field scale the map.
  *
- * Two positions are *not* writable, and both report `no-write` rather than
- * landing somewhere the user did not ask for:
+ * Two positions are *not* writable, and neither lands somewhere the user did not
+ * ask for:
  *
- * - a `linear` ramp segment, where the tempo in force is interpolated between
- *   two events and no single event's `tempo` can reproduce it;
- * - anything at all when there is no transport state to resolve against.
+ * - strictly inside a `linear` ramp segment, where the tempo in force is
+ *   interpolated between two events and no single event's `tempo` can reproduce
+ *   it. This *throws*: `executeAppAction` turns a `no-write` into a silent abort
+ *   and returns normally, so an AI caller reported the action as dispatched
+ *   having changed nothing. (The ramp event's own beat is not this case — the
+ *   interpolation factor there is 0 and the write is exactly defined.)
+ * - anything at all when there is no transport state to resolve against, which
+ *   stays a `no-write`: nothing was refused, the destination simply is not there
+ *   yet, and undo replay reaches it legitimately.
  *
  * Ranges follow the destination, not the control: a base-tempo write is capped
  * at 300 like `transportStore`'s validator, a tempo-map write at 999 like
@@ -64,8 +73,11 @@ export type SetTempoOutput = {
  */
 export function setTempo(input: SetTempoInput): SetTempoOutput {
     const target = getTempoWriteTarget({ tempoChangeId: input.tempoChangeId });
-    if (!target || !target.writable) {
+    if (!target) {
         return { status: 'no-write' };
+    }
+    if (!target.writable) {
+        throw createTempoRampWriteError({ bpm: input.bpm, tempoChangeId: target.tempoChangeId });
     }
 
     if (target.tempoChangeId === null) {

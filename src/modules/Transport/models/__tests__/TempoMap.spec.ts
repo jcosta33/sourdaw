@@ -64,6 +64,49 @@ describe('getGoverningTempoChange', () => {
         expect(governing?.change.tempo).not.toBe(getTempoAtBeat(rampMap, 4, 240));
     });
 
+    it('does not report a ramp at the ramp event’s own beat, where the write is well defined', () => {
+        // Drives between two positions on the same `linear` segment: beat 0, the
+        // ramp event's own start point, and beat 4, strictly inside it. At beat 0
+        // the interpolation factor is 0, so `getTempoAtBeat` returns the event's
+        // own 90 — the readout *is* that event's value and writing to it is
+        // exactly defined. Reporting `interpolated` there made a map whose first
+        // change is at beat 0 with `curve: 'linear'` read-only at the default
+        // playhead position, and a map of all-`linear` changes read-only
+        // everywhere except after the last change.
+        const rampFromZero: TempoChange[] = [
+            { id: 'tc-a', beat: 0, tempo: 90, curve: 'linear' },
+            { id: 'tc-b', beat: 8, tempo: 130, curve: 'instant' },
+        ];
+
+        const atRampStart = getGoverningTempoChange(rampFromZero, 0);
+        expect(atRampStart?.change.id).toBe('tc-a');
+        expect(atRampStart?.interpolated).toBe(false);
+        expect(getTempoAtBeat(rampFromZero, 0, 240)).toBe(90);
+
+        const insideRamp = getGoverningTempoChange(rampFromZero, 4);
+        expect(insideRamp?.change.id).toBe('tc-a');
+        expect(insideRamp?.interpolated).toBe(true);
+        expect(getTempoAtBeat(rampFromZero, 4, 240)).toBe(110);
+    });
+
+    it('keeps the ramp’s own start point writable at a beat other than 0', () => {
+        // The equality clause must key on the *event's* beat, not on a hardcoded
+        // 0: driving between beat 8 (the second ramp event's own start) and beat
+        // 12 (inside its segment) fails a `beat === 0` shortcut.
+        const laterRamp: TempoChange[] = [
+            { id: 'tc-a', beat: 0, tempo: 90, curve: 'instant' },
+            { id: 'tc-b', beat: 8, tempo: 120, curve: 'linear' },
+            { id: 'tc-c', beat: 16, tempo: 160, curve: 'instant' },
+        ];
+
+        expect(getGoverningTempoChange(laterRamp, 8)?.change.id).toBe('tc-b');
+        expect(getGoverningTempoChange(laterRamp, 8)?.interpolated).toBe(false);
+        expect(getTempoAtBeat(laterRamp, 8, 240)).toBe(120);
+
+        expect(getGoverningTempoChange(laterRamp, 12)?.interpolated).toBe(true);
+        expect(getTempoAtBeat(laterRamp, 12, 240)).toBe(140);
+    });
+
     it('does not report a ramp on the last change, which has nothing to ramp toward', () => {
         const trailingRamp: TempoChange[] = [{ id: 'tc-a', beat: 0, tempo: 90, curve: 'linear' }];
 

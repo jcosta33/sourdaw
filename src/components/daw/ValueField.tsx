@@ -1,4 +1,4 @@
-import { type ReactElement, type PointerEvent, useRef, useState } from 'react';
+import { type ReactElement, type PointerEvent, type KeyboardEvent, useRef, useState } from 'react';
 
 import { cn } from '#/utils/Styles/cn';
 
@@ -11,12 +11,20 @@ type ValueFieldProps = {
     fineStep?: number;
     unit?: string;
     label?: string;
+    /**
+     * Accessible name for the widget itself. Prefer it over labelling a wrapper:
+     * `aria-label` on a role-less element has no ARIA mapping and is dropped, so
+     * a wrapper label leaves the control anonymous to assistive tech.
+     */
+    ariaLabel?: string;
     onReset?: () => void;
     className?: string;
     /**
-     * When true the field is a readout only: dragging and double-click reset do
-     * nothing. Use it where the underlying value exists but cannot be written
-     * from here, rather than leaving a control that quietly writes elsewhere.
+     * When true the field is a readout only: dragging, keyboard adjustment and
+     * double-click reset do nothing. Use it where the underlying value exists but
+     * cannot be written from here, rather than leaving a control that quietly
+     * writes elsewhere. Surfaced as `aria-readonly`, and the widget stays
+     * focusable — a read-only control is still readable.
      */
     readOnly?: boolean;
     /**
@@ -29,9 +37,23 @@ type ValueFieldProps = {
 };
 
 /**
+ * Snap to the nearest step, without the binary-float residue the bare
+ * `Math.round(v / step) * step` leaves behind. At `step = 0.1` that arithmetic
+ * turns 5.1 into 5.1000000000000005 — the readout rounds it away at two
+ * decimals, so the noisy value is invisible right up until it is written into
+ * the project.
+ */
+function snapToStep(value: number, stepSize: number): number {
+    if (!(stepSize > 0)) {
+        return value;
+    }
+    return Number((Math.round(value / stepSize) * stepSize).toPrecision(12));
+}
+
+/**
  * ValueField / ScrubField
  * Drag to scrub vertically/horizontally, double-click to reset,
- * Shift-drag for fine tuning.
+ * Shift-drag for fine tuning. Arrow keys / Home / End adjust from the keyboard.
  */
 export const ValueField = ({
     value,
@@ -42,6 +64,7 @@ export const ValueField = ({
     fineStep = 0.1,
     unit = '',
     label,
+    ariaLabel,
     onReset,
     className,
     readOnly = false,
@@ -91,7 +114,7 @@ export const ValueField = ({
         }
 
         // Snap to nearest step
-        newValue = Math.round(newValue / currentStep) * currentStep;
+        newValue = snapToStep(newValue, currentStep);
 
         if (commitMode === 'release') {
             pendingValueRef.current = newValue;
@@ -126,10 +149,44 @@ export const ValueField = ({
         }
     };
 
+    /** Arrow / Home / End adjustment — a `spinbutton` that only responds to a drag is not one. */
+    const handleKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+        if (readOnly || draggingRef.current) {
+            return;
+        }
+
+        const isIncrement = event.key === 'ArrowUp' || event.key === 'ArrowRight';
+        const isDecrement = event.key === 'ArrowDown' || event.key === 'ArrowLeft';
+        const isHome = event.key === 'Home';
+        const isEnd = event.key === 'End';
+        if (!isIncrement && !isDecrement && !isHome && !isEnd) {
+            return;
+        }
+
+        event.preventDefault();
+        const currentStep = event.shiftKey ? fineStep : step;
+        let nextValue: number;
+        if (isHome) {
+            nextValue = min;
+        } else if (isEnd) {
+            nextValue = max;
+        } else {
+            const direction = isIncrement ? 1 : -1;
+            const stepped = value + direction * currentStep;
+            nextValue = snapToStep(Math.max(min, Math.min(max, stepped)), currentStep);
+        }
+
+        if (nextValue === value) {
+            return;
+        }
+        onChange(nextValue);
+    };
+
     let displayValue = value;
     if (pendingValue !== null) {
         displayValue = pendingValue;
     }
+    const roundedValue = Math.round(displayValue * 100) / 100;
 
     return (
         <div className={cn('flex flex-col items-center gap-0.5 group', className)}>
@@ -139,11 +196,19 @@ export const ValueField = ({
                 </span>
             ) : null}
             <div
+                role="spinbutton"
+                tabIndex={0}
+                aria-label={ariaLabel ?? label}
+                aria-valuenow={roundedValue}
+                aria-valuemin={min}
+                aria-valuemax={max}
+                aria-valuetext={`${roundedValue}${unit}`}
+                aria-readonly={readOnly}
                 onPointerDown={handlePointerDown}
                 onPointerMove={handlePointerMove}
                 onPointerUp={handlePointerUp}
                 onDoubleClick={handleDoubleClick}
-                aria-readonly={readOnly}
+                onKeyDown={handleKeyDown}
                 className={cn(
                     'daw-inset-surface flex items-center justify-center rounded-micro px-1.5 py-0.5 font-mono tabular-nums select-none',
                     'transition-[color,box-shadow,border-color,filter] duration-fast',
@@ -155,7 +220,7 @@ export const ValueField = ({
                     'text-[10px]'
                 )}
             >
-                {Math.round(displayValue * 100) / 100}
+                {roundedValue}
                 {unit}
             </div>
         </div>

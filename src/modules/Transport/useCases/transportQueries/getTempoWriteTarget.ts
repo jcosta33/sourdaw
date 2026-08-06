@@ -3,23 +3,35 @@ import { playheadPositionRef } from '../../stores/playheadPositionRef';
 import { tempoMapStore } from '../../stores/tempoMapStore';
 import { transportStore } from '../../stores/transportStore';
 
-export type TempoWriteTarget = {
-    /** The tempo currently in force at the target. */
-    tempo: number;
-    /**
-     * The tempo-map change a write must rewrite, or `null` when there is no map
-     * and the transport's base tempo is still the governing value.
-     */
-    tempoChangeId: string | null;
-    /**
-     * False on a `linear` ramp segment, where the tempo in force is interpolated
-     * between two events and is therefore not any event's own value. Writing a
-     * typed BPM to the ramp's start point does not make the playhead report that
-     * BPM — it moves the readout somewhere else again — so the write must be
-     * refused rather than land where nobody asked for it.
-     */
-    writable: boolean;
-};
+/**
+ * What a transport tempo edit reads and writes.
+ *
+ * `writable: false` means the playhead sits strictly inside a `linear` ramp,
+ * where the tempo in force is interpolated between two events and is therefore
+ * not any event's own value. Writing a typed BPM to the ramp's start point does
+ * not make the playhead report that BPM — it moves the readout somewhere else
+ * again — so the write must be refused rather than land where nobody asked for
+ * it. That case always has a ramp event to name, which the union makes explicit
+ * so the refusal can report *which* event it declined to write.
+ */
+export type TempoWriteTarget =
+    | {
+          /** The tempo currently in force at the target. */
+          tempo: number;
+          /**
+           * The tempo-map change a write must rewrite, or `null` when there is no
+           * map and the transport's base tempo is still the governing value.
+           */
+          tempoChangeId: string | null;
+          writable: true;
+      }
+    | {
+          /** The interpolated tempo in force — no event carries it. */
+          tempo: number;
+          /** The `linear` event the segment starts at. */
+          tempoChangeId: string;
+          writable: false;
+      };
 
 export type GetTempoWriteTargetInput = {
     /**
@@ -41,10 +53,12 @@ export type GetTempoWriteTargetInput = {
  * it would rewrite the tempo event governing the play-start position instead of
  * the one governing what is being heard.
  *
- * Returns `null` when nothing can be resolved: no transport state, or a named
- * change that is no longer in the map. That is the only case in which a write
- * cannot land, and therefore the only case in which an undo entry may carry no
- * inverse.
+ * Returns `null` when nothing can be resolved at all: no transport state, or a
+ * named change that is no longer in the map. Both mean the destination is not
+ * there, so an undo entry may legitimately carry no inverse. A resolved but
+ * `writable: false` target is a different thing — the destination exists and the
+ * write is *refused* — and callers must surface that rather than treat it as
+ * another nothing-happened.
  */
 export function getTempoWriteTarget(input: GetTempoWriteTargetInput = {}): TempoWriteTarget | null {
     const changes = tempoMapStore.value?.changes ?? [];

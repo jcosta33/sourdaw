@@ -145,12 +145,38 @@ describe('setTempo with a tempo map present', () => {
             livePlayheadRef.current = 4;
         });
 
-        it('refuses the write instead of editing the ramp start point', () => {
+        it('refuses the write instead of editing the ramp start point, and says so', () => {
             // The tempo in force at beat 4 is 110, which is neither event's own
             // value. Assigning 111 to tc-a would silently move the readout to
             // 120.5 — the control would never converge on what was typed.
-            expect(setTempo({ bpm: 111 })).toEqual({ status: 'no-write' });
+            //
+            // Returning `no-write` made `executeAppAction` abort the transaction
+            // and return normally, so an AI caller reported the action as
+            // dispatched while nothing changed. The refusal is a typed error.
+            expect(() => setTempo({ bpm: 111 })).toThrowError(/tempo ramp/i);
             expect(governingChangeTempos()).toEqual([90, 130]);
+        });
+
+        it('tags the refusal so a runtime can report which event it could not write', () => {
+            let thrown: unknown;
+            try {
+                setTempo({ bpm: 111 });
+            } catch (error) {
+                thrown = error;
+            }
+
+            expect(thrown).toMatchObject({ _tag: 'TempoRampWrite', bpm: 111, tempoChangeId: 'tc-a' });
+        });
+
+        it('still refuses at the ramp’s own start point only when it is genuinely inside one', () => {
+            // Drives between beat 4, strictly inside the ramp, and beat 0, the
+            // ramp event's own start point where the readout is that event's own
+            // 90 and the write is exactly defined.
+            livePlayheadRef.current = 0;
+            transportRef.value = { ...defaultTransportState, tempo: 120, playheadPosition: 0 };
+
+            expect(setTempo({ bpm: 111 })).toEqual({ status: 'written' });
+            expect(governingChangeTempos()).toEqual([111, 130]);
         });
 
         it('still writes a change named explicitly, which is unambiguous', () => {

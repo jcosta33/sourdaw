@@ -9,13 +9,27 @@ import type { TransportState } from '#/modules/Transport/stores';
 // `mockTransportStore`/`mockTempoMapStore` are plain identity markers — the
 // real stores are Automerge-backed and heavy to construct, so we replace
 // `useStore` outright and branch on which store object was passed in.
-const { mockTransportStore, mockTempoMapStore } = vi.hoisted(() => ({
-    mockTransportStore: { name: 'transportStore' },
-    mockTempoMapStore: { name: 'tempoMapStore' },
-}));
+const { mockTransportStore, mockTempoMapStore, mockPlayheadPositionRef, hoistedDefaultTransportState } = vi.hoisted(
+    () => ({
+        mockTransportStore: { name: 'transportStore' },
+        mockTempoMapStore: { name: 'tempoMapStore' },
+        // Stands in for the non-reactive high-frequency playhead channel the
+        // scheduler writes ~100×/s. Tests set `.current` to place the live
+        // playhead somewhere the *store* playhead is not.
+        mockPlayheadPositionRef: { current: 0 },
+        hoistedDefaultTransportState: {
+            isPlaying: false,
+            tempo: 120,
+            playheadPosition: 0,
+            timeSignatureNumerator: 4,
+            timeSignatureDenominator: 4,
+        },
+    })
+);
 vi.mock('#/modules/Transport/stores', () => ({
     transportStore: mockTransportStore,
     tempoMapStore: mockTempoMapStore,
+    playheadPositionRef: mockPlayheadPositionRef,
 }));
 
 const baseTransportState: TransportState = {
@@ -42,14 +56,19 @@ const baseTransportState: TransportState = {
     masterGain: 80,
 };
 
-let mockTransportState: TransportState = baseTransportState;
+/** `null` reproduces `transportStore` before it has hydrated. */
+let mockTransportState: TransportState | null = baseTransportState;
 let mockTempoMapState: { changes: Array<{ id: string; beat: number; tempo: number; curve: 'instant' | 'linear' }> } = {
     changes: [],
 };
 
-const mockUseStore = vi.fn((store: unknown, _defaultState?: unknown) => {
+// Mirrors the real `useStore`, which is `getSnapshot() ?? defaultValue`. A hook
+// that passes `null` as the default therefore observes the unhydrated store,
+// while one that passes `defaultTransportState` observes the substituted default
+// — the exact divergence that let the field render editable before hydration.
+const mockUseStore = vi.fn((store: unknown, defaultState?: unknown) => {
     if (store === mockTransportStore) {
-        return mockTransportState;
+        return mockTransportState ?? defaultState;
     }
     if (store === mockTempoMapStore) {
         return mockTempoMapState;
@@ -69,9 +88,16 @@ type TempoFieldState = {
     tempo: number;
     governedByMap: boolean;
     editable: boolean;
-    lockReason: 'tempo-ramp' | 'playback' | null;
+    lockReason: 'tempo-ramp' | 'no-transport-state' | null;
+    tempoChangeId: string | null;
     minTempo: number;
     maxTempo: number;
+};
+type ResolveTempoFieldStateInput = {
+    changes: readonly { id: string; beat: number; tempo: number; curve: 'instant' | 'linear' }[];
+    beat: number;
+    defaultTempo: number;
+    hasTransportState: boolean;
 };
 // The tempo matches neither the base tempo nor any fixture map tempo, so
 // `tempoField.tempo` can only be right by routing through the resolver.
@@ -81,11 +107,20 @@ const editableFieldState: TempoFieldState = {
     governedByMap: true,
     editable: true,
     lockReason: null,
+    tempoChangeId: 'tc-resolved',
     minTempo: 20,
     maxTempo: 999,
 };
 let mockTempoFieldState: TempoFieldState = editableFieldState;
-const mockResolveTempoFieldState = vi.fn((): TempoFieldState => mockTempoFieldState);
+/**
+ * Default stand-in: one fixed answer regardless of beat. The live-playhead tests
+ * swap in a beat-sensitive implementation so the two playhead positions they
+ * drive between produce visibly different answers.
+ */
+let mockResolveImplementation: (input: ResolveTempoFieldStateInput) => TempoFieldState = () => mockTempoFieldState;
+const mockResolveTempoFieldState = vi.fn((input: ResolveTempoFieldStateInput): TempoFieldState =>
+    mockResolveImplementation(input)
+);
 vi.mock('#/modules/Transport/useCases', () => ({
     addTempoChange: (...args: unknown[]): void => {
         mockAddTempoChange(...args);
@@ -96,13 +131,13 @@ vi.mock('#/modules/Transport/useCases', () => ({
     updateTempoChange: (...args: unknown[]): void => {
         mockUpdateTempoChange(...args);
     },
-    resolveTempoFieldState: (...args: unknown[]): TempoFieldState => {
-        return mockResolveTempoFieldState(...(args as []));
+    resolveTempoFieldState: (input: ResolveTempoFieldStateInput): TempoFieldState => {
+        return mockResolveTempoFieldState(input);
     },
-    // useTransportState reads this as the `useStore` default; our `useStore`
-    // mock ignores it and always resolves via store identity, but the real
-    // module shape must still be present for the import to resolve.
-    defaultTransportState: {},
+    // `useTransportState` passes this as the `useStore` default, exactly as in
+    // production — which is why an unhydrated store still yields a usable-looking
+    // transport object and the field needs its own null-aware subscription.
+    defaultTransportState: hoistedDefaultTransportState,
 }));
 
 vi.mock('#/modules/Command/useCases', () => ({
@@ -117,12 +152,14 @@ describe('useTempoEditorState', () => {
         mockTransportState = baseTransportState;
         mockTempoMapState = { changes: [] };
         mockTempoFieldState = editableFieldState;
+        mockResolveImplementation = () => mockTempoFieldState;
+        mockPlayheadPositionRef.current = 0;
     });
 
     describe('tempo field state', () => {
-        it('resolves the readout from the tempo map at the playhead when a change sits at beat 0', () => {
+        it('resolves the readout from the tempo map at the stopped playhead', () => {
             mockTempoMapState = { changes: [{ id: 'tc-0', beat: 0, tempo: 90, curve: 'instant' }] };
-            mockTransportState = { ...baseTransportState, tempo: 120, playheadPosition: 6, isPlaying: true };
+            mockTransportState = { ...baseTransportState, tempo: 120, playheadPosition: 6, isPlaying: false };
 
             const { result } = renderHook(() => useTempoEditorState());
 
@@ -130,7 +167,7 @@ describe('useTempoEditorState', () => {
                 changes: mockTempoMapState.changes,
                 beat: 6,
                 defaultTempo: 120,
-                isPlaying: true,
+                hasTransportState: true,
             });
             expect(result.current.tempoField.tempo).toBe(RESOLVED_TEMPO_SENTINEL);
             expect(result.current.tempoField.governedByMap).toBe(true);
@@ -146,13 +183,144 @@ describe('useTempoEditorState', () => {
                 changes: [],
                 beat: 0,
                 defaultTempo: 120,
-                isPlaying: false,
+                hasTransportState: true,
             });
+        });
+
+        it('tells the resolver the transport store has not hydrated instead of passing off the defaults', () => {
+            // `useTransportState` substitutes `defaultTransportState`, so the
+            // transport object still looks usable here. Without a null-aware
+            // subscription the field renders editable at 120 and a drag reaches
+            // `getTempoWriteTarget`, resolves `null`, and vanishes silently.
+            mockTransportState = null;
+
+            renderHook(() => useTempoEditorState());
+
+            expect(mockResolveTempoFieldState).toHaveBeenCalledWith(
+                expect.objectContaining({ hasTransportState: false })
+            );
+        });
+    });
+
+    describe('live playhead during playback', () => {
+        // 120 BPM from bar 1, 160 BPM from bar 9 (beat 32 at 4/4). Two positions
+        // on the same map that the resolver answers differently, so a readout
+        // taken from the store playhead and one taken from the live ref cannot be
+        // confused for each other.
+        const BEAT_AT_BAR_9 = 32;
+        const bandedMap = [
+            { id: 'tc-bar1', beat: 0, tempo: 120, curve: 'instant' as const },
+            { id: 'tc-bar9', beat: BEAT_AT_BAR_9, tempo: 160, curve: 'instant' as const },
+        ];
+
+        const bandedResolver = (input: ResolveTempoFieldStateInput): TempoFieldState => {
+            const inSecondBand = input.beat >= BEAT_AT_BAR_9;
+            return {
+                tempo: inSecondBand ? 160 : 120,
+                governedByMap: true,
+                editable: input.hasTransportState,
+                lockReason: input.hasTransportState ? null : 'no-transport-state',
+                tempoChangeId: inSecondBand ? 'tc-bar9' : 'tc-bar1',
+                minTempo: 20,
+                maxTempo: 999,
+            };
+        };
+
+        beforeEach(() => {
+            mockTempoMapState = { changes: bandedMap };
+            mockResolveImplementation = bandedResolver;
+        });
+
+        it('reads out the tempo sounding now, not the one at the beat playback started from', () => {
+            // Play from bar 1 to bar 12: the store playhead still holds bar 1
+            // (it is written only on start/pause/stop/seek) while the scheduler
+            // has advanced the ref past bar 9.
+            mockTransportState = { ...baseTransportState, tempo: 100, playheadPosition: 0, isPlaying: true };
+            mockPlayheadPositionRef.current = 44;
+
+            const { result } = renderHook(() => useTempoEditorState());
+
+            expect(result.current.tempoField.tempo).toBe(160);
+            expect(result.current.tempoField.tempoChangeId).toBe('tc-bar9');
+        });
+
+        it('stays editable while the transport runs, since the write path resolves the same live beat', () => {
+            mockTransportState = { ...baseTransportState, tempo: 100, playheadPosition: 0, isPlaying: true };
+            mockPlayheadPositionRef.current = 44;
+
+            const { result } = renderHook(() => useTempoEditorState());
+
+            act(() => {
+                result.current.setTempoValue(150);
+            });
+
+            expect(result.current.tempoField.editable).toBe(true);
+            expect(mockExecuteAppAction).toHaveBeenCalledWith({
+                type: 'setTempo',
+                payload: { bpm: 150, tempoChangeId: 'tc-bar9' },
+            });
+        });
+
+        it('follows the ref across a tempo event mid-playback rather than freezing on the first reading', () => {
+            const frames: FrameRequestCallback[] = [];
+            vi.spyOn(globalThis, 'requestAnimationFrame').mockImplementation((callback) => {
+                frames.push(callback);
+                return frames.length;
+            });
+            vi.spyOn(globalThis, 'cancelAnimationFrame').mockImplementation(() => undefined);
+
+            mockTransportState = { ...baseTransportState, tempo: 100, playheadPosition: 0, isPlaying: true };
+            mockPlayheadPositionRef.current = 4;
+
+            const { result } = renderHook(() => useTempoEditorState());
+            expect(result.current.tempoField.tempo).toBe(120);
+
+            mockPlayheadPositionRef.current = 40;
+            act(() => {
+                frames.shift()?.(0);
+            });
+
+            expect(result.current.tempoField.tempo).toBe(160);
+            expect(result.current.tempoField.tempoChangeId).toBe('tc-bar9');
+        });
+
+        it('ignores the live ref when stopped, so a seek is what moves the readout', () => {
+            mockTransportState = { ...baseTransportState, tempo: 100, playheadPosition: 0, isPlaying: false };
+            mockPlayheadPositionRef.current = 44;
+
+            const { result } = renderHook(() => useTempoEditorState());
+
+            expect(result.current.tempoField.tempo).toBe(120);
+            expect(result.current.tempoField.tempoChangeId).toBe('tc-bar1');
         });
     });
 
     describe('tempo writes', () => {
-        it('routes a typed tempo through executeAppAction rather than the raw use case', () => {
+        it('pins the write to the event the readout came from rather than re-resolving it later', () => {
+            // Without the id on the payload, `setTempo` resolves its target again
+            // at execute time — which under `commitMode="release"` is seconds
+            // after the drag started. A seek, a collaborator, or an AI
+            // `seekPlayhead` in between lands the value on a different event.
+            mockTempoFieldState = { ...editableFieldState, tempoChangeId: 'tc-displayed' };
+            const { result } = renderHook(() => useTempoEditorState());
+
+            act(() => {
+                result.current.setTempoValue(133);
+            });
+
+            expect(mockExecuteAppAction).toHaveBeenCalledWith({
+                type: 'setTempo',
+                payload: { bpm: 133, tempoChangeId: 'tc-displayed' },
+            });
+        });
+
+        it('names no event when the base tempo governs, where there is none to name', () => {
+            mockTempoFieldState = {
+                ...editableFieldState,
+                governedByMap: false,
+                tempoChangeId: null,
+                maxTempo: 300,
+            };
             const { result } = renderHook(() => useTempoEditorState());
 
             act(() => {
@@ -163,7 +331,7 @@ describe('useTempoEditorState', () => {
         });
 
         it('drops the write when the field is locked instead of writing the wrong event', () => {
-            mockTempoFieldState = { ...editableFieldState, editable: false, lockReason: 'playback' };
+            mockTempoFieldState = { ...editableFieldState, editable: false, lockReason: 'no-transport-state' };
             const { result } = renderHook(() => useTempoEditorState());
 
             act(() => {
@@ -180,7 +348,12 @@ describe('useTempoEditorState', () => {
         });
 
         it('resets to the default base tempo through executeAppAction when no map governs', () => {
-            mockTempoFieldState = { ...editableFieldState, governedByMap: false, maxTempo: 300 };
+            mockTempoFieldState = {
+                ...editableFieldState,
+                governedByMap: false,
+                tempoChangeId: null,
+                maxTempo: 300,
+            };
             const { result } = renderHook(() => useTempoEditorState());
 
             act(() => {
@@ -395,8 +568,36 @@ describe('useTempoEditorState', () => {
                 result.current.handleTapTempo();
             });
 
-            // 500ms interval → 60000 / 500 = 120bpm.
-            expect(mockExecuteAppAction).toHaveBeenCalledWith({ type: 'setTempo', payload: { bpm: 120 } });
+            // 500ms interval → 60000 / 500 = 120bpm, landing on the same event the
+            // field is reading out.
+            expect(mockExecuteAppAction).toHaveBeenCalledWith({
+                type: 'setTempo',
+                payload: { bpm: 120, tempoChangeId: 'tc-resolved' },
+            });
+        });
+
+        it('taps a tempo onto the event governing the live playhead while the transport runs', () => {
+            // Tap tempo means "the music is at this BPM", so the state it is most
+            // for is tapping along to a running transport. It used to early-return
+            // there against a `playback` lock, silently.
+            mockTransportState = { ...baseTransportState, isPlaying: true, playheadPosition: 0 };
+            mockPlayheadPositionRef.current = 44;
+            mockTempoFieldState = { ...editableFieldState, tempoChangeId: 'tc-live' };
+            const { result } = renderHook(() => useTempoEditorState());
+
+            currentNow = 0;
+            act(() => {
+                result.current.handleTapTempo();
+            });
+            currentNow = 500;
+            act(() => {
+                result.current.handleTapTempo();
+            });
+
+            expect(mockExecuteAppAction).toHaveBeenCalledWith({
+                type: 'setTempo',
+                payload: { bpm: 120, tempoChangeId: 'tc-live' },
+            });
         });
 
         it('does not tap a tempo into a locked field', () => {
@@ -446,6 +647,54 @@ describe('useTempoEditorState', () => {
             // The first tap ages out of the 4s window, leaving only one
             // recent tap — too few to derive a bpm from.
             expect(mockExecuteAppAction).not.toHaveBeenCalled();
+        });
+    });
+
+    describe('opening the tempo map panel', () => {
+        it('seeds the new-change beat from the stopped playhead instead of leaving it at 0', () => {
+            // Inserting a change *at the playhead* is the escape route from the
+            // ramp lock. Seeding '0' made the user transcribe a beat number off
+            // the ruler to use it.
+            mockTransportState = { ...baseTransportState, playheadPosition: 12, isPlaying: false };
+            const { result } = renderHook(() => useTempoEditorState());
+
+            expect(result.current.newBeat).toBe('0');
+
+            act(() => {
+                result.current.setMapOpen(true);
+            });
+
+            expect(result.current.newBeat).toBe('12');
+        });
+
+        it('seeds from the live playhead while the transport runs, not the beat playback started at', () => {
+            mockTransportState = { ...baseTransportState, playheadPosition: 0, isPlaying: true };
+            mockPlayheadPositionRef.current = 44.5;
+            const { result } = renderHook(() => useTempoEditorState());
+
+            act(() => {
+                result.current.setMapOpen(true);
+            });
+
+            expect(result.current.newBeat).toBe('44.5');
+        });
+
+        it('leaves the seeded beat alone when the panel closes', () => {
+            mockTransportState = { ...baseTransportState, playheadPosition: 12, isPlaying: false };
+            const { result } = renderHook(() => useTempoEditorState());
+
+            act(() => {
+                result.current.setMapOpen(true);
+            });
+            act(() => {
+                result.current.setNewBeat('20');
+            });
+            act(() => {
+                result.current.setMapOpen(false);
+            });
+
+            expect(result.current.newBeat).toBe('20');
+            expect(result.current.mapOpen).toBe(false);
         });
     });
 

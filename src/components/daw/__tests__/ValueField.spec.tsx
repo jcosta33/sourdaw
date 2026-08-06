@@ -78,6 +78,69 @@ describe('ValueField', () => {
         expect(screen.getByText('0')).toBeInTheDocument();
     });
 
+    it('should expose the readout as a widget so its name, value and read-only state map to ARIA', () => {
+        // `aria-readonly` and `aria-label` on a role-less div have no ARIA
+        // mapping and are dropped outright: the lock survived only as dim text
+        // and a `cursor-default`, i.e. for sighted mouse users.
+        render(<ValueField value={90} onChange={vi.fn()} ariaLabel="Tempo BPM" min={20} max={999} unit=" BPM" />);
+        const field = screen.getByRole('spinbutton', { name: 'Tempo BPM' });
+
+        expect(field).toHaveAttribute('aria-valuenow', '90');
+        expect(field).toHaveAttribute('aria-valuemin', '20');
+        expect(field).toHaveAttribute('aria-valuemax', '999');
+        expect(field).toHaveAttribute('aria-valuetext', '90 BPM');
+        expect(field).toHaveAttribute('aria-readonly', 'false');
+    });
+
+    it('should mark the widget read-only when it is, rather than only dimming it', () => {
+        render(<ValueField value={90} onChange={vi.fn()} ariaLabel="Tempo BPM" readOnly />);
+
+        expect(screen.getByRole('spinbutton', { name: 'Tempo BPM' })).toHaveAttribute('aria-readonly', 'true');
+    });
+
+    it('should adjust by keyboard, since the field was unreachable without a pointer', () => {
+        const onChange = vi.fn();
+        render(
+            <ValueField value={5} onChange={onChange} ariaLabel="Amount" min={0} max={10} step={1} fineStep={0.1} />
+        );
+        const field = screen.getByRole('spinbutton', { name: 'Amount' });
+
+        expect(field).toHaveAttribute('tabindex', '0');
+
+        fireEvent.keyDown(field, { key: 'ArrowUp' });
+        expect(onChange).toHaveBeenLastCalledWith(6);
+
+        fireEvent.keyDown(field, { key: 'ArrowDown' });
+        expect(onChange).toHaveBeenLastCalledWith(4);
+
+        fireEvent.keyDown(field, { key: 'ArrowUp', shiftKey: true });
+        expect(onChange).toHaveBeenLastCalledWith(5.1);
+
+        fireEvent.keyDown(field, { key: 'Home' });
+        expect(onChange).toHaveBeenLastCalledWith(0);
+
+        fireEvent.keyDown(field, { key: 'End' });
+        expect(onChange).toHaveBeenLastCalledWith(10);
+    });
+
+    it('should ignore keyboard adjustment when read-only', () => {
+        const onChange = vi.fn();
+        render(<ValueField value={5} onChange={onChange} ariaLabel="Amount" min={0} max={10} step={1} readOnly />);
+
+        fireEvent.keyDown(screen.getByRole('spinbutton', { name: 'Amount' }), { key: 'ArrowUp' });
+
+        expect(onChange).not.toHaveBeenCalled();
+    });
+
+    it('should leave unrelated keys to the page instead of swallowing them', () => {
+        const onChange = vi.fn();
+        render(<ValueField value={5} onChange={onChange} ariaLabel="Amount" min={0} max={10} step={1} />);
+
+        fireEvent.keyDown(screen.getByRole('spinbutton', { name: 'Amount' }), { key: 'Enter' });
+
+        expect(onChange).not.toHaveBeenCalled();
+    });
+
     it('should report once on release in release mode, not on every move', () => {
         const onChange = vi.fn();
         render(

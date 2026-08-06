@@ -28,10 +28,11 @@ export const handleSetTempo = createHandler<'setTempo'>({
     execute: (alpha): HandlerExecutionResult | void => {
         const result = setTempo({ bpm: alpha.payload.bpm, tempoChangeId: alpha.payload.tempoChangeId });
         if (result.status === 'no-write') {
-            // Nothing landed — a `linear` ramp segment carries no single event's
-            // tempo, and a named change may have been deleted since. Reporting it
-            // aborts the transaction and keeps a nothing-happened entry out of
-            // the undo stack.
+            // There was nothing to write to — no transport state, or a named
+            // change deleted since. Reporting it aborts the transaction and keeps
+            // a nothing-happened entry out of the undo stack. A *refused* write
+            // inside a ramp throws out of `setTempo` instead, so it reaches the
+            // caller rather than vanishing into the same silent abort.
             return { status: 'no-write' };
         }
         return undefined;
@@ -41,6 +42,13 @@ export const handleSetTempo = createHandler<'setTempo'>({
     // edit a no-op (and treat a real no-op as an edit).
     isNoop: (action) => {
         const target = getTempoWriteTarget({ tempoChangeId: action.payload.tempoChangeId });
+        if (target && !target.writable) {
+            // The interpolated tempo inside a ramp is a tempo no event holds, so
+            // matching it is not "already done" — it is still a refusal. Calling
+            // it a no-op returned from `executeAppAction` before `execute` ever
+            // ran, hiding the refusal exactly as the old `no-write` did.
+            return false;
+        }
         return target?.tempo === action.payload.bpm;
     },
     describe: (alpha) => {

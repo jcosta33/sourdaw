@@ -2,7 +2,7 @@ import { type RefObject, useState, useRef, useEffect } from 'react';
 
 import { useStore } from '#/infra/store/useStore';
 import { executeAppAction } from '#/modules/Command/useCases';
-import { tempoMapStore } from '#/modules/Transport/stores';
+import { playheadPositionRef, tempoMapStore, transportStore, type TransportState } from '#/modules/Transport/stores';
 import {
     addTempoChange,
     removeTempoChange,
@@ -33,6 +33,25 @@ const DEFAULT_BASE_TEMPO = 120;
 const useTempoMapState = (): TempoMapViewState => {
     return useStore<TempoMapViewState>(tempoMapStore, defaultTempoMapState);
 };
+
+/**
+ * Whether `transportStore` has actually hydrated.
+ *
+ * `useTransportState` subscribes with `defaultTransportState` as its fallback,
+ * so an unhydrated store still hands back a complete-looking transport at 120
+ * BPM. The tempo field cannot tell the two apart from that value, and a drag
+ * against the substituted default reaches `getTempoWriteTarget`, resolves
+ * `null`, and disappears as a silent `no-write`. Subscribing again with a `null`
+ * fallback is the only way to see the difference.
+ */
+const useHasTransportState = (): boolean => {
+    return useStore<TransportState | null>(transportStore, null) !== null;
+};
+
+/** Precision the field renders at, so the readout is only re-committed when it visibly changes. */
+function toDisplayedTempo(tempo: number): number {
+    return Math.round(tempo * 100) / 100;
+}
 
 export type TempoEditorState = {
     transport: ReturnType<typeof useTransportState>;
@@ -90,13 +109,85 @@ export type TempoEditorState = {
 export const useTempoEditorState = (): TempoEditorState => {
     const transport = useTransportState();
     const tempoMap = useTempoMapState();
+    const hasTransportState = useHasTransportState();
+
+    const [livePlayheadBeat, setLivePlayheadBeat] = useState(0);
+
+    let beat = transport.playheadPosition;
+    if (transport.isPlaying) {
+        beat = livePlayheadBeat;
+    }
 
     const tempoField = resolveTempoFieldState({
         changes: tempoMap.changes,
-        beat: transport.playheadPosition,
+        beat,
         defaultTempo: transport.tempo,
-        isPlaying: transport.isPlaying,
+        hasTransportState,
     });
+
+    /**
+     * Track the live playhead while the transport runs.
+     *
+     * `transportStore.playheadPosition` is written only on start, pause, stop
+     * and seek — the scheduler advances `playheadPositionRef` alone, ~100×/s,
+     * deliberately outside React. Reading the store during playback therefore
+     * shows the tempo at the beat playback *began* at: play a 120@bar1 /
+     * 160@bar9 map from bar 1 and the field still says 120 at bar 12.
+     *
+     * `PlayheadDisplay` solves the same problem with a rAF loop off the same
+     * ref. This one commits to React state only when the quantities the field
+     * renders or writes would actually change, so a step map costs no re-renders
+     * at all between tempo events; only a `linear` ramp, whose readout genuinely
+     * moves every frame, re-renders per frame.
+     */
+    useEffect(() => {
+        if (!transport.isPlaying) {
+            return undefined;
+        }
+
+        const resolveAt = (atBeat: number): ReturnType<typeof resolveTempoFieldState> => {
+            return resolveTempoFieldState({
+                changes: tempoMap.changes,
+                beat: atBeat,
+                defaultTempo: transport.tempo,
+                hasTransportState,
+            });
+        };
+
+        const sampleLivePlayhead = (): void => {
+            setLivePlayheadBeat((previousBeat) => {
+                const nextBeat = playheadPositionRef.current;
+                if (nextBeat === previousBeat) {
+                    return previousBeat;
+                }
+                const previousField = resolveAt(previousBeat);
+                const nextField = resolveAt(nextBeat);
+                const readoutUnchanged =
+                    previousField.tempoChangeId === nextField.tempoChangeId &&
+                    previousField.editable === nextField.editable &&
+                    toDisplayedTempo(previousField.tempo) === toDisplayedTempo(nextField.tempo);
+                if (readoutUnchanged) {
+                    return previousBeat;
+                }
+                return nextBeat;
+            });
+        };
+
+        // Sampled once synchronously as well as per frame: on the render that
+        // starts playback the field is still showing the store's beat, and
+        // waiting a frame to correct it would flash the wrong tempo. The extra
+        // render pass is the point, not an oversight — `@eslint-react/
+        // set-state-in-effect` warns on it, and the gate is right to be warn-only
+        // here because the source being sampled is deliberately non-reactive.
+        sampleLivePlayhead();
+        let frame = 0;
+        const loop = (): void => {
+            sampleLivePlayhead();
+            frame = requestAnimationFrame(loop);
+        };
+        frame = requestAnimationFrame(loop);
+        return () => cancelAnimationFrame(frame);
+    }, [transport.isPlaying, transport.tempo, tempoMap.changes, hasTransportState]);
 
     const [editingTimeSig, setEditingTimeSig] = useState(false);
     const [numValue, setNumValue] = useState('');
@@ -123,6 +214,29 @@ export const useTempoEditorState = (): TempoEditorState => {
         document.addEventListener('mousedown', handleClickOutside);
         return () => document.removeEventListener('mousedown', handleClickOutside);
     }, [mapOpen]);
+
+    /**
+     * Inserting a change *at the playhead* is the escape route from the ramp
+     * lock, so opening the panel seeds the beat field with where the playhead
+     * actually is. It used to seed `'0'` (or last + 4), making the user read a
+     * beat number off the ruler and retype it.
+     *
+     * Reads the live ref while playing rather than the gated `beat` above: that
+     * one is only re-committed when the *readout* changes, so mid-segment it can
+     * lag the true position by many beats.
+     */
+    const openTempoMapPanel = (open: boolean): void => {
+        if (!open) {
+            setMapOpen(false);
+            return;
+        }
+        let playheadBeat = transport.playheadPosition;
+        if (transport.isPlaying) {
+            playheadBeat = playheadPositionRef.current;
+        }
+        setNewBeat(String(Math.max(0, Math.round(playheadBeat * 100) / 100)));
+        setMapOpen(true);
+    };
 
     const startTimeSigEdit = (): void => {
         setNumValue(String(transport.timeSignatureNumerator));
@@ -179,12 +293,22 @@ export const useTempoEditorState = (): TempoEditorState => {
      * exists. The same call now rewrites a *project* tempo event, and a project
      * mutation outside the command layer leaves no undo entry and no CRDT
      * history — Ctrl+Z would silently undo whatever came before it instead.
+     *
+     * The action names the event the field was *displaying* when the value was
+     * chosen. A bare `setTempo` re-resolves its target from the playhead at
+     * execute time, and with `commitMode="release"` that is seconds after the
+     * drag began — long enough for a seek, a collaborator, or an AI
+     * `seekPlayhead` to move the write onto an event the user never saw.
      */
     const setTempoValue = (bpm: number): void => {
         if (!tempoField.editable) {
             return;
         }
-        void executeAppAction({ type: 'setTempo', payload: { bpm } });
+        if (tempoField.tempoChangeId === null) {
+            void executeAppAction({ type: 'setTempo', payload: { bpm } });
+            return;
+        }
+        void executeAppAction({ type: 'setTempo', payload: { bpm, tempoChangeId: tempoField.tempoChangeId } });
     };
 
     /**
@@ -246,7 +370,7 @@ export const useTempoEditorState = (): TempoEditorState => {
         commitTimeSig,
         cancelTimeSigEdit,
         mapOpen,
-        setMapOpen,
+        setMapOpen: openTempoMapPanel,
         mapPanelRef,
         newBeat,
         setNewBeat,

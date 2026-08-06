@@ -7,26 +7,40 @@ const MAX_BASE_TEMPO = 300;
 
 type ResolveTempoFieldStateInput = {
     changes: readonly TempoChange[];
-    /** Playhead beat as the *store* reports it — see `lockReason: 'playback'`. */
+    /**
+     * The playhead beat the field is reading out. Callers must pass the *live*
+     * beat during playback — `transportStore.playheadPosition` is written only on
+     * start, pause, stop and seek, so during playback it still holds the beat
+     * playback began at and the readout would name the wrong event.
+     */
     beat: number;
     defaultTempo: number;
-    isPlaying: boolean;
+    /**
+     * False before `transportStore` has hydrated. `useStore(transportStore,
+     * defaultTransportState)` substitutes defaults, so without this the field
+     * renders editable at 120 while `getTempoWriteTarget` resolves `null` and any
+     * drag disappears as a silent `no-write`.
+     */
+    hasTransportState: boolean;
 };
 
 /**
  * Why the transport tempo field cannot be edited right now, or `null` when it can.
  *
- * - `tempo-ramp` — the playhead sits inside a `linear` ramp, so the tempo in
- *   force is interpolated between two events and is not any event's own value.
- *   No single BPM written to one event reproduces it.
- * - `playback` — the live playhead lives in `playheadPositionRef`, which is
- *   deliberately not reactive (the scheduler writes it ~100×/s and React never
- *   sees it). While playing with a tempo map, the field cannot know which event
- *   governs, and a write would land on whichever event governed the beat
- *   playback started from. The tempo track is edited from the tempo map panel
- *   instead.
+ * - `no-transport-state` — `transportStore` has not hydrated, so there is
+ *   nothing to resolve a write against. `getTempoWriteTarget` returns `null`
+ *   here before it ever looks at the map, which is why this outranks a ramp.
+ * - `tempo-ramp` — the playhead sits strictly *inside* a `linear` ramp, so the
+ *   tempo in force is interpolated between two events and is not any event's own
+ *   value. No single BPM written to one event reproduces it. The ramp event's
+ *   own beat is not this case: there the interpolation factor is 0 and the
+ *   readout is the event's own tempo.
+ *
+ * Playback is deliberately *not* a lock reason. The write path already resolves
+ * from the live `playheadPositionRef`, and Cubase, Logic and Studio One all keep
+ * the field live while the transport runs.
  */
-type TempoFieldLockReason = 'tempo-ramp' | 'playback';
+type TempoFieldLockReason = 'no-transport-state' | 'tempo-ramp';
 
 type ResolveTempoFieldStateOutput = {
     /** Tempo in force at `beat` — the map's value when a map exists, else the base tempo. */
@@ -35,6 +49,15 @@ type ResolveTempoFieldStateOutput = {
     governedByMap: boolean;
     editable: boolean;
     lockReason: TempoFieldLockReason | null;
+    /**
+     * The tempo-map event `tempo` was read from, or `null` when the base tempo
+     * governs. The caller pins its write to this id so the value lands on the
+     * event it was displayed against: a bare `setTempo` re-resolves its target at
+     * execute time, which under `commitMode="release"` is seconds after the drag
+     * began, and a seek, a collaborator or an AI `seekPlayhead` in between moves
+     * the write to a different event.
+     */
+    tempoChangeId: string | null;
     /**
      * Bounds the field must clamp to. They follow the *destination*: a tempo-map
      * change legally holds up to 999 BPM, so clamping the control at the base
@@ -51,36 +74,36 @@ type ResolveTempoFieldStateOutput = {
  * Takes the already-subscribed store values rather than reading stores, so the
  * result stays a visible function of reactive inputs instead of a zero-argument
  * call the React Compiler may cache across renders. The store-reading sibling
- * used by the command layer is `getTempoWriteTarget`.
+ * used by the command layer is `getTempoWriteTarget`; the two resolve the same
+ * governing event from the same shared scan, so the value on screen and the
+ * value a write lands on cannot disagree.
  */
 export function resolveTempoFieldState(input: ResolveTempoFieldStateInput): ResolveTempoFieldStateOutput {
     const governing = getGoverningTempoChange(input.changes, input.beat);
     const tempo = getTempoAtBeat(input.changes, input.beat, input.defaultTempo);
+    const governedByMap = governing !== undefined;
 
-    if (!governing) {
-        return {
-            tempo,
-            governedByMap: false,
-            editable: true,
-            lockReason: null,
-            minTempo: MIN_BASE_TEMPO,
-            maxTempo: MAX_BASE_TEMPO,
-        };
+    let minTempo = MIN_BASE_TEMPO;
+    let maxTempo = MAX_BASE_TEMPO;
+    if (governedByMap) {
+        minTempo = MIN_TEMPO_MAP_TEMPO;
+        maxTempo = MAX_TEMPO_MAP_TEMPO;
     }
 
     let lockReason: TempoFieldLockReason | null = null;
-    if (governing.interpolated) {
+    if (!input.hasTransportState) {
+        lockReason = 'no-transport-state';
+    } else if (governing?.interpolated === true) {
         lockReason = 'tempo-ramp';
-    } else if (input.isPlaying) {
-        lockReason = 'playback';
     }
 
     return {
         tempo,
-        governedByMap: true,
+        governedByMap,
         editable: lockReason === null,
         lockReason,
-        minTempo: MIN_TEMPO_MAP_TEMPO,
-        maxTempo: MAX_TEMPO_MAP_TEMPO,
+        tempoChangeId: governing?.change.id ?? null,
+        minTempo,
+        maxTempo,
     };
 }
