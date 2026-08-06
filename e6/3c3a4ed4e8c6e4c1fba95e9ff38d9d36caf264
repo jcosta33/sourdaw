@@ -1,0 +1,14 @@
+src/modules/Levain/presentations/components/__tests__/MicBlendSlider.spec.tsx
+  h_1228e573df1f42 17-29,32-34,56,59-62,64-78,80-89,91-117,119-149
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "e63c3a4ed4e8c6e4c1fba95e9ff38d9d36caf264",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
