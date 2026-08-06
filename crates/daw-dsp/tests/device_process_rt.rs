@@ -882,17 +882,43 @@ fn gluten_process_does_not_allocate_while_compressing() {
     );
 }
 
+/// Driven at **non-default** calibration on purpose.
+///
+/// `cc_smoothing_ms` defaults to 0, and at 0 `advance_sustain_smoothing`
+/// early-returns before it computes anything — the coefficient path this
+/// guard exists to cover never runs, and neither does the damper retune it
+/// feeds. Three GrandBoule guards in this file used to sit at that default,
+/// which is the same shape as the voice-stealing guard that ran at unison 1
+/// and the other default-blind guards this crate has collected: the assertion
+/// is green because the code under it never executed.
+///
+/// So: a real smoothing constant, a calibrated lift point, one key released
+/// under a moving pedal (a held key short-circuits `damper_bandwidth_for_key`
+/// to 0 Hz and nothing downstream runs), and the pedal moved just before the
+/// guard arms so the smoother is mid-travel across every guarded block and
+/// `PianoVoice::set_extra_damping` keeps calling `reset_decay` inside it.
 #[test]
 fn grand_boule_process_does_not_allocate_with_notes_held() {
     use daw_dsp::grand_boule::GrandBouleInstance;
 
     let mut instance = GrandBouleInstance::new(SAMPLE_RATE, 0);
+    instance.set_param("cc_smoothing_ms", 25.0);
+    instance.set_param("sustain_threshold", 0.3);
+    instance.set_sustain(0.9);
     instance.note_on(48, 0.9);
     instance.note_on(60, 0.7);
     instance.note_on(67, 0.5);
+    // Released under the pedal: pedal-sustained, so it keeps sounding and the
+    // damper curve governs it rather than the held-key short circuit.
+    instance.note_off(48);
 
     let warmup = unsafe { read_output(instance.process(BLOCK as u32), BLOCK) };
     assert_all_finite(&warmup, "grand_boule");
+
+    // Pedal set moving right before the guard: the smoother spends the whole
+    // guarded region converging, so the per-block coefficient and the damper
+    // retune both run inside `assert_no_alloc` rather than settling first.
+    instance.set_sustain(0.35);
 
     assert_no_alloc(|| {
         for _ in 0..GUARDED_BLOCKS {

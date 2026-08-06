@@ -221,6 +221,18 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         'src/modules/Toaster/useCases/createDrumTrackStack.ts': 2,
     },
     'direct-built-in': {
+        // Count provenance: new file entry, measured 2 with `grep -o` — both
+        // executable, no comment mentions. The Grand Boule "Sus Thresh" and
+        // "CC Smooth" knobs were store-only writes; their values are the lower
+        // edge of the DSP half-pedal damper curve and the time constant
+        // smoothing CC64 into it, so both now reach the engine. Every writer of
+        // the two (the knobs, the reset chip, and the panel's engine-ready
+        // effect) funnels through this one file, so `setSustainThreshold.ts`,
+        // `setCcSmoothingMs.ts` and `resetMidiCalibration.ts` score 0 and stay
+        // out of this table. No persistence sink — Grand Boule writes none of
+        // its state to `Device.parameterValues`, and MIDI calibration is no
+        // exception.
+        'src/modules/GrandBoule/useCases/calibrateGrandBouleMidi/syncMidiCalibrationToEngine.ts': 2,
         'src/modules/GrandBoule/useCases/loadGrandBoulePreset.ts': 4,
         // Count provenance: measured 3 with `grep -o`, was 2. The two
         // executable hits are unchanged — the `setParam` handle on the returned

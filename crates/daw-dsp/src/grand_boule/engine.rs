@@ -472,6 +472,12 @@ impl GrandBouleEngine {
             "tone_color" => self.tone_color = value.clamp(-1.0, 1.0),
             "stretch_amount" => self.stretch_amount = value.clamp(0.0, 2.0),
             "attack_bite" => self.attack_bite = value.clamp(0.0, 2.0),
+            // Half-pedal damper-lift point (research §7.3 `threshold_low`),
+            // calibrated per controller from the MIDI calibration panel.
+            "sustain_threshold" => self.pedals.set_half_pedal_low(value),
+            // Time constant smoothing the continuous sustain controller on its
+            // way to the damper curve, also from the calibration panel.
+            "cc_smoothing_ms" => self.pedals.set_cc_smoothing_ms(value),
             _ => {}
         }
     }
@@ -545,6 +551,11 @@ impl GrandBouleEngine {
 
     pub fn process_block(&mut self, left: &mut [f32], right: &mut [f32]) {
         let frames = left.len().min(right.len());
+        // Advance the continuous-CC smoother before the damper coefficients
+        // are rebuilt from it, so a block never renders with a pedal position
+        // one block stale.
+        self.pedals
+            .advance_sustain_smoothing(frames, self.sample_rate);
         self.apply_damper_state();
         // Per-note bend is resolved once per block, and only for voices whose
         // bend actually moved (audit MD-2).
@@ -1868,5 +1879,135 @@ mod tests {
         let pressed = render_engine(&mut expressive, 40);
 
         assert_eq!(plain, pressed);
+    }
+
+    // ── Half-pedal engagement threshold (`sustain_threshold`) ──────────────
+    //
+    // Research §7.3 fixes the damper curve at `smoothstep(CC64, low, high)`
+    // with `low = 0.15`. The Grand Boule MIDI-calibration panel exposes that
+    // `low` edge as "Sus Thresh" so a pedal whose travel or rest position
+    // differs from the reference can be calibrated to it. These prove the
+    // parameter reaches rendered audio, not merely an engine field.
+
+    /// Tail energy of a pedal-sustained note at a fixed pedal position,
+    /// varying only the calibrated half-pedal threshold. The pedal sits at
+    /// 0.6 in both runs, so every sample of difference is the threshold's.
+    fn pedal_sustained_tail_energy(sustain_threshold: f32) -> f32 {
+        let mut engine = GrandBouleEngine::new(48_000.0, 8);
+        engine.set_param("sustain_threshold", sustain_threshold);
+        // Above the 0.5 note-off catch, so the key release hands the voice to
+        // the pedal (`release_key`) and the damper — not the 150 ms note-off
+        // amplitude ramp — governs how the tail decays.
+        engine.set_sustain(0.6);
+        engine.note_on(60, 0.8);
+        engine.note_off(60);
+        let _ = render_engine(&mut engine, 60); // skip the attack
+        let tail = render_engine(&mut engine, 130); // ~0.35 s of damper decay
+        tail.iter().map(|s| s * s).sum()
+    }
+
+    #[test]
+    fn sustain_threshold_moves_the_half_pedal_lift_point() {
+        // Threshold at the bottom of its range: 0.6 is well past the lift
+        // point, the dampers are largely clear, the string rings on.
+        let early_lift = pedal_sustained_tail_energy(0.0);
+        // Threshold at the top of its range: 0.6 has only just entered the
+        // band, the dampers are still mostly down, the string is choked.
+        let late_lift = pedal_sustained_tail_energy(0.5);
+
+        assert!(
+            early_lift > 1.0e-9,
+            "the pedal-sustained note was silent before the tail window: {early_lift}"
+        );
+        // Measured 5.900 vs 0.00723 — an 816x energy ratio. The bar is set at
+        // 4x so an ordinary damper-curve retune does not trip it; only the
+        // threshold ceasing to reach the audio does.
+        assert!(
+            early_lift > late_lift * 4.0,
+            "the calibrated threshold did not move the damper lift point: \
+             early_lift={early_lift} late_lift={late_lift}"
+        );
+    }
+
+    // ── Continuous-CC smoothing (`cc_smoothing_ms`) ────────────────────────
+    //
+    // CC64 arrives in 128 steps at the controller's scan rate, so a swept
+    // pedal steps the damper bandwidth. The calibration panel's "CC Smooth"
+    // knob is the time constant that turns those steps back into a slide.
+
+    /// Energy of the first ~32 ms after the sustain pedal is released under a
+    /// pedal-sustained note. Both runs take the identical amplitude release
+    /// (`release_pedal_sustained_voices` fires either way), so the difference
+    /// is the speed at which the dampers land.
+    fn energy_after_pedal_release(cc_smoothing_ms: f32) -> f32 {
+        let mut engine = GrandBouleEngine::new(48_000.0, 8);
+        engine.set_param("cc_smoothing_ms", cc_smoothing_ms);
+        engine.set_sustain(1.0);
+        // Settle the smoother on the fully-down pedal before striking, so both
+        // runs damp the attack identically and the only difference measured is
+        // how fast the dampers land when the pedal comes back up.
+        let _ = render_engine(&mut engine, 100);
+        engine.note_on(60, 0.8);
+        engine.note_off(60);
+        let _ = render_engine(&mut engine, 60); // skip the attack
+        engine.set_sustain(0.0); // pedal up: the dampers come down
+        let window = render_engine(&mut engine, 12);
+        window.iter().map(|s| s * s).sum()
+    }
+
+    #[test]
+    fn cc_smoothing_changes_how_fast_the_dampers_land_on_rendered_audio() {
+        // 5 ms and 50 ms — the panel default and the top of its range.
+        // Neither is the engine's own default of 0, so this cannot pass on
+        // the value the parameter already had.
+        let quick = energy_after_pedal_release(5.0);
+        let slow = energy_after_pedal_release(50.0);
+
+        assert!(
+            slow > 1.0e-12,
+            "the note was silent in the measurement window: {slow}"
+        );
+        assert!(
+            slow > quick,
+            "the calibrated smoothing did not reach rendered audio: \
+             quick={quick} slow={slow}"
+        );
+    }
+
+    #[test]
+    fn one_non_finite_pedal_value_does_not_silence_the_instrument_for_good() {
+        // The damage path, end to end: a NaN pedal position seeds
+        // `smoothed_sustain`, which no later valid position clears while
+        // smoothing is on; `damper_bandwidth_for_key` hands the NaN to
+        // `PianoVoice::set_extra_damping`, whose `< 1.0e-3` no-op check is
+        // false for NaN, so `reset_decay` rewrites every resonator
+        // coefficient with NaN. `GrandBouleInstance::process` then scrubs the
+        // output to silence at the wasm boundary, so the symptom a player gets
+        // is not a glitch — it is a piano that never makes a sound again.
+        let mut engine = GrandBouleEngine::new(48_000.0, 8);
+        engine.set_param("cc_smoothing_ms", 30.0);
+        engine.set_sustain(0.8);
+        engine.note_on(60, 0.8);
+        engine.note_off(60);
+        let _ = render_engine(&mut engine, 20);
+
+        engine.set_sustain(f32::NAN);
+        let _ = render_engine(&mut engine, 1);
+        engine.set_sustain(0.2);
+
+        // A fresh note, struck after the bad value, is the real question: not
+        // "did the ringing tail survive" but "does this instrument still work".
+        engine.note_on(64, 0.9);
+        let after = render_engine(&mut engine, 40);
+
+        assert!(
+            after.iter().all(|sample| sample.is_finite()),
+            "rendered audio went non-finite after one bad pedal value"
+        );
+        let energy: f32 = after.iter().map(|sample| sample * sample).sum();
+        assert!(
+            energy > 1.0e-9,
+            "the instrument was silenced by one bad pedal value: energy={energy}"
+        );
     }
 }

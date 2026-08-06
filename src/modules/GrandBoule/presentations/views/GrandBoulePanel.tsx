@@ -13,12 +13,12 @@ import { defaultTrackState, trackStore } from '#/modules/Arrangement/stores';
 
 import { defaultGrandBouleState, createGrandBouleStore, type TemperamentIndex } from '../../stores/grandBouleStore';
 import { resetMidiCalibration } from '../../useCases/calibrateGrandBouleMidi/resetMidiCalibration';
-import { setAfterTouchSensitivity } from '../../useCases/calibrateGrandBouleMidi/setAfterTouchSensitivity';
 import { setCcSmoothingMs } from '../../useCases/calibrateGrandBouleMidi/setCcSmoothingMs';
 import { setSustainThreshold } from '../../useCases/calibrateGrandBouleMidi/setSustainThreshold';
 import { setVelocityCeiling } from '../../useCases/calibrateGrandBouleMidi/setVelocityCeiling';
 import { setVelocityCurveExponent } from '../../useCases/calibrateGrandBouleMidi/setVelocityCurveExponent';
 import { setVelocityFloor } from '../../useCases/calibrateGrandBouleMidi/setVelocityFloor';
+import { syncMidiCalibrationToEngine } from '../../useCases/calibrateGrandBouleMidi/syncMidiCalibrationToEngine';
 import { listGrandBoulePresets } from '../../useCases/listGrandBoulePresets';
 import { loadGrandBoulePreset } from '../../useCases/loadGrandBoulePreset';
 import { onMidiNoteOff } from '../../useCases/midiEventSubscribers/onMidiNoteOff';
@@ -232,6 +232,12 @@ export const GrandBoulePanel = ({ deviceId }: { deviceId: string }): ReactElemen
             return;
         }
         setGrandBouleMorphPosition({ engine, store, morphPosition: 0 });
+        // The two engine-consumed calibration values live on the store, which
+        // outlives any one engine instance (`storesByDevice` is a module Map).
+        // A device node rebuilt underneath a calibrated panel comes up on the
+        // DSP defaults, so re-push them rather than leaving the readout
+        // describing a piano that is not playing.
+        syncMidiCalibrationToEngine({ engine, store });
     }, [engineReady]);
 
     // Read FFT data from the track's AnalyserNode for the spectral waterfall,
@@ -459,10 +465,9 @@ export const GrandBoulePanel = ({ deviceId }: { deviceId: string }): ReactElemen
                             onVelocityCurveExponentChange={(value) => setVelocityCurveExponent({ store, value })}
                             onVelocityFloorChange={(value) => setVelocityFloor({ store, value })}
                             onVelocityCeilingChange={(value) => setVelocityCeiling({ store, value })}
-                            onCcSmoothingMsChange={(value) => setCcSmoothingMs({ store, value })}
-                            onSustainThresholdChange={(value) => setSustainThreshold({ store, value })}
-                            onAfterTouchSensitivityChange={(value) => setAfterTouchSensitivity({ store, value })}
-                            onReset={() => resetMidiCalibration({ store })}
+                            onCcSmoothingMsChange={(value) => setCcSmoothingMs({ engine, store, value })}
+                            onSustainThresholdChange={(value) => setSustainThreshold({ engine, store, value })}
+                            onReset={() => resetMidiCalibration({ engine, store })}
                         />
                     </SectionCard>
                 </aside>

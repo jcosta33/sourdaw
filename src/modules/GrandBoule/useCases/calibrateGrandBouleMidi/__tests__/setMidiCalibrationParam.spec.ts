@@ -93,7 +93,6 @@ describe('setMidiCalibrationParam', () => {
             { key: 'velocityCeiling', input: 0, expected: 0.5 },
             { key: 'ccSmoothingMs', input: -1, expected: 0 },
             { key: 'sustainThreshold', input: -1, expected: 0 },
-            { key: 'afterTouchSensitivity', input: -1, expected: 0 },
         ];
 
         for (const expectation of expectations) {
@@ -125,7 +124,6 @@ describe('setMidiCalibrationParam', () => {
             { key: 'velocityCeiling', input: 9, expected: 1 },
             { key: 'ccSmoothingMs', input: 99, expected: 50 },
             { key: 'sustainThreshold', input: 9, expected: 0.5 },
-            { key: 'afterTouchSensitivity', input: 9, expected: 2 },
         ];
 
         for (const expectation of expectations) {
