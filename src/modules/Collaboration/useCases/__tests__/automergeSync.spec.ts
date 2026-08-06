@@ -1,4 +1,11 @@
-import { init as automergeInit, initSyncState, change, generateSyncMessage, type Doc } from '@automerge/automerge';
+import {
+    init as automergeInit,
+    initSyncState,
+    change,
+    clone,
+    generateSyncMessage,
+    type Doc,
+} from '@automerge/automerge';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import {
@@ -74,6 +81,27 @@ function seedAmDoc(): Doc<SeededDoc> {
     });
 }
 
+/**
+ * Forks `deliverPeerSync`'s "live" and "remote" documents from one canonical
+ * `seedAmDoc()` call instead of calling it twice.
+ *
+ * `change()` stamps every change with the wall-clock second, so two
+ * independent `seedAmDoc()` calls only produce byte-identical seq-1 changes
+ * when they land in the same second — under load they can straddle a
+ * boundary, and Automerge then rejects the second seq 1 from actor
+ * `aaaaaaaaaaaaaaaa` as ambiguous (`RangeError: duplicate seq 1 found for
+ * actor aaaaaaaaaaaaaaaa`). Cloning a single genesis document is
+ * deterministic regardless of timing, and giving each fork its own actor id
+ * keeps them from ever colliding on a future seq of their own.
+ */
+function forkPeerDocs(): { live: Doc<SeededDoc>; remoteSeed: Doc<SeededDoc> } {
+    const canonical = seedAmDoc();
+    return {
+        live: clone<SeededDoc>(canonical, 'aaaaaaaaaaaaaaaa'),
+        remoteSeed: clone<SeededDoc>(canonical, 'bbbbbbbbbbbbbbbb'),
+    };
+}
+
 describe('AutomergeSync', () => {
     beforeEach(() => {
         vi.clearAllMocks();
@@ -142,7 +170,8 @@ describe('AutomergeSync', () => {
      */
     function deliverPeerSync({ docId, mutate }: { docId: string; mutate?: (draft: SeededDoc) => void }): string[] {
         const order: string[] = [];
-        let live = seedAmDoc();
+        const { live: initial_live, remoteSeed } = forkPeerDocs();
+        let live = initial_live;
         vi.mocked(getCrdtDoc).mockImplementation(() => live);
         vi.mocked(replaceCrdtDoc).mockImplementation(({ doc }) => {
             order.push('replace-document');
@@ -152,7 +181,7 @@ describe('AutomergeSync', () => {
             order.push('reconcile-replay-metadata');
         });
 
-        const remote = mutate ? change(seedAmDoc(), mutate) : seedAmDoc();
+        const remote = mutate ? change(remoteSeed, mutate) : remoteSeed;
         const sync = new AutomergeSync(makePeerManager());
         for (const syncMessageBase64 of createPeerSyncMessages({ remote, local: live })) {
             sync.receiveSync({ peerId: 'editor', docId, syncMessageBase64 });
@@ -165,6 +194,27 @@ describe('AutomergeSync', () => {
 
         expect(order).toEqual(['replace-document']);
         expect(command_mocks.sync_action_replay_metadata).not.toHaveBeenCalled();
+    });
+
+    /**
+     * Regression guard for the actor-seq collision: `seedAmDoc()` stamps its
+     * change with `Math.floor(Date.now() / 1000)`, so two independent calls
+     * used to only agree when they landed in the same wall-clock second. This
+     * forces a straddle across that second boundary to prove `forkPeerDocs`
+     * no longer depends on timing — before the fix this threw
+     * `RangeError: duplicate seq 1 found for actor aaaaaaaaaaaaaaaa`.
+     */
+    it('stays deterministic when the underlying seed change would straddle a wall-clock second', () => {
+        const now_spy = vi.spyOn(Date, 'now');
+        now_spy.mockReturnValueOnce(1_700_000_000_000);
+        now_spy.mockReturnValueOnce(1_700_000_001_000);
+        try {
+            const order = deliverPeerSync({ docId: 'root' });
+            expect(order).toEqual(['replace-document']);
+            expect(command_mocks.sync_action_replay_metadata).not.toHaveBeenCalled();
+        } finally {
+            now_spy.mockRestore();
+        }
     });
 
     it("leaves replay authority alone when a root sync only touches a slot that isn't the action history", () => {
