@@ -3,11 +3,130 @@ import { describe, it, expect } from 'vitest';
 import {
     beatToSamples,
     createTempoChange,
+    getGoverningTempoChange,
     getTempoAtBeat,
     samplesToBeat,
     splitRangeAtTempoChanges,
     type TempoChange,
 } from '../TempoMap';
+
+describe('getGoverningTempoChange', () => {
+    const beatZeroMap: TempoChange[] = [
+        { id: 'tc-0', beat: 0, tempo: 90, curve: 'instant' },
+        { id: 'tc-4', beat: 4, tempo: 140, curve: 'instant' },
+    ];
+
+    it('returns the change at beat 0 when the playhead is at the project start', () => {
+        expect(getGoverningTempoChange(beatZeroMap, 0)?.change.id).toBe('tc-0');
+    });
+
+    it('returns the latest change at or before the beat', () => {
+        expect(getGoverningTempoChange(beatZeroMap, 3.99)?.change.id).toBe('tc-0');
+        expect(getGoverningTempoChange(beatZeroMap, 4)?.change.id).toBe('tc-4');
+        expect(getGoverningTempoChange(beatZeroMap, 400)?.change.id).toBe('tc-4');
+    });
+
+    it('returns the first change when the beat precedes every change', () => {
+        const lateMap: TempoChange[] = [{ id: 'tc-16', beat: 16, tempo: 100, curve: 'instant' }];
+
+        expect(getGoverningTempoChange(lateMap, 0)?.change.id).toBe('tc-16');
+    });
+
+    it('sorts before resolving so an unsorted map still picks the right change', () => {
+        const unsorted: TempoChange[] = [
+            { id: 'tc-8', beat: 8, tempo: 150, curve: 'instant' },
+            { id: 'tc-0', beat: 0, tempo: 90, curve: 'instant' },
+        ];
+
+        expect(getGoverningTempoChange(unsorted, 2)?.change.id).toBe('tc-0');
+    });
+
+    it('agrees with getTempoAtBeat about the tempo, not merely about the change', () => {
+        const governing = getGoverningTempoChange(beatZeroMap, 2);
+
+        expect(governing?.interpolated).toBe(false);
+        expect(governing?.change.tempo).toBe(getTempoAtBeat(beatZeroMap, 2, 240));
+    });
+
+    it('reports an interpolated segment rather than pretending the ramp start governs', () => {
+        // 90 at beat 0 ramping to 130 at beat 8: the tempo in force at beat 4 is
+        // 110, which is neither event's own value. A caller that assigned a typed
+        // BPM to `change.tempo` here would move the readout somewhere else again.
+        const rampMap: TempoChange[] = [
+            { id: 'tc-a', beat: 0, tempo: 90, curve: 'linear' },
+            { id: 'tc-b', beat: 8, tempo: 130, curve: 'instant' },
+        ];
+        const governing = getGoverningTempoChange(rampMap, 4);
+
+        expect(governing?.change.id).toBe('tc-a');
+        expect(governing?.interpolated).toBe(true);
+        expect(getTempoAtBeat(rampMap, 4, 240)).toBe(110);
+        expect(governing?.change.tempo).not.toBe(getTempoAtBeat(rampMap, 4, 240));
+    });
+
+    it('does not report a ramp at the ramp event’s own beat, where the write is well defined', () => {
+        // Drives between two positions on the same `linear` segment: beat 0, the
+        // ramp event's own start point, and beat 4, strictly inside it. At beat 0
+        // the interpolation factor is 0, so `getTempoAtBeat` returns the event's
+        // own 90 — the readout *is* that event's value and writing to it is
+        // exactly defined. Reporting `interpolated` there made a map whose first
+        // change is at beat 0 with `curve: 'linear'` read-only at the default
+        // playhead position, and a map of all-`linear` changes read-only
+        // everywhere except after the last change.
+        const rampFromZero: TempoChange[] = [
+            { id: 'tc-a', beat: 0, tempo: 90, curve: 'linear' },
+            { id: 'tc-b', beat: 8, tempo: 130, curve: 'instant' },
+        ];
+
+        const atRampStart = getGoverningTempoChange(rampFromZero, 0);
+        expect(atRampStart?.change.id).toBe('tc-a');
+        expect(atRampStart?.interpolated).toBe(false);
+        expect(getTempoAtBeat(rampFromZero, 0, 240)).toBe(90);
+
+        const insideRamp = getGoverningTempoChange(rampFromZero, 4);
+        expect(insideRamp?.change.id).toBe('tc-a');
+        expect(insideRamp?.interpolated).toBe(true);
+        expect(getTempoAtBeat(rampFromZero, 4, 240)).toBe(110);
+    });
+
+    it('keeps the ramp’s own start point writable at a beat other than 0', () => {
+        // The equality clause must key on the *event's* beat, not on a hardcoded
+        // 0: driving between beat 8 (the second ramp event's own start) and beat
+        // 12 (inside its segment) fails a `beat === 0` shortcut.
+        const laterRamp: TempoChange[] = [
+            { id: 'tc-a', beat: 0, tempo: 90, curve: 'instant' },
+            { id: 'tc-b', beat: 8, tempo: 120, curve: 'linear' },
+            { id: 'tc-c', beat: 16, tempo: 160, curve: 'instant' },
+        ];
+
+        expect(getGoverningTempoChange(laterRamp, 8)?.change.id).toBe('tc-b');
+        expect(getGoverningTempoChange(laterRamp, 8)?.interpolated).toBe(false);
+        expect(getTempoAtBeat(laterRamp, 8, 240)).toBe(120);
+
+        expect(getGoverningTempoChange(laterRamp, 12)?.interpolated).toBe(true);
+        expect(getTempoAtBeat(laterRamp, 12, 240)).toBe(140);
+    });
+
+    it('does not report a ramp on the last change, which has nothing to ramp toward', () => {
+        const trailingRamp: TempoChange[] = [{ id: 'tc-a', beat: 0, tempo: 90, curve: 'linear' }];
+
+        expect(getGoverningTempoChange(trailingRamp, 4)?.interpolated).toBe(false);
+        expect(getGoverningTempoChange(trailingRamp, 4)?.change.tempo).toBe(getTempoAtBeat(trailingRamp, 4, 240));
+    });
+
+    it('resolves a non-finite beat to the same change getTempoAtBeat reports', () => {
+        // `beat > NaN` is false for every change, so a scan looking for "the last
+        // change at or before the beat" walks off the end and answers with the
+        // *last* change while the reported tempo comes from the first.
+        expect(getTempoAtBeat(beatZeroMap, Number.NaN, 240)).toBe(90);
+        expect(getGoverningTempoChange(beatZeroMap, Number.NaN)?.change.id).toBe('tc-0');
+        expect(getGoverningTempoChange(beatZeroMap, Number.POSITIVE_INFINITY)?.change.id).toBe('tc-4');
+    });
+
+    it('returns undefined for an empty map, where the default tempo still governs', () => {
+        expect(getGoverningTempoChange([], 0)).toBeUndefined();
+    });
+});
 
 describe('createTempoChange', () => {
     it('should clamp tempo into the supported range', () => {

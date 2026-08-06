@@ -115,12 +115,14 @@ const renderCache: {
     timeSig: null,
 };
 
-// The transport store mints a new object every playhead tick during playback,
-// but the cached render model only consumes one render-affecting transport
-// field (tempo) — the playhead is read live from playheadPositionRef and the
-// time signature comes from getTimeSignatureAtBeat. Keying cache invalidation
-// on the whole transport object rebuilt the entire track/clip tree on every
-// playing frame. Compare only the render-affecting field instead.
+// The cached render model consumes one render-affecting transport field
+// (tempo) — the playhead is read live from playheadPositionRef and the time
+// signature comes from getTimeSignatureAtBeat. Keying cache invalidation on the
+// whole transport object rebuilt the entire track/clip tree whenever any
+// unrelated transport field changed identity. Compare only the render-affecting
+// field instead. (The store is *not* rewritten per playhead tick: only
+// startPlayback, pausePlayback, stopPlayback and executePlayheadSeek write
+// `playheadPosition`, and the scheduler advances the ref alone.)
 function renderAffectingTransport(transport: { tempo: number } | null | undefined): number | null {
     return transport?.tempo ?? null;
 }

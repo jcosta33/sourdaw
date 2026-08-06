@@ -59,6 +59,7 @@ export { getTransportHandlers } from './getTransportHandlers';
 export { defaultTransportState } from './transportQueries/helpers';
 export { getTransportState } from './transportQueries/getTransportState';
 export { getTempoMapState } from './transportQueries/getTempoMapState';
+export { resolveTempoFieldState } from './transportQueries/resolveTempoFieldState';
 export { getTimeSignatureAtBeat } from './transportQueries/getTimeSignatureAtBeat';
 export { updateTransportState } from './transportQueries/updateTransportState';
 

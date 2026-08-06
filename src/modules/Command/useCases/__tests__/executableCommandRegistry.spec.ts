@@ -436,7 +436,7 @@ const EXPECTED_COMMANDS = [
     ),
     expectedCommand(
         'setTempo',
-        'Set the project tempo in BPM. Range: 20–300.',
+        'Set the tempo in BPM. Range: 20–300. With a tempo map, edits the tempo event governing the playhead.',
         { bpm: { type: 'number' } },
         ['bpm'],
         'authority-sensitive',

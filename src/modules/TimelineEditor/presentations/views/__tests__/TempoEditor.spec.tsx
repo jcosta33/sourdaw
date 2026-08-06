@@ -9,7 +9,16 @@ const mockState = {
         timeSignatureNumerator: 4,
         timeSignatureDenominator: 4,
     },
+    tempoField: {
+        tempo: 120,
+        governedByMap: false,
+        editable: true,
+        lockReason: null as 'tempo-ramp' | 'no-transport-state' | null,
+        minTempo: 20,
+        maxTempo: 300,
+    },
     setTempoValue: vi.fn(),
+    resetTempoValue: null as (() => void) | null,
     mapOpen: false,
     setMapOpen: vi.fn(),
     handleTapTempo: vi.fn(),
@@ -51,13 +60,34 @@ vi.mock('#/components/ui/tooltip', () => ({
     TooltipContent: ({ children }: any) => <div>{children}</div>,
 }));
 
+type MockValueFieldProps = {
+    value: number;
+    onChange: (value: number) => void;
+    onReset?: () => void;
+    readOnly?: boolean;
+    min?: number;
+    max?: number;
+    commitMode?: 'live' | 'release';
+    ariaLabel?: string;
+};
+
+// The accessible name is rendered onto the control itself. A name the view puts
+// on a wrapper instead would leave this input anonymous, which is the state the
+// review found: `aria-label` on a role-less div has no ARIA mapping.
 vi.mock('#/components/daw/ValueField', () => ({
-    ValueField: ({ value, onChange }: any) => (
+    ValueField: ({ value, onChange, onReset, readOnly, min, max, commitMode, ariaLabel }: MockValueFieldProps) => (
         <input
             type="number"
             data-testid="tempo-input"
+            aria-label={ariaLabel}
             value={value}
+            readOnly={readOnly}
+            min={min}
+            max={max}
+            data-commit-mode={commitMode}
+            data-has-reset={onReset === undefined ? 'no' : 'yes'}
             onChange={(event) => onChange(parseFloat(event.target.value))}
+            onDoubleClick={() => onReset?.()}
         />
     ),
 }));
@@ -75,12 +105,173 @@ describe('TempoEditor', () => {
         mockState.newTempo = '';
         mockState.newCurve = 'instant';
         mockState.tempoMap = { changes: [] };
+        mockState.transport.tempo = 120;
+        mockState.tempoField = {
+            tempo: 120,
+            governedByMap: false,
+            editable: true,
+            lockReason: null,
+            minTempo: 20,
+            maxTempo: 300,
+        };
+        mockState.resetTempoValue = null;
     });
+
+    const mapGovernedField = {
+        tempo: 90,
+        governedByMap: true,
+        editable: true,
+        lockReason: null as 'tempo-ramp' | 'no-transport-state' | null,
+        minTempo: 20,
+        maxTempo: 999,
+    };
 
     it('should render current tempo and time signature', () => {
         render(<TempoEditor />);
         expect(screen.getByTestId('tempo-input')).toHaveValue(120);
         expect(screen.getByText('4/4')).toBeInTheDocument();
+        expect(screen.getByLabelText('Tempo BPM')).toBeInTheDocument();
+    });
+
+    it('should read out the map-governed tempo, not the inert base tempo', () => {
+        mockState.tempoMap = { changes: [{ id: 'tc-0', beat: 0, tempo: 90, curve: 'instant' }] };
+        mockState.transport.tempo = 120;
+        mockState.tempoField = mapGovernedField;
+
+        render(<TempoEditor />);
+
+        expect(screen.getByTestId('tempo-input')).toHaveValue(90);
+        expect(screen.getByLabelText('Tempo BPM at playhead (tempo map)')).toBeInTheDocument();
+        expect(screen.queryByLabelText('Tempo BPM')).toBeNull();
+        expect(
+            screen.getByText('Tempo at the playhead. Editing changes the tempo-map event that governs it.')
+        ).toBeInTheDocument();
+    });
+
+    it('should still commit edits through setTempoValue while the map governs', () => {
+        mockState.tempoMap = { changes: [{ id: 'tc-0', beat: 0, tempo: 90, curve: 'instant' }] };
+        mockState.tempoField = mapGovernedField;
+
+        render(<TempoEditor />);
+        fireEvent.change(screen.getByTestId('tempo-input'), { target: { value: '128' } });
+
+        expect(mockState.setTempoValue).toHaveBeenCalledWith(128);
+    });
+
+    it('should clamp to the tempo-map range, not the base range, while a map governs', () => {
+        mockState.tempoField = mapGovernedField;
+
+        render(<TempoEditor />);
+
+        // A tempo-map change legally holds 400 BPM; a max of 300 would let one
+        // pixel of drag narrow it to 300 before onChange ever fired.
+        expect(screen.getByTestId('tempo-input')).toHaveAttribute('max', '999');
+        expect(screen.getByTestId('tempo-input')).toHaveAttribute('min', '20');
+    });
+
+    it('should commit on release so a drag is one history entry, not one per pixel', () => {
+        render(<TempoEditor />);
+
+        expect(screen.getByTestId('tempo-input')).toHaveAttribute('data-commit-mode', 'release');
+    });
+
+    it('should make the field read-only inside a tempo ramp and say why', () => {
+        mockState.tempoField = { ...mapGovernedField, tempo: 110, editable: false, lockReason: 'tempo-ramp' };
+
+        render(<TempoEditor />);
+
+        expect(screen.getByTestId('tempo-input')).toHaveValue(110);
+        expect(screen.getByTestId('tempo-input')).toHaveAttribute('readonly');
+        expect(screen.getByLabelText('Tempo BPM at playhead (tempo ramp, read-only)')).toBeInTheDocument();
+        // Both the field's own hint and the disabled TAP button's hint name the
+        // reason — TAP used to keep offering "Tap to set tempo" while refusing.
+        expect(
+            screen.getAllByText('The playhead is inside a tempo ramp. Edit its end points in the tempo map.')
+        ).toHaveLength(2);
+        expect(screen.queryByText('Tap to set tempo')).toBeNull();
+    });
+
+    it('should make the field read-only before the transport state arrives and say why', () => {
+        mockState.tempoField = {
+            ...mapGovernedField,
+            editable: false,
+            lockReason: 'no-transport-state',
+        };
+
+        render(<TempoEditor />);
+
+        expect(screen.getByTestId('tempo-input')).toHaveAttribute('readonly');
+        expect(screen.getByLabelText('Tempo BPM (transport state loading, read-only)')).toBeInTheDocument();
+        expect(screen.getAllByText('The transport state has not loaded yet.')).toHaveLength(2);
+        expect(screen.getByTestId('tempo-lock-reason')).toHaveTextContent('loading');
+    });
+
+    it('should name the field on the control itself, not on a wrapper ARIA ignores', () => {
+        render(<TempoEditor />);
+
+        expect(screen.getByLabelText('Tempo BPM')).toBe(screen.getByTestId('tempo-input'));
+    });
+
+    it('should render the lock reason as visible text, not only inside a hover tooltip', () => {
+        // The tooltip is hover-only: unreachable by touch, and the trigger has no
+        // `tabIndex`, so it is unreachable by keyboard too. Drives between the two
+        // states — no badge when the field is editable, a named badge when locked.
+        const { unmount } = render(<TempoEditor />);
+        expect(screen.queryByTestId('tempo-lock-reason')).toBeNull();
+        unmount();
+
+        mockState.tempoField = { ...mapGovernedField, tempo: 110, editable: false, lockReason: 'tempo-ramp' };
+        render(<TempoEditor />);
+
+        expect(screen.getByTestId('tempo-lock-reason')).toHaveTextContent('ramp');
+    });
+
+    it('should disable TAP while the field is locked instead of leaving it doing nothing', () => {
+        // Tap tempo silently early-returned under every lock while still offering
+        // its "Tap to set tempo" tooltip.
+        mockState.tempoField = { ...mapGovernedField, editable: false, lockReason: 'tempo-ramp' };
+
+        render(<TempoEditor />);
+        const tapButton = screen.getByLabelText('Tap tempo');
+        expect(tapButton).toBeDisabled();
+
+        fireEvent.click(tapButton);
+        expect(mockState.handleTapTempo).not.toHaveBeenCalled();
+    });
+
+    it('should keep TAP live while the transport runs, the state tap tempo is most for', () => {
+        mockState.tempoField = mapGovernedField;
+
+        render(<TempoEditor />);
+        const tapButton = screen.getByLabelText('Tap tempo');
+        expect(tapButton).not.toBeDisabled();
+
+        fireEvent.click(tapButton);
+        expect(mockState.handleTapTempo).toHaveBeenCalledTimes(1);
+    });
+
+    it('should wire no double-click reset when the hook withholds one', () => {
+        mockState.tempoField = mapGovernedField;
+        mockState.resetTempoValue = null;
+
+        render(<TempoEditor />);
+        fireEvent.doubleClick(screen.getByTestId('tempo-input'));
+
+        expect(screen.getByTestId('tempo-input')).toHaveAttribute('data-has-reset', 'no');
+        expect(mockState.setTempoValue).not.toHaveBeenCalled();
+    });
+
+    it('should route double-click reset through the hook when one is offered', () => {
+        const reset = vi.fn();
+        mockState.resetTempoValue = reset;
+
+        render(<TempoEditor />);
+        fireEvent.doubleClick(screen.getByTestId('tempo-input'));
+
+        expect(reset).toHaveBeenCalledTimes(1);
+        // The view must not invent its own 120 — that write bypassed the command
+        // layer and overwrote tempo-map events with no history entry.
+        expect(mockState.setTempoValue).not.toHaveBeenCalled();
     });
 
     it('should call handleTapTempo when TAP is clicked', () => {

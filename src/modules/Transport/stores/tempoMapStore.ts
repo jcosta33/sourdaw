@@ -22,7 +22,12 @@ export type TempoMapStoreState = {
  * at 300, a tempo-map change at 999. They already disagree, so collapsing them
  * would be wrong.
  *
- * The minimum is exported because it is one of the two floors the
+ * Both bounds are exported for use inside Transport: the tempo field edits a
+ * tempo-map change in place whenever a map governs the playhead, so the field's
+ * own clamp has to be this range and not Transport's — clamping a stored 400 BPM
+ * change to 300 on the first pixel of a drag destroys it.
+ *
+ * The minimum is additionally one of the two floors the
  * unknown-frozen-tail derivation has to clear — a project's slowest legal tempo
  * is the slowest either validator will accept, and that derivation used to be
  * checked against Transport's copy alone. `frozenTailAnchor.spec.ts` pins it
@@ -31,7 +36,7 @@ export type TempoMapStoreState = {
  * agree.
  */
 export const MIN_TEMPO_MAP_TEMPO = 20;
-const MAX_TEMPO_MAP_TEMPO = 999;
+export const MAX_TEMPO_MAP_TEMPO = 999;
 const TEMPO_MAP_KEYS = ['changes'] as const;
 const TEMPO_CHANGE_KEYS = ['id', 'beat', 'tempo', 'curve'] as const;
 

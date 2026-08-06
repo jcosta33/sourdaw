@@ -660,6 +660,17 @@ describe('validateActionPayload / PAYLOAD_VALIDATORS', () => {
             expect(guard({ bpm: 301 })).toBe(false);
             expect(guard({ bpm: Number.NaN })).toBe(false);
         });
+
+        it('should reject an AI-supplied tempoChangeId, which is internal undo routing', () => {
+            const guard = PAYLOAD_VALIDATORS.setTempo;
+            expect(guard).not.toBe('unchecked');
+            if (guard === 'unchecked') {
+                return;
+            }
+            // Carrying an id lets a write name a tempo-map event directly. A model
+            // must ask for a tempo at the playhead, not pick an event out of the map.
+            expect(guard({ bpm: 120, tempoChangeId: 'tc-0' })).toBe(false);
+        });
     });
 
     describe('addAutomationLane', () => {

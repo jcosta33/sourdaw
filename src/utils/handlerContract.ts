@@ -430,7 +430,21 @@ export type AppAction =
     | { type: 'flattenTrack'; payload: { trackId: string } }
     | { type: 'bounceInPlace'; payload: { trackId: string } }
     | { type: 'reorderTrack'; payload: { trackId: string; newIndex: number } }
-    | { type: 'setTempo'; payload: { bpm: number } }
+    | {
+          type: 'setTempo';
+          payload: {
+              bpm: number;
+              /**
+               * Internal undo/redo routing. A bare `setTempo` resolves its target from
+               * the live playhead, which makes it position-dependent — replaying it as
+               * an inverse would re-resolve against wherever the playhead has moved to
+               * and rewrite a different tempo event. The inverse and redo actions
+               * therefore name the tempo-map change the original write landed on.
+               * AiRuntime payload validation rejects this field.
+               */
+              tempoChangeId?: string;
+          };
+      }
     | { type: 'setTimeSignature'; payload: { numerator: number; denominator: number } }
     | { type: 'setPlayback'; payload: { playing: boolean } }
     | { type: 'togglePlayback'; payload?: undefined }

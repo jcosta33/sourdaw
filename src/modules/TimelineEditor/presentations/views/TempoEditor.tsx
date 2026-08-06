@@ -1,6 +1,6 @@
 import { type ReactElement } from 'react';
 
-import { Map, Plus, Trash2 } from 'lucide-react';
+import { Lock, Map, Plus, Trash2 } from 'lucide-react';
 
 import { DawCompactInput } from '#/components/daw/DawCompactInput';
 import { DawCompactSelect } from '#/components/daw/DawCompactSelect';
@@ -14,17 +14,47 @@ import { useTempoEditorState } from '../hooks/useTempoEditorState';
 export const TempoEditor = (): ReactElement => {
     const time = useTempoEditorState();
 
+    // With a tempo map the field reads out the map's value at the playhead and
+    // edits the event governing it, so say so rather than let it look like a
+    // free-standing project tempo. Where it cannot write that event, it says
+    // that too instead of leaving a control that writes somewhere else.
+    const tempoField = time.tempoField;
+    let tempoFieldLabel = 'Tempo BPM';
+    let tempoFieldHint = 'Drag up/down to adjust, arrows to step, double-click to reset, Shift for fine.';
+    if (tempoField.governedByMap) {
+        tempoFieldLabel = 'Tempo BPM at playhead (tempo map)';
+        tempoFieldHint = 'Tempo at the playhead. Editing changes the tempo-map event that governs it.';
+    }
+
+    // The lock reason is rendered as a visible badge beside the field, not left
+    // to the tooltip: the tooltip is hover-only, so touch and keyboard users
+    // never see it, and it was carrying the entire explanation.
+    let tempoLockBadge: string | null = null;
+    if (tempoField.lockReason === 'tempo-ramp') {
+        tempoFieldLabel = 'Tempo BPM at playhead (tempo ramp, read-only)';
+        tempoFieldHint = 'The playhead is inside a tempo ramp. Edit its end points in the tempo map.';
+        tempoLockBadge = 'ramp';
+    }
+    if (tempoField.lockReason === 'no-transport-state') {
+        tempoFieldLabel = 'Tempo BPM (transport state loading, read-only)';
+        tempoFieldHint = 'The transport state has not loaded yet.';
+        tempoLockBadge = 'loading';
+    }
+
     return (
         <div className="daw-readout-well relative flex h-8 items-center gap-2 rounded-sm px-2">
             <Tooltip>
                 <TooltipTrigger asChild>
-                    <div aria-label="Tempo BPM">
+                    <div>
                         <ValueField
-                            value={time.transport.tempo}
+                            value={tempoField.tempo}
                             onChange={time.setTempoValue}
-                            onReset={() => time.setTempoValue(120)}
-                            min={20}
-                            max={300}
+                            onReset={time.resetTempoValue ?? undefined}
+                            readOnly={!tempoField.editable}
+                            ariaLabel={tempoFieldLabel}
+                            commitMode="release"
+                            min={tempoField.minTempo}
+                            max={tempoField.maxTempo}
                             step={1}
                             fineStep={0.01}
                             unit=" BPM"
@@ -32,8 +62,17 @@ export const TempoEditor = (): ReactElement => {
                         />
                     </div>
                 </TooltipTrigger>
-                <TooltipContent>Drag up/down to adjust, double-click to reset, Shift for fine.</TooltipContent>
+                <TooltipContent>{tempoFieldHint}</TooltipContent>
             </Tooltip>
+            {tempoLockBadge === null ? null : (
+                <span
+                    data-testid="tempo-lock-reason"
+                    className="flex items-center gap-0.5 text-[9px] uppercase tracking-[0.12em] text-muted-foreground"
+                >
+                    <Lock className="size-2.5" aria-hidden="true" />
+                    {tempoLockBadge}
+                </span>
+            )}
             <Tooltip>
                 <TooltipTrigger asChild>
                     <Button
@@ -56,12 +95,18 @@ export const TempoEditor = (): ReactElement => {
                         size="icon-xs"
                         onClick={time.handleTapTempo}
                         aria-label="Tap tempo"
+                        // Tap tempo writes through the same field, so it lands
+                        // wherever the field lands — and refuses wherever the
+                        // field refuses. It stays live during playback, the state
+                        // tap tempo is most for; under a lock it is visibly
+                        // disabled rather than silently doing nothing.
+                        disabled={!tempoField.editable}
                         className="text-[9px] font-bold w-6 h-5"
                     >
                         TAP
                     </Button>
                 </TooltipTrigger>
-                <TooltipContent>Tap to set tempo</TooltipContent>
+                <TooltipContent>{tempoField.editable ? 'Tap to set tempo' : tempoFieldHint}</TooltipContent>
             </Tooltip>
             {time.editingTimeSig ? (
                 <div className="flex items-center gap-0.5">
