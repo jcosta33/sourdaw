@@ -627,3 +627,21 @@ groove extraction/restoration, offline render preparation, device-state commit p
 crossfade restore, Toaster groove projection, cloud request abort linking,
 transport seek orchestration, CRDT action-history sanitization, and deepened
 component specs.**
+
+### Threshold Raise #3 + Re-measurement (PR #1231)
+
+Re-measured after 12 additional PRs since threshold raise #2 (PR #1198):
+
+| Metric | Old Threshold | Actual (#1198) | Actual (now) | New Threshold |
+|--------|-------------|----------------|--------------|---------------|
+| Lines | 88 | 89.87% | **89.94%** | 89 |
+| Statements | 85 | 86.62% | **86.69%** | 86 |
+| Branches | 74 | 75.65% | **75.74%** | 75 |
+| Functions | 86 | 87.57% | **87.66%** | 87 |
+
+- **PR #1229**: runBranchLineageTransition — CRDT branch lineage with re-entrancy guard,
+  snapshot rollback, persistence operation, dedup — 5 tests.
+- **PR #1230**: replaceProjectData — full project replacement with AudioContext/IDB/CRDT
+  mocking, abort paths, degraded recovery — 7 tests.
+
+**Campaign total to date: 150 PRs, ~1884 assertions.**
