@@ -1,10 +1,16 @@
 /**
  * MIDI Controller Calibration Panel for Grand Boule (spec SS3.1).
  *
- * Provides rotary knobs for all six calibration parameters, a real-time
+ * Provides rotary knobs for all five calibration parameters, a real-time
  * velocity histogram rendered on a canvas, a "last velocity" metric tile,
  * and a reset-defaults chip button. Uses the amber accent palette to
  * match the Grand Boule faceplate theme.
+ *
+ * There is deliberately no aftertouch control. No acoustic-piano engine in
+ * the premium tier maps channel pressure to tone, and the ones that expose
+ * aftertouch at all expose it as an assignable modulation source with a
+ * response curve, bound to nothing by default — never as a fixed sensitivity
+ * multiplier into a response the engine does not have.
  */
 
 import { type ReactElement, useEffect, useRef, useState } from 'react';
@@ -93,6 +99,7 @@ const Knob = ({
     defaultValue,
     onChange,
     readout,
+    hint,
 }: {
     value: number;
     label: string;
@@ -102,8 +109,11 @@ const Knob = ({
     defaultValue: number;
     onChange: (value: number) => void;
     readout: string;
+    /** Optional explanatory copy surfaced on hover, for knobs with a
+     *  behaviour a player would otherwise only discover by ear. */
+    hint?: string;
 }): ReactElement => (
-    <div className="flex flex-col items-center gap-1">
+    <div className="flex flex-col items-center gap-1" title={hint}>
         <RotaryKnob
             value={value}
             onChange={onChange}
@@ -241,7 +251,6 @@ type MidiCalibrationPanelProps = {
     onVelocityCeilingChange: (value: number) => void;
     onCcSmoothingMsChange: (value: number) => void;
     onSustainThresholdChange: (value: number) => void;
-    onAfterTouchSensitivityChange: (value: number) => void;
     /** Called when the user resets all calibration to defaults. */
     onReset: () => void;
     className?: string;
@@ -255,7 +264,6 @@ export const MidiCalibrationPanel = ({
     onVelocityCeilingChange,
     onCcSmoothingMsChange,
     onSustainThresholdChange,
-    onAfterTouchSensitivityChange,
     onReset,
     className,
 }: MidiCalibrationPanelProps): ReactElement => {
@@ -346,7 +354,9 @@ export const MidiCalibrationPanel = ({
                     />
                 </div>
 
-                {/* Calibration knobs — row 2: controller tuning */}
+                {/* Calibration knobs — row 2: controller tuning. Two knobs in a
+                    three-column grid on purpose, so they stay aligned under row
+                    one rather than stretching to fill the row. */}
                 <div className="grid grid-cols-3 gap-x-2 gap-y-3">
                     <Knob
                         value={midiCalibration.ccSmoothingMs}
@@ -357,6 +367,12 @@ export const MidiCalibrationPanel = ({
                         step={r.ccSmoothingMs.step}
                         defaultValue={r.ccSmoothingMs.default}
                         readout={`${Math.round(midiCalibration.ccSmoothingMs)} ms`}
+                        hint={
+                            'Smooths stepped sustain-pedal CC into a continuous damper movement. ' +
+                            'The damper curve lags the pedal by roughly this long, so a note released ' +
+                            'during a fast stomp sustains immediately but stays damped for a moment ' +
+                            '(up to ~250 ms at 50). Turn it down if stomped pedals sound soft.'
+                        }
                     />
                     <Knob
                         value={midiCalibration.sustainThreshold}
@@ -367,16 +383,12 @@ export const MidiCalibrationPanel = ({
                         step={r.sustainThreshold.step}
                         defaultValue={r.sustainThreshold.default}
                         readout={`${Math.round(midiCalibration.sustainThreshold * 100)}%`}
-                    />
-                    <Knob
-                        value={midiCalibration.afterTouchSensitivity}
-                        onChange={onAfterTouchSensitivityChange}
-                        label="Aftertouch"
-                        min={r.afterTouchSensitivity.min}
-                        max={r.afterTouchSensitivity.max}
-                        step={r.afterTouchSensitivity.step}
-                        defaultValue={r.afterTouchSensitivity.default}
-                        readout={`${midiCalibration.afterTouchSensitivity.toFixed(1)}x`}
+                        hint={
+                            'Pedal position at which the dampers start to leave the strings, for ' +
+                            'pedals whose travel or rest position differs from the reference. Not ' +
+                            'the on/off point at which the pedal starts catching note-offs — that ' +
+                            'stays at the MIDI-standard halfway mark.'
+                        }
                     />
                 </div>
 

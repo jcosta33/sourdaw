@@ -1973,4 +1973,41 @@ mod tests {
              quick={quick} slow={slow}"
         );
     }
+
+    #[test]
+    fn one_non_finite_pedal_value_does_not_silence_the_instrument_for_good() {
+        // The damage path, end to end: a NaN pedal position seeds
+        // `smoothed_sustain`, which no later valid position clears while
+        // smoothing is on; `damper_bandwidth_for_key` hands the NaN to
+        // `PianoVoice::set_extra_damping`, whose `< 1.0e-3` no-op check is
+        // false for NaN, so `reset_decay` rewrites every resonator
+        // coefficient with NaN. `GrandBouleInstance::process` then scrubs the
+        // output to silence at the wasm boundary, so the symptom a player gets
+        // is not a glitch — it is a piano that never makes a sound again.
+        let mut engine = GrandBouleEngine::new(48_000.0, 8);
+        engine.set_param("cc_smoothing_ms", 30.0);
+        engine.set_sustain(0.8);
+        engine.note_on(60, 0.8);
+        engine.note_off(60);
+        let _ = render_engine(&mut engine, 20);
+
+        engine.set_sustain(f32::NAN);
+        let _ = render_engine(&mut engine, 1);
+        engine.set_sustain(0.2);
+
+        // A fresh note, struck after the bad value, is the real question: not
+        // "did the ringing tail survive" but "does this instrument still work".
+        engine.note_on(64, 0.9);
+        let after = render_engine(&mut engine, 40);
+
+        assert!(
+            after.iter().all(|sample| sample.is_finite()),
+            "rendered audio went non-finite after one bad pedal value"
+        );
+        let energy: f32 = after.iter().map(|sample| sample * sample).sum();
+        assert!(
+            energy > 1.0e-9,
+            "the instrument was silenced by one bad pedal value: energy={energy}"
+        );
+    }
 }

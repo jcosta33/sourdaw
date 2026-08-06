@@ -13,11 +13,25 @@ const baseProps = () => ({
     onVelocityCeilingChange: vi.fn(),
     onCcSmoothingMsChange: vi.fn(),
     onSustainThresholdChange: vi.fn(),
-    onAfterTouchSensitivityChange: vi.fn(),
     onReset: vi.fn(),
 });
 
 describe('MidiCalibrationPanel', () => {
+    it('offers exactly the five calibratable parameters, and no aftertouch control', () => {
+        // Both directions on purpose: the absence claim is the point (a piano
+        // has no aftertouch response to scale, and no premium piano engine
+        // ships a fixed-sensitivity knob into one), but an absence assertion
+        // alone stays green if the whole panel stops rendering. The five
+        // present labels are the pin that keeps it honest.
+        render(<MidiCalibrationPanel {...baseProps()} lastVelocity={null} />);
+
+        for (const label of ['Curve', 'Floor', 'Ceiling', 'CC Smooth', 'Sus Thresh']) {
+            expect(screen.getByText(label)).toBeInTheDocument();
+        }
+        expect(screen.queryByText(/aftertouch/i)).not.toBeInTheDocument();
+        expect(screen.getAllByRole('slider')).toHaveLength(5);
+    });
+
     it('should render', () => {
         render(<MidiCalibrationPanel {...baseProps()} lastVelocity={null} />);
         expect(screen.getByText(/midi calibration/i)).toBeInTheDocument();

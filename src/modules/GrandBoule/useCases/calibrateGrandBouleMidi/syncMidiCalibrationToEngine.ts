@@ -11,10 +11,10 @@ type SyncMidiCalibrationToEngineInput = {
 /**
  * Push the engine-consumed half of the MIDI calibration to the DSP.
  *
- * Four of the six calibration values (`velocityCurveExponent`,
- * `velocityFloor`, `velocityCeiling`, `afterTouchSensitivity`) are not engine
- * parameters. The other two are, and both shape how the sustain controller
- * reaches the damper model:
+ * Three of the five calibration values (`velocityCurveExponent`,
+ * `velocityFloor`, `velocityCeiling`) are not engine parameters — they shape
+ * velocity in TypeScript at note time. The other two are, and both shape how
+ * the sustain controller reaches the damper model:
  *
  * * `sustainThreshold` is the lower edge of the half-pedal smoothstep — the
  *   pedal position at which the dampers begin to leave the strings. Its

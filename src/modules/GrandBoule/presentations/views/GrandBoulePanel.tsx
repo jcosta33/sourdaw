@@ -13,7 +13,6 @@ import { defaultTrackState, trackStore } from '#/modules/Arrangement/stores';
 
 import { defaultGrandBouleState, createGrandBouleStore, type TemperamentIndex } from '../../stores/grandBouleStore';
 import { resetMidiCalibration } from '../../useCases/calibrateGrandBouleMidi/resetMidiCalibration';
-import { setAfterTouchSensitivity } from '../../useCases/calibrateGrandBouleMidi/setAfterTouchSensitivity';
 import { setCcSmoothingMs } from '../../useCases/calibrateGrandBouleMidi/setCcSmoothingMs';
 import { setSustainThreshold } from '../../useCases/calibrateGrandBouleMidi/setSustainThreshold';
 import { setVelocityCeiling } from '../../useCases/calibrateGrandBouleMidi/setVelocityCeiling';
@@ -468,7 +467,6 @@ export const GrandBoulePanel = ({ deviceId }: { deviceId: string }): ReactElemen
                             onVelocityCeilingChange={(value) => setVelocityCeiling({ store, value })}
                             onCcSmoothingMsChange={(value) => setCcSmoothingMs({ engine, store, value })}
                             onSustainThresholdChange={(value) => setSustainThreshold({ engine, store, value })}
-                            onAfterTouchSensitivityChange={(value) => setAfterTouchSensitivity({ store, value })}
                             onReset={() => resetMidiCalibration({ engine, store })}
                         />
                     </SectionCard>

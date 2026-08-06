@@ -146,7 +146,14 @@ impl PedalState {
     /// `DEFAULT_HALF_PEDAL_LOW` is not right for every controller. Raising it
     /// delays the lift (a pedal that rests part-way down stops bleeding
     /// sustain); lowering it makes the dampers respond earlier in the travel.
+    ///
+    /// A non-finite threshold is dropped: it survives the clamp and turns the
+    /// smoothstep's lower edge into NaN, which poisons the damper curve for
+    /// every key on the next block.
     pub fn set_half_pedal_low(&mut self, threshold: f32) {
+        if !threshold.is_finite() {
+            return;
+        }
         self.half_pedal_low = threshold.clamp(0.0, MAX_HALF_PEDAL_LOW);
     }
 
@@ -159,7 +166,19 @@ impl PedalState {
     }
 
     /// Update the sustain (CC64) pedal position.
+    ///
+    /// A non-finite position is dropped rather than clamped. `f32::clamp`
+    /// passes NaN straight through, and with smoothing enabled that NaN seeds
+    /// `smoothed_sustain`, which no later valid position can clear — the snap
+    /// back to the raw value only happens at 0 ms. From there it reaches
+    /// `damper_bandwidth_for_key`, whose result goes to
+    /// `PianoVoice::set_extra_damping`; that function's `< 1.0e-3` no-op check
+    /// is false for NaN, so it retunes every resonator with NaN coefficients
+    /// and the instrument never produces a finite sample again.
     pub fn set_sustain(&mut self, position: f32) {
+        if !position.is_finite() {
+            return;
+        }
         self.sustain_position = position.clamp(0.0, 1.0);
         if self.cc_smoothing_ms <= 0.0 {
             self.smoothed_sustain = self.sustain_position;
@@ -181,7 +200,13 @@ impl PedalState {
     /// swept pedal steps the damper bandwidth rather than sliding it. This is
     /// the time constant that turns those steps back into a slide; 0 restores
     /// the raw stepped response.
+    /// A non-finite time constant is dropped for the same reason `set_sustain`
+    /// drops a non-finite position: NaN survives the clamp, fails the
+    /// `<= 0.0` disable check, and poisons the smoother permanently.
     pub fn set_cc_smoothing_ms(&mut self, milliseconds: f32) {
+        if !milliseconds.is_finite() {
+            return;
+        }
         self.cc_smoothing_ms = milliseconds.clamp(0.0, MAX_CC_SMOOTHING_MS);
         if self.cc_smoothing_ms <= 0.0 {
             self.smoothed_sustain = self.sustain_position;
@@ -194,7 +219,15 @@ impl PedalState {
     /// already rebuilt at (`GrandBouleEngine::apply_damper_state`), and
     /// RT-safe: no allocation, no locking, one `exp` per block.
     pub fn advance_sustain_smoothing(&mut self, frames: usize, sample_rate: f32) {
-        if self.cc_smoothing_ms <= 0.0 || frames == 0 || sample_rate <= 0.0 {
+        // `is_finite` is spelled out alongside the sign check rather than
+        // folded into a negated comparison: a NaN rate fails `<= 0.0` as
+        // readily as a good one, and would produce a NaN coefficient that the
+        // smoother can never recover from.
+        if self.cc_smoothing_ms <= 0.0
+            || frames == 0
+            || !sample_rate.is_finite()
+            || sample_rate <= 0.0
+        {
             self.smoothed_sustain = self.sustain_position;
             return;
         }
@@ -242,6 +275,32 @@ impl PedalState {
     ///   sostenuto has captured this key, the damper is fully off (0 Hz).
     /// * Intermediate sustain positions apply a smoothstep between max
     ///   damping and no damping.
+    ///
+    /// # Fast-stomp artifact
+    ///
+    /// This reads `smoothed_sustain`; the engine's discrete "pedal engaged"
+    /// decision in `note_off` reads the raw `sustain_position`. They are
+    /// deliberately different clocks, and on a fast stomp they briefly
+    /// disagree in a way that is audible.
+    ///
+    /// Stomp the pedal to the floor and release a key in the same instant: the
+    /// raw gate says engaged, so the voice is classified pedal-sustained and
+    /// keeps its key ownership immediately — but the dampers it is measured
+    /// against are still most of the way down, and stay partly down for
+    /// roughly five time constants. Measured: one block after a full stomp at
+    /// `cc_smoothing_ms = 30`, `smoothed_sustain` is 0.085; at the 50 ms
+    /// maximum the curve takes about 250 ms to settle. For that window the
+    /// note is a sustained note being damped — it survives, quieter and duller
+    /// than the pedal position suggests, then opens up.
+    ///
+    /// Nothing here is wrong. That window *is* the knob: smoothing the
+    /// controller necessarily means the damper curve lags the controller, and
+    /// the alternative — routing the discrete gate through the smoother too —
+    /// would swallow note-offs for the same duration, which is worse. It is
+    /// recorded because it is the one behaviour a player can hear and cannot
+    /// find by reading the parameter's name, and because the fix for "my
+    /// stomped pedal sounds soft for a moment" is to turn CC Smooth down, not
+    /// to change this curve.
     pub fn damper_bandwidth_for_key(
         &self,
         key: u32,
@@ -484,6 +543,126 @@ mod tests {
 
         assert_eq!(pedals.sustain_position(), 1.0);
         assert!(pedals.smoothed_sustain_position() < 1.0);
+    }
+
+    /// Settle the smoother, feed one bad value, render a block with it, then
+    /// hand the controller back a good value (0.2). Returns the smoothed
+    /// position after 50 more blocks — the reviewer's observation point — and
+    /// after 250, by which point 30 ms of smoothing has had ~22 time constants
+    /// to arrive.
+    fn smoothed_after_recovery(bad: f32) -> (f32, f32) {
+        let mut pedals = PedalState::new();
+        pedals.set_cc_smoothing_ms(30.0);
+        pedals.set_sustain(0.8);
+        for _ in 0..50 {
+            pedals.advance_sustain_smoothing(128, 48_000.0);
+        }
+
+        pedals.set_sustain(bad);
+        pedals.advance_sustain_smoothing(128, 48_000.0);
+
+        // The controller sends a perfectly good value again.
+        pedals.set_sustain(0.2);
+        for _ in 0..50 {
+            pedals.advance_sustain_smoothing(128, 48_000.0);
+        }
+        let at_50 = pedals.smoothed_sustain_position();
+
+        for _ in 0..200 {
+            pedals.advance_sustain_smoothing(128, 48_000.0);
+        }
+        (at_50, pedals.smoothed_sustain_position())
+    }
+
+    #[test]
+    fn a_non_finite_pedal_position_cannot_poison_the_smoother() {
+        // `f32::clamp` passes NaN through, and with smoothing enabled a NaN
+        // that reaches `smoothed_sustain` is permanent: the snap back to the
+        // raw controller value only fires at 0 ms, so every later block
+        // recomputes NaN from NaN. Measured without the guard: NaN, still,
+        // 50 valid blocks later.
+        let (at_50, settled) = smoothed_after_recovery(f32::NAN);
+
+        assert!(
+            at_50.is_finite(),
+            "one non-finite pedal value poisoned the smoother permanently: {at_50}"
+        );
+        assert!(
+            (settled - 0.2).abs() < 1.0e-4,
+            "the smoother did not converge on the pedal after recovering: {settled}"
+        );
+    }
+
+    #[test]
+    fn an_infinite_pedal_position_is_rejected_rather_than_read_as_fully_down() {
+        // Infinity does not poison anything — it clamps — so the smoother
+        // recovers from it either way and asserting that proves nothing. The
+        // claim worth making is what the clamp *does* with it: silently
+        // reading a garbage message as "pedal slammed to the floor" is a
+        // behaviour, and not one anybody asked for. The guard is `is_finite`
+        // rather than `is_nan` precisely so the pedal stays where the player
+        // last put it.
+        let mut pedals = PedalState::new();
+        pedals.set_sustain(0.8);
+
+        pedals.set_sustain(f32::INFINITY);
+
+        assert_eq!(pedals.sustain_position(), 0.8);
+    }
+
+    #[test]
+    fn a_non_finite_smoothing_time_cannot_poison_the_damper_curve() {
+        // NaN survives the clamp and then fails the `<= 0.0` disable check, so
+        // the smoother runs with a NaN time constant.
+        let mut pedals = PedalState::new();
+        pedals.set_cc_smoothing_ms(f32::NAN);
+        pedals.set_sustain(0.6);
+        pedals.advance_sustain_smoothing(128, 48_000.0);
+
+        assert!(
+            pedals.cc_smoothing_ms().is_finite(),
+            "a non-finite smoothing time was stored: {}",
+            pedals.cc_smoothing_ms()
+        );
+        assert!(
+            pedals
+                .damper_bandwidth_for_key(40, false, false)
+                .is_finite(),
+            "the damper curve went non-finite: {}",
+            pedals.damper_bandwidth_for_key(40, false, false)
+        );
+    }
+
+    #[test]
+    fn a_non_finite_threshold_cannot_poison_the_damper_curve() {
+        // A NaN lower edge makes `smoothstep` return NaN for every key.
+        let mut pedals = PedalState::new();
+        pedals.set_half_pedal_low(f32::NAN);
+        pedals.set_sustain(0.6);
+
+        assert_eq!(pedals.half_pedal_low(), DEFAULT_HALF_PEDAL_LOW);
+        assert!(
+            pedals
+                .damper_bandwidth_for_key(40, false, false)
+                .is_finite(),
+            "the damper curve went non-finite: {}",
+            pedals.damper_bandwidth_for_key(40, false, false)
+        );
+        assert!(
+            pedals.sympathetic_damping().is_finite(),
+            "the sympathetic bank went non-finite: {}",
+            pedals.sympathetic_damping()
+        );
+    }
+
+    #[test]
+    fn a_non_finite_sample_rate_falls_back_to_no_smoothing() {
+        let mut pedals = PedalState::new();
+        pedals.set_cc_smoothing_ms(30.0);
+        pedals.set_sustain(0.6);
+        pedals.advance_sustain_smoothing(128, f32::NAN);
+
+        assert_eq!(pedals.smoothed_sustain_position(), 0.6);
     }
 
     #[test]

@@ -16,8 +16,6 @@ export type GrandBouleMidiCalibration = {
     ccSmoothingMs: number;
     /** Half-pedal engagement threshold for sustain CC. Range 0-0.5, default 0.15. */
     sustainThreshold: number;
-    /** Aftertouch sensitivity multiplier. Range 0-2.0, default 1.0. */
-    afterTouchSensitivity: number;
 };
 
 export function createDefaultMidiCalibration(): GrandBouleMidiCalibration {
@@ -27,7 +25,6 @@ export function createDefaultMidiCalibration(): GrandBouleMidiCalibration {
         velocityCeiling: 1.0,
         ccSmoothingMs: 5,
         sustainThreshold: 0.15,
-        afterTouchSensitivity: 1.0,
     };
 }
 
@@ -38,5 +35,4 @@ export const MIDI_CALIBRATION_RANGES = {
     velocityCeiling: { min: 0.5, max: 1.0, step: 0.01, default: 1.0 },
     ccSmoothingMs: { min: 0, max: 50, step: 1, default: 5 },
     sustainThreshold: { min: 0, max: 0.5, step: 0.01, default: 0.15 },
-    afterTouchSensitivity: { min: 0, max: 2.0, step: 0.05, default: 1.0 },
 } as const;
