@@ -603,10 +603,16 @@ zero-coverage files require heavy mocking (CRDT/AudioContext/WebGPU/canvas/DOM-e
   failure, missing-template, groove application) — 4 tests.
 - **PR #1210**: linkCloudRequestAbort — AbortSignal linking (no-caller, pre-aborted,
   deferred abort, cleanup, unlink isolation) — 5 tests.
+- **PR #1214**: getClipNormalizationTargetGain — 7 branch paths (eligibility, state,
+  clip-type, buffer, scale-null, clamp, success) — 7 tests.
+- **PR #1215**: proposeYeastGrooveExtraction — 6 status routing paths (ineligible,
+  extracted, straight, invalid-source, empty) — 6 tests.
+- **PR #1216**: createPopSongTemplate — groove, I-vi-IV-V progression, sections, VCAs,
+  sidechain. Completes ALL 9 project templates with dedicated specs — 6 tests.
 
-**Campaign total to date: 137 PRs, ~1806 assertions across pure-logic models,
+**Campaign total to date: 140 PRs, ~1825 assertions across pure-logic models,
 services, transformers, store-coupled handlers, useCases, components,
-cross-cutting infrastructure, project templates, ALL 14 template helpers,
+cross-cutting infrastructure, ALL 9 project templates, ALL 14 template helpers,
 ALL 9 device layouts, ALL 11 command interface files, the device layout registry,
 groove extraction/restoration, offline render preparation, device-state commit paths,
 crossfade restore, Toaster groove projection, and cloud request abort linking.**
