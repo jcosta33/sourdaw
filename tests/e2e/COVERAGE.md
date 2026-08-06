@@ -565,7 +565,20 @@ Re-measured full suite coverage after 73 additional PRs since the initial thresh
 
 All four metrics measurably increased (+0.7-0.8% each). New thresholds set with ~1.5-2% headroom.
 
-**Campaign total to date: 127 PRs, ~1736 assertions across pure-logic models,
+### Post-threshold-raise coverage (PRs #1199-#1202, ~35 assertions)
+
+- **PR #1199**: duplicateSelectedClipsForward (R-B2 shortcut — span calc, undo/redo
+  closures, guard branches) — 8 tests.
+- **PR #1200**: extractGrooveTemplate (validation branches, straight-groove detection,
+  timing/dynamics extraction, id resolution) — 12 tests.
+- **PR #1201**: applyNoteExpression (no-expression/no-strip/no-controls guards, normalized
+  forwarding, channel default) + restoreDeletedGrooveTemplate (null/invalid/mismatch guards,
+  template restore, assignment restore) — 10 tests.
+- **PR #1202**: prepareOfflineProof (device lookup, chain order restore, reorder message
+  routing, non-proof device filter) — 5 tests.
+
+**Campaign total to date: 131 PRs, ~1771 assertions across pure-logic models,
 services, transformers, store-coupled handlers, useCases, components,
 cross-cutting infrastructure, project templates, ALL 14 template helpers,
-ALL 9 device layouts, ALL 11 command interface files, and the device layout registry.**
+ALL 9 device layouts, ALL 11 command interface files, the device layout registry,
+groove extraction/restoration, and offline render preparation.**
