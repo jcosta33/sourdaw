@@ -1,0 +1,14 @@
+src/modules/WorkspaceShell/presentations/components/__tests__/ShortcutCheatSheet.spec.tsx
+  h_1228e573df1f42 9,11-53
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "38ab7c309b928bd9601e4002f1e5eee5a64c7db1",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
