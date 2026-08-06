@@ -643,5 +643,15 @@ Re-measured after 12 additional PRs since threshold raise #2 (PR #1198):
   snapshot rollback, persistence operation, dedup — 5 tests.
 - **PR #1230**: replaceProjectData — full project replacement with AudioContext/IDB/CRDT
   mocking, abort paths, degraded recovery — 7 tests.
+- **PR #1232**: executableAppActionRegistry (1684 LOC) — descriptor count, Map consistency,
+  risk validation, unique keys, known types — 6 tests.
+- **PR #1233**: crdtPersistenceQueueCoordinator (844 LOC) — entry points, reset, lineage
+  transition validation, load operation — 6 tests.
+- **PR #1235**: ControlHeader deepened — value conditional, zero value, complex content — 4 tests.
+- **PR #1237**: ShortcutCheatSheet deepened — open/close lifecycle, escape/button close,
+  group titles, shortcut descriptions — 5 tests.
 
-**Campaign total to date: 150 PRs, ~1884 assertions.**
+**Campaign total to date: 154 PRs, ~1905 assertions. All hardest-tier zero-coverage files
+now attempted: executePlayheadSeek, sanitizePersistedActionHistoryBundle, runBranchLineageTransition,
+replaceProjectData, executableAppActionRegistry, crdtPersistenceQueueCoordinator,
+grandBouleEngineHandle, deviceNodeFactory.**
