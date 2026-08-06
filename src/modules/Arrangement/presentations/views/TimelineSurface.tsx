@@ -302,12 +302,21 @@ export const TimelineSurface = (): ReactElement => {
                     const viewState = timelineViewStore.value;
                     if (isPlaying && viewState?.autoScrollEnabled) {
                         const playheadPx = playheadPositionRef.current * viewState.pixelsPerBeat;
-                        const canvasWidth = canvas.width;
-                        const rightThreshold = viewState.scrollX + canvasWidth * 0.75;
+                        // audit M-013: measure the viewport in CSS pixels, the
+                        // same unit scrollX and playheadPx use. `canvas.width`
+                        // is the DEVICE-pixel backing store (both renderers set
+                        // it to CSS width × devicePixelRatio), so reading it
+                        // here inflated the threshold by the dpr: at dpr 2 it
+                        // sat at 150% of the viewport and the playhead ran off
+                        // screen before follow-playhead ever fired. Use the
+                        // container's CSS box, as the zoom/scroll handlers above
+                        // already do.
+                        const viewportWidth = container.getBoundingClientRect().width;
+                        const rightThreshold = viewState.scrollX + viewportWidth * 0.75;
                         const leftEdge = viewState.scrollX;
 
                         if (playheadPx > rightThreshold || playheadPx < leftEdge) {
-                            const targetScrollX = Math.max(0, playheadPx - canvasWidth * 0.25);
+                            const targetScrollX = Math.max(0, playheadPx - viewportWidth * 0.25);
                             timelineViewStore.set({ ...viewState, scrollX: targetScrollX });
                         }
                     }
