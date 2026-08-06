@@ -1,0 +1,25 @@
+public/wasm/manifest.json
+  s_14f2bbc9f385dd::t_e32f160f07d6dd 12,16-18,21,40,45-46,49
+src/modules/AudioEngine/wasm/daw_dsp.d.ts
+  s_14f2bbc9f385dd::t_e32f160f07d6dd 1,839-854
+public/wasm/daw-dsp/daw_dsp_bg.wasm.d.ts
+  s_14f2bbc9f385dd::t_e32f160f07d6dd 1,59-74
+public/wasm/daw-dsp/daw_dsp.d.ts
+  s_14f2bbc9f385dd::t_e32f160f07d6dd 1,839-854
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "432c838d4a4383f976482ac931aa0290a559bae7",
+  "prompts": {},
+  "sessions": {
+    "s_14f2bbc9f385dd": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f9a61a1d-66b3-4146-938d-a04f45f4b060",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
