@@ -1,0 +1,19 @@
+src/modules/Arrangement/handlers/device/__tests__/handleSetDeviceState.spec.ts
+  s_14f2bbc9f385dd::t_e4fc46aa529142 1-35
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "cf8e282292ed63ffe8771d575a0d2c61d175784b",
+  "prompts": {},
+  "sessions": {
+    "s_14f2bbc9f385dd": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f9a61a1d-66b3-4146-938d-a04f45f4b060",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
