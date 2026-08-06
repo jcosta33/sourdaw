@@ -1,0 +1,14 @@
+src/modules/CrdtDocument/repositories/__tests__/sanitizePersistedActionHistoryBundle.spec.ts
+  h_1228e573df1f42 1-126
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "23a3a139b8d041e27d4995b7c87f3dbbcfb01b5b",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
