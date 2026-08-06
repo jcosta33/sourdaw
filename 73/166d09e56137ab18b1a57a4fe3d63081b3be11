@@ -1,0 +1,25 @@
+src/modules/Arrangement/repositories/__tests__/factoryPresets.spec.ts
+  s_66d4924c65dcd2::t_3be441f4355168 3,11-24
+src/modules/Arrangement/repositories/presets/factoryPresets.ts
+  s_66d4924c65dcd2::t_85d39830605ba6 103-105
+src/modules/Arrangement/useCases/__tests__/soundPresetLibrary.spec.ts
+  s_66d4924c65dcd2::t_e4d856a755266b 20-44
+src/modules/Arrangement/useCases/soundPresetLibrary.ts
+  s_66d4924c65dcd2::t_c88114ebd2da60 5,48-51
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "73166d09e56137ab18b1a57a4fe3d63081b3be11",
+  "prompts": {},
+  "sessions": {
+    "s_66d4924c65dcd2": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "dad7ceb6-cb31-44b9-91db-bb71a71cbc38",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
