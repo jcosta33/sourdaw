@@ -37,16 +37,16 @@
     },
     "scoring": {
       "crate": "crates/scoring",
-      "crateSourceHash": "sha256:8e75a9188c200af811618578f27cf58ba9a1d6e6498e63c4337190ae267ff816",
+      "crateSourceHash": "sha256:1efb231e69ff548844d52d28ac286c053444a40a35e98cdc807c856808d692c4",
       "schemaHash": "344f42d3211c4765",
       "artifacts": {
         "public/wasm/scoring/scoring.js": "sha256:e25729137072e455d875cdb60796f29a300dc226e5d21b01c045e59811b2e122",
         "public/wasm/scoring/scoring_bg.wasm": "sha256:554ed9f54edff539844385e30be899973f24c5f363feab9948cf09a9a1902182",
-        "public/wasm/scoring/scoring.d.ts": "sha256:737eb043e0aea53835166df6ac245f194aed2bd094ba67056806af337fe6ffb2",
-        "public/wasm/scoring/scoring_bg.wasm.d.ts": "sha256:c5577b179b0f248df97932d4d4bff087be622bfbfb5473ff0b891d7306e8be23",
+        "public/wasm/scoring/scoring.d.ts": "sha256:800a50d017ed88f56c54b5b1048a15fc0ad2d9c6e40fb5109ff874ae76cc06f7",
+        "public/wasm/scoring/scoring_bg.wasm.d.ts": "sha256:5a12a988c30a8870c915f32fb683d2c31a300671cd8fdf8b1241e2cb2f5d729a",
         "public/wasm/scoring/package.json": "sha256:895770ca2e47f84b60b1f09c70658477c33b080435ffba3003358697ff999e54",
         "src/modules/AudioEngine/wasm/scoring.js": "sha256:ddc8145941318fd70dd39a0caa452ba9b41db78450c2e46d87e11df8d1c1adde",
-        "src/modules/AudioEngine/wasm/scoring.d.ts": "sha256:737eb043e0aea53835166df6ac245f194aed2bd094ba67056806af337fe6ffb2"
+        "src/modules/AudioEngine/wasm/scoring.d.ts": "sha256:800a50d017ed88f56c54b5b1048a15fc0ad2d9c6e40fb5109ff874ae76cc06f7"
       }
     },
     "daw-wasm-decoder": {

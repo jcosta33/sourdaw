@@ -206,6 +206,27 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         // path above and as the modulation twin `revertMappingsToBase`, both of
         // which are censused here and guard-listed below.
         'src/modules/Transport/useCases/scheduling/applyAutomation/restoreAutomationBaseValue.ts': 2,
+        // Count provenance: new file entry, measured 4 with `grep -o` over the
+        // four sink identifiers — updateDeviceParam 4, the other three 0. The 4
+        // are the import, one call site, and two doc-comment mentions (one
+        // naming the route the transient preview takes, one recording that the
+        // committing branch reaches the same identifier behind
+        // `setDeviceParameter`).
+        //
+        // Engine-only, and deliberately so. The tuner's concert-A reference knob
+        // used to write `tunerStore` and stop, so the panel readout moved and
+        // `TuningSystem::a4_hz` did not. It is now split the way `setTrackPan`
+        // is: a pointer-move previews through this engine-only sink and persists
+        // nothing, and release dispatches one `setDeviceParameter` action. Read
+        // the family name carefully — this row is the *runtime* half of the
+        // combined family, not a CRDT write. Committing every move instead would
+        // put an Automerge transaction and an undo entry on each of the ~90
+        // steps the 400..490 Hz sweep crosses.
+        //
+        // Guard-listed below: the transient branch addresses the engine directly
+        // and carries the same `resolveEligibleDeviceWriteTarget` ownership gate
+        // as every other device bridge.
+        'src/modules/Tuner/useCases/setA4Reference.ts': 4,
     },
     'strip-add': {
         'src/modules/Arrangement/useCases/device/addDevice.ts': 2,
@@ -593,6 +614,7 @@ const GUARDED_EXECUTABLE_PATHS = [
     'src/modules/Toaster/useCases/toasterParamBridge/setToasterPadParam.ts',
     'src/modules/Transport/useCases/scheduling/applyAutomation/applyAutomation.ts',
     'src/modules/Transport/useCases/scheduling/applyAutomation/restoreAutomationBaseValue.ts',
+    'src/modules/Tuner/useCases/setA4Reference.ts',
 ] as const;
 
 function productionSources(root: string): ProductionSource[] {

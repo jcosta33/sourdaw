@@ -692,10 +692,11 @@ code: no (all dormant).
 ## Tuner
 
 - **Non-atomic read-merge-write races** between updateTunerTelemetry and
-  setA4Reference/setDisplayMode can lose a preference write. Options: keyed
-  updates in the store vs accept the race. Blocks code: no. Source:
-  `src/modules/Tuner/stores/tunerStore.ts:55-59`,
-  `useCases/setA4Reference.ts`, `useCases/setDisplayMode.ts`.
+  setDisplayMode can lose a preference write. Options: keyed updates in the
+  store vs accept the race. Blocks code: no. Source:
+  `src/modules/Tuner/stores/tunerStore.ts:55-59`, `useCases/setDisplayMode.ts`.
+  (`setA4Reference` no longer shares this race: the concert-A reference is a DSP
+  input on `Device.parameterValues`, not `tunerStore` state.)
 - **a4Reference bounds 400–490 exclude historical tunings** (392/415/466/500
   Hz). Options: widen bounds vs document the range. Blocks code: no. Source:
   `src/modules/Tuner/presentations/views/TunerPanel.tsx:162-163`.

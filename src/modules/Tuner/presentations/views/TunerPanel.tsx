@@ -7,8 +7,15 @@ import { DawPluginMetricTile } from '#/components/daw/DawPluginMetricTile';
 import { DawPluginSectionCard } from '#/components/daw/DawPluginSectionCard';
 import { RotaryKnob } from '#/components/daw/RotaryKnob';
 import { useStoreSelector } from '#/infra/store/useStoreSelector';
+import { trackStore, type TrackStoreState } from '#/modules/Arrangement/stores';
 import { createCompactFloatBuffer } from '#/utils/createCompactFloatBuffer';
 
+import {
+    A4_REFERENCE_PARAM_ID,
+    DEFAULT_A4_REFERENCE_HZ,
+    MAX_A4_REFERENCE_HZ,
+    MIN_A4_REFERENCE_HZ,
+} from '../../models/A4Reference';
 import { tunerStore, getTunerState, type DisplayMode } from '../../stores/tunerStore';
 import { setA4Reference } from '../../useCases/setA4Reference';
 import { setDisplayMode } from '../../useCases/setDisplayMode';
@@ -22,6 +29,27 @@ const MODES: ReadonlyArray<{ id: DisplayMode; label: string; detail: string }> =
 const GUITAR_STRINGS = ['E2', 'A2', 'D3', 'G3', 'B3', 'E4'] as const;
 
 const ANNOUNCE_DEBOUNCE_MS = 750;
+
+/**
+ * The reference this device's DSP is actually tuning to.
+ *
+ * Read from the authoritative device row rather than from `tunerStore` so the
+ * readout cannot disagree with the engine: `a4_hz` is what the worklet was sent
+ * and what a strip rebuild replays, and a panel-local mirror would survive
+ * neither a project reload nor an undo. Returns a plain number so
+ * `useStoreSelector`'s `Object.is` cache holds across unrelated track edits.
+ */
+function selectA4Reference(state: TrackStoreState | null, deviceId: string): number {
+    for (const track of state?.tracks ?? []) {
+        for (const device of track.devices) {
+            if (device.id === deviceId) {
+                return device.parameterValues[A4_REFERENCE_PARAM_ID] ?? DEFAULT_A4_REFERENCE_HZ;
+            }
+        }
+    }
+
+    return DEFAULT_A4_REFERENCE_HZ;
+}
 
 /**
  * Returns the latest `message` only after it has stayed unchanged for
@@ -70,8 +98,18 @@ export const TunerPanel = ({ deviceId }: { deviceId: string }): ReactElement => 
     // re-render every mounted TunerPanel on any device's telemetry tick (the
     // producer polls via requestAnimationFrame, ~60/s on a 60 Hz display).
     const state = useStoreSelector(tunerStore, (instances) => instances?.[deviceId] ?? getTunerState(deviceId));
+    const storedA4Reference = useStoreSelector(trackStore, (tracks) => selectA4Reference(tracks, deviceId));
+    // Held only for the duration of a knob drag. The transient half of
+    // `setA4Reference` deliberately writes the engine and not the project, so
+    // the device row does not move until release — without a local preview the
+    // three "Hz" readouts would sit at the old reference while the engine is
+    // already tuning to the new one. `null` means "not dragging": the moment the
+    // gesture commits, the authoritative device row takes back over, so an undo
+    // or a peer edit cannot be masked by a stale preview.
+    const [previewA4Reference, setPreviewA4Reference] = useState<number | null>(null);
+    const a4Reference = previewA4Reference ?? storedA4Reference;
 
-    const { noteName, octave, cents, confidence, active, mode, a4Reference, frequency } = state;
+    const { noteName, octave, cents, confidence, active, mode, frequency } = state;
     // The worklet emits confidence in [0,1] by contract, but nothing between the SAB
     // read and here enforces it. Clamp before any display use so the Conf tile cannot
     // read e.g. 120% and the needle alpha stays in range.
@@ -158,11 +196,24 @@ export const TunerPanel = ({ deviceId }: { deviceId: string }): ReactElement => 
                     <div className="flex items-center justify-center">
                         <RotaryKnob
                             value={a4Reference}
-                            onChange={(value) => setA4Reference(deviceId, Math.round(value))}
-                            min={400}
-                            max={490}
+                            onChange={(value, isTransient) => {
+                                // Whole hertz: the descriptor declares `a4_hz`
+                                // continuous, so the panel is what quantises,
+                                // and a fractional reference would land in the
+                                // project file.
+                                const hz = Math.round(value);
+                                if (isTransient) {
+                                    setPreviewA4Reference(hz);
+                                    setA4Reference(deviceId, hz, true);
+                                    return;
+                                }
+                                setPreviewA4Reference(null);
+                                setA4Reference(deviceId, hz, false);
+                            }}
+                            min={MIN_A4_REFERENCE_HZ}
+                            max={MAX_A4_REFERENCE_HZ}
                             step={1}
-                            defaultValue={440}
+                            defaultValue={DEFAULT_A4_REFERENCE_HZ}
                             size="md"
                             tone="indigo"
                         />

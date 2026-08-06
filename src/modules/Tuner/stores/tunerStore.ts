@@ -4,9 +4,12 @@
  *
  * Write operations are exposed through useCases/:
  *   - setDisplayMode (user preference)
- *   - setA4Reference (user preference)
  *   - updateTunerTelemetry (audio engine telemetry push — also re-exported here for
  *     backward compat with AudioEngine/engine/wasmDeviceRegistry which imports from this path)
+ *
+ * `setA4Reference` is deliberately not among them. The concert-A reference is a
+ * DSP input, not panel state, so it goes to `Device.parameterValues` through
+ * the device-parameter write doors; see `models/A4Reference.ts`.
  */
 
 import { createStore } from '#/infra/store/createStore';
