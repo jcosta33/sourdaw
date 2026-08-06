@@ -576,9 +576,15 @@ All four metrics measurably increased (+0.7-0.8% each). New thresholds set with 
   template restore, assignment restore) — 10 tests.
 - **PR #1202**: prepareOfflineProof (device lookup, chain order restore, reorder message
   routing, non-proof device filter) — 5 tests.
+- **PR #1204**: updateTextNode (null guard, in-place update, node identity preservation,
+  multi-node replace) — the last clean pure-logic gap — 5 tests.
+- **PR #1205**: collectDeviceRuntimeFailures (Map iteration, failure/health aggregation)
+  + commitToasterKit (store guard, executeAppAction dispatch) — 8 tests.
+- **PR #1206**: commitCrumbsDeviceState (store guard, executeAppAction dispatch)
+  + getScopedGrooveAssignment (scoped/legacy fallback) — 6 tests.
 
-**Campaign total to date: 131 PRs, ~1771 assertions across pure-logic models,
+**Campaign total to date: 134 PRs, ~1790 assertions across pure-logic models,
 services, transformers, store-coupled handlers, useCases, components,
 cross-cutting infrastructure, project templates, ALL 14 template helpers,
 ALL 9 device layouts, ALL 11 command interface files, the device layout registry,
-groove extraction/restoration, and offline render preparation.**
+groove extraction/restoration, offline render preparation, and device-state commit paths.**
