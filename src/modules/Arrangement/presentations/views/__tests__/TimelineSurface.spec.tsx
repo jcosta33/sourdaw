@@ -1,5 +1,5 @@
 import { render, screen, fireEvent, act } from '@testing-library/react';
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 import { TooltipProvider } from '#/components/ui/tooltip';
 import { type Store } from '#/infra/store/types';
@@ -74,9 +74,19 @@ const createReactiveStoreFixture = vi.hoisted(() => {
 
 // Mock external dependencies
 vi.mock('../../renderers/createTimelineRenderer', () => ({
-    createTimelineRenderer: vi.fn(() =>
+    createTimelineRenderer: vi.fn((canvas: HTMLCanvasElement) =>
         Promise.resolve({
-            resize: vi.fn(),
+            // Mirror createCanvasRenderer.resize / createWebGpuRenderer.resize:
+            // both size the backing store in DEVICE pixels (CSS px × dpr) while
+            // the CSS box stays in CSS pixels. The stub has to reproduce that so
+            // unit-mixing in the consumer is observable (audit M-013).
+            resize: vi.fn((w: number, h: number) => {
+                const dpr = window.devicePixelRatio || 1;
+                canvas.width = w * dpr;
+                canvas.height = h * dpr;
+                canvas.style.width = `${w}px`;
+                canvas.style.height = `${h}px`;
+            }),
             render: vi.fn(),
             dispose: vi.fn(),
         })
@@ -654,4 +664,106 @@ describe('TimelineSurface — render loop', () => {
         // dirty becomes true on the playing frame → render model is built.
         expect(buildTimelineRenderModel).toHaveBeenCalled();
     });
+});
+
+// audit M-013: the follow-playhead auto-scroll threshold is expressed in CSS
+// pixels (scrollX and playheadPx both are), so it must be derived from the
+// container's CSS box — never from canvas.width, which the renderers size in
+// DEVICE pixels. dpr 1 is precisely where the two units coincide, so these
+// cases drive devicePixelRatio between 1 and 2 and demand the same CSS-pixel
+// answer from both.
+describe('TimelineSurface — follow-playhead auto-scroll is measured in CSS pixels', () => {
+    const VIEWPORT_CSS_WIDTH = 800;
+    const VIEWPORT_CSS_HEIGHT = 600;
+    const originalDevicePixelRatio = window.devicePixelRatio;
+    const originalGetBoundingClientRect = HTMLDivElement.prototype.getBoundingClientRect;
+    const viewportRect: DOMRect = {
+        x: 0,
+        y: 0,
+        top: 0,
+        left: 0,
+        right: VIEWPORT_CSS_WIDTH,
+        bottom: VIEWPORT_CSS_HEIGHT,
+        width: VIEWPORT_CSS_WIDTH,
+        height: VIEWPORT_CSS_HEIGHT,
+        toJSON: () => ({}),
+    };
+
+    const setDevicePixelRatio = (value: number): void => {
+        Object.defineProperty(window, 'devicePixelRatio', { configurable: true, value });
+    };
+
+    beforeEach(() => {
+        vi.clearAllMocks();
+        scheduler.loop = null;
+        // jsdom lays nothing out, so the container's CSS box is 0×0 by default.
+        // Give it a real CSS size — that box is the unit the threshold must use.
+        HTMLDivElement.prototype.getBoundingClientRect = () => viewportRect;
+    });
+
+    afterEach(() => {
+        HTMLDivElement.prototype.getBoundingClientRect = originalGetBoundingClientRect;
+        Object.defineProperty(window, 'devicePixelRatio', {
+            configurable: true,
+            value: originalDevicePixelRatio,
+        });
+    });
+
+    // Runs one dirty frame of the render loop with the playhead at `playheadBeat`
+    // and returns the scrollX the loop settled on.
+    const runOneAutoScrollFrame = async ({
+        devicePixelRatio,
+        playheadBeat,
+    }: {
+        devicePixelRatio: number;
+        playheadBeat: number;
+    }): Promise<number> => {
+        setDevicePixelRatio(devicePixelRatio);
+        zoomHandlers.timelineViewStoreRef.current?.set({
+            scrollX: 0,
+            scrollY: 0,
+            pixelsPerBeat: 10,
+            autoScrollEnabled: true,
+        });
+        zoomHandlers.transportStoreRef.current?.set({ isPlaying: true });
+        const { playheadPositionRef } = await import('#/modules/Transport/stores');
+        playheadPositionRef.current = playheadBeat;
+
+        renderWithTooltip(<TimelineSurface />);
+        await act(async () => {
+            await new Promise((resolve) => {
+                setTimeout(resolve, 0);
+            });
+        });
+        expect(scheduler.loop).not.toBeNull();
+
+        act(() => {
+            scheduler.loop!();
+        });
+
+        const store = zoomHandlers.timelineViewStoreRef.current as Store<{ scrollX: number }>;
+        return store.value!.scrollX;
+    };
+
+    // playheadPx = 70 beats * 10 px/beat = 700 CSS px. The right threshold is
+    // 75% of the 800 CSS px viewport = 600, so the playhead is past it and the
+    // view recentres to playheadPx - 25% * 800 = 500 CSS px. At dpr 2 a
+    // canvas.width-based threshold would read 1600 * 0.75 = 1200 and never fire.
+    it.each([
+        { devicePixelRatio: 1, label: 'dpr 1 (device px === CSS px — the blind spot)' },
+        { devicePixelRatio: 2, label: 'dpr 2 (Retina/HiDPI)' },
+    ])('recentres the view at 500 CSS px on $label', async ({ devicePixelRatio }) => {
+        const scrollX = await runOneAutoScrollFrame({ devicePixelRatio, playheadBeat: 70 });
+        expect(scrollX).toBe(500);
+    });
+
+    // playheadPx = 500 CSS px sits left of the 600 CSS px threshold and right of
+    // the left edge (0), so no frame should move the view at either dpr.
+    it.each([{ devicePixelRatio: 1 }, { devicePixelRatio: 2 }])(
+        'leaves scrollX at 0 while the playhead is inside the CSS viewport threshold (dpr $devicePixelRatio)',
+        async ({ devicePixelRatio }) => {
+            const scrollX = await runOneAutoScrollFrame({ devicePixelRatio, playheadBeat: 50 });
+            expect(scrollX).toBe(0);
+        }
+    );
 });
