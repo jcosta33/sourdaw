@@ -1,0 +1,14 @@
+src/modules/Arrangement/useCases/clipEditing/__tests__/getClipNormalizationTargetGain.spec.ts
+  h_1228e573df1f42 1-103
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "ca537ea958657ec7291efe89dd114eac42e69d25",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
