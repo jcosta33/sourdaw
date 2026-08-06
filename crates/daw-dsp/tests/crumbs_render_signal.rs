@@ -227,6 +227,9 @@ const SETTLE_BLOCKS: usize = 32;
 const RESO_KNOB_MIN: f32 = 0.5;
 const RESO_KNOB_DEFAULT: f32 = 1.0;
 const RESO_KNOB_MAX: f32 = 20.0;
+/// The middle of that travel. Load-bearing: it is the one knob position whose
+/// rendered Q a shrunk span cannot reproduce — see the assertion that uses it.
+const RESO_KNOB_MIDPOINT: f32 = 10.25;
 
 fn steady_tone(frames: usize, tone_hz: f32) -> Vec<f32> {
     (0..frames)
@@ -289,9 +292,7 @@ fn the_knobs_ends_land_on_the_q_range_the_filter_documents() {
     // Where the ends actually land, not merely that they differ. A knob whose
     // ends resolved a narrower Q span than the SVF's documented 0.5–20 would
     // clear every relative check above while quietly shortening the control's
-    // reach — and the two constants that set that span are read by both the
-    // mapping and its inverse, so they stay self-consistent under a change and
-    // nothing white-box can see it.
+    // reach.
     let out_of_circuit = peak_with_filter_out_of_circuit();
     assert!(
         out_of_circuit > 0.05,
@@ -316,6 +317,22 @@ fn the_knobs_ends_land_on_the_q_range_the_filter_documents() {
         "Reso {RESO_KNOB_MAX} lifted the tone {top_lift}× over its unfiltered \
          peak — the top of the knob is not the filter's documented Q \
          {RESO_KNOB_MAX}"
+    );
+
+    // The top of the knob cannot carry the span on its own. Q > 10 engages the
+    // SVF's 2× oversampling, which halves the input, so Q 20 renders a 9.99×
+    // lift and a Q span shrunk to 0.5–10 renders 9.999× — the two are 0.1%
+    // apart and no honest band separates them. The knob's *midpoint* does
+    // separate them: Q 10.25 is interior to the true span and renders 5.12×
+    // (its own Q, halved by the same oversampling), while a shrunk span
+    // saturates it to the ceiling and renders 9.999×.
+    let midpoint_lift = peak_at_resonance_knob(RESO_KNOB_MIDPOINT) / out_of_circuit;
+    assert!(
+        (4.6..5.6).contains(&midpoint_lift),
+        "Reso {RESO_KNOB_MIDPOINT} — the middle of the knob's travel — lifted \
+         the tone {midpoint_lift}× over its unfiltered peak, not the ~5.12× \
+         that Q {RESO_KNOB_MIDPOINT} resolves; the knob's travel is not \
+         landing on the Q span the filter documents"
     );
 }
 

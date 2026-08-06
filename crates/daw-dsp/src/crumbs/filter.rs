@@ -228,6 +228,14 @@ mod tests {
         // dragging the expectation along with it.
         assert_eq!(normalized_resonance_from_q(0.5), 0.0);
         assert_eq!(normalized_resonance_from_q(20.0), 1.0);
+
+        // The ends alone do not hold the span: this function's own `clamp`
+        // saturates them, so shrinking `RESONANCE_Q_MAX` to 10 still returns
+        // 1.0 here and both assertions above stay green while the knob's top
+        // silently delivers half the Q it advertises. The knob's midpoint is
+        // the assertion that cannot be saturated into agreement — it is
+        // interior to the true span and outside a shrunk one.
+        assert_eq!(normalized_resonance_from_q(10.25), 0.5);
     }
 
     #[test]
