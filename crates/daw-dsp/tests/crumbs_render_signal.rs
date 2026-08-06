@@ -212,6 +212,43 @@ fn tune_is_bounded_at_the_twenty_four_semitones_the_knob_travels() {
     );
 }
 
+/// Tune is the *device's* master pitch, so it has to reach a pad the same way
+/// it reaches a keyboard note.
+///
+/// The two modes build entirely different `VoiceTriggerParams` — Drum's come
+/// from `DrumMode::trigger_params` with the pad's own root note, Quick's from
+/// the engine-wide root — and they meet only at the single `set_tune` in
+/// `note_on`. That shared site is what this pins: a future split that gives
+/// Drum its own trigger path would leave the master Tune behind on one side and
+/// the melodic tests above would not notice.
+#[test]
+fn the_master_tune_transposes_a_drum_pad_as_well_as_a_melodic_note() {
+    let pcm = fixture_pcm(4 * BLOCK);
+    let mut instance = instance_with_fixture(&pcm);
+
+    // The loaded sample lands on the base-note pad, whose root note is that
+    // same note 36 — so the pad plays at unity rate and every deviation from
+    // the source frames is the Tune knob's doing and nothing else's.
+    instance.set_mode("drum");
+    instance.set_param("tune", 12.0);
+    instance.note_on(36, 100);
+
+    let left = unsafe { read_channel(instance.process(BLOCK as u32), BLOCK) };
+
+    // A pad carries its own AHDSR, and `PadConfig` ships a 1 ms attack that the
+    // engine-wide `attack` param does not reach — those params are Quick's and
+    // Slice's. 1 ms is 48 frames at this rate, so the comparison starts after
+    // it and the block is a flat unity-gain read of the source from there on.
+    const AFTER_PAD_ATTACK: usize = 64;
+    let rendered_tail = &left[AFTER_PAD_ATTACK..];
+    let every_other_tail: Vec<f32> = (AFTER_PAD_ATTACK..BLOCK).map(|i| pcm[i * 2]).collect();
+    assert_proportional_to(
+        rendered_tail,
+        &every_other_tail,
+        "drum pad 36 with tune +12 st",
+    );
+}
+
 #[test]
 fn a_note_with_no_sample_selected_renders_silence_rather_than_noise() {
     let mut instance = CrumbsInstance::new(SAMPLE_RATE);
