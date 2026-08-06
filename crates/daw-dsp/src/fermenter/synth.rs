@@ -1247,7 +1247,8 @@ mod tests {
         // Drives between 0 (sine) and 1 (saw — the constructed default, so a
         // dead selector renders BOTH positions as this one). Unison stays at
         // its default of 1, exercising the single `WavetableOsc` render path.
-        let (sine_left, sine_right) = render_note_for_engine_with_params(0, &[("osc_waveform", 0.0)]);
+        let (sine_left, sine_right) =
+            render_note_for_engine_with_params(0, &[("osc_waveform", 0.0)]);
         let (saw_left, saw_right) = render_note_for_engine_with_params(0, &[("osc_waveform", 1.0)]);
 
         assert!(block_energy(&sine_left, &sine_right) > 0.001);
@@ -1336,14 +1337,10 @@ mod tests {
         // unison_voices is driven to 8 (default 1) so `Voice::render` takes
         // the `has_unison` branch and reads the `UnisonOsc` bank instead of
         // the single `WavetableOsc` — the waveform must land on both.
-        let (sine_left, sine_right) = render_note_for_engine_with_params(
-            0,
-            &[("unison_voices", 8.0), ("osc_waveform", 0.0)],
-        );
-        let (saw_left, saw_right) = render_note_for_engine_with_params(
-            0,
-            &[("unison_voices", 8.0), ("osc_waveform", 1.0)],
-        );
+        let (sine_left, sine_right) =
+            render_note_for_engine_with_params(0, &[("unison_voices", 8.0), ("osc_waveform", 0.0)]);
+        let (saw_left, saw_right) =
+            render_note_for_engine_with_params(0, &[("unison_voices", 8.0), ("osc_waveform", 1.0)]);
 
         assert!(block_energy(&sine_left, &sine_right) > 0.001);
         assert!(block_energy(&saw_left, &saw_right) > 0.001);
