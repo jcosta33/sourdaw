@@ -221,15 +221,18 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         'src/modules/Toaster/useCases/createDrumTrackStack.ts': 2,
     },
     'direct-built-in': {
-        // Count provenance: measured 1 each with `grep -o`, both new entries.
-        // The Grand Boule "Sus Thresh" knob was a store-only write: its value is
-        // `threshold_low` of the DSP half-pedal damper curve, so it now
-        // dispatches `sustain_threshold` to the engine, and the reset chip
-        // returns the engine to the default alongside the readout. One
-        // executable call apiece and no persistence sink — MIDI calibration is
-        // live per-instance state, not project truth.
-        'src/modules/GrandBoule/useCases/calibrateGrandBouleMidi/resetMidiCalibration.ts': 1,
-        'src/modules/GrandBoule/useCases/calibrateGrandBouleMidi/setSustainThreshold.ts': 1,
+        // Count provenance: new file entry, measured 2 with `grep -o` — both
+        // executable, no comment mentions. The Grand Boule "Sus Thresh" and
+        // "CC Smooth" knobs were store-only writes; their values are the lower
+        // edge of the DSP half-pedal damper curve and the time constant
+        // smoothing CC64 into it, so both now reach the engine. Every writer of
+        // the two (the knobs, the reset chip, and the panel's engine-ready
+        // effect) funnels through this one file, so `setSustainThreshold.ts`,
+        // `setCcSmoothingMs.ts` and `resetMidiCalibration.ts` score 0 and stay
+        // out of this table. No persistence sink — Grand Boule writes none of
+        // its state to `Device.parameterValues`, and MIDI calibration is no
+        // exception.
+        'src/modules/GrandBoule/useCases/calibrateGrandBouleMidi/syncMidiCalibrationToEngine.ts': 2,
         'src/modules/GrandBoule/useCases/loadGrandBoulePreset.ts': 4,
         // Count provenance: measured 3 with `grep -o`, was 2. The two
         // executable hits are unchanged — the `setParam` handle on the returned

@@ -32,6 +32,11 @@ pub const MAX_HALF_PEDAL_LOW: f32 = 0.5;
 /// Smoothstep upper threshold.
 const HALF_PEDAL_HIGH: f32 = 0.85;
 
+/// Upper bound accepted for the continuous-CC smoothing time constant, in
+/// milliseconds. Mirrors the `ccSmoothingMs` range in
+/// `GrandBouleMidiCalibration.ts`.
+pub const MAX_CC_SMOOTHING_MS: f32 = 50.0;
+
 /// Maximum damper bandwidth (Hz) added to a damped key when the pedal is
 /// fully up. Scales with `√key`.
 const DAMPER_MAX_HZ: f32 = 60.0;
@@ -103,6 +108,13 @@ pub struct PedalState {
     /// Calibrated lower edge of the half-pedal smoothstep — the pedal
     /// position at which the dampers begin to lift.
     half_pedal_low: f32,
+    /// Sustain position after continuous-CC smoothing. This is what the
+    /// damper curve reads; `sustain_position` stays the raw controller value
+    /// so the engine's discrete pedal-engaged decisions are never delayed.
+    smoothed_sustain: f32,
+    /// One-pole time constant, in milliseconds, applied to `sustain_position`
+    /// on its way to `smoothed_sustain`. 0 disables smoothing entirely.
+    cc_smoothing_ms: f32,
 }
 
 impl PedalState {
@@ -113,6 +125,10 @@ impl PedalState {
             sostenuto: false,
             keys_held: KeyBitset::EMPTY,
             half_pedal_low: DEFAULT_HALF_PEDAL_LOW,
+            smoothed_sustain: 0.0,
+            // Unsmoothed until a host calibrates it, so an engine driven
+            // without the calibration panel behaves exactly as before.
+            cc_smoothing_ms: 0.0,
         }
     }
 
@@ -145,6 +161,47 @@ impl PedalState {
     /// Update the sustain (CC64) pedal position.
     pub fn set_sustain(&mut self, position: f32) {
         self.sustain_position = position.clamp(0.0, 1.0);
+        if self.cc_smoothing_ms <= 0.0 {
+            self.smoothed_sustain = self.sustain_position;
+        }
+    }
+
+    /// Sustain position the damper curve actually reads.
+    pub fn smoothed_sustain_position(&self) -> f32 {
+        self.smoothed_sustain
+    }
+
+    pub fn cc_smoothing_ms(&self) -> f32 {
+        self.cc_smoothing_ms
+    }
+
+    /// Calibrate how hard the continuous sustain controller is smoothed.
+    ///
+    /// CC64 arrives in 128 steps at whatever rate the controller scans, so a
+    /// swept pedal steps the damper bandwidth rather than sliding it. This is
+    /// the time constant that turns those steps back into a slide; 0 restores
+    /// the raw stepped response.
+    pub fn set_cc_smoothing_ms(&mut self, milliseconds: f32) {
+        self.cc_smoothing_ms = milliseconds.clamp(0.0, MAX_CC_SMOOTHING_MS);
+        if self.cc_smoothing_ms <= 0.0 {
+            self.smoothed_sustain = self.sustain_position;
+        }
+    }
+
+    /// Advance the sustain smoother by one block.
+    ///
+    /// Block-rate, matching the granularity the damper coefficients are
+    /// already rebuilt at (`GrandBouleEngine::apply_damper_state`), and
+    /// RT-safe: no allocation, no locking, one `exp` per block.
+    pub fn advance_sustain_smoothing(&mut self, frames: usize, sample_rate: f32) {
+        if self.cc_smoothing_ms <= 0.0 || frames == 0 || sample_rate <= 0.0 {
+            self.smoothed_sustain = self.sustain_position;
+            return;
+        }
+        let tau_frames = self.cc_smoothing_ms * 0.001 * sample_rate;
+        let coefficient = (-(frames as f32) / tau_frames).exp();
+        self.smoothed_sustain =
+            self.sustain_position + (self.smoothed_sustain - self.sustain_position) * coefficient;
     }
 
     /// Update the una corda (CC67) pedal state.
@@ -200,7 +257,7 @@ impl PedalState {
         if self.sostenuto && sostenuto_captured {
             return 0.0;
         }
-        let lifted = smoothstep(self.half_pedal_low, HALF_PEDAL_HIGH, self.sustain_position);
+        let lifted = smoothstep(self.half_pedal_low, HALF_PEDAL_HIGH, self.smoothed_sustain);
         let max_damp = DAMPER_MAX_HZ * (damper_strength(key) / damper_strength(1));
         max_damp * (1.0 - lifted)
     }
@@ -217,7 +274,7 @@ impl PedalState {
     /// Damping mix supplied to the sympathetic bank. 1.0 = fully damped
     /// (sustain fully up), 0.0 = fully undamped (sustain fully down).
     pub fn sympathetic_damping(&self) -> f32 {
-        1.0 - smoothstep(self.half_pedal_low, HALF_PEDAL_HIGH, self.sustain_position)
+        1.0 - smoothstep(self.half_pedal_low, HALF_PEDAL_HIGH, self.smoothed_sustain)
     }
 }
 
@@ -340,6 +397,93 @@ mod tests {
              {} vs {at_reference}",
             pedals.sympathetic_damping()
         );
+    }
+
+    /// Damper bandwidth one 128-frame block (2.67 ms at 48 kHz) after the
+    /// pedal is slammed from the floor to fully up, at a given smoothing.
+    fn bandwidth_one_block_after_pedal_release(cc_smoothing_ms: f32) -> f32 {
+        let mut pedals = PedalState::new();
+        pedals.set_cc_smoothing_ms(cc_smoothing_ms);
+        pedals.set_sustain(1.0);
+        // Settle first — ten time constants at the 50 ms maximum — so both
+        // runs release from the same fully-down pedal and the measurement is
+        // of the release alone, not of how far each one got on the way down.
+        for _ in 0..200 {
+            pedals.advance_sustain_smoothing(128, 48_000.0);
+        }
+        pedals.set_sustain(0.0);
+        pedals.advance_sustain_smoothing(128, 48_000.0);
+        pedals.damper_bandwidth_for_key(40, false, false)
+    }
+
+    #[test]
+    fn cc_smoothing_slews_the_damper_curve_instead_of_stepping_it() {
+        // Two calibrated smoothing times, neither of them the engine default
+        // of 0: 5 ms is most of the way through one block, 50 ms has barely
+        // started, so the same pedal gesture lands the dampers at different
+        // depths one block later.
+        let quick = bandwidth_one_block_after_pedal_release(5.0);
+        let slow = bandwidth_one_block_after_pedal_release(50.0);
+
+        assert!(
+            quick > slow,
+            "a shorter smoothing time must bring the dampers down sooner: \
+             quick={quick} slow={slow}"
+        );
+    }
+
+    #[test]
+    fn zero_smoothing_restores_the_stepped_response() {
+        // The disable path: at 0 ms the damper curve reads the raw controller
+        // value with no block of latency at all.
+        let mut pedals = PedalState::new();
+        pedals.set_cc_smoothing_ms(0.0);
+        pedals.set_sustain(1.0);
+        assert_eq!(pedals.smoothed_sustain_position(), 1.0);
+        assert_eq!(pedals.damper_bandwidth_for_key(40, false, false), 0.0);
+    }
+
+    #[test]
+    fn cc_smoothing_converges_on_the_controller_value() {
+        // Smoothing may lag the pedal; it may not park somewhere else. 200
+        // blocks is ~533 ms, ten time constants at the 50 ms maximum.
+        let mut pedals = PedalState::new();
+        pedals.set_cc_smoothing_ms(MAX_CC_SMOOTHING_MS);
+        pedals.set_sustain(0.75);
+        for _ in 0..200 {
+            pedals.advance_sustain_smoothing(128, 48_000.0);
+        }
+        assert!(
+            (pedals.smoothed_sustain_position() - 0.75).abs() < 1.0e-4,
+            "smoothed position never reached the pedal: {}",
+            pedals.smoothed_sustain_position()
+        );
+    }
+
+    #[test]
+    fn cc_smoothing_is_clamped_to_the_published_range() {
+        let mut pedals = PedalState::new();
+        assert_eq!(pedals.cc_smoothing_ms(), 0.0);
+
+        pedals.set_cc_smoothing_ms(-3.0);
+        assert_eq!(pedals.cc_smoothing_ms(), 0.0);
+
+        pedals.set_cc_smoothing_ms(999.0);
+        assert_eq!(pedals.cc_smoothing_ms(), MAX_CC_SMOOTHING_MS);
+    }
+
+    #[test]
+    fn smoothing_never_delays_the_discrete_pedal_engaged_decision() {
+        // `GrandBouleEngine` decides note-off catching on `sustain_position`.
+        // Smoothing is a damper-curve concern only — routing the discrete
+        // decision through it too would make a heavily smoothed pedal swallow
+        // note-offs for tens of milliseconds after it was lifted.
+        let mut pedals = PedalState::new();
+        pedals.set_cc_smoothing_ms(MAX_CC_SMOOTHING_MS);
+        pedals.set_sustain(1.0);
+
+        assert_eq!(pedals.sustain_position(), 1.0);
+        assert!(pedals.smoothed_sustain_position() < 1.0);
     }
 
     #[test]

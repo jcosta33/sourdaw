@@ -4,6 +4,8 @@ import { createDefaultMidiCalibration } from '../../models/GrandBouleMidiCalibra
 import { type GrandBouleEngineHandle } from '../../repositories/grandBouleEngineHandle';
 import { type GrandBouleState } from '../../stores/grandBouleStore';
 
+import { syncMidiCalibrationToEngine } from './syncMidiCalibrationToEngine';
+
 // --- Bulk operations --------------------------------------------------------
 
 type ResetMidiCalibrationInput = {
@@ -16,13 +18,13 @@ export function resetMidiCalibration(input: ResetMidiCalibrationInput): void {
     if (state === null) {
         return;
     }
-    const defaults = createDefaultMidiCalibration();
     input.store.set({
         ...state,
-        midiCalibration: defaults,
+        midiCalibration: createDefaultMidiCalibration(),
     });
-    // The other five calibration values are consumed in TypeScript at note
-    // time; `sustainThreshold` lives in the DSP damper curve, so the reset has
-    // to reach the engine or the knob snaps back while the piano does not.
-    input.engine.setParam({ name: 'sustain_threshold', value: defaults.sustainThreshold });
+    // Four of the six values are consumed in TypeScript at note time; the two
+    // pedal-shaping ones live in the DSP, so the reset has to reach the engine
+    // or the knobs snap back while the piano stays calibrated to the values
+    // the readout no longer shows.
+    syncMidiCalibrationToEngine({ engine: input.engine, store: input.store });
 }

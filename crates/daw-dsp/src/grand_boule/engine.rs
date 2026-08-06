@@ -475,6 +475,9 @@ impl GrandBouleEngine {
             // Half-pedal damper-lift point (research §7.3 `threshold_low`),
             // calibrated per controller from the MIDI calibration panel.
             "sustain_threshold" => self.pedals.set_half_pedal_low(value),
+            // Time constant smoothing the continuous sustain controller on its
+            // way to the damper curve, also from the calibration panel.
+            "cc_smoothing_ms" => self.pedals.set_cc_smoothing_ms(value),
             _ => {}
         }
     }
@@ -548,6 +551,11 @@ impl GrandBouleEngine {
 
     pub fn process_block(&mut self, left: &mut [f32], right: &mut [f32]) {
         let frames = left.len().min(right.len());
+        // Advance the continuous-CC smoother before the damper coefficients
+        // are rebuilt from it, so a block never renders with a pedal position
+        // one block stale.
+        self.pedals
+            .advance_sustain_smoothing(frames, self.sample_rate);
         self.apply_damper_state();
         // Per-note bend is resolved once per block, and only for voices whose
         // bend actually moved (audit MD-2).
@@ -1918,6 +1926,51 @@ mod tests {
             early_lift > late_lift * 4.0,
             "the calibrated threshold did not move the damper lift point: \
              early_lift={early_lift} late_lift={late_lift}"
+        );
+    }
+
+    // ── Continuous-CC smoothing (`cc_smoothing_ms`) ────────────────────────
+    //
+    // CC64 arrives in 128 steps at the controller's scan rate, so a swept
+    // pedal steps the damper bandwidth. The calibration panel's "CC Smooth"
+    // knob is the time constant that turns those steps back into a slide.
+
+    /// Energy of the first ~32 ms after the sustain pedal is released under a
+    /// pedal-sustained note. Both runs take the identical amplitude release
+    /// (`release_pedal_sustained_voices` fires either way), so the difference
+    /// is the speed at which the dampers land.
+    fn energy_after_pedal_release(cc_smoothing_ms: f32) -> f32 {
+        let mut engine = GrandBouleEngine::new(48_000.0, 8);
+        engine.set_param("cc_smoothing_ms", cc_smoothing_ms);
+        engine.set_sustain(1.0);
+        // Settle the smoother on the fully-down pedal before striking, so both
+        // runs damp the attack identically and the only difference measured is
+        // how fast the dampers land when the pedal comes back up.
+        let _ = render_engine(&mut engine, 100);
+        engine.note_on(60, 0.8);
+        engine.note_off(60);
+        let _ = render_engine(&mut engine, 60); // skip the attack
+        engine.set_sustain(0.0); // pedal up: the dampers come down
+        let window = render_engine(&mut engine, 12);
+        window.iter().map(|s| s * s).sum()
+    }
+
+    #[test]
+    fn cc_smoothing_changes_how_fast_the_dampers_land_on_rendered_audio() {
+        // 5 ms and 50 ms — the panel default and the top of its range.
+        // Neither is the engine's own default of 0, so this cannot pass on
+        // the value the parameter already had.
+        let quick = energy_after_pedal_release(5.0);
+        let slow = energy_after_pedal_release(50.0);
+
+        assert!(
+            slow > 1.0e-12,
+            "the note was silent in the measurement window: {slow}"
+        );
+        assert!(
+            slow > quick,
+            "the calibrated smoothing did not reach rendered audio: \
+             quick={quick} slow={slow}"
         );
     }
 }
