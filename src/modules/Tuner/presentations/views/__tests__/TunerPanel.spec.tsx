@@ -132,6 +132,14 @@ vi.mock('#/components/daw/DawPluginSectionCard', () => ({
     ),
 }));
 
+// Models the real `RotaryKnob` contract, which is a *two*-argument callback:
+// every pointer-move that crosses a step calls `onChange(value, true)` and
+// release calls it once more with `false` (`RotaryKnob.tsx:307` and `:189`). A
+// single-argument double is what let a drag ship as ninety CRDT commits — the
+// stand-in could not express the difference between a preview and a commit, so
+// no assertion here could see it. `data-testid="rotary-knob"` is the move,
+// `rotary-knob-release` is the release.
+//
 // `type="number"` rather than `range`: jsdom sanitizes a range input's value
 // against its default 0..100 bounds, which would clamp every Hz reading this
 // panel drives to 100 and make the routing assertions meaningless.
@@ -144,19 +152,24 @@ vi.mock('#/components/daw/RotaryKnob', () => ({
         defaultValue,
     }: {
         value: number;
-        onChange: (val: number) => void;
+        onChange: (val: number, isTransient?: boolean) => void;
         min: number;
         max: number;
         defaultValue: number;
     }) => {
         knobProps.last = { min, max, defaultValue, value };
         return (
-            <input
-                type="number"
-                value={value}
-                onChange={(e) => onChange(Number(e.target.value))}
-                data-testid="rotary-knob"
-            />
+            <>
+                <input
+                    type="number"
+                    value={value}
+                    onChange={(e) => onChange(Number(e.target.value), true)}
+                    data-testid="rotary-knob"
+                />
+                <button type="button" data-testid="rotary-knob-release" onClick={() => onChange(value, false)}>
+                    release
+                </button>
+            </>
         );
     },
 }));
@@ -209,12 +222,69 @@ describe('TunerPanel', () => {
     // Moving the knob has to reach `setA4Reference`, which is the only path to
     // the DSP's `a4_hz`. Whole Hz: the descriptor is continuous, so the panel is
     // what quantises, and a fractional reading would land in the project file.
-    it('routes a knob move to setA4Reference as a whole number of hertz', () => {
+    // A move is transient — it previews, it does not commit.
+    it('routes a knob move to setA4Reference as a transient whole number of hertz', () => {
         render(<TunerPanel deviceId={mockDeviceId} />);
 
         fireEvent.change(screen.getByTestId('rotary-knob'), { target: { value: '415.6' } });
 
-        expect(setA4Reference).toHaveBeenCalledWith(mockDeviceId, 416);
+        expect(setA4Reference).toHaveBeenCalledWith(mockDeviceId, 416, true);
+    });
+
+    // The gesture, not the pointer-move, is the edit. A sweep from the stored
+    // 432 Hz down to 415 crosses three sampled steps here; every one of them
+    // must arrive transient, and exactly one commit may follow on release. The
+    // committed value is the last one dragged to (415), not the value the device
+    // row still holds.
+    //
+    // Mutation that reds this (ADR 0015): drop the `isTransient` branch in the
+    // knob's `onChange` and always call `setA4Reference(deviceId, hz)` — all four
+    // calls then arrive with `isTransient` undefined, and the commit count goes
+    // to 4.
+    it('commits a drag once, on release, and previews every move before it', () => {
+        render(<TunerPanel deviceId={mockDeviceId} />);
+
+        const knob = screen.getByTestId('rotary-knob');
+        for (const hz of ['428', '421', '415']) {
+            fireEvent.change(knob, { target: { value: hz } });
+        }
+        fireEvent.click(screen.getByTestId('rotary-knob-release'));
+
+        const calls = vi.mocked(setA4Reference).mock.calls;
+        expect(calls).toEqual([
+            [mockDeviceId, 428, true],
+            [mockDeviceId, 421, true],
+            [mockDeviceId, 415, true],
+            [mockDeviceId, 415, false],
+        ]);
+        expect(calls.filter((call) => call[2] === false)).toHaveLength(1);
+    });
+
+    // The three "Hz" readouts follow the drag. The transient half of
+    // `setA4Reference` writes the engine and not the project, so the device row
+    // sits at 432 for the whole gesture — without the local preview the panel
+    // would claim 432 while the engine is already tuning to 415.
+    it('shows the dragged reference while the gesture is still transient', () => {
+        render(<TunerPanel deviceId={mockDeviceId} />);
+
+        fireEvent.change(screen.getByTestId('rotary-knob'), { target: { value: '415' } });
+
+        expect(screen.getAllByText('415 Hz').length).toBeGreaterThan(0);
+        expect(screen.queryByText('432 Hz')).not.toBeInTheDocument();
+    });
+
+    // Release hands the readout back to the authoritative device row. The
+    // fixture row never moves (the action is mocked), so the panel must fall
+    // back to 432 rather than keeping the preview alive — a preview that
+    // outlived its gesture would mask an undo or a peer edit.
+    it('hands the readout back to the device row once the gesture commits', () => {
+        render(<TunerPanel deviceId={mockDeviceId} />);
+
+        fireEvent.change(screen.getByTestId('rotary-knob'), { target: { value: '415' } });
+        fireEvent.click(screen.getByTestId('rotary-knob-release'));
+
+        expect(screen.getAllByText('432 Hz').length).toBeGreaterThan(0);
+        expect(screen.queryByText('415 Hz')).not.toBeInTheDocument();
     });
 
     // The knob's sweep is the descriptor's declared range (welded to the

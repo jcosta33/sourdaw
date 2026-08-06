@@ -98,7 +98,16 @@ export const TunerPanel = ({ deviceId }: { deviceId: string }): ReactElement => 
     // re-render every mounted TunerPanel on any device's telemetry tick (the
     // producer polls via requestAnimationFrame, ~60/s on a 60 Hz display).
     const state = useStoreSelector(tunerStore, (instances) => instances?.[deviceId] ?? getTunerState(deviceId));
-    const a4Reference = useStoreSelector(trackStore, (tracks) => selectA4Reference(tracks, deviceId));
+    const storedA4Reference = useStoreSelector(trackStore, (tracks) => selectA4Reference(tracks, deviceId));
+    // Held only for the duration of a knob drag. The transient half of
+    // `setA4Reference` deliberately writes the engine and not the project, so
+    // the device row does not move until release — without a local preview the
+    // three "Hz" readouts would sit at the old reference while the engine is
+    // already tuning to the new one. `null` means "not dragging": the moment the
+    // gesture commits, the authoritative device row takes back over, so an undo
+    // or a peer edit cannot be masked by a stale preview.
+    const [previewA4Reference, setPreviewA4Reference] = useState<number | null>(null);
+    const a4Reference = previewA4Reference ?? storedA4Reference;
 
     const { noteName, octave, cents, confidence, active, mode, frequency } = state;
     // The worklet emits confidence in [0,1] by contract, but nothing between the SAB
@@ -187,7 +196,20 @@ export const TunerPanel = ({ deviceId }: { deviceId: string }): ReactElement => 
                     <div className="flex items-center justify-center">
                         <RotaryKnob
                             value={a4Reference}
-                            onChange={(value) => setA4Reference(deviceId, Math.round(value))}
+                            onChange={(value, isTransient) => {
+                                // Whole hertz: the descriptor declares `a4_hz`
+                                // continuous, so the panel is what quantises,
+                                // and a fractional reference would land in the
+                                // project file.
+                                const hz = Math.round(value);
+                                if (isTransient) {
+                                    setPreviewA4Reference(hz);
+                                    setA4Reference(deviceId, hz, true);
+                                    return;
+                                }
+                                setPreviewA4Reference(null);
+                                setA4Reference(deviceId, hz, false);
+                            }}
                             min={MIN_A4_REFERENCE_HZ}
                             max={MAX_A4_REFERENCE_HZ}
                             step={1}
