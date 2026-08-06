@@ -78,6 +78,30 @@ fn assert_proportional_to(rendered: &[f32], expected_source: &[f32], what: &str)
     }
 }
 
+/// How far `rendered` departs from being `reference` times one constant,
+/// expressed as a fraction of the reference's own peak.
+///
+/// `assert_proportional_to` asks "is this the same signal at some level"; this
+/// is that question read the other way, for the cases where the two renders
+/// being a pure rescaling of each other is the *failure*. Two voices in exact
+/// unison sum to one voice times two, so "differs from a scaled copy" is
+/// precisely the statement that a stack is not in unison. Normalising by the
+/// reference peak keeps the threshold a claim about shape rather than level.
+fn departure_from_a_scaled_copy(rendered: &[f32], reference: &[f32], what: &str) -> f32 {
+    let reference_peak = peak(reference);
+    assert!(
+        reference_peak > 0.05,
+        "{what}: the reference render is ~silent (peak {reference_peak}), so \
+         nothing can be concluded from comparing against it"
+    );
+    let scale = scale_factor(rendered, reference);
+    let worst = rendered
+        .iter()
+        .zip(reference.iter())
+        .fold(0.0_f32, |acc, (out, r)| acc.max((out - r * scale).abs()));
+    worst / reference_peak
+}
+
 #[test]
 fn a_note_at_the_root_renders_the_loaded_sample_frame_for_frame() {
     let pcm = fixture_pcm(4 * BLOCK);
@@ -209,6 +233,86 @@ fn tune_is_bounded_at_the_twenty_four_semitones_the_knob_travels() {
     assert_eq!(
         bounded, clamped,
         "tune 100 was not clamped to the +24 st limit"
+    );
+}
+
+/// The master tune and the stacking detune are summed into one `set_tune`, and
+/// nothing held that summation together.
+///
+/// Dropping `+ detune_cents` from it — which collapses every voice of a stack
+/// onto the identical master pitch and throws the whole point of the Detune
+/// knob away — passed all 620 tests in this crate. The stack guard in
+/// `device_process_rt.rs` runs at a detune spread of zero by its own comment,
+/// and every guard above this one runs at the shipped stack count of 1, so the
+/// stacking half of the summand had no coverage at all. Symmetrically, dropping
+/// `self.tune_cents` would leave a stack detuned but untransposed.
+///
+/// One render, two controls, and nothing sitting at a default: the stack is 2
+/// voices (ships at 1), the spread is 40 cents (ships at 0) and the master tune
+/// is +12 st (ships at 0). Both controls park exactly one of those back at its
+/// default, which is what makes each one answer for a single summand.
+#[test]
+fn a_stack_keeps_its_detune_and_its_master_tune_at_the_same_time() {
+    let pcm = fixture_pcm(4 * BLOCK);
+
+    let mut stacked = instance_with_fixture(&pcm);
+    stacked.set_param("stackCount", 2.0);
+    stacked.set_param("detuneSpread", 40.0);
+    stacked.set_param("tune", 12.0);
+    stacked.note_on(60, 100);
+    let stacked_out = unsafe { read_channel(stacked.process(BLOCK as u32), BLOCK) };
+
+    // At a spread of 40 the two voices sit 20 cents either side of the master
+    // pitch, so across this block their read positions pull about three and a
+    // half source frames apart. The fixture does not repeat within the window,
+    // so that separation is a change in the *shape* of the sum and not a phase
+    // shift that could pass for one.
+    let mut one_voice = instance_with_fixture(&pcm);
+    one_voice.set_param("tune", 12.0);
+    one_voice.note_on(60, 100);
+    let one_voice_out = unsafe { read_channel(one_voice.process(BLOCK as u32), BLOCK) };
+
+    let mut untuned_stack = instance_with_fixture(&pcm);
+    untuned_stack.set_param("stackCount", 2.0);
+    untuned_stack.set_param("detuneSpread", 40.0);
+    untuned_stack.note_on(60, 100);
+    let untuned_stack_out = unsafe { read_channel(untuned_stack.process(BLOCK as u32), BLOCK) };
+
+    assert!(
+        peak(&stacked_out) > 0.05,
+        "the stacked render is ~silent, so neither comparison below means anything"
+    );
+
+    // A shape difference of 5% of the reference peak, sitting between two
+    // measured populations rather than picked: as written the two comparisons
+    // below come out at 0.117 and 1.015, and with the detune summand dropped
+    // the first is *exactly* 0 — a stack in unison is bit-for-bit one voice
+    // doubled. Float summation order and the interpolator's own error land
+    // orders below this, so the threshold separates "different signals" from
+    // "the same signal computed twice" with margin on both sides.
+    const NOT_A_RESCALING: f32 = 0.05;
+
+    // Against one voice at the same master tune. A stack whose voices all took
+    // the master pitch and none of the detune *is* that voice doubled — a pure
+    // rescaling — so this is the assertion that reds when the detune summand
+    // goes missing.
+    let from_unison = departure_from_a_scaled_copy(&stacked_out, &one_voice_out, "detuned stack");
+    assert!(
+        from_unison > NOT_A_RESCALING,
+        "the detuned stack is a scaled copy of a single voice (departure \
+         {from_unison}) — its voices are in unison, so the spread never reached them"
+    );
+
+    // Against the same stack with the master tune left at 0. Identical output
+    // would mean the transposition never reached a stacked voice — the
+    // write-only knob, surviving in the one configuration the guards above do
+    // not render.
+    let from_untuned =
+        departure_from_a_scaled_copy(&stacked_out, &untuned_stack_out, "tuned vs untuned stack");
+    assert!(
+        from_untuned > NOT_A_RESCALING,
+        "the stack rendered the same at +12 st as at 0 (departure {from_untuned}) \
+         — the master tune never reached a stacked voice"
     );
 }
 

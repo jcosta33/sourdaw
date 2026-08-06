@@ -808,6 +808,20 @@ impl CrumbsEngine {
             // ±2400 cents this arm has always bounded; only the conversion is
             // new. Stored in cents because that is what `CrumbsVoice::set_tune`
             // takes and what the field is named for.
+            //
+            // **This changes what an existing automation lane sounds like.**
+            // `tune` has been `automatable: true` since the descriptor was
+            // written, so a Tune lane could always be drawn, saved and
+            // reloaded — and until this commit it was inaudible in every
+            // configuration, because nothing read the field it fed. Any such
+            // lane starts sounding now, which is the first time its author
+            // hears what they drew. A lane authored against the old ±100
+            // "cents" declaration is additionally re-bounded: points past ±24
+            // flatten onto the two-octave limit instead of the ±100 the
+            // descriptor used to permit. ADR 0016 ruling 3 governs — there are
+            // no users, correctness wins outright, and no version-gated branch
+            // preserves the silent reading — but the change is real and is
+            // stated here rather than discovered.
             CrumbsParam::Tune => self.tune_cents = value.clamp(-24.0, 24.0) * 100.0,
             CrumbsParam::Pan => {
                 // Pan is set per-voice; this sets the default for new voices.
