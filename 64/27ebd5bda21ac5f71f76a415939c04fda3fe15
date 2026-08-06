@@ -1,0 +1,49 @@
+src/modules/GrandBoule/presentations/components/MidiCalibrationPanel.tsx
+  s_14f2bbc9f385dd::t_6d279a3188f88d 357-359
+  s_14f2bbc9f385dd::t_461fb8190f9b8d 370-375
+  s_14f2bbc9f385dd::t_59e34bebaebd92 386-391
+  s_14f2bbc9f385dd::t_c737fb27c044b4 102,112-114,116
+  s_14f2bbc9f385dd::t_daee0535f5c86f 4,8-13
+src/modules/GrandBoule/presentations/components/__tests__/MidiCalibrationPanel.spec.tsx
+  s_14f2bbc9f385dd::t_35c0f99f2e256b 20-34
+crates/daw-dsp/src/grand_boule/pedals.rs
+  s_14f2bbc9f385dd::t_c2b9dc4b150cef 203-205,207-209
+  s_14f2bbc9f385dd::t_384c686b00362d 597-606,608-610
+  s_14f2bbc9f385dd::t_41fdb2a4b325b5 278-303
+  s_14f2bbc9f385dd::t_a45fa01d2b8f9b 222-230
+  s_14f2bbc9f385dd::t_329bd2c829477f 169-177,179-181
+  s_14f2bbc9f385dd::t_1ae5505d5a6443 149-152,154-156
+  s_14f2bbc9f385dd::t_8b35c1ce0b015a 554-568,575-583,585-586,589-590,593-596,607,611-667
+  s_14f2bbc9f385dd::t_456bc33fc461eb 548-553,569-574,584,587-588,591-592
+src/modules/GrandBoule/useCases/calibrateGrandBouleMidi/syncMidiCalibrationToEngine.ts
+  s_14f2bbc9f385dd::t_b7cc325739486a 14-17
+crates/daw-dsp/src/grand_boule/engine.rs
+  s_14f2bbc9f385dd::t_82f7c76a434596 1976-2012
+crates/daw-dsp/tests/device_process_rt.rs
+  s_14f2bbc9f385dd::t_877899879954bd 885-899,905-907,911-913,918-921
+  s_14f2bbc9f385dd::t_7910c865884180 922
+public/wasm/daw-dsp/daw_dsp.d.ts
+  s_14f2bbc9f385dd::t_87fe8e0440021a 1
+public/wasm/daw-dsp/daw_dsp_bg.wasm.d.ts
+  s_14f2bbc9f385dd::t_a07a7b7c8011bf 1
+public/wasm/manifest.json
+  s_14f2bbc9f385dd::t_8ad70f5cd0e22e 12,16-18,21
+src/modules/AudioEngine/wasm/daw_dsp.d.ts
+  s_14f2bbc9f385dd::t_29272e610db001 1
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "6427ebd5bda21ac5f71f76a415939c04fda3fe15",
+  "prompts": {},
+  "sessions": {
+    "s_14f2bbc9f385dd": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f9a61a1d-66b3-4146-938d-a04f45f4b060",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
