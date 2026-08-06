@@ -647,6 +647,118 @@ mod tests {
             err_cents
         );
     }
+
+    /// Feed `seconds` of a stereo sine through `ScoringInstance` — the object
+    /// the AudioWorklet actually holds — in 128-frame blocks.
+    fn run_instance(instance: &mut ScoringInstance, freq: f32, sample_rate: f32, seconds: f32) {
+        let blocks = (sample_rate * seconds) as usize / 128;
+        let mut n = 0usize;
+        for _ in 0..blocks {
+            let mut left = [0.0_f32; 128];
+            let mut right = [0.0_f32; 128];
+            for i in 0..128 {
+                let s = (TAU * freq * n as f32 / sample_rate).sin() * 0.8;
+                left[i] = s;
+                right[i] = s;
+                n += 1;
+            }
+            let _ = instance.process(&left, &right, 128);
+        }
+    }
+
+    /// The concert-A reference has to move the readout, not just a number in a
+    /// panel. One fixed 446 Hz tone, three references — the input never
+    /// changes, so every difference below is `a4_hz` doing its job:
+    ///
+    /// | reference | note | cents        |
+    /// | --------- | ---- | ------------ |
+    /// | 440 (default) | A4  | +23.5 (sharp of A440) |
+    /// | 446           | A4  | 0 (in tune)           |
+    /// | 415 (Baroque) | A#4 | +24.7                 |
+    ///
+    /// 440 is deliberately not the only row. It is the one reference at which a
+    /// tuner that ignores the parameter entirely still reports the right
+    /// answer, so a guard that only ran there would pass on a dead knob.
+    ///
+    /// Driven through `ScoringInstance::set_param`, the string dispatch the
+    /// worklet's `{ type: 'param' }` message lands on, rather than by assigning
+    /// `TuningSystem::a4_hz`: both `set_param` hops end in a `_ => {}` arm, so a
+    /// drifted id is swallowed without a trace and only the string path can see
+    /// it.
+    ///
+    /// Mutation that reds this (ADR 0015): drop the `"a4_hz" | "reference"` arm
+    /// from `ScoringEngine::set_param` so the write falls through to `_ => {}` —
+    /// all three rows then report the 440 reading and the second and third fail.
+    #[test]
+    fn cent_readout_is_measured_against_the_a4_reference() {
+        const TONE_HZ: f32 = 446.0;
+        const SAMPLE_RATE: f32 = 44100.0;
+
+        // (reference, expected midi note, expected note index)
+        let cases: [(Option<f32>, i32, usize); 3] =
+            [(None, 69, 9), (Some(446.0), 69, 9), (Some(415.0), 70, 10)];
+
+        let mut readings: Vec<f32> = Vec::new();
+
+        for (reference, expected_midi, expected_note_index) in cases {
+            let mut instance = ScoringInstance::new(SAMPLE_RATE);
+            if let Some(hz) = reference {
+                instance.set_param("a4_hz", hz);
+            }
+            run_instance(&mut instance, TONE_HZ, SAMPLE_RATE, 2.0);
+
+            assert!(
+                instance.is_active(),
+                "inactive at reference {reference:?} (freq={:.2}, conf={:.2})",
+                instance.get_frequency(),
+                instance.get_confidence()
+            );
+
+            // The reference renames the note as well as moving the deviation:
+            // 446 Hz is an A against a 440 or 446 reference and an A# against a
+            // 415 one.
+            assert_eq!(
+                instance.get_midi_note(),
+                expected_midi,
+                "wrong note at reference {reference:?}"
+            );
+            assert_eq!(
+                instance.get_note_index() as usize,
+                expected_note_index,
+                "wrong note name at reference {reference:?}"
+            );
+
+            // Predicted from the reference alone: cents from the nearest note of
+            // a 12-TET grid anchored at `a4_hz`.
+            let anchor = reference.unwrap_or(440.0);
+            let semitones_from_a4 = 12.0 * (TONE_HZ / anchor).log2();
+            let expected_cents = semitones_from_a4 * 100.0 - (expected_midi - 69) as f32 * 100.0;
+            assert!(
+                (instance.get_cents() - expected_cents).abs() < 4.0,
+                "reference {reference:?}: expected ~{expected_cents:.1} cents, read {:.1} \
+                 (detected {:.2} Hz)",
+                instance.get_cents(),
+                instance.get_frequency()
+            );
+
+            readings.push(instance.get_cents());
+        }
+
+        // The gap between the 440 row and the 446 row is the feature itself, and
+        // it is the one number detector error cannot explain away: the tone is
+        // identical, so whatever the analyser estimated cancels out of the
+        // difference and only the reference is left.
+        let default_reading = readings[0];
+        let matched_reading = readings[1];
+        let expected_gap = 1200.0 * (TONE_HZ / 440.0_f32).log2();
+        assert!(
+            (default_reading - matched_reading - expected_gap).abs() < 0.5,
+            "moving the reference from 440 to {TONE_HZ} Hz shifted the readout by \
+             {:.2} cents, expected {expected_gap:.2} \
+             (440 -> {default_reading:.2}, {TONE_HZ} -> {matched_reading:.2})",
+            default_reading - matched_reading
+        );
+    }
 }
 
 /// RT-safety guard: steady-state `ScoringEngine::process` (mono + poly) must

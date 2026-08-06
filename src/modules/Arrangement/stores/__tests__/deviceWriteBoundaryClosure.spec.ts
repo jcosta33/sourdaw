@@ -206,24 +206,20 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         // path above and as the modulation twin `revertMappingsToBase`, both of
         // which are censused here and guard-listed below.
         'src/modules/Transport/useCases/scheduling/applyAutomation/restoreAutomationBaseValue.ts': 2,
-        // Count provenance: new file entry, measured 8 with `grep -o` over the
-        // four sink identifiers — persistDeviceParam 4, updateDeviceParam 4,
-        // the patch pair 0. Four apiece: the import, the single call, and two
-        // doc-comment mentions each (one naming what the write is for, one
-        // recording that both doors clamp against the descriptor so the engine
-        // and the stored row cannot land different values).
+        // Count provenance: new file entry, measured 1 with `grep -o` over the
+        // four sink identifiers — updateDeviceParam 1, the other three 0. The
+        // one hit is a doc-comment mention; this file calls no sink and is
+        // therefore deliberately absent from GUARDED_EXECUTABLE_PATHS.
         //
-        // New sink, not a reclassification. The tuner's concert-A reference
-        // knob previously wrote `tunerStore` and stopped: the panel readout
-        // moved and `TuningSystem::a4_hz` did not, so the cents coming back out
-        // of the analyser were identical at 440 and at 415. Both halves are now
-        // required — `updateDeviceParam` is the only route to
-        // `ScoringInstance::set_param('a4_hz', …)`, and `persistDeviceParam` is
-        // what a strip rebuild replays, without which the engine snaps back to
-        // the descriptor's 440. Guard-listed below: same
-        // `resolveEligibleDeviceWriteTarget` ownership gate as the other device
-        // bridges.
-        'src/modules/Tuner/useCases/setA4Reference.ts': 8,
+        // The tuner's concert-A reference knob used to write `tunerStore` and
+        // stop, so the panel readout moved and `TuningSystem::a4_hz` did not. It
+        // now dispatches the `setDeviceParameter` action, which reaches the
+        // engine through `setDeviceParameter.ts` — already censused and
+        // guard-listed above — rather than opening a second bridge of its own.
+        // The comment names `updateDeviceParam` because that is the identifier
+        // at the end of that route and the only thing that moves the reference
+        // the cent readout is measured against.
+        'src/modules/Tuner/useCases/setA4Reference.ts': 1,
     },
     'strip-add': {
         'src/modules/Arrangement/useCases/device/addDevice.ts': 2,
@@ -611,7 +607,6 @@ const GUARDED_EXECUTABLE_PATHS = [
     'src/modules/Toaster/useCases/toasterParamBridge/setToasterPadParam.ts',
     'src/modules/Transport/useCases/scheduling/applyAutomation/applyAutomation.ts',
     'src/modules/Transport/useCases/scheduling/applyAutomation/restoreAutomationBaseValue.ts',
-    'src/modules/Tuner/useCases/setA4Reference.ts',
 ] as const;
 
 function productionSources(root: string): ProductionSource[] {

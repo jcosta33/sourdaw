@@ -1,38 +1,29 @@
-import { persistDeviceParam, resolveEligibleDeviceWriteTarget } from '#/modules/Arrangement/stores';
-import { updateDeviceParam } from '#/modules/AudioEngine/useCases';
+import { executeAppAction } from '#/modules/Command/useCases';
 
 import { A4_REFERENCE_PARAM_ID } from '../models/A4Reference';
 
 /**
  * Move the tuner's concert-A reference.
  *
- * Both writes are required and neither substitutes for the other.
- * `updateDeviceParam` is the single door to the DSP: it reaches
- * `ScoringInstance::set_param('a4_hz', …)` through the worklet port, and that
- * is the only thing that moves `TuningSystem::a4_hz` — which every note name
- * and cent deviation coming back out of the analyser is measured against.
- * `persistDeviceParam` lands the same value on `Device.parameterValues`, which
- * is what a strip rebuild replays (project open, undo, track restore), so
- * without it the engine snaps back to the descriptor's 440 while the panel goes
- * on reporting the reference the user picked.
+ * This used to be a bare `tunerStore` write, which is the whole defect: the
+ * number under the knob moved and `TuningSystem::a4_hz` did not, so the analyser
+ * went on measuring against 440 and reported the same cents for the same input
+ * at every setting of the control.
  *
- * Guarded by `resolveEligibleDeviceWriteTarget` for the same reason every other
- * device bridge is: a device id owned by no track, owned twice, or owned by a
- * track kind that does not accept device updates has no write target, and
- * pushing either half of the pair anyway writes to whichever device answers
- * first.
- *
- * The declared 400..490 Hz range is deliberately not enforced here —
- * `updateDeviceParam` and `persistDeviceParam` each clamp against the
- * descriptor themselves, so the engine and the stored row cannot land on
- * different values.
+ * `setDeviceParameter` is the door the rest of the DAW's device knobs already
+ * use, and it is the one that does all three things this parameter needs:
+ * clamps to the declared range, lands the value on `Device.parameterValues`
+ * (what a strip rebuild replays on project open, undo and track restore), and
+ * calls `updateDeviceParam` — the only route to
+ * `ScoringInstance::set_param('a4_hz', …)`, which is what actually moves the
+ * reference the cent readout is measured against. Going through
+ * `executeAppAction` rather than calling the use case directly is what puts the
+ * move in the CRDT transaction, so a mis-set reference is undoable like any
+ * other knob.
  */
 export function setA4Reference(deviceId: string, hz: number): void {
-    const target = resolveEligibleDeviceWriteTarget(deviceId);
-    if (target.status !== 'eligible') {
-        return;
-    }
-
-    updateDeviceParam(target.trackId, target.deviceId, A4_REFERENCE_PARAM_ID, hz);
-    persistDeviceParam(target.deviceId, A4_REFERENCE_PARAM_ID, hz);
+    void executeAppAction({
+        type: 'setDeviceParameter',
+        payload: { deviceId, paramId: A4_REFERENCE_PARAM_ID, value: hz },
+    });
 }
