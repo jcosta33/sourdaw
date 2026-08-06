@@ -62,6 +62,11 @@ export const MicBlendSlider = ({
                                 max={6}
                                 defaultValue={-6}
                                 height={100}
+                                unit="dB"
+                                // audit M-083: the visible mic name sits below the whole
+                                // column, so it names nothing to assistive tech — the
+                                // slider has to carry its own name and unit.
+                                aria-label={`${mic.name} level`}
                             />
                             <RotaryKnob
                                 value={mic.pan}

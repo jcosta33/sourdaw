@@ -277,7 +277,20 @@ export const ExpandedChannelStrip = ({ track, isSelected, widthClass }: Expanded
             <MixerLevelReadout
                 trackId={track.id}
                 control={
-                    <div className="shrink-0" onPointerUp={actions.releaseGainAutomation}>
+                    /*
+                     * audit M-083: the fader is now keyboard-operable, and a keyboard
+                     * write never produces a pointerup. Without the matching `onKeyUp`
+                     * a touch-mode gain change made from the keyboard would leave the
+                     * automation lane latched until transport stop. The wrapper is a
+                     * delegation container for events bubbling out of the fader, so it
+                     * is marked presentational — the slider inside carries the semantics.
+                     */
+                    <div
+                        role="presentation"
+                        className="shrink-0"
+                        onPointerUp={actions.releaseGainAutomation}
+                        onKeyUp={actions.releaseGainAutomation}
+                    >
                         <Fader
                             value={track.gain}
                             onChange={actions.setGain}

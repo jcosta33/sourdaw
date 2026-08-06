@@ -1,4 +1,12 @@
-import { type ReactElement, type PointerEvent, useState, useRef } from 'react';
+import {
+    type ReactElement,
+    type PointerEvent,
+    type KeyboardEvent,
+    useState,
+    useRef,
+    useEffect,
+    useLayoutEffect,
+} from 'react';
 
 import { cn } from '#/utils/Styles/cn';
 
@@ -45,15 +53,47 @@ type FaderProps = {
     className?: string;
     /** Color tone for the active cap indicator */
     tone?: Tone;
+    /**
+     * audit M-083: accessible name for the slider itself. `aria-label` on the
+     * surrounding markup does not name this control — the wrapper has no role,
+     * so the label has no ARIA mapping and is dropped. Two call sites were
+     * already passing this attribute into a props type that did not declare it;
+     * TypeScript exempts hyphenated JSX attributes from excess-property checks,
+     * so those labels vanished silently.
+     */
+    'aria-label'?: string;
+    /**
+     * audit M-083: unit for the announced value (e.g. `dB`). When set, the
+     * slider reports `aria-valuetext` so assistive tech reads "-10 dB" rather
+     * than a bare number. Omit it where the value is already unitless.
+     */
+    unit?: string;
 };
 
 /** dB marks for the fader scale */
 const DB_MARKS = [6, 0, -6, -12, -24, -48] as const;
 
+/** Keyboard coarse step (PageUp/PageDown) as a multiple of the normal step. */
+const COARSE_STEP_MULTIPLIER = 10;
+
+/**
+ * Snap onto the step grid without the binary-float residue that bare
+ * `Math.round(v / step) * step` leaves behind — at `step = 0.1` it turns 5.1
+ * into 5.1000000000000005, which is invisible in the readout and permanent in
+ * the project. Mirrors `ValueField`'s `snapToStep`.
+ */
+function snapToStep(value: number, stepSize: number): number {
+    if (!(stepSize > 0)) {
+        return value;
+    }
+    return Number((Math.round(value / stepSize) * stepSize).toPrecision(12));
+}
+
 /**
  * Fader
  * Vertical mixer fader with metallic cap, groove track, and dB scale.
  * Drag cap to slide, Shift for fine mode, double-click to reset.
+ * Arrow keys step, Home/End jump to the bounds, PageUp/PageDown move coarsely.
  */
 export const Fader = ({
     value,
@@ -68,12 +108,18 @@ export const Fader = ({
     showScale = false,
     className,
     tone = 'cyan',
+    unit,
+    'aria-label': ariaLabel,
 }: FaderProps): ReactElement => {
     const [isDragging, setIsDragging] = useState(false);
     const draggingRef = useRef(false);
+    const rootRef = useRef<HTMLDivElement>(null);
     const trackRef = useRef<HTMLDivElement>(null);
     const startY = useRef(0);
     const startValue = useRef(value);
+    /** audit M-082: the id of the captured pointer, so a finalizer that has no event can still release it. */
+    const activePointerIdRef = useRef<number | null>(null);
+    const finalizeDragRef = useRef<() => void>(() => {});
 
     const normalized = Math.max(0, Math.min(1, (value - min) / (max - min)));
 
@@ -84,6 +130,58 @@ export const Fader = ({
         }
         return clamped;
     };
+
+    /**
+     * audit M-082: the single exit from a drag. Previously only `pointerup` on
+     * the element cleared `draggingRef`, so a `pointercancel` (touch gesture
+     * stolen by the OS) or an implicit capture release left the drag latched
+     * forever — every later `pointermove` over the fader, plain hover with no
+     * button held, kept writing the level. Every way a drag can end now routes
+     * here. Matches `RotaryKnob`'s cancel / lost-capture / blur / visibility set.
+     */
+    const finalizeDrag = (): void => {
+        if (!draggingRef.current) {
+            return;
+        }
+        const pointerId = activePointerIdRef.current;
+        draggingRef.current = false;
+        activePointerIdRef.current = null;
+        setIsDragging(false);
+        if (pointerId === null || !rootRef.current) {
+            return;
+        }
+        if (typeof rootRef.current.releasePointerCapture !== 'function') {
+            return;
+        }
+        try {
+            rootRef.current.releasePointerCapture(pointerId);
+        } catch {
+            // The browser may have already released capture before this finalizer runs.
+        }
+    };
+
+    useLayoutEffect(() => {
+        finalizeDragRef.current = finalizeDrag;
+    });
+
+    // audit M-082: a drag interrupted by a window/tab switch never sees pointerup.
+    useEffect(() => {
+        const handleWindowBlur = (): void => {
+            finalizeDragRef.current();
+        };
+        const handleVisibilityChange = (): void => {
+            if (document.visibilityState === 'hidden') {
+                finalizeDragRef.current();
+            }
+        };
+
+        window.addEventListener('blur', handleWindowBlur);
+        document.addEventListener('visibilitychange', handleVisibilityChange);
+        return () => {
+            window.removeEventListener('blur', handleWindowBlur);
+            document.removeEventListener('visibilitychange', handleVisibilityChange);
+        };
+    }, []);
 
     const handlePointerDown = (event: PointerEvent<HTMLDivElement>) => {
         if (event.button !== 0 || !trackRef.current) {
@@ -96,6 +194,7 @@ export const Fader = ({
         if (typeof event.currentTarget.setPointerCapture === 'function') {
             event.currentTarget.setPointerCapture(event.pointerId);
         }
+        activePointerIdRef.current = event.pointerId;
         draggingRef.current = true;
         setIsDragging(true);
 
@@ -131,12 +230,57 @@ export const Fader = ({
         onChange(clampAndSnap(newValue));
     };
 
-    const handlePointerUp = (event: PointerEvent<HTMLDivElement>) => {
-        draggingRef.current = false;
-        setIsDragging(false);
-        if (typeof event.currentTarget.releasePointerCapture === 'function') {
-            event.currentTarget.releasePointerCapture(event.pointerId);
+    const handlePointerUp = () => {
+        finalizeDrag();
+    };
+
+    /**
+     * audit M-083: the APG slider keyboard contract — arrows step, Shift for the
+     * fine step, Home/End to the bounds, PageUp/PageDown coarse. `onChange` has no
+     * transient flag, so each keypress is one committed write, not a stream.
+     * https://www.w3.org/WAI/ARIA/apg/patterns/slider/
+     */
+    const handleKeyDown = (event: KeyboardEvent<HTMLDivElement>): void => {
+        if (draggingRef.current) {
+            return;
         }
+
+        const isIncrement = event.key === 'ArrowUp' || event.key === 'ArrowRight';
+        const isDecrement = event.key === 'ArrowDown' || event.key === 'ArrowLeft';
+        const isCoarseIncrement = event.key === 'PageUp';
+        const isCoarseDecrement = event.key === 'PageDown';
+        const isHome = event.key === 'Home';
+        const isEnd = event.key === 'End';
+        if (!isIncrement && !isDecrement && !isCoarseIncrement && !isCoarseDecrement && !isHome && !isEnd) {
+            return;
+        }
+
+        event.preventDefault();
+
+        let nextValue: number;
+        if (isHome) {
+            nextValue = clampAndSnap(min);
+        } else if (isEnd) {
+            nextValue = clampAndSnap(max);
+        } else {
+            let currentStep = step;
+            if (event.shiftKey) {
+                currentStep = fineStep;
+            }
+            if (isCoarseIncrement || isCoarseDecrement) {
+                currentStep = step * COARSE_STEP_MULTIPLIER;
+            }
+            let direction = 1;
+            if (isDecrement || isCoarseDecrement) {
+                direction = -1;
+            }
+            nextValue = clampAndSnap(snapToStep(value + direction * currentStep, currentStep));
+        }
+
+        if (Object.is(nextValue, value)) {
+            return;
+        }
+        onChange(nextValue);
     };
 
     const handleDoubleClick = () => {
@@ -146,13 +290,42 @@ export const Fader = ({
     const capBottomPct = normalized * 100;
     const unityPct = Math.max(0, Math.min(100, ((defaultValue - min) / (max - min)) * 100));
 
+    // audit M-083: the value the accessibility tree reports, kept inside the declared bounds.
+    const reportedValue = Math.max(min, Math.min(max, value));
+    let valueText: string | undefined;
+    if (unit) {
+        valueText = `${Math.round(reportedValue * 100) / 100} ${unit}`;
+    }
+
     return (
         <div
-            className={cn('relative flex items-center select-none group', className)}
+            ref={rootRef}
+            // audit M-083: this was a bare div with pointer handlers only — no role,
+            // no value, no name, no tab stop. A fader is a slider; the vertical
+            // orientation has to be declared because the ARIA default is horizontal.
+            // https://www.w3.org/WAI/ARIA/apg/patterns/slider/
+            role="slider"
+            tabIndex={0}
+            aria-label={ariaLabel ?? 'Level'}
+            aria-orientation="vertical"
+            aria-valuemin={min}
+            aria-valuemax={max}
+            aria-valuenow={reportedValue}
+            aria-valuetext={valueText}
+            className={cn(
+                'relative flex items-center select-none group',
+                'outline-none focus-visible:ring-1 focus-visible:ring-border-focus',
+                className
+            )}
             style={{ height }}
             onPointerDown={handlePointerDown}
             onPointerMove={handlePointerMove}
             onPointerUp={handlePointerUp}
+            // audit M-082: every non-pointerup end of a drag, not just the happy path.
+            onPointerCancel={handlePointerUp}
+            onLostPointerCapture={handlePointerUp}
+            onBlur={handlePointerUp}
+            onKeyDown={handleKeyDown}
             onDoubleClick={handleDoubleClick}
         >
             {/* dB scale marks (left side) */}
