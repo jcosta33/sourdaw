@@ -1,0 +1,27 @@
+crates/daw-dsp/src/fermenter/layer.rs
+  s_66d4924c65dcd2::t_3c6602e50149bb 272-275,478-481
+crates/daw-dsp/src/fermenter/oscillator.rs
+  s_66d4924c65dcd2::t_954ba84c7c9787 210-214,233,244-253,265,267,385-448
+crates/daw-dsp/src/fermenter/synth.rs
+  s_66d4924c65dcd2::t_f103b5146eda9c 1225-1355
+crates/daw-dsp/src/fermenter/voice.rs
+  s_66d4924c65dcd2::t_9581eea1fab9f4 343-354
+crates/daw-dsp/tests/fermenter_osc_waveform_is_audible.rs
+  s_66d4924c65dcd2::t_42937e3334602c 1-394
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "2291f4ccb059827548d8d91f7dbea77200752a71",
+  "prompts": {},
+  "sessions": {
+    "s_66d4924c65dcd2": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "dad7ceb6-cb31-44b9-91db-bb71a71cbc38",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
