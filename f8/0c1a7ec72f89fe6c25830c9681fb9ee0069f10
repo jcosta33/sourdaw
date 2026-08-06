@@ -1,0 +1,19 @@
+src/modules/CrdtDocument/useCases/crdtBranching/__tests__/runBranchLineageTransition.spec.ts
+  s_1107a19c597e97::t_be0872886db3a4 1-174
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "f80c1a7ec72f89fe6c25830c9681fb9ee0069f10",
+  "prompts": {},
+  "sessions": {
+    "s_1107a19c597e97": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-af2b2954b498a90e5",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
