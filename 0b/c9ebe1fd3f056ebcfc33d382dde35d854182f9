@@ -1,0 +1,14 @@
+src/modules/Crust/presentations/components/__tests__/CrustSatCurve.spec.tsx
+  h_1228e573df1f42 12,14-20,22-34,36-38,40-65,67-73,75-79,82-90
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "0bc9ebe1fd3f056ebcfc33d382dde35d854182f9",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
