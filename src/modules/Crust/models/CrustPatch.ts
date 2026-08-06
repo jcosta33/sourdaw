@@ -34,6 +34,26 @@ export const CRUST_OVERSAMPLE_FACTORS = [1, 2, 4, 8, 16, 32] as const;
 
 export type CrustOversampleFactor = (typeof CRUST_OVERSAMPLE_FACTORS)[number];
 
+/**
+ * `value` as a declared factor, or `null` if it is not one.
+ *
+ * A membership narrowing and nothing more — deliberately *not* a second copy of
+ * the resolution law. Which factor an out-of-set value becomes is declared once,
+ * on the Arrangement descriptor, and asked of `quantiseDeviceParameterValue`;
+ * this only turns that answer back into `CrustOversampleFactor`, which a model
+ * can do without reaching across a module boundary.
+ *
+ * `null` means the descriptor's declared set and this list have diverged, which
+ * `CrustPatch.spec.ts` makes impossible by driving the law across the whole
+ * declared range and asserting every answer is a member. Callers therefore
+ * treat `null` as "leave the value alone" rather than inventing a replacement
+ * for it: the spec is what reports the divergence, not a silent substitution at
+ * load time.
+ */
+export function asCrustOversampleFactor(value: number): CrustOversampleFactor | null {
+    return CRUST_OVERSAMPLE_FACTORS.find((factor) => factor === value) ?? null;
+}
+
 export type CrustStreamingPreset =
     | 'spotify'
     | 'youtube'
