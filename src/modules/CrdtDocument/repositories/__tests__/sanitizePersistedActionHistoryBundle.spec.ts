@@ -23,7 +23,7 @@ vi.mock('../../models/ActionHistoryState', () => ({
     sanitize_action_history_state: mockSanitize,
 }));
 
-vi.mock('./crdtPersistence/compareIncrementalKeys', () => ({
+vi.mock('../crdtPersistence/compareIncrementalKeys', () => ({
     compareIncrementalKeys: mockCompare,
 }));
 
