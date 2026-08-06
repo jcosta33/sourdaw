@@ -55,7 +55,11 @@ describe('handleAddAutomationPoint — execute', () => {
             type: 'addAutomationPoint',
             payload: { laneId: 'lane1', beat: 0, value: 1, pointId: 'my-id' },
         });
-        const point = mockedAddPoint.mock.calls[0]?.[1]!;
+        const call = mockedAddPoint.mock.calls[0];
+        if (!call) {
+            throw new TypeError('expected addPoint to have been called');
+        }
+        const point = call[1];
         expect(point.id).toBe('my-id');
     });
 
@@ -64,7 +68,11 @@ describe('handleAddAutomationPoint — execute', () => {
             type: 'addAutomationPoint',
             payload: { laneId: 'lane1', beat: 0, value: 0.5, cp1: { x: 0.1, y: 0.2 }, stairSteps: 4 },
         });
-        const point = mockedAddPoint.mock.calls[0]?.[1]!;
+        const call = mockedAddPoint.mock.calls[0];
+        if (!call) {
+            throw new TypeError('expected addPoint to have been called');
+        }
+        const point = call[1];
         expect(point.cp1).toEqual({ x: 0.1, y: 0.2 });
         expect(point.stairSteps).toBe(4);
     });
@@ -113,7 +121,9 @@ describe('describeLaneTransformUndo', () => {
         expect(result.label).toBe('Scale');
         expect(result.inverseAction?.type).toBe('restoreAutomationLanePoints');
         const payload = (
-            result.inverseAction as unknown as { payload: { laneId: string; points: unknown[]; expectedPoints: unknown[] } }
+            result.inverseAction as unknown as {
+                payload: { laneId: string; points: unknown[]; expectedPoints: unknown[] };
+            }
         ).payload;
         expect(payload.laneId).toBe('lane1');
         expect(payload.points).toHaveLength(1);
@@ -124,8 +134,9 @@ describe('describeLaneTransformUndo', () => {
         setLane([{ id: 'p1', beat: 0, value: 0.5, curve: 'linear', tension: 0, cp1: { x: 0.1, y: 0.2 } }]);
         mockedTransform.mockReturnValue([{ id: 'p1', beat: 0, value: 1, curve: 'linear', tension: 0 }] as never);
         const result = describeLaneTransformUndo('lane1', 'Scale', { type: 'scale', factor: 2 });
-        const payload = (result.inverseAction as unknown as { payload: { points: Array<{ cp1?: { x: number; y: number } }> } })
-            .payload;
+        const payload = (
+            result.inverseAction as unknown as { payload: { points: Array<{ cp1?: { x: number; y: number } }> } }
+        ).payload;
         expect(payload.points[0]?.cp1).toEqual({ x: 0.1, y: 0.2 });
         // Verify it's a clone, not the same reference
         const stateLane = mockedGetState.mockReturnValue as unknown as never;

@@ -289,7 +289,7 @@ describe('PianoRoll', () => {
             handleMouseMove: vi.fn(),
             handleMouseUp: vi.fn(),
             handleDoubleClick: vi.fn(),
-                handleKeyDown: vi.fn(),
+            handleKeyDown: vi.fn(),
             handleContextMenu: vi.fn(),
             ctxMenu: { x: 10, y: 20, beat: 0 },
             setCtxMenu,

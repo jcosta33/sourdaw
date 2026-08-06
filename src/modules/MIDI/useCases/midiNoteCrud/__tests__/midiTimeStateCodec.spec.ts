@@ -76,7 +76,7 @@ describe('midiTimeStateCodec — negative-zero distinction', () => {
         const encoded = encodeState(state);
         expect(encoded).not.toBeNull();
         const decoded = decodeState(encoded)!;
-        const note = decoded.notesByClipId['clip1']?.[0];
+        const note = decoded.notesByClipId.clip1?.[0];
         expect(Object.is(note?.pitchBend, -0)).toBe(true);
     });
 

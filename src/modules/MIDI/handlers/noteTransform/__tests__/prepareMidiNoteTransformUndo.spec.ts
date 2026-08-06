@@ -47,7 +47,7 @@ describe('prepareMidiNoteTransformUndo — noop cases', () => {
 
     it('returns isNoop=true when transform produces identical notes', () => {
         const notes = [makeNote()];
-        mockedSnapshot.mockReturnValue(notes as never);
+        mockedSnapshot.mockReturnValue(notes);
         const result = prepareMidiNoteTransformUndo({ clipId: 'c1', label: 'Test', transform: (notes) => [...notes] });
         expect(result.isNoop).toBe(true);
     });
@@ -56,7 +56,7 @@ describe('prepareMidiNoteTransformUndo — noop cases', () => {
 describe('prepareMidiNoteTransformUndo — with changes', () => {
     it('returns isNoop=false and inverse restoreMidiClipNotes', () => {
         const notes = [makeNote()];
-        mockedSnapshot.mockReturnValue(notes as never);
+        mockedSnapshot.mockReturnValue(notes);
         const result = prepareMidiNoteTransformUndo({
             clipId: 'c1',
             label: 'Quantize',
@@ -77,7 +77,7 @@ describe('prepareMidiNoteTransformUndo — with changes', () => {
 
     it('returns redo restoreMidiClipNotes', () => {
         const notes = [makeNote()];
-        mockedSnapshot.mockReturnValue(notes as never);
+        mockedSnapshot.mockReturnValue(notes);
         const result = prepareMidiNoteTransformUndo({
             clipId: 'c1',
             label: 'Quantize',

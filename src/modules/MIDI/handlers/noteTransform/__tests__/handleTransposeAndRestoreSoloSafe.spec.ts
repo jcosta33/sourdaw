@@ -54,13 +54,21 @@ describe('handleTransposeNotes — describe', () => {
     it('delegates to prepareMidiNoteTransformUndo with transposition label', () => {
         handleTransposeNotes.describe({ type: 'transposeNotes', payload: { clipId: 'c1', semitones: 3 } });
         expect(mockedPrepare).toHaveBeenCalled();
-        const arg = mockedPrepare.mock.calls[0]?.[0]!;
+        const prepareCall = mockedPrepare.mock.calls[0];
+        if (!prepareCall) {
+            throw new TypeError('expected prepare to have been called');
+        }
+        const arg = prepareCall[0];
         expect(arg.label).toBe('Transpose +3 semitones');
     });
 
     it('label has no + prefix for negative semitones', () => {
         handleTransposeNotes.describe({ type: 'transposeNotes', payload: { clipId: 'c1', semitones: -5 } });
-        const arg = mockedPrepare.mock.calls[0]?.[0]!;
+        const prepareCall = mockedPrepare.mock.calls[0];
+        if (!prepareCall) {
+            throw new TypeError('expected prepare to have been called');
+        }
+        const arg = prepareCall[0];
         expect(arg.label).toBe('Transpose -5 semitones');
     });
 });
