@@ -229,10 +229,14 @@ export const ToasterPanel = ({ deviceId }: { deviceId: string }): ReactElement =
     }
 
     function handlePadParam(padIndex: number, key: string, value: number): void {
-        if (key === 'muted') {
-            updatePad(deviceId, padIndex, { muted: value > 0 });
-            return;
-        }
+        // Solo is the one pad control with no engine counterpart — there is no
+        // `solo` arm in `Pad::set_param` (`crates/daw-dsp/src/toaster/pad.rs`) —
+        // so it stays a store-only flag until a DSP reads it.
+        //
+        // Mute is not in that category and must not be routed like it. The DSP
+        // gates voice allocation on the pad's `muted` flag, so mute reaches the
+        // engine through the param bridge exactly like volume and pan; keeping
+        // it here left a muted pad sounding.
         if (key === 'soloed') {
             updatePad(deviceId, padIndex, { soloed: value > 0 });
             return;

@@ -113,10 +113,17 @@ export const PadMixer = ({ pads, onPadParam }: PadMixerProps): ReactElement => (
                     >
                         M
                     </button>
+                    {/* Solo is not wired to playback: the engine has no solo arm
+                        (`Pad::set_param` carries no "soloed" case), so an enabled
+                        S beside a now-live M would let the panel contradict the
+                        audio — solo pad A, hear every pad anyway. Disabled until
+                        the solo DSP lands rather than removed, per the standing
+                        rule that dead controls get implemented. */}
                     <button
                         type="button"
-                        className={`w-3.5 h-3 rounded text-[5px] font-bold leading-none flex items-center justify-center ${pad.soloed ? 'bg-[var(--color-accent-mint)]/80 text-white' : 'bg-surface-inset/50 text-muted-foreground/30'}`}
-                        onClick={() => onPadParam(index, 'soloed', pad.soloed ? 0 : 1)}
+                        disabled
+                        title="Solo isn't wired to playback yet"
+                        className="w-3.5 h-3 rounded text-[5px] font-bold leading-none flex items-center justify-center bg-surface-inset/30 text-muted-foreground/20 cursor-not-allowed"
                     >
                         S
                     </button>
