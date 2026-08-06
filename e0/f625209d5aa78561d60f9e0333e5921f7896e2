@@ -1,0 +1,19 @@
+src/modules/Proof/useCases/__tests__/prepareOfflineProof.spec.ts
+  s_26dbcdb08a0831::t_421eced6b7c5f8 1-70
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "e0f625209d5aa78561d60f9e0333e5921f7896e2",
+  "prompts": {},
+  "sessions": {
+    "s_26dbcdb08a0831": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-a365656640126c9c8",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
