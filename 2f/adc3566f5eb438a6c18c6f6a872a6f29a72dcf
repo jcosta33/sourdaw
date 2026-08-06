@@ -1,0 +1,14 @@
+src/modules/Bacteria/presentations/components/__tests__/CrossoverDisplay.spec.tsx
+  h_1228e573df1f42 23-36,68,103,112-189
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "2fadc3566f5eb438a6c18c6f6a872a6f29a72dcf",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
