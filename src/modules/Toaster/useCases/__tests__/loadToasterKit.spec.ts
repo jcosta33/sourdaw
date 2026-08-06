@@ -5,6 +5,7 @@ import { loadKit } from '../../stores/toasterStore';
 import { getToasterControls } from '../getToasterControls';
 import { loadToasterKitPreset } from '../loadToasterKit';
 import { TOASTER_ENGINE_MAP } from '../toasterEngineMap';
+import { setToasterPadParam } from '../toasterParamBridge/setToasterPadParam';
 
 type MockTrack = {
     id: string;
@@ -59,6 +60,7 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
 
 vi.mock('../../stores/toasterStore', () => ({
     loadKit: vi.fn(),
+    updatePad: vi.fn(),
 }));
 
 function minimalPad(overrides: Partial<PadState> = {}): PadState {
@@ -231,6 +233,58 @@ describe('loadToasterKitPreset', () => {
         expect(resolutionCallOrder).toBeLessThan(loadKitCallOrder);
         expect(loadKitCallOrder).toBeLessThan(trackLookupCallOrder);
         expect(loadKitCallOrder).toBeLessThan(firstSetParamCallOrder);
+    });
+
+    it('cancels a queued pad-param frame so a stale write cannot land after the preset projection', () => {
+        // The rAF coalescer in setToasterPadParam writes the store immediately
+        // but defers the engine write one frame. A preset load that fires in
+        // that gap pushes the whole fresh projection synchronously — and the
+        // surviving frame would then post the *stale pre-preset* value after
+        // it, unconditionally. The panel shows the preset; the engine plays
+        // the old kit. Reproduced empirically in review as
+        // [[2,'muted',0],[2,'muted',1]] — the stale 1 landing last and
+        // winning. The load must cancel the queue, exactly as device teardown
+        // already does.
+        const frames = new Map<number, FrameRequestCallback>();
+        let nextFrameId = 1;
+        const rafSpy = vi.spyOn(globalThis, 'requestAnimationFrame').mockImplementation((callback) => {
+            const id = nextFrameId;
+            nextFrameId += 1;
+            frames.set(id, callback);
+            return id;
+        });
+        const cafSpy = vi.spyOn(globalThis, 'cancelAnimationFrame').mockImplementation((id) => {
+            frames.delete(id);
+        });
+
+        const setParam = vi.fn<SetParam>();
+        const setPadParam = vi.fn<SetPadParam>();
+        wireToasterMocks(setParam, setPadParam);
+
+        // 1. The user mutes pad 0 just before loading a preset: store written,
+        //    engine write queued for the next frame.
+        setToasterPadParam('d1', 0, 'muted', 1);
+        expect(setPadParam).not.toHaveBeenCalled();
+
+        // 2. The preset load replaces the kit; its projection carries pad 0
+        //    unmuted (minimalPad's default).
+        loadToasterKitPreset('d1', minimalKit());
+        const writesAtLoad = setPadParam.mock.calls.length;
+        expect(writesAtLoad).toBeGreaterThan(0);
+
+        // 3. Any frame that survived the load fires now.
+        for (const callback of [...frames.values()]) {
+            callback(0);
+        }
+
+        // The stale muted=1 must not have landed after the projection: no new
+        // engine writes, and the last muted write for pad 0 is the preset's 0.
+        expect(setPadParam.mock.calls.length).toBe(writesAtLoad);
+        const mutedWrites = setPadParam.mock.calls.filter((call) => call[0] === 0 && call[1] === 'muted');
+        expect(mutedWrites.at(-1)).toEqual([0, 'muted', 0]);
+
+        rafSpy.mockRestore();
+        cafSpy.mockRestore();
     });
 
     it.each(['missing', 'ineligible'] as const)(
