@@ -254,12 +254,16 @@ describe('DeviceParameterControl', () => {
     // `crust/oversampling` declares 1..32 and a legal set of {1,2,4,8,16,32}.
     // Read out of the shipped registry rather than fixtured: a fixture would
     // let the control agree with a declaration the product does not have.
-    function crustOversamplingParam(): DeviceParameterView {
-        const parameter = getPluginById('crust')?.parameters.find((candidate) => candidate.id === 'oversampling');
+    function declaredParam(deviceType: string, paramId: string): DeviceParameterView {
+        const parameter = getPluginById(deviceType)?.parameters.find((candidate) => candidate.id === paramId);
         if (!parameter) {
-            throw new Error('crust/oversampling is not in the plugin registry');
+            throw new Error(`${deviceType}/${paramId} is not in the plugin registry`);
         }
         return parameter;
+    }
+
+    function crustOversamplingParam(): DeviceParameterView {
+        return declaredParam('crust', 'oversampling');
     }
 
     const crustDevice: Device = {
@@ -276,7 +280,7 @@ describe('DeviceParameterControl', () => {
 
         const select = screen.getByTestId('compact-select') as HTMLSelectElement;
         expect([...select.options].map((option) => option.value)).toEqual(
-            (param.legalValues ?? []).map((legal) => String(legal))
+            (param.legalSet?.values ?? []).map((legal) => String(legal))
         );
         // The narrowing is the whole point: the knob this replaces stepped by 1
         // over the declared span, so it offered 32 positions for 6 settings.
@@ -310,12 +314,60 @@ describe('DeviceParameterControl', () => {
         expect(screen.getByTestId('compact-select')).toHaveValue('16');
     });
 
+    it('offers gluten the three factors its oversampler builds, and not the fourth position', () => {
+        // 3 sat inside the declared 1..4 and had no stage behind it. The panel
+        // had already stopped offering it; the Inspector had not, and this is
+        // the surface a knob still put it on.
+        render(
+            <DeviceParameterControl
+                param={declaredParam('gluten', 'oversampling')}
+                device={{
+                    id: 'device-gluten',
+                    name: 'Gluten',
+                    type: 'gluten',
+                    bypassed: false,
+                    parameterValues: { oversampling: 3 },
+                }}
+                trackId="track-1"
+            />
+        );
+
+        const select = screen.getByTestId('compact-select') as HTMLSelectElement;
+        expect([...select.options].map((option) => option.value)).toEqual(['1', '2', '4']);
+        // A stored 3 reads as the 2x the engine now runs for it, not as itself
+        // and not as the 4x the old `_ => 4` arm gave it.
+        expect(select).toHaveValue('2');
+    });
+
+    it('offers dutch-oven only the wire values that select an engine, and reads a reserved one as Plate', () => {
+        // 4 and 5 are reserved for the convolution-backed engines and dispatch
+        // to Plate. The 0..6 knob offered them as if they were algorithms.
+        render(
+            <DeviceParameterControl
+                param={declaredParam('dutch-oven', 'algorithm')}
+                device={{
+                    id: 'device-reverb',
+                    name: 'Dutch Oven',
+                    type: 'dutch-oven',
+                    bypassed: false,
+                    parameterValues: { algorithm: 4 },
+                }}
+                trackId="track-1"
+            />
+        );
+
+        const select = screen.getByTestId('compact-select') as HTMLSelectElement;
+        expect([...select.options].map((option) => option.value)).toEqual(['0', '1', '2', '3', '6']);
+        // Not '3' — the fallback is Plate, not the nearest neighbour below.
+        expect(select).toHaveValue('0');
+    });
+
     it('still gives a stepped parameter with no declared legal set the knob', () => {
         // Presence pin: without this the select branch could have swallowed
         // every `int` parameter and these cases would still pass.
         const stepped = getPluginById('crust')?.parameters.find((candidate) => candidate.id === 'scHpfFreq');
         expect(stepped?.type).toBe('int');
-        expect(stepped?.legalValues).toBeUndefined();
+        expect(stepped?.legalSet).toBeUndefined();
 
         render(
             <DeviceParameterControl param={stepped as DeviceParameterView} device={crustDevice} trackId="track-1" />

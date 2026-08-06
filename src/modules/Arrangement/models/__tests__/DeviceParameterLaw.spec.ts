@@ -141,7 +141,7 @@ describe('quantiseDeviceParameterValue', () => {
         }
     });
 
-    it('snaps onto a declared legal set instead of rounding to the nearest integer', () => {
+    it('resolves onto a declared legal set instead of stopping at the nearest integer', () => {
         // `crust/oversampling` declares 1..32 with legal factors
         // {1,2,4,8,16,32}. 20 is reachable and stored: the old 1..32 knob
         // stepped by 1, and a learned MIDI CC scales 0..127 across the same
@@ -149,18 +149,29 @@ describe('quantiseDeviceParameterValue', () => {
         // Rust, so the declaration and the DSP disagreed about what the
         // parameter was set to.
         expect(quantiseDeviceParameterValue({ deviceType: 'crust', paramId: 'oversampling', value: 20 })).toBe(16);
-        // Floors rather than rounds to the nearest — 30 is 2 away from 32 and
-        // 14 away from 16, and it must still deliver 16, because that is what
-        // the engine has always played for a project holding 30.
+        // Floors rather than resolving to the nearest — 30 is 2 away from 32
+        // and 14 away from 16, and it must still deliver 16, because that is
+        // what the engine has always played for a project holding 30.
         expect(quantiseDeviceParameterValue({ deviceType: 'crust', paramId: 'oversampling', value: 30 })).toBe(16);
-        // Fractional inputs (the live automation slew) floor the same way, so
-        // 3.9 is 2x and not 4x — matching `value.max(1.0) as usize` ahead of
-        // `normalize_factor`.
-        expect(quantiseDeviceParameterValue({ deviceType: 'crust', paramId: 'oversampling', value: 3.9 })).toBe(2);
+        // `gluten/oversampling` floors too: 3 has no stage behind it, and the
+        // module's own `clampOversampling` has always sent it to 2.
+        expect(quantiseDeviceParameterValue({ deviceType: 'gluten', paramId: 'oversampling', value: 3 })).toBe(2);
+        // `dutch-oven/algorithm` does not floor: its dispatch is a `match`, so
+        // its reserved 4 lands on the `_ =>` arm (Plate, 0) and not on the
+        // Spring at 3 below it. A single direction for every legal set would
+        // have got this one wrong in a way no range check could see.
+        expect(quantiseDeviceParameterValue({ deviceType: 'dutch-oven', paramId: 'algorithm', value: 4 })).toBe(0);
+        expect(quantiseDeviceParameterValue({ deviceType: 'dutch-oven', paramId: 'algorithm', value: 6 })).toBe(6);
         // A declared member passes through as itself, and below the smallest
         // member the smallest member is delivered.
         expect(quantiseDeviceParameterValue({ deviceType: 'crust', paramId: 'oversampling', value: 4 })).toBe(4);
         expect(quantiseDeviceParameterValue({ deviceType: 'crust', paramId: 'oversampling', value: 0.4 })).toBe(1);
+        // Rounding still runs first, and the order is the audible part: 15.6
+        // delivers 16 (round, then keep), not the 8 that resolving the raw
+        // fraction would give. A ride that sounds one way today has to sound
+        // that way tomorrow — this change corrects the declaration, not the
+        // audio.
+        expect(quantiseDeviceParameterValue({ deviceType: 'crust', paramId: 'oversampling', value: 15.6 })).toBe(16);
         // A stepped parameter on the same device that declares no legal set is
         // still rounded, so this is not "crust stopped being quantised".
         expect(quantiseDeviceParameterValue({ deviceType: 'crust', paramId: 'scHpfFreq', value: 91.6 })).toBe(92);
@@ -171,33 +182,43 @@ describe('quantiseDeviceParameterValue', () => {
         // — the next parameter to declare a legal set is held to the same shape
         // without anyone remembering to add it here.
         //
-        // `snapToDeclaredLegalValue` scans ascending and stops at the first
-        // member above the value, so an unsorted set would snap wrong. A set
-        // that did not reach an endpoint would make that endpoint unreachable
-        // while `minValue`/`maxValue` still claimed it, and a default outside
-        // the set would mean a device boots at a setting its own control cannot
-        // offer.
+        // The `floor` resolution scans ascending and stops at the first member
+        // above the value, so an unsorted set would resolve wrong. A set that
+        // did not reach an endpoint would make that endpoint unreachable while
+        // `minValue`/`maxValue` still claimed it, and a default outside the set
+        // would mean a device boots at a setting its own control cannot offer.
         const declaring = BUILTIN_PLUGINS.flatMap((plugin) =>
             plugin.parameters.flatMap((parameter) => {
-                if (!parameter.legalValues) {
+                if (!parameter.legalSet) {
                     return [];
                 }
-                return [{ identity: `${plugin.id}:${parameter.id}`, parameter, legalValues: parameter.legalValues }];
+                return [{ identity: `${plugin.id}:${parameter.id}`, parameter, legalSet: parameter.legalSet }];
             })
         );
 
         // Presence pin: an extraction that goes blind would satisfy every
-        // assertion below forever.
-        expect(declaring.map((entry) => entry.identity)).toEqual(['crust:oversampling']);
+        // assertion below forever. Sorted, because registry order is the order
+        // the descriptor files happen to be aggregated in and is not a claim.
+        expect([...declaring.map((entry) => entry.identity)].sort()).toEqual([
+            'crust:oversampling',
+            'dutch-oven:algorithm',
+            'gluten:oversampling',
+        ]);
 
-        for (const { identity, parameter, legalValues } of declaring) {
+        for (const { identity, parameter, legalSet } of declaring) {
+            const { values } = legalSet;
             expect(parameter.type, `${identity} declares a legal set on a float`).not.toBe('float');
-            expect([...legalValues], `${identity} is not ascending or not unique`).toEqual([
-                ...new Set([...legalValues].sort((left, right) => left - right)),
+            expect([...values], `${identity} is not ascending or not unique`).toEqual([
+                ...new Set([...values].sort((left, right) => left - right)),
             ]);
-            expect(legalValues[0], `${identity} does not reach its declared minimum`).toBe(parameter.minValue);
-            expect(legalValues.at(-1), `${identity} does not reach its declared maximum`).toBe(parameter.maxValue);
-            expect(legalValues, `${identity} boots at a value it does not offer`).toContain(parameter.defaultValue);
+            expect(values[0], `${identity} does not reach its declared minimum`).toBe(parameter.minValue);
+            expect(values.at(-1), `${identity} does not reach its declared maximum`).toBe(parameter.maxValue);
+            expect(values, `${identity} boots at a value it does not offer`).toContain(parameter.defaultValue);
+            if (legalSet.resolution === 'fallback') {
+                // A fallback outside the set would resolve an unrecognised
+                // value onto a setting the control never offers.
+                expect(values, `${identity} falls back to a value it does not offer`).toContain(legalSet.fallback);
+            }
         }
     });
 

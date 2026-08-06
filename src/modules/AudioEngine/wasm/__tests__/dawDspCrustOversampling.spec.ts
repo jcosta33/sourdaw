@@ -8,8 +8,8 @@
  * renders every integer in the declared range through the checked-in wasm
  * rather than reasoning about `normalize_factor` in TypeScript.
  *
- * The declared settings are read from the shipped registry: `legalValues`
- * when the parameter declares them, otherwise every integer in the range —
+ * The declared settings are read from the shipped registry: the `legalSet`
+ * when the parameter declares one, otherwise every integer in the range —
  * which is exactly what the generic Inspector knob offers for an `int`
  * parameter (`deriveStep` → 1). Before the legal set was declared, that made
  * this file red with the measurement that motivated the change: 32 offered
@@ -29,7 +29,7 @@ import { resolve } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
-import { getPluginById, snapToDeclaredLegalValue } from '#/modules/Arrangement/useCases';
+import { getPluginById, quantiseDeviceParameterValue } from '#/modules/Arrangement/useCases';
 
 const FRAMES = 512;
 const BLOCKS = 8;
@@ -105,12 +105,12 @@ function declaredOversamplingParameter(): DeclaredOversampling {
     if (!parameter) {
         throw new Error('crust/oversampling is not in the plugin registry');
     }
-    if (parameter.legalValues) {
+    if (parameter.legalSet) {
         return {
             minValue: parameter.minValue,
             maxValue: parameter.maxValue,
-            declaredSettings: [...parameter.legalValues],
-            legalValues: parameter.legalValues,
+            declaredSettings: [...parameter.legalSet.values],
+            legalValues: parameter.legalSet.values,
         };
     }
     // No declared legal set means "every integer in the range is its own
@@ -169,24 +169,44 @@ describe('checked-in Crust WASM oversampling', () => {
         // A stored value between two members is reachable — a learned MIDI CC
         // scales 0..127 across the declared span and persists what it lands
         // on, and a project saved before the set was declared could hold any
-        // integer in the range. What the snap delivers has to be what the
-        // engine would have resolved that value to on its own, or correcting
-        // the declaration would have changed how an existing project renders.
-        // 3.9 pins the fractional path (the live automation slew): the engine
-        // truncates before it floors (`value.max(1.0) as usize`), so 3.9 is 2x
-        // and a nearest-member snap to 4x would be audible.
-        const probes: number[] = [3.9];
+        // integer in the range. What the delivery law delivers has to be what
+        // the engine would have resolved that value to on its own, or
+        // correcting the declaration would have changed how an existing
+        // project renders. Integers only: the law rounds before it resolves,
+        // so a fraction is never what the engine is asked about.
         for (let value = minValue; value <= maxValue; value++) {
-            probes.push(value);
-        }
-        for (const value of probes) {
-            const delivered = snapToDeclaredLegalValue({ legalValues, value });
+            const delivered = quantiseDeviceParameterValue({
+                deviceType: 'crust',
+                paramId: 'oversampling',
+                value,
+            });
             const deliveredRender = renderedByFactor.get(delivered);
-            expect(deliveredRender, `snap(${value}) = ${delivered} is not a declared factor`).toBeDefined();
+            expect(deliveredRender, `${value} was delivered as ${delivered}, not a declared factor`).toBeDefined();
             expect(
                 rendersIdentically(renderAtFactor(value), deliveredRender!),
-                `crust rendered ${value} unlike the ${delivered} the snap delivers for it`
+                `crust rendered ${value} unlike the ${delivered} the delivery law hands it`
             ).toBe(true);
         }
+    });
+
+    it('renders a fractional automation value as the factor the rounding law delivers', () => {
+        // The one place the delivery law is not a mirror of the engine, and it
+        // has to be checked as its own claim rather than folded into the sweep
+        // above. `quantiseDeviceParameterValue` rounds before it resolves, so
+        // 15.6 delivers 16 — which is what a ride across 15.6 has rendered
+        // since the rounding law landed. Handing the raw 15.6 to the engine
+        // would render 8, because Rust truncates (`value.max(1.0) as usize`);
+        // that is the audible difference this ordering avoids.
+        const delivered = quantiseDeviceParameterValue({ deviceType: 'crust', paramId: 'oversampling', value: 15.6 });
+        expect(delivered).toBe(16);
+
+        expect(
+            rendersIdentically(renderAtFactor(delivered), renderAtFactor(16)),
+            'the delivered factor did not render as 16x'
+        ).toBe(true);
+        expect(
+            rendersIdentically(renderAtFactor(15.6), renderAtFactor(8)),
+            'the engine no longer truncates a raw fraction, so this ordering guards nothing'
+        ).toBe(true);
     });
 });

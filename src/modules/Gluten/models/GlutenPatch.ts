@@ -12,9 +12,18 @@ export type OversamplingFactor = 1 | 2 | 4;
 export const OVERSAMPLING_FACTORS: readonly OversamplingFactor[] = [1, 2, 4];
 
 /**
- * Snap an arbitrary oversampling value to the nearest valid factor (1, 2, or 4).
- * A step-1 control over 1..4 can produce 3, which the engine does not support;
- * this rounds it down to 2. Values are clamped into the [1, 4] range first.
+ * Resolve an arbitrary oversampling value onto a factor the engine builds
+ * (1, 2, or 4), rounding **down**. A step-1 control over 1..4 can produce 3,
+ * which has no stage behind it; this floors it to 2. Values are clamped into
+ * the [1, 4] range first.
+ *
+ * This is the panel's copy of the law the Arrangement descriptor now declares
+ * for every other surface (`GlutenDescriptor.ts` `legalSet`, resolution
+ * `floor`) and that `ConfigurableOversample::set_rate` mirrors in Rust. The
+ * three used to disagree: this floored 3 to 2, the descriptor declared 3 legal,
+ * and the engine sent it up to 4x. `GlutenPatch.spec.ts` holds this and the
+ * descriptor together; `DeviceLegalParameterValues.json` holds the descriptor
+ * and the engine together.
  */
 export function clampOversampling(value: number): OversamplingFactor {
     if (value <= 1) {

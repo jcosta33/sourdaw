@@ -4,7 +4,7 @@ import { DawCompactSelect } from '#/components/daw/DawCompactSelect';
 import { BipolarSlider } from '#/components/ui/bipolar-slider';
 import { useStore } from '#/infra/store/useStore';
 import { trackStore } from '#/modules/Arrangement/stores';
-import { setDeviceParameter, snapToDeclaredLegalValue } from '#/modules/Arrangement/useCases';
+import { quantiseDeviceParameterValue, setDeviceParameter } from '#/modules/Arrangement/useCases';
 import { automationStore, modulationStore, modulationRuntimeStore } from '#/modules/Automation/stores';
 import { addAutomationLane, removeAutomationLane } from '#/modules/Automation/useCases';
 import { MidiLearnButton, MidiLearnRotaryKnob as RotaryKnob } from '#/modules/ControlSurface/presentations/views';
@@ -145,7 +145,7 @@ export const DeviceParameterControl = ({ param, device, trackId }: DeviceParamet
     // (`deriveStep`), and for `crust/oversampling` that is 32 positions the
     // engine resolves to 6 — 26 drags that move the readout and render an
     // identical signal.
-    const legalValues = param.legalValues;
+    const legalValues = param.legalSet?.values;
     const isLegalSet = !!legalValues && legalValues.length > 0;
     const isDiscrete = isChoice || isLegalSet;
 
@@ -161,8 +161,15 @@ export const DeviceParameterControl = ({ param, device, trackId }: DeviceParamet
                     // number: a project saved before the set was declared, or a
                     // MIDI CC scaled across the range, can hold a value between
                     // two members, and the select would otherwise show the wrong
-                    // one while the engine ran another.
-                    value={snapToDeclaredLegalValue({ legalValues, value })}
+                    // one while the engine ran another. Asked of the delivery
+                    // law rather than resolved here — a control that works out
+                    // "which member is this" for itself is how the readout and
+                    // the DSP come to disagree again.
+                    value={quantiseDeviceParameterValue({
+                        deviceType: device.type,
+                        paramId: param.id,
+                        value,
+                    })}
                     onChange={handleSelectChange}
                     aria-label={param.name}
                 >

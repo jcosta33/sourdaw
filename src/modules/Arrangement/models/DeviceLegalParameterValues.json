@@ -1,0 +1,80 @@
+{
+    "comment": [
+        "Every value a declared legal set can be asked about, paired with the setting the engine",
+        "resolves it to. Read from both sides of the boundary, by neither side's author:",
+        "  TypeScript — src/modules/Arrangement/models/__tests__/DeviceLegalParameterValues.spec.ts",
+        "  Rust       — crates/daw-dsp/tests/legal_parameter_values.rs",
+        "               crates/proof-chamber/tests/legal_parameter_values.rs",
+        "The TS side asserts quantiseDeviceParameterValue delivers `setting`, and that the distinct",
+        "`setting` values are exactly the descriptor's declared legal set. The Rust side asserts its",
+        "own engine resolves `raw` to `setting`. A one-sided edit reds the other side, which is the",
+        "whole reason this is a file and not two lists.",
+        "`raw` covers minValue..maxValue inclusive; anything outside it is the clamp's problem."
+    ],
+    "parameters": [
+        {
+            "deviceType": "crust",
+            "paramId": "oversampling",
+            "engine": "crates/daw-dsp/src/crust/oversample.rs :: normalize_factor",
+            "resolved": [
+                { "raw": 1, "setting": 1 },
+                { "raw": 2, "setting": 2 },
+                { "raw": 3, "setting": 2 },
+                { "raw": 4, "setting": 4 },
+                { "raw": 5, "setting": 4 },
+                { "raw": 6, "setting": 4 },
+                { "raw": 7, "setting": 4 },
+                { "raw": 8, "setting": 8 },
+                { "raw": 9, "setting": 8 },
+                { "raw": 10, "setting": 8 },
+                { "raw": 11, "setting": 8 },
+                { "raw": 12, "setting": 8 },
+                { "raw": 13, "setting": 8 },
+                { "raw": 14, "setting": 8 },
+                { "raw": 15, "setting": 8 },
+                { "raw": 16, "setting": 16 },
+                { "raw": 17, "setting": 16 },
+                { "raw": 18, "setting": 16 },
+                { "raw": 19, "setting": 16 },
+                { "raw": 20, "setting": 16 },
+                { "raw": 21, "setting": 16 },
+                { "raw": 22, "setting": 16 },
+                { "raw": 23, "setting": 16 },
+                { "raw": 24, "setting": 16 },
+                { "raw": 25, "setting": 16 },
+                { "raw": 26, "setting": 16 },
+                { "raw": 27, "setting": 16 },
+                { "raw": 28, "setting": 16 },
+                { "raw": 29, "setting": 16 },
+                { "raw": 30, "setting": 16 },
+                { "raw": 31, "setting": 16 },
+                { "raw": 32, "setting": 32 }
+            ]
+        },
+        {
+            "deviceType": "gluten",
+            "paramId": "oversampling",
+            "engine": "crates/daw-dsp/src/gluten/oversample.rs :: ConfigurableOversample::set_rate",
+            "resolved": [
+                { "raw": 1, "setting": 1 },
+                { "raw": 2, "setting": 2 },
+                { "raw": 3, "setting": 2 },
+                { "raw": 4, "setting": 4 }
+            ]
+        },
+        {
+            "deviceType": "dutch-oven",
+            "paramId": "algorithm",
+            "engine": "crates/proof-chamber/src/lib.rs :: ProofChamberInstance::set_param \"algorithm\"",
+            "resolved": [
+                { "raw": 0, "setting": 0 },
+                { "raw": 1, "setting": 1 },
+                { "raw": 2, "setting": 2 },
+                { "raw": 3, "setting": 3 },
+                { "raw": 4, "setting": 0 },
+                { "raw": 5, "setting": 0 },
+                { "raw": 6, "setting": 6 }
+            ]
+        }
+    ]
+}

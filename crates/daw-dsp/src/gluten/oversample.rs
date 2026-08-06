@@ -130,11 +130,32 @@ impl ConfigurableOversample {
         }
     }
 
+    /// Resolve a requested rate onto the factors this oversampler builds,
+    /// rounding **down**.
+    ///
+    /// The arms used to read `0 | 1 => 1, 2 => 2, _ => 4`, which sent a
+    /// requested 3 *up* to 4x. Nothing else in the product agreed with that.
+    /// Gluten's own patch law (`GlutenPatch.clampOversampling`) has always
+    /// snapped 3 down to 2, its panel has always offered only {1,2,4}, and the
+    /// sibling cascade in `crust/oversample.rs` floors as well — so a 3 that
+    /// arrived through Gluten's panel became 2x while the same 3 arriving from
+    /// the generic Inspector, an automation lane or a model action became 4x.
+    /// The host declaration
+    /// (`src/modules/Arrangement/models/PluginDescriptors/GlutenDescriptor.ts`)
+    /// now says `{1,2,4}` floor for every route, and this is the arm it
+    /// mirrors. `DeviceLegalParameterValues.json` pins the two together from
+    /// both sides.
+    ///
+    /// A stored 3 is therefore 2x rather than 4x from here on. That is a real
+    /// change and it is the intended one: 3 was never a setting, and the two
+    /// answers the product gave for it could not both be right.
     pub fn set_rate(&mut self, rate: u8) {
-        self.rate = match rate {
-            0 | 1 => 1,
-            2 => 2,
-            _ => 4,
+        self.rate = if rate >= 4 {
+            4
+        } else if rate >= 2 {
+            2
+        } else {
+            1
         };
         self.reset();
     }

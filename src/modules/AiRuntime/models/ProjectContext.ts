@@ -89,6 +89,17 @@ export type ProjectContextDeviceParameter = {
     value: number;
     minValue: number;
     maxValue: number;
+    /**
+     * The settings the engine distinguishes, when they are not every integer in
+     * the range — the descriptor's declared legal set.
+     *
+     * Carried into the context because the bridge validates against the
+     * declaration rather than snapping: a model that asks for
+     * `crust/oversampling: 9` has asked for a setting that does not exist, and
+     * the honest answer is a rejection it can see and correct. Snapping it to 8
+     * would hand back a confirmation for something the model did not request.
+     */
+    legalValues?: number[];
     unit: string;
     choices?: string[];
 };

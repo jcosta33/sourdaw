@@ -175,6 +175,7 @@ export function getProjectContext(): ProjectContext {
                             minValue: parameter.minValue,
                             maxValue: parameter.maxValue,
                             unit: parameter.unit,
+                            ...(parameter.legalSet ? { legalValues: [...parameter.legalSet.values] } : {}),
                             ...(parameter.choices ? { choices: [...parameter.choices] } : {}),
                         },
                     ];

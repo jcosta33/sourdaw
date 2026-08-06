@@ -12,6 +12,45 @@ import { type DeviceTailDeclaration } from './DeviceTailTypes';
 
 export type DeviceParameterType = 'float' | 'int' | 'bool' | 'choice';
 
+/**
+ * The settings the engine actually distinguishes, when they are *not* every
+ * integer in `[minValue, maxValue]`.
+ *
+ * `minValue`/`maxValue` say how far a write may travel; for a stepped parameter
+ * the implied legal set is "every integer in between", and for most of them
+ * that is true. It is not true of a parameter whose engine resolves its input
+ * onto a coarser set — `crust/oversampling` declares 1..32 while its cascade
+ * only builds powers of two, so 26 of those 32 integers render bit-identical to
+ * a neighbour. Declaring the set makes those positions unofferable rather than
+ * inert: the control offers exactly `values`, and
+ * `quantiseDeviceParameterValue` resolves a delivery onto them.
+ *
+ * `values` must be ascending, unique, and span `minValue`..`maxValue`
+ * inclusive, and must contain `defaultValue` — held to that over the whole
+ * registry in `DeviceParameterLaw.spec.ts`, because a set that does not reach
+ * an endpoint would make the endpoint unreachable while the range still claims
+ * it.
+ *
+ * **`resolution` is not a preference — it is a mirror.** A value that is not a
+ * member still reaches the DSP by routes this declaration does not gate (a
+ * project file, a preset, a learned MIDI CC), and the engine resolves it
+ * itself. Whatever this says has to be what that engine does, or the fix has
+ * only moved the disagreement. `DeviceLegalParameterValues.json` pins every
+ * in-range value against the engine that answers it, on both sides of the
+ * boundary.
+ *
+ * - `floor` — the greatest member at or below the value; the smallest member
+ *   below the set. Both oversampling cascades work this way: a factor between
+ *   two stages gets the stage under it, never the one above.
+ * - `fallback` — a non-member resolves to `fallback` regardless of where it
+ *   sits. `dutch-oven/algorithm` is a wire format whose dispatch is a `match`,
+ *   so its reserved values 4 and 5 land on the `_ =>` arm rather than on a
+ *   neighbour.
+ */
+export type LegalValueSet =
+    | { values: readonly number[]; resolution: 'floor' }
+    | { values: readonly number[]; resolution: 'fallback'; fallback: number };
+
 export type DeviceParameter = {
     id: string;
     deviceId: string;
@@ -43,28 +82,11 @@ export type DeviceParameter = {
     minValue: number;
     maxValue: number;
     /**
-     * The settings the engine actually distinguishes, when they are *not* every
-     * integer in `[minValue, maxValue]`.
-     *
-     * `minValue`/`maxValue` say how far a write may travel; for a stepped
-     * parameter the implied legal set is "every integer in between", and for
-     * most of them that is true. It is not true of a parameter whose engine
-     * snaps its input to a coarser lattice — `crust/oversampling` declares
-     * 1..32 but its cascade only builds powers of two, so 26 of those 32
-     * integers render bit-identical to a neighbour. Declaring the set here
-     * makes those positions unofferable rather than inert: the control offers
-     * exactly these values, and `quantiseDeviceParameterValue` snaps a delivery
-     * onto them.
-     *
-     * Must be ascending, unique, and span `minValue`..`maxValue` inclusive —
-     * held to that over the whole registry in `DeviceParameterLaw.spec.ts`,
-     * because a set that does not reach an endpoint would make the endpoint
-     * unreachable while the range still claims it.
-     *
-     * Omitted means "every integer in the range is its own setting", which is
-     * what a stepped parameter without this field asserts.
+     * See {@link LegalValueSet}. Omitted means "every integer in the range is
+     * its own setting", which is what a stepped parameter without this field
+     * asserts.
      */
-    legalValues?: readonly number[];
+    legalSet?: LegalValueSet;
     unit: string;
     scaling?: 'log' | 'linear';
     choices?: string[];
@@ -89,8 +111,8 @@ export type PluginParamDef = {
     unit: string;
     step?: number;
     scaling?: 'log' | 'linear';
-    /** See `DeviceParameter.legalValues`; descriptor builders copy it through. */
-    legalValues?: readonly number[];
+    /** See {@link LegalValueSet}; descriptor builders copy it through. */
+    legalSet?: LegalValueSet;
 };
 
 export type PluginFormat = 'builtin' | 'vst3' | 'clap' | 'au';

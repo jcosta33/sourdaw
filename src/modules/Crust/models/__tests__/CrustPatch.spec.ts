@@ -13,8 +13,8 @@ describe('CRUST_OVERSAMPLE_FACTORS', () => {
         // were both missing 2x while the Rust cascade built a stage for it.
         // This is the join that makes a one-sided edit fail.
         const declared = getPluginById('crust')?.parameters.find((parameter) => parameter.id === 'oversampling');
-        expect(declared?.legalValues, 'crust/oversampling declares no legal set').toBeDefined();
-        expect([...(declared?.legalValues ?? [])]).toEqual([...CRUST_OVERSAMPLE_FACTORS]);
+        expect(declared?.legalSet?.resolution, 'crust/oversampling declares no legal set').toBe('floor');
+        expect([...(declared?.legalSet?.values ?? [])]).toEqual([...CRUST_OVERSAMPLE_FACTORS]);
     });
 
     it('contains the factor the init patch boots at', () => {

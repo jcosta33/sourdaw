@@ -102,6 +102,18 @@ const projectContext: ProjectContext = {
                             unit: '',
                             choices: ['Clean', 'Warm', 'Aggressive'],
                         },
+                        {
+                            // Shaped like `crust/oversampling`: an `int` whose
+                            // range is wider than its set of settings.
+                            id: 'oversampling',
+                            name: 'Oversampling',
+                            type: 'int',
+                            value: 4,
+                            minValue: 1,
+                            maxValue: 32,
+                            legalValues: [1, 2, 4, 8, 16, 32],
+                            unit: 'x',
+                        },
                     ],
                 },
             ],
@@ -1998,6 +2010,35 @@ describe('bridgeLlmToolCalls', () => {
             'renameTrack',
             'muteTrack',
         ]);
+    });
+
+    it('rejects a device parameter value that is inside the range but not one of its settings', () => {
+        // The range is not a list of settings. 9 passes every bound and every
+        // integer check and still names nothing: the engine would resolve it to
+        // 8 and the model would be told 9 landed. It has to come back as a
+        // rejection the model can act on, while 8 goes through untouched so
+        // this is a narrowing and not a blanket refusal.
+        const result = bridge({
+            calls: [
+                {
+                    name: 'setDeviceParameter',
+                    arguments: { deviceId: 'device-eq', paramId: 'oversampling', value: 9 },
+                },
+                {
+                    name: 'setDeviceParameter',
+                    arguments: { deviceId: 'device-eq', paramId: 'oversampling', value: 8 },
+                },
+            ],
+            context: projectContext,
+        });
+
+        expect(result.actions).toEqual([
+            {
+                type: 'setDeviceParameter',
+                payload: { deviceId: 'device-eq', paramId: 'oversampling', value: 8 },
+            },
+        ]);
+        expect(result.rejections.map((rejection) => rejection.name)).toEqual(['setDeviceParameter']);
     });
 
     it('converts bounded device and send calls for existing project targets', () => {
