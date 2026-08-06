@@ -3,15 +3,12 @@ import { afterEach, beforeEach, describe, it, expect, vi } from 'vitest';
 
 import { CrossoverDisplay } from '../CrossoverDisplay';
 
-// log10 frequency → x position, mirroring the component's freqToX.
 function freqToX(freq: number, width: number): number {
     const minLog = Math.log10(20);
     const maxLog = Math.log10(20000);
     return ((Math.log10(freq) - minLog) / (maxLog - minLog)) * width;
 }
 
-// A capturing ResizeObserver: records callbacks so a test can drive a resize
-// (the jsdom default mock never fires its callback).
 type ResizeCb = (entries: Array<{ contentRect: { width: number } }>) => void;
 const observers: Array<{ cb: ResizeCb; el: Element | null }> = [];
 
@@ -20,6 +17,20 @@ function emitResize(width: number): void {
         for (const o of observers) {
             o.cb([{ contentRect: { width } }]);
         }
+    });
+}
+
+function mockRect(el: HTMLElement, width = 400): void {
+    el.getBoundingClientRect = () => ({
+        left: 0,
+        top: 0,
+        width,
+        height: 80,
+        right: width,
+        bottom: 80,
+        x: 0,
+        y: 0,
+        toJSON: () => ({}),
     });
 }
 
@@ -54,13 +65,9 @@ describe('CrossoverDisplay', () => {
                 onCrossoverChange={vi.fn()}
             />
         );
-        expect(screen.getByText('lr4')).toBeInTheDocument();
+        expect(screen.getByText('lr4')).toBeTruthy();
     });
 
-    // Regression: layout x-positions are derived from ResizeObserver-tracked width
-    // state, not from reading containerRef.clientWidth during render. The old code
-    // never re-rendered on resize, so handle/band positions stayed stale; the new
-    // code repositions when the observer reports a new width.
     it('repositions the crossover handle when the container is resized', () => {
         const { container } = render(
             <CrossoverDisplay
@@ -72,25 +79,16 @@ describe('CrossoverDisplay', () => {
                 onCrossoverChange={vi.fn()}
             />
         );
-
         const handle = (): HTMLElement => container.querySelector('.cursor-ew-resize') as HTMLElement;
         expect(handle()).toBeTruthy();
-
-        // Resize the container to a concrete measured width.
         emitResize(320);
         expect(parseFloat(handle().style.left)).toBeCloseTo(freqToX(500, 320) - 4, 1);
-
-        // A second, different resize must move the handle again (it tracks state,
-        // it is not pinned to a one-time/render-time read).
         emitResize(640);
         expect(parseFloat(handle().style.left)).toBeCloseTo(freqToX(500, 640) - 4, 1);
     });
 
-    // Regression: a cancelled drag clears the active handle index so a later move
-    // does not keep changing the crossover frequency.
     it('clears the active drag on pointercancel', () => {
         const onCrossoverChange = vi.fn();
-
         const { container } = render(
             <CrossoverDisplay
                 bandCount={2}
@@ -102,25 +100,90 @@ describe('CrossoverDisplay', () => {
             />
         );
         const root = container.firstChild as HTMLElement;
-        root.getBoundingClientRect = () => ({
-            left: 0,
-            top: 0,
-            width: 400,
-            height: 80,
-            right: 400,
-            bottom: 80,
-            x: 0,
-            y: 0,
-            toJSON: () => ({}),
-        });
-
+        mockRect(root);
         const handle = container.querySelector('.cursor-ew-resize') as HTMLElement;
         fireEvent.pointerDown(handle, { clientX: 100, clientY: 10, pointerId: 1 });
         fireEvent.pointerCancel(root, { pointerId: 1 });
         onCrossoverChange.mockClear();
-        // Move after cancel must not change the crossover frequency.
         fireEvent.pointerMove(root, { clientX: 200, clientY: 10, pointerId: 1 });
-
         expect(onCrossoverChange).not.toHaveBeenCalled();
+    });
+});
+
+describe('CrossoverDisplay — band labels and mode', () => {
+    it('shows band number labels for each band', () => {
+        render(
+            <CrossoverDisplay
+                bandCount={3}
+                crossoverFreqs={[500, 2000]}
+                crossoverMode="lr4"
+                activeBand={1}
+                onBandSelect={vi.fn()}
+                onCrossoverChange={vi.fn()}
+            />
+        );
+        expect(screen.getByText('1')).toBeTruthy();
+        expect(screen.getByText('2')).toBeTruthy();
+        expect(screen.getByText('3')).toBeTruthy();
+    });
+
+    it('shows the crossover mode indicator', () => {
+        render(
+            <CrossoverDisplay
+                bandCount={2}
+                crossoverFreqs={[500]}
+                crossoverMode="linear-phase"
+                activeBand={0}
+                onBandSelect={vi.fn()}
+                onCrossoverChange={vi.fn()}
+            />
+        );
+        expect(screen.getByText('linear-phase')).toBeTruthy();
+    });
+});
+
+describe('CrossoverDisplay — drag and band click', () => {
+    it('commits crossover frequency when a handle is dragged', () => {
+        const onCrossoverChange = vi.fn();
+        const { container } = render(
+            <CrossoverDisplay
+                bandCount={2}
+                crossoverFreqs={[500]}
+                crossoverMode="lr4"
+                activeBand={0}
+                onBandSelect={vi.fn()}
+                onCrossoverChange={onCrossoverChange}
+            />
+        );
+        const root = container.firstChild as HTMLElement;
+        mockRect(root, 400);
+        const handle = container.querySelector('.cursor-ew-resize') as HTMLElement;
+        fireEvent.pointerDown(handle, { clientX: 100, clientY: 10, pointerId: 1 });
+        fireEvent.pointerMove(root, { clientX: 200, clientY: 10, pointerId: 1 });
+        expect(onCrossoverChange).toHaveBeenCalledTimes(1);
+        const [bandIdx, freq] = onCrossoverChange.mock.calls[0]!;
+        expect(bandIdx).toBe(0);
+        expect(freq).toBeGreaterThan(20);
+        expect(freq).toBeLessThanOrEqual(20000);
+    });
+
+    it('selects a band when the display area is clicked', () => {
+        const onBandSelect = vi.fn();
+        const { container } = render(
+            <CrossoverDisplay
+                bandCount={2}
+                crossoverFreqs={[500]}
+                crossoverMode="lr4"
+                activeBand={0}
+                onBandSelect={onBandSelect}
+                onCrossoverChange={vi.fn()}
+            />
+        );
+        const root = container.firstChild as HTMLElement;
+        mockRect(root, 400);
+        // Click at x=300 (high freq area → band 1)
+        fireEvent.pointerDown(root, { clientX: 300, clientY: 10, pointerId: 1 });
+        expect(onBandSelect).toHaveBeenCalledTimes(1);
+        expect(onBandSelect.mock.calls[0]?.[0]).toBe(1);
     });
 });
