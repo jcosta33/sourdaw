@@ -1,0 +1,106 @@
+src/modules/Arrangement/models/__tests__/DeviceLegalParameterValues.spec.ts
+  s_14f2bbc9f385dd::t_9b58d181521664 1-22,24-30,32-76,81,84-85,88-92,98-109,114-116
+  s_14f2bbc9f385dd::t_8c26aee07a7a9b 23
+  s_14f2bbc9f385dd::t_eed9098dafcd18 77-80,82-83,86-87,93-97
+  s_14f2bbc9f385dd::t_2cd964dd6de54a 110-113
+  s_14f2bbc9f385dd::t_c98da9ac03ad8a 31
+src/modules/Arrangement/models/__tests__/DeviceParameterLaw.spec.ts
+  s_14f2bbc9f385dd::t_d058812afdbbfd 144,152-154,156-164,169-174,185-189,192,195,203-204,206-209,211-212,214-221
+  s_14f2bbc9f385dd::t_2caefbe1f782e0 200-202,205
+src/modules/TimelineEditor/presentations/views/Inspector/__tests__/DeviceParameterControl.spec.tsx
+  s_14f2bbc9f385dd::t_2a88882262cbb7 257-258,260,265-266
+  s_14f2bbc9f385dd::t_1f6e6089451d82 317-364,370
+  s_14f2bbc9f385dd::t_a65443ea4bb334 283
+  s_14f2bbc9f385dd::t_fbe24b08722379 267-268
+src/modules/AiRuntime/useCases/getProjectContext.ts
+  s_14f2bbc9f385dd::t_2bee0b8f0ac57a 178
+src/modules/Arrangement/models/PluginDescriptors/CrustDescriptor.ts
+  s_14f2bbc9f385dd::t_12c7d7bdcde323 57
+  s_14f2bbc9f385dd::t_e568043618b088 33
+src/modules/AiRuntime/models/ProjectContext.ts
+  s_14f2bbc9f385dd::t_4a4f545cd7ab68 92-102
+src/modules/AiRuntime/transformers/llmActionBridge.ts
+  s_14f2bbc9f385dd::t_1f937f2d0c6941 75-81
+src/modules/Arrangement/models/PluginDescriptors/NativeDspDescriptors.ts
+  s_14f2bbc9f385dd::t_3d78823897d6ab 297-302
+crates/daw-dsp/tests/legal_parameter_values.rs
+  s_14f2bbc9f385dd::t_f3174675cb712e 98,100-103,107,109,112-114
+  s_14f2bbc9f385dd::t_e60d2c61b8bffc 81,86,88
+  s_14f2bbc9f385dd::t_449f552955d552 1-34,36-37,47-48,50,52-54,56-61,63-64,66,68-80,82-85,87,89-97,99,104-106,108,110-111,115-116
+  s_14f2bbc9f385dd::t_7985636ecfaeab 35,38-46,49,51,55
+  s_14f2bbc9f385dd::t_5182bc16d09e56 62,65,67
+src/modules/Arrangement/models/DeviceParameterTypes.ts
+  s_14f2bbc9f385dd::t_5843e44fa1ccec 114-115
+  s_14f2bbc9f385dd::t_2281b2a2c7b019 15-53
+  s_14f2bbc9f385dd::t_643b41f6e45f48 85-87,89
+src/modules/Arrangement/models/DeviceParameterLaw.ts
+  s_14f2bbc9f385dd::t_ce37167a994fe5 88-94
+  s_14f2bbc9f385dd::t_a318575c1f624f 197-199
+  s_14f2bbc9f385dd::t_88924ec37b1915 66-70,72,74-80,82-84,86-87,95-100
+  s_14f2bbc9f385dd::t_e8cb2450fe3308 2
+  s_14f2bbc9f385dd::t_989e644d85c548 161-173,175-183,186-187
+  s_14f2bbc9f385dd::t_8daa40897ead5f 200
+  s_14f2bbc9f385dd::t_159e5f84fb777a 195-196
+  s_14f2bbc9f385dd::t_f3df7f139e5ee3 185
+src/modules/Gluten/models/__tests__/GlutenPatch.spec.ts
+  s_14f2bbc9f385dd::t_099fdf98559b7d 3-4
+  s_14f2bbc9f385dd::t_ed3d5b4594f1b8 37-55
+src/modules/Crust/models/__tests__/CrustPatch.spec.ts
+  s_14f2bbc9f385dd::t_d124137cfe3151 16-17
+src/modules/Transport/useCases/scheduling/applyAutomation/__tests__/applyAutomationSteppedQuantisation.spec.ts
+  s_14f2bbc9f385dd::t_e033084d2addf0 243-248
+  s_14f2bbc9f385dd::t_3bccaacfcd85b9 221-242,249-252
+src/modules/Gluten/models/GlutenPatch.ts
+  s_14f2bbc9f385dd::t_a3babf8e6bb818 15-26
+src/modules/AudioEngine/wasm/__tests__/dawDspCrustOversampling.spec.ts
+  s_14f2bbc9f385dd::t_3c7bccd07f31ab 172-176,178-182,184,187,191-210
+  s_14f2bbc9f385dd::t_ce8322beec159f 11-12
+  s_14f2bbc9f385dd::t_8976ed2bbfd7d9 108,112-113
+  s_14f2bbc9f385dd::t_cbba8dbc458e25 32
+  s_14f2bbc9f385dd::t_0a7f27476634ac 211
+src/modules/AiRuntime/transformers/__tests__/llmActionBridge.spec.ts
+  s_14f2bbc9f385dd::t_baed330225504f 2015-2043
+  s_14f2bbc9f385dd::t_4b5c1c6e3bd0f8 105-116
+crates/daw-dsp/src/gluten/oversample.rs
+  s_14f2bbc9f385dd::t_9167a13d8e9483 133-151,153-158
+crates/proof-chamber/tests/legal_parameter_values.rs
+  s_14f2bbc9f385dd::t_5dd5db74894314 37,40-47
+  s_14f2bbc9f385dd::t_42d2aceffae02d 1-36,38-39,48-93,95,98-99,101-102,104-106,109-119,124-148
+  s_14f2bbc9f385dd::t_bdb1298a92b411 94,96-97,100,103,107-108
+  s_14f2bbc9f385dd::t_ad3fd7892035ce 120-123
+src/modules/TimelineEditor/presentations/views/Inspector/DeviceParameterControl.tsx
+  s_14f2bbc9f385dd::t_416e2bfc7d89ac 148
+  s_14f2bbc9f385dd::t_b8fed77c2f3dac 164-172
+  s_14f2bbc9f385dd::t_ef53ee6923d62b 7
+src/modules/Arrangement/models/PluginDescriptors/GlutenDescriptor.ts
+  s_14f2bbc9f385dd::t_99afb71de6f544 111
+  s_14f2bbc9f385dd::t_0e2c23503ab017 54-69
+src/modules/TimelineEditor/models/PluginDescriptorViewTypes.ts
+  s_14f2bbc9f385dd::t_dc9866c1cf11d3 22-26,28
+public/wasm/daw-dsp/daw_dsp.d.ts
+  s_14f2bbc9f385dd::t_8d9cb996da3616 1,969-984
+public/wasm/daw-dsp/daw_dsp_bg.wasm.d.ts
+  s_14f2bbc9f385dd::t_948231907832ef 1,189-204
+public/wasm/manifest.json
+  s_14f2bbc9f385dd::t_c661201df175ce 12,16-18,21
+src/modules/Arrangement/models/DeviceLegalParameterValues.json
+  s_14f2bbc9f385dd::t_d3cdc877a32544 1-80
+src/modules/AudioEngine/wasm/daw_dsp.d.ts
+  s_14f2bbc9f385dd::t_656f4eaf40e921 1,969-984
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "af499bbe5b17578f9911abc56200798a32a6fb0d",
+  "prompts": {},
+  "sessions": {
+    "s_14f2bbc9f385dd": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f9a61a1d-66b3-4146-938d-a04f45f4b060",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
