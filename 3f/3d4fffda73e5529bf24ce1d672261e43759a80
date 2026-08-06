@@ -1,0 +1,16 @@
+src/modules/AudioEngine/useCases/noteExpression/__tests__/applyNoteExpression.spec.ts
+  h_1228e573df1f42 1-89
+src/modules/MIDI/useCases/grooveTemplates/__tests__/restoreDeletedGrooveTemplate.spec.ts
+  h_1228e573df1f42 1-147
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "3f3d4fffda73e5529bf24ce1d672261e43759a80",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
