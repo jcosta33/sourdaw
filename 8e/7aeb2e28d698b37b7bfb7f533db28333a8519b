@@ -1,0 +1,33 @@
+src/modules/Tuner/presentations/views/__tests__/TunerPanel.spec.tsx
+  s_14f2bbc9f385dd::t_160df775168b3c 135-142,155,162-172
+  s_14f2bbc9f385dd::t_cf8ea94ef5ae53 225-226,231-287
+src/modules/Arrangement/stores/__tests__/deviceWriteBoundaryClosure.spec.ts
+  s_14f2bbc9f385dd::t_73dff735017e1e 617
+  s_14f2bbc9f385dd::t_b376dd2527f353 209-214,216-229
+.agents/decisions/open-decision-docket.md
+  s_14f2bbc9f385dd::t_e1e654189c51aa 695-699
+src/modules/Tuner/useCases/setA4Reference.ts
+  s_14f2bbc9f385dd::t_a07dc15080694e 1-2,15-45,47-57
+src/modules/Tuner/presentations/views/TunerPanel.tsx
+  s_14f2bbc9f385dd::t_b198dabacdd394 101-110
+  s_14f2bbc9f385dd::t_9429352ab704a7 199-212
+src/modules/Tuner/useCases/__tests__/setA4Reference.spec.ts
+  s_14f2bbc9f385dd::t_c07dc453532c4a 3-4,9-16,27-31,35-37,41-46,51-55,58-65,67-70,73-75,77-82,85-133,136
+  s_14f2bbc9f385dd::t_4f71e152f0296c 134-135,137,139-140
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "8e7aeb2e28d698b37b7bfb7f533db28333a8519b",
+  "prompts": {},
+  "sessions": {
+    "s_14f2bbc9f385dd": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f9a61a1d-66b3-4146-938d-a04f45f4b060",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
