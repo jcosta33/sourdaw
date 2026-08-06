@@ -1,0 +1,14 @@
+src/modules/Bacteria/presentations/components/__tests__/WaveshaperEditor.spec.tsx
+  h_1228e573df1f42 6-28,60,63-64,73-119
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "110ef06dc7a66a2fe7f0279405f1a3aa3b1a674c",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
