@@ -1222,6 +1222,134 @@ mod tests {
         assert!(sample_difference(&dry_left, &dry_right, &driven_left, &driven_right) > 0.01);
     }
 
+    // ── osc_waveform reaches the rendered signal ───────────────────────────
+    //
+    // `set_param("osc_waveform")` used to stop at `Layer::osc_waveform`: no
+    // call site ever handed the value to an oscillator, so every selector
+    // position rendered `WavetableOsc::new`'s constructed saw. Each guard
+    // below therefore drives the selector between two named values and
+    // asserts on rendered samples — a state assertion on the layer field
+    // stays green on exactly that defect.
+
+    /// Sum of squared sample-to-sample differences — first-difference energy.
+    /// A discontinuous table (square) concentrates energy in its edges, a
+    /// smooth one (sine) spreads it, so this separates them by well over an
+    /// order of magnitude at equal amplitude.
+    fn first_difference_energy(samples: &[f32]) -> f32 {
+        samples
+            .windows(2)
+            .map(|pair| (pair[1] - pair[0]) * (pair[1] - pair[0]))
+            .sum()
+    }
+
+    #[test]
+    fn osc_waveform_changes_the_rendered_signal_for_a_single_voice() {
+        // Drives between 0 (sine) and 1 (saw — the constructed default, so a
+        // dead selector renders BOTH positions as this one). Unison stays at
+        // its default of 1, exercising the single `WavetableOsc` render path.
+        let (sine_left, sine_right) =
+            render_note_for_engine_with_params(0, &[("osc_waveform", 0.0)]);
+        let (saw_left, saw_right) = render_note_for_engine_with_params(0, &[("osc_waveform", 1.0)]);
+
+        assert!(block_energy(&sine_left, &sine_right) > 0.001);
+        assert!(block_energy(&saw_left, &saw_right) > 0.001);
+        assert!(
+            sample_difference(&sine_left, &sine_right, &saw_left, &saw_right) > 0.01,
+            "waveform 0 (sine) rendered the same signal as waveform 1 (saw): the selector is dead"
+        );
+    }
+
+    #[test]
+    fn all_four_osc_waveform_values_render_pairwise_distinct_signals() {
+        // 0=sine, 1=saw, 2=square, 3=triangle. A dead selector renders all
+        // four as saw, so every pair collapses to zero difference.
+        let renders: Vec<([f32; 512], [f32; 512])> = (0..4)
+            .map(|waveform| {
+                render_note_for_engine_with_params(0, &[("osc_waveform", waveform as f32)])
+            })
+            .collect();
+
+        for a in 0..renders.len() {
+            assert!(block_energy(&renders[a].0, &renders[a].1) > 0.001);
+            for b in (a + 1)..renders.len() {
+                assert!(
+                    sample_difference(&renders[a].0, &renders[a].1, &renders[b].0, &renders[b].1)
+                        > 0.01,
+                    "waveform {a} and waveform {b} rendered identical signals"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn osc_waveform_0_is_the_smooth_table_and_2_the_discontinuous_one() {
+        // Pins the index→table direction (0=sine, 2=square, matching the
+        // `FermenterPatch` contract and the order `MasterSynth::new` builds
+        // the tables in). The pairwise guard above cannot see a permuted
+        // table order; edge energy can: a square's discontinuities carry far
+        // more first-difference energy than a sine of the same amplitude.
+        let (sine_left, _) = render_note_for_engine_with_params(0, &[("osc_waveform", 0.0)]);
+        let (square_left, _) = render_note_for_engine_with_params(0, &[("osc_waveform", 2.0)]);
+
+        let sine_edges = first_difference_energy(&sine_left);
+        let square_edges = first_difference_energy(&square_left);
+        assert!(
+            square_edges > 4.0 * sine_edges,
+            "waveform 2 should render the discontinuous table: square edge energy \
+             {square_edges:.6} vs sine {sine_edges:.6}"
+        );
+    }
+
+    #[test]
+    fn moving_osc_waveform_rewrites_a_note_that_is_already_sounding() {
+        // Both synths hold the same note through block 1 on the default saw;
+        // one then moves the selector to sine (1 → 0). Only
+        // `advance_block_params` can reach the already-active voice, so this
+        // guard reds if the block-rate application is dropped even while the
+        // note-on application survives.
+        let mut kept = MasterSynth::new(48_000.0, 8);
+        let mut moved = MasterSynth::new(48_000.0, 8);
+        let events = [note_on_event(60, 0)];
+        let mut scratch_left = [0.0; 128];
+        let mut scratch_right = [0.0; 128];
+        for synth in [&mut kept, &mut moved] {
+            synth.process_block(&mut scratch_left, &mut scratch_right, &events);
+        }
+
+        moved.set_param("osc_waveform", 0.0);
+
+        let mut kept_left = [0.0; 128];
+        let mut kept_right = [0.0; 128];
+        kept.process_block(&mut kept_left, &mut kept_right, &[]);
+        let mut moved_left = [0.0; 128];
+        let mut moved_right = [0.0; 128];
+        moved.process_block(&mut moved_left, &mut moved_right, &[]);
+
+        assert!(block_energy(&kept_left, &kept_right) > 0.001);
+        assert!(
+            sample_difference(&kept_left, &kept_right, &moved_left, &moved_right) > 0.01,
+            "moving the selector mid-note did not change the sounding voice"
+        );
+    }
+
+    #[test]
+    fn osc_waveform_reaches_the_unison_bank() {
+        // unison_voices is driven to 8 (default 1) so `Voice::render` takes
+        // the `has_unison` branch and reads the `UnisonOsc` bank instead of
+        // the single `WavetableOsc` — the waveform must land on both.
+        let (sine_left, sine_right) =
+            render_note_for_engine_with_params(0, &[("unison_voices", 8.0), ("osc_waveform", 0.0)]);
+        let (saw_left, saw_right) =
+            render_note_for_engine_with_params(0, &[("unison_voices", 8.0), ("osc_waveform", 1.0)]);
+
+        assert!(block_energy(&sine_left, &sine_right) > 0.001);
+        assert!(block_energy(&saw_left, &saw_right) > 0.001);
+        assert!(
+            sample_difference(&sine_left, &sine_right, &saw_left, &saw_right) > 0.01,
+            "waveform 0 (sine) and 1 (saw) rendered identically through the unison bank"
+        );
+    }
+
     #[test]
     fn note_on_triggers_all_playable_active_layers() {
         let mut synth = MasterSynth::new(48_000.0, 8);

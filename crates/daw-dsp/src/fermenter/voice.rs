@@ -340,6 +340,26 @@ impl Voice {
         self.unison_osc.set_spread(self.unison_spread);
     }
 
+    /// Select the wavetable both oscillator paths read: 0=sine, 1=saw,
+    /// 2=square, 3=triangle, matching the order `MasterSynth` builds them in.
+    ///
+    /// Both banks are set unconditionally because `Voice::render` chooses
+    /// between them per block on `unison_voices > 1`, so whichever one is idle
+    /// now may be the one rendering next block.
+    ///
+    /// Wavetable engines only. Engine 1 (Analog) at `unison_voices == 1`
+    /// renders `PolyBlepOsc::pulse` unconditionally — `PolyBlepOsc` carries no
+    /// waveform selection and its `saw` has no caller — so the selector still
+    /// does not reach that path. Raising unison above 1 moves engine 1 onto the
+    /// `UnisonOsc` bank, which does follow it. Closing the Analog case means
+    /// authoring the missing generators, not wiring an existing one, and is
+    /// deliberately left out of this change.
+    pub fn set_waveform(&mut self, index: u8) {
+        let index = usize::from(index);
+        self.osc.set_waveform(index);
+        self.unison_osc.set_waveform(index);
+    }
+
     /// Configure FM engine parameters.
     pub fn configure_fm(
         &mut self,
