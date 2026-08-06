@@ -164,6 +164,31 @@ describe('executePlannedActions', () => {
         expect(vi.mocked(recordAiActionGroup)).not.toHaveBeenCalled();
     });
 
+    it('carries a refused action through as a failure reason instead of reporting it dispatched', async () => {
+        // The last link in a refusal's path to the caller. A handler that throws
+        // — `setTempo` inside a tempo ramp is the case this was written for —
+        // becomes a `failed` batch carrying the refusal message
+        // (`executeAppActionBatch.spec.ts` pins that half), and this is where
+        // that message either reaches the model or is dropped. Dropping it is
+        // the original defect: the runtime answered as though the action had
+        // been dispatched while nothing in the project had changed.
+        const refusal =
+            'Cannot set 111 BPM here: the playhead is inside a tempo ramp, where no single tempo event carries the tempo in force.';
+        vi.mocked(executeAppActionBatch).mockResolvedValue({ status: 'failed', reason: refusal, actions: [] });
+
+        const result = await executePlannedActions({
+            prompt: 'Set the tempo to 111',
+            actions: [{ type: 'setTempo', payload: { bpm: 111 } }],
+            projectRevision: 'revision-1',
+        });
+
+        expect(result).toEqual({ status: 'failed', reason: refusal });
+        // Neither a history entry nor a success notification: both would tell the
+        // user something happened.
+        expect(vi.mocked(recordAiActionGroup)).not.toHaveBeenCalled();
+        expect(vi.mocked(notifyAiChange)).not.toHaveBeenCalled();
+    });
+
     it('preserves a committed result when post-commit reporting fails', async () => {
         vi.mocked(executeAppActionBatch).mockResolvedValue({
             status: 'committed',
