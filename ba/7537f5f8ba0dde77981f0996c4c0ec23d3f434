@@ -1,0 +1,14 @@
+src/modules/Bacteria/presentations/components/__tests__/BezierLfoEditor.spec.tsx
+  h_1228e573df1f42 6-24,43,46-47,56-109
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "ba7537f5f8ba0dde77981f0996c4c0ec23d3f434",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
