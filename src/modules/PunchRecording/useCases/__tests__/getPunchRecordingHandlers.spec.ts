@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 
-import { getWebMidiInputHandlers } from '#/modules/MIDI/useCases/getWebMidiInputHandlers';
-import { getProjectHandlers } from '#/modules/Project/useCases/getProjectHandlers';
+import { getWebMidiInputHandlers } from '#/modules/MIDI/useCases';
+import { getProjectHandlers } from '#/modules/Project/useCases';
 
 import { getPunchRecordingHandlers } from '../getPunchRecordingHandlers';
 

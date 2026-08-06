@@ -1,7 +1,7 @@
 import { render, screen } from '@testing-library/react';
 import { describe, it, expect, vi } from 'vitest';
 
-vi.mock('../../../../hooks/usePreviewAudio', () => ({
+vi.mock('../../../hooks/usePreviewAudio', () => ({
     usePreviewAudio: () => ({ playingId: null, play: vi.fn(), playTone: vi.fn(), playFile: vi.fn(), stop: vi.fn() }),
 }));
 
