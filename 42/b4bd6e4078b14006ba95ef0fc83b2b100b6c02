@@ -1,0 +1,14 @@
+src/modules/Collaboration/presentations/views/__tests__/PresenceOverlay.spec.tsx
+  h_1228e573df1f42 11-15,17,22,28,38-45,56-88,90-104
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "42b4bd6e4078b14006ba95ef0fc83b2b100b6c02",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
