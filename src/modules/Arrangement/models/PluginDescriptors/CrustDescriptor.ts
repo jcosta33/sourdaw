@@ -12,7 +12,21 @@ const CRUST_PARAMS: readonly PluginParamDef[] = [
     { id: 'ceiling', label: 'Ceiling', min: -6, max: 0, default: -0.3, unit: 'dBTP', step: 0.1 },
     { id: 'lookahead', label: 'Lookahead', min: 0, max: 10, default: 2, unit: 'ms', step: 0.1 },
     { id: 'attack', label: 'Attack', min: 0, max: 100, default: 0, unit: 'ms', step: 0.1 },
+    // The switch that decides whether `attack` above is the attack at all.
+    // `CrustEngine::apply_envelope` takes the algorithm profile's time constant
+    // while this is on and the declared control only while it is off, and it
+    // defaults on — so `attack` was declared, automatable, and discarded by the
+    // engine unless someone opened the Crust panel and turned this off there.
+    // An auto switch over the manual time constants is the standard shape for
+    // this control (Waves L2's ARC, Ableton's Compressor "Auto Release"), and
+    // like both of those it is two-position and defaults to auto.
+    { id: 'attackAuto', label: 'Attack Auto', min: 0, max: 1, default: 1, unit: '', step: 1 },
     { id: 'release', label: 'Release', min: 0, max: 1000, default: 0, unit: 'ms', step: 1 },
+    // Same switch for the release, with one extra engine behaviour behind it:
+    // `apply_envelope` also forces the auto branch when `release` is 0, which
+    // is that control's own default. So the release is program-dependent until
+    // *both* this is off and `release` is above zero.
+    { id: 'releaseAuto', label: 'Release Auto', min: 0, max: 1, default: 1, unit: '', step: 1 },
     { id: 'channelLinkTransient', label: 'Link Trans', min: 0, max: 100, default: 100, unit: '%', step: 1 },
     { id: 'channelLinkRelease', label: 'Link Rel', min: 0, max: 100, default: 100, unit: '%', step: 1 },
     { id: 'truePeak', label: 'True Peak', min: 0, max: 1, default: 1, unit: '', step: 1 },
@@ -32,6 +46,13 @@ const CRUST_PARAMS: readonly PluginParamDef[] = [
         step: 1,
         legalSet: { values: [1, 2, 4, 8, 16, 32], resolution: 'floor' },
     },
+    // The saturation stage's own enable, which `Saturator::is_idle` reads as
+    // the first branch of the process path — a per-stage bypass of the kind
+    // every module in a mastering suite carries (iZotope Ozone's per-module
+    // power button). It defaults off, and `satDrive` and `satMix` below are
+    // declared and automatable, so until this could be moved a lane drawn on
+    // either of them rendered nothing.
+    { id: 'satEnabled', label: 'Sat On', min: 0, max: 1, default: 0, unit: '', step: 1 },
     { id: 'satDrive', label: 'Sat Drive', min: 0, max: 18, default: 0, unit: 'dB', step: 0.1 },
     { id: 'satMix', label: 'Sat Mix', min: 0, max: 100, default: 0, unit: '%', step: 1 },
     { id: 'deltaListen', label: 'Delta', min: 0, max: 1, default: 0, unit: '', step: 1 },

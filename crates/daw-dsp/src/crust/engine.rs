@@ -1151,4 +1151,119 @@ mod tests {
             db(trimmed_peak) - db(reference_peak)
         );
     }
+
+    // -----------------------------------------------------------------------
+    // The auto and enable gates
+    // -----------------------------------------------------------------------
+
+    /// Deepest sample-domain disagreement between two renders of the same
+    /// programme.
+    fn peak_difference(left: &[f32], right: &[f32]) -> f32 {
+        left.iter()
+            .zip(right.iter())
+            .fold(0.0_f32, |worst, (a, b)| worst.max((a - b).abs()))
+    }
+
+    /// Render the transient programme through an engine configured by `patch`.
+    fn render_with(patch: &[(&str, f32)]) -> Vec<f32> {
+        let (left, right) = overdriven_programme(48_000);
+        let mut engine = CrustEngine::new(SAMPLE_RATE);
+        for (name, value) in patch {
+            engine.set_param(name, *value);
+        }
+        let (out_left, _) = render(&mut engine, &left, &right);
+        out_left
+    }
+
+    /// Which branch `attack_auto` selects, asserted in both directions.
+    ///
+    /// One direction alone would pass on an inverted gate: "the two states
+    /// render differently" is symmetric, and so is "the attack control moves
+    /// the render for one of them". What pins the polarity is *which* state
+    /// discards the control — auto takes the algorithm profile's time constant
+    /// and the panel's Attack is not consulted at all.
+    ///
+    /// Look-ahead at its maximum because the limiter clamps the attack ramp to
+    /// the look-ahead budget (`clamp_attack`); at the default 2 ms window there
+    /// is almost nothing for a long ramp to occupy and the two attacks converge.
+    #[test]
+    fn attack_auto_discards_the_attack_control_and_clearing_it_restores_it() {
+        let auto_short = render_with(&[("lookahead", 10.0), ("attack_auto", 1.0), ("attack", 0.0)]);
+        let auto_long =
+            render_with(&[("lookahead", 10.0), ("attack_auto", 1.0), ("attack", 100.0)]);
+        assert_eq!(
+            peak_difference(&auto_short, &auto_long),
+            0.0,
+            "the Attack control moved the render while auto was on, so auto is not taking the profile"
+        );
+
+        let manual_short =
+            render_with(&[("lookahead", 10.0), ("attack_auto", 0.0), ("attack", 0.0)]);
+        let manual_long =
+            render_with(&[("lookahead", 10.0), ("attack_auto", 0.0), ("attack", 100.0)]);
+        assert!(
+            peak_difference(&manual_short, &manual_long) > 0.01,
+            "clearing attack_auto left the Attack control inert, so the switch selects nothing"
+        );
+    }
+
+    /// The same claim for the release, which carries one extra engine rule:
+    /// `apply_envelope` forces the auto branch whenever the Release control is
+    /// at zero, so the manual branch is reachable only with both the switch off
+    /// *and* a release above zero. Both halves are asserted, because a guard
+    /// that only drove the switch would be reading the zero-release fallback.
+    #[test]
+    fn release_auto_discards_the_release_control_and_clearing_it_restores_it() {
+        let auto_fast = render_with(&[("release_auto", 1.0), ("release", 50.0)]);
+        let auto_slow = render_with(&[("release_auto", 1.0), ("release", 800.0)]);
+        assert_eq!(
+            peak_difference(&auto_fast, &auto_slow),
+            0.0,
+            "the Release control moved the render while auto was on, so auto is not taking the profile"
+        );
+
+        let manual_fast = render_with(&[("release_auto", 0.0), ("release", 50.0)]);
+        let manual_slow = render_with(&[("release_auto", 0.0), ("release", 800.0)]);
+        assert!(
+            peak_difference(&manual_fast, &manual_slow) > 0.01,
+            "clearing release_auto left the Release control inert, so the switch selects nothing"
+        );
+
+        let zero_release = render_with(&[("release_auto", 0.0), ("release", 0.0)]);
+        let profile_release = render_with(&[("release_auto", 1.0), ("release", 0.0)]);
+        assert_eq!(
+            peak_difference(&zero_release, &profile_release),
+            0.0,
+            "a zero Release with auto cleared rendered unlike the auto branch it is documented to fall back to"
+        );
+    }
+
+    /// `Saturator::is_idle` is the first branch of the saturation path, so the
+    /// enable decides whether Drive and Mix are controls at all. Asserted in
+    /// both directions for the same reason as the two switches above.
+    #[test]
+    fn the_saturation_stage_stays_inert_until_it_is_enabled() {
+        let disabled_driven = render_with(&[
+            ("sat_enabled", 0.0),
+            ("sat_drive", 12.0),
+            ("sat_mix", 100.0),
+        ]);
+        let disabled_clean =
+            render_with(&[("sat_enabled", 0.0), ("sat_drive", 0.0), ("sat_mix", 0.0)]);
+        assert_eq!(
+            peak_difference(&disabled_driven, &disabled_clean),
+            0.0,
+            "Drive and Mix moved the render with the stage disabled, so the enable gates nothing"
+        );
+
+        let enabled_driven = render_with(&[
+            ("sat_enabled", 1.0),
+            ("sat_drive", 12.0),
+            ("sat_mix", 100.0),
+        ]);
+        assert!(
+            peak_difference(&enabled_driven, &disabled_driven) > 0.01,
+            "enabling the saturation stage changed nothing, so the enable selects nothing"
+        );
+    }
 }
