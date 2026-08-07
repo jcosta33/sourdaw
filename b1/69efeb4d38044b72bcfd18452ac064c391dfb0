@@ -1,0 +1,19 @@
+src/modules/Toaster/presentations/components/__tests__/StepSequencer.spec.tsx
+  s_f70d3ab3b9b385::t_09a9227c69ea75 54-76,79-80,128,132,137-145,147-148,161-207
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "b169efeb4d38044b72bcfd18452ac064c391dfb0",
+  "prompts": {},
+  "sessions": {
+    "s_f70d3ab3b9b385": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-a091bf96bd2a7e235",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
