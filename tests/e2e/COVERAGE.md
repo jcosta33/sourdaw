@@ -651,7 +651,17 @@ Re-measured after 12 additional PRs since threshold raise #2 (PR #1198):
 - **PR #1237**: ShortcutCheatSheet deepened — open/close lifecycle, escape/button close,
   group titles, shortcut descriptions — 5 tests.
 
-**Campaign total to date: 154 PRs, ~1905 assertions. All hardest-tier zero-coverage files
+- **PR #1235-#1240**: ControlHeader (value conditional), ShortcutCheatSheet (open/close lifecycle),
+  InstrumentBottomPanel (aria-label/onClose), SampleRow (play/stop/favorite/metadata/formatting),
+  HumanizePanel (computed readouts/knob transforms), MicBlendSlider (room threshold/mixer toggle).
+- **PR #1243-#1244**: GrHistory (canvas role/aria-label), CrustSatCurve (canvas size/aria-label per algo).
+- **PR #1245-#1247**: WaveshaperEditor (canvas size/drag commit), BezierLfoEditor (label toggle/drag),
+  CrossoverDisplay (band labels/mode/drag/click).
+- **PR #1264**: SignalFlowDiagram — shimmer/freeze conditionals, FDN-8/FDN-16 distinction — 6 tests.
+
+**Campaign total to date: 165 PRs, ~1962 assertions. All hardest-tier zero-coverage files
 now attempted: executePlayheadSeek, sanitizePersistedActionHistoryBundle, runBranchLineageTransition,
 replaceProjectData, executableAppActionRegistry, crdtPersistenceQueueCoordinator,
-grandBouleEngineHandle, deviceNodeFactory.**
+grandBouleEngineHandle, deviceNodeFactory. All verifier-named component specs deepened:
+GrHistory, CrustSatCurve, WaveshaperEditor, BezierLfoEditor, CrossoverDisplay, SignalFlowDiagram,
+HumanizePanel, MicBlendSlider, SampleRow, ControlHeader, ShortcutCheatSheet, InstrumentBottomPanel.**
