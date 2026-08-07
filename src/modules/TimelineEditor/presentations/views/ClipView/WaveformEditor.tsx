@@ -193,6 +193,20 @@ export const WaveformEditor = ({ clipId, audioBufferId }: WaveformEditorProps): 
     const [isDraggingMarker, setIsDraggingMarker] = useState(false);
     const didDragRef = useRef(false);
 
+    // audit M-249: `warpState` is seeded once by the lazy initializer above, but
+    // ClipView renders this editor without a `key`, so switching the selected clip
+    // reuses the instance and leaves the previous clip's warp state on screen and
+    // in the toggle branch. Re-read it during the render that changes `clipId` —
+    // React's previous-props adjustment — so the committed frame and the first
+    // click after a switch both describe the clip actually being edited. Held in
+    // state rather than a ref because reading or writing a ref during render is
+    // impure (`react-hooks/refs`).
+    const [renderedClipId, setRenderedClipId] = useState(clipId);
+    if (renderedClipId !== clipId) {
+        setRenderedClipId(clipId);
+        setWarpState(getWarpState(clipId));
+    }
+
     const refreshWarp = () => setWarpState(getWarpState(clipId));
 
     const handleToggleWarp = () => {

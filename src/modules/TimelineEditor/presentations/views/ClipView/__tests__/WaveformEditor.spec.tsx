@@ -283,6 +283,92 @@ describe('WaveformEditor', () => {
         expect(vi.mocked(enableWarp)).not.toHaveBeenCalled();
     });
 
+    // audit M-249 — ClipView renders this editor without a `key`, so selecting a
+    // different clip reuses the instance and the once-seeded `warpState` describes
+    // the clip the editor mounted with rather than the clip on screen.
+    describe('warp state across clip switches (audit M-249)', () => {
+        it('reads the newly selected clip marker count, not the count it mounted with', () => {
+            // Both clips are warped, so the marker readout stays rendered across the
+            // switch: only a re-read of the new clip can change the string.
+            vi.mocked(getWarpState).mockImplementation((clipId: string) => {
+                if (clipId === 'clip-a') {
+                    return {
+                        enabled: true,
+                        markers: [
+                            { id: 'marker-a1', originalBeat: 1, warpedBeat: 1 },
+                            { id: 'marker-a2', originalBeat: 2, warpedBeat: 2.5 },
+                            { id: 'marker-a3', originalBeat: 3, warpedBeat: 4 },
+                        ],
+                        stretchMode: 'repitch',
+                        originalTempo: 120,
+                    };
+                }
+                return {
+                    enabled: true,
+                    markers: [{ id: 'marker-b1', originalBeat: 8, warpedBeat: 9 }],
+                    stretchMode: 'repitch',
+                    originalTempo: 90,
+                };
+            });
+
+            const { rerender } = render(<WaveformEditor clipId="clip-a" />);
+            expect(screen.getByText('3 markers')).toBeInTheDocument();
+
+            rerender(<WaveformEditor clipId="clip-b" />);
+
+            expect(screen.getByText('1 marker')).toBeInTheDocument();
+            expect(screen.queryByText('3 markers')).not.toBeInTheDocument();
+        });
+
+        it('routes the first toggle after a switch into enableWarp when the new clip is unwarped', () => {
+            vi.mocked(getWarpState).mockImplementation((clipId: string) => {
+                if (clipId === 'clip-a') {
+                    return {
+                        enabled: true,
+                        markers: [{ id: 'marker-a1', originalBeat: 1, warpedBeat: 1 }],
+                        stretchMode: 'repitch',
+                        originalTempo: 120,
+                    };
+                }
+                return { enabled: false, markers: [], stretchMode: 'repitch', originalTempo: null };
+            });
+
+            const { rerender } = render(<WaveformEditor clipId="clip-a" />);
+            rerender(<WaveformEditor clipId="clip-b" />);
+
+            expect(screen.getByLabelText('Toggle warp mode')).toHaveAttribute('aria-pressed', 'false');
+
+            fireEvent.click(screen.getByLabelText('Toggle warp mode'));
+
+            expect(vi.mocked(enableWarp)).toHaveBeenCalledWith('clip-b');
+            expect(vi.mocked(disableWarp)).not.toHaveBeenCalled();
+        });
+
+        it('routes the first toggle after a switch into disableWarp when the new clip is already warped', () => {
+            vi.mocked(getWarpState).mockImplementation((clipId: string) => {
+                if (clipId === 'clip-a') {
+                    return { enabled: false, markers: [], stretchMode: 'repitch', originalTempo: null };
+                }
+                return {
+                    enabled: true,
+                    markers: [{ id: 'marker-b1', originalBeat: 2, warpedBeat: 2 }],
+                    stretchMode: 'repitch',
+                    originalTempo: 90,
+                };
+            });
+
+            const { rerender } = render(<WaveformEditor clipId="clip-a" />);
+            rerender(<WaveformEditor clipId="clip-b" />);
+
+            expect(screen.getByLabelText('Toggle warp mode')).toHaveAttribute('aria-pressed', 'true');
+
+            fireEvent.click(screen.getByLabelText('Toggle warp mode'));
+
+            expect(vi.mocked(disableWarp)).toHaveBeenCalledWith('clip-b');
+            expect(vi.mocked(enableWarp)).not.toHaveBeenCalled();
+        });
+    });
+
     it('offers no warp stretch-mode button while repitch is the only executor', () => {
         vi.mocked(getWarpState).mockReturnValue({
             enabled: true,
