@@ -680,4 +680,11 @@ Re-measured after additional PRs since threshold raise #3 (PR #1231). Lines cros
 | Branches | 75 | 75.74% | **76.02%** | 76 |
 | Functions | 87 | 87.66% | **87.83%** | 88 |
 
-**Campaign total to date: 174 PRs, ~2003 assertions. Lines coverage crossed 90%.**
+- **PR #1278**: FermenterPatch model constants — DEFAULT_PATCH shape, name arrays,
+  FERMENTER_PARAMS, MACRO_LABELS/MAPPINGS — 13 tests.
+- **PR #1279**: BacteriaPatch model — DEFAULT_BAND, DEFAULT_PATCH shape, type unions,
+  crossover ordering — 15 tests.
+- **PR #1280**: FactoryDrumKits — 6 kits, unique ids, voice shapes, accessor functions — 10 tests.
+- **PR #1281**: BuiltinEffectDescriptors — 19 effects validated, unique ids, params, categories — 8 tests.
+
+**Campaign total to date: 178 PRs, ~2049 assertions. Lines coverage crossed 90%.**
