@@ -1,0 +1,14 @@
+src/modules/Fermenter/models/__tests__/FermenterPatch.spec.ts
+  h_1228e573df1f42 1-89
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "c805077aec0e51b80870c85477872fb85ff73ebe",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
