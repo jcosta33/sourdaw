@@ -1,0 +1,19 @@
+src/modules/Arrangement/models/PluginDescriptors/__tests__/FaustEffectDescriptors.spec.ts
+  s_1f47ead53741b3::t_338113ea8efa50 1-81
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "ce95b40d2ee416ea5871eef180b61641a0f855fc",
+  "prompts": {},
+  "sessions": {
+    "s_1f47ead53741b3": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-a0710fc50869b119a",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
