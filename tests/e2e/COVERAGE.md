@@ -664,8 +664,14 @@ Re-measured after 12 additional PRs since threshold raise #2 (PR #1198):
 - **PR #1271**: PerNoteEditor — onReset callback, onParamChange knob, value readout, labels — 4 tests.
 - **PR #1272**: IrBrowser — drag-over state toggle, AIFF-by-extension, canvas waveform render — 3 tests.
 
-**Campaign total to date: 170 PRs, ~1986 assertions. All hardest-tier zero-coverage files
-now attempted. All verifier-named component specs deepened: GrHistory, CrustSatCurve,
+- **PR #1273**: SpectralBinEditor — canvas size, mode label, paint with brush falloff — 5 tests.
+- **PR #1274**: LoudnessHistory — aria-label, canvas size, full gridline verification — 3 tests.
+- **PR #1275**: SpectralWaterfall — aria-label, className passthrough, idle render, multi-frame — 4 tests.
+- **PR #1276**: SpectrumAnalyzer — canvas size, default props, crossover overlay with bandCount gate — 4 tests.
+
+**Campaign total to date: 174 PRs, ~2003 assertions. All hardest-tier zero-coverage files
+now attempted. All component specs systematically deepened: GrHistory, CrustSatCurve,
 WaveshaperEditor, BezierLfoEditor, CrossoverDisplay, SignalFlowDiagram, HumanizePanel,
 MicBlendSlider, SampleRow, ControlHeader, ShortcutCheatSheet, InstrumentBottomPanel,
-StepSequencer, PadGrid, GlutenCurve, PerNoteEditor, IrBrowser.**
+StepSequencer, PadGrid, GlutenCurve, PerNoteEditor, IrBrowser, SpectralBinEditor,
+LoudnessHistory, SpectralWaterfall, SpectrumAnalyzer.**
