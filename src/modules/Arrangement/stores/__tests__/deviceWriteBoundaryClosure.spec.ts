@@ -417,6 +417,14 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         'src/modules/PluginHost/useCases/index.ts': 2,
         'src/modules/Proof/useCases/proofParamBridge/loadProofPatchWithAudio.ts': 1,
         'src/modules/Proof/presentations/views/ProofPanel.tsx': 3,
+        // Count provenance: new file entry, measured 1 with `grep -oE` over the
+        // family pattern — a single doc-comment mention of `setPadParamImmediate`,
+        // naming one of the two pad-param entry points that call this transform.
+        // The other sink families score 0. `toPadStoreUpdate` is a pure function
+        // from (key, numeric value) to the `Partial<PadState>` its callers write:
+        // it holds no store write, no engine write, and no import beyond the
+        // `PadState` type.
+        'src/modules/Toaster/models/PadStoreUpdate.ts': 1,
         'src/modules/Toaster/useCases/loadToasterKit.ts': 1,
         // Count provenance: one hit, `audioDevice.loaded` in the doc comment
         // explaining why an offline path is needed — that event never fires

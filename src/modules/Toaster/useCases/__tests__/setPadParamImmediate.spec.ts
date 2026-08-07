@@ -85,6 +85,60 @@ describe('setPadParamImmediate', () => {
         expect(mockUpdatePad).toHaveBeenCalledWith('dev-1', 2, { tune: 7 });
     });
 
+    /**
+     * The store and the wire disagree on the type of a mute. `PadState.muted` is
+     * a boolean; the engine's pad params are uniformly numeric. Writing the raw
+     * numeric into the store leaves a value the persisted kit chunk refuses —
+     * `readPads` in `ToasterKitState.ts` gates on `typeof stored.muted ===
+     * 'boolean'` — so the mute holds for the session and vanishes on the next
+     * project load. Both values are driven: asserting only `1 -> true` cannot
+     * tell a real narrowing from a hardcoded `{ muted: true }`.
+     */
+    it.each([
+        { value: 1, stored: true },
+        { value: 0, stored: false },
+    ])('narrows a numeric muted=$value to $stored for the store', ({ value, stored }) => {
+        setPadParamImmediate({ deviceId: 'dev-1', padIndex: 4, key: 'muted', value });
+
+        expect(mockUpdatePad).toHaveBeenCalledWith('dev-1', 4, { muted: stored });
+    });
+
+    it.each([
+        { value: 1, stored: true },
+        { value: 0, stored: false },
+    ])('keeps the numeric muted=$value on the wire to the worklet', ({ value }) => {
+        setPadParamImmediate({ deviceId: 'dev-1', padIndex: 4, key: 'muted', value });
+
+        expect(setPadParam).toHaveBeenCalledWith(4, 'muted', value);
+    });
+
+    it.each([
+        { value: 1, stored: true },
+        { value: 0, stored: false },
+    ])('narrows a numeric soloed=$value to $stored for the store', ({ value, stored }) => {
+        setPadParamImmediate({ deviceId: 'dev-1', padIndex: 6, key: 'soloed', value });
+
+        expect(mockUpdatePad).toHaveBeenCalledWith('dev-1', 6, { soloed: stored });
+        expect(setPadParam).toHaveBeenCalledWith(6, 'soloed', value);
+    });
+
+    /**
+     * `name`, `color` and `engineType` are strings in `PadState`. A numeric wire
+     * value carries no string, so writing it would put a number where the kit
+     * reader only accepts a string — same silent-drop-on-reload failure as the
+     * boolean case. The worklet dispatch is unaffected: the engine side is
+     * numeric for every param id.
+     */
+    it.each(['name', 'color', 'engineType'] as const)(
+        'drops a numeric write to the string field %s instead of storing a number',
+        (key) => {
+            setPadParamImmediate({ deviceId: 'dev-1', padIndex: 7, key, value: 3 });
+
+            expect(mockUpdatePad).not.toHaveBeenCalled();
+            expect(setPadParam).toHaveBeenCalledWith(7, key, 3);
+        }
+    );
+
     it('dispatches straight to the worklet in the same call, bypassing rAF coalescing', () => {
         setPadParamImmediate({ deviceId: 'dev-1', padIndex: 3, key: 'decay', value: 0.4 });
 

@@ -1,6 +1,7 @@
 import { resolveEligibleDeviceWriteTarget } from '#/modules/Arrangement/stores';
 import { getTrackStrip } from '#/modules/AudioEngine/useCases';
 
+import { toPadStoreUpdate } from '../models/PadStoreUpdate';
 import { type PadState } from '../models/ToasterKit';
 import { updatePad } from '../stores/toasterStore';
 
@@ -28,7 +29,10 @@ export function setPadParamImmediate(input: SetPadParamImmediateInput): void {
         return;
     }
 
-    updatePad(deviceId, padIndex, { [key]: value });
+    const storeUpdate = toPadStoreUpdate({ key, value });
+    if (storeUpdate) {
+        updatePad(deviceId, padIndex, storeUpdate);
+    }
 
     const strip = getTrackStrip(target.trackId);
     if (!strip) {
