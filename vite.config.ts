@@ -45,8 +45,14 @@ export default defineConfig({
         environment: 'jsdom',
         setupFiles: ['./src/setupTests.ts'],
         globals: true,
-        /** Local agent worktrees mirror `src/` — exclude so `vitest run` only hits the main tree. */
-        exclude: [...configDefaults.exclude, 'dist/**', '.claude/**', 'tests/e2e/**', '**/*.e2e.spec.*'],
+        /**
+         * Local agent worktrees mirror `src/` — exclude so `vitest run` only hits the main tree.
+         * The path is `.agents/worktrees/` (see CLAUDE.md); it used to be `.claude/worktrees/`,
+         * and the exclusion kept naming the old location for four months after the move, so a
+         * root `vitest run` collected every live lane's copy of the whole suite.
+         * `pnpm test:collection-scope` now fails the gate if this stops matching.
+         */
+        exclude: [...configDefaults.exclude, 'dist/**', '.agents/worktrees/**', 'tests/e2e/**', '**/*.e2e.spec.*'],
         coverage: {
             all: true,
             provider: 'v8',
