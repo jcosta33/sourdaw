@@ -88,4 +88,22 @@ describe('getLatencyReport', () => {
         expect(report.contextOutputLatencyMs).toBe(0);
         expect(report.maxLatencyMs).toBe(0);
     });
+
+    // A key that is *present but undefined* passes `'outputLatency' in ctx` and
+    // fails a nullish check, so the two readers of this field have to agree on
+    // what "missing" means. `createWebAudioEngine.getState()` uses `?? 0`; this
+    // reader used the `in` check, which multiplied `undefined` into `NaN` — and
+    // that NaN is now rendered straight into the Latency Report notification as
+    // `Output: NaNms (context 10.0ms + device NaNms)`.
+    it('treats a present-but-undefined outputLatency as 0 instead of NaN', () => {
+        ctx.baseLatency = 0.01; // 10 ms
+        ctx.outputLatency = undefined; // key present, value absent
+        mockTrackStore.value = { tracks: [makeTrack('solo')] };
+
+        const report = getLatencyReport();
+
+        expect(report.contextOutputLatencyMs).toBe(0);
+        // The sum the readouts print must stay a real number.
+        expect(report.contextBaseLatencyMs + report.contextOutputLatencyMs).toBeCloseTo(10, 6);
+    });
 });

@@ -227,12 +227,17 @@ export const useStatusBarMetrics = (refs: StatusBarMetricRefs): void => {
             const deviceLatencyMs = engineInfo.outputLatency * 1000;
             const outputLatencyMs = baseLatencyMs + deviceLatencyMs;
             updateTextNode(refs.latency.current, `${outputLatencyMs.toFixed(1)}ms`);
-            if (refs.latency.current) {
-                refs.latency.current.title =
-                    `Output latency ${outputLatencyMs.toFixed(1)} ms` +
-                    ` = context ${baseLatencyMs.toFixed(1)} ms` +
-                    ` + device ${deviceLatencyMs.toFixed(1)} ms.` +
-                    ' Hardware output path only — excludes plug-in delay compensation.';
+            // Compare before writing, the same way `updateTextNode` does: this
+            // tick runs at animation-frame rate and the tooltip only moves when
+            // the device buffer does, so an unguarded assignment would be ~60
+            // attribute writes a second to say the same thing.
+            const latencyTitle =
+                `Output latency ${outputLatencyMs.toFixed(1)} ms` +
+                ` = context ${baseLatencyMs.toFixed(1)} ms` +
+                ` + device ${deviceLatencyMs.toFixed(1)} ms.` +
+                ' Hardware output path only — excludes plug-in delay compensation.';
+            if (refs.latency.current && refs.latency.current.title !== latencyTitle) {
+                refs.latency.current.title = latencyTitle;
             }
 
             if (refs.engineState.current) {

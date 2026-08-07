@@ -249,6 +249,82 @@ describe('useStatusBarMetrics', () => {
         expect(refs.latency.current!.title).toContain('device 0.0 ms');
     });
 
+    // Sibling of the text-node test below: this hook exists to avoid touching
+    // unchanged DOM at animation-frame rate, and the latency tooltip is a string
+    // that only moves when the device buffer does.
+    it('leaves the latency tooltip alone while the latency is unchanged', () => {
+        vi.mocked(getEngineState).mockReturnValue({
+            isReady: true,
+            sampleRate: 48000,
+            state: 'running',
+            masterGain: 1,
+            currentTime: 0,
+            baseLatency: BASE_LATENCY_SECONDS,
+            outputLatency: OUTPUT_LATENCY_SECONDS,
+        });
+        vi.mocked(getMasterPeakLevel).mockReturnValue(0);
+
+        const refs = makeRefs();
+        makeElements(refs);
+        const latencyElement = refs.latency.current!;
+        const titleWrites: string[] = [];
+        let storedTitle = '';
+        Object.defineProperty(latencyElement, 'title', {
+            configurable: true,
+            get: () => storedTitle,
+            set: (value: string) => {
+                storedTitle = value;
+                titleWrites.push(value);
+            },
+        });
+        renderHook(() => useStatusBarMetrics(refs));
+
+        capturedTick!();
+        capturedTick!();
+        capturedTick!();
+
+        expect(titleWrites).toEqual([
+            'Output latency 16.0 ms = context 5.3 ms + device 10.7 ms.' +
+                ' Hardware output path only — excludes plug-in delay compensation.',
+        ]);
+    });
+
+    it('rewrites the latency tooltip when the device buffer changes', () => {
+        vi.mocked(getEngineState).mockReturnValue({
+            isReady: true,
+            sampleRate: 48000,
+            state: 'running',
+            masterGain: 1,
+            currentTime: 0,
+            baseLatency: BASE_LATENCY_SECONDS,
+            outputLatency: OUTPUT_LATENCY_SECONDS,
+        });
+        vi.mocked(getMasterPeakLevel).mockReturnValue(0);
+
+        const refs = makeRefs();
+        makeElements(refs);
+        renderHook(() => useStatusBarMetrics(refs));
+
+        capturedTick!();
+        // The spec allows outputLatency to change while the context runs.
+        vi.mocked(getEngineState).mockReturnValue({
+            isReady: true,
+            sampleRate: 48000,
+            state: 'running',
+            masterGain: 1,
+            currentTime: 0,
+            baseLatency: BASE_LATENCY_SECONDS,
+            outputLatency: 1024 / 48_000,
+        });
+        capturedTick!();
+
+        expect(refs.latency.current!.textContent).toBe('26.7ms');
+        expect(refs.latency.current!.title).toBe(
+            'Output latency 26.7 ms = context 5.3 ms + device 21.3 ms.' +
+                ' Hardware output path only — excludes plug-in delay compensation.'
+        );
+    });
+
     it('preserves metric text nodes when consecutive ticks render the same values', () => {
         vi.mocked(getEngineState).mockReturnValue({
             isReady: true,
