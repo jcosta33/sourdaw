@@ -1,0 +1,16 @@
+src/modules/Bacteria/presentations/components/__tests__/SpectrumAnalyzer.spec.tsx
+  h_1228e573df1f42 48-93
+tests/e2e/COVERAGE.md
+  h_1228e573df1f42 667-673,676-677
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "af5b5d5538ac1e39a1ba5e2edf8e38c687c2a50b",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
