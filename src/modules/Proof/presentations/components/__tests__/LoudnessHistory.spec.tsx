@@ -3,7 +3,6 @@ import { describe, it, expect } from 'vitest';
 
 import { LoudnessHistory } from '../LoudnessHistory';
 
-// Mirror of the component's dB→y mapping (MIN_DB=-60, MAX_DB=0).
 const yForDb = (db: number, height: number): number => ((db - 0) / (-60 - 0)) * height;
 
 const HIGHLIGHT = 'rgba(255,255,255,0.06)';
@@ -11,11 +10,6 @@ const FAINT = 'rgba(255,255,255,0.035)';
 
 type GridLine = { strokeStyle: string; y: number };
 
-/**
- * Record every grid line the component draws by spying on the 2D context.
- * Grid lines are the horizontal strokes set with one of the two grid colors,
- * captured as (strokeStyle, y) at their `moveTo` call.
- */
 const captureGridLines = (height: number): GridLine[] => {
     const lines: GridLine[] = [];
     const original = HTMLCanvasElement.prototype.getContext;
@@ -86,10 +80,7 @@ describe('LoudnessHistory', () => {
     it('highlights exactly the -24 dB gridline (no spurious highlight)', () => {
         const height = 48;
         const lines = captureGridLines(height);
-
         const highlighted = lines.filter((line) => line.strokeStyle === HIGHLIGHT);
-
-        // Exactly one gridline is highlighted, and it sits at the -24 dB position.
         expect(highlighted).toHaveLength(1);
         expect(highlighted[0]!.y).toBeCloseTo(yForDb(-24, height), 5);
     });
@@ -97,10 +88,39 @@ describe('LoudnessHistory', () => {
     it('does not highlight any gridline at the -14 dB position', () => {
         const height = 48;
         const lines = captureGridLines(height);
-
         const at14 = lines.find((line) => Math.abs(line.y - yForDb(-14, height)) < 1e-6);
-
-        // -14 is not one of the iterated gridlines, so no line should be drawn there at all.
         expect(at14).toBeUndefined();
+    });
+});
+
+describe('LoudnessHistory — canvas attributes', () => {
+    it('renders with aria-label', () => {
+        const { container } = render(
+            <LoudnessHistory momentaryLufs={-12} targetLufs={-14} integratedLufs={-13} width={200} height={48} />
+        );
+        const canvas = container.querySelector('canvas');
+        expect(canvas?.getAttribute('aria-label')).toBe('Loudness history graph');
+    });
+
+    it('applies width and height to the canvas style', () => {
+        const { container } = render(
+            <LoudnessHistory momentaryLufs={-12} targetLufs={-14} integratedLufs={-13} width={300} height={80} />
+        );
+        const canvas = container.querySelector('canvas');
+        expect(canvas?.getAttribute('style')).toContain('width: 300px');
+        expect(canvas?.getAttribute('style')).toContain('height: 80px');
+    });
+});
+
+describe('LoudnessHistory — grid line coverage', () => {
+    it('draws gridlines at all 6 dB reference levels', () => {
+        const height = 60;
+        const lines = captureGridLines(height);
+        // 6 gridlines at -6, -12, -18, -24, -36, -48
+        expect(lines.length).toBe(6);
+        for (const db of [-6, -12, -18, -24, -36, -48]) {
+            const expectedY = yForDb(db, height);
+            expect(lines.some((l) => Math.abs(l.y - expectedY) < 1e-5)).toBe(true);
+        }
     });
 });
