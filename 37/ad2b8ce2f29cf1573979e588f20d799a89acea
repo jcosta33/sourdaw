@@ -10,6 +10,7 @@ src/modules/TimelineEditor/presentations/views/ClipView/__tests__/PianoRollEmpty
 src/modules/TimelineEditor/presentations/views/ClipView/PianoRoll.tsx
   s_14f2bbc9f385dd::t_1a8f70c073ff2c 122-123
   s_14f2bbc9f385dd::t_b73c2c6611ccf5 120-121
+  s_14f2bbc9f385dd::t_112723995348ff 33-39
 ---
 {
   "schema_version": "authorship/3.0.0",
