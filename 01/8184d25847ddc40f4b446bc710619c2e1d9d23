@@ -1,0 +1,14 @@
+src/modules/ProofChamber/presentations/components/__tests__/SignalFlowDiagram.spec.tsx
+  h_1228e573df1f42 7,9,38-71
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "018184d25847ddc40f4b446bc710619c2e1d9d23",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
