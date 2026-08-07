@@ -192,6 +192,21 @@ export const KneadEditor = ({ trackId, clipId }: { trackId: string; clipId: stri
         };
         let lastPainted: PaintedSignature | null = null;
 
+        // A 2D context can lose its backing store (GPU reset, memory pressure).
+        // The UA restores it with a cleared bitmap and fires `contextrestored`,
+        // leaving the redraw to the page. None of the signature legs move when
+        // that happens, so the dirty check would sit on a still-matching memo
+        // and leave the editor blank until some unrelated input changed.
+        // Dropping the memo makes the next frame a full repaint.
+        //
+        // The unconditional loop this replaced self-healed within one frame, so
+        // unlike the resize case this is an exposure the dirty check introduces
+        // and therefore has to answer for.
+        const handleContextRestored = () => {
+            lastPainted = null;
+        };
+        canvas.addEventListener('contextrestored', handleContextRestored);
+
         const render = () => {
             const {
                 kneadState: currentKnead,
@@ -385,6 +400,7 @@ export const KneadEditor = ({ trackId, clipId }: { trackId: string; clipId: stri
 
         return () => {
             cancelAnimationFrame(animationFrameId);
+            canvas.removeEventListener('contextrestored', handleContextRestored);
         };
     }, [hasKnead]); // Only re-run if hasKnead changes. Internal changes handled by refs.
 
@@ -398,11 +414,14 @@ export const KneadEditor = ({ trackId, clipId }: { trackId: string; clipId: stri
             if (!parent) {
                 return;
             }
-            // Floor before comparing: `width`/`height` are unsigned longs, so a
-            // fractional assignment reads back truncated and an un-floored
-            // comparison would never settle.
+            // Floor the width before comparing: the zoom multiply makes it
+            // fractional (the slider steps in 0.1), `canvas.width` is an unsigned
+            // long that truncates on assignment, and an un-floored comparison
+            // would therefore never settle — every resize event would re-assign
+            // and reset the bitmap. `clientHeight` is already integral per CSSOM
+            // View, so the height needs no such treatment.
             const nextWidth = Math.floor(Math.max(800, parent.clientWidth * zoom));
-            const nextHeight = Math.floor(parent.clientHeight);
+            const nextHeight = parent.clientHeight;
 
             // Assign only on a real change. The HTML spec resets the canvas
             // bitmap whenever width/height are "set, removed, changed, or

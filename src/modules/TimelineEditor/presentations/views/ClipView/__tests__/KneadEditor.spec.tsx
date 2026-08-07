@@ -460,30 +460,50 @@ describe('KneadEditor', () => {
 
             const make2dContext = (): CanvasRenderingContext2D => document.createElement('canvas').getContext('2d')!;
 
+            // Teardown is registered here and drained in `afterEach`, never at the
+            // end of a test body: a failing assertion throws, and end-of-body
+            // restores would then silently not run and leak a prototype stub or a
+            // spy into every later test in this file.
+            const cleanups: (() => void)[] = [];
+
+            afterEach(() => {
+                while (cleanups.length > 0) {
+                    const undo = cleanups.pop();
+                    undo?.();
+                }
+            });
+
             const spyOnGetContext = (ctx: CanvasRenderingContext2D | null): MockInstance<GetContext2d> => {
                 const proto: { getContext: GetContext2d } = HTMLCanvasElement.prototype;
-                return vi.spyOn(proto, 'getContext').mockReturnValue(ctx);
+                const spy = vi.spyOn(proto, 'getContext').mockReturnValue(ctx);
+                cleanups.push(() => spy.mockRestore());
+                return spy;
+            };
+
+            const setContainerSize = (width: number, height: number): void => {
+                Object.defineProperty(HTMLElement.prototype, 'clientWidth', { configurable: true, value: width });
+                Object.defineProperty(HTMLElement.prototype, 'clientHeight', { configurable: true, value: height });
             };
 
             // jsdom defines clientWidth/clientHeight on `Element.prototype`, so the
-            // stub below is an *own* property of `HTMLElement.prototype` and undoing
-            // it means deleting it. Reading a descriptor off `HTMLElement.prototype`
-            // first returns undefined, which made the restore a silent no-op and
+            // stub is an *own* property of `HTMLElement.prototype` and undoing it
+            // means deleting it. Reading a descriptor off `HTMLElement.prototype`
+            // first returns undefined, which made the old restore a silent no-op and
             // leaked the stubbed size into every later test in this file.
-            const stubContainerSize = (width: number, height: number): (() => void) => {
-                Object.defineProperty(HTMLElement.prototype, 'clientWidth', { configurable: true, value: width });
-                Object.defineProperty(HTMLElement.prototype, 'clientHeight', { configurable: true, value: height });
-                return () => {
+            const stubContainerSize = (width: number, height: number): void => {
+                setContainerSize(width, height);
+                cleanups.push(() => {
                     Reflect.deleteProperty(HTMLElement.prototype, 'clientWidth');
                     Reflect.deleteProperty(HTMLElement.prototype, 'clientHeight');
-                };
+                });
             };
 
             it('draws grid lines, the raw contour, and blob shapes with the playhead when pitch data is present', () => {
-                const restoreSize = stubContainerSize(800, 240);
+                stubContainerSize(800, 240);
                 const ctx = make2dContext();
                 const getContextSpy = spyOnGetContext(ctx);
                 const rafSpy = vi.spyOn(window, 'requestAnimationFrame').mockReturnValue(1);
+                cleanups.push(() => rafSpy.mockRestore());
                 const fillTextSpy = vi.spyOn(ctx, 'fillText');
                 const roundRectSpy = vi.spyOn(ctx, 'roundRect');
                 const moveToSpy = vi.spyOn(ctx, 'moveTo');
@@ -523,16 +543,13 @@ describe('KneadEditor', () => {
                     expect.any(Number)
                 );
                 expect(rafSpy).toHaveBeenCalled();
-
-                getContextSpy.mockRestore();
-                rafSpy.mockRestore();
-                restoreSize();
             });
 
             it('draws the empty-state text on the canvas when no blobs have been analyzed', () => {
                 const ctx = make2dContext();
-                const getContextSpy = spyOnGetContext(ctx);
+                spyOnGetContext(ctx);
                 const rafSpy = vi.spyOn(window, 'requestAnimationFrame').mockReturnValue(1);
+                cleanups.push(() => rafSpy.mockRestore());
                 const fillTextSpy = vi.spyOn(ctx, 'fillText');
 
                 vi.mocked(useStore).mockImplementation((_store: unknown, fallback: unknown) => {
@@ -558,9 +575,6 @@ describe('KneadEditor', () => {
                     expect.any(Number),
                     expect.any(Number)
                 );
-
-                getContextSpy.mockRestore();
-                rafSpy.mockRestore();
             });
 
             // Guards for the render-loop dirty check (audit M-246). The check has to
@@ -568,15 +582,18 @@ describe('KneadEditor', () => {
             // every input the draw reads must repaint when it changes. There is one
             // test per leg of the painted signature — kneadState, contour, zoom,
             // draggedBlobId, hoveredBlobId, width, height, isPlaying,
-            // playheadPosition, tempo — plus one for the canvas bitmap reset that no
-            // leg can observe. Each test names the two values its leg drives between
-            // (ADR 0015); repaints are counted as background clears (one `fillRect`
-            // per painted frame).
+            // playheadPosition, tempo. Each test names the two values its leg drives
+            // between (ADR 0015); repaints are counted as background clears (one
+            // `fillRect` per painted frame).
+            //
+            // Three further tests cover the ways the canvas bitmap can be cleared
+            // behind the check's back, none of which moves any leg: a redundant
+            // resize assignment, a fractional width that never settles, and a
+            // restored 2D context.
             describe('dirty check (audit M-246)', () => {
                 type RafHarness = {
                     stepFrame: () => void;
                     pendingFrames: () => number;
-                    restore: () => void;
                 };
 
                 const installRafQueue = (): RafHarness => {
@@ -586,6 +603,10 @@ describe('KneadEditor', () => {
                         return queue.length;
                     });
                     const cafSpy = vi.spyOn(window, 'cancelAnimationFrame').mockImplementation(() => undefined);
+                    cleanups.push(() => {
+                        rafSpy.mockRestore();
+                        cafSpy.mockRestore();
+                    });
                     return {
                         stepFrame: () => {
                             const pending = queue;
@@ -595,10 +616,6 @@ describe('KneadEditor', () => {
                             }
                         },
                         pendingFrames: () => queue.length,
-                        restore: () => {
-                            rafSpy.mockRestore();
-                            cafSpy.mockRestore();
-                        },
                     };
                 };
 
@@ -648,11 +665,6 @@ describe('KneadEditor', () => {
                     return stores;
                 };
 
-                const setContainerSize = (width: number, height: number): void => {
-                    Object.defineProperty(HTMLElement.prototype, 'clientWidth', { configurable: true, value: width });
-                    Object.defineProperty(HTMLElement.prototype, 'clientHeight', { configurable: true, value: height });
-                };
-
                 // Counts assignments to `canvas.width` / `canvas.height`. Per the
                 // HTML spec an assignment resets the bitmap even when the value is
                 // unchanged; jsdom does not model the bitmap, so the assignment is
@@ -687,7 +699,7 @@ describe('KneadEditor', () => {
 
                 it('skips the repaint on idle frames but keeps the loop scheduled (needsRepaint true ↔ false)', () => {
                     const ctx = make2dContext();
-                    const getContextSpy = spyOnGetContext(ctx);
+                    spyOnGetContext(ctx);
                     const fillRectSpy = vi.spyOn(ctx, 'fillRect');
                     const raf = installRafQueue();
 
@@ -705,9 +717,6 @@ describe('KneadEditor', () => {
                     expect(fillRectSpy.mock.calls.length).toBe(paintsAfterMount);
                     // The loop must stay alive to observe the next change.
                     expect(raf.pendingFrames()).toBe(1);
-
-                    getContextSpy.mockRestore();
-                    raf.restore();
                 });
 
                 it('repaints exactly once after a zoom change, then goes idle again (zoom 1.0 ↔ 1.5)', () => {
@@ -715,9 +724,9 @@ describe('KneadEditor', () => {
                     // floor, so the canvas dimensions hold still and zoom is the only
                     // signature leg that moves. Without this the width leg carries the
                     // repaint and the zoom leg is never actually exercised.
-                    const restoreSize = stubContainerSize(400, 240);
+                    stubContainerSize(400, 240);
                     const ctx = make2dContext();
-                    const getContextSpy = spyOnGetContext(ctx);
+                    spyOnGetContext(ctx);
                     const fillRectSpy = vi.spyOn(ctx, 'fillRect');
                     const raf = installRafQueue();
 
@@ -736,10 +745,6 @@ describe('KneadEditor', () => {
                     raf.stepFrame();
                     raf.stepFrame();
                     expect(fillRectSpy.mock.calls.length).toBe(paintsBefore + 1);
-
-                    getContextSpy.mockRestore();
-                    raf.restore();
-                    restoreSize();
                 });
 
                 it('repaints when the transport playhead moves (playheadPosition 0 ↔ 96)', () => {
@@ -761,7 +766,7 @@ describe('KneadEditor', () => {
                         return { keyRoot: 0, scaleName: 'major' };
                     });
                     const ctx = make2dContext();
-                    const getContextSpy = spyOnGetContext(ctx);
+                    spyOnGetContext(ctx);
                     const fillRectSpy = vi.spyOn(ctx, 'fillRect');
                     const raf = installRafQueue();
 
@@ -774,19 +779,16 @@ describe('KneadEditor', () => {
                     raf.stepFrame();
 
                     expect(fillRectSpy.mock.calls.length).toBe(paintsBefore + 1);
-
-                    getContextSpy.mockRestore();
-                    raf.restore();
                 });
 
                 it('repaints and draws the edit handles when a blob is hovered (hoveredBlobId null ↔ blob-1)', () => {
                     // Pin the container size so the blob row centre is deterministic
                     // (240 px tall → the single blob sits at y = 120) regardless of
                     // what earlier tests did to the prototype descriptors.
-                    const restoreSize = stubContainerSize(800, 240);
+                    stubContainerSize(800, 240);
                     installStores();
                     const ctx = make2dContext();
-                    const getContextSpy = spyOnGetContext(ctx);
+                    spyOnGetContext(ctx);
                     const fillRectSpy = vi.spyOn(ctx, 'fillRect');
                     // `arc` is reached only by the hover/drag handle block, so it
                     // reports whether hover actually got through to the draw — the
@@ -810,17 +812,13 @@ describe('KneadEditor', () => {
 
                     raf.stepFrame();
                     expect(fillRectSpy.mock.calls.length).toBe(paintsBefore + 1);
-
-                    getContextSpy.mockRestore();
-                    raf.restore();
-                    restoreSize();
                 });
 
                 it('repaints when a blob drag begins (draggedBlobId null ↔ blob-1)', () => {
-                    const restoreSize = stubContainerSize(800, 240);
+                    stubContainerSize(800, 240);
                     installStores();
                     const ctx = make2dContext();
-                    const getContextSpy = spyOnGetContext(ctx);
+                    spyOnGetContext(ctx);
                     const fillRectSpy = vi.spyOn(ctx, 'fillRect');
                     const raf = installRafQueue();
 
@@ -840,16 +838,12 @@ describe('KneadEditor', () => {
 
                     raf.stepFrame();
                     expect(fillRectSpy.mock.calls.length).toBe(paintsBefore + 1);
-
-                    getContextSpy.mockRestore();
-                    raf.restore();
-                    restoreSize();
                 });
 
                 it('repaints when the clip blobs change (pitchCenterCents 6000 ↔ 6300)', () => {
                     const stores = installStores();
                     const ctx = make2dContext();
-                    const getContextSpy = spyOnGetContext(ctx);
+                    spyOnGetContext(ctx);
                     const fillRectSpy = vi.spyOn(ctx, 'fillRect');
                     const raf = installRafQueue();
 
@@ -867,15 +861,12 @@ describe('KneadEditor', () => {
 
                     raf.stepFrame();
                     expect(fillRectSpy.mock.calls.length).toBe(paintsBefore + 1);
-
-                    getContextSpy.mockRestore();
-                    raf.restore();
                 });
 
                 it('repaints when the raw pitch contour arrives (contour absent ↔ one voiced point)', () => {
                     const stores = installStores();
                     const ctx = make2dContext();
-                    const getContextSpy = spyOnGetContext(ctx);
+                    spyOnGetContext(ctx);
                     const fillRectSpy = vi.spyOn(ctx, 'fillRect');
                     const raf = installRafQueue();
 
@@ -901,15 +892,12 @@ describe('KneadEditor', () => {
 
                     raf.stepFrame();
                     expect(fillRectSpy.mock.calls.length).toBe(paintsBefore + 1);
-
-                    getContextSpy.mockRestore();
-                    raf.restore();
                 });
 
                 it('repaints when the transport starts (isPlaying false ↔ true)', () => {
                     const stores = installStores();
                     const ctx = make2dContext();
-                    const getContextSpy = spyOnGetContext(ctx);
+                    spyOnGetContext(ctx);
                     const fillRectSpy = vi.spyOn(ctx, 'fillRect');
                     const raf = installRafQueue();
 
@@ -924,9 +912,6 @@ describe('KneadEditor', () => {
 
                     raf.stepFrame();
                     expect(fillRectSpy.mock.calls.length).toBe(paintsBefore + 1);
-
-                    getContextSpy.mockRestore();
-                    raf.restore();
                 });
 
                 it('repaints when the tempo changes under a parked playhead (tempo 120 ↔ 140)', () => {
@@ -935,7 +920,7 @@ describe('KneadEditor', () => {
                     // tempo only moves pixels while a playhead is actually drawn.
                     stores.transport = { ...stores.transport, isPlaying: true, playheadPosition: 4 };
                     const ctx = make2dContext();
-                    const getContextSpy = spyOnGetContext(ctx);
+                    spyOnGetContext(ctx);
                     const fillRectSpy = vi.spyOn(ctx, 'fillRect');
                     const raf = installRafQueue();
 
@@ -951,16 +936,13 @@ describe('KneadEditor', () => {
 
                     raf.stepFrame();
                     expect(fillRectSpy.mock.calls.length).toBe(paintsBefore + 1);
-
-                    getContextSpy.mockRestore();
-                    raf.restore();
                 });
 
                 it('repaints when a window resize widens the canvas (width 800 ↔ 1200)', () => {
-                    const restoreSize = stubContainerSize(600, 240);
+                    stubContainerSize(600, 240);
                     installStores();
                     const ctx = make2dContext();
-                    const getContextSpy = spyOnGetContext(ctx);
+                    spyOnGetContext(ctx);
                     const fillRectSpy = vi.spyOn(ctx, 'fillRect');
                     const raf = installRafQueue();
 
@@ -982,17 +964,13 @@ describe('KneadEditor', () => {
 
                     raf.stepFrame();
                     expect(fillRectSpy.mock.calls.length).toBe(paintsBefore + 1);
-
-                    getContextSpy.mockRestore();
-                    raf.restore();
-                    restoreSize();
                 });
 
                 it('repaints when a window resize changes the canvas height (height 240 ↔ 320)', () => {
-                    const restoreSize = stubContainerSize(600, 240);
+                    stubContainerSize(600, 240);
                     installStores();
                     const ctx = make2dContext();
-                    const getContextSpy = spyOnGetContext(ctx);
+                    spyOnGetContext(ctx);
                     const fillRectSpy = vi.spyOn(ctx, 'fillRect');
                     const raf = installRafQueue();
 
@@ -1012,17 +990,75 @@ describe('KneadEditor', () => {
 
                     raf.stepFrame();
                     expect(fillRectSpy.mock.calls.length).toBe(paintsBefore + 1);
+                });
 
-                    getContextSpy.mockRestore();
-                    raf.restore();
-                    restoreSize();
+                it('repaints after the 2D context is restored (contextrestored: blank bitmap ↔ redrawn)', () => {
+                    stubContainerSize(800, 240);
+                    installStores();
+                    const ctx = make2dContext();
+                    spyOnGetContext(ctx);
+                    const fillRectSpy = vi.spyOn(ctx, 'fillRect');
+                    const raf = installRafQueue();
+
+                    render(<KneadEditor {...defaultProps} />);
+                    raf.stepFrame();
+                    const canvas = getCanvas();
+                    const paintsBefore = fillRectSpy.mock.calls.length;
+
+                    // The UA restores a lost 2D context with a cleared bitmap. No
+                    // signature leg moves, so only an explicit invalidation can get
+                    // the picture back — otherwise the editor stays blank until some
+                    // unrelated input happens to change.
+                    canvas.dispatchEvent(new Event('contextrestored'));
+
+                    raf.stepFrame();
+                    expect(fillRectSpy.mock.calls.length).toBe(paintsBefore + 1);
+
+                    // And it must settle again rather than repaint forever.
+                    raf.stepFrame();
+                    raf.stepFrame();
+                    expect(fillRectSpy.mock.calls.length).toBe(paintsBefore + 1);
+                });
+
+                it('a fractional canvas width still settles, so resizes stop resetting the bitmap', () => {
+                    // 1005 px at zoom 1.5 is 1507.5. `canvas.width` is an unsigned
+                    // long and truncates to 1507, so an un-floored comparison stays
+                    // permanently unequal and every single resize event re-assigns —
+                    // resetting the bitmap each time, which is exactly the blank
+                    // editor this dirty check exists to avoid. Zoom steps in 0.1 on
+                    // the shipped slider, so fractional widths are reachable.
+                    stubContainerSize(1005, 240);
+                    installStores();
+                    const ctx = make2dContext();
+                    spyOnGetContext(ctx);
+                    const fillRectSpy = vi.spyOn(ctx, 'fillRect');
+                    const raf = installRafQueue();
+
+                    render(<KneadEditor {...defaultProps} />);
+                    raf.stepFrame();
+                    const canvas = getCanvas();
+
+                    const sliders = screen.getAllByRole('slider');
+                    fireEvent.change(sliders[sliders.length - 1]!, { target: { value: '150' } });
+                    expect(canvas.width).toBe(1507);
+                    raf.stepFrame();
+
+                    const widthWrites = countBitmapWrites(canvas, 'width');
+                    const paintsBefore = fillRectSpy.mock.calls.length;
+
+                    fireEvent(window, new Event('resize'));
+                    fireEvent(window, new Event('resize'));
+
+                    expect(widthWrites()).toBe(0);
+                    raf.stepFrame();
+                    expect(fillRectSpy.mock.calls.length).toBe(paintsBefore);
                 });
 
                 it('a resize that changes no dimension leaves the bitmap intact (800x240 ↔ 800x240)', () => {
-                    const restoreSize = stubContainerSize(600, 240);
+                    stubContainerSize(600, 240);
                     installStores();
                     const ctx = make2dContext();
-                    const getContextSpy = spyOnGetContext(ctx);
+                    spyOnGetContext(ctx);
                     const fillRectSpy = vi.spyOn(ctx, 'fillRect');
                     const raf = installRafQueue();
 
@@ -1045,10 +1081,6 @@ describe('KneadEditor', () => {
 
                     raf.stepFrame();
                     expect(fillRectSpy.mock.calls.length).toBe(paintsBefore);
-
-                    getContextSpy.mockRestore();
-                    raf.restore();
-                    restoreSize();
                 });
             });
         });
