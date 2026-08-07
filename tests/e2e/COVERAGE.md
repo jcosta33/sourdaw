@@ -686,5 +686,7 @@ Re-measured after additional PRs since threshold raise #3 (PR #1231). Lines cros
   crossover ordering — 15 tests.
 - **PR #1280**: FactoryDrumKits — 6 kits, unique ids, voice shapes, accessor functions — 10 tests.
 - **PR #1281**: BuiltinEffectDescriptors — 19 effects validated, unique ids, params, categories — 8 tests.
+- **PR #1282**: BuiltinInstrumentDescriptors + COVERAGE.md update — 8 tests.
+- **PR #1283**: expandedPresets — 60 presets, unique ids, trackKind, device validation — 10 tests.
 
-**Campaign total to date: 178 PRs, ~2049 assertions. Lines coverage crossed 90%.**
+**Campaign total to date: 181 PRs, ~2067 assertions. Lines coverage crossed 90%.**
