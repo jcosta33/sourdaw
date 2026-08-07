@@ -15,9 +15,11 @@
  * `setNotesForClip`. A predicate that ignored a field the local view type has
  * not caught up with would hold a stale note and write that staleness back.
  *
- * Unchanged notes survive a store write by reference (the MIDI write paths
- * spread the array and replace only the notes they touch), so the per-note
- * identity check makes the common case cost one comparison per note.
+ * A clip untouched by a write keeps its whole note array by reference — the
+ * selector reads `state.notesByClipId[id]` straight out of the snapshot — so the
+ * per-clip identity check settles it in one comparison rather than one per note.
+ * Within a changed clip the same holds per note, because the MIDI write paths
+ * spread the array and replace only the notes they touch.
  */
 
 /** A note as this predicate sees it: an object of own scalar fields. */
@@ -66,6 +68,9 @@ export function areOpenedClipNotesEqual(
         const bNotes = b[clipId];
         if (aNotes === undefined || bNotes === undefined) {
             return false;
+        }
+        if (aNotes === bNotes) {
+            continue;
         }
         if (aNotes.length !== bNotes.length) {
             return false;

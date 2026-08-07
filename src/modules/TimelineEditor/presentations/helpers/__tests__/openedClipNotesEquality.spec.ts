@@ -59,6 +59,16 @@ describe('areOpenedClipNotesEqual', () => {
         expect(areOpenedClipNotesEqual(record([NOTE, extra]), record([NOTE]))).toBe(false);
     });
 
+    it('keeps checking later clips after one that is identical by reference', () => {
+        // The per-clip identity short-circuit must skip that clip, not the rest.
+        const shared: Note[] = [NOTE];
+        const a = { 'clip-2': shared, 'clip-3': [NOTE] };
+        const b = { 'clip-2': shared, 'clip-3': [{ ...NOTE, pitch: 72 }] };
+
+        expect(a['clip-2']).toBe(b['clip-2']);
+        expect(areOpenedClipNotesEqual(a, b)).toBe(false);
+    });
+
     it('reports reordered notes within a clip as different', () => {
         const other = { ...NOTE, id: 'n2', pitch: 64 };
 
