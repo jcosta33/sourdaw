@@ -37,6 +37,11 @@ describe('registerPrefixLayout / resolveDeviceLayout', () => {
         expect(resolveDeviceLayout('test-prefix-bar')).toBe(layout);
     });
 
+    it('returns null for a type that starts with none of the registered prefixes', () => {
+        registerPrefixLayout('test-unmatched-prefix-', makeComponent());
+        expect(resolveDeviceLayout('builtin-synth')).toBeNull();
+    });
+
     it('prefers exact match over prefix match', () => {
         const exact = makeComponent();
         const prefix = makeComponent();
