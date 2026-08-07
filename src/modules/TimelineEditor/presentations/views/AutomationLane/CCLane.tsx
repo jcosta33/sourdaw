@@ -48,8 +48,13 @@ type LaneDragSession = {
 };
 
 /**
- * End the in-flight gesture exactly once: clear the session first so the `lostpointercapture`
- * that Chromium fires immediately after the release cannot commit a second undo entry.
+ * End the in-flight gesture exactly once. What guarantees that is the clear happening *at all*,
+ * synchronously, before this returns: the trailing `pointerup`/`lostpointercapture` the browser
+ * still delivers then finds no gesture to finalize. Placing the clear ahead of `commit()` is cheap
+ * insurance against a future re-entrant commit only — `releasePointerCapture()` merely nulls the
+ * pending capture target, and `lostpointercapture` fires from the process-pending-pointer-capture
+ * steps before the next pointer event rather than synchronously here (Blink matches the spec), so
+ * no current path re-enters and no test can red the ordering. See M16 on the PR.
  */
 const finalizeLaneDrag = (sessionRef: RefObject<LaneDragSession | null>): void => {
     const session = sessionRef.current;
@@ -95,10 +100,11 @@ export const CCLane = ({ clipId, controller, beatWidth }: CCLaneProps): ReactEle
     }, []);
 
     /**
-     * Capture first, arm second. Unlike NotePropertyLane the pointerdown itself writes no value
-     * here — the first `moveMidiCC` happens on pointermove, which cannot run before the session
-     * exists — so this ordering has no assertion of its own; it keeps a capture the browser
-     * refused from leaving a live session behind.
+     * Capture first, arm second. Unlike NotePropertyLane the pointerdown here writes no value, so
+     * the ordering is not protecting a write — it is protecting the arm. Swap these two lines and
+     * a `setPointerCapture` that throws leaves `dragSessionRef.current` set with no capture, and
+     * the live-session guard in `handlePointPointerDown` then refuses every later press: the lane
+     * is dead until it remounts.
      */
     const beginDrag = (session: LaneDragSession): void => {
         session.captureTarget.setPointerCapture(session.pointerId);

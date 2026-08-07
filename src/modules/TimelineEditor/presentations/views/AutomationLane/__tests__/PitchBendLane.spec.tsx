@@ -295,7 +295,9 @@ describe('PitchBendLane', () => {
             };
 
             afterEach(() => {
-                setVisibility('visible');
+                // Restoring a *value* would leave the own accessor shadowing jsdom's real
+                // Document.prototype getter for the rest of the file; delete the property.
+                Reflect.deleteProperty(document, 'visibilityState');
             });
 
             it('moves a point from a touch pointer, not only from a mouse', () => {
@@ -349,6 +351,41 @@ describe('PitchBendLane', () => {
                 // establishes only that the call is made on the pressed handle with the gesture's
                 // pointer id — no test in this repo can prove the browser retargets events.
                 expect(capture).toHaveBeenCalledWith(6);
+            });
+
+            it('arms no drag when taking pointer capture fails', () => {
+                seedPoint();
+                const { container } = render(<PitchBendLane {...defaultProps} />);
+                const point = getPoint(container);
+                const capture = vi.spyOn(point, 'setPointerCapture').mockImplementation(() => {
+                    throw new DOMException('NotAllowed', 'NotAllowedError');
+                });
+
+                // React re-dispatches a throwing handler as a window error event; swallow it in
+                // the capture phase so this deliberate throw is not reported as a suite error.
+                // try/finally so a later failing assertion cannot leak the global listener.
+                const swallow = (event: Event): void => {
+                    event.preventDefault();
+                    event.stopImmediatePropagation();
+                };
+                window.addEventListener('error', swallow, true);
+                try {
+                    fireEvent.pointerDown(point, { pointerId: 3, button: 0, clientX: 8, clientY: 76 });
+                } finally {
+                    window.removeEventListener('error', swallow, true);
+                }
+
+                // Capture is taken before the session is armed, so a capture the browser refused
+                // leaves nothing latched.
+                fireEvent.pointerMove(point, { pointerId: 3, clientX: 88, clientY: 20 });
+                expect(movePitchBend).not.toHaveBeenCalled();
+
+                // Arming first would leave a session with no capture, and the live-session guard
+                // would then refuse every later press — the lane would be dead until it remounts.
+                capture.mockRestore();
+                fireEvent.pointerDown(point, { pointerId: 4, button: 0, clientX: 8, clientY: 76 });
+                fireEvent.pointerMove(point, { pointerId: 4, clientX: 88, clientY: 20 });
+                expect(readPoint()?.beat).toBe(draggedBeat);
             });
 
             it('ignores a right-button press so the context menu is not also an edit', () => {
@@ -513,6 +550,10 @@ describe('PitchBendLane', () => {
                 fireEvent.pointerMove(point, { pointerId: 2, pointerType: 'touch', clientX: 88, clientY: 20 });
 
                 expect(readPoint()?.beat).toBe(0);
+
+                // …and pointer 1 still owns the gesture, so the drag was ignored, not killed.
+                fireEvent.pointerMove(point, { pointerId: 1, clientX: 88, clientY: 20 });
+                expect(readPoint()?.beat).toBe(draggedBeat);
             });
 
             it('a second pointerdown while a drag is live does not steal the gesture', () => {
