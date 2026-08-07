@@ -193,6 +193,31 @@ export const WaveformEditor = ({ clipId, audioBufferId }: WaveformEditorProps): 
     const [isDraggingMarker, setIsDraggingMarker] = useState(false);
     const didDragRef = useRef(false);
 
+    // audit M-249: `warpState` is seeded once by the lazy initializer above, but
+    // ClipView renders this editor without a `key`, so switching the selected clip
+    // reuses the instance and leaves the previous clip's warp state on screen and
+    // in the toggle branch. Re-read it during the render that changes `clipId` —
+    // React's previous-props adjustment — so the committed frame and the first
+    // click after a switch both describe the clip actually being edited. Held in
+    // state rather than a ref because reading or writing a ref during render is
+    // impure (`react-hooks/refs`).
+    const [renderedClipId, setRenderedClipId] = useState(clipId);
+    if (renderedClipId !== clipId) {
+        setRenderedClipId(clipId);
+        setWarpState(getWarpState(clipId));
+    }
+
+    // audit M-249: `didDragRef` latches on a marker drag and is only cleared by a
+    // later pointerdown that lands on a marker, so a drag on the previous clip kept
+    // `handleDoubleClick` returning early — swallowing the first double-click that
+    // adds or removes a warp marker on the new clip. A clip switch abandons the drag
+    // context, so clear the latch with it. Done in an effect rather than in the
+    // render block above because writing a ref during render is impure
+    // (`react-hooks/refs`); double-clicks arrive from user events, long after flush.
+    useEffect(() => {
+        didDragRef.current = false;
+    }, [clipId]);
+
     const refreshWarp = () => setWarpState(getWarpState(clipId));
 
     const handleToggleWarp = () => {

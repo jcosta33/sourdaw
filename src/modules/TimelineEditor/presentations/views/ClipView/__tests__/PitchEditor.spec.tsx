@@ -255,4 +255,52 @@ describe('PitchEditor', () => {
             },
         });
     });
+
+    // audit M-249 — the audio editor is reused across clip switches, so the
+    // sibling waveform strip used to keep the previous clip's warp state. The
+    // dragged pitch shifts here are keyed on contour identity rather than on
+    // `clipId`; this pins that they really do fall away with the old clip.
+    it('should drop the previous clip dragged shifts when the edited clip changes', () => {
+        const contourForClipOne = makeContour(300);
+        const contourForClipTwo = makeContour(200);
+        vi.mocked(useStore).mockReturnValue({
+            ...IDLE_STATE,
+            contours: { 'clip-1': contourForClipOne, 'clip-2': contourForClipTwo },
+        });
+        const { rerender } = render(<PitchEditor clipId="clip-1" />);
+
+        const canvas = document.querySelector('canvas')!;
+        vi.spyOn(canvas, 'getBoundingClientRect').mockReturnValue({
+            left: 0,
+            width: 300,
+            top: 0,
+            height: 100,
+            right: 300,
+            bottom: 100,
+            x: 0,
+            y: 0,
+            toJSON: (): unknown => ({}),
+        });
+
+        fireEvent.pointerDown(canvas, { pointerId: 1, clientX: 150, clientY: 100 });
+        fireEvent.pointerMove(canvas, { pointerId: 1, clientX: 150, clientY: 70 });
+        fireEvent.pointerUp(canvas, { pointerId: 1, clientX: 150, clientY: 70 });
+
+        rerender(<PitchEditor clipId="clip-2" />);
+        fireEvent.click(screen.getByText('Bounce & Commit'));
+
+        // clip-2 is 200ms long and untouched: two flat segments, not clip-1's
+        // three segments carrying the +3 semitone drag.
+        expect(executeAppAction).toHaveBeenCalledWith({
+            type: 'commitPitchEdit',
+            payload: {
+                clipId: 'clip-2',
+                segments: [
+                    { start_time_ms: 0, end_time_ms: 100, shift_semitones: 0 },
+                    { start_time_ms: 100, end_time_ms: 200, shift_semitones: 0 },
+                ],
+                contour: contourForClipTwo,
+            },
+        });
+    });
 });
