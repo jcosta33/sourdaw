@@ -51,21 +51,33 @@ function makePattern(numPads: number, steps: number): Pattern {
     };
 }
 
+function renderSeq(
+    overrides: {
+        pattern?: Pattern;
+        isPlaying?: boolean;
+        currentStep?: number;
+        onToggleStep?: (p: number, s: number) => void;
+        onSetVelocity?: (p: number, s: number, v: number) => void;
+    } = {}
+) {
+    const pads = Array.from({ length: 2 }, (_, index) => makePad(index));
+    const pattern = overrides.pattern ?? makePattern(2, 4);
+    render(
+        <StepSequencer
+            pattern={pattern}
+            pads={pads}
+            currentStep={overrides.currentStep ?? 0}
+            isPlaying={overrides.isPlaying ?? false}
+            onToggleStep={overrides.onToggleStep ?? (() => undefined)}
+            onSetVelocity={overrides.onSetVelocity ?? (() => undefined)}
+        />
+    );
+}
+
 describe('StepSequencer', () => {
     it('should render', () => {
-        const pads = Array.from({ length: 2 }, (_, index) => makePad(index));
-        const pattern = makePattern(2, 4);
-        render(
-            <StepSequencer
-                pattern={pattern}
-                pads={pads}
-                currentStep={0}
-                isPlaying={false}
-                onToggleStep={vi.fn()}
-                onSetVelocity={vi.fn()}
-            />
-        );
-        expect(screen.getByText('P0')).toBeInTheDocument();
+        renderSeq();
+        expect(screen.getByText('P0')).toBeTruthy();
     });
 
     it('should expose each step as a checkbox reflecting its active state', () => {
@@ -113,22 +125,27 @@ describe('StepSequencer', () => {
         );
 
         const cells = screen.getAllByRole('checkbox');
-        const secondCell = cells[1];
-        const thirdCell = cells[2];
-        if (!secondCell || !thirdCell) {
-            throw new Error('Expected at least three step cells');
-        }
-        fireEvent.keyDown(thirdCell, { key: 'Enter' });
+        fireEvent.keyDown(cells[2]!, { key: 'Enter' });
         expect(onToggleStep).toHaveBeenCalledWith(0, 2);
 
         onToggleStep.mockClear();
-        fireEvent.keyDown(secondCell, { key: ' ' });
+        fireEvent.keyDown(cells[1]!, { key: ' ' });
         expect(onToggleStep).toHaveBeenCalledWith(0, 1);
     });
 
     it('should surface the Alt-drag velocity gesture as a discoverable hint and per-cell tooltip', () => {
+        renderSeq();
+        expect(screen.getByText(/alt-drag/i)).toBeTruthy();
+        const cell = screen.getAllByRole('checkbox')[0];
+        expect(cell?.getAttribute('title')).toMatch(/alt-drag/i);
+    });
+});
+
+describe('StepSequencer — velocity aria-label', () => {
+    it('includes velocity percentage in aria-label when step is active', () => {
         const pads = [makePad(0)];
-        const pattern = makePattern(1, 4);
+        const pattern = makePattern(1, 2);
+        pattern.tracks[0]!.steps[0] = { ...baseStep, active: true, velocity: 0.75 };
 
         render(
             <StepSequencer
@@ -141,8 +158,52 @@ describe('StepSequencer', () => {
             />
         );
 
-        expect(screen.getByText(/alt-drag/i)).toBeInTheDocument();
-        const cell = screen.getAllByRole('checkbox')[0];
-        expect(cell).toHaveAttribute('title', expect.stringMatching(/alt-drag/i));
+        const cells = screen.getAllByRole('checkbox');
+        expect(cells[0]).toHaveAccessibleName(/velocity 75%/i);
+    });
+});
+
+describe('StepSequencer — pointer interaction', () => {
+    it('fires onToggleStep when a step cell is clicked (no alt)', () => {
+        const onToggleStep = vi.fn();
+        const pads = [makePad(0)];
+        const pattern = makePattern(1, 2);
+        render(
+            <StepSequencer
+                pattern={pattern}
+                pads={pads}
+                currentStep={0}
+                isPlaying={false}
+                onToggleStep={onToggleStep}
+                onSetVelocity={vi.fn()}
+            />
+        );
+        const cell = screen.getAllByRole('checkbox')[0]!;
+        fireEvent.pointerDown(cell, { clientY: 50, pointerId: 1, altKey: false });
+        expect(onToggleStep).toHaveBeenCalledWith(0, 0);
+    });
+
+    it('fires onSetVelocity on alt-drag pointer move', () => {
+        const onSetVelocity = vi.fn();
+        const pads = [makePad(0)];
+        const pattern = makePattern(1, 2);
+        render(
+            <StepSequencer
+                pattern={pattern}
+                pads={pads}
+                currentStep={0}
+                isPlaying={false}
+                onToggleStep={vi.fn()}
+                onSetVelocity={onSetVelocity}
+            />
+        );
+        const cell = screen.getAllByRole('checkbox')[1]!;
+        fireEvent.pointerDown(cell, { clientY: 50, pointerId: 1, altKey: true });
+        fireEvent.pointerMove(cell.parentElement!, { clientY: 0, pointerId: 1 });
+        expect(onSetVelocity).toHaveBeenCalledTimes(1);
+        const [padIdx, stepIdx, velocity] = onSetVelocity.mock.calls[0]!;
+        expect(padIdx).toBe(0);
+        expect(stepIdx).toBe(1);
+        expect(velocity).toBeGreaterThan(0.5);
     });
 });
