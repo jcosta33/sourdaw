@@ -12,41 +12,58 @@
 const resolvedTokens = new Map<string, string>();
 
 /**
- * Watches the element the tokens are read from. The only runtime mutation in
- * this app that can change a resolved custom property on `documentElement` is
- * an attribute change on that element: the theme switch in
- * `Preferences/…/AppearanceSection.tsx` toggles the `dark` / `light` classes,
- * and any future accent-colour control would write through `style`
- * (`setProperty('--color-…')`). Both are covered; nothing else is watched,
- * because nothing else can move the values.
+ * One observer covering both ways a resolved custom property can move.
+ *
+ * 1. An attribute change on `documentElement` — the element the tokens are read
+ *    from. The theme switch in `Preferences/…/AppearanceSection.tsx` toggles the
+ *    `dark` / `light` classes, and any future accent-colour control would write
+ *    through `style` (`setProperty('--color-…')`).
+ * 2. A stylesheet change inside `<head>` — a `<style>` whose contents are
+ *    swapped, or a sheet appended after first paint. This is what Vite's CSS
+ *    HMR does when `tokens.css` is edited under `pnpm dev`: it rewrites the
+ *    injected `<style>` element's text and touches no attribute on
+ *    `documentElement` at all. Without this target, editing the palette in dev
+ *    would leave every canvas painting the previous colours until a full
+ *    reload — a regression the cache would otherwise introduce.
+ *
+ * `subtree` is required because the mutation lands on the `<style>` element,
+ * not on `<head>` itself. Both options here are load-bearing; each has a guard.
  */
-let rootAttributeObserver: MutationObserver | null = null;
+let tokenSourceObserver: MutationObserver | null = null;
 
-function observeRootAttributes(): void {
-    if (rootAttributeObserver) {
+function observeTokenSources(): void {
+    if (tokenSourceObserver) {
         return;
     }
-    rootAttributeObserver = new MutationObserver(() => {
+    tokenSourceObserver = new MutationObserver(() => {
         resolvedTokens.clear();
     });
-    rootAttributeObserver.observe(document.documentElement, {
+    tokenSourceObserver.observe(document.documentElement, {
         attributes: true,
         attributeFilter: ['class', 'style'],
+    });
+    tokenSourceObserver.observe(document.head, {
+        childList: true,
+        subtree: true,
     });
 }
 
 /**
- * Drops every cached token and stops watching the root element. The next
- * `resolveToken` call recomputes from the live cascade and re-arms the
- * observer, so this is safe to call at any time.
+ * Drops every cached token and detaches the observer. The next `resolveToken`
+ * call recomputes from the live cascade and re-arms, so this is safe to call at
+ * any time.
  *
- * Exists for tests, which share one `document` across a file and would
- * otherwise inherit values resolved by an earlier case.
+ * Nulling the reference is what allows that re-arm: `observeTokenSources` treats
+ * a non-null reference as "already watching" and returns early, so a reset that
+ * disconnected without nulling would leave the cache permanently unwatched.
+ *
+ * Exists for tests, which share one `document` across a file and would otherwise
+ * inherit both the values and the observer of an earlier case.
  */
 export function resetResolvedTokenCache(): void {
     resolvedTokens.clear();
-    rootAttributeObserver?.disconnect();
-    rootAttributeObserver = null;
+    tokenSourceObserver?.disconnect();
+    tokenSourceObserver = null;
 }
 
 /**
@@ -56,8 +73,8 @@ export function resetResolvedTokenCache(): void {
  * `getComputedStyle` forces the browser to flush pending style — from inside a
  * canvas draw path (and several of these run on every animation frame, some
  * once per track or per contour point) that recalculation is paid on every
- * call. The values themselves only move when the theme does, so they are
- * cached and invalidated on the root attribute change that moves them.
+ * call. The values themselves only move when the theme or a stylesheet does, so
+ * they are cached and invalidated on exactly those signals.
  *
  * Falls back to the provided `fallback` when `document` is unavailable (SSR / test).
  */
@@ -71,7 +88,7 @@ export function resolveToken(property: string, fallback: string): string {
         return cached;
     }
 
-    observeRootAttributes();
+    observeTokenSources();
 
     const value = getComputedStyle(document.documentElement).getPropertyValue(property).trim();
     if (!value) {

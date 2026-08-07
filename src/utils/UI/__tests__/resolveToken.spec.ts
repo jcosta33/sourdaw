@@ -5,18 +5,22 @@ import { resolveToken, resetResolvedTokenCache } from '../resolveToken';
 /**
  * These specs drive the token through jsdom's real cascade — a `<style>` sheet
  * on the document, and a class toggled on `documentElement` — rather than a
- * hand-written stub of `getComputedStyle`. jsdom honours `:root` declarations
- * and class-scoped overrides on the root element, so the theme guard exercises
- * the same resolution path the browser takes.
+ * hand-written stub of `getComputedStyle`. jsdom honours `:root` declarations,
+ * class-scoped overrides on the root element, and a `<style>` whose contents are
+ * rewritten in place, so each guard exercises the same resolution path the
+ * browser takes.
  */
 let installedSheets: HTMLStyleElement[] = [];
 let computedStyleSpy: MockInstance<typeof getComputedStyle> | null = null;
+let observeSpy: MockInstance<MutationObserver['observe']> | null = null;
+let disconnectSpy: MockInstance<MutationObserver['disconnect']> | null = null;
 
-const withSheet = (css: string): void => {
+const withSheet = (css: string): HTMLStyleElement => {
     const sheet = document.createElement('style');
     sheet.textContent = css;
     document.head.append(sheet);
     installedSheets.push(sheet);
+    return sheet;
 };
 
 const spyOnComputedStyle = (): MockInstance<typeof getComputedStyle> => {
@@ -29,7 +33,7 @@ const spyOnComputedStyle = (): MockInstance<typeof getComputedStyle> => {
  * strictly later than that, so the invalidation has landed by the time this
  * resolves.
  */
-const flushRootAttributeObserver = async (): Promise<void> =>
+const flushObserver = async (): Promise<void> =>
     new Promise((resolve) => {
         setTimeout(resolve, 0);
     });
@@ -41,9 +45,15 @@ afterEach(() => {
     installedSheets = [];
     computedStyleSpy?.mockRestore();
     computedStyleSpy = null;
+    observeSpy?.mockRestore();
+    observeSpy = null;
+    disconnectSpy?.mockRestore();
+    disconnectSpy = null;
     document.documentElement.className = '';
-    // Last: disconnecting drops the mutation record the line above just queued,
-    // so it cannot fire mid-assertion in the following test.
+    // The cache and the observer are module-global, so they outlive a test.
+    // Resetting leaves the next case unarmed and empty, which the observer-
+    // lifecycle guards below depend on: they assert `observe` call counts that
+    // are only meaningful from a cold start.
     resetResolvedTokenCache();
 });
 
@@ -96,7 +106,7 @@ describe('resolveToken', () => {
 
         // Exactly what Preferences → Appearance does when the user picks light.
         document.documentElement.classList.toggle('light', true);
-        await flushRootAttributeObserver();
+        await flushObserver();
 
         expect(resolveToken('--repro-theme', '#000000')).toBe('#f0f0f0');
     });
@@ -106,16 +116,64 @@ describe('resolveToken', () => {
         expect(resolveToken('--repro-inline', '#000000')).toBe('#202020');
 
         document.documentElement.style.setProperty('--repro-inline', '#e0e0e0');
-        await flushRootAttributeObserver();
+        await flushObserver();
 
         expect(resolveToken('--repro-inline', '#000000')).toBe('#e0e0e0');
         document.documentElement.style.removeProperty('--repro-inline');
     });
 
+    it('returns the new palette value after a stylesheet is rewritten in place', async () => {
+        // Vite's CSS HMR swaps the injected <style> element's contents and
+        // touches no attribute on documentElement, so the root-attribute target
+        // alone never sees an edit to tokens.css under `pnpm dev`.
+        const sheet = withSheet(':root { --repro-hmr: #303030; }');
+        expect(resolveToken('--repro-hmr', '#000000')).toBe('#303030');
+
+        sheet.textContent = ':root { --repro-hmr: #d0d0d0; }';
+        await flushObserver();
+
+        expect(resolveToken('--repro-hmr', '#000000')).toBe('#d0d0d0');
+    });
+
+    it('arms its observer once no matter how many tokens are resolved', () => {
+        withSheet(':root { --repro-arm-a: #010101; --repro-arm-b: #020202; --repro-arm-c: #030303; }');
+        observeSpy = vi.spyOn(MutationObserver.prototype, 'observe');
+
+        const readings = [
+            resolveToken('--repro-arm-a', '#000000'),
+            resolveToken('--repro-arm-b', '#000000'),
+            resolveToken('--repro-arm-c', '#000000'),
+        ];
+
+        expect(readings).toEqual(['#010101', '#020202', '#030303']);
+        // Two targets — documentElement and head — armed exactly once between
+        // them, not once per cache miss.
+        expect(observeSpy).toHaveBeenCalledTimes(2);
+    });
+
+    it('detaches its observer on reset and re-arms on the next lookup', () => {
+        withSheet(':root { --repro-cycle: #040404; }');
+        observeSpy = vi.spyOn(MutationObserver.prototype, 'observe');
+        disconnectSpy = vi.spyOn(MutationObserver.prototype, 'disconnect');
+
+        expect(resolveToken('--repro-cycle', '#000000')).toBe('#040404');
+        expect(observeSpy).toHaveBeenCalledTimes(2);
+
+        resetResolvedTokenCache();
+        expect(disconnectSpy).toHaveBeenCalledTimes(1);
+
+        // Re-arming proves the reset released the reference too: a reset that
+        // disconnected without nulling would leave the cache unwatched forever.
+        expect(resolveToken('--repro-cycle', '#000000')).toBe('#040404');
+        expect(observeSpy).toHaveBeenCalledTimes(4);
+    });
+
     it('gives each call site its own fallback for a token the cascade cannot resolve', () => {
-        // The two fallbacks DistortionCurve and PitchEditor really pass for
-        // `--color-accent-peach`. Caching the first resolution would hand the
-        // second call site a colour it never asked for.
+        // The hazard this guards: `--color-accent-peach` is read with fallback
+        // '#f0944c' in DistortionCurve and '#ffb86c' in PitchEditor. That token
+        // is declared today, so the collision is latent rather than live — but
+        // caching a fallback would hand whichever call site ran second a colour
+        // it never asked for, for any token that ever goes undeclared.
         expect(resolveToken('--repro-unset-shared', '#f0944c')).toBe('#f0944c');
         expect(resolveToken('--repro-unset-shared', '#ffb86c')).toBe('#ffb86c');
     });
