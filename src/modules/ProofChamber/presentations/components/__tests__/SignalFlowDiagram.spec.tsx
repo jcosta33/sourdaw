@@ -4,9 +4,9 @@ import { describe, it, expect } from 'vitest';
 import { type ProofChamberAlgorithm } from '../../../models/ProofChamberState';
 import { SignalFlowDiagram } from '../SignalFlowDiagram';
 
-function labelsFor(algorithm: ProofChamberAlgorithm): string[] {
+function labelsFor(algorithm: ProofChamberAlgorithm, shimmer = false, freeze = false): string[] {
     const { container } = render(
-        <SignalFlowDiagram algorithm={algorithm} shimmerEnabled={false} freezeEnabled={false} />
+        <SignalFlowDiagram algorithm={algorithm} shimmerEnabled={shimmer} freezeEnabled={freeze} />
     );
     return [...container.querySelectorAll('svg text')].map((node) => node.textContent ?? '');
 }
@@ -19,15 +19,8 @@ describe('SignalFlowDiagram', () => {
         expect(container.querySelector('svg')).toBeTruthy();
     });
 
-    /**
-     * Every algorithm the selector offers needs its own topology. The switch in
-     * `getFlowForAlgorithm` falls through to an empty diagram, so an algorithm
-     * added to the union without a case there renders a blank frame instead of
-     * failing — which is why this asserts the stages by name.
-     */
     it('draws the reverse buffer stages rather than falling through to an empty diagram', () => {
         const labels = labelsFor('reverse');
-
         expect(labels).toContain('Reverse Buf');
         expect(labels).toContain('Grain Flip');
         expect(labels).toContain('Hann Fade');
@@ -37,9 +30,42 @@ describe('SignalFlowDiagram', () => {
     it('gives reverse a different topology from the plate it would otherwise duplicate', () => {
         const plate = labelsFor('plate');
         const reverse = labelsFor('reverse');
-
         expect(reverse).not.toEqual(plate);
         expect(reverse).not.toContain('4× Diffuser');
         expect(plate).not.toContain('Reverse Buf');
+    });
+});
+
+describe('SignalFlowDiagram — shimmer and freeze conditionals', () => {
+    it('does not include Shimmer node when shimmerEnabled is false', () => {
+        const labels = labelsFor('plate', false, false);
+        expect(labels).not.toContain('Shimmer');
+    });
+
+    it('includes Shimmer node when shimmerEnabled is true', () => {
+        const labels = labelsFor('plate', true, false);
+        expect(labels).toContain('Shimmer');
+    });
+
+    it('includes Input node regardless of freeze state', () => {
+        const labels = labelsFor('plate', false, true);
+        expect(labels).toContain('Input');
+    });
+});
+
+describe('SignalFlowDiagram — FDN algorithm distinction', () => {
+    it('shows FDN-8 label for fdn-8 algorithm', () => {
+        const labels = labelsFor('fdn-8');
+        expect(labels).toContain('FDN-8');
+    });
+
+    it('shows FDN-16 label for fdn-16 algorithm', () => {
+        const labels = labelsFor('fdn-16');
+        expect(labels).toContain('FDN-16');
+    });
+
+    it('does not show FDN-8 label when fdn-16 is selected', () => {
+        const labels = labelsFor('fdn-16');
+        expect(labels).not.toContain('FDN-8');
     });
 });
