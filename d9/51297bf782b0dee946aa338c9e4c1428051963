@@ -1,0 +1,14 @@
+src/modules/AudioEngine/models/__tests__/FactoryDrumKits.spec.ts
+  h_1228e573df1f42 1-72
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "d951297bf782b0dee946aa338c9e4c1428051963",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
