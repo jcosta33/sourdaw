@@ -1,0 +1,37 @@
+scripts/test-health-gate-scripts.sh
+  s_14f2bbc9f385dd::t_bcb363a4329439 28-30
+  s_14f2bbc9f385dd::t_8bc41861571a3a 97,103-123
+  s_14f2bbc9f385dd::t_f0ec0d8912205d 200-201
+  s_14f2bbc9f385dd::t_e59632a24ba93d 124
+package.json
+  s_14f2bbc9f385dd::t_f4500149ea993b 15
+scripts/checkVitestCollectionScope.ts
+  s_14f2bbc9f385dd::t_e0337fe85e2635 1-136,138-183,185-189,191,193-205,207,209-217,219,221-235
+  s_14f2bbc9f385dd::t_e8f60ec8084ead 190,192
+  s_14f2bbc9f385dd::t_76b3f83112a0e4 137
+  s_14f2bbc9f385dd::t_dc31399be9e4e5 184
+  s_14f2bbc9f385dd::t_709455eea63322 206,208
+  s_14f2bbc9f385dd::t_71c3076a5344e9 218,220
+scripts/health-gates-web.sh
+  s_14f2bbc9f385dd::t_7db87d234e95ca 43
+vite.config.ts
+  s_14f2bbc9f385dd::t_20e0fa9aa3b100 48-51,54
+  s_14f2bbc9f385dd::t_f99156646d260a 55
+  s_14f2bbc9f385dd::t_27cef0e45fa61f 52-53
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "c73535661058b8d1c9c887d8616a2d4a89c71feb",
+  "prompts": {},
+  "sessions": {
+    "s_14f2bbc9f385dd": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f9a61a1d-66b3-4146-938d-a04f45f4b060",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
