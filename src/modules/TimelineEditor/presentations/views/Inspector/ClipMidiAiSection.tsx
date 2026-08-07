@@ -52,6 +52,11 @@ type ClipMidiAiSectionProps = {
     clip: Clip;
 };
 
+type StillOwnsPanelInput = {
+    signal: AbortSignal;
+    launchClipId: string;
+};
+
 export const ClipMidiAiSection = ({ clip }: ClipMidiAiSectionProps): ReactElement => {
     const [isGeneratingVariations, setIsGeneratingVariations] = useState(false);
     const [variationTokenCount, setVariationTokenCount] = useState(0);
@@ -85,26 +90,81 @@ export const ClipMidiAiSection = ({ clip }: ClipMidiAiSectionProps): ReactElemen
     const vocoderStatus = registry?.vocoder?.status ?? 'not-downloaded';
     const vocoderProgress = registry?.vocoder?.downloadProgress ?? 0;
 
+    // Every AI action here runs for seconds while the panel stays interactive, so each one has
+    // to prove it still owns the panel before writing anything back (audit M-250). Two
+    // independent ways to lose that ownership, and both are live:
+    //
+    //   identity — the panel moved to a different clip. Compared at resolution time rather than
+    //     invalidated on switch, because the switch is only observable during render, where
+    //     mutating a ref is unsafe (concurrent rendering can discard a render) and calling
+    //     abort() is a side effect. A comparison has no such window and needs no bookkeeping.
+    //   supersession — a newer launch for the SAME clip replaced this one. Identity cannot see
+    //     that, so each launch owns an AbortController which the next launch aborts, entirely
+    //     inside event handlers. This is reachable: the render-time reset below clears the
+    //     `isGenerating…` / `isRendering…` flags on every clip change, so one A→B→A round trip
+    //     re-enables a button whose first job is still in flight.
+    const renderedClipIdRef = useRef(clip.id);
+    const variationsLaunchRef = useRef<AbortController | null>(null);
+    const ttsLaunchRef = useRef<AbortController | null>(null);
+    const svsLaunchRef = useRef<AbortController | null>(null);
+
+    const stillOwnsPanel = ({ signal, launchClipId }: StillOwnsPanelInput): boolean => {
+        if (signal.aborted) {
+            return false;
+        }
+        return renderedClipIdRef.current === launchClipId;
+    };
+
     const handleGenerateVariations = async (): Promise<void> => {
         setIsGeneratingVariations(true);
         setVariationTokenCount(0);
+        variationsLaunchRef.current?.abort();
+        const launch = new AbortController();
+        variationsLaunchRef.current = launch;
+        const { signal } = launch;
+        const launchClipId = clip.id;
         try {
-            const count = await generateMidiVariations(clip.id, {
-                onToken: (token) => setVariationTokenCount((context) => context + token.length),
+            const count = await generateMidiVariations(launchClipId, {
+                onToken: (token) => {
+                    if (!stillOwnsPanel({ signal, launchClipId })) {
+                        // Streamed progress belonging to a clip the panel has left, or to a
+                        // launch a newer one replaced. Counting it would inflate the live
+                        // "Streaming… N chars" readout of whatever is running now (audit M-250).
+                        return;
+                    }
+                    setVariationTokenCount((context) => context + token.length);
+                },
             });
+            if (!stillOwnsPanel({ signal, launchClipId })) {
+                // Announcing here would credit this clip's variations to whichever clip the
+                // panel is showing now (audit M-250).
+                return;
+            }
             notifyAiChange('MIDI variations generated', [
                 `${String(count)} variation${count === 1 ? '' : 's'} created as alternative clips`,
             ]);
         } catch (error) {
+            if (!stillOwnsPanel({ signal, launchClipId })) {
+                // A failure that belongs to a clip the user has already left, or to a
+                // superseded launch. Reporting it would raise a toast about work they can no
+                // longer see (audit M-250).
+                return;
+            }
             notifyUser(error instanceof Error ? error.message : 'Variation generation failed', 'error');
         } finally {
-            setIsGeneratingVariations(false);
+            if (stillOwnsPanel({ signal, launchClipId })) {
+                // Only the launch that still owns the panel may clear its spinner. An abandoned
+                // launch would otherwise stop the spinner of the job running right now.
+                setIsGeneratingVariations(false);
+            }
         }
     };
 
-    const prevClipId = useRef(clip.id);
-    if (prevClipId.current !== clip.id) {
-        prevClipId.current = clip.id;
+    // Re-point the panel at the newly selected clip and drop the previous clip's scratch state.
+    // Note this also clears the in-flight flags, which is what makes same-clip supersession
+    // reachable — see the launch-ownership comment above.
+    if (renderedClipIdRef.current !== clip.id) {
+        renderedClipIdRef.current = clip.id;
         setTtsText('');
         setDiffSingerLyrics('');
         setTtsVoiceId('af_heart');
@@ -157,6 +217,11 @@ export const ClipMidiAiSection = ({ clip }: ClipMidiAiSectionProps): ReactElemen
 
         setIsRenderingTts(true);
         setTtsResults([]);
+        ttsLaunchRef.current?.abort();
+        const launch = new AbortController();
+        ttsLaunchRef.current = launch;
+        const { signal } = launch;
+        const launchClipId = clip.id;
         try {
             // Sequential — the ONNX worker is single-threaded so parallel
             // calls would serialize anyway, just with noisier logs.
@@ -171,6 +236,12 @@ export const ClipMidiAiSection = ({ clip }: ClipMidiAiSectionProps): ReactElemen
                     speed,
                     targetDurationSec,
                 });
+                if (!stillOwnsPanel({ signal, launchClipId })) {
+                    // The panel moved to another clip, or a newer launch replaced this
+                    // one, while this variant was rendering. Drop it and stop queueing the
+                    // remaining variants (audit M-250).
+                    return;
+                }
                 results.push({
                     audio: result.audio,
                     sampleRate: result.sampleRate,
@@ -181,9 +252,19 @@ export const ClipMidiAiSection = ({ clip }: ClipMidiAiSectionProps): ReactElemen
             setTtsResults(results);
             notifyAiChange('Vocal preview ready', ['3 alternatives rendered — drag one onto an audio track']);
         } catch (error) {
+            if (!stillOwnsPanel({ signal, launchClipId })) {
+                // A failure that belongs to a clip the user has already left, or to a
+                // superseded launch. Reporting it would raise an error toast about work they
+                // can no longer see (audit M-250).
+                return;
+            }
             notifyUser(error instanceof Error ? error.message : 'TTS render failed', 'error');
         } finally {
-            setIsRenderingTts(false);
+            if (stillOwnsPanel({ signal, launchClipId })) {
+                // Only the launch that still owns the panel may clear its spinner. An
+                // abandoned launch would otherwise stop the spinner of the render running now.
+                setIsRenderingTts(false);
+            }
         }
     };
 
@@ -220,6 +301,11 @@ export const ClipMidiAiSection = ({ clip }: ClipMidiAiSectionProps): ReactElemen
 
         setIsRenderingSvs(true);
         setSvsResults([]);
+        svsLaunchRef.current?.abort();
+        const launch = new AbortController();
+        svsLaunchRef.current = launch;
+        const { signal } = launch;
+        const launchClipId = clip.id;
         try {
             const voiceName = activeVoicebank?.name ?? selectedVoicebankId;
             const lyrics = diffSingerLyrics.trim() || 'la la la';
@@ -236,6 +322,13 @@ export const ClipMidiAiSection = ({ clip }: ClipMidiAiSectionProps): ReactElemen
                     renderQuality: svsRenderQuality,
                     seed: SVS_SEED_VARIANTS[index],
                 });
+
+                if (!stillOwnsPanel({ signal, launchClipId })) {
+                    // The panel moved to another clip, or a newer launch replaced this
+                    // one, while this variant was rendering. Drop it and stop queueing the
+                    // remaining variants (audit M-250).
+                    return;
+                }
 
                 if (
                     !rawResult ||
@@ -258,9 +351,19 @@ export const ClipMidiAiSection = ({ clip }: ClipMidiAiSectionProps): ReactElemen
             setSvsResults(results);
             notifyAiChange('Singing render complete', ['3 alternatives rendered — drag one onto an audio track']);
         } catch (error) {
+            if (!stillOwnsPanel({ signal, launchClipId })) {
+                // A failure that belongs to a clip the user has already left, or to a
+                // superseded launch. Reporting it would raise an error toast about work they
+                // can no longer see (audit M-250).
+                return;
+            }
             notifyUser(error instanceof Error ? error.message : 'Singing render failed', 'error');
         } finally {
-            setIsRenderingSvs(false);
+            if (stillOwnsPanel({ signal, launchClipId })) {
+                // Only the launch that still owns the panel may clear its spinner. An
+                // abandoned launch would otherwise stop the spinner of the render running now.
+                setIsRenderingSvs(false);
+            }
         }
     };
 
