@@ -1,0 +1,21 @@
+src/modules/Arrangement/models/PluginDescriptors/__tests__/BuiltinInstrumentDescriptors.spec.ts
+  s_1f47ead53741b3::t_488f868fb54dc3 1-64
+tests/e2e/COVERAGE.md
+  s_1f47ead53741b3::t_91362e9a77a5d1 683-690
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "bfe71d217956069d6756cdbc2eec9344d05e0ab7",
+  "prompts": {},
+  "sessions": {
+    "s_1f47ead53741b3": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-a0710fc50869b119a",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
