@@ -75,12 +75,16 @@ export const KneadEditor = ({ trackId, clipId }: { trackId: string; clipId: stri
         setProjectScaleName(name);
     };
 
-    // Refs for animation loop to avoid dependency-triggered re-runs of the loop itself
-    const stateRef = useRef({ kneadState, zoom, transportState, isDragging, contour });
+    // Refs for the animation loop, to avoid dependency-triggered re-runs of the
+    // loop itself. Only values the draw actually reads belong here: the loop's
+    // dirty check derives its repaint decision from exactly this set, so a field
+    // nobody draws with would be a misleading repaint trigger. (`isDragging` is
+    // deliberately absent — the draw reads `dragStart.current`, not the flag.)
+    const stateRef = useRef({ kneadState, zoom, transportState, contour, hoveredBlobId });
 
     useEffect(() => {
-        stateRef.current = { kneadState, zoom, transportState, isDragging, contour };
-    }, [kneadState, zoom, transportState, isDragging, contour]);
+        stateRef.current = { kneadState, zoom, transportState, contour, hoveredBlobId };
+    }, [kneadState, zoom, transportState, contour, hoveredBlobId]);
 
     // Trigger real DSP pitch-analysis pipeline (WASM pitch detection).
     // Gate on the absence of a contour, not on `blobs.length === 0`: a clip that
@@ -154,12 +158,86 @@ export const KneadEditor = ({ trackId, clipId }: { trackId: string; clipId: stri
 
         let animationFrameId: number;
 
+        // Dirty check (audit M-246). This loop used to repaint the background,
+        // every grid lane, the whole pitch contour and every blob on every
+        // animation frame, unconditionally — including while the editor sat
+        // idle with the transport stopped, where each of those ~60 repaints a
+        // second produced a pixel-identical canvas.
+        //
+        // The draw below is a pure function of the inputs listed here, so when
+        // none of them changed since the last painted frame there is nothing
+        // new to show and the frame is skipped. Anything the draw starts
+        // reading must be added to this signature, or it will not reach the
+        // screen. Two deliberate exclusions, both stale by the same amount as
+        // before this change:
+        //  - `bgCol` / `accentCol` are resolved once per effect run, and this
+        //    effect only re-runs when `hasKnead` flips, so a live theme swap
+        //    already failed to reach the canvas (pre-existing).
+        //  - `playheadPositionRef`, Transport's ~100 Hz playhead channel, is
+        //    NOT read here. The playhead below is drawn from the transport
+        //    *store* field, which Transport writes only on discrete events
+        //    (stop, seek, loop wrap). Wiring the live ref in means adding it
+        //    to this signature, or the playhead will freeze mid-transport.
+        type PaintedSignature = {
+            kneadState: (typeof stateRef.current)['kneadState'];
+            contour: (typeof stateRef.current)['contour'];
+            zoom: number;
+            draggedBlobId: string | null;
+            hoveredBlobId: string | null;
+            width: number;
+            height: number;
+            isPlaying: boolean;
+            playheadPosition: number;
+            tempo: number;
+        };
+        let lastPainted: PaintedSignature | null = null;
+
         const render = () => {
-            const { kneadState: currentKnead, zoom: currentZoom, transportState: currentTransport } = stateRef.current;
+            const {
+                kneadState: currentKnead,
+                zoom: currentZoom,
+                transportState: currentTransport,
+                contour: currentContour,
+                hoveredBlobId: currentHovered,
+            } = stateRef.current;
             const currentPPS = 300 * currentZoom;
 
             const width = canvas.width;
             const height = canvas.height;
+            // Read live from the ref rather than from the `isDragging` flag:
+            // this is the value the blob draw actually branches on, and it is
+            // set synchronously on pointer-down, one React commit earlier than
+            // the flag would reach `stateRef`.
+            const draggedBlobId = dragStart.current?.blobId ?? null;
+
+            const unchangedSinceLastPaint =
+                lastPainted !== null &&
+                lastPainted.kneadState === currentKnead &&
+                lastPainted.contour === currentContour &&
+                lastPainted.zoom === currentZoom &&
+                lastPainted.draggedBlobId === draggedBlobId &&
+                lastPainted.hoveredBlobId === currentHovered &&
+                lastPainted.width === width &&
+                lastPainted.height === height &&
+                lastPainted.isPlaying === currentTransport.isPlaying &&
+                lastPainted.playheadPosition === currentTransport.playheadPosition &&
+                lastPainted.tempo === currentTransport.tempo;
+            if (unchangedSinceLastPaint) {
+                animationFrameId = requestAnimationFrame(render);
+                return;
+            }
+            lastPainted = {
+                kneadState: currentKnead,
+                contour: currentContour,
+                zoom: currentZoom,
+                draggedBlobId,
+                hoveredBlobId: currentHovered,
+                width,
+                height,
+                isPlaying: currentTransport.isPlaying,
+                playheadPosition: currentTransport.playheadPosition,
+                tempo: currentTransport.tempo,
+            };
 
             // Clear background
             ctx.fillStyle = bgCol;
@@ -176,8 +254,7 @@ export const KneadEditor = ({ trackId, clipId }: { trackId: string; clipId: stri
             }
 
             // Draw Raw Pitch Contour (faint background)
-            if (stateRef.current.contour && stateRef.current.contour.points.length > 0) {
-                const currentContour = stateRef.current.contour;
+            if (currentContour && currentContour.points.length > 0) {
                 const avgCents =
                     (currentKnead?.blobs?.reduce((alpha, b) => alpha + (b.pitchCenterCents || 6000), 0) ?? 6000) /
                         (currentKnead?.blobs?.length || 1) || 6000;
@@ -223,8 +300,13 @@ export const KneadEditor = ({ trackId, clipId }: { trackId: string; clipId: stri
 
                     // Map cents to Y
                     const y = height / 2 - ((blob.pitchCenterCents - avgCents) / 100) * rowHeight;
-                    const isHovered = hoveredBlobId === blob.id;
-                    const isDragged = dragStart.current?.blobId === blob.id;
+                    // Read hover through stateRef: this closure only re-runs when
+                    // `hasKnead` flips, so reading the `hoveredBlobId` state
+                    // variable directly froze it at its mount value (always
+                    // null) and the hover highlight and edit handles never
+                    // appeared at all.
+                    const isHovered = currentHovered === blob.id;
+                    const isDragged = draggedBlobId === blob.id;
 
                     // Draw outer blob shape
                     ctx.fillStyle = isDragged || isHovered ? '#ffffff' : accentCol;
@@ -308,12 +390,33 @@ export const KneadEditor = ({ trackId, clipId }: { trackId: string; clipId: stri
 
     useLayoutEffect(() => {
         const resizeCanvas = () => {
-            if (canvasRef.current) {
-                const parent = canvasRef.current.parentElement;
-                if (parent) {
-                    canvasRef.current.width = Math.max(800, parent.clientWidth * zoom);
-                    canvasRef.current.height = parent.clientHeight;
-                }
+            const canvas = canvasRef.current;
+            if (!canvas) {
+                return;
+            }
+            const parent = canvas.parentElement;
+            if (!parent) {
+                return;
+            }
+            // Floor before comparing: `width`/`height` are unsigned longs, so a
+            // fractional assignment reads back truncated and an un-floored
+            // comparison would never settle.
+            const nextWidth = Math.floor(Math.max(800, parent.clientWidth * zoom));
+            const nextHeight = Math.floor(parent.clientHeight);
+
+            // Assign only on a real change. The HTML spec resets the canvas
+            // bitmap whenever width/height are "set, removed, changed, or
+            // redundantly set to the value they already have" — so assigning
+            // unconditionally on every `resize` event would blank the canvas
+            // without moving anything the render loop's dirty check compares,
+            // and the editor would stay blank until some unrelated input
+            // happened to change. A `resize` that leaves the clamped width and
+            // the height alone must leave the bitmap alone too.
+            if (canvas.width !== nextWidth) {
+                canvas.width = nextWidth;
+            }
+            if (canvas.height !== nextHeight) {
+                canvas.height = nextHeight;
             }
         };
         resizeCanvas();
