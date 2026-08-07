@@ -4,7 +4,7 @@ import { afterEach, describe, it, expect, vi } from 'vitest';
 import { type PadState } from '../../../models/ToasterKit';
 import { PadGrid } from '../PadGrid';
 
-function makePad(index: number): PadState {
+function makePad(index: number, overrides: Partial<PadState> = {}): PadState {
     return {
         id: index,
         name: `P${index}`,
@@ -25,6 +25,7 @@ function makePad(index: number): PadState {
         sendReverb: 0,
         sendDelay: 0,
         engineParams: {},
+        ...overrides,
     };
 }
 
@@ -37,18 +38,16 @@ describe('PadGrid (Toaster)', () => {
     it('should render', () => {
         const pads = Array.from({ length: 8 }, (_, index) => makePad(index));
         render(<PadGrid pads={pads} selectedIndex={0} onSelectPad={vi.fn()} onTriggerPad={vi.fn()} />);
-        expect(screen.getByText('P0')).toBeInTheDocument();
+        expect(screen.getByText('P0')).toBeTruthy();
     });
 
     it('should trigger a pad from the keyboard via Enter and Space', () => {
         const onTriggerPad = vi.fn();
         const pads = Array.from({ length: 4 }, (_, index) => makePad(index));
         render(<PadGrid pads={pads} selectedIndex={0} onSelectPad={vi.fn()} onTriggerPad={onTriggerPad} />);
-
         const pad1 = screen.getByRole('button', { name: /trigger p1/i });
         fireEvent.keyDown(pad1, { key: 'Enter' });
         expect(onTriggerPad).toHaveBeenCalledWith(1);
-
         onTriggerPad.mockClear();
         fireEvent.keyDown(pad1, { key: ' ' });
         expect(onTriggerPad).toHaveBeenCalledWith(1);
@@ -58,48 +57,76 @@ describe('PadGrid (Toaster)', () => {
         const onTriggerPad = vi.fn();
         const pads = Array.from({ length: 4 }, (_, index) => makePad(index));
         render(<PadGrid pads={pads} selectedIndex={0} onSelectPad={vi.fn()} onTriggerPad={onTriggerPad} />);
-
         const pad0 = screen.getByRole('button', { name: /trigger p0/i });
         fireEvent.keyDown(pad0, { key: 'Enter', repeat: true });
         expect(onTriggerPad).not.toHaveBeenCalled();
     });
 
-    it('should clear a departed pad flash timer so it does not fire setState after the pad leaves', () => {
+    it('should clear a departed pad flash timer', () => {
         vi.useFakeTimers();
         const onTriggerPad = vi.fn();
         const pads = Array.from({ length: 4 }, (_, index) => makePad(index));
-
         const { rerender } = render(
             <PadGrid pads={pads} selectedIndex={0} onSelectPad={vi.fn()} onTriggerPad={onTriggerPad} />
         );
-
         const isFlashing = (label: RegExp): boolean =>
             screen.getByRole('button', { name: label }).style.transform === 'scale(0.97)';
-
-        // 1. Trigger pad 3 — it flashes and a 120ms unflash timer is now pending.
         act(() => {
             fireEvent.mouseDown(screen.getByRole('button', { name: /trigger p3/i }), { button: 0 });
         });
         expect(isFlashing(/trigger p3/i)).toBe(true);
-
-        // 2. Pad 3 leaves the list before its timer fires. The fix prunes the
-        //    pending timer here so it can never run its setFlashingPads callback.
         act(() => {
             rerender(
                 <PadGrid pads={pads.slice(0, 3)} selectedIndex={0} onSelectPad={vi.fn()} onTriggerPad={onTriggerPad} />
             );
         });
-
-        // 3. Re-add pad 3 (a fresh strip, no re-trigger) so its flash cell is
-        //    observable again, then advance well past the original 120ms window.
         act(() => {
             rerender(<PadGrid pads={pads} selectedIndex={0} onSelectPad={vi.fn()} onTriggerPad={onTriggerPad} />);
             vi.advanceTimersByTime(200);
         });
-
-        // With the timer pruned, the stale unflash callback never ran. Without
-        // the fix, that orphaned timer fires at 120ms and deletes index 3 from
-        // the flash set, so the re-added pad would read as not flashing here.
         expect(isFlashing(/trigger p3/i)).toBe(true);
+    });
+});
+
+describe('PadGrid — selection and aria', () => {
+    it('fires onSelectPad when a pad is clicked', () => {
+        const onSelectPad = vi.fn();
+        const pads = Array.from({ length: 4 }, (_, index) => makePad(index));
+        render(<PadGrid pads={pads} selectedIndex={0} onSelectPad={onSelectPad} onTriggerPad={vi.fn()} />);
+        fireEvent.click(screen.getByRole('button', { name: /trigger p2/i }));
+        expect(onSelectPad).toHaveBeenCalledWith(2);
+    });
+
+    it('shows aria-pressed true on the selected pad', () => {
+        const pads = Array.from({ length: 4 }, (_, index) => makePad(index));
+        render(<PadGrid pads={pads} selectedIndex={1} onSelectPad={vi.fn()} onTriggerPad={vi.fn()} />);
+        expect(screen.getByRole('button', { name: /trigger p1/i })).toHaveAttribute('aria-pressed', 'true');
+        expect(screen.getByRole('button', { name: /trigger p0/i })).toHaveAttribute('aria-pressed', 'false');
+    });
+});
+
+describe('PadGrid — pad state display', () => {
+    it('shows Mute overlay when pad is muted', () => {
+        const pads = [makePad(0, { muted: true })];
+        render(<PadGrid pads={pads} selectedIndex={0} onSelectPad={vi.fn()} onTriggerPad={vi.fn()} />);
+        expect(screen.getByText('Mute')).toBeTruthy();
+    });
+
+    it('does not show Mute overlay when pad is not muted', () => {
+        const pads = [makePad(0, { muted: false })];
+        render(<PadGrid pads={pads} selectedIndex={0} onSelectPad={vi.fn()} onTriggerPad={vi.fn()} />);
+        expect(screen.queryByText('Mute')).toBeNull();
+    });
+
+    it('shows choke group badge when chokeGroup > 0', () => {
+        const pads = [makePad(0, { chokeGroup: 2 })];
+        render(<PadGrid pads={pads} selectedIndex={0} onSelectPad={vi.fn()} onTriggerPad={vi.fn()} />);
+        expect(screen.getByText('C2')).toBeTruthy();
+    });
+
+    it('shows volume percentage readout', () => {
+        const pads = [makePad(0, { volume: 0.65 })];
+        render(<PadGrid pads={pads} selectedIndex={0} onSelectPad={vi.fn()} onTriggerPad={vi.fn()} />);
+        expect(screen.getByText('65%')).toBeTruthy();
     });
 });
