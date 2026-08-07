@@ -1,0 +1,19 @@
+src/modules/WorkspaceShell/presentations/hooks/useStatusBarMetrics.ts
+  s_14f2bbc9f385dd::t_4dd20eb285a6c4 234-241
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "4d27f7af03a36b458b12d16034ff31198de08cec",
+  "prompts": {},
+  "sessions": {
+    "s_14f2bbc9f385dd": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f9a61a1d-66b3-4146-938d-a04f45f4b060",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
