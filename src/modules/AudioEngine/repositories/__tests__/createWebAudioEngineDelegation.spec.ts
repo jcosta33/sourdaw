@@ -314,7 +314,7 @@ describe('AudioEngine — public API delegation and lifecycle', () => {
             state: 'running' as const,
             sampleRate: 48_000,
             baseLatency: 0.01,
-            outputLatency: 0.01,
+            outputLatency: 0.02,
             latencyProfile: null,
             latencyHint: null,
         };
@@ -513,6 +513,7 @@ describe('AudioEngine — public API delegation and lifecycle', () => {
             masterGain: 0.8,
             currentTime: 0,
             baseLatency: 0.01,
+            outputLatency: 0.02,
         });
     });
 

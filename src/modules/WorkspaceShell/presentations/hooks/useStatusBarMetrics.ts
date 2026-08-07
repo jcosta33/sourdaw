@@ -197,7 +197,44 @@ export const useStatusBarMetrics = (refs: StatusBarMetricRefs): void => {
 
             // ── Audio engine info ───────────────────────────────────────
             updateTextNode(refs.sampleRate.current, `${engineInfo.sampleRate / 1000}kHz`);
-            updateTextNode(refs.latency.current, `${(engineInfo.baseLatency * 1000).toFixed(1)}ms`);
+
+            // ── Output latency ──────────────────────────────────────────
+            // Web Audio splits the output path into two *disjoint, successive*
+            // segments, and this readout used to show only the first:
+            //
+            //   baseLatency   — "the number of seconds of processing latency
+            //                   incurred by the AudioContext passing the audio
+            //                   from the AudioDestinationNode to the audio
+            //                   subsystem" (Web Audio API §1.2.2).
+            //   outputLatency — "the interval between the time the UA requests
+            //                   the host system to play a buffer and the time at
+            //                   which the first sample in the buffer is actually
+            //                   processed by the audio output device" (ibid.).
+            //
+            // Latency is additive, so the delay the user actually hears is the
+            // sum; baseLatency alone silently drops the whole device buffer,
+            // which is usually the larger of the two (256 vs 512 frames at 48 kHz
+            // is 5.3 ms reported against 16.0 ms heard). outputLatency is an
+            // estimate the spec allows to change while the context runs, so it is
+            // read per tick alongside baseLatency rather than cached.
+            //
+            // This is the hardware output path only. Plug-in delay compensation
+            // (getCompensationDelay / getMaxTrackLatency) aligns tracks against
+            // each other *inside* the graph, upstream of AudioDestinationNode —
+            // it is a different quantity, is not shown here, and adding it would
+            // double-count delay this figure already covers downstream.
+            const baseLatencyMs = engineInfo.baseLatency * 1000;
+            const deviceLatencyMs = engineInfo.outputLatency * 1000;
+            const outputLatencyMs = baseLatencyMs + deviceLatencyMs;
+            updateTextNode(refs.latency.current, `${outputLatencyMs.toFixed(1)}ms`);
+            if (refs.latency.current) {
+                refs.latency.current.title =
+                    `Output latency ${outputLatencyMs.toFixed(1)} ms` +
+                    ` = context ${baseLatencyMs.toFixed(1)} ms` +
+                    ` + device ${deviceLatencyMs.toFixed(1)} ms.` +
+                    ' Hardware output path only — excludes plug-in delay compensation.';
+            }
+
             if (refs.engineState.current) {
                 refs.engineState.current.className = getDawStatusDotClassName({
                     tone: engineInfo.state === 'running' ? 'success' : 'muted',

@@ -341,8 +341,11 @@ export function createMockAudioContext(): MockAudioContext {
         currentTime: 0,
         sampleRate: 48000,
         state: 'running',
+        // Deliberately different: `baseLatency` and `outputLatency` are disjoint
+        // successive segments of the output path, and a fixture where they match
+        // cannot tell a reader of one from a reader of the other.
         baseLatency: 0.01,
-        outputLatency: 0.01,
+        outputLatency: 0.02,
         playbackStats: {
             underrunDuration: 0.002,
             underrunEvents: 2,

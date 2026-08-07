@@ -518,7 +518,7 @@ class AudioEngineImpl implements AudioEngine {
             state: engineState.state,
             sampleRate: engineState.sampleRate,
             baseLatency: engineState.baseLatency,
-            outputLatency: this.fallbackMode ? 0 : this.context.outputLatency,
+            outputLatency: engineState.outputLatency,
             latencyProfile: this.latencyProfile,
             latencyHint: this.latencyHint,
         };
@@ -714,6 +714,7 @@ class AudioEngineImpl implements AudioEngine {
                 masterGain: 0,
                 currentTime: 0,
                 baseLatency: 0,
+                outputLatency: 0,
             };
         }
         return {
@@ -723,6 +724,7 @@ class AudioEngineImpl implements AudioEngine {
             masterGain: this.masterGainNode.gain.value,
             currentTime: this.context.currentTime,
             baseLatency: this.context.baseLatency ?? 0,
+            outputLatency: this.context.outputLatency ?? 0,
         };
     }
 

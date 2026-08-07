@@ -977,7 +977,7 @@ describe('AudioEngine', () => {
             state: 'running',
             sampleRate: 48_000,
             baseLatency: 0.01,
-            outputLatency: 0.01,
+            outputLatency: 0.02,
             latencyProfile: 'highCapacity',
             latencyHint: 'playback',
         });
