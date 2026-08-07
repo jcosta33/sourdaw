@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
     configureAutomergeStoragePort,
     flushAutomergeStorageWrites,
+    runWithAutomergeStorageTransaction,
 } from '#/infra/store/storage/createAutomergeStorage';
 import { markerStore, trackStore } from '#/modules/Arrangement/stores';
 import { automationStore } from '#/modules/Automation/stores';
@@ -39,6 +40,32 @@ function createPeer(): TestPeer {
             },
         },
     };
+}
+
+/**
+ * Build the demo through the same storage-transaction boundary production uses.
+ *
+ * The `demo-mycelium-ascendant` template declares `executionBoundary:
+ * 'app-action'`, so it only ever reaches the document via
+ * `handleCreateProjectFromTemplate` inside `executeAppAction`, which wraps the
+ * handler in `runWithAutomergeStorageTransaction`. Every store write the
+ * hydration makes therefore shares one commit owner and lands as a single
+ * Automerge `change()`.
+ *
+ * Calling `createMyceliumAscendantDemo()` bare instead leaves each of the 18
+ * store adapters on its own unscoped commit owner, so the demo commits as 18
+ * separate `change()` calls against a document that grows with each one. That
+ * is both slower than production and a write shape production never performs.
+ */
+function createMyceliumAscendantDemoInTransaction(): void {
+    const transaction = runWithAutomergeStorageTransaction(undefined, () => {
+        createMyceliumAscendantDemo();
+    });
+    if (transaction.status === 'threw') {
+        transaction.abort();
+        throw transaction.error;
+    }
+    transaction.commit();
 }
 
 function readDocumentSlot(peer: TestPeer, key: string): unknown {
@@ -77,11 +104,39 @@ describe('Mycelium Ascendant project reload', () => {
         vi.unstubAllGlobals();
     });
 
+    /*
+     * Explicit timeout — measured 2026-08-07, not a convenience bump.
+     *
+     * Profiled per phase, 96% of this test is one thing: writing the demo into
+     * a real Automerge document. Building the demo's stores costs ~44ms and the
+     * whole reload half (`resetModuleStoresToDefault` + `projectCrdtToStores` +
+     * every assertion) costs ~150ms; the document write costs the rest.
+     *
+     * That write is the subject of the test, so it cannot be mocked away, and
+     * the fixture size is the regression this test exists to catch — 115
+     * automation lanes, 43 tracks, and the active arrangement's nested copy of
+     * the same lanes. Shrinking it would delete the coverage.
+     *
+     * What was reducible has been reduced: routing the build through
+     * `runWithAutomergeStorageTransaction` (see above) collapsed 18 Automerge
+     * `change()` calls into 1 and cut ~25% off the write. Interleaved A/B in
+     * one process, three pairs, under three concurrent suites:
+     *   bare 6858ms / 6187ms / 6583ms  vs  transactional 4637ms / 5248ms / 4887ms
+     * The remainder is Automerge materializing the payload, which is real work.
+     *
+     * The reason a timeout is still needed after that cut is variance, not the
+     * mean. Repeated runs of this one test swung between 1.79s and 6.44s purely
+     * with how many sibling suites shared the machine — the 5000ms default sits
+     * inside that band, so ordinary load rather than any defect reddened two
+     * unrelated PRs on 2026-08-07 and cost both lanes real time proving the
+     * failure was not theirs. 30s is ~4.7x the slowest run observed, so load
+     * spikes cannot red it, while a genuinely hung projection still fails fast.
+     */
     it('preserves canonical automation, project scale, and the active arrangement through CRDT projection reload', () => {
         const peer = createPeer();
         configureAutomergeStoragePort(peer.port);
 
-        createMyceliumAscendantDemo();
+        createMyceliumAscendantDemoInTransaction();
         flushAutomergeStorageWrites();
 
         const canonicalAutomation = structuredClone(automationStore.value);
@@ -137,5 +192,5 @@ describe('Mycelium Ascendant project reload', () => {
         expect(markerStore.value?.sections.map((section) => section.name)).toContain('Sporefall');
         expect(readDocumentSlot(peer, 'automation')).toEqual(canonicalDocumentAutomation);
         expect(readDocumentSlot(peer, 'yeast')).toEqual(canonicalDocumentYeast);
-    });
+    }, 30000);
 });
