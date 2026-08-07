@@ -30,13 +30,7 @@ import { SCALE_PATTERNS, KEY_NAMES } from '#/utils/Music/MusicalScale';
 import { cn } from '#/utils/Styles/cn';
 
 import { areOpenedClipNotesEqual } from '../../helpers/openedClipNotesEquality';
-import {
-    GRID_BEATS,
-    ROW_HEIGHT,
-    RULER_HEIGHT,
-    EMPTY_NOTES,
-    getVisiblePitches,
-} from '../../helpers/pianoRollConstants';
+import { GRID_BEATS, ROW_HEIGHT, RULER_HEIGHT, EMPTY_NOTES, getVisiblePitches } from '../../helpers/pianoRollConstants';
 import { usePianoRollInteractions } from '../../hooks/usePianoRollInteractions';
 import { usePianoRollRenderer } from '../../hooks/usePianoRollRenderer';
 import { NotePropertyLane } from '../AutomationLane/NotePropertyLane';
