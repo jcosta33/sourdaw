@@ -193,20 +193,37 @@ describe('SpectralWaterfall — multiple frames', () => {
         vi.restoreAllMocks();
     });
 
+    /**
+     * Drains exactly the frames queued so far.
+     *
+     * The component re-arms itself — the last thing `render` does is
+     * `requestAnimationFrame(render)` — so the stub pushes a new callback onto
+     * `localRafs` while it is being drained. Iterating `localRafs` directly
+     * makes the loop feed itself: `for…of` re-reads `length` on every step, so
+     * each callback appends the next one and the loop never reaches the end.
+     * Snapshotting the queue and resetting it before running anything is what
+     * bounds a drain to one frame.
+     */
+    const tickLocal = (): void => {
+        const pending = localRafs;
+        localRafs = [];
+        act(() => {
+            for (const cb of pending) {
+                cb(performance.now());
+            }
+        });
+    };
+
     it('ingests multiple frames advancing the history ring', () => {
         render(<SpectralWaterfall analyser={makeAnalyser()} />);
         const offscreen = localCtxs[1]!;
-        act(() => {
-            for (const cb of localRafs) {
-                cb(performance.now());
-            }
-        });
-        localRafs = [];
-        act(() => {
-            for (const cb of localRafs) {
-                cb(performance.now());
-            }
-        });
-        expect(offscreen.putImageData.mock.calls.length).toBeGreaterThanOrEqual(2);
+
+        tickLocal();
+        tickLocal();
+
+        // One ingested frame paints exactly one row, so two frames paint two.
+        // An exact count is also the regression guard for the drain above: a
+        // self-feeding loop would run until the worker's heap is exhausted.
+        expect(offscreen.putImageData.mock.calls.length).toBe(2);
     });
 });
