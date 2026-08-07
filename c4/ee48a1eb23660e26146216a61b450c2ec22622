@@ -1,0 +1,53 @@
+src/modules/WorkspaceShell/presentations/hooks/useStatusBarMetrics.ts
+  s_14f2bbc9f385dd::t_42cc6c2b2b7ee7 209-221
+src/modules/WorkspaceShell/presentations/views/__tests__/StatusBar.spec.tsx
+  s_14f2bbc9f385dd::t_a02890fe409b12 83-94
+src/modules/WorkspaceShell/presentations/views/StatusBar.tsx
+  s_14f2bbc9f385dd::t_fdcf0e0eb748c3 181-185
+src/modules/WorkspaceShell/presentations/hooks/__tests__/useStatusBarMetrics.spec.ts
+  s_14f2bbc9f385dd::t_4029c7c791df63 219-242
+src/modules/AudioEngine/repositories/__tests__/createWebAudioEngine.spec.ts
+  s_14f2bbc9f385dd::t_da3f8c8a7ae09e 940-943
+  s_14f2bbc9f385dd::t_5d318c31ab58d0 232-237
+src/modules/Metering/presentations/views/LevelMeter.tsx
+  s_14f2bbc9f385dd::t_c5c4a9f4075942 104-108
+  s_14f2bbc9f385dd::t_a64b1cd335e1e1 102-103,109-113
+src/modules/MixerConsole/presentations/views/Mixer/MixerLevelReadout.tsx
+  s_14f2bbc9f385dd::t_52319e07b1c408 41-51
+src/modules/Metering/presentations/views/__tests__/LevelMeter.spec.tsx
+  s_14f2bbc9f385dd::t_ca017d682c5bae 106-129,152-166
+  s_14f2bbc9f385dd::t_84f2fc799e9019 9
+  s_14f2bbc9f385dd::t_2b9b7a4a50f58c 130-151
+src/modules/AudioEngine/repositories/__tests__/createWebAudioEngineBranches.spec.ts
+  s_14f2bbc9f385dd::t_14e9e15393821a 214-228,230-262,273,278-300
+  s_14f2bbc9f385dd::t_b17e4b7780d526 229
+src/modules/MixerConsole/presentations/views/Mixer/__tests__/MixerLevelReadout.spec.tsx
+  s_14f2bbc9f385dd::t_65cdee8bf4cd3e 128-134
+  s_14f2bbc9f385dd::t_f6534dac527a5d 9
+  s_14f2bbc9f385dd::t_33746cb4c3f7be 102-127,135-136
+src/modules/AudioEngine/models/AudioEngineState.ts
+  s_14f2bbc9f385dd::t_d1c4ddf7168db5 445-447
+src/modules/AudioEngine/repositories/createWebAudioEngine.ts
+  s_14f2bbc9f385dd::t_a41efee577eb47 967-978
+  s_14f2bbc9f385dd::t_326ed2bfd3a288 455-467
+  s_14f2bbc9f385dd::t_537c79c3feed26 278-286
+  s_14f2bbc9f385dd::t_523ba9fd13a58d 1637-1640
+src/modules/AudioEngine/useCases/engineAccess/getMasterPeakLevel.ts
+  s_14f2bbc9f385dd::t_357a409fbf8331 3-4
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "c4ee48a1eb23660e26146216a61b450c2ec22622",
+  "prompts": {},
+  "sessions": {
+    "s_14f2bbc9f385dd": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f9a61a1d-66b3-4146-938d-a04f45f4b060",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
