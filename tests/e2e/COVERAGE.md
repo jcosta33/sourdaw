@@ -658,10 +658,14 @@ Re-measured after 12 additional PRs since threshold raise #2 (PR #1198):
 - **PR #1245-#1247**: WaveshaperEditor (canvas size/drag commit), BezierLfoEditor (label toggle/drag),
   CrossoverDisplay (band labels/mode/drag/click).
 - **PR #1264**: SignalFlowDiagram — shimmer/freeze conditionals, FDN-8/FDN-16 distinction — 6 tests.
+- **PR #1267**: StepSequencer — velocity aria-label, pointer toggle, alt-drag gesture — 3 tests.
+- **PR #1268**: PadGrid — onSelectPad click, aria-pressed, muted overlay, choke badge, volume — 6 tests.
+- **PR #1270**: GlutenCurve — canvas role/aria-label, default size, grab/grabbing cursor, threshold drag — 6 tests.
+- **PR #1271**: PerNoteEditor — onReset callback, onParamChange knob, value readout, labels — 4 tests.
+- **PR #1272**: IrBrowser — drag-over state toggle, AIFF-by-extension, canvas waveform render — 3 tests.
 
-**Campaign total to date: 165 PRs, ~1962 assertions. All hardest-tier zero-coverage files
-now attempted: executePlayheadSeek, sanitizePersistedActionHistoryBundle, runBranchLineageTransition,
-replaceProjectData, executableAppActionRegistry, crdtPersistenceQueueCoordinator,
-grandBouleEngineHandle, deviceNodeFactory. All verifier-named component specs deepened:
-GrHistory, CrustSatCurve, WaveshaperEditor, BezierLfoEditor, CrossoverDisplay, SignalFlowDiagram,
-HumanizePanel, MicBlendSlider, SampleRow, ControlHeader, ShortcutCheatSheet, InstrumentBottomPanel.**
+**Campaign total to date: 170 PRs, ~1986 assertions. All hardest-tier zero-coverage files
+now attempted. All verifier-named component specs deepened: GrHistory, CrustSatCurve,
+WaveshaperEditor, BezierLfoEditor, CrossoverDisplay, SignalFlowDiagram, HumanizePanel,
+MicBlendSlider, SampleRow, ControlHeader, ShortcutCheatSheet, InstrumentBottomPanel,
+StepSequencer, PadGrid, GlutenCurve, PerNoteEditor, IrBrowser.**
