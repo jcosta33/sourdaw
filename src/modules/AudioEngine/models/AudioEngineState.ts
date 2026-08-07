@@ -442,7 +442,9 @@ export type AudioEngine = {
      *  track stops feeding return buses too. Separate from `setTrackMute`. */
     setTrackSoloGate(trackId: string, gated: boolean): void;
     getTrackPeakLevel(trackId: string): number;
-    getMasterPeakLevel(): number;
+    /** Linear master peak, or `null` when no meter tap is wired — see the
+     *  implementation for why "unavailable" must not collapse into `0`. */
+    getMasterPeakLevel(): number | null;
     getBusPeakLevel(busId: string): number;
     addDeviceToStrip(
         trackId: string,

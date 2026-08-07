@@ -30,6 +30,10 @@ export const LevelMeter = ({ trackId, height = 'h-full', width = 'w-2' }: LevelM
     const [schedulerId] = useState(() => `meter-${crypto.randomUUID()}`);
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const containerRef = useRef<HTMLDivElement>(null);
+    /** The `role="meter"` element, updated imperatively alongside the canvas. */
+    const meterRef = useRef<HTMLDivElement>(null);
+    /** Last announced string, so the tick only touches the DOM when it changes. */
+    const lastValueTextRef = useRef<string>('');
     const vuMeterRef = useRef(new VUMeter());
     const vuSampleRef = useRef<Float32Array>(new Float32Array(1));
     const peakHoldRef = useRef(0);
@@ -97,8 +101,47 @@ export const LevelMeter = ({ trackId, height = 'h-full', width = 'w-2' }: LevelM
         peakHoldRef.current = 0;
         peakHoldTimeRef.current = 0;
 
+        /**
+         * Keep the assistive-technology surface in step with the canvas. When
+         * `aria-valuetext` is present it is what a screen reader announces in
+         * place of `aria-valuenow`, so "unavailable" can be said without leaving
+         * `role="meter"` non-conformant or asserting a level nobody measured.
+         */
+        const announceMeterValue = (valueText: string, valueNow: number): void => {
+            if (lastValueTextRef.current === valueText) {
+                return;
+            }
+            lastValueTextRef.current = valueText;
+            const meter = meterRef.current;
+            if (!meter) {
+                return;
+            }
+            meter.setAttribute('aria-valuetext', valueText);
+            meter.setAttribute('aria-valuenow', valueNow.toFixed(1));
+        };
+
         const tick = (currentTime: DOMHighResTimeStamp, deltaMs: number) => {
             const rawPeak = trackId ? getTrackPeakLevel(trackId) : getMasterPeakLevel();
+            if (rawPeak === null) {
+                // Master bus with no meter tap wired: there is no level to paint.
+                // The -∞ frame (black bed, LED gaps, no fill) is the picture a
+                // genuinely silent mix draws, so painting it here would tell a
+                // user whose audio is playing that the master bus is dead. Leave
+                // the canvas clear, and drop the carried state — the held peak and
+                // the VU ballistics both describe a bus nobody is measuring any
+                // more, and a retained VU charge would paint a partial RMS fill on
+                // the first recovered frame.
+                peakHoldRef.current = 0;
+                peakHoldTimeRef.current = 0;
+                vuMeterRef.current.reset();
+                ctx.clearRect(0, 0, w, h);
+                // Without this the visual and audible surfaces disagree: a sighted
+                // user sees a blank meter while a screen reader is told a number.
+                announceMeterValue('unavailable', MIN_DB);
+                return;
+            }
+            const peakDb = linearToDb(rawPeak);
+            announceMeterValue(`${peakDb.toFixed(1)} dB`, peakDb);
             vuSampleRef.current[0] = rawPeak;
             const rawRms = vuMeterRef.current.update(vuSampleRef.current, Math.max(0, deltaMs) / 1000);
             if (rawPeak >= peakHoldRef.current) {
@@ -161,12 +204,18 @@ export const LevelMeter = ({ trackId, height = 'h-full', width = 'w-2' }: LevelM
 
     return (
         <div
+            ref={meterRef}
             className={cn('flex gap-px', height)}
             role="meter"
             aria-label="Level meter"
             aria-valuemin={MIN_DB}
             aria-valuemax={0}
+            // Pre-tick state: nothing has been measured, so the announced value is
+            // "unavailable". The tick replaces both attributes from the first frame
+            // that has a real level; `aria-valuenow` keeps `role="meter"`
+            // conformant while `aria-valuetext` carries what is actually said.
             aria-valuenow={MIN_DB}
+            aria-valuetext="unavailable"
         >
             <div className="flex flex-col justify-between py-0.5 pr-px shrink-0">
                 {DB_MARKS.map((db) => (

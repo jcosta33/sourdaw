@@ -229,9 +229,12 @@ describe('AudioEngine', () => {
         expect(engine.getTrackStrip('t1')).toBeUndefined();
     });
 
-    it('should handle master peak level', () => {
-        const peak = engine.getMasterPeakLevel();
-        expect(typeof peak).toBe('number');
+    it('reports the master peak as unavailable until initialize() wires the meter tap', () => {
+        // The master gain/analyser exist from the constructor, but the SAB-backed
+        // metering-processor is only inserted by initialize(). Until then there is
+        // no measurement, and `null` says so; a `0` here would render as "-∞ dB"
+        // and read as a silent mix.
+        expect(engine.getMasterPeakLevel()).toBeNull();
     });
 
     it('routes sends into device-bearing and ordinary bus track inputs', () => {
@@ -934,7 +937,10 @@ describe('AudioEngine', () => {
             // ramping on the noop context.
             expect(() => fbEngine.setMasterGain(0.5)).not.toThrow();
             expect(fbEngine.getMasterGain()).toBe(0);
-            expect(fbEngine.getMasterPeakLevel()).toBe(0);
+            // No live graph at all, so there is nothing to meter — "unavailable",
+            // not "silent". The status bar renders `null` as "n/a" rather than
+            // "-∞ dB", which would claim a measurement was taken.
+            expect(fbEngine.getMasterPeakLevel()).toBeNull();
 
             // Transport / metering guards — each must return before touching the
             // noop graph; an unguarded method would dereference a noop node and

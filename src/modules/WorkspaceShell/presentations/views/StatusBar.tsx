@@ -178,7 +178,11 @@ export const StatusBar = (): ReactElement => {
                                 ref={masterLevelTextRef}
                                 className="w-10 text-right font-mono text-[10px] text-muted-foreground"
                             >
-                                -∞ dB
+                                {/* Pre-tick placeholder. The engine has not wired a meter tap yet,
+                                    so it has no level to report — "-∞ dB" here would claim silence
+                                    before anything was measured. useStatusBarMetrics overwrites
+                                    this on the first animation frame. */}
+                                n/a
                             </span>
                         }
                     />

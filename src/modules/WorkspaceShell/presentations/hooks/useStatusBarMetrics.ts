@@ -206,6 +206,19 @@ export const useStatusBarMetrics = (refs: StatusBarMetricRefs): void => {
             }
 
             // ── Master level ────────────────────────────────────────────
+            // `null` is not zero. It means the engine has no meter tap at all —
+            // initialize() has not finished, its worklet load failed, or the page
+            // is missing AudioWorklet/SharedArrayBuffer. Rendering "-∞ dB" there
+            // is the readout for a genuinely silent mix, so it tells a user whose
+            // audio is playing that the engine is dead. Say "n/a" instead.
+            if (masterLevel === null) {
+                if (refs.masterLevelBar.current) {
+                    refs.masterLevelBar.current.style.width = '0%';
+                }
+                updateTextNode(refs.masterLevelText.current, 'n/a');
+                return;
+            }
+
             const levelDb = masterLevel > 0 ? (20 * Math.log10(masterLevel)).toFixed(1) : '-∞';
             if (refs.masterLevelBar.current) {
                 refs.masterLevelBar.current.style.width = `${Math.min(100, masterLevel * 300)}%`;
