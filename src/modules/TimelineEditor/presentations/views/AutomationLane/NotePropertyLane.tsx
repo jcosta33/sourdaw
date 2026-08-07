@@ -1,4 +1,4 @@
-import { type ReactElement, type MouseEvent, type PointerEvent, useRef, useLayoutEffect } from 'react';
+import { type ReactElement, type PointerEvent, useRef, useLayoutEffect, useEffect } from 'react';
 
 import { useStore } from '#/infra/store/useStore';
 import { trackStore } from '#/modules/Arrangement/stores';
@@ -26,6 +26,23 @@ type NotePropertyTrackState = {
         }>;
     }>;
     selectedTrackId: string | null;
+};
+
+type LanePointerPosition = {
+    clientX: number;
+    clientY: number;
+};
+
+/**
+ * One in-flight drag gesture. The pointer is captured on `captureTarget`, so every
+ * subsequent event for `pointerId` is retargeted there by the browser — no window
+ * listeners, and a release outside the window still arrives as pointerup/pointercancel.
+ */
+type LaneDragSession = {
+    pointerId: number;
+    captureTarget: Element;
+    move: (position: LanePointerPosition) => void;
+    commit: () => void;
 };
 
 type NotePropertyLaneProps = {
@@ -60,6 +77,71 @@ export const NotePropertyLane = ({
 }: NotePropertyLaneProps): ReactElement => {
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const containerRef = useRef<HTMLDivElement>(null);
+    const dragSessionRef = useRef<LaneDragSession | null>(null);
+    const finalizeDragRef = useRef<() => void>(() => {});
+
+    const finalizeDrag = (): void => {
+        const session = dragSessionRef.current;
+        if (!session) {
+            return;
+        }
+        dragSessionRef.current = null;
+        try {
+            session.captureTarget.releasePointerCapture(session.pointerId);
+        } catch {
+            // The browser releases capture itself on pointercancel and on element removal.
+        }
+        session.commit();
+    };
+
+    useLayoutEffect(() => {
+        finalizeDragRef.current = finalizeDrag;
+    });
+
+    useEffect(() => {
+        const handleWindowBlur = (): void => {
+            finalizeDragRef.current();
+        };
+        const handleVisibilityChange = (): void => {
+            if (document.visibilityState === 'hidden') {
+                finalizeDragRef.current();
+            }
+        };
+
+        window.addEventListener('blur', handleWindowBlur);
+        document.addEventListener('visibilitychange', handleVisibilityChange);
+        return () => {
+            window.removeEventListener('blur', handleWindowBlur);
+            document.removeEventListener('visibilitychange', handleVisibilityChange);
+        };
+    }, []);
+
+    useEffect(() => {
+        return () => {
+            finalizeDragRef.current();
+        };
+    }, []);
+
+    const beginDrag = (session: LaneDragSession): void => {
+        session.captureTarget.setPointerCapture(session.pointerId);
+        dragSessionRef.current = session;
+    };
+
+    const handleDragMove = (event: PointerEvent<Element>): void => {
+        const session = dragSessionRef.current;
+        if (!session || session.pointerId !== event.pointerId) {
+            return;
+        }
+        session.move({ clientX: event.clientX, clientY: event.clientY });
+    };
+
+    const handleDragEnd = (event: PointerEvent<Element>): void => {
+        const session = dragSessionRef.current;
+        if (!session || session.pointerId !== event.pointerId) {
+            return;
+        }
+        finalizeDrag();
+    };
 
     const midiState = useStore<MidiLaneStoreState>(midiStore, {
         notesByClipId: {},
@@ -153,8 +235,8 @@ export const NotePropertyLane = ({
         return null;
     };
 
-    const handleMouseDown = (event: MouseEvent<HTMLCanvasElement>): void => {
-        if (!clipId) {
+    const handleCanvasPointerDown = (event: PointerEvent<HTMLCanvasElement>): void => {
+        if (!clipId || dragSessionRef.current) {
             return;
         }
         const canvas = canvasRef.current;
@@ -204,13 +286,11 @@ export const NotePropertyLane = ({
             // Apply initial ramp from anchor position
             applyRamp(getEndVal(event.clientY));
 
-            const onMove = (me: globalThis.MouseEvent): void => {
-                applyRamp(getEndVal(me.clientY));
+            const onMove = ({ clientY }: LanePointerPosition): void => {
+                applyRamp(getEndVal(clientY));
             };
 
-            const onUp = (): void => {
-                window.removeEventListener('mousemove', onMove);
-                window.removeEventListener('mouseup', onUp);
+            const onCommit = (): void => {
                 const stateNotes = midiStore.value?.notesByClipId[clipId] ?? [];
                 const changes: { id: string; oldVal: number; newVal: number }[] = [];
                 for (const [id, oldVal] of initialValues.entries()) {
@@ -239,8 +319,12 @@ export const NotePropertyLane = ({
                 }
             };
 
-            window.addEventListener('mousemove', onMove);
-            window.addEventListener('mouseup', onUp);
+            beginDrag({
+                pointerId: event.pointerId,
+                captureTarget: canvas,
+                move: onMove,
+                commit: onCommit,
+            });
             return;
         }
 
@@ -256,10 +340,10 @@ export const NotePropertyLane = ({
 
         setValue(clipId, noteId, getVal(event.clientY));
 
-        const onMove = (me: globalThis.MouseEvent): void => {
+        const onMove = ({ clientX, clientY }: LanePointerPosition): void => {
             const containerRect = container.getBoundingClientRect();
-            const rx = me.clientX - containerRect.left;
-            const value = getVal(me.clientY);
+            const rx = clientX - containerRect.left;
+            const value = getVal(clientY);
             // Paint the note currently under the cursor (horizontal movement)
             const noteAtX = hitNoteAtX(rx);
             if (noteAtX) {
@@ -267,9 +351,7 @@ export const NotePropertyLane = ({
             }
         };
 
-        const onUp = (): void => {
-            window.removeEventListener('mousemove', onMove);
-            window.removeEventListener('mouseup', onUp);
+        const onCommit = (): void => {
             const stateNotes = midiStore.value?.notesByClipId[clipId] ?? [];
             const changes: { id: string; oldVal: number; newVal: number }[] = [];
             for (const node of stateNotes) {
@@ -298,12 +380,16 @@ export const NotePropertyLane = ({
             }
         };
 
-        window.addEventListener('mousemove', onMove);
-        window.addEventListener('mouseup', onUp);
+        beginDrag({
+            pointerId: event.pointerId,
+            captureTarget: canvas,
+            move: onMove,
+            commit: onCommit,
+        });
     };
 
     const handleRampDrag = (side: 'left' | 'right', event: PointerEvent<HTMLDivElement>) => {
-        if (!clipId) {
+        if (!clipId || dragSessionRef.current) {
             return;
         }
         const container = containerRef.current;
@@ -326,9 +412,11 @@ export const NotePropertyLane = ({
 
         const initialValues = new Map(sortedSelected.map((node) => [node.id, getValue(node)]));
 
-        const onMove = (me: globalThis.PointerEvent) => {
+        const captureTarget = event.currentTarget;
+
+        const onMove = ({ clientY }: LanePointerPosition) => {
             const containerRect = container.getBoundingClientRect();
-            const ry = me.clientY - containerRect.top;
+            const ry = clientY - containerRect.top;
             const r = 1 - Math.max(0, Math.min(1, (ry - 2) / (h - 4)));
             const newVal = Math.round(r * 127);
 
@@ -347,10 +435,7 @@ export const NotePropertyLane = ({
             }
         };
 
-        const onUp = () => {
-            window.removeEventListener('pointermove', onMove);
-            window.removeEventListener('pointerup', onUp);
-
+        const onCommit = () => {
             const stateNotes = midiStore.value?.notesByClipId[clipId] ?? [];
             const changes: { id: string; oldVal: number; newVal: number }[] = [];
 
@@ -395,8 +480,12 @@ export const NotePropertyLane = ({
             }
         };
 
-        window.addEventListener('pointermove', onMove);
-        window.addEventListener('pointerup', onUp);
+        beginDrag({
+            pointerId: event.pointerId,
+            captureTarget,
+            move: onMove,
+            commit: onCommit,
+        });
     };
 
     const firstSelected = sortedSelected[0];
@@ -416,7 +505,15 @@ export const NotePropertyLane = ({
 
     return (
         <div ref={containerRef} className="relative h-full w-full" role="group" aria-label={`${label} lane`}>
-            <canvas ref={canvasRef} className="cursor-ns-resize" onMouseDown={handleMouseDown} />
+            <canvas
+                ref={canvasRef}
+                className="cursor-ns-resize touch-none"
+                onPointerDown={handleCanvasPointerDown}
+                onPointerMove={handleDragMove}
+                onPointerUp={handleDragEnd}
+                onPointerCancel={handleDragEnd}
+                onLostPointerCapture={handleDragEnd}
+            />
             {sortedSelected.length > 1 ? (
                 <>
                     <svg className="absolute inset-0 pointer-events-none w-full h-full overflow-visible">
@@ -431,14 +528,22 @@ export const NotePropertyLane = ({
                         />
                     </svg>
                     <div
-                        className="absolute w-3 h-3 bg-white border border-black rounded-full cursor-ns-resize transform -translate-x-1/2 -translate-y-1/2 shadow-sm z-10"
+                        className="absolute w-3 h-3 bg-white border border-black rounded-full cursor-ns-resize touch-none transform -translate-x-1/2 -translate-y-1/2 shadow-sm z-10"
                         style={{ left: leftX + 1, top: getYPercent(leftVal) }}
                         onPointerDown={(event) => handleRampDrag('left', event)}
+                        onPointerMove={handleDragMove}
+                        onPointerUp={handleDragEnd}
+                        onPointerCancel={handleDragEnd}
+                        onLostPointerCapture={handleDragEnd}
                     />
                     <div
-                        className="absolute w-3 h-3 bg-white border border-black rounded-full cursor-ns-resize transform -translate-x-1/2 -translate-y-1/2 shadow-sm z-10"
+                        className="absolute w-3 h-3 bg-white border border-black rounded-full cursor-ns-resize touch-none transform -translate-x-1/2 -translate-y-1/2 shadow-sm z-10"
                         style={{ left: rightX + 1, top: getYPercent(rightVal) }}
                         onPointerDown={(event) => handleRampDrag('right', event)}
+                        onPointerMove={handleDragMove}
+                        onPointerUp={handleDragEnd}
+                        onPointerCancel={handleDragEnd}
+                        onLostPointerCapture={handleDragEnd}
                     />
                 </>
             ) : null}
