@@ -230,20 +230,34 @@ describe('PitchBendLane', () => {
             vi.restoreAllMocks();
         });
 
-        it('should move a point via drag and push a Move undo entry on release when changed', () => {
+        const seedPoint = (): void => {
             laneMocks.midiState.pitchBendByClipId['clip-1'] = [{ id: 'pb-a', value: 20, beat: 0, channel: 0 }];
-            const { container } = render(<PitchBendLane {...defaultProps} />);
-            const point = container.querySelector('[data-pb-point="true"]');
+        };
+
+        const readPoint = (): MidiPitchBend | undefined =>
+            (laneMocks.midiState.pitchBendByClipId['clip-1'] ?? []).find((entry) => entry.id === 'pb-a');
+
+        const getPoint = (container: HTMLElement): HTMLElement => {
+            const point = container.querySelector<HTMLElement>('[data-pb-point="true"]');
             expect(point).not.toBeNull();
+            return point!;
+        };
 
-            fireEvent.mouseDown(point!, { clientX: 8, clientY: 76 });
-            fireEvent(window, new MouseEvent('mousemove', { clientX: 88, clientY: 20, bubbles: true }));
+        // Drag target: x 88 → beat 2, y 20 → value 99. Derived, never hand-written.
+        const draggedBeat = beatFromX(88, 40);
+        const draggedValue = valueFromY(20, 80);
 
-            const expectedBeat = beatFromX(88, defaultProps.beatWidth);
-            const expectedValue = valueFromY(20, 80);
-            expect(movePitchBend).toHaveBeenCalledWith('clip-1', 'pb-a', expectedBeat, expectedValue);
+        it('should move a point via drag and push a Move undo entry on release when changed', () => {
+            seedPoint();
+            const { container } = render(<PitchBendLane {...defaultProps} />);
+            const point = getPoint(container);
 
-            fireEvent(window, new MouseEvent('mouseup', { bubbles: true }));
+            fireEvent.pointerDown(point, { pointerId: 2, button: 0, clientX: 8, clientY: 76 });
+            fireEvent.pointerMove(point, { pointerId: 2, clientX: 88, clientY: 20 });
+
+            expect(movePitchBend).toHaveBeenCalledWith('clip-1', 'pb-a', draggedBeat, draggedValue);
+
+            fireEvent.pointerUp(point, { pointerId: 2, clientX: 88, clientY: 20 });
 
             expect(pushUndoEntry).toHaveBeenCalledWith(
                 'Move pitch bend point',
@@ -258,19 +272,309 @@ describe('PitchBendLane', () => {
             const redoFn = vi.mocked(pushUndoEntry).mock.calls[0]?.[2];
             vi.mocked(movePitchBend).mockClear();
             redoFn!();
-            expect(movePitchBend).toHaveBeenCalledWith('clip-1', 'pb-a', expectedBeat, expectedValue);
+            expect(movePitchBend).toHaveBeenCalledWith('clip-1', 'pb-a', draggedBeat, draggedValue);
         });
 
         it('should not push a Move undo entry when the drag ends without changing the point', () => {
-            laneMocks.midiState.pitchBendByClipId['clip-1'] = [{ id: 'pb-a', value: 20, beat: 0, channel: 0 }];
+            seedPoint();
             const { container } = render(<PitchBendLane {...defaultProps} />);
-            const point = container.querySelector('[data-pb-point="true"]');
-            expect(point).not.toBeNull();
+            const point = getPoint(container);
 
-            fireEvent.mouseDown(point!, { clientX: 8, clientY: 76 });
-            fireEvent(window, new MouseEvent('mouseup', { bubbles: true }));
+            fireEvent.pointerDown(point, { pointerId: 2, button: 0, clientX: 8, clientY: 76 });
+            fireEvent.pointerUp(point, { pointerId: 2, clientX: 8, clientY: 76 });
 
             expect(pushUndoEntry).not.toHaveBeenCalled();
+        });
+
+        describe('touch, pen, and interrupted drags', () => {
+            const setVisibility = (state: 'visible' | 'hidden'): void => {
+                Object.defineProperty(document, 'visibilityState', {
+                    configurable: true,
+                    get: () => state,
+                });
+            };
+
+            afterEach(() => {
+                setVisibility('visible');
+            });
+
+            it('moves a point from a touch pointer, not only from a mouse', () => {
+                seedPoint();
+                const { container } = render(<PitchBendLane {...defaultProps} />);
+                const point = getPoint(container);
+
+                fireEvent.pointerDown(point, { pointerId: 7, pointerType: 'touch', clientX: 8, clientY: 76 });
+                fireEvent.pointerMove(point, { pointerId: 7, pointerType: 'touch', clientX: 88, clientY: 20 });
+
+                expect(readPoint()).toEqual(expect.objectContaining({ beat: draggedBeat, value: draggedValue }));
+            });
+
+            it('moves a point from a pen pointer and commits the move on release', () => {
+                seedPoint();
+                const { container } = render(<PitchBendLane {...defaultProps} />);
+                const point = getPoint(container);
+
+                fireEvent.pointerDown(point, { pointerId: 9, pointerType: 'pen', clientX: 8, clientY: 76 });
+                fireEvent.pointerMove(point, { pointerId: 9, pointerType: 'pen', clientX: 88, clientY: 20 });
+
+                expect(readPoint()?.value).toBe(draggedValue);
+
+                fireEvent.pointerUp(point, { pointerId: 9, pointerType: 'pen', clientX: 88, clientY: 20 });
+                expect(pushUndoEntry).toHaveBeenCalledWith(
+                    'Move pitch bend point',
+                    expect.any(Function),
+                    expect.any(Function)
+                );
+            });
+
+            it('opts the lane and its point handles out of the browser pan/zoom gesture', () => {
+                seedPoint();
+                const { container } = render(<PitchBendLane {...defaultProps} />);
+
+                // Without touch-action: none the browser claims the stroke for panning and
+                // cancels it mid-gesture, so a touch drag never completes.
+                expect(screen.getByRole('group').style.touchAction).toBe('none');
+                expect(getPoint(container).style.touchAction).toBe('none');
+            });
+
+            it('takes pointer capture on the pressed point handle with the gesture pointer id', () => {
+                seedPoint();
+                const { container } = render(<PitchBendLane {...defaultProps} />);
+                const point = getPoint(container);
+                const capture = vi.spyOn(point, 'setPointerCapture');
+
+                fireEvent.pointerDown(point, { pointerId: 6, button: 0, clientX: 8, clientY: 76 });
+
+                // jsdom's setPointerCapture is a no-op stub (src/setupTests.ts:163), so this
+                // establishes only that the call is made on the pressed handle with the gesture's
+                // pointer id — no test in this repo can prove the browser retargets events.
+                expect(capture).toHaveBeenCalledWith(6);
+            });
+
+            it('ignores a right-button press so the context menu is not also an edit', () => {
+                seedPoint();
+                const { container } = render(<PitchBendLane {...defaultProps} />);
+                const point = getPoint(container);
+
+                fireEvent.pointerDown(point, { pointerId: 4, button: 2, clientX: 8, clientY: 76 });
+                fireEvent.pointerMove(point, { pointerId: 4, clientX: 88, clientY: 20 });
+
+                expect(movePitchBend).not.toHaveBeenCalled();
+
+                // …and no gesture was latched, so the next primary press still drags.
+                fireEvent.pointerDown(point, { pointerId: 5, button: 0, clientX: 8, clientY: 76 });
+                fireEvent.pointerMove(point, { pointerId: 5, clientX: 88, clientY: 20 });
+                expect(readPoint()?.beat).toBe(draggedBeat);
+            });
+
+            it('pointercancel ends the drag, commits the undo entry, and stops further movement', () => {
+                seedPoint();
+                const { container } = render(<PitchBendLane {...defaultProps} />);
+                const point = getPoint(container);
+
+                fireEvent.pointerDown(point, { pointerId: 2, button: 0, clientX: 8, clientY: 76 });
+                fireEvent.pointerMove(point, { pointerId: 2, clientX: 88, clientY: 20 });
+                expect(readPoint()?.value).toBe(draggedValue);
+
+                fireEvent.pointerCancel(point, { pointerId: 2 });
+                expect(pushUndoEntry).toHaveBeenCalledWith(
+                    'Move pitch bend point',
+                    expect.any(Function),
+                    expect.any(Function)
+                );
+
+                vi.mocked(movePitchBend).mockClear();
+                fireEvent.pointerMove(point, { pointerId: 2, clientX: 208, clientY: 40 });
+                expect(movePitchBend).not.toHaveBeenCalled();
+
+                // The trailing pointerup the browser still delivers must not commit a second entry.
+                fireEvent.pointerUp(point, { pointerId: 2, clientX: 208, clientY: 40 });
+                expect(pushUndoEntry).toHaveBeenCalledTimes(1);
+            });
+
+            it('losing window focus finalizes a latched drag', () => {
+                seedPoint();
+                const { container } = render(<PitchBendLane {...defaultProps} />);
+                const point = getPoint(container);
+
+                fireEvent.pointerDown(point, { pointerId: 2, button: 0, clientX: 8, clientY: 76 });
+                fireEvent.pointerMove(point, { pointerId: 2, clientX: 88, clientY: 20 });
+
+                fireEvent(window, new Event('blur'));
+
+                expect(pushUndoEntry).toHaveBeenCalledWith(
+                    'Move pitch bend point',
+                    expect.any(Function),
+                    expect.any(Function)
+                );
+
+                vi.mocked(movePitchBend).mockClear();
+                fireEvent.pointerMove(point, { pointerId: 2, clientX: 208, clientY: 40 });
+                expect(movePitchBend).not.toHaveBeenCalled();
+            });
+
+            it('hiding the tab finalizes a latched drag', () => {
+                seedPoint();
+                const { container } = render(<PitchBendLane {...defaultProps} />);
+                const point = getPoint(container);
+
+                fireEvent.pointerDown(point, { pointerId: 2, button: 0, clientX: 8, clientY: 76 });
+                fireEvent.pointerMove(point, { pointerId: 2, clientX: 88, clientY: 20 });
+
+                setVisibility('hidden');
+                fireEvent(document, new Event('visibilitychange'));
+
+                expect(pushUndoEntry).toHaveBeenCalledWith(
+                    'Move pitch bend point',
+                    expect.any(Function),
+                    expect.any(Function)
+                );
+
+                vi.mocked(movePitchBend).mockClear();
+                fireEvent.pointerMove(point, { pointerId: 2, clientX: 208, clientY: 40 });
+                expect(movePitchBend).not.toHaveBeenCalled();
+            });
+
+            it('a still-visible tab firing visibilitychange leaves the drag running', () => {
+                seedPoint();
+                const { container } = render(<PitchBendLane {...defaultProps} />);
+                const point = getPoint(container);
+
+                fireEvent.pointerDown(point, { pointerId: 2, button: 0, clientX: 8, clientY: 76 });
+                setVisibility('visible');
+                fireEvent(document, new Event('visibilitychange'));
+
+                expect(pushUndoEntry).not.toHaveBeenCalled();
+
+                fireEvent.pointerMove(point, { pointerId: 2, clientX: 88, clientY: 20 });
+                expect(readPoint()?.value).toBe(draggedValue);
+            });
+
+            it('losing capture without a release finalizes the gesture', () => {
+                seedPoint();
+                const { container } = render(<PitchBendLane {...defaultProps} />);
+                const point = getPoint(container);
+
+                fireEvent.pointerDown(point, { pointerId: 2, button: 0, clientX: 8, clientY: 76 });
+                fireEvent.pointerMove(point, { pointerId: 2, clientX: 88, clientY: 20 });
+                fireEvent.lostPointerCapture(point, { pointerId: 2 });
+
+                expect(pushUndoEntry).toHaveBeenCalledTimes(1);
+
+                vi.mocked(movePitchBend).mockClear();
+                fireEvent.pointerMove(point, { pointerId: 2, clientX: 208, clientY: 40 });
+                expect(movePitchBend).not.toHaveBeenCalled();
+            });
+
+            it('a drag survives the pressed point handle unmounting mid-gesture', () => {
+                seedPoint();
+                const view = render(<PitchBendLane {...defaultProps} />);
+                const point = getPoint(view.container);
+
+                fireEvent.pointerDown(point, { pointerId: 2, pointerType: 'touch', clientX: 8, clientY: 76 });
+                fireEvent.pointerMove(point, { pointerId: 2, clientX: 88, clientY: 20 });
+                expect(readPoint()?.value).toBe(draggedValue);
+
+                // Focusing another clip unmounts every handle belonging to this one.
+                view.rerender(<PitchBendLane {...defaultProps} clipId="clip-2" />);
+                expect(view.container.querySelector('[data-pb-point="true"]')).toBeNull();
+
+                // The release now lands on the lane itself; it must still commit the gesture.
+                fireEvent.pointerUp(screen.getByRole('group'), { pointerId: 2, clientX: 88, clientY: 20 });
+
+                expect(pushUndoEntry).toHaveBeenCalledWith(
+                    'Move pitch bend point',
+                    expect.any(Function),
+                    expect.any(Function)
+                );
+            });
+
+            it('a second finger releasing does not end the drag owned by the first', () => {
+                seedPoint();
+                const { container } = render(<PitchBendLane {...defaultProps} />);
+                const point = getPoint(container);
+
+                fireEvent.pointerDown(point, { pointerId: 1, pointerType: 'touch', clientX: 8, clientY: 76 });
+                fireEvent.pointerMove(point, { pointerId: 1, clientX: 88, clientY: 20 });
+                fireEvent.pointerUp(point, { pointerId: 2, pointerType: 'touch', clientX: 208, clientY: 40 });
+
+                expect(pushUndoEntry).not.toHaveBeenCalled();
+
+                fireEvent.pointerMove(point, { pointerId: 1, clientX: 48, clientY: 40 });
+                expect(readPoint()?.beat).toBe(beatFromX(48, 40));
+            });
+
+            it('a second finger moving does not steer the drag owned by the first', () => {
+                seedPoint();
+                const { container } = render(<PitchBendLane {...defaultProps} />);
+                const point = getPoint(container);
+
+                fireEvent.pointerDown(point, { pointerId: 1, pointerType: 'touch', clientX: 8, clientY: 76 });
+                fireEvent.pointerMove(point, { pointerId: 2, pointerType: 'touch', clientX: 88, clientY: 20 });
+
+                expect(readPoint()?.beat).toBe(0);
+            });
+
+            it('a second pointerdown while a drag is live does not steal the gesture', () => {
+                seedPoint();
+                const { container } = render(<PitchBendLane {...defaultProps} />);
+                const point = getPoint(container);
+
+                fireEvent.pointerDown(point, { pointerId: 1, pointerType: 'touch', clientX: 8, clientY: 76 });
+                fireEvent.pointerDown(point, { pointerId: 2, pointerType: 'touch', clientX: 208, clientY: 40 });
+
+                // Pointer 1 still owns the gesture, so its move is the one that lands.
+                fireEvent.pointerMove(point, { pointerId: 1, clientX: 88, clientY: 20 });
+                expect(readPoint()?.value).toBe(draggedValue);
+            });
+
+            it('moving over the lane without pressing writes nothing', () => {
+                seedPoint();
+                render(<PitchBendLane {...defaultProps} />);
+
+                fireEvent.pointerMove(screen.getByRole('group'), { pointerId: 1, clientX: 88, clientY: 20 });
+
+                expect(movePitchBend).not.toHaveBeenCalled();
+            });
+
+            it('unmounting mid-drag commits the undo entry rather than dropping it', () => {
+                seedPoint();
+                const view = render(<PitchBendLane {...defaultProps} />);
+                const point = getPoint(view.container);
+
+                fireEvent.pointerDown(point, { pointerId: 2, button: 0, clientX: 8, clientY: 76 });
+                fireEvent.pointerMove(point, { pointerId: 2, clientX: 88, clientY: 20 });
+                expect(pushUndoEntry).not.toHaveBeenCalled();
+
+                view.unmount();
+
+                expect(pushUndoEntry).toHaveBeenCalledWith(
+                    'Move pitch bend point',
+                    expect.any(Function),
+                    expect.any(Function)
+                );
+            });
+
+            it('commits the drag even when releasing capture throws', () => {
+                seedPoint();
+                const { container } = render(<PitchBendLane {...defaultProps} />);
+                const point = getPoint(container);
+
+                fireEvent.pointerDown(point, { pointerId: 2, button: 0, clientX: 8, clientY: 76 });
+                fireEvent.pointerMove(point, { pointerId: 2, clientX: 88, clientY: 20 });
+
+                // Browsers throw InvalidPointerId when capture was already dropped (e.g. on cancel).
+                vi.spyOn(point, 'releasePointerCapture').mockImplementation(() => {
+                    throw new DOMException('InvalidPointerId', 'NotFoundError');
+                });
+                fireEvent.pointerCancel(point, { pointerId: 2 });
+
+                expect(pushUndoEntry).toHaveBeenCalledWith(
+                    'Move pitch bend point',
+                    expect.any(Function),
+                    expect.any(Function)
+                );
+            });
         });
     });
 
