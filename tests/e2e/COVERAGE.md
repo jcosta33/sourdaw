@@ -669,9 +669,15 @@ Re-measured after 12 additional PRs since threshold raise #2 (PR #1198):
 - **PR #1275**: SpectralWaterfall — aria-label, className passthrough, idle render, multi-frame — 4 tests.
 - **PR #1276**: SpectrumAnalyzer — canvas size, default props, crossover overlay with bandCount gate — 4 tests.
 
-**Campaign total to date: 174 PRs, ~2003 assertions. All hardest-tier zero-coverage files
-now attempted. All component specs systematically deepened: GrHistory, CrustSatCurve,
-WaveshaperEditor, BezierLfoEditor, CrossoverDisplay, SignalFlowDiagram, HumanizePanel,
-MicBlendSlider, SampleRow, ControlHeader, ShortcutCheatSheet, InstrumentBottomPanel,
-StepSequencer, PadGrid, GlutenCurve, PerNoteEditor, IrBrowser, SpectralBinEditor,
-LoudnessHistory, SpectralWaterfall, SpectrumAnalyzer.**
+### Threshold Raise #4 (PR #1277)
+
+Re-measured after additional PRs since threshold raise #3 (PR #1231). Lines crossed 90% for the first time!
+
+| Metric | Old Threshold | Actual (#1231) | Actual (now) | New Threshold |
+|--------|-------------|----------------|--------------|---------------|
+| Lines | 89 | 89.94% | **90.03%** | 90 |
+| Statements | 86 | 86.69% | **86.84%** | 87 |
+| Branches | 75 | 75.74% | **76.02%** | 76 |
+| Functions | 87 | 87.66% | **87.83%** | 88 |
+
+**Campaign total to date: 174 PRs, ~2003 assertions. Lines coverage crossed 90%.**
