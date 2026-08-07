@@ -688,5 +688,11 @@ Re-measured after additional PRs since threshold raise #3 (PR #1231). Lines cros
 - **PR #1281**: BuiltinEffectDescriptors — 19 effects validated, unique ids, params, categories — 8 tests.
 - **PR #1282**: BuiltinInstrumentDescriptors + COVERAGE.md update — 8 tests.
 - **PR #1283**: expandedPresets — 60 presets, unique ids, trackKind, device validation — 10 tests.
+- **PR #1285**: faustInstrumentPresets + COVERAGE.md — 7 tests.
+- **PR #1286**: transactionalPersistence — IDB test fixture, 14 tests.
+- **PR #1288**: GenerationAndView tools — 218 LOC tool schema registry — 9 tests.
+- **PR #1290**: XYMorphPad — drag transform, clamp, corner labels — 4 tests.
+- **PR #1291**: ModulationDock — source labels, count badge, amount formatting — 5 tests.
+- **PR #1292**: WaveformDisplay — canvas attrs, cursor position callback — 7 tests.
 
-**Campaign total to date: 181 PRs, ~2067 assertions. Lines coverage crossed 90%.**
+**Campaign total to date: 185 PRs, ~2099 assertions. Lines coverage at 90.04%.**
