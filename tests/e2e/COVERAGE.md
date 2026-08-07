@@ -694,5 +694,7 @@ Re-measured after additional PRs since threshold raise #3 (PR #1231). Lines cros
 - **PR #1290**: XYMorphPad — drag transform, clamp, corner labels — 4 tests.
 - **PR #1291**: ModulationDock — source labels, count badge, amount formatting — 5 tests.
 - **PR #1292**: WaveformDisplay — canvas attrs, cursor position callback — 7 tests.
+- **PR #1293**: MobileGate — branding text, full message, Discord CTA button — 3 tests.
+- **PR #1294**: DecayEqOverlay — canvas size, pointer-events, drag onChange with multiplier clamp — 5 tests.
 
-**Campaign total to date: 185 PRs, ~2099 assertions. Lines coverage at 90.04%.**
+**Campaign total to date: 188 PRs, ~2112 assertions. Lines coverage at 90.04%.**
