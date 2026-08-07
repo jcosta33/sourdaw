@@ -4,7 +4,6 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { SpectralWaterfall } from '../SpectralWaterfall';
 
 const DISPLAY_COLS = 176;
-const HISTORY_FRAMES = 128;
 
 type RecordingCtx = {
     drawImage: ReturnType<typeof vi.fn>;
@@ -14,7 +13,6 @@ type RecordingCtx = {
     imageSmoothingEnabled: boolean;
 };
 
-/** Minimal recording 2D context: tracks the scroll self-blit and row writes. */
 function makeRecordingCtx(): RecordingCtx {
     return {
         drawImage: vi.fn(),
@@ -25,20 +23,16 @@ function makeRecordingCtx(): RecordingCtx {
     };
 }
 
-/** A fake analyser that emits a non-trivial frame. */
 function makeAnalyser(): AnalyserNode {
     return {
         fftSize: 512,
         frequencyBinCount: 256,
         getFloatFrequencyData: (data: Float32Array): void => {
-            // -20 dB across the spectrum -> normalizes to a visible magnitude.
             data.fill(-20);
         },
     } as unknown as AnalyserNode;
 }
 
-/** An analyser whose magnitude ramps with the bin index, so the column→bin
- *  mapping (which is sample-rate-dependent) is observable in the painted row. */
 function makeRampAnalyser(): AnalyserNode {
     return {
         fftSize: 512,
@@ -95,27 +89,16 @@ describe('SpectralWaterfall', () => {
 
     it('scrolls the offscreen buffer by one row and writes a single new row per frame', () => {
         render(<SpectralWaterfall analyser={makeAnalyser()} />);
-
-        // The offscreen 2D context is the second created (visible canvas first
-        // via React ref, offscreen second inside the effect).
         const offscreen = ctxs[1]!;
         expect(offscreen).toBeDefined();
-
-        tick(); // run one render frame
-
-        // A self-blit shifted down by exactly one pixel performs the scroll.
+        tick();
         const scrollBlit = offscreen.drawImage.mock.calls.find((c) => c[1] === 0 && c[2] === 1);
         expect(scrollBlit).toBeDefined();
-
-        // Only the newest row is painted: putImageData receives a 1-row image,
-        // never the full HISTORY_FRAMES-tall buffer.
         expect(offscreen.putImageData).toHaveBeenCalled();
         for (const call of offscreen.putImageData.mock.calls) {
             const img = call[0] as ImageData;
             expect(img.height).toBe(1);
             expect(img.width).toBe(DISPLAY_COLS);
-            // The whole-buffer rebuild would have been HISTORY_FRAMES tall.
-            expect(img.height).not.toBe(HISTORY_FRAMES);
         }
     });
 
@@ -123,15 +106,11 @@ describe('SpectralWaterfall', () => {
         render(<SpectralWaterfall analyser={null} />);
         const offscreen = ctxs[1]!;
         tick();
-        // With no ingested frame there is nothing to scroll or write.
         const scrollBlit = offscreen.drawImage.mock.calls.find((c) => c[1] === 0 && c[2] === 1);
         expect(scrollBlit).toBeUndefined();
         expect(offscreen.putImageData).not.toHaveBeenCalled();
     });
 
-    // #10: the column→bin LUT is sample-rate-dependent. Two contexts running at
-    // different rates must paint different rows from the same ramped spectrum;
-    // before the fix the rate was hardcoded to 48 kHz and both were identical.
     const paintRowAt = (rate: number): Uint8ClampedArray => {
         render(<SpectralWaterfall analyser={makeRampAnalyser()} sampleRate={rate} />);
         const offscreen = ctxs[1]!;
@@ -146,9 +125,88 @@ describe('SpectralWaterfall', () => {
         ctxs = [];
         rafCallbacks = [];
         const rowAt44k = Uint8ClampedArray.from(paintRowAt(44100));
-
         expect(rowAt48k.length).toBe(rowAt44k.length);
         const differs = rowAt48k.some((value, index) => value !== rowAt44k[index]);
         expect(differs).toBe(true);
+    });
+});
+
+describe('SpectralWaterfall — canvas attributes', () => {
+    beforeEach(() => {
+        vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockImplementation(((id: string) => {
+            if (id === '2d') {
+                return makeRecordingCtx() as unknown as CanvasRenderingContext2D;
+            }
+            return null;
+        }) as typeof HTMLCanvasElement.prototype.getContext);
+        vi.spyOn(window, 'requestAnimationFrame').mockImplementation(() => 1);
+        vi.spyOn(window, 'cancelAnimationFrame').mockImplementation(() => {});
+    });
+
+    afterEach(() => {
+        vi.restoreAllMocks();
+    });
+
+    it('renders canvas with aria-label', () => {
+        const { container } = render(<SpectralWaterfall analyser={null} />);
+        const canvas = container.querySelector('canvas');
+        expect(canvas?.getAttribute('aria-label')).toBe('Grand Boule spectral waterfall');
+    });
+
+    it('applies the className prop to the container div', () => {
+        const { container } = render(<SpectralWaterfall analyser={null} className="custom-waterfall-class" />);
+        const wrapper = container.querySelector('div');
+        expect(wrapper?.getAttribute('class')).toContain('custom-waterfall-class');
+    });
+
+    it('renders without an analyser (idle state)', () => {
+        const { container } = render(<SpectralWaterfall analyser={null} />);
+        // Canvas exists but no data is drawn — the component must not crash
+        expect(container.querySelector('canvas')).toBeTruthy();
+    });
+});
+
+describe('SpectralWaterfall — multiple frames', () => {
+    let localCtxs: RecordingCtx[];
+    let localRafs: FrameRequestCallback[];
+
+    beforeEach(() => {
+        localCtxs = [];
+        vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockImplementation(((id: string) => {
+            if (id === '2d') {
+                const ctx = makeRecordingCtx();
+                localCtxs.push(ctx);
+                return ctx as unknown as CanvasRenderingContext2D;
+            }
+            return null;
+        }) as typeof HTMLCanvasElement.prototype.getContext);
+
+        localRafs = [];
+        vi.spyOn(window, 'requestAnimationFrame').mockImplementation((cb: FrameRequestCallback) => {
+            localRafs.push(cb);
+            return localRafs.length;
+        });
+        vi.spyOn(window, 'cancelAnimationFrame').mockImplementation(() => {});
+    });
+
+    afterEach(() => {
+        vi.restoreAllMocks();
+    });
+
+    it('ingests multiple frames advancing the history ring', () => {
+        render(<SpectralWaterfall analyser={makeAnalyser()} />);
+        const offscreen = localCtxs[1]!;
+        act(() => {
+            for (const cb of localRafs) {
+                cb(performance.now());
+            }
+        });
+        localRafs = [];
+        act(() => {
+            for (const cb of localRafs) {
+                cb(performance.now());
+            }
+        });
+        expect(offscreen.putImageData.mock.calls.length).toBeGreaterThanOrEqual(2);
     });
 });
