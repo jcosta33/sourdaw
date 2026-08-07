@@ -1,0 +1,38 @@
+src/modules/TimelineEditor/presentations/views/AutomationLane/__tests__/NotePropertyLane.spec.tsx
+  s_14f2bbc9f385dd::t_51ffc8608991b6 243-244,250,262-321,347-486,507-522,548-564
+  s_14f2bbc9f385dd::t_132285100b771d 322-346
+  s_14f2bbc9f385dd::t_9b3ad646e6eff5 487-506
+  s_14f2bbc9f385dd::t_62cc4aaf63c821 523-547
+  s_14f2bbc9f385dd::t_aa10d30f6b9d7a 157,160,163,175,177,179,183,196,198,205
+  s_14f2bbc9f385dd::t_86d91b6f2f8867 565
+src/modules/TimelineEditor/presentations/views/AutomationLane/NotePropertyLane.tsx
+  s_14f2bbc9f385dd::t_6f249d71debb46 438
+  s_14f2bbc9f385dd::t_2cbab4717026b8 508-516
+  s_14f2bbc9f385dd::t_7b1cbc2e0ca7fc 415-417,419
+  s_14f2bbc9f385dd::t_eb54e7f2253d82 531,534-537,540,543-546
+  s_14f2bbc9f385dd::t_8c7ebcf525a503 238-239
+  s_14f2bbc9f385dd::t_3de2c67443cf1f 289-290,293
+  s_14f2bbc9f385dd::t_fdfd1f3fac3293 483-488
+  s_14f2bbc9f385dd::t_5806b4b0c2284a 322-327
+  s_14f2bbc9f385dd::t_9732451defa7e7 80-144
+  s_14f2bbc9f385dd::t_042325ab5c2f68 31-47
+  s_14f2bbc9f385dd::t_141cb94bef342c 1
+  s_14f2bbc9f385dd::t_51d43597dfcb12 343,345-346,354
+  s_14f2bbc9f385dd::t_19f29959678c7f 383-388,392
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "ac81c829fe1f6450cfb0ab73f8dd3c07d8d33985",
+  "prompts": {},
+  "sessions": {
+    "s_14f2bbc9f385dd": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f9a61a1d-66b3-4146-938d-a04f45f4b060",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
