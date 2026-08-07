@@ -127,6 +127,67 @@ describe('LevelMeter', () => {
             expect(fillRectSpy).not.toHaveBeenCalled();
         });
 
+        it('announces "unavailable" instead of a level a screen reader would read as silence', () => {
+            // Driven live first, so the assertion cannot be satisfied by the
+            // pre-tick markup — the attribute has to be moved off a real reading.
+            mocks.getMasterPeakLevel.mockReturnValue(0.5);
+            const { container } = renderWithTooltip(<LevelMeter trackId={null} />);
+            mocks.scheduledTick!(0, 16);
+            const meter = container.querySelector('[role="meter"]');
+            expect(meter).not.toBeNull();
+            expect(meter!.getAttribute('aria-valuetext')).toBe('-6.0 dB');
+
+            mocks.getMasterPeakLevel.mockReturnValue(null);
+            mocks.scheduledTick!(16, 16);
+
+            // aria-valuetext is what assistive tech announces when present, so the
+            // blank canvas and the spoken value now agree.
+            expect(meter!.getAttribute('aria-valuetext')).toBe('unavailable');
+        });
+
+        it('announces the live level again once the tap returns', () => {
+            mocks.getMasterPeakLevel.mockReturnValue(null);
+            const { container } = renderWithTooltip(<LevelMeter trackId={null} />);
+            mocks.scheduledTick!(0, 16);
+            const meter = container.querySelector('[role="meter"]');
+            expect(meter!.getAttribute('aria-valuetext')).toBe('unavailable');
+
+            // 0.5 amplitude → 20*log10(0.5) ≈ -6.0 dB.
+            mocks.getMasterPeakLevel.mockReturnValue(0.5);
+            mocks.scheduledTick!(16, 16);
+
+            expect(meter!.getAttribute('aria-valuetext')).toBe('-6.0 dB');
+            expect(meter!.getAttribute('aria-valuenow')).toBe('-6.0');
+        });
+
+        it('drops the VU charge so no partial RMS fill survives the outage', () => {
+            const canvasContext = document.createElement('canvas').getContext('2d');
+            expect(canvasContext).not.toBeNull();
+            const fillRectSpy = vi.spyOn(canvasContext!, 'fillRect');
+
+            // Charge the 300 ms VU ballistics at full scale.
+            mocks.getMasterPeakLevel.mockReturnValue(1);
+            renderWithTooltip(<LevelMeter trackId={null} />);
+            mocks.scheduledTick!(0, 16);
+
+            mocks.getMasterPeakLevel.mockReturnValue(null);
+            mocks.scheduledTick!(16, 16);
+            fillRectSpy.mockClear();
+
+            // First recovered frame is silent. A retained VU charge (~0.049 linear,
+            // ≈ -26 dB, ≈ 56% of the meter) would paint a partial RMS band here.
+            mocks.getMasterPeakLevel.mockReturnValue(0);
+            mocks.scheduledTick!(32, 16);
+
+            // Legitimate heights on a silent frame: 100 (the bed), 1 (LED gaps),
+            // 0 (the zero-height RMS and peak rects). Anything between is a fill.
+            const partialFills = fillRectSpy.mock.calls.filter((call) => {
+                const rectHeight = call[3];
+                return rectHeight > 1 && rectHeight < 100;
+            });
+            expect(partialFills).toEqual([]);
+        });
+
         it('drops the held peak so a stale hold line does not survive the outage', () => {
             const canvasContext = document.createElement('canvas').getContext('2d');
             expect(canvasContext).not.toBeNull();

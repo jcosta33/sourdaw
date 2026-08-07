@@ -33,7 +33,14 @@ export const MixerLevelReadout = ({
 }: MixerLevelReadoutProps): ReactElement => {
     const id = crypto.randomUUID();
     const peakTextRef = useRef<HTMLDivElement>(null);
-    const maxPeakRef = useRef<number>(MIN_DB);
+    /**
+     * Peak-hold latch. The readout is only written when a sample beats it, so the
+     * floor must sit *below* every value `linearToDb` can return — including
+     * `MIN_DB` itself, which is what silence maps to. Parking it at `MIN_DB`
+     * makes `-60 > -60` false and freezes whatever text was there through every
+     * silent frame, which is how a live but idle bus kept reading "n/a".
+     */
+    const maxPeakRef = useRef<number>(Number.NEGATIVE_INFINITY);
 
     useEffect(() => {
         const tick = () => {
@@ -43,7 +50,12 @@ export const MixerLevelReadout = ({
                 // bus that was measured and found silent; printing it here claims
                 // a measurement nobody took, and any peak held from before the
                 // tap went away is stale. Say the level is unavailable instead.
-                maxPeakRef.current = MIN_DB;
+                //
+                // The floor is -Infinity, not MIN_DB: silence maps to MIN_DB, so
+                // a MIN_DB floor loses the `db > max` test on the first recovered
+                // frame of an idle bus and leaves "n/a" on screen over a meter
+                // that is up and measuring correctly.
+                maxPeakRef.current = Number.NEGATIVE_INFINITY;
                 if (peakTextRef.current && peakTextRef.current.textContent !== 'n/a') {
                     peakTextRef.current.textContent = 'n/a';
                 }
@@ -74,6 +86,10 @@ export const MixerLevelReadout = ({
     }, [trackId, id]);
 
     const handleReset = () => {
+        // MIN_DB here, not -Infinity, and the "-∞" write below is not a claim:
+        // reset paints the floor itself, and the very next tick either overwrites
+        // it with a louder reading or with "n/a". The MIN_DB latch is consistent
+        // with the text it just wrote — a silent bus should keep showing "-∞".
         maxPeakRef.current = MIN_DB;
         if (peakTextRef.current) {
             peakTextRef.current.textContent = '-∞';
@@ -91,7 +107,9 @@ export const MixerLevelReadout = ({
                     className="text-[9px] font-mono cursor-pointer text-muted-foreground/80 hover:text-text-primary transition-colors h-3 flex items-center justify-center"
                     title="Click to reset peak"
                 >
-                    -∞
+                    {/* Pre-tick placeholder. Nothing has been measured yet, so "-∞"
+                        would claim a silent bus. The first tick overwrites this. */}
+                    n/a
                 </div>
                 <div className="flex items-end justify-center h-full">
                     <LevelMeter trackId={trackId} width="w-1.5" />

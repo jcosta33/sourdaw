@@ -451,17 +451,23 @@ class AudioEngineImpl implements AudioEngine {
      * stacking a second tap.
      */
     private wireMasterMeter(): void {
-        if (this.fallbackMode || typeof AudioWorkletNode === 'undefined' || !hasSharedArrayBuffer()) {
-            // No live graph, no worklet support, or no SAB: there is no tap to
-            // read. Clear the buffer so getMasterPeakLevel reports `null`
-            // ("unavailable") rather than a fabricated 0 — which the status bar
-            // renders as "-∞ dB", indistinguishable from a silent mix while audio
-            // is playing (ADR 0012: a downgrade must never be silent).
+        // `this.fallbackMode` is deliberately *not* tested here. initialize()
+        // returns early on fallback, before loadWorklets() — the sole caller of
+        // this method — so the disjunct could only ever evaluate false, and a
+        // branch with one reachable verdict is not a guard. Fallback mode reaches
+        // the same verdict by construction instead: setupNoopContext never assigns
+        // masterMeterBuffer, so it stays null and getMasterPeakLevel reports
+        // unavailable. That path is guarded separately (fallbackMode spec, M9).
+        if (typeof AudioWorkletNode === 'undefined' || !hasSharedArrayBuffer()) {
+            // No worklet support or no SAB: there is no tap to read. Clear the
+            // buffer so getMasterPeakLevel reports `null` ("unavailable") rather
+            // than a fabricated 0 — which the status bar renders as "-∞ dB",
+            // indistinguishable from a silent mix while audio is playing
+            // (ADR 0012: a downgrade must never be silent).
             this.masterMeterBuffer = null;
             logger.warn(
                 '[audio-engine] master meter not wired ' +
-                    `(fallbackMode=${String(this.fallbackMode)}, ` +
-                    `AudioWorkletNode=${String(typeof AudioWorkletNode !== 'undefined')}, ` +
+                    `(AudioWorkletNode=${String(typeof AudioWorkletNode !== 'undefined')}, ` +
                     `SharedArrayBuffer=${String(hasSharedArrayBuffer())}) — ` +
                     'the master level readout reports unavailable until it is.'
             );

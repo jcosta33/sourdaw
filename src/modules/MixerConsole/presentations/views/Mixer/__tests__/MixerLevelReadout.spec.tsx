@@ -56,7 +56,7 @@ describe('MixerLevelReadout', () => {
         expect(screen.getByRole('button', { name: 'Gain' })).toBeInTheDocument();
         expect(screen.getByText('0.0 dB')).toBeInTheDocument();
         expect(screen.getByTestId('level-meter')).toHaveAttribute('data-track-id', 'track-1');
-        expect(getPeakReadout()).toHaveTextContent('-∞');
+        expect(getPeakReadout()).toHaveTextContent('n/a');
     });
 
     it('registers a peak tick on mount and unregisters the same id on unmount', () => {
@@ -126,12 +126,51 @@ describe('MixerLevelReadout', () => {
 
         expect(getPeakReadout()).toHaveTextContent('n/a');
 
-        // The hold is dropped with it: when the tap returns, a quieter peak must
-        // be shown rather than suppressed by the 0.0 dB held across the outage.
-        mocks.getMasterPeakLevel.mockReturnValue(0.5);
+        // The hold is dropped with it. Recovery is driven at genuine silence
+        // because that is the case the -60 dB floor hides: `linearToDb(0)` is
+        // MIN_DB, so a hold parked at MIN_DB never loses the `db > max`
+        // comparison and the readout would stay stuck on "n/a" over a live,
+        // correctly-measuring, idle master bus.
+        mocks.getMasterPeakLevel.mockReturnValue(0);
         mocks.scheduledTick?.(32, 16);
 
-        expect(getPeakReadout()).toHaveTextContent('-6.0');
+        expect(getPeakReadout()).toHaveTextContent('-∞');
+        expect(getPeakReadout()).not.toHaveTextContent('n/a');
+    });
+
+    it('leaves "n/a" behind on the first measured frame, even when that frame is silent', () => {
+        // The every-session path: StatusBar and the mixer tick from mount, while
+        // initializeAudioEngine() is still awaiting its worklet modules. At least
+        // one null tick always lands before the tap exists, so recovery from
+        // "n/a" at digital silence is the common case, not an edge case.
+        mocks.getMasterPeakLevel.mockReturnValue(null);
+        render(<MixerLevelReadout trackId={null} control={null} value={null} />);
+        mocks.scheduledTick?.(0, 16);
+        expect(getPeakReadout()).toHaveTextContent('n/a');
+
+        mocks.getMasterPeakLevel.mockReturnValue(0);
+        mocks.scheduledTick?.(16, 16);
+
+        expect(getPeakReadout()).toHaveTextContent('-∞');
+    });
+
+    it('reads "n/a" before the first tick, not a dB value', () => {
+        // Pre-tick markup, same defect as the StatusBar placeholder: nothing has
+        // measured anything yet, so "-∞" would claim a silent bus.
+        render(<MixerLevelReadout trackId="track-1" control={null} value={null} />);
+
+        expect(getPeakReadout()).toHaveTextContent('n/a');
+    });
+
+    it('writes a real reading on the first tick even when the track is silent', () => {
+        // Guards the mount-time latch: the hold must start below MIN_DB or the
+        // first silent frame never overwrites the "n/a" placeholder.
+        mocks.getTrackPeakLevel.mockReturnValue(0);
+        render(<MixerLevelReadout trackId="track-1" control={null} value={null} />);
+
+        mocks.scheduledTick?.(0, 16);
+
+        expect(getPeakReadout()).toHaveTextContent('-∞');
     });
 
     it('flags a peak above 0 dB as an over, and clicking resets it', () => {
