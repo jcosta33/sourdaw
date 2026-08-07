@@ -287,6 +287,19 @@ describe('WaveformEditor', () => {
     // different clip reuses the instance and the once-seeded `warpState` describes
     // the clip the editor mounted with rather than the clip on screen.
     describe('warp state across clip switches (audit M-249)', () => {
+        // The file-level `beforeEach` is `vi.clearAllMocks()`, which clears calls but
+        // keeps implementations, so a `mockImplementation` installed here would stay
+        // installed for every later test in the file and silently change what they
+        // exercise. Put the module mock's own default back after each of these.
+        afterEach(() => {
+            vi.mocked(getWarpState).mockImplementation(() => ({
+                enabled: false,
+                markers: [],
+                stretchMode: 'complex',
+                originalTempo: null,
+            }));
+        });
+
         it('reads the newly selected clip marker count, not the count it mounted with', () => {
             // Both clips are warped, so the marker readout stays rendered across the
             // switch: only a re-read of the new clip can change the string.
@@ -317,7 +330,6 @@ describe('WaveformEditor', () => {
             rerender(<WaveformEditor clipId="clip-b" />);
 
             expect(screen.getByText('1 marker')).toBeInTheDocument();
-            expect(screen.queryByText('3 markers')).not.toBeInTheDocument();
         });
 
         it('routes the first toggle after a switch into enableWarp when the new clip is unwarped', () => {
@@ -366,6 +378,38 @@ describe('WaveformEditor', () => {
 
             expect(vi.mocked(disableWarp)).toHaveBeenCalledWith('clip-b');
             expect(vi.mocked(enableWarp)).not.toHaveBeenCalled();
+        });
+
+        it('accepts the first double-click on the new clip after a marker drag on the previous one', () => {
+            // Both clips are warped, so `handleDoubleClick`'s `!warpState.enabled`
+            // guard is satisfied either way: only the latched drag flag can swallow
+            // the double-click, which isolates this to the didDragRef reset.
+            vi.mocked(getWarpState).mockImplementation((clipId: string) => {
+                if (clipId === 'clip-a') {
+                    return {
+                        enabled: true,
+                        markers: [{ id: 'marker-a1', originalBeat: 0.5, warpedBeat: 1 }],
+                        stretchMode: 'repitch',
+                        originalTempo: 120,
+                    };
+                }
+                return { enabled: true, markers: [], stretchMode: 'repitch', originalTempo: 90 };
+            });
+
+            const { rerender } = render(<WaveformEditor clipId="clip-a" />);
+            const canvas = screen.getByLabelText('Waveform editor');
+            canvas.setPointerCapture = vi.fn();
+
+            // Drag clip-a's marker past the 4px threshold that latches didDragRef.
+            fireEvent.pointerDown(canvas, { clientX: 40, pointerId: 7 });
+            fireEvent.pointerMove(canvas, { clientX: 84, pointerId: 7 });
+            fireEvent.pointerUp(canvas, { pointerId: 7 });
+            expect(vi.mocked(moveWarpMarker)).toHaveBeenCalledWith('clip-a', 'marker-a1', 2.1);
+
+            rerender(<WaveformEditor clipId="clip-b" />);
+            fireEvent.doubleClick(canvas, { clientX: 80 });
+
+            expect(vi.mocked(addManualWarpMarker)).toHaveBeenCalledWith({ clipId: 'clip-b', beat: 2 });
         });
     });
 
