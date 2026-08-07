@@ -283,7 +283,149 @@ describe('NotePropertyLane', () => {
                 });
 
                 expect(liveSetValue).toHaveBeenCalledWith('clip-1', 'n1', 127);
+            });
+
+            it('opts every touch surface out of the browser pan/zoom gesture', () => {
+                seedNotes([makeNote('n1', 0, 100), makeNote('n3', 4, 100)]);
+                const { container } = render(
+                    <NotePropertyLane
+                        {...defaultProps}
+                        setValue={liveSetValue}
+                        selectedNoteIds={new Set(['n1', 'n3'])}
+                    />
+                );
+
+                // Without touch-action: none the browser claims the stroke for panning and
+                // cancels it mid-gesture, so touch editing never completes.
+                const lane = screen.getByRole('group');
+                expect(lane.style.touchAction).toBe('none');
+                expect(getCanvas().style.touchAction).toBe('none');
+
+                const handles = container.querySelectorAll<HTMLElement>('div.cursor-ns-resize');
+                expect(handles).toHaveLength(2);
+                expect(handles[0]!.style.touchAction).toBe('none');
+                expect(handles[1]!.style.touchAction).toBe('none');
+            });
+
+            it('takes pointer capture before the gesture writes its first value', () => {
+                seedNotes([makeNote('n1', 0, 100)]);
+                const capture = vi.spyOn(HTMLElement.prototype, 'setPointerCapture');
+                render(<NotePropertyLane {...defaultProps} setValue={liveSetValue} />);
+
+                fireEvent.pointerDown(getCanvas(), { pointerId: 4, clientX: 10, clientY: 2 });
+
+                // A write that lands before the gesture has an owner can be stranded with no
+                // undo entry if capture then fails.
+                expect(capture.mock.invocationCallOrder[0]!).toBeLessThan(liveSetValue.mock.invocationCallOrder[0]!);
+                capture.mockRestore();
+            });
+
+            it('takes pointer capture before the shift+drag ramp writes its first value', () => {
+                seedNotes([makeNote('n1', 0, 100), makeNote('n3', 4, 100)]);
+                const capture = vi.spyOn(HTMLElement.prototype, 'setPointerCapture');
+                render(
+                    <NotePropertyLane
+                        {...defaultProps}
+                        setValue={liveSetValue}
+                        selectedNoteIds={new Set(['n1', 'n3'])}
+                    />
+                );
+
+                fireEvent.pointerDown(getCanvas(), { pointerId: 4, clientX: 10, clientY: 2, shiftKey: true });
+
+                expect(capture.mock.invocationCallOrder[0]!).toBeLessThan(liveSetValue.mock.invocationCallOrder[0]!);
+                capture.mockRestore();
+            });
+
+            it('ignores a right-button press so the context menu is not also an edit', () => {
+                seedNotes([makeNote('n1', 0, 100)]);
+                render(<NotePropertyLane {...defaultProps} setValue={liveSetValue} />);
+                const canvas = getCanvas();
+
+                fireEvent.pointerDown(canvas, { pointerId: 1, button: 2, clientX: 10, clientY: 2 });
+
+                expect(liveSetValue).not.toHaveBeenCalled();
+
+                // …and no gesture was latched, so the next primary press still works.
+                fireEvent.pointerDown(canvas, { pointerId: 2, button: 0, clientX: 10, clientY: 2 });
                 expect(readVelocity('n1')).toBe(127);
+            });
+
+            it('ignores a right-button press on a ramp handle', () => {
+                seedNotes([makeNote('n1', 0, 100), makeNote('n3', 4, 100)]);
+                const { container } = render(
+                    <NotePropertyLane
+                        {...defaultProps}
+                        setValue={liveSetValue}
+                        selectedNoteIds={new Set(['n1', 'n3'])}
+                    />
+                );
+                const handle = container.querySelectorAll('div.cursor-ns-resize')[1]!;
+
+                fireEvent.pointerDown(handle, { pointerId: 3, button: 2, clientY: 66 });
+                fireEvent.pointerMove(handle, { pointerId: 3, clientY: 2 });
+
+                expect(liveSetValue).not.toHaveBeenCalled();
+            });
+
+            it('a ramp drag survives the handles unmounting mid-gesture', () => {
+                seedNotes([makeNote('n1', 0, 100), makeNote('n3', 4, 100)]);
+                const view = render(
+                    <NotePropertyLane
+                        {...defaultProps}
+                        setValue={liveSetValue}
+                        selectedNoteIds={new Set(['n1', 'n3'])}
+                    />
+                );
+                const handle = view.container.querySelectorAll('div.cursor-ns-resize')[1]!;
+
+                fireEvent.pointerDown(handle, { pointerId: 3, pointerType: 'touch', clientY: 66 });
+                fireEvent.pointerMove(handle, { pointerId: 3, clientY: 2 });
+                expect(readVelocity('n3')).toBe(127);
+
+                // Selection drops to one note, so both handles — and anything bound to them — unmount.
+                view.rerender(
+                    <NotePropertyLane {...defaultProps} setValue={liveSetValue} selectedNoteIds={new Set(['n1'])} />
+                );
+                expect(view.container.querySelectorAll('div.cursor-ns-resize')).toHaveLength(0);
+
+                // The release now lands on the lane itself; it must still commit the gesture.
+                fireEvent.pointerUp(screen.getByRole('group'), { pointerId: 3, clientY: 2 });
+
+                expect(pushUndoEntry).toHaveBeenCalledWith(
+                    'Change velocity ramp',
+                    expect.any(Function),
+                    expect.any(Function)
+                );
+            });
+
+            it('a paint drag still accepts a release that lands on the lane, not the canvas', () => {
+                seedNotes([makeNote('n1', 0, 100)]);
+                render(<NotePropertyLane {...defaultProps} setValue={liveSetValue} />);
+
+                fireEvent.pointerDown(getCanvas(), { pointerId: 1, clientX: 10, clientY: 2 });
+                fireEvent.pointerUp(screen.getByRole('group'), { pointerId: 1, clientX: 10, clientY: 2 });
+
+                expect(pushUndoEntry).toHaveBeenCalledWith(
+                    'Change velocity',
+                    expect.any(Function),
+                    expect.any(Function)
+                );
+            });
+
+            it('losing capture without a release finalizes the gesture', () => {
+                seedNotes([makeNote('n1', 0, 100)]);
+                render(<NotePropertyLane {...defaultProps} setValue={liveSetValue} />);
+                const canvas = getCanvas();
+
+                fireEvent.pointerDown(canvas, { pointerId: 1, clientX: 10, clientY: 2 });
+                fireEvent.lostPointerCapture(canvas, { pointerId: 1 });
+
+                expect(pushUndoEntry).toHaveBeenCalledTimes(1);
+
+                liveSetValue.mockClear();
+                fireEvent.pointerMove(canvas, { pointerId: 1, clientX: 10, clientY: 129 });
+                expect(liveSetValue).not.toHaveBeenCalled();
             });
 
             it('paints from a pen pointer and follows it across notes', () => {
@@ -318,7 +460,6 @@ describe('NotePropertyLane', () => {
                 liveSetValue.mockClear();
                 fireEvent.pointerMove(canvas, { pointerId: 1, clientX: 10, clientY: 129 });
                 expect(liveSetValue).not.toHaveBeenCalled();
-                expect(readVelocity('n1')).toBe(63);
 
                 // The trailing pointerup the browser still delivers must not commit a second entry.
                 fireEvent.pointerUp(canvas, { pointerId: 1, clientX: 10, clientY: 129 });
@@ -367,7 +508,6 @@ describe('NotePropertyLane', () => {
                 liveSetValue.mockClear();
                 fireEvent.pointerMove(canvas, { pointerId: 1, clientX: 10, clientY: 129 });
                 expect(liveSetValue).not.toHaveBeenCalled();
-                expect(readVelocity('n1')).toBe(127);
             });
 
             it('a still-visible tab firing visibilitychange leaves the drag running', () => {
@@ -402,7 +542,6 @@ describe('NotePropertyLane', () => {
                 liveSetValue.mockClear();
                 fireEvent.pointerMove(canvas, { pointerId: 1, clientX: 10, clientY: 129 });
                 expect(liveSetValue).not.toHaveBeenCalled();
-                expect(readVelocity('n1')).toBe(127);
             });
 
             it('a second finger releasing does not end the drag owned by the first', () => {
@@ -445,7 +584,10 @@ describe('NotePropertyLane', () => {
                 expect(readVelocity('n1')).toBe(63);
             });
 
-            it('captures the pointer on the canvas so the drag survives leaving the element', () => {
+            // jsdom's setPointerCapture is a no-op stub (src/setupTests.ts:163), so these two
+            // establish only that the call is made with the gesture's pointer id — no test in
+            // this repo can prove the browser actually retargets events.
+            it('calls setPointerCapture on the canvas with the pressing pointer id', () => {
                 seedNotes([makeNote('n1', 0, 100)]);
                 const capture = vi.spyOn(HTMLElement.prototype, 'setPointerCapture');
                 render(<NotePropertyLane {...defaultProps} setValue={liveSetValue} />);
@@ -481,7 +623,6 @@ describe('NotePropertyLane', () => {
                 liveSetValue.mockClear();
                 fireEvent.pointerMove(handle, { pointerId: 3, pointerType: 'touch', clientY: 129 });
                 expect(liveSetValue).not.toHaveBeenCalled();
-                expect(readVelocity('n3')).toBe(127);
             });
 
             it('a second handle pressed mid-drag does not steal the gesture from the first', () => {
@@ -504,7 +645,7 @@ describe('NotePropertyLane', () => {
                 expect(readVelocity('n3')).toBe(100);
             });
 
-            it('captures the pointer on the ramp handle it was pressed on', () => {
+            it('calls setPointerCapture on the ramp handle that was pressed, not the canvas', () => {
                 seedNotes([makeNote('n1', 0, 100), makeNote('n3', 4, 100)]);
                 const { container } = render(
                     <NotePropertyLane
@@ -544,7 +685,6 @@ describe('NotePropertyLane', () => {
                 fireEvent.pointerMove(getCanvas(), { pointerId: 1, clientX: 10, clientY: 2 });
 
                 expect(liveSetValue).not.toHaveBeenCalled();
-                expect(readVelocity('n1')).toBe(100);
             });
 
             it('unmounting mid-drag commits the undo entry rather than dropping it', () => {

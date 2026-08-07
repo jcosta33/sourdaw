@@ -1,4 +1,4 @@
-import { type ReactElement, type PointerEvent, useRef, useLayoutEffect, useEffect } from 'react';
+import { type ReactElement, type PointerEvent, type RefObject, useRef, useLayoutEffect, useEffect } from 'react';
 
 import { useStore } from '#/infra/store/useStore';
 import { trackStore } from '#/modules/Arrangement/stores';
@@ -45,6 +45,24 @@ type LaneDragSession = {
     commit: () => void;
 };
 
+/**
+ * End the in-flight gesture exactly once: clear the session first so the `lostpointercapture`
+ * that Chromium fires immediately after the release cannot commit a second undo entry.
+ */
+const finalizeLaneDrag = (sessionRef: RefObject<LaneDragSession | null>): void => {
+    const session = sessionRef.current;
+    if (!session) {
+        return;
+    }
+    sessionRef.current = null;
+    try {
+        session.captureTarget.releasePointerCapture(session.pointerId);
+    } catch {
+        // The browser releases capture itself on pointercancel and on element removal.
+    }
+    session.commit();
+};
+
 type NotePropertyLaneProps = {
     clipId: string | null;
     trackId: string;
@@ -78,33 +96,14 @@ export const NotePropertyLane = ({
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const containerRef = useRef<HTMLDivElement>(null);
     const dragSessionRef = useRef<LaneDragSession | null>(null);
-    const finalizeDragRef = useRef<() => void>(() => {});
-
-    const finalizeDrag = (): void => {
-        const session = dragSessionRef.current;
-        if (!session) {
-            return;
-        }
-        dragSessionRef.current = null;
-        try {
-            session.captureTarget.releasePointerCapture(session.pointerId);
-        } catch {
-            // The browser releases capture itself on pointercancel and on element removal.
-        }
-        session.commit();
-    };
-
-    useLayoutEffect(() => {
-        finalizeDragRef.current = finalizeDrag;
-    });
 
     useEffect(() => {
         const handleWindowBlur = (): void => {
-            finalizeDragRef.current();
+            finalizeLaneDrag(dragSessionRef);
         };
         const handleVisibilityChange = (): void => {
             if (document.visibilityState === 'hidden') {
-                finalizeDragRef.current();
+                finalizeLaneDrag(dragSessionRef);
             }
         };
 
@@ -118,10 +117,14 @@ export const NotePropertyLane = ({
 
     useEffect(() => {
         return () => {
-            finalizeDragRef.current();
+            finalizeLaneDrag(dragSessionRef);
         };
     }, []);
 
+    /**
+     * Take capture *before* the gesture's first write. If capture throws, the drag has no owner —
+     * a value already written at that point would be stranded with no undo entry to commit it.
+     */
     const beginDrag = (session: LaneDragSession): void => {
         session.captureTarget.setPointerCapture(session.pointerId);
         dragSessionRef.current = session;
@@ -140,7 +143,7 @@ export const NotePropertyLane = ({
         if (!session || session.pointerId !== event.pointerId) {
             return;
         }
-        finalizeDrag();
+        finalizeLaneDrag(dragSessionRef);
     };
 
     const midiState = useStore<MidiLaneStoreState>(midiStore, {
@@ -236,7 +239,8 @@ export const NotePropertyLane = ({
     };
 
     const handleCanvasPointerDown = (event: PointerEvent<HTMLCanvasElement>): void => {
-        if (!clipId || dragSessionRef.current) {
+        // Primary contact only — the right button opens the piano roll's context menu.
+        if (!clipId || dragSessionRef.current || event.button !== 0) {
             return;
         }
         const canvas = canvasRef.current;
@@ -283,9 +287,6 @@ export const NotePropertyLane = ({
                 return Math.round((1 - Math.max(0, Math.min(1, (ry - 2) / (h - 4)))) * 127);
             };
 
-            // Apply initial ramp from anchor position
-            applyRamp(getEndVal(event.clientY));
-
             const onMove = ({ clientY }: LanePointerPosition): void => {
                 applyRamp(getEndVal(clientY));
             };
@@ -325,6 +326,8 @@ export const NotePropertyLane = ({
                 move: onMove,
                 commit: onCommit,
             });
+            // Apply initial ramp from anchor position — only once the gesture has an owner.
+            applyRamp(getEndVal(event.clientY));
             return;
         }
 
@@ -337,8 +340,6 @@ export const NotePropertyLane = ({
             const ry = clientY - containerRect.top;
             return Math.round((1 - Math.max(0, Math.min(1, (ry - 2) / (h - 4)))) * 127);
         };
-
-        setValue(clipId, noteId, getVal(event.clientY));
 
         const onMove = ({ clientX, clientY }: LanePointerPosition): void => {
             const containerRect = container.getBoundingClientRect();
@@ -386,10 +387,12 @@ export const NotePropertyLane = ({
             move: onMove,
             commit: onCommit,
         });
+        setValue(clipId, noteId, getVal(event.clientY));
     };
 
     const handleRampDrag = (side: 'left' | 'right', event: PointerEvent<HTMLDivElement>) => {
-        if (!clipId || dragSessionRef.current) {
+        // Primary contact only — the right button opens the piano roll's context menu.
+        if (!clipId || dragSessionRef.current || event.button !== 0) {
             return;
         }
         const container = containerRef.current;
@@ -503,16 +506,26 @@ export const NotePropertyLane = ({
 
     const getYPercent = (val: number) => `calc(2px + ${1 - val / 127} * (100% - 4px))`;
 
+    // The move/end handlers live on the container, not on the pressed element: the ramp handles
+    // unmount as soon as the selection drops below two notes, and a gesture must not die with them.
+    // `touchAction: 'none'` keeps the browser's own pan/zoom from claiming the stroke on touch.
     return (
-        <div ref={containerRef} className="relative h-full w-full" role="group" aria-label={`${label} lane`}>
+        <div
+            ref={containerRef}
+            className="relative h-full w-full"
+            style={{ touchAction: 'none' }}
+            role="group"
+            aria-label={`${label} lane`}
+            onPointerMove={handleDragMove}
+            onPointerUp={handleDragEnd}
+            onPointerCancel={handleDragEnd}
+            onLostPointerCapture={handleDragEnd}
+        >
             <canvas
                 ref={canvasRef}
-                className="cursor-ns-resize touch-none"
+                className="cursor-ns-resize"
+                style={{ touchAction: 'none' }}
                 onPointerDown={handleCanvasPointerDown}
-                onPointerMove={handleDragMove}
-                onPointerUp={handleDragEnd}
-                onPointerCancel={handleDragEnd}
-                onLostPointerCapture={handleDragEnd}
             />
             {sortedSelected.length > 1 ? (
                 <>
@@ -528,22 +541,14 @@ export const NotePropertyLane = ({
                         />
                     </svg>
                     <div
-                        className="absolute w-3 h-3 bg-white border border-black rounded-full cursor-ns-resize touch-none transform -translate-x-1/2 -translate-y-1/2 shadow-sm z-10"
-                        style={{ left: leftX + 1, top: getYPercent(leftVal) }}
+                        className="absolute w-3 h-3 bg-white border border-black rounded-full cursor-ns-resize transform -translate-x-1/2 -translate-y-1/2 shadow-sm z-10"
+                        style={{ left: leftX + 1, top: getYPercent(leftVal), touchAction: 'none' }}
                         onPointerDown={(event) => handleRampDrag('left', event)}
-                        onPointerMove={handleDragMove}
-                        onPointerUp={handleDragEnd}
-                        onPointerCancel={handleDragEnd}
-                        onLostPointerCapture={handleDragEnd}
                     />
                     <div
-                        className="absolute w-3 h-3 bg-white border border-black rounded-full cursor-ns-resize touch-none transform -translate-x-1/2 -translate-y-1/2 shadow-sm z-10"
-                        style={{ left: rightX + 1, top: getYPercent(rightVal) }}
+                        className="absolute w-3 h-3 bg-white border border-black rounded-full cursor-ns-resize transform -translate-x-1/2 -translate-y-1/2 shadow-sm z-10"
+                        style={{ left: rightX + 1, top: getYPercent(rightVal), touchAction: 'none' }}
                         onPointerDown={(event) => handleRampDrag('right', event)}
-                        onPointerMove={handleDragMove}
-                        onPointerUp={handleDragEnd}
-                        onPointerCancel={handleDragEnd}
-                        onLostPointerCapture={handleDragEnd}
                     />
                 </>
             ) : null}
