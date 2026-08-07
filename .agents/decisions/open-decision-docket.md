@@ -56,6 +56,47 @@ what is open. Neither was engineering's to take unilaterally.
   automatable may be *structurally* unschedulable, in which case the descriptor
   is the defect and the real number is far below 106.
 
+### Programme blockers, recorded here as the formal record — 2026-08-07
+
+The ultracode brief's `Done` requires each phase to be *landed or explicitly blocked
+with the blocker named*. The per-phase ledger lives in `SURVEY-ultracode-scope.md`;
+the two phases that are genuinely **blocked** — as opposed to merely unstarted — are
+recorded here so the blocker sits in the decision record rather than only in a survey
+note. Neither blocker is an owner decision; both are engineering preconditions.
+
+- **Phase 5 (one implementation per transform) — blocked, two named blockers.**
+  (i) It is sequenced *after* phases 2–4, and Phase 2 is partial: its AC-3 was not
+  built by design and AC-4 sits behind AC-3, while AC-0's browser null harness needs
+  cross-origin isolation, wasm fixtures for 13 devices, and `BaseAudioContext`
+  widening — a phase of its own. (ii) Its FFT choice cannot be made until a
+  **per-package `.wasm` size ceiling is stated**, because `proof-chamber` and
+  `scoring` have no dependency edge to `daw-dsp`, so sharing one primitive grows two
+  binaries rather than deduplicating one. Stating that ceiling is the unblocking act.
+
+- **Phase 3 (one clock) — not blocked externally; blocked on a measurement this
+  programme owes itself.** Before choosing between "re-derive position every tick"
+  and "keep an integrator and reconcile", the brief's own *measure before you design*
+  rule requires worker-tick jitter under UI load and `currentTime` granularity on the
+  target. Until those numbers exist, any design argument is the one the last campaign
+  lost by roughly fifty times.
+
+- **Phases 7 and 8 are neither landed nor blocked — they are unstarted with no
+  obstruction**, which the brief's `Done` does not admit as a terminal state. Phase 7
+  is partially landed (#1252, #1253, #1261, #1262); Phase 8 is untouched apart from
+  #1075 closing the RAVE half of §3.8. Recorded plainly rather than dressed as
+  blocked.
+
+**Owner-decision surface, stated once so it is not mistaken for absent.** The two
+decisions the brief names as *currently open and known* — the shape of a project file,
+and whether it embeds audio or references it — were both **ratified** in ADR 0014 on
+2026-08-03 and 2026-08-04 respectively, after gates M1–M7 reported. Nothing in the
+2026-08-05→07 work removed a capability, changed how an existing project sounds, or
+changed what the product claims to do, so it raised no new owner decision. The
+remaining owner-decision surface is the finish-or-remove ledger below: each row is an
+owner decision by the brief's own definition (*"what capability is removed"*), and the
+brief is explicit that filing to this docket is **not** the same as putting one in
+front of the owner.
+
 ### Corrections to rows above, from campaign work
 
 - **RAVE timbre-transfer** (row in "Unbuilt feature subsystems"): the stated
