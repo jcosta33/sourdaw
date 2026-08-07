@@ -11,7 +11,6 @@ use super::super::voice::VoiceTriggerParams;
 pub struct QuickMode {
     pub sample_id: SampleId,
     pub root_note: u8,
-    pub tune_cents: f32,
     pub playback_mode: PlaybackMode,
     pub loop_mode: LoopMode,
     pub loop_start: u32,
@@ -36,7 +35,6 @@ impl Default for QuickMode {
         Self {
             sample_id: 0,
             root_note: 60,
-            tune_cents: 0.0,
             playback_mode: PlaybackMode::Sustain,
             loop_mode: LoopMode::Off,
             loop_start: 0,
