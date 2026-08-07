@@ -25,6 +25,9 @@ printf '%s\n' \
     '    sleep "${FAKE_LINT_SLEEP_SECONDS:-0}"' \
     '    exit "${FAKE_LINT_STATUS:-0}"' \
     'fi' \
+    'if [ "${1:-}" = "test:collection-scope" ]; then' \
+    '    exit "${FAKE_COLLECTION_SCOPE_STATUS:-0}"' \
+    'fi' \
     > "$fake_bin/pnpm"
 printf '%s\n' \
     '#!/bin/sh' \
@@ -91,10 +94,33 @@ printf '%s\n' \
     'pnpm typecheck:test' \
     'pnpm typecheck:scripts' \
     'pnpm lint --quiet' \
+    'pnpm test:collection-scope' \
     'pnpm test:run --reporter=dot --silent=passed-only' \
     'pnpm build' \
     > "$temp_root/expected-web-success.log"
 diff -u "$temp_root/expected-web-success.log" "$temp_root/web-success.log"
+
+# A drifting vitest collection scope must fail the gate with the check's own exit
+# code, and must stop before the suite runs — running the suite over an unknown
+# file set is the outcome the check exists to prevent.
+set +e
+PATH="$fake_bin:$PATH" \
+    COMMAND_LOG="$temp_root/collection-scope-failure.log" \
+    FAKE_COLLECTION_SCOPE_STATUS=1 \
+    sh "$temp_root/scripts/health-gates-web.sh" >/dev/null 2>&1
+collection_scope_status=$?
+set -e
+test "$collection_scope_status" -eq 1
+printf '%s\n' \
+    'pnpm wasm:verify' \
+    'pnpm deps:validate' \
+    'pnpm typecheck' \
+    'pnpm typecheck:test' \
+    'pnpm typecheck:scripts' \
+    'pnpm lint --quiet' \
+    'pnpm test:collection-scope' \
+    > "$temp_root/expected-collection-scope-failure.log"
+diff -u "$temp_root/expected-collection-scope-failure.log" "$temp_root/collection-scope-failure.log"
 
 set +e
 server_output=$(PATH="$fake_bin:$PATH" \
@@ -171,6 +197,8 @@ test "$cargo_test_status" -eq 134
 printf '%s\n' \
     "lint heartbeat exit: $lint_status" \
     'lint heartbeat and early stop: PASS' \
+    "collection scope failure exit: $collection_scope_status" \
+    'collection scope failure stops before the suite: PASS' \
     "missing server dependencies exit: $server_status" \
     'server remediation and production build dependency sequence: PASS' \
     "missing cargo exit: $no_cargo_status" \

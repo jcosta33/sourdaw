@@ -12,6 +12,7 @@
         "test": "vitest",
         "test:health-gates": "sh scripts/test-health-gate-scripts.sh",
         "test:run": "vitest run",
+        "test:collection-scope": "node --experimental-strip-types scripts/checkVitestCollectionScope.ts",
         "test:generate-usecase-specs": "node --experimental-strip-types scripts/generate-missing-use-case-specs.ts",
         "test:e2e": "playwright test",
         "test:e2e:mycelium-performance": "playwright test -c tests/e2e/playwright.mycelium.performance.config.cjs",
