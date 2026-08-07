@@ -5,8 +5,8 @@
  * `Object.is` equality never holds for an empty clip: every unrelated
  * midiStore notification looks like a change and re-renders the piano roll.
  * These tests pin the value `usePianoRollInteractions` receives — the same
- * observation point a sibling selector's equality guard uses (see the
- * `openedClipNotes` coverage landing separately in #1299).
+ * observation point `PianoRollOpenedClipNotes.spec.tsx` uses for its sibling
+ * `openedClipNotes` selector's equality guard (landed via #1299).
  */
 import { render, act } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
