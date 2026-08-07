@@ -231,6 +231,14 @@ export const useStatusBarMetrics = (refs: StatusBarMetricRefs): void => {
             // tick runs at animation-frame rate and the tooltip only moves when
             // the device buffer does, so an unguarded assignment would be ~60
             // attribute writes a second to say the same thing.
+            //
+            // Do NOT "align" this with `engineDiagnosticsTitleRef` below. That
+            // ref throttles how often the diagnostics *string is built* (once a
+            // second), but the assignment to `refs.engineState.current.title`
+            // still runs on every frame — so it has this same defect and is not
+            // the pattern to copy. The model here is `updateTextNode`'s own
+            // `nodeValue !== value` check: compare against the live DOM, write
+            // only on a real change, and stay correct across a remount.
             const latencyTitle =
                 `Output latency ${outputLatencyMs.toFixed(1)} ms` +
                 ` = context ${baseLatencyMs.toFixed(1)} ms` +
