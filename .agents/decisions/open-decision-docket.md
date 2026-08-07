@@ -60,9 +60,9 @@ what is open. Neither was engineering's to take unilaterally.
 
 The ultracode brief's `Done` requires each phase to be *landed or explicitly blocked
 with the blocker named*. The per-phase ledger lives in `SURVEY-ultracode-scope.md`;
-the two phases that are genuinely **blocked** — as opposed to merely unstarted — are
+the one phase that is genuinely **blocked** — as opposed to merely unstarted — is
 recorded here so the blocker sits in the decision record rather than only in a survey
-note. Neither blocker is an owner decision; both are engineering preconditions.
+note. It is not an owner decision; it is an engineering precondition.
 
 - **Phase 5 (one implementation per transform) — blocked, two named blockers.**
   (i) It is sequenced *after* phases 2–4, and Phase 2 is partial: its AC-3 was not
@@ -73,29 +73,51 @@ note. Neither blocker is an owner decision; both are engineering preconditions.
   `scoring` have no dependency edge to `daw-dsp`, so sharing one primitive grows two
   binaries rather than deduplicating one. Stating that ceiling is the unblocking act.
 
-- **Phase 3 (one clock) — not blocked externally; blocked on a measurement this
-  programme owes itself.** Before choosing between "re-derive position every tick"
-  and "keep an integrator and reconcile", the brief's own *measure before you design*
-  rule requires worker-tick jitter under UI load and `currentTime` granularity on the
-  target. Until those numbers exist, any design argument is the one the last campaign
-  lost by roughly fifty times.
+- **Phase 3 (one clock) — NOT blocked. Unstarted, with a measurement owed before
+  design.** An earlier draft of this entry called it blocked; that was wrong, and the
+  survey's own reconciliation says so plainly — *"no external blocker — capacity, not
+  obstruction"*. Nothing external is withholding it. What it owes itself before
+  choosing between "re-derive position every tick" and "keep an integrator and
+  reconcile" is a measurement: worker-tick jitter under UI load, and `currentTime`
+  granularity on the target. Owing yourself a measurement is not the same as being
+  blocked, and recording it as blocked would launder an unstarted phase into an
+  excused one.
 
-- **Phases 7 and 8 are neither landed nor blocked — they are unstarted with no
-  obstruction**, which the brief's `Done` does not admit as a terminal state. Phase 7
-  is partially landed (#1252, #1253, #1261, #1262); Phase 8 is untouched apart from
-  #1075 closing the RAVE half of §3.8. Recorded plainly rather than dressed as
-  blocked.
+- **Phases 7 and 8 are neither landed nor blocked.** Phase 7 is **partially landed**
+  — #1252, #1253, #1261, #1262 — with nine named items remaining and no obstruction on
+  any of them. Phase 8 is unstarted apart from #1075 closing the RAVE half of §3.8.
+  Neither state is one the brief's `Done` admits as terminal, and saying so is more
+  useful than inventing a blocker.
 
-**Owner-decision surface, stated once so it is not mistaken for absent.** The two
-decisions the brief names as *currently open and known* — the shape of a project file,
-and whether it embeds audio or references it — were both **ratified** in ADR 0014 on
-2026-08-03 and 2026-08-04 respectively, after gates M1–M7 reported. Nothing in the
-2026-08-05→07 work removed a capability, changed how an existing project sounds, or
-changed what the product claims to do, so it raised no new owner decision. The
-remaining owner-decision surface is the finish-or-remove ledger below: each row is an
-owner decision by the brief's own definition (*"what capability is removed"*), and the
-brief is explicit that filing to this docket is **not** the same as putting one in
-front of the owner.
+**Owner-decision surface. An earlier draft of this entry claimed the 2026-08-05→07
+work "removed no capability and changed no existing project's sound". That was false,
+and the correction matters more than the original claim.**
+
+The two decisions the brief names as *currently open and known* — the shape of a
+project file, and whether it embeds audio or references it — were both **ratified** in
+ADR 0014 on 2026-08-03 and 2026-08-04 respectively; that ADR's own Status line records
+gates **M1–M10** as reported or formally deferred.
+
+But two changes inside the window did meet the brief's definition of an owner decision:
+
+- **#1236 removed GrandBoule's `afterTouchSensitivity` control** — *"what capability is
+  removed"*. Its commit message records it as taken **per the owner**, so it was put in
+  front of them; it is logged here so the record shows it, not to re-open it. The
+  research behind it has since been partly corrected — see the Keyscape refutation in
+  `SURVEY-ultracode-scope.md` — and the removal survives that correction on its
+  remaining sources.
+- **#1236 also wired `sustain_threshold` and `cc_smoothing_ms`, and #1249 wired Crumbs'
+  master tune** — *"changes how existing projects sound"*. `sustain_threshold` had been
+  inert behind a hardcoded `HALF_PEDAL_LOW` of 0.15, so any project storing a
+  non-default value renders differently now. These needed no separate confirmation:
+  ADR 0016 rules that with no users, correctness wins outright and no compatibility
+  path is carried, and the brief states that anything inside an accepted ADR is merged
+  without asking. Recorded because *"it was covered by an ADR"* and *"nothing changed"*
+  are different statements, and only the first is true.
+
+The remaining owner-decision surface is the finish-or-remove ledger below: each row is
+an owner decision by the brief's own definition, and the brief is explicit that filing
+to this docket is **not** the same as putting one in front of the owner.
 
 ### Corrections to rows above, from campaign work
 
