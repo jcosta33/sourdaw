@@ -5,7 +5,19 @@
 
 import { SCALE_PATTERNS, KEY_NAMES } from '#/utils/Music/MusicalScale';
 
+import { type MidiNote } from '../../models/MidiNoteViewTypes';
+
 export { NOTE_NAMES } from '#/utils/noteNames';
+
+/**
+ * Stable empty array for clips with no notes yet. `useStoreSelector`'s
+ * default equality is `Object.is`, so a fresh `[]` literal returned from a
+ * selector's `?? []` fallback would look like a new value on every store
+ * notification — forcing a re-render (and, in the renderer's dirty check, a
+ * full repaint) even when nothing about the focused clip changed. Reusing
+ * this constant keeps the reference stable across notifications.
+ */
+export const EMPTY_NOTES: MidiNote[] = [];
 export const SCALES = SCALE_PATTERNS;
 export const SCALE_ROOT_LABELS = KEY_NAMES;
 export const TOTAL_ROWS = 60;
