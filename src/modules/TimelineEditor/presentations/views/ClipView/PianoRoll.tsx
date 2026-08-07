@@ -29,6 +29,7 @@ import { setProjectKeyRoot, setProjectScaleName } from '#/modules/Project/useCas
 import { SCALE_PATTERNS, KEY_NAMES } from '#/utils/Music/MusicalScale';
 import { cn } from '#/utils/Styles/cn';
 
+import { areOpenedClipNotesEqual } from '../../helpers/openedClipNotesEquality';
 import { GRID_BEATS, ROW_HEIGHT, RULER_HEIGHT, getVisiblePitches } from '../../helpers/pianoRollConstants';
 import { usePianoRollInteractions } from '../../hooks/usePianoRollInteractions';
 import { usePianoRollRenderer } from '../../hooks/usePianoRollRenderer';
@@ -120,7 +121,7 @@ export const PianoRoll = ({
                       openedClipIds.filter((id) => id !== clipId).map((id) => [id, state?.notesByClipId[id] ?? []])
                   )
                 : undefined,
-        (a, b) => JSON.stringify(a) === JSON.stringify(b)
+        areOpenedClipNotesEqual
     );
 
     // ── Report layout to parent ──────────────────────────────────────
