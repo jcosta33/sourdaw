@@ -275,7 +275,15 @@ class AudioEngineImpl implements AudioEngine {
         { sourceTrackId: string; targetTrackId: string; targetDeviceId: string }
     >();
     private scheduledNodes: AudioScheduledSourceNode[] = [];
-    private masterMeterBuffer!: Float32Array;
+    /**
+     * View onto the master metering-processor's SAB, or `null` when no meter tap
+     * is wired (before initialize(), after a failed initialize(), after dispose(),
+     * in fallback mode, or without AudioWorklet/SharedArrayBuffer). `null` is load
+     * bearing: {@link getMasterPeakLevel} returns it verbatim so callers can tell
+     * "no measurement" apart from "measured silence". It must never be an inert
+     * buffer nothing writes — that reads back as a plausible 0.
+     */
+    private masterMeterBuffer: Float32Array | null = null;
     private pendingDevicePromises = new Set<Promise<unknown>>();
     private workletReady = false;
     private fallbackMode = false;
@@ -340,7 +348,6 @@ class AudioEngineImpl implements AudioEngine {
 
             this.masterGainNode.connect(this.masterAnalyser);
             this.masterAnalyser.connect(this.context.destination);
-            this.masterMeterBuffer = new Float32Array(this.masterAnalyser.frequencyBinCount);
         } catch (error) {
             logger.warn(`Failed to create AudioContext: ${error}`);
             notifyUser(
@@ -369,7 +376,6 @@ class AudioEngineImpl implements AudioEngine {
             port: { postMessage: () => {} },
         };
         this.masterAnalyser = this.context.createAnalyser();
-        this.masterMeterBuffer = new Float32Array(1);
     }
 
     private assertActive(): void {
@@ -446,8 +452,19 @@ class AudioEngineImpl implements AudioEngine {
      */
     private wireMasterMeter(): void {
         if (this.fallbackMode || typeof AudioWorkletNode === 'undefined' || !hasSharedArrayBuffer()) {
-            // No live graph, no worklet support, or no SAB: leave masterMeterBuffer
-            // as the inert buffer from the constructor so getMasterPeakLevel reads 0.
+            // No live graph, no worklet support, or no SAB: there is no tap to
+            // read. Clear the buffer so getMasterPeakLevel reports `null`
+            // ("unavailable") rather than a fabricated 0 — which the status bar
+            // renders as "-∞ dB", indistinguishable from a silent mix while audio
+            // is playing (ADR 0012: a downgrade must never be silent).
+            this.masterMeterBuffer = null;
+            logger.warn(
+                '[audio-engine] master meter not wired ' +
+                    `(fallbackMode=${String(this.fallbackMode)}, ` +
+                    `AudioWorkletNode=${String(typeof AudioWorkletNode !== 'undefined')}, ` +
+                    `SharedArrayBuffer=${String(hasSharedArrayBuffer())}) — ` +
+                    'the master level readout reports unavailable until it is.'
+            );
             return;
         }
         // Tear down a previously-wired meter node so a re-initialize does not
@@ -947,9 +964,18 @@ class AudioEngineImpl implements AudioEngine {
         return this.trackNodes.get(trackId)?.getPeakLevel() ?? 0;
     }
 
-    public getMasterPeakLevel(): number {
-        if (this.fallbackMode) {
-            return 0;
+    /**
+     * The master output peak in linear amplitude, or `null` when no meter tap is
+     * wired and the engine therefore has no measurement to report.
+     *
+     * `null` and `0` are different claims and callers must render them
+     * differently: `0` says the worklet measured this block and it was silent,
+     * `null` says nobody measured anything. Collapsing the two is what let a
+     * status bar show "-∞ dB" over a mix that was audibly playing.
+     */
+    public getMasterPeakLevel(): number | null {
+        if (!this.masterMeterBuffer) {
+            return null;
         }
         // Read-and-reset of a single f32, deliberately without Atomics (audit
         // RT-9) — same scalar-meter exception as TrackNode.getPeakLevel.
@@ -1608,6 +1634,10 @@ class AudioEngineImpl implements AudioEngine {
             }
         }
         this.masterMeterNode = undefined;
+        // Drop the view onto the meter SAB with the node that fed it, so a
+        // post-dispose read reports "unavailable" instead of replaying whatever
+        // the last block happened to leave in the buffer.
+        this.masterMeterBuffer = null;
         this.masterAnalyser.disconnect();
 
         // Release the transport SAB / its view so the buffer can be GC'd and a

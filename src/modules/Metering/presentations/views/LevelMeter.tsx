@@ -99,6 +99,18 @@ export const LevelMeter = ({ trackId, height = 'h-full', width = 'w-2' }: LevelM
 
         const tick = (currentTime: DOMHighResTimeStamp, deltaMs: number) => {
             const rawPeak = trackId ? getTrackPeakLevel(trackId) : getMasterPeakLevel();
+            if (rawPeak === null) {
+                // Master bus with no meter tap wired: there is no level to paint.
+                // The -∞ frame (black bed, LED gaps, no fill) is the picture a
+                // genuinely silent mix draws, so painting it here would tell a
+                // user whose audio is playing that the master bus is dead. Leave
+                // the canvas clear, and drop the held peak — it describes a bus
+                // nobody is measuring any more.
+                peakHoldRef.current = 0;
+                peakHoldTimeRef.current = 0;
+                ctx.clearRect(0, 0, w, h);
+                return;
+            }
             vuSampleRef.current[0] = rawPeak;
             const rawRms = vuMeterRef.current.update(vuSampleRef.current, Math.max(0, deltaMs) / 1000);
             if (rawPeak >= peakHoldRef.current) {

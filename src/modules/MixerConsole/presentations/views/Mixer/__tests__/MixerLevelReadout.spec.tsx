@@ -6,7 +6,7 @@ import { MixerLevelReadout } from '../MixerLevelReadout';
 type SchedulerTick = (currentTime: DOMHighResTimeStamp, deltaMs: number) => void;
 
 const mocks = vi.hoisted(() => ({
-    getMasterPeakLevel: vi.fn(() => 0),
+    getMasterPeakLevel: vi.fn<() => number | null>(() => 0),
     getTrackPeakLevel: vi.fn(() => 0),
     register: vi.fn<(id: string, callback: (currentTime: DOMHighResTimeStamp, deltaMs: number) => void) => void>(),
     unregister: vi.fn<(id: string) => void>(),
@@ -97,6 +97,41 @@ describe('MixerLevelReadout', () => {
         expect(mocks.getMasterPeakLevel).toHaveBeenCalledTimes(1);
         expect(mocks.getTrackPeakLevel).not.toHaveBeenCalled();
         expect(getPeakReadout()).toHaveTextContent('0.0');
+    });
+
+    // ── "no meter tap" is not "-∞" ─────────────────────────────────────────────
+    //
+    // getMasterPeakLevel() returns null when the engine has no metering tap in the
+    // master chain. "-∞" is the readout for a bus that was measured and found
+    // silent, so printing it here claims a measurement nobody took (ADR 0012).
+    it('reads "n/a" for the master bus when the level is unavailable', () => {
+        mocks.getMasterPeakLevel.mockReturnValue(null);
+        render(<MixerLevelReadout trackId={null} control={null} value={null} />);
+
+        mocks.scheduledTick?.(0, 16);
+
+        expect(getPeakReadout()).toHaveTextContent('n/a');
+    });
+
+    it('drops a previously held peak once the master meter tap goes away', () => {
+        mocks.getMasterPeakLevel.mockReturnValue(1);
+        render(<MixerLevelReadout trackId={null} control={null} value={null} />);
+        mocks.scheduledTick?.(0, 16);
+        expect(getPeakReadout()).toHaveTextContent('0.0');
+
+        // The tap is torn down (engine disposed / re-initializing). The held
+        // 0.0 dB describes a bus nobody is measuring any more.
+        mocks.getMasterPeakLevel.mockReturnValue(null);
+        mocks.scheduledTick?.(16, 16);
+
+        expect(getPeakReadout()).toHaveTextContent('n/a');
+
+        // The hold is dropped with it: when the tap returns, a quieter peak must
+        // be shown rather than suppressed by the 0.0 dB held across the outage.
+        mocks.getMasterPeakLevel.mockReturnValue(0.5);
+        mocks.scheduledTick?.(32, 16);
+
+        expect(getPeakReadout()).toHaveTextContent('-6.0');
     });
 
     it('flags a peak above 0 dB as an over, and clicking resets it', () => {

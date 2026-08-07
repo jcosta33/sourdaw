@@ -80,6 +80,18 @@ describe('StatusBar', () => {
         toggleUndoHistoryMock.mockClear();
     });
 
+    describe('master output readout', () => {
+        it('reads "n/a" before the metrics tick, not a dB value', () => {
+            // useStatusBarMetrics is mocked to a no-op here, so this is the
+            // pre-tick markup: the engine has not wired a meter tap yet and has
+            // measured nothing. "-∞ dB" would claim it measured silence.
+            renderWithTooltip(<StatusBar />);
+
+            expect(screen.getByText('n/a')).toBeInTheDocument();
+            expect(screen.queryByText('-∞ dB')).not.toBeInTheDocument();
+        });
+    });
+
     describe('LLM status badge', () => {
         it('shows idle by default', () => {
             renderWithTooltip(<StatusBar />);

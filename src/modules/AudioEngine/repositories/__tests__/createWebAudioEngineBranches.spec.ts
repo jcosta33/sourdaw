@@ -211,11 +211,55 @@ describe('AudioEngineImpl — residual branch coverage', () => {
         });
     });
 
-    // ── wireMasterMeter fallback arm: when SharedArrayBuffer is unavailable,
-    //    initialize() leaves the masterMeterBuffer inert and does not build a
-    //    worklet meter node.
-    describe('wireMasterMeter without SharedArrayBuffer', () => {
-        it('does not insert a metering-processor when SAB is unavailable', async () => {
+    // ── Master peak level: "unavailable" is a distinct verdict from "silent" ────
+    //
+    // `getMasterPeakLevel()` used to return a hardcoded `0` whenever the SAB-backed
+    // metering-processor was not in the master chain. The status bar renders `0` as
+    // "-∞ dB", so a meter with no tap at all was pixel-identical to a mix that is
+    // genuinely silent — while audio may be playing perfectly (ADR 0012: "no silent
+    // downgrade"; survey findings master-meter-silent-degrade-on-missing-sab).
+    //
+    // The population below is every way the master meter tap can be absent, plus
+    // the two states that must still report a real number. Each member gets its own
+    // verdict: `null` for "no tap, level unknown", a number for "tap live".
+    describe('master peak level — unavailable vs silent', () => {
+        function masterMeterSab(eng: AudioEngine): ArrayBuffer {
+            const meterNode = (eng as unknown as { masterMeterNode: { port: { postMessage: Mock } } }).masterMeterNode;
+            const initCall = meterNode.port.postMessage.mock.calls.find(
+                (call) => (call[0] as { type?: string }).type === 'init'
+            );
+            expect(initCall).toBeDefined();
+            return (initCall![0] as { sab: ArrayBuffer }).sab;
+        }
+
+        it('reports the live peak the worklet wrote once the tap is wired', async () => {
+            await engine.initialize();
+            new Float32Array(masterMeterSab(engine))[0] = 0.25;
+
+            expect(engine.getMasterPeakLevel()).toBeCloseTo(0.25, 5);
+        });
+
+        it('reports 0 — a real reading, not null — when the wired tap measured digital silence', async () => {
+            await engine.initialize();
+            // The worklet wrote nothing this block: the mix really is silent. This
+            // is the one state that legitimately renders "-∞ dB".
+            expect(engine.getMasterPeakLevel()).toBe(0);
+        });
+
+        it('reports null before initialize() has wired the tap', () => {
+            // The master nodes exist from the constructor; the meter does not. A
+            // reading here describes nothing that was ever measured.
+            expect(engine.getMasterPeakLevel()).toBeNull();
+        });
+
+        it('reports null when initialize() failed to load the worklet modules', async () => {
+            mockCtx.audioWorklet.addModule.mockRejectedValueOnce(new Error('metering-processor 404'));
+
+            await expect(engine.initialize()).rejects.toThrow('metering-processor 404');
+            expect(engine.getMasterPeakLevel()).toBeNull();
+        });
+
+        it('reports null when SharedArrayBuffer is unavailable', async () => {
             const savedSab = globalThis.SharedArrayBuffer;
             delete (globalThis as { SharedArrayBuffer?: unknown }).SharedArrayBuffer;
             try {
@@ -226,11 +270,33 @@ describe('AudioEngineImpl — residual branch coverage', () => {
                 // No worklet meter node — the constructor's analyser stands.
                 const meter = (noSabEngine as unknown as { masterMeterNode?: unknown }).masterMeterNode;
                 expect(meter).toBeUndefined();
-                // Peak stays at 0 (inert buffer, nothing writes it).
-                expect(noSabEngine.getMasterPeakLevel()).toBe(0);
+                expect(noSabEngine.getMasterPeakLevel()).toBeNull();
             } finally {
                 vi.stubGlobal('SharedArrayBuffer', savedSab);
             }
+        });
+
+        it('reports null when AudioWorkletNode is unavailable', async () => {
+            const savedWorkletNode = globalThis.AudioWorkletNode;
+            delete (globalThis as { AudioWorkletNode?: unknown }).AudioWorkletNode;
+            try {
+                const noWorkletEngine = createAudioEngine(asAudioContext(mockCtx));
+                await noWorkletEngine.initialize();
+
+                expect(noWorkletEngine.getMasterPeakLevel()).toBeNull();
+            } finally {
+                vi.stubGlobal('AudioWorkletNode', savedWorkletNode);
+            }
+        });
+
+        it('reports null again after dispose() tears the tap down', async () => {
+            await engine.initialize();
+            new Float32Array(masterMeterSab(engine))[0] = 0.75;
+            expect(engine.getMasterPeakLevel()).toBeCloseTo(0.75, 5);
+
+            await engine.dispose();
+
+            expect(engine.getMasterPeakLevel()).toBeNull();
         });
     });
 

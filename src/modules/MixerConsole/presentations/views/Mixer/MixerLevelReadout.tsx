@@ -38,6 +38,17 @@ export const MixerLevelReadout = ({
     useEffect(() => {
         const tick = () => {
             const rawPeak = trackId ? getTrackPeakLevel(trackId) : getMasterPeakLevel();
+            if (rawPeak === null) {
+                // Master bus with no meter tap wired. "-∞" is the readout for a
+                // bus that was measured and found silent; printing it here claims
+                // a measurement nobody took, and any peak held from before the
+                // tap went away is stale. Say the level is unavailable instead.
+                maxPeakRef.current = MIN_DB;
+                if (peakTextRef.current && peakTextRef.current.textContent !== 'n/a') {
+                    peakTextRef.current.textContent = 'n/a';
+                }
+                return;
+            }
             const db = linearToDb(rawPeak);
 
             if (db > maxPeakRef.current) {

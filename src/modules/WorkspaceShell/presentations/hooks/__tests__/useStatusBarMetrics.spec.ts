@@ -216,6 +216,30 @@ describe('useStatusBarMetrics', () => {
         expect(refs.masterLevelBar.current!.style.width).toBe('100%');
     });
 
+    it('shows "n/a" — never a dB reading — when the master meter is unavailable', () => {
+        vi.mocked(getEngineState).mockReturnValue({
+            isReady: true,
+            sampleRate: 44100,
+            state: 'running',
+            masterGain: 1,
+            currentTime: 0,
+            baseLatency: 0.01,
+        });
+        // No meter tap: the engine cannot say what the output level is. Rendering
+        // "-∞ dB" here is a lie — it is the readout for a genuinely silent mix, so
+        // a user with audio playing reads it as "the engine is dead" and debugs the
+        // wrong thing (ADR 0012: no silent downgrade).
+        vi.mocked(getMasterPeakLevel).mockReturnValue(null);
+
+        const refs = makeRefs();
+        makeElements(refs);
+        renderHook(() => useStatusBarMetrics(refs));
+        capturedTick!();
+
+        expect(refs.masterLevelText.current!.textContent).toBe('n/a');
+        expect(refs.masterLevelBar.current!.style.width).toBe('0%');
+    });
+
     it('shows -inf dB when the master level is zero', () => {
         vi.mocked(getEngineState).mockReturnValue({
             isReady: true,
