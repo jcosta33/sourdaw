@@ -39,14 +39,7 @@ describe('executableAppActionRegistry', () => {
     });
 
     it('includes well-known action types', () => {
-        const knownTypes = [
-            'addTrack',
-            'removeTrack',
-            'muteTrack',
-            'soloTrack',
-            'removeClip',
-            'setTrackGain',
-        ];
+        const knownTypes = ['addTrack', 'removeTrack', 'muteTrack', 'soloTrack', 'removeClip', 'setTrackGain'];
         for (const type of knownTypes) {
             expect(executableAppActionDescriptorByType.has(type)).toBe(true);
         }

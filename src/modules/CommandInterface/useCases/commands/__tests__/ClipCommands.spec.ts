@@ -58,7 +58,7 @@ function findCommand(id: string): CallableCommandEntry {
 function runAction(id: string): void {
     const cmd = findCommand(id);
     if (typeof cmd.action !== 'function') {
-        throw new Error(`Command ${id} action is not callable`);
+        throw new TypeError(`Command ${id} action is not callable`);
     }
     cmd.action();
 }

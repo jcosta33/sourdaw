@@ -13,7 +13,7 @@ const { mockTrackStore, mockGetSelectedTrackId } = vi.hoisted(() => ({
             tracks: [{ id: 't1', name: 'Track 1', groupId: 'grp-1' }],
         },
     },
-    mockGetSelectedTrackId: vi.fn(() => 't1' as string | null),
+    mockGetSelectedTrackId: vi.fn<() => string | null>(() => 't1'),
 }));
 
 vi.mock('#/modules/Command/useCases', () => ({ executeAppAction }));
@@ -33,7 +33,7 @@ function runAction(id: string): void {
         throw new Error(`Command ${id} not found`);
     }
     if (typeof cmd.action !== 'function') {
-        throw new Error(`Command ${id} action is not callable`);
+        throw new TypeError(`Command ${id} action is not callable`);
     }
     cmd.action();
 }

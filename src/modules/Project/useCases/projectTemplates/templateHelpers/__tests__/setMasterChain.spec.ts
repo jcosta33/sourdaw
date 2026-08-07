@@ -39,9 +39,7 @@ describe('setMasterChain', () => {
 
     it('replaces existing devices on the master track', () => {
         const track = makeMasterTrack();
-        track.devices = [
-            { id: 'old', type: 'old-device', name: 'Old', bypassed: false, parameterValues: {} },
-        ] as unknown as Track['devices'];
+        track.devices = [{ id: 'old', type: 'old-device', name: 'Old', bypassed: false, parameterValues: {} }];
         setMasterChain(track, 'rock');
         expect(track.devices.every((d) => d.type !== 'old-device')).toBe(true);
     });
