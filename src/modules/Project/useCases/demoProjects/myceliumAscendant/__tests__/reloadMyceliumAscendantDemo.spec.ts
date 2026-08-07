@@ -19,6 +19,13 @@ import { createMyceliumAscendantDemo } from '../createMyceliumAscendantDemo';
 
 const MYCELIUM_TEMPLATE_ID = 'demo-mycelium-ascendant';
 
+/**
+ * Ceiling on the animation-frame drain below. Measured at 0 passes, so any
+ * value well above zero works; 100 is low enough to fail in milliseconds and
+ * high enough that a legitimately chained projection would never reach it.
+ */
+const MAX_DRAIN_PASSES = 100;
+
 /*
  * Explicit timeout — measured 2026-08-07, not a convenience bump.
  *
@@ -41,13 +48,22 @@ const MYCELIUM_TEMPLATE_ID = 'demo-mycelium-ascendant';
  * transactional — it exceeded the 5000ms default even with the machine quiet.
  * The remainder is Automerge materializing the payload, which is real work.
  *
- * The reason a timeout is still needed after that cut is variance, not the
- * mean. Repeated runs of this one test swung between 1.79s and 6.44s purely
- * with how many sibling suites shared the machine — the 5000ms default sits
- * inside that band, so ordinary load rather than any defect reddened two
- * unrelated PRs on 2026-08-07 and cost both lanes real time proving the failure
- * was not theirs. 30s is ~4.7x the slowest run observed, so load spikes cannot
- * red it, while a genuinely hung projection still fails fast.
+ * Re-measured 2026-08-07 after an unrelated infinite loop in
+ * `SpectralWaterfall.spec.tsx` was fixed. That loop had been burning a core for
+ * entire suite runs, and it was inflating the variance originally cited here:
+ * the spread across repeated runs collapsed from 1.79s-6.44s to 3.37s / 3.73s /
+ * 3.58s / 3.37s / 3.70s across five consecutive runs. So the honest reason for
+ * an explicit timeout is no longer "wild variance" — it is the steady state.
+ *
+ * At ~3.5s against a 5000ms default this test has only ~1.4x headroom, on a
+ * fast developer machine with nothing else running. CI hardware is slower than
+ * that, and the pre-fix shape measured 5438.7ms idle and alone — already over
+ * budget with the machine quiet. A test whose honest cost is 70% of the limit
+ * does not fail when it breaks; it fails when the machine hiccups, which is how
+ * it reddened two unrelated PRs on 2026-08-07 and cost both lanes real time
+ * proving the failure was not theirs. 30s is ~8.6x the measured steady state,
+ * chosen to survive slower CI hardware rather than to absorb load spikes, while
+ * still failing fast on a genuinely hung projection.
  *
  * Deliberately no wall-clock budget `expect()` beside it, unlike
  * `grandBouleOfflineRenderBudget`: that spec measures an offline render whose
@@ -214,7 +230,25 @@ describe('Mycelium Ascendant project reload', () => {
             resetModuleStoresToDefault();
             projectCrdtToStores({ resetProjections: true });
 
+            // Drain frames the projection armed. Measured 2026-08-07: zero
+            // passes, zero callbacks, 0.00ms — it contributes nothing to this
+            // test's runtime. It converges immediately rather than slowly, so
+            // it explains none of the remaining duration.
+            //
+            // It stays as a guard for the invariant that makes that true: the
+            // adapter's frame callback clears its own `rafId` and never
+            // schedules a replacement. Bounded so that if anything ever does
+            // self-re-arm, this fails diagnosably instead of spinning a core
+            // until the fork dies — the failure mode that cost this repo a
+            // whole suite run.
+            let drainPasses = 0;
             while (armedFrames.size > 0) {
+                drainPasses += 1;
+                if (drainPasses > MAX_DRAIN_PASSES) {
+                    throw new Error(
+                        `Animation-frame drain did not converge after ${MAX_DRAIN_PASSES} passes; an armed frame is re-arming itself`
+                    );
+                }
                 const due = [...armedFrames.values()];
                 armedFrames.clear();
                 for (const callback of due) {
