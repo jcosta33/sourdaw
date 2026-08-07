@@ -1,0 +1,29 @@
+src/modules/Toaster/useCases/__tests__/setPadParamImmediate.spec.ts
+  s_14f2bbc9f385dd::t_b917d627437cd6 88-141
+src/modules/Toaster/useCases/setPadParamImmediate.ts
+  s_14f2bbc9f385dd::t_1cbf6b59eda97c 4
+  s_14f2bbc9f385dd::t_5bca39c6dbbe6b 32-35
+src/modules/Toaster/useCases/toasterParamBridge/setToasterPadParam.ts
+  s_14f2bbc9f385dd::t_0eb9d63d2dfb20 40-42
+  s_14f2bbc9f385dd::t_b2e1e3722be445 4
+src/modules/Toaster/models/PadStoreUpdate.ts
+  s_14f2bbc9f385dd::t_e9ed8246c9b0ed 1-55
+src/modules/Arrangement/stores/__tests__/deviceWriteBoundaryClosure.spec.ts
+  s_14f2bbc9f385dd::t_bbb6d655202420 420-427
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "ed2842bd334f7d4127fc5979492221194cedf80a",
+  "prompts": {},
+  "sessions": {
+    "s_14f2bbc9f385dd": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f9a61a1d-66b3-4146-938d-a04f45f4b060",
+        "model": "claude-opus-5"
+      },
+      "human_author": null
+    }
+  }
+}
