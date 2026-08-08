@@ -1,0 +1,36 @@
+crates/daw-dsp/benches/wasm/deviceRecipes.js
+  s_14f2bbc9f385dd::t_abe1cab58a26ef 54-56
+  s_14f2bbc9f385dd::t_da284e5c491c74 99-101
+  s_14f2bbc9f385dd::t_79306d9b2d53c3 57
+  s_14f2bbc9f385dd::t_4964c0569e3ae6 102
+  s_14f2bbc9f385dd::t_2d0f1be32aa3b0 568-742,766
+  s_14f2bbc9f385dd::t_712381d0ff81f7 743-765
+crates/daw-dsp/benches/wasm/index.html
+  s_14f2bbc9f385dd::t_8eecaa628a1909 118-130
+  s_14f2bbc9f385dd::t_100830956a4424 143
+crates/daw-dsp/benches/quantum-cost-table.md
+  s_14f2bbc9f385dd::t_f407f2baf93c74 269-355
+crates/daw-dsp/benches/wasm/run.mjs
+  s_14f2bbc9f385dd::t_f88653dad91d39 217-220
+  s_14f2bbc9f385dd::t_04fee22dceca7e 415
+  s_14f2bbc9f385dd::t_636aab16a0aac2 811-813
+  s_14f2bbc9f385dd::t_b649abafe90c0f 675-693
+  s_14f2bbc9f385dd::t_47701f9c6877f5 760-772
+  s_14f2bbc9f385dd::t_bb35e75d297b0d 232-236
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "132fa49704f562b6648ab92c9b87bafd7ad8514d",
+  "prompts": {},
+  "sessions": {
+    "s_14f2bbc9f385dd": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f9a61a1d-66b3-4146-938d-a04f45f4b060",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
