@@ -1,0 +1,19 @@
+tests/e2e/midiClipDeepTestId.spec.ts
+  s_428b03cffb4801::t_5564603ce30675 1-85
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "bdc4b49d605d2e8f459b033c85407dec8dc039df",
+  "prompts": {},
+  "sessions": {
+    "s_428b03cffb4801": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-a84096dbe014b90c4",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
