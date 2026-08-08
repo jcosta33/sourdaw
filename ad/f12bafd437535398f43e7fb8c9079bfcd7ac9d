@@ -1,0 +1,25 @@
+src/modules/DawInterchange/useCases/exportDawProject.ts
+  s_14f2bbc9f385dd::t_bf16a95df4c9f4 51-52,56
+  s_14f2bbc9f385dd::t_4598e00ad7b83c 13-21
+  s_14f2bbc9f385dd::t_cb803da7b52235 84
+src/modules/DawInterchange/useCases/__tests__/exportDawProject.spec.ts
+  s_14f2bbc9f385dd::t_a5d70e0765e1b0 159-165
+src/modules/DawInterchange/handlers/handleExportDawProject.ts
+  s_14f2bbc9f385dd::t_6532bdaf0b89b9 69,71-79
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "adf12bafd437535398f43e7fb8c9079bfcd7ac9d",
+  "prompts": {},
+  "sessions": {
+    "s_14f2bbc9f385dd": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f9a61a1d-66b3-4146-938d-a04f45f4b060",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
