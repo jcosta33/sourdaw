@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
+import { getPluginById } from '#/modules/Arrangement/useCases';
+
 import { type ProjectContext } from '../../models/ProjectContext';
 import { bridgeLlmToolCalls, buildLlmActionSystemPrompt, buildLlmActionUserMessage } from '../llmActionBridge';
 
@@ -169,6 +171,46 @@ type BridgeInput = Omit<Parameters<typeof bridgeLlmToolCalls>[0], 'context'> & {
 
 function bridge({ calls, context = projectContext, markerSignatures, sectionSignatures }: BridgeInput) {
     return bridgeLlmToolCalls({ calls, context, markerSignatures, sectionSignatures });
+}
+
+/**
+ * A Fermenter device whose two tuning parameters carry the **shipped**
+ * declarations, read from `getPluginById` rather than written out here.
+ * `isValidParameterValue` branches on `DeviceParameter.type`, and that type is
+ * derived from the descriptor's `step`, so a fixture that declared its own
+ * types would be validating itself instead of the product.
+ */
+function createFermenterTuningContext(): ProjectContext {
+    const descriptor = getPluginById('fermenter');
+    if (!descriptor) {
+        throw new Error('Expected the shipped Fermenter descriptor');
+    }
+    const parameters = descriptor.parameters
+        .filter((parameter) => parameter.id === 'oscCoarse' || parameter.id === 'oscFine')
+        .map((parameter) => ({
+            id: parameter.id,
+            name: parameter.name,
+            type: parameter.type,
+            value: parameter.defaultValue,
+            minValue: parameter.minValue,
+            maxValue: parameter.maxValue,
+            unit: parameter.unit,
+        }));
+    const [sourceTrack, ...otherTracks] = projectContext.tracks;
+    if (!sourceTrack) {
+        throw new Error('Expected vocals track fixture');
+    }
+    return {
+        ...projectContext,
+        tracks: [
+            {
+                ...sourceTrack,
+                deviceCount: 1,
+                devices: [{ id: 'device-fermenter', type: 'fermenter', bypassed: false, parameters }],
+            },
+            ...otherTracks,
+        ],
+    };
 }
 
 function createCrossfadeContext(): ProjectContext {
@@ -2095,6 +2137,41 @@ describe('bridgeLlmToolCalls', () => {
             {
                 type: 'setDeviceParameter',
                 payload: { deviceId: 'device-eq', paramId: 'oversampling', value: 8 },
+            },
+        ]);
+        expect(result.rejections.map((rejection) => rejection.name)).toEqual(['setDeviceParameter']);
+    });
+
+    it('admits a fractional cent on Fermenter fine tune while still refusing a fractional semitone on coarse', () => {
+        // The second reader of the descriptor's derived `type`. `oscFine` used
+        // to be declared `int`, so a model asking for 12.5 ct — a perfectly
+        // ordinary detune request — came back rejected; now it is `float` and
+        // goes through. That widening is the point of the change and is
+        // asserted here rather than left to the automation path, because this
+        // is a different gate on a different surface.
+        //
+        // `oscCoarse` in the same batch is the control: a semitone selector is
+        // still declared `int`, so 12.5 st is still refused. One call through
+        // and one refused, so neither "the bridge stopped validating" nor "the
+        // bridge stopped admitting" can pass.
+        const result = bridge({
+            calls: [
+                {
+                    name: 'setDeviceParameter',
+                    arguments: { deviceId: 'device-fermenter', paramId: 'oscFine', value: 12.5 },
+                },
+                {
+                    name: 'setDeviceParameter',
+                    arguments: { deviceId: 'device-fermenter', paramId: 'oscCoarse', value: 12.5 },
+                },
+            ],
+            context: createFermenterTuningContext(),
+        });
+
+        expect(result.actions).toEqual([
+            {
+                type: 'setDeviceParameter',
+                payload: { deviceId: 'device-fermenter', paramId: 'oscFine', value: 12.5 },
             },
         ]);
         expect(result.rejections.map((rejection) => rejection.name)).toEqual(['setDeviceParameter']);
