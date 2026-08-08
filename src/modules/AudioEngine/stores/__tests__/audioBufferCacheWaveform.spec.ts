@@ -55,56 +55,80 @@ type StoredAudioBuffer = {
     sizeInBytes: number;
 };
 
-function installFakeIndexedDb(): Map<string, StoredAudioBuffer> {
-    const backing = new Map<string, StoredAudioBuffer>();
-    const objectStore = {
-        clear: () => backing.clear(),
-        delete: (key: string) => {
-            backing.delete(key);
-        },
-        get: (key: string) => {
-            const request = {
-                result: undefined as StoredAudioBuffer | undefined,
-                error: null,
-                onsuccess: null as (() => void) | null,
-                onerror: null as (() => void) | null,
-            };
-            queueMicrotask(() => {
-                request.result = backing.get(key);
-                request.onsuccess?.();
-            });
-            return request;
-        },
-        getAll: () => {
-            const request = {
-                result: [] as StoredAudioBuffer[],
-                error: null,
-                onsuccess: null as (() => void) | null,
-                onerror: null as (() => void) | null,
-            };
-            queueMicrotask(() => {
-                request.result = [...backing.values()];
-                request.onsuccess?.();
-            });
-            return request;
-        },
-        getAllKeys: () => {
-            const request = {
-                result: [] as string[],
-                error: null,
-                onsuccess: null as (() => void) | null,
-                onerror: null as (() => void) | null,
-            };
-            queueMicrotask(() => {
-                request.result = [...backing.keys()];
-                request.onsuccess?.();
-            });
-            return request;
-        },
-        put: (value: StoredAudioBuffer, key: string) => {
-            backing.set(key, value);
-        },
-    };
+type StoredBufferMeta = { lastAccessed: number; sizeInBytes: number };
+
+/** The buffers store, with the metadata store hanging off it as `.meta`. A
+ * spec that seeds a record directly has to seed its row too, because from
+ * DB_VERSION 2 on a record with no row is deliberately not collectable. */
+type FakeBacking = Map<string, StoredAudioBuffer> & { meta: Map<string, StoredBufferMeta> };
+
+function installFakeIndexedDb(): FakeBacking {
+    const backing = new Map<string, StoredAudioBuffer>() as FakeBacking;
+    // Two object stores from DB_VERSION 2 on, sharing a key space: the metadata
+    // row and the record it describes must not land in the same map.
+    const metaBacking = new Map<string, StoredBufferMeta>();
+    backing.meta = metaBacking;
+
+    function makeStore<Value>(table: Map<string, Value>) {
+        return {
+            clear: () => table.clear(),
+            delete: (key: string) => {
+                table.delete(key);
+            },
+            get: (key: string) => {
+                const request = {
+                    result: undefined as Value | undefined,
+                    error: null,
+                    onsuccess: null as (() => void) | null,
+                    onerror: null as (() => void) | null,
+                };
+                queueMicrotask(() => {
+                    request.result = table.get(key);
+                    request.onsuccess?.();
+                });
+                return request;
+            },
+            getAll: () => {
+                const request = {
+                    result: [] as Value[],
+                    error: null,
+                    onsuccess: null as (() => void) | null,
+                    onerror: null as (() => void) | null,
+                };
+                queueMicrotask(() => {
+                    request.result = [...table.values()];
+                    request.onsuccess?.();
+                });
+                return request;
+            },
+            getAllKeys: () => {
+                const request = {
+                    result: [] as string[],
+                    error: null,
+                    onsuccess: null as (() => void) | null,
+                    onerror: null as (() => void) | null,
+                };
+                queueMicrotask(() => {
+                    request.result = [...table.keys()];
+                    request.onsuccess?.();
+                });
+                return request;
+            },
+            put: (value: Value, key: string) => {
+                table.set(key, value);
+            },
+        };
+    }
+
+    const objectStore = makeStore(backing);
+    const metaStore = makeStore(metaBacking);
+    function storeFor(name: string) {
+        if (name === 'bufferMeta') {
+            return metaStore;
+        }
+        return objectStore;
+    }
+
     const database = {
         objectStoreNames: { contains: () => true },
         createObjectStore: () => objectStore,
@@ -115,7 +139,7 @@ function installFakeIndexedDb(): Map<string, StoredAudioBuffer> {
                 oncomplete: null as (() => void) | null,
                 onerror: null as (() => void) | null,
                 abort: vi.fn(),
-                objectStore: () => objectStore,
+                objectStore: (name: string) => storeFor(name),
             };
             // `complete` fires only after every queued request has been
             // delivered (IDB 3.0 §5.6). Requests here resolve on microtasks, so
@@ -360,6 +384,7 @@ describe('audioBufferCache garbage collection', () => {
             lastAccessed: 0,
             sizeInBytes: 4,
         });
+        backing.meta.set('old', { lastAccessed: 0, sizeInBytes: 4 });
         // Pin 'live' so it survives both age and size sweeps.
         audioBufferCache.set('live', createAudioBuffer({ length: 1 }));
         backing.set('live', {
@@ -369,6 +394,7 @@ describe('audioBufferCache garbage collection', () => {
             lastAccessed: Date.now(),
             sizeInBytes: 4,
         });
+        backing.meta.set('live', { lastAccessed: Date.now(), sizeInBytes: 4 });
 
         const removed = await audioBufferCache.garbageCollectByAge(1);
         expect(removed).toBe(1);
@@ -385,6 +411,7 @@ describe('audioBufferCache garbage collection', () => {
             lastAccessed: now - 1000,
             sizeInBytes: 16,
         });
+        backing.meta.set('big', { lastAccessed: now - 1000, sizeInBytes: 16 });
         backing.set('small', {
             sampleRate: 48_000,
             numberOfChannels: 1,
@@ -392,6 +419,7 @@ describe('audioBufferCache garbage collection', () => {
             lastAccessed: now,
             sizeInBytes: 4,
         });
+        backing.meta.set('small', { lastAccessed: now, sizeInBytes: 4 });
         audioBufferCache.set('small', createAudioBuffer({ length: 1 }));
 
         const removed = await audioBufferCache.garbageCollectBySize(4);

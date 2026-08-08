@@ -84,8 +84,11 @@ describe('audioBufferCache connection churn (audit M-045)', () => {
 
         // The reads really did reach the store — a cache that silently stopped
         // talking to IndexedDB would also report one open. 100 000 differs from
-        // the 1 000 the record was persisted with.
-        expect(controls.committed.get('pcm')?.lastAccessed).toBe(100_000);
+        // the 1 000 the record was persisted with. The stamp lives on the
+        // metadata row from DB_VERSION 2 on; the record keeps its persist-time
+        // value, which is the second half of this pair.
+        expect(controls.committedMeta.get('pcm')?.lastAccessed).toBe(100_000);
+        expect(controls.committed.get('pcm')?.lastAccessed).toBe(1_000);
         expect(controls.openRequestCount()).toBe(1);
         // And the one connection is held, not opened-and-abandoned.
         expect(controls.liveConnectionCount()).toBe(1);
@@ -144,7 +147,7 @@ describe('audioBufferCache connection churn (audit M-045)', () => {
         // 70 000 differs from the 1 000 the record was persisted with, so a
         // refresh that never ran cannot pass this.
         expect(controls.writeTransactionCount()).toBe(2);
-        expect(controls.committed.get('pcm')?.lastAccessed).toBe(70_000);
+        expect(controls.committedMeta.get('pcm')?.lastAccessed).toBe(70_000);
         expect(mocks.loggerWarn).not.toHaveBeenCalled();
     });
 
@@ -166,14 +169,14 @@ describe('audioBufferCache connection churn (audit M-045)', () => {
         audioBufferCache.get('pcm');
         await flushIndexedDbTasks();
         expect(controls.writeTransactionCount()).toBe(2);
-        expect(controls.committed.get('pcm')?.lastAccessed).toBe(62_000);
+        expect(controls.committedMeta.get('pcm')?.lastAccessed).toBe(62_000);
 
         // 48 s after the last refresh: inside the window, no transaction.
         now.mockReturnValue(110_000);
         audioBufferCache.get('pcm');
         await flushIndexedDbTasks();
         expect(controls.writeTransactionCount()).toBe(2);
-        expect(controls.committed.get('pcm')?.lastAccessed).toBe(62_000);
+        expect(controls.committedMeta.get('pcm')?.lastAccessed).toBe(62_000);
 
         // 98 s after the last refresh, though only 50 s after the last read:
         // the window has elapsed and the stamp must move.
@@ -181,7 +184,7 @@ describe('audioBufferCache connection churn (audit M-045)', () => {
         audioBufferCache.get('pcm');
         await flushIndexedDbTasks();
         expect(controls.writeTransactionCount()).toBe(3);
-        expect(controls.committed.get('pcm')?.lastAccessed).toBe(160_000);
+        expect(controls.committedMeta.get('pcm')?.lastAccessed).toBe(160_000);
     });
 
     // Mutation: dropping `accessRefreshStampById.delete(id)` from
@@ -214,7 +217,7 @@ describe('audioBufferCache connection churn (audit M-045)', () => {
 
         expect(exported.evicted?.sampleRate).toBe(48_000);
         expect(controls.writeTransactionCount()).toBe(66);
-        expect(controls.committed.get('evicted')?.lastAccessed).toBe(30_000);
+        expect(controls.committedMeta.get('evicted')?.lastAccessed).toBe(30_000);
     });
 
     // Mutation: memoizing the rejected promise (dropping the `catch` that
