@@ -1,0 +1,19 @@
+src/modules/FactorySynthesis/services/__tests__/bufferCreation.spec.ts
+  s_92c1d200c01af3::t_5524bf49ffbef3 1-116
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "973332f02279303aa52a9728682dd5bcd443b072",
+  "prompts": {},
+  "sessions": {
+    "s_92c1d200c01af3": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-a2fe15c6aa7ce4779",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
