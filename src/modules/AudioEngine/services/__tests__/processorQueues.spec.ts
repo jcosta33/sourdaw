@@ -1,96 +1,56 @@
-import fs from 'fs';
-import path from 'path';
-
-import ts from 'typescript';
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 
 import { FERMENTER_AUTOMATION_PARAM_IDS } from '../../models/FermenterAutomationParams';
-import { PROOF_CHAMBER_AUTOMATION_PARAM_IDS } from '../../models/ProofChamberAutomationParams';
-import { TOASTER_AUTOMATION_PARAM_IDS } from '../../models/ToasterAutomationParams';
-import { resolveProcessorWasmModule } from '../../transformers/resolveProcessorWasmModule';
-import { WasmView } from '../wasmView';
 
-// The eval harness strips imports from the processor source, so any symbol a
-// processor imports and references at class-eval or construction time must be
-// re-supplied as an injected global. The real implementations are used.
+import { loadWorkletProcessor } from './workletBundleHarness';
 
-// Helper to evaluate an AudioWorklet script and extract its class
-function loadProcessorClass(filePath: string, className: string) {
-    const code = fs.readFileSync(path.resolve(__dirname, filePath), 'utf-8');
+// Every processor here is evaluated from the bundled artifact the app loads
+// (`?worker&url` + `worker.format: 'iife'`), not from regex-stripped source, so
+// there is no list of injected globals to keep in step with the processors'
+// imports. See `workletBundleHarness.ts` for the three times the old harness
+// broke on an import that was correct in production.
 
-    // Mock global AudioWorklet environment. `exports` is a no-op stub so TS's
-    // emitted `Object.defineProperty(exports, '__esModule', ...)` line doesn't
-    // crash inside `new Function`.
-    const globals = {
-        AudioWorkletProcessor: class {
-            port = {
-                onmessage: null as ((event: MessageEvent) => void) | null,
-                postMessage: () => {},
-            };
-        },
-        registerProcessor: () => {},
-        currentFrame: 0,
-        sampleRate: 48000,
-        console,
-        WasmView,
-        resolveProcessorWasmModule,
-        // Ordinal tables the processors read at module scope to *derive* their
-        // automation guards. The real tables, per the note above: a stub would
-        // make these specs agree with themselves instead of with the contract.
-        //
-        // `fermenterProcessor` has needed this since the table moved into
-        // `models/`; the three Fermenter cases in this file were failing with
-        // `FERMENTER_AUTOMATION_PARAM_IDS is not defined` before this branch
-        // touched anything, because the import stripping is invisible until a
-        // processor references an imported symbol during class evaluation.
-        FERMENTER_AUTOMATION_PARAM_IDS,
-        TOASTER_AUTOMATION_PARAM_IDS,
-        PROOF_CHAMBER_AUTOMATION_PARAM_IDS,
-    };
+type QueuedMessage = { sampleFrame: number; val: string };
 
-    // Strip TypeScript types so `new Function` can parse pure JS. Use ESNext
-    // module mode so imports stay as `import ... from ...;` (easy to regex
-    // out) instead of becoming CommonJS `require(...)` (which has no loader
-    // inside `new Function`).
-    const transpiled = ts.transpileModule(code, {
-        compilerOptions: {
-            target: ts.ScriptTarget.ES2022,
-            module: ts.ModuleKind.ESNext,
-            isolatedModules: true,
-            removeComments: false,
-        },
-    }).outputText;
-    const safeCode = transpiled.replaceAll(/^import\s+.*?;$/gm, '').replaceAll(/^export\s+/gm, '');
+type QueueProcessor = {
+    _queue: QueuedMessage[];
+    _queueHead: number;
+    _enqueue(message: QueuedMessage): void;
+    _drainQueue(blockEndFrame: number): void;
+    _dispatch(message: QueuedMessage): void;
+    dispatched?: QueuedMessage[];
+};
 
-    // eslint-disable-next-line @typescript-eslint/no-implied-eval -- test utility: dynamically loads AudioWorkletProcessor source to extract class; no user input
-    const execute = new Function(
-        ...Object.keys(globals),
-        `
-        ${safeCode}
-        return ${className};
-        `
-    );
+type ParamSetter = (paramId: number, value: number) => void;
 
-    return execute(...Object.values(globals));
-}
+type AutomationProcessor = {
+    port: { onmessage: ((event: { data: unknown }) => void) | null };
+    _instance: { set_param_by_id: ParamSetter } | null;
+    _ready: boolean;
+    _applyParamAutomation(frame: number): void;
+};
+
+const QUEUE_PROCESSORS = [
+    { entryFileName: 'levainProcessor.ts', registeredName: 'levain-processor' },
+    { entryFileName: 'toasterProcessor.ts', registeredName: 'toaster-processor' },
+    { entryFileName: 'crumbsProcessor.ts', registeredName: 'crumbs-processor' },
+] as const;
 
 describe('AudioWorklet Processor Queues (_queueHead Read Index)', () => {
-    for (const processorName of ['LevainProcessor', 'ToasterProcessor', 'CrumbsProcessor']) {
-        describe(processorName, () => {
-            let ProcessorClass: any;
-            let processor: any;
+    for (const { entryFileName, registeredName } of QUEUE_PROCESSORS) {
+        describe(registeredName, () => {
+            let processor: QueueProcessor;
 
-            beforeEach(() => {
-                const fileName = `${processorName.charAt(0).toLowerCase() + processorName.slice(1)}.ts`;
-                ProcessorClass = loadProcessorClass(`../${fileName}`, processorName);
+            beforeEach(async () => {
+                const ProcessorClass = await loadWorkletProcessor<QueueProcessor>({ entryFileName, registeredName });
                 processor = new ProcessorClass();
 
                 // Mock out the dispatch method to just record the messages
-                processor._dispatch = function (msg: any) {
+                processor._dispatch = function (message: QueuedMessage) {
                     if (!this.dispatched) {
                         this.dispatched = [];
                     }
-                    this.dispatched.push(msg);
+                    this.dispatched.push(message);
                 };
             });
 
@@ -166,9 +126,17 @@ describe('AudioWorklet Processor Queues (_queueHead Read Index)', () => {
 });
 
 describe('FermenterProcessor parameter automation', () => {
+    let processor: AutomationProcessor;
+
+    beforeEach(async () => {
+        const ProcessorClass = await loadWorkletProcessor<AutomationProcessor>({
+            entryFileName: 'fermenterProcessor.ts',
+            registeredName: 'fermenter-processor',
+        });
+        processor = new ProcessorClass();
+    });
+
     it('evaluates compiled automation at render-quantum boundaries', () => {
-        const ProcessorClass = loadProcessorClass('../fermenterProcessor.ts', 'FermenterProcessor');
-        const processor = new ProcessorClass();
         const applied: Array<{ paramId: number; value: number }> = [];
         processor._instance = {
             set_param_by_id(paramId: number, value: number) {
@@ -176,7 +144,7 @@ describe('FermenterProcessor parameter automation', () => {
             },
         };
         processor._ready = true;
-        processor.port.onmessage({
+        processor.port.onmessage?.({
             data: {
                 type: 'paramAutomation',
                 paramId: 1,
@@ -198,15 +166,57 @@ describe('FermenterProcessor parameter automation', () => {
             { paramId: 1, value: 2_000 },
         ]);
     });
+
+    // The bundled worklet derives its ordinal bound from the imported
+    // `FERMENTER_AUTOMATION_PARAM_IDS` table (`models/FermenterAutomationParams`).
+    // A worklet that restates that bound as a literal — as it did before #1351,
+    // when a hard-coded `15` silently dropped every `oscWaveform` (ordinal 15)
+    // automation message — disagrees with the table and fails here.
+    //
+    // This assertion is only reachable at all because the harness evaluates the
+    // bundle: the old source-stripping harness deleted that import and could
+    // only see the table if it was hand-injected as a global.
+    const highestOrdinal = Math.max(...Object.values(FERMENTER_AUTOMATION_PARAM_IDS));
+    const firstInvalidOrdinal = Object.keys(FERMENTER_AUTOMATION_PARAM_IDS).length;
+
+    function scheduleOrdinal(target: AutomationProcessor, paramId: number): number[] {
+        const applied: number[] = [];
+        target._instance = {
+            set_param_by_id(appliedId: number) {
+                applied.push(appliedId);
+            },
+        };
+        target._ready = true;
+        target.port.onmessage?.({
+            data: {
+                type: 'paramAutomation',
+                paramId,
+                segments: [{ startFrame: 0, endFrame: 100, startValue: 0, endValue: 1 }],
+            },
+        });
+        target._applyParamAutomation(100);
+        return applied;
+    }
+
+    it(`accepts automation for the highest ordinal in the table (${highestOrdinal})`, () => {
+        expect(scheduleOrdinal(processor, highestOrdinal)).toEqual([highestOrdinal]);
+    });
+
+    it(`rejects automation one past the table (${firstInvalidOrdinal}), which Rust would index out of range`, () => {
+        expect(scheduleOrdinal(processor, firstInvalidOrdinal)).toEqual([]);
+    });
 });
 
 describe('ProofChamberProcessor parameter automation', () => {
-    it('interpolates a compiled segment at render quantum boundaries', () => {
-        const ProcessorClass = loadProcessorClass('../proofChamberProcessor.ts', 'ProofChamberProcessor');
+    it('interpolates a compiled segment at render quantum boundaries', async () => {
+        const ProcessorClass = await loadWorkletProcessor<AutomationProcessor>({
+            entryFileName: 'proofChamberProcessor.ts',
+            registeredName: 'proof-chamber-processor',
+        });
         const processor = new ProcessorClass();
-        const setParam = vi.fn();
+        const setParam = vi.fn<ParamSetter>();
         processor._instance = { set_param_by_id: setParam };
-        processor.port.onmessage({
+        processor.port.onmessage?.({
             data: {
                 type: 'paramAutomation',
                 paramId: 0,
