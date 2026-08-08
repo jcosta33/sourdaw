@@ -1,0 +1,97 @@
+src/modules/Crumbs/useCases/crumbsParamBridge/helpers.ts
+  s_14f2bbc9f385dd::t_3c036012cdcc55 1-26
+src/modules/Crumbs/useCases/__tests__/crumbsParameterPersistence.integration.spec.ts
+  s_14f2bbc9f385dd::t_6891e217723bee 1-362
+src/modules/Crumbs/presentations/components/CrumbsControls.tsx
+  s_14f2bbc9f385dd::t_c5226fe468b5d2 87
+  s_14f2bbc9f385dd::t_25ca5a42ffeb86 10,24-34
+  s_14f2bbc9f385dd::t_9b8dfb743ec704 56
+  s_bc88af7d3b054c::t_7438fa6e216e9f 120,134,144,154,164,183,195,205,215,225
+src/modules/Crumbs/models/CrumbsParameterMap.ts
+  s_14f2bbc9f385dd::t_5e65be1830d351 1-71
+src/modules/Crumbs/presentations/views/CrumbsPanel.tsx
+  s_14f2bbc9f385dd::t_e78cba41ab80e0 29
+  s_14f2bbc9f385dd::t_a8cb8bd631c090 17-18
+  s_14f2bbc9f385dd::t_b57161f1a7dd5e 342-344
+src/modules/GrandBoule/useCases/setGrandBouleMasterGain.ts
+  s_14f2bbc9f385dd::t_f48df40e577d11 11-12,14-15,19-20,25-31
+src/modules/GrandBoule/useCases/setGrandBouleSympatheticSend.ts
+  s_14f2bbc9f385dd::t_45a6632d7ebe19 12-13
+  s_14f2bbc9f385dd::t_a9ede63e18e445 15-16,20-21,26-32
+src/modules/Crumbs/useCases/hydrateCrumbsStateFromProject.ts
+  s_14f2bbc9f385dd::t_8d479c3c15076e 9,15,58-65,78-79,82-88,90,92
+  s_14f2bbc9f385dd::t_76877a40644578 19-28,41
+  s_14f2bbc9f385dd::t_a6f16a8ea743f9 7-8
+  s_14f2bbc9f385dd::t_d55a4ba6ef6595 10-14
+  s_14f2bbc9f385dd::t_7c6e603b3e33a8 16-18
+  s_14f2bbc9f385dd::t_5b3b8c374a7a4e 29-31,38-40
+  s_14f2bbc9f385dd::t_97a72a5bdf406e 42-44
+  s_ef58c5643547f5::t_e7ec00ea8133f4 4,32-37
+src/modules/GrandBoule/useCases/hydrateGrandBouleConfigFromProject.ts
+  s_14f2bbc9f385dd::t_dba412db3a4eb1 1-56
+src/modules/GrandBoule/useCases/setGrandBouleSoundboardSend.ts
+  s_14f2bbc9f385dd::t_e25e44e026e215 12-13,15-16,20-21,26-32
+src/modules/GrandBoule/useCases/grandBouleParamBridge/helpers.ts
+  s_14f2bbc9f385dd::t_bbdb77b7f7cc8e 1-94
+src/modules/GrandBoule/useCases/__tests__/grandBouleParameterPersistence.integration.spec.ts
+  s_14f2bbc9f385dd::t_7bcc8a78d53c60 1-360
+src/modules/GrandBoule/useCases/__tests__/setGrandBouleSoundboardSend.spec.ts
+  s_14f2bbc9f385dd::t_b4d1a92adc809c 1,3-6,9-35,38-72,75-92
+src/modules/GrandBoule/useCases/__tests__/setGrandBouleSympatheticSend.spec.ts
+  s_14f2bbc9f385dd::t_f18f1b804016da 1,3-6,9-35,38-72,75-92
+src/modules/GrandBoule/presentations/views/GrandBoulePanel.tsx
+  s_14f2bbc9f385dd::t_4fa97d40cc59cc 96-99
+  s_14f2bbc9f385dd::t_153da4b6b276a1 22
+  s_14f2bbc9f385dd::t_952b4d3350a2f6 176-183
+  s_ef58c5643547f5::t_a626d68203859d 373-375,385-393,403-411
+src/modules/GrandBoule/useCases/__tests__/setGrandBouleMasterGain.spec.ts
+  s_14f2bbc9f385dd::t_35f92d885e1684 1,3-6,9-36,38-64,66-96
+src/modules/Crumbs/presentations/components/__tests__/CrumbsControls.spec.tsx
+  s_14f2bbc9f385dd::t_a1e35d99f0c79c 20
+src/modules/Crumbs/useCases/crumbsParamBridge/cancelCrumbsParamPreview.ts
+  s_14f2bbc9f385dd::t_731cbc553c54b7 1-12
+src/modules/Crumbs/useCases/setCrumbsParamWithAudio.ts
+  s_14f2bbc9f385dd::t_d7951444581f70 1-2,8-9,14,18-21,26-34,47,56-61,76-80
+  s_14f2bbc9f385dd::t_fd433e933156a4 3-7,10-13,15-17,22-25,35-46,48-55,62-75,81-89
+  s_14f2bbc9f385dd::t_c294e9b23a26bc 90-95
+src/modules/Crumbs/useCases/crumbsParamBridge/setCrumbsParamThrottled.ts
+  s_14f2bbc9f385dd::t_345578da313e55 1,4
+src/modules/Arrangement/models/PluginDescriptors/CrumbsDescriptor.ts
+  s_14f2bbc9f385dd::t_a29e43a96e8ffc 116-120
+  s_14f2bbc9f385dd::t_241e6b191e6a1b 38-46
+  s_14f2bbc9f385dd::t_c058642e956cc2 86-89
+src/modules/Crumbs/stores/crumbsStore.ts
+  s_14f2bbc9f385dd::t_fac11e49d815dd 9-10,272-309
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "9a3eed0ce04c8cc8cea804906c26865c4313e4b3",
+  "prompts": {},
+  "sessions": {
+    "s_14f2bbc9f385dd": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f9a61a1d-66b3-4146-938d-a04f45f4b060",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_bc88af7d3b054c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f9b4a-11a2-7f61-8dfb-76eed0eb2a9c",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_ef58c5643547f5": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-a313cec355576c0d2",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
