@@ -70,6 +70,7 @@ export const TrackLevelSection = ({ track }: TrackLevelSectionProps): ReactEleme
                                 max={100}
                                 step={1}
                                 aria-label={`${track.name} gain`}
+                                data-testid="inspector-track-gain"
                                 className="w-full"
                             />
                         </div>
