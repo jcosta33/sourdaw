@@ -1,0 +1,42 @@
+docs/manual/devices/07-gluten.md
+  s_b7b7d9d028669e::t_df6c5c7f7fddd2 202-203
+  s_b7b7d9d028669e::t_81c2f6d3bcc813 1-2,9-34,39-43,49-59,61,63-75,83-84,87-88,91-97,101-102,104,107-108,112-118,122-123,125-129,134,136,141,146-149,157-163,168-178,199-201
+  s_b7b7d9d028669e::t_c5955fb851c3e7 124
+  s_b7b7d9d028669e::t_cb059821f951ef 3-8
+docs/manual/02-concepts.md
+  s_b7b7d9d028669e::t_92bf1165e28f85 1-5,7-11,14,16,26,28-74,78-81,85-89,91,95,109-111,113-114,123-133
+docs/README.md
+  s_b7b7d9d028669e::t_c88739ea451fc7 7-8
+docs/manual/README.md
+  s_b7b7d9d028669e::t_7a858329e606e7 1-18,21-51,58
+  s_b7b7d9d028669e::t_bec8bc75d1f658 52,54-60
+  s_b7b7d9d028669e::t_9100aba2858832 19-20
+docs/manual/devices/11-grinder.md
+  s_b7b7d9d028669e::t_d3e18557f8a698 159
+  s_b7b7d9d028669e::t_a20d232a91ba18 117
+  s_b7b7d9d028669e::t_0d62f4438f14e9 141
+  s_b7b7d9d028669e::t_d6d22cf6947101 1-30,32-41,43-80,82-97,99-116,118-140,142-158,160-197
+  s_b7b7d9d028669e::t_36a5e13d9832bf 31
+  s_b7b7d9d028669e::t_3ef4717594385e 98
+  s_b7b7d9d028669e::t_587f367b3a7e13 42
+  s_b7b7d9d028669e::t_c8e4d26b59ba1f 81
+docs/manual/coverage-exceptions.json
+  s_b7b7d9d028669e::t_add110bf62e25e 1-45,55-83
+  s_b7b7d9d028669e::t_0a79374ce7b66a 46-54
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "73768afc82fc23dce68a88054a0fed3db7cceffc",
+  "prompts": {},
+  "sessions": {
+    "s_b7b7d9d028669e": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "7de99988-56ed-47fd-b275-cf2df29995c7",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
