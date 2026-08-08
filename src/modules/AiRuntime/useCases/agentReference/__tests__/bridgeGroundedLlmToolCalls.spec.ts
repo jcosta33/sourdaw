@@ -1169,6 +1169,33 @@ describe('bridgeGroundedLlmToolCalls', () => {
         expect(rejected.every((result) => result.rejections.length === 1)).toBe(true);
     });
 
+    it('grounds one explicit clip move with separate source, destination, and absolute beat evidence', () => {
+        const context = createClipContext();
+        const call = {
+            name: 'moveClip',
+            arguments: { clipId: 'clip-intro', trackId: 'track-guitar', startBeat: 16 },
+        };
+        const accepted = bridge([call], 'move the Intro clip to Guitar at beat 16', context);
+        const selected = bridge([call], 'move the selected clip to Guitar at beat 16', context);
+        const rejected = [
+            bridge([call], 'move the Chorus clip to Guitar at beat 16', context),
+            bridge([call], 'move the Intro clip to Vocals at beat 16', context),
+            bridge([call], 'move the Intro clip to Guitar', context),
+            bridge([call], 'move the Intro clip to Guitar at bar 16', context),
+            bridge([call], 'move the Intro clip to Guitar at beat 8', context),
+            bridge([call], 'move the Intro clip to Guitar at beat 16 or beat 32', context),
+        ];
+
+        expect(accepted.actions).toEqual([
+            { type: 'moveClip', payload: { clipId: 'clip-intro', trackId: 'track-guitar', startBeat: 16 } },
+        ]);
+        expect(accepted.rejections).toEqual([]);
+        expect(selected.actions).toEqual(accepted.actions);
+        expect(selected.rejections).toEqual([]);
+        expect(rejected.every((result) => result.actions.length === 0)).toBe(true);
+        expect(rejected.every((result) => result.rejections.length === 1)).toBe(true);
+    });
+
     it('allows explicit clip unlock while rejecting edits to a locked clip', () => {
         const base = createClipContext();
         const context: ProjectContext = {

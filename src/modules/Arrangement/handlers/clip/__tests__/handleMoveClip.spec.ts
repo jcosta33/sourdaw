@@ -8,10 +8,11 @@ type TestTrackState = { tracks: { id: string; clips: TestClip[] }[] };
 
 const mocks = vi.hoisted(() => ({
     getTrackStoreState: vi.fn<() => TestTrackState | null>(),
+    moveClip: vi.fn<() => boolean>(),
 }));
 
 vi.mock('../../../useCases/clip/moveClip', () => ({
-    moveClip: vi.fn(),
+    moveClip: mocks.moveClip,
 }));
 
 vi.mock('../../../useCases/getTrackStoreState', () => ({
@@ -20,12 +21,25 @@ vi.mock('../../../useCases/getTrackStoreState', () => ({
 
 describe('clipHandlers', () => {
     it('handleMoveClip forwards to moveClip use case', () => {
-        void handleMoveClip.execute({
+        mocks.moveClip.mockReturnValueOnce(true);
+
+        expect(handleMoveClip.execute({
             type: 'moveClip',
             payload: { clipId: 'c1', trackId: 't1', startBeat: 4 },
-        });
+        })).toEqual({ status: 'written' });
 
         expect(moveClip).toHaveBeenCalledWith('c1', 't1', 4);
+    });
+
+    it('reports no-write when the move use case rejects the request', () => {
+        mocks.moveClip.mockReturnValueOnce(false);
+
+        expect(
+            handleMoveClip.execute({
+                type: 'moveClip',
+                payload: { clipId: 'missing', trackId: 't1', startBeat: 4 },
+            })
+        ).toEqual({ status: 'no-write' });
     });
 
     it('handleMoveClip describes an inverse back to the pre-move position', () => {
@@ -43,9 +57,24 @@ describe('clipHandlers', () => {
             payload: { clipId: 'c1', trackId: 't1', startBeat: 4 },
         });
 
-        expect(desc.inverseAction).toEqual({
-            type: 'moveClip',
-            payload: { clipId: 'c1', trackId: 't0', startBeat: 2 },
+        expect(desc).toEqual({
+            label: 'Move clip "Clip c1" (c1) to track t1 at beat 4',
+            inverseAction: {
+                type: 'restoreClipPlacement',
+                payload: {
+                    clipId: 'c1',
+                    expected: { trackId: 't1', startBeat: 4, endBeat: 8 },
+                    replacement: { trackId: 't0', startBeat: 2, endBeat: 6 },
+                },
+            },
+            redoAction: {
+                type: 'restoreClipPlacement',
+                payload: {
+                    clipId: 'c1',
+                    expected: { trackId: 't0', startBeat: 2, endBeat: 6 },
+                    replacement: { trackId: 't1', startBeat: 4, endBeat: 8 },
+                },
+            },
         });
     });
 
@@ -58,5 +87,25 @@ describe('clipHandlers', () => {
         });
 
         expect(desc.inverseAction).toBeNull();
+    });
+
+    it('detects an exact no-op and disables duplicate CRDT compensation', () => {
+        mocks.getTrackStoreState.mockReturnValue({
+            tracks: [
+                {
+                    id: 't0',
+                    clips: [{ id: 'c1', trackId: 't0', name: 'Clip c1', startBeat: 2, endBeat: 6, gain: 1 }],
+                },
+            ],
+        });
+
+        expect(
+            handleMoveClip.isNoop?.({
+                type: 'moveClip',
+                payload: { clipId: 'c1', trackId: 't0', startBeat: 2 },
+            })
+        ).toBe(true);
+        expect(handleMoveClip.requiresAbortCompensation).toBe(false);
+        expect(handleMoveClip.undoable).toBe(true);
     });
 });

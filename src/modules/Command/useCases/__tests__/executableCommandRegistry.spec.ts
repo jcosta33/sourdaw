@@ -80,6 +80,18 @@ const EXPECTED_COMMANDS = [
         true
     ),
     expectedCommand(
+        'moveClip',
+        'Move one unlocked clip to an absolute beat on an existing clip-host track.',
+        {
+            clipId: { type: 'string', description: 'Existing unlocked clip ID' },
+            trackId: { type: 'string', description: 'Existing destination track ID that accepts clips' },
+            startBeat: { type: 'number', minimum: 0, description: 'Non-negative absolute destination beat' },
+        },
+        ['clipId', 'trackId', 'startBeat'],
+        'bounded-reversible',
+        false
+    ),
+    expectedCommand(
         'renameClip',
         'Rename an existing clip.',
         { clipId: { type: 'string' }, name: { type: 'string' } },

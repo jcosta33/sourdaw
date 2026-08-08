@@ -506,6 +506,68 @@ describe('parsePromptToActions', () => {
         expect(fitResult.executionMode).toBe('atomic');
     });
 
+    it('proposes a grounded cross-track clip move as one atomic action', async () => {
+        const actualBridge = await vi.importActual<typeof import('../agentReference/bridgeGroundedLlmToolCalls')>(
+            '../agentReference/bridgeGroundedLlmToolCalls'
+        );
+        mockBridgeGroundedLlmToolCalls.mockImplementation(actualBridge.bridgeGroundedLlmToolCalls);
+        vi.mocked(generateToolCalls).mockResolvedValueOnce(
+            completePlan([
+                {
+                    name: 'moveClip',
+                    arguments: { clipId: 'clip-intro', trackId: 'track-guitar', startBeat: 16 },
+                },
+            ])
+        );
+        const vocals = {
+            id: 'track-vocals',
+            name: 'Vocals',
+            kind: 'audio' as const,
+            muted: false,
+            soloed: false,
+            soloSafe: false,
+            armed: false,
+            gain: 0.8,
+            pan: 0,
+            automationMode: 'read' as const,
+            outputId: 'master',
+            clipCount: 1,
+            deviceCount: 0,
+            clips: [
+                {
+                    id: 'clip-intro',
+                    name: 'Intro',
+                    type: 'audio' as const,
+                    startBeat: 0,
+                    endBeat: 8,
+                    gain: 1,
+                    locked: false,
+                    noteCount: 0,
+                },
+            ],
+            devices: [],
+            sends: [],
+        };
+        const providerContext: ProjectContext = {
+            ...baseContext,
+            tracks: [
+                vocals,
+                { ...vocals, id: 'track-guitar', name: 'Guitar', clipCount: 0, clips: [] },
+            ],
+            selectedTrackId: 'track-vocals',
+            selectedClipId: 'clip-intro',
+            selectedClipIds: ['clip-intro'],
+        };
+
+        const result = await parsePromptToActions('move the Intro clip to Guitar at beat 16', providerContext);
+
+        expect(result.actions).toEqual([
+            { type: 'moveClip', payload: { clipId: 'clip-intro', trackId: 'track-guitar', startBeat: 16 } },
+        ]);
+        expect(result.requiresConfirmation).toBe(false);
+        expect(result.executionMode).toBe('atomic');
+    });
+
     it('proposes a grounded two-clip crossfade as one confirmable atomic action', async () => {
         const actualBridge = await vi.importActual<typeof import('../agentReference/bridgeGroundedLlmToolCalls')>(
             '../agentReference/bridgeGroundedLlmToolCalls'

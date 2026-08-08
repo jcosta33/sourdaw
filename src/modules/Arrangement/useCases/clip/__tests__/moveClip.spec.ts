@@ -43,7 +43,7 @@ describe('moveClip', () => {
             ],
         });
 
-        moveClip('c1', 't2', 10);
+        expect(moveClip('c1', 't2', 10)).toBe(true);
 
         expect(mocks.setTrackState).toHaveBeenCalledTimes(1);
         const setCall = mocks.setTrackState.mock.calls[0];
@@ -71,7 +71,7 @@ describe('moveClip', () => {
             tracks: [{ id: 't1', clips: [{ id: 'c1', startBeat: 0, endBeat: 4 }] }],
         });
 
-        moveClip('c1', 't1', 5);
+        expect(moveClip('c1', 't1', 5)).toBe(true);
 
         // delta = 5 - 0 = 5
         expect(mocks.shiftClipMidiNotes).not.toHaveBeenCalled();
@@ -82,7 +82,7 @@ describe('moveClip', () => {
             tracks: [{ id: 't1', clips: [{ id: 'c1', startBeat: 0, endBeat: 4 }] }],
         });
 
-        moveClip('c1', 't1', 5);
+        expect(moveClip('c1', 't1', 5)).toBe(true);
 
         // delta = 5 - 0 = 5
         expect(mocks.shiftClipAutomation).toHaveBeenCalledWith('c1', 5);
@@ -96,7 +96,7 @@ describe('moveClip', () => {
         // Current start is 2. Target is 10. Drag started at 0.
         // MIDI delta should be 10 - 2 = 8.
         // Automation delta should be 10 - 0 = 10.
-        moveClip('c1', 't1', 10, 0);
+        expect(moveClip('c1', 't1', 10, 0)).toBe(true);
 
         expect(mocks.shiftClipMidiNotes).not.toHaveBeenCalled();
         expect(mocks.shiftClipAutomation).toHaveBeenCalledWith('c1', 10);
@@ -104,7 +104,7 @@ describe('moveClip', () => {
 
     it('bails if clip is not found', () => {
         mocks.getTrackState.mockReturnValue({ tracks: [{ id: 't1', clips: [] }] });
-        moveClip('c1', 't1', 10);
+        expect(moveClip('c1', 't1', 10)).toBe(false);
         expect(mocks.setTrackState).not.toHaveBeenCalled();
     });
 
@@ -116,7 +116,7 @@ describe('moveClip', () => {
         // The clip exists, but the destination track id is bogus. Without the
         // guard, the strip-then-readd logic would remove c1 from t1 and never
         // re-add it anywhere — silently destroying the clip.
-        moveClip('c1', 'does-not-exist', 10);
+        expect(moveClip('c1', 'does-not-exist', 10)).toBe(false);
 
         expect(mocks.setTrackState).not.toHaveBeenCalled();
         expect(mocks.shiftClipAutomation).not.toHaveBeenCalled();
@@ -126,7 +126,45 @@ describe('moveClip', () => {
     it('bails when the track store has not loaded', () => {
         mocks.getTrackState.mockReturnValue(null as unknown as { tracks: never[] });
 
-        moveClip('c1', 't1', 10);
+        expect(moveClip('c1', 't1', 10)).toBe(false);
+
+        expect(mocks.setTrackState).not.toHaveBeenCalled();
+        expect(mocks.shiftClipAutomation).not.toHaveBeenCalled();
+    });
+
+    it.each([Number.NaN, Number.NEGATIVE_INFINITY, Number.POSITIVE_INFINITY, -1])(
+        'rejects an invalid start beat %s without writing',
+        (startBeat) => {
+            mocks.getTrackState.mockReturnValue({
+                tracks: [{ id: 't1', clips: [{ id: 'c1', startBeat: 0, endBeat: 4 }] }],
+            });
+
+            expect(moveClip('c1', 't1', startBeat)).toBe(false);
+
+            expect(mocks.setTrackState).not.toHaveBeenCalled();
+            expect(mocks.shiftClipAutomation).not.toHaveBeenCalled();
+        }
+    );
+
+    it('rejects moving a locked clip or moving onto an ineligible VCA track', () => {
+        mocks.getTrackState.mockReturnValue({
+            tracks: [
+                { id: 't1', clips: [{ id: 'c1', startBeat: 0, endBeat: 4, locked: true }] },
+                { id: 'vca-1', kind: 'vca', clips: [] },
+            ],
+        } as never);
+
+        expect(moveClip('c1', 't1', 4)).toBe(false);
+        expect(moveClip('c1', 'vca-1', 4)).toBe(false);
+        expect(mocks.setTrackState).not.toHaveBeenCalled();
+    });
+
+    it('reports an exact same-track, same-position request as a no-op', () => {
+        mocks.getTrackState.mockReturnValue({
+            tracks: [{ id: 't1', clips: [{ id: 'c1', trackId: 't1', startBeat: 4, endBeat: 8 }] }],
+        });
+
+        expect(moveClip('c1', 't1', 4)).toBe(false);
 
         expect(mocks.setTrackState).not.toHaveBeenCalled();
         expect(mocks.shiftClipAutomation).not.toHaveBeenCalled();
