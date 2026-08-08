@@ -273,28 +273,40 @@ that makes them, and they keep the repo small. **A generator must not be the sam
 as the analyser** — the expected value must come from the construction parameter (the
 frequency asked for), never from a second run of the thing under test.
 
-### RM-2 — BS.1770 / EBU conformance signals
+### RM-2 — BS.1770 conformance signals, regenerated rather than acquired
 
-The EBU Tech 3341 compliance material is the only way to claim a conforming meter. Its
-acquisition, licence, and redistributability are recorded in
-`RESEARCH.md` alongside this spec. **Acquiring and checking in (or scripting the download
-of) this material is part of this phase, not a prerequisite** — see AC-020, which fails
-until it is present.
+**The EBU loudness test set may not be used, and this is settled rather than pending.** Its
+terms of use forbid redistribution ("You may not copy, modify, merge, publish, distribute,
+sublicense, and/or sell copies") and restrict use to "internal Research and Development
+operations", explicitly excluding "business, commercial or for-profit activities". Both
+clauses bind this project. The files cannot be committed, cannot be vendored, and cannot be
+downloaded by a build script for a commercial product. Quotations and the full reasoning are
+in `RESEARCH.md`.
 
-Where the material cannot be redistributed, the fallback is generated signals whose exact
-LUFS is analytically known: a −23 LUFS 1 kHz sine at 0 dB FS reference is computable in
-closed form from the K-weighting gain at 1 kHz, and the gating behaviour is provable with
-constructed block sequences (e.g. a −70 LUFS segment that must be gated out, and a −11 LU
-relative-gate boundary case). These test the implementation against arithmetic, not against
-itself.
+**What is used instead: generators written from the published EBU Tech 3341 case
+descriptions.** Tech 3341 is a freely readable specification that *describes* each compliance
+case and its expected reading; reproducing those signals from their descriptions uses the
+specification, which is publishable knowledge, not the recordings, which are licensed.
+Conformance tolerance is **±0.1 LU** on the Tech 3341 minimum-requirement cases. (EBU R 128's
+±0.5 LU is a programme-delivery target, not meter accuracy — the two must not be conflated.)
+
+Anchoring the generators are signals whose exact LUFS is analytically known: a 1 kHz sine's
+LUFS is closed-form from the K-weighting gain at 1 kHz, and gating is provable with
+constructed block sequences (a segment below the absolute gate that must be excluded, and a
+case sitting on the relative-gate boundary). These test the implementation against
+arithmetic, not against itself, and depend on no external material at all.
 
 ### RM-3 — Annotated corpora for accuracy scoring
 
-Public key/tempo-annotated datasets are used for the **scored accuracy** criteria
-(AC-006, AC-013). Annotations are redistributable for the datasets selected; audio in
-general is not. The phase therefore checks in **annotations and a fetch script**, and the
-scored-accuracy criteria run as an opt-in target, not in the default suite. Dataset
-selection, licences, and redistributability are recorded in `RESEARCH.md`.
+**GiantSteps Key and GiantSteps Tempo** (Knees et al., ISMIR 2015), ~600+ tracks each.
+**Annotations are CC BY-SA 4.0 and are committed** with attribution; **audio is not
+redistributable** and is fetched by script, matching what the upstream dataset itself does.
+The scored-accuracy criteria (AC-006, AC-011) therefore run as an **opt-in target, not part
+of the default suite**, so a contributor without the audio still gets a green run.
+
+GiantSteps is predominantly EDM. A score against it is a floor, not a certificate of
+general-purpose accuracy, and the implementing PR must say so rather than reporting the
+number bare.
 
 ## Verification hygiene
 
@@ -385,16 +397,19 @@ Verify with: `pnpm test:run --dir src src/modules/AudioAnalysis/useCases/__tests
 
 #### AC-006 — Key accuracy is scored with partial credit, not exact match
 
-Accuracy must be reported using the MIREX-style weighted score (exact / perfect fifth /
-relative / parallel / other), against the corpus in RM-3. Exact-match-only scoring is
-forbidden: it cannot distinguish a detector that confuses relative majors from one that
-returns noise, and tuning against it optimises the wrong thing.
+Accuracy must be reported using the MIREX weighted score against the corpus in RM-3:
+**1.0 same, 0.5 perfect fifth, 0.3 relative major/minor, 0.2 parallel major/minor, 0.0
+otherwise.** Exact-match-only scoring is forbidden: it cannot distinguish a detector that
+confuses relative majors from one that returns noise, and tuning against it optimises the
+wrong thing.
 
-The scoring weights, their source, and the target score are recorded in `RESEARCH.md` and
-pinned by the harness.
+The fifth is credited in **either direction, same mode only**. The MIREX task definition is
+ambiguous on direction, so this is a recorded decision rather than a fact read off the
+standard — see `RESEARCH.md`. The harness must state it in a named constant so a later
+comparison against published MIREX figures can revisit it.
 
-*Violated by:* a harness reporting a single exact-match percentage, or a weighted score
-below the pinned target.
+*Violated by:* a harness reporting a single exact-match percentage, a weight table diverging
+from the five values above, or a weighted score below the pinned target.
 
 Verify with: `pnpm test:run --dir src src/modules/AudioAnalysis/useCases/__tests__/keyAccuracy.spec.ts`
 
@@ -447,12 +462,19 @@ Verify with: `pnpm test:run --dir src src/modules/AudioAnalysis/handlers/analysi
 
 #### AC-011 — Tempo accuracy is scored with octave tolerance
 
-Accuracy is reported as both a strict metric and an octave-tolerant metric (the MIREX
-Accuracy 1 / Accuracy 2 convention), with the percentage tolerance window and the admitted
-octave ratios pinned by the harness. Their definitions and sources are in `RESEARCH.md`.
+Three figures are reported, not one: the **MIREX P-score at 8% tolerance**, **Accuracy 1 at
+4%**, and **Accuracy 2 at 4%** admitting the octave ratios **{2, 1/2, 3, 1/3}**. The two
+tolerances are not a mistake — 8% is the MIREX P-score convention (Moelants & McKinney) and
+4% is the de facto Accuracy 1/2 implementation; reporting one number invites comparison
+against published figures computed the other way. Sources in `RESEARCH.md`.
 
-*Violated by:* a harness reporting one number, or scoring a half-tempo answer as simply
-wrong without recording it as an octave error.
+**Accuracy 2 minus Accuracy 1 is the octave-error rate**, and that difference is the number
+that says whether AC-012's fold policy is doing harm. A harness that cannot produce it cannot
+answer the question this criterion exists for.
+
+*Violated by:* a harness reporting fewer than three figures, a tolerance or ratio set
+diverging from the values above, or scoring a half-tempo answer as simply wrong without
+recording it as an octave error.
 
 Verify with: `pnpm test:run --dir src src/modules/AudioAnalysis/useCases/__tests__/tempoAccuracy.spec.ts`
 
@@ -548,17 +570,20 @@ the early level.
 
 Verify with: `pnpm test:run --dir src src/modules/AudioAnalysis/services/__tests__/mixAnalysisHelpers.spec.ts`
 
-#### AC-020 — True peak is measured with oversampling, against reference material
+#### AC-020 — True peak is oversampled to at least 192 kHz, and reads within ±0.1 LU
 
-Inter-sample peaks must be detected by an oversampled true-peak meter at the factor pinned
-in `RESEARCH.md`, verified against the conformance material described in RM-2. A signal
-whose sample peak is below 0 dBFS but whose true peak exceeds it must be flagged.
+Inter-sample peaks must be detected by an oversampled true-peak meter whose factor is the
+smallest power of two bringing the source rate to **≥ 192 kHz** — 4× at 48 kHz, **8× at
+44.1 kHz**, which is the default export rate. BS.1770-5 Annex 2 states that "higher sampling
+rates and over-sampling ratios are preferred" and permits any method giving "similar or
+superior results"; a hard-coded 4× is therefore under-specified at 44.1 kHz, and
+`crates/daw-dsp/src/proof/metering.rs:542-581` hard-codes it.
 
-This criterion **fails until the reference material is present**, by design. Acquiring it is
-in scope.
+A signal whose sample peak is below 0 dBFS but whose true peak exceeds it must be flagged.
+Readings are checked against the RM-2 generated cases to **±0.1 LU**.
 
 *Violated by:* the sample-peak threshold at `analyzeMix.ts:65` surviving as the clip
-detector, or a conforming test signal reading outside the pinned tolerance.
+detector; a 44.1 kHz render oversampled only 4×; or any RM-2 case reading outside ±0.1 LU.
 
 Verify with: `pnpm test:run --dir src src/modules/AudioRendering/repositories/audioEncoders/__tests__/measureTruePeak.spec.ts`
 
@@ -779,9 +804,63 @@ Verify with: `pnpm typecheck && pnpm typecheck:test && pnpm lint --quiet`
 - [ ] (non-blocking) Whether the Rust `crates/daw-dsp/src/proof/metering.rs` K-weighting
   adopts the TypeScript rate-correct derivation, or stays as-is scoped to Proof. Default:
   file separately; out of scope here.
-- [ ] (blocking AC-006/AC-011/AC-013 target numbers only) The pinned accuracy targets. Set
-  from the baseline the fixed detector actually achieves on RM-3, measured once and then
-  pinned as a floor — not guessed in advance.
+- [ ] (blocking AC-006/AC-011/AC-013 target numbers only) The pinned accuracy targets. The
+  scoring *methods* are settled and recorded in `RESEARCH.md`; only the pass thresholds are
+  open, and they are set from the baseline the fixed detector actually achieves on RM-3,
+  measured once and pinned as a floor — not guessed in advance.
+- [ ] (non-blocking) Whether momentary/short-term window lengths and LRA are owned by
+  BS.1770 or by EBU Tech 3341/3342. Unresolved in research and deliberately left so; it
+  blocks nothing here because this phase specifies only integrated loudness and true peak,
+  which are BS.1770's own. It must be settled before any claim of "EBU Mode" conformance.
+
+## Out-of-scope observations
+
+Found while establishing current state. Recorded with evidence; **not fixed here.**
+
+### O-1 — `SPEC-loudness-metering-ebur128` cannot be verified as written
+
+That spec is `status: draft` on `main`, and all five of its `Verify with:` commands select
+nothing:
+
+- `ebur128` appears in **no `Cargo.toml`** in the workspace and **zero times in
+  `Cargo.lock`**, so the crate the spec is built around is not a dependency.
+- None of `ebur128_short_term_accuracy`, `ebur128_true_peak`,
+  `ebur128_meter_rate_no_alloc`, or `export_loudness_report` exists anywhere under `crates/`
+  or `src-tauri/`.
+
+Because `cargo test -p <crate> <filter>` **exits 0 when the filter matches nothing** (see
+*Verification hygiene* above), every one of those commands **passes today** against a crate
+that was never added. This is the same shape as the spec repair in PR #810 — a verification
+instruction that cannot verify — and it is worth recording that it recurred in a spec already
+merged, which is the argument for AC-026 applying beyond this document.
+
+Not fixed here because that spec owns the realtime meter this phase explicitly declares a
+non-goal, and editing it would collide with whichever lane implements it. The concrete
+remedy is the guarded `--list | grep -q` form.
+
+### O-2 — Dangling `sources:` citations across the spec tree
+
+`.agents/artifacts/` does not exist (`git ls-files .agents/artifacts` returns nothing) and
+`.agents/specs/intake/` contains only `README.md`. Specs across the tree — and ADR 0015
+itself — cite `.agents/artifacts/sourdaw/SURVEY-ultracode-scope.md`,
+`intake/implementation-gaps.md`, `intake/differentiators.md` and similar in frontmatter that
+resolves to nothing. This spec cites only paths that exist.
+
+### O-3 — `speech.rs` bypasses the native digest check
+
+`src-tauri/src/commands/speech.rs:50-56` — `load_whisper_model(model_path: String)` takes a
+user-supplied path and bypasses `ensure_model`, skipping the SHA-256 verification every other
+native model receives. Adjacent to item 4 but on the native side, which is otherwise correct.
+
+### O-4 — `crates/daw-dsp/src/proof/metering.rs` non-48 kHz K-weighting
+
+Adapts to other sample rates by scaling coefficients by `48000.0 / sr` rather than
+redesigning the biquads. Real, but Proof-scoped; see the second open question.
+
+### O-5 — Conflicting execution-policy declarations
+
+`getAppActionExecutionPolicy.ts:80-81` marks `detectKey`/`detectTempo` as `readOnlyPolicy`
+while `validateActionPayload.ts:701-702` marks both `'unchecked'`.
 
 ## Affected areas
 

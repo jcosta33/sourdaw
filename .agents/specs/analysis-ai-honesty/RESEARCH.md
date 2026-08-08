@@ -44,25 +44,90 @@ one-pole `state - 0.85 * prevSample` is not K-weighting yet still applies the st
 one measurement is how a wrong number reaches a user while a right one sits unused ten files
 away — which is the present state.
 
-### UNVERIFIED — must be settled before AC-020 and AC-017 targets are fixed
+### Verified against the published recommendation
 
-- **True-peak oversampling factor and tolerance.** The Rust implementation uses 4×
-  (`crates/daw-dsp/src/proof/metering.rs:542-581`); the recommendation's normative minimum
-  and the associated tolerance have not been confirmed against the published text in this
-  pass. Do not assume 4× is conforming because the repo does it.
-- **EBU Tech 3341 conformance test set** — case list, expected LUFS per case, the stated
-  tolerance a conforming meter must hit, licence, size, and whether it may be committed to
-  this repository. Until this is settled, AC-020's reference material is unacquired, which
-  is why AC-020 is written to fail in that state.
-- **Which document defines which measure.** Momentary/short-term window lengths and LRA are
-  defined in the EBU Tech 3341/3342 layer rather than BS.1770 itself; the exact split has not
-  been confirmed here and must be stated before the spec claims conformance to either.
+Text extracted directly from ITU-R BS.1770-5 (11/2023),
+`https://www.itu.int/dms_pubrec/itu-r/rec/bs/R-REC-BS.1770-5-202311-I!!PDF-E.pdf`:
 
-Analytic fallback, valid regardless of the above: a 1 kHz sine's exact LUFS is computable in
-closed form from the K-weighting gain at 1 kHz, and gating is provable with constructed block
-sequences (a below −70 LUFS segment that must be excluded, and a case sitting on the −10 LU
-relative boundary). These test the arithmetic rather than the implementation against itself,
-and they are available without any downloaded material.
+- **Gating**: "gating of 400 ms blocks (overlapping by 75%), where two thresholds are used"
+  — confirming the block length and overlap the repo already implements.
+- **Loudness formula**: `L_K = -0.691 + 10 log10 Σ G_i …` LKFS, "where G_i are the weighting
+  coefficients for the individual channels". Surround channels carry larger weights; **the
+  LFE channel is excluded from the measurement**.
+- **True peak** (Annex 2), five stages: attenuate 12.04 dB (2-bit shift), 4× over-sampling,
+  low-pass filter, absolute value, convert to dB TP. The 12.04 dB attenuation "is not
+  necessary if the calculations are performed in floating point" — so our f32/f64 path may
+  skip it.
+- **True peak is a guideline, not a fixed factor**: the recommendation says a true-peak method
+  "should be based on the guidelines shown in Annex 2, **or on a method that gives similar or
+  superior results**", and Annex 2 states "**Higher sampling rates and over-sampling ratios
+  are preferred**". The illustrated 4× raises 48 kHz to 192 kHz.
+
+**Recommendation on oversampling: 4× is the floor at 48 kHz, and is not sufficient at
+44.1 kHz.** 4× at 44.1 kHz reaches only 176.4 kHz, below the 192 kHz the recommendation
+illustrates. Since export defaults to 44.1 kHz, specify the oversampling factor as *the
+smallest power of two whose product with the source rate is ≥ 192 kHz* — 4× at 48 kHz, 8× at
+44.1 kHz. This tracks the standard's stated preference instead of hard-coding the number the
+example happens to use. The existing Rust implementation
+(`crates/daw-dsp/src/proof/metering.rs:542-581`) hard-codes 4×.
+
+**Revision: stay on BS.1770-4.** BS.1770-5 adds Annex 3 (advanced/immersive loudspeaker
+configurations) and Annex 4 (object-based audio); the core K-weighting, gating and true-peak
+algorithm this phase uses are unchanged. Nothing in Phase 8 measures immersive or
+object-based audio, so the in-repo BS.1770-4 pin stays correct and no coefficient changes.
+Revisit if Atmos work (`.agents/specs/atmos/`) lands.
+
+Note: the PDF's numeric glyphs for the two gate thresholds did not survive text extraction.
+The values used (−70 LUFS absolute, −10 LU relative) are corroborated by the in-repo
+implementation and by EBU R 128, which specifies the relative gate at −10 LU. They are not
+quoted here from the primary source.
+
+### RESOLVED, and it constrains the phase — the EBU test set cannot be used
+
+The EBU loudness test set is 70 files / 87.4 MB. Its terms
+(`use of EBU AUDIO test sequences.pdf`, July 2019, v1.0) are decisive and quoted verbatim:
+
+> EBU Test Sequences are made available for the sole purposes to assess the performance of
+> audio equipment and systems within the frame of internal Research and Development
+> operations.
+
+> You may not use any EBU Test Sequences for business, commercial or for-profit activities.
+
+> You may not copy, modify, merge, publish, distribute, sublicense, and/or sell copies of
+> the EBU Test Sequences.
+
+The EBU may also "revoke the authorization granted hereunder at any time without notice".
+
+**Two independent blockers**: redistribution is forbidden, so the files cannot be committed
+or vendored; and commercial use is forbidden, which this project is (`audioFeatures.ts:8`
+records the Meyda licence specifically as "MIT (safe for commercial use)"). This is a real
+constraint on the phase, not a procurement delay.
+
+**Recommendation: regenerate the test cases rather than acquire the files.** EBU Tech 3341 is
+a freely readable public specification — it *describes* each compliance case and its expected
+reading (e.g. a 1 kHz stereo sine at −18 dBFS peak must read −18.0 LUFS; the −23 LUFS and
+−33 LUFS cases; the gating cases). Implementing generators from those published descriptions
+reproduces the conformance check without copying EBU's audio, so nothing restricted enters
+the repository. What is used is the *specification*, which is publishable knowledge, not the
+*recordings*, which are licensed.
+
+**Tolerance: ±0.1 LU** for the Tech 3341 minimum-requirement cases. (EBU R 128's programme
+delivery tolerance of ±0.5 LU is a *delivery* target, not a meter-accuracy figure — do not
+conflate them.)
+
+Analytic anchors, independent of any external material: a 1 kHz sine's exact LUFS is
+computable in closed form from the K-weighting gain at 1 kHz, and gating is provable with
+constructed block sequences — a below −70 LUFS segment that must be excluded, and a case
+sitting on the −10 LU relative boundary. These test the arithmetic rather than the
+implementation against itself.
+
+### Still UNVERIFIED
+
+- **Which document defines which measure.** Momentary and short-term window lengths and LRA
+  belong to the EBU Tech 3341/3342 layer rather than BS.1770 itself. The exact split was not
+  confirmed in this pass and must be stated before the spec claims conformance to either.
+  This does not block any criterion below — Phase 8 specifies only *integrated* loudness and
+  true peak, both of which are BS.1770's own.
 
 ## 2. Spectral resolution — the number and the reason
 
@@ -139,29 +204,68 @@ on exact match alone is tuned toward the wrong objective — exact-match scoring
 distinguish a detector that confuses relative majors (a near-miss a musician would forgive)
 from one returning noise.
 
-### UNVERIFIED — must be settled before AC-006 and AC-011 are implemented
+### Key detection — MIREX partial credit (confirmed)
 
-- **MIREX audio key detection partial-credit weights.** The widely-repeated set is 1.0
-  exact, 0.5 perfect fifth, 0.3 relative major/minor, 0.2 parallel major/minor, 0.0
-  otherwise — **but this has not been confirmed against a primary source in this pass, and
-  the direction of the fifth (dominant only, or both dominant and subdominant) is exactly
-  the kind of detail that gets copied wrong.** Confirm against the MIREX task definition
-  before pinning. Do not implement from the numbers in this paragraph.
-- **MIREX tempo evaluation.** The P-score, and the Accuracy 1 / Accuracy 2 convention
-  (Accuracy 2 admitting octave-related answers), together with the percentage tolerance
-  window around the annotated tempo and the exact set of admitted ratios
-  (1/3, 1/2, 2, 3), must be confirmed before AC-011's harness pins them.
-- **Corpora for RM-3.** Candidate annotated datasets and, critically, whether *audio* is
-  redistributable or only annotations. The working assumption in the spec — annotations
-  checked in, audio fetched by script, scored accuracy as an opt-in target — is the safe
-  shape under either answer, but the specific datasets and licences are unconfirmed.
+From the MIREX Audio Key Detection task definition
+(`https://music-ir.org/mirex/wiki/2025:Audio_Key_Detection`):
 
-A research pass covering these was commissioned alongside this spec and had not returned
-when the spec was committed. **Nothing in the spec depends on a guessed value**: AC-006 and
-AC-011 require the weights and tolerances to be "recorded in `RESEARCH.md` and pinned by the
-harness", so they cannot be implemented against blanks, and their target numbers are
-deliberately deferred to a measured baseline (see the spec's third open question) rather
-than invented.
+| Relation to correct key | Points |
+| - | - |
+| Same | 1.0 |
+| Perfect fifth | 0.5 |
+| Relative major/minor | 0.3 |
+| Parallel major/minor | 0.2 |
+| Other | 0.0 |
+
+The task defines closeness as "distance of perfect fifth, relative major and minor, and
+parallel major and minor".
+
+**One detail is genuinely ambiguous in the primary source and is being decided here, not
+discovered.** The current wiki says "distance of perfect fifth" without stating direction;
+the 2005 task page words it as a key "a perfect fifth too high or low". **Decision: credit a
+fifth in either direction (dominant and subdominant), same mode only.** Rationale: the
+symmetric reading is the one the 2005 wording states explicitly and the one implemented by
+the common evaluation libraries; an asymmetric rule would also score G major differently from
+F major relative to C major, which has no musical justification. Record this as a stated
+choice in the harness, not as a fact read off the standard — if a later comparison against
+published MIREX numbers disagrees, this is the assumption to revisit first.
+
+### Tempo — two conventions, both reported (confirmed)
+
+There are **two** established conventions and they use different tolerances. Reporting only
+one invites a comparison against published numbers that were computed the other way.
+
+- **MIREX P-score**, Moelants & McKinney, as used in MIREX Audio Tempo Extraction and
+  analysed in McKinney, Moelants, Davies & Klapuri, *Evaluation of Audio Beat Tracking and
+  Music Tempo Extraction Algorithms*, JNMR 36(1), 2007. Algorithms return two tempi T1 and
+  T2 (T1 the slower); the score combines `ST1` (relative perceptual strength of T1) with the
+  ability to identify T1 and T2 **to within 8%**.
+- **Accuracy 1 / Accuracy 2**, the de facto implementation (madmom `evaluation/tempo`):
+  `TOLERANCE = 0.04` — **4%**. Accuracy 1 scores the strongest tempo against the first
+  annotation. Accuracy 2 additionally admits octave-related answers, with `DOUBLE = True`
+  and `TRIPLE = True` expanding the annotation set by `×2, ÷2, ×3, ÷3`.
+
+**Recommendation: pin all three — P-score at 8%, Accuracy 1 at 4%, Accuracy 2 at 4% with the
+{2, 1/2, 3, 1/3} ratio set — and report them separately.** Accuracy 2 minus Accuracy 1 is
+precisely the octave-error rate, which is the number that tells us whether the fold policy in
+AC-012 is doing harm. Collapsing them hides exactly the failure this phase is about.
+
+### Corpora — GiantSteps (confirmed), and what may be committed
+
+GiantSteps Key and GiantSteps Tempo (Knees et al., ISMIR 2015), ~600+ tracks each, mostly
+electronic. **Annotations are licensed CC BY-SA 4.0** and are redistributable with
+attribution. **Audio is not redistributed by the dataset itself** — the upstream repository
+(`github.com/GiantSteps/giantsteps-tempo-dataset`) ships "the annotations and download
+scripts for the audio files", which is the same shape this spec specifies.
+
+This confirms RM-3 as written: **annotations committed (with CC BY-SA 4.0 attribution), audio
+fetched by script, scored accuracy as an opt-in target rather than part of the default
+suite.** No licence change to the repository is implied, since CC BY-SA applies to the
+annotation files, not to code that reads them.
+
+Genre caveat worth stating in the implementing PR: GiantSteps is predominantly EDM, so a
+score against it is not evidence of general-purpose accuracy. It is a floor, not a
+certificate.
 
 ## 5. Model integrity — the mechanism to copy
 
