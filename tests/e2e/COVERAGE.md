@@ -768,7 +768,10 @@ Re-measured after additional PRs since threshold raise #3 (PR #1231). Lines cros
 - **PR #1423**: Collaboration panel — toggle, open, close, status — 5 tests.
 - **PR #1424**: Command palette — open, search, navigate, close — 5 tests.
 - **PR #1426**: Prompt bar & AI history — input, autocomplete, toggle — 5 tests.
+- **PR #1428**: Inspector — notes, gain, toggle — 3 tests.
+- **PR #1430**: Timeline navigation — minimap, canvas, playhead — 4 tests.
+- **PR #1432**: Voice button & tempo editor — map toggle, BPM, voice, time sig — 4 tests.
 
-**E2E: 85 tests across 19 spec files using data-testid selectors.**
+**E2E: 97 tests across 22 spec files using data-testid selectors.**
 
-**Campaign total to date: 258 PRs, ~2623 assertions. Lines coverage at 90.30%.**
+**Campaign total to date: 262 PRs, ~2647 assertions. Lines coverage at 90.30%.**
