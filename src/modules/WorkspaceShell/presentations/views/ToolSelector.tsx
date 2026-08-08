@@ -40,6 +40,7 @@ export const ToolSelector = ({ rippleEditing, onToggleRipple }: ToolSelectorProp
                             role="radio"
                             aria-checked={activeTool === tool}
                             aria-label={TOOL_LABELS[tool]}
+                            data-testid={`tool-${tool}`}
                             onClick={() => setEditingTool(tool)}
                         >
                             {TOOL_ICONS[tool]}
@@ -53,11 +54,12 @@ export const ToolSelector = ({ rippleEditing, onToggleRipple }: ToolSelectorProp
                     <div className="mx-0.5 h-4 w-px daw-seam" />
                     <Tooltip>
                         <TooltipTrigger asChild>
-                            <Button
-                                variant={rippleEditing ? 'secondary' : 'ghost'}
-                                size="xs"
-                                onClick={onToggleRipple}
-                                className={
+                        <Button
+                            variant={rippleEditing ? 'secondary' : 'ghost'}
+                            size="xs"
+                            onClick={onToggleRipple}
+                            data-testid="tool-ripple"
+                            className={
                                     rippleEditing
                                         ? 'text-[var(--color-accent-peach)] border-[var(--color-accent-peach)]/30 px-1.5'
                                         : 'px-1.5'
