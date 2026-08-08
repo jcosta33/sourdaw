@@ -1,0 +1,14 @@
+src/modules/Arrangement/repositories/presets/__tests__/faustEffectPresets.spec.ts
+  h_1228e573df1f42 1-46
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "c638859d6e97835c3c7c2d33bcedddad022bcb5d",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
