@@ -9,7 +9,7 @@ import {
     getAiOrganizationHandlers,
     setVoiceToggleEventBus,
 } from '#/modules/AiRuntime/useCases';
-import { persistDeviceParam, resolveEligibleDeviceWriteTarget, trackStore } from '#/modules/Arrangement/stores';
+import { persistDeviceParam, resolveEligibleDeviceWriteTarget } from '#/modules/Arrangement/stores';
 import {
     clampDeviceParameterValue,
     getAllTracks,
@@ -110,7 +110,7 @@ import { getPluginHostHandlers } from '#/modules/PluginHost/useCases';
 import {
     getProjectHandlers,
     initGrooveTemplateDirtyTracking,
-    markDirty,
+    initProjectDirtyTracking,
     migrateLegacyProjectSnapshots,
     setProjectIdentityTransitionDependencies,
 } from '#/modules/Project/useCases';
@@ -407,7 +407,7 @@ initLevainDeviceStatePersistence();
 initCrumbsDeviceStatePersistence();
 initStalenessDetection();
 
-trackStore.subscribe(() => markDirty());
+initProjectDirtyTracking();
 initGrooveTemplateDirtyTracking();
 
 // Drain pre-ADR-0013 project content out of localStorage into IndexedDB. A
