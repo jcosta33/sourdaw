@@ -449,19 +449,34 @@ describe('mergeBundle sync fallback — byte-equivalence with the worker path (f
         expect(Buffer.compare(Buffer.from(direct), Buffer.from(reSerialised))).toBe(0);
     });
 
-    it('sync fallback yields the same bytes/getChanges/heads as the worker-style compacted merge for the same local state', async () => {
+    /**
+     * Builds one canonical local seed and reuses its bytes for both the
+     * worker-style reference merge and the repository's real sync-fallback
+     * merge, then returns both outputs for comparison.
+     *
+     * `change()` stamps its implicit `time` with `Date.now()`. This used to
+     * build the local seed via two *independent* `init(ACTOR_LOCAL)` calls -
+     * one per path - so the two paths' change hashes (and therefore their
+     * merged bytes) only agreed when both builds landed in the same
+     * wall-clock second. That is the same actor-id hazard fixed for
+     * `seedAmDoc()` in `automergeSync.spec.ts` (#1255): two independent
+     * documents sharing an explicit actor id, each accumulating its own
+     * changes, compared as if they had to be byte-identical. Building the
+     * seed once and reusing its bytes removes the timing dependency; see the
+     * regression guard below.
+     */
+    async function runLocalRemoteMergeComparison(): Promise<{ mergedBytes: Uint8Array; referenceBytes: Uint8Array }> {
         const ACTOR_LOCAL = 'aaaaaaaaaaaaaaaa';
         const ACTOR_REMOTE = 'bbbbbbbbbbbbbbbb';
-        function buildLocal(): ReturnType<typeof init<Record<string, unknown>>> {
-            let d = init<Record<string, unknown>>(ACTOR_LOCAL);
-            d = change(d, (x) => {
-                x.a = 1;
-            });
-            d = change(d, (x) => {
-                x.b = 2;
-            });
-            return d;
-        }
+        let localSeed = init<Record<string, unknown>>(ACTOR_LOCAL);
+        localSeed = change(localSeed, (x) => {
+            x.a = 1;
+        });
+        localSeed = change(localSeed, (x) => {
+            x.b = 2;
+        });
+        const localBytes = save(localSeed);
+
         let remote = init<Record<string, unknown>>(ACTOR_REMOTE);
         remote = change(remote, (d) => {
             d.a = 1;
@@ -472,24 +487,52 @@ describe('mergeBundle sync fallback — byte-equivalence with the worker path (f
         const remoteBytes = save(remote);
 
         // Worker-style reference: round-trip local (saveAll), merge, save.
-        const referenceMerged = load(save(merge(load(save(buildLocal())), load(remoteBytes))));
+        const referenceMerged = load(save(merge(load(localBytes), load(remoteBytes))));
         const referenceBytes = save(referenceMerged);
 
         // Drive the real sync fallback: seed the same local state, Worker stub
         // throws → mergeBundle falls back to _mergeBundleSync.
         automergeRepository.createProject('p');
-        automergeRepository.insertDoc('root', buildLocal());
+        automergeRepository.insertDoc('root', load(localBytes));
         const result = await automergeRepository.mergeBundle(new Map([['root', remoteBytes]]));
         expect(result.mergedDocIds).toEqual(['root']);
 
         const mergedBytes = automergeRepository.saveDoc('root')!;
+        return { mergedBytes, referenceBytes };
+    }
+
+    it('sync fallback yields the same bytes/getChanges/heads as the worker-style compacted merge for the same local state', async () => {
+        const { mergedBytes, referenceBytes } = await runLocalRemoteMergeComparison();
         expect(Buffer.compare(Buffer.from(mergedBytes), Buffer.from(referenceBytes))).toBe(0);
 
         const mergedDoc = load(mergedBytes);
+        const referenceMerged = load(referenceBytes);
         const refCount = getChanges(view(referenceMerged, []), referenceMerged).length;
         const gotCount = getChanges(view(mergedDoc, []), mergedDoc).length;
         expect(gotCount).toBe(refCount);
         expect(getHeads(mergedDoc)).toEqual(getHeads(referenceMerged));
+    });
+
+    it('stays deterministic when the wall clock advances between the reference merge and the repository merge', async () => {
+        // Regression guard for the actor-id hazard documented on
+        // `runLocalRemoteMergeComparison`: force every subsequent Automerge
+        // `change()` in this test onto a new wall-clock second. Before the
+        // fix, the local seed was built twice (once per path) and this
+        // reliably desynced their change hashes, failing the byte comparison
+        // below; with the fix (one canonical build, reused bytes) the clock
+        // moving elsewhere in the test cannot affect it.
+        const now_spy = vi.spyOn(Date, 'now');
+        let tick = 1_700_000_000_000;
+        now_spy.mockImplementation(() => {
+            tick += 1_000;
+            return tick;
+        });
+        try {
+            const { mergedBytes, referenceBytes } = await runLocalRemoteMergeComparison();
+            expect(Buffer.compare(Buffer.from(mergedBytes), Buffer.from(referenceBytes))).toBe(0);
+        } finally {
+            now_spy.mockRestore();
+        }
     });
 
     it('keeps the current repository intact when merge commit authority is revoked', async () => {
