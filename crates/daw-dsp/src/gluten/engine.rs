@@ -3,7 +3,7 @@
 //! Routes audio through: sidechain → detector → topology → gain application.
 //! Handles M/S encoding, stereo linking, lookahead, parallel mix.
 
-use super::detector::{DetectionMode, RmsDetector};
+use super::detector::DetectionMode;
 use super::diode::DiodeCompressor;
 use super::fet::FetCompressor;
 use super::gain_computer::{auto_makeup, db_to_linear};
@@ -56,9 +56,9 @@ pub struct GlutenEngine {
     sc_eq: SidechainEq,
     thrust: ThrustFilter,
 
-    // Detector
-    rms_l: RmsDetector,
-    rms_r: RmsDetector,
+    // Detector. The detectors themselves live inside each topology, next to the
+    // ballistics they steer; the engine keeps the selections so it can restate
+    // them when the other one changes.
     detection_mode: DetectionMode,
 
     // Stereo
@@ -113,7 +113,7 @@ pub struct GlutenEngine {
 
 impl GlutenEngine {
     pub fn new(sample_rate: f32) -> Self {
-        Self {
+        let mut engine = Self {
             sample_rate,
             vca: VcaCompressor::new(sample_rate),
             opto: OptoCompressor::new(sample_rate),
@@ -132,8 +132,6 @@ impl GlutenEngine {
             sc_eq: SidechainEq::new(sample_rate),
             thrust: ThrustFilter::new(sample_rate),
 
-            rms_l: RmsDetector::new(sample_rate, 10.0),
-            rms_r: RmsDetector::new(sample_rate, 10.0),
             detection_mode: DetectionMode::Rms,
 
             stereo_mode: StereoMode::Stereo,
@@ -171,7 +169,39 @@ impl GlutenEngine {
             r_sq_accum: 0.0,
             current_threshold: -18.0,
             current_ratio: 4.0,
-        }
+        };
+        // The topologies are constructed with their own detector defaults; push
+        // the engine's declared ones down so a Gluten that is never sent a
+        // patch still detects the way the descriptor says it does.
+        engine.apply_detector_settings();
+        engine
+    }
+
+    /// Restate detection mode and stereo link on every topology.
+    ///
+    /// Called whenever any of the three controls that determine them moves.
+    /// Stereo mode is one of those three: `dual-mono` *is* an unlinked
+    /// detector, which is the meaning it carries on every console-style bus
+    /// compressor, so it forces the link to 0 rather than adding a second
+    /// mechanism that does the same thing.
+    ///
+    /// Control-rate only — nothing here runs per sample.
+    fn apply_detector_settings(&mut self) {
+        let link = match self.stereo_mode {
+            StereoMode::DualMono => 0.0,
+            _ => self.stereo_link,
+        };
+        let mode = self.detection_mode;
+
+        self.vca.set_detection(mode);
+        self.opto.set_detection(mode);
+        self.fet.set_detection(mode);
+        self.diode.set_detection(mode);
+
+        self.vca.set_stereo_link(link);
+        self.opto.set_stereo_link(link);
+        self.fet.set_stereo_link(link);
+        self.diode.set_stereo_link(link);
     }
 
     pub fn set_param(&mut self, name: &str, value: f32) {
@@ -265,6 +295,7 @@ impl GlutenEngine {
                 } else {
                     DetectionMode::Rms
                 };
+                self.apply_detector_settings();
             }
 
             // Stereo
@@ -276,8 +307,12 @@ impl GlutenEngine {
                     3 => StereoMode::DualMono,
                     _ => StereoMode::Stereo,
                 };
+                self.apply_detector_settings();
             }
-            "stereo_link" => self.stereo_link = value.clamp(0.0, 1.0),
+            "stereo_link" => {
+                self.stereo_link = value.clamp(0.0, 1.0);
+                self.apply_detector_settings();
+            }
 
             // Lookahead
             "lookahead" => self.lookahead_ms = value.clamp(0.0, 20.0),

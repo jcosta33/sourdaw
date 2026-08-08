@@ -3,9 +3,19 @@
 //! Ultra-fast attack (20µs–800µs), JFET square-law distortion (odd harmonics),
 //! transformer saturation (even harmonics), "all buttons in" mode.
 
-use super::gain_computer::{apply_range, db_to_linear, gain_computer, linear_to_db};
+use super::detector::{DetectionMode, StereoDetector};
+use super::gain_computer::{apply_range, db_to_linear, gain_computer};
 use super::oversample::ConfigurableOversample;
 use crate::primitives::flush_denormal;
+
+/// One side's FET gain path. `peak_timer` rides along because the all-buttons
+/// ratio lag is driven by that channel's own transients.
+#[derive(Clone, Default)]
+struct FetChannel {
+    gr_state: f32,
+    /// Time since last peak (for all-buttons ratio lag)
+    peak_timer: f32,
+}
 
 pub struct FetCompressor {
     sample_rate: f32,
@@ -17,7 +27,9 @@ pub struct FetCompressor {
     output_gain: f32, // output level (dB)
     attack_coeff: f32,
     release_coeff: f32,
-    gr_state: f32,
+    channel_l: FetChannel,
+    channel_r: FetChannel,
+    detector: StereoDetector,
     /// Transformer saturation drive
     xfmr_drive: f32,
     /// JFET odd-harmonic amount (k3 coefficient)
@@ -26,8 +38,6 @@ pub struct FetCompressor {
     xfmr_k2: f32,
     /// All-buttons-in mode
     all_buttons: bool,
-    /// Time since last peak (for all-buttons ratio lag)
-    peak_timer: f32,
     last_output_l: f32,
     last_output_r: f32,
     /// Configurable oversamplers for nonlinear distortion (L/R)
@@ -47,12 +57,13 @@ impl FetCompressor {
             output_gain: 0.0,
             attack_coeff: 0.0,
             release_coeff: 0.0,
-            gr_state: 0.0,
+            channel_l: FetChannel::default(),
+            channel_r: FetChannel::default(),
+            detector: StereoDetector::new(sample_rate),
             xfmr_drive: 1.2,
             jfet_k3: 0.15,
             xfmr_k2: 0.0,
             all_buttons: false,
-            peak_timer: 0.0,
             last_output_l: 0.0,
             last_output_r: 0.0,
             os_l: ConfigurableOversample::new(2),
@@ -101,6 +112,63 @@ impl FetCompressor {
         }
     }
 
+    pub fn set_detection(&mut self, mode: DetectionMode) {
+        self.detector.set_mode(mode);
+    }
+
+    /// See `VcaCompressor::set_stereo_link`.
+    pub fn set_stereo_link(&mut self, link: f32) {
+        if self.detector.is_fully_linked() && link < 1.0 {
+            self.channel_r = self.channel_l.clone();
+        }
+        self.detector.set_link(link);
+    }
+
+    #[inline]
+    fn channel_gain_db(&mut self, input_db: f32, right_channel: bool) -> f32 {
+        let sample_rate = self.sample_rate;
+        let ratio = self.ratio;
+        let all_buttons = self.all_buttons;
+        let threshold = self.threshold;
+        let attack_coeff = self.attack_coeff;
+        let release_coeff = self.release_coeff;
+        let channel = if right_channel {
+            &mut self.channel_r
+        } else {
+            &mut self.channel_l
+        };
+
+        // Ratio — all-buttons-in mode increases ratio after transient
+        let effective_ratio = if all_buttons {
+            let base = 12.0; // Parallel resistance of all 4 ratio networks
+            let lag_factor = 1.0 + 0.5 * (1.0 - (-channel.peak_timer / 50.0).exp());
+            base * lag_factor
+        } else {
+            ratio
+        };
+
+        // Gain computer
+        let gc = gain_computer(input_db, threshold, effective_ratio, 3.0);
+        let gc = apply_range(gc, 60.0); // FET can go deep
+
+        // Smoothing
+        let coeff = if gc <= channel.gr_state {
+            attack_coeff
+        } else {
+            release_coeff
+        };
+        channel.gr_state = flush_denormal(coeff * channel.gr_state + (1.0 - coeff) * gc);
+
+        // Track peak timer for all-buttons mode
+        if gc < channel.gr_state - 1.0 {
+            channel.peak_timer = 0.0;
+        } else {
+            channel.peak_timer += 1000.0 / sample_rate; // ms
+        }
+
+        channel.gr_state
+    }
+
     #[inline]
     pub fn process_sample(&mut self, left: f32, right: f32) -> (f32, f32, f32) {
         // Input gain (drive)
@@ -109,41 +177,19 @@ impl FetCompressor {
         let in_r = right * input_linear;
 
         // Feedback detection
-        let detect = self.last_output_l.abs().max(self.last_output_r.abs());
-        let input_db = linear_to_db(detect);
+        let (detect_l_db, detect_r_db) =
+            self.detector.detect_db(self.last_output_l, self.last_output_r);
 
-        // Ratio — all-buttons-in mode increases ratio after transient
-        let effective_ratio = if self.all_buttons {
-            let base = 12.0; // Parallel resistance of all 4 ratio networks
-            let lag_factor = 1.0 + 0.5 * (1.0 - (-self.peak_timer / 50.0).exp());
-            base * lag_factor
+        let gr_l = self.channel_gain_db(detect_l_db, false);
+        let gr_r = if self.detector.is_fully_linked() {
+            gr_l
         } else {
-            self.ratio
+            self.channel_gain_db(detect_r_db, true)
         };
-
-        // Gain computer
-        let gc = gain_computer(input_db, self.threshold, effective_ratio, 3.0);
-        let gc = apply_range(gc, 60.0); // FET can go deep
-
-        // Smoothing
-        let coeff = if gc <= self.gr_state {
-            self.attack_coeff
-        } else {
-            self.release_coeff
-        };
-        self.gr_state = flush_denormal(coeff * self.gr_state + (1.0 - coeff) * gc);
-
-        // Track peak timer for all-buttons mode
-        if gc < self.gr_state - 1.0 {
-            self.peak_timer = 0.0;
-        } else {
-            self.peak_timer += 1000.0 / self.sample_rate; // ms
-        }
 
         // Apply gain reduction
-        let gr_linear = db_to_linear(self.gr_state);
-        let wet_l = in_l * gr_linear;
-        let wet_r = in_r * gr_linear;
+        let wet_l = in_l * db_to_linear(gr_l);
+        let wet_r = in_r * db_to_linear(gr_r);
 
         // JFET + transformer distortion at configurable oversampled rate
         let xfmr = self.xfmr_drive;
@@ -164,12 +210,13 @@ impl FetCompressor {
         self.last_output_l = out_l;
         self.last_output_r = out_r;
 
-        (out_l, out_r, self.gr_state)
+        (out_l, out_r, gr_l.min(gr_r))
     }
 
     pub fn reset(&mut self) {
-        self.gr_state = 0.0;
-        self.peak_timer = 0.0;
+        self.channel_l = FetChannel::default();
+        self.channel_r = FetChannel::default();
+        self.detector.reset();
         self.last_output_l = 0.0;
         self.last_output_r = 0.0;
         self.os_l.reset();

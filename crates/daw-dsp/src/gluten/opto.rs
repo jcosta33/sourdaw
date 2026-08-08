@@ -3,17 +3,28 @@
 //! T4 opto cell with program-dependent release and physical memory effect.
 //! Feedback topology with soft, inherently program-dependent ratio.
 
-use super::gain_computer::{db_to_linear, linear_to_db};
+use super::detector::{DetectionMode, StereoDetector};
+use super::gain_computer::db_to_linear;
 use crate::primitives::flush_denormal;
+
+/// One side's opto cell. The CdS memory is per-channel because it *is* the
+/// cell: two unlinked channels drive two physical cells with two charge
+/// histories.
+#[derive(Clone, Default)]
+struct OptoChannel {
+    gr_state: f32,
+    /// CdS memory accumulator (0.0 – 1.0)
+    memory_state: f32,
+}
 
 pub struct OptoCompressor {
     sample_rate: f32,
     threshold: f32,
     /// Fixed soft ratio that increases with excess (3:1 → ~10:1)
     base_ratio: f32,
-    gr_state: f32,
-    /// CdS memory accumulator (0.0 – 1.0)
-    memory_state: f32,
+    channel_l: OptoChannel,
+    channel_r: OptoChannel,
+    detector: StereoDetector,
     last_output_l: f32,
     last_output_r: f32,
     /// ~10ms fixed attack (EL panel rise time)
@@ -34,8 +45,9 @@ impl OptoCompressor {
             sample_rate,
             threshold: -20.0,
             base_ratio: 3.0,
-            gr_state: 0.0,
-            memory_state: 0.0,
+            channel_l: OptoChannel::default(),
+            channel_r: OptoChannel::default(),
+            detector: StereoDetector::new(sample_rate),
             last_output_l: 0.0,
             last_output_r: 0.0,
             tau_attack: 0.010,
@@ -70,11 +82,23 @@ impl OptoCompressor {
         }
     }
 
+    pub fn set_detection(&mut self, mode: DetectionMode) {
+        self.detector.set_mode(mode);
+    }
+
+    /// See `VcaCompressor::set_stereo_link` — the right cell is seeded from the
+    /// left one on the way out of fully-linked so the two do not step apart.
+    pub fn set_stereo_link(&mut self, link: f32) {
+        if self.detector.is_fully_linked() && link < 1.0 {
+            self.channel_r = self.channel_l.clone();
+        }
+        self.detector.set_link(link);
+    }
+
+    /// One cell's gain reduction, in positive dB. Returns the reduction rather
+    /// than the applied gain so the caller keeps the sign convention.
     #[inline]
-    pub fn process_sample(&mut self, left: f32, right: f32) -> (f32, f32, f32) {
-        // Feedback: detect from previous output
-        let detect = self.last_output_l.abs().max(self.last_output_r.abs());
-        let detect_db = linear_to_db(detect);
+    fn channel_gr_db(&mut self, detect_db: f32, right_channel: bool) -> f32 {
         let excess = (detect_db - self.threshold).max(0.0);
 
         // Program-dependent ratio: increases with excess
@@ -87,39 +111,67 @@ impl OptoCompressor {
             self.base_ratio + (max_ratio - self.base_ratio) * (excess / 20.0).min(1.0);
         let desired_gr_db = excess * (1.0 - 1.0 / effective_ratio);
 
+        let sample_rate = self.sample_rate;
+        let tau_attack = self.tau_attack;
+        let tau_release_fast = self.tau_release_fast;
+        let tau_memory_charge = self.tau_memory_charge;
+        let tau_memory_decay = self.tau_memory_decay;
+        let channel = if right_channel {
+            &mut self.channel_r
+        } else {
+            &mut self.channel_l
+        };
+
         // Update memory state (CdS charge trapping)
         if desired_gr_db > 0.5 {
-            let charge_alpha = 1.0 - (-1.0 / (self.tau_memory_charge * self.sample_rate)).exp();
-            self.memory_state += charge_alpha * (1.0 - self.memory_state);
+            let charge_alpha = 1.0 - (-1.0 / (tau_memory_charge * sample_rate)).exp();
+            channel.memory_state += charge_alpha * (1.0 - channel.memory_state);
         } else {
-            let decay_alpha = 1.0 - (-1.0 / (self.tau_memory_decay * self.sample_rate)).exp();
-            self.memory_state = flush_denormal(self.memory_state - decay_alpha * self.memory_state);
+            let decay_alpha = 1.0 - (-1.0 / (tau_memory_decay * sample_rate)).exp();
+            channel.memory_state =
+                flush_denormal(channel.memory_state - decay_alpha * channel.memory_state);
         }
 
         // Release time stretches with memory
-        let tau_release = self.tau_release_fast + (5.0 - self.tau_release_fast) * self.memory_state;
+        let tau_release = tau_release_fast + (5.0 - tau_release_fast) * channel.memory_state;
 
         // Ballistics
-        let alpha = if desired_gr_db > self.gr_state {
-            1.0 - (-1.0 / (self.tau_attack * self.sample_rate)).exp()
+        let alpha = if desired_gr_db > channel.gr_state {
+            1.0 - (-1.0 / (tau_attack * sample_rate)).exp()
         } else {
-            1.0 - (-1.0 / (tau_release * self.sample_rate)).exp()
+            1.0 - (-1.0 / (tau_release * sample_rate)).exp()
         };
 
-        self.gr_state = flush_denormal(self.gr_state + alpha * (desired_gr_db - self.gr_state));
+        channel.gr_state =
+            flush_denormal(channel.gr_state + alpha * (desired_gr_db - channel.gr_state));
+        channel.gr_state
+    }
 
-        let gain = db_to_linear(-self.gr_state);
-        let out_l = left * gain;
-        let out_r = right * gain;
+    #[inline]
+    pub fn process_sample(&mut self, left: f32, right: f32) -> (f32, f32, f32) {
+        // Feedback: detect from previous output
+        let (detect_l_db, detect_r_db) =
+            self.detector.detect_db(self.last_output_l, self.last_output_r);
+
+        let gr_l = self.channel_gr_db(detect_l_db, false);
+        let gr_r = if self.detector.is_fully_linked() {
+            gr_l
+        } else {
+            self.channel_gr_db(detect_r_db, true)
+        };
+
+        let out_l = left * db_to_linear(-gr_l);
+        let out_r = right * db_to_linear(-gr_r);
         self.last_output_l = out_l;
         self.last_output_r = out_r;
 
-        (out_l, out_r, -self.gr_state)
+        (out_l, out_r, -gr_l.max(gr_r))
     }
 
     pub fn reset(&mut self) {
-        self.gr_state = 0.0;
-        self.memory_state = 0.0;
+        self.channel_l = OptoChannel::default();
+        self.channel_r = OptoChannel::default();
+        self.detector.reset();
         self.last_output_l = 0.0;
         self.last_output_r = 0.0;
     }

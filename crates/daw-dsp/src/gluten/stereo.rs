@@ -20,9 +20,19 @@ pub fn decode_ms(m: f32, s: f32) -> (f32, f32) {
 
 /// Stereo link — blend between dual-mono and fully linked.
 /// Uses max-based linking to avoid phase cancellation issues.
+///
+/// Operates on detector *levels*, in whatever domain the caller measures them
+/// (Gluten reads it in dB). The lerp at link 1 is written as an exact return of
+/// the linked level rather than `level + 1.0 * (linked - level)`, because that
+/// expression is only approximately the linked level in f32 and the detector
+/// relies on the two channels agreeing bit-for-bit to take its single-gain-path
+/// fast route.
 #[inline]
 pub fn stereo_link(level_l: f32, level_r: f32, link: f32) -> (f32, f32) {
     let linked_level = level_l.max(level_r);
+    if link >= 1.0 {
+        return (linked_level, linked_level);
+    }
     let final_l = level_l + link * (linked_level - level_l);
     let final_r = level_r + link * (linked_level - level_r);
     (final_l, final_r)
