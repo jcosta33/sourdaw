@@ -86,6 +86,7 @@ vi.mock('../../../../stores/arrangementStore', () => ({
     },
 }));
 
+import { defaultMissingMediaStoreState, missingMediaStore } from '../../../../stores/missingMediaStore';
 import { resetModuleStoresToDefault } from '../resetModuleStoresToDefault';
 
 describe('resetModuleStoresToDefault', () => {
@@ -104,6 +105,28 @@ describe('resetModuleStoresToDefault', () => {
         mocks.grinderTelemetryStoreSet.mockClear();
         mocks.arrangementStoreSet.mockClear();
         mocks.hydrateYeastState.mockClear();
+    });
+
+    it('clears the missing-media record, so a closed project cannot keep counting', () => {
+        // `newProject` resets stores and never re-scans, so if the record is not
+        // cleared here the transport bar keeps counting clips from a project
+        // that is no longer open, over an empty timeline.
+        missingMediaStore.set({
+            items: [
+                {
+                    bufferId: 'gone',
+                    clipId: 'clip-1',
+                    kind: 'clip',
+                    label: 'Lost',
+                    trackId: 'track-1',
+                    trackName: 'Guitars',
+                },
+            ],
+        });
+
+        resetModuleStoresToDefault();
+
+        expect(missingMediaStore.value).toEqual(defaultMissingMediaStoreState);
     });
 
     it('should reset arrangement, transport, automation, MIDI, and routing stores', () => {

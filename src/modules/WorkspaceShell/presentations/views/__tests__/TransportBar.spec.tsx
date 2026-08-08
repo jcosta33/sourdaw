@@ -90,6 +90,7 @@ vi.mock('#/modules/TimelineEditor/presentations/views', () => ({
 vi.mock('#/modules/Project/presentations/views', () => ({
     RecentProjectsMenu: () => <div data-testid="recent-projects" />,
     ArrangementSelector: () => <div data-testid="arrangement-selector" />,
+    MissingMediaPanel: () => <div data-testid="missing-media-panel" />,
 }));
 
 vi.mock('#/modules/PunchRecording/presentations/views', () => ({

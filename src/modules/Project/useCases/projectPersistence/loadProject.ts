@@ -20,6 +20,7 @@ import { collectTrackStateAudioBufferIds } from './helpers/collectTrackStateAudi
 import { resetModuleStoresToDefault } from './helpers/resetModuleStoresToDefault';
 import { runProjectLoadTransaction } from './helpers/runProjectLoadTransaction';
 import { stopActiveAutoSave } from './helpers/stopActiveAutoSave';
+import { verifyAudioBufferReferences } from './helpers/verifyAudioBufferReferences';
 
 export async function loadProject(): Promise<boolean> {
     // Boot restore is subordinate: if the user picked a project on the
@@ -79,6 +80,13 @@ export async function loadProject(): Promise<boolean> {
         resetModuleStoresToDefault({ resetGrooveTemplates: false, resetMidiState: false, resetYeastState: false });
         projectCrdtToStores({ resetProjections: true });
         migrateAbsoluteMidiNotes();
+
+        // Buffers that failed to resolve out of IndexedDB are simply absent from
+        // the cache — nothing above throws for them. Scan the hydrated track
+        // state against the cache so the absence becomes a counted, inspectable
+        // record instead of silent playback. Runs after `publish()` and
+        // `projectCrdtToStores` so both sides of the comparison are current.
+        verifyAudioBufferReferences();
 
         const project = projectStore.value;
         if (project?.loading) {

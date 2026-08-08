@@ -19,6 +19,7 @@ import { tunerStore } from '#/modules/Tuner/stores';
 import { hydrateYeastState } from '#/modules/Yeast/useCases';
 
 import { arrangementStore, defaultArrangementStoreState } from '../../../stores/arrangementStore';
+import { defaultMissingMediaStoreState, missingMediaStore } from '../../../stores/missingMediaStore';
 
 type ResetModuleStoresToDefaultInput = {
     createNewMidiProbabilitySeed?: boolean;
@@ -35,6 +36,11 @@ export function resetModuleStoresToDefault({
 }: ResetModuleStoresToDefaultInput = {}): void {
     resetArrangementStoresForProject();
     arrangementStore.set(structuredClone(defaultArrangementStoreState));
+    // The missing-media record describes the project being torn down. Every
+    // caller either follows with `verifyAudioBufferReferences` (the load paths,
+    // which re-derive it) or is `newProject`, which has no media to miss — so
+    // clearing here is what stops a closed project's count from outliving it.
+    missingMediaStore.set(structuredClone(defaultMissingMediaStoreState));
     transportStore.set(defaultTransportState);
     setMasterGainValue(defaultTransportState.masterGain / 100);
     automationStore.set({ lanes: [] });

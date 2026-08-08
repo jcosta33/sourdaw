@@ -4,7 +4,7 @@ import { useStore } from '#/infra/store/useStore';
 import { voiceStatusStore } from '#/modules/AiRuntime/stores';
 import { isVoiceInputAvailable, toggleVoiceInput } from '#/modules/AiRuntime/useCases';
 import { trackStore } from '#/modules/Arrangement/stores';
-import { RecentProjectsMenu, ArrangementSelector } from '#/modules/Project/presentations/views';
+import { RecentProjectsMenu, ArrangementSelector, MissingMediaPanel } from '#/modules/Project/presentations/views';
 import { PunchRecordingControls } from '#/modules/PunchRecording/presentations/views';
 import { TempoEditor } from '#/modules/TimelineEditor/presentations/views';
 
@@ -81,6 +81,7 @@ export const TransportBar = (): ReactElement => {
                     <RecentProjectsMenu />
                     <Sep />
                     <ArrangementSelector />
+                    <MissingMediaPanel />
                 </div>
 
                 {/* Center stage */}
