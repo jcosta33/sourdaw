@@ -1322,7 +1322,8 @@ function getTargetPromptScope(
     return `to ${actionScope.text.slice(separator.index + separator[0].length).trim()}`;
 }
 
-const moveBeatAssertionPattern = /\bbeat\b[\s:=]*(-?(?:\d+(?:\.\d+)?|\.\d+)(?:\s*\/\s*(?:\d+(?:\.\d+)?|\.\d+))?%?)/giu;
+const moveBeatAssertionPattern =
+    /\bbeat\b[\s:=]*(-?(?:\d+(?:\.\d+)?|\.\d+)(?:\s*\/\s*(?:\d+(?:\.\d+)?|\.\d+))?%?)(?![\p{L}\p{N}_.])/giu;
 
 function getMoveBeatAssertions(text: string): RegExpExecArray[] {
     return [...text.matchAll(moveBeatAssertionPattern)];
@@ -1378,6 +1379,50 @@ function hasGroundedMoveBeatAssertions({
     return moveClauseCount === expectedMoveCount;
 }
 
+function hasGroundedSplitBeatAssertions({
+    catalog,
+    context,
+    expectedSplitCount,
+    plannedActionNames,
+    prompt,
+}: {
+    catalog: GroundingCatalog;
+    context: ProjectContext;
+    expectedSplitCount: number;
+    plannedActionNames: readonly string[];
+    prompt: string;
+}): boolean {
+    const maskedPrompt = maskProjectReferences(prompt, context);
+    let splitClauseCount = 0;
+    for (const clause of getPromptClauses(prompt, maskedPrompt)) {
+        const assertions = getMoveBeatAssertions(clause.text);
+        const unmaskedNumbers = clause.masked.match(
+            /(?<![\p{L}\p{N}_.])-?(?:\d+(?:\.\d+)?|\.\d+)(?:\s*\/\s*(?:\d+(?:\.\d+)?|\.\d+))?%?(?![\p{L}\p{N}_.])/gu
+        );
+        const intent = resolveClauseActionIntent(clause.masked, catalog);
+        if (assertions.length === 0) {
+            if ((unmaskedNumbers?.length ?? 0) > 0 && (!intent || intent.actionType === 'splitClip')) {
+                return false;
+            }
+            continue;
+        }
+        if (intent?.actionType === 'splitClip') {
+            if (!hasExactlyOneMoveBeatAssertion(clause.text)) {
+                return false;
+            }
+            if (unmaskedNumbers?.length !== 1) {
+                return false;
+            }
+            splitClauseCount += 1;
+            continue;
+        }
+        if (!intent || !plannedActionNames.includes(intent.actionType)) {
+            return false;
+        }
+    }
+    return splitClauseCount === expectedSplitCount;
+}
+
 function isDirectMoveClipDestination(
     actionScope: ActionPromptScope,
     trackId: unknown,
@@ -1408,6 +1453,38 @@ function isDirectMoveClipDestination(
             `the ${reference} track`,
         ].some((prefix) => targetScope === prefix || targetScope.startsWith(`${prefix} `))
     );
+}
+
+function isDirectSplitClipScope(actionScope: ActionPromptScope, clipId: unknown, context: ProjectContext): boolean {
+    if (typeof clipId !== 'string') {
+        return false;
+    }
+    const clip = context.tracks.flatMap((track) => track.clips).find((candidate) => candidate.id === clipId);
+    if (!clip) {
+        return false;
+    }
+    const normalizedScope = normalizePromptText(actionScope.text);
+    const namedSubjects = [clip.id, clip.name]
+        .map(normalizePromptText)
+        .filter((reference) => reference.length > 0)
+        .map((reference) => `(?:the\\s+)?${escapeRegExp(reference)}\\s+clip`);
+    const directSubjects = ['(?:the\\s+)?(?:(?:selected|current)\\s+)?clip', 'this\\s+clip', ...namedSubjects].join(
+        '|'
+    );
+    const hasDirectWholeClipSubject = new RegExp(
+        `\\b(?:split|cut)\\s+(?:${directSubjects})\\s+(?:at\\s+)?beat\\b`,
+        'u'
+    ).test(normalizedScope);
+    if (!hasDirectWholeClipSubject) {
+        return false;
+    }
+    const assertions = getMoveBeatAssertions(actionScope.text);
+    if (assertions.length !== 1) {
+        return false;
+    }
+    const assertion = assertions[0]!;
+    const suffix = actionScope.text.slice(assertion.index + assertion[0].length);
+    return /^[\s.,!?]*$/u.test(suffix);
 }
 
 type GroundingValueRule = GroundingRules['valueRules'][number];
@@ -2528,6 +2605,18 @@ function groundToolCall({
     ) {
         return rejection(index, call.name, 'Provider clip move requires exactly one explicit absolute beat per move');
     }
+    if (
+        call.name === 'splitClip' &&
+        !hasGroundedSplitBeatAssertions({
+            catalog,
+            context,
+            expectedSplitCount: sameActionCallCount,
+            plannedActionNames,
+            prompt,
+        })
+    ) {
+        return rejection(index, call.name, 'Provider clip split requires exactly one explicit absolute beat per split');
+    }
     if (call.name === 'setPlayback' && !isExplicitSetPlaybackScope(actionScope)) {
         return rejection(index, call.name, 'Provider action is not grounded in an explicit playback request');
     }
@@ -2641,6 +2730,9 @@ function groundToolCall({
     }
     if (call.name === 'moveClip' && !isDirectMoveClipDestination(actionScope, groundedArguments.trackId, context)) {
         return rejection(index, call.name, 'Provider clip destination is not the direct object of the move request');
+    }
+    if (call.name === 'splitClip' && !isDirectSplitClipScope(actionScope, groundedArguments.clipId, context)) {
+        return rejection(index, call.name, 'Provider clip split is not scoped to the whole clip');
     }
     if (
         call.name === 'removeTrack' &&

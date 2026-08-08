@@ -44,4 +44,15 @@ describe('executableAppActionRegistry', () => {
             expect(executableAppActionDescriptorByType.has(type)).toBe(true);
         }
     });
+
+    it('declares audio clip splitting as zero-crossing adjusted', () => {
+        const descriptor = executableAppActionDescriptors.find((candidate) => candidate.actionType === 'splitClip');
+
+        expect(descriptor?.description).toContain('nearest zero crossing');
+        expect(descriptor?.description).toContain("when the clip's audio buffer is available");
+        expect(descriptor?.description).toContain('requested beat');
+        expect(descriptor?.parameters.properties.beat.description).toContain('nearest zero crossing');
+        expect(descriptor?.parameters.properties.beat.description).toContain('when the audio buffer is available');
+        expect(descriptor?.parameters.properties.beat.description).toContain('requested beat');
+    });
 });

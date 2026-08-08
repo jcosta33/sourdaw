@@ -12,6 +12,7 @@ export type SplitMidiNotesAtBeatInput = {
      * kept on the source clip.
      */
     discardBeforeBeat?: number;
+    targetNoteIds?: readonly string[];
 };
 
 export function splitMidiNotesAtBeat({
@@ -19,6 +20,7 @@ export function splitMidiNotesAtBeat({
     newClipId,
     splitBeat,
     discardBeforeBeat,
+    targetNoteIds: suppliedTargetNoteIds,
 }: SplitMidiNotesAtBeatInput): void {
     const state = midiStore.value;
     if (!state) {
@@ -39,7 +41,7 @@ export function splitMidiNotesAtBeat({
         return;
     }
 
-    const targetNoteIds = planned.identityRequests.map(() => createMidiNote(0, 0, 0).id);
+    const targetNoteIds = suppliedTargetNoteIds ?? planned.identityRequests.map(() => createMidiNote(0, 0, 0).id);
     const transformed = transformMidiGlobalTimeState({ state, commands, targetNoteIds });
     if (transformed.status === 'rejected' || !transformed.hasChanges) {
         return;

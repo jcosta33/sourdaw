@@ -918,6 +918,24 @@ function bridgeToolCall({
         };
     }
 
+    if (call.name === 'splitClip') {
+        const target = findEditableClip(context, args.clipId);
+        if (
+            !hasExactKeys(args, ['clipId', 'beat']) ||
+            !target ||
+            !isFiniteNumber(args.beat) ||
+            args.beat <= target.clip.startBeat ||
+            args.beat >= target.clip.endBeat
+        ) {
+            return rejection(
+                index,
+                call.name,
+                'Expected one unlocked clip and a finite beat strictly inside its current bounds'
+            );
+        }
+        return { type: 'splitClip', payload: { clipId: target.clip.id, beat: args.beat } };
+    }
+
     if (call.name === 'duplicateClip' || call.name === 'duplicateClipToNextBar') {
         const source = findClip(context, args.clipId);
         if (!hasExactKeys(args, ['clipId']) || !source) {
@@ -1732,6 +1750,7 @@ function getClipTargetIds(action: RuntimeAction): string[] {
         action.type === 'duplicateClip' ||
         action.type === 'duplicateClipToNextBar' ||
         action.type === 'moveClip' ||
+        action.type === 'splitClip' ||
         action.type === 'removeClip' ||
         action.type === 'renameClip' ||
         action.type === 'trimClipStart' ||
@@ -1952,6 +1971,21 @@ function getMutationKeys(
             ...getClipAutomationLaneIds(context, action.payload.clipId).map(
                 (laneId) => `automation-lane-points:${laneId}`
             ),
+        ];
+    }
+    if (action.type === 'splitClip') {
+        return [
+            `clip:${action.payload.clipId}:membership`,
+            `clip:${action.payload.clipId}:name`,
+            `clip:${action.payload.clipId}:geometry`,
+            `clip:${action.payload.clipId}:gain`,
+            `clip:${action.payload.clipId}:muted`,
+            `clip:${action.payload.clipId}:color`,
+            `clip:${action.payload.clipId}:fades`,
+            `clip:${action.payload.clipId}:lock`,
+            `clip:${action.payload.clipId}:loop`,
+            `clip:${action.payload.clipId}:stretch`,
+            `clip:${action.payload.clipId}:notes`,
         ];
     }
     if (action.type === 'renameClip') {
@@ -2295,6 +2329,10 @@ export function bridgeLlmToolCalls({
     const automationPointWriteLaneIds = new Set<string>();
     const automationTransformLaneIds = new Set<string>();
     const movedClipAutomationLaneIds = new Set<string>();
+    const splitClipIds = new Set<string>();
+    const splitClipOwnerTrackIds = new Set<string>();
+    const duplicatedClipSourceIds = new Set<string>();
+    const duplicatedTrackIds = new Set<string>();
 
     for (const [index, call] of calls.entries()) {
         const result = bridgeToolCall({
@@ -2344,6 +2382,20 @@ export function bridgeLlmToolCalls({
             const hasRippleCouplingConflict =
                 (result.type === 'removeClip' && actionClipTrackIds.some((trackId) => clipTrackIds.has(trackId))) ||
                 actionClipTrackIds.some((trackId) => removedClipTrackIds.has(trackId));
+            const duplicatedClipId =
+                result.type === 'duplicateClip' || result.type === 'duplicateClipToNextBar'
+                    ? result.payload.clipId
+                    : null;
+            const splitClipId = result.type === 'splitClip' ? result.payload.clipId : null;
+            const splitClipOwnerTrackId =
+                splitClipId === null ? null : (findClip(context, splitClipId)?.track.id ?? null);
+            const duplicatedTrackId = result.type === 'duplicateTrack' ? result.payload.trackId : null;
+            const hasSplitDuplicateConflict =
+                (duplicatedClipId !== null && splitClipIds.has(duplicatedClipId)) ||
+                (splitClipId !== null && duplicatedClipSourceIds.has(splitClipId));
+            const hasSplitOwnerTrackDuplicateConflict =
+                (duplicatedTrackId !== null && splitClipOwnerTrackIds.has(duplicatedTrackId)) ||
+                (splitClipOwnerTrackId !== null && duplicatedTrackIds.has(splitClipOwnerTrackId));
             const hasDeviceLifecycleConflict =
                 deviceTarget !== null &&
                 ((deviceTarget.deviceId !== null &&
@@ -2418,6 +2470,22 @@ export function bridgeLlmToolCalls({
                 );
                 continue;
             }
+            if (hasSplitDuplicateConflict) {
+                rejections.push(
+                    rejection(index, call.name, 'Provider batch mixes splitting and duplicating the same clip')
+                );
+                continue;
+            }
+            if (hasSplitOwnerTrackDuplicateConflict) {
+                rejections.push(
+                    rejection(
+                        index,
+                        call.name,
+                        'Provider batch mixes splitting a clip with duplicating its owner track'
+                    )
+                );
+                continue;
+            }
             if (hasDeviceLifecycleConflict) {
                 rejections.push(
                     rejection(index, call.name, 'Provider batch mixes incompatible device lifecycle writes')
@@ -2435,6 +2503,18 @@ export function bridgeLlmToolCalls({
             }
             for (const laneId of movedAutomationLaneIds) {
                 movedClipAutomationLaneIds.add(laneId);
+            }
+            if (splitClipId !== null) {
+                splitClipIds.add(splitClipId);
+            }
+            if (splitClipOwnerTrackId !== null) {
+                splitClipOwnerTrackIds.add(splitClipOwnerTrackId);
+            }
+            if (duplicatedClipId !== null) {
+                duplicatedClipSourceIds.add(duplicatedClipId);
+            }
+            if (duplicatedTrackId !== null) {
+                duplicatedTrackIds.add(duplicatedTrackId);
             }
             for (const clipTargetId of actionClipTargetIds) {
                 clipTargetIds.add(clipTargetId);

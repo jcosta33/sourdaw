@@ -477,8 +477,14 @@ const guardedPayloadContractCases = [
         invalidPayloads: [
             { clipId: 'clip-1', splitBeat: 4 },
             { clipId: 'clip-1' },
+            { clipId: '', beat: 4 },
             { clipId: 1, beat: 4 },
+            { clipId: 'clip-1', beat: -1 },
             { clipId: 'clip-1', beat: Number.NaN },
+            { clipId: 'clip-1', beat: Number.NEGATIVE_INFINITY },
+            { clipId: 'clip-1', beat: Number.POSITIVE_INFINITY },
+            { clipId: 'clip-1', beat: '4' },
+            { clipId: 'clip-1', beat: 4, extra: true },
         ],
     }),
     guardedPayloadCase({

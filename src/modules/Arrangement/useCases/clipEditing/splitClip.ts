@@ -1,11 +1,27 @@
 import { splitMidiNotesAtBeat } from '#/modules/MIDI/useCases';
+import { type ClipStateSnapshot } from '#/utils/handlerContract';
 
-import { getNextClipId } from '../../repositories/clipIdCounter';
 import { getTrackState } from '../../repositories/track/getTrackState';
 import { setTrackState } from '../../repositories/track/setTrackState';
-import { resolveEligibleClipWriteTarget } from '../../stores/resolveEligibleClipWriteTarget';
 import { type Clip } from '../../stores/trackStore';
-import { snapToZeroCrossing } from '../timelineInteractions/snapToZeroCrossing';
+
+import { prepareClipSplit } from './prepareClipSplit';
+
+function cloneClipStateSnapshot(snapshot: ClipStateSnapshot): Clip {
+    return {
+        ...structuredClone(snapshot),
+        overrides: snapshot.overrides ? { ...snapshot.overrides } : undefined,
+        kneadState: snapshot.kneadState
+            ? {
+                  ...snapshot.kneadState,
+                  blobs: snapshot.kneadState.blobs.map((blob) => ({
+                      ...blob,
+                      pitchCurveCents: [...blob.pitchCurveCents],
+                  })),
+              }
+            : undefined,
+    };
+}
 
 /**
  * Split a clip at `splitBeat` (zero-crossing snapped for audio). The left half
@@ -14,7 +30,13 @@ import { snapToZeroCrossing } from '../timelineInteractions/snapToZeroCrossing';
  * produced so stacked splits on the same lineage stay addressable. Returns the
  * right clip id, or null when the split is rejected.
  */
-export function splitClip(clipId: string, splitBeat: number, rightClipId?: string): string | null {
+export function splitClip(
+    clipId: string,
+    splitBeat: number,
+    rightClipId?: string,
+    targetNoteIds?: readonly string[],
+    resolvedSplitBeat?: number
+): string | null {
     if (!Number.isFinite(splitBeat)) {
         return null;
     }
@@ -22,105 +44,32 @@ export function splitClip(clipId: string, splitBeat: number, rightClipId?: strin
         return null;
     }
 
-    const resolution = resolveEligibleClipWriteTarget({ clipId });
-    if (resolution.status !== 'eligible') {
-        return null;
-    }
-
+    const plan = prepareClipSplit({ clipId, splitBeat, rightClipId, resolvedSplitBeat, targetNoteIds });
     const state = getTrackState();
-    if (!state) {
+    if (!plan || !state || !plan.next.rightClip) {
         return null;
     }
-    if (rightClipId !== undefined) {
-        const destinationIdIsUsed = state.tracks.some((track) => {
-            if (track.clips.some((context) => context.id === rightClipId)) {
-                return true;
+    const leftClip = cloneClipStateSnapshot(plan.next.leftClip);
+    const rightClip = cloneClipStateSnapshot(plan.next.rightClip);
+    setTrackState({
+        ...state,
+        tracks: state.tracks.map((track) => {
+            if (track.id !== plan.next.trackId) {
+                return track;
             }
-
-            return track.alternatives.some((alternative) =>
-                alternative.clips.some((context) => context.id === rightClipId)
-            );
-        });
-        if (destinationIdIsUsed) {
-            return null;
-        }
-    }
-
-    let newRightClipId: string | null = null;
-    let splitClipType: 'audio' | 'midi' | null = null;
-    let adjustedMediaSplit: number | null = null;
-
-    const newTracks = state.tracks.map((time) => {
-        if (time.id !== resolution.trackId) {
-            return time;
-        }
-
-        const clip = time.clips.find((context) => context.id === clipId);
-        if (!clip || splitBeat <= clip.startBeat || splitBeat >= clip.endBeat) {
-            return time;
-        }
-
-        const adjustedSplitBeat = snapToZeroCrossing(clip, splitBeat);
-
-        if (adjustedSplitBeat <= clip.startBeat || adjustedSplitBeat >= clip.endBeat) {
-            return time;
-        }
-
-        const rightId = rightClipId ?? getNextClipId();
-        newRightClipId = rightId;
-        splitClipType = clip.type;
-        // MIDI notes are stored clip-relative (playback =
-        // clip.startBeat + note.startBeat - midiOffsetBeats), so the note
-        // partition must happen in clip-media beats, not timeline beats.
-        adjustedMediaSplit = adjustedSplitBeat - clip.startBeat + (clip.midiOffsetBeats ?? 0);
-
-        const leftClip: Clip = {
-            ...clip,
-            endBeat: adjustedSplitBeat,
-            name: `${clip.name} (L)`,
-            fadeOutBeats: 0,
-        };
-
-        const rightClip: Clip = {
-            ...clip,
-            id: rightId,
-            name: `${clip.name} (R)`,
-            startBeat: adjustedSplitBeat,
-            endBeat: clip.endBeat,
-            fadeInBeats: 0,
-            fadeOutBeats: clip.fadeOutBeats,
-            audioOffsetBeats: (clip.audioOffsetBeats ?? 0) + (adjustedSplitBeat - clip.startBeat),
-            // Right-side notes are re-based onto this clip at split time, so
-            // its MIDI media starts at the split point.
-            midiOffsetBeats: 0,
-        };
-
-        return {
-            ...time,
-            clips: time.clips.map((context) => (context.id === clipId ? leftClip : context)).concat(rightClip),
-        };
+            return {
+                ...track,
+                clips: track.clips.map((clip) => (clip.id === clipId ? leftClip : clip)).concat(rightClip),
+            };
+        }),
     });
-
-    if (newRightClipId !== null) {
-        setTrackState({
-            ...state,
-            tracks: newTracks,
+    if (plan.next.leftClip.type === 'midi') {
+        splitMidiNotesAtBeat({
+            sourceClipId: clipId,
+            newClipId: plan.rightClipId,
+            splitBeat: plan.adjustedMediaSplit,
+            targetNoteIds: plan.targetNoteIds,
         });
-
-        // For MIDI clips the notes are keyed by clip id, clip-relative —
-        // after trimming the source clip, any note past the split point would
-        // become invisible. Partition the notes across the two clip ids so
-        // every note stays visible and playable.
-        if (splitClipType === 'midi' && adjustedMediaSplit !== null) {
-            splitMidiNotesAtBeat({
-                sourceClipId: clipId,
-                newClipId: newRightClipId,
-                splitBeat: adjustedMediaSplit,
-            });
-        }
-
-        return newRightClipId;
     }
-
-    return null;
+    return plan.rightClipId;
 }

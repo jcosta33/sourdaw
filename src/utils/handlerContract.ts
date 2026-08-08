@@ -102,6 +102,51 @@ export type ClipSnapshot = {
     readonly startBeat: number;
     readonly endBeat: number;
 };
+export type ClipStateSnapshot = {
+    readonly id: string;
+    readonly trackId: string;
+    readonly name: string;
+    readonly startBeat: number;
+    readonly endBeat: number;
+    readonly type: 'audio' | 'midi';
+    readonly audioBufferId?: string;
+    readonly assetHash?: string;
+    readonly audioOffsetBeats?: number;
+    readonly midiOffsetBeats?: number;
+    readonly fadeInBeats: number;
+    readonly fadeOutBeats: number;
+    readonly gain: number;
+    readonly color: string;
+    readonly locked: boolean;
+    readonly muted: boolean;
+    readonly stretchMode?: 'off' | 'repitch' | 'timestretch';
+    readonly stretchRatio?: number;
+    readonly loopEnabled?: boolean;
+    readonly loopLength?: number;
+    readonly followAction?: 'stop' | 'play_next' | 'play_previous' | 'play_random' | 'play_first' | 'play_last';
+    readonly generating?: boolean;
+    readonly isGhost?: boolean;
+    readonly isInlineEditing?: boolean;
+    readonly parentClipId?: string;
+    readonly isLinkedInstance?: boolean;
+    readonly sourceKeyRoot?: number;
+    readonly sourceScaleName?: string;
+    readonly overrides?: Readonly<Record<string, boolean>>;
+    readonly kneadState?: {
+        readonly blobs: readonly {
+            readonly id: string;
+            readonly startTime: number;
+            readonly endTime: number;
+            readonly pitchCenterCents: number;
+            readonly originalPitchCenterCents?: number;
+            readonly pitchCurveCents: readonly number[];
+            readonly voicedConfidence: number;
+        }[];
+        readonly retuneSpeedMs: number;
+        readonly humanizePercent: number;
+        readonly formantPreserve: boolean;
+    };
+};
 export type ClipAutomationLaneActionSnapshot = {
     readonly id: string;
     readonly trackId: string;
@@ -150,6 +195,32 @@ export type MidiClipNoteSnapshot = {
 };
 export type MidiCcSnapshot = readonly { readonly id: string }[];
 export type MidiPitchBendSnapshot = readonly { readonly id: string }[];
+export type MidiClipCcSnapshot = {
+    readonly id: string;
+    readonly controller: number;
+    readonly value: number;
+    readonly beat: number;
+    readonly channel: number;
+};
+export type MidiClipPitchBendSnapshot = {
+    readonly id: string;
+    readonly value: number;
+    readonly beat: number;
+    readonly channel: number;
+};
+export type MidiClipDataActionSnapshot = {
+    readonly notes: { readonly present: boolean; readonly value: readonly MidiClipNoteSnapshot[] };
+    readonly controlChanges: { readonly present: boolean; readonly value: readonly MidiClipCcSnapshot[] };
+    readonly pitchBends: { readonly present: boolean; readonly value: readonly MidiClipPitchBendSnapshot[] };
+};
+export type ClipSplitActionSnapshot = {
+    readonly trackId: string;
+    readonly leftClip: ClipStateSnapshot;
+    readonly rightClip: ClipStateSnapshot | null;
+    readonly rightClipIndex: number;
+    readonly sourceMidi: MidiClipDataActionSnapshot;
+    readonly rightMidi: MidiClipDataActionSnapshot;
+};
 export type RippleShiftSnapshot = {
     readonly clipId: string;
     readonly origStartBeat: number;
@@ -520,7 +591,27 @@ export type AppAction =
     | { type: 'duplicateTrack'; payload: { trackId: string; targetTrackId?: string; select?: boolean } }
     | { type: 'removeClip'; payload: { clipId: string } }
     | { type: 'renameClip'; payload: { clipId: string; name: string } }
-    | { type: 'splitClip'; payload: { clipId: string; beat: number } }
+    | {
+          type: 'splitClip';
+          payload: {
+              clipId: string;
+              beat: number;
+              /** Internal deterministic replay metadata. AiRuntime rejects these fields. */
+              resolvedBeat?: number;
+              rightClipId?: string;
+              targetNoteIds?: readonly string[];
+          };
+      }
+    | {
+          /** Guarded inverse/redo for splitClip. Emitted only by its handler. */
+          type: 'restoreClipSplitState';
+          payload: {
+              clipId: string;
+              rightClipId: string;
+              expected: ClipSplitActionSnapshot;
+              replacement: ClipSplitActionSnapshot;
+          };
+      }
     | { type: 'trimClipStart'; payload: { clipId: string; newStartBeat: number } }
     | { type: 'trimClipEnd'; payload: { clipId: string; newEndBeat: number } }
     | { type: 'addDevice'; payload: { trackId: string; deviceType: string; deviceId?: string } }

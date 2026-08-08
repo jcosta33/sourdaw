@@ -175,7 +175,10 @@ const validators = {
         isOptional(param.audioBufferId, isString),
     removeClip: hasClipId,
     splitClip: (param): param is PayloadOf<'splitClip'> =>
-        isObj(param) && isString(param.clipId) && isNumber(param.beat),
+        isObj(param) &&
+        hasExactKeys(param, ['clipId', 'beat']) &&
+        isNonEmptyString(param.clipId) &&
+        isNonNegativeNumber(param.beat),
     moveClip: (param): param is PayloadOf<'moveClip'> =>
         isObj(param) &&
         hasExactKeys(param, ['clipId', 'trackId', 'startBeat']) &&
