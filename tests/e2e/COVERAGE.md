@@ -784,6 +784,9 @@ Re-measured after additional PRs since threshold raise #3 (PR #1231). Lines cros
 - **PR #1454**: Chord stamp & expression — chord type, lane selector — 5 tests.
 - **PR #1458**: Modulation matrix — new modulator, empty state — 4 tests.
 
-**E2E: 165 tests across 37 spec files using data-testid selectors.**
+- **PR #1460**: Setlist & loop station — add item, arm — 4 tests.
+- **PR #1461**: Automation lanes — mode button, dropdown — 4 tests.
 
-**Campaign total to date: 282 PRs, ~2734 assertions. Lines coverage at 90.30%.**
+**E2E: 173 tests across 39 spec files using data-testid selectors.**
+
+**Campaign total to date: 285 PRs, ~2742 assertions. Lines coverage at 90.30%.**
