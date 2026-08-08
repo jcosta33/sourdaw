@@ -400,7 +400,11 @@ describe('applyImportedProjectData round-trip hydration', () => {
         expect(startCrdtAutoSave).toHaveBeenCalledOnce();
         expect(resetAudioGraph).toHaveBeenCalledOnce();
         expect(restoreOldAudioGraph).toHaveBeenCalledOnce();
-        expect(projectStore.value).toMatchObject({ loading: true, initialized: false });
+        // The previous session survives whole, transient flags included. This
+        // line used to pin `{ loading: true, initialized: false }` — the flags
+        // the aborted import had claimed on entry and never gave back, which
+        // left the loading overlay up and `markDirty` permanently short-circuited.
+        expect(projectStore.value).toMatchObject({ loading: false, initialized: true });
     });
 
     it('keeps the committed project live when post-commit embedded persistence fails', async () => {

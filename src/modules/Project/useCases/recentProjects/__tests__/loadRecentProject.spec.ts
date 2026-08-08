@@ -199,7 +199,11 @@ describe('loadRecentProject', () => {
         expect(hydrateModuleStoresFromProjectData).not.toHaveBeenCalled();
         expect(startCrdtAutoSave).not.toHaveBeenCalled();
         expect(ensureTrackStrips).toHaveBeenCalledOnce();
-        expect(projectStore.value).toMatchObject({ loading: true, initialized: false });
+        // Restoring "the previous graph" includes the transient flags. This line
+        // used to pin `{ loading: true, initialized: false }` — the flags the
+        // aborted load claimed on entry and never gave back, which left the
+        // loading overlay up and `markDirty` permanently short-circuited.
+        expect(projectStore.value).toMatchObject({ loading: false, initialized: true });
     });
 
     it('continues the committed replacement after a mid-commit store reset failure', async () => {

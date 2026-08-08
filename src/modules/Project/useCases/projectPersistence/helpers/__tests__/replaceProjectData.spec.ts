@@ -110,9 +110,10 @@ function makeTransaction(overrides: Partial<ProjectLoadTransaction> = {}): Proje
     return {
         prepare: () => Promise.resolve(true),
         activate: () => true,
+        canActivate: () => true,
         isCurrent: () => true,
         ...overrides,
-    } as ProjectLoadTransaction;
+    };
 }
 
 describe('replaceProjectData', () => {

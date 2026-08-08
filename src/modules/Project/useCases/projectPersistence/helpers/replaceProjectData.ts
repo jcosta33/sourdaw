@@ -66,17 +66,48 @@ export async function replaceProjectData({
     transaction,
 }: ReplaceProjectDataInput): Promise<ProjectReplacementResult> {
     const currentProject = projectStore.value;
+    // Captured before the load claims the flags, so an abort can hand the
+    // previous session back exactly as it was. Every abort below returns
+    // through `abortProjectReplacement`: none of them has published any of the
+    // incoming project (hydration happens only in the committed batch), and the
+    // two that tore the audio graph down rebuild the previous one via
+    // `restorePreviousAudioGraph`, so the entry values are the right values for
+    // all of them. Mirrors `newProject`'s `previousTransientState` /
+    // `failNewProjectActivation` pair.
+    const previousTransientState = currentProject
+        ? { initialized: currentProject.initialized, loading: currentProject.loading }
+        : null;
     if (currentProject) {
         projectStore.set({ ...currentProject, loading: true, initialized: false });
     }
 
+    function abortProjectReplacement(): ProjectReplacementResult {
+        // `loading` is not cosmetic: `markDirty` reads it to tell a load's
+        // hydration writes apart from a user's edit, so an abort that leaves it
+        // set kills dirty tracking for the rest of the session — the unsaved
+        // indicator, the autosave (gated on `dirty`), and the save-before-import
+        // guard all go with it.
+        //
+        // Only a transition that still owns the store may write. Once a newer
+        // load has superseded this one, these entry values are stale: the newer
+        // load has already written its own `loading: true`, and clearing it
+        // mid-hydration would mark the project it is loading dirty.
+        if (transaction.isCurrent() || transaction.canActivate()) {
+            const project = projectStore.value;
+            if (project && previousTransientState) {
+                projectStore.set({ ...project, ...previousTransientState });
+            }
+        }
+        return { status: 'aborted' };
+    }
+
     try {
         if (!(await transaction.prepare()) || !transaction.activate()) {
-            return { status: 'aborted' };
+            return abortProjectReplacement();
         }
     } catch (error) {
         logPreparationFailure(context, error);
-        return { status: 'aborted' };
+        return abortProjectReplacement();
     }
 
     let preparedEmbeddedBuffers: NonNullable<Awaited<ReturnType<typeof importCachedAudioBuffers>>>;
@@ -96,7 +127,7 @@ export async function replaceProjectData({
             shouldContinue: transaction.isCurrent,
         });
         if (!embeddedCandidate) {
-            return { status: 'aborted' };
+            return abortProjectReplacement();
         }
         preparedEmbeddedBuffers = embeddedCandidate;
 
@@ -107,17 +138,17 @@ export async function replaceProjectData({
         });
     } catch (error) {
         logPreparationFailure(context, error);
-        return { status: 'aborted' };
+        return abortProjectReplacement();
     }
 
     if (!preparedStoredBuffers || !transaction.isCurrent()) {
-        return { status: 'aborted' };
+        return abortProjectReplacement();
     }
 
     try {
         await stopPlayback();
         if (!transaction.isCurrent()) {
-            return { status: 'aborted' };
+            return abortProjectReplacement();
         }
         // Tear down the previous graph's native-plugin activation guards so the
         // incoming project re-activates its own instances on the next rebuild.
@@ -126,7 +157,7 @@ export async function replaceProjectData({
     } catch (error) {
         logPreparationFailure(context, error);
         restorePreviousAudioGraph(context);
-        return { status: 'aborted' };
+        return abortProjectReplacement();
     }
 
     let previousPersistenceStopped = false;
@@ -149,7 +180,7 @@ export async function replaceProjectData({
                 );
             }
         }
-        return { status: 'aborted' };
+        return abortProjectReplacement();
     }
 
     let degraded = false;
@@ -200,14 +231,20 @@ export async function replaceProjectData({
             runCommittedStep('audio buffer verification', verifyAudioBufferReferences);
             runCommittedStep('undo history reset', clearUndoHistory);
         });
-        // The batch has flushed; every hydration subscriber has run. The load
-        // is over only now, so the module that owns that transition says so.
-        runCommittedStep('project load completion', finishProjectLoading);
     } catch (error) {
         degraded = true;
         logger.error(
             new Error(`[${context}] Committed project replacement notification flush failed`, { cause: error })
         );
+    } finally {
+        // The batch has flushed; every hydration subscriber has run. The load
+        // is over only now, so the module that owns that transition says so.
+        //
+        // In `finally` because this is the only write that clears `loading`,
+        // and the `catch` above exists precisely because the flush is modelled
+        // as fallible. A throw there must not leave the session stuck loading
+        // with dirty tracking dead — the same end state the abort paths guard.
+        runCommittedStep('project load completion', finishProjectLoading);
     }
 
     if (afterCommit) {
