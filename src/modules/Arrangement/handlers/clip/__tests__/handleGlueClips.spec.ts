@@ -46,6 +46,34 @@ describe('handleGlueClips', () => {
         expect(result).toEqual({ status: 'no-write' });
     });
 
+    it('clears stale internal replay fields when fresh preflight rejects the action', () => {
+        mocks.glueClips.mockReturnValue(false);
+        const stale = {
+            trackId: 'track-1',
+            clips: [],
+            clipOrder: [],
+            midi: { clips: [], migratedAbsoluteNoteClipIds: { present: false, value: [] } },
+        };
+        const action = {
+            type: 'glueClips' as const,
+            payload: {
+                clipIds: ['c1', 'c2'],
+                targetClipId: 'stale-target',
+                expected: stale,
+                replacement: stale,
+            },
+        };
+
+        const description = handleGlueClips.describe(action);
+        const result = handleGlueClips.execute(action);
+
+        expect(description.inverseAction).toBeNull();
+        expect(action.payload).toEqual({ clipIds: ['c1', 'c2'] });
+        expect(mocks.glueClips).toHaveBeenCalledWith(['c1', 'c2'], undefined);
+        expect(mocks.restoreClipGlueState).not.toHaveBeenCalled();
+        expect(result).toEqual({ status: 'no-write' });
+    });
+
     it('provides a description', () => {
         const desc = handleGlueClips.describe({
             type: 'glueClips',
@@ -69,10 +97,14 @@ describe('handleGlueClips', () => {
             midi: { clips: [], migratedAbsoluteNoteClipIds: { present: true, value: ['target'] } },
         };
         mocks.prepareClipGlue.mockReturnValue({ previous, next, targetClipId: 'target' });
-        const action = { type: 'glueClips' as const, payload: { clipIds: ['c1', 'c2'] } };
+        const action = {
+            type: 'glueClips' as const,
+            payload: { clipIds: ['c1', 'c2'], targetClipId: 'stale-target', expected: next, replacement: previous },
+        };
 
         const desc = handleGlueClips.describe(action);
 
+        expect(mocks.prepareClipGlue).toHaveBeenCalledWith({ clipIds: ['c1', 'c2'] });
         expect(action.payload).toMatchObject({ targetClipId: 'target', expected: previous, replacement: next });
         expect(desc.inverseAction).toEqual({
             type: 'restoreClipGlueState',

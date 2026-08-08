@@ -5,7 +5,9 @@ import { automationStore } from '#/modules/Automation/stores';
 import { clearHandlerRegistry, macroStore, registerHandlerMap } from '#/modules/Command/stores';
 import {
     clearUndoHistory,
+    executeAppAction,
     executeAppActionBatch,
+    getMacroHandlers,
     redo,
     resetActionReplayAuthority,
     setActionHistoryMetadataPort,
@@ -18,18 +20,70 @@ import {
     resetCrdtProjectAuthority,
 } from '#/modules/CrdtDocument/useCases';
 import { midiStore } from '#/modules/MIDI/stores';
+import { type AppAction, type ClipGlueActionSnapshot } from '#/utils/handlerContract';
 
 import { ClipDummy } from '../../../__tests__/ClipDummy';
 import { TrackDummy } from '../../../__tests__/TrackDummy';
 import { takeLaneStore } from '../../../stores/takeLaneStore';
 import { trackStore } from '../../../stores/trackStore';
 import { getArrangementHandlers } from '../../../useCases/getArrangementHandlers';
+import { handleGlueClips } from '../handleGlueClips';
 
 const noActionHistoryMetadataPort = {
     record: () => [],
     markReverted: () => ({ status: 'unavailable' as const }),
     clear: () => undefined,
 };
+
+const LEGACY_GLUE_MACRO_ID = 'legacy-glue-macro';
+
+function withProbability(snapshot: ClipGlueActionSnapshot, probability: number): ClipGlueActionSnapshot {
+    return {
+        ...snapshot,
+        midi: {
+            ...snapshot.midi,
+            clips: snapshot.midi.clips.map((clip) => ({
+                ...clip,
+                data: {
+                    ...clip.data,
+                    notes: {
+                        ...clip.data.notes,
+                        value: clip.data.notes.value.map((note) => ({ ...note, probability })),
+                    },
+                },
+            })),
+        },
+    };
+}
+
+function persistLegacyGlueMacro(probability?: number): Extract<AppAction, { type: 'glueClips' }> {
+    const action: Extract<AppAction, { type: 'glueClips' }> = {
+        type: 'glueClips',
+        payload: { clipIds: ['clip-a', 'clip-b'] },
+    };
+    const description = handleGlueClips.describe(action);
+    if (!description.inverseAction || !action.payload.expected || !action.payload.replacement) {
+        throw new Error('Expected legacy glue snapshots');
+    }
+    if (probability !== undefined) {
+        action.payload.expected = withProbability(action.payload.expected, probability);
+        action.payload.replacement = withProbability(action.payload.replacement, probability);
+    }
+    const persistedAction = structuredClone(action);
+    macroStore.set({
+        macros: [
+            {
+                id: LEGACY_GLUE_MACRO_ID,
+                name: 'Legacy glue',
+                actions: [persistedAction],
+                createdAt: 1,
+            },
+        ],
+        recording: false,
+        currentRecording: [],
+    });
+    return persistedAction;
+}
 
 describe('handleGlueClips atomic integration', () => {
     beforeEach(() => {
@@ -39,6 +93,7 @@ describe('handleGlueClips atomic integration', () => {
         createCrdtDoc('root');
         registerCrdtStorageRuntime();
         clearHandlerRegistry();
+        registerHandlerMap(getMacroHandlers());
         registerHandlerMap(getArrangementHandlers());
         clearUndoHistory();
         resetActionReplayAuthority();
@@ -124,6 +179,59 @@ describe('handleGlueClips atomic integration', () => {
             { id: 'note-b', startBeat: 5 },
         ]);
         expect(midiStore.value!.migratedAbsoluteNoteClipIds).toEqual([glued.id]);
+    });
+
+    it('re-preflights a legacy macro instead of replaying stale snapshots over probabilistic notes', async () => {
+        const persistedAction = persistLegacyGlueMacro(50);
+        midiStore.set({
+            ...midiStore.value!,
+            notesByClipId: Object.fromEntries(
+                Object.entries(midiStore.value!.notesByClipId).map(([clipId, notes]) => [
+                    clipId,
+                    notes.map((note) => ({ ...note, probability: 50 })),
+                ])
+            ),
+        });
+        const originalTracks = structuredClone(trackStore.value!.tracks);
+        const originalMidi = structuredClone(midiStore.value);
+
+        await executeAppAction({ type: 'playMacro', payload: { macroId: LEGACY_GLUE_MACRO_ID } });
+
+        expect(trackStore.value!.tracks).toEqual(originalTracks);
+        expect(midiStore.value).toEqual(originalMidi);
+        expect(macroStore.value?.macros[0]?.actions).toEqual([persistedAction]);
+    });
+
+    it('re-preflights a legacy macro instead of bypassing duplicate migration markers', async () => {
+        const persistedAction = persistLegacyGlueMacro();
+        midiStore.set({
+            ...midiStore.value!,
+            migratedAbsoluteNoteClipIds: ['clip-a', 'clip-b', 'unrelated', 'unrelated'],
+        });
+        const originalTracks = structuredClone(trackStore.value!.tracks);
+        const originalMidi = structuredClone(midiStore.value);
+
+        await executeAppAction({ type: 'playMacro', payload: { macroId: LEGACY_GLUE_MACRO_ID } });
+
+        expect(trackStore.value!.tracks).toEqual(originalTracks);
+        expect(midiStore.value).toEqual(originalMidi);
+        expect(macroStore.value?.macros[0]?.actions).toEqual([persistedAction]);
+    });
+
+    it('re-preflights a safe legacy macro and keeps its replay undoable and redoable', async () => {
+        const persistedAction = persistLegacyGlueMacro();
+
+        await executeAppAction({ type: 'playMacro', payload: { macroId: LEGACY_GLUE_MACRO_ID } });
+
+        const glued = trackStore.value!.tracks[0]!.clips[0]!;
+        expect(trackStore.value!.tracks[0]!.clips).toMatchObject([{ id: glued.id, name: 'Intro A (glued)' }]);
+        expect(macroStore.value?.macros[0]?.actions).toEqual([persistedAction]);
+
+        await undo();
+        expect(trackStore.value!.tracks[0]!.clips).toMatchObject([{ id: 'clip-a' }, { id: 'clip-b' }]);
+
+        await redo();
+        expect(trackStore.value!.tracks[0]!.clips).toMatchObject([{ id: glued.id, name: 'Intro A (glued)' }]);
     });
 
     it('refuses glue when a source note probability depends on the source clip identity', async () => {
