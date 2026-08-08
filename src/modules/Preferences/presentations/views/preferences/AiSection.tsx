@@ -37,7 +37,8 @@ type SelectedBackendInput = {
 const HOSTED_MODEL_OPTIONS: Record<Exclude<HostedProviderSelection, 'openai-compatible'>, HostedModelOption[]> = {
     anthropic: [
         { value: 'claude-sonnet-5', label: 'Claude Sonnet 5 — Recommended' },
-        { value: 'claude-opus-5', label: 'Claude Opus 5 — Highest quality' },
+        { value: 'claude-fable-5', label: 'Claude Fable 5 — Highest quality' },
+        { value: 'claude-opus-5', label: 'Claude Opus 5 — Agentic and enterprise' },
         { value: 'claude-haiku-4-5', label: 'Claude Haiku 4.5 — Faster, lower cost' },
     ],
     openai: [
