@@ -68,9 +68,9 @@ vi.mock('../helpers/verifyAudioBufferReferences', () => ({
 import { defaultTrackState, trackStore } from '#/modules/Arrangement/stores';
 
 import { projectStore } from '../../../stores/projectStore';
-import { initProjectDirtyTracking } from '../saveProject/initProjectDirtyTracking';
 import { loadProject } from '../loadProject';
 import { setProjectIdentityTransitionDependencies } from '../projectIdentityTransitionDependencies';
+import { initProjectDirtyTracking } from '../saveProject/initProjectDirtyTracking';
 
 const RESTORED_TRACK_NAME = 'Drums (restored)';
 

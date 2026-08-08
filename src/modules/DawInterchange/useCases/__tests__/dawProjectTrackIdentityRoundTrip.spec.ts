@@ -108,16 +108,16 @@ function roundTrip(project: ProjectData): ProjectData {
  * The importer mints fresh track ids, so identity across the seam is carried by
  * name. Every fixture below uses distinct names for that reason.
  */
-function kindByName(project: ProjectData): Record<string, string> {
-    return Object.fromEntries(project.arrangement.tracks.map((track) => [track.name, track.kind]));
-}
-
-function trackNamed(project: ProjectData, name: string): ProjectData['arrangement']['tracks'][number] {
+function trackNamed(project: ProjectData, name: string): Track {
     const found = project.arrangement.tracks.find((track) => track.name === name);
     if (!found) {
         throw new Error(`Imported project has no track named "${name}"`);
     }
     return found;
+}
+
+function kindOf(project: ProjectData, name: string): string {
+    return trackNamed(project, name).kind;
 }
 
 describe('DAWproject round-trip — track kinds (audit M-261)', () => {
@@ -129,9 +129,9 @@ describe('DAWproject round-trip — track kinds (audit M-261)', () => {
             ])
         );
 
-        expect(kindByName(returned)['Mix Bus']).toBe('master');
+        expect(kindOf(returned, 'Mix Bus')).toBe('master');
         // Pin the negative: the fix must not promote every track to master.
-        expect(kindByName(returned)['Guitar']).toBe('audio');
+        expect(kindOf(returned, 'Guitar')).toBe('audio');
     });
 
     it('brings a bus back as a bus, not as an audio track', () => {
@@ -143,15 +143,15 @@ describe('DAWproject round-trip — track kinds (audit M-261)', () => {
             ])
         );
 
-        expect(kindByName(returned)['Drum Bus']).toBe('bus');
+        expect(kindOf(returned, 'Drum Bus')).toBe('bus');
         // Pin the negative: the fix must not turn every track into a bus.
-        expect(kindByName(returned)['Kick']).toBe('audio');
+        expect(kindOf(returned, 'Kick')).toBe('audio');
     });
 
     it('leaves an ordinary MIDI track alone', () => {
         const returned = roundTrip(buildProject([buildTrack({ id: 'keys', name: 'Keys', kind: 'midi' })]));
 
-        expect(kindByName(returned)['Keys']).toBe('midi');
+        expect(kindOf(returned, 'Keys')).toBe('midi');
     });
 });
 
@@ -159,9 +159,6 @@ describe('DAWproject round-trip — output routing (audit M-262)', () => {
     it('routes every track to a master track that exists in the imported project', () => {
         const returned = roundTrip(
             buildProject([
-                // Deliberately not the literal id 'master': a foreign DAW names
-                // its master channel whatever it likes, and that is exactly the
-                // case the importer got wrong.
                 // Named, not 'Master', and with a foreign id: nothing about a
                 // foreign DAW's master channel matches the literal the importer
                 // hardcoded.
@@ -180,7 +177,7 @@ describe('DAWproject round-trip — output routing (audit M-262)', () => {
 
         for (const name of ['Vocals', 'Bass']) {
             const track = trackNamed(returned, name);
-            expect(ids.has(track.outputId ?? '')).toBe(true);
+            expect(ids.has(track.outputId)).toBe(true);
             expect(track.outputId).toBe(master.id);
         }
     });

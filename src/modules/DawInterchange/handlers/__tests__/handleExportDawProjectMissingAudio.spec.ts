@@ -25,9 +25,7 @@ vi.mock('#/infra/logger/appLogger', () => ({ logger: { error: mocks.logError, wa
 import { handleExportDawProject } from '../handleExportDawProject';
 
 function notificationsOfSeverity(severity: string): string[] {
-    return mocks.notifyUser.mock.calls
-        .filter((call) => call[1] === severity)
-        .map((call) => String(call[0]));
+    return mocks.notifyUser.mock.calls.filter((call) => call[1] === severity).map((call) => String(call[0]));
 }
 
 describe('handleExportDawProject — unbundled audio (audit M-263)', () => {

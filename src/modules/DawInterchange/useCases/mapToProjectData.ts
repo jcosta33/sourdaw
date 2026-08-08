@@ -119,11 +119,10 @@ type MapTrackInput = {
     masterTrackId: string;
 };
 
-function mapTrack({
-    parsed,
-    bufferIdsByPath,
-    masterTrackId,
-}: MapTrackInput): { track: ProjectTrack; notesByClipId: Record<string, ProjectMidiNote[]> } {
+function mapTrack({ parsed, bufferIdsByPath, masterTrackId }: MapTrackInput): {
+    track: ProjectTrack;
+    notesByClipId: Record<string, ProjectMidiNote[]>;
+} {
     const notesByClipId: Record<string, ProjectMidiNote[]> = {};
     const clips: ProjectClip[] = [];
     for (const rawClip of parsed.clips) {
