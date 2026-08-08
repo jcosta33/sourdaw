@@ -316,15 +316,22 @@ describe('toggleRecording', () => {
         expect(mocks.startAudioRecording).not.toHaveBeenCalled();
     });
 
-    it('punch-in starts recording and playback even when no audio tracks are armed', async () => {
-        // Punch-in must engage transport + record immediately. With no armed audio
-        // tracks the recorder-start block is skipped entirely (recordingStarts is
-        // empty) but the Arrangement recording still commits and playback begins.
+    it('punch-in rolls the transport and leaves the record window to the scheduler', async () => {
+        // Was: "punch-in starts recording and playback even when no audio tracks
+        // are armed". That is the defect in audit M-255 — a recording opened
+        // here is anchored at the playhead rather than punchInBeat, and it makes
+        // the scheduler's punch-in gate (`!isRecording`) fail, so its punch-out
+        // branch never fires either. Record now arms the punch: the transport
+        // rolls and the region governs both ends. See
+        // `punchRecordArming.spec.ts` for the negatives that keep this from
+        // degenerating into "punch enabled means never record".
         vi.mocked(getTransportState).mockReturnValue({
             ...defaultTransportState,
             isPlaying: false,
             isRecording: false,
             punchInEnabled: true,
+            punchInBeat: 4,
+            punchOutBeat: 12,
             countInEnabled: false,
         });
         mocks.getTrackStoreState.mockReturnValue({ tracks: [] });
@@ -334,10 +341,9 @@ describe('toggleRecording', () => {
         await vi.waitFor(() => {
             expect(mocks.startPlayback).toHaveBeenCalledOnce();
         });
-        // No recorder was started (no armed audio), yet Arrangement recording armed.
         expect(mocks.startAudioRecording).not.toHaveBeenCalled();
-        expect(mocks.startRecording).toHaveBeenCalledOnce();
-        expect(updateTransportState).toHaveBeenCalledWith({ isRecording: true });
+        expect(mocks.startRecording).not.toHaveBeenCalled();
+        expect(updateTransportState).not.toHaveBeenCalledWith({ isRecording: true });
     });
 
     it('count-in uses safe defaults when the time-sig store and metronome volume are absent', () => {
@@ -369,11 +375,13 @@ describe('toggleRecording', () => {
     it('records even when the track store snapshot is null', async () => {
         // A null track store must degrade to an empty armed list (?? []) rather
         // than throwing on the optional-chain; recording still proceeds.
+        // Punch is off here: this case is about the null store, and an armed
+        // punch region now hands the record window to the scheduler (M-255).
         vi.mocked(getTransportState).mockReturnValue({
             ...defaultTransportState,
             isPlaying: true,
             isRecording: false,
-            punchInEnabled: true,
+            punchInEnabled: false,
             countInEnabled: false,
         });
         mocks.getTrackStoreState.mockReturnValue(null);
@@ -389,12 +397,13 @@ describe('toggleRecording', () => {
     it('ignores a recorder callback that fires before the record clip is assigned', async () => {
         // The buffer-ready callback can race ahead of startRecording() populating
         // the clip list. The `if (recClip)` guard must keep it a no-op rather than
-        // caching a buffer for a clip that does not exist yet.
+        // caching a buffer for a clip that does not exist yet. Punch off: this
+        // case is about the callback race, not the punch region (M-255).
         vi.mocked(getTransportState).mockReturnValue({
             ...defaultTransportState,
             isPlaying: true,
             isRecording: false,
-            punchInEnabled: true,
+            punchInEnabled: false,
             countInEnabled: false,
         });
         mocks.getTrackStoreState.mockReturnValue({
@@ -431,12 +440,14 @@ describe('toggleRecording', () => {
             startBeat: 10,
             endBeat: 10,
         };
+        // Punch off: this case is about the tempo fallback, not the punch
+        // region (M-255).
         vi.mocked(getTransportState).mockReturnValue({
             ...defaultTransportState,
             tempo: 60,
             isPlaying: true,
             isRecording: false,
-            punchInEnabled: true,
+            punchInEnabled: false,
             countInEnabled: false,
         });
         mocks.getTrackStoreState.mockReturnValue({

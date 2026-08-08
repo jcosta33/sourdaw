@@ -107,11 +107,22 @@ export function toggleRecording(): void {
         return;
     }
 
-    if (state.punchInEnabled) {
-        // Punch-in: start recording immediately and begin playback.
-        // The punch-in/out points are enforced by the scheduler, which
-        // only writes audio between the in/out markers.
-        beginRecordingAndMaybePlayback();
+    if (state.punchInEnabled && state.punchOutBeat > state.punchInBeat) {
+        // Punch arming, not recording. The scheduler owns the record window
+        // (`startPlayheadScheduler`: punch-in at `punchInBeat`, punch-out at
+        // `punchOutBeat`), and its punch-in branch is gated on
+        // `!current.isRecording`. Opening the recording here therefore both
+        // anchored the capture at the playhead instead of `punchInBeat` and
+        // left `punchRecordingActive` false, which is the flag the punch-out
+        // branch reads — so it also never punched out. Rolling the transport
+        // and standing back is what makes the region govern both ends.
+        //
+        // A degenerate region (`punchOutBeat <= punchInBeat`) is excluded: the
+        // scheduler refuses to punch on it, so diverting would leave Record
+        // with no path to a recording at all.
+        if (!state.isPlaying) {
+            startPlayback();
+        }
         return;
     }
 

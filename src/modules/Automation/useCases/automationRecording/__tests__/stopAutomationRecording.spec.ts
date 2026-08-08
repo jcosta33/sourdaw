@@ -22,6 +22,7 @@ const {
     activeRecording,
     pendingPoints,
     touchActive,
+    laneBaselines,
     findLaneId,
     clearPointsInRange,
     flushPendingPoints,
@@ -32,6 +33,7 @@ const {
     const activeRecording = new Map<string, import('../recordingSessionState').RecordingSession>();
     const pendingPoints = new Map<string, import('../../../models/Automation').AutomationPoint[]>();
     const touchActive = new Set<string>();
+    const laneBaselines = new Map<string, import('../../../models/Automation').AutomationPoint[]>();
     const trackSnapshot: { value: { tracks: TestTrack[] } | null } = { value: null };
     const automationSnapshot: { value: { lanes: TestLane[] } | null } = { value: null };
     const undoEntries: UndoEntry[] = [];
@@ -39,6 +41,7 @@ const {
         activeRecording,
         pendingPoints,
         touchActive,
+        laneBaselines,
         findLaneId: vi.fn(() => null as string | null),
         clearPointsInRange: vi.fn(),
         flushPendingPoints: vi.fn(),
@@ -85,6 +88,7 @@ vi.mock('../recordingSessionState', () => ({
     activeRecording,
     pendingPoints,
     touchActive,
+    laneBaselines,
 }));
 
 vi.mock('../findLaneId', () => ({

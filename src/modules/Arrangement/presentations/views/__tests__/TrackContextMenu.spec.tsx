@@ -337,10 +337,18 @@ describe('TrackContextMenu', () => {
         );
         fireEvent.contextMenu(screen.getByTestId('track'));
         fireEvent.click(screen.getByText('Delete Track'));
-        // confirmUser is awaited inside an async IIFE.
+        // confirmUser is awaited inside an async IIFE. The delete goes through
+        // the undoable `removeTrack` action, not the bare use case: the use
+        // case captures no inverse, so the menu's delete was unrecoverable
+        // (audit M-015). `trackDeleteUndo.integration.spec.tsx` asserts the
+        // resulting undo end-to-end.
         await vi.waitFor(() => {
-            expect(vi.mocked(removeTrack)).toHaveBeenCalledWith('track1');
+            expect(vi.mocked(executeAppAction)).toHaveBeenCalledWith({
+                type: 'removeTrack',
+                payload: { trackId: 'track1' },
+            });
         });
+        expect(vi.mocked(removeTrack)).not.toHaveBeenCalled();
     });
 
     it('does not delete the track when the confirm dialog is cancelled', async () => {
@@ -356,6 +364,7 @@ describe('TrackContextMenu', () => {
             expect(vi.mocked(confirmUser)).toHaveBeenCalled();
         });
         expect(vi.mocked(removeTrack)).not.toHaveBeenCalled();
+        expect(vi.mocked(executeAppAction)).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'removeTrack' }));
     });
 
     it('commits a rename with the trimmed name', () => {

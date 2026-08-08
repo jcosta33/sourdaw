@@ -1,6 +1,8 @@
 import { type Modulator } from '../../models/Modulator';
 import { modulationStore } from '../../stores/modulationStore';
 
+import { revertMappingsToBase } from './revertMappingsToBase';
+
 /**
  * The fields a modulator patch may change. Deliberately excludes:
  *  - `id`: identity is immutable.
@@ -20,6 +22,7 @@ export function updateModulator(id: string, patch: ModulatorPatch): void {
     if (!state) {
         return;
     }
+    const previous = state.modulators.find((m) => m.id === id);
     modulationStore.set({
         modulators: state.modulators.map((m) =>
             m.id === id
@@ -38,4 +41,15 @@ export function updateModulator(id: string, patch: ModulatorPatch): void {
                 : m
         ),
     });
+
+    // Disabling only stops `applyModulationToEngine`'s per-tick writes; the
+    // engine keeps the last override it was handed, so the parameter stays
+    // frozen at an arbitrary point of the waveform while the UI says the
+    // modulator is off. The removal paths already hand the parameter back
+    // (`removeModulator`, `removeMapping`); a disable is the same event for the
+    // engine and needs the same restore. Guarded on the *transition* so a
+    // rename, or a disable of an already-disabled modulator, writes nothing.
+    if (previous?.enabled === true && patch.enabled === false && previous.mappings.length > 0) {
+        revertMappingsToBase(previous.mappings);
+    }
 }
