@@ -758,7 +758,12 @@ Re-measured after additional PRs since threshold raise #3 (PR #1231). Lines cros
 - **PR #1401**: Device chain — add/bypass/remove device cards — 5 tests.
 - **PR #1405**: Browser & AI panels — search, generate toggle, chat toggle — 5 tests.
 - **PR #1406**: Undo/redo & auto-scroll — toggle round-trip, undo after MIDI draw — 3 tests.
+- **PR #1408**: Editing tools & ripple — 6 tools, ripple toggle, tool switching — 5 tests.
+- **PR #1410**: Solo mode selector — SIP/AFL/PFL cycling — 4 tests.
+- **PR #1412**: Virtual keyboard & panel toggles — VK open/close, inspector, bottom dock — 5 tests.
+- **PR #1414**: Punch recording & count-in — toggle, bars pill — 3 tests.
+- **PR #1417**: Timeline clip operations — create, open piano roll, context menu — 3 tests.
 
-**E2E: 41 tests across 8 spec files using data-testid selectors.**
+**E2E: 61 tests across 13 spec files using data-testid selectors.**
 
-**Campaign total to date: 248 PRs, ~2547 assertions. Lines coverage at 90.30%.**
+**Campaign total to date: 253 PRs, ~2588 assertions. Lines coverage at 90.30%.**
