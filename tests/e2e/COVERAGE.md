@@ -748,4 +748,17 @@ Re-measured after additional PRs since threshold raise #3 (PR #1231). Lines cros
 - **PR #1373**: semanticChangeContext + resolveMidiTrackId — context holder, MIDI track resolution — 8 tests.
 - **PR #1374**: mixAnalysisDisplayLifecycle — noop default, swap, delegation — 6 tests.
 
-**Campaign total to date: 240 PRs, ~2506 assertions. Lines coverage at 90.30%.**
+### E2E DAW Flow Coverage (data-testid targeted)
+
+- **PR #1383**: Transport controls — play/stop/record/loop/metronome/BPM/time-sig — 5 tests.
+- **PR #1384**: MIDI editor toolbar — paint/ghost/fold/step/constrain/chord/expression + undo — 8 tests.
+- **PR #1385**: Mixer channel strip — mute/solo/pan + keyboard increment — 5 tests.
+- **PR #1390**: Track operations — add MIDI/audio menu, mute/solo, isolation — 6 tests.
+- **PR #1391**: Export dialog — mode buttons, cancel, start baking — 4 tests.
+- **PR #1401**: Device chain — add/bypass/remove device cards — 5 tests.
+- **PR #1405**: Browser & AI panels — search, generate toggle, chat toggle — 5 tests.
+- **PR #1406**: Undo/redo & auto-scroll — toggle round-trip, undo after MIDI draw — 3 tests.
+
+**E2E: 41 tests across 8 spec files using data-testid selectors.**
+
+**Campaign total to date: 248 PRs, ~2547 assertions. Lines coverage at 90.30%.**
