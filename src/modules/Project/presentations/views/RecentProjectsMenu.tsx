@@ -191,6 +191,7 @@ export const RecentProjectsMenu = (): ReactElement => {
                         type="button"
                         className="flex w-full items-center gap-2 px-3 py-1.5 text-xs text-foreground hover:bg-accent/50 transition-colors"
                         role="menuitem"
+                        data-testid="menu-new-project"
                         onClick={handleNewProject}
                     >
                         <Plus className="size-3 text-muted-foreground" aria-hidden="true" />
