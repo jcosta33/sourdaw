@@ -7,34 +7,17 @@
 /// Reference: Zavalishin, "The Art of VA Filter Design" (2018), Chapter 4.
 use std::f32::consts::PI;
 
-use crate::primitives::flush_denormal;
+use crate::primitives::{flush_denormal, q_from_normalized_resonance};
 
 // ── Resonance units ────────────────────────────────────────────────────
 
-/// Q at a normalised resonance of 0.0 — a gently damped, non-peaking filter.
-pub const RESONANCE_Q_MIN: f32 = 0.5;
-
-/// Q at a normalised resonance of 1.0 — the onset of self-oscillation.
-pub const RESONANCE_Q_MAX: f32 = 20.0;
-
-/// Convert a Q reading into the normalised 0–1 resonance `set_params` takes.
-///
-/// Q is the unit every *product* surface for this filter carries: the Crumbs
-/// `Reso` knob (`min={0.5} max={20}`), `CrumbsDescriptor`'s automatable
-/// `filterResonance`, and `ToasterKit`'s identically-shaped field (documented
-/// "0.5-20"). Normalised 0–1 is the unit the SVF itself takes. Something has to
-/// convert between them, and the exact inverse of the mapping in
-/// `update_coefficients` lives beside it here so the two cannot drift apart
-/// again — they already had, in `CrumbsEngine::set_param`, which fed raw Q
-/// straight into a `clamp(0.0, 1.0)` and pinned 19 of the knob's 19.5 units onto
-/// the same coefficients.
-///
-/// Out-of-range readings saturate: an automation curve can be dragged past
-/// either end, and a project saved against an older advertised range can carry
-/// one in.
-pub fn normalized_resonance_from_q(q: f32) -> f32 {
-    ((q - RESONANCE_Q_MIN) / (RESONANCE_Q_MAX - RESONANCE_Q_MIN)).clamp(0.0, 1.0)
-}
+// The Q ↔ normalised contract is product-wide, not Crumbs-specific — Toaster's
+// pads carry the identical "0.5-20" field. Both directions live in
+// `primitives::resonance`; re-exported here because this module was their
+// address for long enough that callers point at it.
+pub use crate::primitives::resonance::{
+    normalized_resonance_from_q, RESONANCE_Q_MAX, RESONANCE_Q_MIN,
+};
 
 // ── Filter Output ──────────────────────────────────────────────────────
 
@@ -193,8 +176,7 @@ impl TptSvf {
         self.resonance = resonance;
 
         // Map resonance 0–1 to Q. At resonance=1.0, Q≈20 (self-oscillation).
-        // `normalized_resonance_from_q` is the inverse; keep the two together.
-        let q = RESONANCE_Q_MIN + resonance * (RESONANCE_Q_MAX - RESONANCE_Q_MIN);
+        let q = q_from_normalized_resonance(resonance);
         self.oversample = q > 10.0;
 
         let effective_sr = if self.oversample {
@@ -213,36 +195,12 @@ impl TptSvf {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::normalized_resonance_from_q;
-
-    /// `set_params` clamps its own argument, so a rendered block cannot tell
-    /// whether the conversion saturated or the filter did — this is the only
-    /// place the conversion's own ends are observable.
-    #[test]
-    fn the_q_range_the_knob_draws_maps_onto_the_whole_normalised_span() {
-        // The knob's ends as `CrumbsControls` draws them (`min={0.5}`,
-        // `max={20}`), written as literals rather than through
-        // `RESONANCE_Q_MIN`/`MAX` so moving a constant reds this instead of
-        // dragging the expectation along with it.
-        assert_eq!(normalized_resonance_from_q(0.5), 0.0);
-        assert_eq!(normalized_resonance_from_q(20.0), 1.0);
-
-        // The ends alone do not hold the span: this function's own `clamp`
-        // saturates them, so shrinking `RESONANCE_Q_MAX` to 10 still returns
-        // 1.0 here and both assertions above stay green while the knob's top
-        // silently delivers half the Q it advertises. The knob's midpoint is
-        // the assertion that cannot be saturated into agreement — it is
-        // interior to the true span and outside a shrunk one.
-        assert_eq!(normalized_resonance_from_q(10.25), 0.5);
-    }
-
-    #[test]
-    fn a_q_outside_the_knobs_travel_saturates_instead_of_leaving_the_span() {
-        // Automation curves, presets and projects saved against an older
-        // advertised range can all deliver one.
-        assert_eq!(normalized_resonance_from_q(0.1), 0.0);
-        assert_eq!(normalized_resonance_from_q(40.0), 1.0);
-    }
-}
+// The two tests that lived here asserted `normalized_resonance_from_q`'s ends,
+// midpoint and saturation. That function is now re-exported from
+// `primitives::resonance`, so `super::normalized_resonance_from_q` resolved to
+// the identical function the primitive's own tests already cover with the
+// identical assertions — the same expression evaluated twice, not a second
+// callsite guarded. They are deleted rather than kept for the appearance of
+// coverage (ADR 0015). The Crumbs-specific detail they carried, that
+// `CrumbsControls` is one of the two panels drawing this exact span, moved into
+// the primitive's test comment so the citation is not lost.
