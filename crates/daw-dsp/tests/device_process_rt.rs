@@ -882,6 +882,67 @@ fn gluten_process_does_not_allocate_while_compressing() {
     );
 }
 
+/// Driven at a **non-default** stereo link on purpose, and across every
+/// topology.
+///
+/// `stereo_link` defaults to 1, and at 1 the detector hands both channels the
+/// same level and each topology takes a fast route that runs *one* gain path
+/// and copies it — so the guard above, which sits at the default, never
+/// executes the second channel's ballistics at all. The branch that only runs
+/// below link 1 is the newer code and the one with two envelopes to keep, so
+/// it is the branch that needs the allocation claim.
+#[test]
+fn gluten_process_does_not_allocate_with_an_unlinked_detector() {
+    use daw_dsp::gluten::GlutenInstance;
+
+    for topology in 0..4_u32 {
+        let mut instance = GlutenInstance::new(SAMPLE_RATE);
+        instance.set_param("topology", topology as f32);
+        instance.set_param("threshold", -24.0);
+        instance.set_param("ratio", 8.0);
+        instance.set_param("attack", 5.0);
+        instance.set_param("release", 100.0);
+        instance.set_param("makeup", 3.0);
+        // The two settings this guard exists for: an unlinked detector runs
+        // both gain paths, and RMS detection runs both integrators.
+        instance.set_param("stereo_link", 0.35);
+        instance.set_param("detection", 0.0);
+
+        unsafe {
+            fill_input(
+                instance.get_input_left_ptr(),
+                instance.get_input_right_ptr(),
+                BLOCK,
+                0,
+            );
+        }
+        let warmup = unsafe { read_output(instance.process(BLOCK as u32), BLOCK) };
+        assert_all_finite(&warmup, "gluten unlinked");
+
+        assert_no_alloc(|| {
+            for block in 0..GUARDED_BLOCKS {
+                unsafe {
+                    fill_input(
+                        instance.get_input_left_ptr(),
+                        instance.get_input_right_ptr(),
+                        BLOCK,
+                        block * BLOCK,
+                    );
+                }
+                instance.process(BLOCK as u32);
+            }
+        });
+
+        let out = unsafe { read_output(instance.process(BLOCK as u32), BLOCK) };
+        assert_all_finite(&out, "gluten unlinked");
+        assert!(
+            peak(&out) > 1e-4,
+            "gluten topology {topology} fell silent, so the guarded region did not \
+             exercise the unlinked detector"
+        );
+    }
+}
+
 /// Driven at **non-default** calibration on purpose.
 ///
 /// `cc_smoothing_ms` defaults to 0, and at 0 `advance_sustain_smoothing`
