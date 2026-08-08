@@ -737,5 +737,7 @@ Re-measured after additional PRs since threshold raise #3 (PR #1231). Lines cros
 - **PR #1358**: getMidiGrooveHandlers — 9-handler map contract — 4 tests.
 - **PR #1359**: usePromptDialog — pending lifecycle, trim, cancel, displacement — 7 tests.
 - **PR #1361**: toPadStoreUpdate — boolean/string/numeric field dispatch — 13 tests.
+- **PR #1362**: registerCrdtStorageRuntime — storage port wiring delegation — 8 tests.
+- **PR #1363**: fermenterDependencies + getPitchHandlers — DI holder, handler map — 8 tests.
 
-**Campaign total to date: 229 PRs, ~2438 assertions. Lines coverage at 90.30%.**
+**Campaign total to date: 231 PRs, ~2454 assertions. Lines coverage at 90.30%.**
