@@ -1043,6 +1043,7 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                                             <button
                                                 type="button"
                                                 key={freq.value}
+                                                data-testid={`export-format-${freq.value}`}
                                                 className={`rounded-lg border px-3 py-2.5 text-left transition-all ${
                                                     active
                                                         ? 'border-orange-500/40 bg-orange-950/40 shadow-[inset_0_1px_0_rgba(251,146,60,0.1)]'
