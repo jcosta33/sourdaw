@@ -1,0 +1,66 @@
+src/modules/AiRuntime/transformers/__tests__/llmActionBridge.spec.ts
+  s_bc88af7d3b054c::t_3cbd36c25c6139 1499-1511,1517,1523,1525,1527-1532
+src/modules/AiRuntime/useCases/__tests__/validateActionPayload.spec.ts
+  s_bc88af7d3b054c::t_a72346d5310867 466,468-470
+src/modules/Arrangement/handlers/clipStretch/handleFitClipToBeats.ts
+  s_bc88af7d3b054c::t_9b3e4b79e4d89a 81-85
+  s_bc88af7d3b054c::t_fdd07c91e78481 2,5-6,9-48,53-80
+src/modules/AiRuntime/useCases/validateActionPayload.ts
+  s_bc88af7d3b054c::t_fdd07c91e78481 509-513
+src/modules/Command/useCases/executableAppActionRegistry.ts
+  s_bc88af7d3b054c::t_fdd07c91e78481 56,594-597,606-625
+  s_bc88af7d3b054c::t_bfb4bf81f99a17 598,601-605
+  s_bc88af7d3b054c::t_a515c0ead91ca4 599-600
+  s_bc88af7d3b054c::t_cfcb70370af64f 626-627
+src/modules/Arrangement/handlers/clipStretch/__tests__/handleFitClipToBeats.integration.spec.ts
+  s_bc88af7d3b054c::t_9b3e4b79e4d89a 22-23
+src/modules/AiRuntime/useCases/agentReference/__tests__/bridgeGroundedLlmToolCalls.spec.ts
+  s_bc88af7d3b054c::t_6439e32c5e78ee 1099-1101
+  s_bc88af7d3b054c::t_ec9df22966fba4 1138-1146,1153-1159
+  s_bc88af7d3b054c::t_469a21205a2f49 1130-1137,1166-1167
+  s_bc88af7d3b054c::t_344981004e9f5f 1147-1152
+  s_bc88af7d3b054c::t_e7494da45c8ee7 1169
+  s_14f2bbc9f385dd::t_94d7f91caefff8 1102-1103
+src/modules/Command/useCases/__tests__/executableCommandRegistry.spec.ts
+  s_bc88af7d3b054c::t_a72346d5310867 1136,1139-1143
+  s_bc88af7d3b054c::t_a515c0ead91ca4 1137-1138
+src/modules/AiRuntime/useCases/describePlannedAction.ts
+  s_bc88af7d3b054c::t_fdd07c91e78481 57-63
+src/modules/Arrangement/handlers/clipStretch/__tests__/handleFitClipToBeats.spec.ts
+  s_bc88af7d3b054c::t_a05f71f1fd68fc 76-87
+  s_bc88af7d3b054c::t_9b3e4b79e4d89a 126
+src/modules/AiRuntime/useCases/agentReference/bridgeGroundedLlmToolCalls.ts
+  s_bc88af7d3b054c::t_c6bf6cc11fe5cc 843
+  s_bc88af7d3b054c::t_bfb4bf81f99a17 831-842,844-845,847-849,886-891
+  s_bc88af7d3b054c::t_f3564d28e920af 1415,1418-1422,1517-1519
+  s_bc88af7d3b054c::t_fdd07c91e78481 1414,1416-1417,1510-1511,1515-1516,1520-1521
+  s_bc88af7d3b054c::t_236b67663f4aba 1512-1514
+  s_bc88af7d3b054c::t_344981004e9f5f 846
+  s_14f2bbc9f385dd::t_576c60aed743f8 1522
+src/modules/AiRuntime/transformers/llmActionBridge.ts
+  s_bc88af7d3b054c::t_88d1ced86cafaa 967-983,1702,1907
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "92789390528508a1112ff4676d1e19639b591633",
+  "prompts": {},
+  "sessions": {
+    "s_14f2bbc9f385dd": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f9a61a1d-66b3-4146-938d-a04f45f4b060",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_bc88af7d3b054c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f9b4a-11a2-7f61-8dfb-76eed0eb2a9c",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
