@@ -728,5 +728,6 @@ Re-measured after additional PRs since threshold raise #3 (PR #1231). Lines cros
 - **PR #1342**: getExecutableAppActionGroundingRules — lookup, clone, defaults — 7 tests.
 - **PR #1344**: paintDrawPoint — snap, clamp, replace, constrain, RAF — 10 tests.
 - **PR #1345**: stopSequencer — stop, clear timeout, release, reset state — 6 tests.
+- **PR #1347**: beginDrawSession — session init, point snapshot, guards — 5 tests.
 
-**Campaign total to date: 220 PRs, ~2372 assertions. Lines coverage at 90.30%.**
+**Campaign total to date: 221 PRs, ~2377 assertions. Lines coverage at 90.30%.**
