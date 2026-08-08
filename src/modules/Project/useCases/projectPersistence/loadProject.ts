@@ -88,12 +88,19 @@ export async function loadProject(): Promise<boolean> {
         // `projectCrdtToStores` so both sides of the comparison are current.
         verifyAudioBufferReferences();
 
-        const project = projectStore.value;
-        if (project?.loading) {
-            projectStore.set({ ...project, loading: false, initialized: true });
-        }
         clearUndoHistory();
     });
+
+    // Outside the batch on purpose. `batchStoreUpdates` defers subscriber
+    // notification to the end of the batch, so the hydration writes above reach
+    // their subscribers only once it returns — and the dirty tracker is one of
+    // them, reading `loading` to tell a load apart from an edit (audit M-011).
+    // Clearing the flag inside the batch let every cold start restore its
+    // project and immediately flag it as having unsaved changes.
+    const project = projectStore.value;
+    if (project?.loading) {
+        projectStore.set({ ...project, loading: false, initialized: true });
+    }
 
     if (!transaction.isCurrent()) {
         return false;
