@@ -1,0 +1,68 @@
+crates/daw-dsp/src/knead/mod.rs
+  s_14f2bbc9f385dd::t_bb89addd8bed72 74-87
+crates/daw-dsp/tests/device_process_rt.rs
+  s_14f2bbc9f385dd::t_0aa7298cf6cabc 1140-1200
+src/modules/AudioEngine/services/kneadProcessor.ts
+  s_14f2bbc9f385dd::t_b78f0b91901ff1 289-295
+  s_14f2bbc9f385dd::t_3cf0bd7238c4a0 23-24,39-46,49-55
+  s_14f2bbc9f385dd::t_dcd530e2a793c3 199-200
+  s_14f2bbc9f385dd::t_19d8d0f42b5c2f 234-245
+  s_14f2bbc9f385dd::t_54c565b3974c18 56
+src/modules/AudioEngine/services/__tests__/kneadProcessor.spec.ts
+  s_14f2bbc9f385dd::t_b5fb086a9f287b 49-52
+  s_14f2bbc9f385dd::t_1e280a9fa34471 79-84
+  s_14f2bbc9f385dd::t_dacce8aedab2dd 226-316,463
+  s_14f2bbc9f385dd::t_699d10134d293a 166-167,464,616-617
+crates/daw-dsp/src/knead/engine.rs
+  s_14f2bbc9f385dd::t_bd3454dd17bd7d 161-169
+  s_14f2bbc9f385dd::t_d6a1e4fa651474 7-9
+  s_14f2bbc9f385dd::t_133c9ee25cf5e3 138-140
+  s_14f2bbc9f385dd::t_77a68bf58d9f81 243,245,248-252
+  s_14f2bbc9f385dd::t_24c1a94c0da08c 494-497,504-549
+  s_14f2bbc9f385dd::t_762cfc972d8093 221-227
+  s_14f2bbc9f385dd::t_f6c13260fb82a4 550,554-669
+  s_14f2bbc9f385dd::t_7674577d592865 68-82
+  s_14f2bbc9f385dd::t_161e251867d119 253,551-553
+src/modules/AudioEngine/wasm/__tests__/dawDspKneadPitchControls.spec.ts
+  s_14f2bbc9f385dd::t_40bdcc6565d87a 35-42
+  s_14f2bbc9f385dd::t_7b78d680ff6223 242-244
+  s_14f2bbc9f385dd::t_7708360001d75c 62-67,69-77,79-83
+  s_14f2bbc9f385dd::t_641ea8c30b5c69 1-34,43-61,68,78,84-90,92-157,173-175,179-225,227-232,234-241,246-259,261-266,268-273,275-286,288-319,321-334,336-353,355-402,404
+  s_14f2bbc9f385dd::t_82546a50f7f440 158-172,176-178
+  s_14f2bbc9f385dd::t_6bab305b452d86 91,226,233,245,260,267,274,287,320,335,354,403
+crates/daw-dsp/src/knead/pitch_edit.rs
+  s_14f2bbc9f385dd::t_b0465c647515b9 220
+crates/daw-dsp/src/knead/psola.rs
+  s_14f2bbc9f385dd::t_9f588c8816ae16 281-290,295
+  s_14f2bbc9f385dd::t_b6f10ad2c78660 375-480
+  s_14f2bbc9f385dd::t_1f7fdddc669b80 195-221
+  s_14f2bbc9f385dd::t_81fbd1b3e153ce 8-25,33
+public/wasm/daw-dsp/daw_dsp.d.ts
+  s_14f2bbc9f385dd::t_2f14122aa66e99 535-546,797-817,837-853,878-900,914-953,968-981,998
+public/wasm/daw-dsp/daw_dsp.js
+  s_14f2bbc9f385dd::t_a5e3d302bc4901 1240-1257
+public/wasm/daw-dsp/daw_dsp_bg.wasm.d.ts
+  s_14f2bbc9f385dd::t_1ac7fcf9210c80 5-25,45-61,86-108,122-161,176-189,206
+public/wasm/manifest.json
+  s_14f2bbc9f385dd::t_c4bbb3bc4811f7 15,20
+src/modules/AudioEngine/wasm/daw_dsp.d.ts
+  s_14f2bbc9f385dd::t_646f81d532a569 535-546,797-817,837-853,878-900,914-953,968-981,998
+src/modules/AudioEngine/wasm/daw_dsp.js
+  s_14f2bbc9f385dd::t_edadc2c8ebb300 1417-1434
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "7829fefebe03894a28b9725361ad332bc733338f",
+  "prompts": {},
+  "sessions": {
+    "s_14f2bbc9f385dd": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f9a61a1d-66b3-4146-938d-a04f45f4b060",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
