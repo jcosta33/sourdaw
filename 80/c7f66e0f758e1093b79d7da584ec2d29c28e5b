@@ -1,0 +1,21 @@
+src/modules/Arrangement/presentations/views/TimelineMinimap.tsx
+  s_14f2bbc9f385dd::t_1e58d90e190f73 391
+tests/e2e/timelineNavigationTestId.spec.ts
+  s_14f2bbc9f385dd::t_444dfdc3fd65a4 1-53
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "80c7f66e0f758e1093b79d7da584ec2d29c28e5b",
+  "prompts": {},
+  "sessions": {
+    "s_14f2bbc9f385dd": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f9a61a1d-66b3-4146-938d-a04f45f4b060",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
