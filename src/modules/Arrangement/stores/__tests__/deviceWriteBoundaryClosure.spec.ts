@@ -125,6 +125,16 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         'src/modules/Bacteria/useCases/bacteriaParamBridge/loadBacteriaPatchWithAudio.ts': 2,
         'src/modules/Bacteria/useCases/bacteriaParamBridge/setBacteriaBandParamWithAudio.ts': 2,
         'src/modules/Bacteria/useCases/bacteriaParamBridge/setBacteriaParamWithAudio.ts': 2,
+        // Count provenance: new file entry, measured 3 — all `updateDeviceParam`
+        // (persistDeviceParam 0, persistDevicePatch 0, updateDevicePatch 0): the
+        // import, one doc-comment mention naming the route to the worklet, and a
+        // single call on the transient branch. The **commit** branch reaches no
+        // sink here at all; it dispatches `setDeviceParameter` through
+        // `executeAppAction`, so project truth and the engine are both written
+        // behind the action. Crumbs knob values were previously persisted nowhere
+        // and its only engine write went to the *native* instance, which is not
+        // the one that renders.
+        'src/modules/Crumbs/useCases/setCrumbsParamWithAudio.ts': 3,
         'src/modules/Crust/useCases/crustParamBridge/createFlushHandlers.ts': 4,
         'src/modules/Crust/useCases/crustParamBridge/helpers.ts': 8,
         // Count provenance: new file entry, measured 2 — the `updateDeviceParam`
@@ -153,8 +163,37 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         'src/modules/Fermenter/useCases/fermenterParamBridge/loadFermenterPatchWithAudio.ts': 6,
         'src/modules/Fermenter/useCases/fermenterParamBridge/setFermenterParamWithAudio.ts': 4,
         'src/modules/Fermenter/useCases/presetMorph/applyMorphedPatch.ts': 6,
-        'src/modules/Gluten/useCases/glutenParamBridge/createFlushHandlers.ts': 4,
+        // Count provenance: measured 5, was 4. #1437 added `previewParam`, the
+        // transient half of a knob gesture — it drives the engine and writes
+        // nothing to project truth, so it contributes one `updateDeviceParam`
+        // and no persistence identifier. The committing paths are unchanged:
+        // `flushParam` and `pushParamImmediately` each still pair one
+        // `updateDeviceParam` with one `persistDeviceParam`. Measured with
+        // `grep -o` over the four sink identifiers: updateDeviceParam 3,
+        // persistDeviceParam 2, persistDevicePatch 0, updateDevicePatch 0.
+        'src/modules/Gluten/useCases/glutenParamBridge/createFlushHandlers.ts': 5,
         'src/modules/Gluten/useCases/glutenParamBridge/helpers.ts': 8,
+        // Count provenance: new entry, measured 2, and **both matches are
+        // doc-comment prose — this file performs no write**. #1437 rewrote the
+        // header to explain why a drag is one edit rather than ninety: it names
+        // `persistDeviceParam` as what the transient half no longer calls, and
+        // `updateDeviceParam` as what `setDeviceParameter` calls on its behalf.
+        // The commit now goes through `executeAppAction`, so the sink
+        // identifiers appear here only as references to the path that was left
+        // behind and the one that replaced it. Measured with `grep -o` over the
+        // four sink identifiers: persistDeviceParam 1, updateDeviceParam 1,
+        // persistDevicePatch 0, updateDevicePatch 0.
+        'src/modules/Gluten/useCases/glutenParamBridge/setGlutenParamWithAudio.ts': 2,
+        // Count provenance: new file entry, measured 1, and **the single match is
+        // doc-comment prose — this file performs no `updateDeviceParam` write**.
+        // The comment records why the commit branch does *not* also push at the
+        // Grand Boule engine handle: `setDeviceParameter` already reaches the same
+        // worklet controls through `updateDeviceParam`, so a second direct push
+        // would be a redundant message per gesture and a second place that could
+        // disagree about the clamped value. The transient branch writes the engine
+        // through `GrandBouleEngineHandle.setParam`, which is the `direct-built-in`
+        // family, not this one.
+        'src/modules/GrandBoule/useCases/grandBouleParamBridge/helpers.ts': 1,
         'src/modules/Grinder/useCases/grinderParamBridge/grinderParamBridgeDependencies.ts': 6,
         'src/modules/Grinder/useCases/grinderParamBridge/helpers.ts': 4,
         'src/modules/Grinder/useCases/grinderParamBridge/loadGrinderPatchWithAudio.ts': 3,
@@ -250,10 +289,28 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         // the two (the knobs, the reset chip, and the panel's engine-ready
         // effect) funnels through this one file, so `setSustainThreshold.ts`,
         // `setCcSmoothingMs.ts` and `resetMidiCalibration.ts` score 0 and stay
-        // out of this table. No persistence sink — Grand Boule writes none of
-        // its state to `Device.parameterValues`, and MIDI calibration is no
-        // exception.
+        // out of this table. No persistence sink here — MIDI calibration is not
+        // written to `Device.parameterValues`. That used to be true of *all* of
+        // Grand Boule's state; the three Mix knobs now persist through
+        // `grandBouleParamBridge/helpers.ts`, and calibration remains the
+        // exception rather than the rule.
+        // Count provenance: new file entry, measured 1 — a single doc-comment
+        // mention of `CrumbsNode.setParam`, naming the worklet the commit now
+        // reaches through `setDeviceParameter`. No executable `setParam` here:
+        // the Crumbs bridge calls `setCrumbsParam`, which does not match this
+        // family's pattern.
+        'src/modules/Crumbs/useCases/setCrumbsParamWithAudio.ts': 1,
         'src/modules/GrandBoule/useCases/calibrateGrandBouleMidi/syncMidiCalibrationToEngine.ts': 2,
+        // Count provenance: new file entry, measured 2 — the single
+        // `engine.setParam` call on the transient branch, plus one doc-comment
+        // mention recording why the *commit* branch does not also push at the
+        // handle (`setDeviceParameter` reaches the same worklet controls through
+        // `updateDeviceParam`). This is the write the three Mix setters used to
+        // each hold one of: `setGrandBouleMasterGain.ts`,
+        // `setGrandBouleSoundboardSend.ts` and `setGrandBouleSympatheticSend.ts`
+        // each scored 1 and now score 0, so they leave this table. They clamp to
+        // their declared range and delegate; nothing else changed about them.
+        'src/modules/GrandBoule/useCases/grandBouleParamBridge/helpers.ts': 2,
         'src/modules/GrandBoule/useCases/loadGrandBoulePreset.ts': 4,
         // Count provenance: measured 3 with `grep -o`, was 2. The two
         // executable hits are unchanged — the `setParam` handle on the returned
@@ -264,13 +321,10 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         // GrandBoule on a track hosting two before the scope was added.
         'src/modules/GrandBoule/useCases/resolveGrandBouleEngine.ts': 3,
         'src/modules/GrandBoule/useCases/setGrandBouleAttackBite.ts': 1,
-        'src/modules/GrandBoule/useCases/setGrandBouleMasterGain.ts': 1,
         'src/modules/GrandBoule/useCases/setGrandBouleMorphPosition.ts': 7,
         'src/modules/GrandBoule/useCases/setGrandBoulePerNoteParam/resetGrandBoulePerNoteParams.ts': 1,
         'src/modules/GrandBoule/useCases/setGrandBoulePerNoteParam/setGrandBoulePerNoteParam.ts': 1,
-        'src/modules/GrandBoule/useCases/setGrandBouleSoundboardSend.ts': 1,
         'src/modules/GrandBoule/useCases/setGrandBouleStretchAmount.ts': 1,
-        'src/modules/GrandBoule/useCases/setGrandBouleSympatheticSend.ts': 1,
         'src/modules/GrandBoule/useCases/setGrandBouleVelocityCurve.ts': 1,
         // Count provenance: measured 10, was 11. Registration no longer routes
         // patch initialization through the rAF write batcher: it applies the
@@ -388,6 +442,14 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         'src/modules/Bacteria/presentations/views/BacteriaPanel.tsx': 3,
         'src/modules/Bacteria/useCases/bacteriaParamBridge/loadBacteriaPatchWithAudio.ts': 2,
         'src/modules/Crumbs/useCases/crumbsParamBridge/setCrumbsParamImmediate.ts': 1,
+        // Count provenance: new file entry, measured 3, all `setCrumbsParamImmediate`
+        // and all one write: the imported identifier, the module path in that same
+        // import (the family pattern matches inside the string too), and the single
+        // call. It runs on the commit branch only, pushing the settled value at the
+        // *native* Crumbs instance — the sample-acquisition and disk-streaming
+        // engine, which is not the worklet that renders. The commit reaches the
+        // worklet, and project truth, through `setDeviceParameter`.
+        'src/modules/Crumbs/useCases/setCrumbsParamWithAudio.ts': 3,
         'src/modules/Crust/useCases/crustParamBridge/loadCrustPatchWithAudio.ts': 1,
         'src/modules/Crust/presentations/views/CrustPanel.tsx': 3,
         'src/modules/Fermenter/useCases/fermenterParamBridge/loadFermenterPatchWithAudio.ts': 1,

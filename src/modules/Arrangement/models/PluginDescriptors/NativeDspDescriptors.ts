@@ -252,6 +252,27 @@ export const NATIVE_DSP_DESCRIPTORS: PluginDescriptor[] = [
                 hasAutomation: false,
             },
             {
+                // The plate implements three distinct curves and advertises
+                // the parameter in `param_names`; nothing could write it, so
+                // every project has heard curve 0 since the engine shipped.
+                //
+                // `automatable: false` alongside `vintage` and `algorithm`,
+                // the device's other selectors: an automation lane
+                // interpolates, and a curve index between 0 and 1 is not a
+                // curve. The switch belongs on the panel, not on a ramp.
+                id: 'saturation_type',
+                deviceId: 'dutch-oven',
+                name: 'Saturation Curve',
+                type: 'int',
+                value: 0,
+                defaultValue: 0,
+                minValue: 0,
+                maxValue: 2,
+                unit: '',
+                automatable: false,
+                hasAutomation: false,
+            },
+            {
                 id: 'early_late',
                 deviceId: 'dutch-oven',
                 name: 'Early/Late',

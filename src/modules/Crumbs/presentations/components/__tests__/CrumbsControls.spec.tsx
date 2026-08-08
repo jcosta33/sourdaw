@@ -17,11 +17,7 @@ function defaultProps(overrides: Partial<Props> = {}): Props {
         tune: 0,
         pan: 0,
         onModeChange: vi.fn(),
-        onEnvelopeChange: vi.fn(),
-        onFilterChange: vi.fn(),
-        onGainChange: vi.fn(),
-        onTuneChange: vi.fn(),
-        onPanChange: vi.fn(),
+        onParamChange: vi.fn(),
         ...overrides,
     };
 }

@@ -781,7 +781,32 @@ Re-measured after additional PRs since threshold raise #3 (PR #1231). Lines cros
 - **PR #1448**: Master channel + export range & tail — range radios, tail input — 8 tests.
 - **PR #1450**: Piano roll scale selectors — root, type change — 5 tests.
 - **PR #1452**: Piano roll zoom & snap — slider, snap buttons, variant change — 4 tests.
+- **PR #1454**: Chord stamp & expression — chord type, lane selector — 5 tests.
+- **PR #1458**: Modulation matrix — new modulator, empty state — 4 tests.
 
-**E2E: 156 tests across 35 spec files using data-testid selectors.**
+- **PR #1460**: Setlist & loop station — add item, arm — 4 tests.
+- **PR #1461**: Automation lanes — mode button, dropdown — 4 tests.
 
-**Campaign total to date: 278 PRs, ~2720 assertions. Lines coverage at 90.30%.**
+- **PR #1463**: Routing graph — tab access, SVG content — 4 tests.
+- **PR #1464**: Mix analysis & chat panel — refresh, log, coexist — 4 tests.
+- **PR #1466**: Input monitoring + tuner — mode cycle, lanes toggle — 4 tests.
+- **PR #1467**: Status bar — footer, undo history, collaboration, metrics — 5 tests.
+- **PR #1469**: Generate panel tabs — MIDI, Audio switching — 5 tests.
+
+- **PR #1471**: EDM template tracks — mute, solo, transport, playhead — 5 tests.
+- **PR #1472**: Keyboard shortcuts — Space, Escape, M, L, Cmd+K — 5 tests.
+
+- **PR #1475**: Chat composer — input, aria-label, coexist — 5 tests.
+
+- **PR #1478**: Elastic audio editor — panel, tool buttons, switching — 4 tests.
+- **PR #1479**: Browser instrument cards — search, open panel, tab switch — 5 tests.
+
+- **PR #1482**: Mixer width & sends — EDM template, channel width, strips — 5 tests.
+- **PR #1484**: Session view clip launcher — scene buttons, dual view — 5 tests.
+
+- **PR #1486**: MIDI clip deep — Pop Song template, piano roll, paint, ghost, chord — 5 tests.
+- **PR #1488**: Take lanes & comp — variation lanes, add take, flatten — 5 tests.
+
+**E2E: 243 tests across 54 spec files using data-testid selectors.**
+
+**Campaign total to date: 315 PRs, ~2816 assertions. Lines coverage at 90.30%.**

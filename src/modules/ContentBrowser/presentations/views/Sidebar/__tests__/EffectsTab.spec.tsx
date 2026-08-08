@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { render, screen, fireEvent } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { TooltipProvider } from '#/components/ui/tooltip';
@@ -7,6 +7,16 @@ import { type PreviewHandle } from '../../../hooks/usePreviewAudio';
 import { EffectsTab } from '../EffectsTab';
 
 import type { PluginDescriptorView as PluginDescriptor } from '../../../../models/PluginDescriptorViewTypes';
+import type { SidebarPanelActions } from '../SidebarTypes';
+
+const arrangementMocks = vi.hoisted(() => ({
+    addDevice: vi.fn<(trackId: string, deviceType: string) => { id: string } | null>(),
+}));
+
+vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Arrangement/useCases')>()),
+    addDevice: arrangementMocks.addDevice,
+}));
 
 const createPlugin = (overrides?: Partial<PluginDescriptor>): PluginDescriptor => ({
     id: 'builtin-reverb',
@@ -17,6 +27,22 @@ const createPlugin = (overrides?: Partial<PluginDescriptor>): PluginDescriptor =
     parameters: [],
     hasCustomUI: false,
     ...overrides,
+});
+
+const createPanelActions = (): SidebarPanelActions => ({
+    showBacteria: vi.fn(),
+    showCrumbs: vi.fn(),
+    showCrust: vi.fn(),
+    showDevice: vi.fn(),
+    showDutchOven: vi.fn(),
+    showFermenter: vi.fn(),
+    showGluten: vi.fn(),
+    showGrandBoule: vi.fn(),
+    showLevain: vi.fn(),
+    showProof: vi.fn(),
+    showScoring: vi.fn(),
+    showToaster: vi.fn(),
+    showYeast: vi.fn(),
 });
 
 const renderWithTooltip = (ui: React.ReactElement) => {
@@ -64,5 +90,47 @@ describe('EffectsTab', () => {
         renderWithTooltip(<EffectsTab {...defaultProps} />);
         const buttons = screen.queryAllByRole('button');
         expect(buttons.length).toBeGreaterThanOrEqual(0);
+    });
+
+    it.each([
+        { query: 'crust', deviceType: 'crust', panelAction: 'showCrust' as const, cardName: /crust/i },
+        { query: 'dutch', deviceType: 'dutch-oven', panelAction: 'showDutchOven' as const, cardName: /dutch oven/i },
+    ])('opens the $deviceType panel on the device it just created', ({ query, panelAction, cardName }) => {
+        arrangementMocks.addDevice.mockReturnValue({ id: 'device-77' });
+        const panelActions = createPanelActions();
+
+        renderWithTooltip(
+            <EffectsTab
+                {...defaultProps}
+                plugins={[
+                    createPlugin({ id: 'crust', name: 'Crust', category: 'effect' }),
+                    createPlugin({ id: 'dutch-oven', name: 'Dutch Oven', category: 'effect' }),
+                ]}
+                searchQuery={query}
+                panelActions={panelActions}
+            />
+        );
+
+        fireEvent.click(screen.getByRole('button', { name: cardName }));
+
+        expect(panelActions[panelAction]).toHaveBeenCalledWith('device-77');
+    });
+
+    it('leaves the panel closed when the device could not be created', () => {
+        arrangementMocks.addDevice.mockReturnValue(null);
+        const panelActions = createPanelActions();
+
+        renderWithTooltip(
+            <EffectsTab
+                {...defaultProps}
+                plugins={[createPlugin({ id: 'crust', name: 'Crust', category: 'effect' })]}
+                searchQuery="crust"
+                panelActions={panelActions}
+            />
+        );
+
+        fireEvent.click(screen.getByRole('button', { name: /crust/i }));
+
+        expect(panelActions.showCrust).toHaveBeenCalledWith(null);
     });
 });

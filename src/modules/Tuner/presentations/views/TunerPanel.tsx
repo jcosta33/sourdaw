@@ -498,6 +498,7 @@ const NeedleDisplay = ({
             className="h-full w-full"
             role="img"
             aria-label="Needle tuner display"
+            data-testid="tuner-needle-display"
         />
     );
 };

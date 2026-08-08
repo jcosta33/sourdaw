@@ -7,6 +7,7 @@
 pub mod convolution;
 pub mod decay_curve;
 pub mod decay_eq;
+pub mod early_reflections;
 pub mod fdn;
 pub mod hybrid;
 pub mod proof_chamber;

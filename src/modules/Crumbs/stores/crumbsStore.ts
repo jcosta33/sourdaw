@@ -6,6 +6,8 @@
 
 import { createStore } from '#/infra/store/createStore';
 
+import { CRUMBS_PARAM_TARGETS, type CrumbsPersistedParamId } from '../models/CrumbsParameterMap';
+
 import type {
     EnvelopeParams,
     FilterType,
@@ -263,6 +265,44 @@ export function setVoiceStack(instanceId: string, updates: Partial<VoiceStackPar
                 ...s[instanceId],
                 voiceStack: { ...s[instanceId].voiceStack, ...updates },
             },
+        };
+    });
+}
+
+/**
+ * Write one persisted knob parameter onto a device's session state.
+ *
+ * The single store-side entry point for the ten parameters that ride
+ * `Device.parameterValues`, addressed by their descriptor id rather than by a
+ * per-knob setter. The per-knob setters above stay for the callers that already
+ * use them; this one exists because the write path and the read-back path have to
+ * resolve a parameter id to a field the *same* way, and two hand-written switch
+ * statements are two chances to disagree.
+ *
+ * No clamping here. `setDeviceParameter` clamps against the declared range on the
+ * commit path, and the transient path is previewing a value the knob already
+ * bounded to that same range; clamping again against a second, hand-copied bound
+ * is how `setMasterGain`'s 0..2 came to disagree with the descriptor's 0..1.
+ */
+export function applyCrumbsParamValue(instanceId: string, paramId: CrumbsPersistedParamId, value: number): void {
+    const target = CRUMBS_PARAM_TARGETS[paramId];
+    crumbsStore.update((s) => {
+        if (!s) {
+            return s;
+        }
+        const inst = s[instanceId];
+        if (!inst) {
+            return s;
+        }
+        if (target.kind === 'envelope') {
+            return {
+                ...s,
+                [instanceId]: { ...inst, envelope: { ...inst.envelope, [target.key]: value } },
+            };
+        }
+        return {
+            ...s,
+            [instanceId]: { ...inst, [target.key]: value },
         };
     });
 }

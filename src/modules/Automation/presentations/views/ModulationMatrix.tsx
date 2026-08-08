@@ -531,6 +531,7 @@ export const ModulationMatrix = (): ReactElement => {
                         size="xs"
                         onClick={() => setNewFormOpen((open) => !open)}
                         aria-expanded={newFormOpen}
+                        data-testid="modulation-new-button"
                     >
                         <Plus className="size-3" />
                         <span className="ml-1">New Modulator</span>

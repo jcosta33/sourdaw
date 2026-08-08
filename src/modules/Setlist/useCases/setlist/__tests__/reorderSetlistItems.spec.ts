@@ -104,4 +104,56 @@ describe('reorderSetlistItems', () => {
 
         expect(mockSetlistStore.set).not.toHaveBeenCalled();
     });
+
+    it('carries the cursor with the current song when that song is dragged', () => {
+        mockSetlistStore.value = {
+            name: 'S',
+            items: [item('a'), item('b'), item('c')],
+            currentIndex: 0,
+            autoAdvance: false,
+            countInBars: 1,
+            totalDuration: 3,
+        };
+
+        reorderSetlistItems(0, 2);
+
+        const next = mockSetlistStore.set.mock.calls[0]![0];
+        expect(next.items[next.currentIndex]?.id).toBe('a');
+        expect(next.currentIndex).toBe(2);
+    });
+
+    it('carries the cursor when another song is dragged across the current one', () => {
+        mockSetlistStore.value = {
+            name: 'S',
+            items: [item('a'), item('b'), item('c')],
+            currentIndex: 1,
+            autoAdvance: false,
+            countInBars: 1,
+            totalDuration: 3,
+        };
+
+        reorderSetlistItems(2, 0);
+
+        const next = mockSetlistStore.set.mock.calls[0]![0];
+        expect(next.items.map((entry) => entry.id)).toEqual(['c', 'a', 'b']);
+        expect(next.items[next.currentIndex]?.id).toBe('b');
+        expect(next.currentIndex).toBe(2);
+    });
+
+    it('leaves the cursor alone when the move happens entirely after it', () => {
+        mockSetlistStore.value = {
+            name: 'S',
+            items: [item('a'), item('b'), item('c'), item('d')],
+            currentIndex: 1,
+            autoAdvance: false,
+            countInBars: 1,
+            totalDuration: 4,
+        };
+
+        reorderSetlistItems(3, 2);
+
+        const next = mockSetlistStore.set.mock.calls[0]![0];
+        expect(next.items[next.currentIndex]?.id).toBe('b');
+        expect(next.currentIndex).toBe(1);
+    });
 });

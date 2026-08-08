@@ -101,6 +101,8 @@ export const ChatComposer = ({
                     onChange={(event) => onChange(event.target.value)}
                     onKeyDown={onKeyDown}
                     placeholder={placeholderText}
+                    aria-label="Chat message input"
+                    data-testid="chat-composer-input"
                     className="max-h-32 min-h-[44px] w-full flex-1 resize-none bg-transparent p-3 text-xs text-foreground placeholder:text-muted-foreground scrollbar-thin scrollbar-thumb-white/10 focus:outline-none"
                     disabled={isGenerating || !isLlmAvailable}
                     rows={1}

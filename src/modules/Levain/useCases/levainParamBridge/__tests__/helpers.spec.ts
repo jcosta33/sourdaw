@@ -416,6 +416,52 @@ describe('createLevainBridge', () => {
             expect(deps.persistDeviceParam).not.toHaveBeenCalled();
         });
     });
+
+    describe('applyPatchToEngine', () => {
+        it('applies the whole projection and persists everything but the articulation id', () => {
+            const deps = makeDeps();
+            const bridge = createLevainBridge(deps);
+            const device = makeDevice();
+            seedDevice('d1');
+            void bridge.registerLevainDevice('d1', device, {} as MessagePort);
+            flushRaf();
+            device.setParam.mockClear();
+            deps.persistDeviceParam.mockClear();
+
+            const patch = createDefaultPatch('cello');
+            bridge.applyPatchToEngine('d1', patch);
+            flushRaf();
+
+            for (const { name, value } of projectLevainPatchToEngineParameters(patch)) {
+                expect(device.setParam).toHaveBeenCalledWith(name, value);
+            }
+            // Articulation identity rides `Device.deviceState`; persisting the engine
+            // id here would create a second, competing source of truth for it.
+            expect(deps.persistDeviceParam).not.toHaveBeenCalledWith('d1', 'currentArticulation', expect.anything());
+            expect(deps.persistDeviceParam).toHaveBeenCalledWith('d1', 'mic0Volume', 0.8);
+        });
+
+        it.each(['missing', 'ineligible'] as const)(
+            'writes nothing to the engine when the write target resolves %s',
+            (status) => {
+                const deps = makeDeps();
+                const bridge = createLevainBridge(deps);
+                const device = makeDevice();
+                seedDevice('d1');
+                void bridge.registerLevainDevice('d1', device, {} as MessagePort);
+                flushRaf();
+                device.setParam.mockClear();
+                deps.persistDeviceParam.mockClear();
+
+                deps.setResolutionStatus(status);
+                bridge.applyPatchToEngine('d1', createDefaultPatch('cello'));
+                flushRaf();
+
+                expect(device.setParam).not.toHaveBeenCalled();
+                expect(deps.persistDeviceParam).not.toHaveBeenCalled();
+            }
+        );
+    });
 });
 
 function paramBatcherHasPending(rafCallbacks: FrameRequestCallback[]): boolean {

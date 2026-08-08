@@ -15,11 +15,24 @@ describe('gridSnapBeats', () => {
     });
 
     it('should map triplet and dotted options', () => {
-        expect(gridSnapBeats('1/4T')).toBeCloseTo(1 / 3);
-        expect(gridSnapBeats('1/8T')).toBeCloseTo(1 / 6);
-        expect(gridSnapBeats('1/16T')).toBeCloseTo(1 / 12);
+        expect(gridSnapBeats('1/4T')).toBeCloseTo(1 / 6);
+        expect(gridSnapBeats('1/8T')).toBeCloseTo(1 / 12);
+        expect(gridSnapBeats('1/16T')).toBeCloseTo(1 / 24);
         expect(gridSnapBeats('1/4D')).toBe(0.375);
         expect(gridSnapBeats('1/8D')).toBe(0.1875);
+    });
+
+    it('fits three triplet steps into two straight steps of the same denomination', () => {
+        expect(3 * gridSnapBeats('1/4T')).toBeCloseTo(2 * gridSnapBeats('1/4'));
+        expect(3 * gridSnapBeats('1/8T')).toBeCloseTo(2 * gridSnapBeats('1/8'));
+        expect(3 * gridSnapBeats('1/16T')).toBeCloseTo(2 * gridSnapBeats('1/16'));
+    });
+
+    it('makes a triplet grid finer than its straight sibling and a dotted grid coarser', () => {
+        expect(gridSnapBeats('1/4T')).toBeLessThan(gridSnapBeats('1/4'));
+        expect(gridSnapBeats('1/8T')).toBeLessThan(gridSnapBeats('1/8'));
+        expect(gridSnapBeats('1/4D')).toBeGreaterThan(gridSnapBeats('1/4'));
+        expect(gridSnapBeats('1/8D')).toBeGreaterThan(gridSnapBeats('1/8'));
     });
 
     it('should return 0 for an unknown option value', () => {

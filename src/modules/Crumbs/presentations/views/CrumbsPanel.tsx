@@ -14,27 +14,19 @@ import { DawPluginSectionCard } from '#/components/daw/DawPluginSectionCard';
 import { logger } from '#/infra/logger/appLogger';
 import { useStoreSelector } from '#/infra/store/useStoreSelector';
 
-import { type EnvelopeParams, midiNoteToName } from '../../models/CrumbsTypes';
-import {
-    defaultCrumbsState,
-    crumbsStore,
-    setFilterParams,
-    setMasterGain,
-    setPan,
-    setTune,
-    updateEnvelope,
-} from '../../stores/crumbsStore';
+import { midiNoteToName } from '../../models/CrumbsTypes';
+import { defaultCrumbsState, crumbsStore } from '../../stores/crumbsStore';
 import { defaultPadState, padStore, ensurePadInstance, reorderPad, selectPad } from '../../stores/padStore';
 import { defaultSliceState, sliceStore, ensureSliceInstance, setActiveSlice } from '../../stores/sliceStore';
 import { ensureCrumbsInstanceFromProject } from '../../useCases/crumbsLifecycle/ensureCrumbsInstanceFromProject';
 import { initCrumbsEngine } from '../../useCases/crumbsLifecycle/initCrumbsEngine';
 import { teardownCrumbsEngine } from '../../useCases/crumbsLifecycle/teardownCrumbsEngine';
-import { setCrumbsParamThrottled } from '../../useCases/crumbsParamBridge/setCrumbsParamThrottled';
 import { handleCrumbsFileDrop } from '../../useCases/handleFileDrop';
 import { subscribeToPosition } from '../../useCases/positionTracking';
 import { armCrumbsRecording } from '../../useCases/recording/armCrumbsRecording';
 import { stopCrumbsRecording } from '../../useCases/recording/stopCrumbsRecording';
 import { switchCrumbsMode } from '../../useCases/setCrumbsMode';
+import { setCrumbsParamWithAudio } from '../../useCases/setCrumbsParamWithAudio';
 import { detectAndApplyLoopPoints } from '../../useCases/smartLoopPoints';
 import { triggerPadOff } from '../../useCases/triggerPad/triggerPadOff';
 import { triggerPadOn } from '../../useCases/triggerPad/triggerPadOn';
@@ -45,11 +37,6 @@ import { CrumbsControls } from '../components/CrumbsControls';
 import { PadGrid } from '../components/PadGrid';
 import { SliceOverlay } from '../components/SliceOverlay';
 import { WaveformDisplay } from '../components/WaveformDisplay';
-
-// The exhaustive set of envelope param names forwarded to the engine. Typed as
-// `keyof EnvelopeParams` so a rename to the type breaks this list at compile time
-// instead of silently no-oping at the parse_crumbs_param boundary.
-const ENVELOPE_PARAM_KEYS: readonly (keyof EnvelopeParams)[] = ['attack', 'hold', 'decay', 'sustain', 'release'];
 
 const SectionCard = ({
     title,
@@ -141,10 +128,6 @@ export const CrumbsPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
         isLoading,
         voiceStack,
     } = state;
-
-    function handleParamChange(param: string, value: number): void {
-        setCrumbsParamThrottled(deviceId, param, value);
-    }
 
     let statusLabel = 'Ready';
     if (engineReady === false) {
@@ -356,40 +339,9 @@ export const CrumbsPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
                             pan={pan}
                             voiceStack={voiceStack}
                             onModeChange={(m) => switchCrumbsMode(deviceId, m)}
-                            onEnvelopeChange={(updates) => {
-                                updateEnvelope(deviceId, updates);
-                                // Iterate a typed key list so each forwarded param name stays a
-                                // literal `keyof EnvelopeParams` the Rust parse_crumbs_param matches —
-                                // Object.entries would widen the key to a bare string and let a future
-                                // renamed key compile while silently failing at the IPC boundary.
-                                for (const key of ENVELOPE_PARAM_KEYS) {
-                                    const value = updates[key];
-                                    if (value !== undefined) {
-                                        handleParamChange(key, value);
-                                    }
-                                }
-                            }}
-                            onFilterChange={(cutoff, resonance) => {
-                                setFilterParams(deviceId, cutoff, resonance);
-                                if (cutoff !== undefined) {
-                                    handleParamChange('filterCutoff', cutoff);
-                                }
-                                if (resonance !== undefined) {
-                                    handleParamChange('filterResonance', resonance);
-                                }
-                            }}
-                            onGainChange={(gain) => {
-                                setMasterGain(deviceId, gain);
-                                handleParamChange('masterGain', gain);
-                            }}
-                            onTuneChange={(t) => {
-                                setTune(deviceId, t);
-                                handleParamChange('tune', t);
-                            }}
-                            onPanChange={(p) => {
-                                setPan(deviceId, p);
-                                handleParamChange('pan', p);
-                            }}
+                            onParamChange={(paramId, value, isTransient) =>
+                                setCrumbsParamWithAudio(deviceId, paramId, value, isTransient)
+                            }
                             onStackChange={(updates) => updateVoiceStack(deviceId, updates)}
                         />
                     </SectionCard>
