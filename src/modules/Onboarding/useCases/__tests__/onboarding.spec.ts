@@ -29,6 +29,27 @@ describe('onboarding useCases', () => {
         expect(onboardingStore.value).toEqual({ active: false, stepIndex: 0 });
     });
 
+    it('advanceOnboardingStep past the last step persists completion', () => {
+        startOnboardingTour();
+        advanceOnboardingStep({ totalSteps: 2 });
+        expect(isOnboardingCompleted()).toBe(false);
+
+        advanceOnboardingStep({ totalSteps: 2 });
+
+        expect(onboardingStore.value).toEqual({ active: false, stepIndex: 0 });
+        expect(window.localStorage.getItem(ONBOARDING_COMPLETED_KEY)).toBe('1');
+        expect(isOnboardingCompleted()).toBe(true);
+    });
+
+    it('advanceOnboardingStep does not persist completion mid-tour', () => {
+        startOnboardingTour();
+
+        advanceOnboardingStep({ totalSteps: 3 });
+
+        expect(window.localStorage.getItem(ONBOARDING_COMPLETED_KEY)).toBeNull();
+        expect(isOnboardingCompleted()).toBe(false);
+    });
+
     it('regressOnboardingStep clamps at zero', () => {
         startOnboardingTour();
         advanceOnboardingStep({ totalSteps: 5 });
