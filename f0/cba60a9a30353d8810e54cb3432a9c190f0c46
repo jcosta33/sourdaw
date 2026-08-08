@@ -1,0 +1,31 @@
+crates/daw-dsp/tests/fermenter_osc_waveform_is_audible.rs
+  s_14f2bbc9f385dd::t_f95bbe8c659dc0 277-283
+crates/daw-dsp/src/fermenter/oscillator.rs
+  s_14f2bbc9f385dd::t_4d5edef0d1c19a 799
+  s_14f2bbc9f385dd::t_0a8277d74d6b62 216-234
+  s_14f2bbc9f385dd::t_2896cd1808bd02 647-667,669-679,681,684-689,693-696,698,707-726,728-731,733-748,750-772,787-798,800-906
+public/wasm/daw-dsp/daw_dsp.d.ts
+  s_14f2bbc9f385dd::t_57b09d9ce76e79 1
+public/wasm/daw-dsp/daw_dsp_bg.wasm.d.ts
+  s_14f2bbc9f385dd::t_0cb5c265e11b7d 1
+public/wasm/manifest.json
+  s_14f2bbc9f385dd::t_600ba90adb97a1 12,16-18,21
+src/modules/AudioEngine/wasm/daw_dsp.d.ts
+  s_14f2bbc9f385dd::t_00caa0969ffe78 1
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "f0cba60a9a30353d8810e54cb3432a9c190f0c46",
+  "prompts": {},
+  "sessions": {
+    "s_14f2bbc9f385dd": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f9a61a1d-66b3-4146-938d-a04f45f4b060",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
