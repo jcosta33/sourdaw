@@ -126,7 +126,24 @@ export const ValueField = ({
         const wasDragging = draggingRef.current;
         draggingRef.current = false;
         setIsDragging(false);
-        event.currentTarget.releasePointerCapture(event.pointerId);
+        /**
+         * `handlePointerDown` takes no capture when the field is read-only or the
+         * press is not the primary button, and both still deliver a `pointerup`
+         * here. Releasing unconditionally therefore raised an uncaught
+         * `NotFoundError` on every right-click and every press on a read-only
+         * field — the spec throws when `pointerId` matches no captured pointer.
+         *
+         * The guard covers the presses that never captured; the catch covers a
+         * capture the browser already released on its own. Same pair as
+         * `Fader.finalizeDrag`.
+         */
+        if (wasDragging) {
+            try {
+                event.currentTarget.releasePointerCapture(event.pointerId);
+            } catch {
+                // The browser may have already released capture before this handler runs.
+            }
+        }
 
         const committed = pendingValueRef.current;
         pendingValueRef.current = null;
