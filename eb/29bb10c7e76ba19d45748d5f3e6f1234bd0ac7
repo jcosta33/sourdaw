@@ -1,0 +1,19 @@
+tests/e2e/timelineClipTestId.spec.ts
+  s_a80674d66f50b5::t_90072e07ca57c7 1-60
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "eb29bb10c7e76ba19d45748d5f3e6f1234bd0ac7",
+  "prompts": {},
+  "sessions": {
+    "s_a80674d66f50b5": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-a98dd5c7f6b553820",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
