@@ -10,6 +10,7 @@ import { useStore } from '#/infra/store/useStore';
 import { aiBackendPreferenceStore, hostedLlmProviderStatusStore, llmStatusStore } from '#/modules/AiRuntime/stores';
 import {
     configureCloudProvider,
+    isNativeAiRuntimeAvailable,
     removeCloudApi,
     resolveBackend,
     setAiBackendPreference,
@@ -20,11 +21,34 @@ import { cn } from '#/utils/Styles/cn';
 import { SectionTitle, FieldGroup } from '../preferencesShared';
 
 type HostedProviderSelection = 'anthropic' | 'openai' | 'openai-compatible';
-type BackendSelection = 'auto' | 'native' | 'webllm' | 'cloud';
+type BackendSelection = 'native' | 'webllm' | 'cloud';
+
+type HostedModelOption = {
+    label: string;
+    value: string;
+};
+
+type SelectedBackendInput = {
+    backend: 'native' | 'webllm' | 'cloud' | 'none';
+    nativeAvailable: boolean;
+    preference: 'auto' | BackendSelection;
+};
+
+const HOSTED_MODEL_OPTIONS: Record<Exclude<HostedProviderSelection, 'openai-compatible'>, HostedModelOption[]> = {
+    anthropic: [
+        { value: 'claude-sonnet-4-20250514', label: 'Claude Sonnet 4 — Recommended' },
+        { value: 'claude-opus-4-20250514', label: 'Claude Opus 4 — Highest quality' },
+    ],
+    openai: [
+        { value: 'gpt-5.2', label: 'GPT-5.2 — Recommended' },
+        { value: 'gpt-5.1', label: 'GPT-5.1' },
+        { value: 'gpt-5-mini', label: 'GPT-5 mini — Faster, lower cost' },
+    ],
+};
 
 const DEFAULT_MODELS: Record<HostedProviderSelection, string> = {
-    anthropic: 'claude-sonnet-4-20250514',
-    openai: 'gpt-5.2',
+    anthropic: HOSTED_MODEL_OPTIONS.anthropic[0]!.value,
+    openai: HOSTED_MODEL_OPTIONS.openai[0]!.value,
     'openai-compatible': '',
 };
 
@@ -33,7 +57,17 @@ function isHostedProviderSelection(value: string): value is HostedProviderSelect
 }
 
 function isBackendSelection(value: string): value is BackendSelection {
-    return value === 'auto' || value === 'native' || value === 'webllm' || value === 'cloud';
+    return value === 'native' || value === 'webllm' || value === 'cloud';
+}
+
+function getSelectedBackend({ backend, nativeAvailable, preference }: SelectedBackendInput): BackendSelection {
+    if (preference !== 'auto' && (preference !== 'native' || nativeAvailable)) {
+        return preference;
+    }
+    if (backend !== 'none' && (backend !== 'native' || nativeAvailable)) {
+        return backend;
+    }
+    return 'webllm';
 }
 
 function getProviderLabel(provider: HostedProviderSelection): string {
@@ -67,6 +101,8 @@ export const AiSection = (): ReactElement => {
     const configuredProvider = useStore(hostedLlmProviderStatusStore, null);
     const llmStatus = useStore(llmStatusStore, { state: 'idle' });
     const backend = llmStatus.state === 'ready' ? llmStatus.backend : resolveBackend();
+    const nativeAvailable = isNativeAiRuntimeAvailable();
+    const selectedBackend = getSelectedBackend({ backend, nativeAvailable, preference: backendPreference });
     const cloudAvailable = configuredProvider !== null;
     const renderIife_16 = () => {
         if (backend === 'native') {
@@ -101,7 +137,7 @@ export const AiSection = (): ReactElement => {
             <SectionTitle icon={<Sparkles className="size-4" />} title="AI" />
             <FieldGroup label="AI execution backend">
                 <select
-                    value={backendPreference}
+                    value={selectedBackend}
                     onChange={(event) => {
                         const selection = event.target.value;
                         if (isBackendSelection(selection)) {
@@ -111,13 +147,14 @@ export const AiSection = (): ReactElement => {
                     className="h-8 w-full rounded-md border border-input bg-background px-2 text-xs"
                     aria-label="AI execution backend"
                 >
-                    <option value="auto">Automatic</option>
-                    <option value="native">Native local</option>
+                    {nativeAvailable ? <option value="native">Native local</option> : null}
                     <option value="webllm">Browser WebLLM</option>
                     <option value="cloud">Hosted provider</option>
                 </select>
                 <p className="mt-1 text-[10px] leading-relaxed text-muted-foreground">
-                    Automatic prefers an already-running backend, then native local, WebLLM, and hosted AI.
+                    {nativeAvailable
+                        ? 'Choose where prompts run. Native local and WebLLM stay on this device; hosted AI uses your configured provider.'
+                        : 'Choose where prompts run. WebLLM stays in this browser; hosted AI uses your configured provider.'}
                 </p>
             </FieldGroup>
             <FieldGroup label="Active Backend">
@@ -166,16 +203,39 @@ export const AiSection = (): ReactElement => {
                         <option value="openai">OpenAI</option>
                         <option value="openai-compatible">OpenAI-compatible</option>
                     </select>
-                    <Input
-                        value={model}
-                        onChange={(event) => {
-                            setModel(event.target.value);
-                            setConfigurationError(null);
-                        }}
-                        placeholder="Model identifier"
-                        className="h-8 text-xs font-mono"
-                        aria-label="Hosted AI model"
-                    />
+                    {provider === 'openai-compatible' ? (
+                        <div>
+                            <Input
+                                value={model}
+                                onChange={(event) => {
+                                    setModel(event.target.value);
+                                    setConfigurationError(null);
+                                }}
+                                placeholder="Model identifier from your provider"
+                                className="h-8 text-xs font-mono"
+                                aria-label="Hosted AI model"
+                            />
+                            <p className="mt-1 text-[9px] leading-tight text-muted-foreground">
+                                Custom endpoints define their own model IDs.
+                            </p>
+                        </div>
+                    ) : (
+                        <select
+                            value={model}
+                            onChange={(event) => {
+                                setModel(event.target.value);
+                                setConfigurationError(null);
+                            }}
+                            className="h-8 rounded-md border border-input bg-background px-2 text-xs"
+                            aria-label="Hosted AI model"
+                        >
+                            {HOSTED_MODEL_OPTIONS[provider].map((option) => (
+                                <option key={option.value} value={option.value}>
+                                    {option.label}
+                                </option>
+                            ))}
+                        </select>
+                    )}
                 </div>
                 {provider === 'openai-compatible' ? (
                     <Input
