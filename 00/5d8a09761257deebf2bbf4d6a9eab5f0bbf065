@@ -1,0 +1,29 @@
+src/modules/CrdtDocument/useCases/__tests__/registerCrdtStorageRuntime.spec.ts
+  s_73fef025b7b6eb::t_dc59f000cf8348 1-146
+tests/e2e/COVERAGE.md
+  s_bc88af7d3b054c::t_a4617bb562ef9c 739,741
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "005d8a09761257deebf2bbf4d6a9eab5f0bbf065",
+  "prompts": {},
+  "sessions": {
+    "s_73fef025b7b6eb": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-a474172e5e8760838",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_bc88af7d3b054c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f9b4a-11a2-7f61-8dfb-76eed0eb2a9c",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
