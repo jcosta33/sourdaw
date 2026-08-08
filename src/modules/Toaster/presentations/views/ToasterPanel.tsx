@@ -22,7 +22,6 @@ import {
     toasterStore,
     toggleStep,
     updateKit,
-    updatePad,
 } from '../../stores/toasterStore';
 import { applyEuclideanToTrack } from '../../useCases/applyEuclidean';
 import { assignToasterPatternGroove } from '../../useCases/assignToasterPatternGroove';
@@ -229,18 +228,13 @@ export const ToasterPanel = ({ deviceId }: { deviceId: string }): ReactElement =
     }
 
     function handlePadParam(padIndex: number, key: string, value: number): void {
-        // Solo is the one pad control with no engine counterpart — there is no
-        // `solo` arm in `Pad::set_param` (`crates/daw-dsp/src/toaster/pad.rs`) —
-        // so it stays a store-only flag until a DSP reads it.
-        //
-        // Mute is not in that category and must not be routed like it. The DSP
-        // gates voice allocation on the pad's `muted` flag, so mute reaches the
-        // engine through the param bridge exactly like volume and pan; keeping
-        // it here left a muted pad sounding.
-        if (key === 'soloed') {
-            updatePad(deviceId, padIndex, { soloed: value > 0 });
-            return;
-        }
+        // Every pad control routes the same way. Solo used to be diverted into a
+        // store-only write here because `Pad::set_param` had no `soloed` arm to
+        // send it to; it has one now, and `ToasterEngine::note_on` resolves solo
+        // across the pad set, so solo reaches the engine exactly like mute,
+        // volume and pan. `setToasterPadParam` still writes the store — via
+        // `toPadStoreUpdate`, which is what turns the numeric wire value back
+        // into the boolean the persisted kit chunk requires.
         setToasterPadParam(deviceId, padIndex, key as keyof PadState, value);
     }
 

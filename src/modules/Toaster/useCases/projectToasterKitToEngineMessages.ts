@@ -86,6 +86,22 @@ export function projectToasterKitToEngineMessages({
         // because the engine keeps pad state across kit loads, so a pad muted under
         // the outgoing kit would stay muted under the incoming one.
         messages.push({ type: 'padParam', pad: index, name: 'muted', value: pad.muted ? 1 : 0 });
+
+        // Stated for both values for the same reason as `muted`: the engine keeps
+        // pad state across kit loads, so an omitted `false` would leave a pad
+        // soloed under the kit that replaced the one it was soloed in — and with
+        // solo that leaks further than mute does, because one stale soloed pad
+        // silences every other pad on the device.
+        messages.push({ type: 'padParam', pad: index, name: 'soloed', value: pad.soloed ? 1 : 0 });
+
+        // The engine's choke handling has always been live (`Pad::choke_group`
+        // is read at every note-on); until this message existed nothing ever
+        // told it what the kit's grouping was, so the engine fell back to a
+        // construction default keyed on pad index and the "C1" badge the pad
+        // grid draws from `pad.chokeGroup` described a grouping the audio did
+        // not have. Sent for group 0 too — "this pad chokes nothing" is a
+        // statement the engine has to hear to unset a previous kit's grouping.
+        messages.push({ type: 'padParam', pad: index, name: 'choke_group', value: pad.chokeGroup });
         messages.push({ type: 'padParam', pad: index, name: 'tune', value: pad.tune });
         messages.push({ type: 'padParam', pad: index, name: 'decay', value: pad.decay });
         messages.push({ type: 'padParam', pad: index, name: 'tone', value: pad.tone });

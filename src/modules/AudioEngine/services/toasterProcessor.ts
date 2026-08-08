@@ -104,6 +104,8 @@ const PAD_PARAM_MAP: Record<string, string> = {
     volume: 'volume',
     pan: 'pan',
     muted: 'muted',
+    soloed: 'soloed',
+    chokeGroup: 'choke_group',
     tune: 'tune',
     decay: 'decay',
     tone: 'tone',

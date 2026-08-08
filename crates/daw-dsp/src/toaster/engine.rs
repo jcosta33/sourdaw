@@ -307,12 +307,18 @@ impl ToasterEngine {
                     .copied()
                     .unwrap_or(DrumEngineType::Perc);
                 let mut pad = Pad::new(et);
-                // Set open hi-hat on pad 3 with choke group 1 (shared with closed hat)
-                if i == 2 {
-                    pad.choke_group = 1; // closed hat
-                }
-                if i == 3 {
-                    pad.choke_group = 1; // open hat chokes with closed
+                // Hats share a choke group so a closed hat cuts a ringing open
+                // one. Keyed on the pad's engine, not on its index: the index
+                // form asserted "pads 2 and 3 are the hats", which is only true
+                // of `default_types` and was silently wrong for any kit that put
+                // a hat pair anywhere else. It selects the same two pads here.
+                //
+                // This is a construction default, not the authority. Every kit
+                // load projects `choke_group` for every pad
+                // (`projectToasterKitToEngineMessages`), so a kit's own grouping
+                // overwrites this before the first note.
+                if matches!(et, DrumEngineType::HiHat) {
+                    pad.choke_group = 1;
                 }
                 // Native Base Frequencies for Toms
                 if i == 6 {
@@ -369,6 +375,34 @@ impl ToasterEngine {
 
         let pad_cfg = &self.pads[pad_idx];
         if pad_cfg.muted {
+            return;
+        }
+
+        // Solo-in-place across the pad set. A pad is silenced when some *other*
+        // pad is soloed and this one is not; with no pad soloed the scan
+        // short-circuits on the first pass and nothing is gated.
+        //
+        // Mute wins over solo, which is why this sits after the mute guard
+        // rather than replacing it. That is the rule the rest of the app already
+        // applies at track level — `applySoloLogic` computes
+        // `shouldMute = (!soloed && !routedToSoloed) || track.muted` — and
+        // soloing a pad you deliberately muted should not unmute it.
+        //
+        // Gating the *trigger* rather than the pad's output is deliberate and it
+        // is the audible difference: a voice already sounding when solo is
+        // engaged rings out to its natural end instead of being cut. That is
+        // Toaster's own shipped mute behaviour (the guard directly above never
+        // touches a voice already allocated), and it is what the reference
+        // hardware calls Event Mute — Akai's MPC standalone OS offers Event Mute
+        // and Audio Mute as separate track-mute modes, the former defined as
+        // silencing new events while currently playing audio finishes. Matching
+        // mute is what keeps the two buttons on one pad from meaning two
+        // different things.
+        //
+        // Cost: one short-circuiting pass over `num_pads` booleans per note-on
+        // event, skipped entirely for a soloed pad. No allocation, no lock, and
+        // nothing added to the per-sample loop.
+        if !pad_cfg.soloed && self.pads.iter().any(|pad| pad.soloed) {
             return;
         }
 
