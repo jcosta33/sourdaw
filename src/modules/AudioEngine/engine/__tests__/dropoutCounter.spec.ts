@@ -23,6 +23,7 @@ describe('dropoutCounters — engine dropout tally (audit RT-10)', () => {
             detectedUnderrunBlocks: 0,
             silentFrames: 0,
             lastUnderrunAtFrame: 0,
+            bridgeDroppedBlocks: 0,
         });
     });
 
@@ -43,6 +44,7 @@ describe('dropoutCounters — engine dropout tally (audit RT-10)', () => {
             detectedUnderrunBlocks: 2,
             silentFrames: 256,
             lastUnderrunAtFrame: 8_192,
+            bridgeDroppedBlocks: 0,
         });
     });
 
@@ -64,6 +66,7 @@ describe('dropoutCounters — engine dropout tally (audit RT-10)', () => {
         Atomics.add(view, DROPOUT_IDX.detectedUnderrunBlocks, 3);
         Atomics.add(view, DROPOUT_IDX.silentFrames, 384);
         Atomics.store(view, DROPOUT_IDX.lastUnderrunAtFrame, 1_024);
+        Atomics.add(view, DROPOUT_IDX.bridgeDroppedBlocks, 7);
 
         dropoutCounters.reset();
 
@@ -71,6 +74,7 @@ describe('dropoutCounters — engine dropout tally (audit RT-10)', () => {
             detectedUnderrunBlocks: 0,
             silentFrames: 0,
             lastUnderrunAtFrame: 0,
+            bridgeDroppedBlocks: 0,
         });
         // Reset zeroes the shared buffer in place — the worklet keeps its view.
         expect(Atomics.load(view, DROPOUT_IDX.detectedUnderrunBlocks)).toBe(0);

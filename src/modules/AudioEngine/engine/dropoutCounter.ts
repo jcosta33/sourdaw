@@ -51,22 +51,25 @@ import type { AudioEngineDropoutStats } from '../models/AudioEngineState';
 
 /**
  * Int32 slot layout of the dropout SAB. Mirrored by literal in
- * `worklets/grandBouleProcessor.ts` — worklet code stays isolated from app
- * modules, so both sides pin the same indices.
+ * `worklets/grandBouleProcessor.ts` and in
+ * `public/audio/worklets/native-plugin-bridge-processor.js` — worklet code
+ * stays isolated from app modules, so every side pins the same indices.
  */
 export const DROPOUT_IDX = Object.freeze({
     detectedUnderrunBlocks: 0,
     silentFrames: 1,
     lastUnderrunAtFrame: 2,
+    bridgeDroppedBlocks: 3,
 });
 
-/** One spare slot beyond the three in use, so a future counter needs no re-layout. */
+/** Every slot in the layout above. Grow both together. */
 const DROPOUT_SLOTS = 4;
 
 const EMPTY_DROPOUT_STATS: AudioEngineDropoutStats = {
     detectedUnderrunBlocks: 0,
     silentFrames: 0,
     lastUnderrunAtFrame: 0,
+    bridgeDroppedBlocks: 0,
 };
 
 class DropoutCounters {
@@ -99,6 +102,7 @@ class DropoutCounters {
             detectedUnderrunBlocks: Atomics.load(view, DROPOUT_IDX.detectedUnderrunBlocks),
             silentFrames: Atomics.load(view, DROPOUT_IDX.silentFrames),
             lastUnderrunAtFrame: Atomics.load(view, DROPOUT_IDX.lastUnderrunAtFrame),
+            bridgeDroppedBlocks: Atomics.load(view, DROPOUT_IDX.bridgeDroppedBlocks),
         };
     }
 

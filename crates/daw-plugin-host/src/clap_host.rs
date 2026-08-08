@@ -157,10 +157,13 @@ unsafe extern "C" fn host_request_restart(host: *const clap_host) {
     // activation-time invariants). CLAP forbids latency changes while active, so
     // flag the instance dirty; the control thread reacts by deactivating,
     // reactivating, and re-querying `clap_plugin_latency.get()`.
+    //
+    // Deliberately silent: CLAP marks `request_restart` [thread-safe], so a
+    // plugin may call it from its audio thread, and `eprintln!` locks stderr and
+    // makes a write syscall. The flag is the record; the control thread reads it.
     if let Some(state) = host_state(host) {
         state.mark_latency_dirty();
     }
-    eprintln!("[CLAP Host] Plugin requested restart — scheduling deactivate/reactivate");
 }
 
 unsafe extern "C" fn host_request_process(_host: *const clap_host) {
@@ -182,8 +185,8 @@ static HOST_PARAMS: clap_host_params = clap_host_params {
 
 unsafe extern "C" fn host_params_rescan(_host: *const clap_host, _flags: u32) {
     // Plugin is telling us its parameter list changed.
-    // In a full implementation, re-enumerate parameters and update the UI.
-    eprintln!("[CLAP Host] Plugin requested param rescan");
+    // Not yet acted on: re-enumerating parameters belongs on the control thread.
+    // No logging here — this callback can arrive from a plugin's own thread.
 }
 
 unsafe extern "C" fn host_params_clear(_host: *const clap_host, _param_id: u32, _flags: u32) {
@@ -214,10 +217,7 @@ unsafe extern "C" fn host_gui_request_resize(
     width: u32,
     height: u32,
 ) -> bool {
-    eprintln!(
-        "[CLAP Host] Plugin requested resize to {}x{}",
-        width, height
-    );
+    let _ = (width, height);
     // TODO: Resize the Tauri window to match
     // For now, accept but don't actually resize
     true
@@ -234,8 +234,8 @@ unsafe extern "C" fn host_gui_request_hide(_host: *const clap_host) -> bool {
 }
 
 unsafe extern "C" fn host_gui_closed(_host: *const clap_host, _was_destroyed: bool) {
-    // Plugin closed its own GUI (e.g. user clicked X in the plugin)
-    eprintln!("[CLAP Host] Plugin GUI closed by plugin");
+    // Plugin closed its own GUI (e.g. user clicked X in the plugin).
+    // No logging here — this callback can arrive from a plugin's own thread.
 }
 
 // ── clap_host_state extension ──────────────────────────────────────────
@@ -245,8 +245,9 @@ static HOST_STATE: clap_host_state = clap_host_state {
 };
 
 unsafe extern "C" fn host_state_mark_dirty(_host: *const clap_host) {
-    // Plugin state changed — mark the project as unsaved
-    eprintln!("[CLAP Host] Plugin state marked dirty");
+    // Plugin state changed — the project should be marked unsaved.
+    // Not yet wired, and deliberately not logged: this callback can arrive from
+    // a plugin's own thread, where stderr I/O is not acceptable.
 }
 
 // ── clap_host_latency extension ────────────────────────────────────────

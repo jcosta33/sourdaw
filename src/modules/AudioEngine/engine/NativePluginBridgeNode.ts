@@ -1,17 +1,24 @@
 /**
- * NativePluginBridgeNode — bridges Web Audio ↔ Rust native audio thread
- * via a ring buffer and Tauri IPC.
+ * NativePluginBridgeNode — relays Web Audio blocks to the Rust plugin host and
+ * back, over a MessagePort hop plus Tauri IPC.
  *
- * Audio data is transferred as raw IEEE 754 little-endian bytes (Uint8Array)
- * rather than JSON number arrays, reducing IPC payload size ~4×.
+ * Audio crosses as raw IEEE 754 little-endian interleaved pairs, not JSON
+ * numbers.
  *
- * Backpressure: if the previous IPC round-trip hasn't completed when the next
- * block arrives, the new block is dropped. The ring buffer on the Rust side
- * (8 blocks deep) absorbs transient delays; the worklet outputs the most
- * recent available block in the meantime.
+ * The worklet owns a small pool of transfer buffers. Each one it sends must come
+ * back, so this relay always returns the buffer it was given — carrying the
+ * processed audio when the round trip produced some, empty when it did not.
+ * Failing to return one permanently shrinks the pool and starves the bridge.
+ *
+ * Backpressure: only one round trip is in flight at a time. A block that arrives
+ * while one is pending is dropped and counted in the shared dropout tally; its
+ * buffer goes straight back so the pool stays whole. The worklet keeps emitting
+ * the last processed block, so a drop is a stale block rather than a hole.
  */
 
 import { processAudioIPC, setPluginParameter } from '#/modules/PluginHost/useCases';
+
+import { DROPOUT_IDX, dropoutCounters } from './dropoutCounter';
 
 export type NativePluginBridgeResult = {
     workletNode: AudioWorkletNode;
@@ -33,14 +40,28 @@ export async function createNativePluginBridgeNode(
         channelCountMode: 'explicit',
     });
 
+    const dropoutSab = dropoutCounters.getSab();
+    const dropoutView = dropoutSab ? new Int32Array(dropoutSab) : null;
+
     // The worklet needs no plugin identity: the relay resolves the instance on
-    // the main thread. Init only tells the processor it may start relaying.
-    node.port.postMessage({ type: 'init' });
+    // the main thread. Init tells the processor it may start relaying, and hands
+    // it the tally it writes its own dropped blocks into.
+    node.port.postMessage({ type: 'init', dropoutSab });
 
     // Backpressure: only one IPC round-trip in flight at a time.
     let pendingBlock = false;
 
     type WorkletMessage = { type: string; audio?: ArrayBuffer };
+
+    function countDroppedBlock(): void {
+        if (dropoutView) {
+            Atomics.add(dropoutView, DROPOUT_IDX.bridgeDroppedBlocks, 1);
+        }
+    }
+
+    function returnBuffer(type: 'processed' | 'recycle', buffer: ArrayBuffer): void {
+        node.port.postMessage({ type, audio: buffer }, [buffer]);
+    }
 
     // Relay audio between worklet and Rust
     node.port.onmessage = async (event: MessageEvent<WorkletMessage>) => {
@@ -48,12 +69,16 @@ export async function createNativePluginBridgeNode(
             return;
         }
 
-        if (pendingBlock) {
-            return;
-        } // Drop block — previous round-trip still in flight
-
         const audioBuffer = event.data.audio;
         if (!audioBuffer) {
+            return;
+        }
+
+        if (pendingBlock) {
+            // Previous round trip still out. Give the buffer back before
+            // dropping, or the pool shrinks by one every time this happens.
+            countDroppedBlock();
+            returnBuffer('recycle', audioBuffer);
             return;
         }
 
@@ -66,11 +91,18 @@ export async function createNativePluginBridgeNode(
             });
 
             if (resultBytes) {
-                const processedBuffer = new Uint8Array(resultBytes).buffer;
-                node.port.postMessage({ type: 'processed', audio: processedBuffer }, [processedBuffer]);
+                // Write the reply into the worklet's own buffer and hand that
+                // same backing store back, so nothing new is allocated per block.
+                const target = new Uint8Array(audioBuffer);
+                target.set(resultBytes.subarray(0, Math.min(resultBytes.length, target.length)));
+                returnBuffer('processed', audioBuffer);
+                return;
             }
+
+            returnBuffer('recycle', audioBuffer);
         } catch {
-            // If Rust processing fails, the worklet falls back to passthrough
+            // Rust processing failed; the worklet keeps emitting its last block.
+            returnBuffer('recycle', audioBuffer);
         } finally {
             pendingBlock = false;
         }

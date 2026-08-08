@@ -25,10 +25,13 @@ use crate::traits::AudioPlugin;
 use clap_sys::audio_buffer::clap_audio_buffer;
 use clap_sys::entry::clap_plugin_entry;
 use clap_sys::events::{
-    clap_event_header, clap_event_note, clap_event_param_value, clap_input_events,
-    clap_output_events, CLAP_CORE_EVENT_SPACE_ID, CLAP_EVENT_NOTE_OFF, CLAP_EVENT_NOTE_ON,
-    CLAP_EVENT_PARAM_VALUE,
+    clap_event_header, clap_event_note, clap_event_param_value, clap_event_transport,
+    clap_input_events, clap_output_events, CLAP_CORE_EVENT_SPACE_ID, CLAP_EVENT_NOTE_OFF,
+    CLAP_EVENT_NOTE_ON, CLAP_EVENT_PARAM_VALUE, CLAP_EVENT_TRANSPORT,
+    CLAP_TRANSPORT_HAS_BEATS_TIMELINE, CLAP_TRANSPORT_HAS_SECONDS_TIMELINE,
+    CLAP_TRANSPORT_HAS_TEMPO, CLAP_TRANSPORT_HAS_TIME_SIGNATURE, CLAP_TRANSPORT_IS_PLAYING,
 };
+use clap_sys::fixedpoint::{CLAP_BEATTIME_FACTOR, CLAP_SECTIME_FACTOR};
 use clap_sys::ext::gui::{
     clap_plugin_gui, clap_window, clap_window_handle, CLAP_EXT_GUI, CLAP_WINDOW_API_COCOA,
     CLAP_WINDOW_API_WIN32, CLAP_WINDOW_API_X11,
@@ -48,11 +51,123 @@ use libloading::Library;
 use std::ffi::{c_void, CStr, CString};
 use std::mem;
 use std::ptr;
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
+use std::sync::Arc;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct ClapParameterUpdate {
     pub param_id: u32,
     pub value: f64,
+}
+
+/// Host timeline handed to a plugin each block.
+///
+/// Deliberately its own type rather than the engine's transport struct: this
+/// crate must stay loadable without the engine, and the engine must be free to
+/// grow fields a CLAP plugin has no slot for.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct HostTransport {
+    pub tempo: f64,
+    pub time_sig_num: u16,
+    pub time_sig_denom: u16,
+    pub is_playing: bool,
+    pub song_pos_beats: f64,
+    pub song_pos_seconds: f64,
+}
+
+/// Ownership of a plugin's processing state, split by thread the way CLAP
+/// splits it.
+///
+/// CLAP annotates `start_processing` and `stop_processing` `[audio-thread]`, so
+/// neither may be called from the loader, the unload command, or a `Drop`. This
+/// gate lets a control thread state an *intent* — "this plugin should (not) be
+/// processing" — which the audio thread carries out on its next block, and lets
+/// the control thread observe when that has happened.
+///
+/// Exclusive access to the wrapper does not substitute for thread affinity: a
+/// plugin that gates real-time state on these callbacks cares which thread ran
+/// them, not who else was excluded at the time.
+///
+/// One case cannot be served on the audio thread: a slot that has already left
+/// the graph will never be handed another block, so nothing there can perform
+/// the stop that must precede `deactivate`. That path calls
+/// `force_stop_processing_off_audio_thread`, which counts itself so the
+/// deviation is measurable rather than assumed rare.
+#[derive(Debug, Default)]
+pub struct ProcessingGate {
+    /// Control-thread intent. Read by the audio thread each block.
+    requested: AtomicBool,
+    /// Audio-thread truth: `start_processing` returned true and has not been undone.
+    active: AtomicBool,
+    /// Stops performed off the audio thread because no further block was coming.
+    off_audio_thread_stops: AtomicU32,
+}
+
+impl ProcessingGate {
+    /// Intent set by the loader once activation succeeds: the plugin should be
+    /// processing as soon as the audio thread next runs it.
+    pub fn request_start(&self) {
+        self.requested.store(true, Ordering::Release);
+    }
+
+    /// Intent set before deactivate/destroy. Callable from any thread; performs
+    /// no CLAP call itself.
+    pub fn request_stop(&self) {
+        self.requested.store(false, Ordering::Release);
+    }
+
+    /// Whether the plugin is currently in the CLAP processing state.
+    pub fn is_processing(&self) -> bool {
+        self.active.load(Ordering::Acquire)
+    }
+
+    /// Whether a requested stop has been carried out. A control thread waits on
+    /// this after `request_stop` before it deactivates.
+    pub fn has_stopped(&self) -> bool {
+        !self.is_processing()
+    }
+
+    /// How many stops had to be performed off the audio thread.
+    pub fn off_audio_thread_stops(&self) -> u32 {
+        self.off_audio_thread_stops.load(Ordering::Acquire)
+    }
+
+    /// Whether the control thread currently wants this plugin processing.
+    pub fn wants_processing(&self) -> bool {
+        self.requested.load(Ordering::Acquire)
+    }
+
+    /// Whether a stop has been asked for but not yet carried out. The audio
+    /// thread uses this to decide whether a block is worth a visit.
+    pub fn has_pending_stop(&self) -> bool {
+        !self.wants_processing() && self.is_processing()
+    }
+
+    /// A gate in the state a freshly loaded plugin reaches after its first
+    /// audio block: wanted, and processing.
+    ///
+    /// Fixture-only. In production `active` is written by the audio thread and
+    /// nothing else, which is the whole point of the split — so the setter that
+    /// short-circuits that is not compiled into a normal build.
+    #[cfg(feature = "engine-owned-command-fixture")]
+    pub fn fixture_already_processing() -> Self {
+        let gate = Self::default();
+        gate.request_start();
+        gate.mark_started();
+        gate
+    }
+
+    fn mark_started(&self) {
+        self.active.store(true, Ordering::Release);
+    }
+
+    fn mark_stopped(&self) {
+        self.active.store(false, Ordering::Release);
+    }
+
+    fn count_off_audio_thread_stop(&self) {
+        self.off_audio_thread_stops.fetch_add(1, Ordering::AcqRel);
+    }
 }
 
 /// Holds a loaded CLAP plugin instance and its associated resources.
@@ -83,6 +198,15 @@ pub struct ClapWrapper {
     host_state: Box<HostCallbackState>,
     /// Whether the GUI is currently open.
     gui_open: bool,
+    /// Split ownership of the CLAP processing state. Shared with the runtime
+    /// owner so an unload can request a stop without touching the wrapper.
+    processing: Arc<ProcessingGate>,
+    /// Preallocated transport event refilled in place each block — the audio
+    /// thread never allocates one.
+    transport_scratch: Box<clap_event_transport>,
+    /// Whether the host has supplied a timeline yet. Until it has, the plugin
+    /// gets a null transport, which CLAP defines as "no timeline available".
+    has_transport: bool,
     /// Preallocated input channel scratch (2 ch × MAX_BUFFER samples). No RT allocation.
     input_scratch: Box<[[f32; MAX_BUFFER]; 2]>,
     /// Preallocated output channel scratch (2 ch × MAX_BUFFER samples). No RT allocation.
@@ -309,22 +433,20 @@ impl ClapWrapper {
                 eprintln!("[CLAP] Plugin '{}' supports CLAP_EXT_GUI", name);
             }
 
-            // 9. Activate the plugin
-            let mut activated = false;
-            if let Some(activate_fn) = plugin_ref.activate {
-                let ok = activate_fn(plugin, sample_rate, 32, 4096);
-                if ok {
-                    activated = true;
-                    // Start processing
-                    if let Some(start_processing) = plugin_ref.start_processing {
-                        start_processing(plugin);
-                    }
-                } else {
-                    eprintln!(
-                        "[CLAP] Warning: plugin.activate() returned false for {}",
-                        name
-                    );
-                }
+            // 9. Activate the plugin. Activation is [main-thread]; entering the
+            //    processing state is [audio-thread], so it stops here and the
+            //    first block picks it up through the gate.
+            let activated = activate_plugin(plugin, sample_rate);
+            if !activated {
+                eprintln!(
+                    "[CLAP] Warning: plugin.activate() returned false for {}",
+                    name
+                );
+            }
+
+            let processing = Arc::new(ProcessingGate::default());
+            if activated {
+                processing.request_start();
             }
 
             eprintln!("[CLAP] Loaded plugin: {} (activated={})", name, activated);
@@ -342,6 +464,9 @@ impl ClapWrapper {
                 latency_ext,
                 host_state,
                 gui_open: false,
+                processing,
+                transport_scratch: Box::new(empty_transport_event()),
+                has_transport: false,
                 input_scratch: Box::new([[0.0f32; MAX_BUFFER]; 2]),
                 output_scratch: Box::new([[0.0f32; MAX_BUFFER]; 2]),
                 midi_scratch: Vec::with_capacity(MAX_MIDI),
@@ -368,6 +493,9 @@ impl ClapWrapper {
             latency_ext: ptr::null(),
             host_state: Box::new(HostCallbackState::default()),
             gui_open: false,
+            processing: Arc::new(ProcessingGate::fixture_already_processing()),
+            transport_scratch: Box::new(empty_transport_event()),
+            has_transport: false,
             input_scratch: Box::new([[0.0f32; MAX_BUFFER]; 2]),
             output_scratch: Box::new([[0.0f32; MAX_BUFFER]; 2]),
             midi_scratch: Vec::with_capacity(MAX_MIDI),
@@ -739,6 +867,94 @@ impl ClapWrapper {
         self.process_audio_internal(inputs, outputs, num_samples, &input_events);
     }
 
+    /// The processing gate shared with this plugin's runtime owner. Clone it to
+    /// request a stop, or to observe whether one has been carried out, without
+    /// holding the wrapper.
+    pub fn processing_gate(&self) -> Arc<ProcessingGate> {
+        Arc::clone(&self.processing)
+    }
+
+    /// Supply the host timeline the next block hands the plugin.
+    ///
+    /// Refills the preallocated transport event in place, so this is safe to
+    /// call from the audio thread immediately before `process`.
+    pub fn set_transport(&mut self, transport: HostTransport) {
+        fill_transport_event(&mut self.transport_scratch, transport);
+        self.has_transport = true;
+    }
+
+    /// Carry out whatever processing-state transition the control thread asked
+    /// for. **Audio thread only** — it is the caller's thread affinity that
+    /// makes these CLAP calls legal.
+    ///
+    /// The runtime owner also calls this on a block it will not process, so an
+    /// instance on its way out still leaves the processing state on the right
+    /// thread.
+    pub fn sync_processing_state(&mut self) {
+        let wants = self.processing.wants_processing();
+        if wants == self.processing.is_processing() {
+            return;
+        }
+
+        if wants {
+            let started = match self.plugin_callback(|plugin_ref| plugin_ref.start_processing) {
+                // A plugin with no callback is always free to process; one that
+                // is not loaded at all is not.
+                Some(start_processing) => unsafe { start_processing(self.plugin) },
+                None => !self.plugin.is_null(),
+            };
+            if started {
+                self.processing.mark_started();
+            }
+            return;
+        }
+
+        if let Some(stop_processing) = self.plugin_callback(|plugin_ref| plugin_ref.stop_processing)
+        {
+            unsafe { stop_processing(self.plugin) };
+        }
+        self.processing.mark_stopped();
+    }
+
+    /// Read one optional callback off the loaded plugin, or `None` when nothing
+    /// is loaded. Keeps the null check in one place instead of at each use.
+    fn plugin_callback<Callback>(
+        &self,
+        select: impl FnOnce(&clap_plugin) -> Option<Callback>,
+    ) -> Option<Callback> {
+        if self.plugin.is_null() {
+            return None;
+        }
+        select(unsafe { &*self.plugin })
+    }
+
+    /// Leave the processing state from a thread that is not the audio thread.
+    ///
+    /// Only correct when no further block will ever arrive — an unload, or a
+    /// deactivate/reactivate cycle that holds the wrapper exclusively — because
+    /// CLAP requires processing to have stopped before `deactivate`, and by then
+    /// the audio thread has no way to do it. Prefer
+    /// `ProcessingGate::request_stop` plus a block; this counts every time it
+    /// has to step in, so the deviation stays visible.
+    pub fn force_stop_processing_off_audio_thread(&mut self) {
+        self.processing.request_stop();
+
+        if !self.processing.is_processing() {
+            // The audio thread already stopped it, or it never started.
+            return;
+        }
+
+        if !self.plugin.is_null() {
+            unsafe {
+                if let Some(stop_processing) = (*self.plugin).stop_processing {
+                    stop_processing(self.plugin);
+                }
+            }
+        }
+        self.processing.mark_stopped();
+        self.processing.count_off_audio_thread_stop();
+    }
+
     /// Internal process method that accepts a custom input events list.
     ///
     /// RT-safe: uses preallocated `input_scratch`/`output_scratch`. Stack-allocates pointer
@@ -751,12 +967,19 @@ impl ClapWrapper {
         in_events: &clap_input_events,
     ) {
         if !self.activated || self.plugin.is_null() {
-            for (ch, out) in outputs.iter_mut().enumerate() {
-                if ch < inputs.len() {
-                    let len = num_samples.min(inputs[ch].len()).min(out.len());
-                    out[..len].copy_from_slice(&inputs[ch][..len]);
-                }
-            }
+            copy_inputs_to_outputs(inputs, outputs, num_samples);
+            return;
+        }
+
+        // This is the audio thread, which is the only thread CLAP allows to
+        // enter or leave the processing state — so this is where the control
+        // thread's intent is carried out.
+        self.sync_processing_state();
+
+        if !self.processing.is_processing() {
+            // Either the plugin refused to start, or a stop has been requested
+            // and performed. Either way it must not be handed a block.
+            copy_inputs_to_outputs(inputs, outputs, num_samples);
             return;
         }
 
@@ -808,10 +1031,20 @@ impl ClapWrapper {
                 constant_mask: 0,
             };
 
+            // A null transport tells the plugin the host has no timeline, so it
+            // is only sent while that is actually true. Once the host supplies
+            // one, the preallocated event is passed by pointer — the plugin
+            // reads it during this call and never retains it.
+            let transport = if self.has_transport {
+                &*self.transport_scratch as *const clap_event_transport
+            } else {
+                ptr::null()
+            };
+
             let process_data = clap_process {
                 steady_time: -1,
                 frames_count: n_samp as u32,
-                transport: ptr::null(),
+                transport,
                 audio_inputs: &input_buffer,
                 audio_outputs: &mut output_buffer,
                 audio_inputs_count: 1,
@@ -828,6 +1061,83 @@ impl ClapWrapper {
             }
         }
     }
+}
+
+/// Pass the block through unchanged, for every case where the plugin must not
+/// be handed it: not activated, or not in the CLAP processing state.
+fn copy_inputs_to_outputs(inputs: &[&[f32]], outputs: &mut [&mut [f32]], num_samples: usize) {
+    for (ch, out) in outputs.iter_mut().enumerate() {
+        if ch < inputs.len() {
+            let len = num_samples.min(inputs[ch].len()).min(out.len());
+            out[..len].copy_from_slice(&inputs[ch][..len]);
+        }
+    }
+}
+
+/// Activate a plugin at the given sample rate, and do nothing else.
+///
+/// Kept separate from entering the processing state on purpose: CLAP marks
+/// `activate` `[main-thread]` and `start_processing` `[audio-thread]`, so a
+/// loader that does both has already violated the thread model by the time the
+/// plugin sees its first block. Free function so a test can prove the loader
+/// path leaves `start_processing` alone.
+///
+/// # Safety
+/// `plugin` must be a live `clap_plugin` that has not been activated.
+unsafe fn activate_plugin(plugin: *const clap_plugin, sample_rate: f64) -> bool {
+    if plugin.is_null() {
+        return false;
+    }
+    match (*plugin).activate {
+        Some(activate) => activate(plugin, sample_rate, 32, 4096),
+        None => false,
+    }
+}
+
+/// A zeroed transport event with only its header filled, used as the
+/// preallocated slot the audio thread refills in place.
+fn empty_transport_event() -> clap_event_transport {
+    let mut transport: clap_event_transport = unsafe { mem::zeroed() };
+    transport.header = clap_event_header {
+        size: mem::size_of::<clap_event_transport>() as u32,
+        time: 0,
+        space_id: CLAP_CORE_EVENT_SPACE_ID,
+        type_: CLAP_EVENT_TRANSPORT,
+        flags: 0,
+    };
+    transport
+}
+
+/// Refill a preallocated transport event from the host timeline.
+///
+/// Writes every field in place — no allocation, safe to call from the audio
+/// thread. Beat and second positions are CLAP fixed point, and the flags say
+/// which fields carry meaning so a plugin does not read a zero as a real value.
+fn fill_transport_event(target: &mut clap_event_transport, source: HostTransport) {
+    let mut flags = CLAP_TRANSPORT_HAS_TEMPO
+        | CLAP_TRANSPORT_HAS_TIME_SIGNATURE
+        | CLAP_TRANSPORT_HAS_BEATS_TIMELINE
+        | CLAP_TRANSPORT_HAS_SECONDS_TIMELINE;
+    if source.is_playing {
+        flags |= CLAP_TRANSPORT_IS_PLAYING;
+    }
+
+    target.flags = flags;
+    target.tempo = source.tempo;
+    target.tempo_inc = 0.0;
+    target.tsig_num = source.time_sig_num;
+    target.tsig_denom = source.time_sig_denom;
+    target.song_pos_beats = (source.song_pos_beats * CLAP_BEATTIME_FACTOR as f64) as i64;
+    target.song_pos_seconds = (source.song_pos_seconds * CLAP_SECTIME_FACTOR as f64) as i64;
+    // Loop and bar reporting are not modelled by the host yet; the flags above
+    // deliberately omit CLAP_TRANSPORT_IS_LOOP_ACTIVE so these read as absent
+    // rather than as a loop from bar zero to bar zero.
+    target.loop_start_beats = 0;
+    target.loop_end_beats = 0;
+    target.loop_start_seconds = 0;
+    target.loop_end_seconds = 0;
+    target.bar_start = 0;
+    target.bar_number = 0;
 }
 
 /// Read a CLAP plugin's reported latency through its latency extension.
@@ -891,19 +1201,22 @@ impl ClapWrapper {
     ///
     /// Main/control-thread only: the caller (the `SharedClapPlugin` control seam)
     /// holds the exclusive control lock, so the RT `process` path cannot run
-    /// concurrently. Introduces no new audio-thread calls.
+    /// concurrently — which is also why the audio thread cannot perform the stop
+    /// this cycle needs, and why the off-audio-thread fallback is used and
+    /// counted here. Restarting is left to the first block after the cycle.
     pub fn reactivate_for_latency(&mut self) -> Result<u32, String> {
         if self.plugin.is_null() {
             return Ok(self.latency_samples());
+        }
+
+        if self.activated {
+            self.force_stop_processing_off_audio_thread();
         }
 
         unsafe {
             let plugin_ref = &*self.plugin;
 
             if self.activated {
-                if let Some(stop_processing) = plugin_ref.stop_processing {
-                    stop_processing(self.plugin);
-                }
                 if let Some(deactivate) = plugin_ref.deactivate {
                     deactivate(self.plugin);
                 }
@@ -918,9 +1231,9 @@ impl ClapWrapper {
                     ));
                 }
                 self.activated = true;
-                if let Some(start_processing) = plugin_ref.start_processing {
-                    start_processing(self.plugin);
-                }
+                // The next audio block re-enters the processing state, on the
+                // thread CLAP requires for it.
+                self.processing.request_start();
             }
         }
 
@@ -1276,6 +1589,10 @@ mod tests {
         let latency_ext = unsafe {
             ClapWrapper::query_extension::<clap_plugin_latency>(&*plugin, CLAP_EXT_LATENCY)
         };
+        // Mirrors what a successful load leaves behind: activated, and asking to
+        // process as soon as the audio thread next runs the plugin.
+        let processing = Arc::new(ProcessingGate::default());
+        processing.request_start();
         ClapWrapper {
             _library: None,
             plugin,
@@ -1289,6 +1606,9 @@ mod tests {
             latency_ext,
             host_state: Box::new(HostCallbackState::default()),
             gui_open: false,
+            processing,
+            transport_scratch: Box::new(empty_transport_event()),
+            has_transport: false,
             input_scratch: Box::new([[0.0f32; MAX_BUFFER]; 2]),
             output_scratch: Box::new([[0.0f32; MAX_BUFFER]; 2]),
             midi_scratch: Vec::with_capacity(MAX_MIDI),
@@ -1465,6 +1785,422 @@ mod tests {
             Err("[CLAP] state.load() failed for fixture".to_string())
         );
     }
+
+    // ── Processing-state thread affinity + transport forwarding ─────────
+    //
+    // CLAP annotates `start_processing`/`stop_processing` `[audio-thread]`.
+    // These tests pin the transition to the audio path and prove the
+    // off-audio-thread fallback is a counted exception, not the norm.
+
+    static PROCESSING_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    static STUB_START_CALLS: AtomicU32 = AtomicU32::new(0);
+    static STUB_STOP_CALLS: AtomicU32 = AtomicU32::new(0);
+
+    /// What the stub plugin saw in `clap_process.transport` on its last block.
+    #[derive(Clone, Copy, Default)]
+    struct CapturedTransport {
+        present: bool,
+        flags: u32,
+        tempo: f64,
+        tsig_num: u16,
+        tsig_denom: u16,
+        song_pos_beats: i64,
+        song_pos_seconds: i64,
+    }
+
+    static CAPTURED_TRANSPORT: std::sync::Mutex<Option<CapturedTransport>> =
+        std::sync::Mutex::new(None);
+
+    fn captured_transport() -> CapturedTransport {
+        CAPTURED_TRANSPORT
+            .lock()
+            .unwrap()
+            .expect("stub plugin should have processed at least one block")
+    }
+
+    /// The thread that last performed each processing transition. This is what
+    /// makes the affinity claim checkable: ordering says *when* a transition
+    /// ran, only a thread id says *where*.
+    static START_CALLER_THREAD: std::sync::Mutex<Option<std::thread::ThreadId>> =
+        std::sync::Mutex::new(None);
+    static STOP_CALLER_THREAD: std::sync::Mutex<Option<std::thread::ThreadId>> =
+        std::sync::Mutex::new(None);
+
+    unsafe extern "C" fn stub_start_processing_counting(_plugin: *const clap_plugin) -> bool {
+        STUB_START_CALLS.fetch_add(1, Ordering::Relaxed);
+        *START_CALLER_THREAD.lock().unwrap() = Some(std::thread::current().id());
+        true
+    }
+
+    unsafe extern "C" fn stub_stop_processing_counting(_plugin: *const clap_plugin) {
+        STUB_STOP_CALLS.fetch_add(1, Ordering::Relaxed);
+        *STOP_CALLER_THREAD.lock().unwrap() = Some(std::thread::current().id());
+    }
+
+    unsafe extern "C" fn stub_process_capturing(
+        _plugin: *const clap_plugin,
+        process: *const clap_process,
+    ) -> i32 {
+        let transport = (*process).transport;
+        let captured = if transport.is_null() {
+            CapturedTransport::default()
+        } else {
+            CapturedTransport {
+                present: true,
+                flags: (*transport).flags,
+                tempo: (*transport).tempo,
+                tsig_num: (*transport).tsig_num,
+                tsig_denom: (*transport).tsig_denom,
+                song_pos_beats: (*transport).song_pos_beats,
+                song_pos_seconds: (*transport).song_pos_seconds,
+            }
+        };
+        *CAPTURED_TRANSPORT.lock().unwrap() = Some(captured);
+        0
+    }
+
+    /// A stub that counts its processing transitions and records the transport
+    /// it was handed, so a test can tell which thread drove each transition.
+    fn counting_plugin_ptr() -> *const clap_plugin {
+        let mut plugin: clap_plugin = unsafe { mem::zeroed() };
+        plugin.get_extension = Some(stub_get_extension);
+        plugin.activate = Some(stub_activate);
+        plugin.deactivate = Some(stub_deactivate);
+        plugin.start_processing = Some(stub_start_processing_counting);
+        plugin.stop_processing = Some(stub_stop_processing_counting);
+        plugin.process = Some(stub_process_capturing);
+        Box::into_raw(Box::new(plugin)) as *const clap_plugin
+    }
+
+    fn reset_processing_counters() {
+        STUB_START_CALLS.store(0, Ordering::Relaxed);
+        STUB_STOP_CALLS.store(0, Ordering::Relaxed);
+        *CAPTURED_TRANSPORT.lock().unwrap() = None;
+        *START_CALLER_THREAD.lock().unwrap() = None;
+        *STOP_CALLER_THREAD.lock().unwrap() = None;
+    }
+
+    /// Drive one block through the RT entry point the audio thread uses.
+    fn process_one_block(wrapper: &mut ClapWrapper) {
+        let left = [0.0f32; 8];
+        let right = [0.0f32; 8];
+        let mut out_l = [0.0f32; 8];
+        let mut out_r = [0.0f32; 8];
+        let inputs: [&[f32]; 2] = [&left, &right];
+        let mut outputs: [&mut [f32]; 2] = [&mut out_l, &mut out_r];
+        wrapper.process(&inputs, &mut outputs, 8);
+    }
+
+    #[test]
+    fn activation_does_not_start_processing_off_the_audio_thread() {
+        let _guard = PROCESSING_TEST_LOCK.lock().unwrap();
+        reset_processing_counters();
+        let plugin = counting_plugin_ptr();
+
+        let activated = unsafe { activate_plugin(plugin, 48_000.0) };
+
+        assert!(activated, "the stub activates successfully");
+        assert_eq!(
+            STUB_START_CALLS.load(Ordering::Relaxed),
+            0,
+            "CLAP marks start_processing [audio-thread]; the loader thread must not call it"
+        );
+    }
+
+    #[test]
+    fn the_first_audio_block_starts_processing_exactly_once() {
+        let _guard = PROCESSING_TEST_LOCK.lock().unwrap();
+        reset_processing_counters();
+        let mut wrapper = stub_wrapper(counting_plugin_ptr());
+
+        assert_eq!(
+            STUB_START_CALLS.load(Ordering::Relaxed),
+            0,
+            "constructing the wrapper starts nothing"
+        );
+
+        process_one_block(&mut wrapper);
+        assert_eq!(
+            STUB_START_CALLS.load(Ordering::Relaxed),
+            1,
+            "the first block on the audio thread performs the start transition"
+        );
+
+        process_one_block(&mut wrapper);
+        assert_eq!(
+            STUB_START_CALLS.load(Ordering::Relaxed),
+            1,
+            "a plugin already processing is not restarted every block"
+        );
+    }
+
+    #[test]
+    fn a_requested_stop_is_performed_by_the_next_audio_block_not_by_the_requester() {
+        let _guard = PROCESSING_TEST_LOCK.lock().unwrap();
+        reset_processing_counters();
+        let mut wrapper = stub_wrapper(counting_plugin_ptr());
+        process_one_block(&mut wrapper);
+
+        let gate = wrapper.processing_gate();
+        gate.request_stop();
+
+        assert_eq!(
+            STUB_STOP_CALLS.load(Ordering::Relaxed),
+            0,
+            "requesting a stop must not call stop_processing on the requesting thread"
+        );
+        assert!(
+            !gate.has_stopped(),
+            "the stop is not complete until the audio thread performs it"
+        );
+
+        process_one_block(&mut wrapper);
+
+        assert_eq!(
+            STUB_STOP_CALLS.load(Ordering::Relaxed),
+            1,
+            "the next audio block performs the stop transition"
+        );
+        assert!(gate.has_stopped(), "the audio thread acknowledges the stop");
+        assert_eq!(
+            gate.off_audio_thread_stops(),
+            0,
+            "no fallback was needed while the audio thread was still pumping"
+        );
+    }
+
+    /// The claim the rest of this section only approximates: both transitions
+    /// happen on the thread that runs `process`, and on no other. Ordering tests
+    /// cannot separate "the audio thread did it" from "the control thread did it
+    /// at the right moment" — a thread id can, and a host that starts processing
+    /// from its loader or stops it from its control path fails here by identity
+    /// even if every call count is correct.
+    #[test]
+    fn both_processing_transitions_run_on_the_thread_that_calls_process() {
+        let _guard = PROCESSING_TEST_LOCK.lock().unwrap();
+        reset_processing_counters();
+        let control_thread = std::thread::current().id();
+        let mut wrapper = stub_wrapper(counting_plugin_ptr());
+
+        // The gate is the control thread's only handle on processing state.
+        let gate = wrapper.processing_gate();
+
+        // Block one, on the audio thread: this is where the start must happen.
+        let first = std::thread::spawn(move || {
+            let here = std::thread::current().id();
+            process_one_block(&mut wrapper);
+            (here, wrapper)
+        });
+        let (audio_thread_id, mut wrapper) = first.join().unwrap();
+
+        // The stop is *requested here*, on the control thread, and deliberately
+        // not while any block is running. A host that performs the transition in
+        // the requester records `control_thread` against STOP_CALLER_THREAD.
+        gate.request_stop();
+
+        // Block two, on the audio thread again: this is where the stop must land.
+        let second = std::thread::spawn(move || {
+            let here = std::thread::current().id();
+            process_one_block(&mut wrapper);
+            (here, wrapper)
+        });
+        let (second_block_thread_id, wrapper) = second.join().unwrap();
+
+        assert_ne!(
+            audio_thread_id, control_thread,
+            "the test is only meaningful if process actually ran off the control thread"
+        );
+        assert_eq!(
+            *START_CALLER_THREAD.lock().unwrap(),
+            Some(audio_thread_id),
+            "start_processing is [audio-thread]: it must run on the thread that called process"
+        );
+        assert_eq!(
+            *STOP_CALLER_THREAD.lock().unwrap(),
+            Some(second_block_thread_id),
+            "stop_processing is [audio-thread]: the block carries it out, not the requester"
+        );
+        assert_ne!(
+            *STOP_CALLER_THREAD.lock().unwrap(),
+            Some(control_thread),
+            "the thread that requested the stop must never be the one that performed it"
+        );
+        assert_eq!(
+            wrapper.processing_gate().off_audio_thread_stops(),
+            0,
+            "the audio thread was pumping, so no counted deviation was needed"
+        );
+    }
+
+    #[test]
+    fn a_stop_the_audio_thread_never_performed_falls_back_and_is_counted() {
+        let _guard = PROCESSING_TEST_LOCK.lock().unwrap();
+        reset_processing_counters();
+        let mut wrapper = stub_wrapper(counting_plugin_ptr());
+        process_one_block(&mut wrapper);
+        wrapper.processing_gate().request_stop();
+
+        // The slot left the graph, so no further block will ever arrive.
+        wrapper.force_stop_processing_off_audio_thread();
+
+        assert_eq!(
+            STUB_STOP_CALLS.load(Ordering::Relaxed),
+            1,
+            "the plugin is still stopped before deactivate, as CLAP requires"
+        );
+        assert_eq!(
+            wrapper.processing_gate().off_audio_thread_stops(),
+            1,
+            "the spec deviation is counted rather than hidden"
+        );
+    }
+
+    #[test]
+    fn a_plugin_that_never_processed_needs_no_stop_at_all() {
+        let _guard = PROCESSING_TEST_LOCK.lock().unwrap();
+        reset_processing_counters();
+        let mut wrapper = stub_wrapper(counting_plugin_ptr());
+
+        wrapper.force_stop_processing_off_audio_thread();
+
+        assert_eq!(
+            STUB_STOP_CALLS.load(Ordering::Relaxed),
+            0,
+            "start_processing never ran, so there is nothing to stop"
+        );
+        assert_eq!(
+            wrapper.processing_gate().off_audio_thread_stops(),
+            0,
+            "skipping an unnecessary stop is not a spec deviation"
+        );
+    }
+
+    #[test]
+    fn process_hands_the_plugin_no_transport_until_the_host_supplies_one() {
+        let _guard = PROCESSING_TEST_LOCK.lock().unwrap();
+        reset_processing_counters();
+        let mut wrapper = stub_wrapper(counting_plugin_ptr());
+
+        process_one_block(&mut wrapper);
+
+        assert!(
+            !captured_transport().present,
+            "CLAP reads a null transport as 'host has no timeline', which is the truth here"
+        );
+    }
+
+    #[test]
+    fn process_forwards_the_transport_the_host_supplied() {
+        let _guard = PROCESSING_TEST_LOCK.lock().unwrap();
+        reset_processing_counters();
+        let mut wrapper = stub_wrapper(counting_plugin_ptr());
+
+        wrapper.set_transport(HostTransport {
+            tempo: 137.5,
+            time_sig_num: 7,
+            time_sig_denom: 8,
+            is_playing: true,
+            song_pos_beats: 2.5,
+            song_pos_seconds: 1.25,
+        });
+        process_one_block(&mut wrapper);
+
+        let transport = captured_transport();
+        assert!(transport.present, "the plugin receives a transport struct");
+        assert_eq!(transport.tempo, 137.5);
+        assert_eq!((transport.tsig_num, transport.tsig_denom), (7, 8));
+        assert_eq!(
+            transport.song_pos_beats,
+            (2.5 * CLAP_BEATTIME_FACTOR as f64) as i64,
+            "beat position is carried in CLAP fixed point, not raw beats"
+        );
+        assert_eq!(
+            transport.song_pos_seconds,
+            (1.25 * CLAP_SECTIME_FACTOR as f64) as i64,
+            "seconds position is carried in CLAP fixed point"
+        );
+        assert_eq!(
+            transport.flags
+                & (CLAP_TRANSPORT_HAS_TEMPO
+                    | CLAP_TRANSPORT_HAS_TIME_SIGNATURE
+                    | CLAP_TRANSPORT_HAS_BEATS_TIMELINE
+                    | CLAP_TRANSPORT_HAS_SECONDS_TIMELINE),
+            CLAP_TRANSPORT_HAS_TEMPO
+                | CLAP_TRANSPORT_HAS_TIME_SIGNATURE
+                | CLAP_TRANSPORT_HAS_BEATS_TIMELINE
+                | CLAP_TRANSPORT_HAS_SECONDS_TIMELINE,
+            "every field the host actually fills is flagged as present"
+        );
+        assert_ne!(
+            transport.flags & CLAP_TRANSPORT_IS_PLAYING,
+            0,
+            "a rolling transport reports as playing"
+        );
+    }
+
+    #[test]
+    fn a_stopped_transport_clears_the_playing_flag_and_keeps_the_position() {
+        let _guard = PROCESSING_TEST_LOCK.lock().unwrap();
+        reset_processing_counters();
+        let mut wrapper = stub_wrapper(counting_plugin_ptr());
+
+        wrapper.set_transport(HostTransport {
+            tempo: 90.0,
+            time_sig_num: 3,
+            time_sig_denom: 4,
+            is_playing: false,
+            song_pos_beats: 6.0,
+            song_pos_seconds: 4.0,
+        });
+        process_one_block(&mut wrapper);
+
+        let transport = captured_transport();
+        assert_eq!(
+            transport.flags & CLAP_TRANSPORT_IS_PLAYING,
+            0,
+            "a parked transport must not tell tempo-synced plugins to run"
+        );
+        assert_eq!(transport.tempo, 90.0);
+        assert_eq!(
+            transport.song_pos_beats,
+            (6.0 * CLAP_BEATTIME_FACTOR as f64) as i64,
+            "the parked playhead position is still reported"
+        );
+    }
+
+    #[test]
+    fn a_transport_update_between_blocks_reaches_the_next_block() {
+        let _guard = PROCESSING_TEST_LOCK.lock().unwrap();
+        reset_processing_counters();
+        let mut wrapper = stub_wrapper(counting_plugin_ptr());
+
+        wrapper.set_transport(HostTransport {
+            tempo: 120.0,
+            time_sig_num: 4,
+            time_sig_denom: 4,
+            is_playing: true,
+            song_pos_beats: 0.0,
+            song_pos_seconds: 0.0,
+        });
+        process_one_block(&mut wrapper);
+        assert_eq!(captured_transport().song_pos_beats, 0);
+
+        wrapper.set_transport(HostTransport {
+            tempo: 120.0,
+            time_sig_num: 4,
+            time_sig_denom: 4,
+            is_playing: true,
+            song_pos_beats: 1.0,
+            song_pos_seconds: 0.5,
+        });
+        process_one_block(&mut wrapper);
+
+        assert_eq!(
+            captured_transport().song_pos_beats,
+            CLAP_BEATTIME_FACTOR,
+            "the playhead the host advanced is the one the plugin sees"
+        );
+    }
 }
 
 impl Drop for ClapWrapper {
@@ -1474,14 +2210,17 @@ impl Drop for ClapWrapper {
             self.close_gui();
         }
 
+        // Last resort: a dropped instance is already out of the graph, so no
+        // block is coming to perform the stop that `deactivate` requires. If the
+        // audio thread already stopped it — the normal case once the runtime
+        // owner requests the stop first — this does nothing and counts nothing.
+        self.force_stop_processing_off_audio_thread();
+
         if !self.plugin.is_null() {
             unsafe {
                 let plugin_ref = &*self.plugin;
 
                 if self.activated {
-                    if let Some(stop_processing) = plugin_ref.stop_processing {
-                        stop_processing(self.plugin);
-                    }
                     if let Some(deactivate) = plugin_ref.deactivate {
                         deactivate(self.plugin);
                     }
