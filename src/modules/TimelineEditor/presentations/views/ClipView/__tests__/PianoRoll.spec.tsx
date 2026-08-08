@@ -143,6 +143,7 @@ vi.mock('../../../helpers/pianoRollConstants', () => ({
     GRID_BEATS: 256,
     ROW_HEIGHT: 24,
     RULER_HEIGHT: 28,
+    EMPTY_NOTES: [],
     getVisiblePitches: vi.fn(() => [60, 61, 62, 63, 64]),
 }));
 

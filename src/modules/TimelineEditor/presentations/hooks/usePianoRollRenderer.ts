@@ -42,6 +42,7 @@ import {
     ROW_HEIGHT,
     RULER_HEIGHT,
     SCALES,
+    EMPTY_NOTES,
     getVisiblePitches,
     colorWithAlpha,
     brightenColor,
@@ -297,9 +298,6 @@ export const usePianoRollRenderer = (deps: RendererDeps): (() => void) => {
     // eslint-disable-next-line react-hooks/refs -- returning stable draw() ref is intentional; value is set once in useEffect
     return drawFnRef.current;
 };
-
-// Stable empty array so reference equality works for clips with no notes.
-const EMPTY_NOTES: MidiNote[] = [];
 
 // ── Drawing helpers ──────────────────────────────────────────────────────────
 

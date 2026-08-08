@@ -30,7 +30,7 @@ import { SCALE_PATTERNS, KEY_NAMES } from '#/utils/Music/MusicalScale';
 import { cn } from '#/utils/Styles/cn';
 
 import { areOpenedClipNotesEqual } from '../../helpers/openedClipNotesEquality';
-import { GRID_BEATS, ROW_HEIGHT, RULER_HEIGHT, getVisiblePitches } from '../../helpers/pianoRollConstants';
+import { GRID_BEATS, ROW_HEIGHT, RULER_HEIGHT, EMPTY_NOTES, getVisiblePitches } from '../../helpers/pianoRollConstants';
 import { usePianoRollInteractions } from '../../hooks/usePianoRollInteractions';
 import { usePianoRollRenderer } from '../../hooks/usePianoRollRenderer';
 import { NotePropertyLane } from '../AutomationLane/NotePropertyLane';
@@ -111,7 +111,10 @@ export const PianoRoll = ({
     }
 
     // ── Store subscriptions ──────────────────────────────────────────
-    const notes = useStoreSelector(midiStore, (state: MidiStoreState | null) => state?.notesByClipId[clipId] ?? []);
+    const notes = useStoreSelector(
+        midiStore,
+        (state: MidiStoreState | null) => state?.notesByClipId[clipId] ?? EMPTY_NOTES
+    );
     // A9: build notes map for all simultaneously-open clips (excludes primary clipId)
     const openedClipNotes = useStoreSelector(
         midiStore,
