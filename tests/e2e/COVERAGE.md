@@ -774,7 +774,10 @@ Re-measured after additional PRs since threshold raise #3 (PR #1231). Lines cros
 - **PR #1435**: Track arm & Ableton Link — arm toggle, isolation, arm/disarm both — 5 tests.
 - **PR #1436**: Track list header — height cycle, add folder — 5 tests.
 - **PR #1439**: Project name & preferences — display, rename click, prefs dialog — 5 tests.
+- **PR #1441**: Mixer snapshots & AI health — save, recall, health — 5 tests.
+- **PR #1443**: Export format selection — WAV/MP3/FLAC toggles — 4 tests.
+- **PR #1444**: Track context menu — duplicate, rename, add clip — 5 tests.
 
-**E2E: 117 tests across 27 spec files using data-testid selectors.**
+**E2E: 136 tests across 31 spec files using data-testid selectors.**
 
-**Campaign total to date: 267 PRs, ~2672 assertions. Lines coverage at 90.30%.**
+**Campaign total to date: 272 PRs, ~2697 assertions. Lines coverage at 90.30%.**
