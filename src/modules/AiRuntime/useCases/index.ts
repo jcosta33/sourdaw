@@ -32,6 +32,7 @@ export { isCloudAvailable } from './cloudApiManagement/isCloudAvailable';
 export { getProjectContext } from './getProjectContext';
 
 export { resolveBackend } from './llmOrchestration/backendResolution/helpers';
+export { isNativeAiRuntimeAvailable } from './llmOrchestration/backendResolution/isNativeAiRuntimeAvailable';
 export { isLlmAvailable } from './llmOrchestration/backendResolution/isLlmAvailable';
 export { setAiBackendPreference } from './llmOrchestration/backendResolution/setAiBackendPreference';
 

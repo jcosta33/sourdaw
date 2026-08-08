@@ -88,6 +88,7 @@ export const PlayheadDisplay = ({ tempo, numerator, timeDisplayMode }: PlayheadD
             <Tooltip>
                 <TooltipTrigger asChild>
                     <TransportSegmentedReadout
+                        data-testid="transport-playhead"
                         label="Bars"
                         segments={[bar, beat, String(tick).padStart(3, '0')]}
                         separators={['.', '.']}
