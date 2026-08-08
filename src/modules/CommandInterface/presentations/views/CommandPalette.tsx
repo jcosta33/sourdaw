@@ -79,6 +79,7 @@ export const CommandPalette = (): ReactElement | null => {
                         onKeyDown={handleKeyDown}
                         placeholder="Type a command..."
                         className="h-12 border-0 bg-transparent shadow-none focus-visible:ring-0 text-base"
+                        data-testid="command-palette-input"
                         autoFocus
                     />
                 </div>
