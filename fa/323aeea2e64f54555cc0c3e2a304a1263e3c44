@@ -1,0 +1,23 @@
+src/modules/Arrangement/models/PluginDescriptors/__tests__/descriptorEngineParamWeld.spec.ts
+  s_14f2bbc9f385dd::t_454498da142bd1 2,38-64,70-95,100-104,106-177,179-180,270-273,277-411,467-471,473-474,486-494,528,530,540-601,652-658,663-669,672-683,688-693,700-736,745-750,759,767-792,798-800,804,840-868,872-883,887-888,896-963,977-981,987-999
+  s_14f2bbc9f385dd::t_bb2dcb6c0a7c2b 684-687
+  s_14f2bbc9f385dd::t_2b5f117bb35f68 869-871
+  s_14f2bbc9f385dd::t_7ec095ba19abf8 793-797,801-803
+  s_14f2bbc9f385dd::t_306a3703c3d0b9 805
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "fa323aeea2e64f54555cc0c3e2a304a1263e3c44",
+  "prompts": {},
+  "sessions": {
+    "s_14f2bbc9f385dd": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f9a61a1d-66b3-4146-938d-a04f45f4b060",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
