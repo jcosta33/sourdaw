@@ -191,5 +191,78 @@ export const CRUMBS_DESCRIPTOR: PluginDescriptor = {
             automatable: true,
             hasAutomation: false,
         },
+        // ── Voice stack ──────────────────────────────────────────────────────
+        //
+        // Declared, not deferred. #1474 left these three out on purpose and said
+        // so — they had no declared range and therefore no automation surface —
+        // and left the decision to the owner. The answer is yes: they become real
+        // parameters, automatable and exported, and their panel writes go through
+        // `setDeviceParameter` like the other ten.
+        //
+        // Each range was checked against **both** the knob's travel and the
+        // engine's own clamp before being written, which is the check #1474 found
+        // three existing rows had failed (`masterGain` declared 1 against a knob
+        // that goes to 2, `decay` 2 s against 5 s, `release` 10 s against 5 s —
+        // each invisible until something clamped against the declaration, at
+        // which point it would have truncated its knob mid-sweep). All three
+        // below agree on both sides; the agreement is recorded per row so the
+        // next person does not have to re-derive it.
+        {
+            id: 'stackCount',
+            deviceId: 'builtin-crumbs',
+            name: 'Voices',
+            // `int`, so a delivery lands on a whole voice count. Every integer in
+            // 1..8 is a distinct setting the engine really uses — the stack loop
+            // runs `count` voices — so there is no `legalSet` to declare, unlike
+            // the oversampling factors on Crust and Gluten.
+            type: 'int',
+            value: 1,
+            defaultValue: 1,
+            // 1..8: the Voices knob's travel (`CrumbsControls`, `min={1} max={8}
+            // step={1}`) and `CrumbsParam::StackCount`'s own
+            // `(value as u8).clamp(1, MAX_STACK_VOICES)` with `MAX_STACK_VOICES = 8`
+            // (`crates/daw-dsp/src/crumbs/types.rs:438`, `engine.rs:831`).
+            minValue: 1,
+            maxValue: 8,
+            unit: '',
+            automatable: true,
+            hasAutomation: false,
+        },
+        {
+            id: 'detuneSpread',
+            deviceId: 'builtin-crumbs',
+            name: 'Detune Spread',
+            type: 'float',
+            value: 0,
+            defaultValue: 0,
+            // 0..100 cents. The Detune knob reads out in `¢` and travels 0..100;
+            // `CrumbsParam::DetuneSpread` is `value.clamp(0.0, 100.0)`
+            // (`engine.rs:834`). The knob's `step: 0.5` is a knob increment, not a
+            // legal-value law, so this stays `float` and continuous — the same
+            // reading `DeviceParameterLaw` gives every other half-step control.
+            minValue: 0,
+            maxValue: 100,
+            unit: 'cents',
+            automatable: true,
+            hasAutomation: false,
+        },
+        {
+            id: 'stackSpread',
+            deviceId: 'builtin-crumbs',
+            name: 'Stereo Spread',
+            type: 'float',
+            value: 0,
+            defaultValue: 0,
+            // 0..1. The Spread knob travels 0..1 and renders it as a percentage;
+            // `CrumbsParam::StackSpread` is `value.clamp(0.0, 1.0)`
+            // (`engine.rs:837`). The engine reads it as a half-width — voice pan
+            // runs `-stack_spread ..= +stack_spread` — so 1 is full width, not
+            // double.
+            minValue: 0,
+            maxValue: 1,
+            unit: '',
+            automatable: true,
+            hasAutomation: false,
+        },
     ],
 };

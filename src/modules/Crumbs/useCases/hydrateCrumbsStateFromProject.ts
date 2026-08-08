@@ -37,6 +37,10 @@ function withStoredParameters(state: CrumbsState, parameterValues?: Record<strin
             next = { ...next, envelope: { ...next.envelope, [target.key]: stored } };
             continue;
         }
+        if (target.kind === 'voiceStack') {
+            next = { ...next, voiceStack: { ...next.voiceStack, [target.key]: stored } };
+            continue;
+        }
         next = { ...next, [target.key]: stored };
     }
     return next;
