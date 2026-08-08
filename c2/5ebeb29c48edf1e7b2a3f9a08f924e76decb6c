@@ -1,0 +1,14 @@
+src/modules/Arrangement/models/PluginDescriptors/__tests__/CrumbsAndBacteriaDescriptors.spec.ts
+  h_1228e573df1f42 1-70
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "c25ebeb29c48edf1e7b2a3f9a08f924e76decb6c",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
