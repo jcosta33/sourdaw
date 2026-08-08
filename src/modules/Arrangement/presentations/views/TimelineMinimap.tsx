@@ -388,6 +388,7 @@ export const TimelineMinimap = ({ height = TIMELINE_MINIMAP_DEFAULT_HEIGHT }: Ti
             onKeyDown={handleKeyDown}
             tabIndex={0}
             aria-label="Timeline minimap — drag the viewport to scroll, click to jump, or use arrow keys"
+            data-testid="timeline-minimap"
             role="slider"
             aria-valuemin={0}
             aria-valuemax={100}
