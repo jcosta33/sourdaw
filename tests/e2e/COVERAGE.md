@@ -805,7 +805,8 @@ Re-measured after additional PRs since threshold raise #3 (PR #1231). Lines cros
 - **PR #1484**: Session view clip launcher — scene buttons, dual view — 5 tests.
 
 - **PR #1486**: MIDI clip deep — Pop Song template, piano roll, paint, ghost, chord — 5 tests.
+- **PR #1488**: Take lanes & comp — variation lanes, add take, flatten — 5 tests.
 
-**E2E: 238 tests across 53 spec files using data-testid selectors.**
+**E2E: 243 tests across 54 spec files using data-testid selectors.**
 
-**Campaign total to date: 313 PRs, ~2811 assertions. Lines coverage at 90.30%.**
+**Campaign total to date: 315 PRs, ~2816 assertions. Lines coverage at 90.30%.**
