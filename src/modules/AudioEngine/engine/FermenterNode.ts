@@ -13,6 +13,7 @@ import { raceAbortSignal } from '#/infra/audioWorklet/raceAbortSignal';
 import { createReadyHandshake, ensureWorkletRegistered, fetchWasmModule } from '#/infra/audioWorklet/workletInitShared';
 import { logger } from '#/infra/logger/appLogger';
 
+import { FERMENTER_AUTOMATION_PARAM_IDS } from '../models/FermenterAutomationParams';
 import fermenterProcessorUrl from '../services/fermenterProcessor.ts?worker&url';
 
 import {
@@ -28,46 +29,15 @@ import {
 import type { AudioProcessorLifecycleState } from '../models/AudioEngineState';
 
 const DEFAULT_WASM_URL = '/wasm/daw-dsp/daw_dsp_bg.wasm';
+
 /**
- * Offline automation ordinals. The scheduled path deliberately bypasses the
- * WASM string bridge: the worklet posts `{paramId, segments}` and Rust indexes
- * `AUTOMATION_PARAM_NAMES` (`crates/daw-dsp/src/fermenter/mod.rs`) positionally.
- * The two sides use different spellings by design (`oscLevel`/`osc_level`,
- * `lfoPitchAmount`/`mod_lfo_to_pitch`), so their only contract is **ordinal
- * agreement**, and no compiler in either language checks it.
- *
- * **Every ordinal here is pinned**, by
- * `wasm/__tests__/dawDspFermenterAutomationOrdinals.spec.ts`: it derives each
- * Rust name from the key beside it through `mapFermenterParamToDspParam` — the
- * same translation the live write path uses — and asserts that driving the
- * ordinal through the shipped wasm renders identically to driving that name.
- * Each row also asserts its probe actually moves the engine, so the comparison
- * cannot pass by both arms doing nothing.
- *
- * So this map may be edited freely, including inserting rather than appending:
- * a transposition fails that spec on both affected rows. What it must stay is
- * **dense 0..n-1** and **in step with `AUTOMATION_PARAM_NAMES`**
- * (`crates/daw-dsp/src/fermenter/mod.rs`); adding a key here needs the matching
- * Rust entry, a probe in that spec, and a wasm rebuild.
+ * Re-exported from `models/FermenterAutomationParams` so this node stays the
+ * single import site for consumers, while the table itself lives where the
+ * AudioWorklet processor may also read it — `services/` cannot import
+ * `engine/`, and the worklet's ordinal guard has to be *derived* from this
+ * table rather than restate its length. See that file for the ordinal contract.
  */
-export const FERMENTER_AUTOMATION_PARAM_IDS: Readonly<Record<string, number>> = {
-    oscLevel: 0,
-    filterCutoff: 1,
-    filterResonance: 2,
-    lfoRate: 3,
-    lfoFilterAmount: 4,
-    lfoPitchAmount: 5,
-    filterEnvAmount: 6,
-    msegToFilter: 7,
-    unisonSpread: 8,
-    fmLevel2: 9,
-    fmFeedback: 10,
-    noiseLevel: 11,
-    grainDensity: 12,
-    grainSize: 13,
-    grainSpray: 14,
-    oscWaveform: 15,
-};
+export { FERMENTER_AUTOMATION_PARAM_IDS };
 
 type OfflineAutomationSegment = {
     startFrame: number;

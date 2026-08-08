@@ -1,5 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+import { FERMENTER_AUTOMATION_PARAM_IDS } from '../../models/FermenterAutomationParams';
+
 import {
     RealFloat32Array,
     installWorkletGlobals,
@@ -409,6 +411,64 @@ describe('FermenterProcessor message handling', () => {
 
             proc.process([], makeStereoBlock());
             expect(paramByIdCalls).toEqual([]); // nothing scheduled
+        });
+
+        // The `paramId >= AUTOMATION_PARAM_COUNT` guard is only observable from
+        // outside by what it *admits*. Rejection cases alone cannot separate a
+        // correct bound from one set too low, which is how the count stayed at
+        // 15 after `oscWaveform` was added at ordinal 15: every offline waveform
+        // automation message was dropped by a guard whose only tests passed.
+        // So the admitted population is derived from the shared ordinal table
+        // rather than restated here, and one ordinal past the table is sent in
+        // the same batch — the single set equality then pins both sides of the
+        // bound, and a table that grows without the count following reds here.
+        it('admits exactly the ordinals the shared table declares, and nothing past them', async () => {
+            const proc = await loadProcessor();
+            send(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });
+            resetRecording();
+
+            const declaredOrdinals = Object.values(FERMENTER_AUTOMATION_PARAM_IDS).sort((a, b) => a - b);
+            const firstUnmappedOrdinal = declaredOrdinals[declaredOrdinals.length - 1]! + 1;
+
+            for (const ordinal of [...declaredOrdinals, firstUnmappedOrdinal]) {
+                send(proc, {
+                    type: 'paramAutomation',
+                    paramId: ordinal,
+                    // Degenerate segment (endFrame <= startFrame) so the applied
+                    // value is endValue on the very first block, with no ramp.
+                    segments: [{ startFrame: 0, endFrame: 0, startValue: 0, endValue: ordinal + 1 }],
+                });
+            }
+
+            proc.process([], makeStereoBlock());
+
+            const admittedOrdinals = paramByIdCalls.map((call) => call.id).sort((a, b) => a - b);
+            expect(admittedOrdinals).toEqual(declaredOrdinals);
+        });
+
+        // The user-facing half of #1351: a waveform automation lane in an offline
+        // bounce must reach the engine. `set_param_by_id` indexes Rust's
+        // AUTOMATION_PARAM_NAMES positionally, so the id carried here is the
+        // whole contract — and the value proves the segment was evaluated, not
+        // merely that some id survived the guard.
+        it('delivers an oscWaveform automation value to the engine under its table ordinal', async () => {
+            const proc = await loadProcessor();
+            send(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });
+            resetRecording();
+
+            // `?? NaN` rather than a non-null assertion: if the key is ever
+            // removed from the table this must red on the missing delivery, not
+            // crash on a bad index or quietly pass on some other ordinal.
+            const oscWaveformOrdinal = FERMENTER_AUTOMATION_PARAM_IDS.oscWaveform ?? Number.NaN;
+            send(proc, {
+                type: 'paramAutomation',
+                paramId: oscWaveformOrdinal,
+                segments: [{ startFrame: 0, endFrame: 0, startValue: 0, endValue: 3 }],
+            });
+
+            proc.process([], makeStereoBlock());
+
+            expect(paramByIdCalls).toEqual([{ id: oscWaveformOrdinal, value: 3 }]);
         });
 
         it('interpolates a ramp across a segment and writes only changed values', async () => {
