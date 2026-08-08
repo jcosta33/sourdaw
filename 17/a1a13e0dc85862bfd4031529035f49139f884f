@@ -1,0 +1,69 @@
+src/modules/TimelineEditor/presentations/views/AutomationView/AutomationLaneHeader.tsx
+  s_14f2bbc9f385dd::t_bcafdf9823e0de 4,15-19,31
+  s_14f2bbc9f385dd::t_aa124e91057d18 43-46
+src/modules/TimelineEditor/presentations/views/AutomationView/__tests__/AutomationLaneRow.spec.tsx
+  s_14f2bbc9f385dd::t_a329b5cccd74a7 14
+  s_14f2bbc9f385dd::t_1d694924c6d852 162-166
+  s_14f2bbc9f385dd::t_115e362743dabe 240-243,246-257
+  s_14f2bbc9f385dd::t_0ac45d9bd528f7 245
+  s_3a3b36f3fa3c25::t_98106bfe83d9e6 2
+src/components/daw/DawMicroBadge.tsx
+  s_14f2bbc9f385dd::t_cd83398a06b008 1,8-9
+src/modules/Metering/presentations/views/__tests__/SpectrogramFrequencyAxis.spec.tsx
+  s_14f2bbc9f385dd::t_1fd46941182fea 163
+  s_14f2bbc9f385dd::t_0b95d031835950 151-152,155-162,166
+  s_14f2bbc9f385dd::t_e3c27f86695e30 195-210
+  s_14f2bbc9f385dd::t_a7748ef8f4d143 1-30,55-102,104-105,108-117,120-131,133-135,139-150,153-154,167-194,211-212
+  s_14f2bbc9f385dd::t_a90fdc40baaddd 42-49,51-53
+  s_14f2bbc9f385dd::t_6d216d63662ac7 103,106-107,118-119
+  s_14f2bbc9f385dd::t_05848a91418f79 164-165
+  s_14f2bbc9f385dd::t_140e6797aa1ea4 136-138
+  s_14f2bbc9f385dd::t_e6d0497706d702 31-41,50,54
+  s_14f2bbc9f385dd::t_07cecf6ed03a9f 132
+src/modules/TimelineEditor/presentations/views/AutomationView/__tests__/AutomationLaneRowPlayheadReadout.spec.tsx
+  s_14f2bbc9f385dd::t_f0b52190fefbad 72-73
+  s_14f2bbc9f385dd::t_6213a7321bc9c6 1-71,74-127,149-158
+  s_14f2bbc9f385dd::t_0f5d21b79628ea 128-148
+src/modules/Metering/presentations/views/__tests__/Spectrogram.spec.tsx
+  s_14f2bbc9f385dd::t_2b836c09f1a57e 8-19
+src/modules/TimelineEditor/presentations/views/AutomationView/AutomationLaneRow.tsx
+  s_14f2bbc9f385dd::t_f162bd70221e09 122,124-127,133,136,155-156
+  s_14f2bbc9f385dd::t_f5f10325834798 121,123,128-131,134-135,137-141,143-151,158,166
+  s_14f2bbc9f385dd::t_3d79f523527d0f 159-165
+  s_14f2bbc9f385dd::t_02f7e52a4d7188 16
+  s_14f2bbc9f385dd::t_d5ad915a63a2e5 48-64
+  s_14f2bbc9f385dd::t_e93dd4d2c0bc6d 348
+  s_14f2bbc9f385dd::t_30ac99165e87e8 76
+  s_14f2bbc9f385dd::t_d3946ef5b3dc60 132,142,152-154
+src/modules/Metering/presentations/views/Spectrogram.tsx
+  s_14f2bbc9f385dd::t_8b405de43b6d1b 116
+  s_14f2bbc9f385dd::t_4d698d875ea9ef 125-127,136-144,150-152,154,156-158
+  s_14f2bbc9f385dd::t_4fd039982b43b2 55-58
+  s_14f2bbc9f385dd::t_0670c9c836ed46 78-79
+  s_14f2bbc9f385dd::t_f23ff23441f1bd 6-10,23-54,59-61
+  s_14f2bbc9f385dd::t_edd02598a6727e 76-77,114-115,123-124,164-167,169
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "17a1a13e0dc85862bfd4031529035f49139f884f",
+  "prompts": {},
+  "sessions": {
+    "s_14f2bbc9f385dd": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f9a61a1d-66b3-4146-938d-a04f45f4b060",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_3a3b36f3fa3c25": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-ad75481dae1d79afc",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
