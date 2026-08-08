@@ -71,7 +71,7 @@ function getSelectedBackend({ backend, nativeAvailable, preference }: SelectedBa
     if (preference !== 'auto' && preference !== 'native') {
         return preference;
     }
-    if (backend !== 'none' && (backend !== 'native' || nativeAvailable)) {
+    if (backend !== 'none' && backend !== 'native') {
         return backend;
     }
     return 'webllm';
