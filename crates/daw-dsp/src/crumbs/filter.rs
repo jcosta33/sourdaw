@@ -195,36 +195,12 @@ impl TptSvf {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::normalized_resonance_from_q;
-
-    /// `set_params` clamps its own argument, so a rendered block cannot tell
-    /// whether the conversion saturated or the filter did — this is the only
-    /// place the conversion's own ends are observable.
-    #[test]
-    fn the_q_range_the_knob_draws_maps_onto_the_whole_normalised_span() {
-        // The knob's ends as `CrumbsControls` draws them (`min={0.5}`,
-        // `max={20}`), written as literals rather than through
-        // `RESONANCE_Q_MIN`/`MAX` so moving a constant reds this instead of
-        // dragging the expectation along with it.
-        assert_eq!(normalized_resonance_from_q(0.5), 0.0);
-        assert_eq!(normalized_resonance_from_q(20.0), 1.0);
-
-        // The ends alone do not hold the span: this function's own `clamp`
-        // saturates them, so shrinking `RESONANCE_Q_MAX` to 10 still returns
-        // 1.0 here and both assertions above stay green while the knob's top
-        // silently delivers half the Q it advertises. The knob's midpoint is
-        // the assertion that cannot be saturated into agreement — it is
-        // interior to the true span and outside a shrunk one.
-        assert_eq!(normalized_resonance_from_q(10.25), 0.5);
-    }
-
-    #[test]
-    fn a_q_outside_the_knobs_travel_saturates_instead_of_leaving_the_span() {
-        // Automation curves, presets and projects saved against an older
-        // advertised range can all deliver one.
-        assert_eq!(normalized_resonance_from_q(0.1), 0.0);
-        assert_eq!(normalized_resonance_from_q(40.0), 1.0);
-    }
-}
+// The two tests that lived here asserted `normalized_resonance_from_q`'s ends,
+// midpoint and saturation. That function is now re-exported from
+// `primitives::resonance`, so `super::normalized_resonance_from_q` resolved to
+// the identical function the primitive's own tests already cover with the
+// identical assertions — the same expression evaluated twice, not a second
+// callsite guarded. They are deleted rather than kept for the appearance of
+// coverage (ADR 0015). The Crumbs-specific detail they carried, that
+// `CrumbsControls` is one of the two panels drawing this exact span, moved into
+// the primitive's test comment so the citation is not lost.

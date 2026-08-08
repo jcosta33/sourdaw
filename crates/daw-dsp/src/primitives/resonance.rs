@@ -1,14 +1,34 @@
-//! The product-wide resonance unit contract: Q on every surface a user touches,
-//! normalised 0–1 inside every filter that implements one.
+//! The Q ↔ normalised resonance conversion shared by the devices whose *stored*
+//! resonance field is in Q.
 //!
-//! Q is the unit the product carries. Every shipped `Reso` knob draws
-//! `min={0.5} max={20} step={0.1} defaultValue={1}` — Fermenter
-//! (`FilterSection.tsx`), Crumbs (`CrumbsControls.tsx`), GrandBoule, Grinder and
-//! Bacteria alike — and `ToasterKit`'s `filterResonance` field documents the
-//! identical "0.5-20". Normalised 0–1 is the unit the SVF state itself carries.
+//! This is **not** a house style, and the repo should not be read as having one.
+//! What actually ships:
 //!
-//! Something has to convert between the two, and the pair has to stay an exact
-//! inverse. Twice now it has not:
+//! | surface | range | default | unit |
+//! | --- | --- | --- | --- |
+//! | Crumbs `Reso` (`CrumbsControls.tsx:193-197`) | 0.5–20 step 0.1 | 1 | Q |
+//! | Fermenter `filterResonance` (`FilterSection.tsx:150-156`) | 0.5–20 step 0.1 | 1 | Q |
+//! | Grinder `Res Q` (`GrinderPanel.tsx:1470-1474`) | 0.5–**10** step 0.1 | **2** | Q |
+//! | Bacteria `Reso` (`BacteriaPanel.tsx:1028-1032`) | **0–1** | 0.3 | **normalised** |
+//! | GrandBoule | — draws no resonance control — | | |
+//!
+//! Two surfaces share the 0.5–20 shape this module implements. Grinder uses Q
+//! over a different span. Bacteria deliberately does not use Q at all: its knob
+//! is normalised 0–1 and `bacteria/filter.rs:86,122` implements
+//! `clamp(0.0, 1.0)` then `k = 2.0 - 2.0 * res * 0.99` — Cytomic's recommended
+//! damping-linear line, end to end, self-oscillation backed off by the 0.99.
+//! That is a coherent design and this module is not an argument against it.
+//!
+//! So the reason a device belongs here is narrow and worth stating, because the
+//! alternative is genuinely defensible: **it belongs here when its persisted
+//! field is already denominated in Q.** `ToasterKit.filterResonance` is
+//! documented "0.5-20", defaults to `1`, and is CRDT-persisted, so reading that
+//! stored `1` as a normalised control would mean `k = 0` — self-oscillation on
+//! every pad that never set the field. The stored unit decides, not the taper.
+//!
+//! Given a field in Q, something has to convert to the normalised 0–1 the SVF
+//! state carries, and the pair has to stay an exact inverse. Twice now it has
+//! not:
 //!
 //! - `CrumbsEngine::set_param` fed raw Q straight into a `clamp(0.0, 1.0)`,
 //!   pinning 19 of the knob's 19.5 units onto the same coefficients.
@@ -29,10 +49,12 @@ pub const RESONANCE_Q_MAX: f32 = 20.0;
 /// Convert a Q reading from a product surface into the normalised 0–1
 /// resonance a filter's state carries.
 ///
-/// The taper is linear in Q, not in damping. A damping-linear taper spends most
-/// of the knob's travel between Q 0.5 and Q 1 — inaudible ground — and crams
-/// everything from Q 4 upward into the last few percent. Linear-in-Q puts the
-/// filter's audible range across the sweep.
+/// The taper is linear in Q because the *value* is Q: a surface that reads out
+/// `filterResonance.toFixed(1)` has to deliver the number it prints. This is
+/// not a claim that a Q-linear sweep feels better than a damping-linear one —
+/// Cytomic, Pirkle and Zavalishin all favour damping, and Bacteria ships it.
+/// Taper belongs in the knob's travel→value curve, where the readout can stay
+/// honest; it does not belong in a conversion between two units.
 ///
 /// Out-of-range readings saturate: an automation curve can be dragged past
 /// either end, and a project saved against an older advertised range can carry
@@ -60,10 +82,11 @@ mod tests {
     /// the only place the conversion's own ends are observable.
     #[test]
     fn the_q_range_the_knob_draws_maps_onto_the_whole_normalised_span() {
-        // The knob's ends as every shipped panel draws them (`min={0.5}`,
-        // `max={20}`), written as literals rather than through
-        // `RESONANCE_Q_MIN`/`MAX` so moving a constant reds this instead of
-        // dragging the expectation along with it.
+        // The ends as the two panels on this span draw them — Crumbs
+        // (`CrumbsControls.tsx:194-195`) and Fermenter
+        // (`FilterSection.tsx:152-153`), both `min={0.5} max={20}` — written as
+        // literals rather than through `RESONANCE_Q_MIN`/`MAX` so moving a
+        // constant reds this instead of dragging the expectation along with it.
         assert_eq!(normalized_resonance_from_q(0.5), 0.0);
         assert_eq!(normalized_resonance_from_q(20.0), 1.0);
 
