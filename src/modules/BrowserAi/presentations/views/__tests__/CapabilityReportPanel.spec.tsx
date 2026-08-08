@@ -19,9 +19,18 @@ const SUPPORTED_REPORT: CapabilityReport = {
     sharedArrayBuffer: true,
     opfsAvailable: true,
     chromeVersion: 133,
-    benchmarkMs: 12.34,
+    inference: {
+        status: 'measured',
+        modelId: 'kokoro-82m-q8',
+        executionProviders: ['webgpu', 'wasm'],
+        audioSeconds: 4,
+        elapsedSeconds: 2.5,
+        realtimeFactor: 1.6,
+    },
     detectedAt: 1_803_556_800_000,
 };
+
+const REFRESH_ARGS = { forceRefresh: true, measureInference: true };
 
 describe('CapabilityReportPanel', () => {
     beforeEach(() => {
@@ -36,7 +45,7 @@ describe('CapabilityReportPanel', () => {
 
         fireEvent.click(screen.getByRole('button', { name: 'Detect Capabilities' }));
 
-        expect(mocks.detectCapabilities).toHaveBeenCalledWith({ forceRefresh: true });
+        expect(mocks.detectCapabilities).toHaveBeenCalledWith(REFRESH_ARGS);
     });
 
     it('should render the detecting state', () => {
@@ -57,7 +66,7 @@ describe('CapabilityReportPanel', () => {
 
         fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
 
-        expect(mocks.detectCapabilities).toHaveBeenCalledWith({ forceRefresh: true });
+        expect(mocks.detectCapabilities).toHaveBeenCalledWith(REFRESH_ARGS);
     });
 
     it('should render the unsupported-platform reason with a native rendering summary', () => {
@@ -92,12 +101,13 @@ describe('CapabilityReportPanel', () => {
 
         expect(screen.getByRole('status', { name: 'Browser AI capabilities' })).toBeInTheDocument();
         expect(screen.getByText('Fast (WebGPU)')).toBeInTheDocument();
-        expect(screen.getByText('12.3ms')).toBeInTheDocument();
+        expect(screen.getByText('1.60× real time')).toBeInTheDocument();
+        expect(screen.getByText('kokoro-82m-q8 · webgpu → wasm')).toBeInTheDocument();
         expect(screen.getAllByText('Available')).toHaveLength(2);
         expect(screen.getByText('133')).toBeInTheDocument();
 
         fireEvent.click(screen.getByRole('button', { name: 'Re-detect capabilities' }));
-        expect(mocks.detectCapabilities).toHaveBeenCalledWith({ forceRefresh: true });
+        expect(mocks.detectCapabilities).toHaveBeenCalledWith(REFRESH_ARGS);
     });
 
     it('should render the slow WebGPU tier and unavailable shared memory / OPFS', () => {
@@ -108,7 +118,14 @@ describe('CapabilityReportPanel', () => {
                 webGpuTier: 'webgpu-slow',
                 sharedArrayBuffer: false,
                 opfsAvailable: false,
-                benchmarkMs: null,
+                inference: {
+                    status: 'measured',
+                    modelId: 'kokoro-82m-q8',
+                    executionProviders: ['webgpu', 'wasm'],
+                    audioSeconds: 4,
+                    elapsedSeconds: 10,
+                    realtimeFactor: 0.4,
+                },
                 chromeVersion: null,
             },
         });
@@ -116,8 +133,8 @@ describe('CapabilityReportPanel', () => {
         render(<CapabilityReportPanel />);
 
         expect(screen.getByText('Slow (WebGPU)')).toBeInTheDocument();
+        expect(screen.getByText('0.40× real time')).toBeInTheDocument();
         expect(screen.getAllByText('Unavailable')).toHaveLength(2);
-        expect(screen.queryByText(/ms$/)).not.toBeInTheDocument();
     });
 
     it('should render the unavailable WebGPU tier for any non webgpu-* value', () => {
@@ -129,5 +146,32 @@ describe('CapabilityReportPanel', () => {
         render(<CapabilityReportPanel />);
 
         expect(screen.getByText('Unavailable', { selector: 'span' })).toBeInTheDocument();
+    });
+
+    // ── The tier must never look graded when nothing was measured ────────────
+
+    it.each([
+        ['not-requested', 'Not measured — press Refresh to run it'],
+        ['no-webgpu', 'Not measured — no WebGPU on this target'],
+        ['model-not-cached', 'Not measured — download Kokoro TTS first'],
+        ['runtime-unavailable', 'Not measured — ONNX runtime failed to start'],
+        ['inference-failed', 'Not measured — the probe render produced no audio'],
+    ] as const)('should name the cause when throughput is not measured: %s', (reason, expected) => {
+        capabilityStore.set({
+            phase: 'done',
+            report: {
+                ...SUPPORTED_REPORT,
+                webGpuTier: 'not-measured',
+                inference: { status: 'not-measured', reason },
+            },
+        });
+
+        render(<CapabilityReportPanel />);
+
+        expect(screen.getByText('Not Measured')).toBeInTheDocument();
+        expect(screen.getByText(expected)).toBeInTheDocument();
+        // No probe row, because there was no probe.
+        expect(screen.queryByText(/× real time$/)).not.toBeInTheDocument();
+        expect(screen.queryByText(/webgpu → wasm/)).not.toBeInTheDocument();
     });
 });

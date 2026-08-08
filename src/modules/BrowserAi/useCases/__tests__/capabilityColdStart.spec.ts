@@ -15,7 +15,10 @@ import { capabilityStore } from '../../stores/capabilityStore';
 import { modelRegistryStore } from '../../stores/modelRegistryStore';
 import { initBrowserAi } from '../initBrowserAi';
 
-type DetectCapabilitiesRepo = (input?: { forceRefresh?: boolean }) => Promise<CapabilityReport>;
+type DetectCapabilitiesRepo = (input?: {
+    forceRefresh?: boolean;
+    measureInference?: boolean;
+}) => Promise<CapabilityReport>;
 type CheckModelCached = (input: { family: string; modelId: string }) => Promise<boolean>;
 
 function create_logger_mock(): { info: (m: string) => void; warn: (m: string) => void; debug: (m: string) => void } {
@@ -32,7 +35,14 @@ const supported_report: CapabilityReport = {
     sharedArrayBuffer: true,
     opfsAvailable: true,
     chromeVersion: 133,
-    benchmarkMs: 12,
+    inference: {
+        status: 'measured',
+        modelId: 'kokoro-82m-q8',
+        executionProviders: ['webgpu', 'wasm'],
+        audioSeconds: 4,
+        elapsedSeconds: 2,
+        realtimeFactor: 2,
+    },
     detectedAt: 1_803_556_800_000,
 };
 
@@ -45,7 +55,7 @@ const regressed_report: CapabilityReport = {
     sharedArrayBuffer: false,
     opfsAvailable: true,
     chromeVersion: 133,
-    benchmarkMs: 0,
+    inference: { status: 'not-measured', reason: 'no-webgpu' },
     detectedAt: 1_803_643_200_000,
 };
 
@@ -74,7 +84,7 @@ describe('BrowserAi capabilityColdStart', () => {
 
         await initBrowserAi();
 
-        expect(detect_capabilities_repo).toHaveBeenCalledWith({ forceRefresh: true });
+        expect(detect_capabilities_repo).toHaveBeenCalledWith({ forceRefresh: true, measureInference: false });
         expect(capabilityStore.value).toEqual({ phase: 'done', report: supported_report });
     });
 
@@ -100,8 +110,8 @@ describe('BrowserAi capabilityColdStart', () => {
         await initBrowserAi();
 
         expect(detect_capabilities_repo).toHaveBeenCalledTimes(2);
-        expect(detect_capabilities_repo).toHaveBeenNthCalledWith(1, { forceRefresh: true });
-        expect(detect_capabilities_repo).toHaveBeenNthCalledWith(2, { forceRefresh: true });
+        expect(detect_capabilities_repo).toHaveBeenNthCalledWith(1, { forceRefresh: true, measureInference: false });
+        expect(detect_capabilities_repo).toHaveBeenNthCalledWith(2, { forceRefresh: true, measureInference: false });
         expect(capabilityStore.value).toEqual({ phase: 'done', report: regressed_report });
     });
 });

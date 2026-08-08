@@ -1,21 +1,81 @@
 /**
  * Repository: Browser AI capability detection.
  *
- * Checks for Chrome + WebGPU availability and runs a micro-benchmark
- * to classify the device as webgpu-fast, webgpu-slow, or unavailable.
+ * Reports the platform facts (Chrome, WebGPU, SharedArrayBuffer, OPFS) and
+ * classifies the device into a `WebGpuTier` from a measured inference
+ * throughput figure.
  *
- * Results are stored in localStorage to avoid re-running the benchmark.
+ * What the tier is derived from
+ * -----------------------------
+ * Until this file was fixed, `benchmarkMs` timed `navigator.gpu.requestAdapter()`
+ * and the tier was a function of that. Adapter acquisition is essentially
+ * constant and unrelated to whether a model renders faster than real time, so a
+ * confident `webgpu-fast` could be returned on a device that cannot run a single
+ * inference. That is a guard that cannot fail (ADR 0015): it reported
+ * confidently and measured nothing relevant.
+ *
+ * The tier is now derived from `measureInferenceThroughput()` — a real Kokoro
+ * ONNX render through the real worker — and from nothing else. When there is no
+ * throughput figure the tier is `not-measured`, never a grade.
+ *
+ * Why the thresholds are where they are
+ * -------------------------------------
+ * Every inference path here is an offline render the user waits on, tagged
+ * `tier: 'browser-preview'` in `RenderProvenance`. So the unit is throughput
+ * against real time, and the boundaries are set by what a user will sit through
+ * for a preview render of a phrase:
+ *
+ *   >= 1.0x  `webgpu-fast`  — a phrase renders in less time than it plays. The
+ *                             browser path is the primary path.
+ *   >= 0.2x  `webgpu-slow`  — usable, but a 10 s phrase costs up to 50 s. Offer
+ *                             it; do not make it the default.
+ *    < 0.2x  `unavailable`  — a 10 s phrase costs more than 50 s. Below any
+ *                             reasonable patience for a scratch preview; route
+ *                             to the native renderer instead.
+ *
+ * Caching
+ * -------
+ * The report is stored in localStorage. That cache now holds a figure worth
+ * reusing: a real throughput measurement costs a full model render, so it is not
+ * repeated on every boot. `forceRefresh` re-reads the platform facts; passing
+ * `measureInference` is what re-runs the expensive part. A cached *measured*
+ * throughput is carried forward across a platform-only refresh so the tier does
+ * not silently regress to `not-measured`.
  */
 
 import { inject } from '#/infra/di/inject';
 import { logger } from '#/infra/logger/appLogger';
 import { isTauri } from '#/utils/tauriBridge';
 
-import { type BrowserAiCapability, type CapabilityReport, type WebGpuTier } from '../models/CapabilityReport';
+import {
+    type BrowserAiCapability,
+    type CapabilityReport,
+    type InferenceThroughput,
+    type ThroughputNotMeasuredReason,
+    type WebGpuTier,
+} from '../models/CapabilityReport';
+
+import { measureInferenceThroughput } from './measureInferenceThroughput';
 
 const STORAGE_KEY = 'sourdaw-browser-ai-capability';
-const BENCHMARK_FAST_THRESHOLD_MS = 50;
-const BENCHMARK_SLOW_THRESHOLD_MS = 500;
+
+/** At or above this many seconds of audio per second of wall clock: `webgpu-fast`. */
+const FAST_REALTIME_FACTOR = 1;
+/** At or above this, but below fast: `webgpu-slow`. Below it: `unavailable`. */
+const USABLE_REALTIME_FACTOR = 0.2;
+
+/**
+ * Determine if we're running in Tauri on macOS or Linux,
+ * where WKWebView/WebKitGTK doesn't support WebGPU.
+ */
+function isTauriNonWindowsPlatform(): boolean {
+    if (!isTauri()) {
+        return false;
+    }
+    // In Tauri, navigator.platform reports the OS
+    const platform = navigator.platform.toLowerCase();
+    return platform.includes('mac') || platform.includes('linux');
+}
 
 /**
  * Detect Chrome version from user agent.
@@ -38,51 +98,17 @@ function detectChromeVersion(): number | null {
 }
 
 /**
- * Determine if we're running in Tauri on macOS or Linux,
- * where WKWebView/WebKitGTK doesn't support WebGPU.
+ * The only place a `WebGpuTier` is produced. A throughput that was not measured
+ * yields `not-measured` — never a grade inferred from something else.
  */
-function isTauriNonWindowsPlatform(): boolean {
-    if (!isTauri()) {
-        return false;
+function classifyWebGpuTier(inference: InferenceThroughput): WebGpuTier {
+    if (inference.status !== 'measured') {
+        return 'not-measured';
     }
-    // In Tauri, navigator.platform reports the OS
-    const platform = navigator.platform.toLowerCase();
-    return platform.includes('mac') || platform.includes('linux');
-}
-
-/**
- * Run a minimal ONNX inference micro-benchmark to estimate WebGPU speed.
- * Returns elapsed time in ms.
- */
-async function runWebGpuBenchmark(): Promise<number> {
-    try {
-        const startTime = performance.now();
-        // Check if WebGPU adapter is available and responsive
-        if (typeof navigator !== 'undefined' && 'gpu' in navigator) {
-            // navigator.gpu is not in lib.dom.d.ts — cast to access the WebGPU API
-            const adapter = await (
-                navigator as { gpu: { requestAdapter: () => Promise<unknown> } }
-            ).gpu.requestAdapter();
-            if (adapter) {
-                const endTime = performance.now();
-                // Adapter acquisition time is a proxy for WebGPU responsiveness
-                return endTime - startTime;
-            }
-        }
-        return BENCHMARK_SLOW_THRESHOLD_MS + 1; // Not available
-    } catch {
-        return BENCHMARK_SLOW_THRESHOLD_MS + 1;
-    }
-}
-
-function classifyWebGpuTier(benchmarkMs: number | null): WebGpuTier {
-    if (benchmarkMs === null) {
-        return 'unavailable';
-    }
-    if (benchmarkMs < BENCHMARK_FAST_THRESHOLD_MS) {
+    if (inference.realtimeFactor >= FAST_REALTIME_FACTOR) {
         return 'webgpu-fast';
     }
-    if (benchmarkMs < BENCHMARK_SLOW_THRESHOLD_MS) {
+    if (inference.realtimeFactor >= USABLE_REALTIME_FACTOR) {
         return 'webgpu-slow';
     }
     return 'unavailable';
@@ -112,14 +138,51 @@ function is_browser_ai_capability(value: unknown): value is BrowserAiCapability 
 }
 
 function is_web_gpu_tier(value: unknown): value is WebGpuTier {
-    return value === 'webgpu-fast' || value === 'webgpu-slow' || value === 'unavailable';
+    return value === 'webgpu-fast' || value === 'webgpu-slow' || value === 'unavailable' || value === 'not-measured';
+}
+
+function is_not_measured_reason(value: unknown): value is ThroughputNotMeasuredReason {
+    return (
+        value === 'not-requested' ||
+        value === 'no-webgpu' ||
+        value === 'model-not-cached' ||
+        value === 'runtime-unavailable' ||
+        value === 'inference-failed'
+    );
+}
+
+function is_finite_number(value: unknown): value is number {
+    return typeof value === 'number' && Number.isFinite(value);
+}
+
+function is_string_array(value: unknown): value is string[] {
+    return Array.isArray(value) && value.every((entry) => typeof entry === 'string');
+}
+
+function is_inference_throughput(value: unknown): value is InferenceThroughput {
+    if (!is_plain_record(value)) {
+        return false;
+    }
+    if (value.status === 'not-measured') {
+        return is_not_measured_reason(value.reason);
+    }
+    if (value.status !== 'measured') {
+        return false;
+    }
+    return (
+        typeof value.modelId === 'string' &&
+        is_string_array(value.executionProviders) &&
+        is_finite_number(value.audioSeconds) &&
+        is_finite_number(value.elapsedSeconds) &&
+        is_finite_number(value.realtimeFactor)
+    );
 }
 
 function is_nullable_finite_number(value: unknown): value is number | null {
     if (value === null) {
         return true;
     }
-    return typeof value === 'number' && Number.isFinite(value);
+    return is_finite_number(value);
 }
 
 function is_valid_capability_report(value: unknown): value is CapabilityReport {
@@ -134,32 +197,54 @@ function is_valid_capability_report(value: unknown): value is CapabilityReport {
         typeof value.detectedAt === 'number' &&
         Number.isFinite(value.detectedAt) &&
         is_nullable_finite_number(value.chromeVersion) &&
-        is_nullable_finite_number(value.benchmarkMs)
+        is_inference_throughput(value.inference)
     );
 }
 
+function read_cached_report(storage: Storage | null): CapabilityReport | null {
+    if (!storage) {
+        return null;
+    }
+    const cached = storage.getItem(STORAGE_KEY);
+    if (!cached) {
+        return null;
+    }
+    try {
+        const parsed: unknown = JSON.parse(cached);
+        if (is_valid_capability_report(parsed)) {
+            return parsed;
+        }
+    } catch {
+        // Corrupt cache — re-detect
+    }
+    return null;
+}
+
+type DetectCapabilitiesInput = {
+    forceRefresh?: boolean;
+    /**
+     * Run the real throughput measurement. Off by default: it renders a full
+     * Kokoro phrase, which is far too expensive for app startup. `initBrowserAi`
+     * leaves it off and accepts a `not-requested` throughput; the AI settings
+     * panel turns it on.
+     */
+    measureInference?: boolean;
+};
+
 type DetectCapabilitiesOutput = Promise<CapabilityReport>;
 
-export const detectCapabilities = inject({ logger })(
-    ({ logger }) =>
+export const detectCapabilities = inject({ logger, measureInferenceThroughput })(
+    ({ logger, measureInferenceThroughput }) =>
         async function detectCapabilities({
             forceRefresh = false,
-        }: { forceRefresh?: boolean } = {}): DetectCapabilitiesOutput {
+            measureInference = false,
+        }: DetectCapabilitiesInput = {}): DetectCapabilitiesOutput {
             const storage = get_capability_storage();
-            // Check cached result first
-            if (!forceRefresh && storage) {
-                const cached = storage.getItem(STORAGE_KEY);
-                if (cached) {
-                    try {
-                        const parsed: unknown = JSON.parse(cached);
-                        if (is_valid_capability_report(parsed)) {
-                            logger.info('[BrowserAi] Using cached capability report');
-                            return parsed;
-                        }
-                    } catch {
-                        // Corrupt cache — re-detect
-                    }
-                }
+            const cachedReport = read_cached_report(storage);
+
+            if (!forceRefresh && !measureInference && cachedReport) {
+                logger.info('[BrowserAi] Using cached capability report');
+                return cachedReport;
             }
 
             const chromeVersion = detectChromeVersion();
@@ -168,9 +253,8 @@ export const detectCapabilities = inject({ logger })(
             const opfsAvailable =
                 typeof navigator !== 'undefined' && 'storage' in navigator && 'getDirectory' in navigator.storage;
 
-            let capability: CapabilityReport['capability'];
-            let benchmarkMs: number | null = null;
-            let webGpuTier: WebGpuTier = 'unavailable';
+            let capability: BrowserAiCapability;
+            let inference: InferenceThroughput = { status: 'not-measured', reason: 'not-requested' };
 
             if (isTauriNonWindowsPlatform()) {
                 // macOS/Linux Tauri — route to native pipeline instead
@@ -183,13 +267,23 @@ export const detectCapabilities = inject({ logger })(
                 logger.info('[BrowserAi] Non-Chrome browser detected — browser AI disabled');
             } else if (!webGpuAvailable) {
                 capability = 'unsupported-browser';
+                inference = { status: 'not-measured', reason: 'no-webgpu' };
                 logger.info('[BrowserAi] WebGPU not available — browser AI disabled');
+            } else if (measureInference) {
+                capability = 'supported';
+                inference = await measureInferenceThroughput();
             } else {
                 capability = 'supported';
-                benchmarkMs = await runWebGpuBenchmark();
-                webGpuTier = classifyWebGpuTier(benchmarkMs);
-                logger.info(`[BrowserAi] WebGPU detected: ${webGpuTier} (${String(benchmarkMs.toFixed(1))}ms)`);
+                // Carry a real measurement forward rather than downgrading the tier
+                // on a platform-only refresh. Only a `measured` figure is reusable —
+                // a stale `not-measured` reason would be a claim about a probe this
+                // run never performed.
+                if (cachedReport && cachedReport.inference.status === 'measured') {
+                    inference = cachedReport.inference;
+                }
             }
+
+            const webGpuTier = classifyWebGpuTier(inference);
 
             const report: CapabilityReport = {
                 capability,
@@ -197,9 +291,11 @@ export const detectCapabilities = inject({ logger })(
                 sharedArrayBuffer,
                 opfsAvailable,
                 chromeVersion,
-                benchmarkMs,
+                inference,
                 detectedAt: Date.now(),
             };
+
+            logger.info(`[BrowserAi] Capability ${capability}, WebGPU tier ${webGpuTier}`);
 
             // Cache the result
             if (storage) {

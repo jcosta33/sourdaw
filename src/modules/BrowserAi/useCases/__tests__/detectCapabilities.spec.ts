@@ -6,7 +6,10 @@ import { type CapabilityReport } from '../../models/CapabilityReport';
 import { capabilityStore } from '../../stores/capabilityStore';
 import { detectCapabilities } from '../detectCapabilities';
 
-type DetectCapabilitiesRepo = (input: { forceRefresh: boolean }) => Promise<CapabilityReport>;
+type DetectCapabilitiesRepo = (input: {
+    forceRefresh: boolean;
+    measureInference: boolean;
+}) => Promise<CapabilityReport>;
 
 function createLoggerMock(): { info: (message: string) => void; error: (error: Error) => void } {
     return { info: vi.fn(), error: vi.fn() };
@@ -18,7 +21,14 @@ const report: CapabilityReport = {
     sharedArrayBuffer: true,
     opfsAvailable: true,
     chromeVersion: 133,
-    benchmarkMs: 8,
+    inference: {
+        status: 'measured',
+        modelId: 'kokoro-82m-q8',
+        executionProviders: ['webgpu', 'wasm'],
+        audioSeconds: 4,
+        elapsedSeconds: 2,
+        realtimeFactor: 2,
+    },
     detectedAt: 1_800_000_000_000,
 };
 
@@ -34,7 +44,7 @@ describe('detectCapabilities', () => {
 
         await detectCapabilities();
 
-        expect(detectCapabilitiesRepo).toHaveBeenCalledWith({ forceRefresh: false });
+        expect(detectCapabilitiesRepo).toHaveBeenCalledWith({ forceRefresh: false, measureInference: false });
         expect(capabilityStore.value).toEqual({ phase: 'done', report });
         expect(logger.info).toHaveBeenCalledWith(expect.stringContaining('supported / webgpu-fast'));
     });
@@ -45,7 +55,16 @@ describe('detectCapabilities', () => {
 
         await detectCapabilities({ forceRefresh: true });
 
-        expect(detectCapabilitiesRepo).toHaveBeenCalledWith({ forceRefresh: true });
+        expect(detectCapabilitiesRepo).toHaveBeenCalledWith({ forceRefresh: true, measureInference: false });
+    });
+
+    it('forwards measureInference through to the repository', async () => {
+        const detectCapabilitiesRepo = vi.fn<DetectCapabilitiesRepo>().mockResolvedValue(report);
+        injectDependencies(detectCapabilities, { logger: createLoggerMock(), detectCapabilitiesRepo });
+
+        await detectCapabilities({ forceRefresh: true, measureInference: true });
+
+        expect(detectCapabilitiesRepo).toHaveBeenCalledWith({ forceRefresh: true, measureInference: true });
     });
 
     it('records an error state when detection fails', async () => {

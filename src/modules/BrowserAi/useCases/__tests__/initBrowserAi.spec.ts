@@ -21,7 +21,10 @@ import { modelRegistryStore } from '../../stores/modelRegistryStore';
 import { renderQueueStore } from '../../stores/renderQueueStore';
 import { initBrowserAi } from '../initBrowserAi';
 
-type DetectCapabilitiesRepo = (input?: { forceRefresh?: boolean }) => Promise<CapabilityReport>;
+type DetectCapabilitiesRepo = (input?: {
+    forceRefresh?: boolean;
+    measureInference?: boolean;
+}) => Promise<CapabilityReport>;
 type CheckModelCached = (input: { family: string; modelId: string }) => Promise<boolean>;
 
 type LoggerMock = {
@@ -44,7 +47,14 @@ const fresh_capability_report: CapabilityReport = {
     sharedArrayBuffer: true,
     opfsAvailable: true,
     chromeVersion: 133,
-    benchmarkMs: 12,
+    inference: {
+        status: 'measured',
+        modelId: 'kokoro-82m-q8',
+        executionProviders: ['webgpu', 'wasm'],
+        audioSeconds: 4,
+        elapsedSeconds: 2,
+        realtimeFactor: 2,
+    },
     detectedAt: 1_803_556_800_000,
 };
 
@@ -79,7 +89,10 @@ describe('initBrowserAi', () => {
 
         await initBrowserAi();
 
-        expect(detect_capabilities_repo).toHaveBeenCalledWith({ forceRefresh: true });
+        // App startup takes the platform facts only. The throughput probe renders a
+        // full Kokoro phrase; paying that on every boot is not acceptable, so the
+        // flag must stay off here.
+        expect(detect_capabilities_repo).toHaveBeenCalledWith({ forceRefresh: true, measureInference: false });
         expect(capabilityStore.value).toEqual({ phase: 'done', report: fresh_capability_report });
         expect(subscribe_to_midi_store).toHaveBeenCalledTimes(1);
     });
