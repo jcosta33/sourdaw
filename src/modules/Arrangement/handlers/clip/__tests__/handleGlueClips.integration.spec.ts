@@ -126,6 +126,78 @@ describe('handleGlueClips atomic integration', () => {
         expect(midiStore.value!.migratedAbsoluteNoteClipIds).toEqual([glued.id]);
     });
 
+    it('refuses glue when a source note probability depends on the source clip identity', async () => {
+        midiStore.set({
+            ...midiStore.value!,
+            notesByClipId: {
+                ...midiStore.value!.notesByClipId,
+                'clip-a': [
+                    {
+                        ...midiStore.value!.notesByClipId['clip-a']![0]!,
+                        probability: 50,
+                    },
+                ],
+            },
+        });
+        const originalTracks = structuredClone(trackStore.value!.tracks);
+        const originalMidi = structuredClone(midiStore.value);
+
+        await executeAppActionBatch([{ type: 'glueClips', payload: { clipIds: ['clip-a', 'clip-b'] } }], {
+            source: 'prompt',
+            requireCompensation: true,
+        });
+
+        expect(trackStore.value!.tracks).toEqual(originalTracks);
+        expect(midiStore.value).toEqual(originalMidi);
+    });
+
+    it('refuses glue when migration markers contain duplicates', async () => {
+        midiStore.set({
+            ...midiStore.value!,
+            migratedAbsoluteNoteClipIds: ['clip-a', 'clip-a', 'clip-b'],
+        });
+        const originalTracks = structuredClone(trackStore.value!.tracks);
+        const originalMidi = structuredClone(midiStore.value);
+
+        await executeAppActionBatch([{ type: 'glueClips', payload: { clipIds: ['clip-a', 'clip-b'] } }], {
+            source: 'prompt',
+            requireCompensation: true,
+        });
+
+        expect(trackStore.value!.tracks).toEqual(originalTracks);
+        expect(midiStore.value).toEqual(originalMidi);
+    });
+
+    it('round-trips Unicode equal-time order exactly and redoes in code-unit order', async () => {
+        midiStore.set({
+            ...midiStore.value!,
+            notesByClipId: {
+                'clip-a': [
+                    { id: 'é-note', pitch: 60, startBeat: 3, duration: 1, velocity: 100 },
+                    { id: 'z-note', pitch: 62, startBeat: 3, duration: 1, velocity: 100 },
+                ],
+                'clip-b': [],
+            },
+            ccByClipId: {},
+            pitchBendByClipId: {},
+        });
+        const originalMidi = structuredClone(midiStore.value);
+
+        await executeAppActionBatch([{ type: 'glueClips', payload: { clipIds: ['clip-a', 'clip-b'] } }], {
+            source: 'prompt',
+            requireCompensation: true,
+        });
+        const glued = trackStore.value!.tracks[0]!.clips[0]!;
+
+        expect(midiStore.value!.notesByClipId[glued.id]?.map((note) => note.id)).toEqual(['z-note', 'é-note']);
+
+        await undo();
+        expect(midiStore.value).toEqual(originalMidi);
+
+        await redo();
+        expect(midiStore.value!.notesByClipId[glued.id]?.map((note) => note.id)).toEqual(['z-note', 'é-note']);
+    });
+
     it('keeps the glue and undo entry when the target gains clip automation', async () => {
         await executeAppActionBatch([{ type: 'glueClips', payload: { clipIds: ['clip-a', 'clip-b'] } }], {
             source: 'prompt',
