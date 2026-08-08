@@ -150,9 +150,6 @@ export const Fader = ({
         if (pointerId === null || !rootRef.current) {
             return;
         }
-        if (typeof rootRef.current.releasePointerCapture !== 'function') {
-            return;
-        }
         try {
             rootRef.current.releasePointerCapture(pointerId);
         } catch {
@@ -191,9 +188,7 @@ export const Fader = ({
             onChange(defaultValue);
             return;
         }
-        if (typeof event.currentTarget.setPointerCapture === 'function') {
-            event.currentTarget.setPointerCapture(event.pointerId);
-        }
+        event.currentTarget.setPointerCapture(event.pointerId);
         activePointerIdRef.current = event.pointerId;
         draggingRef.current = true;
         setIsDragging(true);

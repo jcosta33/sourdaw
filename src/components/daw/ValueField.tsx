@@ -84,9 +84,7 @@ export const ValueField = ({
         if (event.button !== 0) {
             return;
         } // Only left click
-        if (typeof event.currentTarget.setPointerCapture === 'function') {
-            event.currentTarget.setPointerCapture(event.pointerId);
-        }
+        event.currentTarget.setPointerCapture(event.pointerId);
         draggingRef.current = true;
         setIsDragging(true);
         startY.current = event.clientY;
@@ -128,9 +126,7 @@ export const ValueField = ({
         const wasDragging = draggingRef.current;
         draggingRef.current = false;
         setIsDragging(false);
-        if (typeof event.currentTarget.releasePointerCapture === 'function') {
-            event.currentTarget.releasePointerCapture(event.pointerId);
-        }
+        event.currentTarget.releasePointerCapture(event.pointerId);
 
         const committed = pendingValueRef.current;
         pendingValueRef.current = null;
