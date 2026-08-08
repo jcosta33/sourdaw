@@ -139,8 +139,8 @@ export const EffectsTab = ({
                         description="Mastering-grade limiter · 5-level"
                         onClick={() => {
                             if (selectedTrackId) {
-                                addDevice(selectedTrackId, 'crust');
-                                panelActions?.showCrust(null);
+                                const device = addDevice(selectedTrackId, 'crust');
+                                panelActions?.showCrust(device?.id ?? null);
                             }
                         }}
                         theme={CRUST_THEME}
@@ -155,8 +155,8 @@ export const EffectsTab = ({
                         description="Dattorro plate · FDN · Convolution"
                         onClick={() => {
                             if (selectedTrackId) {
-                                addDevice(selectedTrackId, 'dutch-oven');
-                                panelActions?.showDutchOven(null);
+                                const device = addDevice(selectedTrackId, 'dutch-oven');
+                                panelActions?.showDutchOven(device?.id ?? null);
                             }
                         }}
                         theme={DUTCH_OVEN_THEME}

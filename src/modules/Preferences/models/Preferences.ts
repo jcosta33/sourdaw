@@ -20,9 +20,12 @@ export const GRID_SNAP_OPTIONS: { value: GridSnapOption; label: string; beats: n
     { value: '1/8', label: '1/8', beats: 0.125 },
     { value: '1/16', label: '1/16', beats: 0.0625 },
     { value: '1/32', label: '1/32', beats: 0.03125 },
-    { value: '1/4T', label: '1/4T', beats: 1 / 3 },
-    { value: '1/8T', label: '1/8T', beats: 1 / 6 },
-    { value: '1/16T', label: '1/16T', beats: 1 / 12 },
+    // Triplets are two thirds of their straight sibling — three of them fill the
+    // span of two. They were twice that, which made every triplet grid *coarser*
+    // than the straight option it is named after (1/4T snapped wider than 1/4).
+    { value: '1/4T', label: '1/4T', beats: (2 / 3) * 0.25 },
+    { value: '1/8T', label: '1/8T', beats: (2 / 3) * 0.125 },
+    { value: '1/16T', label: '1/16T', beats: (2 / 3) * 0.0625 },
     { value: '1/4D', label: '1/4D', beats: 0.375 },
     { value: '1/8D', label: '1/8D', beats: 0.1875 },
     { value: 'off', label: 'Off', beats: 0 },

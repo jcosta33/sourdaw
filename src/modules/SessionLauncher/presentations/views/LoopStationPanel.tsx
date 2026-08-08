@@ -28,7 +28,7 @@ import { stopSlot } from '../../useCases/loopStation/stopSlot';
 import { toggleArm } from '../../useCases/loopStation/toggleArm';
 import { toggleRecord } from '../../useCases/loopStation/toggleRecord';
 import { toggleSync } from '../../useCases/loopStation/toggleSync';
-import { triggerScene } from '../../useCases/loopStation/triggerScene';
+import { triggerSlot } from '../../useCases/loopStation/triggerSlot';
 import { undoLastLayer } from '../../useCases/loopStation/undoLastLayer';
 
 const emptyLoopState: LoopStationState = {
@@ -169,7 +169,7 @@ const LoopStationSlotCell = ({
                     className="size-5"
                     aria-label={`Play slot ${row + 1}`}
                     disabled={slot.layers.length === 0}
-                    onClick={() => triggerScene(slot.column)}
+                    onClick={() => triggerSlot(slot.id)}
                 >
                     <Play
                         className={cn(

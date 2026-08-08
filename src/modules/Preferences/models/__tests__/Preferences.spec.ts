@@ -16,8 +16,20 @@ describe('gridSnapBeats', () => {
     });
 
     it('should map triplet options', () => {
-        expect(gridSnapBeats('1/4T')).toBeCloseTo(1 / 3);
+        expect(gridSnapBeats('1/4T')).toBeCloseTo(1 / 6);
         expect(gridSnapBeats('1/8D')).toBeCloseTo(0.1875);
+    });
+
+    it('keeps every triplet option at two thirds of its straight sibling', () => {
+        const beatsFor = (value: Parameters<typeof gridSnapBeats>[0]): number => {
+            const entry = GRID_SNAP_OPTIONS.find((option) => option.value === value);
+            expect(entry).toBeDefined();
+            return entry!.beats;
+        };
+
+        expect(beatsFor('1/4T')).toBeCloseTo((2 / 3) * beatsFor('1/4'));
+        expect(beatsFor('1/8T')).toBeCloseTo((2 / 3) * beatsFor('1/8'));
+        expect(beatsFor('1/16T')).toBeCloseTo((2 / 3) * beatsFor('1/16'));
     });
 
     it('should return 0 for an unknown option', () => {

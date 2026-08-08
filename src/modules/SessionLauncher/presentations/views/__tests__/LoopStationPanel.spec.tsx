@@ -37,6 +37,7 @@ const mocks = vi.hoisted(() => ({
     setFixedLoopLength: vi.fn(),
     createSlot: vi.fn(),
     triggerScene: vi.fn(),
+    triggerSlot: vi.fn(),
     stopSlot: vi.fn(),
     undoLastLayer: vi.fn(),
     clearSlot: vi.fn(),
@@ -83,6 +84,7 @@ vi.mock('../../../useCases/loopStation/toggleArm', () => ({ toggleArm: mocks.tog
 vi.mock('../../../useCases/loopStation/toggleRecord', () => ({ toggleRecord: mocks.toggleRecord }));
 vi.mock('../../../useCases/loopStation/toggleSync', () => ({ toggleSync: mocks.toggleSync }));
 vi.mock('../../../useCases/loopStation/triggerScene', () => ({ triggerScene: mocks.triggerScene }));
+vi.mock('../../../useCases/loopStation/triggerSlot', () => ({ triggerSlot: mocks.triggerSlot }));
 vi.mock('../../../useCases/loopStation/undoLastLayer', () => ({ undoLastLayer: mocks.undoLastLayer }));
 vi.mock('#/modules/Transport/useCases', () => ({
     defaultTransportState: { playheadPosition: 0, timeSignatureNumerator: 4 },
@@ -157,6 +159,31 @@ describe('LoopStationPanel', () => {
         const recButton = screen.getByRole('button', { name: /record or overdub slot 1/i });
         fireEvent.click(recButton);
         expect(mocks.toggleRecord).toHaveBeenCalledWith('slot-1');
+    });
+
+    it('plays only the clicked slot, leaving the other columns alone', () => {
+        mocks.trackState.tracks = [{ id: 't1', name: 'Drums', color: null }];
+        mocks.loopState.slots = [
+            {
+                id: 'slot-1',
+                trackId: 't1',
+                row: 0,
+                column: 0,
+                state: 'stopped',
+                lengthBeats: 4,
+                layers: [{ id: 'layer-1', layerIndex: 0, recordedAt: '', muted: false, volume: 1 }],
+                loopCount: 0,
+                volume: 1,
+                quantize: true,
+                fadeBeats: 0,
+            },
+        ];
+        renderPanel();
+
+        fireEvent.click(screen.getByRole('button', { name: /play slot 1/i }));
+
+        expect(mocks.triggerSlot).toHaveBeenCalledWith('slot-1');
+        expect(mocks.triggerScene).not.toHaveBeenCalled();
     });
 
     it('should clear all slots via stop-all', () => {
