@@ -96,11 +96,16 @@ describe('AiSection', () => {
         render(<AiSection />);
 
         const backend = screen.getByLabelText('AI execution backend');
-        expect(backend).not.toHaveDisplayValue('Automatic');
-        expect(screen.queryByRole('option', { name: 'Automatic' })).not.toBeInTheDocument();
+        expect(backend).toHaveValue('webllm');
+        expect(screen.queryByRole('option', { name: /Automatic/ })).not.toBeInTheDocument();
         expect(screen.queryByRole('option', { name: 'Native local' })).not.toBeInTheDocument();
         expect(screen.getByRole('option', { name: 'Browser WebLLM' })).toBeInTheDocument();
         expect(screen.getByRole('option', { name: 'Hosted provider' })).toBeInTheDocument();
+
+        const model = screen.getByLabelText('Hosted AI model');
+        expect(model.tagName).toBe('SELECT');
+        expect(model).toHaveValue('claude-sonnet-5');
+        expect(screen.getByRole('option', { name: 'Claude Fable 5 — Highest quality' })).toBeInTheDocument();
     });
 
     it('shows native local only when the desktop runtime is available', () => {
