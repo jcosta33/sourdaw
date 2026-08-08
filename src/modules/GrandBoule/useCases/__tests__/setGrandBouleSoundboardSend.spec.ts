@@ -1,17 +1,94 @@
-import { describe, it, expect } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { createStore } from '#/infra/store/createStore';
+
+import { createDisconnectedGrandBouleEngineHandle } from '../../repositories/grandBouleEngineHandle';
+import { createDefaultGrandBouleState, type GrandBouleState } from '../../stores/grandBouleStore';
 import { setGrandBouleSoundboardSend } from '../setGrandBouleSoundboardSend';
 
-const mock_engine = new Proxy({}, { get: () => () => {} }) as never;
+const dispatched: { type: string; payload: unknown }[] = [];
+
+vi.mock('#/modules/Command/useCases', () => ({
+    executeAppAction: (action: { type: string; payload: unknown }) => {
+        dispatched.push(action);
+        return Promise.resolve({ status: 'ok' });
+    },
+}));
+
+const engineWrites: { name: string; value: number }[] = [];
+
+function engine() {
+    return {
+        ...createDisconnectedGrandBouleEngineHandle(),
+        setParam: ({ name, value }: { name: string; value: number }) => {
+            engineWrites.push({ name, value });
+        },
+    };
+}
+
+/** Seeded away from the default 0.6 so a restored default cannot pass as a write. */
+function seededStore() {
+    const state = createDefaultGrandBouleState();
+    return createStore<GrandBouleState>({
+        initialData: { ...state, config: { ...state.config, soundboardSend: 0.05 } },
+    });
+}
 
 describe('setGrandBouleSoundboardSend', () => {
-    it('runs without crash when state exists', () => {
-        const store = { value: { pedals: {}, params: {} }, set: () => {} } as never;
-        expect(() => setGrandBouleSoundboardSend({ store, engine: mock_engine } as never)).not.toThrow();
+    beforeEach(() => {
+        dispatched.length = 0;
+        engineWrites.length = 0;
     });
 
-    it('does nothing when state is null', () => {
-        const store = { value: null, set: () => {} } as never;
-        expect(() => setGrandBouleSoundboardSend({ store, engine: mock_engine } as never)).not.toThrow();
+    it('previews on the engine and the store without touching project truth', () => {
+        const store = seededStore();
+
+        setGrandBouleSoundboardSend({ deviceId: 'gb-1', engine: engine(), store, amount: 0.42, isTransient: true });
+
+        expect(store.value?.config.soundboardSend).toBe(0.42);
+        expect(engineWrites).toEqual([{ name: 'soundboardSend', value: 0.42 }]);
+        expect(dispatched).toEqual([]);
+    });
+
+    it('commits through setDeviceParameter and leaves the engine to the action', () => {
+        const store = seededStore();
+
+        setGrandBouleSoundboardSend({ deviceId: 'gb-1', engine: engine(), store, amount: 0.42 });
+
+        expect(store.value?.config.soundboardSend).toBe(0.42);
+        expect(dispatched).toEqual([
+            { type: 'setDeviceParameter', payload: { deviceId: 'gb-1', paramId: 'soundboardSend', value: 0.42 } },
+        ]);
+        expect(engineWrites).toEqual([]);
+    });
+
+    it('clamps to the declared 0..1 range', () => {
+        const store = seededStore();
+
+        setGrandBouleSoundboardSend({ deviceId: 'gb-1', engine: engine(), store, amount: 4 });
+        expect(store.value?.config.soundboardSend).toBe(1);
+
+        setGrandBouleSoundboardSend({ deviceId: 'gb-1', engine: engine(), store, amount: -0.5 });
+        expect(store.value?.config.soundboardSend).toBe(0);
+    });
+
+    it('leaves every other config field alone', () => {
+        const store = seededStore();
+        const before = store.value!.config;
+
+        setGrandBouleSoundboardSend({ deviceId: 'gb-1', engine: engine(), store, amount: 0.9 });
+
+        expect(store.value?.config.masterGain).toBe(before.masterGain);
+        expect(store.value?.config.sympatheticSend).toBe(before.sympatheticSend);
+    });
+
+    it('does nothing when the store holds no state', () => {
+        const store = createStore<GrandBouleState>();
+
+        setGrandBouleSoundboardSend({ deviceId: 'gb-1', engine: engine(), store, amount: 0.42 });
+
+        expect(store.value).toBeNull();
+        expect(dispatched).toEqual([]);
+        expect(engineWrites).toEqual([]);
     });
 });

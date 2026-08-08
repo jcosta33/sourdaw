@@ -1,11 +1,8 @@
 import { logger } from '#/infra/logger/appLogger';
-import { createRafBatcher } from '#/utils/DOM/createRafBatcher';
 
 import { setCrumbsParam } from '../../repositories/crumbsBridge/setCrumbsParam';
 
-// §57.1 — Shared rAF-batch primitive (same as the 6 plugin bridges).
-type CrumbsBatchEntry = { instanceId: string; param: string; value: number };
-const paramBatcher = createRafBatcher<CrumbsBatchEntry>();
+import { crumbsParamCacheKey, paramBatcher, type CrumbsBatchEntry } from './helpers';
 
 function flushCrumbsParam(_cacheKey: string, entry: CrumbsBatchEntry): void {
     setCrumbsParam(entry.instanceId, entry.param, entry.value).catch((error) => {
@@ -14,6 +11,5 @@ function flushCrumbsParam(_cacheKey: string, entry: CrumbsBatchEntry): void {
 }
 
 export function setCrumbsParamThrottled(instanceId: string, param: string, value: number): void {
-    const cacheKey = `${instanceId}_${param}`;
-    paramBatcher.schedule(cacheKey, { instanceId, param, value }, flushCrumbsParam);
+    paramBatcher.schedule(crumbsParamCacheKey(instanceId, param), { instanceId, param, value }, flushCrumbsParam);
 }
