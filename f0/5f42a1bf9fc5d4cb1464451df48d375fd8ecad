@@ -1,0 +1,19 @@
+tests/e2e/devicePanelTestId.spec.ts
+  s_31c43a0e832dc1::t_d56b844afd0860 1-65
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "f05f42a1bf9fc5d4cb1464451df48d375fd8ecad",
+  "prompts": {},
+  "sessions": {
+    "s_31c43a0e832dc1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-a1bbc332955ea08f1",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
