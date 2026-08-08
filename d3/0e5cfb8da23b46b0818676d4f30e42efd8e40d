@@ -1,0 +1,16 @@
+src/modules/AudioEngine/repositories/__tests__/applyParams.spec.ts
+  h_1228e573df1f42 1-127
+src/modules/AudioRendering/repositories/audioEncoders/__tests__/createKWeightingFilters.spec.ts
+  h_1228e573df1f42 1-79
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "d30e5cfb8da23b46b0818676d4f30e42efd8e40d",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
