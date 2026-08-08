@@ -832,12 +832,13 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
         }
         return (
             <>
-                <Button variant="ghost" size="sm" onClick={onClose} className="text-stone-400 hover:text-stone-200">
+                <Button variant="ghost" size="sm" onClick={onClose} data-testid="export-cancel" className="text-stone-400 hover:text-stone-200">
                     Cancel
                 </Button>
                 <Button
                     size="sm"
                     onClick={handleExport}
+                    data-testid="export-start"
                     disabled={(mode !== 'render-to-clip' && formats.size === 0) || isExportActive()}
                     className="border-t border-orange-400/30 bg-orange-600 font-medium text-white shadow-[0_0_15px_rgba(234,88,12,0.3)] transition-all hover:bg-orange-500 hover:shadow-[0_0_20px_rgba(249,115,22,0.5)]"
                 >
@@ -886,6 +887,7 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                                 variant={mode === 'mixdown' ? 'default' : 'outline'}
                                 size="sm"
                                 onClick={() => setMode('mixdown')}
+                                data-testid="export-mode-mixdown"
                                 className={
                                     mode === 'mixdown'
                                         ? 'w-full border-orange-500/30 bg-orange-700/20 text-orange-300 hover:bg-orange-700/30'
@@ -900,6 +902,7 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                                 variant={mode === 'stems' ? 'default' : 'outline'}
                                 size="sm"
                                 onClick={() => setMode('stems')}
+                                data-testid="export-mode-stems"
                                 className={
                                     mode === 'stems'
                                         ? 'w-full border-amber-500/30 bg-amber-700/20 text-amber-300 hover:bg-amber-700/30'
