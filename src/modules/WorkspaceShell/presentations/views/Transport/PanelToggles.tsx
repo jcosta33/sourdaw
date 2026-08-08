@@ -95,6 +95,7 @@ export const PanelToggles = ({
                         aria-label="Toggle browser"
                         aria-pressed={sidebarOpen}
                         onClick={toggleSidebar}
+                        data-testid="toggle-browser"
                     >
                         <PanelLeft className="size-3.5" aria-hidden="true" />
                     </Button>
@@ -170,6 +171,7 @@ export const PanelToggles = ({
                         aria-label="Toggle AI chat panel"
                         aria-pressed={chatPanelOpen}
                         onClick={toggleChatPanel}
+                        data-testid="toggle-chat"
                     >
                         <MessageSquare className="size-3.5" aria-hidden="true" />
                     </Button>
@@ -184,6 +186,7 @@ export const PanelToggles = ({
                         aria-label="Generate"
                         aria-pressed={aiState.isPanelOpen}
                         onClick={toggleAiPanel}
+                        data-testid="toggle-generate"
                         className={aiState.isPanelOpen ? 'text-[var(--color-accent-lavender)]' : ''}
                     >
                         <Sparkles className="size-3.5" aria-hidden="true" />
