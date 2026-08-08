@@ -1,0 +1,19 @@
+tests/e2e/midiScaleInteractionTestId.spec.ts
+  s_4d519dc0f7726f::t_b163be3fa5003a 1-79
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "f2822f5103660c4858e95fe93c988d1abf631935",
+  "prompts": {},
+  "sessions": {
+    "s_4d519dc0f7726f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-a0b41be4b5d24f799",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
