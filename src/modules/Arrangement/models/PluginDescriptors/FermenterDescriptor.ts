@@ -14,7 +14,15 @@ const FERMENTER_PARAMS: readonly PluginParamDef[] = [
     { id: 'oscWaveform', label: 'Waveform', min: 0, max: 3, default: 1, unit: '', step: 1 },
     { id: 'oscLevel', label: 'Osc Level', min: 0, max: 1, default: 0.8, unit: '' },
     { id: 'oscCoarse', label: 'Coarse', min: -24, max: 24, default: 0, unit: 'st', step: 1 },
-    { id: 'oscFine', label: 'Fine', min: -100, max: 100, default: 0, unit: 'ct', step: 1 },
+    // No `step`: fine tune is continuous. `layer.rs` clamps it as an `f32`
+    // (`"osc_fine" => self.osc_fine = value.clamp(-100.0, 100.0)`), exactly as
+    // it does the neighbouring `unisonDetune` below — same unit, same
+    // magnitude, no step. Coarse above keeps its `step: 1` on purpose: a
+    // semitone selector is stepped in every shipping synth (Vital declares
+    // `transpose` `kIndexed` and rounds it in its host bridge, while `tune` is
+    // `kLinear` and passes through unrounded), and VST3 `stepCount` / CLAP
+    // `CLAP_PARAM_IS_STEPPED` draw the same line.
+    { id: 'oscFine', label: 'Fine', min: -100, max: 100, default: 0, unit: 'ct' },
     { id: 'pulseWidth', label: 'Pulse Width', min: 0.05, max: 0.95, default: 0.5, unit: '' },
 
     // Unison
