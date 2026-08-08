@@ -214,6 +214,10 @@ function parseArgs(argv) {
         segmentTargetMs: DEFAULT_SEGMENT_TARGET_MS,
         json: null,
         headed: false,
+        // Subset runs are for investigating one question. A partial run is not
+        // a table: its rows were taken in a different order, on a different
+        // machine state, from the ones already in `quantum-cost-table.md`.
+        deviceIds: [],
     };
     for (let i = 0; i < argv.length; i += 1) {
         const flag = argv[i];
@@ -225,6 +229,11 @@ function parseArgs(argv) {
             options.segmentTargetMs = Number(argv[++i]);
         } else if (flag === '--json') {
             options.json = argv[++i];
+        } else if (flag === '--devices') {
+            options.deviceIds = String(argv[++i])
+                .split(',')
+                .map((id) => id.trim())
+                .filter((id) => id.length > 0);
         } else if (flag === '--headed') {
             options.headed = true;
         } else {
@@ -403,6 +412,7 @@ async function main() {
             warmupQuanta: options.warmupQuanta,
             measureQuanta: options.measureQuanta,
             segmentTargetMs: options.segmentTargetMs,
+            deviceIds: options.deviceIds,
         });
 
         payload.browser = browser.version();
@@ -662,72 +672,104 @@ async function main() {
     }
 
     // -- reference project --------------------------------------------------
-    const sumOver = (members, pick) => members.reduce((total, [id, count]) => total + pick(byId[id]) * count, 0);
+    //
+    // The project total needs every member row. A `--devices` subset run does
+    // not have them, and inventing a total from the rows that happen to be
+    // present is exactly the kind of number this instrument exists to refuse:
+    // it would read as a project figure while silently omitting devices.
+    const referenceMemberIds = [...REFERENCE_PROJECT_AUDIO_THREAD, ...REFERENCE_PROJECT_WORKER].map(([id]) => id);
+    const referenceMissing = [...new Set(referenceMemberIds.filter((id) => byId[id] === undefined))];
+    let referenceProjectJson = null;
+    if (referenceMissing.length > 0) {
+        console.log('=== Reference project — NOT COMPUTED ===');
+        console.log('');
+        console.log(
+            `  This was a subset run (--devices). ${referenceMissing.length} member row(s) were not measured: ` +
+                `${referenceMissing.join(', ')}.`
+        );
+        console.log('  A project total from a partial run would omit devices without saying so. Per-row');
+        console.log('  figures above stand on their own; the project total needs a full run.');
+        console.log('');
+    } else {
+        const sumOver = (members, pick) => members.reduce((total, [id, count]) => total + pick(byId[id]) * count, 0);
 
-    // A lower bound stays a lower bound if an unmeasurable term is counted as
-    // zero, so rows whose floor was withheld simply contribute nothing.
-    const audioFloor = sumOver(REFERENCE_PROJECT_AUDIO_THREAD, (row) =>
-        row.floorMeasurable ? (row.dutyCycle ? row.dutyCycle.amortisedFloorMs : row.stats.floor) : 0
-    );
-    const floorRowsMissing = REFERENCE_PROJECT_AUDIO_THREAD.filter(([id]) => !byId[id].floorMeasurable).map(
-        ([id]) => id
-    );
-    const audioMedian = sumOver(REFERENCE_PROJECT_AUDIO_THREAD, (row) => row.stats.median);
-    const audioMean = sumOver(REFERENCE_PROJECT_AUDIO_THREAD, (row) =>
-        row.dutyCycle ? row.dutyCycle.amortisedMeanMs : row.stats.median
-    );
-    const workerFloor = sumOver(REFERENCE_PROJECT_WORKER, (row) => row.stats.floor);
-    const workerMedian = sumOver(REFERENCE_PROJECT_WORKER, (row) => row.stats.median);
+        // A lower bound stays a lower bound if an unmeasurable term is counted as
+        // zero, so rows whose floor was withheld simply contribute nothing.
+        const audioFloor = sumOver(REFERENCE_PROJECT_AUDIO_THREAD, (row) =>
+            row.floorMeasurable ? (row.dutyCycle ? row.dutyCycle.amortisedFloorMs : row.stats.floor) : 0
+        );
+        const floorRowsMissing = REFERENCE_PROJECT_AUDIO_THREAD.filter(([id]) => !byId[id].floorMeasurable).map(
+            ([id]) => id
+        );
+        const audioMedian = sumOver(REFERENCE_PROJECT_AUDIO_THREAD, (row) => row.stats.median);
+        const audioMean = sumOver(REFERENCE_PROJECT_AUDIO_THREAD, (row) =>
+            row.dutyCycle ? row.dutyCycle.amortisedMeanMs : row.stats.median
+        );
+        const workerFloor = sumOver(REFERENCE_PROJECT_WORKER, (row) => row.stats.floor);
+        const workerMedian = sumOver(REFERENCE_PROJECT_WORKER, (row) => row.stats.median);
 
-    // The defensible worst quantum: everyone at their median, plus the single
-    // largest duty-cycle spike landing in that quantum. Summing every row's p95
-    // assumes every device spikes in the same quantum, which nothing makes true
-    // — the duty cycles are independent and unsynchronised.
-    const worstSpikeUpper = Math.max(
-        0,
-        ...duty
-            .filter((row) => REFERENCE_PROJECT_AUDIO_THREAD.some(([id]) => id === row.id))
-            .map((row) => row.dutyCycle.tickCostMs - row.dutyCycle.idleCostMs)
-    );
-    const audioWorstUpper = audioMean + worstSpikeUpper;
+        // The defensible worst quantum: everyone at their median, plus the single
+        // largest duty-cycle spike landing in that quantum. Summing every row's p95
+        // assumes every device spikes in the same quantum, which nothing makes true
+        // — the duty cycles are independent and unsynchronised.
+        const worstSpikeUpper = Math.max(
+            0,
+            ...duty
+                .filter((row) => REFERENCE_PROJECT_AUDIO_THREAD.some(([id]) => id === row.id))
+                .map((row) => row.dutyCycle.tickCostMs - row.dutyCycle.idleCostMs)
+        );
+        const audioWorstUpper = audioMean + worstSpikeUpper;
 
-    console.log('=== Reference project (defined in deviceRecipes.js — nothing in the repo defines it) ===');
-    console.log('');
-    console.log('  audio thread:');
-    for (const [id, count] of REFERENCE_PROJECT_AUDIO_THREAD) {
-        console.log(`    ${count} x ${id}`);
+        console.log('=== Reference project (defined in deviceRecipes.js — nothing in the repo defines it) ===');
+        console.log('');
+        console.log('  audio thread:');
+        for (const [id, count] of REFERENCE_PROJECT_AUDIO_THREAD) {
+            console.log(`    ${count} x ${id}`);
+        }
+        console.log('  worker (not the audio thread):');
+        for (const [id, count] of REFERENCE_PROJECT_WORKER) {
+            console.log(`    ${count} x ${id}`);
+        }
+        console.log('');
+        const meanLoad = meanOf(rows.map((row) => row.load.mean));
+        console.log(`  measured at a mean 1-minute load average of ${meanLoad.toFixed(0)} on ${os.cpus().length} logical cores.`);
+        console.log('');
+        console.log(`  AUDIO THREAD >= ${sig2(audioFloor)} ms  (${pct(audioFloor)} of budget)   lower bound`);
+        if (floorRowsMissing.length > 0) {
+            console.log(`               partial: no floor from ${floorRowsMissing.join(', ')} (counted as zero, so still a lower bound)`);
+        }
+        console.log(`  AUDIO THREAD <= ${sig2(audioMean)} ms  (${pct(audioMean)} of budget)   upper bound, taken under load ${meanLoad.toFixed(0)}`);
+        console.log(`  worst quantum <= ${sig2(audioWorstUpper)} ms  (${pct(audioWorstUpper)} of budget)   upper bound, + the largest duty spike`);
+        console.log('');
+        const verdict =
+            audioWorstUpper < BUDGET_MS
+                ? `  DECIDED: the upper bound already fits. Even measured under load ${meanLoad.toFixed(0)}, the reference\n` +
+                  "  project's audio thread does not approach the deadline on compute. A quieter machine can only\n" +
+                  '  lower these numbers. Compute is not the obstacle.'
+                : audioFloor > BUDGET_MS
+                  ? '  DECIDED THE OTHER WAY: the lower bound already exceeds budget. No quieter machine will fix it.'
+                  : `  UNDECIDED on this machine: the bounds straddle the budget (${pct(audioFloor)} to ${pct(audioWorstUpper)}).\n` +
+                    '  A quiet-machine run would narrow it; AC-3 would answer the deadline question directly.';
+        console.log(verdict);
+        console.log('');
+        console.log(`  WORKER line item, Grand Boule >= ${sig2(workerFloor)} ms (${pct(workerFloor)}), <= ${sig2(workerMedian)} ms per`);
+        console.log("                                quantum of audio, on its own thread with its own ring to keep ahead.");
+        console.log('');
+        console.log('  Neither bound is a deadline claim. They bound compute. AC-3 owns the deadline question.');
+        console.log('');
+        referenceProjectJson = {
+            audioThread: REFERENCE_PROJECT_AUDIO_THREAD,
+            worker: REFERENCE_PROJECT_WORKER,
+            audioFloorMs: audioFloor,
+            audioFloorPartialFrom: floorRowsMissing,
+            audioUpperBoundMs: audioMean,
+            audioWorstQuantumUpperMs: audioWorstUpper,
+            audioMedianMs: audioMedian,
+            meanLoad: meanOf(rows.map((row) => row.load.mean)),
+            workerFloorMs: workerFloor,
+            workerMedianMs: workerMedian,
+        };
     }
-    console.log('  worker (not the audio thread):');
-    for (const [id, count] of REFERENCE_PROJECT_WORKER) {
-        console.log(`    ${count} x ${id}`);
-    }
-    console.log('');
-    const meanLoad = meanOf(rows.map((row) => row.load.mean));
-    console.log(`  measured at a mean 1-minute load average of ${meanLoad.toFixed(0)} on ${os.cpus().length} logical cores.`);
-    console.log('');
-    console.log(`  AUDIO THREAD >= ${sig2(audioFloor)} ms  (${pct(audioFloor)} of budget)   lower bound`);
-    if (floorRowsMissing.length > 0) {
-        console.log(`               partial: no floor from ${floorRowsMissing.join(', ')} (counted as zero, so still a lower bound)`);
-    }
-    console.log(`  AUDIO THREAD <= ${sig2(audioMean)} ms  (${pct(audioMean)} of budget)   upper bound, taken under load ${meanLoad.toFixed(0)}`);
-    console.log(`  worst quantum <= ${sig2(audioWorstUpper)} ms  (${pct(audioWorstUpper)} of budget)   upper bound, + the largest duty spike`);
-    console.log('');
-    const verdict =
-        audioWorstUpper < BUDGET_MS
-            ? `  DECIDED: the upper bound already fits. Even measured under load ${meanLoad.toFixed(0)}, the reference\n` +
-              "  project's audio thread does not approach the deadline on compute. A quieter machine can only\n" +
-              '  lower these numbers. Compute is not the obstacle.'
-            : audioFloor > BUDGET_MS
-              ? '  DECIDED THE OTHER WAY: the lower bound already exceeds budget. No quieter machine will fix it.'
-              : `  UNDECIDED on this machine: the bounds straddle the budget (${pct(audioFloor)} to ${pct(audioWorstUpper)}).\n` +
-                '  A quiet-machine run would narrow it; AC-3 would answer the deadline question directly.';
-    console.log(verdict);
-    console.log('');
-    console.log(`  WORKER line item, Grand Boule >= ${sig2(workerFloor)} ms (${pct(workerFloor)}), <= ${sig2(workerMedian)} ms per`);
-    console.log("                                quantum of audio, on its own thread with its own ring to keep ahead.");
-    console.log('');
-    console.log('  Neither bound is a deadline claim. They bound compute. AC-3 owns the deadline question.');
-    console.log('');
 
     console.log('per row: cost site, occupancy, in-window calibration spread, stationarity, wall-clock bound');
     for (const row of rows) {
@@ -766,18 +808,9 @@ async function main() {
                     budgetMs: BUDGET_MS,
                     options,
                     load: { before: loadBefore, after: loadAfter, ceiling: loadCeiling() },
-                    referenceProject: {
-                        audioThread: REFERENCE_PROJECT_AUDIO_THREAD,
-                        worker: REFERENCE_PROJECT_WORKER,
-                        audioFloorMs: audioFloor,
-                        audioFloorPartialFrom: floorRowsMissing,
-                        audioUpperBoundMs: audioMean,
-                        audioWorstQuantumUpperMs: audioWorstUpper,
-                        audioMedianMs: audioMedian,
-                        meanLoad: meanOf(rows.map((row) => row.load.mean)),
-                        workerFloorMs: workerFloor,
-                        workerMedianMs: workerMedian,
-                    },
+                    // null on a `--devices` subset run: the total needs every
+                    // member row, and a partial one is not a project figure.
+                    referenceProject: referenceProjectJson,
                     // Per-row summaries and calibration, but not the 20 000 raw
                     // samples per row — that is 40 MB of JSON. `--json-samples`
                     // is deliberately absent; the retained record is the
