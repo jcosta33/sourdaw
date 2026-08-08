@@ -294,6 +294,39 @@ describe('interrupted project load dirty tracking', () => {
                 expect(projectStore.value?.dirty).toBe(true);
             });
         }
+
+        it('does not blame the user for the arrangement writes its own teardown made', async () => {
+            const opened = await openProject(OPEN_PROJECT_NAME, OPEN_TRACK_ID, OPEN_TRACK_NAME);
+            expect(opened.status).toBe('committed');
+
+            // Tearing the previous graph down writes the arrangement — track
+            // strips go away with it. That write belongs to the load, which is
+            // why the load claims `loading` before anything can go wrong.
+            mockResetAudioGraph.mockImplementation(() => {
+                const current = trackStore.value ?? defaultTrackState;
+                trackStore.set({ ...current, selectedTrackId: null });
+            });
+            mockResetCrdtProjectAuthority.mockImplementation(() => {
+                throw new Error('authority reset failed');
+            });
+
+            const aborted = await replaceProjectData({
+                context: 'applyImportedProjectData',
+                data: projectData({
+                    name: INCOMING_PROJECT_NAME,
+                    trackId: 'incoming-track',
+                    trackName: INCOMING_TRACK_NAME,
+                }),
+                transaction: loadTransaction(),
+            });
+
+            expect(aborted.status).toBe('aborted');
+            expect(projectStore.value?.dirty).toBe(false);
+
+            editTheArrangement();
+
+            expect(projectStore.value?.dirty).toBe(true);
+        });
     });
 
     describe('an aborted open that a newer load superseded leaves the newer load alone', () => {
