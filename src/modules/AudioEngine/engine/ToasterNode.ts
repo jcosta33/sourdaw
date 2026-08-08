@@ -9,6 +9,7 @@ import { raceAbortSignal } from '#/infra/audioWorklet/raceAbortSignal';
 import { createReadyHandshake, ensureWorkletRegistered, fetchWasmModule } from '#/infra/audioWorklet/workletInitShared';
 import { logger } from '#/infra/logger/appLogger';
 
+import { TOASTER_AUTOMATION_PARAM_IDS } from '../models/ToasterAutomationParams';
 import toasterProcessorUrl from '../services/toasterProcessor.ts?worker&url';
 
 import {
@@ -23,11 +24,14 @@ import type { AudioProcessorLifecycleState } from '../models/AudioEngineState';
 
 const DEFAULT_WASM_URL = '/wasm/daw-dsp/daw_dsp_bg.wasm';
 const TOASTER_PAD_COUNT = 16;
-export const TOASTER_AUTOMATION_PARAM_IDS: Readonly<Record<string, number>> = {
-    masterGain: 0,
-    reverbMix: 1,
-    delayMix: 2,
-};
+/**
+ * Re-exported from `models/ToasterAutomationParams` so this node stays the
+ * single import site for consumers, while the table itself lives where the
+ * AudioWorklet processor may also read it — `services/` cannot import `engine/`,
+ * and the worklet's ordinal guard has to be *derived* from this table rather
+ * than restate its size. See that file for the ordinal contract.
+ */
+export { TOASTER_AUTOMATION_PARAM_IDS };
 
 function projectToasterLifecycle(view: Float32Array): AudioProcessorLifecycleState | null {
     switch (view[TOASTER_IDX.lifecycle]) {

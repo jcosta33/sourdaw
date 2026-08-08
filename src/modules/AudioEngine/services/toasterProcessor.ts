@@ -17,6 +17,7 @@
  *   { type: 'resetPadDryRouting' }
  */
 
+import { TOASTER_AUTOMATION_PARAM_IDS } from '../models/ToasterAutomationParams';
 import { resolveProcessorWasmModule } from '../transformers/resolveProcessorWasmModule';
 import { initSync, ToasterInstance } from '../wasm/daw_dsp.js';
 
@@ -26,7 +27,26 @@ import { beginTelemetryPublish, endTelemetryPublish } from './telemetrySeqlock';
 const TOASTER_PAD_COUNT = 16;
 const TOASTER_MAX_BLOCK_SIZE = 4096;
 const TOASTER_OUTPUT_COUNT = 1 + TOASTER_PAD_COUNT;
-const TOASTER_AUTOMATION_PARAM_COUNT = 3;
+
+/**
+ * The offline automation ordinals this worklet will forward to
+ * `set_param_by_id`, **derived** from the shared table rather than restated.
+ *
+ * This used to be `TOASTER_AUTOMATION_PARAM_COUNT = 3`, a second expression of
+ * `Object.keys(TOASTER_AUTOMATION_PARAM_IDS).length` living in a file that could
+ * not see the table at all. A fourth parameter added to the table would have
+ * been silently dropped here — the same shape as the Fermenter `oscWaveform`
+ * bug, where a pinned count left the guard one ordinal short and every offline
+ * waveform automation message died before reaching the engine.
+ *
+ * A **set**, not a count: `TOASTER_AUTOMATION_PARAM_IDS` is a `Record`, so
+ * nothing forces its ordinals to stay dense `0..n-1`, and a key count is only a
+ * valid bound while they are. Membership is the guard the contract actually
+ * wants — admit exactly the ordinals Rust can dispatch — and it stays correct
+ * if a hole is ever introduced. Built once at module scope; `Set.has` on the
+ * message path allocates nothing.
+ */
+const TOASTER_AUTOMATION_ORDINALS: ReadonlySet<number> = new Set(Object.values(TOASTER_AUTOMATION_PARAM_IDS));
 const PROCESS_LIFECYCLE_SLEEP = 3;
 const TELEMETRY_LIFECYCLE_IDX = 0;
 
@@ -261,8 +281,7 @@ class ToasterProcessor extends AudioWorkletProcessor {
         if (msg.type === 'paramAutomation') {
             if (
                 !Number.isInteger(msg.paramId) ||
-                msg.paramId < 0 ||
-                msg.paramId >= TOASTER_AUTOMATION_PARAM_COUNT ||
+                !TOASTER_AUTOMATION_ORDINALS.has(msg.paramId) ||
                 !isContiguousAutomationSchedule(msg.segments)
             ) {
                 return;

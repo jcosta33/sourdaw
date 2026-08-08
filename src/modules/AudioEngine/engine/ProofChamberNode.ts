@@ -6,13 +6,19 @@
 import { raceAbortSignal } from '#/infra/audioWorklet/raceAbortSignal';
 import { createReadyHandshake, ensureWorkletRegistered, fetchWasmModule } from '#/infra/audioWorklet/workletInitShared';
 
+import { PROOF_CHAMBER_AUTOMATION_PARAM_IDS } from '../models/ProofChamberAutomationParams';
 import proofChamberProcessorUrl from '../services/proofChamberProcessor.ts?worker&url';
 
 const DEFAULT_WASM_URL = '/wasm/proof-chamber/proof_chamber_bg.wasm';
-export const PROOF_CHAMBER_AUTOMATION_PARAM_IDS: Readonly<Record<string, number>> = {
-    mix: 0,
-    decay: 1,
-};
+
+/**
+ * Re-exported from `models/ProofChamberAutomationParams` so this node stays the
+ * single import site for consumers, while the table itself lives where the
+ * AudioWorklet processor may also read it — `services/` cannot import `engine/`,
+ * and the worklet's ordinal guard has to be *derived* from this table rather
+ * than restate its bound. See that file for the ordinal contract.
+ */
+export { PROOF_CHAMBER_AUTOMATION_PARAM_IDS };
 
 type OfflineAutomationSegment = {
     startFrame: number;

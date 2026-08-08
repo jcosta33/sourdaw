@@ -1,5 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+import { PROOF_CHAMBER_AUTOMATION_PARAM_IDS } from '../../models/ProofChamberAutomationParams';
+
+/** Ordinals the shared table declares, ascending — never a list written here. */
+const declaredProofChamberOrdinals = Object.values(PROOF_CHAMBER_AUTOMATION_PARAM_IDS).sort((a, b) => a - b);
+
 import {
     RealFloat32Array,
     installWorkletGlobals,
@@ -206,7 +211,8 @@ describe('ProofChamberProcessor param automation', () => {
         send(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });
         resetRecording();
 
-        // Only paramId 0 and 1 are valid.
+        // Ordinals the shared table does not declare, plus the two shapes no
+        // table membership can express: a non-integer and a negative id.
         send(proc, {
             type: 'paramAutomation',
             paramId: 2,
@@ -223,9 +229,52 @@ describe('ProofChamberProcessor param automation', () => {
             segments: [{ startFrame: 0, endFrame: 10, startValue: 0, endValue: 1 }],
         });
         send(proc, { type: 'paramAutomation', paramId: 0, segments: [] });
+        // A schedule the guard *does* admit, sent in the same batch. Without it
+        // this assertion was vacuous in a second way: the `outputs` argument was
+        // passed unwrapped (`makeChannels(...)` rather than `[makeChannels(...)]`),
+        // so `process` bailed before `_applyParamAutomation` ever ran and
+        // `paramByIdCalls` stayed empty no matter what the guard admitted.
+        send(proc, {
+            type: 'paramAutomation',
+            paramId: declaredProofChamberOrdinals[0],
+            segments: [{ startFrame: 0, endFrame: 0, startValue: 0, endValue: 7 }],
+        });
 
-        proc.process([stereo(FRAMES, 0)], makeChannels(2, FRAMES, () => 0) as unknown as Float32Array[][]);
-        expect(paramByIdCalls).toEqual([]);
+        proc.process([stereo(FRAMES, 0)], [makeChannels(2, FRAMES, () => 0)]);
+        expect(paramByIdCalls).toEqual([{ id: declaredProofChamberOrdinals[0], value: 7 }]);
+    });
+
+    // The accept side, which rejection cases alone cannot supply: they separate
+    // "too high" from "correct" but never "correct" from "too low". The guard
+    // was a bare inline `paramId > 1` restating a two-key table it could not
+    // see, so a third parameter would have been dropped with every existing
+    // assertion still green. Population derived from the table, with one ordinal
+    // past the highest sent in the same batch, so one set equality pins both
+    // ends — and the value carried proves each schedule was evaluated rather
+    // than merely admitted.
+    it('admits exactly the ordinals the shared table declares, and nothing past them', async () => {
+        const proc = await loadProcessor();
+        send(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });
+        resetRecording();
+
+        const declaredOrdinals = declaredProofChamberOrdinals;
+        const firstUnmappedOrdinal = Math.max(...declaredOrdinals) + 1;
+
+        for (const ordinal of [...declaredOrdinals, firstUnmappedOrdinal]) {
+            send(proc, {
+                type: 'paramAutomation',
+                paramId: ordinal,
+                // Degenerate segment (endFrame <= startFrame) so the applied
+                // value is endValue on the very first block, with no ramp.
+                segments: [{ startFrame: 0, endFrame: 0, startValue: 0, endValue: ordinal + 1 }],
+            });
+        }
+
+        proc.process([stereo(FRAMES, 0)], [makeChannels(2, FRAMES, () => 0)]);
+
+        expect(paramByIdCalls.sort((a, b) => a.id - b.id)).toEqual(
+            declaredOrdinals.map((ordinal) => ({ id: ordinal, value: ordinal + 1 }))
+        );
     });
 
     it('writes the interpolated value once per change and dedupes unchanged values', async () => {

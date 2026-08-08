@@ -1,5 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+import { TOASTER_AUTOMATION_PARAM_IDS } from '../../models/ToasterAutomationParams';
+
 // --- Worklet global scope shims -------------------------------------------
 const registry = new Map<string, new (...args: unknown[]) => ToasterProcessorLike>();
 
@@ -605,10 +607,48 @@ describe('ToasterProcessor dispatch paths & process guards', () => {
         vi.stubGlobal('currentFrame', 0);
     });
 
+    // Both ends of the ordinal guard, from a population the shared table
+    // supplies rather than one written out here.
+    //
+    // The old coverage was two hardcoded literals — `paramId: 2` accepted,
+    // `paramId: 3` and `5` rejected — which pins the bound only while the table
+    // has exactly three entries. A fourth parameter would leave every one of
+    // those assertions green while its automation was silently dropped, which is
+    // precisely how Fermenter's `oscWaveform` shipped broken. Sending the
+    // declared ordinals and one past the highest in a single batch, then
+    // comparing the admitted set against the declared one, reds on a table that
+    // grows without the guard following — and also on a guard that admits an
+    // ordinal Rust cannot dispatch.
+    it('admits exactly the ordinals the shared table declares, and nothing past them', async () => {
+        const proc = await loadProcessor();
+        send(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });
+        paramByIdCalls.length = 0;
+
+        const declaredOrdinals = Object.values(TOASTER_AUTOMATION_PARAM_IDS).sort((a, b) => a - b);
+        const firstUnmappedOrdinal = Math.max(...declaredOrdinals) + 1;
+
+        for (const ordinal of [...declaredOrdinals, firstUnmappedOrdinal]) {
+            send(proc, {
+                type: 'paramAutomation',
+                paramId: ordinal,
+                // Single flat segment: the value applied on the first block is
+                // `startValue`, distinct per ordinal so a schedule landing on the
+                // wrong slot is visible in the value as well as the id.
+                segments: [{ startFrame: 0, endFrame: 128, startValue: ordinal + 1, endValue: ordinal + 1 }],
+            });
+        }
+
+        proc.process([[]], [[new Float32Array(8), new Float32Array(8)]]);
+
+        expect(paramByIdCalls.sort((a, b) => a[0] - b[0])).toEqual(
+            declaredOrdinals.map((ordinal) => [ordinal, ordinal + 1])
+        );
+    });
+
     it('automation rejects malformed schedules (bad paramId, gaps, non-contiguous frames)', async () => {
         const proc = await loadProcessor();
         send(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });
-        // paramId out of range (>= TOASTER_AUTOMATION_PARAM_COUNT=3).
+        // An ordinal the shared table does not declare.
         send(proc, {
             type: 'paramAutomation',
             paramId: 5,

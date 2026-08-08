@@ -1,5 +1,7 @@
 import { vi } from 'vitest';
 
+import grinderAudioParamContract from '../grinderAudioParamContract.json';
+
 type GrinderAudioParamDescriptor = {
     name: string;
     defaultValue: number;
@@ -43,7 +45,13 @@ const OUTPUT_LEFT_PTR = 19_456;
 const OUTPUT_RIGHT_PTR = 28_672;
 const AUTOMATION_PTR = 40_960;
 const MAX_GRINDER_BLOCK_SIZE = 2_048;
-const AUTOMATABLE_PARAM_COUNT = 11;
+// Read off the same contract the processor reads. Restating `11` here made this
+// harness a *second* copy of the number under test: it decoded the mock buffer
+// at the same wrong offsets the processor would write to, so no spec built on it
+// could ever observe a header/value-region disagreement. The real TS↔Rust weld
+// is `wasm/__tests__/dawDspGrinderAutomationLayout.spec.ts`, which drives the
+// shipped binary; this only has to stop contradicting it.
+const AUTOMATABLE_PARAM_COUNT = grinderAudioParamContract.length;
 
 export const grinderSetParamCalls: Array<{ name: string; value: number }> = [];
 export const grinderProcessSizes: number[] = [];

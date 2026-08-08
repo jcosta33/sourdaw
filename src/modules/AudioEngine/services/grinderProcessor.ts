@@ -138,7 +138,37 @@ const PARAM_MAP: Record<string, string> = {
 };
 
 const MAX_GRINDER_BLOCK_SIZE = 2048;
-const GRINDER_AUTOMATABLE_PARAM_COUNT = 11;
+
+/**
+ * Shared-layout constant for the automation SAB, and **not** a loop bound.
+ *
+ * The automation buffer is one flat `f32` region with two parts: a header of
+ * one value-count per parameter, then a value region of one
+ * `MAX_GRINDER_BLOCK_SIZE`-wide block per parameter. Both sides compute the
+ * start of the value region as *the number of automatable parameters* —
+ * `GRINDER_AUTOMATABLE_PARAM_COUNT + index * stride`, here in `process()` and
+ * in `apply_automatable_constants` / `apply_automatable_frame`
+ * (`crates/daw-dsp/src/grinder/engine.rs`). Rust derives its copy from
+ * `GRINDER_AUTOMATABLE_PARAM_CONTRACT.len()`
+ * (`crates/daw-dsp/src/grinder/params.rs`), which a crate test pins against
+ * this very JSON file via `include_str!` (`grinder/mod.rs`).
+ *
+ * This used to be a literal `11` restating `grinderAudioParamContract.json`,
+ * which is imported at the top of this file. That is worse than an off-by-one
+ * loop bound: a twelfth contract entry moves Rust's base to 12 while a pinned
+ * TS base stays at 11, so every parameter's value would be written one float
+ * short of where Rust reads it. Rust then reads whatever sits in the slot it
+ * *does* index — for the constant (`valueCount === 1`) case that is an untouched
+ * `0.0`, which `clamp` accepts, so every knob silently collapses to its minimum
+ * and the amp renders near-silent. Nothing traps: the TS view is *smaller* than
+ * Rust's `Vec`, so the write stays comfortably in bounds.
+ *
+ * Deriving it means the two bases cannot drift apart in the first place, and
+ * `wasm/__tests__/dawDspGrinderAutomationLayout.spec.ts` welds this derivation
+ * to the shipped binary — it drives every contract entry through this exact
+ * layout and requires the render to match the engine's own by-name path.
+ */
+const GRINDER_AUTOMATABLE_PARAM_COUNT = GRINDER_AUDIO_PARAM_DESCRIPTORS.length;
 const GRINDER_AUTOMATION_BUFFER_SIZE =
     GRINDER_AUTOMATABLE_PARAM_COUNT + GRINDER_AUTOMATABLE_PARAM_COUNT * MAX_GRINDER_BLOCK_SIZE;
 
