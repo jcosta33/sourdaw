@@ -1,0 +1,31 @@
+scripts/measureTransportClock.ts
+  s_14f2bbc9f385dd::t_7e882b92c5da53 701-706
+  s_14f2bbc9f385dd::t_9561992a51e18c 64-84
+  s_14f2bbc9f385dd::t_4194c615f2f19b 639-653
+  s_14f2bbc9f385dd::t_01ea05e228b39c 272-332
+  s_14f2bbc9f385dd::t_82bb7e18fb6abb 707-708,710-728
+  s_14f2bbc9f385dd::t_0d127c6e41fb58 121-148
+  s_14f2bbc9f385dd::t_8b39500124ab94 568-570,580-583,585,588
+  s_14f2bbc9f385dd::t_fb39e9259a07fe 709
+scripts/measureYeastGeneratorDrift.ts
+  s_14f2bbc9f385dd::t_868b91a65513bc 269-272
+  s_14f2bbc9f385dd::t_bd6aab831d29e9 59-69
+  s_14f2bbc9f385dd::t_735acbd8627801 70,282-298,300-304,307-318,320,325-336,338,341
+  s_14f2bbc9f385dd::t_b611d65e2a612a 71-78,80-94
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "4297e6b45d817a14538a964f9899f4786336ef5f",
+  "prompts": {},
+  "sessions": {
+    "s_14f2bbc9f385dd": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f9a61a1d-66b3-4146-938d-a04f45f4b060",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
