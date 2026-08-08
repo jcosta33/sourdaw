@@ -79,7 +79,7 @@ function persistedMarkerState(): MarkerStoreState {
                 id: 'persisted-section',
                 startBeat: 0,
                 endBeat: 64,
-                name: 'Sporefall',
+                name: 'Opening Section',
                 color: 'purple',
             },
         ],

@@ -2,7 +2,7 @@ import { defineConfig, devices } from '@playwright/test';
 
 export default defineConfig({
     testDir: './tests/e2e',
-    testIgnore: ['myceliumPerformance.spec.ts', '**/__tests__/**'],
+    testIgnore: ['**/__tests__/**'],
     // Default per-test timeout. Template launches boot the WASM DSP + audio
     // graph before wait_for_workspace_ready observes the launch overlay exit;
     // under fullyParallel worker contention that cold boot + template creation

@@ -52,8 +52,8 @@ export type ProjectData = {
      * DEAD FIELD — written, never read.
      *
      * `buildProjectData` writes the literal `{ master: { gain: 0.8, pan: 0 }, buses: [] }`
-     * and so do `mapToProjectData`, `normalizeLegacyProjectData` and the Mycelium
-     * blueprint. No import, hydration or render path reads `data.mixer`: the real
+     * and so do `mapToProjectData`, `normalizeLegacyProjectData` and the demo
+     * builders. No import, hydration or render path reads `data.mixer`: the real
      * master gain round-trips as {@link ProjectTransport.masterGain}, and buses are
      * ordinary `kind: 'bus'` rows in {@link ProjectArrangement.tracks}.
      *

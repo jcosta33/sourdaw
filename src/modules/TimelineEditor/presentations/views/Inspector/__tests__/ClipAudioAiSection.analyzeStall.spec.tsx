@@ -1,5 +1,5 @@
 /**
- * AC-4 — the Analyze handler's stall, asserted behaviourally and without a clock.
+ * The Analyze handler's stall, asserted behaviourally and without a clock.
  *
  * `handleAnalyze` (`../ClipAudioAiSection.tsx:66-85`) is declared `(): void`. It
  * calls `setIsAnalyzing(true)`, then `summarizeFeatures` and
@@ -22,12 +22,10 @@
  * the point — this test reds when the defect is repaired and must be rewritten
  * then, rather than being kept green.
  *
- * **What this file deliberately does not do is time anything.** The magnitude of
- * the stall — how long that unpaintable window actually lasts — is measured by
- * `pnpm audio:stall-budget` (`scripts/measureStallBudget.ts`), which owns every
- * AC-4 figure and has an exit code for "the machine was too busy to measure".
- * A wall-clock assertion in the shared suite has no such state: it can only
- * pass or fail, and a failure there reads as a claim about the product.
+ * **What this file deliberately does not do is time anything.** A wall-clock
+ * assertion in the shared suite can only pass or fail, so machine load would be
+ * misreported as a product regression. This case proves the control-flow defect
+ * without depending on timing.
  */
 
 import { render, screen, fireEvent } from '@testing-library/react';

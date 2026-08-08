@@ -1,4 +1,3 @@
-import { createMyceliumAscendantDemo } from '../../demoProjects/myceliumAscendant/createMyceliumAscendantDemo';
 import { demo5_NebulaDrift } from '../../demoProjects/nebulaDrift/createNebulaDriftDemo';
 import { newProject } from '../../projectPersistence/newProject';
 import { createAmbientTemplate } from '../templateFiles/ambient';
@@ -126,14 +125,5 @@ export const templates: ProjectTemplate[] = [
         category: 'demo',
         executionBoundary: 'app-action',
         create: () => createSuccessfulTemplate(demo5_NebulaDrift),
-    },
-    {
-        id: 'demo-mycelium-ascendant',
-        name: 'Mycelium Ascendant',
-        description:
-            'Four minutes of psychedelic trance: rolling bass, organic signals, fractal effects, and deep automation.',
-        category: 'demo',
-        executionBoundary: 'app-action',
-        create: () => createSuccessfulTemplate(createMyceliumAscendantDemo),
     },
 ];
