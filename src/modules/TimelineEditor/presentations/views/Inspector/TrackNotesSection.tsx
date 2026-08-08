@@ -54,6 +54,7 @@ export const TrackNotesSection = ({ track }: TrackNotesSectionProps): ReactEleme
                     }
                 }}
                 aria-label={`Notes for ${track.name}`}
+                data-testid="inspector-track-notes"
             />
         </InsetPanel>
     );
