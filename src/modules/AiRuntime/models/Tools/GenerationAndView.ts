@@ -45,7 +45,12 @@ export const generationTools: readonly ToolSchema[] = [
     tool('analyzeMix', 'Analyze the current mix for issues (clipping, frequency masking, etc.).', {}),
     tool('autoFixMix', 'Automatically fix common mix issues (gain staging, panning, EQ conflicts).', {}),
     tool('detectTempo', 'Detect the tempo of an audio clip.', { clipId: { type: 'string' } }, ['clipId']),
-    tool('detectKey', 'Detect the musical key of an audio clip.', { clipId: { type: 'string' } }, ['clipId']),
+    tool(
+        'detectKey',
+        'Detect the musical key of an audio clip. Atonal, percussive or broadband material reports that no key was found rather than guessing one.',
+        { clipId: { type: 'string' } },
+        ['clipId']
+    ),
     tool(
         'audioToMidi',
         'Convert audio to MIDI (e.g. extract melody from vocals).',

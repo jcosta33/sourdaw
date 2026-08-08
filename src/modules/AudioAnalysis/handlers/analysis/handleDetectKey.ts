@@ -2,6 +2,7 @@ import { trackStore } from '#/modules/Arrangement/stores';
 import { createHandler } from '#/utils/createHandler';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
+import { describeDetectedKey } from '../../useCases/describeDetectedKey';
 import { detectKey } from '../../useCases/keyDetection';
 
 export const handleDetectKey = createHandler<'detectKey'>({
@@ -13,14 +14,7 @@ export const handleDetectKey = createHandler<'detectKey'>({
             return;
         }
 
-        const result = detectKey(clip.audioBufferId);
-        if (!result) {
-            notifyUser('Could not detect key');
-            return;
-        }
-
-        const confidencePercent = Math.round(result.confidence * 100);
-        notifyUser(`Detected key: ${result.key} ${result.mode} (${confidencePercent}% confidence)`);
+        notifyUser(describeDetectedKey(detectKey(clip.audioBufferId)));
     },
     describe: () => ({ label: 'Detect key from audio' }),
     undoable: false,

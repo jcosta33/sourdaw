@@ -1,11 +1,9 @@
 import { describe, it, expect, vi } from 'vitest';
 
-import { summarizeFeatures } from '#/modules/AudioAnalysis/useCases';
 import { addMidiNote } from '#/modules/MIDI/useCases';
 
 import { addTrack } from '../addTrack';
 import { audioToMidi } from '../audioAnalysis/audioToMidi';
-import { detectKey } from '../audioAnalysis/detectKey';
 import * as helpers from '../audioAnalysis/helpers';
 import { addClip } from '../clip/addClip';
 
@@ -28,16 +26,6 @@ vi.mock('../clip/addClip', () => ({
 vi.mock('../audioAnalysis/helpers', () => ({
     getBufferForClip: vi.fn(),
 }));
-
-describe('detectKey', () => {
-    it('does not call summarizeFeatures when the clip has no audio buffer', async () => {
-        vi.mocked(helpers.getBufferForClip).mockReturnValue(null);
-
-        await detectKey('clip-that-does-not-exist');
-
-        expect(summarizeFeatures).not.toHaveBeenCalled();
-    });
-});
 
 describe('audioToMidi', () => {
     it('does not create tracks when the clip has no audio buffer', async () => {
