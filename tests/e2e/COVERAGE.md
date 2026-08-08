@@ -729,5 +729,8 @@ Re-measured after additional PRs since threshold raise #3 (PR #1231). Lines cros
 - **PR #1344**: paintDrawPoint — snap, clamp, replace, constrain, RAF — 10 tests.
 - **PR #1345**: stopSequencer — stop, clear timeout, release, reset state — 6 tests.
 - **PR #1347**: beginDrawSession — session init, point snapshot, guards — 5 tests.
+- **PR #1350**: endDrawSession — undo/redo registration, flush, RAF cancel — 9 tests.
+- **PR #1352**: hydrateToasterKitFromProject — device lookup, null guards — 6 tests.
+- **PR #1354**: commitLevainDeviceState + getActionReplayStatus — patch commit, replay status — 12 tests.
 
-**Campaign total to date: 221 PRs, ~2377 assertions. Lines coverage at 90.30%.**
+**Campaign total to date: 224 PRs, ~2401 assertions. Lines coverage at 90.30%.**
