@@ -45,6 +45,7 @@ export const AutomationModeControl = ({
             <DawEyebrowLabel>Mode</DawEyebrowLabel>
             <button
                 type="button"
+                data-testid="automation-mode-button"
                 className={cn(
                     'rounded px-1.5 py-0.5 text-[9px] font-bold tracking-wider transition-colors',
                     automationMode === 'write' ? 'animate-pulse' : ''
