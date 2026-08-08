@@ -1,7 +1,7 @@
 //! Pad configuration for a single drum pad in the Toaster drum machine.
 
 use super::engines::DrumEngineType;
-use crate::primitives::normalized_resonance_from_q;
+use crate::primitives::{normalized_cutoff_from_hz, normalized_resonance_from_q};
 
 /// One drum pad's configuration. Does not contain DSP state —
 /// that lives in the voice. This is purely parameter storage.
@@ -90,11 +90,10 @@ impl Pad {
             "tone" => self.tone = value.clamp(0.0, 1.0),
             "drive" => self.drive = value.clamp(0.0, 10.0),
             "filter_cutoff" => {
-                // Accept Hz (20-20000) and normalize to 0-1 for the SVF
-                // log scale: 0 = 20Hz, 1 = 20000Hz
-                let hz = value.clamp(20.0, 20000.0);
-                self.filter_cutoff = (hz / 20.0).log2() / (1000.0f32).log2();
-                self.filter_cutoff = self.filter_cutoff.clamp(0.0, 1.0);
+                // Accept the 20-20000 Hz range `ToasterKit.filterCutoff` carries,
+                // normalize to 0-1. `SvfFilter::tick` re-expands with the exact
+                // inverse; both directions live in `primitives::cutoff`.
+                self.filter_cutoff = normalized_cutoff_from_hz(value);
             }
             "filter_resonance" => {
                 // Accept the 0.5-20 Q range `ToasterKit.filterResonance` carries,
