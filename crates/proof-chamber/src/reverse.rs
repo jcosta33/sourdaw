@@ -6,6 +6,11 @@
 /// Produces the classic pre-vocal swell / reverse wash effect.
 use std::f32::consts::TAU;
 
+// Tone filters only. This engine writes one mono buffer and emits the same
+// sample to both channels, so the stage's mid/side `width` matrix has no side
+// component to scale — see `OutputStage::MONO_PARAM_NAMES`.
+use crate::output_stage::OutputStage;
+
 /// Maximum reverse time (3 seconds at 48kHz).
 const MAX_REVERSE_SAMPLES: usize = 144000;
 
@@ -30,6 +35,9 @@ pub struct ReverseReverb {
 
     pub mix: f32,
     pub decay: f32, // applied to the reversed signal
+
+    /// Wet-path tone, shared with the plate, the FDN and the spring.
+    output: OutputStage,
 }
 
 impl ReverseReverb {
@@ -48,10 +56,15 @@ impl ReverseReverb {
             envelope_phase: 0.0,
             mix: 0.3,
             decay: 0.7,
+            output: OutputStage::new(sample_rate),
         }
     }
 
     pub fn set_param(&mut self, name: &str, value: f32) {
+        if self.output.set_param(name, value) {
+            return;
+        }
+
         match name {
             "mix" => self.mix = value.clamp(0.0, 1.0),
             "decay" => self.decay = value.clamp(0.0, 0.99),
@@ -106,7 +119,11 @@ impl ReverseReverb {
                 1.0
             };
 
-            let wet = reversed * env;
+            // Output EQ over the windowed grain. Filtering the grain rather
+            // than the raw buffer read keeps the crossfade envelope intact:
+            // a highpass ahead of the window would ring across the boundary
+            // the window exists to hide.
+            let wet = self.output.process_mono(reversed * env);
 
             // Advance positions
             self.write_pos += 1;
@@ -132,6 +149,12 @@ impl ReverseReverb {
         // advertised. Same shape as the FDN pair, which advertises `decay`
         // while still accepting `rt60`. Advertising a name the descriptor
         // never declares would describe a control the host cannot send.
-        vec!["mix", "decay", "size"]
+        let mut names = vec!["mix", "decay", "size"];
+        // Tone only. `width` is deliberately absent: the wet path above is one
+        // mono sample copied to both channels, so a width matrix would accept
+        // the write and change nothing. Advertising it would describe a
+        // control that cannot move this engine's output.
+        names.extend(OutputStage::PARAM_NAMES);
+        names
     }
 }

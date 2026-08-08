@@ -9,6 +9,7 @@
 use std::f32::consts::TAU;
 
 use crate::early_reflections::EarlyReflections;
+use crate::output_stage::OutputStage;
 
 // ---------------------------------------------------------------------------
 // Reference delays at 29761 Hz (Dattorro Table 1)
@@ -172,50 +173,9 @@ impl OnePole {
 // Simple one-pole filters for input/output EQ
 // ---------------------------------------------------------------------------
 
-struct HighCut {
-    state: f32,
-    coeff: f32,
-}
-
-impl HighCut {
-    fn new(freq: f32, sample_rate: f32) -> Self {
-        let coeff = (-TAU * freq / sample_rate).exp();
-        Self { state: 0.0, coeff }
-    }
-
-    fn set_freq(&mut self, freq: f32, sample_rate: f32) {
-        self.coeff = (-TAU * freq / sample_rate).exp();
-    }
-
-    #[inline]
-    fn process(&mut self, input: f32) -> f32 {
-        self.state = input * (1.0 - self.coeff) + self.state * self.coeff;
-        self.state
-    }
-}
-
-struct LowCut {
-    state: f32,
-    coeff: f32,
-}
-
-impl LowCut {
-    fn new(freq: f32, sample_rate: f32) -> Self {
-        let coeff = (-TAU * freq / sample_rate).exp();
-        Self { state: 0.0, coeff }
-    }
-
-    fn set_freq(&mut self, freq: f32, sample_rate: f32) {
-        self.coeff = (-TAU * freq / sample_rate).exp();
-    }
-
-    #[inline]
-    fn process(&mut self, input: f32) -> f32 {
-        let hp = input - self.state;
-        self.state += (1.0 - self.coeff) * hp;
-        hp
-    }
-}
+// `HighCut` and `LowCut` moved to `output_stage.rs` along with the width
+// matrix, so the FDN, spring and reverse engines can run the same wet-path
+// tone stage this engine used to own privately.
 
 // ---------------------------------------------------------------------------
 // Granular pitch shifter (for shimmer)
@@ -319,9 +279,6 @@ pub struct ProofChamber {
     mod_rate: f32,
     mod_depth: f32,
     diffusion: f32,
-    high_cut_freq: f32,
-    low_cut_freq: f32,
-    width: f32,
     freeze: bool,
     gravity: f32,        // -1 to +1: negative = reverse swell, positive = normal
     saturation_type: u8, // 0=tanh, 1=chebyshev, 2=hard clip
@@ -374,12 +331,10 @@ pub struct ProofChamber {
     lfo_phase_r: f32,
     excursion: f32,
 
-    // Output EQ — independent L/R instances so the right channel is not
-    // left unfiltered (and so `set_param` can actually address both).
-    high_cut_l: HighCut,
-    high_cut_r: HighCut,
-    low_cut_l: LowCut,
-    low_cut_r: LowCut,
+    /// Wet-path tone and width. Shared with the FDN, spring and reverse
+    /// engines since #1495's gap table — the same two filters and the same
+    /// mid/side matrix this engine used to own alone.
+    output: OutputStage,
 
     // Shimmer
     shimmer: GranularShifter,
@@ -442,9 +397,6 @@ impl ProofChamber {
             mod_rate: 1.0,
             mod_depth: 0.3,
             diffusion: 0.75,
-            high_cut_freq: 12000.0,
-            low_cut_freq: 80.0,
-            width: 1.0,
             freeze: false,
             gravity: 0.5,
             saturation_type: 0,
@@ -489,10 +441,7 @@ impl ProofChamber {
 
             excursion,
 
-            high_cut_l: HighCut::new(12000.0, sample_rate),
-            high_cut_r: HighCut::new(12000.0, sample_rate),
-            low_cut_l: LowCut::new(80.0, sample_rate),
-            low_cut_r: LowCut::new(80.0, sample_rate),
+            output: OutputStage::new(sample_rate),
 
             shimmer: GranularShifter::new(sample_rate),
 
@@ -507,7 +456,16 @@ impl ProofChamber {
     }
 
     pub fn set_param(&mut self, name: &str, value: f32) {
+        // The shared wet-path stage owns the two tone ids, and reports whether
+        // it took the write rather than swallowing everything.
+        if self.output.set_param(name, value) {
+            return;
+        }
+
         match name {
+            // `width` stays an engine-level arm: the matrix only means
+            // something on an engine whose wet path has two different channels.
+            "width" => self.output.set_width(value),
             "mix" => self.mix = value.clamp(0.0, 1.0),
             "decay" => self.decay = value.clamp(0.0, 0.9999),
             "damping" => self.damping = value.clamp(0.0, 0.9999),
@@ -539,17 +497,6 @@ impl ProofChamber {
                 self.input_diffusers[2].gain = d2;
                 self.input_diffusers[3].gain = d2;
             }
-            "high_cut" => {
-                self.high_cut_freq = value.clamp(1000.0, 20000.0);
-                self.high_cut_l.set_freq(value, self.sample_rate);
-                self.high_cut_r.set_freq(value, self.sample_rate);
-            }
-            "low_cut" => {
-                self.low_cut_freq = value.clamp(20.0, 1000.0);
-                self.low_cut_l.set_freq(value, self.sample_rate);
-                self.low_cut_r.set_freq(value, self.sample_rate);
-            }
-            "width" => self.width = value.clamp(0.0, 2.0),
             "freeze" => {
                 self.freeze = value > 0.5;
                 if self.freeze {
@@ -748,17 +695,8 @@ impl ProofChamber {
             wet_l = early * (1.0 - el) + wet_l * el;
             wet_r = early * (1.0 - el) + wet_r * el;
 
-            // Output EQ — stereo (independent filter instances per channel).
-            wet_l = self.high_cut_l.process(wet_l);
-            wet_l = self.low_cut_l.process(wet_l);
-            wet_r = self.high_cut_r.process(wet_r);
-            wet_r = self.low_cut_r.process(wet_r);
-
-            // Stereo width
-            let mid = (wet_l + wet_r) * 0.5;
-            let side = (wet_l - wet_r) * 0.5;
-            wet_l = mid + side * self.width;
-            wet_r = mid - side * self.width;
+            // Output EQ and stereo width — the shared wet-path stage.
+            (wet_l, wet_r) = self.output.process(wet_l, wet_r);
 
             // Mix
             let m = self.smooth_mix;

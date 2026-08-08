@@ -15,6 +15,10 @@ use crate::decay_curve::{decay_to_rt60_seconds, MAX_RT60_SECONDS, MIN_RT60_SECON
 // here. The tapped delay line moved out so the plate could blend the same
 // early signal against its own tank.
 use crate::early_reflections::EarlyReflections;
+// `high_cut`, `low_cut` and `width` are a wet-path stage, not a topology
+// property; the plate owned them privately until #1495's gap table showed the
+// descriptor advertising all three on an engine that dropped all three.
+use crate::output_stage::OutputStage;
 
 // ---------------------------------------------------------------------------
 // Mixing matrices
@@ -199,6 +203,9 @@ pub struct FdnReverb {
     // Soft saturation for infinite sustain
     pub saturation_enabled: bool,
 
+    /// Wet-path tone and width, shared with the plate.
+    output: OutputStage,
+
     // Parameter smoothing (30ms ramp)
     smooth_mix: f32,
     smooth_coeff: f32,
@@ -262,13 +269,21 @@ impl FdnReverb {
             predelay_pos: 0,
             predelay_len: ((15.0 / 1000.0) * sample_rate) as usize,
             saturation_enabled: false,
+            output: OutputStage::new(sample_rate),
             smooth_mix: 0.3,
             smooth_coeff: 1.0 - (-1.0 / (0.030 * sample_rate)).exp(),
         }
     }
 
     pub fn set_param(&mut self, name: &str, value: f32) {
+        if self.output.set_param(name, value) {
+            return;
+        }
+
         match name {
+            // `width` stays an engine-level arm: the matrix only means
+            // something on an engine whose wet path has two different channels.
+            "width" => self.output.set_width(value),
             "mix" => self.mix = value.clamp(0.0, 1.0),
             "rt60" => {
                 // Seconds-native alias: the value already IS an RT60.
@@ -435,8 +450,14 @@ impl FdnReverb {
 
             // Blend early and late
             let el = self.early_late_balance;
-            let wet_l = early_l * (1.0 - el) + late_l * el;
-            let wet_r = early_r * (1.0 - el) + late_r * el;
+            let blended_l = early_l * (1.0 - el) + late_l * el;
+            let blended_r = early_r * (1.0 - el) + late_r * el;
+
+            // Output EQ and stereo width. After the blend, exactly as on the
+            // plate: filtering before it would leave the early half unfiltered
+            // and make Hi Cut, Lo Cut and Width fade out as Early/Late turned
+            // down.
+            let (wet_l, wet_r) = self.output.process(blended_l, blended_r);
 
             // Mix
             // Smoothed mix to prevent clicks
