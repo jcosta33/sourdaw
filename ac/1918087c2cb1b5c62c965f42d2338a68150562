@@ -1,0 +1,28 @@
+src/modules/AudioEngine/engine/__tests__/panelReachesTheEngine.spec.tsx
+  s_14f2bbc9f385dd::t_6c7793321ea350 376
+  s_14f2bbc9f385dd::t_943df75cecbc93 178
+  s_14f2bbc9f385dd::t_395864a6adfd1b 406-409,411
+  s_14f2bbc9f385dd::t_71da66eabf51da 7
+  s_14f2bbc9f385dd::t_7c6b9df1a7b704 255,270-286
+  s_14f2bbc9f385dd::t_c73dc137b2a718 334-357,360
+  s_14f2bbc9f385dd::t_21131710d6ebcb 231-232
+  s_14f2bbc9f385dd::t_0475b7c47ef571 1-6,8-177,179-230,233-254,256-269,287-300,302-333,358-359,361-375,377-405,410,412-449,464
+  s_14f2bbc9f385dd::t_cb82a8902afac1 301
+  s_14f2bbc9f385dd::t_c4a68d00bc15e4 450-463
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "ac1918087c2cb1b5c62c965f42d2338a68150562",
+  "prompts": {},
+  "sessions": {
+    "s_14f2bbc9f385dd": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f9a61a1d-66b3-4146-938d-a04f45f4b060",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
