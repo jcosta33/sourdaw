@@ -124,7 +124,16 @@ type WebGpuMockHandles = {
  * WebGPU text path (2D `fillText` → texture upload), so stubbing it lets the
  * spec observe exactly which strings the renderer rasterises for which clips.
  */
-function install_offscreen_canvas_stub(labelFillText: ReturnType<typeof vi.fn>, measuredWidthCssPx = 10): void {
+function install_offscreen_canvas_stub(
+    labelFillText: ReturnType<typeof vi.fn>,
+    measuredWidthCssPx = 10,
+    inkMetrics: {
+        actualBoundingBoxLeft?: number;
+        actualBoundingBoxRight?: number;
+        actualBoundingBoxAscent?: number;
+        actualBoundingBoxDescent?: number;
+    } = {}
+): void {
     class OffscreenCanvasStub {
         width: number;
         height: number;
@@ -146,7 +155,7 @@ function install_offscreen_canvas_stub(labelFillText: ReturnType<typeof vi.fn>, 
                 scale: vi.fn(),
                 clearRect: vi.fn(),
                 fillText: labelFillText,
-                measureText: vi.fn(() => ({ width: measuredWidthCssPx })),
+                measureText: vi.fn(() => ({ width: measuredWidthCssPx, ...inkMetrics })),
             };
         }
     }
@@ -699,13 +708,22 @@ describe('createWebGpuRenderer label quad device-pixel snapping', () => {
         };
     };
 
-    const render_fractional_frame = async (dpr: number, measuredWidthCssPx: number) => {
+    const render_fractional_frame = async (
+        dpr: number,
+        measuredWidthCssPx: number,
+        inkMetrics: {
+            actualBoundingBoxLeft?: number;
+            actualBoundingBoxRight?: number;
+            actualBoundingBoxAscent?: number;
+            actualBoundingBoxDescent?: number;
+        } = {}
+    ) => {
         Object.defineProperty(window, 'devicePixelRatio', { configurable: true, value: dpr });
         const canvas = document.createElement('canvas');
         canvas.width = CANVAS_W;
         canvas.height = CANVAS_H;
         const handles = install_webgpu_mocks(canvas);
-        install_offscreen_canvas_stub(vi.fn(), measuredWidthCssPx);
+        install_offscreen_canvas_stub(vi.fn(), measuredWidthCssPx, inkMetrics);
         const { createWebGpuRenderer } = await import('../createWebGpuRenderer');
         const renderer = await createWebGpuRenderer(canvas);
         if (!renderer) {
@@ -744,6 +762,24 @@ describe('createWebGpuRenderer label quad device-pixel snapping', () => {
         expect(y1).toBe(7);
         expect(x2 - x1).toBe(21);
         expect(y2 - y1).toBe(28);
+    });
+
+    it('shifts the quad left by the raster overhang so the glyphs stay where the layout put them', async () => {
+        // 2 CSS px of left side bearing: the raster grew leftwards to hold it,
+        // so the quad has to move left by the same amount. Placing it at the
+        // pen instead pushes every glyph 2px right of where the Canvas2D
+        // renderer draws the same name.
+        const { x1, x2 } = await render_fractional_frame(1, 10, {
+            actualBoundingBoxLeft: 2,
+            actualBoundingBoxRight: 12,
+            actualBoundingBoxAscent: 10,
+            actualBoundingBoxDescent: 4,
+        });
+
+        // Pen is at 31.3 device px; the raster starts 2px left of it.
+        expect(x1).toBe(29);
+        // 2px of bearing + 12px of ink.
+        expect(x2 - x1).toBe(14);
     });
 });
 

@@ -345,6 +345,30 @@ describe('createClipLabelTextureCache', () => {
         expect(handles.destroyedTextures).toHaveLength(296);
     });
 
+    it('pins a label the open frame reused from an earlier frame, not only a fresh one', () => {
+        // A hit is just as committed to the frame as a miss: the caller gets a
+        // bind group either way and queues it. An entry that only counts as
+        // in-use when it was rasterised this frame is evictable while the frame
+        // is drawing with it.
+        const cache = makeCache(4);
+
+        cache.acquire({ text: 'label-0', maxWidthCssPx: 100, dpr: 1 });
+        cache.endFrame();
+
+        // Second frame: draw label-0 again, then push far past the bound. The
+        // only unpinned candidate is label-0 itself.
+        cache.acquire({ text: 'label-0', maxWidthCssPx: 100, dpr: 1 });
+        for (let i = 1; i <= 20; i += 1) {
+            cache.acquire({ text: `label-${i}`, maxWidthCssPx: 100, dpr: 1 });
+        }
+
+        // 21 distinct labels, and label-0 came from the cache rather than the
+        // rasteriser — so tex-1 is still the texture this frame is drawing it
+        // with.
+        expect(handles.device.createTexture).toHaveBeenCalledTimes(21);
+        expect(handles.destroyedTextures).not.toContain('tex-1');
+    });
+
     it('serves a name the same frame already drew instead of rasterising it twice', () => {
         // Two clips can share a name — a copied loop, a take, a duplicated
         // region — so one frame asks for the same string more than once. With
