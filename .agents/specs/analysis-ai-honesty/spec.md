@@ -398,16 +398,19 @@ below the pinned target.
 
 Verify with: `pnpm test:run --dir src src/modules/AudioAnalysis/useCases/__tests__/keyAccuracy.spec.ts`
 
-#### AC-007 — The dead key detector is gone
+#### AC-007 — Exactly one key detector exists, and it never guesses
 
-`src/modules/Arrangement/useCases/audioAnalysis/detectKey.ts` and its spec are deleted, and
-no import of it remains. Its `'C Major'` silent fallback must not reappear anywhere: the
-surviving detector returns absence, never a guess.
+Exactly one key-detection implementation exists under `src/`. The test enumerates candidates
+by searching the module tree for Krumhansl–Schmuckler profile constants — not by checking a
+hand-written list — and asserts a count of one, so a reintroduced second copy reds it.
+`src/modules/Arrangement/useCases/audioAnalysis/detectKey.ts` and its spec are deleted. Its
+`'C Major'` silent fallback must not reappear: the surviving detector returns absence, never
+a guess.
 
-*Violated by:* the file existing, or any detector returning a hard-coded key on an
-analysis failure.
+*Violated by:* the enumeration finding two implementations, or any detector returning a
+hard-coded key on an analysis failure.
 
-Verify with: `pnpm deps:validate`
+Verify with: `pnpm test:run --dir src src/modules/AudioAnalysis/useCases/__tests__/keyDetection.spec.ts`
 
 #### AC-008 — Absence is representable end to end
 
@@ -602,12 +605,19 @@ Verify with: listening pass, recorded in the PR body.
 #### AC-024 — Analysis DSP runs in a Worker
 
 Key detection, tempo detection, feature extraction, and mix analysis execute in a Worker.
-The main thread must not run FFT, Goertzel, or per-sample loops for analysis.
+Each of the four entry points must return a pending result and post to the worker; none may
+compute its DSP inline. The test asserts the worker received the request and that the entry
+point returned before the DSP completed — an ordering observation, not a mock-called check.
 
-*Violated by:* any of the four analysis entry points executing its DSP synchronously on the
-main thread.
+A boundary rule additionally confines the analysis DSP module so that the worker is its only
+importer, which is what `deps:validate` can see; the ordering test is what proves the
+runtime behaviour.
 
-Verify with: `pnpm deps:validate`
+*Violated by:* an entry point whose result is available synchronously on return — the
+current behaviour, where `analyzeMix` is `async` in signature only
+(`src/modules/AudioAnalysis/useCases/analyzeMix.ts:36`).
+
+Verify with: `pnpm test:run --dir src src/modules/AudioAnalysis/useCases/__tests__/analysisWorkerResponsiveness.spec.ts`
 
 #### AC-025 — Main-thread responsiveness is measured by an independent observer
 
