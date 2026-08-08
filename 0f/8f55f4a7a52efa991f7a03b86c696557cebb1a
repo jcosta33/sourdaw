@@ -1,0 +1,29 @@
+tests/e2e/modulationMatrixTestId.spec.ts
+  s_14f2bbc9f385dd::t_7976a76261d498 1-71
+src/modules/Automation/presentations/views/ModulationMatrix.tsx
+  s_ef58c5643547f5::t_73e6cbd639574a 534
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "0f8f55f4a7a52efa991f7a03b86c696557cebb1a",
+  "prompts": {},
+  "sessions": {
+    "s_14f2bbc9f385dd": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f9a61a1d-66b3-4146-938d-a04f45f4b060",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_ef58c5643547f5": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-a313cec355576c0d2",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
