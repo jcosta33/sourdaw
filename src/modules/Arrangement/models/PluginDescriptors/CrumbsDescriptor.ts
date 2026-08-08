@@ -35,7 +35,15 @@ export const CRUMBS_DESCRIPTOR: PluginDescriptor = {
             value: 0.8,
             defaultValue: 0.8,
             minValue: 0,
-            maxValue: 1,
+            // 0..2, the travel the shipped Gain knob has always offered
+            // (`CrumbsControls`, `max={2}`) and the span `setMasterGain` clamps to.
+            // The declared maximum was 1, which agreed with neither, and
+            // `CrumbsEngine::set_param` does a bare `master_gain.set(value)` with no
+            // bound of its own — so the declaration was the only thing that would
+            // have truncated a knob at half travel once writes started being
+            // clamped against it. Same failure as the Tune range below, found the
+            // same way.
+            maxValue: 2,
             unit: '',
             automatable: true,
             hasAutomation: false,
@@ -75,7 +83,10 @@ export const CRUMBS_DESCRIPTOR: PluginDescriptor = {
             value: 0.3,
             defaultValue: 0.3,
             minValue: 0.001,
-            maxValue: 2,
+            // 5 s, matching the Dec knob's travel. `CrumbsParam::Decay` is
+            // `value.max(0.0)` — no ceiling in the engine — so the declared 2 s
+            // would have clipped the top 60% of the control.
+            maxValue: 5,
             unit: 's',
             automatable: true,
             hasAutomation: false,
@@ -102,7 +113,11 @@ export const CRUMBS_DESCRIPTOR: PluginDescriptor = {
             value: 0.1,
             defaultValue: 0.1,
             minValue: 0.001,
-            maxValue: 5,
+            // 10 s, matching the Rel knob's travel; `CrumbsParam::Release` is also
+            // `value.max(0.0)`. This one additionally feeds the export tail
+            // (`tail.parameterId: 'release'`), so an under-declared ceiling would
+            // have cut a long release short in a bounce as well as under the knob.
+            maxValue: 10,
             unit: 's',
             automatable: true,
             hasAutomation: false,

@@ -19,6 +19,7 @@ import { setVelocityCeiling } from '../../useCases/calibrateGrandBouleMidi/setVe
 import { setVelocityCurveExponent } from '../../useCases/calibrateGrandBouleMidi/setVelocityCurveExponent';
 import { setVelocityFloor } from '../../useCases/calibrateGrandBouleMidi/setVelocityFloor';
 import { syncMidiCalibrationToEngine } from '../../useCases/calibrateGrandBouleMidi/syncMidiCalibrationToEngine';
+import { hydrateGrandBouleConfigFromProject } from '../../useCases/hydrateGrandBouleConfigFromProject';
 import { listGrandBoulePresets } from '../../useCases/listGrandBoulePresets';
 import { loadGrandBoulePreset } from '../../useCases/loadGrandBoulePreset';
 import { onMidiNoteOff } from '../../useCases/midiEventSubscribers/onMidiNoteOff';
@@ -92,7 +93,10 @@ const Knob = ({
     max: number;
     step: number;
     defaultValue: number;
-    onChange: (value: number) => void;
+    // `RotaryKnob` reports a drag with `isTransient: true` and the release with
+    // `false`. This wrapper declared a one-argument `onChange` and so discarded the
+    // flag, which left the Mix knobs with no gesture boundary to commit on.
+    onChange: (value: number, isTransient?: boolean) => void;
     readout: string;
 }): ReactElement => (
     <div className="flex flex-col items-center gap-1">
@@ -168,6 +172,14 @@ export const GrandBoulePanel = ({ deviceId }: { deviceId: string }): ReactElemen
     engineRef.current = engine;
     const storeRef = useRef(store);
     storeRef.current = store;
+
+    // Seed the session config from project truth before the user can touch a Mix
+    // knob. `projectTrackToLiveStrip` restores the engine from the same values on
+    // project open, so without this the panel would draw its module defaults over a
+    // correctly-restored piano and the first knob move would persist the default.
+    useEffect(() => {
+        hydrateGrandBouleConfigFromProject(deviceId);
+    }, [deviceId]);
 
     // Subscribe to external MIDI note events so the visual keyboard reflects
     // notes played on a physical controller (e.g. Akai). Re-subscribe when the
@@ -358,7 +370,9 @@ export const GrandBoulePanel = ({ deviceId }: { deviceId: string }): ReactElemen
                         <div className="grid grid-cols-3 gap-x-2 gap-y-3">
                             <Knob
                                 value={config.masterGain}
-                                onChange={(value) => setGrandBouleMasterGain({ engine, store, gain: value })}
+                                onChange={(value, isTransient) =>
+                                    setGrandBouleMasterGain({ deviceId, engine, store, gain: value, isTransient })
+                                }
                                 label="Master"
                                 min={0}
                                 max={2}
@@ -368,7 +382,15 @@ export const GrandBoulePanel = ({ deviceId }: { deviceId: string }): ReactElemen
                             />
                             <Knob
                                 value={config.soundboardSend}
-                                onChange={(value) => setGrandBouleSoundboardSend({ engine, store, amount: value })}
+                                onChange={(value, isTransient) =>
+                                    setGrandBouleSoundboardSend({
+                                        deviceId,
+                                        engine,
+                                        store,
+                                        amount: value,
+                                        isTransient,
+                                    })
+                                }
                                 label="Board"
                                 min={0}
                                 max={1}
@@ -378,7 +400,15 @@ export const GrandBoulePanel = ({ deviceId }: { deviceId: string }): ReactElemen
                             />
                             <Knob
                                 value={config.sympatheticSend}
-                                onChange={(value) => setGrandBouleSympatheticSend({ engine, store, amount: value })}
+                                onChange={(value, isTransient) =>
+                                    setGrandBouleSympatheticSend({
+                                        deviceId,
+                                        engine,
+                                        store,
+                                        amount: value,
+                                        isTransient,
+                                    })
+                                }
                                 label="Symp"
                                 min={0}
                                 max={1}

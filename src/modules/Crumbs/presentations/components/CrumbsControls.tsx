@@ -7,6 +7,7 @@ import { type ReactElement } from 'react';
 import { DawPluginChip } from '#/components/daw/DawPluginChip';
 import { RotaryKnob } from '#/components/daw/RotaryKnob';
 
+import type { CrumbsPersistedParamId } from '../../models/CrumbsParameterMap';
 import type { EnvelopeParams, FilterType, CrumbsMode, VoiceStackParams } from '../../models/CrumbsTypes';
 
 type CrumbsControlsProps = {
@@ -20,11 +21,17 @@ type CrumbsControlsProps = {
     pan: number;
     voiceStack?: VoiceStackParams;
     onModeChange: (mode: CrumbsMode) => void;
-    onEnvelopeChange: (updates: Partial<EnvelopeParams>) => void;
-    onFilterChange: (cutoff?: number, resonance?: number) => void;
-    onGainChange: (gain: number) => void;
-    onTuneChange: (tune: number) => void;
-    onPanChange: (pan: number) => void;
+    /**
+     * One handler for the ten knobs that ride `Device.parameterValues`, addressed
+     * by descriptor id.
+     *
+     * Five per-knob callbacks used to sit here, each of which had to remember to
+     * write the session store *and* forward the value under the right engine name.
+     * The id is now the only thing a knob has to get right, and `isTransient` — the
+     * flag `RotaryKnob` has always passed and every one of those callbacks silently
+     * dropped — reaches the use case that decides preview from commit.
+     */
+    onParamChange: (paramId: CrumbsPersistedParamId, value: number, isTransient?: boolean) => void;
     onStackChange?: (updates: Partial<VoiceStackParams>) => void;
 };
 
@@ -46,7 +53,7 @@ const Knob = ({
     max: number;
     step: number;
     defaultValue: number;
-    onChange: (value: number) => void;
+    onChange: (value: number, isTransient?: boolean) => void;
     readout: string;
 }): ReactElement => (
     <div className="flex flex-col items-center gap-1">
@@ -77,11 +84,7 @@ export const CrumbsControls = ({
     pan,
     voiceStack,
     onModeChange,
-    onEnvelopeChange,
-    onFilterChange,
-    onGainChange,
-    onTuneChange,
-    onPanChange,
+    onParamChange,
     onStackChange,
 }: CrumbsControlsProps): ReactElement => {
     let panReadout = 'C';
@@ -114,7 +117,7 @@ export const CrumbsControls = ({
                 <div className="grid grid-cols-5 gap-x-2 gap-y-3">
                     <Knob
                         value={envelope.attack}
-                        onChange={(v) => onEnvelopeChange({ attack: v })}
+                        onChange={(v, isTransient) => onParamChange('attack', v, isTransient)}
                         label="Atk"
                         min={0.001}
                         max={2}
@@ -128,7 +131,7 @@ export const CrumbsControls = ({
                     />
                     <Knob
                         value={envelope.hold}
-                        onChange={(v) => onEnvelopeChange({ hold: v })}
+                        onChange={(v, isTransient) => onParamChange('hold', v, isTransient)}
                         label="Hold"
                         min={0}
                         max={2}
@@ -138,7 +141,7 @@ export const CrumbsControls = ({
                     />
                     <Knob
                         value={envelope.decay}
-                        onChange={(v) => onEnvelopeChange({ decay: v })}
+                        onChange={(v, isTransient) => onParamChange('decay', v, isTransient)}
                         label="Dec"
                         min={0.001}
                         max={5}
@@ -148,7 +151,7 @@ export const CrumbsControls = ({
                     />
                     <Knob
                         value={envelope.sustain}
-                        onChange={(v) => onEnvelopeChange({ sustain: v })}
+                        onChange={(v, isTransient) => onParamChange('sustain', v, isTransient)}
                         label="Sus"
                         min={0}
                         max={1}
@@ -158,7 +161,7 @@ export const CrumbsControls = ({
                     />
                     <Knob
                         value={envelope.release}
-                        onChange={(v) => onEnvelopeChange({ release: v })}
+                        onChange={(v, isTransient) => onParamChange('release', v, isTransient)}
                         label="Rel"
                         min={0.001}
                         max={10}
@@ -177,7 +180,7 @@ export const CrumbsControls = ({
                 <div className="grid grid-cols-5 gap-x-2 gap-y-3">
                     <Knob
                         value={filterCutoff}
-                        onChange={(v) => onFilterChange(v, undefined)}
+                        onChange={(v, isTransient) => onParamChange('filterCutoff', v, isTransient)}
                         label="Cutoff"
                         min={20}
                         max={20000}
@@ -189,7 +192,7 @@ export const CrumbsControls = ({
                     />
                     <Knob
                         value={filterResonance}
-                        onChange={(v) => onFilterChange(undefined, v)}
+                        onChange={(v, isTransient) => onParamChange('filterResonance', v, isTransient)}
                         label="Reso"
                         min={0.5}
                         max={20}
@@ -199,7 +202,7 @@ export const CrumbsControls = ({
                     />
                     <Knob
                         value={masterGain}
-                        onChange={onGainChange}
+                        onChange={(v, isTransient) => onParamChange('masterGain', v, isTransient)}
                         label="Gain"
                         min={0}
                         max={2}
@@ -209,7 +212,7 @@ export const CrumbsControls = ({
                     />
                     <Knob
                         value={tune}
-                        onChange={onTuneChange}
+                        onChange={(v, isTransient) => onParamChange('tune', v, isTransient)}
                         label="Tune"
                         min={-24}
                         max={24}
@@ -219,7 +222,7 @@ export const CrumbsControls = ({
                     />
                     <Knob
                         value={pan}
-                        onChange={onPanChange}
+                        onChange={(v, isTransient) => onParamChange('pan', v, isTransient)}
                         label="Pan"
                         min={-1}
                         max={1}
