@@ -1,0 +1,16 @@
+src/modules/FactorySynthesis/services/__tests__/envelopes.spec.ts
+  h_1228e573df1f42 1-125
+src/modules/FactorySynthesis/services/__tests__/mixing.spec.ts
+  h_1228e573df1f42 1-114
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "4820141c1c0c503c4ae62e98c37a7b62d407135c",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
