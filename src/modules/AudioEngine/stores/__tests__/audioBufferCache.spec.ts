@@ -1,6 +1,15 @@
-import { afterEach, describe, it, expect, vi } from 'vitest';
+import { afterEach, beforeEach, describe, it, expect, vi } from 'vitest';
 
-import { audioBufferCache } from '../audioBufferCache';
+// Loaded fresh per test. The cache holds one IndexedDB connection for the life
+// of the module (audit M-045), and these tests install a new `indexedDB` double
+// per test — without the reset, every test after the first would keep talking to
+// the first test's double through the memoized connection.
+let audioBufferCache: typeof import('../audioBufferCache').audioBufferCache;
+
+beforeEach(async () => {
+    vi.resetModules();
+    ({ audioBufferCache } = await import('../audioBufferCache'));
+});
 
 function createAudioBuffer({ length, sampleRate }: { length: number; sampleRate: number }): AudioBuffer {
     const channels = Array.from({ length: 1 }, () => new Float32Array(length));
@@ -513,18 +522,27 @@ describe('audioBufferCache conversions', () => {
             audioBufferCache.remove('race');
             audioBufferCache.set('race', createAudioBuffer({ length: 1, sampleRate: 48_000 }));
 
-            expect(requests).toHaveLength(2);
+            // One memoized connection (audit M-045): both operations wait on
+            // the same open request rather than racing two of them.
+            expect(requests).toHaveLength(1);
 
-            requests[1]!.onsuccess?.();
-            await Promise.resolve();
+            // Resolving it releases both continuations in the order they were
+            // registered — the stale remove first, then the newer persist. The
+            // remove must recognise that `set` has since claimed a newer
+            // persistence generation for 'race' and skip its delete, which is
+            // now the only thing keeping the buffer alive: it can no longer be
+            // saved by the test resolving the opens in a convenient order.
+            requests[0]!.onsuccess?.();
+            await new Promise<void>((resolve) => setTimeout(resolve, 0));
+
             expect(store.put).toHaveBeenCalledWith(expect.anything(), 'race');
+            expect(store.delete).not.toHaveBeenCalled();
             expect(transactions).toHaveLength(1);
 
+            // And it stays skipped once the persist's transaction commits —
+            // the remove is abandoned, not merely deferred behind the put.
             transactions[0]!.oncomplete?.();
-            await Promise.resolve();
-
-            requests[0]!.onsuccess?.();
-            await Promise.resolve();
+            await new Promise<void>((resolve) => setTimeout(resolve, 0));
 
             expect(store.delete).not.toHaveBeenCalled();
             expect(transactions).toHaveLength(1);

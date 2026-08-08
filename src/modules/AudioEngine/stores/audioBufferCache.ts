@@ -149,7 +149,23 @@ const DB_NAME = 'sourdaw-audio';
 const DB_VERSION = 1;
 const STORE_NAME = 'buffers';
 
-function openDb(): Promise<IDBDatabase> {
+/** One connection for the life of the module (audit M-045). `get()` and
+ * `getWaveformPeaks()` run per clip per timeline paint, and each one refreshes
+ * the buffer's access stamp; before this, every one of those calls opened its
+ * own IndexedDB connection that nothing ever closed. Measured in
+ * `audioBufferCacheConnectionChurn.spec.ts`: one persist plus six reads issued
+ * seven `indexedDB.open` calls, and now issues one.
+ *
+ * `IDBDatabase` is designed to be held, so the memo is the platform's own
+ * shape rather than a pool. It self-heals in both directions a held connection
+ * can go bad: a failed open is forgotten so the next caller retries, and a
+ * browser-initiated `versionchange` or `close` drops it so the next caller
+ * reconnects instead of reusing a dead handle. The generation counter keeps a
+ * late loss event from clearing a memo that has already been replaced. */
+let dbPromise: Promise<IDBDatabase> | null = null;
+let dbConnectionGeneration = 0;
+
+function openDbConnection(onConnectionLoss: () => void): Promise<IDBDatabase> {
     return new Promise((resolve, reject) => {
         const req = indexedDB.open(DB_NAME, DB_VERSION);
         req.onupgradeneeded = () => {
@@ -158,9 +174,40 @@ function openDb(): Promise<IDBDatabase> {
                 db.createObjectStore(STORE_NAME);
             }
         };
-        req.onsuccess = () => resolve(req.result);
+        req.onsuccess = () => {
+            const db = req.result;
+            db.onversionchange = () => {
+                // Another context wants to upgrade or delete the database;
+                // holding this connection open would block it indefinitely.
+                db.close();
+                onConnectionLoss();
+            };
+            db.onclose = onConnectionLoss;
+            resolve(db);
+        };
         req.onerror = () => reject(req.error ?? new Error('IDB request failed'));
     });
+}
+
+function openDb(): Promise<IDBDatabase> {
+    if (dbPromise !== null) {
+        return dbPromise;
+    }
+    dbConnectionGeneration++;
+    const generation = dbConnectionGeneration;
+    function forgetIfCurrent(): void {
+        if (dbConnectionGeneration === generation) {
+            dbPromise = null;
+        }
+    }
+    dbPromise = openDbConnection(forgetIfCurrent).catch((error: unknown) => {
+        // A failed open (including `indexedDB` being unavailable) must not
+        // poison the memo, or one transient failure would disable persistence
+        // for the rest of the session.
+        forgetIfCurrent();
+        throw error;
+    });
+    return dbPromise;
 }
 
 /** Resolve with a request's result. An IndexedDB request's `success` fires
@@ -260,7 +307,29 @@ async function updateAccessTimeInIdb(id: string): Promise<void> {
     await awaitTransaction(tx);
 }
 
+/** Coalesce access-time refreshes (audit M-045). Holding one connection stops
+ * the read path opening connections, but each read still ran its own readwrite
+ * get+put transaction on the object store buffer persistence uses — measured in
+ * `audioBufferCacheConnectionChurn.spec.ts`: one persist plus ten reads opened
+ * eleven readwrite transactions, and now opens two.
+ *
+ * The stamp only has to be accurate enough for the consumer that reads it, and
+ * the age-based collector thinks in days (`garbageCollectByAge(maxAgeDays)`),
+ * so one committed stamp per window per id keeps it exactly as honest. The
+ * window is fixed, not sliding: skipped reads do not move the stamp, so a
+ * buffer under continuous access still commits a fresh stamp once per window
+ * rather than going quiet. A failed refresh keeps its stamp — it is retried
+ * next window, and logged either way. */
+const ACCESS_REFRESH_WINDOW_MS = 60_000;
+const accessRefreshStampById = new Map<string, number>();
+
 function refreshAccessTime(id: string): void {
+    const now = Date.now();
+    const lastRefreshedAt = accessRefreshStampById.get(id);
+    if (lastRefreshedAt !== undefined && now - lastRefreshedAt < ACCESS_REFRESH_WINDOW_MS) {
+        return;
+    }
+    accessRefreshStampById.set(id, now);
     updateAccessTimeInIdb(id).catch((error: unknown) => {
         logger.warn('[audioBufferCache] Audio buffer access-time refresh failed', { id, error });
     });
@@ -442,6 +511,10 @@ export const audioBufferCache = {
         cache.delete(id);
         pinnedBufferIds.delete(id);
         clearWaveformCachesForId(id);
+        // Release the coalescing stamp alongside this id's other cache state
+        // (audit M-045), so the map does not retain an entry per buffer the
+        // cache no longer holds.
+        accessRefreshStampById.delete(id);
         void removeFromIdb(id);
     },
 
@@ -463,6 +536,10 @@ export const audioBufferCache = {
             return new Float32Array(numBins);
         }
 
+        // Runs before the waveform-cache hit on purpose: a fully cached peak
+        // read is still a use of the buffer, and the age-based collector must
+        // see it. Coalescing (audit M-045) makes this at most one committed
+        // stamp per window per id, not one readwrite transaction per paint.
         refreshAccessTime(id);
         const totalSamples = buffer.length;
         const rawStart = windowOpts?.startSample ?? 0;
@@ -589,6 +666,13 @@ export const audioBufferCache = {
         pinnedBufferIds.clear();
         waveformCache.clear();
         persistenceGenerationById.clear();
+        accessRefreshStampById.clear();
+        // Deliberately keeps the memoized connection (audit M-045). Clearing the
+        // object store does not invalidate the connection, and dropping it here
+        // would both leak the handle the clear is running on and put the clear
+        // and any immediately following write on two different connections,
+        // which have no ordering guarantee between them — a `set()` right after
+        // a `clear()` could be wiped by it.
         openDb()
             .then(async (db) => {
                 const tx = db.transaction(STORE_NAME, 'readwrite');
