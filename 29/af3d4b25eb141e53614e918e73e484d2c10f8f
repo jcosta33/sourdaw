@@ -1,0 +1,24 @@
+src/modules/MIDI/useCases/midiClipData/__tests__/prepareMidiClipGlueState.spec.ts
+  s_bc88af7d3b054c::t_5359b883f82613 1-56,80-84,86-88,90-121
+  s_bc88af7d3b054c::t_bc479107aaf22a 57-79,85,89
+src/modules/MIDI/useCases/midiClipData/prepareMidiClipGlueState.ts
+  s_bc88af7d3b054c::t_5ffdf1102fd099 72-86,108-111,131-135,175-177
+src/modules/Arrangement/handlers/clip/__tests__/handleGlueClips.integration.spec.ts
+  s_bc88af7d3b054c::t_5359b883f82613 129-200
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "29af3d4b25eb141e53614e918e73e484d2c10f8f",
+  "prompts": {},
+  "sessions": {
+    "s_bc88af7d3b054c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f9b4a-11a2-7f61-8dfb-76eed0eb2a9c",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
