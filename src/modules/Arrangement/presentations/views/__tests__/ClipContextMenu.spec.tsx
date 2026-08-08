@@ -2,7 +2,7 @@ import { render, screen, fireEvent } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { handleAiDenoiseClip } from '#/modules/AiGeneration/useCases';
-import { detectKey, detectTempo } from '#/modules/AudioAnalysis/useCases';
+import { describeDetectedKey, detectKey, detectTempo } from '#/modules/AudioAnalysis/useCases';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { clipSelectionStore, defaultClipSelectionState } from '../../../stores/clipSelectionStore';
@@ -88,6 +88,7 @@ vi.mock('#/modules/Command/useCases', () => ({
 vi.mock('#/modules/AudioAnalysis/useCases', () => ({
     detectTempo: vi.fn(),
     detectKey: vi.fn(),
+    describeDetectedKey: vi.fn(),
 }));
 
 vi.mock('#/utils/Notification/notifyUser', () => ({
@@ -232,19 +233,35 @@ describe('ClipContextMenu', () => {
         expect(notifyUser).toHaveBeenCalledWith('Could not detect tempo');
     });
 
-    it('notifies the detected key when detectKey returns a result', () => {
-        vi.mocked(detectKey).mockReturnValue({ key: 'C', mode: 'major', confidence: 0.875 });
+    it('routes the detection result through the shared description before notifying', () => {
+        const result = { detected: true, key: 'C', mode: 'major', confidence: 0.875 } as const;
+        vi.mocked(detectKey).mockReturnValue(result);
+        vi.mocked(describeDetectedKey).mockReturnValue('Detected key: C major (88% confidence)');
         render(<ClipContextMenu x={0} y={0} clipId="clip2" splitBeat={4} onClose={mockOnClose} />);
         fireEvent.click(screen.getByRole('button', { name: 'Detect Key' }));
         expect(detectKey).toHaveBeenCalledWith('buffer-2');
+        expect(describeDetectedKey).toHaveBeenCalledWith(result);
         expect(notifyUser).toHaveBeenCalledWith('Detected key: C major (88% confidence)');
+    });
+
+    it('hands the no-key result to the same description rather than inventing a message', () => {
+        // The menu must not phrase results itself: an atonal reading has to
+        // reach the user as the detector's own wording.
+        vi.mocked(detectKey).mockReturnValue({ detected: false });
+        vi.mocked(describeDetectedKey).mockReturnValue('No key detected: the audio is atonal or broadband');
+        render(<ClipContextMenu x={0} y={0} clipId="clip2" splitBeat={4} onClose={mockOnClose} />);
+        fireEvent.click(screen.getByRole('button', { name: 'Detect Key' }));
+        expect(describeDetectedKey).toHaveBeenCalledWith({ detected: false });
+        expect(notifyUser).toHaveBeenCalledWith('No key detected: the audio is atonal or broadband');
     });
 
     it('notifies failure when detectKey returns null', () => {
         vi.mocked(detectKey).mockReturnValue(null);
+        vi.mocked(describeDetectedKey).mockReturnValue('Could not detect key: no audio to analyse');
         render(<ClipContextMenu x={0} y={0} clipId="clip2" splitBeat={4} onClose={mockOnClose} />);
         fireEvent.click(screen.getByRole('button', { name: 'Detect Key' }));
-        expect(notifyUser).toHaveBeenCalledWith('Could not detect key');
+        expect(describeDetectedKey).toHaveBeenCalledWith(null);
+        expect(notifyUser).toHaveBeenCalledWith('Could not detect key: no audio to analyse');
     });
 
     it('renders the close-inline-editor label for a midi clip already editing inline', () => {

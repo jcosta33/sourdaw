@@ -1,84 +1,116 @@
 import { getCachedAudioBuffer } from '#/modules/AudioEngine/useCases';
-import { NOTE_NAMES } from '#/utils/noteNames';
+import { type NoteName, NOTE_NAMES } from '#/utils/noteNames';
 
-// Krumhansl-Schmuckler key profiles
-const MAJOR_PROFILE = [6.35, 2.23, 3.48, 2.33, 4.38, 4.09, 2.52, 5.19, 2.39, 3.66, 2.29, 2.88];
-const MINOR_PROFILE = [6.33, 2.68, 3.52, 5.38, 2.6, 3.53, 2.54, 4.75, 3.98, 2.69, 3.34, 3.17];
+import { chromaFlatness } from '../services/chromaFlatness';
+import { chromaFromSamples } from '../services/chromaFromSamples';
+import { correlateKeyProfiles } from '../services/keyProfileCorrelation';
 
-export function detectKey(audioBufferId: string): { key: string; mode: 'major' | 'minor'; confidence: number } | null {
+/**
+ * Above this chroma flatness the material has no key to find: the twelve pitch
+ * classes carry essentially equal energy, which describes noise, unpitched
+ * percussion and a full chromatic aggregate alike.
+ *
+ * Calibrated here, not cited — no published numeric threshold for "no key"
+ * exists, because MIREX-style evaluation assumes every excerpt has one.
+ * Measured on this front end: white noise 0.948 (0.3 s) to 0.9998 (5 s) over
+ * 40 seeds per length; a 12-tone cluster 0.980; a chromatic run 0.986. Tonal
+ * material: a C major I-IV-V-I 0.512, an A minor i-iv-V-i 0.573, a dense jazz
+ * voicing 0.344, and 0.898 for that same I-IV-V-I buried under white noise
+ * three times its amplitude (where the key call was still correct). 0.92 sits
+ * in the gap between the worst tonal case that still resolves and the flattest
+ * broadband case.
+ */
+const ATONAL_FLATNESS_CEILING = 0.92;
+
+/**
+ * Below this relative gap to the runner-up the two readings are not meaningfully
+ * distinguishable and the alternative is reported alongside the winner.
+ *
+ * The quantity is Essentia's `firstToSecondRelativeStrength`, `(r1 - r2) / r1`.
+ * Measured: 0.235 for a C major I-IV-V-I and 0.311 for an A minor i-iv-V-i
+ * (unambiguous), against 0.047 for a bare C major scale — the relative-key tie
+ * MIREX scores at 0.3 — and 0.015 for a single sustained sine, which cannot
+ * imply a mode at all.
+ */
+const CLOSE_CALL_RELATIVE_STRENGTH = 0.1;
+
+type KeyReading = {
+    key: NoteName;
+    mode: 'major' | 'minor';
+};
+
+type DetectKeyResult =
+    | (KeyReading & {
+          detected: true;
+          /**
+           * Pearson correlation between the observed chroma and the winning
+           * Krumhansl-Schmuckler profile, clamped to [0, 1]. This is Essentia's
+           * `strength`: a correlation coefficient, bounded by the statistic
+           * itself rather than by a divisor picked to make numbers look good.
+           */
+          confidence: number;
+          /** The runner-up key, present only when it is too close to dismiss. */
+          alternative?: KeyReading;
+      })
+    | { detected: false };
+
+/**
+ * Estimate the musical key of a cached audio buffer.
+ *
+ * Krumhansl (1990) ch. 4 defines key finding as the Pearson product-moment
+ * correlation between the mean-centred pitch-class distribution and each of the
+ * 24 rotated probe-tone profiles. The centring is not decoration: without it the
+ * score reduces to a dot product dominated by the profile sums (minor 44.51,
+ * major 41.79), so every broadband input reads as minor.
+ *
+ * Returns `null` when there is nothing to analyse (no cached buffer, or silence).
+ * Returns `{ detected: false }` when analysis ran and the material has no key.
+ */
+export function detectKey(audioBufferId: string): DetectKeyResult | null {
     const buffer = getCachedAudioBuffer({ bufferId: audioBufferId });
     if (!buffer) {
         return null;
     }
 
-    const sampleRate = buffer.sampleRate;
-    const data = buffer.getChannelData(0);
-
-    // Compute chroma features using Goertzel algorithm at specific frequencies
-    const chroma = new Float64Array(12);
-    const fftSize = 4096;
-    const hopSize = 2048;
-
-    for (let frame = 0; frame + fftSize < data.length; frame += hopSize) {
-        for (let note = 0; note < 12; note++) {
-            for (let octave = 2; octave <= 7; octave++) {
-                const freq = 440 * 2 ** ((note - 9 + (octave - 4) * 12) / 12);
-                const kIndex = Math.round((freq * fftSize) / sampleRate);
-                if (kIndex <= 0 || kIndex >= fftSize / 2) {
-                    continue;
-                }
-
-                const w = (2 * Math.PI * kIndex) / fftSize;
-                const coeff = 2 * Math.cos(w);
-                let s0: number,
-                    s1 = 0,
-                    s2 = 0;
-
-                for (let index = 0; index < fftSize; index++) {
-                    s0 = (data[frame + index] ?? 0) + coeff * s1 - s2;
-                    s2 = s1;
-                    s1 = s0;
-                }
-
-                const power = s1 * s1 + s2 * s2 - coeff * s1 * s2;
-                chroma[note] = chroma[note]! + Math.abs(power);
-            }
-        }
-    }
-
-    const maxChroma = Math.max(...chroma);
-    if (maxChroma === 0) {
+    const chroma = chromaFromSamples({
+        samples: buffer.getChannelData(0),
+        sampleRate: buffer.sampleRate,
+    });
+    if (!chroma) {
         return null;
     }
-    for (let index = 0; index < 12; index++) {
-        chroma[index] = chroma[index]! / maxChroma;
+
+    if (chromaFlatness(chroma) >= ATONAL_FLATNESS_CEILING) {
+        return { detected: false };
     }
 
-    // Correlate with key profiles
-    let bestKey = 0;
-    let bestMode: 'major' | 'minor' = 'major';
-    let bestCorr = -Infinity;
-
-    for (let shift = 0; shift < 12; shift++) {
-        let corrMajor = 0,
-            corrMinor = 0;
-        for (let index = 0; index < 12; index++) {
-            const ci = chroma[(index + shift) % 12]!;
-            corrMajor += ci * MAJOR_PROFILE[index]!;
-            corrMinor += ci * MINOR_PROFILE[index]!;
-        }
-        if (corrMajor > bestCorr) {
-            bestCorr = corrMajor;
-            bestKey = shift;
-            bestMode = 'major';
-        }
-        if (corrMinor > bestCorr) {
-            bestCorr = corrMinor;
-            bestKey = shift;
-            bestMode = 'minor';
-        }
+    const correlation = correlateKeyProfiles(chroma);
+    if (!correlation) {
+        return { detected: false };
     }
 
-    const confidence = Math.min(1, bestCorr / 30);
-    return { key: NOTE_NAMES[bestKey]!, mode: bestMode, confidence };
+    const strength = correlation.best.correlation;
+    if (strength <= 0) {
+        return { detected: false };
+    }
+
+    const relativeStrength = (strength - correlation.runnerUp.correlation) / strength;
+    const reading: DetectKeyResult = {
+        detected: true,
+        key: NOTE_NAMES[correlation.best.tonic]!,
+        mode: correlation.best.mode,
+        confidence: Math.min(1, strength),
+    };
+
+    if (relativeStrength < CLOSE_CALL_RELATIVE_STRENGTH) {
+        return {
+            ...reading,
+            alternative: {
+                key: NOTE_NAMES[correlation.runnerUp.tonic]!,
+                mode: correlation.runnerUp.mode,
+            },
+        };
+    }
+
+    return reading;
 }

@@ -57,12 +57,42 @@ describe('handleDetectKey', () => {
         mocks.trackStore.value = {
             tracks: [{ clips: [{ id: 'c1', audioBufferId: 'buf1' }] }],
         };
-        mocks.detectKey.mockReturnValue({ key: 'C', mode: 'major', confidence: 0.856 });
+        mocks.detectKey.mockReturnValue({ detected: true, key: 'C', mode: 'major', confidence: 0.856 });
 
         handleDetectKey.execute({ type: 'detectKey', payload: { clipId: 'c1' } });
 
         expect(mocks.detectKey).toHaveBeenCalledWith('buf1');
         expect(mocks.notifyUser).toHaveBeenCalledWith('Detected key: C major (86% confidence)');
+    });
+
+    it('should surface the runner-up when the detector reports a close call', () => {
+        mocks.trackStore.value = {
+            tracks: [{ clips: [{ id: 'c1', audioBufferId: 'buf1' }] }],
+        };
+        mocks.detectKey.mockReturnValue({
+            detected: true,
+            key: 'A',
+            mode: 'minor',
+            confidence: 0.788,
+            alternative: { key: 'C', mode: 'major' },
+        });
+
+        handleDetectKey.execute({ type: 'detectKey', payload: { clipId: 'c1' } });
+
+        expect(mocks.notifyUser).toHaveBeenCalledWith(
+            'Detected key: A minor (79% confidence), close call with C major'
+        );
+    });
+
+    it('should state that there is no key rather than name one when the material is atonal', () => {
+        mocks.trackStore.value = {
+            tracks: [{ clips: [{ id: 'c1', audioBufferId: 'buf1' }] }],
+        };
+        mocks.detectKey.mockReturnValue({ detected: false });
+
+        handleDetectKey.execute({ type: 'detectKey', payload: { clipId: 'c1' } });
+
+        expect(mocks.notifyUser).toHaveBeenCalledWith('No key detected: the audio is atonal or broadband');
     });
 
     it('should notify the user if key cannot be detected', () => {
@@ -73,7 +103,7 @@ describe('handleDetectKey', () => {
 
         handleDetectKey.execute({ type: 'detectKey', payload: { clipId: 'c1' } });
 
-        expect(mocks.notifyUser).toHaveBeenCalledWith('Could not detect key');
+        expect(mocks.notifyUser).toHaveBeenCalledWith('Could not detect key: no audio to analyse');
     });
 
     it('should provide a description', () => {

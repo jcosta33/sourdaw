@@ -16,6 +16,7 @@ export { detectOnsets } from './detectOnsets';
 export { insertPolyphonicMidiNotes } from './insertPolyphonicMidiNotes';
 
 export { detectKey } from './keyDetection';
+export { describeDetectedKey } from './describeDetectedKey';
 
 export { detectDominantPitch } from './pitchDetection';
 

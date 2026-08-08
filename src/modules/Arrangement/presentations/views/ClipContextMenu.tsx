@@ -7,7 +7,7 @@ import { DawSwatchButton } from '#/components/daw/DawSwatchButton';
 import { useStore } from '#/infra/store/useStore';
 import { handleAiDenoiseClip } from '#/modules/AiGeneration/useCases';
 import { runAiActionWithToast } from '#/modules/AiRuntime/useCases';
-import { detectTempo, detectKey } from '#/modules/AudioAnalysis/useCases';
+import { detectTempo, detectKey, describeDetectedKey } from '#/modules/AudioAnalysis/useCases';
 import { executeAppAction } from '#/modules/Command/useCases';
 import { setWorkspaceMode } from '#/modules/WorkspaceShell/useCases';
 import { notifyUser } from '#/utils/Notification/notifyUser';
@@ -114,13 +114,7 @@ export const ClipContextMenu = ({ x, y, clipId, splitBeat, onClose }: ClipContex
                 role="menuitem"
                 onClick={act(() => {
                     if (clip?.audioBufferId) {
-                        const result = detectKey(clip.audioBufferId);
-                        if (result) {
-                            const confidence = Math.round(result.confidence * 100);
-                            notifyUser(`Detected key: ${result.key} ${result.mode} (${confidence}% confidence)`);
-                        } else {
-                            notifyUser('Could not detect key');
-                        }
+                        notifyUser(describeDetectedKey(detectKey(clip.audioBufferId)));
                     }
                 })}
             >
