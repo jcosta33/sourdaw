@@ -12,6 +12,8 @@ vi.mock('#/infra/store/useStore', () => ({
 
 vi.mock('#/modules/Command/useCases', () => ({
     executeAppAction: vi.fn(),
+    executeAppActionBatch: vi.fn(() => Promise.resolve({ status: 'committed', actions: [] })),
+    generateGroupId: vi.fn(() => 'group-test'),
 }));
 
 vi.mock('../../../stores/chamberStore', () => ({
@@ -39,9 +41,17 @@ vi.mock('../../components/DecayEqOverlay', () => ({
  * The algorithm chips are rendered twice — once on the rail and once in the
  * deep Engine card — so a label matches more than one node. The rail copy is
  * the one a click would land on first.
+ *
+ * Matched by accessible name rather than by raw text: two algorithm labels,
+ * `Plate` and `Spring`, are also **space** labels, and the space rows are
+ * rendered first. A `getAllByText` lookup handed those tests the space tile and
+ * the assertion below passed on `selectSpace`'s incidental `algorithm` dispatch
+ * rather than on the chip it names. A space row's accessible name carries its
+ * mood subtitle ("Plate Bright sheet"), so an exact-name query resolves to the
+ * chips only.
  */
 function railChip(label: string): HTMLElement {
-    const [chip] = screen.getAllByText(label);
+    const [chip] = screen.getAllByRole('button', { name: label });
     if (!chip) {
         throw new Error(`no chip labelled "${label}" is rendered`);
     }

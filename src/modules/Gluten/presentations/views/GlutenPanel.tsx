@@ -301,7 +301,9 @@ const Knob = ({
     <div className="flex flex-col items-center gap-1">
         <RotaryKnob
             value={value}
-            onChange={(nextValue) => setGlutenParamWithAudio(deviceId, param, nextValue as GlutenPatch[typeof param])}
+            onChange={(nextValue, isTransient) =>
+                setGlutenParamWithAudio(deviceId, param, nextValue as GlutenPatch[typeof param], isTransient)
+            }
             min={min}
             max={max}
             step={step}
@@ -550,8 +552,8 @@ export const GlutenPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
                                         inputDb={inputDb}
                                         width={360}
                                         height={180}
-                                        onThresholdChange={(value) =>
-                                            setGlutenParamWithAudio(deviceId, 'threshold', value)
+                                        onThresholdChange={(value, isTransient) =>
+                                            setGlutenParamWithAudio(deviceId, 'threshold', value, isTransient)
                                         }
                                         accentColor={accentColor}
                                     />
