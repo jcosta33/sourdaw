@@ -154,6 +154,7 @@ describe('useStatusBarMetrics', () => {
             masterGain: 1,
             currentTime: 0,
             baseLatency: 0.005,
+            outputLatency: 0.003,
         });
         vi.mocked(getMasterPeakLevel).mockReturnValue(0);
 
@@ -164,9 +165,164 @@ describe('useStatusBarMetrics', () => {
         expect(capturedTick).not.toBeNull();
         capturedTick!();
 
-        // 48000 Hz → "48kHz"; 0.005s → 5.0ms.
+        // 48000 Hz → "48kHz"; 0.005s context + 0.003s device → 8.0ms heard.
         expect(refs.sampleRate.current!.textContent).toBe('48kHz');
-        expect(refs.latency.current!.textContent).toBe('5.0ms');
+        expect(refs.latency.current!.textContent).toBe('8.0ms');
+    });
+
+    // ── Output latency readout ───────────────────────────────────────────
+    // Web Audio splits the output path into two disjoint successive segments:
+    // `baseLatency` (AudioDestinationNode → audio subsystem) and `outputLatency`
+    // (UA hands the host a buffer → the device plays its first sample). The delay
+    // a user hears is the sum. The fixture below keeps them different and non-zero
+    // so "base only" (5.3ms), "device only" (10.7ms) and "the sum" (16.0ms) are
+    // three distinguishable readouts: 256 and 512 frames at 48 kHz.
+    const BASE_LATENCY_SECONDS = 256 / 48_000; // 5.333… ms
+    const OUTPUT_LATENCY_SECONDS = 512 / 48_000; // 10.666… ms
+
+    it('reports the sum of context and device latency, not baseLatency alone', () => {
+        vi.mocked(getEngineState).mockReturnValue({
+            isReady: true,
+            sampleRate: 48000,
+            state: 'running',
+            masterGain: 1,
+            currentTime: 0,
+            baseLatency: BASE_LATENCY_SECONDS,
+            outputLatency: OUTPUT_LATENCY_SECONDS,
+        });
+        vi.mocked(getMasterPeakLevel).mockReturnValue(0);
+
+        const refs = makeRefs();
+        makeElements(refs);
+        renderHook(() => useStatusBarMetrics(refs));
+
+        capturedTick!();
+
+        // 5.333ms + 10.667ms = 16.0ms. Reporting either term alone reads 5.3ms or 10.7ms.
+        expect(refs.latency.current!.textContent).toBe('16.0ms');
+    });
+
+    it('breaks the latency readout down into its context and device terms in the tooltip', () => {
+        vi.mocked(getEngineState).mockReturnValue({
+            isReady: true,
+            sampleRate: 48000,
+            state: 'running',
+            masterGain: 1,
+            currentTime: 0,
+            baseLatency: BASE_LATENCY_SECONDS,
+            outputLatency: OUTPUT_LATENCY_SECONDS,
+        });
+        vi.mocked(getMasterPeakLevel).mockReturnValue(0);
+
+        const refs = makeRefs();
+        makeElements(refs);
+        renderHook(() => useStatusBarMetrics(refs));
+
+        capturedTick!();
+
+        expect(refs.latency.current!.title).toBe(
+            'Output latency 16.0 ms = context 5.3 ms + device 10.7 ms.' +
+                ' Hardware output path only — excludes plug-in delay compensation.'
+        );
+    });
+
+    it('falls back to the context term alone when the engine reports no device latency', () => {
+        vi.mocked(getEngineState).mockReturnValue({
+            isReady: false,
+            sampleRate: 44100,
+            state: 'closed',
+            masterGain: 0,
+            currentTime: 0,
+            baseLatency: BASE_LATENCY_SECONDS,
+            outputLatency: 0,
+        });
+        vi.mocked(getMasterPeakLevel).mockReturnValue(0);
+
+        const refs = makeRefs();
+        makeElements(refs);
+        renderHook(() => useStatusBarMetrics(refs));
+
+        capturedTick!();
+
+        // Sum, not a fixed device allowance: a 0 device term must subtract nothing.
+        expect(refs.latency.current!.textContent).toBe('5.3ms');
+        expect(refs.latency.current!.title).toContain('device 0.0 ms');
+    });
+
+    // Sibling of the text-node test below: this hook exists to avoid touching
+    // unchanged DOM at animation-frame rate, and the latency tooltip is a string
+    // that only moves when the device buffer does.
+    it('leaves the latency tooltip alone while the latency is unchanged', () => {
+        vi.mocked(getEngineState).mockReturnValue({
+            isReady: true,
+            sampleRate: 48000,
+            state: 'running',
+            masterGain: 1,
+            currentTime: 0,
+            baseLatency: BASE_LATENCY_SECONDS,
+            outputLatency: OUTPUT_LATENCY_SECONDS,
+        });
+        vi.mocked(getMasterPeakLevel).mockReturnValue(0);
+
+        const refs = makeRefs();
+        makeElements(refs);
+        const latencyElement = refs.latency.current!;
+        const titleWrites: string[] = [];
+        let storedTitle = '';
+        Object.defineProperty(latencyElement, 'title', {
+            configurable: true,
+            get: () => storedTitle,
+            set: (value: string) => {
+                storedTitle = value;
+                titleWrites.push(value);
+            },
+        });
+        renderHook(() => useStatusBarMetrics(refs));
+
+        capturedTick!();
+        capturedTick!();
+        capturedTick!();
+
+        expect(titleWrites).toEqual([
+            'Output latency 16.0 ms = context 5.3 ms + device 10.7 ms.' +
+                ' Hardware output path only — excludes plug-in delay compensation.',
+        ]);
+    });
+
+    it('rewrites the latency tooltip when the device buffer changes', () => {
+        vi.mocked(getEngineState).mockReturnValue({
+            isReady: true,
+            sampleRate: 48000,
+            state: 'running',
+            masterGain: 1,
+            currentTime: 0,
+            baseLatency: BASE_LATENCY_SECONDS,
+            outputLatency: OUTPUT_LATENCY_SECONDS,
+        });
+        vi.mocked(getMasterPeakLevel).mockReturnValue(0);
+
+        const refs = makeRefs();
+        makeElements(refs);
+        renderHook(() => useStatusBarMetrics(refs));
+
+        capturedTick!();
+        // The spec allows outputLatency to change while the context runs.
+        vi.mocked(getEngineState).mockReturnValue({
+            isReady: true,
+            sampleRate: 48000,
+            state: 'running',
+            masterGain: 1,
+            currentTime: 0,
+            baseLatency: BASE_LATENCY_SECONDS,
+            outputLatency: 1024 / 48_000,
+        });
+        capturedTick!();
+
+        expect(refs.latency.current!.textContent).toBe('26.7ms');
+        expect(refs.latency.current!.title).toBe(
+            'Output latency 26.7 ms = context 5.3 ms + device 21.3 ms.' +
+                ' Hardware output path only — excludes plug-in delay compensation.'
+        );
     });
 
     it('preserves metric text nodes when consecutive ticks render the same values', () => {
@@ -177,6 +333,7 @@ describe('useStatusBarMetrics', () => {
             masterGain: 1,
             currentTime: 0,
             baseLatency: 0.005,
+            outputLatency: 0,
         });
         vi.mocked(getMasterPeakLevel).mockReturnValue(0);
 
@@ -202,6 +359,7 @@ describe('useStatusBarMetrics', () => {
             masterGain: 1,
             currentTime: 0,
             baseLatency: 0.01,
+            outputLatency: 0,
         });
         // 0.5 amplitude → 20*log10(0.5) ≈ -6.0 dB.
         vi.mocked(getMasterPeakLevel).mockReturnValue(0.5);
@@ -224,6 +382,7 @@ describe('useStatusBarMetrics', () => {
             masterGain: 1,
             currentTime: 0,
             baseLatency: 0.01,
+            outputLatency: 0.02,
         });
         // No meter tap: the engine cannot say what the output level is. Rendering
         // "-∞ dB" here is a lie — it is the readout for a genuinely silent mix, so
@@ -248,6 +407,7 @@ describe('useStatusBarMetrics', () => {
             masterGain: 1,
             currentTime: 0,
             baseLatency: 0.01,
+            outputLatency: 0,
         });
         vi.mocked(getMasterPeakLevel).mockReturnValue(0);
 
@@ -267,6 +427,7 @@ describe('useStatusBarMetrics', () => {
             masterGain: 1,
             currentTime: 0,
             baseLatency: 0.01,
+            outputLatency: 0,
         });
         vi.mocked(getMasterPeakLevel).mockReturnValue(0);
         // performance.memory absent (non-Chrome) — default in jsdom.
@@ -287,6 +448,7 @@ describe('useStatusBarMetrics', () => {
             masterGain: 1,
             currentTime: 0,
             baseLatency: 0.01,
+            outputLatency: 0,
         });
         vi.mocked(getMasterPeakLevel).mockReturnValue(0);
         // 10 MB in bytes.
@@ -312,6 +474,7 @@ describe('useStatusBarMetrics', () => {
             masterGain: 1,
             currentTime: 0,
             baseLatency: 0.01,
+            outputLatency: 0,
         });
         vi.mocked(getMasterPeakLevel).mockReturnValue(0);
 
@@ -335,6 +498,7 @@ describe('useStatusBarMetrics', () => {
             masterGain: 1,
             currentTime: 0,
             baseLatency: 0.01,
+            outputLatency: 0,
         });
         vi.mocked(getMasterPeakLevel).mockReturnValue(0);
 
@@ -367,6 +531,7 @@ describe('useStatusBarMetrics', () => {
             masterGain: 1,
             currentTime: 0,
             baseLatency: 0.005,
+            outputLatency: 0,
         });
         vi.mocked(getMasterPeakLevel).mockReturnValue(0);
         const diagnostics = makeEngineDiagnostics();
@@ -391,6 +556,7 @@ describe('useStatusBarMetrics', () => {
             masterGain: 1,
             currentTime: 0,
             baseLatency: 0.005,
+            outputLatency: 0,
         });
         vi.mocked(getMasterPeakLevel).mockReturnValue(0);
         vi.mocked(getEngineHealth).mockReturnValue(makeEngineHealth(7));
@@ -414,6 +580,7 @@ describe('useStatusBarMetrics', () => {
             masterGain: 1,
             currentTime: 0,
             baseLatency: 0.005,
+            outputLatency: 0,
         });
         vi.mocked(getMasterPeakLevel).mockReturnValue(0);
         vi.mocked(getEngineDiagnostics).mockReturnValue({ ...makeEngineDiagnostics(), playback: null });
@@ -439,6 +606,7 @@ describe('useStatusBarMetrics', () => {
             masterGain: 1,
             currentTime: 0,
             baseLatency: 0.005,
+            outputLatency: 0,
         });
         vi.mocked(getMasterPeakLevel).mockReturnValue(0);
 
@@ -470,6 +638,7 @@ describe('useStatusBarMetrics', () => {
             masterGain: 1,
             currentTime: 0,
             baseLatency: 0.01,
+            outputLatency: 0,
         });
         vi.mocked(getMasterPeakLevel).mockReturnValue(0);
 
@@ -492,6 +661,7 @@ describe('useStatusBarMetrics', () => {
             masterGain: 1,
             currentTime: 0,
             baseLatency: 0.01,
+            outputLatency: 0,
         });
         vi.mocked(getMasterPeakLevel).mockReturnValue(0);
 
@@ -517,6 +687,7 @@ describe('useStatusBarMetrics', () => {
             masterGain: 1,
             currentTime: 0,
             baseLatency: 0.01,
+            outputLatency: 0,
         });
         vi.mocked(getMasterPeakLevel).mockReturnValue(0);
 

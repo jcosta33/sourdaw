@@ -322,6 +322,16 @@ describe('AudioEngineImpl — residual branch coverage', () => {
             expect(state.baseLatency).toBe(0);
         });
 
+        // `outputLatency` is optional on BaseAudioContext and absent on some
+        // implementations; without the `?? 0` the status bar renders "NaNms".
+        it('returns 0 outputLatency when context.outputLatency is undefined', () => {
+            const ctx = (engine as unknown as { context: { outputLatency?: number } }).context;
+            ctx.outputLatency = undefined;
+            const state = engine.getState();
+            expect(state.outputLatency).toBe(0);
+            expect(state.baseLatency).toBe(0.01);
+        });
+
         it('reports ready when context is not running but worklets are loaded', async () => {
             await engine.initialize();
             mockCtx.state = 'suspended';

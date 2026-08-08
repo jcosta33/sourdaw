@@ -4,7 +4,24 @@ export type AudioEngineState = {
     state: AudioContextState;
     masterGain: number;
     currentTime: number;
+    /**
+     * `AudioContext.baseLatency` in seconds — "the number of seconds of
+     * processing latency incurred by the `AudioContext` passing the audio from
+     * the `AudioDestinationNode` to the audio subsystem" (Web Audio API §1.2.2).
+     * The context's own segment of the output path, and only that segment.
+     */
     baseLatency: number;
+    /**
+     * `AudioContext.outputLatency` in seconds — "the interval between the time
+     * the UA requests the host system to play a buffer and the time at which the
+     * first sample in the buffer is actually processed by the audio output
+     * device" (Web Audio API §1.2.2). The *next* segment of the output path, not
+     * an alternative measure of the same one, so the delay a user hears is
+     * `baseLatency + outputLatency`. The spec calls this an estimation that "may
+     * change while the context is running or the associated audio output device
+     * changes", so read it per frame rather than caching it. `0` in fallback mode.
+     */
+    outputLatency: number;
 };
 
 /**

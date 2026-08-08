@@ -22,6 +22,12 @@ export function getLatencyReport(): LatencyReport {
         tracks,
         maxLatencyMs: getMaxTrackLatency(),
         contextBaseLatencyMs: (ctx.baseLatency ?? 0) * 1000,
-        contextOutputLatencyMs: ('outputLatency' in ctx ? (ctx as { outputLatency: number }).outputLatency : 0) * 1000,
+        // Nullish, not `'outputLatency' in ctx`: a key that is present but
+        // undefined satisfies `in`, and `undefined * 1000` is NaN — which now
+        // reaches the user as `Output: NaNms (… + device NaNms)`. This must
+        // match `createWebAudioEngine.getState()`, the other reader of the same
+        // field, which has always used `?? 0`; two readers disagreeing about
+        // what "missing" means is how one of them ends up printing NaN.
+        contextOutputLatencyMs: (ctx.outputLatency ?? 0) * 1000,
     };
 }

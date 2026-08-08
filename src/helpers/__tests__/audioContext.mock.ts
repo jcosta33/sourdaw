@@ -341,8 +341,22 @@ export function createMockAudioContext(): MockAudioContext {
         currentTime: 0,
         sampleRate: 48000,
         state: 'running',
+        // Deliberately different: `baseLatency` and `outputLatency` are disjoint
+        // successive segments of the output path, and a fixture where they match
+        // cannot tell a reader of one from a reader of the other.
+        //
+        // FOLLOW-UP (not this fixture): the same blindness is still live in four
+        // fixtures on the recording side, where the identical sum shifts recorded
+        // material rather than a readout. `toggleRecording.spec.ts:102` is 0/0
+        // file-wide and deleting the whole `totalHardwareLatencySec` line in
+        // `toggleRecording.ts` reds nothing; `recordAutomationValue.spec.ts:76` is
+        // 0/0 and `:151` is base 0 / output 0.5, so dropping `(ctx.baseLatency || 0) +`
+        // from `recordAutomationValue.ts` reds nothing; `handleWebMidiNoteOn.spec.ts`,
+        // `handleWebMidiNoteOff.spec.ts` and `handleWebMidiToasterLifecycle.spec.ts`
+        // are all 0/0. Three production summing sites, no fixture able to say which
+        // term is read. All pre-existing; needs its own change.
         baseLatency: 0.01,
-        outputLatency: 0.01,
+        outputLatency: 0.02,
         playbackStats: {
             underrunDuration: 0.002,
             underrunEvents: 2,
