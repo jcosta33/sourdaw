@@ -69,6 +69,21 @@ function hasDuplicateIds(rows: readonly { id: string }[]): boolean {
     return new Set(rows.map((row) => row.id)).size !== rows.length;
 }
 
+function compareCodeUnits(left: string, right: string): number {
+    if (left < right) {
+        return -1;
+    }
+    if (left > right) {
+        return 1;
+    }
+    return 0;
+}
+
+function hasIdentityDependentProbability(note: MidiNote): boolean {
+    const probability = note.probability ?? 100;
+    return probability > 0 && probability < 100;
+}
+
 export function prepareMidiClipGlueState({
     sources,
     targetClipId,
@@ -90,6 +105,10 @@ export function prepareMidiClipGlueState({
     ) {
         return null;
     }
+    const migrationIds = state.migratedAbsoluteNoteClipIds ?? [];
+    if (new Set(migrationIds).size !== migrationIds.length) {
+        return null;
+    }
     const clipIds = [...sourceIds, targetClipId];
     const previous = snapshotState(state, clipIds);
     const targetSnapshot = previous.clips.at(-1)!.data;
@@ -109,7 +128,11 @@ export function prepareMidiClipGlueState({
         const sourceNotes = state.notesByClipId[source.clipId] ?? [];
         if (
             sourceNotes.some(
-                (note) => !Number.isFinite(note.startBeat) || !Number.isFinite(note.duration) || note.duration < 0
+                (note) =>
+                    !Number.isFinite(note.startBeat) ||
+                    !Number.isFinite(note.duration) ||
+                    note.duration < 0 ||
+                    hasIdentityDependentProbability(note)
             )
         ) {
             return null;
@@ -149,9 +172,9 @@ export function prepareMidiClipGlueState({
     ) {
         return null;
     }
-    mergedNotes.sort((left, right) => left.startBeat - right.startBeat || left.id.localeCompare(right.id));
-    mergedControlChanges.sort((left, right) => left.beat - right.beat || left.id.localeCompare(right.id));
-    mergedPitchBends.sort((left, right) => left.beat - right.beat || left.id.localeCompare(right.id));
+    mergedNotes.sort((left, right) => left.startBeat - right.startBeat || compareCodeUnits(left.id, right.id));
+    mergedControlChanges.sort((left, right) => left.beat - right.beat || compareCodeUnits(left.id, right.id));
+    mergedPitchBends.sort((left, right) => left.beat - right.beat || compareCodeUnits(left.id, right.id));
 
     const firstMigratedSourceIndex = previous.migratedAbsoluteNoteClipIds.value.findIndex((clipId) =>
         sourceIds.includes(clipId)

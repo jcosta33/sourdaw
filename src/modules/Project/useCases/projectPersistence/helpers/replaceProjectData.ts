@@ -18,6 +18,7 @@ import { ensureTrackStrips, stopPlayback } from '#/modules/Transport/useCases';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { projectStore } from '../../../stores/projectStore';
+import { finishProjectLoading } from '../../finishProjectLoading';
 
 import { setAutoSaveHandle } from './autoSaveHandle';
 import { collectProjectAudioBufferIds } from './collectProjectAudioBufferIds';
@@ -186,13 +187,22 @@ export async function replaceProjectData({
                     scaleName: data.meta.scaleName,
                     tuning: data.meta.tuning,
                     dirty: false,
-                    loading: false,
+                    // Still loading: `batchStoreUpdates` defers subscriber
+                    // notification to the end of the batch, so the hydration
+                    // writes above have not reached their subscribers yet. The
+                    // dirty tracker is one of them, and it reads this flag to
+                    // tell a load apart from an edit (audit M-011). Cleared
+                    // below, once the flush has drained.
+                    loading: true,
                     initialized: true,
                 });
             });
             runCommittedStep('audio buffer verification', verifyAudioBufferReferences);
             runCommittedStep('undo history reset', clearUndoHistory);
         });
+        // The batch has flushed; every hydration subscriber has run. The load
+        // is over only now, so the module that owns that transition says so.
+        runCommittedStep('project load completion', finishProjectLoading);
     } catch (error) {
         degraded = true;
         logger.error(

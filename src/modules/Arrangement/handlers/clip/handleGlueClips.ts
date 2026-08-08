@@ -15,7 +15,10 @@ export const handleGlueClips = createHandler<'glueClips'>({
         return toHandlerExecutionResult(glueClips(action.payload.clipIds, action.payload.targetClipId));
     },
     describe: (action) => {
-        const plan = prepareClipGlue({ clipIds: action.payload.clipIds, targetClipId: action.payload.targetClipId });
+        delete action.payload.targetClipId;
+        delete action.payload.expected;
+        delete action.payload.replacement;
+        const plan = prepareClipGlue({ clipIds: action.payload.clipIds });
         if (!plan) {
             return { label: 'Glue clips', inverseAction: null };
         }

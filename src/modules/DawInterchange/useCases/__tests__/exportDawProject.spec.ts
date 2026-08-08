@@ -156,6 +156,12 @@ describe('exportDawProject', () => {
             metadataXml: '<metadata />',
             projectXml: '<project />',
         });
-        expect(result).toEqual({ bytes: new Uint8Array([9, 8, 7]), fileName: 'Song_Name.dawproject' });
+        // 'missing:buffer' was skipped, and the export now reports that rather
+        // than dropping it silently (audit M-263).
+        expect(result).toEqual({
+            bytes: new Uint8Array([9, 8, 7]),
+            fileName: 'Song_Name.dawproject',
+            missingAudioCount: 1,
+        });
     });
 });

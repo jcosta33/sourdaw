@@ -64,7 +64,7 @@ describe('handleExportDawProject', () => {
 
     it('should save DAWproject bytes through native repositories and notify success', async () => {
         vi.mocked(isTauri).mockReturnValue(true);
-        vi.mocked(exportDawProject).mockResolvedValue({ bytes, fileName: 'session.dawproject' });
+        vi.mocked(exportDawProject).mockResolvedValue({ bytes, fileName: 'session.dawproject', missingAudioCount: 0 });
         vi.mocked(saveDawProjectNativeFile).mockResolvedValue(undefined);
 
         await handleExportDawProject.execute({ type: 'exportDawProject' });
@@ -75,7 +75,7 @@ describe('handleExportDawProject', () => {
 
     it('should return without writing when the native save dialog is cancelled', async () => {
         vi.mocked(isTauri).mockReturnValue(true);
-        vi.mocked(exportDawProject).mockResolvedValue({ bytes, fileName: 'session.dawproject' });
+        vi.mocked(exportDawProject).mockResolvedValue({ bytes, fileName: 'session.dawproject', missingAudioCount: 0 });
         vi.mocked(saveDawProjectNativeFile).mockResolvedValue(undefined);
 
         await handleExportDawProject.execute({ type: 'exportDawProject' });
@@ -87,7 +87,7 @@ describe('handleExportDawProject', () => {
 
     it('should keep browser showSaveFilePicker export behavior unchanged', async () => {
         vi.mocked(isTauri).mockReturnValue(false);
-        vi.mocked(exportDawProject).mockResolvedValue({ bytes, fileName: 'session.dawproject' });
+        vi.mocked(exportDawProject).mockResolvedValue({ bytes, fileName: 'session.dawproject', missingAudioCount: 0 });
 
         const writable = {
             close: vi.fn<() => Promise<void>>().mockResolvedValue(undefined),

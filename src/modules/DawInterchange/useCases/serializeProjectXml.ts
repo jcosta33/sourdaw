@@ -30,6 +30,33 @@ function contentTypeForKind(kind: ProjectTrack['kind']): string {
     return 'tracks';
 }
 
+/**
+ * The `type` attribute the parser reads to recover a channel role.
+ *
+ * `contentType` cannot carry it: master is "mix" and a bus is indistinguishable
+ * from an audio track, so a round-trip demoted both to plain audio tracks
+ * (audit M-261). Empty for the kinds `contentType` already identifies, so
+ * ordinary tracks keep the exact element they had before.
+ *
+ * Provenance: the token names are not invented here — `parseProjectXml`'s
+ * `classifyTrackKind` already accepted `type="masterChannel"`, `master="true"`
+ * and `type="bus"` from foreign files. Only the writer was missing, so this
+ * closes the loop with the vocabulary the reader already had. Judgement call
+ * worth a second opinion: whether emitting a non-DAWproject-standard `type`
+ * attribute is acceptable, or whether the role belongs on `<Channel role=…>`
+ * as the DAWproject spec puts it — the latter would need the parser to learn a
+ * new location as well.
+ */
+function typeAttributeForKind(kind: ProjectTrack['kind']): string {
+    if (kind === 'master') {
+        return ' type="masterChannel"';
+    }
+    if (kind === 'bus') {
+        return ' type="bus"';
+    }
+    return '';
+}
+
 function formatNumber(value: number): string {
     if (!Number.isFinite(value)) {
         return '0';
@@ -97,7 +124,7 @@ function renderTrackNode(node: TrackTreeNode, indent: string): string {
     const { track, children } = node;
     const parts: string[] = [];
     parts.push(
-        `${indent}<Track id="${escapeXml(track.id)}" name="${escapeXml(track.name)}" contentType="${contentTypeForKind(track.kind)}" color="${escapeXml(track.color || '#64748b')}">`
+        `${indent}<Track id="${escapeXml(track.id)}" name="${escapeXml(track.name)}" contentType="${contentTypeForKind(track.kind)}"${typeAttributeForKind(track.kind)} color="${escapeXml(track.color || '#64748b')}">`
     );
     parts.push(renderChannelXml(track, `${indent}    `));
     for (const child of children) {
