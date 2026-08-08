@@ -1,0 +1,121 @@
+src/modules/Arrangement/handlers/clip/handleMoveClip.ts
+  s_bc88af7d3b054c::t_78f2b17e5f718b 1
+  s_bc88af7d3b054c::t_5a41d32c79d660 7,10-11,16-17,19-24,27-30,32,34-43,58-66,69-74,87
+  s_bc88af7d3b054c::t_892e708e591845 3,9,12-15,18,44-56,75-85
+  s_ac9b259eab20ba::t_e8405ebbe8be86 8,86
+src/modules/Arrangement/handlers/clip/__tests__/handleMoveClip.spec.ts
+  s_bc88af7d3b054c::t_d87d5ec8a2af8b 1
+  s_bc88af7d3b054c::t_cece4872986c34 10,15-18,28-30,34-39,76-77,84-85
+src/modules/AiRuntime/useCases/agentReference/bridgeGroundedLlmToolCalls.ts
+  s_bc88af7d3b054c::t_940b3b2c33d051 1325,1327
+  s_bc88af7d3b054c::t_1087c05c7f2ef0 1334-1340,1342-1343,1379-1390,1394-1412,2529-2530,2643-2644
+  s_bc88af7d3b054c::t_482d9e750b0f41 1326,1328-1330,1332,1344-1378,2519-2528
+  s_bc88af7d3b054c::t_bbf27ca1e3a8b9 1393
+  s_bc88af7d3b054c::t_2a393d27615fe5 1331,1333,1341,1391-1392,2642
+src/modules/Arrangement/useCases/clip/moveClip.ts
+  s_bc88af7d3b054c::t_5a41d32c79d660 6,16-17,20-22,27,31-33,35,46-50,70
+  s_bc88af7d3b054c::t_87cc4fc07bcb72 8-14,62-63
+src/modules/Arrangement/handlers/clip/__tests__/clipHandlers.spec.ts
+  s_bc88af7d3b054c::t_91b3fbe636c63e 9,15,22,32
+src/modules/Automation/useCases/automation/clipAutomationMoveStateMatches.ts
+  s_bc88af7d3b054c::t_87cc4fc07bcb72 1-53
+src/modules/Command/useCases/executableAppActionRegistry.ts
+  s_bc88af7d3b054c::t_1ab3e1ca690348 261-264,274-275,277-290,292
+  s_bc88af7d3b054c::t_90e8fd92502cb7 265-273
+  s_bc88af7d3b054c::t_dc96c0054760f5 276
+  s_bc88af7d3b054c::t_0fed77d35e4e0e 291,293-295
+src/modules/AiRuntime/useCases/getProjectContext.ts
+  s_bc88af7d3b054c::t_2a393d27615fe5 96-99
+  s_bc88af7d3b054c::t_ac9cdb7ef6be86 100-108,110
+src/modules/Arrangement/useCases/clip/__tests__/moveClip.spec.ts
+  s_bc88af7d3b054c::t_a0e1d684bde68a 6
+  s_bc88af7d3b054c::t_cece4872986c34 12,88,102-115,177
+  s_bc88af7d3b054c::t_7ca39c168d73ee 7,41-42,71,82,93,119,126,152,165
+src/utils/handlerContract.ts
+  s_bc88af7d3b054c::t_87cc4fc07bcb72 105-110,114,514-515
+  s_bc88af7d3b054c::t_5a41d32c79d660 111-113,115,509-513,516-517
+src/modules/Automation/useCases/automation/shiftClipAutomation.ts
+  s_bc88af7d3b054c::t_87cc4fc07bcb72 3,16
+src/modules/AiRuntime/transformers/llmActionBridge.ts
+  s_bc88af7d3b054c::t_cb3e1957301682 898-920,1734,1948
+  s_bc88af7d3b054c::t_2a393d27615fe5 220-237,1949-1956,2297,2321-2324,2326-2329,2436-2437
+  s_bc88af7d3b054c::t_591cc9db02cb55 2310-2311,2314-2316,2325,2356-2361,2438
+  s_bc88af7d3b054c::t_e6c8ffedc7ff46 121-125
+src/modules/AiRuntime/useCases/describePlannedAction.ts
+  s_bc88af7d3b054c::t_15a0b040c95fca 28-37
+src/modules/Arrangement/handlers/clip/clipHandlers.ts
+  s_bc88af7d3b054c::t_5a41d32c79d660 41
+  s_bc88af7d3b054c::t_94a894d8088424 25
+src/modules/AiRuntime/transformers/__tests__/llmActionBridge.spec.ts
+  s_bc88af7d3b054c::t_5b62326f230b5a 1384-1403,1439-1459
+  s_bc88af7d3b054c::t_591cc9db02cb55 1361,1410-1431
+  s_14f2bbc9f385dd::t_6765e2c1203584 1432,1460-1461
+src/modules/Arrangement/handlers/clip/__tests__/handleMoveClip.integration.spec.ts
+  s_bc88af7d3b054c::t_64044cfa5751a6 4,45-51,55-75,83,104-108,118-121,131-180
+  s_bc88af7d3b054c::t_fc12206501199e 181-182
+src/modules/Arrangement/handlers/clip/handleRestoreClipPlacement.ts
+  s_bc88af7d3b054c::t_5a41d32c79d660 7-10,12-18,21-27,33-34,41,49-52,59-62
+  s_bc88af7d3b054c::t_51718e41824e94 5-6,42-45
+  s_bc88af7d3b054c::t_892e708e591845 1-4,11,19-20,28-32,35-40,46-48,53-58
+src/modules/Automation/useCases/automation/restoreClipAutomationMoveState.ts
+  s_bc88af7d3b054c::t_51718e41824e94 7,18-26,36-40
+  s_bc88af7d3b054c::t_87cc4fc07bcb72 1-6,8-17,27-35,41-45
+src/modules/AiRuntime/useCases/agentReference/__tests__/bridgeGroundedLlmToolCalls.spec.ts
+  s_bc88af7d3b054c::t_26d396cab99e53 1205
+  s_bc88af7d3b054c::t_5b62326f230b5a 1180-1184,1203-1204,1214-1218
+  s_bc88af7d3b054c::t_d989a578cca23c 1185-1188,1196-1202
+src/modules/AiRuntime/models/ProjectContext.ts
+  s_bc88af7d3b054c::t_5b62326f230b5a 37
+src/modules/Arrangement/handlers/clip/__tests__/handleRestoreClipPlacement.spec.ts
+  s_bc88af7d3b054c::t_b550858459b974 1-5,7-8,10-11,17-28,41-46,49-62,68-78,83,87-88,96-106,108-113
+  s_bc88af7d3b054c::t_51718e41824e94 64-67
+  s_bc88af7d3b054c::t_64044cfa5751a6 6,9,12-16,29-40,47-48,63,79-82,84-86,89-95,107
+src/modules/AiRuntime/useCases/validateActionPayload.ts
+  s_bc88af7d3b054c::t_297374f4a3a821 180-184
+src/modules/AiRuntime/useCases/__tests__/getProjectContext.spec.ts
+  s_bc88af7d3b054c::t_823bc23c076940 329
+  s_bc88af7d3b054c::t_5b62326f230b5a 375-385
+src/modules/Command/useCases/__tests__/executableCommandRegistry.spec.ts
+  s_bc88af7d3b054c::t_d241e8f6513ff5 957-958,968-969,971-976,981
+  s_bc88af7d3b054c::t_90e8fd92502cb7 959-967
+  s_bc88af7d3b054c::t_dc96c0054760f5 970
+  s_bc88af7d3b054c::t_ff161b54987a2f 977-980
+src/modules/Automation/useCases/automation/getClipAutomationMoveState.ts
+  s_bc88af7d3b054c::t_87cc4fc07bcb72 1-42
+src/modules/Automation/useCases/index.ts
+  s_bc88af7d3b054c::t_87cc4fc07bcb72 6,9,22
+src/modules/AiRuntime/useCases/__tests__/parsePromptToActions.spec.ts
+  s_bc88af7d3b054c::t_09d74ec48c2c8d 553
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "5e810e84d2a0f4bb5dd65d8150d1bb6b9e70e711",
+  "prompts": {},
+  "sessions": {
+    "s_14f2bbc9f385dd": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f9a61a1d-66b3-4146-938d-a04f45f4b060",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_ac9b259eab20ba": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8699-3865-7842-8c54-afbac6cfd266",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_bc88af7d3b054c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f9b4a-11a2-7f61-8dfb-76eed0eb2a9c",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
