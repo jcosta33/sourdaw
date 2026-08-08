@@ -1,0 +1,19 @@
+tests/e2e/browserInstrumentsTestId.spec.ts
+  s_14f2bbc9f385dd::t_9e8ee37a77b3e0 1-120
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "2182f98b110d8a5ff8f96bbf396ccb76c13a9d67",
+  "prompts": {},
+  "sessions": {
+    "s_14f2bbc9f385dd": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f9a61a1d-66b3-4146-938d-a04f45f4b060",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
