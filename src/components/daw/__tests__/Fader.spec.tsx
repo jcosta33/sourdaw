@@ -271,6 +271,78 @@ describe('Fader', () => {
         });
     });
 
+    /**
+     * ADR 0012 — the capture calls used to sit behind `typeof … === 'function'`
+     * probes. Every engine this app ships on implements `setPointerCapture`, so
+     * the false branch was unreachable; all it could ever do was turn a missing
+     * capture into a drag that silently breaks at the element edge.
+     *
+     * These assert the *call sites*, not the effect. `src/setupTests.ts` stubs
+     * both methods as no-ops for jsdom, and jsdom has no capture implementation
+     * of its own, so no test in this repo can prove capture actually retargets
+     * events to the fader. What is provable, and what regressed without these,
+     * is that the element is asked to take capture on `pointerdown` and asked to
+     * give it back on every path a drag can end by.
+     */
+    describe('pointer capture call sites', () => {
+        const installPointerCaptureSpy = (element: HTMLElement): string[] => {
+            const calls: string[] = [];
+            Object.defineProperty(element, 'setPointerCapture', {
+                configurable: true,
+                value: (pointerId: number): void => {
+                    calls.push(`set:${pointerId}`);
+                },
+            });
+            Object.defineProperty(element, 'releasePointerCapture', {
+                configurable: true,
+                value: (pointerId: number): void => {
+                    calls.push(`release:${pointerId}`);
+                },
+            });
+            return calls;
+        };
+
+        const renderWithCaptureSpy = (): { slider: HTMLElement; calls: string[] } => {
+            render(<Fader value={0} onChange={vi.fn()} defaultValue={0} min={-70} max={6} height={100} />);
+            const slider = screen.getByRole('slider');
+            return { slider, calls: installPointerCaptureSpy(slider) };
+        };
+
+        it('should take capture on pointer down and give it back on pointer up', () => {
+            const { slider, calls } = renderWithCaptureSpy();
+            fireEvent.pointerDown(slider, { button: 0, pointerId: 7, clientY: 50, clientX: 20 });
+            expect(calls).toEqual(['set:7']);
+            fireEvent.pointerUp(slider, { pointerId: 7 });
+            expect(calls).toEqual(['set:7', 'release:7']);
+        });
+
+        it('should give capture back when the drag ends by pointercancel', () => {
+            const { slider, calls } = renderWithCaptureSpy();
+            fireEvent.pointerDown(slider, { button: 0, pointerId: 8, clientY: 50, clientX: 20 });
+            fireEvent.pointerCancel(slider, { pointerId: 8 });
+            expect(calls).toEqual(['set:8', 'release:8']);
+        });
+
+        it('should give capture back when the window loses focus mid-drag', () => {
+            const { slider, calls } = renderWithCaptureSpy();
+            fireEvent.pointerDown(slider, { button: 0, pointerId: 9, clientY: 50, clientX: 20 });
+            fireEvent(window, new Event('blur'));
+            expect(calls).toEqual(['set:9', 'release:9']);
+        });
+
+        it('should take no capture when the press is not the primary button', () => {
+            const { slider, calls } = renderWithCaptureSpy();
+            fireEvent.pointerDown(slider, { button: 2, pointerId: 10, clientY: 50, clientX: 20 });
+            expect(calls).toEqual([]);
+        });
+
+        it('should take no capture when an alt-press resets to the default instead of dragging', () => {
+            const { slider, calls } = renderWithCaptureSpy();
+            fireEvent.pointerDown(slider, { button: 0, pointerId: 11, clientY: 50, clientX: 20, altKey: true });
+            expect(calls).toEqual([]);
+        });
+    });
+
     it('should apply every tone variant while dragging', () => {
         const tones = [
             'neutral',

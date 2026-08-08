@@ -139,7 +139,7 @@ export const RotaryKnob = ({
     const finalizeDragRef = useRef<(pointerId?: number) => boolean>(() => false);
 
     const releasePointerCapture = (pointerId: number | null): void => {
-        if (pointerId === null || !rootRef.current || typeof rootRef.current.releasePointerCapture !== 'function') {
+        if (pointerId === null || !rootRef.current) {
             return;
         }
         try {
@@ -253,9 +253,7 @@ export const RotaryKnob = ({
             return;
         }
         const gestureToken = gestureAuthorityRef.current?.acquire(() => finalizeDragRef.current()) ?? gestureOwner;
-        if (typeof event.currentTarget.setPointerCapture === 'function') {
-            event.currentTarget.setPointerCapture(event.pointerId);
-        }
+        event.currentTarget.setPointerCapture(event.pointerId);
         activePointerIdRef.current = event.pointerId;
         draggingRef.current = true;
         gestureOwnerAtStartRef.current = gestureToken;

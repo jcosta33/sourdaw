@@ -184,4 +184,58 @@ describe('ValueField', () => {
         fireEvent.pointerMove(field, { pointerId: 4, clientY: 80 });
         expect(onChange).not.toHaveBeenCalled();
     });
+
+    /**
+     * ADR 0012 — the capture calls used to sit behind `typeof … === 'function'`
+     * probes whose false branch no shipped engine can take. All the probe could
+     * do was convert a missing capture into a scrub that silently stops
+     * updating once the pointer leaves the field's box.
+     *
+     * These assert the *call sites*, not the effect: `src/setupTests.ts` stubs
+     * both methods as no-ops and jsdom implements no capture semantics, so
+     * nothing here proves that pointer events are actually retargeted. It
+     * proves the element is asked to take capture when a scrub starts, is asked
+     * to give it back when the scrub ends, and is not asked at all for a press
+     * that never becomes a scrub.
+     */
+    describe('pointer capture call sites', () => {
+        const renderWithCaptureSpy = (readOnly = false): { field: HTMLElement; calls: string[] } => {
+            render(<ValueField value={0} onChange={vi.fn()} min={-10} max={10} readOnly={readOnly} />);
+            const field = screen.getByRole('spinbutton');
+            const calls: string[] = [];
+            Object.defineProperty(field, 'setPointerCapture', {
+                configurable: true,
+                value: (pointerId: number): void => {
+                    calls.push(`set:${pointerId}`);
+                },
+            });
+            Object.defineProperty(field, 'releasePointerCapture', {
+                configurable: true,
+                value: (pointerId: number): void => {
+                    calls.push(`release:${pointerId}`);
+                },
+            });
+            return { field, calls };
+        };
+
+        it('should take capture on pointer down and give it back on pointer up', () => {
+            const { field, calls } = renderWithCaptureSpy();
+            fireEvent.pointerDown(field, { button: 0, pointerId: 21, clientY: 100 });
+            expect(calls).toEqual(['set:21']);
+            fireEvent.pointerUp(field, { pointerId: 21 });
+            expect(calls).toEqual(['set:21', 'release:21']);
+        });
+
+        it('should take no capture when the field is read-only', () => {
+            const { field, calls } = renderWithCaptureSpy(true);
+            fireEvent.pointerDown(field, { button: 0, pointerId: 22, clientY: 100 });
+            expect(calls).toEqual([]);
+        });
+
+        it('should take no capture when the press is not the primary button', () => {
+            const { field, calls } = renderWithCaptureSpy();
+            fireEvent.pointerDown(field, { button: 2, pointerId: 23, clientY: 100 });
+            expect(calls).toEqual([]);
+        });
+    });
 });
