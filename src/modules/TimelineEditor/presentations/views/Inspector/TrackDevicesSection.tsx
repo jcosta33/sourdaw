@@ -84,6 +84,7 @@ export const TrackDevicesSection = ({ track, onSelectDevice }: TrackDevicesSecti
                                 setShowDeviceMenu(!showDeviceMenu);
                             }}
                             aria-label="Add device"
+                            data-testid="add-device-button"
                         >
                             <Plus className="size-3" />
                         </Button>
@@ -198,6 +199,7 @@ export const TrackDevicesSection = ({ track, onSelectDevice }: TrackDevicesSecti
                     {track.devices.map((device, deviceIndex) => (
                         <ChoiceCard
                             key={device.id}
+                            data-testid={`device-card-${device.id}`}
                             className={cn(
                                 'flex items-center justify-between cursor-grab active:cursor-grabbing',
                                 device.bypassed ? 'opacity-50' : ''
@@ -247,6 +249,7 @@ export const TrackDevicesSection = ({ track, onSelectDevice }: TrackDevicesSecti
                                     className="h-6 w-6"
                                     aria-label={`${device.bypassed ? 'Enable' : 'Bypass'} ${device.name}`}
                                     aria-pressed={device.bypassed}
+                                    data-testid={`device-bypass-${device.id}`}
                                     onClick={(event) => {
                                         event.stopPropagation();
                                         bypassDevice(device.id, !device.bypassed);
@@ -280,6 +283,7 @@ export const TrackDevicesSection = ({ track, onSelectDevice }: TrackDevicesSecti
                                     size="icon-xs"
                                     className="h-6 w-6"
                                     aria-label={`Remove ${device.name}`}
+                                    data-testid={`device-remove-${device.id}`}
                                     onClick={(event) => {
                                         event.stopPropagation();
                                         removeDevice(device.id);
