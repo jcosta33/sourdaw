@@ -1,5 +1,5 @@
 import { fireEvent, render, screen } from '@testing-library/react';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from 'vitest';
 
 import { injectDependencies } from '#/infra/di/testing/injectDependencies';
 import {
@@ -12,6 +12,7 @@ import {
 } from '#/modules/Arrangement/stores';
 
 import { levainStore } from '../../../stores/levainStore';
+import { type LevainDevice } from '../../../useCases/levainParamBridge/helpers';
 import { levainBridge } from '../../../useCases/levainParamBridge/levainBridge';
 import { registerLevainDevice } from '../../../useCases/levainParamBridge/registerLevainDevice';
 import { prepareOfflineLevain } from '../../../useCases/prepareOfflineLevain';
@@ -28,6 +29,8 @@ vi.mock('../../../useCases/autoLoadSamples', () => ({
 const DEVICE_ID = 'levain-1';
 
 type PostedMessage = { type: string; name?: string; value?: number };
+
+type SetParamMock = Mock<LevainDevice['setParam']>;
 
 function fakePort(): { port: MessagePort; posted: PostedMessage[] } {
     const posted: PostedMessage[] = [];
@@ -62,14 +65,17 @@ function makeLevainTracks(): Track[] {
 }
 
 /** Last value the live worklet was told for one engine parameter, or undefined. */
-function lastLiveValue(setParam: ReturnType<typeof vi.fn>, name: string): number | undefined {
-    const matching = setParam.mock.calls.filter((call) => call[0] === name);
-    return matching.at(-1)?.[1] as number | undefined;
+function lastLiveValue(setParam: SetParamMock, name: string): number | undefined {
+    const call = setParam.mock.calls.findLast((candidate) => candidate[0] === name);
+    if (!call) {
+        return undefined;
+    }
+    return call[1];
 }
 
 /** Value the offline render will apply for one engine parameter, or undefined. */
 function offlineValue(posted: PostedMessage[], name: string): number | undefined {
-    return posted.filter((message) => message.type === 'param' && message.name === name).at(-1)?.value;
+    return posted.findLast((message) => message.type === 'param' && message.name === name)?.value;
 }
 
 /**
@@ -102,7 +108,7 @@ function clickArticulation(name: string): void {
  * that sent the wrong value.
  */
 describe('LevainPanel edits reach the live engine', () => {
-    let setParam: ReturnType<typeof vi.fn>;
+    let setParam: SetParamMock;
     let rafCallbacks: FrameRequestCallback[];
 
     /** Run the rAF batch the param bridge coalesces engine writes into. */
@@ -115,7 +121,7 @@ describe('LevainPanel edits reach the live engine', () => {
     beforeEach(async () => {
         mocks.autoLoadLevainSamples.mockClear();
         mocks.autoLoadLevainSamples.mockImplementation(() => Promise.resolve());
-        setParam = vi.fn();
+        setParam = vi.fn<LevainDevice['setParam']>();
         rafCallbacks = [];
         vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
             rafCallbacks.push(callback);
@@ -154,9 +160,7 @@ describe('LevainPanel edits reach the live engine', () => {
         await prepareOfflineLevain({ deviceId: DEVICE_ID, port });
 
         expect(offlineValue(posted, 'current_articulation')).toBe(13);
-        expect(lastLiveValue(setParam, 'current_articulation')).toBe(
-            offlineValue(posted, 'current_articulation')
-        );
+        expect(lastLiveValue(setParam, 'current_articulation')).toBe(offlineValue(posted, 'current_articulation'));
     });
 
     it('keeps the panel readout on the articulation it sent', () => {

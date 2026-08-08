@@ -43,8 +43,8 @@ vi.mock('../levainParamBridge/levainBridgeDependencies', () => ({
     },
 }));
 
-import { loadSamplesForInstrument } from '../levainParamBridge/loadSamplesForInstrument';
 import { applyPatchToEngine } from '../levainParamBridge/applyPatchToEngine';
+import { loadSamplesForInstrument } from '../levainParamBridge/loadSamplesForInstrument';
 import { loadInstrument } from '../loadPreset';
 
 describe('loadInstrument', () => {
