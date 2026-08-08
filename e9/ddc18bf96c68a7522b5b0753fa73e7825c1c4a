@@ -1,0 +1,19 @@
+src/modules/DawInterchange/useCases/__tests__/buildDawProjectZip.spec.ts
+  s_bd148f6aa66446::t_ddfcb6ebcca63a 1-103
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "e9ddc18bf96c68a7522b5b0753fa73e7825c1c4a",
+  "prompts": {},
+  "sessions": {
+    "s_bd148f6aa66446": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-a6e6f530e750d1ff2",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
