@@ -100,6 +100,23 @@ type WebGpuMockHandles = {
     /** Every `createTexture` descriptor the renderer asked the device for. */
     createTexture: ReturnType<typeof vi.fn>;
     setBindGroup: ReturnType<typeof vi.fn>;
+    /**
+     * Ids of the label textures whose bind group the *current* frame encoded,
+     * in encode order. Reset by `startFrameRecording`.
+     */
+    boundTextureIds: string[];
+    /**
+     * Ids of every label texture destroyed, in destruction order. A texture
+     * that appears here before the frame that bound it reached `submit` is the
+     * frame-loss bug: WebGPU rejects the whole command buffer.
+     */
+    destroyedTextureIds: string[];
+    /** Snapshot of `destroyedTextureIds` taken the instant `queue.submit` ran. */
+    destroyedAtSubmit: string[];
+    /** Text-quad vertex floats captured at `writeBuffer` time, per frame. */
+    textQuadWrites: Float32Array[];
+    /** Clear the per-frame recorders so one `render` call can be read in isolation. */
+    startFrameRecording: () => void;
 };
 
 /**
@@ -107,7 +124,7 @@ type WebGpuMockHandles = {
  * WebGPU text path (2D `fillText` → texture upload), so stubbing it lets the
  * spec observe exactly which strings the renderer rasterises for which clips.
  */
-function install_offscreen_canvas_stub(labelFillText: ReturnType<typeof vi.fn>): void {
+function install_offscreen_canvas_stub(labelFillText: ReturnType<typeof vi.fn>, measuredWidthCssPx = 10): void {
     class OffscreenCanvasStub {
         width: number;
         height: number;
@@ -129,7 +146,7 @@ function install_offscreen_canvas_stub(labelFillText: ReturnType<typeof vi.fn>):
                 scale: vi.fn(),
                 clearRect: vi.fn(),
                 fillText: labelFillText,
-                measureText: vi.fn(() => ({ width: 10 })),
+                measureText: vi.fn(() => ({ width: measuredWidthCssPx })),
             };
         }
     }
@@ -137,11 +154,66 @@ function install_offscreen_canvas_stub(labelFillText: ReturnType<typeof vi.fn>):
 }
 
 function install_webgpu_mocks(canvas: HTMLCanvasElement): WebGpuMockHandles {
-    const writeBuffer = vi.fn();
     const draw = vi.fn();
-    const setBindGroup = vi.fn();
     const labelFillText = vi.fn();
-    const createTexture = vi.fn(() => ({ createView: vi.fn(() => ({})), destroy: vi.fn() }));
+
+    // Label textures carry an identity so the spec can follow one texture from
+    // `createTexture` through the bind group that samples it, into the render
+    // pass that encodes it, and out through `destroy`. Without the identity a
+    // destroyed-while-queued texture is invisible: every stub texture looks the
+    // same.
+    const destroyedTextureIds: string[] = [];
+    const destroyedAtSubmit: string[] = [];
+    let textureSeq = 0;
+    const createTexture = vi.fn(() => {
+        const id = `label-tex-${(textureSeq += 1)}`;
+        return {
+            id,
+            createView: vi.fn(() => ({ textureId: id })),
+            destroy: vi.fn(() => {
+                destroyedTextureIds.push(id);
+            }),
+        };
+    });
+    // Binding 1 of the text pipeline's group 0 is the label's texture view, so
+    // the descriptor is what ties a bind group back to its texture.
+    const createBindGroup = vi.fn((descriptor?: { entries?: { resource?: { textureId?: string } }[] }) => ({
+        textureId: descriptor?.entries?.[1]?.resource?.textureId,
+    }));
+
+    const boundTextureIds: string[] = [];
+    const setBindGroup = vi.fn((_index: number, group?: { textureId?: string }) => {
+        if (group?.textureId !== undefined) {
+            boundTextureIds.push(group.textureId);
+        }
+    });
+
+    // The renderer creates the rect vertex buffer first and the text quad
+    // buffer second, and reuses both across frames — so the CPU-side array is
+    // mutated in place and has to be copied at write time, not read afterwards.
+    let bufferSeq = 0;
+    let textBufferIndex = -1;
+    const textQuadWrites: Float32Array[] = [];
+    const writeBuffer = vi.fn(
+        (
+            buffer?: { bufferIndex?: number },
+            _offset?: number,
+            data?: Float32Array,
+            dataOffset?: number,
+            size?: number
+        ) => {
+            if (buffer?.bufferIndex !== textBufferIndex || !data) {
+                return;
+            }
+            textQuadWrites.push(data.slice(dataOffset ?? 0, (dataOffset ?? 0) + (size ?? data.length)));
+        }
+    );
+
+    const submit = vi.fn(() => {
+        destroyedAtSubmit.length = 0;
+        destroyedAtSubmit.push(...destroyedTextureIds);
+    });
+
     const render_pass = {
         setPipeline: vi.fn(),
         setVertexBuffer: vi.fn(),
@@ -160,20 +232,24 @@ function install_webgpu_mocks(canvas: HTMLCanvasElement): WebGpuMockHandles {
         createRenderPipeline: vi.fn(() => ({
             getBindGroupLayout: vi.fn(() => ({})),
         })),
-        createBuffer: vi.fn(({ size }: { size: number }) => ({
-            size,
-            destroy: vi.fn(),
-        })),
+        createBuffer: vi.fn(({ size }: { size: number }) => {
+            const bufferIndex = bufferSeq++;
+            // Buffer 0 is the rect vertex buffer, buffer 1 the text quad buffer.
+            if (bufferIndex === 1) {
+                textBufferIndex = bufferIndex;
+            }
+            return { size, bufferIndex, destroy: vi.fn() };
+        }),
         createSampler: vi.fn(() => ({})),
         // Every real `GPUDevice` exposes `limits`, and the label cache reads
         // `maxTextureDimension2D` from it to bound the raster it asks for. 8192
         // is the WebGPU default a device must support.
         limits: { maxTextureDimension2D: 8192 },
         createTexture,
-        createBindGroup: vi.fn(() => ({})),
+        createBindGroup,
         queue: {
             writeBuffer,
-            submit: vi.fn(),
+            submit,
             copyExternalImageToTexture: vi.fn(),
         },
         createCommandEncoder: vi.fn(() => ({
@@ -214,7 +290,22 @@ function install_webgpu_mocks(canvas: HTMLCanvasElement): WebGpuMockHandles {
     });
     install_offscreen_canvas_stub(labelFillText);
 
-    return { draw, writeBuffer, labelFillText, createTexture, setBindGroup };
+    return {
+        draw,
+        writeBuffer,
+        labelFillText,
+        createTexture,
+        setBindGroup,
+        boundTextureIds,
+        destroyedTextureIds,
+        destroyedAtSubmit,
+        textQuadWrites,
+        startFrameRecording: () => {
+            boundTextureIds.length = 0;
+            destroyedAtSubmit.length = 0;
+            textQuadWrites.length = 0;
+        },
+    };
 }
 
 beforeEach(() => {
@@ -425,6 +516,214 @@ describe('createWebGpuRenderer clip name labels', () => {
         // clip's 10 000. Asserting the actual value rather than just the ceiling
         // keeps this from passing on a texture that is merely clamped.
         expect(width?.width).toBe(10);
+    });
+});
+
+/**
+ * One clip per beat, each with its own name, so the number of *distinct* label
+ * cache keys in a single frame is exactly `clipCount`. Every clip is 25 CSS px
+ * wide, which clears the 12 px inset pair and so renders a label.
+ */
+const create_many_labelled_clips_model = (clipCount: number): TimelineRenderModel => {
+    const base = create_test_model();
+    const template = base.tracks[0]!.clips[0]!;
+    const clips = Array.from({ length: clipCount }, (_unused, index) => ({
+        ...template,
+        id: `clip-${index}`,
+        name: `Clip ${index}`,
+        startBeat: index,
+        endBeat: index + 1,
+        audioBufferId: undefined,
+        type: 'midi' as const,
+        midiNotes: [],
+    }));
+    return {
+        ...base,
+        tracks: [{ ...base.tracks[0]!, clips }],
+        viewportEndBeat: clipCount,
+    };
+};
+
+const create_wide_renderer_canvas = (clipCount: number): HTMLCanvasElement => {
+    const canvas = document.createElement('canvas');
+    // 25 device px per beat at dpr 1, plus slack, so no clip is viewport-culled.
+    canvas.width = clipCount * 25 + 100;
+    canvas.height = 80;
+    return canvas;
+};
+
+/**
+ * The label cache evicts by destroying a `GPUTexture`. The renderer collects
+ * every label's bind group during the clip pass and only encodes them into the
+ * render pass *after* that pass finishes — so any texture destroyed during the
+ * pass is destroyed while a bind group referencing it is already queued for the
+ * frame. WebGPU rejects the whole command buffer at submit: not one missing
+ * label, the entire frame.
+ *
+ * These guards live past the cache's retention bound on purpose. A frame with
+ * ten labels never evicts and passes identically with the bug present.
+ */
+describe('createWebGpuRenderer label texture lifetime across one frame', () => {
+    const render_one_frame = async (clipCount: number) => {
+        const canvas = create_wide_renderer_canvas(clipCount);
+        const handles = install_webgpu_mocks(canvas);
+        const { createWebGpuRenderer } = await import('../createWebGpuRenderer');
+        const renderer = await createWebGpuRenderer(canvas);
+        if (!renderer) {
+            throw new Error('expected WebGPU renderer');
+        }
+        handles.startFrameRecording();
+        renderer.render(create_many_labelled_clips_model(clipCount));
+        return handles;
+    };
+
+    it('keeps every encoded label texture alive through submit at 257 distinct labels', async () => {
+        const handles = await render_one_frame(257);
+
+        // The fixture really does put 257 distinct labels in the frame — the
+        // assertion below is worthless if the frame quietly drew fewer.
+        expect(handles.boundTextureIds).toHaveLength(257);
+
+        const destroyedWhileQueued = handles.boundTextureIds.filter((id) => handles.destroyedAtSubmit.includes(id));
+        expect(destroyedWhileQueued).toEqual([]);
+    });
+
+    it('keeps every encoded label texture alive through submit at 256 distinct labels', async () => {
+        const handles = await render_one_frame(256);
+
+        expect(handles.boundTextureIds).toHaveLength(256);
+        expect(handles.destroyedAtSubmit).toEqual([]);
+    });
+
+    it('keeps every encoded label texture alive through submit well past the retention bound', async () => {
+        const handles = await render_one_frame(500);
+
+        expect(handles.boundTextureIds).toHaveLength(500);
+
+        const destroyedWhileQueued = handles.boundTextureIds.filter((id) => handles.destroyedAtSubmit.includes(id));
+        expect(destroyedWhileQueued).toEqual([]);
+    });
+
+    it('rasterises a 400-label frame once, not once per frame', async () => {
+        const canvas = create_wide_renderer_canvas(400);
+        const handles = install_webgpu_mocks(canvas);
+        const { createWebGpuRenderer } = await import('../createWebGpuRenderer');
+        const renderer = await createWebGpuRenderer(canvas);
+        if (!renderer) {
+            throw new Error('expected WebGPU renderer');
+        }
+        const model = create_many_labelled_clips_model(400);
+
+        renderer.render(model);
+        const afterFirstFrame = handles.createTexture.mock.calls.length;
+        renderer.render(model);
+        renderer.render(model);
+
+        // 400 distinct labels, three identical frames. A cache that retains the
+        // frame's working set rasterises 400 textures and no more; one that
+        // evicts inside the frame re-rasterises all 400 every frame.
+        expect(afterFirstFrame).toBe(400);
+        expect(handles.createTexture.mock.calls.length).toBe(400);
+    });
+});
+
+/**
+ * The label sampler filters linearly. A quad whose edges land between texel
+ * centres therefore resolves as a blur rather than as the glyphs, and because
+ * the fractional part moves with the scroll offset, the blur crawls while the
+ * timeline moves. Two things have to hold: the quad's origin is a whole device
+ * pixel, and its extent is exactly the raster's — a quad a fraction narrower
+ * than its texture minifies it, which blurs even at an integral origin.
+ *
+ * A power-of-two canvas keeps the clip-space round trip exact in float32, so
+ * these read the vertices the GPU would actually receive.
+ */
+describe('createWebGpuRenderer label quad device-pixel snapping', () => {
+    const CANVAS_W = 2048;
+    const CANVAS_H = 512;
+
+    /** Undo `pushTexturedQuad`'s clip-space mapping to recover device px. */
+    const read_quad_device_px = (quad: Float32Array) => ({
+        x1: (quad[0]! + 1) * (CANVAS_W / 2),
+        y1: (1 - quad[1]!) * (CANVAS_H / 2),
+        x2: (quad[4]! + 1) * (CANVAS_W / 2),
+        y2: (1 - quad[9]!) * (CANVAS_H / 2),
+    });
+
+    /**
+     * One clip whose left edge and track offset are both fractional in CSS px —
+     * which is the ordinary case, not a contrived one: any non-integer zoom or
+     * mid-scroll position produces it.
+     */
+    const create_fractional_model = (): TimelineRenderModel => {
+        const base = create_test_model();
+        return {
+            ...base,
+            pixelsPerBeat: 25.3,
+            scrollY: 0.5,
+            tracks: [
+                {
+                    ...base.tracks[0]!,
+                    clips: [
+                        {
+                            ...base.tracks[0]!.clips[0]!,
+                            startBeat: 1,
+                            endBeat: 2,
+                            audioBufferId: undefined,
+                            type: 'midi' as const,
+                            midiNotes: [],
+                        },
+                    ],
+                },
+            ],
+        };
+    };
+
+    const render_fractional_frame = async (dpr: number, measuredWidthCssPx: number) => {
+        Object.defineProperty(window, 'devicePixelRatio', { configurable: true, value: dpr });
+        const canvas = document.createElement('canvas');
+        canvas.width = CANVAS_W;
+        canvas.height = CANVAS_H;
+        const handles = install_webgpu_mocks(canvas);
+        install_offscreen_canvas_stub(vi.fn(), measuredWidthCssPx);
+        const { createWebGpuRenderer } = await import('../createWebGpuRenderer');
+        const renderer = await createWebGpuRenderer(canvas);
+        if (!renderer) {
+            throw new Error('expected WebGPU renderer');
+        }
+        handles.startFrameRecording();
+        renderer.render(create_fractional_model());
+        const quad = handles.textQuadWrites.at(-1);
+        if (!quad) {
+            throw new Error('expected the frame to write a label quad');
+        }
+        return read_quad_device_px(quad);
+    };
+
+    it('places a label quad on whole device pixels from a fractional layout at dpr 1', async () => {
+        // Pen at (1 × 25.3 + 6) = 31.3 CSS px, block top at (−0.5 + 4) = 3.5.
+        const { x1, y1, x2, y2 } = await render_fractional_frame(1, 10);
+
+        expect(Number.isInteger(x1)).toBe(true);
+        expect(Number.isInteger(y1)).toBe(true);
+        expect(x1).toBe(31);
+        expect(y1).toBe(4);
+        // A 10 CSS px run at dpr 1 is a 10-texel raster, and the quad covers it
+        // exactly: one texel per device pixel.
+        expect(x2 - x1).toBe(10);
+        expect(y2 - y1).toBe(14);
+    });
+
+    it('matches the quad to the rounded-up raster size at dpr 2', async () => {
+        // A 10.3 CSS px run at dpr 2 needs ceil(20.6) = 21 texels. Sizing the
+        // quad from the CSS width instead gives 20.6 device px, so the raster
+        // is minified by 2% — blurry at every position, integral or not.
+        const { x1, y1, x2, y2 } = await render_fractional_frame(2, 10.3);
+
+        expect(x1).toBe(63);
+        expect(y1).toBe(7);
+        expect(x2 - x1).toBe(21);
+        expect(y2 - y1).toBe(28);
     });
 });
 

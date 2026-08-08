@@ -19,11 +19,26 @@ type LabelContext = {
     fillStyle: string;
 };
 
-function install_offscreen_canvas_stub(measuredWidth: () => number): {
+/**
+ * What the stubbed 2D context reports for a glyph run. `width` is the pen
+ * advance; the `actualBoundingBox*` fields are the ink box, which real engines
+ * report and which can extend outside the advance in every direction.
+ */
+type StubTextMetrics = {
+    width: number;
+    actualBoundingBoxLeft?: number;
+    actualBoundingBoxRight?: number;
+    actualBoundingBoxAscent?: number;
+    actualBoundingBoxDescent?: number;
+};
+
+function install_offscreen_canvas_stub(measured: () => StubTextMetrics): {
     contexts: LabelContext[];
     fillTextAll: ReturnType<typeof vi.fn>;
+    canvasSizes: { width: number; height: number }[];
 } {
     const contexts: LabelContext[] = [];
+    const canvasSizes: { width: number; height: number }[] = [];
     const fillTextAll = vi.fn();
     class OffscreenCanvasStub {
         width: number;
@@ -32,6 +47,7 @@ function install_offscreen_canvas_stub(measuredWidth: () => number): {
         constructor(width: number, height: number) {
             this.width = width;
             this.height = height;
+            canvasSizes.push({ width, height });
         }
 
         getContext(contextId: string): LabelContext | null {
@@ -39,7 +55,7 @@ function install_offscreen_canvas_stub(measuredWidth: () => number): {
                 return null;
             }
             const ctx: LabelContext = {
-                measureText: vi.fn(() => ({ width: measuredWidth() })),
+                measureText: vi.fn(() => measured()),
                 fillText: fillTextAll,
                 scale: vi.fn(),
                 font: '',
@@ -55,7 +71,7 @@ function install_offscreen_canvas_stub(measuredWidth: () => number): {
         }
     }
     vi.stubGlobal('OffscreenCanvas', OffscreenCanvasStub);
-    return { contexts, fillTextAll };
+    return { contexts, fillTextAll, canvasSizes };
 }
 
 type StubDevice = {
@@ -120,7 +136,7 @@ describe('createClipLabelTextureCache', () => {
         // The measuring context reports a 30px glyph run by default — narrow
         // enough that the clip budget only constrains it when the test shrinks
         // the run, wide enough to exercise `Math.min(measured, budget, ceiling)`.
-        install_offscreen_canvas_stub(() => 30);
+        install_offscreen_canvas_stub(() => ({ width: 30 }));
         vi.stubGlobal('GPUTextureUsage', {
             TEXTURE_BINDING: 4,
             COPY_DST: 2,
@@ -135,11 +151,12 @@ describe('createClipLabelTextureCache', () => {
     // The stub device satisfies the cache's real surface (limits, createTexture,
     // createBindGroup, queue.copyExternalImageToTexture). Cast once here so each
     // test reads as plain data, not a casting exercise.
-    const makeCache = () =>
+    const makeCache = (maxCachedLabels = 256) =>
         createClipLabelTextureCache({
             device: handles.device as unknown as GPUDevice,
             bindGroupLayout: handles.bindGroupLayout,
             sampler: handles.sampler,
+            maxCachedLabels,
         });
 
     it('rejects an empty label and never touches the device', () => {
@@ -166,10 +183,14 @@ describe('createClipLabelTextureCache', () => {
         const result = cache.acquire({ text: 'Kick', maxWidthCssPx: 100, dpr: 1 });
 
         expect(result).not.toBeNull();
-        // The measuring context reported 30px; that is narrower than the 100px
-        // budget and the 8192px device ceiling, so the cache uses the run's own
-        // width as the condensed target.
-        expect(result?.widthCssPx).toBe(30);
+        // The measuring context reported a 30px advance; that is narrower than
+        // the 100px budget and the 8192px device ceiling, so the cache uses the
+        // run's own width as the condensed target. At dpr 1 that is 30 texels.
+        expect(result?.widthDevicePx).toBe(30);
+        // A plain run with no reported ink box needs no room outside the pen,
+        // so the quad sits exactly at the layout's pen position.
+        expect(result?.offsetXDevicePx).toBe(0);
+        expect(result?.offsetYDevicePx).toBe(0);
         expect(result?.bindGroup).toEqual({ id: 'bg-1' });
         // The first call creates exactly one texture and one bind group.
         expect(handles.device.createTexture).toHaveBeenCalledTimes(1);
@@ -181,7 +202,7 @@ describe('createClipLabelTextureCache', () => {
 
         const result = cache.acquire({ text: 'Kick', maxWidthCssPx: 20, dpr: 1 });
 
-        expect(result?.widthCssPx).toBe(20);
+        expect(result?.widthDevicePx).toBe(20);
         // The texture is sized in device pixels: ceil(budgetCss * dpr) wide,
         // ceil(blockHeight * dpr) tall.
         expect(handles.device.createTexture).toHaveBeenCalledWith(
@@ -196,7 +217,7 @@ describe('createClipLabelTextureCache', () => {
     });
 
     it('hands the 2D context the condensed width so fillText condenses the run', () => {
-        const { fillTextAll } = install_offscreen_canvas_stub(() => 60);
+        const { fillTextAll } = install_offscreen_canvas_stub(() => ({ width: 60 }));
         const cache = makeCache();
 
         // Glyph run 60, budget 40 — the cache must condense into 40.
@@ -262,25 +283,66 @@ describe('createClipLabelTextureCache', () => {
         expect(handles.device.createTexture).toHaveBeenCalledTimes(1);
     });
 
-    it('evicts the least-recently-used entry past MAX_CACHED_LABELS and destroys its texture', () => {
+    it('evicts the least-recently-used entry past the retention bound once the frame closes', () => {
         const cache = makeCache();
 
-        // Insert 256 distinct labels. The 257th must evict label-1 (the oldest).
+        // Frame 1: 256 distinct labels, exactly the retention bound.
         for (let i = 0; i < 256; i += 1) {
             cache.acquire({ text: `label-${i}`, maxWidthCssPx: 100, dpr: 1 });
         }
-        const textureCountBefore = handles.device.createTexture.mock.calls.length;
-        expect(textureCountBefore).toBe(256);
+        cache.endFrame();
+        expect(handles.device.createTexture.mock.calls.length).toBe(256);
         expect(handles.destroyedTextures).toHaveLength(0);
 
-        // Insert one more — label-0 was inserted first and never re-acquired,
-        // so it is the LRU victim.
+        // Frame 2: one new label. label-0 was inserted first and is not pinned
+        // by this frame, so it is the LRU victim.
         cache.acquire({ text: `label-256`, maxWidthCssPx: 100, dpr: 1 });
+        cache.endFrame();
 
         expect(handles.device.createTexture.mock.calls.length).toBe(257);
-        expect(handles.destroyedTextures).toHaveLength(1);
-        // tex-1 is the texture allocated for the first label-0 acquire.
-        expect(handles.destroyedTextures[0]).toBe('tex-1');
+        expect(handles.destroyedTextures).toEqual(['tex-1']);
+    });
+
+    it('holds an evicted texture until endFrame rather than destroying it mid-frame', () => {
+        const cache = makeCache();
+
+        // All 257 in one frame. The 257th pushes the cache past its bound, but
+        // the caller has not submitted yet — the first label's bind group is
+        // already queued for this frame, so destroying its texture now costs
+        // the whole frame.
+        for (let i = 0; i < 257; i += 1) {
+            cache.acquire({ text: `label-${i}`, maxWidthCssPx: 100, dpr: 1 });
+        }
+
+        expect(handles.destroyedTextures).toHaveLength(0);
+
+        cache.endFrame();
+
+        expect(handles.destroyedTextures).toEqual(['tex-1']);
+    });
+
+    it('never evicts an entry the open frame has handed out, however far past the bound', () => {
+        // A deliberately tiny bound: 300 labels in one frame is 75× it. If the
+        // cache can be made to destroy an in-frame texture at all, this is
+        // where it happens — and no constant in the production wiring can hide
+        // it, because the bound is the fixture.
+        const cache = makeCache(4);
+
+        const acquired = [];
+        for (let i = 0; i < 300; i += 1) {
+            acquired.push(cache.acquire({ text: `label-${i}`, maxWidthCssPx: 100, dpr: 1 }));
+        }
+
+        expect(acquired.filter((entry) => entry !== null)).toHaveLength(300);
+        // Every one of the 300 got its own bind group, and not one texture was
+        // destroyed while the frame was open.
+        expect(new Set(handles.bindGroups).size).toBe(300);
+        expect(handles.destroyedTextures).toHaveLength(0);
+
+        cache.endFrame();
+
+        // Closing the frame gives the overshoot back: 4 retained, 296 released.
+        expect(handles.destroyedTextures).toHaveLength(296);
     });
 
     it('promotes a re-acquired entry to most-recent so it survives a later eviction', () => {
@@ -289,15 +351,124 @@ describe('createClipLabelTextureCache', () => {
         for (let i = 0; i < 256; i += 1) {
             cache.acquire({ text: `label-${i}`, maxWidthCssPx: 100, dpr: 1 });
         }
+        cache.endFrame();
+
         // Touch label-0 — it moves to the back (most-recent).
         cache.acquire({ text: `label-0`, maxWidthCssPx: 100, dpr: 1 });
-
         // Now the oldest is label-1. Inserting a new label evicts label-1, not label-0.
         cache.acquire({ text: `label-256`, maxWidthCssPx: 100, dpr: 1 });
+        cache.endFrame();
 
-        expect(handles.destroyedTextures).toHaveLength(1);
         // tex-2 was the texture allocated for label-1 (the second insertion).
-        expect(handles.destroyedTextures[0]).toBe('tex-2');
+        expect(handles.destroyedTextures).toEqual(['tex-2']);
+    });
+
+    it('keys the cache so a different width and a text that starts with a digit cannot collide', () => {
+        const cache = makeCache();
+
+        // Concatenating dpr, width and text without a separator makes these two
+        // the same key: "1" + "23" + "foo" and "1" + "2" + "3foo". The second
+        // clip would then be served the first clip's raster.
+        cache.acquire({ text: 'foo', maxWidthCssPx: 23, dpr: 1 });
+        cache.acquire({ text: '3foo', maxWidthCssPx: 2, dpr: 1 });
+
+        expect(handles.device.createTexture).toHaveBeenCalledTimes(2);
+        expect(new Set(handles.bindGroups).size).toBe(2);
+    });
+
+    /**
+     * The pen advance is where the cursor lands, not where the paint lands. An
+     * italic's last glyph leans past it, an emoji is drawn wider than it
+     * advances, and Devanagari, Thai and Arabic all carry marks outside it — on
+     * the left as well as the right, and above the Latin ascent. A raster cut
+     * to the advance and the nominal ascent/descent block shears all of that
+     * off, and the missing pixels are silent.
+     */
+    describe('ink box', () => {
+        // A run that overhangs the pen in all four directions: 2px of left side
+        // bearing, 6px of lean past the 30px advance, 3px above the nominal
+        // 10px ascent, 2px below the nominal 4px descent.
+        const overhanging_run = () => ({
+            width: 30,
+            actualBoundingBoxLeft: 2,
+            actualBoundingBoxRight: 36,
+            actualBoundingBoxAscent: 13,
+            actualBoundingBoxDescent: 6,
+        });
+
+        it('contains the whole ink box in the raster, not just the advance box', () => {
+            const { fillTextAll } = install_offscreen_canvas_stub(overhanging_run);
+            const cache = makeCache();
+
+            const result = cache.acquire({ text: 'Kick', maxWidthCssPx: 100, dpr: 1 });
+
+            // Where the cache put the pen inside its own raster.
+            const [, penX, penBaselineY] = fillTextAll.mock.calls[0] as [string, number, number, number];
+            const ink = overhanging_run();
+
+            // Ink left of the pen must land at or after the raster's left edge,
+            // and ink right of it at or before the right edge. Same vertically
+            // about the baseline. These four inequalities are the whole point:
+            // an advance-sized raster fails the first and the last two.
+            expect(penX - ink.actualBoundingBoxLeft).toBeGreaterThanOrEqual(0);
+            expect(penBaselineY - ink.actualBoundingBoxAscent).toBeGreaterThanOrEqual(0);
+            expect(result?.widthDevicePx).toBeGreaterThanOrEqual(penX + ink.actualBoundingBoxRight);
+            expect(result?.heightDevicePx).toBeGreaterThanOrEqual(penBaselineY + ink.actualBoundingBoxDescent);
+
+            // And no larger than it needs to be — a raster that merely got big
+            // enough by accident would satisfy the inequalities above.
+            expect(result?.widthDevicePx).toBe(38);
+            expect(result?.heightDevicePx).toBe(19);
+        });
+
+        it('offsets the quad by the overhang so the glyphs land where the layout asked', () => {
+            install_offscreen_canvas_stub(overhanging_run);
+            const cache = makeCache();
+
+            const result = cache.acquire({ text: 'Kick', maxWidthCssPx: 100, dpr: 1 });
+
+            // The raster grew 2px left and 3px up to hold the overhang, so the
+            // caller has to place it 2px left and 3px up of the pen position —
+            // otherwise widening the raster silently shifts the text right.
+            expect(result?.offsetXDevicePx).toBe(-2);
+            expect(result?.offsetYDevicePx).toBe(-3);
+        });
+
+        it('shrinks the ink box by the same factor fillText condenses the run', () => {
+            // 60px advance squeezed into a 30px budget: `maxWidth` condenses
+            // horizontally by half, so 72px of ink becomes 36px and 4px of side
+            // bearing becomes 2px. Sizing from the unsqueezed ink would ask for
+            // a raster twice as wide as the paint.
+            install_offscreen_canvas_stub(() => ({
+                width: 60,
+                actualBoundingBoxLeft: 4,
+                actualBoundingBoxRight: 72,
+                actualBoundingBoxAscent: 10,
+                actualBoundingBoxDescent: 4,
+            }));
+            const cache = makeCache();
+
+            const result = cache.acquire({ text: 'LongLabel', maxWidthCssPx: 30, dpr: 1 });
+
+            // 2px bearing + 36px condensed ink.
+            expect(result?.widthDevicePx).toBe(38);
+            expect(result?.offsetXDevicePx).toBe(-2);
+        });
+
+        it('keeps the nominal block when the engine reports no ink box', () => {
+            // Older engines omit the actualBoundingBox* fields. The cache must
+            // fall back to the advance and the shared ascent/descent constants
+            // rather than producing a 1px or NaN-sized raster.
+            install_offscreen_canvas_stub(() => ({ width: 30 }));
+            const cache = makeCache();
+
+            const result = cache.acquire({ text: 'Kick', maxWidthCssPx: 100, dpr: 2 });
+
+            expect(result?.widthDevicePx).toBe(60);
+            expect(result?.heightDevicePx).toBe(CLIP_LABEL_BLOCK_HEIGHT_CSS_PX * 2);
+            expect(result?.offsetXDevicePx).toBe(0);
+            expect(result?.offsetYDevicePx).toBe(0);
+        });
     });
 
     it('destroys every held texture on dispose and empties the cache', () => {
