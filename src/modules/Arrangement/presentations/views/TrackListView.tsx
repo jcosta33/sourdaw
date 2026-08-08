@@ -342,60 +342,60 @@ const AddTrackMenu = ({ trackCount }: { trackCount: number }): ReactElement => {
 
     return (
         <div data-testid="add-track-button">
-        <DropdownMenu>
-            <Tooltip>
-                <TooltipTrigger asChild>
-                    <DropdownMenuTrigger asChild>
-                        <Button variant="ghost" size="icon-xs" aria-label="Add track">
-                            <Plus className="size-3" aria-hidden="true" />
-                        </Button>
-                    </DropdownMenuTrigger>
-                </TooltipTrigger>
-                <TooltipContent>Add Track</TooltipContent>
-            </Tooltip>
+            <DropdownMenu>
+                <Tooltip>
+                    <TooltipTrigger asChild>
+                        <DropdownMenuTrigger asChild>
+                            <Button variant="ghost" size="icon-xs" aria-label="Add track">
+                                <Plus className="size-3" aria-hidden="true" />
+                            </Button>
+                        </DropdownMenuTrigger>
+                    </TooltipTrigger>
+                    <TooltipContent>Add Track</TooltipContent>
+                </Tooltip>
 
-            <DropdownMenuContent align="end" sideOffset={4} className="w-44">
-                <DropdownMenuItem
-                    onClick={() => createTrackOfKind('audio')}
-                    data-testid="add-track-audio"
-                    className="flex items-center gap-2 px-3 py-1.5 text-xs focus:bg-white/[0.06] cursor-pointer"
-                >
-                    <Mic2 className="size-3 text-[var(--color-accent-cyan)]" />
-                    Audio Track
-                </DropdownMenuItem>
-                <DropdownMenuItem
-                    onClick={() => createTrackOfKind('midi')}
-                    data-testid="add-track-midi"
-                    className="flex items-center gap-2 px-3 py-1.5 text-xs focus:bg-white/[0.06] cursor-pointer"
-                >
-                    <Music className="size-3 text-[var(--color-accent-mint)]" />
-                    MIDI Track
-                </DropdownMenuItem>
-                <DropdownMenuItem
-                    onClick={() => createTrackOfKind('bus')}
-                    className="flex items-center gap-2 px-3 py-1.5 text-xs focus:bg-white/[0.06] cursor-pointer"
-                >
-                    <GitBranch className="size-3 text-[var(--color-accent-peach)]" />
-                    Bus Track
-                </DropdownMenuItem>
-                {templates.length > 0 ? (
-                    <>
-                        <DropdownMenuSeparator className="border-border/50" />
-                        <DawMenuSectionLabel>Templates</DawMenuSectionLabel>
-                        {templates.map((tmpl) => (
-                            <DropdownMenuItem
-                                key={tmpl.id}
-                                onClick={() => loadTrackTemplate(tmpl.id)}
-                                className="flex items-center gap-2 px-3 py-1.5 text-xs focus:bg-white/[0.06] cursor-pointer"
-                            >
-                                <FileStack className="size-3 text-[var(--color-accent-lavender)]" />
-                                {tmpl.name}
-                            </DropdownMenuItem>
-                        ))}
-                    </>
-                ) : null}
-            </DropdownMenuContent>
-        </DropdownMenu>
+                <DropdownMenuContent align="end" sideOffset={4} className="w-44">
+                    <DropdownMenuItem
+                        onClick={() => createTrackOfKind('audio')}
+                        data-testid="add-track-audio"
+                        className="flex items-center gap-2 px-3 py-1.5 text-xs focus:bg-white/[0.06] cursor-pointer"
+                    >
+                        <Mic2 className="size-3 text-[var(--color-accent-cyan)]" />
+                        Audio Track
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                        onClick={() => createTrackOfKind('midi')}
+                        data-testid="add-track-midi"
+                        className="flex items-center gap-2 px-3 py-1.5 text-xs focus:bg-white/[0.06] cursor-pointer"
+                    >
+                        <Music className="size-3 text-[var(--color-accent-mint)]" />
+                        MIDI Track
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                        onClick={() => createTrackOfKind('bus')}
+                        className="flex items-center gap-2 px-3 py-1.5 text-xs focus:bg-white/[0.06] cursor-pointer"
+                    >
+                        <GitBranch className="size-3 text-[var(--color-accent-peach)]" />
+                        Bus Track
+                    </DropdownMenuItem>
+                    {templates.length > 0 ? (
+                        <>
+                            <DropdownMenuSeparator className="border-border/50" />
+                            <DawMenuSectionLabel>Templates</DawMenuSectionLabel>
+                            {templates.map((tmpl) => (
+                                <DropdownMenuItem
+                                    key={tmpl.id}
+                                    onClick={() => loadTrackTemplate(tmpl.id)}
+                                    className="flex items-center gap-2 px-3 py-1.5 text-xs focus:bg-white/[0.06] cursor-pointer"
+                                >
+                                    <FileStack className="size-3 text-[var(--color-accent-lavender)]" />
+                                    {tmpl.name}
+                                </DropdownMenuItem>
+                            ))}
+                        </>
+                    ) : null}
+                </DropdownMenuContent>
+            </DropdownMenu>
         </div>
     );
 };
