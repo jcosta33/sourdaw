@@ -777,7 +777,9 @@ Re-measured after additional PRs since threshold raise #3 (PR #1231). Lines cros
 - **PR #1441**: Mixer snapshots & AI health — save, recall, health — 5 tests.
 - **PR #1443**: Export format selection — WAV/MP3/FLAC toggles — 4 tests.
 - **PR #1444**: Track context menu — duplicate, rename, add clip — 5 tests.
+- **PR #1447**: Master channel strip — gain, slider, keyboard — 3 tests.
+- **PR #1448**: Master channel + export range & tail — range radios, tail input — 8 tests.
 
-**E2E: 136 tests across 31 spec files using data-testid selectors.**
+**E2E: 147 tests across 33 spec files using data-testid selectors.**
 
-**Campaign total to date: 272 PRs, ~2697 assertions. Lines coverage at 90.30%.**
+**Campaign total to date: 275 PRs, ~2710 assertions. Lines coverage at 90.30%.**
