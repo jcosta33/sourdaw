@@ -81,6 +81,7 @@ export const TempoEditor = (): ReactElement => {
                         onClick={() => time.setMapOpen(!time.mapOpen)}
                         aria-label="Toggle tempo map"
                         aria-expanded={time.mapOpen}
+                        data-testid="transport-tempo-map-toggle"
                         className={cn('size-5', time.mapOpen && 'bg-accent')}
                     >
                         <Map className="size-3" />
