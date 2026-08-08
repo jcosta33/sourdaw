@@ -92,6 +92,7 @@ export const StepSequencer = ({
                                         role="checkbox"
                                         tabIndex={0}
                                         aria-checked={step.active}
+                                        data-testid={`toaster-step-${track.padIndex}-${stepIndex}`}
                                         aria-label={`${pad.name} step ${stepIndex + 1}${
                                             step.active ? `, on, velocity ${Math.round(step.velocity * 100)}%` : ', off'
                                         }`}
