@@ -1,0 +1,23 @@
+src/modules/Levain/presentations/views/__tests__/levainPanelReachesTheEngine.spec.tsx
+  s_14f2bbc9f385dd::t_c2c4543dc3551b 148-151,165,167-169,171,175-177,181,186,189-197,201,204-209
+  s_14f2bbc9f385dd::t_efd9cdd733d176 198-200,202-203
+  s_14f2bbc9f385dd::t_b3f24632940bfd 76-89
+  s_14f2bbc9f385dd::t_3370a37cedb98f 106,108-114,119-124
+  s_14f2bbc9f385dd::t_5b837c297155c9 1-75,90-105,107,115-118,125-147,152-164,166,170,172-174,178-180,182-185,187-188,210-211
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "8f7aa4484442ab50b27f6613f8153ec2a2a9981c",
+  "prompts": {},
+  "sessions": {
+    "s_14f2bbc9f385dd": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f9a61a1d-66b3-4146-938d-a04f45f4b060",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
