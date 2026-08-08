@@ -96,6 +96,11 @@ class QuantumCostProcessor extends AudioWorkletProcessor {
         try {
             built = buildDevices({
             only: config.deviceId,
+            // Every quantum this row will render, warm-up included. A recipe
+            // that has to lay out a timeline ahead of time sizes it from this
+            // rather than from a literal, so raising `--measure` cannot walk a
+            // row off the end of its own data.
+            quantaBudget: config.warmupQuanta + config.measureQuanta,
             dsp: {
                 memory: dspExports.memory,
                 BacteriaInstance,

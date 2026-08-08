@@ -51,6 +51,10 @@ export const DEVICE_IDS = [
     'knead',
     'grinder',
     'fermenter',
+    'fermenter_automation_16',
+    'fermenter_automation_90',
+    'fermenter_automation_105',
+    'fermenter_automation_1050',
     'grand_boule',
     'grand_boule_ring_consumer',
     'toaster',
@@ -92,6 +96,10 @@ export const COST_SITE = {
     knead: 'audio-thread',
     grinder: 'audio-thread',
     fermenter: 'audio-thread',
+    fermenter_automation_16: 'audio-thread',
+    fermenter_automation_90: 'audio-thread',
+    fermenter_automation_105: 'audio-thread',
+    fermenter_automation_1050: 'audio-thread',
     grand_boule: 'worker',
     grand_boule_ring_consumer: 'audio-thread',
     toaster: 'audio-thread',
@@ -201,7 +209,7 @@ export function loopSample(frames) {
  *   timed run, so a device that fell silent halfway through cannot be reported.
  * - `note` — what the load parameter is and where production sets it.
  */
-export function buildDevices({ dsp, chamber, scoring, ring, readBlockAcquire, only }) {
+export function buildDevices({ dsp, chamber, scoring, ring, readBlockAcquire, only, quantaBudget }) {
     const devices = [];
     /**
      * Constructing a device allocates: Levain and Crumbs each load a one-second
@@ -554,6 +562,261 @@ export function buildDevices({ dsp, chamber, scoring, ring, readBlockAcquire, on
                 expectSounding: 16,
                 activeVoices: () => instance.active_voices(),
             })
+        );
+    }
+
+    // -- Fermenter under offline parameter automation ----------------------
+    //
+    // What these rows exist to decide: `fermenterProcessor.ts` keeps its
+    // automation schedules in a plain growing `Array` (`_paramAutomation`) and
+    // walks the whole of it once per `process()` call, on the audio thread
+    // (`_applyParamAutomation`, called from `process` at line 527). Fermenter
+    // declares ~105 automatable parameters and only 16 are bound today, so the
+    // question in front of the binding-table work is what the walk costs at 90
+    // and at 105 rather than at 16.
+    //
+    // The loop is **per schedule, not per scheduled event** — one entry per
+    // distinct `paramId`, so the array length is bounded by the ordinal count,
+    // and the segment cursor only ever moves forward. The per-entry work is a
+    // segment-advance check, a linear interpolation, and — when the value moved
+    // — one `set_param_by_id` call across the wasm-bindgen boundary into a
+    // string-matched `MasterSynth::set_param` cascade. That call is the cost,
+    // not the array walk, which is why this is measured rather than reasoned
+    // about from the loop count.
+    //
+    // # Why the ordinals cycle
+    //
+    // Only 16 ordinals exist in `AUTOMATION_PARAM_NAMES` today; ordinal >= 16
+    // early-returns in `set_param_by_id` and would measure nothing. So the 90-
+    // and 105-schedule rows cycle `paramId % 16`. This is deliberate and it is
+    // what makes the delta readable: the **set of parameters actually moved**
+    // is identical across all three rows, so the DSP consequence of automation
+    // is held constant and the 16 -> 90 -> 105 difference is the marginal
+    // dispatch cost of extra schedules and nothing else.
+    //
+    // What that does not cover, and must not be claimed. The 16 live ordinals
+    // are not a sample of Fermenter's parameters, they are the **cheap tail** of
+    // it, and the bias has a direction:
+    //
+    // * All 16 land on cheap arms — `layer.rs:627+` has thirteen as plain field
+    //   stores, and `cutoff`/`resonance`/`lfo_rate` as `SmoothedParam::set`.
+    //   None of the 16 recomputes a coefficient inside `set_param`, and none
+    //   loops the voice array.
+    // * The unbound 89 include arms that do both: the nine EQ parameters in
+    //   `FermenterDescriptor.ts:149-157` call `self.eq.set_band(...)` in
+    //   `synth.rs` (a biquad recompute per call), and `drift` /
+    //   `additive_partials` iterate all 32 voices (`layer.rs:691-702`).
+    //
+    // So these rows bound the **dispatch** of N schedules and nothing else. The
+    // per-parameter DSP cost of the 89 is unmeasured and skews expensive. And
+    // because `paramId % 16` holds the moved set constant by construction, the
+    // step between the un-automated row and these carries **no** information
+    // about how it scales with *distinct* parameters — do not read it as a cost
+    // already paid.
+    const AUTOMATION_ORDINAL_RANGES = [
+        [0.6, 1.0], // 0  osc_level
+        [2000, 6000], // 1  cutoff
+        [0.2, 0.6], // 2  resonance
+        [0.5, 6.0], // 3  lfo_rate
+        [0.0, 0.5], // 4  lfo_filter_amount
+        [0.0, 0.2], // 5  mod_lfo_to_pitch
+        [0.0, 0.5], // 6  mod_env_to_filter
+        [0.0, 0.5], // 7  mseg_to_filter
+        [0.0, 0.5], // 8  unison_spread
+        [0.0, 0.3], // 9  fm_level2
+        [0.0, 0.3], // 10 fm_feedback
+        [0.0, 0.2], // 11 noise_level
+        [0.0, 0.5], // 12 grain_density
+        [0.1, 0.5], // 13 grain_size
+        [0.0, 0.3], // 14 grain_spray
+        [0.0, 0.9], // 15 osc_waveform (stays inside the sine bucket; still a new value each quantum)
+    ];
+
+    /** 0.1 s of automation per segment at 48 kHz — a dense but realistic clip resolution. */
+    const AUTOMATION_SEGMENT_FRAMES = 4_800;
+
+    /**
+     * Build `count` schedules in exactly the shape `_paramAutomation` holds,
+     * covering `frames` of timeline. Built once at construction; nothing here
+     * runs on the render path.
+     */
+    const buildAutomationSchedules = (count, frames) => {
+        const schedules = [];
+        const segmentCount = Math.ceil(frames / AUTOMATION_SEGMENT_FRAMES) + 1;
+        for (let index = 0; index < count; index += 1) {
+            const paramId = index % AUTOMATION_ORDINAL_RANGES.length;
+            const [lo, hi] = AUTOMATION_ORDINAL_RANGES[paramId];
+            const segments = [];
+            // Deterministic, non-repeating within a schedule, and different per
+            // schedule, so no two entries share a value trajectory.
+            const at = (k) => lo + (hi - lo) * (0.5 + 0.5 * Math.sin((k * 0.7 + index) * 1.31));
+            for (let k = 0; k < segmentCount; k += 1) {
+                segments.push({
+                    startFrame: k * AUTOMATION_SEGMENT_FRAMES,
+                    endFrame: (k + 1) * AUTOMATION_SEGMENT_FRAMES,
+                    startValue: at(k),
+                    endValue: at(k + 1),
+                });
+            }
+            schedules.push({ paramId, segments, segmentIndex: 0, lastValue: undefined });
+        }
+        return schedules;
+    };
+
+    /**
+     * `_applyParamAutomation` from `fermenterProcessor.ts`, transcribed.
+     *
+     * Kept as a transcription rather than an import because the file is an
+     * `AudioWorkletProcessor` subclass with a top-level `registerProcessor` and
+     * a wasm `initSync` import; it cannot be loaded into this scope. Any edit to
+     * the shipped loop must be mirrored here or this row stops describing it.
+     */
+    const applyParamAutomation = (instance, schedules, frame) => {
+        for (let scheduleIndex = 0; scheduleIndex < schedules.length; scheduleIndex += 1) {
+            const schedule = schedules[scheduleIndex];
+            while (
+                schedule.segmentIndex < schedule.segments.length - 1 &&
+                frame >= schedule.segments[schedule.segmentIndex].endFrame
+            ) {
+                schedule.segmentIndex += 1;
+            }
+            const segment = schedule.segments[schedule.segmentIndex];
+            let value = segment.startValue;
+            if (segment.endFrame <= segment.startFrame || frame >= segment.endFrame) {
+                value = segment.endValue;
+            } else if (frame > segment.startFrame) {
+                const fraction = (frame - segment.startFrame) / (segment.endFrame - segment.startFrame);
+                value = segment.startValue + (segment.endValue - segment.startValue) * fraction;
+            }
+            if (value !== schedule.lastValue) {
+                instance.set_param_by_id(schedule.paramId, value);
+                schedule.lastValue = value;
+            }
+        }
+    };
+
+    const automatedFermenter = ({ id, scheduleCount }) => {
+        const struck = 16;
+        const instance = new dsp.FermenterInstance(SAMPLE_RATE, 32);
+        instance.set_param('cutoff', 4000);
+        instance.set_param('resonance', 0.4);
+        for (const note of spreadNotes(struck)) {
+            instance.note_on(note, 100);
+        }
+        // Sized from the quanta this row will actually render, not from a
+        // literal. The first version hard-coded 30 000 at every call site, which
+        // covers the default run and silently degrades every row to a bare
+        // array walk at `--measure 30000` — the exact failure `verify` below is
+        // supposed to catch, reachable by a flag.
+        const coveredQuanta = (quantaBudget ?? 30_000) + 1_000;
+        const schedules = buildAutomationSchedules(scheduleCount, coveredQuanta * QUANTUM);
+        let frame = 0;
+        let lastLeftPtr = 0;
+        let visits = 0;
+        let writes = 0;
+        // Counted through the same wrapper the loop calls, so the tally cannot
+        // drift from the calls actually issued. The alternative — re-deriving
+        // in `verify` whether each value *would* have moved — reimplements the
+        // predicate under test, which is the failure `quantum_bench_census.rs`
+        // documents at length.
+        //
+        // The wrapper is therefore **inside the timed loop**, one monomorphic
+        // call and an increment per write. It taxes the very thing being
+        // measured, and it is left in because it taxes it in the safe
+        // direction: it applies identically to every automation row, so in the
+        // amplifier difference `(1050 - 105) / 945` it contributes 945 extra
+        // wrapper calls to the numerator and nothing else. That can only make
+        // the derived per-schedule cost too *large*, which is how the figure is
+        // published.
+        const countingInstance = {
+            set_param_by_id(paramId, value) {
+                writes += 1;
+                instance.set_param_by_id(paramId, value);
+            },
+        };
+        return {
+            id,
+            label: `Fermenter + ${scheduleCount} automated params (16 sounding voices, 1 layer)`,
+            note:
+                `_applyParamAutomation over ${scheduleCount} schedules then process(128); ordinals cycle ` +
+                `paramId % 16 so the set of parameters moved matches the other automation rows`,
+            render() {
+                applyParamAutomation(countingInstance, schedules, frame);
+                visits += schedules.length;
+                frame += QUANTUM;
+                lastLeftPtr = instance.process(QUANTUM);
+                return lastLeftPtr;
+            },
+            verify() {
+                const level = pointerRms(dsp, lastLeftPtr, instance.get_right_ptr());
+                const active = instance.active_voices();
+                // Occupancy, and — the part the first version could not see —
+                // that the loop is still *doing the work being timed*.
+                //
+                // It checked `lastValue !== undefined`, which is true forever
+                // after the first quantum, and a visit count, which rises
+                // whether or not anything is written. Both stay green through
+                // the failure they were written to catch: once `frame` runs off
+                // the end of the segments every schedule pins to its last one,
+                // the value stops changing, no `set_param_by_id` is issued, and
+                // the row silently becomes a measurement of an array walk.
+                //
+                // So the gate is the **write ratio** — how many of the schedule
+                // visits actually crossed the wasm boundary — plus a direct
+                // check that no cursor has reached its final segment. A pinned
+                // row reds on both.
+                const writeRatio = visits === 0 ? 0 : writes / visits;
+                const exhausted = schedules.filter(
+                    (schedule) => schedule.segmentIndex >= schedule.segments.length - 1
+                ).length;
+                return {
+                    ok: active === 16 && level > 1e-5 && writeRatio > 0.99 && exhausted === 0,
+                    detail:
+                        `active_voices() = ${active}, expected 16 from ${struck} note-ons, ` +
+                        `output RMS ${level.toExponential(3)}, ${writes}/${visits} schedule visits wrote ` +
+                        `through set_param_by_id (${(writeRatio * 100).toFixed(1)}%), ${exhausted}/${schedules.length} ` +
+                        `schedules exhausted their segments, timeline covers ${coveredQuanta} quanta`,
+                };
+            },
+        };
+    };
+
+    if (wanted('fermenter_automation_16')) {
+        devices.push(
+            automatedFermenter({ id: 'fermenter_automation_16', scheduleCount: 16 })
+        );
+    }
+    if (wanted('fermenter_automation_90')) {
+        devices.push(
+            automatedFermenter({ id: 'fermenter_automation_90', scheduleCount: 90 })
+        );
+    }
+    if (wanted('fermenter_automation_105')) {
+        devices.push(
+            automatedFermenter({ id: 'fermenter_automation_105', scheduleCount: 105 })
+        );
+    }
+    // An amplifier, not a product configuration. Fermenter cannot have 1050
+    // automatable parameters and this row does not claim it can.
+    //
+    // It exists because the first run of the three rows above came back FLAT —
+    // 16, 90 and 105 schedules all measured within a microsecond of each other,
+    // ~23 us above the un-automated Fermenter row. Flat is consistent with two
+    // very different stories: a marginal per-schedule cost of zero, and a
+    // marginal cost of tens of nanoseconds that 89 extra schedules cannot lift
+    // above a clock good to about +/-10% on a 70 us row. Reporting "no
+    // measurable difference" without separating those would have been the same
+    // argue-from-shape mistake this whole table was built to stop.
+    //
+    // So this row runs 10x the ~105 target and the marginal cost is read as
+    // (this row - the 105 row) / 945. That derived figure is an **upper bound**
+    // on the marginal cost at 105, not an estimate of it: 1050 schedules and
+    // their 1050 live segment objects are a working set well past L1, where 105
+    // of them fit, so per-schedule cost here can only be dearer than in the
+    // configuration being decided about.
+    if (wanted('fermenter_automation_1050')) {
+        devices.push(
+            automatedFermenter({ id: 'fermenter_automation_1050', scheduleCount: 1050 })
         );
     }
 

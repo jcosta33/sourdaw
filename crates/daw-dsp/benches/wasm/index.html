@@ -115,7 +115,19 @@
                 return result;
             }
 
-            window.runQuantumCostTable = async ({ warmupQuanta, measureQuanta, segmentTargetMs }) => {
+            window.runQuantumCostTable = async ({ warmupQuanta, measureQuanta, segmentTargetMs, deviceIds }) => {
+                // A subset run is for investigating one question, never for
+                // publishing the table: the rows are measured in a fixed order
+                // and a partial run cannot be pasted into
+                // `quantum-cost-table.md` beside rows taken in another one.
+                const selectedDeviceIds =
+                    deviceIds && deviceIds.length > 0
+                        ? DEVICE_IDS.filter((id) => deviceIds.includes(id))
+                        : DEVICE_IDS;
+                const unknown = (deviceIds ?? []).filter((id) => !DEVICE_IDS.includes(id));
+                if (unknown.length > 0) {
+                    throw new Error(`--devices names ids that are not in DEVICE_IDS: ${unknown.join(', ')}`);
+                }
                 const [dspBytes, chamberBytes, scoringBytes] = await Promise.all([
                     fetchWasm('/public/wasm/daw-dsp/daw_dsp_bg.wasm'),
                     fetchWasm('/public/wasm/proof-chamber/proof_chamber_bg.wasm'),
@@ -128,7 +140,7 @@
                 const ticksPerMsBefore = calibrate(clock.ticks, 400);
 
                 const results = [];
-                for (const deviceId of DEVICE_IDS) {
+                for (const deviceId of selectedDeviceIds) {
                     say(`measuring ${deviceId}…`);
                     const result = await measure({
                         deviceId,

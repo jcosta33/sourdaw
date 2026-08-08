@@ -266,6 +266,113 @@ Even measured under a load average of 5, the reference project's audio thread do
 
 <!-- generated:end -->
 
+## Fermenter under parameter automation — what growing the binding table costs
+
+**Question.** Fermenter declares ~105 automatable parameters and binds 16 of them for offline
+automation. The objection standing in the way of binding the other 89 was that
+`fermenterProcessor.ts` holds its schedules in a growing `Array` (`_paramAutomation`) and walks the
+whole of it once per `process()` call, and that 90 concurrent schedules per device had never been
+measured.
+
+**The scan is on the audio thread.** `_applyParamAutomation` is called from `process()`
+(`fermenterProcessor.ts:527`), inside the render callback of an `AudioWorkletProcessor`. It is not
+on the scheduler's worker and it does not dissolve.
+
+**What the per-quantum work actually is**, read before it was measured: the loop is **per schedule,
+not per scheduled event**. `_handleMessage` replaces an existing entry with the same `paramId`
+rather than appending, so the array length is bounded by the distinct-ordinal count — 16 today, ~105
+if the table is grown — however many automation *events* the timeline carries. Per entry the loop
+does a forward-only segment-cursor advance, one linear interpolation, and — only when the value
+moved — one `set_param_by_id` call across the wasm-bindgen boundary into a string-matched
+`MasterSynth::set_param` cascade. That call, not the array walk, is where any cost would live. The
+`findIndex` linear scan is in message handling, not in `process()`.
+
+### Measured, wasm leg, same instrument as the table above
+
+Rows `fermenter_automation_{16,90,105,1050}` in `deviceRecipes.js`. Each drives the same 16-voice
+Fermenter as the plain row, runs a transcription of the shipped `_applyParamAutomation` over N
+schedules, then `process(128)`. Ordinals cycle `paramId % 16` because only 16 exist today, so the
+**set of parameters actually moved is identical in every row** — the DSP consequence of automation
+is held constant and the difference between rows is the schedule count and nothing else.
+
+| Row | ≥ floor | ≤ upper bound | upper as % of budget |
+| --- | ---: | ---: | ---: |
+| Fermenter, no automation | 43 µs | **46 µs** | **1.7%** |
+| Fermenter + 16 automated params (today's ceiling) | 62 µs | **68 µs** | **2.6%** |
+| Fermenter + 90 automated params | 67 µs | **71 µs** | **2.7%** |
+| Fermenter + 105 automated params | 61 µs | **71 µs** | **2.7%** |
+| Fermenter + 1050 automated params (amplifier, not a product configuration) | 85 µs | **96 µs** | **3.6%** |
+
+Provenance: Apple M4 Pro (`Mac16,11`), macOS 26.6, Chrome **151.0.7922.76** headless, commit
+`132fa4970` (base `e8eb38075`; working tree dirty — this branch adds the rows), 4000 warm-up +
+20 000 timed quanta per row, load average 2.26 → 2.22, **zero clock stalls and no non-stationary row
+in this run**, every automation row verifying a 100% write ratio with no schedule exhausted. An
+immediately preceding run reproduced every row within 1 µs. Reproduce with
+`node crates/daw-dsp/benches/wasm/run.mjs --devices fermenter,fermenter_automation_16,fermenter_automation_90,fermenter_automation_105,fermenter_automation_1050`.
+
+### Why there is a 1050 row
+
+The first run of 16 / 90 / 105 came back **flat** — all three within a microsecond of each other.
+Flat is consistent with a marginal per-schedule cost of zero *and* with one of tens of nanoseconds
+that 89 extra schedules cannot lift above a clock good to about ±10% on a 70 µs row. Publishing "no
+measurable difference" without separating those would have been the argue-from-shape mistake this
+table exists to stop. The 1050 row is 10× the target so the marginal cost clears the noise, and it
+is read as `(1050 row − 105 row) / 945`.
+
+That derived figure is an **upper bound** on the marginal cost at 105, not an estimate of it: 1050
+schedules and their live segment objects are a working set past L1, where 105 of them fit, so
+per-schedule cost there can only be dearer than in the configuration being decided about.
+
+- amplifier, the figure this rests on: (96 − 71) µs ÷ 945 = **26 ns per schedule per quantum**,
+  and 28 ns on the preceding run
+- the direct 16 → 105 arithmetic agrees — 34 ns on both runs — but it is **not a second independent
+  derivation** and should not be read as one. It divides a 3 µs numerator by 89 on rows this same
+  page calls flat under a clock worth about ±7 µs at 70 µs. It is a consistency check that failed to
+  contradict the amplifier, which is all it can be.
+
+**Roughly 27 ns per schedule per quantum**, carried by the amplifier. That figure includes the
+harness's own per-write counter, which sits inside the timed loop — see `automatedFermenter` — so it
+is biased high, in the direction that makes the verdict safe rather than flattering.
+
+### The answer, narrowed to what was measured
+
+**Dispatch cost.** Walking 89 more schedules costs **89 × ~27 ns ≈ 2.4 µs per quantum**, which is
+**≈ 0.09% of the 2.667 ms budget**.
+
+**Verdict: safe to grow, on the dispatch question.** The `Array` shape does not need replacing with
+a map, a sorted structure, or a per-parameter slot array. At the sizes in question the walk is not
+where Fermenter's time goes — and no container choice would help anyway, because the cost that does
+exist is per-call work on the far side of the wasm boundary, not the search that finds the entry.
+
+### The proxy is the cheap end of the distribution, and that is a real limit
+
+The rows cycle the 16 live ordinals. Those 16 are not a sample of Fermenter's parameters — **they
+are the cheap tail of it**, and the bias has a direction:
+
+- All 16 land on cheap arms. In `layer.rs:627+` thirteen are plain field stores; `cutoff`,
+  `resonance` and `lfo_rate` are `SmoothedParam::set`. **None of the 16 recomputes a coefficient
+  inside `set_param`, and none loops the voice array.**
+- The unbound 89 include arms that do both. `FermenterDescriptor.ts:149-157` declares nine EQ
+  parameters whose arms call `self.eq.set_band(...)` in `synth.rs` — a biquad recompute per call —
+  and `drift` / `additive_partials` iterate all 32 voices in `layer.rs:691-702`.
+
+So the per-parameter DSP cost of the 89 is **unmeasured here and skews expensive**. That does not
+touch the dispatch verdict — no container change fixes a per-call `set_band`, so the 25 ns figure
+stands on its own — but it is the number to take before automating the EQ band or `drift`.
+
+**What these rows therefore cannot say:** the table shows a **+22 µs step** (46 → 68 µs) between no automation
+and any automation. Cycling `paramId % 16` holds the set of moved parameters constant by
+construction, so these rows contain **no information** about how that step scales with distinct
+parameters. +22 µs is what 16 *distinct* cheap parameters cost. Whether 105 distinct parameters —
+nine of them recomputing biquads — cost 22 µs or considerably more is a separate measurement that
+has not been taken. Do not read the step as already paid.
+
+### Other limits
+
+- **Cost, not deadline.** The host is an `OfflineAudioContext`, which has no deadline. AC-3's
+  dropout observation owns that question, as everywhere else in this document.
+- **One device in an empty worklet.** Same favourable-cache caveat as every other row here.
+
 ## The native leg
 
 A lower bound, not the answer, and kept for two reasons: a per-device wasm ÷ native ratio is useful,
