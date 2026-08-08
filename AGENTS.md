@@ -52,11 +52,17 @@ Bread-named modules under `src/modules/` are the built-in devices. Most have a m
 
 ## Project specifications
 
-Project specifications live under `.agents/specs/<feature>/`; preserve their
-status and content unless assigned work says otherwise. Captured source material
-that has not yet been normalized into a feature specification lives under
-`.agents/specs/intake/`. Accepted project decisions live under
-`.agents/decisions/` and follow that directory's ADR ledger.
+**Do not add specifications to this repo.** Write them as workspace artifacts instead. A spec enters
+the repo only when the owner explicitly asks for that artifact to be promoted, and is deleted
+immediately after the work it describes is implemented unless the owner says otherwise.
+
+The `.agents/specs/<feature>/` directories already here predate that rule. Leave them alone —
+preserve their status and content unless assigned work says otherwise — but do not add to them.
+Captured source material that has not yet been normalized lives under `.agents/specs/intake/`, under
+the same no-new-additions rule.
+
+Accepted project decisions are different and do belong here: they live under `.agents/decisions/` and
+follow that directory's ADR ledger.
 
 ## Path aliases
 
