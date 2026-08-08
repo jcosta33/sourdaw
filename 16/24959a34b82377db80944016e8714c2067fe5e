@@ -1,0 +1,102 @@
+src/modules/AiRuntime/useCases/__tests__/describePlannedAction.spec.ts
+  s_bc88af7d3b054c::t_535074bd009473 311-341,343-344
+  s_bc88af7d3b054c::t_1e1e8312b18b43 342
+src/modules/AiRuntime/useCases/describePlannedAction.ts
+  s_bc88af7d3b054c::t_c1b167071fc2be 29-36,38-39
+  s_bc88af7d3b054c::t_5070d5de8814d6 28,37,40-42
+src/modules/MIDI/useCases/midiClipData/canPrepareMidiClipGlueState.ts
+  s_bc88af7d3b054c::t_e123d910932b44 1-37
+src/modules/Arrangement/useCases/clipEditing/getGlueEligibleClipPairs.ts
+  s_bc88af7d3b054c::t_fef2f17bf87d49 3,15-18,21-22,25
+  s_bc88af7d3b054c::t_b19a7cff28ea68 4-5,7-14,19-20,23,34,45-49
+  s_bc88af7d3b054c::t_e123d910932b44 1-2,6,24,26-33,35-44
+src/modules/Arrangement/useCases/clipEditing/isPlainMidiGlueClip.ts
+  s_bc88af7d3b054c::t_b19a7cff28ea68 1-22
+src/modules/Arrangement/useCases/clipEditing/getMidiClipGlueSources.ts
+  s_bc88af7d3b054c::t_e123d910932b44 1-18
+src/modules/AiRuntime/transformers/__tests__/llmActionBridge.spec.ts
+  s_bc88af7d3b054c::t_00ff47812dfc89 322
+  s_bc88af7d3b054c::t_381b029e57740a 313-321,323-328,1846-1867,1872-1877,1902-1952
+  s_bc88af7d3b054c::t_1b6e71c86e1306 1868-1871,1878-1901
+  s_14f2bbc9f385dd::t_620c90cb6b8ee1 1953
+src/modules/AiRuntime/useCases/__tests__/parsePromptToActions.spec.ts
+  s_bc88af7d3b054c::t_381b029e57740a 622-643,645-671,673-676
+  s_bc88af7d3b054c::t_1e1e8312b18b43 672
+  s_bc88af7d3b054c::t_86312a30ac099f 644
+src/modules/Arrangement/useCases/clipEditing/prepareClipGlue.ts
+  s_bc88af7d3b054c::t_e123d910932b44 10,105
+  s_bc88af7d3b054c::t_b19a7cff28ea68 12,64
+src/modules/Command/useCases/executableAppActionRegistry.ts
+  s_bc88af7d3b054c::t_5070d5de8814d6 501-527,532,534
+  s_14f2bbc9f385dd::t_d5b7a5c53f0a69 528-531,533
+src/modules/Command/useCases/__tests__/executableCommandRegistry.spec.ts
+  s_bc88af7d3b054c::t_5070d5de8814d6 1140-1152,1155,1157,1159
+  s_bc88af7d3b054c::t_d438c77f256eb4 212-227
+  s_14f2bbc9f385dd::t_27e7c05e3b0b5b 211,1153-1154,1156,1158
+src/modules/AiRuntime/useCases/agentReference/bridgeGroundedLlmToolCalls.ts
+  s_bc88af7d3b054c::t_957bab0ec85a60 2678-2680,2683-2686
+  s_bc88af7d3b054c::t_23686006136192 1248-1251,1368,1371
+  s_bc88af7d3b054c::t_e123d910932b44 430,433,1369-1370
+  s_bc88af7d3b054c::t_dce5840a2c4a5e 1156-1163,1175-1179,1181-1208,1211-1219
+  s_bc88af7d3b054c::t_2e9e4748106016 431-432,434,1372,1374-1416,2670-2677,2681-2682,2978-2980
+  s_14f2bbc9f385dd::t_7de9c5ae0bba41 1373
+src/modules/AiRuntime/models/ProjectContext.ts
+  s_bc88af7d3b054c::t_b19a7cff28ea68 19
+src/modules/AiRuntime/transformers/llmActionBridge.ts
+  s_bc88af7d3b054c::t_3d664073b3a232 2449,2487,2508,2520-2522,2619-2624,2655-2657,2663
+  s_bc88af7d3b054c::t_c5c72ac4d86728 1333-1354,1360-1365,1367-1396
+  s_bc88af7d3b054c::t_490e7d3414c616 1355-1359,1366,2509
+  s_bc88af7d3b054c::t_3eea4e85578842 1841-1843,2065-2079
+src/modules/AiRuntime/models/__tests__/RuntimeAction.spec.ts
+  s_bc88af7d3b054c::t_381b029e57740a 54,77,100-102
+src/modules/Command/useCases/__tests__/executableAppActionRegistry.spec.ts
+  s_bc88af7d3b054c::t_381b029e57740a 80-109
+src/modules/AiRuntime/useCases/getProjectContext.ts
+  s_bc88af7d3b054c::t_b19a7cff28ea68 2,39,50,66-67,78-79,203,216
+src/modules/Arrangement/useCases/index.ts
+  s_bc88af7d3b054c::t_b19a7cff28ea68 72
+src/modules/AiRuntime/useCases/agentReference/__tests__/bridgeGroundedLlmToolCalls.spec.ts
+  s_bc88af7d3b054c::t_381b029e57740a 719-726,728,732-737,985-986,992-998,1002-1005,1025-1046,1063,1072-1078
+  s_bc88af7d3b054c::t_67ab2ddc0d28b8 987-991,1006-1024,1047-1062,1079
+  s_bc88af7d3b054c::t_d438c77f256eb4 729-731
+  s_bc88af7d3b054c::t_58db153633f4f8 1064-1071
+  s_bc88af7d3b054c::t_00ff47812dfc89 727,999-1001
+  s_14f2bbc9f385dd::t_987e7c260eeeaa 1080
+src/modules/AiRuntime/models/RuntimeAction.ts
+  s_bc88af7d3b054c::t_5070d5de8814d6 266,308
+src/modules/AiRuntime/useCases/__tests__/getProjectContext.spec.ts
+  s_bc88af7d3b054c::t_6fdaa5cb0290b8 20,42,99,106-114
+  s_14f2bbc9f385dd::t_abbc346b82bd48 115-116
+src/modules/Arrangement/useCases/clipEditing/__tests__/glueClips.integration.spec.ts
+  s_bc88af7d3b054c::t_cabc828b0c7cd7 10,62-84,86
+  s_bc88af7d3b054c::t_58db153633f4f8 87,89-120
+  s_bc88af7d3b054c::t_f372adfecafb26 121-133
+  s_bc88af7d3b054c::t_d5d4501f2e9b47 85
+  s_bc88af7d3b054c::t_18e36877480d10 88
+src/modules/MIDI/useCases/index.ts
+  s_bc88af7d3b054c::t_e123d910932b44 46
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "1624959a34b82377db80944016e8714c2067fe5e",
+  "prompts": {},
+  "sessions": {
+    "s_14f2bbc9f385dd": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f9a61a1d-66b3-4146-938d-a04f45f4b060",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_bc88af7d3b054c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f9b4a-11a2-7f61-8dfb-76eed0eb2a9c",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
