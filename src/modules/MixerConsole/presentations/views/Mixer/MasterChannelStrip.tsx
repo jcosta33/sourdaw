@@ -17,14 +17,14 @@ export const MasterChannelStrip = ({ widthClass }: MasterChannelStripProps): Rea
     const masterGain = useStore(transportStore, defaultTransportState).masterGain;
 
     return (
-        <DawChannelStripShell className={cn('ml-2', widthClass)} aria-label="Master channel">
+        <DawChannelStripShell className={cn('ml-2', widthClass)} aria-label="Master channel" data-testid="channel-master">
             <div className="h-1 w-full rounded-full bg-border-active" />
             <span className="text-[10px] font-bold text-text-primary uppercase tracking-wider">Master</span>
             <MixerLevelReadout
                 trackId={null}
                 clusterClassName="mt-1"
                 control={
-                    <div className="shrink-0">
+                    <div className="shrink-0" data-testid="master-gain">
                         <Fader
                             value={masterGain / 100}
                             onChange={(value) => {
