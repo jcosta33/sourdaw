@@ -1,0 +1,64 @@
+src/modules/AudioEngine/services/__tests__/toasterProcessor.spec.ts
+  s_14f2bbc9f385dd::t_bb2b8d2a8f601d 610-647,651
+  s_14f2bbc9f385dd::t_3e17dd2d3b45ac 3-4
+src/modules/AudioEngine/wasm/__tests__/dawDspGrinderAutomationLayout.spec.ts
+  s_14f2bbc9f385dd::t_ea64fcaafa9507 1-163
+src/modules/AudioEngine/services/__tests__/grinderAudioParamAutomationRamp.spec.ts
+  s_14f2bbc9f385dd::t_59b5e7ef430f4e 3-4
+  s_14f2bbc9f385dd::t_c26dfb048373a1 34-46,54-57,59-61,63-64
+  s_14f2bbc9f385dd::t_0b273eb8c7459a 47-53,58,62
+src/modules/AudioEngine/services/grinderProcessor.ts
+  s_14f2bbc9f385dd::t_a2a10fb64bb30f 141-170
+  s_14f2bbc9f385dd::t_1904461733b8a1 171
+src/modules/AudioEngine/services/toasterProcessor.ts
+  s_14f2bbc9f385dd::t_e2ce706b458744 284
+  s_14f2bbc9f385dd::t_e1b532a486234b 20
+  s_14f2bbc9f385dd::t_d83de15bd928bf 30-49
+src/modules/AudioEngine/services/__tests__/grinderProcessorTestHarness.ts
+  s_14f2bbc9f385dd::t_d9025576be3608 48-53
+  s_14f2bbc9f385dd::t_69e8676d21d0e9 54
+  s_14f2bbc9f385dd::t_5977791ab36cb2 3-4
+src/modules/AudioEngine/engine/ProofChamberNode.ts
+  s_14f2bbc9f385dd::t_3e88d0ae79fa99 9,13-21
+src/modules/AudioEngine/models/ProofChamberAutomationParams.ts
+  s_14f2bbc9f385dd::t_0862057475ee86 1-27
+src/modules/AudioEngine/services/__tests__/processorQueues.spec.ts
+  s_14f2bbc9f385dd::t_fdddfd3ec7b100 37-47
+  s_14f2bbc9f385dd::t_194b1b390f799c 7,9
+  s_14f2bbc9f385dd::t_484308164a465a 8
+  s_14f2bbc9f385dd::t_34837dc08f15ef 48
+src/modules/AudioEngine/services/proofChamberProcessor.ts
+  s_14f2bbc9f385dd::t_8ca934ae28c44c 124
+  s_14f2bbc9f385dd::t_210c026729eadc 15,21-39
+  s_14f2bbc9f385dd::t_9af9f9aef9b597 40
+src/modules/AudioEngine/engine/ToasterNode.ts
+  s_14f2bbc9f385dd::t_97faafc52a2739 27-34
+  s_14f2bbc9f385dd::t_f6d240310e5024 12
+src/modules/AudioEngine/services/__tests__/proofChamberProcessor.spec.ts
+  s_14f2bbc9f385dd::t_8e4d9fb0f719d5 214-215
+  s_14f2bbc9f385dd::t_462b4693e49ba1 5-7
+  s_14f2bbc9f385dd::t_b0a9e062b9c0a3 232-241,243-244
+  s_14f2bbc9f385dd::t_259ef4f01c37eb 260
+  s_14f2bbc9f385dd::t_25b41e3512152b 247-259,261-277
+  s_14f2bbc9f385dd::t_81dcad4d04c90e 3-4
+  s_14f2bbc9f385dd::t_9f8ac07bed458f 245-246
+src/modules/AudioEngine/models/ToasterAutomationParams.ts
+  s_14f2bbc9f385dd::t_06ead1c4f2ea9b 1-27,29
+  s_14f2bbc9f385dd::t_44458748ddf0a2 28
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "e4e45ff0c6800d0a75675ba93311915302490145",
+  "prompts": {},
+  "sessions": {
+    "s_14f2bbc9f385dd": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f9a61a1d-66b3-4146-938d-a04f45f4b060",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
