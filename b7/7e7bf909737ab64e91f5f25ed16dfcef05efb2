@@ -1,0 +1,14 @@
+src/modules/Toaster/useCases/__tests__/stopSequencer.spec.ts
+  h_1228e573df1f42 1-123
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "b77e7bf909737ab64e91f5f25ed16dfcef05efb2",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
