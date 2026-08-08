@@ -10,7 +10,7 @@ use super::{
     engines::{DrumEngineResources, DrumEngineType, DrumSynthEngine},
     pad::Pad,
 };
-use crate::primitives::flush_denormal;
+use crate::primitives::{flush_denormal, q_from_normalized_resonance};
 
 /// Simple state-variable filter for per-voice filtering.
 pub struct SvfFilter {
@@ -45,7 +45,13 @@ impl SvfFilter {
         // Map normalized cutoff to frequency (20Hz - 20kHz, exponential)
         let freq = 20.0 * (self.cutoff * 10.0).exp2().min(20000.0);
         let g = (TAU * freq / sample_rate * 0.5).tan();
-        let k = 2.0 - 1.9 * self.resonance; // Q from 0.5 to 20
+        // `k` is 1/Q in this topology, so re-expanding the normalised resonance
+        // has to go through Q. It used to read `2.0 - 1.9 * self.resonance` —
+        // linear in damping and capped at Q = 10, against a comment claiming
+        // "Q from 0.5 to 20". `Pad::set_param` normalises Q linearly, so the two
+        // stages composed into a knob that moved delivered Q 0.50 → 0.79 across
+        // its entire useful travel.
+        let k = 1.0 / q_from_normalized_resonance(self.resonance);
         let a1 = 1.0 / (1.0 + g * (g + k));
         let a2 = g * a1;
         let a3 = g * a2;
