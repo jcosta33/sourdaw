@@ -218,6 +218,7 @@ export const StatusBar = (): ReactElement => {
                         className="flex h-5 items-center gap-1 text-[10px] text-muted-foreground hover:text-foreground"
                         onClick={toggleCollaborationPanel}
                         aria-label="Toggle collaboration panel"
+                        data-testid="toggle-collaboration"
                         title="Collaboration"
                     >
                         <DawStatusDot tone={collab.connectionStatus === 'connected' ? 'success' : 'muted'} />
