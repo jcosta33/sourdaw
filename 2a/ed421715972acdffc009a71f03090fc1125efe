@@ -1,0 +1,16 @@
+src/modules/ControlSurface/models/__tests__/ControllerProfile.spec.ts
+  h_1228e573df1f42 1-52
+tests/e2e/COVERAGE.md
+  h_1228e573df1f42 735,737
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "2aed421715972acdffc009a71f03090fc1125efe",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
