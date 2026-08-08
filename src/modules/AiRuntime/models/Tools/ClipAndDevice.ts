@@ -131,14 +131,6 @@ export const clipTools: readonly ToolSchema[] = [
     tool('reverseClip', 'Reverse the audio/MIDI content of a clip.', { clipId: { type: 'string' } }, ['clipId']),
     tool('normalizeClip', 'Normalize clip volume to peak level.', { clipId: { type: 'string' } }, ['clipId']),
     tool(
-        'glueClips',
-        'Merge multiple adjacent clips into one.',
-        {
-            clipIds: { type: 'array', items: { type: 'string' }, description: 'At least 2 clip IDs to merge' },
-        },
-        ['clipIds']
-    ),
-    tool(
         'setClipLoop',
         'Enable or disable looping on a clip.',
         {

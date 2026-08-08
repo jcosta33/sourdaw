@@ -540,7 +540,11 @@ const validators = {
         return !hasTargetDb || isInRange(param.targetDb, -60, 0);
     },
     reverseClip: 'unchecked',
-    glueClips: 'unchecked',
+    glueClips: (param): param is PayloadOf<'glueClips'> =>
+        isObj(param) &&
+        hasExactKeys(param, ['clipIds']) &&
+        isUniqueNonEmptyStringArray(param.clipIds) &&
+        param.clipIds.length >= 2,
     nudgeClip: (param): param is PayloadOf<'nudgeClip'> =>
         isObj(param) &&
         hasExactKeys(param, ['clipId', 'beats']) &&

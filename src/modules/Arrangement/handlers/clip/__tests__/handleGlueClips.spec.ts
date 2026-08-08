@@ -4,16 +4,25 @@ import { handleGlueClips } from '../handleGlueClips';
 
 const mocks = vi.hoisted(() => ({
     glueClips: vi.fn(),
+    prepareClipGlue: vi.fn(),
+    restoreClipGlueState: vi.fn(),
 }));
 
 vi.mock('../../../useCases/clipEditing/glueClips', () => ({
     glueClips: mocks.glueClips,
+}));
+vi.mock('../../../useCases/clipEditing/prepareClipGlue', () => ({
+    prepareClipGlue: mocks.prepareClipGlue,
+}));
+vi.mock('../../../useCases/clipEditing/restoreClipGlueState', () => ({
+    restoreClipGlueState: mocks.restoreClipGlueState,
 }));
 
 describe('handleGlueClips', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         mocks.glueClips.mockReturnValue(true);
+        mocks.prepareClipGlue.mockReturnValue(null);
     });
 
     it('executes glueClips with the provided payload', () => {
@@ -22,7 +31,7 @@ describe('handleGlueClips', () => {
             payload: { clipIds: ['c1', 'c2'] },
         });
 
-        expect(mocks.glueClips).toHaveBeenCalledWith(['c1', 'c2']);
+        expect(mocks.glueClips).toHaveBeenCalledWith(['c1', 'c2'], undefined);
         expect(result).toEqual({ status: 'written' });
     });
 
@@ -43,9 +52,40 @@ describe('handleGlueClips', () => {
             payload: { clipIds: [] },
         });
         expect(desc.label).toBe('Glue clips');
+        expect(desc.inverseAction).toBeNull();
+    });
+
+    it('captures a stable guarded inverse and redo plan', () => {
+        const previous = {
+            trackId: 'track-1',
+            clips: [],
+            clipOrder: [],
+            midi: { clips: [], migratedAbsoluteNoteClipIds: { present: false, value: [] } },
+        };
+        const next = {
+            trackId: 'track-1',
+            clips: [],
+            clipOrder: [],
+            midi: { clips: [], migratedAbsoluteNoteClipIds: { present: true, value: ['target'] } },
+        };
+        mocks.prepareClipGlue.mockReturnValue({ previous, next, targetClipId: 'target' });
+        const action = { type: 'glueClips' as const, payload: { clipIds: ['c1', 'c2'] } };
+
+        const desc = handleGlueClips.describe(action);
+
+        expect(action.payload).toMatchObject({ targetClipId: 'target', expected: previous, replacement: next });
+        expect(desc.inverseAction).toEqual({
+            type: 'restoreClipGlueState',
+            payload: { expected: next, replacement: previous },
+        });
+        expect(desc.redoAction).toEqual({
+            type: 'restoreClipGlueState',
+            payload: { expected: previous, replacement: next },
+        });
     });
 
     it('is undoable', () => {
         expect(handleGlueClips.undoable).toBe(true);
+        expect(handleGlueClips.requiresAbortCompensation).toBe(false);
     });
 });

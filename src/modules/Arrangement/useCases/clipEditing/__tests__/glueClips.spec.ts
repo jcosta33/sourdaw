@@ -2,29 +2,33 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { ClipDummy } from '../../../__tests__/ClipDummy';
 import { TrackDummy } from '../../../__tests__/TrackDummy';
-import { type Track } from '../../../models/Track';
 import { glueClips } from '../glueClips';
 
+import type { prepareMidiClipGlueState as originalPrepareMidiClipGlueState } from '#/modules/MIDI/useCases';
+import type { Track } from '../../../models/Track';
 import type { TrackState, getTrackState as originalGetTrackState } from '../../../repositories/track/getTrackState';
-import type { updateTrack as originalUpdateTrack } from '../../../repositories/track/updateTrack';
 import type * as resolverModule from '../../../stores/resolveEligibleClipWriteTarget';
-
-type GlueMidiClipData = (input: { sourceClipIds: readonly string[]; targetClipId: string }) => void;
 
 const mocks = vi.hoisted(() => ({
     getTrackState: vi.fn<typeof originalGetTrackState>(),
-    updateTrack: vi.fn<typeof originalUpdateTrack>(),
+    setTrackState: vi.fn<(state: TrackState) => void>(),
     getNextClipId: vi.fn(() => 'merged-clip'),
-    glueMidiClipData: vi.fn<GlueMidiClipData>(),
+    prepareMidiClipGlueState: vi.fn<typeof originalPrepareMidiClipGlueState>(),
+    restoreMidiClipGlueState: vi.fn(() => true),
+    getAutomationLanes: vi.fn(() => []),
     warn: vi.fn(),
     resolveEligibleClipWriteTarget: vi.fn<(typeof resolverModule)['resolveEligibleClipWriteTarget']>(),
 }));
 
 vi.mock('../../../repositories/track/getTrackState', () => ({ getTrackState: mocks.getTrackState }));
-vi.mock('../../../repositories/track/updateTrack', () => ({ updateTrack: mocks.updateTrack }));
+vi.mock('../../../repositories/track/setTrackState', () => ({ setTrackState: mocks.setTrackState }));
 vi.mock('../../../repositories/clipIdCounter', () => ({ getNextClipId: mocks.getNextClipId }));
 vi.mock('#/infra/logger/appLogger', () => ({ logger: { warn: mocks.warn } }));
-vi.mock('#/modules/MIDI/useCases', () => ({ glueMidiClipData: mocks.glueMidiClipData }));
+vi.mock('#/modules/MIDI/useCases', () => ({
+    prepareMidiClipGlueState: mocks.prepareMidiClipGlueState,
+    restoreMidiClipGlueState: mocks.restoreMidiClipGlueState,
+}));
+vi.mock('#/modules/Automation/useCases', () => ({ getAutomationLanes: mocks.getAutomationLanes }));
 vi.mock('../../../stores/resolveEligibleClipWriteTarget', () => ({
     resolveEligibleClipWriteTarget: mocks.resolveEligibleClipWriteTarget,
 }));
@@ -37,6 +41,30 @@ describe('glueClips', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         mocks.resolveEligibleClipWriteTarget.mockReturnValue({ status: 'eligible', trackId: 't1', clipId: 'a' });
+        const absentData = {
+            notes: { present: false, value: [] },
+            controlChanges: { present: false, value: [] },
+            pitchBends: { present: false, value: [] },
+        };
+        mocks.prepareMidiClipGlueState.mockReturnValue({
+            previous: {
+                clips: [
+                    { clipId: 'a', data: absentData },
+                    { clipId: 'b', data: absentData },
+                    { clipId: 'merged-clip', data: absentData },
+                ],
+                migratedAbsoluteNoteClipIds: { present: false, value: [] },
+            },
+            next: {
+                clips: [
+                    { clipId: 'a', data: absentData },
+                    { clipId: 'b', data: absentData },
+                    { clipId: 'merged-clip', data: absentData },
+                ],
+                migratedAbsoluteNoteClipIds: { present: true, value: ['merged-clip'] },
+            },
+        });
+        mocks.restoreMidiClipGlueState.mockReturnValue(true);
     });
 
     it('refuses to glue audio clips instead of producing a silent clip (regression: ledger M-027)', () => {
@@ -50,30 +78,30 @@ describe('glueClips', () => {
 
         // Sources must be untouched: no glued clip written, no MIDI gluing,
         // and a warning explaining the refusal.
-        expect(mocks.updateTrack).not.toHaveBeenCalled();
-        expect(mocks.glueMidiClipData).not.toHaveBeenCalled();
+        expect(mocks.setTrackState).not.toHaveBeenCalled();
+        expect(mocks.prepareMidiClipGlueState).not.toHaveBeenCalled();
         expect(mocks.warn).toHaveBeenCalledOnce();
     });
 
     it('does nothing with no state', () => {
         mocks.getTrackState.mockReturnValue(null);
         expect(glueClips(['a', 'b'])).toBe(false);
-        expect(mocks.updateTrack).not.toHaveBeenCalled();
-        expect(mocks.glueMidiClipData).not.toHaveBeenCalled();
+        expect(mocks.setTrackState).not.toHaveBeenCalled();
+        expect(mocks.prepareMidiClipGlueState).not.toHaveBeenCalled();
     });
 
     it('does nothing with less than 2 clips', () => {
         mocks.getTrackState.mockReturnValue(createTrackState([]));
         expect(glueClips(['a'])).toBe(false);
-        expect(mocks.updateTrack).not.toHaveBeenCalled();
-        expect(mocks.glueMidiClipData).not.toHaveBeenCalled();
+        expect(mocks.setTrackState).not.toHaveBeenCalled();
+        expect(mocks.prepareMidiClipGlueState).not.toHaveBeenCalled();
     });
 
     it('does nothing with empty clip list', () => {
         mocks.getTrackState.mockReturnValue(createTrackState([]));
         expect(glueClips([])).toBe(false);
-        expect(mocks.updateTrack).not.toHaveBeenCalled();
-        expect(mocks.glueMidiClipData).not.toHaveBeenCalled();
+        expect(mocks.setTrackState).not.toHaveBeenCalled();
+        expect(mocks.prepareMidiClipGlueState).not.toHaveBeenCalled();
     });
 
     it('rejects clips spanning multiple tracks', () => {
@@ -93,8 +121,8 @@ describe('glueClips', () => {
 
         expect(glueClips(['a', 'b'])).toBe(false);
 
-        expect(mocks.updateTrack).not.toHaveBeenCalled();
-        expect(mocks.glueMidiClipData).not.toHaveBeenCalled();
+        expect(mocks.setTrackState).not.toHaveBeenCalled();
+        expect(mocks.prepareMidiClipGlueState).not.toHaveBeenCalled();
         expect(mocks.warn).toHaveBeenCalledWith(
             'glueClips: clips span multiple tracks — gluing is only supported within a single track'
         );
@@ -118,8 +146,8 @@ describe('glueClips', () => {
 
         expect(mocks.warn).not.toHaveBeenCalled();
         expect(mocks.getNextClipId).not.toHaveBeenCalled();
-        expect(mocks.updateTrack).not.toHaveBeenCalled();
-        expect(mocks.glueMidiClipData).not.toHaveBeenCalled();
+        expect(mocks.setTrackState).not.toHaveBeenCalled();
+        expect(mocks.prepareMidiClipGlueState).not.toHaveBeenCalled();
     });
 
     it('rejects duplicate target ids before owner resolution', () => {
@@ -144,8 +172,8 @@ describe('glueClips', () => {
 
         glueClips(['a', 'b']);
 
-        expect(mocks.updateTrack).not.toHaveBeenCalled();
-        expect(mocks.glueMidiClipData).not.toHaveBeenCalled();
+        expect(mocks.setTrackState).not.toHaveBeenCalled();
+        expect(mocks.prepareMidiClipGlueState).not.toHaveBeenCalled();
     });
 
     it('does nothing when fewer than two selected clips are on the matching track', () => {
@@ -157,11 +185,96 @@ describe('glueClips', () => {
 
         glueClips(['a', 'missing']);
 
-        expect(mocks.updateTrack).not.toHaveBeenCalled();
-        expect(mocks.glueMidiClipData).not.toHaveBeenCalled();
+        expect(mocks.setTrackState).not.toHaveBeenCalled();
+        expect(mocks.prepareMidiClipGlueState).not.toHaveBeenCalled();
     });
 
-    it('updates the glued track before forwarding the exact selected ids to MIDI', () => {
+    it('keeps source clips when MIDI state cannot be prepared', () => {
+        const firstClip = ClipDummy.create({ id: 'a', trackId: 't1', type: 'midi', startBeat: 0, endBeat: 4 });
+        const secondClip = ClipDummy.create({ id: 'b', trackId: 't1', type: 'midi', startBeat: 4, endBeat: 8 });
+        mocks.getTrackState.mockReturnValue(
+            createTrackState([TrackDummy.create({ id: 't1', kind: 'midi', clips: [firstClip, secondClip] })])
+        );
+        mocks.prepareMidiClipGlueState.mockReturnValue(null);
+
+        expect(glueClips(['a', 'b'])).toBe(false);
+
+        expect(mocks.prepareMidiClipGlueState).toHaveBeenCalledOnce();
+        expect(mocks.setTrackState).not.toHaveBeenCalled();
+    });
+
+    it('rejects looped MIDI clips until loop materialization is supported', () => {
+        const firstClip = ClipDummy.create({ id: 'a', trackId: 't1', type: 'midi', startBeat: 0, endBeat: 4 });
+        const loopedClip = ClipDummy.create({
+            id: 'b',
+            trackId: 't1',
+            type: 'midi',
+            startBeat: 4,
+            endBeat: 12,
+            loopEnabled: true,
+            loopLength: 4,
+        });
+        mocks.getTrackState.mockReturnValue(
+            createTrackState([TrackDummy.create({ id: 't1', kind: 'midi', clips: [firstClip, loopedClip] })])
+        );
+
+        expect(glueClips(['a', 'b'])).toBe(false);
+
+        expect(mocks.prepareMidiClipGlueState).not.toHaveBeenCalled();
+        expect(mocks.setTrackState).not.toHaveBeenCalled();
+        expect(mocks.warn).toHaveBeenCalledWith('glueClips: looped MIDI clips must be flattened before gluing');
+    });
+
+    it.each([
+        ['locked', { locked: true }],
+        ['muted', { muted: true }],
+        ['gain-adjusted', { gain: 0.5 }],
+        ['stretched', { stretchMode: 'timestretch' as const, stretchRatio: 2 }],
+        ['linked', { parentClipId: 'source', isLinkedInstance: true }],
+        ['scale-folded', { sourceKeyRoot: 2, sourceScaleName: 'Dorian' }],
+    ])('rejects %s source clips instead of discarding their semantics', (_label, modifier) => {
+        const firstClip = ClipDummy.create({ id: 'a', trackId: 't1', type: 'midi', startBeat: 0, endBeat: 4 });
+        const modifiedClip = ClipDummy.create({
+            id: 'b',
+            trackId: 't1',
+            type: 'midi',
+            startBeat: 4,
+            endBeat: 8,
+            ...modifier,
+        });
+        mocks.getTrackState.mockReturnValue(
+            createTrackState([TrackDummy.create({ id: 't1', kind: 'midi', clips: [firstClip, modifiedClip] })])
+        );
+
+        expect(glueClips(['a', 'b'])).toBe(false);
+
+        expect(mocks.prepareMidiClipGlueState).not.toHaveBeenCalled();
+        expect(mocks.setTrackState).not.toHaveBeenCalled();
+    });
+
+    it.each([
+        ['gap', 5],
+        ['overlap', 3],
+    ])('rejects clips separated by a %s', (_label, secondStartBeat) => {
+        const firstClip = ClipDummy.create({ id: 'a', trackId: 't1', type: 'midi', startBeat: 0, endBeat: 4 });
+        const secondClip = ClipDummy.create({
+            id: 'b',
+            trackId: 't1',
+            type: 'midi',
+            startBeat: secondStartBeat,
+            endBeat: 8,
+        });
+        mocks.getTrackState.mockReturnValue(
+            createTrackState([TrackDummy.create({ id: 't1', kind: 'midi', clips: [firstClip, secondClip] })])
+        );
+
+        expect(glueClips(['a', 'b'])).toBe(false);
+
+        expect(mocks.prepareMidiClipGlueState).not.toHaveBeenCalled();
+        expect(mocks.setTrackState).not.toHaveBeenCalled();
+    });
+
+    it('writes MIDI before replacing clips and orders glue metadata by timeline position', () => {
         const firstClip = ClipDummy.create({
             id: 'a',
             trackId: 't1',
@@ -171,10 +284,7 @@ describe('glueClips', () => {
             type: 'midi',
             fadeInBeats: 0.25,
             fadeOutBeats: 0.5,
-            gain: 0.4,
             color: 'cyan',
-            locked: true,
-            muted: true,
         });
         const secondClip = ClipDummy.create({
             id: 'b',
@@ -187,42 +297,47 @@ describe('glueClips', () => {
             fadeOutBeats: 1.25,
             color: 'magenta',
         });
-        const track = TrackDummy.create({ id: 't1', clips: [firstClip, secondClip] });
+        const track = TrackDummy.create({ id: 't1', kind: 'midi', clips: [firstClip, secondClip] });
         const selectedClipIds = ['a', 'b'];
         mocks.getTrackState.mockReturnValue(createTrackState([track]));
 
         expect(glueClips(selectedClipIds)).toBe(true);
 
-        expect(mocks.updateTrack).toHaveBeenCalledTimes(1);
-        expect(mocks.glueMidiClipData).toHaveBeenCalledTimes(1);
-        const updateCall = mocks.updateTrack.mock.calls[0];
-        const midiCall = mocks.glueMidiClipData.mock.calls[0];
-        const updateInvocationOrder = mocks.updateTrack.mock.invocationCallOrder[0];
-        const midiInvocationOrder = mocks.glueMidiClipData.mock.invocationCallOrder[0];
-        if (!updateCall || !midiCall || updateInvocationOrder === undefined || midiInvocationOrder === undefined) {
+        expect(mocks.setTrackState).toHaveBeenCalledTimes(1);
+        expect(mocks.prepareMidiClipGlueState).toHaveBeenCalledTimes(1);
+        expect(mocks.restoreMidiClipGlueState).toHaveBeenCalledTimes(1);
+        const setCall = mocks.setTrackState.mock.calls[0];
+        const midiCall = mocks.prepareMidiClipGlueState.mock.calls[0];
+        const setInvocationOrder = mocks.setTrackState.mock.invocationCallOrder[0];
+        const midiInvocationOrder = mocks.restoreMidiClipGlueState.mock.invocationCallOrder[0];
+        if (!setCall || !midiCall || setInvocationOrder === undefined || midiInvocationOrder === undefined) {
             throw new Error('Expected Arrangement and MIDI glue calls');
         }
 
-        const [trackId, updater] = updateCall;
+        const [nextState] = setCall;
         const [midiInput] = midiCall;
-        expect(trackId).toBe('t1');
-        expect(midiInput).toEqual({ sourceClipIds: selectedClipIds, targetClipId: 'merged-clip' });
-        expect(midiInput.sourceClipIds).toBe(selectedClipIds);
-        expect(updateInvocationOrder).toBeLessThan(midiInvocationOrder);
-        expect(updater(track)).toEqual({
+        expect(midiInput).toEqual({
+            sources: [
+                { clipId: 'b', beatOffset: 0, visibleStartBeat: 0, visibleEndBeat: 4 },
+                { clipId: 'a', beatOffset: 4, visibleStartBeat: 0, visibleEndBeat: 4 },
+            ],
+            targetClipId: 'merged-clip',
+        });
+        expect(midiInvocationOrder).toBeLessThan(setInvocationOrder);
+        expect(nextState.tracks[0]).toEqual({
             ...track,
             clips: [
                 {
                     id: 'merged-clip',
                     trackId: 't1',
-                    name: 'Clip A (glued)',
+                    name: 'Clip B (glued)',
                     startBeat: 0,
                     endBeat: 8,
                     type: 'midi',
-                    fadeInBeats: 0.25,
-                    fadeOutBeats: 1.25,
+                    fadeInBeats: 0.75,
+                    fadeOutBeats: 0.5,
                     gain: 1,
-                    color: 'cyan',
+                    color: 'magenta',
                     locked: false,
                     muted: false,
                 },

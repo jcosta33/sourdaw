@@ -63,11 +63,39 @@ describe('glueMidiClipData', () => {
     it('reads once and does nothing when the MIDI store is unavailable', () => {
         mocks.state.value = null;
 
-        glueMidiClipData({ sourceClipIds: ['source-a', 'source-b'], targetClipId: 'target' });
+        const result = glueMidiClipData({
+            sources: [
+                { clipId: 'source-a', beatOffset: 0, visibleStartBeat: 0, visibleEndBeat: 4 },
+                { clipId: 'source-b', beatOffset: 4, visibleStartBeat: 0, visibleEndBeat: 4 },
+            ],
+            targetClipId: 'target',
+        });
 
+        expect(result).toBe(false);
         expectOneStoreRead();
         expect(mocks.set).not.toHaveBeenCalled();
         expect(mocks.state.value).toBeNull();
+    });
+
+    it('rejects a non-finite source offset without changing MIDI state', () => {
+        const previousState = requireMidiState();
+
+        const result = glueMidiClipData({
+            sources: [
+                {
+                    clipId: 'source-a',
+                    beatOffset: Number.POSITIVE_INFINITY,
+                    visibleStartBeat: 0,
+                    visibleEndBeat: 4,
+                },
+            ],
+            targetClipId: 'target',
+        });
+
+        expect(result).toBe(false);
+        expectOneStoreRead();
+        expect(mocks.set).not.toHaveBeenCalled();
+        expect(mocks.state.value).toBe(previousState);
     });
 
     it('merges source rows in selection order, deletes sources, and preserves unrelated row references', () => {
@@ -99,29 +127,51 @@ describe('glueMidiClipData', () => {
                 'source-b': sourcePitchBendsB,
                 keep: unrelatedPitchBends,
             },
+            migratedAbsoluteNoteClipIds: ['source-a', 'source-b', 'keep'],
         };
         const sourceClipIds = Object.freeze(['source-b', 'source-a']);
         mocks.state.value = previousState;
 
-        glueMidiClipData({ sourceClipIds, targetClipId: 'target' });
+        const result = glueMidiClipData({
+            sources: sourceClipIds.map((clipId, index) => ({
+                clipId,
+                beatOffset: index * 4,
+                visibleStartBeat: 0,
+                visibleEndBeat: 8,
+            })),
+            targetClipId: 'target',
+        });
 
-        expectOneStoreRead();
+        expect(result).toBe(true);
+        expect(mocks.getValue).toHaveBeenCalledTimes(2);
         expect(mocks.set).toHaveBeenCalledTimes(1);
         const nextState = requireMidiState();
 
         expect(nextState.notesByClipId).not.toBe(previousState.notesByClipId);
         expect(nextState.ccByClipId).not.toBe(previousState.ccByClipId);
         expect(nextState.pitchBendByClipId).not.toBe(previousState.pitchBendByClipId);
-        expect(nextState.notesByClipId.target).toEqual([...sourceNotesB, ...sourceNotesA]);
-        expect(nextState.ccByClipId.target).toEqual([...sourceControlChangesB, ...sourceControlChangesA]);
-        expect(nextState.pitchBendByClipId.target).toEqual([...sourcePitchBendsB, ...sourcePitchBendsA]);
+        expect(nextState.notesByClipId.target).toEqual([
+            ...sourceNotesB,
+            ...sourceNotesA.map((note) => ({ ...note, startBeat: note.startBeat + 4 })),
+        ]);
+        expect(nextState.ccByClipId.target).toEqual([
+            ...sourceControlChangesB,
+            ...sourceControlChangesA.map((controlChange) => ({ ...controlChange, beat: controlChange.beat + 4 })),
+        ]);
+        expect(nextState.pitchBendByClipId.target).toEqual([
+            ...sourcePitchBendsB,
+            ...sourcePitchBendsA.map((pitchBend) => ({ ...pitchBend, beat: pitchBend.beat + 4 })),
+        ]);
         expect(nextState.notesByClipId.target).not.toBe(sourceNotesA);
         expect(nextState.notesByClipId.target).not.toBe(sourceNotesB);
         expect(nextState.ccByClipId.target).not.toBe(sourceControlChangesA);
         expect(nextState.pitchBendByClipId.target).not.toBe(sourcePitchBendsA);
-        expect(nextState.notesByClipId.target?.[0]).toBe(sourceNotesB[0]);
-        expect(nextState.ccByClipId.target?.[0]).toBe(sourceControlChangesB[0]);
-        expect(nextState.pitchBendByClipId.target?.[0]).toBe(sourcePitchBendsB[0]);
+        expect(nextState.notesByClipId.target?.[0]).toEqual(sourceNotesB[0]);
+        expect(nextState.notesByClipId.target?.[0]).not.toBe(sourceNotesB[0]);
+        expect(nextState.ccByClipId.target?.[0]).toEqual(sourceControlChangesB[0]);
+        expect(nextState.ccByClipId.target?.[0]).not.toBe(sourceControlChangesB[0]);
+        expect(nextState.pitchBendByClipId.target?.[0]).toEqual(sourcePitchBendsB[0]);
+        expect(nextState.pitchBendByClipId.target?.[0]).not.toBe(sourcePitchBendsB[0]);
         expect(nextState.notesByClipId).not.toHaveProperty('source-a');
         expect(nextState.notesByClipId).not.toHaveProperty('source-b');
         expect(nextState.ccByClipId).not.toHaveProperty('source-a');
@@ -134,6 +184,7 @@ describe('glueMidiClipData', () => {
         expect(nextState.notesByClipId.keep?.[0]).toBe(unrelatedNote);
         expect(nextState.ccByClipId.keep?.[0]).toBe(unrelatedControlChange);
         expect(nextState.pitchBendByClipId.keep?.[0]).toBe(unrelatedPitchBend);
+        expect(nextState.migratedAbsoluteNoteClipIds).toEqual(['target', 'keep']);
         expect(sourceClipIds).toEqual(['source-b', 'source-a']);
         expect(sourceNotesA).toEqual([createNote('note-a-1', 1), createNote('note-a-2', 2)]);
         expect(sourceControlChangesB).toEqual([createControlChange('cc-b-1', 3), createControlChange('cc-b-2', 4)]);
@@ -145,24 +196,34 @@ describe('glueMidiClipData', () => {
         const unrelatedControlChanges = [createControlChange('cc-keep', 10)];
         const unrelatedPitchBends = [createPitchBend('pitch-keep', 10)];
         const previousState: MidiStoreStateInput = {
-            notesByClipId: { source: [], keep: unrelatedNotes },
-            ccByClipId: { source: [], keep: unrelatedControlChanges },
-            pitchBendByClipId: { source: [], keep: unrelatedPitchBends },
+            notesByClipId: { 'source-a': [], 'source-b': [], keep: unrelatedNotes },
+            ccByClipId: { 'source-a': [], 'source-b': [], keep: unrelatedControlChanges },
+            pitchBendByClipId: { 'source-a': [], 'source-b': [], keep: unrelatedPitchBends },
         };
         mocks.state.value = previousState;
 
-        glueMidiClipData({ sourceClipIds: ['source'], targetClipId: 'target' });
+        const result = glueMidiClipData({
+            sources: [
+                { clipId: 'source-a', beatOffset: 0, visibleStartBeat: 0, visibleEndBeat: 4 },
+                { clipId: 'source-b', beatOffset: 4, visibleStartBeat: 0, visibleEndBeat: 4 },
+            ],
+            targetClipId: 'target',
+        });
 
-        expectOneStoreRead();
+        expect(result).toBe(true);
+        expect(mocks.getValue).toHaveBeenCalledTimes(2);
         expect(mocks.set).toHaveBeenCalledTimes(1);
         const nextState = requireMidiState();
 
         expect(nextState.notesByClipId).not.toBe(previousState.notesByClipId);
         expect(nextState.ccByClipId).not.toBe(previousState.ccByClipId);
         expect(nextState.pitchBendByClipId).not.toBe(previousState.pitchBendByClipId);
-        expect(nextState.notesByClipId).not.toHaveProperty('source');
-        expect(nextState.ccByClipId).not.toHaveProperty('source');
-        expect(nextState.pitchBendByClipId).not.toHaveProperty('source');
+        expect(nextState.notesByClipId).not.toHaveProperty('source-a');
+        expect(nextState.notesByClipId).not.toHaveProperty('source-b');
+        expect(nextState.ccByClipId).not.toHaveProperty('source-a');
+        expect(nextState.ccByClipId).not.toHaveProperty('source-b');
+        expect(nextState.pitchBendByClipId).not.toHaveProperty('source-a');
+        expect(nextState.pitchBendByClipId).not.toHaveProperty('source-b');
         expect(nextState.notesByClipId).not.toHaveProperty('target');
         expect(nextState.ccByClipId).not.toHaveProperty('target');
         expect(nextState.pitchBendByClipId).not.toHaveProperty('target');

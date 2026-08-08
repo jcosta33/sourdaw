@@ -46,6 +46,7 @@ describe('clipHandlers', () => {
             'normalizeClip',
             'reverseClip',
             'glueClips',
+            'restoreClipGlueState',
             'nudgeClip',
             'crossfadeClips',
             'restoreCrossfadeClips',
