@@ -619,6 +619,61 @@ describe('parsePromptToActions', () => {
         expect(result.executionMode).toBe('atomic');
     });
 
+    it('proposes grounded MIDI clip glue as one destructive confirmable atomic action', async () => {
+        const actualBridge = await vi.importActual<typeof import('../agentReference/bridgeGroundedLlmToolCalls')>(
+            '../agentReference/bridgeGroundedLlmToolCalls'
+        );
+        mockBridgeGroundedLlmToolCalls.mockImplementation(actualBridge.bridgeGroundedLlmToolCalls);
+        vi.mocked(generateToolCalls).mockResolvedValue(
+            completePlan([{ name: 'glueClips', arguments: { clipIds: ['clip-intro', 'clip-verse'] } }])
+        );
+        const clip = {
+            id: 'clip-intro',
+            name: 'Intro',
+            type: 'midi' as const,
+            startBeat: 0,
+            endBeat: 8,
+            gain: 1,
+            locked: false,
+            muted: false,
+            loopEnabled: false,
+            noteCount: 4,
+        };
+        const providerContext: ProjectContext = {
+            ...baseContext,
+            glueEligibleClipPairs: [['clip-intro', 'clip-verse']],
+            tracks: [
+                {
+                    id: 'track-midi',
+                    name: 'Keys',
+                    kind: 'midi',
+                    muted: false,
+                    soloed: false,
+                    soloSafe: false,
+                    armed: false,
+                    gain: 0.8,
+                    pan: 0,
+                    automationMode: 'read',
+                    outputId: 'master',
+                    clipCount: 2,
+                    deviceCount: 0,
+                    clips: [{ ...clip }, { ...clip, id: 'clip-verse', name: 'Verse', startBeat: 8, endBeat: 16 }],
+                    devices: [],
+                    sends: [],
+                },
+            ],
+            selectedTrackId: 'track-midi',
+            selectedClipId: clip.id,
+            selectedClipIds: [clip.id, 'clip-verse'],
+        };
+
+        const result = await parsePromptToActions('glue the Intro and Verse clips', providerContext);
+
+        expect(result.actions).toEqual([{ type: 'glueClips', payload: { clipIds: ['clip-intro', 'clip-verse'] } }]);
+        expect(result.requiresConfirmation).toBe(true);
+        expect(result.executionMode).toBe('atomic');
+    });
+
     it('proposes a grounded whole-clip MIDI transform as one confirmable atomic action', async () => {
         const actualBridge = await vi.importActual<typeof import('../agentReference/bridgeGroundedLlmToolCalls')>(
             '../agentReference/bridgeGroundedLlmToolCalls'

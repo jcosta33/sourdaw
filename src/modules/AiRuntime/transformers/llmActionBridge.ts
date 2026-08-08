@@ -1330,6 +1330,70 @@ function bridgeToolCall({
         };
     }
 
+    if (call.name === 'glueClips') {
+        if (
+            !hasExactKeys(args, ['clipIds']) ||
+            !Array.isArray(args.clipIds) ||
+            args.clipIds.length !== 2 ||
+            !args.clipIds.every((clipId): clipId is string => typeof clipId === 'string' && clipId.length > 0) ||
+            new Set(args.clipIds).size !== args.clipIds.length
+        ) {
+            return rejection(index, call.name, 'Expected exactly two distinct existing clip IDs');
+        }
+        const sources = args.clipIds.map((clipId) => findClip(context, clipId));
+        if (sources.some((source) => !source)) {
+            return rejection(index, call.name, 'Expected exactly two distinct existing clip IDs');
+        }
+        const [sourceA, sourceB] = sources;
+        if (!sourceA || !sourceB) {
+            return rejection(index, call.name, 'Expected exactly two distinct existing clip IDs');
+        }
+        const sortedSources = [sourceA, sourceB].toSorted(
+            (left, right) => left.clip.startBeat - right.clip.startBeat || left.clip.id.localeCompare(right.clip.id)
+        );
+        const [first, second] = sortedSources;
+        const hasAuthoritativeEligibility = (context.glueEligibleClipPairs ?? []).some(
+            ([leftId, rightId]) =>
+                (leftId === sourceA.clip.id && rightId === sourceB.clip.id) ||
+                (leftId === sourceB.clip.id && rightId === sourceA.clip.id)
+        );
+        const hasClipAutomation = (context.automationLanes ?? []).some(
+            (lane) => lane.clipId === first?.clip.id || lane.clipId === second?.clip.id
+        );
+        if (
+            !first ||
+            !second ||
+            !hasAuthoritativeEligibility ||
+            first.track.id !== second.track.id ||
+            first.track.kind !== 'midi' ||
+            first.clip.type !== 'midi' ||
+            second.clip.type !== 'midi' ||
+            first.clip.locked === true ||
+            second.clip.locked === true ||
+            first.clip.muted === true ||
+            second.clip.muted === true ||
+            first.clip.loopEnabled === true ||
+            second.clip.loopEnabled === true ||
+            first.clip.gain !== 1 ||
+            second.clip.gain !== 1 ||
+            !isFiniteNumber(first.clip.startBeat) ||
+            !isFiniteNumber(first.clip.endBeat) ||
+            !isFiniteNumber(second.clip.startBeat) ||
+            !isFiniteNumber(second.clip.endBeat) ||
+            first.clip.startBeat >= first.clip.endBeat ||
+            second.clip.startBeat >= second.clip.endBeat ||
+            first.clip.endBeat !== second.clip.startBeat ||
+            hasClipAutomation
+        ) {
+            return rejection(
+                index,
+                call.name,
+                'Expected two adjacent plain unlocked and unmuted MIDI clips on the same MIDI track'
+            );
+        }
+        return { type: 'glueClips', payload: { clipIds: [...args.clipIds] } };
+    }
+
     if (call.name === 'crossfadeClips') {
         const hasDuration = Object.hasOwn(args, 'durationBeats');
         const expectedKeys = hasDuration ? ['clipAId', 'clipBId', 'durationBeats'] : ['clipAId', 'clipBId'];
@@ -1774,6 +1838,9 @@ function bridgeToolCall({
 }
 
 function getClipTargetIds(action: RuntimeAction): string[] {
+    if (action.type === 'glueClips') {
+        return [...action.payload.clipIds];
+    }
     if (action.type === 'crossfadeClips') {
         return [action.payload.clipAId, action.payload.clipBId];
     }
@@ -1994,6 +2061,21 @@ function getMutationKeys(
             `clip:${action.payload.clipId}:stretch`,
             `clip:${action.payload.clipId}:notes`,
         ];
+    }
+    if (action.type === 'glueClips') {
+        return action.payload.clipIds.flatMap((clipId) => [
+            `clip:${clipId}:membership`,
+            `clip:${clipId}:name`,
+            `clip:${clipId}:geometry`,
+            `clip:${clipId}:gain`,
+            `clip:${clipId}:muted`,
+            `clip:${clipId}:color`,
+            `clip:${clipId}:fades`,
+            `clip:${clipId}:lock`,
+            `clip:${clipId}:loop`,
+            `clip:${clipId}:stretch`,
+            `clip:${clipId}:notes`,
+        ]);
     }
     if (action.type === 'moveClip') {
         return [
@@ -2364,6 +2446,7 @@ export function bridgeLlmToolCalls({
     const splitClipOwnerTrackIds = new Set<string>();
     const duplicatedClipSourceIds = new Set<string>();
     const duplicatedTrackIds = new Set<string>();
+    const gluedClipOwnerTrackIds = new Set<string>();
     const addedClipTrackIds = new Set<string>();
 
     for (const [index, call] of calls.entries()) {
@@ -2401,7 +2484,7 @@ export function bridgeLlmToolCalls({
                 (automationPointLaneId !== null && automationTransformLaneIds.has(automationPointLaneId)) ||
                 (automationTransformLaneId !== null && automationPointWriteLaneIds.has(automationTransformLaneId));
             const hasClipLifecycleConflict =
-                (result.type === 'removeClip' &&
+                ((result.type === 'removeClip' || result.type === 'glueClips') &&
                     actionClipTargetIds.some((clipTargetId) => clipTargetIds.has(clipTargetId))) ||
                 actionClipTargetIds.some((clipTargetId) => removedClipIds.has(clipTargetId));
             const hasClipTrackLifecycleConflict = actionClipTrackIds.some((trackId) => removedTrackIds.has(trackId));
@@ -2422,6 +2505,8 @@ export function bridgeLlmToolCalls({
             const splitClipOwnerTrackId =
                 splitClipId === null ? null : (findClip(context, splitClipId)?.track.id ?? null);
             const duplicatedTrackId = result.type === 'duplicateTrack' ? result.payload.trackId : null;
+            const gluedClipOwnerTrackId =
+                result.type === 'glueClips' ? (findClip(context, result.payload.clipIds[0])?.track.id ?? null) : null;
             const addedClipTrackId = result.type === 'addClip' ? result.payload.trackId : null;
             const hasSplitDuplicateConflict =
                 (duplicatedClipId !== null && splitClipIds.has(duplicatedClipId)) ||
@@ -2432,6 +2517,9 @@ export function bridgeLlmToolCalls({
             const hasAddClipTrackDuplicateConflict =
                 (duplicatedTrackId !== null && addedClipTrackIds.has(duplicatedTrackId)) ||
                 (addedClipTrackId !== null && duplicatedTrackIds.has(addedClipTrackId));
+            const hasGlueOwnerTrackDuplicateConflict =
+                (duplicatedTrackId !== null && gluedClipOwnerTrackIds.has(duplicatedTrackId)) ||
+                (gluedClipOwnerTrackId !== null && duplicatedTrackIds.has(gluedClipOwnerTrackId));
             const hasDeviceLifecycleConflict =
                 deviceTarget !== null &&
                 ((deviceTarget.deviceId !== null &&
@@ -2528,6 +2616,12 @@ export function bridgeLlmToolCalls({
                 );
                 continue;
             }
+            if (hasGlueOwnerTrackDuplicateConflict) {
+                rejections.push(
+                    rejection(index, call.name, 'Provider batch mixes gluing clips with duplicating their owner track')
+                );
+                continue;
+            }
             if (hasDeviceLifecycleConflict) {
                 rejections.push(
                     rejection(index, call.name, 'Provider batch mixes incompatible device lifecycle writes')
@@ -2558,12 +2652,15 @@ export function bridgeLlmToolCalls({
             if (duplicatedTrackId !== null) {
                 duplicatedTrackIds.add(duplicatedTrackId);
             }
+            if (gluedClipOwnerTrackId !== null) {
+                gluedClipOwnerTrackIds.add(gluedClipOwnerTrackId);
+            }
             if (addedClipTrackId !== null) {
                 addedClipTrackIds.add(addedClipTrackId);
             }
             for (const clipTargetId of actionClipTargetIds) {
                 clipTargetIds.add(clipTargetId);
-                if (result.type === 'removeClip') {
+                if (result.type === 'removeClip' || result.type === 'glueClips') {
                     removedClipIds.add(clipTargetId);
                 }
                 if (result.type === 'lockClip') {

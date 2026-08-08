@@ -310,6 +310,22 @@ function createMidiClipContext(): ProjectContext {
     };
 }
 
+function createGlueClipContext(): ProjectContext {
+    const context = createMidiClipContext();
+    const track = context.tracks[0]!;
+    const intro = { ...track.clips[0]!, id: 'clip-midi-intro', name: 'MIDI Intro', startBeat: 0, endBeat: 8 };
+    const verse = { ...intro, id: 'clip-midi-verse', name: 'MIDI Verse', startBeat: 8, endBeat: 16 };
+    const outro = { ...intro, id: 'clip-midi-outro', name: 'MIDI Outro', startBeat: 16, endBeat: 24 };
+    return {
+        ...context,
+        automationLanes: [],
+        glueEligibleClipPairs: [[intro.id, verse.id]],
+        tracks: [{ ...track, clipCount: 3, clips: [intro, verse, outro] }, ...context.tracks.slice(1)],
+        selectedClipId: intro.id,
+        selectedClipIds: [intro.id, verse.id],
+    };
+}
+
 describe('bridgeLlmToolCalls', () => {
     it('bridges exact desired playback state and rejects no-ops or malformed payloads', () => {
         const play = bridge({
@@ -1825,6 +1841,114 @@ describe('bridgeLlmToolCalls', () => {
             { type: 'crossfadeClips', payload: { clipAId: 'clip-verse', clipBId: 'clip-chorus' } },
         ]);
         expect([...explicit.rejections, ...defaultDuration.rejections]).toEqual([]);
+    });
+
+    it('converts exactly two adjacent plain MIDI clips into one glue action', () => {
+        const context = createGlueClipContext();
+        const result = bridge({
+            context,
+            calls: [{ name: 'glueClips', arguments: { clipIds: ['clip-midi-intro', 'clip-midi-verse'] } }],
+        });
+
+        expect(result.actions).toEqual([
+            { type: 'glueClips', payload: { clipIds: ['clip-midi-intro', 'clip-midi-verse'] } },
+        ]);
+        expect(result.rejections).toEqual([]);
+    });
+
+    it('rejects malformed, ineligible, non-adjacent, cross-track, and dependency-bearing MIDI glue calls', () => {
+        const context = createGlueClipContext();
+        const cases = [
+            { context, arguments: { clipIds: ['clip-midi-intro'] } },
+            { context, arguments: { clipIds: ['clip-midi-intro', 'clip-midi-intro'] } },
+            { context, arguments: { clipIds: ['clip-midi-intro', 'clip-midi-outro'] } },
+            { context, arguments: { clipIds: ['clip-midi-intro', 'missing'] } },
+            { context, arguments: { clipIds: ['clip-midi-intro', 'clip-midi-verse'], targetClipId: 'provider-id' } },
+            {
+                context: { ...context, glueEligibleClipPairs: [] },
+                arguments: { clipIds: ['clip-midi-intro', 'clip-midi-verse'] },
+            },
+            {
+                context: replaceTrack(context, 'track-vocals', (track) => ({
+                    ...track,
+                    clips: track.clips.map((clip) =>
+                        clip.id === 'clip-midi-verse' ? { ...clip, locked: true } : clip
+                    ),
+                })),
+                arguments: { clipIds: ['clip-midi-intro', 'clip-midi-verse'] },
+            },
+            {
+                context: {
+                    ...context,
+                    tracks: context.tracks.map((track) => {
+                        if (track.id === 'track-vocals') {
+                            return {
+                                ...track,
+                                clipCount: 2,
+                                clips: track.clips.filter((clip) => clip.id !== 'clip-midi-verse'),
+                            };
+                        }
+                        if (track.id === 'track-guitar') {
+                            return {
+                                ...track,
+                                kind: 'midi',
+                                clipCount: 1,
+                                clips: [context.tracks[0]!.clips[1]!],
+                            };
+                        }
+                        return track;
+                    }),
+                },
+                arguments: { clipIds: ['clip-midi-intro', 'clip-midi-verse'] },
+            },
+            {
+                context: {
+                    ...context,
+                    automationLanes: [
+                        {
+                            id: 'lane-clip-gain',
+                            trackId: 'track-vocals',
+                            clipId: 'clip-midi-intro',
+                            parameterId: 'gain',
+                            name: 'Gain',
+                            enabled: true,
+                            minValue: 0,
+                            maxValue: 1,
+                            points: [],
+                        },
+                    ],
+                },
+                arguments: { clipIds: ['clip-midi-intro', 'clip-midi-verse'] },
+            },
+        ];
+
+        const results = cases.map((testCase) =>
+            bridge({ context: testCase.context, calls: [{ name: 'glueClips', arguments: testCase.arguments }] })
+        );
+
+        expect(results.every((result) => result.actions.length === 0)).toBe(true);
+        expect(results.every((result) => result.rejections[0]?.name === 'glueClips')).toBe(true);
+    });
+
+    it('rejects same-source glue lifecycle and owner-track duplication conflicts in both orders', () => {
+        const context = createGlueClipContext();
+        const glue = { name: 'glueClips', arguments: { clipIds: ['clip-midi-intro', 'clip-midi-verse'] } };
+        const conflicts = [
+            { name: 'renameClip', arguments: { clipId: 'clip-midi-intro', name: 'New Intro' } },
+            { name: 'duplicateClip', arguments: { clipId: 'clip-midi-verse' } },
+            { name: 'removeClip', arguments: { clipId: 'clip-midi-intro' } },
+            { name: 'lockClip', arguments: { clipId: 'clip-midi-verse', locked: true } },
+            { name: 'removeTrack', arguments: { trackId: 'track-vocals' } },
+            { name: 'duplicateTrack', arguments: { trackId: 'track-vocals' } },
+        ];
+
+        const results = conflicts.flatMap((conflict) => [
+            bridge({ context, calls: [glue, conflict] }),
+            bridge({ context, calls: [conflict, glue] }),
+        ]);
+
+        expect(results.every((result) => result.actions.length === 1)).toBe(true);
+        expect(results.every((result) => result.rejections.length === 1)).toBe(true);
     });
 
     it('rejects malformed, unsafe, reversed, no-op, and non-overlapping crossfade calls', () => {

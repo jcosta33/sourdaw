@@ -427,9 +427,11 @@ type CancellationCue = {
 
 function getCancellationCues(text: string): CancellationCue[] {
     const patterns = [
-        /\b(?:never mind|on second thought|actually\s*,?\s+no)\b/gu,
-        /\b(?:abort|cancel|disregard|scratch)\s+(?:it\b|(?:that|this)\b(?!\s+\p{L})|(?:the|that|this)\s+(?:\p{L}+\s+){0,2}(?:change|command|request)\b)/gu,
-        /\bleave\s+(?:(?:it|that|this)\s+)?unchanged\b/gu,
+        /\b(?:never mind|on second thought|actually\s*,?\s+(?:no|don['’]?t|don t|dont))\b/gu,
+        /\b(?:abort|cancel|disregard|scratch)\s+(?:it\b|them\b|(?:that|this)\b(?!\s+\p{L})|(?:the|that|this)\s+(?:\p{L}+\s+){0,2}(?:change|command|request)\b)/gu,
+        /\bleave\s+(?:(?:it|them|that|this)\s+)?unchanged\b/gu,
+        /\bkeep\s+(?:(?:it|them|that|this)\s+)?separate\b/gu,
+        /\bwithout\s+(?:(?:making|applying)\s+(?:any\s+)?changes?|changing\s+(?:anything|it|them))\b/gu,
         /\b(?:do not|don['’]t|don t|dont|never|not)\b(?:\s+\p{L}+){0,3}\s+(?:apply|change|do|execute|make)\s+(?:it\b|(?:that|this)\b(?!\s+\p{L})|(?:the|that|this)\s+(?:\p{L}+\s+){0,2}(?:change|command|request)\b)/gu,
     ];
     return patterns.flatMap((pattern) =>
@@ -1151,6 +1153,14 @@ function getAssertedControlTargetReferences(
             const value = assertedArguments[targetRule.argument];
             if (typeof value === 'string') {
                 direct.add(value);
+                continue;
+            }
+            if (Array.isArray(value)) {
+                for (const item of value) {
+                    if (typeof item === 'string') {
+                        direct.add(item);
+                    }
+                }
             }
         }
         for (const valueRule of groundingRules.valueRules) {
@@ -1162,48 +1172,51 @@ function getAssertedControlTargetReferences(
     }
     for (const targetRule of groundingRules.targetRules) {
         for (const assertedArguments of assertedArgumentSets) {
-            const assertedId = assertedArguments[targetRule.argument];
-            if (typeof assertedId !== 'string') {
-                continue;
-            }
-            for (const track of context.tracks) {
-                if (track.id === assertedId) {
-                    direct.add(track.id);
-                    direct.add(track.name);
+            const assertedValue = assertedArguments[targetRule.argument];
+            const assertedIds = Array.isArray(assertedValue) ? assertedValue : [assertedValue];
+            for (const assertedId of assertedIds) {
+                if (typeof assertedId !== 'string') {
+                    continue;
                 }
-                const device = track.devices.find((candidate) => candidate.id === assertedId);
-                if (device) {
-                    direct.add(device.id);
-                    direct.add(device.type);
-                    owners.add(track.id);
-                    owners.add(track.name);
-                }
-                const clip = track.clips.find((candidate) => candidate.id === assertedId);
-                if (clip) {
-                    direct.add(clip.id);
-                    direct.add(clip.name);
-                    owners.add(track.id);
-                    owners.add(track.name);
-                }
-                for (const owningDevice of track.devices) {
-                    const parameter = owningDevice.parameters?.find((candidate) => candidate.id === assertedId);
-                    if (!parameter) {
-                        continue;
+                for (const track of context.tracks) {
+                    if (track.id === assertedId) {
+                        direct.add(track.id);
+                        direct.add(track.name);
                     }
-                    direct.add(parameter.id);
-                    direct.add(parameter.name);
-                    owners.add(track.id);
-                    owners.add(track.name);
+                    const device = track.devices.find((candidate) => candidate.id === assertedId);
+                    if (device) {
+                        direct.add(device.id);
+                        direct.add(device.type);
+                        owners.add(track.id);
+                        owners.add(track.name);
+                    }
+                    const clip = track.clips.find((candidate) => candidate.id === assertedId);
+                    if (clip) {
+                        direct.add(clip.id);
+                        direct.add(clip.name);
+                        owners.add(track.id);
+                        owners.add(track.name);
+                    }
+                    for (const owningDevice of track.devices) {
+                        const parameter = owningDevice.parameters?.find((candidate) => candidate.id === assertedId);
+                        if (!parameter) {
+                            continue;
+                        }
+                        direct.add(parameter.id);
+                        direct.add(parameter.name);
+                        owners.add(track.id);
+                        owners.add(track.name);
+                    }
                 }
-            }
-            const automationLane = context.automationLanes?.find((candidate) => candidate.id === assertedId);
-            if (automationLane) {
-                direct.add(automationLane.id);
-                direct.add(automationLane.name);
-                const owner = context.tracks.find((track) => track.id === automationLane.trackId);
-                if (owner) {
-                    owners.add(owner.id);
-                    owners.add(owner.name);
+                const automationLane = context.automationLanes?.find((candidate) => candidate.id === assertedId);
+                if (automationLane) {
+                    direct.add(automationLane.id);
+                    direct.add(automationLane.name);
+                    const owner = context.tracks.find((track) => track.id === automationLane.trackId);
+                    if (owner) {
+                        owners.add(owner.id);
+                        owners.add(owner.name);
+                    }
                 }
             }
         }
@@ -1232,7 +1245,10 @@ function resolveActionPromptScope({
     }
     const projectMaskedPrompt =
         groundingRules.targetRules.length === 0 ? prompt : maskProjectReferences(prompt, context);
-    const maskedPrompt = maskQuotedLabels(projectMaskedPrompt);
+    let maskedPrompt = maskQuotedLabels(projectMaskedPrompt);
+    if (actionName === 'glueClips') {
+        maskedPrompt = maskGlueClipPairConjunction(maskedPrompt);
+    }
     const matchingScopes: ActionPromptScope[] = [];
     for (const clause of getPromptClauses(prompt, maskedPrompt)) {
         const controlTargetReferences = getAssertedControlTargetReferences(
@@ -1347,6 +1363,55 @@ function maskQuotedLabels(text: string): string {
         const closingQuote = label.at(-1)!;
         return `${label[0]!}${' '.repeat(label.length - 2)}${closingQuote}`;
     });
+}
+
+function maskGlueClipPairConjunction(text: string): string {
+    return text.replaceAll(/["'“‘]?(?:clip)?□+["'”’]?(?:\s+clips?)?\s+and\s+(?=["'“‘]?(?:clip)?□+)/giu, (pairPrefix) =>
+        pairPrefix.replace(/\band\b/iu, '   ')
+    );
+}
+
+function isDirectGlueClipPairScope(
+    actionScope: ActionPromptScope,
+    assertedClipIds: unknown,
+    context: ProjectContext
+): boolean {
+    if (
+        !Array.isArray(assertedClipIds) ||
+        assertedClipIds.length !== 2 ||
+        !assertedClipIds.every((clipId): clipId is string => typeof clipId === 'string')
+    ) {
+        return false;
+    }
+    const normalizedScope = normalizePromptText(actionScope.text);
+    if (/^(?:glue|join)(?: the)? selected clips$/u.test(normalizedScope)) {
+        const selectedIds = new Set(context.selectedClipIds);
+        return selectedIds.size === 2 && assertedClipIds.every((clipId) => selectedIds.has(clipId));
+    }
+    const clips = assertedClipIds.map((clipId) =>
+        context.tracks.flatMap((track) => track.clips).find((clip) => clip.id === clipId)
+    );
+    if (clips.some((clip) => !clip)) {
+        return false;
+    }
+    const referencePattern = (clip: NonNullable<(typeof clips)[number]>): string => {
+        const references = [clip.id, clip.name]
+            .map(normalizePromptText)
+            .filter((reference) => reference.length > 0)
+            .toSorted((left, right) => right.length - left.length)
+            .map(escapeRegExp);
+        return `(?:${references.join('|')})`;
+    };
+    const first = referencePattern(clips[0]!);
+    const second = referencePattern(clips[1]!);
+    const matchesOrder = (left: string, right: string): boolean => {
+        const pattern = new RegExp(
+            `^(?:glue|join)(?: the)? ${left}(?: clips?)? (?:and|with) (?:the )?${right}(?: clips?)?$`,
+            'u'
+        );
+        return pattern.test(normalizedScope);
+    };
+    return matchesOrder(first, second) || matchesOrder(second, first);
 }
 
 function getAddClipPromptEvidence(actionScope: ActionPromptScope): AddClipPromptEvidence | null {
@@ -2602,13 +2667,25 @@ function resolveAgentReferenceArray({
     ) {
         return { status: 'rejected', reason: 'ungrounded-target' };
     }
-    if (capability !== 'vca-member-track') {
+    if (capability === 'editable-clip' && /\bselected clips\b/u.test(normalizePromptText(prompt))) {
+        const selectedIds = new Set(context.selectedClipIds);
+        const assertedIdSet = new Set(assertedIds);
+        if (selectedIds.size === assertedIdSet.size && [...selectedIds].every((id) => assertedIdSet.has(id))) {
+            return { status: 'resolved', ids: [...assertedIds] };
+        }
+        return { status: 'rejected', reason: 'asserted-target-mismatch' };
+    }
+    let candidates: Array<{ id: string; name: string }>;
+    if (capability === 'vca-member-track') {
+        candidates = context.tracks.filter(
+            (track) =>
+                track.kind === 'audio' || track.kind === 'midi' || track.kind === 'bus' || track.kind === 'folder'
+        );
+    } else if (capability === 'editable-clip') {
+        candidates = context.tracks.flatMap((track) => track.clips);
+    } else {
         return { status: 'rejected', reason: 'ungrounded-target' };
     }
-
-    const candidates = context.tracks.filter(
-        (track) => track.kind === 'audio' || track.kind === 'midi' || track.kind === 'bus' || track.kind === 'folder'
-    );
     const evidenced = candidates.flatMap((candidate) => {
         const result = resolveAgentReference({
             prompt,
@@ -2897,6 +2974,9 @@ function groundToolCall({
     }
     if (call.name === 'moveClip' && !isDirectMoveClipDestination(actionScope, groundedArguments.trackId, context)) {
         return rejection(index, call.name, 'Provider clip destination is not the direct object of the move request');
+    }
+    if (call.name === 'glueClips' && !isDirectGlueClipPairScope(actionScope, groundedArguments.clipIds, context)) {
+        return rejection(index, call.name, 'Provider clips are not the direct objects of one glue request');
     }
     if (call.name === 'splitClip' && !isDirectSplitClipScope(actionScope, groundedArguments.clipId, context)) {
         return rejection(index, call.name, 'Provider clip split is not scoped to the whole clip');

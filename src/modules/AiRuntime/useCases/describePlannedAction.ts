@@ -25,6 +25,21 @@ export function describePlannedAction({ action, context }: DescribePlannedAction
             return `Remove clip "${clip.name}"`;
         }
     }
+    if (action.type === 'glueClips') {
+        const sources = action.payload.clipIds.flatMap((clipId) => {
+            for (const track of context.tracks) {
+                const clip = track.clips.find((candidate) => candidate.id === clipId);
+                if (clip) {
+                    return [`"${clip.name}" (${clip.id}, beats ${String(clip.startBeat)}–${String(clip.endBeat)})`];
+                }
+            }
+            return [];
+        });
+        if (sources.length === action.payload.clipIds.length) {
+            return `Glue MIDI clips ${sources.join(' and ')}`;
+        }
+        return 'Glue MIDI clips';
+    }
     if (action.type === 'moveClip') {
         const clip = context.tracks
             .flatMap((track) => track.clips)

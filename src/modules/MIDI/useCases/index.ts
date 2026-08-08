@@ -43,6 +43,7 @@ export { resetMidiStoreForProject } from './resetMidiStoreForProject';
 export { shouldPlayMidiEvent } from './shouldPlayMidiEvent';
 export { duplicateMidiClipData } from './midiClipData/duplicateMidiClipData';
 export { glueMidiClipData } from './midiClipData/glueMidiClipData';
+export { canPrepareMidiClipGlueState } from './midiClipData/canPrepareMidiClipGlueState';
 export { prepareMidiClipGlueState } from './midiClipData/prepareMidiClipGlueState';
 export { restoreMidiClipGlueState } from './midiClipData/restoreMidiClipGlueState';
 export { removeMidiClipData } from './midiClipData/removeMidiClipData';

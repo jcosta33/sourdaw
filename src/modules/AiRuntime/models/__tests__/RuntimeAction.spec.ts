@@ -51,6 +51,7 @@ describe('RuntimeAction', () => {
             { type: 'setClipColor', payload: { clipId: 'clip-1', color: '#112233' } },
             { type: 'setClipFade', payload: { clipId: 'clip-1', fadeInBeats: 1, fadeOutBeats: 2 } },
             { type: 'setClipLoop', payload: { clipId: 'clip-1', enabled: true } },
+            { type: 'glueClips', payload: { clipIds: ['clip-1', 'clip-2'] } },
         ];
 
         expect(actions.map((action) => action.type)).toEqual([
@@ -73,6 +74,7 @@ describe('RuntimeAction', () => {
             'setClipColor',
             'setClipFade',
             'setClipLoop',
+            'glueClips',
         ]);
         expectTypeOf<PayloadHasKey<'duplicateClip', 'targetClipId'>>().toEqualTypeOf<false>();
         expectTypeOf<PayloadHasKey<'addAutomationLane', 'laneId'>>().toEqualTypeOf<false>();
@@ -95,5 +97,8 @@ describe('RuntimeAction', () => {
         expectTypeOf<PayloadHasKey<'setClipColor', 'expectedColor'>>().toEqualTypeOf<false>();
         expectTypeOf<PayloadHasKey<'setClipFade', 'expectedFadeInBeats'>>().toEqualTypeOf<false>();
         expectTypeOf<PayloadHasKey<'setClipFade', 'expectedFadeOutBeats'>>().toEqualTypeOf<false>();
+        expectTypeOf<PayloadHasKey<'glueClips', 'targetClipId'>>().toEqualTypeOf<false>();
+        expectTypeOf<PayloadHasKey<'glueClips', 'expected'>>().toEqualTypeOf<false>();
+        expectTypeOf<PayloadHasKey<'glueClips', 'replacement'>>().toEqualTypeOf<false>();
     });
 });

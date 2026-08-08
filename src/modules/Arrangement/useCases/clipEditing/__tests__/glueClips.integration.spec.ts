@@ -7,6 +7,7 @@ import { ClipDummy } from '../../../__tests__/ClipDummy';
 import { TrackDummy } from '../../../__tests__/TrackDummy';
 import { __resetGainEnvelopesForTest, setEnvelope } from '../../../stores/gainEnvelopeStore';
 import { trackStore } from '../../../stores/trackStore';
+import { getGlueEligibleClipPairs } from '../getGlueEligibleClipPairs';
 import { glueClips } from '../glueClips';
 
 describe('glueClips MIDI state integration', () => {
@@ -56,6 +57,78 @@ describe('glueClips MIDI state integration', () => {
         midiStore.set({ notesByClipId: {}, ccByClipId: {}, pitchBendByClipId: {} });
         automationStore.set({ lanes: [] });
         __resetGainEnvelopesForTest();
+    });
+
+    it('projects only adjacent plain source pairs without hidden clip dependencies', () => {
+        expect(getGlueEligibleClipPairs()).toEqual([['clip-a', 'clip-b']]);
+
+        trackStore.set({
+            ...trackStore.value!,
+            tracks: trackStore.value!.tracks.map((track) => ({
+                ...track,
+                clips: track.clips.map((clip) =>
+                    clip.id === 'clip-a' ? { ...clip, stretchMode: 'timestretch' as const } : clip
+                ),
+            })),
+        });
+        expect(getGlueEligibleClipPairs()).toEqual([]);
+
+        trackStore.set({
+            ...trackStore.value!,
+            tracks: trackStore.value!.tracks.map((track) => ({
+                ...track,
+                clips: track.clips.map((clip) =>
+                    clip.id === 'clip-a' ? { ...clip, stretchMode: 'off' as const } : clip
+                ),
+            })),
+        });
+        setEnvelope('clip-a', { clipId: 'clip-a', points: [], enabled: true });
+        expect(getGlueEligibleClipPairs()).toEqual([]);
+    });
+
+    it('projects an adjacent source pair across an unrelated overlapping clip', () => {
+        const overlapping = ClipDummy.create({
+            id: 'clip-overlap',
+            trackId: 'track-midi',
+            type: 'midi',
+            startBeat: 9,
+            endBeat: 10,
+        });
+        trackStore.set({
+            ...trackStore.value!,
+            tracks: trackStore.value!.tracks.map((track) => ({
+                ...track,
+                clips: [track.clips[0]!, overlapping, track.clips[1]!],
+            })),
+        });
+
+        expect(getGlueEligibleClipPairs()).toContainEqual(['clip-a', 'clip-b']);
+    });
+
+    it('does not advertise a pair whose MIDI rows cannot be glued', () => {
+        midiStore.set({
+            ...midiStore.value!,
+            notesByClipId: {
+                ...midiStore.value!.notesByClipId,
+                'clip-b': [{ id: 'note-a', pitch: 64, startBeat: 2, duration: 1, velocity: 100 }],
+            },
+        });
+
+        expect(getGlueEligibleClipPairs()).toEqual([]);
+        expect(glueClips(['clip-a', 'clip-b'])).toBe(false);
+    });
+
+    it('does not advertise clips whose declared owner disagrees with their containing track', () => {
+        trackStore.set({
+            ...trackStore.value!,
+            tracks: trackStore.value!.tracks.map((track) => ({
+                ...track,
+                clips: track.clips.map((clip) => (clip.id === 'clip-a' ? { ...clip, trackId: 'track-other' } : clip)),
+            })),
+        });
+
+        expect(getGlueEligibleClipPairs()).toEqual([]);
+        expect(glueClips(['clip-a', 'clip-b'])).toBe(false);
     });
 
     it('rebases every source MIDI event into the glued clip local timeline', () => {

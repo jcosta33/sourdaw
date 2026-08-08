@@ -7,31 +7,14 @@ import { getNextClipId } from '../../repositories/clipIdCounter';
 import { getTrackState } from '../../repositories/track/getTrackState';
 import { resolveEligibleClipWriteTarget } from '../../stores/resolveEligibleClipWriteTarget';
 
+import { getMidiClipGlueSources } from './getMidiClipGlueSources';
 import { hasClipGlueDependencies } from './hasClipGlueDependencies';
+import { isPlainMidiGlueClip } from './isPlainMidiGlueClip';
 
 type PrepareClipGlueInput = {
     clipIds: readonly string[];
     targetClipId?: string;
 };
-
-function hasUnsupportedMidiGlueState(clip: Clip): boolean {
-    return (
-        clip.locked ||
-        clip.muted ||
-        clip.gain !== 1 ||
-        (clip.stretchMode !== undefined && clip.stretchMode !== 'off') ||
-        (clip.stretchRatio !== undefined && clip.stretchRatio !== 1) ||
-        clip.followAction !== undefined ||
-        clip.generating === true ||
-        clip.isGhost === true ||
-        clip.parentClipId !== undefined ||
-        clip.isLinkedInstance === true ||
-        clip.sourceKeyRoot !== undefined ||
-        clip.sourceScaleName !== undefined ||
-        clip.overrides !== undefined ||
-        clip.kneadState !== undefined
-    );
-}
 
 export function prepareClipGlue({ clipIds, targetClipId }: PrepareClipGlueInput): {
     previous: ClipGlueActionSnapshot;
@@ -78,7 +61,7 @@ export function prepareClipGlue({ clipIds, targetClipId }: PrepareClipGlueInput)
         logger.warn('glueClips: looped MIDI clips must be flattened before gluing');
         return null;
     }
-    if (clips.some(hasUnsupportedMidiGlueState)) {
+    if (clips.some((clip) => !isPlainMidiGlueClip(clip))) {
         logger.warn('glueClips: only plain, unlocked, unmuted MIDI clips can be glued safely');
         return null;
     }
@@ -119,15 +102,7 @@ export function prepareClipGlue({ clipIds, targetClipId }: PrepareClipGlueInput)
         muted: false,
     };
     const midiPlan = prepareMidiClipGlueState({
-        sources: clips.map((clip) => {
-            const midiOffsetBeats = clip.midiOffsetBeats ?? 0;
-            return {
-                clipId: clip.id,
-                beatOffset: clip.startBeat - startBeat - midiOffsetBeats,
-                visibleStartBeat: midiOffsetBeats,
-                visibleEndBeat: midiOffsetBeats + (clip.endBeat - clip.startBeat),
-            };
-        }),
+        sources: getMidiClipGlueSources({ clips, gluedStartBeat: startBeat }),
         targetClipId: gluedId,
     });
     if (!midiPlan) {

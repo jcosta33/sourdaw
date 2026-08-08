@@ -716,6 +716,25 @@ function createMidiClipContext(): ProjectContext {
     };
 }
 
+function createGlueClipContext(): ProjectContext {
+    const context = createMidiClipContext();
+    const track = context.tracks.find((candidate) => candidate.id === 'track-vocals')!;
+    const intro = { ...track.clips[0]!, id: 'clip-midi-intro', name: 'MIDI Intro', startBeat: 0, endBeat: 8 };
+    const verse = { ...intro, id: 'clip-midi-verse', name: 'MIDI Verse', startBeat: 8, endBeat: 16 };
+    const outro = { ...intro, id: 'clip-midi-outro', name: 'MIDI Outro', startBeat: 16, endBeat: 24 };
+    return {
+        ...context,
+        glueEligibleClipPairs: [[intro.id, verse.id]],
+        tracks: context.tracks.map((candidate) =>
+            candidate.id === track.id
+                ? { ...candidate, kind: 'midi', clipCount: 3, clips: [intro, verse, outro] }
+                : candidate
+        ),
+        selectedClipId: intro.id,
+        selectedClipIds: [intro.id, verse.id],
+    };
+}
+
 describe('bridgeGroundedLlmToolCalls', () => {
     it('grounds reversible clip-state commands and binds both fade values by name', () => {
         const context = createClipContext();
@@ -961,6 +980,102 @@ describe('bridgeGroundedLlmToolCalls', () => {
         ]);
         expect(rejected.every((result) => result.actions.length === 0)).toBe(true);
         expect(rejected.every((result) => result.rejections[0]?.reason.includes('does not match'))).toBe(true);
+    });
+
+    it('grounds natural two-clip glue language to exactly the two named MIDI clips', () => {
+        const context = createGlueClipContext();
+        const prompts = [
+            'glue the MIDI Intro and MIDI Verse clips',
+            'join MIDI Intro with MIDI Verse',
+            'glue "MIDI Intro" and "MIDI Verse" clips',
+        ];
+
+        for (const prompt of prompts) {
+            const result = bridge(
+                [{ name: 'glueClips', arguments: { clipIds: ['clip-midi-intro', 'clip-midi-verse'] } }],
+                prompt,
+                context
+            );
+            expect
+                .soft(result.actions)
+                .toEqual([{ type: 'glueClips', payload: { clipIds: ['clip-midi-intro', 'clip-midi-verse'] } }]);
+            expect.soft(result.rejections).toEqual([]);
+        }
+    });
+
+    it('grounds exactly two selected clips and rejects selected sets with the wrong cardinality', () => {
+        const context = createGlueClipContext();
+        const accepted = bridge(
+            [{ name: 'glueClips', arguments: { clipIds: ['clip-midi-intro', 'clip-midi-verse'] } }],
+            'glue the selected clips',
+            context
+        );
+        const rejected = bridge(
+            [{ name: 'glueClips', arguments: { clipIds: ['clip-midi-intro', 'clip-midi-verse'] } }],
+            'glue the selected clips',
+            { ...context, selectedClipIds: ['clip-midi-intro'] }
+        );
+
+        expect(accepted.actions).toEqual([
+            { type: 'glueClips', payload: { clipIds: ['clip-midi-intro', 'clip-midi-verse'] } },
+        ]);
+        expect(rejected.actions).toEqual([]);
+    });
+
+    it('rejects glue calls with missing, extra, mismatched, ambiguous, negated, or contextual clip evidence', () => {
+        const context = createGlueClipContext();
+        const cases = [
+            {
+                arguments: { clipIds: ['clip-midi-intro', 'clip-midi-verse'] },
+                prompt: 'glue the MIDI Intro clip',
+            },
+            {
+                arguments: { clipIds: ['clip-midi-intro', 'clip-midi-verse'] },
+                prompt: 'glue MIDI Intro, MIDI Verse, and MIDI Outro clips',
+            },
+            {
+                arguments: { clipIds: ['clip-midi-intro', 'clip-midi-outro'] },
+                prompt: 'glue MIDI Intro and MIDI Verse clips',
+            },
+            {
+                arguments: { clipIds: ['clip-midi-intro', 'clip-midi-verse'] },
+                prompt: 'do not glue MIDI Intro and MIDI Verse clips',
+            },
+            {
+                arguments: { clipIds: ['clip-midi-intro', 'clip-midi-verse'] },
+                prompt: 'use MIDI Intro as a reference while gluing MIDI Verse and MIDI Outro clips',
+            },
+            {
+                arguments: { clipIds: ['clip-midi-intro', 'clip-midi-verse'] },
+                prompt: 'join the call after reviewing MIDI Intro and MIDI Verse clips',
+            },
+            {
+                arguments: { clipIds: ['clip-midi-intro', 'clip-midi-verse'] },
+                prompt: 'glue the mix using MIDI Intro and MIDI Verse clips',
+            },
+            {
+                arguments: { clipIds: ['clip-midi-intro', 'clip-midi-verse'] },
+                prompt: 'join MIDI Intro and MIDI Verse clips without changing anything',
+            },
+            {
+                arguments: { clipIds: ['clip-midi-intro', 'clip-midi-verse'] },
+                prompt: 'join MIDI Intro and MIDI Verse clips, but leave them unchanged',
+            },
+            {
+                arguments: { clipIds: ['clip-midi-intro', 'clip-midi-verse'] },
+                prompt: "join MIDI Intro and MIDI Verse clips, actually don't",
+            },
+            {
+                arguments: { clipIds: ['clip-midi-intro', 'clip-midi-verse'] },
+                prompt: 'join MIDI Intro and MIDI Verse clips, but keep them separate',
+            },
+        ];
+
+        const results = cases.map((testCase) =>
+            bridge([{ name: 'glueClips', arguments: testCase.arguments }], testCase.prompt, context)
+        );
+
+        expect(results.every((result) => result.actions.length === 0)).toBe(true);
     });
 
     it('grounds an explicit clip stretch ratio without allowing provider invention or omission', () => {
