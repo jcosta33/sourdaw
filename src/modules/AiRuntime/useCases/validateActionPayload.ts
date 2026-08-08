@@ -166,13 +166,13 @@ const validators = {
     // Clip lifecycle
     addClip: (param): param is PayloadOf<'addClip'> =>
         isObj(param) &&
-        hasOnlyKeys(param, ['trackId', 'startBeat', 'endBeat', 'name', 'type', 'audioBufferId']) &&
+        hasOnlyKeys(param, ['trackId', 'startBeat', 'endBeat', 'name', 'type']) &&
         isNonEmptyString(param.trackId) &&
-        isNumber(param.startBeat) &&
+        isNonNegativeNumber(param.startBeat) &&
         isNumber(param.endBeat) &&
-        isString(param.name) &&
-        isOptional(param.type, (value): value is 'audio' | 'midi' => value === 'audio' || value === 'midi') &&
-        isOptional(param.audioBufferId, isString),
+        param.endBeat > param.startBeat &&
+        normalizeSafeProjectName(param.name) !== null &&
+        isOptional(param.type, (value): value is 'midi' => value === 'midi'),
     removeClip: hasClipId,
     splitClip: (param): param is PayloadOf<'splitClip'> =>
         isObj(param) &&

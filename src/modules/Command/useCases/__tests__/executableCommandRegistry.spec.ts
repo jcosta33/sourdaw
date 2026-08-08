@@ -56,6 +56,19 @@ const EXPECTED_COMMANDS = [
         true
     ),
     expectedCommand(
+        'addClip',
+        'Create one empty MIDI clip on an existing MIDI track over an explicit beat range.',
+        {
+            trackId: { type: 'string', description: 'Existing MIDI track ID' },
+            startBeat: { type: 'number', minimum: 0, description: 'Non-negative absolute start beat' },
+            endBeat: { type: 'number', minimum: 0, description: 'Absolute end beat, strictly after startBeat' },
+            name: { type: 'string', description: 'Explicit clip name' },
+        },
+        ['trackId', 'startBeat', 'endBeat', 'name'],
+        'bounded-reversible',
+        false
+    ),
+    expectedCommand(
         'duplicateClip',
         'Duplicate an existing clip immediately after itself.',
         { clipId: { type: 'string', description: 'Existing clip ID' } },
@@ -951,6 +964,22 @@ const EXPECTED_GROUNDING = [
         intentPhrases: ['delete track', 'remove track', 'delete', 'remove'],
         targetRules: [{ argument: 'trackId', capability: 'removable-track' }],
         valueRules: [],
+    },
+    {
+        actionType: 'addClip',
+        intentPhrases: ['add midi clip', 'add a midi clip', 'create midi clip', 'create a midi clip'],
+        targetRules: [{ argument: 'trackId', capability: 'track', promptRole: 'container' }],
+        valueRules: [
+            { argument: 'startBeat', kind: 'number-if-present', requiredInPrompt: true, connector: 'from' },
+            { argument: 'endBeat', kind: 'number-if-present', requiredInPrompt: true, connector: 'to' },
+            {
+                argument: 'name',
+                kind: 'text-after-keyword-if-present',
+                keywords: ['named', 'called'],
+                requiredInPrompt: true,
+                terminators: ['on', 'to', 'into', 'from'],
+            },
+        ],
     },
     {
         actionType: 'duplicateClip',

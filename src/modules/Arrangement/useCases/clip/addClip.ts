@@ -55,10 +55,21 @@ export function addClip(input: {
     if (!getTrackEligibility(track.kind).acceptsClipAdd) {
         return null;
     }
+    const clipId = input.id ?? getNextClipId();
+    const clipIdExists =
+        state.ghostClips?.some((clip) => clip.id === clipId) === true ||
+        state.tracks.some(
+            (candidate) =>
+                candidate.clips.some((clip) => clip.id === clipId) ||
+                candidate.alternatives.some((alternative) => alternative.clips.some((clip) => clip.id === clipId))
+        );
+    if (clipIdExists) {
+        return null;
+    }
     const inferredType = input.type ?? (track.kind === 'midi' ? 'midi' : 'audio');
 
     const clip: Clip = {
-        id: input.id ?? getNextClipId(),
+        id: clipId,
         trackId: input.trackId,
         name: input.name,
         startBeat: input.startBeat,
