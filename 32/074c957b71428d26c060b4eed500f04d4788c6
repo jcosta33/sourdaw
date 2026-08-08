@@ -1,0 +1,27 @@
+src/modules/Toaster/presentations/components/__tests__/PadMixer.spec.tsx
+  s_14f2bbc9f385dd::t_3e7261e67342dc 93-124
+src/modules/Toaster/presentations/views/__tests__/ToasterPadSoloWiring.spec.tsx
+  s_14f2bbc9f385dd::t_a99e490b559d16 1-132
+src/modules/Toaster/useCases/__tests__/projectToasterKitToEngineMessages.spec.ts
+  s_14f2bbc9f385dd::t_42dff77ad1712a 291-306,309-316
+  s_14f2bbc9f385dd::t_ceb03bb98bdbf9 185-242
+  s_14f2bbc9f385dd::t_56d2493a8398cb 75-82,85-101
+crates/daw-dsp/tests/toaster_pad_output.rs
+  s_14f2bbc9f385dd::t_2c79d7ca784af9 459-751
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "32074c957b71428d26c060b4eed500f04d4788c6",
+  "prompts": {},
+  "sessions": {
+    "s_14f2bbc9f385dd": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f9a61a1d-66b3-4146-938d-a04f45f4b060",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
