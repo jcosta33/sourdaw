@@ -73,7 +73,7 @@ it, and touching either one afterwards overrides what Amount set. Use one or the
 | **Makeup** | −12 to +24 dB | 0 dB | Gain applied to the compressed signal before the mix. |
 | **Mix** | 0 to 100% | 100% | Blend of compressed and dry signal. |
 | **Range** | 0 to 60 dB | 15 dB | Ceiling on total gain reduction. VCA only. |
-| **Link** | 0 to 100% | 100% | Intended stereo detector linking. |
+| **Link** | 0 to 100% | 100% | How much the two channels share one detector reading. |
 | **Look** | 0 to 20 ms | 0 ms | Delays the audio so reduction starts before the transient. |
 | **Stage 2** | 0 to 100% | 0% | Blends in the second topology. See Stage two, below. |
 | **Auto rel** | On / Off | On | Adapts release to the material. VCA only. |
@@ -85,9 +85,11 @@ it, and touching either one afterwards overrides what Amount set. Use one or the
 any **Look** value. **Match** acts only while the device is bypassed — it is for honest A/B, not for
 setting output level.
 
-> [!WARNING]
-> **Not yet active.** Link is stored with the preset but does not change detector linking. Stereo
-> detection is fully linked in every topology.
+**Link** is on the detector, never on the output. At 100% both channels read the louder of the two
+and duck together, so the stereo image stays put — this is what you want on a bus. At 0% each
+channel gets its own reading and they breathe independently, which widens the image and can pull it
+off centre when one side is much louder. Anything in between blends the two readings. It applies on
+all four topologies.
 
 ## Detector
 
@@ -102,8 +104,8 @@ The Detector section shapes what the compressor listens to, without changing wha
 | **EQ Q** | 0.1 to 10 | 1 | Width of the detector bell. |
 | **Thrust off · Thrust med · Thrust loud** | — | Thrust off | Tilts the detector toward high frequencies. |
 | **Ext SC** | On / Off | Off | Detects from a routed sidechain source instead of the input. |
-| **RMS · PEAK** | — | RMS | Intended detector integration mode. |
-| **Stereo · Mid · Side · Dual mono** | — | Stereo | Which part of the stereo image is compressed. |
+| **RMS · PEAK** | — | RMS | What the detector measures. RMS averages over 10 ms and follows loudness; PEAK reacts to the instant. |
+| **Stereo · Mid · Side · Dual mono** | — | Stereo | Which part of the stereo image is compressed. Dual mono also forces Link to 0. |
 | **OS** | 1× · 2× · 4× | 2× | Oversamples the nonlinear stages. |
 
 The bell is a no-op until **EQ Gain** leaves 0 dB, so **EQ Q** on its own changes nothing — set the
@@ -115,10 +117,10 @@ gain first, then narrow or widen.
 > and these seven controls have no effect. VCA is the default topology, so ducking one track under
 > another requires switching to Diode first.
 
-> [!WARNING]
-> **Not yet active.** The RMS / PEAK choice is stored with the preset but does not change detector
-> behaviour. Every topology detects on instantaneous peak regardless of which chip is lit, so the
-> compressor reacts to transients rather than to average level.
+RMS is the default and the usual choice for glue: it ignores single transients and follows how loud
+the material actually is. Switch to PEAK when you need the compressor to catch the transient itself
+— a slapped bass, a snare crack. The two also change how Attack reads, since peak detection reaches
+the threshold sooner.
 
 To duck a bass under a kick, switch to the Diode topology, route the kick to this track's sidechain
 input, then turn on **Ext SC**.
