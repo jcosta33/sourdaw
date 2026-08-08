@@ -1,0 +1,22 @@
+docs/manual/devices/07-gluten.md
+  s_14f2bbc9f385dd::t_03cea2e9e24c30 76
+  s_14f2bbc9f385dd::t_5ae36d64446c24 88-92
+  s_14f2bbc9f385dd::t_4e2f93f351a21f 120-123
+  s_14f2bbc9f385dd::t_2fdd77bf99f7f6 107-108
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "a8d99384214fcf0ac1618033848e047057c36457",
+  "prompts": {},
+  "sessions": {
+    "s_14f2bbc9f385dd": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f9a61a1d-66b3-4146-938d-a04f45f4b060",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
