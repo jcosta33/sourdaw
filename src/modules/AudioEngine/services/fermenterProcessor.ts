@@ -19,13 +19,26 @@
  * already-mapped view between two `Atomics` counter bumps.
  */
 
+import { FERMENTER_AUTOMATION_PARAM_IDS } from '../models/FermenterAutomationParams';
 import { resolveProcessorWasmModule } from '../transformers/resolveProcessorWasmModule';
 import { initSync, FermenterInstance } from '../wasm/daw_dsp.js';
 
 import { beginTelemetryPublish, endTelemetryPublish } from './telemetrySeqlock';
 import { WasmView } from './wasmView';
 
-const AUTOMATION_PARAM_COUNT = 15;
+// Exclusive upper bound of the offline automation ordinal space. **Derived, not
+// restated**: the ordinal table is dense 0..n-1 (pinned by
+// `wasm/__tests__/dawDspFermenterAutomationOrdinals.spec.ts`), so its key count
+// is exactly one past the highest ordinal Rust's `AUTOMATION_PARAM_NAMES` can
+// index. This used to be a literal `15`, a fourth unpinned expression of a count
+// three other places already carried; adding `oscWaveform` at ordinal 15 left it
+// one short and the guard below silently dropped every offline waveform
+// automation message. Reading the table means the next ordinal cannot repeat it.
+//
+// `models/` is the one layer both this worklet and `engine/FermenterNode` may
+// import — `services-must-stay-pure` forbids the reverse direction — and the
+// table is inert data, so nothing app-side follows it into the worklet bundle.
+const AUTOMATION_PARAM_COUNT = Object.keys(FERMENTER_AUTOMATION_PARAM_IDS).length;
 
 // The live transport schedules 100 ms ahead. At Web Audio's maximum valid
 // 96 kHz context rate that spans 75 128-frame quanta; Fermenter's Rust engine
