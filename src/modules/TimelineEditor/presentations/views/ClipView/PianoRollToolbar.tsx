@@ -170,6 +170,7 @@ export const PianoRollToolbar = ({
             onChange={(event) => onScaleRootChange(Number(event.target.value))}
             size="micro"
             aria-label="Scale root note"
+            data-testid="toolbar-scale-root"
         >
             {SCALE_ROOT_LABELS.map((label, index) => (
                 <option key={label} value={index}>
@@ -182,6 +183,7 @@ export const PianoRollToolbar = ({
             onChange={(event) => onScaleTypeChange(event.target.value)}
             size="micro"
             aria-label="Scale type"
+            data-testid="toolbar-scale-type"
         >
             {Object.keys(SCALES).map((key) => (
                 <option key={key} value={key}>
