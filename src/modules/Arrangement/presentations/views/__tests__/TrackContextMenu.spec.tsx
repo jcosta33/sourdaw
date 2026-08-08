@@ -364,9 +364,7 @@ describe('TrackContextMenu', () => {
             expect(vi.mocked(confirmUser)).toHaveBeenCalled();
         });
         expect(vi.mocked(removeTrack)).not.toHaveBeenCalled();
-        expect(vi.mocked(executeAppAction)).not.toHaveBeenCalledWith(
-            expect.objectContaining({ type: 'removeTrack' })
-        );
+        expect(vi.mocked(executeAppAction)).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'removeTrack' }));
     });
 
     it('commits a rename with the trimmed name', () => {
