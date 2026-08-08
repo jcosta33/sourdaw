@@ -6,7 +6,7 @@ use super::filter::FilterMode;
 use super::modulation::ModMatrix;
 use super::oscillator::Wavetable;
 use super::params::SmoothedParam;
-use super::voice::{Voice, VoiceParams};
+use super::voice::{note_frequency, Voice, VoiceParams};
 
 const MAX_VOICES_PER_LAYER: usize = 16;
 const MAX_SCRATCH_FRAMES: usize = 4096;
@@ -134,6 +134,44 @@ pub struct Layer {
     pub fm_feedback: f32,
     pub fm_mod_amount: f32,
 
+    /// The pitch the next glide starts from: the frequency of the last note
+    /// this layer played, or `None` when it has played none.
+    ///
+    /// **Why the layer holds this and the voice does not.** The glide source
+    /// used to be `Voice::current_freq`, which is per-slot state seeded at
+    /// 440 Hz. `Layer::note_on_with_channel` allocates the first *inactive*
+    /// slot, so a note that overlapped anything took a different slot from the
+    /// note before it and glided from whatever pitch that slot was last left
+    /// holding — or from 440 Hz if it had never been used. Only strictly
+    /// sequential monophonic playing recycles the previous note's slot, which is
+    /// why the origin looked right for the one way of playing anybody checks.
+    /// The pitch a glide comes from is a fact about what the *player* last
+    /// played, so it belongs to the keyboard, not to the voice pool.
+    ///
+    /// **Why `None` rather than a starting pitch.** With no history there is no
+    /// pitch to come from, and the note snaps — `note_on_with_channel`
+    /// substitutes the destination, so the ramp has nowhere to travel. Vital
+    /// does exactly this, initialising `last_played_note_` to `-1.0f` and
+    /// falling back to the note being played (`voice_handler.cpp`). Surge XT
+    /// instead starts its scene-global `last_key` at MIDI 60, but that is only
+    /// ever read in its monophonic modes, and seeding a fixed pitch here would
+    /// merely move the arbitrary constant that this field exists to remove.
+    ///
+    /// **Written at note-on only.** A note-off leaves it alone: releasing a key
+    /// does not change which note was last played. Both sources agree — neither
+    /// writes its store from a release path. That is consistent with, not
+    /// contrary to, the `Voice::held` predicate in
+    /// [`Layer::portamento_time_for_note_on`]: whether a key is *still down*
+    /// decides if a glide happens at all, while what was *last played* decides
+    /// where a glide that does happen begins. A release ends the first and not
+    /// the second.
+    ///
+    /// **Under polyphony every note-on reads it and then overwrites it**, so a
+    /// chord entered as three note-ons glides its second note from its first and
+    /// its third from its second. That is Vital's behaviour and it falls out of
+    /// the same two lines.
+    last_played_freq: Option<f32>,
+
     sample_rate: f32,
     scratch_left: Vec<f32>,
     scratch_right: Vec<f32>,
@@ -220,6 +258,7 @@ impl Layer {
             fm_level: [1.0, 1.0, 1.0, 1.0],
             fm_feedback: 0.0,
             fm_mod_amount: 1.0,
+            last_played_freq: None,
             sample_rate,
             scratch_left: vec![0.0; MAX_SCRATCH_FRAMES],
             scratch_right: vec![0.0; MAX_SCRATCH_FRAMES],
@@ -247,13 +286,10 @@ impl Layer {
     /// coefficient is at 1.0. The suppression therefore lands through the
     /// existing "no portamento" path instead of a second one.
     ///
-    /// Known limitation, shared with mode 0 and not introduced here: the glide
-    /// *origin* is whatever pitch the recycled voice slot was left on, not the
-    /// pitch of the note being glided from. For monophonic playing the slot is
-    /// the previous note and the origin is right; when notes overlap — which is
-    /// every legato glide — a free slot is taken instead and the origin is
-    /// stale. Fixing that moves mode 0's rendered output too, so it is its own
-    /// change with its own guard.
+    /// This decides *whether* a note glides. Where a glide that does happen
+    /// starts from is [`Layer::last_played_freq`], a separate question with a
+    /// separate answer — a released key stops making the next note legato but
+    /// remains the last note played.
     fn portamento_time_for_note_on(&self) -> f32 {
         if self.portamento_mode != 1 {
             return self.portamento_time;
@@ -277,6 +313,15 @@ impl Layer {
         // displaced voice out of `self.voices` into a steal tail, so asking
         // after it would be asking a pool the new note has already altered.
         let portamento_time = self.portamento_time_for_note_on();
+
+        // Where this note's glide starts, and the record the *next* note will
+        // read. With no history the origin is the destination, so the ramp has
+        // nowhere to travel and the note snaps — see `last_played_freq`. The
+        // record is updated for every note-on, whether or not this one glided,
+        // because a snapped note is still a note that was played.
+        let destination_freq = note_frequency(note);
+        let glide_origin = self.last_played_freq.unwrap_or(destination_freq);
+        self.last_played_freq = Some(destination_freq);
 
         // Find a free voice, or steal the quietest
         let mut target = None;
@@ -324,6 +369,12 @@ impl Layer {
             // The glide-mode switch is resolved here and nowhere else — this is
             // the only moment at which "was a key still down?" has an answer.
             voice.set_portamento(portamento_time, self.sample_rate);
+            // After `set_portamento` and before `note_on`: the coefficient set
+            // above is what decides whether `note_on` snaps over this value or
+            // leaves it for the render loop to ramp away from. Seeding it here
+            // is what stops the glide starting from whichever pitch this
+            // particular slot was last left on.
+            voice.set_glide_origin(glide_origin);
             voice.set_granular_params(
                 self.grain_density,
                 self.grain_size,
@@ -357,8 +408,7 @@ impl Layer {
             );
             // Excite Karplus-Strong at note-on time (after note_on reset)
             if self.engine == 3 {
-                let freq = 440.0 * 2.0f32.powf((note as f32 - 69.0) / 12.0);
-                voice.excite_ks(freq, self.sample_rate, self.ks_brightness);
+                voice.excite_ks(destination_freq, self.sample_rate, self.ks_brightness);
             }
             // Trigger sampler at note-on time
             if self.engine == 6 {

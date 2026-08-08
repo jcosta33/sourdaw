@@ -22,6 +22,17 @@ use super::stepseq::StepSequencer;
 /// site for why it is unreachable in the current gate and why it is still here.
 const MIN_BALANCE_SUM: f32 = 1e-6;
 
+/// Equal-tempered frequency of a MIDI note, A4 = 440 Hz.
+///
+/// Shared so that the pitch a note glides *to* and the pitch a later note glides
+/// *from* are computed by one expression: `Layer` records a played note's
+/// frequency as the next glide's origin, and an origin that disagreed with the
+/// destination formula by even a rounding step would put an audible sub-cent
+/// ramp on a note that should have snapped.
+pub fn note_frequency(note: u8) -> f32 {
+    440.0 * 2.0f32.powf((note as f32 - 69.0) / 12.0)
+}
+
 /// All per-block parameters passed from MasterSynth to Voice::render.
 pub struct VoiceParams<'a> {
     pub tables: &'a [Wavetable],
@@ -191,7 +202,7 @@ impl Voice {
         self.expr_bend_semitones = 0.0;
         self.expr_pressure = 0.0;
         self.expr_slide = 0.0;
-        let new_freq = 440.0 * 2.0f32.powf((note as f32 - 69.0) / 12.0);
+        let new_freq = note_frequency(note);
         self.target_freq = new_freq;
         self.frequency = new_freq;
         // If no portamento (glide_coeff == 1.0), snap immediately
@@ -235,6 +246,22 @@ impl Voice {
         if let Some(sp) = &mut self.sampler {
             sp.trigger(pitch_ratio);
         }
+    }
+
+    /// Seed the pitch the next glide starts from.
+    ///
+    /// Must be called *before* `note_on`, and after `set_portamento` so the
+    /// glide coefficient is already the one this note will use. `note_on` snaps
+    /// `current_freq` onto the new pitch only when the coefficient says there is
+    /// no glide, so with a glide armed this value survives and the render loop
+    /// ramps away from it.
+    ///
+    /// The caller is `Layer::note_on_with_channel`, and it is the caller rather
+    /// than the voice because the origin is a property of what the *player* last
+    /// played, not of the slot the note was allocated to — see the note on
+    /// `Layer::last_played_freq`.
+    pub fn set_glide_origin(&mut self, freq: f32) {
+        self.current_freq = freq;
     }
 
     /// Set portamento time in seconds. 0 = no portamento.
