@@ -265,6 +265,17 @@ const ORDINAL_PROBES: Readonly<Record<string, OrdinalProbe>> = {
         to: 12,
         why: 'grains all at pitch versus scattered across an octave, on the granular engine',
     },
+    grainPanSpread: {
+        // Two interior values, neither of them the 0.5 default. The ends would
+        // work here — 0 is a hard-centred image — but this parameter reaches the
+        // output through a balance whose divisor is clamped, and a row parked on
+        // 0 and 1 could not tell a working pan from one that only resolved the
+        // extremes.
+        prelude: [['engine', 4]],
+        from: 0.15,
+        to: 0.85,
+        why: 'a nearly centred grain cloud versus a wide one, on the granular engine; the pan is per-grain, so it is dead on every other engine',
+    },
 
     // ── Sampler ─────────────────────────────────────────────────────────
     // `SamplerEngine::new` seeds a decaying sine burst, so the sampler engine
