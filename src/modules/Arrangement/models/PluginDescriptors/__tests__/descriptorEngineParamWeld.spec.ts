@@ -334,9 +334,6 @@ const KNOWN_ENGINE_GAPS: readonly EngineGap[] = [
         paramIds: [
             'mod_rate',
             'diffusion',
-            'high_cut',
-            'low_cut',
-            'width',
             'freeze',
             'shimmer',
             'shimmer_amount',
@@ -346,12 +343,12 @@ const KNOWN_ENGINE_GAPS: readonly EngineGap[] = [
             'density',
         ],
         reason:
-            '`FdnReverb::set_param` (`fdn.rs:270-310`) answers to mix, rt60/decay, rt60_hf, damping, size, mod_depth, ' +
-            'early_late, predelay, matrix and saturation, and drops the rest through `_ => {}`. The FDN has no ' +
-            'shimmer pitch-shifter, no freeze latch, no tone filters, no width stage, no gravity and no saturation ' +
-            'curve selector — the stages simply are not built, so these are twelve features to write rather than ' +
-            'twelve names to reconnect. `saturation` is accepted here, which is why only the *curve* selector is ' +
-            'listed.',
+            '`FdnReverb::set_param` (`fdn.rs`) answers to mix, rt60/decay, rt60_hf, damping, size, mod_depth, ' +
+            'early_late, predelay, matrix and saturation, forwards high_cut/low_cut/width to the shared ' +
+            '`OutputStage`, and drops the rest through `_ => {}`. The FDN has no shimmer pitch-shifter, no freeze ' +
+            'latch, no gravity and no saturation curve selector — the stages simply are not built, so these are ' +
+            'nine features to write rather than nine names to reconnect. `saturation` is accepted here, which is ' +
+            'why only the *curve* selector is listed.',
     },
     {
         deviceId: 'dutch-oven',
@@ -359,9 +356,6 @@ const KNOWN_ENGINE_GAPS: readonly EngineGap[] = [
         paramIds: [
             'predelay',
             'mod_rate',
-            'high_cut',
-            'low_cut',
-            'width',
             'freeze',
             'shimmer',
             'shimmer_amount',
@@ -373,11 +367,11 @@ const KNOWN_ENGINE_GAPS: readonly EngineGap[] = [
             'density',
         ],
         reason:
-            '`SpringReverb::set_param` (`spring.rs:103-115`) answers to mix, decay, feedback, damping, size, ' +
-            'dispersion and mod_depth. Its own `param_names()` advertises six of those, so the engine is at least ' +
-            'honest with a host that asks; the descriptor is the layer that over-promises. `early_late` is on this ' +
-            'list for the same reason it was on the plate before #1481 — no early-reflection stage exists here to ' +
-            'balance against.',
+            '`SpringReverb::set_param` (`spring.rs`) answers to mix, decay, feedback, damping, size, dispersion ' +
+            'and mod_depth, and forwards high_cut/low_cut/width to the shared `OutputStage`. Its `param_names()` ' +
+            'advertises exactly what it answers to, so the engine is honest with a host that asks; the descriptor ' +
+            'is the layer that over-promises. `early_late` is on this list for the same reason it was on the plate ' +
+            'before #1481 — no early-reflection stage exists here to balance against.',
     },
     {
         deviceId: 'dutch-oven',
@@ -388,8 +382,6 @@ const KNOWN_ENGINE_GAPS: readonly EngineGap[] = [
             'mod_rate',
             'mod_depth',
             'diffusion',
-            'high_cut',
-            'low_cut',
             'width',
             'freeze',
             'shimmer',
@@ -402,10 +394,15 @@ const KNOWN_ENGINE_GAPS: readonly EngineGap[] = [
             'density',
         ],
         reason:
-            '`ReverseReverb::set_param` (`reverse.rs:54-62`) answers to mix, decay, size and its own `reverse_time`, ' +
-            'and nothing else. Seventeen of the twenty non-global ids the descriptor advertises are inert on this ' +
-            'algorithm — the widest gap of the four, and the one most likely to read as a broken device rather than a ' +
-            'sparse one.',
+            '`ReverseReverb::set_param` (`reverse.rs`) answers to mix, decay, size, its own `reverse_time` and the ' +
+            'shared `OutputStage`’s two tone filters, and nothing else. Fifteen of the twenty non-global ids the ' +
+            'descriptor advertises are still inert on this algorithm — the widest gap of the four, and the one most ' +
+            'likely to read as a broken device rather than a sparse one. `width` is the one row here that is ' +
+            'structural rather than unbuilt: this engine writes a single mono buffer and copies each output sample ' +
+            'to both channels, so a mid/side matrix has no side component to scale. Wiring it would accept the ' +
+            'value and provably not move a sample. `OutputStage::set_mono_param` refuses it, and ' +
+            '`crates/proof-chamber/tests/output_stage_parameter_surface.rs` pins the mono wet path so this row ' +
+            'becomes a defect the moment the reverse buffer goes stereo.',
     },
 ];
 

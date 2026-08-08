@@ -6,6 +6,12 @@
 /// sound of a real helical spring reverberator.
 use std::f32::consts::TAU;
 
+// A spring's tone controls are not part of its physical model — a real tank is
+// followed by an amplifier's tone stack, and every spring emulation puts its
+// filters after the tank for the same reason. Shared with the plate and the
+// FDN so Hi Cut, Lo Cut and Width mean one thing across the Dutch Oven.
+use crate::output_stage::OutputStage;
+
 // ---------------------------------------------------------------------------
 // First-order allpass filter
 // ---------------------------------------------------------------------------
@@ -62,6 +68,9 @@ pub struct SpringReverb {
     // Output
     pub mix: f32,
 
+    /// Wet-path tone and width, shared with the plate and the FDN.
+    output: OutputStage,
+
     // Drip transient emphasis
     drip_envelope: f32,
     drip_decay: f32,
@@ -95,13 +104,21 @@ impl SpringReverb {
             mod_rate: 4.5, // faster modulation for metallic character
             mod_depth: 0.3,
             mix: 0.3,
+            output: OutputStage::new(sample_rate),
             drip_envelope: 0.0,
             drip_decay: (-1.0 / (0.05 * sample_rate)).exp(), // 50ms drip decay
         }
     }
 
     pub fn set_param(&mut self, name: &str, value: f32) {
+        if self.output.set_param(name, value) {
+            return;
+        }
+
         match name {
+            // `width` stays an engine-level arm: the matrix only means
+            // something on an engine whose wet path has two different channels.
+            "width" => self.output.set_width(value),
             "mix" => self.mix = value.clamp(0.0, 1.0),
             "decay" | "feedback" => {
                 self.feedback = value.clamp(0.0, 0.95);
@@ -176,13 +193,22 @@ impl SpringReverb {
             // Add drip emphasis on transients
             let drip = self.drip_envelope * 0.3;
 
+            // Output EQ and stereo width, over the whole wet signal including
+            // the drip: the drip is part of what the spring emits, and leaving
+            // it outside the filters would make Hi Cut fail to tame exactly
+            // the transient brightness it exists to tame.
+            let (wet_l, wet_r) = self.output.process(wet_l + drip, wet_r + drip);
+
             // Mix
-            left[i] = dry_l * (1.0 - self.mix) + (wet_l + drip) * self.mix;
-            right[i] = dry_r * (1.0 - self.mix) + (wet_r + drip) * self.mix;
+            left[i] = dry_l * (1.0 - self.mix) + wet_l * self.mix;
+            right[i] = dry_r * (1.0 - self.mix) + wet_r * self.mix;
         }
     }
 
     pub fn param_names(&self) -> Vec<&str> {
-        vec!["mix", "decay", "damping", "size", "dispersion", "mod_depth"]
+        let mut names = vec!["mix", "decay", "damping", "size", "dispersion", "mod_depth"];
+        names.extend(OutputStage::PARAM_NAMES);
+        names.push(OutputStage::WIDTH);
+        names
     }
 }
