@@ -168,8 +168,11 @@ if (typeof HTMLElement !== 'undefined' && typeof HTMLElement.prototype.releasePo
 }
 
 // Web Audio — module singleton `createWebAudioEngine` instantiates on import; jsdom has no Audio APIs.
-function createMinimalBaseAudioContext(): {
+const DEFAULT_STUB_SAMPLE_RATE = 48_000;
+
+function createMinimalBaseAudioContext(sampleRate: number = DEFAULT_STUB_SAMPLE_RATE): {
     state: AudioContextState;
+    sampleRate: number;
     destination: AudioDestinationNode;
     audioWorklet: AudioWorklet;
     createGain: () => GainNode;
@@ -195,11 +198,15 @@ function createMinimalBaseAudioContext(): {
             disconnect: (): void => {},
         }) as unknown as GainNode;
 
+    // `context` is inherited from AudioNode by every real AnalyserNode. Code
+    // that maps FFT bins to frequencies reads `analyser.context.sampleRate`,
+    // so a stub without it does not model the contract.
     const createAnalyser = (): AnalyserNode =>
         ({
             fftSize: 256,
             smoothingTimeConstant: 0.8,
             frequencyBinCount: 128,
+            context,
             connect: (dest: AudioNode) => dest,
             disconnect: (): void => {},
             getFloatTimeDomainData: (data: Float32Array): void => {
@@ -210,8 +217,9 @@ function createMinimalBaseAudioContext(): {
             },
         }) as unknown as AnalyserNode;
 
-    return {
-        state: 'running',
+    const context = {
+        state: 'running' as AudioContextState,
+        sampleRate,
         destination: stubNode as unknown as AudioDestinationNode,
         audioWorklet: { addModule: async (): Promise<void> => {} },
         createGain,
@@ -219,17 +227,18 @@ function createMinimalBaseAudioContext(): {
         resume: async (): Promise<void> => {},
         suspend: async (): Promise<void> => {},
     };
+    return context;
 }
 
 globalThis.AudioContext = class AudioContextMock {
-    constructor(_options?: AudioContextOptions) {
-        return createMinimalBaseAudioContext();
+    constructor(options?: AudioContextOptions) {
+        return createMinimalBaseAudioContext(options?.sampleRate);
     }
 } as unknown as typeof AudioContext;
 
 globalThis.OfflineAudioContext = class OfflineAudioContextMock {
-    constructor(_channels?: number, _length?: number, _sampleRate?: number) {
-        return createMinimalBaseAudioContext();
+    constructor(_channels?: number, _length?: number, sampleRate?: number) {
+        return createMinimalBaseAudioContext(sampleRate);
     }
 } as unknown as typeof OfflineAudioContext;
 

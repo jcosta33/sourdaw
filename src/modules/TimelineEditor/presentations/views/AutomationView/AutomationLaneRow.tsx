@@ -13,7 +13,7 @@ import {
     zoomToUsedRange,
 } from '#/modules/Automation/useCases';
 import { pushUndoEntry } from '#/modules/Command/useCases';
-import { transportStore } from '#/modules/Transport/stores';
+import { playheadPositionRef, transportStore } from '#/modules/Transport/stores';
 import { defaultTransportState } from '#/modules/Transport/useCases';
 import { defaultWorkspaceState, workspaceStore, type WorkspaceState } from '#/modules/WorkspaceShell/stores';
 import { cn } from '#/utils/Styles/cn';
@@ -45,6 +45,43 @@ type AutomationShapeType = 'sine' | 'triangle' | 'sawtooth-up' | 'sawtooth-down'
 
 type AutomationLaneTransportState = {
     playheadPosition: number;
+    isPlaying: boolean;
+};
+
+const READOUT_INTERVAL_MS = 1000 / 60;
+
+/**
+ * Automation value at `beat`, or null when the lane has no points.
+ *
+ * Single pass, no intermediate arrays: this runs once per lane per animation
+ * frame, so the two `filter` calls it replaces were allocating two arrays per
+ * lane per frame. Scanning in array order picks the same two points the
+ * filters did, for sorted and unsorted point lists alike.
+ */
+const valueAtBeat = (points: AutomationLane['points'], beat: number): number | null => {
+    if (points.length === 0) {
+        return null;
+    }
+
+    let lastBefore: AutomationLane['points'][number] | undefined;
+    let firstAfter: AutomationLane['points'][number] | undefined;
+    for (const point of points) {
+        if (point.beat <= beat) {
+            lastBefore = point;
+            continue;
+        }
+        if (firstAfter === undefined) {
+            firstAfter = point;
+        }
+    }
+
+    if (lastBefore === undefined) {
+        return points[0]!.value;
+    }
+    if (firstAfter === undefined) {
+        return lastBefore.value;
+    }
+    return interpolateAutomationValue(lastBefore, firstAfter, beat);
 };
 
 export const AutomationLaneRow = ({
@@ -56,6 +93,7 @@ export const AutomationLaneRow = ({
 }: AutomationLaneRowProps): ReactElement => {
     const svgRef = useRef<SVGSVGElement>(null);
     const rowRef = useRef<HTMLDivElement>(null);
+    const currentValueRef = useRef<HTMLSpanElement>(null);
     const [dragPointBeat, setDragPointBeat] = useState<number | null>(null);
     const [hoveredBeat, setHoveredBeat] = useState<number | null>(null);
     const [selectedPoints, setSelectedPoints] = useState<number[]>([]);
@@ -100,20 +138,64 @@ export const AutomationLaneRow = ({
     const getRect = (): DOMRect | undefined => svgRef.current?.getBoundingClientRect();
     const coords = { getRect, xToBeat, yToValue };
 
-    // Interpolated value at playhead
-    const playheadBeat = transport.playheadPosition;
-    let currentValue: number | null = null;
-    if (lane.points.length > 0) {
-        const before = lane.points.filter((param) => param.beat <= playheadBeat);
-        const after = lane.points.filter((param) => param.beat > playheadBeat);
-        if (before.length === 0) {
-            currentValue = lane.points[0]!.value;
-        } else if (after.length === 0) {
-            currentValue = before[before.length - 1]!.value;
-        } else {
-            currentValue = interpolateAutomationValue(before[before.length - 1]!, after[0]!, playheadBeat);
+    // Value at the playhead, for the header readout.
+    //
+    // The clock is `playheadPositionRef`, NOT `transportStore.playheadPosition`.
+    // The store is written on exactly four events — start, stop, pause, seek —
+    // and notably NOT on loop wrap, so a readout driven by it freezes at the beat
+    // playback started from while the audible automation sweeps on. The ref is the
+    // ~100 Hz channel the scheduler writes, so it matches what the user hears.
+    //
+    // This render-time read seeds the first paint only. The ref is invisible to
+    // React (and to the Compiler's memoization), so the effect below owns every
+    // subsequent update.
+    const currentValue = valueAtBeat(lane.points, playheadPositionRef.current);
+
+    // Writes the readout text directly: re-rendering the lane to move a two-glyph
+    // badge would repaint the whole SVG curve at frame rate.
+    useEffect(() => {
+        const paintOnce = (): void => {
+            const element = currentValueRef.current;
+            if (!element) {
+                return;
+            }
+            const value = valueAtBeat(lane.points, playheadPositionRef.current);
+            if (value === null) {
+                return;
+            }
+            const text = formatParameterValue(value, lane.parameterId);
+            if (element.textContent !== text) {
+                element.textContent = text;
+            }
+        };
+
+        // Discrete moves (start, stop, pause, seek) re-run this effect; repaint for them.
+        paintOnce();
+
+        if (!transport.isPlaying) {
+            return undefined;
         }
-    }
+
+        // Throttled to the same 60 Hz as `PlayheadDisplay`: rAF fires at the
+        // display's refresh rate, and this runs once per visible lane.
+        let rafId = 0;
+        let lastPaintedAt: number | null = null;
+        const loop = (frameTimestamp: number): void => {
+            if (lastPaintedAt === null) {
+                paintOnce();
+                lastPaintedAt = frameTimestamp;
+            } else {
+                const elapsed = frameTimestamp - lastPaintedAt;
+                if (elapsed >= READOUT_INTERVAL_MS) {
+                    paintOnce();
+                    lastPaintedAt = frameTimestamp - (elapsed % READOUT_INTERVAL_MS);
+                }
+            }
+            rafId = requestAnimationFrame(loop);
+        };
+        rafId = requestAnimationFrame(loop);
+        return () => cancelAnimationFrame(rafId);
+    }, [transport.isPlaying, transport.playheadPosition, lane.points, lane.parameterId]);
 
     const visiblePoints = lane.points.filter(
         (param) => param.beat >= viewportStartBeat - 2 && param.beat <= viewportEndBeat + 2
@@ -295,6 +377,7 @@ export const AutomationLaneRow = ({
                 parameterId={lane.parameterId}
                 curveColor={curveColor}
                 currentValue={currentValue}
+                currentValueRef={currentValueRef}
                 isDrawMode={isDrawMode}
                 isYZoomed={isYZoomed}
                 viewMin={vMin}

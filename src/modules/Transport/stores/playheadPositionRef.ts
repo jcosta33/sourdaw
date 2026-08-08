@@ -7,7 +7,10 @@
  * React's reconciler, reading it never triggers re-renders.
  *
  * For discrete / event-driven reads (recording, seek, commands), continue
- * using `transportStore.value.playheadPosition` which is updated only on
- * discrete events (stop, seek, loop wrap).
+ * using `transportStore.value.playheadPosition`, which is written on exactly
+ * four events: `startPlayback`, `stopPlayback`, `pausePlayback`, and
+ * `executePlayheadSeek`. Loop wrap is NOT one of them — the scheduler wraps
+ * through this ref alone, so the store holds a stale beat for the whole of
+ * playback. Anything the user reads during playback must follow this ref.
  */
 export const playheadPositionRef = { current: 0 };

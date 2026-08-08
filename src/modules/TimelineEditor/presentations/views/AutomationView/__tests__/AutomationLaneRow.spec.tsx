@@ -1,5 +1,5 @@
 import { render, screen, fireEvent } from '@testing-library/react';
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 import {
     addAutomationPoint,
@@ -11,6 +11,7 @@ import {
     toggleAutomationVisibility,
 } from '#/modules/Automation/useCases';
 import { pushUndoEntry } from '#/modules/Command/useCases';
+import { playheadPositionRef } from '#/modules/Transport/stores';
 
 import { type AutomationLane, type AutomationPoint } from '../../../../models/AutomationViewTypes';
 import { onDrawMouseDown, onRubberBandStart, applyCurveSelect } from '../../../helpers/automationDrag';
@@ -158,6 +159,11 @@ describe('AutomationLaneRow', () => {
         mockWorkspaceState.activeTool = 'pointer';
         mockWorkspaceState.snapValue = 1;
         mockTransportState.playheadPosition = 0;
+        playheadPositionRef.current = 0;
+    });
+
+    afterEach(() => {
+        playheadPositionRef.current = 0;
     });
 
     it('should render without crashing', () => {
@@ -231,17 +237,24 @@ describe('AutomationLaneRow', () => {
             ],
         };
 
-        mockTransportState.playheadPosition = -5;
-        const { rerender } = render(<AutomationLaneRow {...defaultProps} lane={lane} />);
-        expect(screen.getByTestId('lane-header')).toHaveAttribute('data-current-value', '0.2');
-
-        mockTransportState.playheadPosition = 4;
-        rerender(<AutomationLaneRow {...defaultProps} lane={lane} />);
-        expect(screen.getByTestId('lane-header')).toHaveAttribute('data-current-value', '0.5');
-
+        // The store is pinned to a beat that would select the "after" branch for
+        // every case, so these assertions only hold if the row reads the
+        // high-frequency ref instead. Each case remounts: the ref is invisible to
+        // React, so a bare rerender would replay the Compiler's memoized output.
         mockTransportState.playheadPosition = 100;
-        rerender(<AutomationLaneRow {...defaultProps} lane={lane} />);
-        expect(screen.getByTestId('lane-header')).toHaveAttribute('data-current-value', '0.8');
+
+        const cases: { beat: number; expected: string }[] = [
+            { beat: -5, expected: '0.2' },
+            { beat: 4, expected: '0.5' },
+            { beat: 100, expected: '0.8' },
+        ];
+
+        for (const testCase of cases) {
+            playheadPositionRef.current = testCase.beat;
+            const { unmount } = render(<AutomationLaneRow {...defaultProps} lane={lane} />);
+            expect(screen.getByTestId('lane-header')).toHaveAttribute('data-current-value', testCase.expected);
+            unmount();
+        }
     });
 
     it('should render in-view automation objects with their name and pool icon, filtering out-of-view objects', () => {
