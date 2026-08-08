@@ -1,0 +1,31 @@
+crates/daw-dsp/src/primitives/resonance.rs
+  s_14f2bbc9f385dd::t_849701f988e935 85-89
+  s_14f2bbc9f385dd::t_35dcb15323a9aa 1-2,4-5,7-31
+  s_14f2bbc9f385dd::t_056b239b970274 52-57
+crates/daw-dsp/src/crumbs/filter.rs
+  s_14f2bbc9f385dd::t_7cc521f61b6a6a 198-206
+public/wasm/daw-dsp/daw_dsp.d.ts
+  s_14f2bbc9f385dd::t_5417a04ba82f98 1,785-798,871-910
+public/wasm/daw-dsp/daw_dsp_bg.wasm.d.ts
+  s_14f2bbc9f385dd::t_56ab9a8f426e94 1,5-18,91-130
+public/wasm/manifest.json
+  s_14f2bbc9f385dd::t_aac81f317159ca 12,16-18,21
+src/modules/AudioEngine/wasm/daw_dsp.d.ts
+  s_14f2bbc9f385dd::t_ece3939c300e9b 1,785-798,871-910
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "cd26e6ca8f34f97ac62cfa9cea3713a58d288b89",
+  "prompts": {},
+  "sessions": {
+    "s_14f2bbc9f385dd": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f9a61a1d-66b3-4146-938d-a04f45f4b060",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
