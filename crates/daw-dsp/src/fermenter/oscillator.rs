@@ -139,10 +139,14 @@ impl WavetableOsc {
 }
 
 /// PolyBLEP anti-aliased virtual analog oscillator.
-/// Produces saw and pulse waves with minimal aliasing.
+/// Produces sine, saw, pulse and triangle waves with minimal aliasing.
 pub struct PolyBlepOsc {
     phase: f32,
     pulse_width: f32,
+    /// 0=sine, 1=saw, 2=square, 3=triangle — the same order as
+    /// `WavetableOsc::table_index` and `FermenterPatch.oscWaveform`, so one
+    /// selector value means the same waveform on either oscillator path.
+    waveform: usize,
 }
 
 impl PolyBlepOsc {
@@ -150,11 +154,79 @@ impl PolyBlepOsc {
         Self {
             phase: 0.0,
             pulse_width: 0.5,
+            // Saw, matching `WavetableOsc::new` and `Layer`'s `osc_waveform`
+            // default, so a voice that renders before either configuration
+            // path runs is on the same waveform as the wavetable engines.
+            waveform: 1,
         }
     }
 
     pub fn set_pulse_width(&mut self, pw: f32) {
         self.pulse_width = pw.clamp(0.05, 0.95);
+    }
+
+    pub fn set_waveform(&mut self, index: usize) {
+        self.waveform = index.min(3);
+    }
+
+    /// Advance phase and return one sample of the selected waveform.
+    #[inline]
+    pub fn tick(&mut self, freq: f32, sample_rate: f32) -> f32 {
+        match self.waveform {
+            0 => self.sine(freq, sample_rate),
+            2 => self.pulse(freq, sample_rate),
+            3 => self.triangle(freq, sample_rate),
+            _ => self.saw(freq, sample_rate),
+        }
+    }
+
+    /// Generate a sine sample.
+    ///
+    /// A sine has no harmonics above its fundamental, so it needs no
+    /// band-limiting correction — the phase accumulator alone is alias-free.
+    #[inline]
+    pub fn sine(&mut self, freq: f32, sample_rate: f32) -> f32 {
+        let inc = freq / sample_rate;
+        self.phase += inc;
+        if self.phase >= 1.0 {
+            self.phase -= 1.0;
+        }
+
+        (std::f32::consts::TAU * self.phase).sin()
+    }
+
+    /// Generate a polyBLAMP-corrected triangle sample.
+    ///
+    /// A triangle has no step discontinuity for polyBLEP to correct — it is
+    /// continuous, and it is its *first derivative* that jumps, at the peak and
+    /// at the trough. Those corners are what alias, so the correction is the
+    /// band-limited ramp (BLAMP) residual rather than the band-limited step.
+    ///
+    /// The trivial triangle runs from +1 at phase 0 down to -1 at phase 0.5 and
+    /// back, so its per-sample slope is `4 * inc` and the slope *changes* by
+    /// `8 * inc` at each corner: downward at the peak, upward at the trough.
+    /// The residual is scaled by that change and added at both corners, which
+    /// is the synthesis case worked in Sec. 4.1 of the source cited on
+    /// [`poly_blamp`] (its slope parameter `2 * mu` is this `8 * inc`).
+    ///
+    /// No delay line is needed even though the four-point residual reaches two
+    /// samples either side of a corner: an oscillator knows where its corners
+    /// are from the phase and the increment, so the ones just ahead of the
+    /// current sample are as available as the ones just behind it.
+    #[inline]
+    pub fn triangle(&mut self, freq: f32, sample_rate: f32) -> f32 {
+        let inc = freq / sample_rate;
+        self.phase += inc;
+        if self.phase >= 1.0 {
+            self.phase -= 1.0;
+        }
+
+        let mut sample = 4.0 * (self.phase - 0.5).abs() - 1.0;
+
+        let slope_change = 8.0 * inc;
+        sample -= slope_change * poly_blamp(corner_distance(self.phase, 0.0, inc));
+        sample += slope_change * poly_blamp(corner_distance(self.phase, 0.5, inc));
+        sample
     }
 
     /// Generate a PolyBLEP sawtooth sample.
@@ -369,6 +441,67 @@ impl UnisonOsc {
     }
 }
 
+/// Distance in samples from the sample at `phase` to the corner at `corner`,
+/// measured the short way around the phase circle and returned unsigned.
+///
+/// Unsigned is enough because [`poly_blamp`] is symmetric about the corner, so
+/// a corner two samples ahead is corrected by the same value as one two samples
+/// behind. A zero increment yields a non-finite distance, which `poly_blamp`
+/// reads as "no corner in range".
+#[inline]
+fn corner_distance(phase: f32, corner: f32, inc: f32) -> f32 {
+    let mut delta = phase - corner;
+    if delta > 0.5 {
+        delta -= 1.0;
+    }
+    if delta < -0.5 {
+        delta += 1.0;
+    }
+    (delta / inc).abs()
+}
+
+/// Four-point polyBLAMP residual, `t` in samples from the corner.
+///
+/// The polyBLAMP function is the second integral of the third-order B-spline
+/// that stands in for the band-limited impulse; the *residual* is its
+/// difference from the trivial ramp, and that is what gets added to a
+/// waveform's corners. Method and derivation: Esqueda, Välimäki and Bilbao,
+/// "Rounding Corners with BLAMP", Proc. DAFx-16, Brno, pp. 121-128 — Sec. 3
+/// and Table 1 for the residual, Sec. 4.1 for the triangle-oscillator case.
+///
+/// Integrating the cubic B-spline twice and subtracting `max(t, 0)` gives a
+/// residual that is even in `t`:
+///
+/// ```text
+///   |t| <= 1      |t|^5/40 - t^4/12 + t^2/3 - |t|/2 + 7/30
+///   1 < |t| < 2   (2 - |t|)^5 / 120
+///   |t| >= 2      0
+/// ```
+///
+/// Two checks that the coefficients are the paper's and not a plausible
+/// mistranscription: the value at the corner is 7/30, the peak labelled on
+/// Fig. 3(d), and the two branches agree at |t| = 1 on 1/120. Both are
+/// asserted in this module's tests.
+///
+/// The `!(t < 2.0)` guard is written against the negation so that a NaN
+/// distance — a zero-frequency oscillator, where the corner is neither in
+/// range nor out of it — returns 0 instead of falling through.
+#[inline]
+fn poly_blamp(t: f32) -> f32 {
+    let t = t.abs();
+    if !(t < 2.0) {
+        return 0.0;
+    }
+    if t > 1.0 {
+        let u = 2.0 - t;
+        let u2 = u * u;
+        return u2 * u2 * u / 120.0;
+    }
+    let t2 = t * t;
+    let t4 = t2 * t2;
+    t4 * t / 40.0 - t4 / 12.0 + t2 / 3.0 - t / 2.0 + 7.0 / 30.0
+}
+
 /// PolyBLEP correction for band-limited discontinuities.
 #[inline]
 fn poly_blep(t: f32, dt: f32) -> f32 {
@@ -385,7 +518,7 @@ fn poly_blep(t: f32, dt: f32) -> f32 {
 
 #[cfg(test)]
 mod tests {
-    use super::{UnisonOsc, Wavetable};
+    use super::{poly_blamp, PolyBlepOsc, UnisonOsc, Wavetable};
 
     const SAMPLE_RATE: f32 = 48_000.0;
     const FRAMES: usize = 256;
@@ -443,6 +576,104 @@ mod tests {
             grown, selected,
             "setting the waveform before growing the bank should render the \
              same as setting it after"
+        );
+    }
+
+    /// The polyBLAMP residual is transcribed from a paper, so the transcription
+    /// is checked against values the paper states independently of the
+    /// coefficients: the peak of 7/30 labelled on Fig. 3(d), and the two
+    /// branches meeting at |t| = 1.
+    ///
+    /// A coefficient typo would still produce a smooth, plausible-looking bump,
+    /// so "it rounds the corner" is not evidence the residual is the right one.
+    #[test]
+    fn the_polyblamp_residual_matches_the_values_its_source_states() {
+        assert!(
+            (poly_blamp(0.0) - 7.0 / 30.0).abs() < 1e-6,
+            "the residual at the corner should be the 7/30 peak on Fig. 3(d); \
+             got {}",
+            poly_blamp(0.0)
+        );
+
+        let from_inner = poly_blamp(1.0);
+        let from_outer = poly_blamp(1.0 + f32::EPSILON * 8.0);
+        assert!(
+            (from_inner - 1.0 / 120.0).abs() < 1e-6,
+            "the inner branch should reach 1/120 at |t| = 1; got {from_inner}"
+        );
+        assert!(
+            (from_inner - from_outer).abs() < 1e-6,
+            "the two branches should agree at |t| = 1; inner {from_inner}, \
+             outer {from_outer}"
+        );
+
+        assert_eq!(
+            poly_blamp(2.0),
+            0.0,
+            "the residual should vanish at |t| = 2"
+        );
+        assert_eq!(
+            poly_blamp(-0.25),
+            poly_blamp(0.25),
+            "the residual should be even in t"
+        );
+        assert_eq!(
+            poly_blamp(f32::NAN),
+            0.0,
+            "a zero-frequency oscillator yields a NaN corner distance, which \
+             must read as no correction rather than fall through"
+        );
+    }
+
+    /// A triangle's corners are what alias, and the correction is what removes
+    /// them: without it the peak sample sits on the trivial `4|p-0.5|-1` value.
+    ///
+    /// Driven at an increment that puts a sample close to the peak, so the
+    /// correction is near its full 7/30 weight and the claim is about a real
+    /// rounding rather than a rounding error. The band-limited peak must sit
+    /// *below* the trivial one — the residual is subtracted at a maximum.
+    #[test]
+    fn the_triangle_rounds_its_corners_below_the_trivial_waveform() {
+        // 1/64 cycle per sample places a sample exactly on the phase-0 corner.
+        const INC: f32 = 1.0 / 64.0;
+        let mut osc = PolyBlepOsc::new();
+        osc.set_waveform(3);
+
+        let mut rendered = Vec::with_capacity(64);
+        let mut trivial = Vec::with_capacity(64);
+        let mut phase = 0.0f32;
+        for _ in 0..64 {
+            rendered.push(osc.tick(INC, 1.0));
+            phase += INC;
+            if phase >= 1.0 {
+                phase -= 1.0;
+            }
+            trivial.push(4.0 * (phase - 0.5).abs() - 1.0);
+        }
+
+        let rendered_peak = rendered.iter().fold(f32::MIN, |best, s| best.max(*s));
+        let trivial_peak = trivial.iter().fold(f32::MIN, |best, s| best.max(*s));
+        assert!(
+            (trivial_peak - 1.0).abs() < 1e-5,
+            "the trivial reference should reach +1 at the corner; got \
+             {trivial_peak}"
+        );
+        assert!(
+            rendered_peak < trivial_peak - 0.01,
+            "the corrected peak should be rounded down from the trivial {trivial_peak}; \
+             got {rendered_peak}"
+        );
+
+        // Away from both corners the two must agree — the residual has finite
+        // support, so a correction bleeding across the whole ramp would mean
+        // the distance or the support bound is wrong.
+        let mid = rendered.len() / 4;
+        assert!(
+            (rendered[mid] - trivial[mid]).abs() < 1e-5,
+            "a quarter cycle from either corner the correction should be zero; \
+             rendered {} against trivial {}",
+            rendered[mid],
+            trivial[mid]
         );
     }
 }

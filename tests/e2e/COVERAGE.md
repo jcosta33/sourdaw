@@ -710,14 +710,23 @@ Re-measured after additional PRs since threshold raise #3 (PR #1231). Lines cros
 - **PR #1319**: FactorySynthesis filters — 6 biquad types + frequency sweep — 11 tests.
 - **PR #1320**: FactorySynthesis envelopes + mixing — ADSR shapes, equal-power pan — 21 tests.
 - **PR #1321**: serializeMetadataXml + toasterEngineMap — XML escaping, engine index mapping — 14 tests.
+- **PR #1323**: startNoteRepeat + stopNoteRepeat — rate conversion, scheduling, stop — 8 tests.
+- **PR #1324**: createKWeightingFilters + applyParams dispatch — ITU-R BS.1770-4 coefficients, 18-device routing — 8 tests.
+- **PR #1325**: quantizeMidiNotes — grid snap, strength, swing offbeats — 10 tests.
+- **PR #1326**: measureIntegratedLoudness — gated LUFS, silence, surround weight — 8 tests.
+- **PR #1327**: measureTruePeak — inter-sample peak, multi-channel, linearity — 8 tests.
+- **PR #1328**: readLegacyChordTrackStorage — read, remove, stale-guard, error swallow — 6 tests.
+- **PR #1329**: buildDawProjectZip — zip output, content, determinism — 7 tests.
+- **PR #1331**: clipboardStore — cross-field preservation (clip/note) — 7 tests.
+- **PR #1332**: trackPitch — windowing, clarity threshold, note conversion — 8 tests.
+- **PR #1333**: trigger16Level — velocity/tune/decay/filter scaling — 6 tests.
+- **PR #1336**: PhonemeMap + resolveFileHandle — ARPAbet token map, OPFS traversal — 12 tests.
+- **PR #1337**: cancelPendingChatActions — missing/not_pending/cancelled branches — 5 tests.
+- **PR #1338**: actionHistoryMetadataPort — no-op default, swap, delegation — 7 tests.
+- **PR #1339**: bufferCreation — mono/stereo alloc, AudioBuffer copy — 9 tests.
+- **PR #1340**: resetShortcutMappings — preserve defs, clear custom — 3 tests.
+- **PR #1342**: getExecutableAppActionGroundingRules — lookup, clone, defaults — 7 tests.
+- **PR #1344**: paintDrawPoint — snap, clamp, replace, constrain, RAF — 10 tests.
+- **PR #1345**: stopSequencer — stop, clear timeout, release, reset state — 6 tests.
 
-| Metric | Threshold (prev) | Measured | Threshold (new) |
-|--------|-----------------|----------|-----------------|
-| Lines | 90 | **90.30%** | 90 |
-| Statements | 87 | **87.09%** | 87 |
-| Branches | 76 | **76.20%** | 76 |
-| Functions | 88 | **88.01%** | 88 |
-
-Thresholds held at 90/87/76/88 — margins thin (0.2–0.3%); will raise after next wave batch.
-
-**Campaign total to date: 202 PRs, ~2233 assertions. Lines coverage at 90.30%.**
+**Campaign total to date: 220 PRs, ~2372 assertions. Lines coverage at 90.30%.**
