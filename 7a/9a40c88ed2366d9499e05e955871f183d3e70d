@@ -1,0 +1,32 @@
+src/modules/Arrangement/models/__tests__/DeviceParameterLaw.spec.ts
+  s_14f2bbc9f385dd::t_0cc5aa433fcd84 134-137
+src/modules/Arrangement/models/PluginDescriptors/FermenterDescriptor.ts
+  s_14f2bbc9f385dd::t_a5d8b29029d93d 17-24
+  s_14f2bbc9f385dd::t_276d71180a117b 25
+src/modules/Arrangement/models/DeviceParameterLaw.ts
+  s_14f2bbc9f385dd::t_f91fca64061646 204-209
+src/modules/AudioEngine/repositories/offlineScheduler/__tests__/offlineAutomationExemptions.ts
+  s_14f2bbc9f385dd::t_755fa4c39aac28 44
+src/modules/Transport/useCases/scheduling/applyAutomation/__tests__/applyAutomationSteppedQuantisation.spec.ts
+  s_14f2bbc9f385dd::t_c4b75456c317e4 327-331
+  s_14f2bbc9f385dd::t_424324ba54ff3d 298-300
+  s_14f2bbc9f385dd::t_f39037bd53d871 285-287
+  s_14f2bbc9f385dd::t_2d7c3b4b0a5666 278-284,288-297,301-325,336-337
+  s_14f2bbc9f385dd::t_a42bb86b944dd9 326,332-335
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "7a9a40c88ed2366d9499e05e955871f183d3e70d",
+  "prompts": {},
+  "sessions": {
+    "s_14f2bbc9f385dd": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f9a61a1d-66b3-4146-938d-a04f45f4b060",
+        "model": "claude-opus-5"
+      },
+      "human_author": null
+    }
+  }
+}
