@@ -99,6 +99,7 @@ export const TransportControls = ({
                         aria-label={isPlaying ? 'Pause' : 'Play'}
                         onClick={togglePlayback}
                         data-onboarding="transport-play"
+                        data-testid="transport-play"
                     >
                         {isPlaying ? (
                             <Pause className="size-4" aria-hidden="true" />
@@ -112,7 +113,7 @@ export const TransportControls = ({
 
             <Tooltip>
                 <TooltipTrigger asChild>
-                    <Button variant="transport" size="icon-sm" aria-label="Stop" onClick={stopPlayback}>
+                    <Button variant="transport" size="icon-sm" aria-label="Stop" onClick={stopPlayback} data-testid="transport-stop">
                         <Square className="size-3.5 fill-text-secondary" aria-hidden="true" />
                     </Button>
                 </TooltipTrigger>
@@ -128,6 +129,7 @@ export const TransportControls = ({
                         aria-label={isRecording ? 'Stop recording' : 'Record'}
                         aria-pressed={isRecording}
                         onClick={toggleRecording}
+                        data-testid="transport-record"
                         className={cn(!isRecording && anyTrackArmed && 'ring-1 ring-state-danger')}
                     >
                         <Circle
@@ -149,6 +151,7 @@ export const TransportControls = ({
                         aria-label="Loop"
                         aria-pressed={isLooping}
                         onClick={toggleLoop}
+                        data-testid="transport-loop"
                     >
                         <Repeat className="size-3.5" aria-hidden="true" />
                     </LatchButton>
@@ -183,6 +186,7 @@ export const TransportControls = ({
                         aria-label="Metronome"
                         aria-pressed={metronomeEnabled}
                         onClick={toggleMetronome}
+                        data-testid="transport-metronome"
                     >
                         <svg
                             className="size-3.5"
