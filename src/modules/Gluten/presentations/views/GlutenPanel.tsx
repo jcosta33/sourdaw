@@ -1087,7 +1087,8 @@ export const GlutenPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
                                     })}
                                 </Row>
                                 <p className="text-[10px] leading-4 text-muted-foreground">
-                                    Lower values grab harder. Higher values relax into the tail.
+                                    Fixed release times: 50, 100, 400, 800 and 1500 ms. Low positions let the level
+                                    spring back between hits; high positions hold the reduction through the tail.
                                 </p>
                             </Stack>
                         ) : null}

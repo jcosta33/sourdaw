@@ -144,7 +144,6 @@ ratio-crush mode.
 **Diode** — **Recovery 1** to **Recovery 5** (default 3) replaces Release on this topology. Each
 position is a fixed release time: 50 ms, 100 ms, 400 ms, 800 ms, and 1.5 s. Low positions let the
 level spring back between hits; high positions hold the reduction through the tail and pump more.
-The hint printed under the chips reads the other way round — go by the times above.
 
 ## Stage two
 
