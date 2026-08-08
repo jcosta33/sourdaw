@@ -28,6 +28,7 @@ export const AutoScrollToggle = (): ReactElement => {
                     onClick={() => {
                         toggleTimelineAutoScroll();
                     }}
+                    data-testid="transport-auto-scroll"
                 >
                     <ChevronsRight className="size-3.5" aria-hidden="true" />
                 </Button>
