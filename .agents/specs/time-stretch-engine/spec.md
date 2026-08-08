@@ -101,6 +101,24 @@ exists yet.
 
 ## Requirements
 
+**A green `Verify with:` run is not evidence until the named test exists.** This
+spec is `in-progress`; most tests it names are unwritten. The two verification
+runners fail differently, and the difference matters:
+
+- `pnpm test:run <path>` on a missing file **exits 1**. Those commands fail
+  closed — they stay red until the test is written, which is what you want.
+- `cargo test --test time_stretch_contract <name>` with a filter matching no
+  test **exits 0** and prints `running 0 tests`. It reports success while
+  asserting nothing.
+
+Of the seven Rust test names cited below, `crates/daw-dsp/tests/time_stretch_contract.rs`
+currently defines **none**. Every criterion that chains cargo with a `pnpm
+test:run` path is still fail-closed overall, because the vitest leg errors.
+**AC-004 is the exception** — its command is cargo-only, so it passes today
+while running zero tests. Treat AC-004's command as an acceptance definition to
+implement, never as a passing gate. Delete this note once the named Rust tests
+exist.
+
 ### AC-001 — One canonical ratio, one reciprocal
 
 Every layer that computes or consumes a stretch ratio — project truth,
