@@ -1,0 +1,16 @@
+src/modules/CrdtDocument/errors/__tests__/CrdtPersistenceMembershipConflictError.spec.ts
+  h_1228e573df1f42 1-39
+src/modules/Yeast/models/__tests__/YeastProcessorProjection.spec.ts
+  h_1228e573df1f42 1-74
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "d42457f86b3286ebee5a5b712e3e82090e95de64",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
