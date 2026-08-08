@@ -72,12 +72,33 @@ describe('projectToasterKitToEngineMessages — kit-level params', () => {
 });
 
 describe('projectToasterKitToEngineMessages — per-pad messages', () => {
-    it('emits 12 padParam messages per pad (engine_type + 11 params)', () => {
+    /**
+     * The names, not their number. A count is a weaker claim than the list it
+     * summarises — it passes for any twelve messages, including twelve copies of
+     * `volume` — and it has to be edited by hand every time the contract grows,
+     * which is how a projection that had stopped sending `muted` could still
+     * have reported the arity it was supposed to.
+     */
+    it('emits the whole common pad-state contract, in order, for a pad', () => {
         const kit = makeKit([makePad(0)]);
         const messages = projectToasterKitToEngineMessages({ kit });
-        const padParams = messages.filter((m) => m.type === 'padParam' && m.pad === 0);
-        // engine_type + volume + pan + muted + tune + decay + tone + drive + filter_cutoff + filter_resonance + send_reverb + send_delay = 12
-        expect(padParams).toHaveLength(12);
+        const names = messages.filter((m) => m.type === 'padParam' && m.pad === 0).map((m) => m.name);
+        expect(names).toEqual([
+            'engine_type',
+            'volume',
+            'pan',
+            'muted',
+            'soloed',
+            'choke_group',
+            'tune',
+            'decay',
+            'tone',
+            'drive',
+            'filter_cutoff',
+            'filter_resonance',
+            'send_reverb',
+            'send_delay',
+        ]);
     });
 
     it('emits messages with correct pad index for each pad', () => {
@@ -161,6 +182,64 @@ describe('projectToasterKitToEngineMessages — pad mute', () => {
     });
 });
 
+describe('projectToasterKitToEngineMessages — pad solo', () => {
+    /**
+     * Solo is per pad on the wire but resolved across the pad set in the engine,
+     * which makes an omitted `false` worse than it is for mute: one pad left
+     * soloed by the outgoing kit silences *every* pad of the incoming one. Both
+     * values are therefore stated, and stated per pad.
+     */
+    it('addresses solo per pad and states the unsoloed pads too', () => {
+        const kit = makeKit([
+            makePad(0, { soloed: false }),
+            makePad(1, { soloed: true }),
+            makePad(2, { soloed: false }),
+        ]);
+        const messages = projectToasterKitToEngineMessages({ kit });
+        const soloByPad = messages
+            .filter((m) => m.type === 'padParam' && m.name === 'soloed')
+            .map((m) => (m.type === 'padParam' ? [m.pad, m.value] : []));
+        expect(soloByPad).toEqual([
+            [0, 0],
+            [1, 1],
+            [2, 0],
+        ]);
+    });
+});
+
+describe('projectToasterKitToEngineMessages — pad choke group', () => {
+    /**
+     * `Pad::choke_group` has always been read at note-on; nothing ever told the
+     * engine what the kit's grouping was, so it ran on a construction default and
+     * the pad grid's "C1" badge described a grouping the audio did not have.
+     *
+     * Interior groups matter as much as the ends: a projection that forwarded
+     * only "has a group / has none" would pass a 0-vs-1 check and still collapse
+     * every distinct pair onto one group, so this asserts a kit that uses three
+     * different groups and expects them kept apart.
+     */
+    it('forwards each pad its own choke group, including group 0 and interior groups', () => {
+        const kit = makeKit([
+            makePad(0, { chokeGroup: 0 }),
+            makePad(1, { chokeGroup: 1 }),
+            makePad(2, { chokeGroup: 1 }),
+            makePad(3, { chokeGroup: 7 }),
+            makePad(4, { chokeGroup: 16 }),
+        ]);
+        const messages = projectToasterKitToEngineMessages({ kit });
+        const chokeByPad = messages
+            .filter((m) => m.type === 'padParam' && m.name === 'choke_group')
+            .map((m) => (m.type === 'padParam' ? [m.pad, m.value] : []));
+        expect(chokeByPad).toEqual([
+            [0, 0],
+            [1, 1],
+            [2, 1],
+            [3, 7],
+            [4, 16],
+        ]);
+    });
+});
+
 describe('projectToasterKitToEngineMessages — hihat open/closed flag', () => {
     it('emits open=1 for hihat-open', () => {
         const kit = makeKit([makePad(0, { engineType: 'hihat-open' })]);
@@ -209,17 +288,31 @@ describe('projectToasterKitToEngineMessages — NaN/Infinity filter', () => {
 });
 
 describe('projectToasterKitToEngineMessages — total message count', () => {
-    it('produces 9 + pads * 12 messages for pads without hihat', () => {
-        const kit = makeKit([makePad(0), makePad(1)]);
-        const messages = projectToasterKitToEngineMessages({ kit });
-        // 9 kit params + 2 pads * 12 pad params = 33
-        expect(messages).toHaveLength(33);
+    /**
+     * The shape of the total, derived from the projection's own one-pad output
+     * rather than restated as a literal: the kit-level block is emitted once and
+     * the per-pad block is emitted once per pad. Emitting the kit block twice,
+     * or emitting pad 0's block and skipping pad 1's, both red this.
+     */
+    it('emits the kit-level block once and the per-pad block once per pad', () => {
+        const onePad = projectToasterKitToEngineMessages({ kit: makeKit([makePad(0)]) });
+        const twoPads = projectToasterKitToEngineMessages({ kit: makeKit([makePad(0), makePad(1)]) });
+
+        const kitLevelCount = onePad.filter((m) => m.type === 'param').length;
+        const perPadCount = onePad.length - kitLevelCount;
+
+        expect(twoPads).toHaveLength(kitLevelCount + 2 * perPadCount);
+        expect(twoPads.filter((m) => m.type === 'param')).toHaveLength(kitLevelCount);
+        expect(twoPads.filter((m) => m.type === 'padParam' && m.pad === 1)).toHaveLength(perPadCount);
     });
 
-    it('adds +1 per hihat pad for the open flag', () => {
-        const kit = makeKit([makePad(0, { engineType: 'hihat-open' }), makePad(1, { engineType: 'hihat-closed' })]);
-        const messages = projectToasterKitToEngineMessages({ kit });
-        // 9 + 2*12 + 2 (open flags) = 35
-        expect(messages).toHaveLength(35);
+    it('adds exactly one open flag per hihat pad, valued by which hat it is', () => {
+        const plain = projectToasterKitToEngineMessages({ kit: makeKit([makePad(0), makePad(1)]) });
+        const hats = projectToasterKitToEngineMessages({
+            kit: makeKit([makePad(0, { engineType: 'hihat-open' }), makePad(1, { engineType: 'hihat-closed' })]),
+        });
+
+        expect(hats.length - plain.length).toBe(2);
+        expect(hats.filter((m) => m.type === 'padParam' && m.name === 'open').map((m) => m.value)).toEqual([1, 0]);
     });
 });

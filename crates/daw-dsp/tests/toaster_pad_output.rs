@@ -456,3 +456,296 @@ fn production_instance_offsets_stay_stable_and_processing_does_not_allocate() {
         assert_eq!(energy(inactive), 0.0, "inactive channel {channel}");
     }
 }
+
+// ---------------------------------------------------------------------------
+// Pad gating — solo and choke groups.
+//
+// Both controls are decided in `ToasterEngine::note_on`, and both used to be
+// decided wrongly: there was no `soloed` arm at all, and `choke_group` was read
+// from a construction default keyed on pad index because no kit message ever
+// carried the real grouping. These guards render, because "the parameter is
+// stored" is exactly the assertion that passed while nothing was audible.
+// ---------------------------------------------------------------------------
+
+/// Concatenated L,R of `blocks` render blocks, so a delta can be compared
+/// sample-for-sample rather than through a summary number.
+fn render_main(configure: impl FnOnce(&mut ToasterEngine), hits: &[u8], blocks: usize) -> Vec<f32> {
+    let mut engine = ToasterEngine::new(48_000.0, PADS);
+    configure(&mut engine);
+    for &pad in hits {
+        engine.note_on(pad, 127.0, 60);
+    }
+
+    let mut left = [0.0; FRAMES];
+    let mut right = [0.0; FRAMES];
+    let mut out = Vec::with_capacity(blocks * FRAMES * 2);
+    for _ in 0..blocks {
+        engine.process_block(&mut left, &mut right);
+        out.extend_from_slice(&left);
+        out.extend_from_slice(&right);
+    }
+    out
+}
+
+/// Energy of one pad's own stereo tap, measured only over the blocks rendered
+/// *after* an optional second pad is struck. Reading the tap rather than the
+/// parent mix is what keeps the choke measurement about the choked pad instead
+/// of about the total of two drums.
+fn tap_energy_after_second_hit(
+    configure: impl FnOnce(&mut ToasterEngine),
+    first: u8,
+    second: Option<u8>,
+    measured: usize,
+) -> f32 {
+    let mut engine = ToasterEngine::new(48_000.0, PADS);
+    configure(&mut engine);
+    engine.note_on(first, 127.0, 60);
+
+    let mut left = [0.0; FRAMES];
+    let mut right = [0.0; FRAMES];
+    let mut pad_outputs = vec![0.0; PADS * 2 * FRAMES];
+    for _ in 0..4 {
+        engine.process_block_with_pad_outputs(&mut left, &mut right, &mut pad_outputs, FRAMES);
+    }
+
+    if let Some(second) = second {
+        engine.note_on(second, 127.0, 60);
+    }
+
+    let tap = 2 * first as usize * FRAMES;
+    let mut measured_energy = 0.0;
+    for _ in 0..measured {
+        engine.process_block_with_pad_outputs(&mut left, &mut right, &mut pad_outputs, FRAMES);
+        measured_energy += energy(&pad_outputs[tap..tap + 2 * FRAMES]);
+    }
+    measured_energy
+}
+
+/// The shipped state of every kit: no pad soloed. A guard that only ever renders
+/// with a solo engaged cannot tell a working gate from one that silences the
+/// device outright, so the default is asserted first and for every pad.
+#[test]
+fn every_pad_sounds_while_no_pad_is_soloed() {
+    for pad in 0..PADS as u8 {
+        let rendered = render_main(|_| {}, &[pad], 8);
+        assert!(
+            energy(&rendered) > 0.0,
+            "pad {pad} must sound when no pad is soloed"
+        );
+    }
+}
+
+/// Every pad, not one of them. The gate is a single comparison against a set,
+/// so a version that hard-coded "pad 0 is the soloed one" — or that compared the
+/// wrong index — would pass a single-pad guard and fail here.
+#[test]
+fn soloing_a_pad_silences_every_other_pad_and_leaves_that_pad_untouched() {
+    for soloed in 0..PADS as u8 {
+        let alone = render_main(|_| {}, &[soloed], 8);
+        let alone_and_soloed = render_main(
+            |engine| engine.set_pad_param(soloed, "soloed", 1.0),
+            &[soloed],
+            8,
+        );
+        assert_bit_identical(&alone_and_soloed, &alone);
+
+        for other in 0..PADS as u8 {
+            if other == soloed {
+                continue;
+            }
+            let gated = render_main(
+                |engine| engine.set_pad_param(soloed, "soloed", 1.0),
+                &[other],
+                8,
+            );
+            assert_eq!(
+                energy(&gated),
+                0.0,
+                "pad {other} must be silent while pad {soloed} is soloed"
+            );
+        }
+    }
+}
+
+/// Solo is a set decision, not a per-pad flag: two soloed pads both play.
+#[test]
+fn two_soloed_pads_both_play_and_the_rest_stay_gated() {
+    let configure = |engine: &mut ToasterEngine| {
+        engine.set_pad_param(0, "soloed", 1.0);
+        engine.set_pad_param(5, "soloed", 1.0);
+    };
+
+    assert!(energy(&render_main(configure, &[0], 8)) > 0.0);
+    assert!(energy(&render_main(configure, &[5], 8)) > 0.0);
+    assert_eq!(energy(&render_main(configure, &[9], 8)), 0.0);
+}
+
+/// Mute wins over solo, which is the rule `applySoloLogic` already applies at
+/// track level. Both halves are asserted, because a gate that dropped the mute
+/// check entirely would still pass the "muted pad is silent" case on its own.
+#[test]
+fn a_muted_pad_stays_silent_even_when_it_is_the_soloed_one() {
+    let muted_and_soloed = render_main(
+        |engine| {
+            engine.set_pad_param(3, "muted", 1.0);
+            engine.set_pad_param(3, "soloed", 1.0);
+        },
+        &[3],
+        8,
+    );
+    assert_eq!(energy(&muted_and_soloed), 0.0);
+
+    let soloed_only = render_main(|engine| engine.set_pad_param(3, "soloed", 1.0), &[3], 8);
+    assert!(energy(&soloed_only) > 0.0);
+}
+
+/// Solo gates the trigger, not the pad's output — Event Mute, the behaviour
+/// Toaster's own mute already had. Engaging solo must leave a voice that is
+/// already sounding bit-identical, and must stop the next hit on that pad
+/// entirely. Asserting only the second half would pass for an output gate too.
+#[test]
+fn engaging_solo_spares_a_sounding_voice_and_stops_the_next_hit() {
+    fn tail(engage_solo: bool, retrigger: bool) -> Vec<f32> {
+        let mut engine = ToasterEngine::new(48_000.0, PADS);
+        engine.set_pad_param(0, "decay", 1.0);
+        engine.note_on(0, 127.0, 60);
+
+        let mut left = [0.0; FRAMES];
+        let mut right = [0.0; FRAMES];
+        for _ in 0..4 {
+            engine.process_block(&mut left, &mut right);
+        }
+
+        if engage_solo {
+            engine.set_pad_param(1, "soloed", 1.0);
+        }
+        if retrigger {
+            engine.note_on(0, 127.0, 60);
+        }
+
+        let mut out = Vec::with_capacity(16 * FRAMES * 2);
+        for _ in 0..16 {
+            engine.process_block(&mut left, &mut right);
+            out.extend_from_slice(&left);
+            out.extend_from_slice(&right);
+        }
+        out
+    }
+
+    let untouched = tail(false, false);
+    assert!(energy(&untouched) > 0.0, "the tail under test must exist");
+
+    // The sounding voice is not cut when another pad is soloed.
+    assert_bit_identical(&tail(true, false), &untouched);
+
+    // A fresh hit on the now-gated pad adds nothing at all...
+    assert_bit_identical(&tail(true, true), &untouched);
+
+    // ...whereas without the solo the same retrigger plainly changes the render.
+    let retriggered = tail(false, true);
+    assert!(
+        energy(&retriggered) > energy(&untouched),
+        "the retrigger must be audible without a solo: {} vs {}",
+        energy(&retriggered),
+        energy(&untouched)
+    );
+}
+
+/// A choke group the old construction default could not express. Pads 9 and 10
+/// are cymbals with no default grouping, so any choke here came from the kit
+/// message — and the group number is 3, not the single hard-coded 1.
+#[test]
+fn a_kit_sent_choke_group_cuts_a_ringing_pad_at_a_group_the_default_never_set() {
+    let choked = tap_energy_after_second_hit(
+        |engine| {
+            engine.set_pad_param(9, "decay", 1.0);
+            engine.set_pad_param(9, "choke_group", 3.0);
+            engine.set_pad_param(10, "choke_group", 3.0);
+        },
+        9,
+        Some(10),
+        16,
+    );
+    let separate = tap_energy_after_second_hit(
+        |engine| {
+            engine.set_pad_param(9, "decay", 1.0);
+            engine.set_pad_param(9, "choke_group", 3.0);
+            engine.set_pad_param(10, "choke_group", 4.0);
+        },
+        9,
+        Some(10),
+        16,
+    );
+
+    assert!(separate > 0.0, "the ringing tail under test must exist");
+    assert!(
+        choked < separate * 0.5,
+        "a shared choke group must cut pad 9's tail: choked={choked}, separate={separate}"
+    );
+}
+
+/// Group 0 is a statement, not an absence. Sending it has to clear a grouping
+/// the engine already holds, or a kit without hats inherits the previous kit's.
+#[test]
+fn sending_choke_group_zero_clears_an_existing_grouping() {
+    let grouped = tap_energy_after_second_hit(
+        |engine| {
+            engine.set_pad_param(2, "decay", 1.0);
+        },
+        2,
+        Some(3),
+        16,
+    );
+    let cleared = tap_energy_after_second_hit(
+        |engine| {
+            engine.set_pad_param(2, "decay", 1.0);
+            engine.set_pad_param(2, "choke_group", 0.0);
+            engine.set_pad_param(3, "choke_group", 0.0);
+        },
+        2,
+        Some(3),
+        16,
+    );
+
+    assert!(
+        cleared > grouped * 2.0,
+        "clearing the group must let pad 2 ring through pad 3: grouped={grouped}, cleared={cleared}"
+    );
+}
+
+/// The construction default is now keyed on the pad's engine rather than on its
+/// index. It has to still select exactly the two hi-hat pads of the default
+/// layout, and no one else — a `matches!` that caught the wrong variant would
+/// either lose the hat pair or group every cymbal with it.
+#[test]
+fn the_construction_default_groups_the_hi_hat_pair_and_nothing_else() {
+    let hat_alone = tap_energy_after_second_hit(|engine| engine.set_pad_param(2, "decay", 1.0), 2, None, 16);
+    let hat_choked = tap_energy_after_second_hit(
+        |engine| engine.set_pad_param(2, "decay", 1.0),
+        2,
+        Some(3),
+        16,
+    );
+    assert!(
+        hat_choked < hat_alone * 0.5,
+        "pads 2 and 3 must choke by default: alone={hat_alone}, choked={hat_choked}"
+    );
+
+    for other in 0..PADS as u8 {
+        if other == 2 || other == 3 {
+            continue;
+        }
+        let alone = tap_energy_after_second_hit(|engine| engine.set_pad_param(other, "decay", 1.0), other, None, 16);
+        let with_neighbour = tap_energy_after_second_hit(
+            |engine| engine.set_pad_param(other, "decay", 1.0),
+            other,
+            Some(if other == 0 { 1 } else { 0 }),
+            16,
+        );
+        assert_eq!(
+            with_neighbour.to_bits(),
+            alone.to_bits(),
+            "pad {other} must not be choked by default"
+        );
+    }
+}
