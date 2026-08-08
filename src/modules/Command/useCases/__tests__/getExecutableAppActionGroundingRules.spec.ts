@@ -1,0 +1,69 @@
+import { describe, expect, it } from 'vitest';
+
+import { executableAppActionDescriptorByType } from '../executableAppActionRegistry';
+import { getExecutableAppActionGroundingRules } from '../getExecutableAppActionGroundingRules';
+
+describe('getExecutableAppActionGroundingRules', () => {
+    it('returns null for an unknown action type', () => {
+        const result = getExecutableAppActionGroundingRules('nonexistent-action');
+
+        expect(result).toBeNull();
+    });
+
+    it('returns the action type, intent phrases, and target rules for a known action', () => {
+        const result = getExecutableAppActionGroundingRules('addTrack');
+
+        expect(result).not.toBeNull();
+        expect(result?.actionType).toBe('addTrack');
+        expect(result?.intentPhrases.length).toBeGreaterThan(0);
+        expect(result?.intentPhrases).toContain('add track');
+        expect(result?.targetRules).toEqual([]);
+    });
+
+    it('includes valueRules when the descriptor defines them', () => {
+        const result = getExecutableAppActionGroundingRules('addTrack');
+
+        expect(result).not.toBeNull();
+        expect(result?.valueRules.length).toBeGreaterThan(0);
+    });
+
+    it('defaults valueRules to an empty array when the descriptor omits them', () => {
+        // Find an action without valueRules.
+        const actionWithoutValueRules = [...executableAppActionDescriptorByType.entries()].find(
+            ([, descriptor]) => !('valueRules' in descriptor)
+        )?.[0];
+
+        if (!actionWithoutValueRules) {
+            // All actions happen to have valueRules — skip this test.
+            return;
+        }
+
+        const result = getExecutableAppActionGroundingRules(actionWithoutValueRules);
+
+        expect(result?.valueRules).toEqual([]);
+    });
+
+    it('includes directionalIntent when the descriptor defines it', () => {
+        const result = getExecutableAppActionGroundingRules('bypassDevice');
+
+        expect(result).not.toBeNull();
+        expect(result?.directionalIntent).toBeDefined();
+    });
+
+    it('omits directionalIntent (undefined) when the descriptor does not define it', () => {
+        const result = getExecutableAppActionGroundingRules('addTrack');
+
+        expect(result).not.toBeNull();
+        expect(result?.directionalIntent).toBeUndefined();
+    });
+
+    it('returns a deep clone (structuredClone), not the descriptor itself', () => {
+        const result = getExecutableAppActionGroundingRules('addTrack');
+        const descriptor = executableAppActionDescriptorByType.get('addTrack')!;
+
+        // The intentPhrases array must not be the same reference as the descriptor's.
+        expect(result?.intentPhrases).not.toBe(descriptor.intentPhrases);
+        // But the contents must match.
+        expect(result?.intentPhrases).toEqual(descriptor.intentPhrases);
+    });
+});
