@@ -1,0 +1,29 @@
+src/modules/MixerConsole/presentations/views/MixerPanel.tsx
+  s_3abf8ab34aaef1::t_79aa0c9d82a87e 103
+tests/e2e/mixerWidthSendsTestId.spec.ts
+  s_0d0bc246c47845::t_1f6d3289888290 1-64
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "9520528a7b4e505cc66e78212daa27bdb2e0900e",
+  "prompts": {},
+  "sessions": {
+    "s_0d0bc246c47845": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-a04eeaa35a019c995",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_3abf8ab34aaef1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-a016a90c2deda69cf",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
