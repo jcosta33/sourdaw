@@ -742,5 +742,10 @@ Re-measured after additional PRs since threshold raise #3 (PR #1231). Lines cros
 - **PR #1364**: initCrumbsDeviceStatePersistence — playback-key dedup, first-sight, stale cleanup — 7 tests.
 - **PR #1365**: initLevainDeviceStatePersistence — identity-key dedup, first-sight, stale cleanup — 7 tests.
 - **PR #1366**: yeastPreviewRevision + RenderProgress — pub/sub revision, quality steps — 8 tests.
+- **PR #1368**: ModelInfo + TempoRampWriteError — model metadata, typed error — 12 tests.
+- **PR #1371**: capabilityStore — phase transitions (idle→detecting→done/error) — 5 tests.
+- **PR #1372**: importDawProject — parse/decode/apply pipeline with error paths — 6 tests.
+- **PR #1373**: semanticChangeContext + resolveMidiTrackId — context holder, MIDI track resolution — 8 tests.
+- **PR #1374**: mixAnalysisDisplayLifecycle — noop default, swap, delegation — 6 tests.
 
-**Campaign total to date: 234 PRs, ~2469 assertions. Lines coverage at 90.30%.**
+**Campaign total to date: 240 PRs, ~2506 assertions. Lines coverage at 90.30%.**
