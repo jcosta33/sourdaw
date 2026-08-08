@@ -1,0 +1,46 @@
+.agents/decisions/open-decision-docket.md
+  s_14f2bbc9f385dd::t_9b39a05d9d9234 59-62,64,66-75,121
+src/modules/AudioEngine/repositories/createWebAudioEngine.ts
+  s_14f2bbc9f385dd::t_eec1ecfb89adf7 717,727
+  s_14f2bbc9f385dd::t_fecbe2f2cbeecf 521
+src/modules/WorkspaceShell/presentations/hooks/useStatusBarMetrics.ts
+  s_14f2bbc9f385dd::t_b24669370846fd 200-237
+src/modules/AudioEngine/handlers/finalFeature/__tests__/finalFeatureMiscHandlers.spec.ts
+  s_14f2bbc9f385dd::t_84b2baff10aa4c 37-58
+  s_14f2bbc9f385dd::t_30d0fc7baf68a9 31
+src/modules/AudioEngine/models/AudioEngineState.ts
+  s_14f2bbc9f385dd::t_148eef7d8d206f 7-12,14-24
+src/modules/AudioEngine/handlers/finalFeature/handleGetLatencyReport.ts
+  s_14f2bbc9f385dd::t_b929080d0f552f 10-16,18-20,25
+src/modules/AudioEngine/repositories/__tests__/createWebAudioEngineDelegation.spec.ts
+  s_14f2bbc9f385dd::t_f60eda651091a5 317
+  s_14f2bbc9f385dd::t_95898be3b3baf4 516
+src/modules/AudioEngine/repositories/__tests__/createWebAudioEngine.spec.ts
+  s_14f2bbc9f385dd::t_429223b9cfa26f 980
+src/modules/AudioEngine/repositories/__tests__/createWebAudioEngineBranches.spec.ts
+  s_14f2bbc9f385dd::t_e6c4e697f36df6 325-334
+src/modules/WorkspaceShell/presentations/hooks/__tests__/useStatusBarMetrics.spec.ts
+  s_14f2bbc9f385dd::t_1c12848fa31eca 171,173-249
+  s_14f2bbc9f385dd::t_06ee7477d597c3 172
+  s_14f2bbc9f385dd::t_d379b34e5b2bb2 157,168,170
+  s_14f2bbc9f385dd::t_f529ef805ba9bb 260,457,482,506,532
+  s_14f2bbc9f385dd::t_1c3540aa2eb554 286,333,353,374,400,424,564,587,613
+src/helpers/__tests__/audioContext.mock.ts
+  s_14f2bbc9f385dd::t_8dee56b9181e91 344-346,348
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "ded5e6c8b7fc73374bbc1957fae5caa6218fc3d9",
+  "prompts": {},
+  "sessions": {
+    "s_14f2bbc9f385dd": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f9a61a1d-66b3-4146-938d-a04f45f4b060",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
