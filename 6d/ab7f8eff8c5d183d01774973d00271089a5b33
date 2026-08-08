@@ -1,0 +1,19 @@
+src/modules/AudioAnalysis/useCases/__tests__/trackPitch.spec.ts
+  s_ac9b259eab20ba::t_fbc68c090b8eb7 1-141
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "6dab7f8eff8c5d183d01774973d00271089a5b33",
+  "prompts": {},
+  "sessions": {
+    "s_ac9b259eab20ba": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8699-3865-7842-8c54-afbac6cfd266",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
