@@ -11,7 +11,7 @@ import { RotaryKnob } from '#/components/daw/RotaryKnob';
 import { useStore } from '#/infra/store/useStore';
 
 import { type InstrumentId } from '../../models/LevainPatch';
-import { defaultLevainState, levainStore, setCurrentArticulation, updateMicPosition } from '../../stores/levainStore';
+import { defaultLevainState, levainStore, updateMicPosition } from '../../stores/levainStore';
 import { sendMicParamToEngine } from '../../useCases/levainParamBridge/sendMicParamToEngine';
 import { setLevainParamWithAudio } from '../../useCases/levainParamBridge/setLevainParamWithAudio';
 import { setMacroWithAudio } from '../../useCases/levainParamBridge/setMacroWithAudio';
@@ -186,7 +186,7 @@ export const LevainPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
                         <ArticulationList
                             articulations={patch.articulations}
                             current={patch.currentArticulation}
-                            onSelect={(type) => setCurrentArticulation(deviceId, type)}
+                            onSelect={(type) => setLevainParamWithAudio(deviceId, 'currentArticulation', type)}
                         />
                     </section>
                 </aside>

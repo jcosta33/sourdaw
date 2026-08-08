@@ -33,8 +33,8 @@ vi.mock('../levainParamBridge/loadSamplesForInstrument', () => ({
     loadSamplesForInstrument: vi.fn(),
 }));
 
-vi.mock('../levainParamBridge/setLevainParamWithAudio', () => ({
-    setLevainParamWithAudio: vi.fn(),
+vi.mock('../levainParamBridge/applyPatchToEngine', () => ({
+    applyPatchToEngine: vi.fn(),
 }));
 
 vi.mock('../levainParamBridge/levainBridgeDependencies', () => ({
@@ -44,7 +44,7 @@ vi.mock('../levainParamBridge/levainBridgeDependencies', () => ({
 }));
 
 import { loadSamplesForInstrument } from '../levainParamBridge/loadSamplesForInstrument';
-import { setLevainParamWithAudio } from '../levainParamBridge/setLevainParamWithAudio';
+import { applyPatchToEngine } from '../levainParamBridge/applyPatchToEngine';
 import { loadInstrument } from '../loadPreset';
 
 describe('loadInstrument', () => {
@@ -53,7 +53,7 @@ describe('loadInstrument', () => {
             [DEVICE_ID]: { patch: { articulations: [] }, currentArticulationDisplay: '' },
         };
         mockLevainStore.set.mockClear();
-        vi.mocked(setLevainParamWithAudio).mockClear();
+        vi.mocked(applyPatchToEngine).mockClear();
         vi.mocked(loadSamplesForInstrument).mockClear();
         mockResolveEligibleDeviceWriteTarget.mockReset();
         mockResolveEligibleDeviceWriteTarget.mockImplementation((deviceId) => ({
@@ -68,9 +68,24 @@ describe('loadInstrument', () => {
 
         expect(mockLevainStore.set).toHaveBeenCalled();
         expect(loadSamplesForInstrument).toHaveBeenCalledWith(DEVICE_ID, 'violin-1');
-        // Forwards each engine param at least once
-        expect(setLevainParamWithAudio).toHaveBeenCalledWith(DEVICE_ID, 'masterGain', expect.any(Number));
-        expect(setLevainParamWithAudio).toHaveBeenCalledWith(DEVICE_ID, 'legato', expect.anything());
+    });
+
+    it('forwards the whole patch, not the four fields it used to hand-list', () => {
+        // This spec previously pinned `masterGain` and `legato` reaching the engine
+        // individually, which is exactly the subset that left the engine holding the
+        // previous instrument's mic mix and articulation (audit M-131). Asserting the
+        // fields the old list omitted is what makes it a regression guard rather than
+        // a restatement of the call it observes.
+        loadInstrument(DEVICE_ID, 'cello');
+
+        expect(applyPatchToEngine).toHaveBeenCalledWith(
+            DEVICE_ID,
+            expect.objectContaining({
+                instrumentId: 'cello',
+                currentArticulation: 'sustain',
+                micPositions: expect.arrayContaining([expect.objectContaining({ type: 'close', volume: 0.8 })]),
+            })
+        );
     });
 
     it('seeds the store from defaults when the device entry is missing', () => {
@@ -93,7 +108,7 @@ describe('loadInstrument', () => {
             loadInstrument(DEVICE_ID, 'violin-1');
 
             expect(mockLevainStore.set).not.toHaveBeenCalled();
-            expect(setLevainParamWithAudio).not.toHaveBeenCalled();
+            expect(applyPatchToEngine).not.toHaveBeenCalled();
             expect(loadSamplesForInstrument).not.toHaveBeenCalled();
         }
     );

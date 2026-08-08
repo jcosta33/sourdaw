@@ -8,7 +8,7 @@ import { defaultLevainState, levainStore } from '../stores/levainStore';
 
 import { levainBridgeDependencies } from './levainParamBridge/levainBridgeDependencies';
 import { loadSamplesForInstrument } from './levainParamBridge/loadSamplesForInstrument';
-import { setLevainParamWithAudio } from './levainParamBridge/setLevainParamWithAudio';
+import { applyPatchToEngine } from './levainParamBridge/applyPatchToEngine';
 
 /**
  * Load an instrument with default settings and trigger sample loading.
@@ -51,9 +51,9 @@ function applyPatch(deviceId: string, patch: LevainPatch): void {
         },
     });
 
-    // Forward all patch parameters to the audio engine.
-    setLevainParamWithAudio(deviceId, 'masterGain', patch.masterGain);
-    setLevainParamWithAudio(deviceId, 'legato', patch.legato);
-    setLevainParamWithAudio(deviceId, 'humanize', patch.humanize);
-    setLevainParamWithAudio(deviceId, 'expression', patch.expression);
+    // Forward all patch parameters to the audio engine — the same projection
+    // registration and the offline render apply. A hand-listed subset left the
+    // engine on the previous instrument's mic mix and articulation while the panel
+    // showed the new instrument's defaults, so the export and the monitor disagreed.
+    applyPatchToEngine(deviceId, patch);
 }
