@@ -112,17 +112,15 @@ fn assert_corner_lands_on(asked_hz: f32, context: &str) {
     );
 }
 
-/// The frequencies `toasterPresets.ts` writes into Mycelial Pulse, the only
-/// shipped kit that sets `filterCutoff` explicitly. All sixteen of its pads
-/// carry one, spanning 7.5 kHz to 14 kHz.
+/// Representative high-frequency cutoff requests from the shipped control
+/// range, including the region where the former expansion drifted most.
 #[test]
-fn a_kit_cutoff_resonates_where_the_kit_asked_it_to() {
-    // The kit's lowest and highest, and one from the middle of its cluster.
+fn representative_high_cutoffs_resonate_where_requested() {
     // Interior to the control's travel, which is where the mappings separate:
     // the old expansion put these at 7654.2 Hz, 10739.9 Hz and 14322.3 Hz.
-    assert_corner_lands_on(7_500.0, "Mycelial Pulse 'Clap' pad");
-    assert_corner_lands_on(10_500.0, "Mycelial Pulse 'OH' pad");
-    assert_corner_lands_on(14_000.0, "Mycelial Pulse 'Snare' pad");
+    assert_corner_lands_on(7_500.0, "low representative cutoff");
+    assert_corner_lands_on(10_500.0, "middle representative cutoff");
+    assert_corner_lands_on(14_000.0, "high representative cutoff");
 }
 
 /// Mid travel is the single point furthest from either end's agreement, and the

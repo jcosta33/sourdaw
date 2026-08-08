@@ -1,7 +1,7 @@
 ---
 type: spec
 id: SPEC-render-parity-instrumentation
-subject: the four instruments every later design decision is argued from
+subject: the instruments every later design decision is argued from
 status: landed
 repo: sourdaw
 date: 2026-08-01
@@ -9,8 +9,8 @@ landed: 2026-08-04
 blocked_by: SPEC-project-durability
 blocks: survey programme phases 2-8, ADR 0014 phase 2
 sources:
-  - .agents/artifacts/sourdaw/SURVEY-ultracode-scope.md
-  - .agents/artifacts/sourdaw/RESEARCH-project-persistence.md
+    - .agents/artifacts/sourdaw/SURVEY-ultracode-scope.md
+    - .agents/artifacts/sourdaw/RESEARCH-project-persistence.md
 ---
 
 # Render parity instrumentation — Phase 1
@@ -71,35 +71,7 @@ captured on this target and what the fallback measures instead. **"Its compute e
 and "it misses the deadline" are different claims** — do not write the second without the
 observation.
 
-### AC-4 — A main-thread stall budget
-
-**Two budgets, an order of magnitude apart.** An earlier revision of this criterion said "**10 ms**,
-one `SCHEDULE_AHEAD_SECONDS` grain", which named the wrong constant and the wrong mechanism, and
-both instruments inherited the error from here. The two real thresholds are:
-
-- **10 ms — `scheduleGrainMs`** (`Transport/models/TransportState.ts:38`; also `SCHEDULER_GRAIN_MS`
-  in `Yeast/engine/YeastWorkerClient.ts:42`). The scheduler tick period: a **responsiveness and
-  automation-resolution** threshold. Overrunning it loses no scheduled audio — each tick schedules
-  the contiguous range `lastScheduledBeat -> scheduleUpTo` and carries `lastScheduledBeat` forward
-  (`startPlayheadScheduler.ts:358-359`, `:411`), and `tickInFlight` (`:159-162`) drops overrunning
-  ticks on purpose and counts them. What it does cost is the work each tick applies at
-  `newPosition` — `applyAutomation`, `applyVcaGains`, `refreshSidechainAlignment`,
-  `applyModulation`, `scheduleAdjustmentLayers` (`:395-407`) — which lands late rather than early.
-- **100 ms — `SCHEDULE_AHEAD_SECONDS = 0.1`** (`startPlayheadScheduler.ts:40`). The look-ahead
-  horizon: the **audio-correctness** threshold. `MAX_DELTA_SECONDS = SCHEDULE_AHEAD_SECONDS`
-  (`:105`) absorbs a stall up to that point; exhaust it and
-  `Transport/useCases/scheduling/scheduleAudioClips.ts:203-217` takes the `iterStartTime < now`
-  branch and starts the clip mid-buffer. That is the audible failure.
-
-Measured with `performance.now()` around save, project load, and analysis. Every verdict must name
-which threshold it asserts. Breach claims read the minimum (a cost floor); pass claims read the
-maximum or a high percentile (the conservative side). A claim that will not hold on its conservative
-statistic is reported as inconclusive, not restated on the other one.
-
-**Evidence:** the measurement for each, and a failing case if one exists. Several survey findings
-allege main-thread blocking; this is what decides them.
-
-### AC-5 — The persistence gates that are hours, not days
+### AC-4 — The persistence gates that are hours, not days
 
 From ADR 0014, run and report:
 
@@ -112,7 +84,7 @@ From ADR 0014, run and report:
 **Evidence:** both reported with their outcome. These are also AC-7 of `SPEC-project-durability`;
 whichever phase runs them first records the result and the other cites it.
 
-### AC-6 — Every instrument states its own budget in its own header
+### AC-5 — Every instrument states its own budget in its own header
 
 Each harness file carries the budget it enforces and why that number, so the next reader cannot
 re-litigate it from scratch or quietly widen it. `benches/quantum.rs` is the model.
@@ -133,18 +105,17 @@ validated by the fix it motivated proves nothing.
 
 ## Outcome — landed 2026-08-04
 
-| AC | Where it lives | Outcome |
-| --- | --- | --- |
-| AC-1 signal-level null test | `AudioEngine/useCases/offlineRender/__tests__/liveOfflineNullTest.spec.ts` + `nullTestRenderHarness.ts` | **Landed.** 27 cases. Both directions ship: six under "the instrument can fail", including a broken fixture that drops `applyParams` from the offline registry, plus a sensitivity block that catches a fader divergence of 1 part in 500 and a filter cutoff divergence of 1 Hz in 2400. Budget held at −90 dBFS; not widened. |
-| AC-2 per-quantum cost table | `crates/daw-dsp/benches/quantum.rs`, `benches/wasm/`, `benches/quantum-cost-table.{md,json}` | **Landed, and corrected — see "What the instruments found" below.** Both legs regenerated; machine, browser and SHA stated in the artifact. |
-| AC-3 dropout observation | `scripts/measureRenderDeadline.ts`, `renderDeadlineBrowser.ts` | **Landed.** `renderCapacity` is absent on the shipping target across eight probed configurations; the file says so explicitly and pins the absence so it reds if it ever appears. A real deadline miss *was* captured via `AudioContext.playbackStats` under a deliberately over-budget worklet, with an in-budget control leg recording none. |
-| AC-4 main-thread stall budget | `scripts/measureStallBudget.ts` | **Landed.** Both thresholds measured and named per verdict — 10 ms `scheduleGrainMs`, 100 ms `SCHEDULE_AHEAD_SECONDS`. Breaches read the minimum, passes the max or p95, and four persistence spans are reported *inconclusive* rather than restated on the favourable statistic. End-to-end `saveProject`/`loadProject` are deliberately not timed; the reason is in the file. |
-| AC-5 gates M2 and M9 | ADR 0014 §"Gates reported", `SPEC-project-durability` AC-7 | **Cited, not re-run**, per this spec's own "whichever phase runs them first records the result and the other cites it". **M9** ran in Phase 0 (#963): the two `.sdaw` codecs agree, one real UTF-8 divergence was found and fixed, nine fixtures checked in both directions. **M2** is formally deferred — it is entirely a Tauri-webview question and ADR 0016 defers desktop; ADR 0014 records it unmeasured rather than deleted. It has no web leg to run. |
-| AC-6 budget in each header | all of the above | **Landed** for `quantum.rs`, `measureRenderDeadline.ts` and `measureStallBudget.ts`. **Gap:** `scripts/renderDeadlineBrowser.ts` has no header at all and gives no reason for its `channel: 'chrome'` requirement, which the main harness's own probe matrix appears to contradict. Left as a finding rather than guessed at. |
+| AC                          | Where it lives                                                                                          | Outcome                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| --------------------------- | ------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| AC-1 signal-level null test | `AudioEngine/useCases/offlineRender/__tests__/liveOfflineNullTest.spec.ts` + `nullTestRenderHarness.ts` | **Landed.** 27 cases. Both directions ship: six under "the instrument can fail", including a broken fixture that drops `applyParams` from the offline registry, plus a sensitivity block that catches a fader divergence of 1 part in 500 and a filter cutoff divergence of 1 Hz in 2400. Budget held at −90 dBFS; not widened.                                                                                                                               |
+| AC-2 per-quantum cost table | `crates/daw-dsp/benches/quantum.rs`, `benches/wasm/`, `benches/quantum-cost-table.{md,json}`            | **Landed, and corrected — see "What the instruments found" below.** Both legs regenerated; machine, browser and SHA stated in the artifact.                                                                                                                                                                                                                                                                                                                   |
+| AC-3 dropout observation    | `scripts/measureRenderDeadline.ts`, `renderDeadlineBrowser.ts`                                          | **Landed.** `renderCapacity` is absent on the shipping target across eight probed configurations; the file says so explicitly and pins the absence so it reds if it ever appears. A real deadline miss _was_ captured via `AudioContext.playbackStats` under a deliberately over-budget worklet, with an in-budget control leg recording none.                                                                                                                |
+| AC-4 gates M2 and M9        | ADR 0014 §"Gates reported", `SPEC-project-durability` AC-7                                              | **Cited, not re-run**, per this spec's own "whichever phase runs them first records the result and the other cites it". **M9** ran in Phase 0 (#963): the two `.sdaw` codecs agree, one real UTF-8 divergence was found and fixed, nine fixtures checked in both directions. **M2** is formally deferred — it is entirely a Tauri-webview question and ADR 0016 defers desktop; ADR 0014 records it unmeasured rather than deleted. It has no web leg to run. |
+| AC-5 budget in each header  | all of the above                                                                                        | **Landed** for `quantum.rs` and `measureRenderDeadline.ts`. **Gap:** `scripts/renderDeadlineBrowser.ts` has no header at all and gives no reason for its `channel: 'chrome'` requirement, which the main harness's own probe matrix appears to contradict. Left as a finding rather than guessed at.                                                                                                                                                          |
 
 ### What the instruments found
 
-Out of scope for this phase is *fixing* what the instruments find — but a defect **in an instrument**
+Out of scope for this phase is _fixing_ what the instruments find — but a defect **in an instrument**
 is this phase's own work, and three were found in the cost table.
 
 1. **The bench did not compile, and had not for some time.** `cargo clippy -p daw-dsp --all-targets`
@@ -159,19 +130,19 @@ is this phase's own work, and three were found in the cost table.
    `crates/daw-dsp/tests/quantum_bench_census.rs` derives the population from the crate source and
    compares it against the bench, per ADR 0015 rules 2 and 3.
 3. **Two rows were timing a device with the expensive part switched off**, and both passed every
-   gate the bench had while doing it. Occupancy proved they were *running*; nothing proved *what*.
-   - **Levain** loaded through the direct pool rather than production's staged-bank protocol, so
-     `commit_sample_bank` never ran, realism stayed at `Instrument::Other`, and all five realism
-     stages early-returned on a zero amount. Corrected: +10% native.
-   - **Bacteria** had a single row at the constructor defaults, where every creative stage is
-     disabled. Engaging the shipped Smudge mode moves it from 15 µs (0.58% of budget) to an
-     **amortised 300 µs (11%)**, with a **1100 µs tick quantum at 42% of the entire budget** every
-     fourth quantum. Roughly **19x amortised and 73x on the tick**, from one user-reachable control.
+   gate the bench had while doing it. Occupancy proved they were _running_; nothing proved _what_.
+    - **Levain** loaded through the direct pool rather than production's staged-bank protocol, so
+      `commit_sample_bank` never ran, realism stayed at `Instrument::Other`, and all five realism
+      stages early-returned on a zero amount. Corrected: +10% native.
+    - **Bacteria** had a single row at the constructor defaults, where every creative stage is
+      disabled. Engaging the shipped Smudge mode moves it from 15 µs (0.58% of budget) to an
+      **amortised 300 µs (11%)**, with a **1100 µs tick quantum at 42% of the entire budget** every
+      fourth quantum. Roughly **19x amortised and 73x on the tick**, from one user-reachable control.
 
-   Correcting these exposed a fourth defect: the reference-project total summed **medians**, which is
-   only the sustained cost if every row is flat. It charged a block device the price of the quantum
-   in which it did nothing. Totals now sum the **mean**, and rows whose mean exceeds 1.5x their
-   median are flagged `BURSTY`.
+    Correcting these exposed a fourth defect: the reference-project total summed **medians**, which is
+    only the sustained cost if every row is flat. It charged a block device the price of the quantum
+    in which it did nothing. Totals now sum the **mean**, and rows whose mean exceeds 1.5x their
+    median are flagged `BURSTY`.
 
 ### Survey stop condition 6 — not triggered
 

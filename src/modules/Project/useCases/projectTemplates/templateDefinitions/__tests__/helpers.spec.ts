@@ -29,14 +29,12 @@ describe('helpers', () => {
         }
     });
 
-    it('registers Mycelium Ascendant without replacing Nebula Drift', () => {
+    it('keeps Nebula Drift as the only bundled demo', () => {
         const demos = templates.filter((template) => template.category === 'demo');
 
-        expect(demos.map((template) => template.id)).toEqual(['demo-nebula-drift', 'demo-mycelium-ascendant']);
-        expect(demos.at(-1)).toMatchObject({
-            name: 'Mycelium Ascendant',
-            description:
-                'Four minutes of psychedelic trance: rolling bass, organic signals, fractal effects, and deep automation.',
+        expect(demos.map((template) => template.id)).toEqual(['demo-nebula-drift']);
+        expect(demos[0]).toMatchObject({
+            name: 'Nebula Drift',
             executionBoundary: 'app-action',
         });
     });

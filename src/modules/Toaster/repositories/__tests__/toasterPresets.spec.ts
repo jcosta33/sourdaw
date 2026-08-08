@@ -22,7 +22,6 @@ const EXPECTED_PRESET_IDS = [
     'acoustic-bread',
     'world-perc',
     'edm-festival',
-    'psytrance-mycelium',
     'jazz-brush',
     'sp1200-crunch',
     'cinematic-perc',
@@ -102,33 +101,5 @@ describe('TOASTER_PRESETS', () => {
         // Fields lofi-crust never touches stay at the default.
         expect(lofi?.kit.delayMix).toBe(baseline.delayMix);
         expect(lofi?.kit.lofiBits).toBe(baseline.lofiBits);
-    });
-
-    it('authors a tight, role-balanced psychedelic trance kit without default pad wash', () => {
-        const mycelium = TOASTER_PRESETS.find((preset) => preset.id === 'psytrance-mycelium');
-        const kick = mycelium?.kit.pads[0];
-        const hats = mycelium?.kit.pads.slice(2, 4) ?? [];
-        const upperPercussion = mycelium?.kit.pads.slice(2) ?? [];
-
-        expect(mycelium?.kit).toMatchObject({
-            name: 'Mycelial Pulse',
-            masterGain: 0.9,
-            reverbMix: 0.08,
-            delayMix: 0.02,
-        });
-        expect(kick).toMatchObject({
-            engineType: 'kick-909',
-            volume: 1,
-            pan: 0,
-            decay: 0.12,
-            sendReverb: 0,
-            sendDelay: 0,
-        });
-        expect(hats.map((pad) => pad.engineType)).toEqual(['hihat-closed', 'hihat-open']);
-        expect(hats.every((pad) => pad.volume <= 0.5 && pad.filterCutoff <= 13_000)).toBe(true);
-        expect(new Set(mycelium?.kit.pads.map((pad) => pad.volume)).size).toBeGreaterThan(8);
-        expect(upperPercussion.some((pad) => pad.pan < 0)).toBe(true);
-        expect(upperPercussion.some((pad) => pad.pan > 0)).toBe(true);
-        expect(mycelium?.kit.pads.every((pad) => Object.keys(pad.engineParams).length === 0)).toBe(true);
     });
 });

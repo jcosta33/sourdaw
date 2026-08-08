@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 
-import { setupWorkspace, wait_for_workspace_ready } from './e2eUtils';
+import { launch_new_project, setupWorkspace } from './e2eUtils';
 
 const ALLOWED_WARNING_FRAGMENTS = [
     'using deprecated parameters for `initSync()`',
@@ -10,11 +10,11 @@ const ALLOWED_WARNING_FRAGMENTS = [
 
 type RuntimeCall = { command: string; args: unknown };
 
-test('launches Mycelium through the Tauri v2 desktop-runtime contract', async ({ page }, testInfo) => {
+test('launches a project through the Tauri v2 desktop-runtime contract', async ({ page }, testInfo) => {
     test.setTimeout(180_000);
     const configuredBaseUrl = testInfo.project.use.baseURL;
     if (typeof configuredBaseUrl !== 'string') {
-        throw new TypeError('Mycelium desktop-runtime E2E requires a configured Playwright baseURL');
+        throw new TypeError('Desktop-runtime E2E requires a configured Playwright baseURL');
     }
     const appOrigin = new URL(configuredBaseUrl).origin;
     const consoleErrors: string[] = [];
@@ -58,7 +58,7 @@ test('launches Mycelium through the Tauri v2 desktop-runtime contract', async ({
         const callbacks = new Map<number, RuntimeCallback>();
         let nextCallbackId = 1;
 
-        Reflect.set(window, '__MYCELIUM_TAURI_CALLS__', calls);
+        Reflect.set(window, '__SOURDAW_TAURI_CALLS__', calls);
         Reflect.deleteProperty(window, '__TAURI__');
         Reflect.set(window, '__TAURI_INTERNALS__', {
             callbacks,
@@ -94,21 +94,11 @@ test('launches Mycelium through the Tauri v2 desktop-runtime contract', async ({
     await setupWorkspace(page);
     expect(await page.evaluate(() => Reflect.has(window, '__TAURI_INTERNALS__'))).toBe(true);
     expect(await page.evaluate(() => Reflect.has(window, '__TAURI__'))).toBe(false);
-    await page.locator('#launch-demo-project').click();
-    const card = page.getByRole('button', { name: /Mycelium Ascendant/i });
-    await expect(card).toBeVisible();
-    await card.click();
-    await wait_for_workspace_ready(page);
-
-    await expect(page.getByRole('button', { name: /^Mycelium Ascendant/ })).toBeVisible();
-    const trackList = page.getByRole('grid', { name: /Track list/i });
-    await expect(trackList.getByRole('row').filter({ hasText: 'Kick' }).first()).toBeVisible();
-    await expect(trackList.getByRole('row').filter({ hasText: 'Main Vision' }).first()).toBeVisible();
-    await expect(trackList.getByRole('row').filter({ hasText: 'Temple Chamber' }).first()).toBeVisible();
-    await expect(page.getByRole('region', { name: 'Arrangement sections' })).toContainText('Sporefall');
+    await launch_new_project(page);
+    await expect(page.getByRole('group', { name: 'Playback controls' })).toBeVisible();
 
     const runtimeCalls = await page.evaluate(() => {
-        const calls: unknown = Reflect.get(window, '__MYCELIUM_TAURI_CALLS__');
+        const calls: unknown = Reflect.get(window, '__SOURDAW_TAURI_CALLS__');
         if (!Array.isArray(calls)) {
             return [];
         }
@@ -117,7 +107,7 @@ test('launches Mycelium through the Tauri v2 desktop-runtime contract', async ({
                 typeof call === 'object' && call !== null && typeof Reflect.get(call, 'command') === 'string'
         );
     });
-    await testInfo.attach('mycelium-desktop-runtime-log', {
+    await testInfo.attach('desktop-runtime-log', {
         body: JSON.stringify({ capturedAt: new Date().toISOString(), runtimeCalls }),
         contentType: 'application/json',
     });

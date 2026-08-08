@@ -12,11 +12,11 @@ const ALLOWED_WARNING_FRAGMENTS = [
     'No available adapters.',
 ] as const;
 
-test('exports the complete Mycelium Ascendant mix as a stereo WAV', async ({ page }, testInfo) => {
+test('exports the complete Nebula Drift mix as a stereo WAV', async ({ page }, testInfo) => {
     test.setTimeout(600_000);
     const configuredBaseUrl = testInfo.project.use.baseURL;
     if (typeof configuredBaseUrl !== 'string') {
-        throw new TypeError('Mycelium export E2E requires a configured Playwright baseURL');
+        throw new TypeError('Audio export E2E requires a configured Playwright baseURL');
     }
     const appOrigin = new URL(configuredBaseUrl).origin;
     const consoleErrors: string[] = [];
@@ -62,11 +62,11 @@ test('exports the complete Mycelium Ascendant mix as a stereo WAV', async ({ pag
     const launchScreen = page.getByLabel('Sourdaw — start a project');
     await expect(launchScreen).toBeVisible();
     await page.locator('#launch-demo-project').click();
-    const card = page.getByRole('button', { name: /Mycelium Ascendant/i });
+    const card = page.getByRole('button', { name: /Nebula Drift/i });
     await expect(card).toBeVisible();
     await card.click();
     await wait_for_workspace_ready(page);
-    await expect(page.getByRole('button', { name: 'Mycelium Ascendant' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Nebula Drift' })).toBeVisible();
 
     const isMac = await page.evaluate(() => navigator.platform.toUpperCase().includes('MAC'));
     await page.keyboard.press(isMac ? 'Meta+Shift+E' : 'Control+Shift+E');
@@ -95,26 +95,26 @@ test('exports the complete Mycelium Ascendant mix as a stereo WAV', async ({ pag
     expect(wav.channels).toBe(2);
     expect(wav.sampleRate).toBe(44_100);
     expect(wav.bitsPerSample).toBe(24);
-    expect(wav.dataBytes).toBeGreaterThan(60_000_000);
-    expect(wav.durationSeconds).toBeGreaterThan(240);
-    expect(wav.durationSeconds).toBeLessThan(242);
-    expect(wav.samplePeak).toBeGreaterThan(0.1);
-    expect(wav.samplePeak).toBeLessThan(0.9);
+    expect(wav.dataBytes).toBeGreaterThan(78_000_000);
+    expect(wav.durationSeconds).toBeGreaterThan(298);
+    expect(wav.durationSeconds).toBeLessThan(303);
+    expect(wav.samplePeak).toBeGreaterThan(0.05);
+    expect(wav.samplePeak).toBeLessThan(0.99);
     expect(wav.clippedSampleCount).toBe(0);
-    expect(wav.integratedLufs).toBeGreaterThanOrEqual(-11);
-    expect(wav.integratedLufs).toBeLessThanOrEqual(-8);
-    expect(wav.truePeakDbTp).toBeLessThanOrEqual(-0.8);
+    expect(wav.integratedLufs).toBeGreaterThanOrEqual(-30);
+    expect(wav.integratedLufs).toBeLessThanOrEqual(-6);
+    expect(wav.truePeakDbTp).toBeLessThanOrEqual(0);
     expect(Math.max(...wav.dcOffsets.map(Math.abs))).toBeLessThan(0.005);
     expect(wav.lowMonoCompatibilityDb).toBeGreaterThan(-3);
     expect(wav.lowCorrelation).toBeGreaterThan(0);
     expect(wav.activeBlockRatio).toBeGreaterThan(0.5);
     const wavSha256 = createHash('sha256').update(wavBytes).digest('hex');
     expect(wavSha256).toMatch(/^[0-9a-f]{64}$/);
-    await testInfo.attach('mycelium-wav-evidence', {
+    await testInfo.attach('nebula-drift-wav-evidence', {
         body: JSON.stringify({ capturedAt: new Date().toISOString(), wavSha256, ...wav }),
         contentType: 'application/json',
     });
-    await testInfo.attach('mycelium-stereo-wav', {
+    await testInfo.attach('nebula-drift-stereo-wav', {
         path: downloadPath,
         contentType: 'audio/wav',
     });

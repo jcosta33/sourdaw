@@ -516,12 +516,6 @@ const DEVICE_DATA_COUNTS = {
         'src/modules/Arrangement/useCases/saveTrackAsTemplate.ts': 1,
         'src/modules/Project/stores/arrangementStore.ts': 3,
         'src/modules/Project/useCases/demoProjects/demoUtils/applyPreset.ts': 4,
-        // Count provenance: the Mycelium demo generators read/clone track
-        // device data to seed deterministic automation targets and topology
-        // (same class as the Nebula Drift generator above) — no live device
-        // writes; mutations stay on cloned project data.
-        'src/modules/Project/useCases/demoProjects/myceliumAscendant/createMyceliumAutomation.ts': 2,
-        'src/modules/Project/useCases/demoProjects/myceliumAscendant/createMyceliumTopology.ts': 2,
         'src/modules/Project/useCases/demoProjects/nebulaDrift/createNebulaDriftDemo.ts': 8,
         'src/modules/Project/useCases/projectPersistence/fileIO/hydrateArrangementTracks.ts': 1,
         'src/modules/Project/useCases/projectPersistence/helpers/migrateLegacyVcaGroups.ts': 1,
