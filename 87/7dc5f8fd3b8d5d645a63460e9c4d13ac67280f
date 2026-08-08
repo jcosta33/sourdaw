@@ -1,0 +1,29 @@
+tests/e2e/COVERAGE.md
+  s_14f2bbc9f385dd::t_96b91e07b5bbe9 740-741,743
+src/modules/Crumbs/useCases/__tests__/initCrumbsDeviceStatePersistence.spec.ts
+  s_b54052ac05332e::t_127e6686a2805a 1-127
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "877dc5f8fd3b8d5d645a63460e9c4d13ac67280f",
+  "prompts": {},
+  "sessions": {
+    "s_14f2bbc9f385dd": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f9a61a1d-66b3-4146-938d-a04f45f4b060",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_b54052ac05332e": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-ac09cb44470f72f46",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
