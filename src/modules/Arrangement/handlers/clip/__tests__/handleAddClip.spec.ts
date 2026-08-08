@@ -12,10 +12,14 @@ type AddClipInput = {
 
 const mocks = vi.hoisted(() => ({
     addClip: vi.fn<(input: AddClipInput) => unknown>(),
+    serializeMidiStateForClips: vi.fn(() => '{"notesByClipId":{}}'),
 }));
 
 vi.mock('../../../useCases/clip/addClip', () => ({
     addClip: mocks.addClip,
+}));
+vi.mock('#/modules/MIDI/useCases', () => ({
+    serializeMidiStateForClips: mocks.serializeMidiStateForClips,
 }));
 
 describe('handleAddClip', () => {
@@ -75,7 +79,10 @@ describe('handleAddClip', () => {
         expect(clipId).toMatch(/^clip-/);
         expect(desc.inverseAction).toEqual({
             type: 'discardDuplicatedClip',
-            payload: { clipId },
+            payload: {
+                clipId,
+                generatedMidiStateGuard: { entityJson: '', midiByClipIdJson: '' },
+            },
         });
         expect(desc.redoAction).toEqual({
             type: 'addClip',
@@ -97,6 +104,45 @@ describe('handleAddClip', () => {
         const input = mocks.addClip.mock.calls[0]?.[0];
         expect(input?.id).toMatch(/^clip-/);
         expect(input?.name).toBe('Stable');
+    });
+
+    it('guards undo against changes to the created clip and its MIDI state', async () => {
+        const createdClip = {
+            id: 'clip-stable',
+            trackId: 't1',
+            name: 'Stable',
+            startBeat: 0,
+            endBeat: 4,
+            type: 'midi' as const,
+            fadeInBeats: 0,
+            fadeOutBeats: 0,
+            gain: 1,
+            color: '',
+            locked: false,
+            muted: false,
+        };
+        mocks.addClip.mockImplementation((input) => ({ ...createdClip, id: input.id! }));
+        const action = {
+            type: 'addClip' as const,
+            payload: { trackId: 't1', name: 'Stable', startBeat: 0, endBeat: 4, type: 'midi' as const },
+        };
+
+        const desc = handleAddClip.describe(action);
+        await handleAddClip.execute(action);
+        const createdId = mocks.addClip.mock.calls[0]![0].id!;
+        const materializedClip = { ...createdClip, id: createdId };
+
+        expect(desc.inverseAction).toEqual({
+            type: 'discardDuplicatedClip',
+            payload: {
+                clipId: createdId,
+                generatedMidiStateGuard: {
+                    entityJson: JSON.stringify(materializedClip),
+                    midiByClipIdJson: '{"notesByClipId":{}}',
+                },
+            },
+        });
+        expect(mocks.serializeMidiStateForClips).toHaveBeenCalledWith([createdId]);
     });
 
     it('is undoable', () => {

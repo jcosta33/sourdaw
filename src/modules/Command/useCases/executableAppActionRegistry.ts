@@ -30,7 +30,7 @@ export type ExecutableAppActionTargetRule = {
     cardinality?: 'many';
     dependsOn?: string;
     distinctFrom?: string;
-    promptRole?: 'source' | 'destination' | 'members';
+    promptRole?: 'source' | 'destination' | 'container' | 'members';
 };
 
 export type ExecutableAppActionValueRule =
@@ -79,6 +79,7 @@ export type ExecutableAppActionValueRule =
           kind: 'text-after-keyword-if-present';
           keywords: readonly string[];
           requiredInPrompt?: boolean;
+          terminators?: readonly string[];
       }
     | { argument: string; denominatorArgument: string; kind: 'time-signature' };
 
@@ -223,6 +224,33 @@ export const executableAppActionDescriptors = [
         parameters: {
             properties: { trackId: { type: 'string', description: 'Existing non-master track ID' } },
             required: ['trackId'],
+        },
+    },
+    {
+        actionType: 'addClip',
+        risk: 'bounded-reversible',
+        description: 'Create one empty MIDI clip on an existing MIDI track over an explicit beat range.',
+        intentPhrases: ['add midi clip', 'add a midi clip', 'create midi clip', 'create a midi clip'],
+        targetRules: [{ argument: 'trackId', capability: 'track', promptRole: 'container' }],
+        valueRules: [
+            { argument: 'startBeat', kind: 'number-if-present', requiredInPrompt: true, connector: 'from' },
+            { argument: 'endBeat', kind: 'number-if-present', requiredInPrompt: true, connector: 'to' },
+            {
+                argument: 'name',
+                kind: 'text-after-keyword-if-present',
+                keywords: ['named', 'called'],
+                requiredInPrompt: true,
+                terminators: ['on', 'to', 'into', 'from'],
+            },
+        ],
+        parameters: {
+            properties: {
+                trackId: { type: 'string', description: 'Existing MIDI track ID' },
+                startBeat: { type: 'number', minimum: 0, description: 'Non-negative absolute start beat' },
+                endBeat: { type: 'number', minimum: 0, description: 'Absolute end beat, strictly after startBeat' },
+                name: { type: 'string', description: 'Explicit clip name' },
+            },
+            required: ['trackId', 'startBeat', 'endBeat', 'name'],
         },
     },
     {

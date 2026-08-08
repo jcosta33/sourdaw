@@ -1522,6 +1522,88 @@ describe('bridgeLlmToolCalls', () => {
         expect(results.every((result) => result.rejections.length === 1)).toBe(true);
     });
 
+    it('creates only a blank MIDI clip on an existing MIDI track', () => {
+        const midiTrack = {
+            ...projectContext.tracks[0]!,
+            id: 'track-midi',
+            name: 'Keys',
+            kind: 'midi' as const,
+            vcaGroupId: undefined,
+            clipCount: 0,
+            deviceCount: 0,
+            clips: [],
+            devices: [],
+            sends: [],
+        };
+        const context = { ...projectContext, tracks: [...projectContext.tracks, midiTrack] };
+        const accepted = bridge({
+            context,
+            calls: [
+                {
+                    name: 'addClip',
+                    arguments: { trackId: 'track-midi', startBeat: 8, endBeat: 16, name: 'Verse' },
+                },
+            ],
+        });
+        const rejected = [
+            { trackId: 'track-vocals', startBeat: 8, endBeat: 16, name: 'Verse' },
+            { trackId: 'missing', startBeat: 8, endBeat: 16, name: 'Verse' },
+            { trackId: 'track-midi', startBeat: -1, endBeat: 16, name: 'Verse' },
+            { trackId: 'track-midi', startBeat: 16, endBeat: 16, name: 'Verse' },
+            { trackId: 'track-midi', startBeat: 16, endBeat: 8, name: 'Verse' },
+            { trackId: 'track-midi', startBeat: 8, endBeat: Number.POSITIVE_INFINITY, name: 'Verse' },
+            { trackId: 'track-midi', startBeat: '8', endBeat: 16, name: 'Verse' },
+            { trackId: 'track-midi', startBeat: 8, endBeat: 16, name: '' },
+            { trackId: 'track-midi', startBeat: 8, endBeat: 16, name: 'Verse', type: 'audio' },
+            { trackId: 'track-midi', startBeat: 8, endBeat: 16, name: 'Verse', audioBufferId: 'buffer' },
+        ].map((arguments_) => bridge({ context, calls: [{ name: 'addClip', arguments: arguments_ }] }));
+
+        expect(accepted).toEqual({
+            actions: [
+                {
+                    type: 'addClip',
+                    payload: { trackId: 'track-midi', startBeat: 8, endBeat: 16, name: 'Verse', type: 'midi' },
+                },
+            ],
+            rejections: [],
+        });
+        expect(rejected.every((result) => result.actions.length === 0)).toBe(true);
+        expect(rejected.every((result) => result.rejections.length === 1)).toBe(true);
+    });
+
+    it.each(['add-first', 'track-write-first'] as const)(
+        'rejects addClip mixed with removal or duplication of its target track (%s)',
+        (order) => {
+            const midiTrack = {
+                ...projectContext.tracks[0]!,
+                id: 'track-midi',
+                name: 'Keys',
+                kind: 'midi' as const,
+                vcaGroupId: undefined,
+                clipCount: 0,
+                deviceCount: 0,
+                clips: [],
+                devices: [],
+                sends: [],
+            };
+            const context = { ...projectContext, tracks: [...projectContext.tracks, midiTrack] };
+            const add = {
+                name: 'addClip',
+                arguments: { trackId: 'track-midi', startBeat: 8, endBeat: 16, name: 'Verse' },
+            };
+            for (const trackWrite of [
+                { name: 'removeTrack', arguments: { trackId: 'track-midi' } },
+                { name: 'duplicateTrack', arguments: { trackId: 'track-midi' } },
+            ]) {
+                const calls = order === 'add-first' ? [add, trackWrite] : [trackWrite, add];
+                const result = bridge({ context, calls });
+
+                expect(result.actions).toHaveLength(1);
+                expect(result.rejections).toHaveLength(1);
+            }
+        }
+    );
+
     it('canonicalizes default peak normalization and rejects unsafe normalization calls', () => {
         const defaultPeak = bridge({
             calls: [{ name: 'normalizeClip', arguments: { clipId: 'clip-verse' } }],

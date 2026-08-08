@@ -1319,15 +1319,35 @@ describe('validateActionPayload / PAYLOAD_VALIDATORS', () => {
     });
 
     describe('addClip', () => {
-        it('should require trackId, startBeat, endBeat, and name', () => {
+        it('accepts only a finite positive blank-MIDI clip request', () => {
             const guard = PAYLOAD_VALIDATORS.addClip;
             expect(guard).not.toBe('unchecked');
             if (guard === 'unchecked') {
                 return;
             }
             expect(guard({ trackId: 't-1', startBeat: 0, endBeat: 4, name: 'Clip' })).toBe(true);
+            expect(guard({ trackId: 't-1', startBeat: 0, endBeat: 4, name: 'Clip', type: 'midi' })).toBe(true);
             expect(guard({ id: 'command-owned', trackId: 't-1', startBeat: 0, endBeat: 4, name: 'Clip' })).toBe(false);
             expect(guard({ trackId: 't-1', startBeat: 0, endBeat: 4, name: 'Clip', muted: true })).toBe(false);
+            expect(guard({ trackId: 't-1', startBeat: 0, endBeat: 4, name: 'Clip', type: 'audio' })).toBe(false);
+            expect(
+                guard({
+                    trackId: 't-1',
+                    startBeat: 0,
+                    endBeat: 4,
+                    name: 'Clip',
+                    audioBufferId: 'provider-buffer',
+                })
+            ).toBe(false);
+            expect(guard({ trackId: 't-1', startBeat: -1, endBeat: 4, name: 'Clip' })).toBe(false);
+            expect(guard({ trackId: 't-1', startBeat: 4, endBeat: 4, name: 'Clip' })).toBe(false);
+            expect(guard({ trackId: 't-1', startBeat: 5, endBeat: 4, name: 'Clip' })).toBe(false);
+            expect(guard({ trackId: 't-1', startBeat: 0, endBeat: Number.POSITIVE_INFINITY, name: 'Clip' })).toBe(
+                false
+            );
+            expect(guard({ trackId: 't-1', startBeat: 0, endBeat: 4, name: '  ' })).toBe(false);
+            expect(guard({ trackId: 't-1', startBeat: 0, endBeat: 4, name: '<Framed>' })).toBe(false);
+            expect(guard({ trackId: 't-1', startBeat: 0, endBeat: 4, name: 'Bad\u0000Name' })).toBe(false);
             // name is required by the payload type but was previously unchecked.
             expect(guard({ trackId: 't-1', startBeat: 0, endBeat: 4 })).toBe(false);
             expect(guard({ trackId: 't-1', startBeat: 0, endBeat: 4, name: 1 })).toBe(false);

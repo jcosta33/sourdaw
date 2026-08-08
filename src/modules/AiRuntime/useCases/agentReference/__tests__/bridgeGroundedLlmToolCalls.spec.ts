@@ -1270,6 +1270,176 @@ describe('bridgeGroundedLlmToolCalls', () => {
         expect(rejected.every((result) => result.rejections.length === 1)).toBe(true);
     });
 
+    it('grounds one named blank MIDI clip to an explicit track and beat range', () => {
+        const keys = createTrack({ id: 'track-keys', name: 'Keys', kind: 'midi' });
+        const context = { ...projectContext, tracks: [...projectContext.tracks, keys] };
+        const call = {
+            name: 'addClip',
+            arguments: { trackId: 'track-keys', startBeat: 8, endBeat: 16, name: 'Verse' },
+        };
+        const accepted = bridge([call], 'create a MIDI clip named Verse on Keys from beat 8 to beat 16', context);
+        const compound = bridge(
+            [call, { name: 'addMarker', arguments: { beat: 24, name: 'Chorus' } }],
+            'create a MIDI clip named Verse on Keys from beat 8 to beat 16 and add a marker named Chorus at beat 24',
+            context
+        );
+        const quotedName = bridge(
+            [
+                {
+                    name: 'addClip',
+                    arguments: { trackId: 'track-keys', startBeat: 8, endBeat: 16, name: 'Back to Black' },
+                },
+            ],
+            'create a MIDI clip named "Back to Black" on Keys from beat 8 to beat 16',
+            context
+        );
+        const quotedConjunctionName = bridge(
+            [
+                {
+                    name: 'addClip',
+                    arguments: {
+                        trackId: 'track-keys',
+                        startBeat: 8,
+                        endBeat: 16,
+                        name: 'Verse and Chorus, reprise',
+                    },
+                },
+            ],
+            'create a MIDI clip named "Verse and Chorus, reprise" on Keys from beat 8 to beat 16',
+            context
+        );
+        const keywordTrack = createTrack({ id: 'track-keyword', name: 'Beat Keys Called Home', kind: 'midi' });
+        const keywordTrackResult = bridge(
+            [
+                {
+                    name: 'addClip',
+                    arguments: { trackId: keywordTrack.id, startBeat: 8, endBeat: 16, name: 'Verse' },
+                },
+            ],
+            'create a MIDI clip named Verse on Beat Keys Called Home from beat 8 to beat 16',
+            { ...context, tracks: [...context.tracks, keywordTrack] }
+        );
+        const quotedActionText = bridge(
+            [
+                {
+                    name: 'addClip',
+                    arguments: { ...call.arguments, name: 'Verse and mute Keys' },
+                },
+                { name: 'muteTrack', arguments: { trackId: 'track-keys', muted: true } },
+            ],
+            'create a MIDI clip named "Verse and mute Keys" on Keys from beat 8 to beat 16',
+            context
+        );
+        const rejected = [
+            bridge([call], 'create a MIDI clip on Keys from beat 8 to beat 16', context),
+            bridge([call], 'create a MIDI clip named Chorus on Keys from beat 8 to beat 16', context),
+            bridge([call], 'create a MIDI clip named Verse on Guitar from beat 8 to beat 16', context),
+            bridge([call], 'create a MIDI clip named Verse to align with Keys from beat 8 to beat 16', context),
+            bridge([call], 'create a MIDI clip named Verse next to Keys from beat 8 to beat 16', context),
+            bridge([call], 'create a MIDI clip named Verse through Keys from beat 8 to beat 16', context),
+            bridge([call], 'create a MIDI clip named Song on Fire on Keys from beat 8 to beat 16', context),
+            bridge(
+                [{ name: 'addClip', arguments: { ...call.arguments, name: 'Verse called Chorus' } }],
+                'create a MIDI clip named Verse called Chorus on Keys from beat 8 to beat 16',
+                context
+            ),
+            bridge(
+                [{ name: 'addClip', arguments: { ...call.arguments, name: 'Song' } }],
+                'create a MIDI clip named "Song on Fire" on Keys from beat 8 to beat 16',
+                context
+            ),
+            bridge([call], 'create a MIDI clip named Verse on Keys from bar 8 to beat 16', context),
+            bridge([call], 'create a MIDI clip named Verse on Keys from beat 8 to bar 16', context),
+            bridge([call], 'create a MIDI clip named Verse on Keys from beat 8% to beat 16', context),
+            bridge([call], 'create a MIDI clip named Verse on Keys from beat 8 to beat 16 bars', context),
+            bridge([call], 'create a MIDI clip named Verse on Keys from beat 8foo to beat 16', context),
+            bridge([call], 'create a MIDI clip named Verse on Keys from beat 8 to beat 16.5.6', context),
+            bridge([call], 'create a MIDI clip named Verse on Keys from beat 8 or beat 12 to beat 16', context),
+            bridge([call], 'create a MIDI clip named Verse on Keys from beat 8 to beat 16 or beat 24', context),
+            bridge([call], 'create a MIDI clip named Verse on Keys from beat 8 to beat 16 and beat 24', context),
+            bridge([call], 'create a MIDI clip named Verse on Keys from beat 8 to beat 16 and 24', context),
+            bridge([call], 'create a MIDI clip named Verse on Keys from beat 8 to beat 16 and beat 24foo', context),
+            bridge([call], 'create a MIDI clip named Verse on Keys from beat 8 to beat 16 and beat 24.5.6', context),
+            bridge([call], 'create an audio clip named Verse on Keys from beat 8 to beat 16', context),
+        ];
+
+        expect(accepted).toEqual({
+            actions: [
+                {
+                    type: 'addClip',
+                    payload: { trackId: 'track-keys', startBeat: 8, endBeat: 16, name: 'Verse', type: 'midi' },
+                },
+            ],
+            rejections: [],
+        });
+        expect(quotedName).toEqual({
+            actions: [
+                {
+                    type: 'addClip',
+                    payload: {
+                        trackId: 'track-keys',
+                        startBeat: 8,
+                        endBeat: 16,
+                        name: 'Back to Black',
+                        type: 'midi',
+                    },
+                },
+            ],
+            rejections: [],
+        });
+        expect(quotedConjunctionName).toEqual({
+            actions: [
+                {
+                    type: 'addClip',
+                    payload: {
+                        trackId: 'track-keys',
+                        startBeat: 8,
+                        endBeat: 16,
+                        name: 'Verse and Chorus, reprise',
+                        type: 'midi',
+                    },
+                },
+            ],
+            rejections: [],
+        });
+        expect(keywordTrackResult.actions).toEqual([
+            {
+                type: 'addClip',
+                payload: {
+                    trackId: keywordTrack.id,
+                    startBeat: 8,
+                    endBeat: 16,
+                    name: 'Verse',
+                    type: 'midi',
+                },
+            },
+        ]);
+        expect(keywordTrackResult.rejections).toEqual([]);
+        expect(quotedActionText.actions).toEqual([
+            {
+                type: 'addClip',
+                payload: {
+                    trackId: 'track-keys',
+                    startBeat: 8,
+                    endBeat: 16,
+                    name: 'Verse and mute Keys',
+                    type: 'midi',
+                },
+            },
+        ]);
+        expect(quotedActionText.rejections).toMatchObject([{ name: 'muteTrack' }]);
+        expect(compound.actions).toEqual([
+            {
+                type: 'addClip',
+                payload: { trackId: 'track-keys', startBeat: 8, endBeat: 16, name: 'Verse', type: 'midi' },
+            },
+            { type: 'addMarker', payload: { beat: 24, name: 'Chorus' } },
+        ]);
+        expect(compound.rejections).toEqual([]);
+        expect(rejected.every((result) => result.actions.length === 0)).toBe(true);
+        expect(rejected.every((result) => result.rejections.length === 1)).toBe(true);
+    });
+
     it('allows explicit clip unlock while rejecting edits to a locked clip', () => {
         const base = createClipContext();
         const context: ProjectContext = {

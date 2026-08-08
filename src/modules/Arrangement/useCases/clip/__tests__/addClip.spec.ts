@@ -27,7 +27,7 @@ describe('addClip', () => {
 
     it('creates and adds a clip to the track', () => {
         mocks.getTrackState.mockReturnValue({
-            tracks: [{ id: 't1', kind: 'audio', clips: [] }],
+            tracks: [{ id: 't1', kind: 'audio', clips: [], alternatives: [] }],
         });
 
         const result = addClip({
@@ -51,7 +51,7 @@ describe('addClip', () => {
 
     it('infers type from track kind if not provided', () => {
         mocks.getTrackState.mockReturnValue({
-            tracks: [{ id: 't1', kind: 'midi', clips: [] }],
+            tracks: [{ id: 't1', kind: 'midi', clips: [], alternatives: [] }],
         });
 
         const result = addClip({
@@ -66,7 +66,7 @@ describe('addClip', () => {
 
     it('respects explicitly provided type', () => {
         mocks.getTrackState.mockReturnValue({
-            tracks: [{ id: 't1', kind: 'audio', clips: [] }],
+            tracks: [{ id: 't1', kind: 'audio', clips: [], alternatives: [] }],
         });
 
         const result = addClip({
@@ -87,7 +87,7 @@ describe('addClip', () => {
     });
 
     it('returns null when the target track does not exist (no orphaned clip)', () => {
-        mocks.getTrackState.mockReturnValue({ tracks: [{ id: 't1', kind: 'audio', clips: [] }] });
+        mocks.getTrackState.mockReturnValue({ tracks: [{ id: 't1', kind: 'audio', clips: [], alternatives: [] }] });
 
         const result = addClip({ trackId: 'missing', startBeat: 0, endBeat: 4, name: 'X' });
 
@@ -97,8 +97,29 @@ describe('addClip', () => {
         expect(mocks.updateTrack).not.toHaveBeenCalled();
     });
 
+    it('rejects an explicit clip ID that is already present anywhere in the project', () => {
+        mocks.getTrackState.mockReturnValue({
+            tracks: [
+                { id: 't1', kind: 'midi', clips: [], alternatives: [] },
+                { id: 't2', kind: 'midi', clips: [{ id: 'clip-existing' }], alternatives: [] },
+            ],
+        });
+
+        const result = addClip({
+            id: 'clip-existing',
+            trackId: 't1',
+            startBeat: 0,
+            endBeat: 4,
+            name: 'Duplicate identity',
+            type: 'midi',
+        });
+
+        expect(result).toBeNull();
+        expect(mocks.updateTrack).not.toHaveBeenCalled();
+    });
+
     it('rejects a dormant VCA before allocating a clip ID or writing the track', () => {
-        mocks.getTrackState.mockReturnValue({ tracks: [{ id: 'vca-1', kind: 'vca', clips: [] }] });
+        mocks.getTrackState.mockReturnValue({ tracks: [{ id: 'vca-1', kind: 'vca', clips: [], alternatives: [] }] });
 
         const result = addClip({ trackId: 'vca-1', startBeat: 0, endBeat: 4, name: 'Forbidden' });
 
@@ -108,7 +129,7 @@ describe('addClip', () => {
     });
 
     it('returns null when endBeat does not exceed startBeat', () => {
-        mocks.getTrackState.mockReturnValue({ tracks: [{ id: 't1', kind: 'audio', clips: [] }] });
+        mocks.getTrackState.mockReturnValue({ tracks: [{ id: 't1', kind: 'audio', clips: [], alternatives: [] }] });
 
         expect(addClip({ trackId: 't1', startBeat: 4, endBeat: 4, name: 'zero' })).toBeNull();
         expect(addClip({ trackId: 't1', startBeat: 4, endBeat: 2, name: 'inverted' })).toBeNull();
@@ -116,14 +137,14 @@ describe('addClip', () => {
     });
 
     it('returns null when startBeat is negative', () => {
-        mocks.getTrackState.mockReturnValue({ tracks: [{ id: 't1', kind: 'audio', clips: [] }] });
+        mocks.getTrackState.mockReturnValue({ tracks: [{ id: 't1', kind: 'audio', clips: [], alternatives: [] }] });
 
         expect(addClip({ trackId: 't1', startBeat: -1, endBeat: 4, name: 'neg' })).toBeNull();
         expect(mocks.updateTrack).not.toHaveBeenCalled();
     });
 
     it('returns null when startBeat or endBeat is non-finite', () => {
-        mocks.getTrackState.mockReturnValue({ tracks: [{ id: 't1', kind: 'audio', clips: [] }] });
+        mocks.getTrackState.mockReturnValue({ tracks: [{ id: 't1', kind: 'audio', clips: [], alternatives: [] }] });
 
         expect(addClip({ trackId: 't1', startBeat: Number.NaN, endBeat: 4, name: 'nan' })).toBeNull();
         expect(addClip({ trackId: 't1', startBeat: 0, endBeat: Number.POSITIVE_INFINITY, name: 'inf' })).toBeNull();
@@ -131,7 +152,7 @@ describe('addClip', () => {
     });
 
     it('preserves passthrough source properties when provided', () => {
-        mocks.getTrackState.mockReturnValue({ tracks: [{ id: 't1', kind: 'audio', clips: [] }] });
+        mocks.getTrackState.mockReturnValue({ tracks: [{ id: 't1', kind: 'audio', clips: [], alternatives: [] }] });
 
         const result = addClip({
             trackId: 't1',

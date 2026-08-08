@@ -895,6 +895,37 @@ function bridgeToolCall({
         return { type: 'removeTrack', payload: { trackId: track.id } };
     }
 
+    if (call.name === 'addClip') {
+        const destination = findTrack(context, args.trackId);
+        const name = normalizeSafeProjectName(args.name);
+        if (
+            !hasExactKeys(args, ['trackId', 'startBeat', 'endBeat', 'name']) ||
+            !destination ||
+            destination.kind !== 'midi' ||
+            !isFiniteNumber(args.startBeat) ||
+            args.startBeat < 0 ||
+            !isFiniteNumber(args.endBeat) ||
+            args.endBeat <= args.startBeat ||
+            !name
+        ) {
+            return rejection(
+                index,
+                call.name,
+                'Expected one existing MIDI track, one safe explicit name, and a finite non-negative beat range'
+            );
+        }
+        return {
+            type: 'addClip',
+            payload: {
+                trackId: destination.id,
+                startBeat: args.startBeat,
+                endBeat: args.endBeat,
+                name,
+                type: 'midi',
+            },
+        };
+    }
+
     if (call.name === 'moveClip') {
         const source = findEditableClip(context, args.clipId);
         const destination = findTrack(context, args.trackId);
@@ -2333,6 +2364,7 @@ export function bridgeLlmToolCalls({
     const splitClipOwnerTrackIds = new Set<string>();
     const duplicatedClipSourceIds = new Set<string>();
     const duplicatedTrackIds = new Set<string>();
+    const addedClipTrackIds = new Set<string>();
 
     for (const [index, call] of calls.entries()) {
         const result = bridgeToolCall({
@@ -2350,7 +2382,7 @@ export function bridgeLlmToolCalls({
                         const trackId = findClip(context, clipTargetId)?.track.id;
                         return trackId ? [trackId] : [];
                     }),
-                    ...(result.type === 'moveClip' ? [result.payload.trackId] : []),
+                    ...(result.type === 'moveClip' || result.type === 'addClip' ? [result.payload.trackId] : []),
                 ]),
             ];
             const deviceTarget = getDeviceBatchTarget(result, context);
@@ -2390,12 +2422,16 @@ export function bridgeLlmToolCalls({
             const splitClipOwnerTrackId =
                 splitClipId === null ? null : (findClip(context, splitClipId)?.track.id ?? null);
             const duplicatedTrackId = result.type === 'duplicateTrack' ? result.payload.trackId : null;
+            const addedClipTrackId = result.type === 'addClip' ? result.payload.trackId : null;
             const hasSplitDuplicateConflict =
                 (duplicatedClipId !== null && splitClipIds.has(duplicatedClipId)) ||
                 (splitClipId !== null && duplicatedClipSourceIds.has(splitClipId));
             const hasSplitOwnerTrackDuplicateConflict =
                 (duplicatedTrackId !== null && splitClipOwnerTrackIds.has(duplicatedTrackId)) ||
                 (splitClipOwnerTrackId !== null && duplicatedTrackIds.has(splitClipOwnerTrackId));
+            const hasAddClipTrackDuplicateConflict =
+                (duplicatedTrackId !== null && addedClipTrackIds.has(duplicatedTrackId)) ||
+                (addedClipTrackId !== null && duplicatedTrackIds.has(addedClipTrackId));
             const hasDeviceLifecycleConflict =
                 deviceTarget !== null &&
                 ((deviceTarget.deviceId !== null &&
@@ -2486,6 +2522,12 @@ export function bridgeLlmToolCalls({
                 );
                 continue;
             }
+            if (hasAddClipTrackDuplicateConflict) {
+                rejections.push(
+                    rejection(index, call.name, 'Provider batch mixes clip creation with duplicating its target track')
+                );
+                continue;
+            }
             if (hasDeviceLifecycleConflict) {
                 rejections.push(
                     rejection(index, call.name, 'Provider batch mixes incompatible device lifecycle writes')
@@ -2515,6 +2557,9 @@ export function bridgeLlmToolCalls({
             }
             if (duplicatedTrackId !== null) {
                 duplicatedTrackIds.add(duplicatedTrackId);
+            }
+            if (addedClipTrackId !== null) {
+                addedClipTrackIds.add(addedClipTrackId);
             }
             for (const clipTargetId of actionClipTargetIds) {
                 clipTargetIds.add(clipTargetId);

@@ -1,3 +1,4 @@
+import { serializeMidiStateForClips } from '#/modules/MIDI/useCases';
 import { createHandler } from '#/utils/createHandler';
 
 import { addClip } from '../../useCases/clip/addClip';
@@ -6,32 +7,46 @@ import { toHandlerExecutionResult } from '../toHandlerExecutionResult';
 
 type AddClipAction = { payload: { id?: string } };
 
-const clipIdsByAction = new WeakMap<object, string>();
+type AddClipState = {
+    clipId: string;
+    generatedMidiStateGuard: { entityJson: string; midiByClipIdJson: string };
+};
 
-function getClipId(action: AddClipAction): string {
-    if (action.payload.id) {
-        return action.payload.id;
+const addClipStates = new WeakMap<object, AddClipState>();
+
+function getAddClipState(action: AddClipAction): AddClipState {
+    const existing = addClipStates.get(action);
+    if (existing) {
+        return existing;
     }
-    const existingClipId = clipIdsByAction.get(action);
-    if (existingClipId) {
-        return existingClipId;
-    }
-    const clipId = getNextAppActionClipId();
-    clipIdsByAction.set(action, clipId);
-    return clipId;
+    const state = {
+        clipId: action.payload.id ?? getNextAppActionClipId(),
+        generatedMidiStateGuard: { entityJson: '', midiByClipIdJson: '' },
+    };
+    addClipStates.set(action, state);
+    return state;
 }
 
 export const handleAddClip = createHandler<'addClip'>({
     execute: (alpha) => {
-        const clipId = getClipId(alpha);
-        return toHandlerExecutionResult(addClip({ ...alpha.payload, id: clipId }) !== null);
+        const state = getAddClipState(alpha);
+        const clip = addClip({ ...alpha.payload, id: state.clipId });
+        if (!clip) {
+            return toHandlerExecutionResult(false);
+        }
+        state.generatedMidiStateGuard.entityJson = JSON.stringify(clip);
+        state.generatedMidiStateGuard.midiByClipIdJson = serializeMidiStateForClips([clip.id]);
+        return toHandlerExecutionResult(true);
     },
     describe: (alpha) => {
-        const clipId = getClipId(alpha);
+        const state = getAddClipState(alpha);
         return {
             label: `Add clip "${alpha.payload.name}"`,
-            inverseAction: { type: 'discardDuplicatedClip', payload: { clipId } },
-            redoAction: { type: 'addClip', payload: { ...alpha.payload, id: clipId } },
+            inverseAction: {
+                type: 'discardDuplicatedClip',
+                payload: { clipId: state.clipId, generatedMidiStateGuard: state.generatedMidiStateGuard },
+            },
+            redoAction: { type: 'addClip', payload: { ...alpha.payload, id: state.clipId } },
         };
     },
     undoable: true,

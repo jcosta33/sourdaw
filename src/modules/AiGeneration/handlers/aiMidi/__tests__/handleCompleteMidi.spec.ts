@@ -72,18 +72,23 @@ describe('handleCompleteMidi', () => {
                     clipIds.map((clipId) => [
                         clipId,
                         {
-                            notes: mocks.addMidiNote.mock.calls
-                                .filter(([writtenClipId]) => writtenClipId === clipId)
-                                .map(([, pitch, startBeat, duration, velocity]) => ({
-                                    id: `written-${clipId}`,
-                                    pitch,
-                                    startBeat,
-                                    duration,
-                                    velocity,
-                                    probability: 100,
-                                })),
-                            cc: [],
-                            pitchBends: [],
+                            notes: {
+                                present: mocks.addMidiNote.mock.calls.some(
+                                    ([writtenClipId]) => writtenClipId === clipId
+                                ),
+                                value: mocks.addMidiNote.mock.calls
+                                    .filter(([writtenClipId]) => writtenClipId === clipId)
+                                    .map(([, pitch, startBeat, duration, velocity]) => ({
+                                        id: `written-${clipId}`,
+                                        pitch,
+                                        startBeat,
+                                        duration,
+                                        velocity,
+                                        probability: 100,
+                                    })),
+                            },
+                            cc: { present: false, value: [] },
+                            pitchBends: { present: false, value: [] },
                             migrated: false,
                         },
                     ])
@@ -192,18 +197,21 @@ describe('handleCompleteMidi', () => {
             }),
             midiByClipIdJson: JSON.stringify({
                 'new-clip-id': {
-                    notes: [
-                        {
-                            id: 'written-new-clip-id',
-                            pitch: 58,
-                            startBeat: 0,
-                            duration: 1,
-                            velocity: 80,
-                            probability: 100,
-                        },
-                    ],
-                    cc: [],
-                    pitchBends: [],
+                    notes: {
+                        present: true,
+                        value: [
+                            {
+                                id: 'written-new-clip-id',
+                                pitch: 58,
+                                startBeat: 0,
+                                duration: 1,
+                                velocity: 80,
+                                probability: 100,
+                            },
+                        ],
+                    },
+                    cc: { present: false, value: [] },
+                    pitchBends: { present: false, value: [] },
                     migrated: false,
                 },
             }),

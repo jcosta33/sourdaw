@@ -55,4 +55,26 @@ describe('executableAppActionRegistry', () => {
         expect(descriptor?.parameters.properties.beat.description).toContain('when the audio buffer is available');
         expect(descriptor?.parameters.properties.beat.description).toContain('requested beat');
     });
+
+    it('exposes blank MIDI clip creation without provider-controlled internal state', () => {
+        const descriptor = executableAppActionDescriptorByType.get('addClip');
+
+        expect(descriptor).toMatchObject({
+            actionType: 'addClip',
+            risk: 'bounded-reversible',
+            targetRules: [{ argument: 'trackId', capability: 'track', promptRole: 'container' }],
+            parameters: {
+                required: ['trackId', 'startBeat', 'endBeat', 'name'],
+                properties: {
+                    trackId: { type: 'string' },
+                    startBeat: { type: 'number' },
+                    endBeat: { type: 'number' },
+                    name: { type: 'string' },
+                },
+            },
+        });
+        expect(descriptor?.parameters.properties).not.toHaveProperty('id');
+        expect(descriptor?.parameters.properties).not.toHaveProperty('type');
+        expect(descriptor?.parameters.properties).not.toHaveProperty('audioBufferId');
+    });
 });
