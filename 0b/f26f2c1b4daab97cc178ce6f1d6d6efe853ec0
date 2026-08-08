@@ -1,0 +1,29 @@
+src/modules/Command/useCases/__tests__/getActionReplayStatus.spec.ts
+  s_6f879efb05ab13::t_d0d504ac7144e5 1-95
+src/modules/Levain/useCases/__tests__/commitLevainDeviceState.spec.ts
+  s_e7cacb4fe89155::t_328cc524c33689 1-83
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "0bf26f2c1b4daab97cc178ce6f1d6d6efe853ec0",
+  "prompts": {},
+  "sessions": {
+    "s_6f879efb05ab13": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-afbd0893519c08e67",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_e7cacb4fe89155": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-af81d0271c50fba84",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
