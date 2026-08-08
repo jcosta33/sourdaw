@@ -13,7 +13,7 @@ import {
     zoomToUsedRange,
 } from '#/modules/Automation/useCases';
 import { pushUndoEntry } from '#/modules/Command/useCases';
-import { transportStore } from '#/modules/Transport/stores';
+import { playheadPositionRef, transportStore } from '#/modules/Transport/stores';
 import { defaultTransportState } from '#/modules/Transport/useCases';
 import { defaultWorkspaceState, workspaceStore, type WorkspaceState } from '#/modules/WorkspaceShell/stores';
 import { cn } from '#/utils/Styles/cn';
@@ -45,6 +45,23 @@ type AutomationShapeType = 'sine' | 'triangle' | 'sawtooth-up' | 'sawtooth-down'
 
 type AutomationLaneTransportState = {
     playheadPosition: number;
+    isPlaying: boolean;
+};
+
+/** Automation value at `beat`, or null when the lane has no points. */
+const valueAtBeat = (points: AutomationLane['points'], beat: number): number | null => {
+    if (points.length === 0) {
+        return null;
+    }
+    const before = points.filter((param) => param.beat <= beat);
+    const after = points.filter((param) => param.beat > beat);
+    if (before.length === 0) {
+        return points[0]!.value;
+    }
+    if (after.length === 0) {
+        return before[before.length - 1]!.value;
+    }
+    return interpolateAutomationValue(before[before.length - 1]!, after[0]!, beat);
 };
 
 export const AutomationLaneRow = ({
@@ -56,6 +73,7 @@ export const AutomationLaneRow = ({
 }: AutomationLaneRowProps): ReactElement => {
     const svgRef = useRef<SVGSVGElement>(null);
     const rowRef = useRef<HTMLDivElement>(null);
+    const currentValueRef = useRef<HTMLSpanElement>(null);
     const [dragPointBeat, setDragPointBeat] = useState<number | null>(null);
     const [hoveredBeat, setHoveredBeat] = useState<number | null>(null);
     const [selectedPoints, setSelectedPoints] = useState<number[]>([]);
@@ -100,20 +118,52 @@ export const AutomationLaneRow = ({
     const getRect = (): DOMRect | undefined => svgRef.current?.getBoundingClientRect();
     const coords = { getRect, xToBeat, yToValue };
 
-    // Interpolated value at playhead
-    const playheadBeat = transport.playheadPosition;
-    let currentValue: number | null = null;
-    if (lane.points.length > 0) {
-        const before = lane.points.filter((param) => param.beat <= playheadBeat);
-        const after = lane.points.filter((param) => param.beat > playheadBeat);
-        if (before.length === 0) {
-            currentValue = lane.points[0]!.value;
-        } else if (after.length === 0) {
-            currentValue = before[before.length - 1]!.value;
-        } else {
-            currentValue = interpolateAutomationValue(before[before.length - 1]!, after[0]!, playheadBeat);
+    // Value at the playhead, for the header readout.
+    //
+    // The clock is `playheadPositionRef`, NOT `transportStore.playheadPosition`.
+    // The store is written only on discrete events (start, seek, pause), so a
+    // readout driven by it freezes at the beat playback started from while the
+    // audible automation sweeps on. The ref is the ~100 Hz channel the scheduler
+    // writes, so it matches what the user hears.
+    //
+    // This render-time read seeds the first paint only. The ref is invisible to
+    // React (and to the Compiler's memoization), so the effect below owns every
+    // subsequent update.
+    const currentValue = valueAtBeat(lane.points, playheadPositionRef.current);
+
+    // Writes the readout text directly: re-rendering the lane to move a two-glyph
+    // badge would repaint the whole SVG curve at frame rate.
+    useEffect(() => {
+        const paintOnce = (): void => {
+            const element = currentValueRef.current;
+            if (!element) {
+                return;
+            }
+            const value = valueAtBeat(lane.points, playheadPositionRef.current);
+            if (value === null) {
+                return;
+            }
+            const text = formatParameterValue(value, lane.parameterId);
+            if (element.textContent !== text) {
+                element.textContent = text;
+            }
+        };
+
+        // Discrete moves (seek, pause, start) re-run this effect; repaint for them.
+        paintOnce();
+
+        if (!transport.isPlaying) {
+            return undefined;
         }
-    }
+
+        let rafId = 0;
+        const loop = (): void => {
+            paintOnce();
+            rafId = requestAnimationFrame(loop);
+        };
+        rafId = requestAnimationFrame(loop);
+        return () => cancelAnimationFrame(rafId);
+    }, [transport.isPlaying, transport.playheadPosition, lane.points, lane.parameterId]);
 
     const visiblePoints = lane.points.filter(
         (param) => param.beat >= viewportStartBeat - 2 && param.beat <= viewportEndBeat + 2
@@ -295,6 +345,7 @@ export const AutomationLaneRow = ({
                 parameterId={lane.parameterId}
                 curveColor={curveColor}
                 currentValue={currentValue}
+                currentValueRef={currentValueRef}
                 isDrawMode={isDrawMode}
                 isYZoomed={isYZoomed}
                 viewMin={vMin}

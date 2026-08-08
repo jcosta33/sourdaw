@@ -1,7 +1,7 @@
 /**
  * Lane header strip — parameter name badge, current value, mode indicators.
  */
-import { type ReactElement } from 'react';
+import { type ReactElement, type RefObject } from 'react';
 
 import { DawMicroBadge } from '#/components/daw/DawMicroBadge';
 
@@ -12,6 +12,11 @@ type AutomationLaneHeaderProps = {
     parameterId: string;
     curveColor: string;
     currentValue: number | null;
+    /**
+     * Handed to the value badge so the owning row can retarget the readout
+     * from its rAF loop without re-rendering the lane's SVG curve.
+     */
+    currentValueRef?: RefObject<HTMLSpanElement | null>;
     isDrawMode: boolean;
     isYZoomed: boolean;
     viewMin: number;
@@ -23,6 +28,7 @@ export const AutomationLaneHeader = ({
     parameterId,
     curveColor,
     currentValue,
+    currentValueRef,
     isDrawMode,
     isYZoomed,
     viewMin,
@@ -34,7 +40,10 @@ export const AutomationLaneHeader = ({
             {parameterName}
         </DawMicroBadge>
         {currentValue !== null ? (
-            <DawMicroBadge className="border-border/20 bg-surface-base/80 font-mono text-foreground/60">
+            <DawMicroBadge
+                ref={currentValueRef}
+                className="border-border/20 bg-surface-base/80 font-mono text-foreground/60"
+            >
                 {formatParameterValue(currentValue, parameterId)}
             </DawMicroBadge>
         ) : null}

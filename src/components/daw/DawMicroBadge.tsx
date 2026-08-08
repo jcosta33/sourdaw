@@ -1,10 +1,12 @@
-import { type HTMLAttributes, type ReactElement } from 'react';
+import { type HTMLAttributes, type ReactElement, type Ref } from 'react';
 
 import { cn } from '#/utils/Styles/cn';
 
 type DawMicroBadgeProps = HTMLAttributes<HTMLSpanElement> & {
     tone?: 'muted' | 'primary' | 'cyan' | 'peach' | 'success' | 'danger';
     rounded?: 'sm' | 'full';
+    /** React 19 passes `ref` as a plain prop; it forwards onto the span. */
+    ref?: Ref<HTMLSpanElement>;
 };
 
 const TONE_CLASS_NAMES: Record<NonNullable<DawMicroBadgeProps['tone']>, string> = {
