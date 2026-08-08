@@ -1,0 +1,62 @@
+src/modules/AudioAnalysis/useCases/describeDetectedKey.ts
+  s_14f2bbc9f385dd::t_b21aa6f626b9d2 1-27
+src/modules/AudioAnalysis/services/__tests__/chromaFlatness.spec.ts
+  s_14f2bbc9f385dd::t_2a540ac7c0a2be 1-45
+src/modules/AudioAnalysis/services/__tests__/chromaFromSamples.spec.ts
+  s_14f2bbc9f385dd::t_0d2c7c3ae7f56a 59-62,65
+  s_14f2bbc9f385dd::t_8f01872779dd90 69,71
+  s_14f2bbc9f385dd::t_447283b5a1f776 1-58,63-64,66-68,70,72-81
+src/modules/AudioAnalysis/useCases/__tests__/describeDetectedKey.spec.ts
+  s_14f2bbc9f385dd::t_d3b77bdda91cec 1-40
+src/modules/AudioAnalysis/handlers/analysis/__tests__/handleDetectKey.spec.ts
+  s_14f2bbc9f385dd::t_8c39ac0dd96c46 60,68-97,106
+src/modules/AudioAnalysis/services/__tests__/keyProfileCorrelation.spec.ts
+  s_14f2bbc9f385dd::t_d83211a69cedd5 1-19,21-100,102-109,113,118-139
+  s_14f2bbc9f385dd::t_237c807a0a38a4 110-112,114-117
+  s_14f2bbc9f385dd::t_7b1ead1d5a6a7e 20,101
+src/modules/Arrangement/presentations/views/ClipContextMenu.tsx
+  s_14f2bbc9f385dd::t_a25a7609ede484 10
+  s_14f2bbc9f385dd::t_eb09b537648898 117
+src/modules/AudioAnalysis/useCases/index.ts
+  s_14f2bbc9f385dd::t_c15887e5fdbd58 19
+src/modules/Arrangement/presentations/views/__tests__/ClipContextMenu.spec.tsx
+  s_14f2bbc9f385dd::t_42c835ff666b12 236-239,243,247-257,260,263-264
+  s_14f2bbc9f385dd::t_2f287e198292da 5
+  s_14f2bbc9f385dd::t_4c9f096fe962b2 91
+src/modules/AudioAnalysis/services/chromaFromSamples.ts
+  s_14f2bbc9f385dd::t_3472b5b3a1837a 1-66
+  s_14f2bbc9f385dd::t_fa138511bd3d0e 67
+src/modules/AudioAnalysis/useCases/keyDetection.ts
+  s_14f2bbc9f385dd::t_d22c55e52ba0f9 2,4-6,8-23,25-35,37-40,42-55,57-73,75-81,83-84,87-89,91-94,97-103,105-112,115
+src/modules/AudioAnalysis/services/keyProfileCorrelation.ts
+  s_14f2bbc9f385dd::t_5edcd01be667ad 76-79,81
+  s_14f2bbc9f385dd::t_21d1ebe175c1b6 1-75,80,82-117
+  s_14f2bbc9f385dd::t_27f6c6109950fe 118-119
+src/modules/AudioAnalysis/handlers/analysis/handleDetectKey.ts
+  s_14f2bbc9f385dd::t_945ae7837127ab 5
+  s_14f2bbc9f385dd::t_13d349635c7a8f 17
+src/modules/AiRuntime/models/Tools/GenerationAndView.ts
+  s_14f2bbc9f385dd::t_a014fb0b9ded21 48-53
+src/modules/AudioAnalysis/useCases/__tests__/keyDetection.spec.ts
+  s_14f2bbc9f385dd::t_07bc61f3b2e457 3-18,20-23,25-31,33,36-99,102,109-118,124-174,179,182-223,229
+  s_14f2bbc9f385dd::t_0dd563b23e6dfb 24
+  s_14f2bbc9f385dd::t_4f1b4777520409 175-178,180-181
+src/modules/AudioAnalysis/services/chromaFlatness.ts
+  s_14f2bbc9f385dd::t_c5ef2e2ebdea44 1-37
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "d466def2980a2b89f546701eeb257c69b0f76d7d",
+  "prompts": {},
+  "sessions": {
+    "s_14f2bbc9f385dd": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f9a61a1d-66b3-4146-938d-a04f45f4b060",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
