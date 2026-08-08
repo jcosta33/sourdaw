@@ -319,7 +319,7 @@ export const TakeLanePanel = ({ trackId, trackName, trackColor }: TakeLanePanelP
                 <div className="ml-auto flex items-center gap-1">
                     <Tooltip>
                         <TooltipTrigger asChild>
-                            <Button variant="ghost" size="xs" aria-label="Add take" onClick={handleAddTakeFromClips}>
+                            <Button variant="ghost" size="xs" aria-label="Add take" data-testid="take-lane-add" onClick={handleAddTakeFromClips}>
                                 <Plus className="size-3" aria-hidden="true" />
                                 <span className="ml-1">Take</span>
                             </Button>
