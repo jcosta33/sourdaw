@@ -1,0 +1,21 @@
+src/modules/BrowserAi/models/__tests__/RenderProgress.spec.ts
+  s_14f2bbc9f385dd::t_ea86cda38e2b6c 1-26
+src/modules/Yeast/stores/__tests__/yeastPreviewRevision.spec.ts
+  s_14f2bbc9f385dd::t_539a6a7a0e04ce 1-119
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "27334ae5dcb6c0105d22a93452d34a3323b2e11c",
+  "prompts": {},
+  "sessions": {
+    "s_14f2bbc9f385dd": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f9a61a1d-66b3-4146-938d-a04f45f4b060",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
