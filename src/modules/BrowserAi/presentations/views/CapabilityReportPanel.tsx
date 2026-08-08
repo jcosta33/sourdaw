@@ -8,14 +8,27 @@ import { DawUtilitySection } from '#/components/daw/DawUtilitySection';
 import { Button } from '#/components/ui/button';
 import { useStore } from '#/infra/store/useStore';
 
+import { type InferenceThroughput } from '../../models/CapabilityReport';
 import { capabilityStore } from '../../stores/capabilityStore';
 import { detectCapabilities } from '../../useCases/detectCapabilities';
+
+/**
+ * Plain-language cause for an absent throughput figure. The panel says which
+ * one it is rather than showing a grade it did not earn.
+ */
+const NOT_MEASURED_LABELS: Record<Extract<InferenceThroughput, { status: 'not-measured' }>['reason'], string> = {
+    'not-requested': 'Not measured — press Refresh to run it',
+    'no-webgpu': 'Not measured — no WebGPU on this target',
+    'model-not-cached': 'Not measured — download Kokoro TTS first',
+    'runtime-unavailable': 'Not measured — ONNX runtime failed to start',
+    'inference-failed': 'Not measured — the probe render produced no audio',
+};
 
 export function CapabilityReportPanel(): ReactElement {
     const state = useStore(capabilityStore, { phase: 'idle' });
 
     const handleRefresh = (): void => {
-        void detectCapabilities({ forceRefresh: true });
+        void detectCapabilities({ forceRefresh: true, measureInference: true });
     };
 
     if (!state || state.phase === 'idle') {
@@ -77,11 +90,13 @@ export function CapabilityReportPanel(): ReactElement {
         );
     }
 
-    let tierTone: 'success' | 'peach' | 'danger';
+    let tierTone: 'success' | 'peach' | 'danger' | 'muted';
     if (report.webGpuTier === 'webgpu-fast') {
         tierTone = 'success';
     } else if (report.webGpuTier === 'webgpu-slow') {
         tierTone = 'peach';
+    } else if (report.webGpuTier === 'not-measured') {
+        tierTone = 'muted';
     } else {
         tierTone = 'danger';
     }
@@ -91,8 +106,17 @@ export function CapabilityReportPanel(): ReactElement {
         tierLabel = 'Fast (WebGPU)';
     } else if (report.webGpuTier === 'webgpu-slow') {
         tierLabel = 'Slow (WebGPU)';
+    } else if (report.webGpuTier === 'not-measured') {
+        tierLabel = 'Not Measured';
     } else {
         tierLabel = 'Unavailable';
+    }
+
+    let throughputValue: string;
+    if (report.inference.status === 'measured') {
+        throughputValue = `${report.inference.realtimeFactor.toFixed(2)}× real time`;
+    } else {
+        throughputValue = NOT_MEASURED_LABELS[report.inference.reason];
     }
 
     return (
@@ -113,8 +137,12 @@ export function CapabilityReportPanel(): ReactElement {
         >
             <div className="space-y-1">
                 <DawReadoutRow label="WebGPU" value={<DawMicroBadge tone={tierTone}>{tierLabel}</DawMicroBadge>} />
-                {report.benchmarkMs !== null ? (
-                    <DawReadoutRow label="Benchmark" value={`${report.benchmarkMs.toFixed(1)}ms`} />
+                <DawReadoutRow label="Render Throughput" value={throughputValue} />
+                {report.inference.status === 'measured' ? (
+                    <DawReadoutRow
+                        label="Probe"
+                        value={`${report.inference.modelId} · ${report.inference.executionProviders.join(' → ')}`}
+                    />
                 ) : null}
                 <DawReadoutRow
                     label="Shared Memory"

@@ -117,7 +117,7 @@ describe('renderDiffSingerPhrase — cached-session re-read skip (item #13)', ()
                 sharedArrayBuffer: false,
                 opfsAvailable: false,
                 chromeVersion: null,
-                benchmarkMs: null,
+                inference: { status: 'not-measured', reason: 'no-webgpu' },
                 detectedAt: 123,
             },
         };

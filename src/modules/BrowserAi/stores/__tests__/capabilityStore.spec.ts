@@ -26,7 +26,14 @@ describe('capabilityStore', () => {
             sharedArrayBuffer: true,
             opfsAvailable: true,
             chromeVersion: 120,
-            benchmarkMs: 15,
+            inference: {
+                status: 'measured',
+                modelId: 'kokoro-82m-q8',
+                executionProviders: ['webgpu', 'wasm'],
+                audioSeconds: 4,
+                elapsedSeconds: 2,
+                realtimeFactor: 2,
+            },
             detectedAt: Date.now(),
         } as CapabilityReport;
 

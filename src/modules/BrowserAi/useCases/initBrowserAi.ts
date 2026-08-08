@@ -2,7 +2,7 @@
  * Use case: Initialize the BrowserAi module on app startup.
  *
  * Called once from bootstrap. Responsibilities:
- * 1. Detect browser capabilities (fresh cold-start probe)
+ * 1. Detect browser platform capabilities (cold-start probe; no inference measurement)
  * 2. Populate model registry with DDSP catalog + Kokoro model entry
  * 3. Check which downloadable models are already cached in OPFS and update status
  * 4. Request persistent storage if browser AI is supported
@@ -68,8 +68,12 @@ export const initBrowserAi = inject({ logger, detectCapabilitiesRepo, checkModel
             logger.info('[BrowserAi] Initializing…');
 
             // ── 1. Detect capabilities ──────────────────────────────────────
+            // Platform facts only. `measureInference` is deliberately off: the
+            // throughput probe renders a full Kokoro phrase, which is not a cost
+            // app startup may pay. The tier therefore reads `not-measured` until
+            // the AI settings panel runs the measurement.
             try {
-                const report = await detectCapabilitiesRepo({ forceRefresh: true });
+                const report = await detectCapabilitiesRepo({ forceRefresh: true, measureInference: false });
                 setCapabilityReport(report);
                 logger.info(`[BrowserAi] Capability: ${report.capability} / ${report.webGpuTier}`);
             } catch (error) {
