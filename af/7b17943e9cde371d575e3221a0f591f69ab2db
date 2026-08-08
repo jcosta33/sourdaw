@@ -1,0 +1,30 @@
+src/components/daw/Fader.tsx
+  s_14f2bbc9f385dd::t_8f38e9a66ac092 191
+src/components/daw/__tests__/Fader.spec.tsx
+  s_14f2bbc9f385dd::t_96e6b495ee70b9 306
+  s_14f2bbc9f385dd::t_f021fecbb78e2b 274-305,307-345
+src/components/daw/RotaryKnob.tsx
+  s_14f2bbc9f385dd::t_9bff6b6ed20b8c 256
+  s_14f2bbc9f385dd::t_4436b61d2eb864 142
+src/components/daw/__tests__/ValueField.spec.tsx
+  s_14f2bbc9f385dd::t_7782ff67305413 187-240
+src/components/daw/ValueField.tsx
+  s_14f2bbc9f385dd::t_d94bcf02135fba 129
+  s_14f2bbc9f385dd::t_e15aab3c7e53eb 87
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "af7b17943e9cde371d575e3221a0f591f69ab2db",
+  "prompts": {},
+  "sessions": {
+    "s_14f2bbc9f385dd": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f9a61a1d-66b3-4146-938d-a04f45f4b060",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
