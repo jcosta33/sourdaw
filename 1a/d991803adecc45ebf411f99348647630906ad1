@@ -1,0 +1,99 @@
+src/modules/AiRuntime/useCases/agentReference/bridgeGroundedLlmToolCalls.ts
+  s_bc88af7d3b054c::t_41a6b22717515b 1318-1319,1330-1340,1350-1352,1355-1356,1360-1363,1366-1370,1372-1373,1375-1423
+  s_bc88af7d3b054c::t_d844641cae1cbc 1861-1865,1876-1883
+  s_bc88af7d3b054c::t_b51015b9a220e1 1294,1317
+  s_bc88af7d3b054c::t_bf4ba05eb8ddac 1364-1365,1374
+  s_bc88af7d3b054c::t_0bd6cf5073b742 1233-1234
+  s_bc88af7d3b054c::t_eb3d3a74c60b98 1342-1344
+  s_bc88af7d3b054c::t_ddbc0a1c7dd2b4 1345-1346
+  s_bc88af7d3b054c::t_8b88fae7dd7f45 1540
+  s_bc88af7d3b054c::t_e8259b1efb8967 1348
+  s_bc88af7d3b054c::t_afef7b7bf0ba6e 2442,2444,2904-2912,2918-2919,2925
+  s_bc88af7d3b054c::t_029aeef5bb85a1 1235,1353,1358-1359,1371
+  s_bc88af7d3b054c::t_64a76bf62c736f 1341,1347,1349
+  s_bc88af7d3b054c::t_9ec3ac1ce9a21f 1354,1357,1557-1558
+  s_bc88af7d3b054c::t_ed18c9ab051233 1424,1527-1539,1541-1556,1559-1567,2443,2775-2786,2913-2917,2920-2924,2926
+  s_14f2bbc9f385dd::t_9b775129190bfb 1425
+src/modules/Command/useCases/executableAppActionRegistry.ts
+  s_bc88af7d3b054c::t_b51015b9a220e1 33,234
+  s_bc88af7d3b054c::t_004d53be8ca648 230-233,235-242,244-255
+  s_bc88af7d3b054c::t_d844641cae1cbc 82,243
+  s_14f2bbc9f385dd::t_a2865dd92284b2 229
+src/modules/AiRuntime/useCases/validateActionPayload.ts
+  s_bc88af7d3b054c::t_1a4558760017fc 174
+  s_bc88af7d3b054c::t_004d53be8ca648 169,171,173,175
+src/modules/Arrangement/handlers/clip/handleAddClip.ts
+  s_bc88af7d3b054c::t_004d53be8ca648 1,10-13,15-20,22-27,32-39,42,45-49
+src/modules/AiRuntime/transformers/__tests__/llmActionBridge.spec.ts
+  s_bc88af7d3b054c::t_7c5ed8af952204 1525-1606
+src/modules/AiGeneration/handlers/aiMidi/__tests__/handleCompleteMidi.spec.ts
+  s_bc88af7d3b054c::t_bf8b34cc355ce6 75-91,200-214
+src/modules/AiRuntime/useCases/agentReference/__tests__/bridgeGroundedLlmToolCalls.spec.ts
+  s_bc88af7d3b054c::t_19028677b7674c 1311-1332,1405-1430
+  s_bc88af7d3b054c::t_ea1f9cb3571b07 1346-1350
+  s_bc88af7d3b054c::t_53ce330aabe4f6 1273-1280,1333-1336,1351-1352,1357-1358,1363-1370,1401-1404
+  s_bc88af7d3b054c::t_fac0522c315371 1281-1285,1431-1439
+  s_bc88af7d3b054c::t_b22348c1a23c6e 1286-1295,1337-1340,1353-1356,1359-1360,1371-1383,1399-1400
+  s_bc88af7d3b054c::t_22124463fe13e8 1296-1310,1341-1345,1361-1362,1384-1398
+  s_14f2bbc9f385dd::t_bd9f011283c5f8 1270-1272
+src/modules/Arrangement/handlers/clip/__tests__/handleAddClip.spec.ts
+  s_bc88af7d3b054c::t_76d018944fb928 15,21-23,82-85,109-123,125-131,134-137,139,141-144
+  s_bc88af7d3b054c::t_62b5c13780925c 124,132-133,138,140,145
+  s_14f2bbc9f385dd::t_54119be187bae3 146-147
+src/modules/AiRuntime/transformers/llmActionBridge.ts
+  s_bc88af7d3b054c::t_0df60e6645536b 898-928,2385,2425,2432-2434,2525-2530,2561-2562
+  s_bc88af7d3b054c::t_5ca1d8b6e9abaa 2367
+  s_14f2bbc9f385dd::t_6010d1c37d484f 2563
+src/modules/AiRuntime/useCases/__tests__/validateActionPayload.spec.ts
+  s_bc88af7d3b054c::t_b40f246f821555 1322,1329,1332-1348
+  s_bc88af7d3b054c::t_27ddc0d13d1f1a 1349
+  s_bc88af7d3b054c::t_1a4558760017fc 1350
+src/modules/MIDI/useCases/serializeMidiStateForClips.ts
+  s_bc88af7d3b054c::t_c3d4ec54c94e8d 9-20
+src/modules/MIDI/useCases/__tests__/serializeMidiStateForClips.spec.ts
+  s_bc88af7d3b054c::t_c3d4ec54c94e8d 31-42,45-73
+src/modules/Command/useCases/__tests__/executableAppActionRegistry.spec.ts
+  s_bc88af7d3b054c::t_b51015b9a220e1 65
+  s_bc88af7d3b054c::t_b40f246f821555 58-64,66-79
+src/modules/Arrangement/useCases/clip/__tests__/addClip.spec.ts
+  s_bc88af7d3b054c::t_8970b1c6d633e8 100-102,105-120
+  s_bc88af7d3b054c::t_d4d8469cb70c52 30,54,69,90,103-104,122,132,140,147,155
+src/modules/Arrangement/useCases/clip/addClip.ts
+  s_bc88af7d3b054c::t_004d53be8ca648 58-63,65,67-68
+  s_bc88af7d3b054c::t_d4d8469cb70c52 64,66
+  s_14f2bbc9f385dd::t_248907b8358e4c 72
+src/modules/Arrangement/handlers/clip/__tests__/handleAddClip.integration.spec.ts
+  s_bc88af7d3b054c::t_160f87bbc5dcd1 123-130
+  s_bc88af7d3b054c::t_0a62427ea697af 132-170
+  s_bc88af7d3b054c::t_3a2c610ad66813 1-122,131,171
+src/modules/AiGeneration/handlers/aiMidi/__tests__/handleGenerateBassline.spec.ts
+  s_bc88af7d3b054c::t_bf8b34cc355ce6 110-126,490-504
+src/modules/Command/useCases/__tests__/executableCommandRegistry.spec.ts
+  s_bc88af7d3b054c::t_d8c5e7745d2626 59-70,968-982,1045,1048
+  s_bc88af7d3b054c::t_e845476229b2f1 108-122,983,1026-1043,1049
+  s_14f2bbc9f385dd::t_756017a1ece5f3 58,107,1044,1046-1047
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "1ad991803adecc45ebf411f99348647630906ad1",
+  "prompts": {},
+  "sessions": {
+    "s_14f2bbc9f385dd": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f9a61a1d-66b3-4146-938d-a04f45f4b060",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_bc88af7d3b054c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f9b4a-11a2-7f61-8dfb-76eed0eb2a9c",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
