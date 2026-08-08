@@ -804,6 +804,8 @@ Re-measured after additional PRs since threshold raise #3 (PR #1231). Lines cros
 - **PR #1482**: Mixer width & sends — EDM template, channel width, strips — 5 tests.
 - **PR #1484**: Session view clip launcher — scene buttons, dual view — 5 tests.
 
-**E2E: 233 tests across 52 spec files using data-testid selectors.**
+- **PR #1486**: MIDI clip deep — Pop Song template, piano roll, paint, ghost, chord — 5 tests.
 
-**Campaign total to date: 310 PRs, ~2806 assertions. Lines coverage at 90.30%.**
+**E2E: 238 tests across 53 spec files using data-testid selectors.**
+
+**Campaign total to date: 313 PRs, ~2811 assertions. Lines coverage at 90.30%.**
