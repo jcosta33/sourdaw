@@ -99,9 +99,9 @@ describe('audioBufferCache write observation', () => {
         );
     });
 
-    // Mutation: removing `store.put(existing, id)` from updateAccessTimeInIdb
-    // reds `expect(record?.lastAccessed).toBe(70_000)` — the age-based garbage
-    // collector would then delete buffers of an open project.
+    // Mutation: removing the `metaStore.put(...)` from updateAccessTimeInIdb
+    // reds `expect(...committedMeta...lastAccessed).toBe(70_000)` — the
+    // age-based garbage collector would then delete buffers of an open project.
     it('commits a refreshed access time when a cached buffer is read', async () => {
         const audioBufferCache = await importCache();
         const now = vi.spyOn(Date, 'now');
@@ -109,7 +109,7 @@ describe('audioBufferCache write observation', () => {
 
         audioBufferCache.set('pcm', makeAudioBuffer([new Float32Array([0.5])]));
         await flushIndexedDbTasks();
-        expect(controls.committed.get('pcm')?.lastAccessed).toBe(1_000);
+        expect(controls.committedMeta.get('pcm')?.lastAccessed).toBe(1_000);
 
         // Past the 60 s coalescing window the persist seeded, so this read is
         // the one that has to reach the store.
@@ -117,7 +117,10 @@ describe('audioBufferCache write observation', () => {
         expect(audioBufferCache.get('pcm')).not.toBeUndefined();
         await flushIndexedDbTasks();
 
-        expect(controls.committed.get('pcm')?.lastAccessed).toBe(70_000);
+        // The stamp moved on the metadata row and the record was left alone —
+        // the whole point of DB_VERSION 2.
+        expect(controls.committedMeta.get('pcm')?.lastAccessed).toBe(70_000);
+        expect(controls.committed.get('pcm')?.lastAccessed).toBe(1_000);
         expect(mocks.loggerWarn).not.toHaveBeenCalled();
     });
 
@@ -126,6 +129,10 @@ describe('audioBufferCache write observation', () => {
     it('reports an access-time refresh whose transaction aborts', async () => {
         const audioBufferCache = await importCache();
         controls.committed.set('pcm', storedRecord([new Float32Array([0.5])], 1_000));
+        // An already-migrated record: the row exists at 1 000, so the refresh
+        // has a stamp to move and the absence of movement below is the abort
+        // rather than a refresh that never ran.
+        controls.committedMeta.set('pcm', { lastAccessed: 1_000, sizeInBytes: 4 });
         const context = { createBuffer: () => makeAudioBuffer([new Float32Array(1)]) };
         await audioBufferCache.restoreFromIdb({ context });
         controls.abortWrites();
@@ -134,6 +141,9 @@ describe('audioBufferCache write observation', () => {
         expect(audioBufferCache.get('pcm')).not.toBeUndefined();
         await flushIndexedDbTasks();
 
+        // The refresh had a row to write and the abort rolled it back, so the
+        // absence below is the abort rather than a refresh that never ran.
+        expect(controls.committedMeta.get('pcm')?.lastAccessed).toBe(1_000);
         expect(controls.committed.get('pcm')?.lastAccessed).toBe(1_000);
         expect(mocks.loggerWarn).toHaveBeenCalledWith(
             '[audioBufferCache] Audio buffer access-time refresh failed',
@@ -175,16 +185,20 @@ describe('audioBufferCache write observation', () => {
 
     // Mutation: returning `deletedCount` before awaiting the transaction reds
     // `expect(deleted).toBe(0)` — the count is reported for deletes that were
-    // rolled back.
+    // rolled back. The metadata row is what makes the record a candidate at all
+    // from DB_VERSION 2 on, so seeding it is what keeps this measuring the
+    // abort rather than the "no row, do not collect" rule.
     it('reports zero collected buffers when the age-based collection aborts', async () => {
         const audioBufferCache = await importCache();
         controls.committed.set('old', storedRecord([new Float32Array([0.2])], 0));
+        controls.committedMeta.set('old', { lastAccessed: 0, sizeInBytes: 4 });
         controls.abortWrites();
 
         const deleted = await audioBufferCache.garbageCollectByAge(1);
 
         expect(deleted).toBe(0);
         expect(controls.committed.has('old')).toBe(true);
+        expect(controls.committedMeta.has('old')).toBe(true);
     });
 
     // Presence pin for the assertion above: the same call really does collect
@@ -193,11 +207,14 @@ describe('audioBufferCache write observation', () => {
         const audioBufferCache = await importCache();
         controls.committed.set('old', storedRecord([new Float32Array([0.2])], 0));
         controls.committed.set('fresh', storedRecord([new Float32Array([0.3])], Date.now()));
+        controls.committedMeta.set('old', { lastAccessed: 0, sizeInBytes: 4 });
+        controls.committedMeta.set('fresh', { lastAccessed: Date.now(), sizeInBytes: 4 });
 
         const deleted = await audioBufferCache.garbageCollectByAge(1);
 
         expect(deleted).toBe(1);
         expect([...controls.committed.keys()]).toEqual(['fresh']);
+        expect([...controls.committedMeta.keys()]).toEqual(['fresh']);
     });
 
     // Mutation: returning `deletedCount` before awaiting the transaction reds
@@ -205,22 +222,26 @@ describe('audioBufferCache write observation', () => {
     it('reports zero collected buffers when the size-based collection aborts', async () => {
         const audioBufferCache = await importCache();
         controls.committed.set('bulky', storedRecord([new Float32Array(64)], 1_000));
+        controls.committedMeta.set('bulky', { lastAccessed: 1_000, sizeInBytes: 256 });
         controls.abortWrites();
 
         const deleted = await audioBufferCache.garbageCollectBySize(1);
 
         expect(deleted).toBe(0);
         expect(controls.committed.has('bulky')).toBe(true);
+        expect(controls.committedMeta.has('bulky')).toBe(true);
     });
 
     // Presence pin for the assertion above.
     it('counts size-collected buffers that committed', async () => {
         const audioBufferCache = await importCache();
         controls.committed.set('bulky', storedRecord([new Float32Array(64)], 1_000));
+        controls.committedMeta.set('bulky', { lastAccessed: 1_000, sizeInBytes: 256 });
 
         const deleted = await audioBufferCache.garbageCollectBySize(1);
 
         expect(deleted).toBe(1);
         expect([...controls.committed.keys()]).toEqual([]);
+        expect([...controls.committedMeta.keys()]).toEqual([]);
     });
 });

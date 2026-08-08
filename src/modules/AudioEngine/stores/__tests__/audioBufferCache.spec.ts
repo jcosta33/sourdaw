@@ -90,42 +90,59 @@ type StoredAudioBuffer = {
 
 function installFakeIndexedDb(): Map<string, StoredAudioBuffer> {
     const backing = new Map<string, StoredAudioBuffer>();
-    const objectStore = {
-        clear: () => backing.clear(),
-        delete: (key: string) => backing.delete(key),
-        get: (key: string) => {
-            const request = {
-                result: undefined as StoredAudioBuffer | undefined,
-                error: null,
-                onsuccess: null as (() => void) | null,
-                onerror: null as (() => void) | null,
-            };
-            queueMicrotask(() => {
-                request.result = backing.get(key);
-                request.onsuccess?.();
-            });
-            return request;
-        },
-        getAllKeys: () => {
-            const request = {
-                result: [] as string[],
-                error: null,
-                onsuccess: null as (() => void) | null,
-                onerror: null as (() => void) | null,
-            };
-            queueMicrotask(() => {
-                request.result = [...backing.keys()];
-                request.onsuccess?.();
-            });
-            return request;
-        },
-        put: (value: StoredAudioBuffer, key: string) => {
-            backing.set(key, value);
-        },
-    };
+    // The database has two object stores from DB_VERSION 2 on, and they share a
+    // key space. A double that handed the same map to both would let the
+    // metadata row overwrite the record it describes.
+    const metaBacking = new Map<string, { lastAccessed: number; sizeInBytes: number }>();
+
+    function makeStore<Value>(table: Map<string, Value>) {
+        return {
+            clear: () => table.clear(),
+            delete: (key: string) => table.delete(key),
+            get: (key: string) => {
+                const request = {
+                    result: undefined as Value | undefined,
+                    error: null,
+                    onsuccess: null as (() => void) | null,
+                    onerror: null as (() => void) | null,
+                };
+                queueMicrotask(() => {
+                    request.result = table.get(key);
+                    request.onsuccess?.();
+                });
+                return request;
+            },
+            getAllKeys: () => {
+                const request = {
+                    result: [] as string[],
+                    error: null,
+                    onsuccess: null as (() => void) | null,
+                    onerror: null as (() => void) | null,
+                };
+                queueMicrotask(() => {
+                    request.result = [...table.keys()];
+                    request.onsuccess?.();
+                });
+                return request;
+            },
+            put: (value: Value, key: string) => {
+                table.set(key, value);
+            },
+        };
+    }
+
+    const bufferStore = makeStore(backing);
+    const metaStore = makeStore(metaBacking);
+    function storeFor(name: string) {
+        if (name === 'bufferMeta') {
+            return metaStore;
+        }
+        return bufferStore;
+    }
+
     const database = {
         objectStoreNames: { contains: () => true },
-        createObjectStore: () => objectStore,
+        createObjectStore: () => bufferStore,
         transaction: () => {
             const transaction = {
                 error: null,
@@ -133,7 +150,7 @@ function installFakeIndexedDb(): Map<string, StoredAudioBuffer> {
                 oncomplete: null as (() => void) | null,
                 onerror: null as (() => void) | null,
                 abort: vi.fn(),
-                objectStore: () => objectStore,
+                objectStore: (name: string) => storeFor(name),
             };
             // `complete` fires only after every queued request has been
             // delivered (IDB 3.0 §5.6). Requests here resolve on microtasks, so

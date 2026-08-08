@@ -55,9 +55,16 @@ type StoredAudioBuffer = {
     sizeInBytes: number;
 };
 
+type StoredBufferMeta = { lastAccessed: number; sizeInBytes: number };
+
+/** The buffers store, with the metadata store hanging off it as `.meta`. A
+ * spec that seeds a record directly has to seed its row too, because from
+ * DB_VERSION 2 on a record with no row is deliberately not collectable. */
+type FakeBacking = Map<string, StoredAudioBuffer> & { meta: Map<string, StoredBufferMeta> };
+
 /** In-memory IndexedDB double covering the store operations the cache uses. */
-function installFakeIndexedDb(): Map<string, StoredAudioBuffer> {
-    const backing = new Map<string, StoredAudioBuffer>();
+function installFakeIndexedDb(): FakeBacking {
+    const backing = new Map<string, StoredAudioBuffer>() as FakeBacking;
     type FakeRequest<Result> = {
         result: Result;
         error: null;
@@ -77,16 +84,30 @@ function installFakeIndexedDb(): Map<string, StoredAudioBuffer> {
         });
         return request;
     }
-    const objectStore = {
-        clear: () => backing.clear(),
-        delete: (key: string) => backing.delete(key),
-        get: (key: string) => asyncRequest(() => backing.get(key)),
-        getAll: () => asyncRequest(() => [...backing.values()]),
-        getAllKeys: () => asyncRequest(() => [...backing.keys()]),
-        put: (value: StoredAudioBuffer, key: string) => {
-            backing.set(key, value);
-        },
-    };
+    // Two object stores from DB_VERSION 2 on, sharing a key space: the metadata
+    // row and the record it describes must not land in the same map.
+    const metaBacking = new Map<string, StoredBufferMeta>();
+    backing.meta = metaBacking;
+    function makeStore<Value>(table: Map<string, Value>) {
+        return {
+            clear: () => table.clear(),
+            delete: (key: string) => table.delete(key),
+            get: (key: string) => asyncRequest(() => table.get(key)),
+            getAll: () => asyncRequest(() => [...table.values()]),
+            getAllKeys: () => asyncRequest(() => [...table.keys()]),
+            put: (value: Value, key: string) => {
+                table.set(key, value);
+            },
+        };
+    }
+    const objectStore = makeStore(backing);
+    const metaStore = makeStore(metaBacking);
+    function storeFor(name: string) {
+        if (name === 'bufferMeta') {
+            return metaStore;
+        }
+        return objectStore;
+    }
     const database = {
         objectStoreNames: { contains: () => true },
         createObjectStore: () => objectStore,
@@ -97,7 +118,7 @@ function installFakeIndexedDb(): Map<string, StoredAudioBuffer> {
                 oncomplete: null as (() => void) | null,
                 onerror: null as (() => void) | null,
                 abort: vi.fn(),
-                objectStore: () => objectStore,
+                objectStore: (name: string) => storeFor(name),
             };
             // `complete` fires only after every queued request has been
             // delivered (IDB 3.0 §5.6). Requests here resolve on microtasks, so
@@ -497,6 +518,7 @@ describe('audioBufferCache lifecycle', () => {
                 lastAccessed: 1,
                 sizeInBytes: 4,
             });
+            backing.meta.set('ancient', { lastAccessed: 1, sizeInBytes: 4 });
             backing.set('fresh', {
                 sampleRate: 48_000,
                 numberOfChannels: 1,
@@ -504,6 +526,7 @@ describe('audioBufferCache lifecycle', () => {
                 lastAccessed: Date.now(),
                 sizeInBytes: 4,
             });
+            backing.meta.set('fresh', { lastAccessed: Date.now(), sizeInBytes: 4 });
 
             const deleted = await audioBufferCache.garbageCollectByAge(1);
 
@@ -521,6 +544,7 @@ describe('audioBufferCache lifecycle', () => {
                 lastAccessed: 10,
                 sizeInBytes: 100,
             });
+            backing.meta.set('oldest', { lastAccessed: 10, sizeInBytes: 100 });
             backing.set('middle', {
                 sampleRate: 48_000,
                 numberOfChannels: 1,
@@ -528,6 +552,7 @@ describe('audioBufferCache lifecycle', () => {
                 lastAccessed: 20,
                 sizeInBytes: 100,
             });
+            backing.meta.set('middle', { lastAccessed: 20, sizeInBytes: 100 });
             backing.set('newest', {
                 sampleRate: 48_000,
                 numberOfChannels: 1,
@@ -535,6 +560,7 @@ describe('audioBufferCache lifecycle', () => {
                 lastAccessed: 30,
                 sizeInBytes: 100,
             });
+            backing.meta.set('newest', { lastAccessed: 30, sizeInBytes: 100 });
 
             const deleted = await audioBufferCache.garbageCollectBySize(150);
 

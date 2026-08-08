@@ -3,7 +3,7 @@ import { vi } from 'vitest';
 /**
  * Controllable IndexedDB double for the audio-buffer cache specs.
  *
- * Faithful on the three points these specs turn on:
+ * Faithful on the points these specs turn on:
  *
  * 1. Request events are delivered as **tasks**, not microtasks (IDB 3.0 §5.6).
  *    A caller that resolves without waiting for its request therefore resolves
@@ -18,6 +18,17 @@ import { vi } from 'vitest';
  *    `InvalidStateError` (IDB 3.0 §3.3.1). A caller that keeps using a handle it
  *    already closed therefore fails here the way it fails in a browser, instead
  *    of quietly working against a single immortal double.
+ * 5. The database has **named object stores**, a transaction has a **scope**, and
+ *    `objectStore(name)` outside that scope throws `NotFoundError` (IDB 3.0
+ *    §3.1.7). Two stores written under one transaction commit or roll back
+ *    together; two stores written under two transactions do not.
+ * 6. Store creation runs in `onupgradeneeded` against the stores that already
+ *    exist. `existingStores` seeds that set, so a spec can start the fake at the
+ *    v1 schema (`buffers` only) and watch the upgrade add the rest.
+ * 7. Every value crossing the boundary is **measured**. `bytesRead` /
+ *    `bytesWritten` total the structured-clone payload of each get/getAll/put,
+ *    which is the quantity a full-record rewrite wastes and a metadata row does
+ *    not. Counting transactions or calls cannot see that difference.
  */
 
 export type StoredAudioBuffer = {
@@ -28,6 +39,54 @@ export type StoredAudioBuffer = {
     sizeInBytes: number;
 };
 
+/** The v2 metadata row: everything the age and size collectors read, and
+ * nothing else. Mirrors `BufferMeta` in `audioBufferCache.ts`. */
+export type StoredBufferMeta = {
+    lastAccessed: number;
+    sizeInBytes: number;
+};
+
+export type StoredValue = StoredAudioBuffer | StoredBufferMeta;
+
+export const BUFFER_STORE = 'buffers';
+export const META_STORE = 'bufferMeta';
+
+/** Structured-clone payload size of one value, in bytes.
+ *
+ * Not a byte-exact model of any engine's serialization — the numbers that
+ * matter here differ by four orders of magnitude, so the fixed per-field cost
+ * is noise. What it is exact about is the part that dominates: a
+ * `Float32Array` costs its `byteLength`, so a record's PCM is counted in full
+ * and a metadata row is not. */
+function measureBytes(value: unknown): number {
+    if (value === null || value === undefined) {
+        return 0;
+    }
+    if (ArrayBuffer.isView(value)) {
+        return value.byteLength;
+    }
+    if (Array.isArray(value)) {
+        return value.reduce<number>((total, entry) => total + measureBytes(entry), 0);
+    }
+    if (typeof value === 'number') {
+        return 8;
+    }
+    if (typeof value === 'boolean') {
+        return 1;
+    }
+    if (typeof value === 'string') {
+        return value.length * 2;
+    }
+    if (typeof value === 'object') {
+        let total = 0;
+        for (const [key, entry] of Object.entries(value)) {
+            total += key.length * 2 + measureBytes(entry);
+        }
+        return total;
+    }
+    return 0;
+}
+
 type FakeRequest<T> = {
     result: T | undefined;
     error: unknown;
@@ -36,10 +95,25 @@ type FakeRequest<T> = {
 };
 
 export type FakeAudioIndexedDbControls = {
-    /** Committed contents of the object store. */
+    /** Committed contents of the `buffers` object store. */
     committed: Map<string, StoredAudioBuffer>;
+    /** Committed contents of the `bufferMeta` object store. */
+    committedMeta: Map<string, StoredBufferMeta>;
+    /** Object stores that exist on the database right now. */
+    storeNames: () => string[];
     /** Abort every subsequent readwrite transaction, after its requests succeed. */
     abortWrites: () => void;
+    /**
+     * Abort only the subsequent readwrite transactions whose scope includes
+     * `storeName` — a quota failure on one store, which is what a real engine
+     * hands you.
+     *
+     * This is the control that can tell one two-store transaction apart from
+     * two one-store transactions. `abortWrites` cannot: it kills both halves of
+     * a split write, so the stores end up consistent by accident and the
+     * atomicity guard passes on an implementation that has none.
+     */
+    abortWritesTo: (storeName: string) => void;
     /** Number of readwrite transactions opened against the database. */
     writeTransactionCount: () => number;
     /** Number of `indexedDB.open` calls issued against the fake. */
@@ -48,6 +122,14 @@ export type FakeAudioIndexedDbControls = {
     closeCount: () => number;
     /** Connections opened and not yet closed — a leaked handle shows up here. */
     liveConnectionCount: () => number;
+    /** Bytes of stored value handed back by `get` / `getAll` since the last reset. */
+    bytesRead: () => number;
+    /** Bytes of stored value accepted by `put` since the last reset. */
+    bytesWritten: () => number;
+    /** Zero both byte counters, so a spec can measure one operation in isolation. */
+    resetByteCounters: () => void;
+    /** Scope (store names) of every transaction opened, in order. */
+    transactionScopes: () => string[][];
     /**
      * Fire `versionchange` on the most recently opened connection, as a
      * competing upgrade or a `deleteDatabase` in another tab would.
@@ -62,6 +144,13 @@ export type FakeAudioIndexedDbControls = {
     fireAbnormalClose: () => void;
 };
 
+type ByteMeters = {
+    read: number;
+    written: number;
+};
+
+type Tables = Map<string, Map<string, StoredValue>>;
+
 class FakeTransaction {
     oncomplete: (() => void) | null = null;
     onerror: (() => void) | null = null;
@@ -69,14 +158,19 @@ class FakeTransaction {
     error: unknown = null;
 
     private readonly queue: Array<() => void> = [];
+    private readonly staged = new Map<string, Map<string, StoredValue | null>>();
     private scheduled = false;
     private settled = false;
 
     constructor(
-        private readonly committed: Map<string, StoredAudioBuffer>,
-        private readonly staged: Map<string, StoredAudioBuffer | null>,
-        private readonly willAbort: boolean
+        private readonly tables: Tables,
+        private readonly scope: readonly string[],
+        private readonly willAbort: boolean,
+        private readonly meters: ByteMeters
     ) {
+        for (const name of scope) {
+            this.staged.set(name, new Map<string, StoredValue | null>());
+        }
         this.schedule();
     }
 
@@ -85,8 +179,24 @@ class FakeTransaction {
         this.schedule();
     }
 
-    objectStore(): FakeObjectStore {
-        return new FakeObjectStore(this, this.committed, this.staged);
+    objectStore(name: string): FakeObjectStore {
+        if (!this.scope.includes(name)) {
+            // What a browser throws when a transaction is asked for a store it
+            // did not name. A two-store mutation that forgot to widen its scope
+            // has to fail here rather than quietly writing one store.
+            throw new DOMException(
+                `Failed to execute 'objectStore' on 'IDBTransaction': The specified object store was not found.`,
+                'NotFoundError'
+            );
+        }
+        const committed = this.tables.get(name);
+        if (!committed) {
+            throw new DOMException(
+                `Failed to execute 'objectStore' on 'IDBTransaction': The specified object store was not found.`,
+                'NotFoundError'
+            );
+        }
+        return new FakeObjectStore(this, committed, this.staged.get(name)!, this.meters);
     }
 
     abort(): void {
@@ -125,20 +235,28 @@ class FakeTransaction {
         }
         this.settled = true;
         if (abort) {
-            this.staged.clear();
+            // Every store in scope rolls back together — the property a
+            // two-store mutation depends on for its size accounting to stay
+            // consistent with its records.
+            for (const staged of this.staged.values()) {
+                staged.clear();
+            }
             this.error = null;
             // A bare abort fires `abort` and nothing else.
             this.onabort?.();
             return;
         }
-        for (const [key, value] of this.staged) {
-            if (value === null) {
-                this.committed.delete(key);
-                continue;
+        for (const [name, staged] of this.staged) {
+            const committed = this.tables.get(name)!;
+            for (const [key, value] of staged) {
+                if (value === null) {
+                    committed.delete(key);
+                    continue;
+                }
+                committed.set(key, value);
             }
-            this.committed.set(key, value);
+            staged.clear();
         }
-        this.staged.clear();
         this.oncomplete?.();
     }
 }
@@ -146,26 +264,40 @@ class FakeTransaction {
 class FakeObjectStore {
     constructor(
         private readonly transaction: FakeTransaction,
-        private readonly committed: Map<string, StoredAudioBuffer>,
-        private readonly staged: Map<string, StoredAudioBuffer | null>
+        private readonly committed: Map<string, StoredValue>,
+        private readonly staged: Map<string, StoredValue | null>,
+        private readonly meters: ByteMeters
     ) {}
 
-    get(key: string): FakeRequest<StoredAudioBuffer | undefined> {
-        return this.request(() => this.read(key) ?? undefined);
+    get(key: string): FakeRequest<StoredValue | undefined> {
+        return this.request(() => {
+            const value = this.read(key) ?? undefined;
+            this.meters.read += measureBytes(value);
+            return value;
+        });
     }
 
-    getAll(): FakeRequest<StoredAudioBuffer[]> {
-        return this.request(() => [...this.keys()].map((key) => this.read(key)!));
+    getAll(): FakeRequest<StoredValue[]> {
+        return this.request(() => {
+            const values = [...this.keys()].map((key) => this.read(key)!);
+            this.meters.read += measureBytes(values);
+            return values;
+        });
     }
 
     getAllKeys(): FakeRequest<string[]> {
-        return this.request(() => [...this.keys()]);
+        return this.request(() => {
+            const keys = [...this.keys()];
+            this.meters.read += measureBytes(keys);
+            return keys;
+        });
     }
 
-    put(value: StoredAudioBuffer, key: string): FakeRequest<undefined> {
+    put(value: StoredValue, key: string): FakeRequest<undefined> {
         // IDB structured-clones the value at `put` time, so a later mutation of
         // the caller's object cannot reach the store.
         const snapshot = structuredClone(value);
+        this.meters.written += measureBytes(snapshot);
         return this.request(() => {
             this.staged.set(key, snapshot);
             return undefined;
@@ -200,7 +332,7 @@ class FakeObjectStore {
         return [...keys];
     }
 
-    private read(key: string): StoredAudioBuffer | null {
+    private read(key: string): StoredValue | null {
         // Reads hand back a structured clone, so mutating a read result cannot
         // reach the store without a `put` that commits.
         const stored = this.staged.has(key) ? this.staged.get(key) : this.committed.get(key);
@@ -221,18 +353,52 @@ class FakeObjectStore {
 }
 
 type FakeConnection = {
-    objectStoreNames: { contains: () => boolean };
-    createObjectStore: () => undefined;
+    objectStoreNames: { contains: (name: string) => boolean };
+    createObjectStore: (name: string) => undefined;
     onclose: (() => void) | null;
     onversionchange: (() => void) | null;
     close: () => void;
-    transaction: (storeName: string, mode?: IDBTransactionMode) => FakeTransaction;
+    transaction: (storeNames: string | string[], mode?: IDBTransactionMode) => FakeTransaction;
     isClosed: () => boolean;
 };
 
-export function installFakeAudioIndexedDb(): FakeAudioIndexedDbControls {
+export type InstallFakeAudioIndexedDbInput = {
+    /**
+     * Object stores that already exist when the first `open()` lands. Defaults
+     * to the v1 schema, so the upgrade handler under test is the thing that
+     * creates anything beyond `buffers`.
+     */
+    existingStores?: readonly string[];
+    /**
+     * How `open()` behaves when another context holds a connection at the older
+     * version (IDB 3.0 §3.3.1).
+     *
+     * - `'forever'` fires `blocked` and then **nothing else** — no `success`,
+     *   no `error`. The silence is the point: a double that fired `blocked` and
+     *   then `success` anyway could not show the hang, because the promise
+     *   would settle either way.
+     * - `'then-yields'` fires `blocked` and then `success` a task later, as a
+     *   browser does when the blocking context finally closes. This is the only
+     *   way to reach the branch that has to close a connection nobody is
+     *   waiting for any more.
+     */
+    blockOpens?: 'forever' | 'then-yields';
+};
+
+export function installFakeAudioIndexedDb(input: InstallFakeAudioIndexedDbInput = {}): FakeAudioIndexedDbControls {
     const committed = new Map<string, StoredAudioBuffer>();
+    const committedMeta = new Map<string, StoredBufferMeta>();
+    const tables: Tables = new Map<string, Map<string, StoredValue>>();
+    // Both concrete maps are handed to specs by identity, so they are installed
+    // as the backing tables rather than copied into them.
+    tables.set(BUFFER_STORE, committed);
+    tables.set(META_STORE, committedMeta);
+
+    const existingStores = new Set<string>(input.existingStores ?? [BUFFER_STORE]);
+    const meters: ByteMeters = { read: 0, written: 0 };
+    const transactionScopes: string[][] = [];
     let abortWrites = false;
+    let abortWritesToStore: string | null = null;
     let writeTransactionCount = 0;
     let openRequestCount = 0;
     let closeCount = 0;
@@ -244,8 +410,11 @@ export function installFakeAudioIndexedDb(): FakeAudioIndexedDbControls {
     function createConnection(): FakeConnection {
         let closed = false;
         const connection: FakeConnection = {
-            objectStoreNames: { contains: () => true },
-            createObjectStore: () => undefined,
+            objectStoreNames: { contains: (name: string) => existingStores.has(name) },
+            createObjectStore: (name: string) => {
+                existingStores.add(name);
+                return undefined;
+            },
             onclose: null,
             onversionchange: null,
             close: () => {
@@ -255,7 +424,7 @@ export function installFakeAudioIndexedDb(): FakeAudioIndexedDbControls {
                 closed = true;
                 closeCount++;
             },
-            transaction: (_storeName: string, mode: IDBTransactionMode = 'readonly') => {
+            transaction: (storeNames: string | string[], mode: IDBTransactionMode = 'readonly') => {
                 if (closed) {
                     // What a browser throws for a transaction on a closed
                     // connection. Reusing a handle after `close()` is a bug the
@@ -265,15 +434,23 @@ export function installFakeAudioIndexedDb(): FakeAudioIndexedDbControls {
                         'InvalidStateError'
                     );
                 }
+                const scope = typeof storeNames === 'string' ? [storeNames] : [...storeNames];
+                for (const name of scope) {
+                    if (!existingStores.has(name)) {
+                        throw new DOMException(
+                            `Failed to execute 'transaction' on 'IDBDatabase': One of the specified object stores was not found.`,
+                            'NotFoundError'
+                        );
+                    }
+                }
+                transactionScopes.push(scope);
                 const isWrite = mode === 'readwrite';
                 if (isWrite) {
                     writeTransactionCount++;
                 }
-                return new FakeTransaction(
-                    committed,
-                    new Map<string, StoredAudioBuffer | null>(),
-                    isWrite && abortWrites
-                );
+                const doomed =
+                    isWrite && (abortWrites || (abortWritesToStore !== null && scope.includes(abortWritesToStore)));
+                return new FakeTransaction(tables, scope, doomed, meters);
             },
             isClosed: () => closed,
         };
@@ -299,8 +476,22 @@ export function installFakeAudioIndexedDb(): FakeAudioIndexedDbControls {
                 onsuccess: null as (() => void) | null,
                 onerror: null as (() => void) | null,
                 onupgradeneeded: null as (() => void) | null,
+                onblocked: null as (() => void) | null,
             };
             setTimeout(() => {
+                if (input.blockOpens !== undefined) {
+                    request.onblocked?.();
+                    if (input.blockOpens === 'forever') {
+                        return;
+                    }
+                    // The blocking context closed; the open completes normally,
+                    // whether or not anyone still wants the result.
+                    setTimeout(() => {
+                        request.onupgradeneeded?.();
+                        request.onsuccess?.();
+                    }, 0);
+                    return;
+                }
                 request.onupgradeneeded?.();
                 request.onsuccess?.();
             }, 0);
@@ -310,13 +501,25 @@ export function installFakeAudioIndexedDb(): FakeAudioIndexedDbControls {
 
     return {
         committed,
+        committedMeta,
+        storeNames: () => [...existingStores],
         abortWrites: () => {
             abortWrites = true;
+        },
+        abortWritesTo: (storeName: string) => {
+            abortWritesToStore = storeName;
         },
         writeTransactionCount: () => writeTransactionCount,
         openRequestCount: () => openRequestCount,
         closeCount: () => closeCount,
         liveConnectionCount: () => connections.filter((connection) => !connection.isClosed()).length,
+        bytesRead: () => meters.read,
+        bytesWritten: () => meters.written,
+        resetByteCounters: () => {
+            meters.read = 0;
+            meters.written = 0;
+        },
+        transactionScopes: () => transactionScopes.map((scope) => [...scope]),
         fireVersionChange: () => {
             latestConnection().onversionchange?.();
         },

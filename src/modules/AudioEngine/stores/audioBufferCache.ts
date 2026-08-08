@@ -144,8 +144,36 @@ function waveformCacheSet(key: string, peaks: Float32Array): void {
 }
 
 const DB_NAME = 'sourdaw-audio';
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 const STORE_NAME = 'buffers';
+
+/** Everything the age and size collectors read, split out of the record so that
+ * moving a timestamp does not rewrite the audio next to it.
+ *
+ * A record is `sampleRate` and `numberOfChannels` and then however many
+ * megabytes of `Float32Array`; the two numbers the collectors want are 16 bytes
+ * of it. IndexedDB has no partial update, so `put`ting a record back to change
+ * `lastAccessed` rewrites the PCM — 384 KB per second of 48 kHz stereo, so
+ * ~1.5 MB for a four-second loop and ~69 MB for a three-minute freeze bounce,
+ * once per id per refresh window, forever. And both collectors reached those
+ * two numbers through `getAll()`, materialising every record in the store to
+ * read them; `cleanupUnusedFreezeFiles` caps that store at 2 GiB.
+ *
+ * Measured in `audioBufferCacheMetadataStore.spec.ts` on one second of 48 kHz
+ * stereo: a refresh wrote 384 152 bytes and now writes 62, and a two-record
+ * collector pass read 768 322 bytes (age) / 768 324 (size) and now reads 142 /
+ * 144 — the rows and their keys, and no PCM at all.
+ *
+ * The record keeps its own `lastAccessed` and `sizeInBytes` fields. They stop
+ * being the collectors' input at this version and become what the record was
+ * persisted with — which is exactly what the lazy back-fill needs to seed a row
+ * for a record written before this store existed. */
+const META_STORE_NAME = 'bufferMeta';
+
+type BufferMeta = {
+    lastAccessed: number;
+    sizeInBytes: number;
+};
 
 /** One connection for the life of the module (audit M-045). `get()` and
  * `getWaveformPeaks()` run per clip per timeline paint, and each one refreshes
@@ -184,8 +212,16 @@ let dbConnectionGeneration = 0;
  * entries, so any project past that exports short. It is reported rather than
  * silent — the omissions become `buildProjectData`'s `missingBufferCount` and
  * `exportProjectFile` raises a user-facing warning — but the file is still
- * written, and no reload un-writes a file already on disk. Reachable only at a
- * `DB_VERSION` bump; on the migration checklist for that bump.
+ * written, and no reload un-writes a file already on disk.
+ *
+ * The `DB_VERSION` 1 -> 2 bump for the metadata store is what makes that
+ * reachable: until it, no build ever asked for a version another build did not
+ * already have, so nothing could fire `versionchange` and this whole latch was
+ * inert. It is live from that version on, for anyone with two tabs open across
+ * the upgrade. A gate on the load side is queued separately and is not this
+ * change; what is not still outstanding is the refresh half — `refreshAccessTime`
+ * reads the latch on entry and returns, so the once-per-id-per-window warning
+ * this comment used to warn about does not happen.
  *
  * Nothing resets this in-process on purpose. The upgrade completing is not an
  * event this context can observe, and the reason to reconnect afterwards would
@@ -206,17 +242,69 @@ let versionChangeLatched = false;
 
 const VERSION_CHANGE_LATCH_MESSAGE = 'IDB connection surrendered to a versionchange; reload to reconnect';
 
+const OPEN_BLOCKED_MESSAGE = 'IDB open blocked by another connection at an older version';
+
 function openDbConnection(onConnectionLoss: () => void): Promise<IDBDatabase> {
     return new Promise((resolve, reject) => {
         const req = indexedDB.open(DB_NAME, DB_VERSION);
+        // `blocked` becomes reachable at the same moment `versionchange` does:
+        // it fires when another context still holds a connection at the older
+        // version and has not closed it. Until the `DB_VERSION` bump no build
+        // ever asked for a version another build did not have, so neither event
+        // could occur.
+        //
+        // Unhandled, this is the one consequence of the bump that *hangs*
+        // rather than degrades. A blocked open fires neither `success` nor
+        // `error`, so the promise never settles, and `openDb` memoises it —
+        // every later caller joins the same pending promise, and `dbPromise` is
+        // only ever cleared by `forgetIfCurrent`, which needs a rejection to
+        // run. `restoreFromIdb` would sit mid project load instead of reaching
+        // its `catch` and publishing zero buffers.
+        //
+        // So it rejects. Degrading immediately is right for this store even
+        // though the block may clear on its own: playback and waveforms read
+        // the in-memory cache and are unaffected, the memo is cleared so the
+        // next caller retries, and a `catch` that runs is worth more than a
+        // connection that might arrive.
+        let settled = false;
+        req.onblocked = () => {
+            if (settled) {
+                return;
+            }
+            settled = true;
+            reject(new Error(OPEN_BLOCKED_MESSAGE));
+        };
         req.onupgradeneeded = () => {
+            // Creates stores and nothing else. A v1 -> v2 back-fill that walked
+            // the records here would hold the upgrade transaction — and every
+            // context waiting on it — for as long as it takes to read a store
+            // the freeze cleanup allows to reach 2 GiB, on the startup path.
+            //
+            // The rows are seeded lazily instead, from three places:
+            // `persistSerializedToIdb` and the import persist write one
+            // alongside every record from now on; `updateAccessTimeInIdb` seeds
+            // one from the record the first time a legacy id's stamp is
+            // refreshed; and `garbageCollectByAge` sweeps whatever is left
+            // within a byte budget, which is the only one of the three that can
+            // reach a record no project references.
             const db = req.result;
             if (!db.objectStoreNames.contains(STORE_NAME)) {
                 db.createObjectStore(STORE_NAME);
             }
+            if (!db.objectStoreNames.contains(META_STORE_NAME)) {
+                db.createObjectStore(META_STORE_NAME);
+            }
         };
         req.onsuccess = () => {
             const db = req.result;
+            if (settled) {
+                // Already reported blocked and the caller has moved on. Holding
+                // this handle would block the very upgrade we yielded to, so it
+                // is closed rather than resolved or leaked.
+                db.close();
+                return;
+            }
+            settled = true;
             db.onversionchange = () => {
                 // Another context wants to upgrade or delete the database;
                 // holding this connection open would block it indefinitely.
@@ -229,7 +317,13 @@ function openDbConnection(onConnectionLoss: () => void): Promise<IDBDatabase> {
             db.onclose = onConnectionLoss;
             resolve(db);
         };
-        req.onerror = () => reject(req.error ?? new Error('IDB request failed'));
+        req.onerror = () => {
+            if (settled) {
+                return;
+            }
+            settled = true;
+            reject(req.error ?? new Error('IDB request failed'));
+        };
     });
 }
 
@@ -341,18 +435,72 @@ function serializeBuffer(buffer: AudioBuffer): SerializedBuffer {
 
 /** Refresh a buffer's last-access stamp. The age-based collector deletes on
  * this field, so a silently failed refresh eventually deletes audio a project
- * still references — the reason it is observed rather than fire-and-forget. */
+ * still references — the reason it is observed rather than fire-and-forget.
+ *
+ * The write lands on the metadata row, so it costs 62 bytes rather than the
+ * whole record. The transaction is scoped to both stores even though the steady
+ * state only touches one, because whether the record has to be read is not
+ * known until the metadata row has been read, and an IndexedDB transaction's
+ * scope is fixed at creation (IDB 3.0 §3.1.7). Scope is not payload: the extra
+ * store in scope blocks overlapping writers for the microseconds this takes,
+ * while reading the record would move megabytes.
+ *
+ * The `else` branch is the v1 -> v2 migration, one id at a time on the path
+ * that proves the id is in use. It reads the record once — the only PCM read on
+ * this path, and it happens at most once per id per record lifetime — to
+ * recover the `sizeInBytes` the size collector needs, then never again.
+ *
+ * Holding both stores in one transaction is also what stops this seeding a row
+ * for a record that is being deleted. Overlapping-scope "readwrite"
+ * transactions are ordered by creation across the database (IDB 3.0 §2.7.2), so
+ * a `removeFromIdb` either commits first — and then both the row and the record
+ * read back absent here, and nothing is written — or commits after, and takes
+ * the row with it. No orphan row can exist in the gap, because there is no gap:
+ * every read and write on this path is in the transaction below. The same is
+ * true of the migration sweep in `garbageCollectByAge`. */
 async function updateAccessTimeInIdb(id: string): Promise<void> {
     const db = await openDb();
-    const tx = db.transaction(STORE_NAME, 'readwrite');
-    const store = tx.objectStore(STORE_NAME);
-    const data = await awaitRequest(store.get(id) as IDBRequest<SerializedBuffer | undefined>);
-    if (data) {
-        data.lastAccessed = Date.now();
-        store.put(data, id);
+    const tx = db.transaction([STORE_NAME, META_STORE_NAME], 'readwrite');
+    const metaStore = tx.objectStore(META_STORE_NAME);
+    const meta = await awaitRequest(metaStore.get(id) as IDBRequest<BufferMeta | undefined>);
+    if (meta) {
+        metaStore.put({ lastAccessed: Date.now(), sizeInBytes: meta.sizeInBytes } satisfies BufferMeta, id);
+    } else {
+        const record = await awaitRequest(
+            tx.objectStore(STORE_NAME).get(id) as IDBRequest<SerializedBuffer | undefined>
+        );
+        if (record) {
+            metaStore.put(
+                { lastAccessed: Date.now(), sizeInBytes: recordSizeInBytes(record) } satisfies BufferMeta,
+                id
+            );
+        }
     }
     await awaitTransaction(tx);
 }
+
+/** The record's persisted `sizeInBytes`, or the same total recomputed from the
+ * channels when the field is missing. A record written by a build older than
+ * the field would otherwise seed a metadata row claiming zero bytes, and the
+ * size collector would then evict everything else before touching it. */
+function recordSizeInBytes(record: SerializedBuffer): number {
+    if (typeof record.sizeInBytes === 'number' && Number.isFinite(record.sizeInBytes)) {
+        return record.sizeInBytes;
+    }
+    return record.channelData.reduce((total, channel) => total + channel.byteLength, 0);
+}
+
+/** How much PCM one `garbageCollectByAge` pass may read to migrate records that
+ * predate the metadata store.
+ *
+ * A record's size cannot be learned without reading it — IndexedDB has no
+ * partial read — so the migration of a legacy store costs one read per record,
+ * once, and the only question is how much of it happens at a time. Budgeting
+ * *bytes* rather than records is what makes that bound hold: a count budget is
+ * meaningless when one record can be a 69 MB freeze bounce and the next 4 KB.
+ * At most one record overshoots, because the budget is checked before each
+ * read and a record's size is only known after it. */
+const LEGACY_MIGRATION_BYTE_BUDGET = 64 * 1024 * 1024;
 
 /** Coalesce access-time refreshes (audit M-045). Holding one connection stops
  * the read path opening connections, but each read still ran its own readwrite
@@ -396,8 +544,16 @@ async function persistSerializedToIdb(id: string, data: SerializedBuffer): Promi
         if (persistenceGenerationById.get(id) !== generation) {
             return false;
         }
-        const tx = db.transaction(STORE_NAME, 'readwrite');
+        // One transaction over both stores. Two transactions would let the
+        // record commit while its metadata row rolled back (or the reverse),
+        // and a `sizeInBytes` total that disagrees with the records is a size
+        // collector evicting the wrong things or nothing at all.
+        const tx = db.transaction([STORE_NAME, META_STORE_NAME], 'readwrite');
         tx.objectStore(STORE_NAME).put(data, id);
+        tx.objectStore(META_STORE_NAME).put(
+            { lastAccessed: data.lastAccessed, sizeInBytes: data.sizeInBytes } satisfies BufferMeta,
+            id
+        );
         await awaitTransaction(tx);
         return true;
     } catch (error) {
@@ -417,8 +573,11 @@ async function removeFromIdb(id: string): Promise<void> {
         if (persistenceGenerationById.get(id) !== generation) {
             return;
         }
-        const tx = db.transaction(STORE_NAME, 'readwrite');
+        // Both rows under one transaction: a metadata row that outlived its
+        // record keeps counting bytes that are no longer there.
+        const tx = db.transaction([STORE_NAME, META_STORE_NAME], 'readwrite');
         tx.objectStore(STORE_NAME).delete(id);
+        tx.objectStore(META_STORE_NAME).delete(id);
         await awaitTransaction(tx);
     } catch (error) {
         logger.warn('[audioBufferCache] Audio buffer removal failed', { id, error });
@@ -760,8 +919,12 @@ export const audioBufferCache = {
         // right after it commit in that order even on two connections.
         openDb()
             .then(async (db) => {
-                const tx = db.transaction(STORE_NAME, 'readwrite');
+                const tx = db.transaction([STORE_NAME, META_STORE_NAME], 'readwrite');
                 tx.objectStore(STORE_NAME).clear();
+                // Metadata rows left behind here would keep every buffer of the
+                // previous project counting against the 2 GiB size cap, and the
+                // size collector would evict live audio to make room for them.
+                tx.objectStore(META_STORE_NAME).clear();
                 await awaitTransaction(tx);
                 return null;
             })
@@ -979,22 +1142,29 @@ export const audioBufferCache = {
                         return false;
                     }
 
-                    const activeTransaction = database.transaction(STORE_NAME, 'readwrite');
+                    const activeTransaction = database.transaction([STORE_NAME, META_STORE_NAME], 'readwrite');
                     transaction = activeTransaction;
                     importPersistenceTransactions.set(candidateId, activeTransaction);
                     const objectStore = activeTransaction.objectStore(STORE_NAME);
+                    const metaStore = activeTransaction.objectStore(META_STORE_NAME);
                     for (const entry of entries) {
                         const channels = entry.readChannels();
+                        const lastAccessed = Date.now();
+                        const sizeInBytes = channels.reduce((total, channel) => total + channel.byteLength, 0);
                         objectStore.put(
                             {
                                 sampleRate: entry.sampleRate,
                                 numberOfChannels: entry.numberOfChannels,
                                 channelData: channels,
-                                lastAccessed: Date.now(),
-                                sizeInBytes: channels.reduce((total, channel) => total + channel.byteLength, 0),
+                                lastAccessed,
+                                sizeInBytes,
                             } satisfies SerializedBuffer,
                             entry.id
                         );
+                        // Same transaction as the record, so an aborted import
+                        // — which `abortImportPersistenceExcept` does routinely
+                        // when a later candidate wins — leaves neither behind.
+                        metaStore.put({ lastAccessed, sizeInBytes } satisfies BufferMeta, entry.id);
                     }
                     await awaitTransaction(activeTransaction);
                     if (candidateId !== activeImportCandidateId || candidateId !== committedImportCandidateId) {
@@ -1046,12 +1216,24 @@ export const audioBufferCache = {
         // awaited, so this resolves only once they have actually committed.
         try {
             const db = await openDb();
-            const tx = db.transaction(STORE_NAME, 'readwrite');
+            const tx = db.transaction([STORE_NAME, META_STORE_NAME], 'readwrite');
             const store = tx.objectStore(STORE_NAME);
+            const metaStore = tx.objectStore(META_STORE_NAME);
+            // `getAllKeys` already reads keys rather than records, so this
+            // collector never materialised PCM. What changes is that it deletes
+            // both rows, under the one transaction.
+            //
+            // It also collects on *reference*, not on a stamp, so a record with
+            // no metadata row is still collectable here — the "absence means do
+            // not collect" rule belongs to the two stamp-driven collectors
+            // below, where absence means "not yet migrated" and a wrong guess
+            // deletes audio. Here absence means nothing: an unreferenced freeze
+            // file is garbage whether or not it has been migrated.
             const keys = await awaitRequest(store.getAllKeys());
             for (const key of keys) {
                 if (typeof key === 'string' && key.startsWith('freeze-') && !activeIds.has(key)) {
                     store.delete(key);
+                    metaStore.delete(key);
                 }
             }
             await awaitTransaction(tx);
@@ -1065,25 +1247,115 @@ export const audioBufferCache = {
         let deletedCount = 0;
         try {
             const db = await openDb();
-            const tx = db.transaction(STORE_NAME, 'readwrite');
+            const tx = db.transaction([STORE_NAME, META_STORE_NAME], 'readwrite');
             const store = tx.objectStore(STORE_NAME);
-            const [data, keys] = await Promise.all([
-                awaitRequest(store.getAll() as IDBRequest<SerializedBuffer[]>),
+            const metaStore = tx.objectStore(META_STORE_NAME);
+            // Reads the metadata store, not the records: the two numbers this
+            // loop wants are 16 bytes each, and `getAll()` on the records
+            // materialised every buffer in a store capped at 2 GiB to find
+            // them.
+            //
+            // The invariant is **never collect on a stamp we do not have** —
+            // not "never collect without a metadata row". The v1 code read
+            // `item.lastAccessed ?? 0`, which *invented* a stamp: an absent one
+            // read as the epoch and the record was deleted on the spot. That
+            // fallback is gone rather than moved. What replaces it is reading
+            // the real value, from the row where there is one and from the
+            // record where there is not.
+            const [metas, keys, recordKeys] = await Promise.all([
+                awaitRequest(metaStore.getAll() as IDBRequest<BufferMeta[]>),
+                awaitRequest(metaStore.getAllKeys()),
                 awaitRequest(store.getAllKeys()),
             ]);
 
-            for (let index = 0; index < data.length; index++) {
-                const item = data[index]!;
+            const migratedIds = new Set<IDBValidKey>(keys);
+            for (let index = 0; index < metas.length; index++) {
+                const meta = metas[index]!;
                 const key = keys[index]! as string;
                 if (pinnedBufferIds.has(key)) {
                     continue;
                 }
-                if ((item.lastAccessed ?? 0) < threshold) {
+                if (typeof meta.lastAccessed !== 'number') {
+                    continue;
+                }
+                if (meta.lastAccessed < threshold) {
                     store.delete(key);
+                    metaStore.delete(key);
                     evictCachedBuffer(key);
                     deletedCount++;
                 }
             }
+
+            // Records that predate the metadata store. This is the only place
+            // that reliably sees them: `set` and the import write a row with
+            // every new record, and `updateAccessTimeInIdb` seeds one for any id
+            // a read touches — but a record whose clip was deleted without an
+            // explicit `remove` is referenced by no project, so nothing ever
+            // reads it.
+            //
+            // `restoreFromIdb` cannot be relied on either. It walks every key
+            // only when `ids` is undefined, and the two use-case callers always
+            // pass a list; the one caller that can omit it is `ExportDialog`,
+            // and only when the project has no clips referencing a buffer at
+            // all. So the ids it sees are, in every case that matters, ones
+            // some project still holds — the exact complement of this set.
+            //
+            // Left unmigrated such a record would be immortal — never
+            // age-collectable, and invisible to `garbageCollectBySize`'s total,
+            // so the 2 GiB budget would be computed over a store arbitrarily
+            // larger than it. v1 reaped these after `maxAgeDays` and so must
+            // this. Reading the record is the only way to recover its stamp and
+            // size, so the pass reads within a byte budget and converges over
+            // successive cleanups rather than doing it all at once. Same
+            // transaction as the reads above, so no window exists in which a
+            // row can outlive the record it describes.
+            let migrationBytes = 0;
+            for (const key of recordKeys) {
+                if (migrationBytes >= LEGACY_MIGRATION_BYTE_BUDGET) {
+                    break;
+                }
+                if (typeof key !== 'string' || migratedIds.has(key)) {
+                    continue;
+                }
+                const record = await awaitRequest(store.get(key) as IDBRequest<SerializedBuffer | undefined>);
+                if (!record) {
+                    continue;
+                }
+                const sizeInBytes = recordSizeInBytes(record);
+                migrationBytes += sizeInBytes;
+                if (typeof record.lastAccessed !== 'number') {
+                    // Neither the row nor the record carries a stamp. Records
+                    // written before `lastAccessed` existed are real — the
+                    // original `SerializedBuffer` was `{sampleRate,
+                    // numberOfChannels, channelData}` and nothing else.
+                    //
+                    // The clock starts now. That cannot advance a collection:
+                    // `Date.now()` is the furthest-future stamp available, so
+                    // the record becomes collectable `maxAgeDays` from this
+                    // pass and never sooner. The invariant is that a record is
+                    // never deleted on a stamp that was invented, and nothing
+                    // here deletes.
+                    //
+                    // Leaving the row unwritten is what would be unsafe, and
+                    // not for the obvious reason: the record would charge the
+                    // byte budget on this pass, never retire from the sweep,
+                    // and charge it again on every pass after — starving every
+                    // record behind it out of the migration for as long as it
+                    // exists. Those records would then stay out of
+                    // `garbageCollectBySize`'s total, which is the 2 GiB
+                    // residual this sweep was written to close.
+                    metaStore.put({ lastAccessed: Date.now(), sizeInBytes } satisfies BufferMeta, key);
+                    continue;
+                }
+                if (!pinnedBufferIds.has(key) && record.lastAccessed < threshold) {
+                    store.delete(key);
+                    evictCachedBuffer(key);
+                    deletedCount++;
+                    continue;
+                }
+                metaStore.put({ lastAccessed: record.lastAccessed, sizeInBytes } satisfies BufferMeta, key);
+            }
+
             // The count is reported only for deletes that committed.
             await awaitTransaction(tx);
         } catch (error) {
@@ -1097,20 +1369,39 @@ export const audioBufferCache = {
         let deletedCount = 0;
         try {
             const db = await openDb();
-            const tx = db.transaction(STORE_NAME, 'readwrite');
+            const tx = db.transaction([STORE_NAME, META_STORE_NAME], 'readwrite');
             const store = tx.objectStore(STORE_NAME);
-            const [data, keys] = await Promise.all([
-                awaitRequest(store.getAll() as IDBRequest<SerializedBuffer[]>),
-                awaitRequest(store.getAllKeys()),
+            const metaStore = tx.objectStore(META_STORE_NAME);
+            // Metadata rows, for the same reason as `garbageCollectByAge`, and
+            // with the same consequence: a record with no row is neither a
+            // deletion candidate nor part of `currentTotal`.
+            //
+            // This collector does not sweep for un-migrated records itself.
+            // `cleanupUnusedFreezeFiles` runs `garbageCollectByAge` immediately
+            // before it, and that pass seeds or reaps them, so by the time this
+            // runs the rows exist for everything the budget reached. Doing the
+            // sweep in both would double the migration read for no gain.
+            //
+            // Until then those records are out of the total, so this collector
+            // evicts *less* than it should. That is the direction to be wrong
+            // in — the alternative is counting a record whose size is unknown as
+            // zero, which under-reports the total just as badly *and* makes it
+            // a candidate that frees nothing when deleted, so the loop would
+            // walk the whole store deleting audio without the total ever
+            // falling.
+            const [metas, keys] = await Promise.all([
+                awaitRequest(metaStore.getAll() as IDBRequest<BufferMeta[]>),
+                awaitRequest(metaStore.getAllKeys()),
             ]);
 
             // Sort by access time ascending (oldest first)
-            const entries = data
-                .map((item, index) => ({
+            const entries = metas
+                .map((meta, index) => ({
                     id: keys[index]! as string,
-                    lastAccessed: item.lastAccessed ?? 0,
-                    size: item.sizeInBytes ?? 0,
+                    lastAccessed: meta.lastAccessed,
+                    size: meta.sizeInBytes,
                 }))
+                .filter((entry) => typeof entry.lastAccessed === 'number' && typeof entry.size === 'number')
                 .sort((alpha, b) => alpha.lastAccessed - b.lastAccessed);
 
             let currentTotal = entries.reduce((acc, event) => acc + event.size, 0);
@@ -1123,6 +1414,7 @@ export const audioBufferCache = {
                     continue;
                 }
                 store.delete(entry.id);
+                metaStore.delete(entry.id);
                 evictCachedBuffer(entry.id);
                 currentTotal -= entry.size;
                 deletedCount++;
