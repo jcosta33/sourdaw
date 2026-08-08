@@ -231,6 +231,21 @@ describe('createPushMidiCodec', () => {
             expect(bytesOf(button)).toEqual([0xb0, 60, 0]);
         }
 
+        // 127 is the top of the accepted palette range. Without these, narrowing
+        // the bound to 0..126 leaves the suite green: 126 is accepted above and
+        // 128 is rejected below, so neither pins the upper accepted endpoint.
+        const padTop = codec.encode({ kind: 'pad-led', note: 99, paletteIndex: 127 });
+        expect(padTop.status).toBe('encoded');
+        if (padTop.status === 'encoded') {
+            expect(bytesOf(padTop)).toEqual([0x90, 99, 127]);
+        }
+
+        const buttonTop = codec.encode({ kind: 'button-led', control: 3, paletteIndex: 127 });
+        expect(buttonTop.status).toBe('encoded');
+        if (buttonTop.status === 'encoded') {
+            expect(bytesOf(buttonTop)).toEqual([0xb0, 3, 127]);
+        }
+
         expect(codec.encode({ kind: 'pad-led', note: 35, paletteIndex: 1 })).toEqual({
             status: 'rejected',
             reason: 'unsupported-note',
@@ -355,6 +370,27 @@ describe('createPushMidiCodec', () => {
         });
     });
 
+    it('encodes a mode 0 (Live) request, the low end of the accepted mode range', () => {
+        const codec = createPushMidiCodec();
+
+        // Mode 0 is Live mode — the default the device boots into — and was the
+        // one accepted mode never exercised. Narrowing the guard to 1..2 must
+        // not leave the suite green.
+        const request = codec.beginRequest({ kind: 'midi-mode', mode: 0 });
+        expect(request.status).toBe('started');
+        if (request.status === 'started') {
+            expect(bytesOf(request)).toEqual([0xf0, 0x00, 0x21, 0x1d, 0x01, 0x01, 0x0a, 0x00, 0xf7]);
+        }
+
+        expect(codec.acceptReply([0xf0, 0x00, 0x21, 0x1d, 0x01, 0x01, 0x0a, 0x00, 0xf7])).toEqual({
+            status: 'accepted',
+            reply: {
+                kind: 'midi-mode',
+                mode: 0,
+            },
+        });
+    });
+
     it('requires an exact MIDI-mode reply and does not let a duplicate clear a later request', () => {
         const codec = createPushMidiCodec();
         const modeOneReply = [0xf0, 0x00, 0x21, 0x1d, 0x01, 0x01, 0x0a, 0x01, 0xf7] as const;
@@ -379,6 +415,10 @@ describe('createPushMidiCodec', () => {
 
         const secondRequest = codec.beginRequest({ kind: 'midi-mode', mode: 2 });
         expect(secondRequest.status).toBe('started');
+        if (secondRequest.status === 'started') {
+            // The mode byte must reach the wire, not just the pending-reply slot.
+            expect(bytesOf(secondRequest)).toEqual([0xf0, 0x00, 0x21, 0x1d, 0x01, 0x01, 0x0a, 0x02, 0xf7]);
+        }
         expect(codec.acceptReply(modeOneReply)).toEqual({
             status: 'rejected',
             reason: 'reply-mismatch',
