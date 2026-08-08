@@ -1,0 +1,19 @@
+src/modules/MIDI/useCases/__tests__/getMidiGrooveHandlers.spec.ts
+  s_0401539a699666::t_bf1f6f7f6bc548 1-45
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "8971c00361c5218fb5a1d02e53fe7c2444ad5bca",
+  "prompts": {},
+  "sessions": {
+    "s_0401539a699666": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-af3d13d1c4ea877db",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
