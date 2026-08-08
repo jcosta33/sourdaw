@@ -1,0 +1,19 @@
+src/modules/Arrangement/stores/__tests__/clipboardStore.spec.ts
+  s_d4c192425595f5::t_0d4102393fc732 1-101
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "0b160a7f8a11fe6ed9b566235c2708dcd18b32b9",
+  "prompts": {},
+  "sessions": {
+    "s_d4c192425595f5": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-a77fe8a4ebb5042b2",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
