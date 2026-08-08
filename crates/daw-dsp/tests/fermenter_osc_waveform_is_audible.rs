@@ -274,11 +274,16 @@ fn the_analog_engine_renders_its_own_harmonic_series_per_waveform() {
 /// alone can no longer tell which oscillator produced it. Identity can: nothing
 /// but the shared `UnisonOsc` makes two different engines agree sample for
 /// sample.
+///
+/// The harmonic bounds are deliberately *not* re-asserted for engine 1 here.
+/// They would be entailed rather than checked: the identity below says this
+/// render is bit-for-bit the engine-0 unison-4 render, and
+/// `the_unison_bank_follows_the_osc_waveform_setting` already puts that render
+/// through the bounds. An assertion that cannot reach a verdict the file does
+/// not already hold is decoration — see ADR 0015.
 #[test]
 fn above_one_unison_voice_the_analog_engine_renders_the_wavetable_bank() {
     for case in &WAVEFORM_CASES {
-        assert_waveform_identity(case, 1.0, 4.0);
-
         let analog = render_sustain(case.setting, 1.0, 4.0);
         let wavetable = render_sustain(case.setting, 0.0, 4.0);
         assert_eq!(
