@@ -781,7 +781,9 @@ Re-measured after additional PRs since threshold raise #3 (PR #1231). Lines cros
 - **PR #1448**: Master channel + export range & tail — range radios, tail input — 8 tests.
 - **PR #1450**: Piano roll scale selectors — root, type change — 5 tests.
 - **PR #1452**: Piano roll zoom & snap — slider, snap buttons, variant change — 4 tests.
+- **PR #1454**: Chord stamp & expression — chord type, lane selector — 5 tests.
+- **PR #1458**: Modulation matrix — new modulator, empty state — 4 tests.
 
-**E2E: 156 tests across 35 spec files using data-testid selectors.**
+**E2E: 165 tests across 37 spec files using data-testid selectors.**
 
-**Campaign total to date: 278 PRs, ~2720 assertions. Lines coverage at 90.30%.**
+**Campaign total to date: 282 PRs, ~2734 assertions. Lines coverage at 90.30%.**
