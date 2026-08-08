@@ -796,6 +796,8 @@ Re-measured after additional PRs since threshold raise #3 (PR #1231). Lines cros
 - **PR #1471**: EDM template tracks — mute, solo, transport, playhead — 5 tests.
 - **PR #1472**: Keyboard shortcuts — Space, Escape, M, L, Cmd+K — 5 tests.
 
-**E2E: 209 tests across 47 spec files using data-testid selectors.**
+- **PR #1475**: Chat composer — input, aria-label, coexist — 5 tests.
 
-**Campaign total to date: 299 PRs, ~2782 assertions. Lines coverage at 90.30%.**
+**E2E: 214 tests across 48 spec files using data-testid selectors.**
+
+**Campaign total to date: 302 PRs, ~2787 assertions. Lines coverage at 90.30%.**
