@@ -441,6 +441,9 @@ describe('parsePromptToActions', () => {
         vi.mocked(generateToolCalls).mockResolvedValueOnce(
             completePlan([{ name: 'setClipStretchMode', arguments: { clipId: 'clip-intro', mode: 'timestretch' } }])
         );
+        vi.mocked(generateToolCalls).mockResolvedValueOnce(
+            completePlan([{ name: 'fitClipToBeats', arguments: { clipId: 'clip-intro', targetBeats: 4 } }])
+        );
         const providerContext: ProjectContext = {
             ...baseContext,
             tracks: [
@@ -484,6 +487,7 @@ describe('parsePromptToActions', () => {
             'set the Intro clip stretch mode to timestretch',
             providerContext
         );
+        const fitResult = await parsePromptToActions('fit the Intro clip duration to 4 beats', providerContext);
 
         expect(result.actions).toEqual([
             { type: 'setClipStretchRatio', payload: { clipId: 'clip-intro', ratio: 1.5 } },
@@ -495,6 +499,11 @@ describe('parsePromptToActions', () => {
         ]);
         expect(modeResult.requiresConfirmation).toBe(true);
         expect(modeResult.executionMode).toBe('atomic');
+        expect(fitResult.actions).toEqual([
+            { type: 'fitClipToBeats', payload: { clipId: 'clip-intro', targetBeats: 4 } },
+        ]);
+        expect(fitResult.requiresConfirmation).toBe(true);
+        expect(fitResult.executionMode).toBe('atomic');
     });
 
     it('proposes a grounded two-clip crossfade as one confirmable atomic action', async () => {

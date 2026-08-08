@@ -457,6 +457,17 @@ const guardedPayloadContractCases = [
         ],
     }),
     guardedPayloadCase({
+        actionType: 'fitClipToBeats',
+        validPayload: { clipId: 'clip-1', targetBeats: 8 },
+        invalidPayloads: [
+            { clipId: '', targetBeats: 8 },
+            { clipId: 'clip-1' },
+            { clipId: 'clip-1', targetBeats: 0 },
+            { clipId: 'clip-1', targetBeats: Number.NaN },
+            { clipId: 'clip-1', targetBeats: 8, extra: true },
+        ],
+    }),
+    guardedPayloadCase({
         actionType: 'splitClip',
         validPayload: { clipId: 'clip-1', beat: 4 },
         invalidPayloads: [

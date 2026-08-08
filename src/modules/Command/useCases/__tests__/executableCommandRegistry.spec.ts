@@ -258,6 +258,21 @@ const EXPECTED_COMMANDS = [
         true
     ),
     expectedCommand(
+        'fitClipToBeats',
+        'Fit one unlocked audio clip to an explicit duration in beats.',
+        {
+            clipId: { type: 'string', description: 'Existing unlocked audio clip ID' },
+            targetBeats: {
+                type: 'number',
+                exclusiveMinimum: 0,
+                description: 'Target clip duration in beats; must be greater than 0',
+            },
+        },
+        ['clipId', 'targetBeats'],
+        'broad-reversible',
+        true
+    ),
+    expectedCommand(
         'quantizeNotes',
         'Snap every note in one MIDI clip to an explicit beat grid.',
         {
@@ -1113,6 +1128,20 @@ const EXPECTED_GROUNDING = [
                 requiredInPrompt: true,
                 match: 'exact',
                 unit: 'stretch-ratio',
+            },
+        ],
+    },
+    {
+        actionType: 'fitClipToBeats',
+        intentPhrases: ['fit clip to beats', 'fit the clip to beats', 'fit clip duration', 'fit the clip duration'],
+        targetRules: [{ argument: 'clipId', capability: 'editable-audio-clip' }],
+        valueRules: [
+            {
+                argument: 'targetBeats',
+                kind: 'number-if-present',
+                requiredInPrompt: true,
+                match: 'exact',
+                unit: 'beat-duration',
             },
         ],
     },
