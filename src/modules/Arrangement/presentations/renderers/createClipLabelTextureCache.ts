@@ -351,12 +351,13 @@ export function createClipLabelTextureCache({
             }
 
             // Quantise the width so sub-pixel zoom jitter does not rasterise a
-            // fresh texture on every frame of a drag. The separator matters:
+            // fresh texture on every frame of a drag. The delimiter matters:
             // concatenating the three parts raw makes dpr 1 / width 23 / "foo"
             // and dpr 1 / width 2 / "3foo" the same key, which serves one clip
-            // the other's raster.
+            // the other's raster. NUL is the delimiter because it is the one
+            // character a clip name cannot smuggle past the name field.
             const quantisedWidth = Math.round(maxWidthCssPx);
-            const key = `${dpr} ${quantisedWidth} ${text}`;
+            const key = `${dpr}\u0000${quantisedWidth}\u0000${text}`;
 
             const cached = entries.get(key);
             if (cached) {
