@@ -720,5 +720,10 @@ Re-measured after additional PRs since threshold raise #3 (PR #1231). Lines cros
 - **PR #1331**: clipboardStore — cross-field preservation (clip/note) — 7 tests.
 - **PR #1332**: trackPitch — windowing, clarity threshold, note conversion — 8 tests.
 - **PR #1333**: trigger16Level — velocity/tune/decay/filter scaling — 6 tests.
+- **PR #1336**: PhonemeMap + resolveFileHandle — ARPAbet token map, OPFS traversal — 12 tests.
+- **PR #1337**: cancelPendingChatActions — missing/not_pending/cancelled branches — 5 tests.
+- **PR #1338**: actionHistoryMetadataPort — no-op default, swap, delegation — 7 tests.
+- **PR #1339**: bufferCreation — mono/stereo alloc, AudioBuffer copy — 9 tests.
+- **PR #1340**: resetShortcutMappings — preserve defs, clear custom — 3 tests.
 
-**Campaign total to date: 212 PRs, ~2313 assertions. Lines coverage at 90.30%.**
+**Campaign total to date: 217 PRs, ~2349 assertions. Lines coverage at 90.30%.**
