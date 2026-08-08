@@ -1,0 +1,76 @@
+src/modules/ProofChamber/presentations/views/__tests__/proofChamberAlgorithmGating.spec.tsx
+  s_14f2bbc9f385dd::t_ea79b4976edcc0 2-7,9-145,148-230,235-332
+  s_14f2bbc9f385dd::t_18227bd6180a94 146-147
+  s_14f2bbc9f385dd::t_1a6455160dc2e9 231-234
+  s_14f2bbc9f385dd::t_098841586685ec 1
+  s_14f2bbc9f385dd::t_49270ddda3169c 8
+src/components/daw/RotaryKnob.tsx
+  s_14f2bbc9f385dd::t_5f3d5d73fa9989 145
+  s_14f2bbc9f385dd::t_9d2d331f4cb298 263,270
+  s_14f2bbc9f385dd::t_63098d6ef69df9 331
+  s_14f2bbc9f385dd::t_6568e9f0e5bfa5 402
+  s_14f2bbc9f385dd::t_3678746f5681f6 84-91
+  s_14f2bbc9f385dd::t_f225f076d2039b 146
+  s_14f2bbc9f385dd::t_b95f105a24208d 72-83
+  s_14f2bbc9f385dd::t_8634b24c329805 401,404-405
+src/modules/Arrangement/models/PluginDescriptors/__tests__/descriptorEngineParamWeld.spec.ts
+  s_14f2bbc9f385dd::t_bb5e71335bde75 850
+  s_14f2bbc9f385dd::t_53567a946fa17a 312-318,320-323,325
+  s_14f2bbc9f385dd::t_c0aef3950612c0 662-665
+  s_14f2bbc9f385dd::t_09db393ca4cec8 904-939
+  s_06719b1569586e::t_759695caadde7a 12
+src/modules/ProofChamber/presentations/views/ProofChamberPanel.tsx
+  s_14f2bbc9f385dd::t_17eaf2b2180ca4 718
+  s_14f2bbc9f385dd::t_a5b5b69e742123 783
+  s_14f2bbc9f385dd::t_d912f59c227add 289-301
+  s_14f2bbc9f385dd::t_89994b7ab9673a 825
+  s_14f2bbc9f385dd::t_47cb71a900096a 837
+  s_14f2bbc9f385dd::t_25edaa1ce2e436 653
+  s_14f2bbc9f385dd::t_51e250b7ece10f 665
+  s_14f2bbc9f385dd::t_1cfe6229d0c7b0 677
+  s_14f2bbc9f385dd::t_c2321719bbab63 706
+  s_14f2bbc9f385dd::t_7b0d2d977bca57 742
+  s_14f2bbc9f385dd::t_380af3e73e759d 23-25
+  s_14f2bbc9f385dd::t_90289b5621fbe0 568-569,574-579,581-583,588,594,606,621,628
+  s_14f2bbc9f385dd::t_2dde3fc4416c31 26
+  s_14f2bbc9f385dd::t_c527437caf8963 75-82
+  s_14f2bbc9f385dd::t_adef51a663674c 795
+  s_14f2bbc9f385dd::t_adaf6277254396 623
+  s_14f2bbc9f385dd::t_d8cbae2f578377 771
+  s_14f2bbc9f385dd::t_5e7d2016b65328 812
+  s_14f2bbc9f385dd::t_2c7712304927ca 689
+  s_14f2bbc9f385dd::t_1943dd2310dc77 730
+  s_14f2bbc9f385dd::t_ae82e8451a2156 178-206,218,230,244-251
+  s_14f2bbc9f385dd::t_8af35696a82067 759
+  s_14f2bbc9f385dd::t_597c4d013caba1 431-435,437-442,444-446,451
+  s_14f2bbc9f385dd::t_6a2503ec750fd6 22
+  s_14f2bbc9f385dd::t_5b4cfd6e95935a 288
+src/utils/nativeDspEngineGaps.ts
+  s_14f2bbc9f385dd::t_03dfdc25daacb8 1-229
+src/modules/ProofChamber/models/ProofChamberAlgorithmGating.ts
+  s_14f2bbc9f385dd::t_50ada0d1a78ee6 1-180
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "728605b7103a7bbd18dbacc336770c98e0f02e59",
+  "prompts": {},
+  "sessions": {
+    "s_06719b1569586e": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-acd3a7368ec491325",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_14f2bbc9f385dd": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f9a61a1d-66b3-4146-938d-a04f45f4b060",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
