@@ -725,5 +725,8 @@ Re-measured after additional PRs since threshold raise #3 (PR #1231). Lines cros
 - **PR #1338**: actionHistoryMetadataPort — no-op default, swap, delegation — 7 tests.
 - **PR #1339**: bufferCreation — mono/stereo alloc, AudioBuffer copy — 9 tests.
 - **PR #1340**: resetShortcutMappings — preserve defs, clear custom — 3 tests.
+- **PR #1342**: getExecutableAppActionGroundingRules — lookup, clone, defaults — 7 tests.
+- **PR #1344**: paintDrawPoint — snap, clamp, replace, constrain, RAF — 10 tests.
+- **PR #1345**: stopSequencer — stop, clear timeout, release, reset state — 6 tests.
 
-**Campaign total to date: 217 PRs, ~2349 assertions. Lines coverage at 90.30%.**
+**Campaign total to date: 220 PRs, ~2372 assertions. Lines coverage at 90.30%.**
