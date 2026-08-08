@@ -27,7 +27,7 @@ import { BUILTIN_PLUGINS } from '../../DeviceParameter';
  *     declared range  ==  knob travel  ==  engine clamp
  *
  * Two of those legs are derivable for every parameter this file compares; the
- * third is derivable for 107 of the 184. So the census is **three-way where it
+ * third is derivable for 112 of the 192. So the census is **three-way where it
  * can be and two-way where it cannot**, and it says which is which rather than
  * implying uniform coverage. A two-way row that is honest beats a three-way one
  * that fabricates a clamp from a comment.
@@ -47,8 +47,20 @@ import { BUILTIN_PLUGINS } from '../../DeviceParameter';
  *
  * **Leg 3 — engine clamp.** The two-sided numeric `value.clamp(a, b)` in the
  * Rust `set_param` arm, read the way `descriptorEngineParamWeld` reads the arm
- * names. Covers 107 of 184; every shape it cannot read is named in
+ * names. Covers 112 of 192; every shape it cannot read is named in
  * `ENGINE_CLAMP_COVERAGE`, at the point where the derivation stops.
+ *
+ * ## Coverage is part of the claim
+ *
+ * A total is not a census. The first revision of this file said "184 across 13
+ * devices" and was 184 across **seven** — `native-scoring`, `toaster`, `levain`,
+ * `proof`, `yeast` and `grand-boule` were all at zero, and #1474's exact defect
+ * could be re-created on `masterGain` in three of them at once, against three
+ * shipped `max={2}` knobs, with every assertion green. Four of those six are now
+ * covered; two are not, and both are named with their cause in the per-device
+ * pin. **`comparedPerDevice` is asserted by identity for that reason** — a
+ * device that silently falls to zero is the failure mode this census exists to
+ * catch, turned on itself.
  *
  * ## Why the comparison is not a tautology
  *
@@ -206,6 +218,22 @@ function readAttribute(tag: string, name: string): string | null {
  * whose declared range is the 0..1 of a boolean. That reported two disagreements
  * that do not exist. The auto toggle is not a knob and has no travel; only the
  * value binding does.
+ *
+ * ## The id is not always the first argument
+ *
+ * An earlier revision anchored the call form to `…Param(` immediately followed
+ * by the literal, which silently excluded every panel that passes a device id
+ * first. `ToasterPanel.tsx:618-656` writes
+ * `setToasterKitParam(deviceId, 'swing', value)` and `LevainPanel.tsx:313-321`
+ * writes `setLevainParamWithAudio(deviceId, 'masterGain', value)` — four
+ * kit-scoped Toaster knobs and Levain's master, all with numeric bounds, all
+ * invisible. So the literal is now taken from **any** argument position.
+ *
+ * The safety condition for widening it is `exactly one` string literal in the
+ * argument list. `setBacteriaBandParamWithAudio(deviceId, bandIndex, 'chorusFeedback', value)`
+ * still resolves unambiguously; a call carrying two literals resolves to
+ * nothing rather than to a coin flip, and lands in the unbound count where it
+ * can be seen.
  */
 function readBoundParamId(expression: string | null): string | null {
     if (expression === null) {
@@ -215,15 +243,72 @@ function readBoundParamId(expression: string | null): string | null {
     if (bare !== null) {
         return bare[1]!;
     }
-    const call = /(?:setParam|onParam|updateParam|setDeviceParam|onStackChange)\w*\(\s*'([\w-]+)'/.exec(expression);
-    if (call !== null) {
-        return call[1]!;
+
+    // A `set…Param…(` / `update…Param…(` / `on…Param…(` call, or Crumbs'
+    // `onStackChange`. `setGrandBouleMasterGain(…)` deliberately does not match:
+    // its parameter id lives in the *function name*, not in any argument, so
+    // there is no literal to read and pretending otherwise would invent one.
+    const callSite = /\b(?:set|update|on)\w*(?:[Pp]aram\w*|StackChange)\(/.exec(expression);
+    if (callSite !== null) {
+        const args = readParenthesised(expression, callSite.index + callSite[0].length - 1);
+        const literals = [...args.matchAll(/(?<![\w$])['"]([\w-]+)['"]/g)].map((hit) => hit[1]!);
+        if (literals.length === 1) {
+            return literals[0]!;
+        }
     }
-    const objectKey = /\(\s*\{\s*(\w+)\s*:/.exec(expression);
-    if (objectKey !== null) {
-        return objectKey[1]!;
+
+    // An object-argument write. Two shapes occur and they mean opposite things:
+    // Crumbs' `onStackChange({ stackCount: v })` names the parameter with the
+    // *key*, while Proof's `onPatchChange({ key: 'imgMonoBassFreq', value })`
+    // names it with the key's *value*. Reading the key name in both cases is
+    // what produced the phantom `byParam` entry `"key"` — an id no descriptor
+    // declares, invisible to `compared` and to the per-device gap pins.
+    const objectArgument = /\(\s*\{\s*(\w+)\s*:\s*(?:'([\w-]+)')?/.exec(expression);
+    if (objectArgument !== null) {
+        const keyName = objectArgument[1]!;
+        const keyValue = objectArgument[2];
+        if (['key', 'param', 'paramId', 'id'].includes(keyName)) {
+            return keyValue ?? null;
+        }
+        return keyName;
     }
     return null;
+}
+
+/** The parenthesised argument list starting at `openIndex`, brace- and string-aware. */
+function readParenthesised(source: string, openIndex: number): string {
+    let depth = 0;
+    let inString = false;
+    let quote = '';
+    for (let index = openIndex; index < source.length; index++) {
+        const char = source[index]!;
+        if (inString) {
+            if (char === '\\') {
+                index++;
+                continue;
+            }
+            if (char === quote) {
+                inString = false;
+            }
+            continue;
+        }
+        if (char === '"' || char === "'" || char === '`') {
+            inString = true;
+            quote = char;
+            continue;
+        }
+        if (char === '(') {
+            depth++;
+            continue;
+        }
+        if (char === ')') {
+            depth--;
+            if (depth === 0) {
+                return source.slice(openIndex, index + 1);
+            }
+        }
+    }
+    return source.slice(openIndex);
 }
 
 // ── The population, and how each device binds a knob to a parameter ────────
@@ -266,7 +351,10 @@ const BINDING_ATTRIBUTES = ['param', 'paramId', 'k', 'onChange'] as const;
  */
 type PanelBinding = {
     readonly presentationRoot: string;
-    readonly translation: { readonly kind: 'identity' } | { readonly kind: 'table'; readonly source: string };
+    readonly translation:
+        | { readonly kind: 'identity' }
+        | { readonly kind: 'table'; readonly source: string }
+        | { readonly kind: 'switch'; readonly source: string };
 };
 
 const PANEL_BINDINGS: Readonly<Record<string, PanelBinding>> = {
@@ -313,7 +401,13 @@ const PANEL_BINDINGS: Readonly<Record<string, PanelBinding>> = {
     },
     proof: {
         presentationRoot: 'src/modules/Proof/presentations',
-        translation: { kind: 'identity' },
+        // Proof's descriptor ids are the Rust snake_case ones; its panel writes
+        // camelCase patch keys and `setProofParamWithPatch` translates them on
+        // the way to the engine. Reading that switch is the join.
+        translation: {
+            kind: 'switch',
+            source: 'src/modules/Proof/useCases/proofParamBridge/setProofParamWithPatch.ts',
+        },
     },
     yeast: {
         presentationRoot: 'src/modules/Yeast/presentations',
@@ -338,6 +432,21 @@ function readTranslationTable(source: string): ReadonlyMap<string, string> {
     const block = readBraced(text, text.indexOf('{', declaration));
     const entry = /([A-Za-z_]\w*)\s*:\s*'([\w-]+)'/g;
     return new Map([...block.matchAll(entry)].map((match) => [match[1]!, match[2]!]));
+}
+
+/**
+ * A `case 'panelKey': return { name: 'engine_key', … }` switch.
+ *
+ * Proof's panel speaks camelCase and its descriptor speaks the Rust snake_case;
+ * the translation is a switch rather than an object literal
+ * (`Proof/useCases/proofParamBridge/setProofParamWithPatch.ts:276-300`), and it
+ * is the same production code the panel's writes actually go through. Reading it
+ * is what turns Proof from three uncovered parameters into three three-way rows.
+ */
+function readTranslationSwitch(source: string): ReadonlyMap<string, string> {
+    const text = stripComments(readFileSync(join(REPO_ROOT, source), 'utf8')).replaceAll(/\s+/g, ' ');
+    const arm = /case '([\w-]+)': return \{ name: '([\w-]+)'/g;
+    return new Map([...text.matchAll(arm)].map((match) => [match[1]!, match[2]!]));
 }
 
 // ── Leg 2: knob travel ─────────────────────────────────────────────────────
@@ -389,15 +498,21 @@ function readKnobsFromFile(file: string): {
     return { bound, unbound };
 }
 
+function buildPanelTranslator(binding: PanelBinding): (id: string) => string {
+    if (binding.translation.kind === 'identity') {
+        return (id) => id;
+    }
+    if (binding.translation.kind === 'switch') {
+        const table = readTranslationSwitch(binding.translation.source);
+        return (id) => table.get(id) ?? id;
+    }
+    const table = readTranslationTable(binding.translation.source);
+    return (id) => table.get(id) ?? id;
+}
+
 function readPanelKnobs(deviceId: string): { byParam: ReadonlyMap<string, KnobTravel[]>; unbound: number } {
     const binding = PANEL_BINDINGS[deviceId]!;
-    const translate =
-        binding.translation.kind === 'identity'
-            ? (id: string): string => id
-            : ((): ((id: string) => string) => {
-                  const table = readTranslationTable(binding.translation.source);
-                  return (id: string): string => table.get(id) ?? id;
-              })();
+    const translate = buildPanelTranslator(binding);
 
     const byParam = new Map<string, KnobTravel[]>();
     let unbound = 0;
@@ -587,10 +702,26 @@ type Census = {
     readonly notContinuous: readonly string[];
     /** Knob elements with bounds but no literal id the scanner could read. */
     readonly unboundKnobs: ReadonlyMap<string, number>;
+    /**
+     * Ids the scanner *did* resolve that no descriptor on that device declares.
+     *
+     * A binding that resolves to the wrong string is worse than one that
+     * resolves to nothing: it is absent from `compared`, absent from `noKnob`,
+     * and absent from `unboundKnobs`, so every existing pin stays green while a
+     * control goes uncovered. Counted separately for exactly that reason.
+     */
+    readonly strayBindings: ReadonlyMap<string, readonly string[]>;
+    /** Compared parameters per device — a zero here means the device is uncovered. */
+    readonly comparedPerDevice: ReadonlyMap<string, number>;
     /** Compared rows that also carry a derived engine clamp — the three-way subset. */
     readonly threeWay: readonly Comparison[];
     /** Three-way rows where the clamp disagrees with the declared range. */
     readonly clampDisagree: readonly Comparison[];
+    /**
+     * Arm names whose clamp differs between two files on the same device, so no
+     * single interval can be claimed. The seventh not-derivable shape.
+     */
+    readonly contestedClamps: ReadonlyMap<string, readonly string[]>;
 };
 
 function buildCensus(): Census {
@@ -603,6 +734,9 @@ function buildCensus(): Census {
     const unboundKnobs = new Map<string, number>();
     const threeWay: Comparison[] = [];
     const clampDisagree: Comparison[] = [];
+    const strayBindings = new Map<string, readonly string[]>();
+    const comparedPerDevice = new Map<string, number>();
+    const contestedClamps = new Map<string, readonly string[]>();
 
     for (const descriptor of BUILTIN_PLUGINS) {
         const binding = PANEL_BINDINGS[descriptor.id];
@@ -612,7 +746,11 @@ function buildCensus(): Census {
         const panel = readPanelKnobs(descriptor.id);
         const engine = readEngineClamps(descriptor.id);
         unboundKnobs.set(descriptor.id, panel.unbound);
+        contestedClamps.set(descriptor.id, [...engine.contested].sort());
+        const declaredIds = new Set(descriptor.parameters.map((param) => param.id));
+        strayBindings.set(descriptor.id, [...panel.byParam.keys()].filter((id) => !declaredIds.has(id)).sort());
         const missing: string[] = [];
+        let comparedHere = 0;
 
         for (const param of descriptor.parameters) {
             if (param.legalSet !== undefined) {
@@ -645,6 +783,7 @@ function buildCensus(): Census {
                 at: knob.at,
             };
             compared.push(row);
+            comparedHere++;
             if (clamp !== null) {
                 threeWay.push(row);
                 if (clamp[0] !== param.minValue || clamp[1] !== param.maxValue) {
@@ -657,10 +796,24 @@ function buildCensus(): Census {
             }
             disagree.push(row);
         }
-        noKnob.set(descriptor.id, missing);
+        noKnob.set(descriptor.id, missing.sort());
+        comparedPerDevice.set(descriptor.id, comparedHere);
     }
 
-    return { compared, agree, disagree, noKnob, ambiguous, notContinuous, unboundKnobs, threeWay, clampDisagree };
+    return {
+        compared,
+        agree,
+        disagree,
+        noKnob,
+        ambiguous,
+        notContinuous,
+        unboundKnobs,
+        strayBindings,
+        comparedPerDevice,
+        threeWay,
+        clampDisagree,
+        contestedClamps,
+    };
 }
 
 const CENSUS = buildCensus();
@@ -672,6 +825,12 @@ type RangeDisagreement = {
     readonly paramId: string;
     readonly declared: readonly [number, number];
     readonly travel: readonly [number, number];
+    /**
+     * The engine clamp, when leg 3 reaches this parameter. `null` is a claim
+     * that has to survive assertion, not a shrug: if a clamp becomes derivable
+     * the row reds until someone re-reads the verdict in the light of it.
+     */
+    readonly clamp: readonly [number, number] | null;
     /** `declared`, `knob`, or `unresolved` — which side this lane judges wrong. */
     readonly wrongSide: 'declared' | 'knob' | 'unresolved';
     readonly reason: string;
@@ -698,27 +857,32 @@ const KNOWN_RANGE_DISAGREEMENTS: readonly RangeDisagreement[] = [
         paramId: 'lfoRate',
         declared: [0, 5000],
         travel: [0, 20],
-        wrongSide: 'unresolved',
+        clamp: [0, 5000],
+        wrongSide: 'knob',
         reason:
             'The **mirror** of #1474, not a repeat of it. #1474 found three ranges declared *narrower* than the knob, ' +
             'where a clamp against the declaration would truncate the sweep. This one is declared 250× *wider*: the ' +
             'LFO Rate knob travels 0..20 Hz (`Fermenter/presentations/components/LfoSection.tsx:123`) while ' +
             '`FERMENTER_DESCRIPTOR` declares 0..5000 (`FermenterDescriptor.ts`, `lfoRate`). Nothing truncates — the ' +
-            'defect points the other way. An automation lane drawn on Lfo Rate offers the user a curve up to 5000, ' +
-            'the lane picker scales its editor to that span, and 99.6% of the drawable range is travel the panel ' +
-            'never offers and (see below) a modulation LFO has no musical use for.\n\n' +
-            'Marked **unresolved** rather than judged, deliberately, and this is the row I most want a second pair ' +
-            'of eyes on. The two candidate readings are not equally cheap to be wrong about:\n' +
-            '  (a) 5000 is a copy of `audioModRate`, which is declared [0..5000] on the very same descriptor and is ' +
-            '      an *audio-rate* modulator where kilohertz is the point. If `lfoRate` was written by copying that ' +
-            '      row, 20 Hz is correct and the declaration should come down to 20 — which is a **narrowing**, and ' +
-            '      narrowing a declared range retroactively clamps automation curves already drawn in saved ' +
-            '      projects. That is a data-affecting change and it does not belong in a census PR.\n' +
-            '  (b) The LFO is genuinely meant to reach audio rate and the knob is the under-provisioned side, in ' +
-            '      which case the fix is a wider knob (or a log-scaled one) and the declaration is already right.\n' +
-            'The engine leg does not settle it: `lfo_rate` is not statically resolvable to a clamp — see ' +
-            '`ENGINE_CLAMP_COVERAGE`. Until someone who owns the synth says which reading is intended, recording the ' +
-            'disagreement is the whole of what this file can honestly claim.',
+            'defect points the other way. An automation lane drawn on LFO Rate offers a curve up to 5000, the lane ' +
+            'picker scales its editor to that span, and 99.6% of the drawable range is travel the panel never ' +
+            'offers.\n\n' +
+            '**The knob is the wrong side, and leg 3 is what settles it.** ' +
+            '`crates/daw-dsp/src/fermenter/layer.rs:631` is ' +
+            '`"lfo_rate" => self.lfo_rate.set(value.clamp(0.0, 5000.0))` — the two-sided literal shape, which this ' +
+            "census derives (the row's `clamp` above is read, not typed). So the *engine* independently agrees with " +
+            'the declaration at 0..5000, and the descriptor is not a stray copy of anything: the DSP was built to ' +
+            'accept audio-rate LFO, which is a real synthesis technique and the reason a modulator would be given ' +
+            'that ceiling deliberately.\n\n' +
+            'An earlier revision of this row marked it `unresolved` and asserted that `lfo_rate` "is not statically ' +
+            'resolvable to a clamp". That was simply false — the census was already deriving the clamp while the ' +
+            'prose beside it denied the clamp existed. It also floated a theory that 5000 was copied from ' +
+            '`audioModRate` (declared [0..5000] on the same descriptor); the engine clamp rules that out, because a ' +
+            'copied *descriptor* number would not also appear as a hand-written bound in the Rust.\n\n' +
+            'Two legs against one, so the knob is the under-provisioned side. **Not fixed here.** Widening a shipped ' +
+            "control's travel 250× changes its feel across its whole useful range, and a 0..5000 Hz LFO wants a log " +
+            'taper rather than the linear one it has — that is a control-design change, not a number change, and it ' +
+            'belongs to whoever owns the synth. Recorded with the evidence that identifies the side.',
     },
 ];
 
@@ -728,8 +892,8 @@ const KNOWN_RANGE_DISAGREEMENTS: readonly RangeDisagreement[] = [
  * Written here, at the point the derivation stops, rather than only in a PR
  * description: a future lane reading this file will otherwise assume the third
  * leg is covered everywhere and build on it. It is **not** a population-wide
- * equality. It covers 107 of the 184 compared parameters — the ones whose arm
- * contains a two-sided numeric `value.clamp(a, b)`. The remaining 77 are not
+ * equality. It covers 112 of the 192 compared parameters — the ones whose arm
+ * contains a two-sided numeric `value.clamp(a, b)`. The remaining 80 are not
  * skipped for effort; each shape below yields no interval to compare, and
  * inventing one is exactly the "fabricate a clamp from a comment" this census
  * must not do.
@@ -758,7 +922,17 @@ const KNOWN_RANGE_DISAGREEMENTS: readonly RangeDisagreement[] = [
  *     `MAX_BANDS`, `MAX_BURSTS` and `MAX_VOICES` are each defined more than once
  *     with different values in different modules (`crust/bands.rs:19` = 5 against
  *     `bacteria/engine.rs:22` = 6), so a name-only resolver picks the wrong one.
- *  6. **Crumbs' enum dispatch, specifically.** The public `set_param`
+ *  6. **Two files on one device clamping the same name differently.** Unioning
+ *     arm names across a device's sources means a name can carry two intervals,
+ *     and there is then no single clamp to claim. `readClampsFromFiles` collects
+ *     these as `contested` and refuses the name outright rather than picking a
+ *     file. Live today on `gluten` (`ratio`, `attack`), `dutch-oven` (`decay`,
+ *     `damping`), `bacteria` (`spectralBlur`) and seven Toaster arms.
+ *     **`gluten.ratio` and `gluten.attack` are in the compared population**, so
+ *     they are two-way rows for this reason and not for one of the others — the
+ *     distinction is why this needs its own entry rather than being folded into
+ *     "clamp applied in a callee".
+ *  7. **Crumbs' enum dispatch, specifically.** The public `set_param`
  *     (`crumbs/mod.rs:95-101`) clamps nothing: it maps the name to a
  *     `CrumbsParam` through `parse_crumbs_param` (`crumbs/types.rs:321`) and
  *     dispatches into `crumbs/engine.rs:715`, where the arms are enum variants
@@ -780,6 +954,7 @@ const ENGINE_CLAMP_COVERAGE = {
         'clamp on a transformed value (`(value / 10.0).clamp(…)`) — bounds the result, not the wire domain',
         'clamp applied in a callee or in a sub-processor the arm delegates to',
         'named-constant bounds — the same constant name is defined with different values in different modules',
+        'contested — two files on one device clamp the same arm name to different intervals',
         'Crumbs: enum-variant arms behind `parse_crumbs_param`, not string arms',
     ],
 } as const;
@@ -994,6 +1169,13 @@ describe('declared parameter range agrees with the knob that drives it', () => {
             expect(row, `${known.deviceId}.${known.paramId} no longer disagrees — delete the row`).toBeDefined();
             expect(row!.declared).toStrictEqual(known.declared);
             expect(row!.travel).toStrictEqual(known.travel);
+            // The engine clamp is part of the recorded evidence, so it is
+            // asserted like the rest of it. This is the assertion the first
+            // revision of the `lfoRate` row needed and did not have: its prose
+            // said leg 3 could not reach `lfo_rate` while the census beside it
+            // was already deriving 0..5000. A verdict that misdescribes its own
+            // evidence now reds.
+            expect(row!.clamp).toStrictEqual(known.clamp);
         }
     });
 
@@ -1006,16 +1188,16 @@ describe('declared parameter range agrees with the knob that drives it', () => {
         //
         // compared = descriptor parameters on a bespoke-panel device that the
         // scanner bound to exactly one knob with two numeric bounds.
-        expect(CENSUS.compared.length).toBe(184);
-        expect(CENSUS.agree.length).toBe(183);
+        expect(CENSUS.compared.length).toBe(192);
+        expect(CENSUS.agree.length).toBe(191);
         expect(CENSUS.disagree.length).toBe(1);
         expect(CENSUS.ambiguous).toStrictEqual([]);
 
         // threeWay = the subset of `compared` that ALSO has a derivable engine
-        // clamp. 107 of 184 is the honest size of the three-way census; the
-        // other 77 are two-way only, for the shapes named in
+        // clamp. 112 of 192 is the honest size of the three-way census; the
+        // other 80 are two-way only, for the shapes named in
         // `ENGINE_CLAMP_COVERAGE.notDerivable`.
-        expect(CENSUS.threeWay.length).toBe(107);
+        expect(CENSUS.threeWay.length).toBe(112);
         expect(CENSUS.clampDisagree.length).toBe(7);
 
         // `legalSet` selectors: oversampling factors and the like. A set of legal
@@ -1023,6 +1205,136 @@ describe('declared parameter range agrees with the knob that drives it', () => {
         // sweeping — so the three-way comparison does not apply and forcing it
         // would report every one of them as a disagreement.
         expect(CENSUS.notContinuous.length).toBe(3);
+    });
+
+    it('pins compared coverage per device, so a device at zero is stated not implied', () => {
+        // **The most important assertion in this file**, and the one it shipped
+        // without. A total of 192 says nothing about distribution: the first
+        // revision reported "184 across 13 devices" while six of the thirteen
+        // were at zero, and #1474's exact defect could be re-created on
+        // `masterGain` in Toaster, Levain and GrandBoule simultaneously — three
+        // shipped `max={2}` knobs — with the spec still green. A census whose
+        // coverage can silently shrink is the failure mode this file exists to
+        // prevent, applied to itself.
+        expect(Object.fromEntries(CENSUS.comparedPerDevice)).toStrictEqual({
+            'builtin-crumbs': 13,
+            'dutch-oven': 17,
+            fermenter: 57,
+            gluten: 24,
+            bacteria: 42,
+            grinder: 25,
+            crust: 6,
+            // Reached only because `readBoundParamId` takes the id from any
+            // argument position: `setToasterKitParam(deviceId, 'swing', value)`.
+            toaster: 4,
+            // `setLevainParamWithAudio(deviceId, 'masterGain', value)`, same reason.
+            levain: 1,
+            // Reached only through the `setProofParamWithPatch` switch, which
+            // translates the panel's camelCase to the descriptor's snake_case.
+            proof: 3,
+
+            // ── The zeros. Each is a real gap with a real cause. ──────────────
+            //
+            // The Tuner has no knobs: `a4_hz` is a numeric field, `mute` and
+            // `tone` are toggles. Nothing to compare, and no defect implied.
+            'native-scoring': 0,
+            // Yeast declares four rack-level parameters and its panel renders 48
+            // per-processor controls that name none of them. The largest blind
+            // spot in the file; see `unboundKnobs`.
+            yeast: 0,
+            // GrandBoule encodes the parameter in the *function name* —
+            // `setGrandBouleMasterGain({ deviceId, engine, store, gain: value })`
+            // (`GrandBoulePanel.tsx:371-381`) — so there is no literal id to
+            // read, and inventing one from the function name would be guessing.
+            // Its three declared parameters include a `masterGain` on a shipped
+            // `max={2}` knob, i.e. exactly #1474's shape, uncovered.
+            'grand-boule': 0,
+        });
+    });
+
+    it('counts bindings that resolved to an id no descriptor declares', () => {
+        // A binding that resolves to the *wrong* string is worse than one that
+        // resolves to nothing: it is absent from `compared`, from `noKnob` and
+        // from `unboundKnobs`, so every other pin stays green while a control
+        // goes uncovered. `ProofImagerSection.tsx:121` was one —
+        // `onPatchChange({ key: 'imgMonoBassFreq', … })` resolved to the literal
+        // key name `"key"`, a phantom entry for a knob travelling 40..200.
+        //
+        // Asserted by identity, not count, because which ids these are is the
+        // whole diagnostic value: `toaster`'s eight are pad-scoped writes that
+        // share a spelling with no kit parameter, `levain`'s fifteen are
+        // engine-config values, and Proof's three snake_case entries are
+        // parameters the switch translates but the descriptor does not declare.
+        expect(Object.fromEntries(CENSUS.strayBindings)).toStrictEqual({
+            'builtin-crumbs': [],
+            'dutch-oven': [],
+            fermenter: [],
+            gluten: [],
+            yeast: [],
+            crust: [],
+            'grand-boule': [],
+            'native-scoring': [],
+            toaster: ['decay', 'drive', 'filterCutoff', 'lofiBits', 'lofiMix', 'pan', 'tone', 'volume'],
+            levain: [
+                'amount',
+                'dynamicCrossfadeTime',
+                'dynamicMax',
+                'fastThresholdMs',
+                'pan',
+                'portamentoVelocityThreshold',
+                'slowThresholdMs',
+                'timingMaxMs',
+                'tuningMaxCents',
+                'vibratoDepthMax',
+                'vibratoOnsetDelay',
+                'vibratoRateMax',
+                'vibratoRateMin',
+                'vibratoVarMax',
+                'volume',
+            ],
+            bacteria: [
+                'filterEnvAttack',
+                'filterEnvRelease',
+                'lorenzBeta',
+                'lorenzRho',
+                'lorenzSigma',
+                'lorenzSpeed',
+                'stepSeqRate',
+                'stepSeqSteps',
+                'tubeBias',
+            ],
+            grinder: ['distance', 'positionX', 'positionY'],
+            proof: ['dynBands', 'excBands', 'imgBandWidth', 'img_mono_bass_freq', 'lim_lookahead', 'lim_release'],
+        });
+    });
+
+    it('names the arm names two files clamp differently, the seventh unreadable shape', () => {
+        // `contested` was computed and forwarded and never read — a shape the
+        // file's own prose claimed was enumerated in `ENGINE_CLAMP_COVERAGE`
+        // while being absent from it. `gluten.ratio` and `gluten.attack` are in
+        // `compared` (the presence pin even asserts `ratio` max 20), so they are
+        // two-way rows for *this* reason and not one of the other six.
+        expect(Object.fromEntries(CENSUS.contestedClamps)).toStrictEqual({
+            'builtin-crumbs': [],
+            fermenter: [],
+            levain: [],
+            grinder: [],
+            proof: [],
+            yeast: [],
+            crust: [],
+            'grand-boule': [],
+            'native-scoring': [],
+            'dutch-oven': ['damping', 'decay'],
+            gluten: ['attack', 'ratio'],
+            bacteria: ['spectralBlur'],
+            toaster: ['amp_decay', 'base_freq', 'noise_level', 'pitch_amount', 'pitch_decay', 'ratio', 'tone'],
+        });
+
+        // The refusal is the point: a contested name must yield no clamp at all
+        // rather than whichever file the directory walk reached first.
+        expect(readEngineClamps('gluten').byName.has('ratio')).toBe(false);
+        expect(CENSUS.threeWay.some((row) => row.deviceId === 'gluten' && row.paramId === 'ratio')).toBe(false);
+        expect(CENSUS.compared.some((row) => row.deviceId === 'gluten' && row.paramId === 'ratio')).toBe(true);
     });
 
     it('reads real clamps out of the Rust it claims to read', () => {
@@ -1093,20 +1405,24 @@ describe('declared parameter range agrees with the knob that drives it', () => {
         // have no `min`/`max` at all, and the rest are knobs whose id the scanner
         // cannot read (see the unbound count below). They are listed so a reader
         // knows exactly which parameters this census says nothing about.
-        const perDevice = Object.fromEntries([...CENSUS.noKnob].map(([device, ids]) => [device, ids.length]));
-        expect(perDevice).toStrictEqual({
+        //
+        // Asserted by **identity**, not cardinality. The title promises names,
+        // and a count does not keep that promise: a refactor that drops one
+        // parameter out of `compared` while another enters leaves every count
+        // unchanged and every assertion green, which is the same silent-shrink
+        // failure the per-device pin above exists to stop.
+        expect(Object.fromEntries(CENSUS.noKnob)).toStrictEqual({
             // Crumbs is fully covered on the knob leg: 13 of 13 declared
             // parameters bound to a knob. That matters more than the zero looks
             // — it is the device #1474's three defects were on, so the mutation
             // that re-creates one of them cannot slip through a coverage hole.
-            'builtin-crumbs': 0,
-            // The booleans (`freeze`, `shimmer`, `saturation`) and the
-            // `saturation_type` selector. Everything else on Dutch Oven resolves
-            // through the PARAM_MAP translation.
-            'dutch-oven': 4,
+            'builtin-crumbs': [],
+            // The booleans and the `saturation_type` selector. Everything else on
+            // Dutch Oven resolves through the PARAM_MAP translation.
+            'dutch-oven': ['freeze', 'saturation', 'saturation_type', 'shimmer'],
             // The Tuner panel drives `a4_hz` through a numeric field rather than
             // a knob, and `mute`/`tone` are toggles.
-            'native-scoring': 3,
+            'native-scoring': ['a4_hz', 'mute', 'tone'],
             // Fermenter is the largest gap by far, and the reason is a single
             // shape rather than 48 unrelated omissions: several sections drive
             // knobs from a config array — `{ label: 'A', key: 'Attack',
@@ -1118,25 +1434,151 @@ describe('declared parameter range agrees with the knob that drives it', () => {
             // panel, or driving the panel under jsdom and reading `aria-valuemin`
             // off the rendered `role="slider"` (`RotaryKnob.tsx:373-377`) — a
             // real option, and the obvious next census.
-            fermenter: 48,
-            // Toaster's four descriptor parameters are kit-level; the panel's
-            // knobs are all pad-scoped and go through `set_pad_param`, a
-            // different entry point (see `descriptorEngineParamWeld`'s
-            // `outOfBand` note on the same split).
-            toaster: 4,
-            // Levain's panel knobs drive engine-config values
-            // (`vibratoDepthMax`, `slowThresholdMs`, …) that are not descriptor
-            // parameters at all; its six descriptor parameters have no knob.
-            levain: 6,
-            gluten: 18,
-            bacteria: 20,
-            grinder: 16,
-            // Proof's sections bind through a local `key` variable rather than a
-            // literal, so no id is readable.
-            proof: 3,
-            yeast: 4,
-            crust: 9,
-            'grand-boule': 3,
+            fermenter: [
+                'activeLayer',
+                'ampAttack',
+                'ampDecay',
+                'ampRelease',
+                'ampSustain',
+                'audioModTarget',
+                'chaosAmount',
+                'chaosSpeed',
+                'eqHighFreq',
+                'eqHighGain',
+                'eqHighQ',
+                'eqLowFreq',
+                'eqLowGain',
+                'eqLowQ',
+                'eqMidFreq',
+                'eqMidGain',
+                'eqMidQ',
+                'filterAttack',
+                'filterDecay',
+                'filterMode',
+                'filterModel',
+                'filterRelease',
+                'filterSustain',
+                'fmAlgorithm',
+                'fmLevel1',
+                'fmLevel2',
+                'fmLevel3',
+                'fmLevel4',
+                'fmRatio1',
+                'fmRatio2',
+                'fmRatio3',
+                'fmRatio4',
+                'ksBrightness',
+                'ksDamping',
+                'layerLevel',
+                'layerPan',
+                'lfoShape',
+                'noiseColor',
+                'numLayers',
+                'oscDrift',
+                'oscEngine',
+                'oscWaveform',
+                'portamentoMode',
+                'portamentoTime',
+                'reverbType',
+                'samplerMode',
+                'voiceDrive',
+                'warpMode',
+            ],
+            // All four kit parameters are covered. **The comment that used to sit
+            // here said the opposite** — that Toaster's knobs are "all pad-scoped
+            // and go through `set_pad_param`" — and the source contradicts it:
+            // `ToasterPanel.tsx:618-656` renders four kit-scoped `<Knob>`s on
+            // exactly these ids. The real cause of the old zero was the scanner
+            // requiring the id as the first call argument. A wrong stated reason
+            // is worse than a bare count, because it sends the next reader to
+            // look in the wrong place.
+            toaster: [],
+            // Five of Levain's six. **Also previously mis-stated**: the old
+            // comment claimed none of its knobs drive descriptor parameters, and
+            // `masterGain` does (`LevainPanel.tsx:313-321`, `max={2}`). These
+            // five are toggles and mode selectors with no `min`/`max`.
+            levain: ['autoDivisi', 'ensembleTiming', 'humanize', 'legatoEnabled', 'vibratoDepth'],
+            gluten: [
+                'allButtons',
+                'autoMakeup',
+                'autoRelease',
+                'blendTopology',
+                'deltaListen',
+                'detection',
+                'extSidechain',
+                'feedForward',
+                'gainMatchBypass',
+                'limitMode',
+                'recovery',
+                'scEqEnabled',
+                'scHpfEnabled',
+                'scLpfEnabled',
+                'stereoMode',
+                'style',
+                'thrust',
+                'topology',
+            ],
+            bacteria: [
+                'bandCount',
+                'crossoverFreq1',
+                'crossoverFreq2',
+                'crossoverFreq3',
+                'crossoverFreq4',
+                'crossoverFreq5',
+                'crossoverMode',
+                'crossoverSlope',
+                'distortionMode',
+                'filterMode',
+                'lfo1Shape',
+                'lfo2Shape',
+                'macro1',
+                'macro2',
+                'macro3',
+                'macro4',
+                'macro5',
+                'macro6',
+                'macro7',
+                'macro8',
+            ],
+            grinder: [
+                'bright',
+                'channel',
+                'cleanBlend',
+                'couplingCapCharge',
+                'engineMode',
+                'fat',
+                'gridConduction',
+                'inputGain',
+                'inputImpedance',
+                'limiterThreshold',
+                'micBlend',
+                'millerCapacitance',
+                'outputGain',
+                'outputMix',
+                'powerAmpBias',
+                'tubeAge',
+            ],
+            // All three covered, through the `setProofParamWithPatch` switch.
+            // **The old comment here was also wrong** — it said Proof's sections
+            // "bind through a local `key` variable rather than a literal". They
+            // bind through `onPatchChange({ key: 'limCeiling', … })`, a literal
+            // the scanner was mis-reading as the id `"key"`.
+            proof: [],
+            yeast: ['arp_gate', 'arp_mode', 'arp_rate', 'arp_swing'],
+            crust: [
+                'attackAuto',
+                'ceiling',
+                'channelLinkRelease',
+                'channelLinkTransient',
+                'deltaListen',
+                'gain',
+                'releaseAuto',
+                'satEnabled',
+                'truePeak',
+            ],
+            // Including a `masterGain` on a shipped `max={2}` knob — #1474's
+            // exact shape, uncovered, because the id is in the function name.
+            'grand-boule': ['masterGain', 'soundboardSend', 'sympatheticSend'],
         });
     });
 
@@ -1151,11 +1593,13 @@ describe('declared parameter range agrees with the knob that drives it', () => {
             'dutch-oven': 0,
             'native-scoring': 0,
             fermenter: 8,
-            toaster: 12,
-            levain: 5,
+            // Zero, not twelve: the four kit knobs now bind. The old twelve was
+            // the scanner failing, not the panel.
+            toaster: 0,
+            levain: 1,
             gluten: 0,
             bacteria: 1,
-            grinder: 6,
+            grinder: 0,
             proof: 10,
             // Yeast's `ProcessorParams.tsx` renders one control per MIDI
             // processor kind from a switch, and none of them names a descriptor
@@ -1173,6 +1617,6 @@ describe('declared parameter range agrees with the knob that drives it', () => {
         // how much of the population is three-way. If a later lane closes one of
         // these shapes — most usefully the Crumbs enum-variant join — this list
         // shrinks and the test reds, which is the prompt to come back and say so.
-        expect(ENGINE_CLAMP_COVERAGE.notDerivable.length).toBe(6);
+        expect(ENGINE_CLAMP_COVERAGE.notDerivable.length).toBe(7);
     });
 });
