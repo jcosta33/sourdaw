@@ -44,6 +44,8 @@ class FakePort {
 /** Slot the bridge bumps for a block it could not send. Mirrors `DROPOUT_IDX`. */
 const BRIDGE_DROPPED_BLOCKS_INDEX = 3;
 const QUANTUM = 128;
+/** Mirrors `TRANSFER_POOL_SIZE` in the worklet. Grow both together. */
+const TRANSFER_POOL_SIZE = 4;
 
 let ProcessorClass: new () => ProcessorInstance;
 
@@ -191,8 +193,11 @@ describe('native plugin bridge worklet', () => {
             sentBlocks = processor.port.posted.filter((entry) => entry.message.type === 'process').length;
         }
 
-        expect(sentBlocks).toBeLessThan(40);
-        expect(Atomics.load(counters, BRIDGE_DROPPED_BLOCKS_INDEX)).toBe(40 - sentBlocks);
+        // Exactly the pool depth goes out — four buffers, none ever returned —
+        // and every subsequent block is counted. Pinning the number rather than
+        // bounding it is what makes a larger or unbounded pool fail here.
+        expect(sentBlocks).toBe(TRANSFER_POOL_SIZE);
+        expect(Atomics.load(counters, BRIDGE_DROPPED_BLOCKS_INDEX)).toBe(40 - TRANSFER_POOL_SIZE);
     });
 
     it('keeps emitting the last processed block while blocks are being dropped', () => {

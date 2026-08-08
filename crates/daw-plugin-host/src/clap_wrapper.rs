@@ -1818,13 +1818,23 @@ mod tests {
             .expect("stub plugin should have processed at least one block")
     }
 
+    /// The thread that last performed each processing transition. This is what
+    /// makes the affinity claim checkable: ordering says *when* a transition
+    /// ran, only a thread id says *where*.
+    static START_CALLER_THREAD: std::sync::Mutex<Option<std::thread::ThreadId>> =
+        std::sync::Mutex::new(None);
+    static STOP_CALLER_THREAD: std::sync::Mutex<Option<std::thread::ThreadId>> =
+        std::sync::Mutex::new(None);
+
     unsafe extern "C" fn stub_start_processing_counting(_plugin: *const clap_plugin) -> bool {
         STUB_START_CALLS.fetch_add(1, Ordering::Relaxed);
+        *START_CALLER_THREAD.lock().unwrap() = Some(std::thread::current().id());
         true
     }
 
     unsafe extern "C" fn stub_stop_processing_counting(_plugin: *const clap_plugin) {
         STUB_STOP_CALLS.fetch_add(1, Ordering::Relaxed);
+        *STOP_CALLER_THREAD.lock().unwrap() = Some(std::thread::current().id());
     }
 
     unsafe extern "C" fn stub_process_capturing(
@@ -1866,6 +1876,8 @@ mod tests {
         STUB_START_CALLS.store(0, Ordering::Relaxed);
         STUB_STOP_CALLS.store(0, Ordering::Relaxed);
         *CAPTURED_TRANSPORT.lock().unwrap() = None;
+        *START_CALLER_THREAD.lock().unwrap() = None;
+        *STOP_CALLER_THREAD.lock().unwrap() = None;
     }
 
     /// Drive one block through the RT entry point the audio thread uses.
@@ -1954,6 +1966,69 @@ mod tests {
             gate.off_audio_thread_stops(),
             0,
             "no fallback was needed while the audio thread was still pumping"
+        );
+    }
+
+    /// The claim the rest of this section only approximates: both transitions
+    /// happen on the thread that runs `process`, and on no other. Ordering tests
+    /// cannot separate "the audio thread did it" from "the control thread did it
+    /// at the right moment" — a thread id can, and a host that starts processing
+    /// from its loader or stops it from its control path fails here by identity
+    /// even if every call count is correct.
+    #[test]
+    fn both_processing_transitions_run_on_the_thread_that_calls_process() {
+        let _guard = PROCESSING_TEST_LOCK.lock().unwrap();
+        reset_processing_counters();
+        let control_thread = std::thread::current().id();
+        let mut wrapper = stub_wrapper(counting_plugin_ptr());
+
+        // The gate is the control thread's only handle on processing state.
+        let gate = wrapper.processing_gate();
+
+        // Block one, on the audio thread: this is where the start must happen.
+        let first = std::thread::spawn(move || {
+            let here = std::thread::current().id();
+            process_one_block(&mut wrapper);
+            (here, wrapper)
+        });
+        let (audio_thread_id, mut wrapper) = first.join().unwrap();
+
+        // The stop is *requested here*, on the control thread, and deliberately
+        // not while any block is running. A host that performs the transition in
+        // the requester records `control_thread` against STOP_CALLER_THREAD.
+        gate.request_stop();
+
+        // Block two, on the audio thread again: this is where the stop must land.
+        let second = std::thread::spawn(move || {
+            let here = std::thread::current().id();
+            process_one_block(&mut wrapper);
+            (here, wrapper)
+        });
+        let (second_block_thread_id, wrapper) = second.join().unwrap();
+
+        assert_ne!(
+            audio_thread_id, control_thread,
+            "the test is only meaningful if process actually ran off the control thread"
+        );
+        assert_eq!(
+            *START_CALLER_THREAD.lock().unwrap(),
+            Some(audio_thread_id),
+            "start_processing is [audio-thread]: it must run on the thread that called process"
+        );
+        assert_eq!(
+            *STOP_CALLER_THREAD.lock().unwrap(),
+            Some(second_block_thread_id),
+            "stop_processing is [audio-thread]: the block carries it out, not the requester"
+        );
+        assert_ne!(
+            *STOP_CALLER_THREAD.lock().unwrap(),
+            Some(control_thread),
+            "the thread that requested the stop must never be the one that performed it"
+        );
+        assert_eq!(
+            wrapper.processing_gate().off_audio_thread_stops(),
+            0,
+            "the audio thread was pumping, so no counted deviation was needed"
         );
     }
 
