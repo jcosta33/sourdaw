@@ -6,6 +6,7 @@ import { midiStore } from '#/modules/MIDI/stores';
 import { ClipDummy } from '../../../__tests__/ClipDummy';
 import { TrackDummy } from '../../../__tests__/TrackDummy';
 import { __resetGainEnvelopesForTest, setEnvelope } from '../../../stores/gainEnvelopeStore';
+import { takeLaneStore } from '../../../stores/takeLaneStore';
 import { trackStore } from '../../../stores/trackStore';
 import { glueClips } from '../glueClips';
 
@@ -48,6 +49,7 @@ describe('glueClips MIDI state integration', () => {
             },
         });
         automationStore.set({ lanes: [] });
+        takeLaneStore.set({ lanes: [] });
         __resetGainEnvelopesForTest();
     });
 
@@ -55,6 +57,7 @@ describe('glueClips MIDI state integration', () => {
         trackStore.set({ tracks: [], selectedTrackId: null, ghostClips: [] });
         midiStore.set({ notesByClipId: {}, ccByClipId: {}, pitchBendByClipId: {} });
         automationStore.set({ lanes: [] });
+        takeLaneStore.set({ lanes: [] });
         __resetGainEnvelopesForTest();
     });
 
@@ -109,6 +112,64 @@ describe('glueClips MIDI state integration', () => {
 
         expect(trackStore.value!.tracks[0]!.clips).toMatchObject([{ id: 'clip-a' }, { id: 'clip-b' }]);
         expect(midiStore.value!.notesByClipId).toHaveProperty('clip-a');
+    });
+
+    it('refuses glue while an active comp region depends on a source clip take', () => {
+        takeLaneStore.set({
+            lanes: [
+                {
+                    id: 'lane-track-midi',
+                    trackId: 'track-midi',
+                    takes: [
+                        {
+                            id: 'take-clip-a',
+                            clipId: 'clip-a',
+                            name: 'Take A',
+                            startBeat: 8,
+                            endBeat: 12,
+                            selected: true,
+                        },
+                    ],
+                    activeCompRegions: [{ startBeat: 8, endBeat: 12, takeId: 'take-clip-a' }],
+                },
+            ],
+        });
+        const previousTakeLanes = structuredClone(takeLaneStore.value);
+
+        expect(glueClips(['clip-a', 'clip-b'])).toBe(false);
+
+        expect(trackStore.value!.tracks[0]!.clips).toMatchObject([{ id: 'clip-a' }, { id: 'clip-b' }]);
+        expect(midiStore.value!.notesByClipId).toHaveProperty('clip-a');
+        expect(midiStore.value!.notesByClipId).toHaveProperty('clip-b');
+        expect(takeLaneStore.value).toEqual(previousTakeLanes);
+    });
+
+    it('preserves an unrelated take lane while gluing the selected clips', () => {
+        takeLaneStore.set({
+            lanes: [
+                {
+                    id: 'lane-unrelated',
+                    trackId: 'track-unrelated',
+                    takes: [
+                        {
+                            id: 'take-unrelated',
+                            clipId: 'clip-unrelated',
+                            name: 'Unrelated take',
+                            startBeat: 20,
+                            endBeat: 24,
+                            selected: true,
+                        },
+                    ],
+                    activeCompRegions: [{ startBeat: 20, endBeat: 24, takeId: 'take-unrelated' }],
+                },
+            ],
+        });
+        const previousTakeLanes = structuredClone(takeLaneStore.value);
+
+        expect(glueClips(['clip-a', 'clip-b'])).toBe(true);
+
+        expect(trackStore.value!.tracks[0]!.clips).toHaveLength(1);
+        expect(takeLaneStore.value).toEqual(previousTakeLanes);
     });
 
     it('refuses glue when another clip is linked to a source', () => {

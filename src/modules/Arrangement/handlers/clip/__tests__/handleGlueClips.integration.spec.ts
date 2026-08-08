@@ -21,6 +21,7 @@ import { midiStore } from '#/modules/MIDI/stores';
 
 import { ClipDummy } from '../../../__tests__/ClipDummy';
 import { TrackDummy } from '../../../__tests__/TrackDummy';
+import { takeLaneStore } from '../../../stores/takeLaneStore';
 import { trackStore } from '../../../stores/trackStore';
 import { getArrangementHandlers } from '../../../useCases/getArrangementHandlers';
 
@@ -77,6 +78,7 @@ describe('handleGlueClips atomic integration', () => {
             migratedAbsoluteNoteClipIds: ['clip-a', 'clip-b'],
         });
         automationStore.set({ lanes: [] });
+        takeLaneStore.set({ lanes: [] });
     });
 
     afterEach(() => {
@@ -86,6 +88,7 @@ describe('handleGlueClips atomic integration', () => {
         trackStore.set({ tracks: [], selectedTrackId: null, ghostClips: [] });
         midiStore.set({ notesByClipId: {}, ccByClipId: {}, pitchBendByClipId: {} });
         automationStore.set({ lanes: [] });
+        takeLaneStore.set({ lanes: [] });
         configureAutomergeStoragePort(null);
         removeCrdtDoc('root');
     });
@@ -181,6 +184,81 @@ describe('handleGlueClips atomic integration', () => {
         trackStore.set({ ...trackStore.value!, ghostClips: [] });
         await undo();
         expect(trackStore.value!.tracks[0]!.clips).toMatchObject([{ id: 'clip-a' }, { id: 'clip-b' }]);
+    });
+
+    it('keeps the glue and undo entry when a take lane references the generated target', async () => {
+        await executeAppActionBatch([{ type: 'glueClips', payload: { clipIds: ['clip-a', 'clip-b'] } }], {
+            source: 'prompt',
+            requireCompensation: true,
+        });
+        const glued = trackStore.value!.tracks[0]!.clips[0]!;
+        takeLaneStore.set({
+            lanes: [
+                {
+                    id: 'lane-track-midi',
+                    trackId: 'track-midi',
+                    takes: [
+                        {
+                            id: 'take-glued',
+                            clipId: glued.id,
+                            name: 'Glued take',
+                            startBeat: 8,
+                            endBeat: 16,
+                            selected: true,
+                        },
+                    ],
+                    activeCompRegions: [{ startBeat: 8, endBeat: 16, takeId: 'take-glued' }],
+                },
+            ],
+        });
+        const previousTakeLanes = structuredClone(takeLaneStore.value);
+
+        await undo();
+
+        expect(trackStore.value!.tracks[0]!.clips).toMatchObject([{ id: glued.id }]);
+        expect(takeLaneStore.value).toEqual(previousTakeLanes);
+
+        takeLaneStore.set({ lanes: [] });
+        await undo();
+        expect(trackStore.value!.tracks[0]!.clips).toMatchObject([{ id: 'clip-a' }, { id: 'clip-b' }]);
+    });
+
+    it('keeps the source clips and redo entry when a take lane references a source', async () => {
+        await executeAppActionBatch([{ type: 'glueClips', payload: { clipIds: ['clip-a', 'clip-b'] } }], {
+            source: 'prompt',
+            requireCompensation: true,
+        });
+        const glued = trackStore.value!.tracks[0]!.clips[0]!;
+        await undo();
+        takeLaneStore.set({
+            lanes: [
+                {
+                    id: 'lane-track-midi',
+                    trackId: 'track-midi',
+                    takes: [
+                        {
+                            id: 'take-clip-a',
+                            clipId: 'clip-a',
+                            name: 'Take A',
+                            startBeat: 8,
+                            endBeat: 12,
+                            selected: true,
+                        },
+                    ],
+                    activeCompRegions: [{ startBeat: 8, endBeat: 12, takeId: 'take-clip-a' }],
+                },
+            ],
+        });
+        const previousTakeLanes = structuredClone(takeLaneStore.value);
+
+        await redo();
+
+        expect(trackStore.value!.tracks[0]!.clips).toMatchObject([{ id: 'clip-a' }, { id: 'clip-b' }]);
+        expect(takeLaneStore.value).toEqual(previousTakeLanes);
+
+        takeLaneStore.set({ lanes: [] });
+        await redo();
+        expect(trackStore.value!.tracks[0]!.clips).toMatchObject([{ id: glued.id }]);
     });
 
     it('preserves unrelated clip and migration edits through undo and redo', async () => {
