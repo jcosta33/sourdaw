@@ -31,6 +31,7 @@ import {
 } from '#/modules/Arrangement/useCases';
 import { audioToMidi } from '#/modules/AudioAnalysis/useCases';
 import { decodeAudioFile, getCachedAudioBufferWaveformPeaks } from '#/modules/AudioEngine/useCases';
+import { verifyAudioBufferReferences } from '#/modules/Project/useCases';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 import { cn } from '#/utils/Styles/cn';
 import { isTauri } from '#/utils/tauriRuntime';
@@ -244,7 +245,17 @@ export const WaveformEditor = ({ clipId, audioBufferId }: WaveformEditorProps): 
 
         try {
             const { id: bufferId } = await decodeAudioFile(file);
-            replaceClipAudioBuffer(clipId, bufferId);
+            if (replaceClipAudioBuffer(clipId, bufferId)) {
+                // Dropping a file here is the repair the missing-media panel
+                // prompts for, and the panel holds a scan rather than a
+                // subscription — so a successful relink has to re-scan or it
+                // keeps counting a clip the user has already fixed. This sits
+                // at the caller because `replaceClipAudioBuffer` cannot import
+                // Project's use cases: Project already imports Arrangement's,
+                // and the edge closes a dependency cycle (`deps:validate`
+                // no-circular).
+                verifyAudioBufferReferences();
+            }
             setBufferVersion((value) => value + 1);
         } catch {
             notifyUser(`Failed to import "${file.name}" — unsupported format or corrupt file`, 'error');

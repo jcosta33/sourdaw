@@ -20,14 +20,15 @@ export type MissingMediaItem = {
 };
 
 export type MissingMediaStoreState = {
+    /** One entry per dangling *reference*. Two clips split from the same source
+     * are two entries sharing one `bufferId` — the panel counts distinct
+     * `bufferId`s for its headline, because that is the number of files the
+     * user has to go find. */
     items: MissingMediaItem[];
-    /** `Date.now()` of the scan that produced `items`; `0` before any scan. */
-    scannedAt: number;
 };
 
 export const defaultMissingMediaStoreState: MissingMediaStoreState = {
     items: [],
-    scannedAt: 0,
 };
 
 /**

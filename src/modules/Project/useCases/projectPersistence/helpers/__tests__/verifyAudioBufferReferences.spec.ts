@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const notifyUser = vi.fn();
 
@@ -90,6 +90,13 @@ describe('verifyAudioBufferReferences', () => {
         notifyUser.mockClear();
         vi.mocked(getCachedAudioBuffer).mockReset();
         trackStoreMock.value = null;
+        // Every case in this file writes the real store; reset it here rather
+        // than relying on declaration order to keep the outer cases clean.
+        missingMediaStore.set(structuredClone(defaultMissingMediaStoreState));
+    });
+
+    afterEach(() => {
+        missingMediaStore.set(structuredClone(defaultMissingMediaStoreState));
     });
 
     it('should not notify when track state is null', () => {
@@ -166,10 +173,6 @@ describe('verifyAudioBufferReferences', () => {
     });
 
     describe('durable record', () => {
-        beforeEach(() => {
-            missingMediaStore.set(defaultMissingMediaStoreState);
-        });
-
         it('records the clip id so a relink has a target, alongside the owning track', () => {
             vi.mocked(getCachedAudioBuffer).mockReturnValue(null);
             trackStoreMock.value = makeTrackState([
@@ -224,7 +227,6 @@ describe('verifyAudioBufferReferences', () => {
                         trackName: 'Stale',
                     },
                 ],
-                scannedAt: 1,
             });
             vi.mocked(getCachedAudioBuffer).mockReturnValue({
                 copyFromChannel: vi.fn(),
@@ -242,7 +244,26 @@ describe('verifyAudioBufferReferences', () => {
             verifyAudioBufferReferences();
 
             expect(missingMediaStore.value?.items).toEqual([]);
-            expect(missingMediaStore.value?.scannedAt).toBeGreaterThan(1);
+        });
+
+        it('records one entry per reference when clips share a source buffer', () => {
+            vi.mocked(getCachedAudioBuffer).mockReturnValue(null);
+            trackStoreMock.value = makeTrackState([
+                makeTrack({
+                    id: 'track-1',
+                    name: 'Guitars',
+                    clips: [
+                        makeClip({ id: 'clip-left', name: 'Take', audioBufferId: 'shared' }),
+                        makeClip({ id: 'clip-right', name: 'Take', audioBufferId: 'shared' }),
+                    ],
+                }),
+            ]);
+
+            verifyAudioBufferReferences();
+
+            const items = missingMediaStore.value?.items ?? [];
+            expect(items.map((item) => item.clipId)).toEqual(['clip-left', 'clip-right']);
+            expect(new Set(items.map((item) => item.bufferId))).toEqual(new Set(['shared']));
         });
 
         it('clears a prior record when there is no track state to make a claim about', () => {
@@ -257,7 +278,6 @@ describe('verifyAudioBufferReferences', () => {
                         trackName: 'Stale',
                     },
                 ],
-                scannedAt: 1,
             });
             trackStoreMock.value = null;
 

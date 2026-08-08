@@ -173,7 +173,6 @@ describe('missing media on project load', () => {
                 trackName: 'Frozen Piano',
             },
         ]);
-        expect(recorded?.scannedAt).toBeGreaterThan(0);
     });
 
     it('leaves no missing-media record when every referenced buffer resolves', async () => {

@@ -75,7 +75,7 @@ export function verifyAudioBufferReferences(): void {
     // leave the prior project's rows looking current.
     const items = state ? collectMissingMedia(state.tracks) : [];
 
-    missingMediaStore.set({ items, scannedAt: Date.now() });
+    missingMediaStore.set({ items });
 
     if (items.length === 0) {
         return;
