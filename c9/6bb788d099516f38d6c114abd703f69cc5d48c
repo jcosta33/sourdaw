@@ -1,0 +1,14 @@
+src/modules/CommandInterface/useCases/__tests__/resetShortcutMappings.spec.ts
+  h_1228e573df1f42 1-52
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "c96bb788d099516f38d6c114abd703f69cc5d48c",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
