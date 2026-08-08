@@ -1,0 +1,14 @@
+src/modules/Toaster/useCases/__tests__/startNoteRepeat.spec.ts
+  h_1228e573df1f42 1-125
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "f70d1c12b9c43d8a8184d25cca92900edbea6ee9",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
