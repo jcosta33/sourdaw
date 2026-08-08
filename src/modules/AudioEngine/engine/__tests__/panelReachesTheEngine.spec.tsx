@@ -1,12 +1,14 @@
 import { fireEvent, render, screen } from '@testing-library/react';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { createMockAudioContext, createMockAudioNode } from '#/helpers/__tests__/audioContext.mock';
 import { injectDependencies } from '#/infra/di/testing/injectDependencies';
 import { defaultTrackState, sanitizeTrackSnapshot, trackStore } from '#/modules/Arrangement/stores';
 import { getPlatformPlugins } from '#/modules/Arrangement/useCases';
+import { clearHandlerRegistry, registerHandlerMap } from '#/modules/Command/stores';
 import { CrumbsPanel } from '#/modules/Crumbs/presentations/views';
 import { showDevicePanelForType } from '#/modules/WorkspaceShell/useCases';
+import { createHandler } from '#/utils/createHandler';
 
 import { type BuiltinDeviceNode } from '../../models/AudioEngineState';
 import { createDeviceReadinessDiagnostics } from '../deviceReadinessDiagnostics';
@@ -388,6 +390,33 @@ describe('Crumbs panel edits reach the node in the track strip', () => {
         Element.prototype.releasePointerCapture = vi.fn();
         seedTrackWithDevice(CRUMBS_DEVICE_ID, 'builtin-crumbs');
         strip = installStrip(CRUMBS_DEVICE_ID, 'builtin-crumbs');
+    });
+
+    // Registered once, and never cleared per test: the commit fires during
+    // Testing Library's unmount, which runs in an `afterEach` registered by the
+    // global setup — that is, *after* this describe's own teardown. Clearing the
+    // registry here would put the crash back.
+    beforeAll(() => {
+        // Releasing a knob ends the gesture with a *commit*, which dispatches
+        // `setDeviceParameter` through `executeAppAction`. Unmounting at test
+        // teardown blurs the knob and does the same. Standing the whole Automerge
+        // document up for that is out of proportion — the question here is the
+        // audible preview, which is the transient half — but leaving the dispatch
+        // unregistered turns every teardown into an unhandled rejection that
+        // fails the file independently of any assertion. Registering the
+        // discriminant with a handler that does nothing keeps the commit path a
+        // dispatch rather than a crash, and keeps it out of the measurement.
+        registerHandlerMap({
+            setDeviceParameter: createHandler<'setDeviceParameter'>({
+                undoable: false,
+                execute: () => {},
+                describe: () => ({ label: 'noop', inverseAction: null }),
+            }),
+        });
+    });
+
+    afterAll(() => {
+        clearHandlerRegistry();
     });
 
     afterEach(() => {
