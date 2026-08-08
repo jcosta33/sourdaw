@@ -210,6 +210,7 @@ export const PanelToggles = ({
                         }
                         aria-pressed={linkStatus.enabled}
                         onClick={handleLinkToggle}
+                        data-testid="toggle-ableton-link"
                         className={linkStatus.enabled ? 'text-[var(--color-accent-amber)]' : ''}
                     >
                         <LinkIcon className="size-3.5" aria-hidden="true" />
