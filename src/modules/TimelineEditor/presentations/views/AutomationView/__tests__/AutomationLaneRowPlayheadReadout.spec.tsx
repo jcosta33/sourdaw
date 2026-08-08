@@ -74,14 +74,21 @@ const readReadout = (): string | null => screen.getByText(/^\d+%$/).textContent;
 
 describe('AutomationLaneRow playhead value readout', () => {
     let frameCallbacks: FrameRequestCallback[] = [];
+    let lastIssuedFrameId = 0;
+    let cancelledFrameIds: number[] = [];
 
     beforeEach(() => {
         frameCallbacks = [];
+        lastIssuedFrameId = 0;
+        cancelledFrameIds = [];
         vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
             frameCallbacks.push(callback);
-            return frameCallbacks.length;
+            lastIssuedFrameId = frameCallbacks.length;
+            return lastIssuedFrameId;
         });
-        vi.stubGlobal('cancelAnimationFrame', () => {});
+        vi.stubGlobal('cancelAnimationFrame', (id: number) => {
+            cancelledFrameIds.push(id);
+        });
         mockTransportState.playheadPosition = 0;
         mockTransportState.isPlaying = false;
         playheadPositionRef.current = 0;
@@ -144,6 +151,50 @@ describe('AutomationLaneRow playhead value readout', () => {
 
         expect(readReadout()).toBe('80%');
         expect(frameCallbacks).toHaveLength(0);
+    });
+
+    it('should cancel the frame it is actually waiting on when unmounted mid-playback', () => {
+        mockTransportState.playheadPosition = 0;
+        mockTransportState.isPlaying = true;
+        playheadPositionRef.current = 1;
+
+        const { unmount } = render(<AutomationLaneRow {...laneProps} />);
+
+        // Run two frames so the id issued at effect setup is stale and only the
+        // id from the most recent re-request is still outstanding.
+        act(() => {
+            frameCallbacks[0]!(1000);
+        });
+        act(() => {
+            frameCallbacks[1]!(2000);
+        });
+        const outstanding = lastIssuedFrameId;
+        expect(outstanding).toBe(3);
+        expect(cancelledFrameIds).toEqual([]);
+
+        unmount();
+
+        expect(cancelledFrameIds).toEqual([outstanding]);
+    });
+
+    it('should stop repainting the readout once unmounted', () => {
+        mockTransportState.isPlaying = true;
+        playheadPositionRef.current = 1;
+
+        const { unmount } = render(<AutomationLaneRow {...laneProps} />);
+        const badge = screen.getByText(/^\d+%$/);
+        expect(badge.textContent).toBe('40%');
+
+        unmount();
+
+        // A frame that escapes cancellation would still find the detached node
+        // and write to it; the readout must be left alone.
+        playheadPositionRef.current = 3;
+        act(() => {
+            frameCallbacks[0]!(1000);
+        });
+
+        expect(badge.textContent).toBe('40%');
     });
 
     it('should not schedule an animation frame while the transport is stopped', () => {

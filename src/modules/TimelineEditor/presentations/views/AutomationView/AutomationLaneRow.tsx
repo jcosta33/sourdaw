@@ -48,20 +48,40 @@ type AutomationLaneTransportState = {
     isPlaying: boolean;
 };
 
-/** Automation value at `beat`, or null when the lane has no points. */
+const READOUT_INTERVAL_MS = 1000 / 60;
+
+/**
+ * Automation value at `beat`, or null when the lane has no points.
+ *
+ * Single pass, no intermediate arrays: this runs once per lane per animation
+ * frame, so the two `filter` calls it replaces were allocating two arrays per
+ * lane per frame. Scanning in array order picks the same two points the
+ * filters did, for sorted and unsorted point lists alike.
+ */
 const valueAtBeat = (points: AutomationLane['points'], beat: number): number | null => {
     if (points.length === 0) {
         return null;
     }
-    const before = points.filter((param) => param.beat <= beat);
-    const after = points.filter((param) => param.beat > beat);
-    if (before.length === 0) {
+
+    let lastBefore: AutomationLane['points'][number] | undefined;
+    let firstAfter: AutomationLane['points'][number] | undefined;
+    for (const point of points) {
+        if (point.beat <= beat) {
+            lastBefore = point;
+            continue;
+        }
+        if (firstAfter === undefined) {
+            firstAfter = point;
+        }
+    }
+
+    if (lastBefore === undefined) {
         return points[0]!.value;
     }
-    if (after.length === 0) {
-        return before[before.length - 1]!.value;
+    if (firstAfter === undefined) {
+        return lastBefore.value;
     }
-    return interpolateAutomationValue(before[before.length - 1]!, after[0]!, beat);
+    return interpolateAutomationValue(lastBefore, firstAfter, beat);
 };
 
 export const AutomationLaneRow = ({
@@ -121,10 +141,10 @@ export const AutomationLaneRow = ({
     // Value at the playhead, for the header readout.
     //
     // The clock is `playheadPositionRef`, NOT `transportStore.playheadPosition`.
-    // The store is written only on discrete events (start, seek, pause), so a
-    // readout driven by it freezes at the beat playback started from while the
-    // audible automation sweeps on. The ref is the ~100 Hz channel the scheduler
-    // writes, so it matches what the user hears.
+    // The store is written on exactly four events — start, stop, pause, seek —
+    // and notably NOT on loop wrap, so a readout driven by it freezes at the beat
+    // playback started from while the audible automation sweeps on. The ref is the
+    // ~100 Hz channel the scheduler writes, so it matches what the user hears.
     //
     // This render-time read seeds the first paint only. The ref is invisible to
     // React (and to the Compiler's memoization), so the effect below owns every
@@ -149,16 +169,28 @@ export const AutomationLaneRow = ({
             }
         };
 
-        // Discrete moves (seek, pause, start) re-run this effect; repaint for them.
+        // Discrete moves (start, stop, pause, seek) re-run this effect; repaint for them.
         paintOnce();
 
         if (!transport.isPlaying) {
             return undefined;
         }
 
+        // Throttled to the same 60 Hz as `PlayheadDisplay`: rAF fires at the
+        // display's refresh rate, and this runs once per visible lane.
         let rafId = 0;
-        const loop = (): void => {
-            paintOnce();
+        let lastPaintedAt: number | null = null;
+        const loop = (frameTimestamp: number): void => {
+            if (lastPaintedAt === null) {
+                paintOnce();
+                lastPaintedAt = frameTimestamp;
+            } else {
+                const elapsed = frameTimestamp - lastPaintedAt;
+                if (elapsed >= READOUT_INTERVAL_MS) {
+                    paintOnce();
+                    lastPaintedAt = frameTimestamp - (elapsed % READOUT_INTERVAL_MS);
+                }
+            }
             rafId = requestAnimationFrame(loop);
         };
         rafId = requestAnimationFrame(loop);
