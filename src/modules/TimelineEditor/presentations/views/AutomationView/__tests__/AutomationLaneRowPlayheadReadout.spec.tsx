@@ -132,6 +132,49 @@ describe('AutomationLaneRow playhead value readout', () => {
         expect(readReadout()).toBe('80%');
     });
 
+    it('should suppress a repaint that arrives inside the 60 Hz throttle window', () => {
+        mockTransportState.isPlaying = true;
+        playheadPositionRef.current = 1;
+
+        render(<AutomationLaneRow {...laneProps} />);
+        const badge = screen.getByText(/^\d+%$/);
+        expect(badge.textContent).toBe('40%');
+
+        // Counts DOM writes to the readout, so a suppressed frame is proved by
+        // the absence of a write and not only by the text happening to match.
+        const observer = new MutationObserver(() => {});
+        observer.observe(badge, { childList: true, characterData: true, subtree: true });
+        const writesSinceLastCheck = (): number => observer.takeRecords().length;
+
+        // Frame at t=1000 establishes the throttle clock; the ref has not moved,
+        // so the paint it performs writes nothing new.
+        act(() => {
+            frameCallbacks[0]!(1000);
+        });
+        expect(writesSinceLastCheck()).toBe(0);
+
+        // t=1008 is 8 ms later — inside the 16.67 ms window. The ref is at beat 3
+        // ("80%"), a value the readout must not show.
+        playheadPositionRef.current = 3;
+        act(() => {
+            frameCallbacks[1]!(1008);
+        });
+        expect(writesSinceLastCheck()).toBe(0);
+        expect(badge.textContent).toBe('40%');
+
+        // t=1020 is 20 ms after the last paint, so the window has elapsed. The ref
+        // is now at beat 2 ("60%"): a readout reading "80%" here would mean the
+        // suppressed frame had painted after all.
+        playheadPositionRef.current = 2;
+        act(() => {
+            frameCallbacks[2]!(1020);
+        });
+        expect(writesSinceLastCheck()).toBe(1);
+        expect(badge.textContent).toBe('60%');
+
+        observer.disconnect();
+    });
+
     it('should repaint the readout when a discrete seek moves the playhead while stopped', () => {
         mockTransportState.playheadPosition = 0;
         mockTransportState.isPlaying = false;
