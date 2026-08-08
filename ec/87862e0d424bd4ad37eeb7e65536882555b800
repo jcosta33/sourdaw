@@ -1,0 +1,19 @@
+src/modules/BrowserAi/stores/__tests__/capabilityStore.spec.ts
+  s_2bfedba1768496::t_8e5ea191170948 1-66
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "ec87862e0d424bd4ad37eeb7e65536882555b800",
+  "prompts": {},
+  "sessions": {
+    "s_2bfedba1768496": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-ae539c8dc4af84baf",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
