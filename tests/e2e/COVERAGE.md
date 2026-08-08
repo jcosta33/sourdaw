@@ -806,7 +806,8 @@ Re-measured after additional PRs since threshold raise #3 (PR #1231). Lines cros
 
 - **PR #1486**: MIDI clip deep — Pop Song template, piano roll, paint, ghost, chord — 5 tests.
 - **PR #1488**: Take lanes & comp — variation lanes, add take, flatten — 5 tests.
+- **PR #1490**: Proof device panel — A/B compare, open/close — 4 tests.
 
-**E2E: 243 tests across 54 spec files using data-testid selectors.**
+**E2E: 247 tests across 55 spec files using data-testid selectors.**
 
-**Campaign total to date: 315 PRs, ~2816 assertions. Lines coverage at 90.30%.**
+**Campaign total to date: 317 PRs, ~2820 assertions. Lines coverage at 90.30%.**
