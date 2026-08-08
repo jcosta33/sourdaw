@@ -146,7 +146,7 @@ export function getProjectContext(): ProjectContext {
             clips: time.clips.map((context) => ({
                 id: context.id,
                 name: context.name,
-                type: context.type ?? 'audio',
+                type: context.type,
                 startBeat: context.startBeat,
                 endBeat: context.endBeat,
                 gain: context.gain,

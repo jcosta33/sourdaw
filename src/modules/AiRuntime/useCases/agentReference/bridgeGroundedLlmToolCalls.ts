@@ -1394,23 +1394,23 @@ function isDirectGlueClipPairScope(
     if (clips.some((clip) => !clip)) {
         return false;
     }
-    const referencePattern = (clip: NonNullable<(typeof clips)[number]>): string => {
+    function getReferencePattern(clip: NonNullable<(typeof clips)[number]>): string {
         const references = [clip.id, clip.name]
             .map(normalizePromptText)
             .filter((reference) => reference.length > 0)
             .toSorted((left, right) => right.length - left.length)
             .map(escapeRegExp);
         return `(?:${references.join('|')})`;
-    };
-    const first = referencePattern(clips[0]!);
-    const second = referencePattern(clips[1]!);
-    const matchesOrder = (left: string, right: string): boolean => {
+    }
+    function matchesOrder(left: string, right: string): boolean {
         const pattern = new RegExp(
             `^(?:glue|join)(?: the)? ${left}(?: clips?)? (?:and|with) (?:the )?${right}(?: clips?)?$`,
             'u'
         );
         return pattern.test(normalizedScope);
-    };
+    }
+    const first = getReferencePattern(clips[0]!);
+    const second = getReferencePattern(clips[1]!);
     return matchesOrder(first, second) || matchesOrder(second, first);
 }
 
