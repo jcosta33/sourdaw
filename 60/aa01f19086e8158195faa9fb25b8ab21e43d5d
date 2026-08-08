@@ -1,0 +1,35 @@
+src/modules/Project/useCases/projectTemplates/templateDefinitions/__tests__/helpers.spec.ts
+  s_ac9b259eab20ba::t_ea9c24b3773d28 32,35-37
+playwright.config.ts
+  s_ac9b259eab20ba::t_ea9c24b3773d28 5
+src/modules/TimelineEditor/presentations/views/Inspector/__tests__/ClipAudioAiSection.analyzeStall.spec.tsx
+  s_ac9b259eab20ba::t_e64a1b70a5c2b3 25-28
+  s_ac9b259eab20ba::t_319a198b5dbb0b 2
+.agents/specs/render-parity-instrumentation/spec.md
+  s_ac9b259eab20ba::t_ac6f0246284edf 4,12-13,74,87,108-114,118,133-145
+src/modules/Project/useCases/projectPersistence/__tests__/loadProjectMidiHydration.spec.ts
+  s_ac9b259eab20ba::t_ac6f0246284edf 82
+tests/e2e/desktopRuntime.spec.ts
+  s_ac9b259eab20ba::t_47ceb9212bf7ef 1-122
+tests/e2e/exportAudioEvidence.spec.ts
+  s_ac9b259eab20ba::t_47ceb9212bf7ef 1-97,100,103,106-109,111-127
+  s_ac9b259eab20ba::t_55be99b55e93a3 98-99,101-102,104-105,110
+src/modules/Project/models/ProjectData.ts
+  s_ac9b259eab20ba::t_ea9c24b3773d28 55-56
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "60aa01f19086e8158195faa9fb25b8ab21e43d5d",
+  "prompts": {},
+  "sessions": {
+    "s_ac9b259eab20ba": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8699-3865-7842-8c54-afbac6cfd266",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
