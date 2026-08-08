@@ -703,5 +703,21 @@ Re-measured after additional PRs since threshold raise #3 (PR #1231). Lines cros
 - **PR #1308**: restoreGrooveAssignment — null-store guard, remove/add/replace, divergence/validation throws — 7 tests.
 - **PR #1309**: CrumbsDescriptor + BacteriaDescriptor — ids, params, float ranges — 10 tests.
 - **PR #1310**: faustEffectPresets — unique ids, device type/params validation — 6 tests.
+- **PR #1312**: usePreviewAudio hook — play/stop/tone, resume, source swap — 6 tests.
+- **PR #1314**: createClipLabelTextureCache — LRU eviction, recency, width clamp, dispose — 13 tests.
+- **PR #1316**: useFermenterTelemetry selectors — buffer/peaks branching + equality — 8 tests.
+- **PR #1317**: createWebGpuSpectrumRenderer — heatmap ring buffer, null guards, resize, dispose — 9 tests.
+- **PR #1319**: FactorySynthesis filters — 6 biquad types + frequency sweep — 11 tests.
+- **PR #1320**: FactorySynthesis envelopes + mixing — ADSR shapes, equal-power pan — 21 tests.
+- **PR #1321**: serializeMetadataXml + toasterEngineMap — XML escaping, engine index mapping — 14 tests.
 
-**Campaign total to date: 195 PRs, ~2162 assertions. Lines coverage at 90.07%.**
+| Metric | Threshold (prev) | Measured | Threshold (new) |
+|--------|-----------------|----------|-----------------|
+| Lines | 90 | **90.30%** | 90 |
+| Statements | 87 | **87.09%** | 87 |
+| Branches | 76 | **76.20%** | 76 |
+| Functions | 88 | **88.01%** | 88 |
+
+Thresholds held at 90/87/76/88 — margins thin (0.2–0.3%); will raise after next wave batch.
+
+**Campaign total to date: 202 PRs, ~2233 assertions. Lines coverage at 90.30%.**
