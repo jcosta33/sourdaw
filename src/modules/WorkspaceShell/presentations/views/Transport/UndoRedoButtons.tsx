@@ -23,6 +23,7 @@ export const UndoRedoButtons = ({ canUndo, canRedo }: UndoRedoButtonsProps): Rea
                         aria-label="Undo"
                         disabled={!canUndo}
                         onClick={() => void undo()}
+                        data-testid="transport-undo"
                     >
                         <Undo2 className="size-3.5" aria-hidden="true" />
                     </Button>
@@ -37,6 +38,7 @@ export const UndoRedoButtons = ({ canUndo, canRedo }: UndoRedoButtonsProps): Rea
                         aria-label="Redo"
                         disabled={!canRedo}
                         onClick={() => void redo()}
+                        data-testid="transport-redo"
                     >
                         <Redo2 className="size-3.5" aria-hidden="true" />
                     </Button>

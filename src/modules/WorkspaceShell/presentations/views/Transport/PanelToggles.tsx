@@ -81,6 +81,7 @@ export const PanelToggles = ({
                         aria-label="Toggle track list"
                         aria-pressed={trackListOpen}
                         onClick={toggleTrackList}
+                        data-testid="toggle-track-list"
                     >
                         <ListOrdered className="size-3.5" aria-hidden="true" />
                     </Button>
@@ -110,6 +111,7 @@ export const PanelToggles = ({
                         aria-label="Toggle inspector"
                         aria-pressed={inspectorOpen}
                         onClick={toggleInspector}
+                        data-testid="toggle-inspector"
                     >
                         <PanelRight className="size-3.5" aria-hidden="true" />
                     </Button>
@@ -125,6 +127,7 @@ export const PanelToggles = ({
                         aria-label="Toggle Session + Arrangement View"
                         aria-pressed={dualViewOpen}
                         onClick={toggleDualView}
+                        data-testid="toggle-dual-view"
                         className={dualViewOpen ? 'text-[var(--color-accent-mint)]' : ''}
                     >
                         <Layers className="size-3.5" aria-hidden="true" />
@@ -142,6 +145,7 @@ export const PanelToggles = ({
                         aria-pressed={mixerOpen}
                         onClick={toggleMixer}
                         data-onboarding="mixer-button"
+                        data-testid="toggle-bottom-dock"
                     >
                         <PanelBottom className="size-3.5" aria-hidden="true" />
                     </Button>
@@ -156,6 +160,7 @@ export const PanelToggles = ({
                         aria-label="Toggle virtual keyboard"
                         aria-pressed={virtualKeyboardOpen}
                         onClick={toggleVirtualKeyboard}
+                        data-testid="toggle-virtual-keyboard"
                         className={virtualKeyboardOpen ? 'text-[var(--color-accent-lavender)]' : ''}
                     >
                         <Piano className="size-3.5" aria-hidden="true" />

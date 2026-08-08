@@ -40,7 +40,26 @@ use wasm_bindgen::prelude::*;
 const MAX_BLOCK_EVENTS: usize = 256;
 
 /// Offline/scheduled automation ordinals, mirrored by
-/// `FERMENTER_AUTOMATION_PARAM_IDS` in `src/modules/AudioEngine/engine/FermenterNode.ts`.
+/// `FERMENTER_AUTOMATION_PARAM_IDS` in
+/// `src/modules/AudioEngine/models/FermenterAutomationParams.ts`.
+///
+/// This covers 102 of the 105 parameters the Fermenter descriptor declares
+/// automatable. Three are deliberately absent because **no two values of any of
+/// them render differently**, so the behavioural pin below could not fail:
+///
+///  - `active_layer` writes no DSP state. `MasterSynth::set_param` reads it only
+///    to route *subsequent* writes to a layer; neither `note_on_with_channel`
+///    nor `render_layers` consults it. Binding it would also make every other
+///    scheduled lane's destination depend on schedule ordering.
+///  - `portamento_mode` is a dead control: `Layer::set_param` stores the field
+///    and nothing in this crate reads it. `Layer::note_on` passes only
+///    `portamento_time` to `Voice::set_portamento`, so the legato-only glide the
+///    control names is not implemented.
+///  - `grain_pan_spread` is computed and discarded: `GranularEngine::tick` pans
+///    each grain into an L/R pair, and `Voice::render` sums the oscillator pair
+///    to mono before the filter and restores the L/R ratio only on the unison
+///    branch. Driving it 0 → 1 across 96 quanta moves the render by 9.5e-5 total
+///    absolute sample difference against an RMS of 6.4e-2.
 ///
 /// The two tables use different spellings on purpose (`osc_level`/`oscLevel`,
 /// `mod_lfo_to_pitch`/`lfoPitchAmount`), so their only contract is that index
@@ -53,7 +72,7 @@ const MAX_BLOCK_EVENTS: usize = 256;
 /// `mapFermenterParamToDspParam` translation and asserts `set_param_by_id(n, v)`
 /// renders identically to `set_param(name, v)`. Editing this array without
 /// making the matching edit to `FERMENTER_AUTOMATION_PARAM_IDS` fails there.
-const AUTOMATION_PARAM_NAMES: [&str; 16] = [
+const AUTOMATION_PARAM_NAMES: [&str; 102] = [
     "osc_level",
     "cutoff",
     "resonance",
@@ -70,6 +89,92 @@ const AUTOMATION_PARAM_NAMES: [&str; 16] = [
     "grain_size",
     "grain_spray",
     "osc_waveform",
+    "engine",
+    "osc_coarse",
+    "osc_fine",
+    "pulse_width",
+    "unison_voices",
+    "unison_detune",
+    "noise_color",
+    "drift",
+    "warp_mode",
+    "warp_amount",
+    "audio_mod_rate",
+    "audio_mod_depth",
+    "audio_mod_target",
+    "additive_partials",
+    "additive_tilt",
+    "additive_odd",
+    "additive_inharm",
+    "ks_damping",
+    "ks_brightness",
+    "grain_position",
+    "grain_pitch_var",
+    "sampler_mode",
+    "sampler_start",
+    "sampler_end",
+    "voice_drive",
+    "filter_model",
+    "filter_mode",
+    "filter_drive",
+    "filter_keytrack",
+    "fm_algorithm",
+    "fm_ratio1",
+    "fm_ratio2",
+    "fm_ratio3",
+    "fm_ratio4",
+    "fm_level1",
+    "fm_level3",
+    "fm_level4",
+    "fm_mod_amount",
+    "amp_attack",
+    "amp_decay",
+    "amp_sustain",
+    "amp_release",
+    "filter_attack",
+    "filter_decay",
+    "filter_sustain",
+    "filter_release",
+    "lfo_shape",
+    "seq_rate",
+    "seq_to_pitch",
+    "portamento",
+    "reverb_type",
+    "reverb_mix",
+    "reverb_decay",
+    "eq_low_freq",
+    "eq_low_gain",
+    "eq_low_q",
+    "eq_mid_freq",
+    "eq_mid_gain",
+    "eq_mid_q",
+    "eq_high_freq",
+    "eq_high_gain",
+    "eq_high_q",
+    "delay_time",
+    "delay_feedback",
+    "delay_mix",
+    "chorus_rate",
+    "chorus_depth",
+    "chorus_mix",
+    "phaser_rate",
+    "phaser_depth",
+    "phaser_mix",
+    "dist_drive",
+    "dist_tone",
+    "dist_mix",
+    "comp_threshold",
+    "comp_ratio",
+    "comp_attack",
+    "comp_release",
+    "comp_mix",
+    "stereo_width",
+    "num_layers",
+    "layer_level",
+    "layer_pan",
+    "chaos_amount",
+    "chaos_speed",
+    "master_gain",
 ];
 
 /// WASM-exported Fermenter instance for AudioWorklet.

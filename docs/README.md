@@ -4,6 +4,8 @@ This documentation provides high-level overviews for implementing features in th
 
 > **Note**: These files are meant for human reading. AI agents start at the root `AGENTS.md` and load task-specific rules from `.agents/skills/*/SKILL.md`; machine enforcement lives in `eslint.config.mjs` and `.dependency-cruiser*.cjs` (`pnpm deps:validate`).
 
+> **Note**: End-user documentation lives in [`docs/manual/`](./manual/README.md). It is written for people using the DAW, not building it — keep implementation vocabulary out of it.
+
 ## Feature implementation flow
 
 ### 1. Architecture

@@ -36,182 +36,19 @@
 export const PARAMETER_LEVEL_OFFLINE_AUTOMATION_EXEMPTIONS: Readonly<Record<string, Readonly<Record<string, string>>>> =
     {
         fermenter: {
-            oscEngine:
-                'unclassified: declared `int` — AC-1 must decide class (b) structural selector vs class (c) stepped-but-automatable before an ordinal is wired',
-            oscCoarse:
-                'unclassified: declared `int` — AC-1 must decide class (b) structural selector vs class (c) stepped-but-automatable before an ordinal is wired',
-            oscFine:
-                'unclassified: declared `float`, continuous in the engine — SPEC-parameter-automation-coverage AC-1 class (a) candidate, no offline ordinal wired',
-            pulseWidth:
-                'unclassified: declared `float`, continuous in the engine — SPEC-parameter-automation-coverage AC-1 class (a) candidate, no offline ordinal wired',
-            unisonVoices:
-                'unclassified: declared `int` — AC-1 must decide class (b) structural selector vs class (c) stepped-but-automatable before an ordinal is wired',
-            unisonDetune:
-                'unclassified: declared `float`, continuous in the engine — SPEC-parameter-automation-coverage AC-1 class (a) candidate, no offline ordinal wired',
-            noiseColor:
-                'unclassified: declared `int` — AC-1 must decide class (b) structural selector vs class (c) stepped-but-automatable before an ordinal is wired',
-            oscDrift:
-                'unclassified: declared `float`, continuous in the engine — SPEC-parameter-automation-coverage AC-1 class (a) candidate, no offline ordinal wired',
-            warpMode:
-                'unclassified: declared `int` — AC-1 must decide class (b) structural selector vs class (c) stepped-but-automatable before an ordinal is wired',
-            warpAmount:
-                'unclassified: declared `float`, continuous in the engine — SPEC-parameter-automation-coverage AC-1 class (a) candidate, no offline ordinal wired',
-            audioModRate:
-                'unclassified: declared `float`, continuous in the engine — SPEC-parameter-automation-coverage AC-1 class (a) candidate, no offline ordinal wired',
-            audioModDepth:
-                'unclassified: declared `float`, continuous in the engine — SPEC-parameter-automation-coverage AC-1 class (a) candidate, no offline ordinal wired',
-            audioModTarget:
-                'unclassified: declared `int` — AC-1 must decide class (b) structural selector vs class (c) stepped-but-automatable before an ordinal is wired',
-            additivePartials:
-                'unclassified: declared `int` — AC-1 must decide class (b) structural selector vs class (c) stepped-but-automatable before an ordinal is wired',
-            additiveTilt:
-                'unclassified: declared `float`, continuous in the engine — SPEC-parameter-automation-coverage AC-1 class (a) candidate, no offline ordinal wired',
-            additiveOdd:
-                'unclassified: declared `float`, continuous in the engine — SPEC-parameter-automation-coverage AC-1 class (a) candidate, no offline ordinal wired',
-            additiveInharm:
-                'unclassified: declared `float`, continuous in the engine — SPEC-parameter-automation-coverage AC-1 class (a) candidate, no offline ordinal wired',
-            ksDamping:
-                'unclassified: declared `float`, continuous in the engine — SPEC-parameter-automation-coverage AC-1 class (a) candidate, no offline ordinal wired',
-            ksBrightness:
-                'unclassified: declared `float`, continuous in the engine — SPEC-parameter-automation-coverage AC-1 class (a) candidate, no offline ordinal wired',
-            grainPosition:
-                'unclassified: declared `float`, continuous in the engine — SPEC-parameter-automation-coverage AC-1 class (a) candidate, no offline ordinal wired',
-            grainPitchVar:
-                'unclassified: declared `float`, continuous in the engine — SPEC-parameter-automation-coverage AC-1 class (a) candidate, no offline ordinal wired',
-            grainPanSpread:
-                'unclassified: declared `float`, continuous in the engine — SPEC-parameter-automation-coverage AC-1 class (a) candidate, no offline ordinal wired',
-            samplerMode:
-                'unclassified: declared `int` — AC-1 must decide class (b) structural selector vs class (c) stepped-but-automatable before an ordinal is wired',
-            samplerStart:
-                'unclassified: declared `float`, continuous in the engine — SPEC-parameter-automation-coverage AC-1 class (a) candidate, no offline ordinal wired',
-            samplerEnd:
-                'unclassified: declared `float`, continuous in the engine — SPEC-parameter-automation-coverage AC-1 class (a) candidate, no offline ordinal wired',
-            voiceDrive:
-                'unclassified: declared `float`, continuous in the engine — SPEC-parameter-automation-coverage AC-1 class (a) candidate, no offline ordinal wired',
-            filterModel:
-                'unclassified: declared `int` — AC-1 must decide class (b) structural selector vs class (c) stepped-but-automatable before an ordinal is wired',
-            filterMode:
-                'unclassified: declared `int` — AC-1 must decide class (b) structural selector vs class (c) stepped-but-automatable before an ordinal is wired',
-            filterDrive:
-                'unclassified: declared `float`, continuous in the engine — SPEC-parameter-automation-coverage AC-1 class (a) candidate, no offline ordinal wired',
-            filterKeytrack:
-                'unclassified: declared `float`, continuous in the engine — SPEC-parameter-automation-coverage AC-1 class (a) candidate, no offline ordinal wired',
-            fmAlgorithm:
-                'unclassified: declared `int` — AC-1 must decide class (b) structural selector vs class (c) stepped-but-automatable before an ordinal is wired',
-            fmRatio1:
-                'unclassified: declared `float`, continuous in the engine — SPEC-parameter-automation-coverage AC-1 class (a) candidate, no offline ordinal wired',
-            fmRatio2:
-                'unclassified: declared `float`, continuous in the engine — SPEC-parameter-automation-coverage AC-1 class (a) candidate, no offline ordinal wired',
-            fmRatio3:
-                'unclassified: declared `float`, continuous in the engine — SPEC-parameter-automation-coverage AC-1 class (a) candidate, no offline ordinal wired',
-            fmRatio4:
-                'unclassified: declared `float`, continuous in the engine — SPEC-parameter-automation-coverage AC-1 class (a) candidate, no offline ordinal wired',
-            fmLevel1:
-                'unclassified: declared `float`, continuous in the engine — SPEC-parameter-automation-coverage AC-1 class (a) candidate, no offline ordinal wired',
-            fmLevel3:
-                'unclassified: declared `float`, continuous in the engine — SPEC-parameter-automation-coverage AC-1 class (a) candidate, no offline ordinal wired',
-            fmLevel4:
-                'unclassified: declared `float`, continuous in the engine — SPEC-parameter-automation-coverage AC-1 class (a) candidate, no offline ordinal wired',
-            fmModAmount:
-                'unclassified: declared `float`, continuous in the engine — SPEC-parameter-automation-coverage AC-1 class (a) candidate, no offline ordinal wired',
-            ampAttack:
-                'unclassified: declared `float`, continuous in the engine — SPEC-parameter-automation-coverage AC-1 class (a) candidate, no offline ordinal wired',
-            ampDecay:
-                'unclassified: declared `float`, continuous in the engine — SPEC-parameter-automation-coverage AC-1 class (a) candidate, no offline ordinal wired',
-            ampSustain:
-                'unclassified: declared `float`, continuous in the engine — SPEC-parameter-automation-coverage AC-1 class (a) candidate, no offline ordinal wired',
-            ampRelease:
-                'unclassified: declared `float`, continuous in the engine — SPEC-parameter-automation-coverage AC-1 class (a) candidate, no offline ordinal wired',
-            filterAttack:
-                'unclassified: declared `float`, continuous in the engine — SPEC-parameter-automation-coverage AC-1 class (a) candidate, no offline ordinal wired',
-            filterDecay:
-                'unclassified: declared `float`, continuous in the engine — SPEC-parameter-automation-coverage AC-1 class (a) candidate, no offline ordinal wired',
-            filterSustain:
-                'unclassified: declared `float`, continuous in the engine — SPEC-parameter-automation-coverage AC-1 class (a) candidate, no offline ordinal wired',
-            filterRelease:
-                'unclassified: declared `float`, continuous in the engine — SPEC-parameter-automation-coverage AC-1 class (a) candidate, no offline ordinal wired',
-            lfoShape:
-                'unclassified: declared `int` — AC-1 must decide class (b) structural selector vs class (c) stepped-but-automatable before an ordinal is wired',
-            seqRate:
-                'unclassified: declared `float`, continuous in the engine — SPEC-parameter-automation-coverage AC-1 class (a) candidate, no offline ordinal wired',
-            seqToPitch:
-                'unclassified: declared `float`, continuous in the engine — SPEC-parameter-automation-coverage AC-1 class (a) candidate, no offline ordinal wired',
-            portamentoTime:
-                'unclassified: declared `float`, continuous in the engine — SPEC-parameter-automation-coverage AC-1 class (a) candidate, no offline ordinal wired',
-            portamentoMode:
-                'unclassified: declared `int` — AC-1 must decide class (b) structural selector vs class (c) stepped-but-automatable before an ordinal is wired',
-            reverbType:
-                'unclassified: declared `int` — AC-1 must decide class (b) structural selector vs class (c) stepped-but-automatable before an ordinal is wired',
-            reverbMix:
-                'unclassified: declared `float`, continuous in the engine — SPEC-parameter-automation-coverage AC-1 class (a) candidate, no offline ordinal wired',
-            reverbDecay:
-                'unclassified: declared `float`, continuous in the engine — SPEC-parameter-automation-coverage AC-1 class (a) candidate, no offline ordinal wired',
-            eqLowFreq:
-                'unclassified: declared `float`, continuous in the engine — SPEC-parameter-automation-coverage AC-1 class (a) candidate, no offline ordinal wired',
-            eqLowGain:
-                'unclassified: declared `float`, continuous in the engine — SPEC-parameter-automation-coverage AC-1 class (a) candidate, no offline ordinal wired',
-            eqLowQ: 'unclassified: declared `float`, continuous in the engine — SPEC-parameter-automation-coverage AC-1 class (a) candidate, no offline ordinal wired',
-            eqMidFreq:
-                'unclassified: declared `float`, continuous in the engine — SPEC-parameter-automation-coverage AC-1 class (a) candidate, no offline ordinal wired',
-            eqMidGain:
-                'unclassified: declared `float`, continuous in the engine — SPEC-parameter-automation-coverage AC-1 class (a) candidate, no offline ordinal wired',
-            eqMidQ: 'unclassified: declared `float`, continuous in the engine — SPEC-parameter-automation-coverage AC-1 class (a) candidate, no offline ordinal wired',
-            eqHighFreq:
-                'unclassified: declared `float`, continuous in the engine — SPEC-parameter-automation-coverage AC-1 class (a) candidate, no offline ordinal wired',
-            eqHighGain:
-                'unclassified: declared `float`, continuous in the engine — SPEC-parameter-automation-coverage AC-1 class (a) candidate, no offline ordinal wired',
-            eqHighQ:
-                'unclassified: declared `float`, continuous in the engine — SPEC-parameter-automation-coverage AC-1 class (a) candidate, no offline ordinal wired',
-            delayTime:
-                'unclassified: declared `float`, continuous in the engine — SPEC-parameter-automation-coverage AC-1 class (a) candidate, no offline ordinal wired',
-            delayFeedback:
-                'unclassified: declared `float`, continuous in the engine — SPEC-parameter-automation-coverage AC-1 class (a) candidate, no offline ordinal wired',
-            delayMix:
-                'unclassified: declared `float`, continuous in the engine — SPEC-parameter-automation-coverage AC-1 class (a) candidate, no offline ordinal wired',
-            chorusRate:
-                'unclassified: declared `float`, continuous in the engine — SPEC-parameter-automation-coverage AC-1 class (a) candidate, no offline ordinal wired',
-            chorusDepth:
-                'unclassified: declared `float`, continuous in the engine — SPEC-parameter-automation-coverage AC-1 class (a) candidate, no offline ordinal wired',
-            chorusMix:
-                'unclassified: declared `float`, continuous in the engine — SPEC-parameter-automation-coverage AC-1 class (a) candidate, no offline ordinal wired',
-            phaserRate:
-                'unclassified: declared `float`, continuous in the engine — SPEC-parameter-automation-coverage AC-1 class (a) candidate, no offline ordinal wired',
-            phaserDepth:
-                'unclassified: declared `float`, continuous in the engine — SPEC-parameter-automation-coverage AC-1 class (a) candidate, no offline ordinal wired',
-            phaserMix:
-                'unclassified: declared `float`, continuous in the engine — SPEC-parameter-automation-coverage AC-1 class (a) candidate, no offline ordinal wired',
-            distDrive:
-                'unclassified: declared `float`, continuous in the engine — SPEC-parameter-automation-coverage AC-1 class (a) candidate, no offline ordinal wired',
-            distTone:
-                'unclassified: declared `float`, continuous in the engine — SPEC-parameter-automation-coverage AC-1 class (a) candidate, no offline ordinal wired',
-            distMix:
-                'unclassified: declared `float`, continuous in the engine — SPEC-parameter-automation-coverage AC-1 class (a) candidate, no offline ordinal wired',
-            compThreshold:
-                'unclassified: declared `float`, continuous in the engine — SPEC-parameter-automation-coverage AC-1 class (a) candidate, no offline ordinal wired',
-            compRatio:
-                'unclassified: declared `float`, continuous in the engine — SPEC-parameter-automation-coverage AC-1 class (a) candidate, no offline ordinal wired',
-            compAttack:
-                'unclassified: declared `float`, continuous in the engine — SPEC-parameter-automation-coverage AC-1 class (a) candidate, no offline ordinal wired',
-            compRelease:
-                'unclassified: declared `float`, continuous in the engine — SPEC-parameter-automation-coverage AC-1 class (a) candidate, no offline ordinal wired',
-            compMix:
-                'unclassified: declared `float`, continuous in the engine — SPEC-parameter-automation-coverage AC-1 class (a) candidate, no offline ordinal wired',
-            stereoWidth:
-                'unclassified: declared `float`, continuous in the engine — SPEC-parameter-automation-coverage AC-1 class (a) candidate, no offline ordinal wired',
+            // All three survivors are absences of engine behaviour, not absences
+            // of wiring: no two values of any of them render differently, so an
+            // ordinal for them could not carry a guard that is able to fail
+            // (ADR 0015). The other 86 rows that stood here were bound by
+            // SPEC-parameter-automation-coverage AC-4 and each one now carries a
+            // per-parameter render-delta probe in
+            // `wasm/__tests__/dawDspFermenterAutomationOrdinals.spec.ts`.
             activeLayer:
-                'unclassified: declared `int` — AC-1 must decide class (b) structural selector vs class (c) stepped-but-automatable before an ordinal is wired',
-            numLayers:
-                'unclassified: declared `int` — AC-1 must decide class (b) structural selector vs class (c) stepped-but-automatable before an ordinal is wired',
-            layerLevel:
-                'unclassified: declared `float`, continuous in the engine — SPEC-parameter-automation-coverage AC-1 class (a) candidate, no offline ordinal wired',
-            layerPan:
-                'unclassified: declared `float`, continuous in the engine — SPEC-parameter-automation-coverage AC-1 class (a) candidate, no offline ordinal wired',
-            chaosAmount:
-                'unclassified: declared `float`, continuous in the engine — SPEC-parameter-automation-coverage AC-1 class (a) candidate, no offline ordinal wired',
-            chaosSpeed:
-                'unclassified: declared `float`, continuous in the engine — SPEC-parameter-automation-coverage AC-1 class (a) candidate, no offline ordinal wired',
-            masterGain:
-                'unclassified: declared `float`, continuous in the engine — SPEC-parameter-automation-coverage AC-1 class (a) candidate, no offline ordinal wired',
+                'class (b) structural: `active_layer` writes no DSP state — `MasterSynth::set_param` reads it only to route *subsequent* parameter writes to a layer, and `note_on_with_channel`/`render_layers` iterate `layers[..num_active_layers]` without consulting it. Binding it would also make the destination of every other scheduled lane depend on the order the schedules sit in `_paramAutomation`',
+            portamentoMode:
+                'dead control: `Layer::set_param` stores `portamento_mode` and nothing in `crates/daw-dsp` reads the field — `Layer::note_on` passes only `portamento_time` to `Voice::set_portamento`. The legato-only glide the descriptor offers is not implemented, so this is a DSP gap for a follow-up, not a binding gap',
+            grainPanSpread:
+                'dead control: `GranularEngine::tick` pans each grain into an L/R pair, but `Voice::render` sums the oscillator pair to mono before the filter and restores the L/R ratio only on the `has_unison` branch, so granular pan never reaches the output. Measured: driving it 0 → 1 across 96 quanta moves the render by 9.5e-5 total absolute sample difference against an RMS of 6.4e-2. A DSP gap for a follow-up',
         },
         toaster: {
             swing: 'unclassified: declared `float`, continuous in the engine — SPEC-parameter-automation-coverage AC-1 class (a) candidate, no offline ordinal wired',

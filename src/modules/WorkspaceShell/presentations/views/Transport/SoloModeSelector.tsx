@@ -40,6 +40,7 @@ export const SoloModeSelector = ({ soloMode }: SoloModeSelectorProps): ReactElem
                             size="xs"
                             role="radio"
                             aria-checked={soloMode === message.value}
+                            data-testid={`solo-mode-${message.value}`}
                             onClick={() => setSoloMode(message.value)}
                             className={soloMode === message.value ? 'text-[var(--color-state-solo)]' : ''}
                         >

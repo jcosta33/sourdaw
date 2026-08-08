@@ -3,10 +3,12 @@
 //! Feedback topology with dual-time-constant auto-release,
 //! THAT 2181 VCA distortion modeling (2nd harmonic).
 
-use super::gain_computer::{apply_range, db_to_linear, gain_computer, linear_to_db};
+use super::detector::{DetectionMode, StereoDetector};
+use super::gain_computer::{apply_range, db_to_linear, gain_computer};
 use crate::primitives::flush_denormal;
 
 /// SSL-style auto-release with dual RC networks.
+#[derive(Clone)]
 struct AutoRelease {
     env_fast: f32,
     env_slow: f32,
@@ -59,6 +61,28 @@ impl AutoRelease {
     }
 }
 
+/// Everything a single channel's gain path carries. One per side, so an
+/// unlinked detector gets two independent envelopes rather than one shared one.
+#[derive(Clone)]
+struct VcaChannel {
+    gr_state: f32,
+    auto_rel: AutoRelease,
+}
+
+impl VcaChannel {
+    fn new(sample_rate: f32) -> Self {
+        Self {
+            gr_state: 0.0,
+            auto_rel: AutoRelease::new(sample_rate),
+        }
+    }
+
+    fn reset(&mut self) {
+        self.gr_state = 0.0;
+        self.auto_rel.reset();
+    }
+}
+
 pub struct VcaCompressor {
     sample_rate: f32,
     threshold: f32,
@@ -70,8 +94,9 @@ pub struct VcaCompressor {
     auto_release: bool,
     attack_coeff: f32,
     release_coeff: f32,
-    gr_state: f32,
-    auto_rel: AutoRelease,
+    channel_l: VcaChannel,
+    channel_r: VcaChannel,
+    detector: StereoDetector,
     /// VCA type: 0 = Ideal (clean), 1 = THAT 2181 (subtle 2nd), 2 = DBX 202 (warmer)
     vca_type: u8,
     /// VCA 2nd harmonic distortion amount (0.001 – 0.01 typical).
@@ -95,8 +120,9 @@ impl VcaCompressor {
             auto_release: true,
             attack_coeff: 0.0,
             release_coeff: 0.0,
-            gr_state: 0.0,
-            auto_rel: AutoRelease::new(sample_rate),
+            channel_l: VcaChannel::new(sample_rate),
+            channel_r: VcaChannel::new(sample_rate),
+            detector: StereoDetector::new(sample_rate),
             vca_type: 1, // THAT 2181 default
             vca_k2: 0.003,
             last_output_l: 0.0,
@@ -151,54 +177,90 @@ impl VcaCompressor {
         }
     }
 
-    /// Process one sample pair. Returns (left, right, gain_reduction_db).
-    #[inline]
-    pub fn process_sample(&mut self, left: f32, right: f32) -> (f32, f32, f32) {
-        // Detection: feedback (SSL default) or feed-forward
-        let detect = if self.feed_forward {
-            left.abs().max(right.abs())
-        } else {
-            self.last_output_l.abs().max(self.last_output_r.abs())
-        };
-        let input_db = linear_to_db(detect);
+    pub fn set_detection(&mut self, mode: DetectionMode) {
+        self.detector.set_mode(mode);
+    }
 
-        // Gain computer
+    /// Set stereo link. Leaving the fully-linked state seeds the right
+    /// channel's envelope from the left one, so the moment the two gain paths
+    /// separate they separate from a settled value rather than from whatever
+    /// the right channel was left holding — otherwise turning Link down under
+    /// programme steps the right channel's gain and clicks. This runs at
+    /// control rate, so the audio path never pays for it.
+    pub fn set_stereo_link(&mut self, link: f32) {
+        if self.detector.is_fully_linked() && link < 1.0 {
+            self.channel_r = self.channel_l.clone();
+        }
+        self.detector.set_link(link);
+    }
+
+    #[inline]
+    fn channel_gain_db(&mut self, input_db: f32, right_channel: bool) -> f32 {
         let gc = gain_computer(input_db, self.threshold, self.ratio, self.knee_width);
         let gc = apply_range(gc, self.range);
 
-        // Smoothing
-        let smoothed = if self.auto_release {
-            // Use dual-time-constant auto-release
-            let rectified = -gc; // positive for auto-release logic
-            let env = self.auto_rel.process(rectified, self.attack_coeff);
-            -env // back to negative dB
+        let attack_coeff = self.attack_coeff;
+        let release_coeff = self.release_coeff;
+        let auto_release = self.auto_release;
+        let channel = if right_channel {
+            &mut self.channel_r
         } else {
-            // Standard branching smoother
-            let coeff = if gc <= self.gr_state {
-                self.attack_coeff
-            } else {
-                self.release_coeff
-            };
-            self.gr_state = flush_denormal(coeff * self.gr_state + (1.0 - coeff) * gc);
-            self.gr_state
+            &mut self.channel_l
         };
 
-        // Apply gain reduction
-        let gr_linear = db_to_linear(smoothed);
+        if auto_release {
+            // Dual-time-constant auto-release. Positive for the envelope logic,
+            // back to negative dB on the way out.
+            let env = channel.auto_rel.process(-gc, attack_coeff);
+            return -env;
+        }
+
+        // Standard branching smoother
+        let coeff = if gc <= channel.gr_state {
+            attack_coeff
+        } else {
+            release_coeff
+        };
+        channel.gr_state = flush_denormal(coeff * channel.gr_state + (1.0 - coeff) * gc);
+        channel.gr_state
+    }
+
+    /// Process one sample pair. Returns (left, right, gain_reduction_db).
+    #[inline]
+    pub fn process_sample(&mut self, left: f32, right: f32) -> (f32, f32, f32) {
+        // Detection source: feedback (SSL default) or feed-forward. The
+        // detector decides *how* the source is rectified and how much the two
+        // sides share; this only chooses which signal it reads.
+        let (source_l, source_r) = if self.feed_forward {
+            (left, right)
+        } else {
+            (self.last_output_l, self.last_output_r)
+        };
+        let (detect_l_db, detect_r_db) = self.detector.detect_db(source_l, source_r);
+
+        let smoothed_l = self.channel_gain_db(detect_l_db, false);
+        let smoothed_r = if self.detector.is_fully_linked() {
+            smoothed_l
+        } else {
+            self.channel_gain_db(detect_r_db, true)
+        };
 
         // VCA distortion: subtle 2nd harmonic
-        let out_l = vca_distortion(left * gr_linear, self.vca_k2, smoothed);
-        let out_r = vca_distortion(right * gr_linear, self.vca_k2, smoothed);
+        let out_l = vca_distortion(left * db_to_linear(smoothed_l), self.vca_k2, smoothed_l);
+        let out_r = vca_distortion(right * db_to_linear(smoothed_r), self.vca_k2, smoothed_r);
 
         self.last_output_l = out_l;
         self.last_output_r = out_r;
 
-        (out_l, out_r, smoothed)
+        // Report the deeper of the two reductions to the meter — identical to
+        // the single value while linked, and the one an engineer reads for.
+        (out_l, out_r, smoothed_l.min(smoothed_r))
     }
 
     pub fn reset(&mut self) {
-        self.gr_state = 0.0;
-        self.auto_rel.reset();
+        self.channel_l.reset();
+        self.channel_r.reset();
+        self.detector.reset();
         self.last_output_l = 0.0;
         self.last_output_r = 0.0;
     }

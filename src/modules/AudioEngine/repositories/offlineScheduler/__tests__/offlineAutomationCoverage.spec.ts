@@ -265,13 +265,18 @@ describe('offline device-param automation capability coverage', () => {
         //
         // These three exact counts are also the presence pin for the two empty
         // assertions above (ADR 0015 rule 4). A walk that went blind reaches
-        // zero pairs and cannot produce 21/182/105, so `uncovered === []` cannot
+        // zero pairs and cannot produce 107/182/19, so `uncovered === []` cannot
         // be satisfied by an empty extraction — the shape that let a device-write
         // census spend 41 commits comparing nothing against a four-element
         // expectation.
-        expect(census.verdicts).toBe(21);
+        //
+        // 21 → 107 verdicts and 105 → 19 parameter-level exemptions: 86 of
+        // Fermenter's remaining parameters were bound (AC-4). The device-level
+        // count is untouched, which is the point of counting the two classes
+        // apart — parameter-level work must not move a device-level number.
+        expect(census.verdicts).toBe(107);
         expect(census.deviceLevelExemptions).toBe(182);
-        expect(census.parameterLevelExemptions).toBe(105);
+        expect(census.parameterLevelExemptions).toBe(19);
 
         // (v) `knead` is a factory entry and a canonical native device type with
         // no descriptor anywhere. It is not an exemption row: two of the three
@@ -286,14 +291,28 @@ describe('offline device-param automation capability coverage', () => {
 
         // The subject of SPEC-parameter-automation-coverage, stated as a number
         // the census can defend rather than a sentence in a header. Fermenter
-        // declares 105 automatable parameters and carries offline ordinals for
-        // 16 of them; the other 89 render frozen in a bounce, freeze or stem
-        // export while the monitor rides them.
-        expect(fermenter).toEqual({ covered: 16, exempt: 89, deviceLevel: false });
-        // `oscWaveform` is the one this PR moved across, so it must be a verdict
-        // and must NOT still carry an exemption row.
-        expect(census.coveredPairs).toContain('fermenter:oscWaveform');
-        expect(Object.hasOwn(PARAMETER_LEVEL_OFFLINE_AUTOMATION_EXEMPTIONS.fermenter ?? {}, 'oscWaveform')).toBe(false);
+        // declares 105 automatable parameters. 102 now carry offline ordinals;
+        // the three that do not are absences of *engine behaviour* — see their
+        // rows in `offlineAutomationExemptions.ts` — rather than parameters that
+        // render frozen in a bounce while the monitor rides them.
+        expect(fermenter).toEqual({ covered: 102, exempt: 3, deviceLevel: false });
+        // Spot-checks on both sides of the move, so a regression that reverted
+        // the binding en masse cannot satisfy the totals by shifting a count.
+        // `oscWaveform` came across in an earlier PR; `additiveTilt` is the most
+        // expensive setter in the newly bound set and `masterGain` the last
+        // ordinal, so a truncated table loses it first.
+        for (const paramId of ['oscWaveform', 'additiveTilt', 'masterGain']) {
+            expect(census.coveredPairs).toContain(`fermenter:${paramId}`);
+            expect(Object.hasOwn(PARAMETER_LEVEL_OFFLINE_AUTOMATION_EXEMPTIONS.fermenter ?? {}, paramId)).toBe(false);
+        }
+        // And the two that stayed behind are exempt rather than silently
+        // dropped: a pair with neither a binding nor a row lands in `uncovered`
+        // above, so this pins which side of the split they are on.
+        expect(Object.keys(PARAMETER_LEVEL_OFFLINE_AUTOMATION_EXEMPTIONS.fermenter ?? {}).sort()).toEqual([
+            'activeLayer',
+            'grainPanSpread',
+            'portamentoMode',
+        ]);
     });
 
     it('resolves every Faust family’s automatable params through its AudioParam map', () => {
