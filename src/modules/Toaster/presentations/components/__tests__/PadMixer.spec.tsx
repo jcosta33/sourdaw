@@ -90,6 +90,38 @@ describe('PadMixer', () => {
         expect(onPadParam).not.toHaveBeenCalled();
     });
 
+    /**
+     * The solo button shipped `disabled` while the engine had no `soloed` arm.
+     * Asserting both directions is what keeps it honest: a handler that always
+     * sent 1 would pass a single click, and the engine gates every pad that is
+     * not soloed, so a solo that cannot be released silences the device.
+     */
+    it('should toggle solo on and off through the pad param callback', () => {
+        const onPadParam = vi.fn();
+        const pad = makePad(0);
+        const { rerender } = render(<PadMixer pads={[pad]} onPadParam={onPadParam} />);
+
+        fireEvent.click(screen.getByRole('button', { name: 'S' }));
+        expect(onPadParam).toHaveBeenCalledWith(0, 'soloed', 1);
+
+        onPadParam.mockClear();
+        rerender(<PadMixer pads={[{ ...pad, soloed: true }]} onPadParam={onPadParam} />);
+        fireEvent.click(screen.getByRole('button', { name: 'S' }));
+        expect(onPadParam).toHaveBeenCalledWith(0, 'soloed', 0);
+    });
+
+    it('should address solo to the pad that was clicked', () => {
+        const onPadParam = vi.fn();
+        const pads = Array.from({ length: 4 }, (_, index) => makePad(index));
+        render(<PadMixer pads={pads} onPadParam={onPadParam} />);
+
+        const soloButtons = screen.getAllByRole('button', { name: 'S' });
+        fireEvent.click(soloButtons[2]!);
+
+        expect(onPadParam).toHaveBeenCalledWith(2, 'soloed', 1);
+        expect(onPadParam).toHaveBeenCalledTimes(1);
+    });
+
     it('should release a fader drag on window blur', () => {
         const onPadParam = vi.fn();
         const pad = makePad(0);

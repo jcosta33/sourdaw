@@ -11,6 +11,10 @@ pub struct Pad {
     pub volume: f32,
     pub pan: f32, // -1 (left) to +1 (right)
     pub muted: bool,
+    /// Solo is stored per pad and resolved across the whole pad set by
+    /// `ToasterEngine::note_on` — a lone flag says nothing on its own, because
+    /// "solo" means "and every pad that is not soloed goes quiet".
+    pub soloed: bool,
     pub tune: f32,              // semitones
     pub decay: f32,             // 0-1 normalized
     pub tone: f32,              // 0-1 normalized
@@ -44,6 +48,7 @@ impl Pad {
             volume: 0.8,
             pan: 0.0,
             muted: false,
+            soloed: false,
             tune: 0.0,
             decay: 0.5,
             tone: 0.5,
@@ -85,6 +90,7 @@ impl Pad {
             "volume" => self.volume = value.clamp(0.0, 1.0),
             "pan" => self.pan = value.clamp(-1.0, 1.0),
             "muted" => self.muted = value > 0.5,
+            "soloed" => self.soloed = value > 0.5,
             "tune" => self.tune = value.clamp(-24.0, 24.0),
             "decay" => self.decay = value.clamp(0.0, 1.0),
             "tone" => self.tone = value.clamp(0.0, 1.0),
