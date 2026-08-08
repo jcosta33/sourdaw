@@ -110,10 +110,19 @@ function mapClip(
     return { clip, notes };
 }
 
-function mapTrack(
-    parsed: DawProjectParsedTrack,
-    bufferIdsByPath: Map<string, string>
-): { track: ProjectTrack; notesByClipId: Record<string, ProjectMidiNote[]> } {
+type MapTrackInput = {
+    parsed: DawProjectParsedTrack;
+    bufferIdsByPath: Map<string, string>;
+    /** Id of the master every non-master track routes to. Only equal to the
+     * literal `'master'` when this import synthesizes one; a file that carries
+     * its own master supplies whatever id the parser assigned it. */
+    masterTrackId: string;
+};
+
+function mapTrack({ parsed, bufferIdsByPath, masterTrackId }: MapTrackInput): {
+    track: ProjectTrack;
+    notesByClipId: Record<string, ProjectMidiNote[]>;
+} {
     const notesByClipId: Record<string, ProjectMidiNote[]> = {};
     const clips: ProjectClip[] = [];
     for (const rawClip of parsed.clips) {
@@ -162,7 +171,7 @@ function mapTrack(
         hidden: false,
         disabled: false,
         height: 80,
-        outputId: parsed.kind === 'master' ? 'hw_out' : 'master',
+        outputId: parsed.kind === 'master' ? 'hw_out' : masterTrackId,
         automationMode: 'read',
         groupId: null,
         soloSafe: parsed.kind === 'bus',
@@ -182,10 +191,18 @@ export function mapToProjectData(input: MapToProjectDataInput): ProjectData {
     const { parsed, bufferIdsByPath, fileName } = input;
     const now = Date.now();
 
+    // Resolved before the mapping loop: the imported file's own master keeps
+    // the id the parser gave it, and every other track has to route to *that*
+    // id. Hardcoding the literal `'master'` was only ever right for the
+    // synthesized master below, so any file that carried one left every other
+    // track pointing at a track that does not exist (audit M-262).
+    const importedMasterTrack = parsed.tracks.find((track) => track.kind === 'master');
+    const masterTrackId = importedMasterTrack?.id ?? 'master';
+
     const tracks: ProjectTrack[] = [];
     const notesByClipId: Record<string, ProjectMidiNote[]> = {};
     for (const parsedTrack of parsed.tracks) {
-        const mapped = mapTrack(parsedTrack, bufferIdsByPath);
+        const mapped = mapTrack({ parsed: parsedTrack, bufferIdsByPath, masterTrackId });
         tracks.push(mapped.track);
         Object.assign(notesByClipId, mapped.notesByClipId);
     }

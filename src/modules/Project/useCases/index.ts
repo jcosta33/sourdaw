@@ -4,6 +4,7 @@ export { captureProjectTransitionAuthority } from './projectPersistence/captureP
 export { saveProject } from './projectPersistence/saveProject/saveProject';
 export { markDirty } from './projectPersistence/saveProject/markDirty';
 export { initGrooveTemplateDirtyTracking } from './projectPersistence/saveProject/initGrooveTemplateDirtyTracking';
+export { initProjectDirtyTracking } from './projectPersistence/saveProject/initProjectDirtyTracking';
 export { loadProject } from './projectPersistence/loadProject';
 export { migrateLegacyProjectSnapshots } from './projectPersistence/migrateLegacyProjectSnapshots';
 export { setProjectIdentityTransitionDependencies } from './projectPersistence/projectIdentityTransitionDependencies';

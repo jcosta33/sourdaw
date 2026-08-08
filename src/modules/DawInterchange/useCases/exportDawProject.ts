@@ -10,6 +10,15 @@ import { serializeProjectXml } from './serializeProjectXml';
 export type ExportDawProjectOutput = Promise<{
     bytes: Uint8Array;
     fileName: string;
+    /**
+     * Clips whose audio could not be bundled because the buffer was not in the
+     * cache. They serialize as a `<Clip/>` with no `<Audio>` child, so the
+     * destination DAW plays silence there — the caller has to say so (audit
+     * M-263). `buildProjectData` cannot supply this: its own
+     * `missingBufferCount` is short-circuited to 0 under
+     * `includeAudioBuffers: false`, which is how this path calls it.
+     */
+    missingAudioCount: number;
 }>;
 
 function collectAudioBufferIds(project: ProjectData): string[] {
@@ -39,9 +48,12 @@ export async function exportDawProject(): ExportDawProjectOutput {
     const audioPathByBufferId = new Map<string, string>();
     const audioFiles = new Map<string, Uint8Array>();
 
+    let missingAudioCount = 0;
+
     for (const id of bufferIds) {
         const buffer = getCachedAudioBuffer({ bufferId: id });
         if (!buffer) {
+            missingAudioCount++;
             continue;
         }
         const fileName = `${sanitizeForPath(id)}.wav`;
@@ -69,5 +81,5 @@ export async function exportDawProject(): ExportDawProjectOutput {
     });
 
     const fileName = `${sanitizeForPath(projectData.meta.name || 'Sourdaw_Export')}.dawproject`;
-    return { bytes, fileName };
+    return { bytes, fileName, missingAudioCount };
 }

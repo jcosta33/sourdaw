@@ -252,7 +252,7 @@ vi.mock('#/modules/PluginHost/useCases', () => ({
 vi.mock('#/modules/Project/useCases', () => ({
     getProjectHandlers: sentinelHandlers('Project'),
     initGrooveTemplateDirtyTracking: noop,
-    markDirty: noop,
+    initProjectDirtyTracking: noop,
     migrateLegacyProjectSnapshots: () =>
         Promise.resolve({
             inspected: 0,
