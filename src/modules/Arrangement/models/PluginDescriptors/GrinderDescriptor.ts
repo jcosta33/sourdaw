@@ -14,8 +14,15 @@ const GRINDER_PARAMS: readonly PluginParamDef[] = [
 
     // Gate
     { id: 'gateThreshold', label: 'Gate', min: -80, max: 0, default: -60, unit: 'dB', step: 1 },
-    { id: 'gateAttack', label: 'Gate Atk', min: 0.1, max: 50, default: 0.5, unit: 'ms', scaling: 'log' },
-    { id: 'gateRelease', label: 'Gate Rel', min: 5, max: 500, default: 50, unit: 'ms', scaling: 'log' },
+    // 2 ms / 120 ms, not the 0.5 / 50 this table shipped with. `7690f7139`
+    // reworked `NoiseGate` so these times drive the gain stage as well as the
+    // detector — before it the gate opened on a hard-coded `0.05` coefficient
+    // and closed on `*= 0.999`, so the knobs only shaped the envelope follower
+    // — and raised `DEFAULT_PATCH` to suit. This table was not updated, so the
+    // Inspector and the automation lane have disagreed with the panel and with
+    // the engine ever since. See `declaredDefaultConsensus.spec.ts`.
+    { id: 'gateAttack', label: 'Gate Atk', min: 0.1, max: 50, default: 2, unit: 'ms', scaling: 'log' },
+    { id: 'gateRelease', label: 'Gate Rel', min: 5, max: 500, default: 120, unit: 'ms', scaling: 'log' },
 
     // Preamp
     { id: 'gain', label: 'Gain', min: 0, max: 10, default: 5, unit: '', step: 0.1 },
