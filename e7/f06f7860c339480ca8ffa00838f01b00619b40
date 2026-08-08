@@ -1,0 +1,44 @@
+crates/daw-dsp/src/primitives/cutoff.rs
+  s_14f2bbc9f385dd::t_ef853caa349bc7 75
+  s_14f2bbc9f385dd::t_bfd9e1764bf435 48
+  s_14f2bbc9f385dd::t_2772afcf03113e 87
+  s_14f2bbc9f385dd::t_6a54a58f55a1b5 1-47,49-74,76-86,88-200
+crates/daw-dsp/src/primitives/mod.rs
+  s_14f2bbc9f385dd::t_1602af13bd9406 5
+  s_14f2bbc9f385dd::t_3b65fa32c08566 13-15
+crates/daw-dsp/src/toaster/pad.rs
+  s_14f2bbc9f385dd::t_adf35a5a534016 4
+  s_14f2bbc9f385dd::t_daad67782c58eb 93-96
+crates/daw-dsp/tests/toaster_pad_cutoff.rs
+  s_14f2bbc9f385dd::t_8258e9eaa8fe7a 1-181
+crates/daw-dsp/src/toaster/voice.rs
+  s_14f2bbc9f385dd::t_846e7fea0a08bf 13
+  s_14f2bbc9f385dd::t_a77512da874f65 45-53
+crates/daw-dsp/tests/toaster_pad_resonance.rs
+  s_14f2bbc9f385dd::t_adc3ca49121bea 32-37,39
+  s_14f2bbc9f385dd::t_45ff2c5d85b42c 23
+public/wasm/daw-dsp/daw_dsp.d.ts
+  s_14f2bbc9f385dd::t_201fb043eb91e0 1,785-800,897-944
+public/wasm/daw-dsp/daw_dsp_bg.wasm.d.ts
+  s_14f2bbc9f385dd::t_06be2ecc54dcbf 1,5-20,117-164
+public/wasm/manifest.json
+  s_14f2bbc9f385dd::t_24f732143d1fd2 12,16-18,21
+src/modules/AudioEngine/wasm/daw_dsp.d.ts
+  s_14f2bbc9f385dd::t_c08f3896d2d6cd 1,785-800,897-944
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "e7f06f7860c339480ca8ffa00838f01b00619b40",
+  "prompts": {},
+  "sessions": {
+    "s_14f2bbc9f385dd": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f9a61a1d-66b3-4146-938d-a04f45f4b060",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
