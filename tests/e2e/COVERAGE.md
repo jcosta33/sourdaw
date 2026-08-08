@@ -789,7 +789,9 @@ Re-measured after additional PRs since threshold raise #3 (PR #1231). Lines cros
 
 - **PR #1463**: Routing graph — tab access, SVG content — 4 tests.
 - **PR #1464**: Mix analysis & chat panel — refresh, log, coexist — 4 tests.
+- **PR #1466**: Input monitoring + tuner — mode cycle, lanes toggle — 4 tests.
+- **PR #1467**: Status bar — footer, undo history, collaboration, metrics — 5 tests.
 
-**E2E: 181 tests across 41 spec files using data-testid selectors.**
+**E2E: 194 tests across 44 spec files using data-testid selectors.**
 
-**Campaign total to date: 289 PRs, ~2754 assertions. Lines coverage at 90.30%.**
+**Campaign total to date: 294 PRs, ~2767 assertions. Lines coverage at 90.30%.**
