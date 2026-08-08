@@ -69,6 +69,7 @@ export const PadGrid = ({ pads, selectedIndex, onSelectPad, onTriggerPad }: PadG
                     <button
                         key={pad.id}
                         type="button"
+                        data-testid={`toaster-pad-${index}`}
                         className="relative aspect-square rounded-[16px] border transition-all select-none"
                         aria-label={`Trigger ${pad.name}`}
                         aria-pressed={isSelected}
