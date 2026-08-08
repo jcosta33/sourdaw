@@ -108,6 +108,55 @@ describe('Dutch Oven PARAM_MAP closure', () => {
         }
     });
 
+    /**
+     * The shipped defaults have to reproduce the untouched engine.
+     *
+     * A device is instantiated with the plate's own constructor values, and
+     * then the panel writes `DEFAULT_PARAMS` over them on the first space
+     * preset. If the two disagree, the sound of a project that touched nothing
+     * changes, and the Rust guards cannot see it: they pin the engine's end of
+     * the contract, and this constant is the other end.
+     *
+     * Found by mutation M11 — moving `density` off 1.0 reddened nothing.
+     *
+     * The three parameters this closure made writable are read out of the Rust
+     * constructor rather than restated, so a change on either side reds. The
+     * table is not extended to the whole parameter set here because it does not
+     * currently hold: `damping` ships as 0.3 in `DEFAULT_PARAMS` against the
+     * engine's and the descriptor's 0.0005. That is a real disagreement, it
+     * predates this file, and triaging it is not this closure's job.
+     */
+    describe('shipped defaults against the plate constructor', () => {
+        const plateSource = readFileSync(PLATE_SOURCE, 'utf8');
+
+        function constructorValue(field: string): number {
+            const match = new RegExp(`^\\s+${field}: (-?[0-9.]+),$`, 'm').exec(plateSource);
+            if (!match?.[1]) {
+                throw new Error(`no constructor literal for ${field} in ${PLATE_SOURCE}`);
+            }
+            return Number(match[1]);
+        }
+
+        it('matches the constructor on early_late_balance', () => {
+            expect(DEFAULT_PARAMS.earlyLateBalance).toBe(constructorValue('early_late_balance'));
+        });
+
+        it('matches the constructor on saturation_type', () => {
+            expect(DEFAULT_PARAMS.saturationType).toBe(constructorValue('saturation_type'));
+        });
+
+        it('matches the allpass gain the constructor encodes as full density', () => {
+            // `density` is not stored as a field: the arm writes it straight
+            // into the tank's modulated-allpass gains as `-0.70 * d`. So the
+            // default has to be the `d` that reproduces the constructor's gain.
+            const armMatch = /"density" => \{[\s\S]*?= (-?[0-9.]+) \* d;/.exec(plateSource);
+            expect(armMatch?.[1]).toBeTypeOf('string');
+            const coefficient = Number(armMatch?.[1]);
+
+            expect(DEFAULT_PARAMS.density * coefficient).toBeCloseTo(constructorValue('left_mod_ap_gain'), 10);
+        });
+    });
+
     it('emits the plate-only parameters when a space preset is loaded', () => {
         // `selectSpace` iterates the expanded preset and skips unmapped keys,
         // so a field missing from `PARAM_MAP` never reaches the engine on a
