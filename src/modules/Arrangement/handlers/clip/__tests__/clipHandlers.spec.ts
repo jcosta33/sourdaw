@@ -36,6 +36,7 @@ describe('clipHandlers', () => {
             'removeClip',
             'renameClip',
             'splitClip',
+            'restoreClipSplitState',
             'trimClipStart',
             'trimClipEnd',
             'setClipFade',

@@ -1220,6 +1220,56 @@ describe('bridgeGroundedLlmToolCalls', () => {
         expect(rejected.every((result) => result.rejections.length === 1)).toBe(true);
     });
 
+    it('grounds one explicit clip split at one absolute beat', () => {
+        const context = createClipContext();
+        const call = { name: 'splitClip', arguments: { clipId: 'clip-intro', beat: 4 } };
+        const accepted = bridge([call], 'split the Intro clip at beat 4', context);
+        const selected = bridge([call], 'split the selected clip at beat 4', context);
+        const rejected = [
+            bridge([call], 'split the Chorus clip at beat 4', context),
+            bridge([call], 'split the Intro clip', context),
+            bridge([call], 'split the Intro clip at bar 4', context),
+            bridge([call], 'split the Intro clip at beat 2', context),
+            bridge([call], 'split the Intro clip at beat 4 or beat 6', context),
+            bridge([call], 'split the Intro clip at beat 4 and beat 6', context),
+            bridge([call], 'split the Intro clip at beat 4 and 6', context),
+            bridge(
+                [{ name: 'splitClip', arguments: { clipId: 'clip-intro', beat: 6 } }],
+                'split the Intro clip at beat 4 and 6',
+                context
+            ),
+            bridge([call], 'split the Intro clip at beat 4, beat 6', context),
+            bridge([call], 'split the Intro clip at beat 4; beat 6', context),
+            bridge(
+                [{ name: 'splitClip', arguments: { clipId: 'clip-intro', beat: 6 } }],
+                'split the Intro clip at beat 4 and beat 6',
+                context
+            ),
+            bridge([call], 'split the Intro clip at beat 4%', context),
+            bridge([call], 'split the Intro clip at beat 4 bars', context),
+            bridge([call], 'split the Intro clip at beat 4ish', context),
+            bridge([call], 'split the Intro clip at beat 4foo', context),
+            bridge([call], 'split the Intro clip at beat 4.5.6', context),
+            bridge([call], 'split the Intro clip at beat 4 notes', context),
+            bridge([call], 'split the Intro clip at beat 4 automation', context),
+            bridge([call], 'split the Intro clip fade at beat 4', context),
+            bridge([call], 'split the Intro clip notes at beat 4', context),
+            bridge([call], 'split the Intro clip automation at beat 4', context),
+            bridge([call], 'split the Intro clip transient at beat 4', context),
+            bridge([call], "split the Intro clip's automation at beat 4", context),
+            bridge([call], 'split automation on the Intro clip at beat 4', context),
+        ];
+
+        expect(accepted).toEqual({
+            actions: [{ type: 'splitClip', payload: { clipId: 'clip-intro', beat: 4 } }],
+            rejections: [],
+        });
+        expect(selected.actions).toEqual(accepted.actions);
+        expect(selected.rejections).toEqual([]);
+        expect(rejected.every((result) => result.actions.length === 0)).toBe(true);
+        expect(rejected.every((result) => result.rejections.length === 1)).toBe(true);
+    });
+
     it('allows explicit clip unlock while rejecting edits to a locked clip', () => {
         const base = createClipContext();
         const context: ProjectContext = {

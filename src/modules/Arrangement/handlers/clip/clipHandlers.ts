@@ -23,6 +23,7 @@ import { handleRemoveClip } from './handleRemoveClip';
 import { handleRenameClip } from './handleRenameClip';
 import { handleRestoreClipLoop } from './handleRestoreClipLoop';
 import { handleRestoreClipPlacement } from './handleRestoreClipPlacement';
+import { handleRestoreClipSplitState } from './handleRestoreClipSplitState';
 import { handleRestoreCrossfadeClips } from './handleRestoreCrossfadeClips';
 import { handleReverseClip } from './handleReverseClip';
 import { handleSetClipColor } from './handleSetClipColor';
@@ -45,6 +46,7 @@ export const clipHandlers = {
     removeClip: handleRemoveClip,
     renameClip: handleRenameClip,
     splitClip: handleSplitClip,
+    restoreClipSplitState: handleRestoreClipSplitState,
     trimClipStart: handleTrimClipStart,
     trimClipEnd: handleTrimClipEnd,
     setClipFade: handleSetClipFade,

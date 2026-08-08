@@ -45,6 +45,8 @@ export { duplicateMidiClipData } from './midiClipData/duplicateMidiClipData';
 export { glueMidiClipData } from './midiClipData/glueMidiClipData';
 export { removeMidiClipData } from './midiClipData/removeMidiClipData';
 export { restoreMidiClipData } from './midiClipData/restoreMidiClipData';
+export { prepareMidiClipSplit } from './midiClipData/prepareMidiClipSplit';
+export { restoreMidiClipSplitState } from './midiClipData/restoreMidiClipSplitState';
 
 export { adaptGrooveTemplateForConsumer } from './grooveTemplates/adaptGrooveTemplateForConsumer';
 export { applyGrooveTemplate } from './grooveTemplates/applyGrooveTemplate';

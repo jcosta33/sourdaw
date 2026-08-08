@@ -5,6 +5,7 @@ const mocks = vi.hoisted(() => ({
     setTrackState: vi.fn<(typeof trackSetRepo)['setTrackState']>(),
     getNextClipId: vi.fn(() => 'new-clip-right'),
     snapToZeroCrossing: vi.fn<(typeof snapModule)['snapToZeroCrossing']>(),
+    prepareMidiClipSplit: vi.fn(),
     splitMidiNotesAtBeat: vi.fn(),
     resolveEligibleClipWriteTarget: vi.fn<(typeof resolverModule)['resolveEligibleClipWriteTarget']>(),
 }));
@@ -12,7 +13,10 @@ const mocks = vi.hoisted(() => ({
 vi.mock('../../../repositories/track/getTrackState', () => ({ getTrackState: mocks.getTrackState }));
 vi.mock('../../../repositories/track/setTrackState', () => ({ setTrackState: mocks.setTrackState }));
 vi.mock('../../../repositories/clipIdCounter', () => ({ getNextClipId: mocks.getNextClipId }));
-vi.mock('#/modules/MIDI/useCases', () => ({ splitMidiNotesAtBeat: mocks.splitMidiNotesAtBeat }));
+vi.mock('#/modules/MIDI/useCases', () => ({
+    prepareMidiClipSplit: mocks.prepareMidiClipSplit,
+    splitMidiNotesAtBeat: mocks.splitMidiNotesAtBeat,
+}));
 vi.mock('../../timelineInteractions/snapToZeroCrossing', () => ({ snapToZeroCrossing: mocks.snapToZeroCrossing }));
 vi.mock('../../../stores/resolveEligibleClipWriteTarget', () => ({
     resolveEligibleClipWriteTarget: mocks.resolveEligibleClipWriteTarget,
@@ -50,6 +54,20 @@ describe('splitClip', () => {
         vi.clearAllMocks();
         mocks.getNextClipId.mockReturnValue('new-clip-right');
         mocks.snapToZeroCrossing.mockImplementation((_clip, beat) => beat);
+        mocks.prepareMidiClipSplit.mockImplementation(() => {
+            const emptyMidi = {
+                notes: { present: false, value: [] },
+                controlChanges: { present: false, value: [] },
+                pitchBends: { present: false, value: [] },
+            };
+            return {
+                targetNoteIds: [],
+                previousSource: emptyMidi,
+                previousRight: emptyMidi,
+                nextSource: emptyMidi,
+                nextRight: emptyMidi,
+            };
+        });
         mocks.resolveEligibleClipWriteTarget.mockReturnValue({ status: 'eligible', trackId: 't1', clipId: 'c1' });
     });
 
@@ -84,6 +102,18 @@ describe('splitClip', () => {
         expect(mocks.snapToZeroCrossing).not.toHaveBeenCalled();
         expect(mocks.getNextClipId).not.toHaveBeenCalled();
         expect(mocks.setTrackState).not.toHaveBeenCalled();
+    });
+
+    it('uses a preflight-resolved audio beat without resnapping against changed transport state', () => {
+        mocks.getTrackState.mockReturnValue(makeState([makeClip('c1', 0, 8)]));
+
+        expect(splitClip('c1', 4, 'right-clip', [], 4.125)).toBe('right-clip');
+
+        expect(mocks.snapToZeroCrossing).not.toHaveBeenCalled();
+        expect(newTrackState().tracks[0]!.clips).toMatchObject([
+            { id: 'c1', endBeat: 4.125 },
+            { id: 'right-clip', startBeat: 4.125 },
+        ]);
     });
 
     it('rejects an empty explicit destination id before snapping or writing', () => {
@@ -160,6 +190,7 @@ describe('splitClip', () => {
             sourceClipId: 'c1',
             newClipId: 'captured-right',
             splitBeat: 2,
+            targetNoteIds: [],
         });
     });
 
@@ -224,6 +255,7 @@ describe('splitClip', () => {
             sourceClipId: 'c1',
             newClipId: 'new-clip-right',
             splitBeat: 3,
+            targetNoteIds: [],
         });
     });
 

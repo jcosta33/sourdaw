@@ -294,6 +294,45 @@ export const executableAppActionDescriptors = [
         },
     },
     {
+        actionType: 'splitClip',
+        risk: 'bounded-reversible',
+        description:
+            "Split one unlocked clip at an explicit absolute beat inside the clip. Audio clips split at the nearest zero crossing when the clip's audio buffer is available; otherwise they split at the requested beat.",
+        intentPhrases: [
+            'split clip',
+            'split the clip',
+            'split selected clip',
+            'split the selected clip',
+            'split current clip',
+            'split the current clip',
+            'split this clip',
+            'cut clip',
+            'cut the clip',
+        ],
+        targetRules: editableClipTargetRules,
+        valueRules: [
+            {
+                argument: 'beat',
+                kind: 'number-if-present',
+                requiredInPrompt: true,
+                connector: 'beat',
+                match: 'exact',
+            },
+        ],
+        parameters: {
+            properties: {
+                clipId: { type: 'string', description: 'Existing unlocked clip ID' },
+                beat: {
+                    type: 'number',
+                    minimum: 0,
+                    description:
+                        'Absolute beat strictly inside the clip; audio uses the nearest zero crossing when the audio buffer is available, otherwise the requested beat',
+                },
+            },
+            required: ['clipId', 'beat'],
+        },
+    },
+    {
         actionType: 'renameClip',
         risk: 'bounded-reversible',
         description: 'Rename an existing clip.',

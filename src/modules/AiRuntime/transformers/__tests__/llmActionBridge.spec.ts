@@ -1308,6 +1308,10 @@ describe('bridgeLlmToolCalls', () => {
                 },
             },
             {
+                call: { name: 'splitClip', arguments: { clipId: 'clip-verse', beat: 4 } },
+                action: { type: 'splitClip', payload: { clipId: 'clip-verse', beat: 4 } },
+            },
+            {
                 call: { name: 'renameClip', arguments: { clipId: 'clip-verse', name: 'Lead Verse' } },
                 action: { type: 'renameClip', payload: { clipId: 'clip-verse', name: 'Lead Verse' } },
             },
@@ -1499,6 +1503,23 @@ describe('bridgeLlmToolCalls', () => {
             expect(result.actions).toHaveLength(2);
             expect(result.rejections).toEqual([]);
         }
+    });
+
+    it('rejects malformed or out-of-bounds splitClip calls', () => {
+        const results = [
+            bridge({ calls: [{ name: 'splitClip', arguments: { clipId: 'missing', beat: 4 } }] }),
+            bridge({ calls: [{ name: 'splitClip', arguments: { clipId: 'clip-verse', beat: 0 } }] }),
+            bridge({ calls: [{ name: 'splitClip', arguments: { clipId: 'clip-verse', beat: 8 } }] }),
+            bridge({ calls: [{ name: 'splitClip', arguments: { clipId: 'clip-verse', beat: -1 } }] }),
+            bridge({
+                calls: [{ name: 'splitClip', arguments: { clipId: 'clip-verse', beat: Number.POSITIVE_INFINITY } }],
+            }),
+            bridge({ calls: [{ name: 'splitClip', arguments: { clipId: 'clip-verse', beat: '4' } }] }),
+            bridge({ calls: [{ name: 'splitClip', arguments: { clipId: 'clip-verse', beat: 4, extra: true } }] }),
+        ];
+
+        expect(results.every((result) => result.actions.length === 0)).toBe(true);
+        expect(results.every((result) => result.rejections.length === 1)).toBe(true);
     });
 
     it('canonicalizes default peak normalization and rejects unsafe normalization calls', () => {
@@ -2740,6 +2761,14 @@ describe('bridgeLlmToolCalls', () => {
                 acceptedType: 'removeClip',
                 rejectedType: 'setClipGain',
             },
+            {
+                calls: [
+                    { name: 'splitClip', arguments: { clipId: 'clip-verse', beat: 4 } },
+                    { name: 'setClipGain', arguments: { clipId: 'clip-verse', gain: 1.25 } },
+                ],
+                acceptedType: 'splitClip',
+                rejectedType: 'setClipGain',
+            },
         ];
 
         for (const testCase of cases) {
@@ -2753,6 +2782,80 @@ describe('bridgeLlmToolCalls', () => {
                 },
             ]);
         }
+    });
+
+    it('rejects splitting and duplicating the same clip in either action order', () => {
+        const cases = [
+            [
+                { name: 'splitClip', arguments: { clipId: 'clip-verse', beat: 4 } },
+                { name: 'duplicateClip', arguments: { clipId: 'clip-verse' } },
+            ],
+            [
+                { name: 'duplicateClipToNextBar', arguments: { clipId: 'clip-verse' } },
+                { name: 'splitClip', arguments: { clipId: 'clip-verse', beat: 4 } },
+            ],
+        ];
+
+        for (const calls of cases) {
+            const result = bridge({ calls });
+            expect.soft(result.actions).toHaveLength(1);
+            expect.soft(result.rejections).toEqual([
+                {
+                    index: 1,
+                    name: calls[1]!.name,
+                    reason: 'Provider batch mixes splitting and duplicating the same clip',
+                },
+            ]);
+        }
+    });
+
+    it('rejects splitting a clip and duplicating its owner track in either order', () => {
+        const cases = [
+            [
+                { name: 'splitClip', arguments: { clipId: 'clip-verse', beat: 4 } },
+                { name: 'duplicateTrack', arguments: { trackId: 'track-vocals' } },
+            ],
+            [
+                { name: 'duplicateTrack', arguments: { trackId: 'track-vocals' } },
+                { name: 'splitClip', arguments: { clipId: 'clip-verse', beat: 4 } },
+            ],
+        ];
+
+        for (const calls of cases) {
+            const result = bridge({ calls });
+            expect.soft(result.actions).toHaveLength(1);
+            expect.soft(result.rejections).toEqual([
+                {
+                    index: 1,
+                    name: calls[1]!.name,
+                    reason: 'Provider batch mixes splitting a clip with duplicating its owner track',
+                },
+            ]);
+        }
+    });
+
+    it('allows splitting a clip and duplicating a disjoint track', () => {
+        const context: ProjectContext = {
+            ...projectContext,
+            tracks: projectContext.tracks.map((track) =>
+                track.id === 'bus-reverb' ? { ...track, kind: 'audio' as const } : track
+            ),
+        };
+        expect(
+            bridge({
+                calls: [
+                    { name: 'splitClip', arguments: { clipId: 'clip-verse', beat: 4 } },
+                    { name: 'duplicateTrack', arguments: { trackId: 'bus-reverb' } },
+                ],
+                context,
+            })
+        ).toEqual({
+            actions: [
+                { type: 'splitClip', payload: { clipId: 'clip-verse', beat: 4 } },
+                { type: 'duplicateTrack', payload: { trackId: 'bus-reverb', select: false } },
+            ],
+            rejections: [],
+        });
     });
 
     it('rejects ripple-coupled clip commands on the same track in either action order', () => {
