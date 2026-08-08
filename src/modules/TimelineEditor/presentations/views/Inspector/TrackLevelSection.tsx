@@ -85,7 +85,7 @@ export const TrackLevelSection = ({ track }: TrackLevelSectionProps): ReactEleme
                                 <MidiLearnButton targetType="trackPan" trackId={track.id} />
                             </div>
                         </div>
-                        <div className="shrink-0 flex items-center justify-center">
+                        <div className="shrink-0 flex items-center justify-center" data-testid="inspector-track-pan">
                             <RotaryKnob
                                 value={activePan}
                                 onChange={(value, isTransient) => {
