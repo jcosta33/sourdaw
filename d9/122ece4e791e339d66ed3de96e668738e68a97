@@ -1,0 +1,43 @@
+src/modules/Automation/useCases/automationRecording/__tests__/startAutomationRecording.spec.ts
+  s_14f2bbc9f385dd::t_3d78dd1d9bd340 107-109
+  s_14f2bbc9f385dd::t_0ef8aaaa5b83f8 95
+  s_14f2bbc9f385dd::t_677ccbf198c6bd 69
+  s_14f2bbc9f385dd::t_7c91d349fc7df5 20-38
+  s_14f2bbc9f385dd::t_3dea03694d711f 11-19
+src/modules/Automation/useCases/automationRecording/startAutomationRecording.ts
+  s_14f2bbc9f385dd::t_bb0499872634a0 7,13-15
+src/modules/Automation/useCases/automationRecording/stopAutomationRecording.ts
+  s_14f2bbc9f385dd::t_9b75214bfe4887 120
+  s_14f2bbc9f385dd::t_1fd13eae75b730 46-51,56-60
+  s_14f2bbc9f385dd::t_37870533b2602d 80
+  s_14f2bbc9f385dd::t_cf2e5341116376 8,12
+src/modules/Automation/useCases/automationRecording/recordingSessionState.ts
+  s_14f2bbc9f385dd::t_205db63e83248f 71
+  s_14f2bbc9f385dd::t_c79fe0f70789ea 42-49
+  s_14f2bbc9f385dd::t_5126508c5cec1a 57
+src/modules/Automation/useCases/automationRecording/__tests__/stopAutomationRecording.spec.ts
+  s_14f2bbc9f385dd::t_c2d32828e3a9a0 25
+  s_14f2bbc9f385dd::t_764a6161718c6e 36,44
+  s_14f2bbc9f385dd::t_f592a3aa64e215 91
+src/modules/Automation/useCases/automationRecording/flushPendingPoints.ts
+  s_14f2bbc9f385dd::t_6bccba138cd8d9 20-24
+  s_14f2bbc9f385dd::t_906cd142ad45d1 4
+src/modules/Automation/useCases/automationRecording/captureLaneBaseline.ts
+  s_14f2bbc9f385dd::t_2376ea462a3490 1-31
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "d9122ece4e791e339d66ed3de96e668738e68a97",
+  "prompts": {},
+  "sessions": {
+    "s_14f2bbc9f385dd": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f9a61a1d-66b3-4146-938d-a04f45f4b060",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
