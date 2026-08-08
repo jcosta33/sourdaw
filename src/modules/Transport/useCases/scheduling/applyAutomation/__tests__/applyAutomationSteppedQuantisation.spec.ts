@@ -250,6 +250,31 @@ describe('applyAutomation — stepped device parameters', () => {
         expect(scheduleTrackPan).not.toHaveBeenCalled();
     });
 
+    it("delivers a moving waveform index to Fermenter's oscWaveform while riding 0 → 3", () => {
+        // The live half of the offline/live divergence closed by
+        // `fermenterOscWaveformOfflineParity.spec.ts`. This is what the user
+        // hears while monitoring; that spec asserts the same lane now reaches
+        // the offline scheduled-parameter port, which it previously did not —
+        // the bounce froze on whichever waveform the patch started on.
+        //
+        // `oscWaveform` defaults to **1** (saw), so the ride 0 → 3 starts off
+        // the default and ends on a third index: `layer.rs` stores it as
+        // `(value as u8).min(3)` selecting one of four wavetables, and a ride
+        // that never left the default would satisfy the integer assertion
+        // without the selector moving at all.
+        seedSteppedLane({ deviceId: 'device-f2', deviceType: 'fermenter', paramId: 'oscWaveform', startValue: 0 });
+
+        ride({ startValue: 0, endValue: 3 });
+
+        const delivered = vi.mocked(applyFermenterRuntimeParam).mock.calls.map(([input]) => input.value);
+
+        expect(delivered.filter((value) => !Number.isInteger(value))).toEqual([]);
+        // The slew (α = 0.4) runs 1.2, 2.04, 2.42, 2.65, 2.79, … which the
+        // integer law rounds and the repeat gate dedupes to this, arriving at
+        // waveform 3 rather than stalling one index below it.
+        expect(delivered).toEqual([1, 2, 3]);
+    });
+
     it('leaves a float device parameter unrounded while riding 0 → 0.75', () => {
         // The complement, so the fix cannot be "round everything": Bacteria's
         // `mix` is declared `float` (step 0.01), and its slewed ride must still

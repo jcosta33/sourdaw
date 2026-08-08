@@ -28,6 +28,24 @@ import {
 import type { AudioProcessorLifecycleState } from '../models/AudioEngineState';
 
 const DEFAULT_WASM_URL = '/wasm/daw-dsp/daw_dsp_bg.wasm';
+/**
+ * Offline automation ordinals. The scheduled path deliberately bypasses the
+ * WASM string bridge: the worklet posts `{paramId, segments}` and Rust indexes
+ * `AUTOMATION_PARAM_NAMES` (`crates/daw-dsp/src/fermenter/mod.rs`) positionally.
+ * The two sides use different spellings by design (`oscLevel`/`osc_level`,
+ * `lfoPitchAmount`/`mod_lfo_to_pitch`), so their only contract is **ordinal
+ * agreement** and no textual pin can express it.
+ *
+ * Two consequences for anyone editing this map:
+ *  - **Append only.** Inserting or reordering silently repoints every ordinal
+ *    after the edit at a different parameter, on both the live-scheduled and the
+ *    offline path, with no type error anywhere.
+ *  - The ordinals are pinned behaviourally, not textually. `oscWaveform`'s is
+ *    pinned by `ordinal_15_reaches_the_oscillator_waveform` in
+ *    `crates/daw-dsp/src/fermenter/mod.rs`, which drives `set_param_by_id(15, …)`
+ *    through the real engine and asserts the rendered signal changes. The other
+ *    fifteen are not yet pinned — SPEC-parameter-automation-coverage AC-3.
+ */
 export const FERMENTER_AUTOMATION_PARAM_IDS: Readonly<Record<string, number>> = {
     oscLevel: 0,
     filterCutoff: 1,
@@ -44,6 +62,7 @@ export const FERMENTER_AUTOMATION_PARAM_IDS: Readonly<Record<string, number>> = 
     grainDensity: 12,
     grainSize: 13,
     grainSpray: 14,
+    oscWaveform: 15,
 };
 
 type OfflineAutomationSegment = {
