@@ -798,6 +798,9 @@ Re-measured after additional PRs since threshold raise #3 (PR #1231). Lines cros
 
 - **PR #1475**: Chat composer — input, aria-label, coexist — 5 tests.
 
-**E2E: 214 tests across 48 spec files using data-testid selectors.**
+- **PR #1478**: Elastic audio editor — panel, tool buttons, switching — 4 tests.
+- **PR #1479**: Browser instrument cards — search, open panel, tab switch — 5 tests.
 
-**Campaign total to date: 302 PRs, ~2787 assertions. Lines coverage at 90.30%.**
+**E2E: 223 tests across 50 spec files using data-testid selectors.**
+
+**Campaign total to date: 305 PRs, ~2796 assertions. Lines coverage at 90.30%.**
