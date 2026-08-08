@@ -1,0 +1,30 @@
+src/modules/AudioEngine/repositories/offlineScheduler/__tests__/offlineAutomationCoverage.spec.ts
+  s_14f2bbc9f385dd::t_c076932723d1a0 33-54
+  s_14f2bbc9f385dd::t_0ff1fa4a113dbf 108-112
+  s_14f2bbc9f385dd::t_26f00f4c44699a 265-271
+src/modules/AudioEngine/wasm/__tests__/dawDspFermenterAutomationOrdinals.spec.ts
+  s_14f2bbc9f385dd::t_76348dbd273481 1-204
+crates/daw-dsp/src/fermenter/mod.rs
+  s_14f2bbc9f385dd::t_32adba2dc1fe35 322-335
+  s_14f2bbc9f385dd::t_84c2b1ddfee58c 47-55
+src/modules/AudioEngine/engine/FermenterNode.ts
+  s_14f2bbc9f385dd::t_31328b1f81fcae 37,39-51
+src/modules/Fermenter/useCases/index.ts
+  s_14f2bbc9f385dd::t_0a09b75422fd8d 4-9
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "cf58fabf64c8035d61759fbb4d75fe870c1ee390",
+  "prompts": {},
+  "sessions": {
+    "s_14f2bbc9f385dd": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f9a61a1d-66b3-4146-938d-a04f45f4b060",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
