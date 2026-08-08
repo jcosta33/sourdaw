@@ -1,0 +1,19 @@
+src/modules/Toaster/useCases/__tests__/trigger16Level.spec.ts
+  s_6f879efb05ab13::t_8e60fa706d32dd 1-114
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "4b42bcaa6d9f1cdaf0444aebd9d02e20a8b9a307",
+  "prompts": {},
+  "sessions": {
+    "s_6f879efb05ab13": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-afbd0893519c08e67",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
