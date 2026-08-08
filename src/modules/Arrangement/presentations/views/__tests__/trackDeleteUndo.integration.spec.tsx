@@ -20,6 +20,7 @@ import { confirmUser } from '#/utils/Notification/confirmUser';
 
 import { TrackDummy } from '../../../__tests__/TrackDummy';
 import { trackStore } from '../../../stores/trackStore';
+import { ArrangementEventBus, setArrangementEventBus } from '../../../useCases/arrangementEventBus';
 import { getArrangementHandlers } from '../../../useCases/getArrangementHandlers';
 import { TrackContextMenu } from '../TrackContextMenu';
 import { TrackListView } from '../TrackListView';
@@ -59,13 +60,26 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
 vi.mock('#/modules/Routing/useCases', () => ({
     getAllSidechainRoutes: vi.fn(() => []),
     wireSidechainRoutes: vi.fn(),
+    // Returns the finalizer the restore handler pushes straight into its
+    // post-commit effect list, so it has to be callable.
+    restoreSidechainRoutes: vi.fn(() => () => undefined),
 }));
 vi.mock('../../../useCases/projectTrackToLiveStrip', () => ({
     projectTrackToLiveStrip: vi.fn(),
 }));
-vi.mock('../../../useCases/publishTrackRemoved', () => ({
-    publishTrackRemoved: vi.fn(),
-}));
+
+/**
+ * The remove/restore handlers publish `track.removed` / `track.added` through
+ * the DI event bus, which only `bootstrap.ts` wires. A recording stub keeps the
+ * post-commit effect list runnable without pulling the composition root in.
+ */
+class RecordingArrangementEventBus extends ArrangementEventBus {
+    readonly emitted: string[] = [];
+    emit(event: string): Promise<void> {
+        this.emitted.push(event);
+        return Promise.resolve();
+    }
+}
 
 const noActionHistoryMetadataPort = {
     record: () => [],
@@ -125,6 +139,7 @@ describe('deleting a track from the UI', () => {
         resetActionReplayAuthority();
         setActionHistoryMetadataPort(noActionHistoryMetadataPort);
         macroStore.set({ macros: [], recording: false, currentRecording: [] });
+        setArrangementEventBus(new RecordingArrangementEventBus());
         vi.mocked(confirmUser).mockResolvedValue(true);
         seedProject();
     });

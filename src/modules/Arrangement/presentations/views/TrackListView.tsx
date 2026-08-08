@@ -25,6 +25,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '#/components/ui/tooltip
 import { useStore } from '#/infra/store/useStore';
 import { useStoreSelector } from '#/infra/store/useStoreSelector';
 import { injectPromptCommand } from '#/modules/AiRuntime/useCases';
+import { executeAppAction } from '#/modules/Command/useCases';
 import { preferencesStore, type Preferences } from '#/modules/Preferences/stores';
 import { defaultPreferences, setTrackHeight } from '#/modules/Preferences/useCases';
 import { setWorkspaceMode } from '#/modules/WorkspaceShell/useCases';
@@ -35,7 +36,6 @@ import { addTrack } from '../../useCases/addTrack';
 import { createFolder } from '../../useCases/folder/createFolder';
 import { getTrackTemplates } from '../../useCases/getTrackTemplates';
 import { loadTrackTemplate } from '../../useCases/loadTrackTemplate';
-import { removeTrack } from '../../useCases/removeTrack';
 import { reorderTrack } from '../../useCases/toggleTrackState/reorderTrack';
 import { selectTrack } from '../../useCases/toggleTrackState/selectTrack';
 import { useTracks } from '../hooks/useTracks';
@@ -180,12 +180,18 @@ export const TrackListView = ({
                     void (async () => {
                         const ok = await confirmUser({
                             title: `Delete "${track.name}"?`,
-                            message: 'This action cannot be undone.',
+                            message: 'The track, its clips and its devices are removed. Undo restores them.',
                             confirmLabel: 'Delete',
                             variant: 'danger',
                         });
                         if (ok) {
-                            removeTrack(selectedTrackId);
+                            // Same gesture as the context menu's Delete Track,
+                            // so it takes the same undoable route: the bare
+                            // `removeTrack` use case captures nothing for undo.
+                            void executeAppAction({
+                                type: 'removeTrack',
+                                payload: { trackId: selectedTrackId },
+                            });
                         }
                     })();
                 }
