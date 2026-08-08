@@ -1,0 +1,19 @@
+src/modules/AiRuntime/useCases/__tests__/cancelPendingChatActions.spec.ts
+  s_7e35704d04db19::t_1d303798330abe 1-100
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "5a3ad107f7d2461b43aee9744b16a326a32aa338",
+  "prompts": {},
+  "sessions": {
+    "s_7e35704d04db19": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-aa878212dd328187e",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
