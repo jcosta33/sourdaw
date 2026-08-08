@@ -7,7 +7,7 @@ const mockConfigureCloudProvider = vi.fn<(configuration: unknown) => void>();
 const mockRemoveCloudApi = vi.fn<() => void>();
 const mockSetAiBackendPreference = vi.fn<(preference: string) => void>();
 const mockNativeAvailable = { value: false };
-const mockBackendPreference = { value: 'webllm' };
+const mockBackendPreference = { value: 'auto' };
 const mockLlmStatus = {
     value: { state: 'idle' } as
         { state: 'idle' } | { state: 'ready'; backend: 'native' | 'cloud' | 'webllm'; modelId: string },
@@ -71,7 +71,7 @@ describe('AiSection', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         mockHostedProviderStatus.value = null;
-        mockBackendPreference.value = 'webllm';
+        mockBackendPreference.value = 'auto';
         mockLlmStatus.value = { state: 'idle' };
         mockResolveBackend.mockReturnValue('none');
         mockNativeAvailable.value = false;
@@ -108,6 +108,7 @@ describe('AiSection', () => {
         mockResolveBackend.mockReturnValue('native');
         render(<AiSection />);
 
+        expect(screen.getByRole('option', { name: 'Automatic failover' })).toBeInTheDocument();
         expect(screen.getByRole('option', { name: 'Native local' })).toBeInTheDocument();
         expect(screen.getByText('Native (in-process)')).toBeInTheDocument();
     });
@@ -116,7 +117,7 @@ describe('AiSection', () => {
         mockResolveBackend.mockReturnValue('cloud');
         mockHostedProviderStatus.value = {
             provider: 'anthropic',
-            model: 'claude-sonnet-4-20250514',
+            model: 'claude-sonnet-5',
             baseUrl: null,
         };
         render(<AiSection />);
@@ -180,7 +181,7 @@ describe('AiSection', () => {
         expect(mockConfigureCloudProvider).toHaveBeenCalledWith({
             provider: 'anthropic',
             apiKey: '  sk-ant-test  ',
-            model: 'claude-sonnet-4-20250514',
+            model: 'claude-sonnet-5',
             baseUrl: undefined,
         });
         expect(input.value).toBe('');
@@ -191,16 +192,16 @@ describe('AiSection', () => {
 
         fireEvent.change(screen.getByLabelText('Hosted AI provider'), { target: { value: 'openai' } });
         expect(screen.getByLabelText('Hosted AI model').tagName).toBe('SELECT');
-        expect(screen.getByLabelText('Hosted AI model')).toHaveValue('gpt-5.2');
-        expect(screen.getByRole('option', { name: 'GPT-5.2 — Recommended' })).toBeInTheDocument();
-        expect(screen.getByRole('option', { name: 'GPT-5 mini — Faster, lower cost' })).toBeInTheDocument();
+        expect(screen.getByLabelText('Hosted AI model')).toHaveValue('gpt-5.6-terra');
+        expect(screen.getByRole('option', { name: 'GPT-5.6 Sol — Highest quality' })).toBeInTheDocument();
+        expect(screen.getByRole('option', { name: 'GPT-5.6 Terra — Recommended' })).toBeInTheDocument();
         fireEvent.change(screen.getByLabelText('OpenAI API key'), { target: { value: 'sk-openai' } });
         fireEvent.click(screen.getByRole('button', { name: 'Save' }));
 
         expect(mockConfigureCloudProvider).toHaveBeenLastCalledWith({
             provider: 'openai',
             apiKey: 'sk-openai',
-            model: 'gpt-5.2',
+            model: 'gpt-5.6-terra',
             baseUrl: undefined,
         });
 
@@ -220,6 +221,28 @@ describe('AiSection', () => {
             apiKey: 'local-key',
             model: 'qwen-local',
             baseUrl: 'http://localhost:1234/v1',
+        });
+    });
+
+    it('preserves a configured first-party custom model and resubmits it without retyping', () => {
+        mockHostedProviderStatus.value = {
+            provider: 'anthropic',
+            model: 'claude-private-preview',
+            baseUrl: null,
+        };
+        render(<AiSection />);
+
+        expect(screen.getByLabelText('Hosted AI model')).toHaveValue('custom');
+        expect(screen.getByLabelText('Custom Anthropic model ID')).toHaveValue('claude-private-preview');
+
+        fireEvent.change(screen.getByLabelText('Anthropic API key'), { target: { value: 'sk-ant-test' } });
+        fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+
+        expect(mockConfigureCloudProvider).toHaveBeenCalledWith({
+            provider: 'anthropic',
+            apiKey: 'sk-ant-test',
+            model: 'claude-private-preview',
+            baseUrl: undefined,
         });
     });
 
