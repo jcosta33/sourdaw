@@ -291,6 +291,7 @@ export const PianoRollToolbar = ({
                 onChange={(event) => onChordTypeChange(event.target.value as PianoRollChordType)}
                 size="micro"
                 aria-label="Chord type"
+                data-testid="toolbar-chord-type"
             >
                 {CHORD_TYPE_KEYS.map((key) => (
                     <option key={key} value={key}>
