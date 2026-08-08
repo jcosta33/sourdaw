@@ -955,6 +955,31 @@ const EXPECTED_GROUNDING = [
         valueRules: [],
     },
     {
+        actionType: 'moveClip',
+        intentPhrases: [
+            'move clip',
+            'move the clip',
+            'move selected clip',
+            'move the selected clip',
+            'move current clip',
+            'move the current clip',
+            'move this clip',
+        ],
+        targetRules: [
+            { argument: 'clipId', capability: 'editable-clip', promptRole: 'source' },
+            { argument: 'trackId', capability: 'track', allowBatchLocal: false, promptRole: 'destination' },
+        ],
+        valueRules: [
+            {
+                argument: 'startBeat',
+                kind: 'number-if-present',
+                requiredInPrompt: true,
+                connector: 'beat',
+                match: 'exact',
+            },
+        ],
+    },
+    {
         actionType: 'renameClip',
         intentPhrases: ['rename clip'],
         targetRules: [{ argument: 'clipId', capability: 'editable-clip', promptRole: 'source' }],

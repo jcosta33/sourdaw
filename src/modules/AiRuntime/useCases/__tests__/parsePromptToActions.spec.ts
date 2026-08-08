@@ -550,10 +550,7 @@ describe('parsePromptToActions', () => {
         };
         const providerContext: ProjectContext = {
             ...baseContext,
-            tracks: [
-                vocals,
-                { ...vocals, id: 'track-guitar', name: 'Guitar', clipCount: 0, clips: [] },
-            ],
+            tracks: [vocals, { ...vocals, id: 'track-guitar', name: 'Guitar', clipCount: 0, clips: [] }],
             selectedTrackId: 'track-vocals',
             selectedClipId: 'clip-intro',
             selectedClipIds: ['clip-intro'],

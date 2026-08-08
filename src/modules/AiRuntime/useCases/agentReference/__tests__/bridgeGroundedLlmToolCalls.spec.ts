@@ -1177,6 +1177,15 @@ describe('bridgeGroundedLlmToolCalls', () => {
         };
         const accepted = bridge([call], 'move the Intro clip to Guitar at beat 16', context);
         const selected = bridge([call], 'move the selected clip to Guitar at beat 16', context);
+        const compound = bridge(
+            [call, { name: 'addMarker', arguments: { beat: 32, name: 'Chorus' } }],
+            'move the Intro clip to Guitar at beat 16 and add a marker named Chorus at beat 32',
+            context
+        );
+        const callAtBeat32 = {
+            ...call,
+            arguments: { ...call.arguments, startBeat: 32 },
+        };
         const rejected = [
             bridge([call], 'move the Chorus clip to Guitar at beat 16', context),
             bridge([call], 'move the Intro clip to Vocals at beat 16', context),
@@ -1184,6 +1193,16 @@ describe('bridgeGroundedLlmToolCalls', () => {
             bridge([call], 'move the Intro clip to Guitar at bar 16', context),
             bridge([call], 'move the Intro clip to Guitar at beat 8', context),
             bridge([call], 'move the Intro clip to Guitar at beat 16 or beat 32', context),
+            bridge([call], 'move the Intro clip to Guitar at beat 16 and beat 32', context),
+            bridge([call], 'move the Intro clip to Guitar at beat 16, beat 32', context),
+            bridge([call], 'move the Intro clip to Guitar at beat 16; beat 32', context),
+            bridge([callAtBeat32], 'move the Intro clip to Guitar at beat 32 and beat 16', context),
+            bridge([call], 'move the Intro clip to Guitar at beat 16%', context),
+            bridge([call], 'move the Intro clip to Guitar at beat 16 bars', context),
+            bridge([call], 'move the Intro clip to align with Guitar at beat 16', context),
+            bridge([call], 'move the Intro clip next to Guitar at beat 16', context),
+            bridge([call], 'move the Intro clip according to Guitar at beat 16', context),
+            bridge([call], 'move the Intro clip through Guitar at beat 16', context),
         ];
 
         expect(accepted.actions).toEqual([
@@ -1192,6 +1211,11 @@ describe('bridgeGroundedLlmToolCalls', () => {
         expect(accepted.rejections).toEqual([]);
         expect(selected.actions).toEqual(accepted.actions);
         expect(selected.rejections).toEqual([]);
+        expect(compound.actions).toEqual([
+            { type: 'moveClip', payload: { clipId: 'clip-intro', trackId: 'track-guitar', startBeat: 16 } },
+            { type: 'addMarker', payload: { beat: 32, name: 'Chorus' } },
+        ]);
+        expect(compound.rejections).toEqual([]);
         expect(rejected.every((result) => result.actions.length === 0)).toBe(true);
         expect(rejected.every((result) => result.rejections.length === 1)).toBe(true);
     });

@@ -3,27 +3,36 @@ import { shiftClipAutomation } from '#/modules/Automation/useCases';
 import { type Clip } from '../../models/Track';
 import { getTrackState } from '../../repositories/track/getTrackState';
 import { setTrackState } from '../../repositories/track/setTrackState';
+import { getTrackEligibility } from '../../stores/trackEligibility';
 
-export function moveClip(clipId: string, targetTrackId: string, startBeat: number, originalStartBeat?: number): void {
+export function moveClip(
+    clipId: string,
+    targetTrackId: string,
+    startBeat: number,
+    originalStartBeat?: number,
+    moveAutomation = true
+): boolean {
     const state = getTrackState();
-    if (!state) {
-        return;
+    if (!state || !Number.isFinite(startBeat) || startBeat < 0) {
+        return false;
     }
 
-    // Guard against moving to a track that doesn't exist. The strip-then-readd
-    // logic below removes the clip from its source track unconditionally and
-    // only re-inserts it into the track whose id matches targetTrackId — so a
-    // bad target id would silently delete the clip with no error.
-    if (!state.tracks.some((time) => time.id === targetTrackId)) {
-        return;
+    const targetTrack = state.tracks.find((track) => track.id === targetTrackId);
+    if (!targetTrack || !getTrackEligibility(targetTrack.kind).acceptsClipUpdate) {
+        return false;
     }
 
     let movedClip: Clip | undefined;
     let oldStartBeat: number | undefined;
+    let sourceTrackId: string | undefined;
     const tracksWithoutClip = state.tracks.map((time) => {
         const clip = time.clips.find((context) => context.id === clipId);
         if (clip) {
+            if (clip.locked) {
+                return time;
+            }
             oldStartBeat = clip.startBeat;
+            sourceTrackId = time.id;
             movedClip = {
                 ...clip,
                 trackId: targetTrackId,
@@ -34,8 +43,11 @@ export function moveClip(clipId: string, targetTrackId: string, startBeat: numbe
         return { ...time, clips: time.clips.filter((context) => context.id !== clipId) };
     });
 
-    if (!movedClip || oldStartBeat === undefined) {
-        return;
+    if (!movedClip || oldStartBeat === undefined || sourceTrackId === undefined) {
+        return false;
+    }
+    if (sourceTrackId === targetTrackId && Object.is(oldStartBeat, startBeat)) {
+        return false;
     }
 
     setTrackState({
@@ -47,12 +59,13 @@ export function moveClip(clipId: string, targetTrackId: string, startBeat: numbe
 
     // Automation: shift from the original drag start (preview doesn't shift automation)
     const automationDelta = startBeat - (originalStartBeat ?? oldStartBeat);
-    if (automationDelta !== 0) {
-        shiftClipAutomation(clipId, automationDelta);
+    if (moveAutomation) {
+        shiftClipAutomation(clipId, automationDelta, targetTrackId);
     }
 
     // MIDI: no shift — notes are stored clip-relative (playback position is
     // clip.startBeat + note.startBeat - midiOffsetBeats), so they follow the
     // clip's rectangle automatically. Shifting them here double-moved every
     // note on every drag (re-validation finding, ledger M-025 family).
+    return true;
 }

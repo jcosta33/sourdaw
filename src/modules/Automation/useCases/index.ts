@@ -3,8 +3,10 @@ export { addAutomationLane } from './automation/addAutomationLane';
 export { addAutomationPoint } from './automation/addAutomationPoint';
 export { batchAddAutomationPoints } from './automation/batchAddAutomationPoints';
 export { createAutomationLane } from './automation/createAutomationLane';
+export { clipAutomationMoveStateMatches } from './automation/clipAutomationMoveStateMatches';
 export { duplicateClipAutomation } from './automation/duplicateClipAutomation';
 export { duplicateClipAutomationBatch } from './automation/duplicateClipAutomationBatch';
+export { getClipAutomationMoveState } from './automation/getClipAutomationMoveState';
 export { deleteAutomationTimeRange } from './automation/deleteAutomationTimeRange';
 export { recordAutomationValue } from './automationRecording/recordAutomationValue';
 export { setAutomationRecordingDependencies } from './automationRecording/recordingDependencies';
@@ -17,6 +19,7 @@ export { prepareAutomationTimeStateRestore } from './automation/prepareAutomatio
 export { prepareClipAutomationShiftTransaction } from './automation/prepareClipAutomationShiftTransaction';
 export { replaceAutomationLanePoints } from './automation/replaceAutomationLanePoints';
 export { restoreAutomationLanes } from './automation/restoreAutomationLanes';
+export { restoreClipAutomationMoveState } from './automation/restoreClipAutomationMoveState';
 export { restoreAutomationSnapshot } from './restoreAutomationSnapshot';
 export { shiftAutomationAfterBeat } from './automation/shiftAutomationAfterBeat';
 export { shiftClipAutomation } from './automation/shiftClipAutomation';

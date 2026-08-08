@@ -25,6 +25,16 @@ export function describePlannedAction({ action, context }: DescribePlannedAction
             return `Remove clip "${clip.name}"`;
         }
     }
+    if (action.type === 'moveClip') {
+        const clip = context.tracks
+            .flatMap((track) => track.clips)
+            .find((candidate) => candidate.id === action.payload.clipId);
+        const track = context.tracks.find((candidate) => candidate.id === action.payload.trackId);
+        if (clip && track) {
+            return `Move clip "${clip.name}" to track "${track.name}" at beat ${String(action.payload.startBeat)}`;
+        }
+        return `Move clip to beat ${String(action.payload.startBeat)}`;
+    }
     if (action.type === 'normalizeClip') {
         const clip = context.tracks
             .flatMap((track) => track.clips)

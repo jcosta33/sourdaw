@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { moveClip } from '../../../useCases/clip/moveClip';
 import { handleMoveClip } from '../handleMoveClip';
@@ -7,8 +7,13 @@ type TestClip = { id: string; trackId: string; name: string; startBeat: number; 
 type TestTrackState = { tracks: { id: string; clips: TestClip[] }[] };
 
 const mocks = vi.hoisted(() => ({
+    getClipAutomationMoveState: vi.fn(),
     getTrackStoreState: vi.fn<() => TestTrackState | null>(),
     moveClip: vi.fn<() => boolean>(),
+}));
+
+vi.mock('#/modules/Automation/useCases', () => ({
+    getClipAutomationMoveState: mocks.getClipAutomationMoveState,
 }));
 
 vi.mock('../../../useCases/clip/moveClip', () => ({
@@ -20,13 +25,18 @@ vi.mock('../../../useCases/getTrackStoreState', () => ({
 }));
 
 describe('clipHandlers', () => {
+    beforeEach(() => {
+        mocks.getClipAutomationMoveState.mockReturnValue({ previous: [], next: [] });
+    });
     it('handleMoveClip forwards to moveClip use case', () => {
         mocks.moveClip.mockReturnValueOnce(true);
 
-        expect(handleMoveClip.execute({
-            type: 'moveClip',
-            payload: { clipId: 'c1', trackId: 't1', startBeat: 4 },
-        })).toEqual({ status: 'written' });
+        expect(
+            handleMoveClip.execute({
+                type: 'moveClip',
+                payload: { clipId: 'c1', trackId: 't1', startBeat: 4 },
+            })
+        ).toEqual({ status: 'written' });
 
         expect(moveClip).toHaveBeenCalledWith('c1', 't1', 4);
     });
@@ -63,16 +73,16 @@ describe('clipHandlers', () => {
                 type: 'restoreClipPlacement',
                 payload: {
                     clipId: 'c1',
-                    expected: { trackId: 't1', startBeat: 4, endBeat: 8 },
-                    replacement: { trackId: 't0', startBeat: 2, endBeat: 6 },
+                    expected: { trackId: 't1', startBeat: 4, endBeat: 8, automationLanes: [] },
+                    replacement: { trackId: 't0', startBeat: 2, endBeat: 6, automationLanes: [] },
                 },
             },
             redoAction: {
                 type: 'restoreClipPlacement',
                 payload: {
                     clipId: 'c1',
-                    expected: { trackId: 't0', startBeat: 2, endBeat: 6 },
-                    replacement: { trackId: 't1', startBeat: 4, endBeat: 8 },
+                    expected: { trackId: 't0', startBeat: 2, endBeat: 6, automationLanes: [] },
+                    replacement: { trackId: 't1', startBeat: 4, endBeat: 8, automationLanes: [] },
                 },
             },
         });

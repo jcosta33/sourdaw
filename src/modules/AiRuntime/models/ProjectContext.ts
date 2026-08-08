@@ -34,6 +34,7 @@ export type ProjectContextAutomationPoint = {
 export type ProjectContextAutomationLane = {
     id: string;
     trackId: string;
+    clipId?: string;
     parameterId: string;
     name: string;
     enabled: boolean;
