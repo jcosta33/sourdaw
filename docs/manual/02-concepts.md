@@ -3,26 +3,28 @@
 Sourdaw arranges a handful of ideas differently from most audio software, and every other chapter
 assumes them. Read this once and the rest of the manual will make sense in the order you need it.
 
-## One window, several views
+## One window, several surfaces
 
 Sourdaw does not have pages you navigate between. There is a single workspace, and everything else
 is a panel you show or hide inside it. Nothing is ever "somewhere else" — it is either visible or
 toggled off, and the same project is underneath all of it.
 
-The centre of the workspace shows one of three views at a time:
+The centre of the workspace is the **arrangement**: tracks run down the left, time runs left to
+right, and clips sit on the grid. This is where a song is assembled, and it stays there.
 
-- **Arrange** — the timeline. Tracks run down the left, time runs left to right, and clips sit on
-  the grid. This is where a song is assembled.
-- **Clip** — the inside of one clip. Notes, audio waveform, pitch, and that clip's own automation.
-- **Automation** — parameter movements across the whole arrangement, given the full window instead
-  of a lane.
+Everything else lives in the dock along the bottom, one tab at a time:
 
-Switching views never changes what is playing or what is recorded. They are three ways of looking at
-one project.
+- **Editor** — the inside of one clip. Notes, audio waveform, pitch, and that clip's own automation.
+- **Automation** — parameter movements across the arrangement.
+- **Mixer** — faders, sends, and device chains for every track at once.
+- **Session** — clips that launch on demand rather than at a fixed time. Use it to try arrangements
+  before committing them to the timeline. It can also sit beside the arrangement instead of in the
+  dock.
+- **Routing**, **Analysis**, **Setlist**, **Loop Station**, and **Modulation** — covered in their own
+  chapters.
+- **Elastic** — appears only while an audio clip is selected.
 
-The **Session** surface is different: it is a panel rather than a view, and it holds clips that
-launch on demand rather than at a fixed time. Use it to try arrangements before committing them to
-the timeline.
+Switching tabs never changes what is playing or what is recorded. They are views onto one project.
 
 ## Tracks
 
@@ -70,41 +72,54 @@ Three kinds:
 - **Audio effects** change sound that already exists.
 - **MIDI effects** change notes before they reach the instrument.
 
-Devices come from three places: the built-in devices documented in this manual, and — where your
-system supports them — plugins you already own.
+Devices come from two places: the built-in devices documented in this manual, and — in the desktop
+app only — VST, AU, and CLAP plugins you already own. In a browser the plugin browser is present but
+disabled.
 
 ## Parameters and automation
 
 Every knob, slider, and switch on a device is a **parameter** with a range, a unit, and a default.
-Any parameter can be **automated** — given a value that changes over time, drawn as a line in an
-automation lane.
+Most parameters can be **automated** — given a value that changes over time, drawn as a line in an
+automation lane. A few discrete switches cannot: algorithm and filter-shape selectors, and metering
+mode. Those are absent from the parameter list when you go to assign a lane, which is how you tell.
 
 Automation belongs to the track, not the device, so it survives while you audition alternatives. A
 parameter under automation follows the line rather than the knob; the knob shows you where the line
 currently is.
 
-## Nothing happens twice
+## Undo, and what it covers
 
-Every change you make — a note moved, a fader nudged, a device added, a preset loaded — is recorded
-as a single step. That is what undo walks back through, and it is why undo behaves predictably even
-when one action changed forty parameters at once: loading a preset is one step, not forty.
+Undo walks back through a stack of recorded steps. Editing material writes steps to it: move,
+resize, split, or delete notes and clips, and each gesture goes on the stack as one entry, however
+many notes it touched.
 
-The same record makes **versions** possible. A version is a named point you can return to. A
-**branch** lets you take a project in two directions and compare them, rather than choosing blindly
-and hoping undo is deep enough.
+> [!WARNING]
+> **Not yet active.** Undo does not yet cover the mixer or devices. Moving a fader or a pan control,
+> adding or removing a device, turning a device knob, and loading a device preset all apply
+> immediately and are not recorded — undo will skip straight past them to the last material edit.
+> The one exception runs the other way: the reverb records every parameter of a loaded space as a
+> separate step, so undoing one takes many presses.
+>
+> Save a preset or duplicate the track before you experiment with a device.
+
+A **branch** is the durable way to try something. It takes the project in two directions so you can
+compare them, rather than choosing blindly and hoping undo is deep enough. Branches cover everything,
+including the changes undo does not see. Open the Branch Manager from the command list to fork,
+switch, merge, and delete them.
 
 ## Three ways to drive it
 
-The same operations are available three ways, and none of them is a lesser path:
+Most operations are available three ways:
 
 1. **Direct manipulation** — dragging, clicking, and typing in the interface.
-2. **Commands** — a searchable list of every action, reachable from the keyboard, plus shortcuts you
-   can remap.
-3. **Natural language** — describing what you want to the assistant, which carries out the same
-   actions the other two paths use.
+2. **Commands** — a searchable list of actions, reachable from the keyboard, plus shortcuts you can
+   remap in Preferences.
+3. **Natural language** — describing what you want to the assistant, from the prompt bar in the
+   transport or the chat panel.
 
-Because all three route through the same actions, anything the assistant does is a normal step in
-the history and can be undone like anything else.
+The three are not yet equivalent, and the difference shows up in undo. Track gain, pan, and adding a
+device are recorded as undoable steps when the assistant performs them, but not when you perform them
+by hand. Until that evens out, ask the assistant for a change you may want to walk back.
 
 ## Where sound actually comes out
 
