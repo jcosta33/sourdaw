@@ -1,0 +1,29 @@
+src/modules/MixerConsole/presentations/views/Mixer/MasterChannelStrip.tsx
+  s_a7f145c01f8b49::t_8328e422787f44 20,27
+tests/e2e/masterChannelTestId.spec.ts
+  s_bc88af7d3b054c::t_a5e819233a24bb 1-60
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "2beffa72ae59a6c0a1793fb586d4f4c43b9be811",
+  "prompts": {},
+  "sessions": {
+    "s_a7f145c01f8b49": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-a34254e15311d44fa",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_bc88af7d3b054c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f9b4a-11a2-7f61-8dfb-76eed0eb2a9c",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
