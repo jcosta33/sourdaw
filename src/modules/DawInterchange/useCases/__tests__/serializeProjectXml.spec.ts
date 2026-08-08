@@ -234,16 +234,19 @@ describe('serializeProjectXml — number formatting', () => {
         expect(xml).toContain('<Tempo value="128"/>');
     });
 
-    it('rounds to 6 decimals and trims trailing zero for fractional values', () => {
+    it('rounds to 6 decimals and renders a whole-number duration without decimals', () => {
         const project = buildProjectFixture();
-        // a clip at startBeat 1.5 → formatNumber(1.5) = "1.5"
+        // 1.2345678 has 7 decimals: rounding to 6 must drop the trailing 8.
+        // A passthrough `String(value)` would emit "1.2345678" and fail here.
         const track = project.arrangement.tracks.find((t) => t.kind === 'audio')!;
-        track.clips = [{ ...track.clips[0]!, startBeat: 1.5, endBeat: 3.5 }];
+        track.clips = [{ ...track.clips[0]!, startBeat: 1.2345678, endBeat: 3.2345678 }];
         const xml = serializeProjectXml({
             project,
             audioPathByBufferId: new Map([['buf-drums', 'x.wav']]),
         });
-        expect(xml).toContain('time="1.5"');
+        expect(xml).toContain('time="1.234568"');
+        expect(xml).not.toContain('time="1.2345678"');
+        // endBeat - startBeat is exactly 2 → integer branch emits "2", not "2.0"
         expect(xml).toContain('duration="2"');
     });
 });
@@ -332,7 +335,13 @@ describe('serializeProjectXml — tempo / time-signature point lanes', () => {
         const project = buildProjectFixture();
         project.timeSignatureMap = { changes: [] };
         const xml = serializeProjectXml({ project, audioPathByBufferId: new Map() });
-        expect(xml).toContain('numerator="3" denominator="4"');
+        // Count the points lane specifically. `<TimeSignature .../>` is emitted
+        // unconditionally inside <Transport> from the same fixture values, so a
+        // bare substring match here passes even if this lane renders nothing.
+        const points = xml.match(/<TimeSignaturePoint\b[^>]*\/>/g) ?? [];
+        expect(points).toEqual([
+            '<TimeSignaturePoint time="0" numerator="3" denominator="4"/>',
+        ]);
     });
 });
 
@@ -374,5 +383,18 @@ describe('serializeProjectXml — markers + devices + escaping', () => {
         const xml = serializeProjectXml({ project, audioPathByBufferId: new Map() });
         expect(xml).toContain('<Volume value="1"/>');
         expect(xml).toContain('<Pan value="0"/>');
+    });
+
+    it('normalises interior gain/pan values that no clamp saturates', () => {
+        // The clamped case above sits at a fixed point of the pan normalisation:
+        // pan −1 maps to 0 under both `(pan + 1) / 2` and a broken `pan + 1`.
+        // Only an interior point separates them.
+        const project = buildProjectFixture();
+        const track = project.arrangement.tracks[0]!;
+        track.gain = 0.5;
+        track.pan = 0.5; // → (0.5 + 1) / 2 = 0.75
+        const xml = serializeProjectXml({ project, audioPathByBufferId: new Map() });
+        expect(xml).toContain('<Volume value="0.5"/>');
+        expect(xml).toContain('<Pan value="0.75"/>');
     });
 });

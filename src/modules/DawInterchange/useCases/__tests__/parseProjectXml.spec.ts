@@ -266,9 +266,9 @@ describe('parseProjectXml — clip parsing', () => {
             '</Clips></Lanes></Arrangement>';
         const result = parseProjectXml(project(inner));
         const clip = result.tracks[0]?.clips[0];
-        // start 1, duration 4 (5-1) → end 5, but floored to >= start+0.25
+        // start 1, playStop 5 → duration 4 → end exactly 5
         expect(clip?.startBeat).toBe(1);
-        expect(clip?.endBeat).toBeGreaterThanOrEqual(5);
+        expect(clip?.endBeat).toBe(5);
     });
 
     it('falls back to a "Clip N" name when the clip has none', () => {
