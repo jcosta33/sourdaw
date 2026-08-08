@@ -1,0 +1,19 @@
+tests/e2e/proofPanelTestId.spec.ts
+  s_428b03cffb4801::t_acc248486f1f0d 1-115
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "264dc9483b0ed5de88e5b52e4406e37f2e183586",
+  "prompts": {},
+  "sessions": {
+    "s_428b03cffb4801": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-a84096dbe014b90c4",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
