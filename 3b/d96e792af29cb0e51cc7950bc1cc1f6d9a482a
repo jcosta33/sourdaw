@@ -1,0 +1,19 @@
+tests/e2e/clipDragDeleteTestId.spec.ts
+  s_14f2bbc9f385dd::t_5c099bfe0403a4 1-83
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "3bd96e792af29cb0e51cc7950bc1cc1f6d9a482a",
+  "prompts": {},
+  "sessions": {
+    "s_14f2bbc9f385dd": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f9a61a1d-66b3-4146-938d-a04f45f4b060",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
