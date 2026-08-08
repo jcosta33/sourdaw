@@ -487,8 +487,14 @@ const guardedPayloadContractCases = [
         invalidPayloads: [
             { clipId: 'clip-1', newTrackId: 'track-2', newStartBeat: 8 },
             { clipId: 'clip-1', trackId: 'track-2' },
+            { clipId: '', trackId: 'track-2', startBeat: 8 },
+            { clipId: 'clip-1', trackId: '', startBeat: 8 },
             { clipId: 'clip-1', trackId: 2, startBeat: 8 },
+            { clipId: 'clip-1', trackId: 'track-2', startBeat: -1 },
+            { clipId: 'clip-1', trackId: 'track-2', startBeat: Number.NaN },
             { clipId: 'clip-1', trackId: 'track-2', startBeat: Number.POSITIVE_INFINITY },
+            { clipId: 'clip-1', trackId: 'track-2', startBeat: '8' },
+            { clipId: 'clip-1', trackId: 'track-2', startBeat: 8, extra: true },
         ],
     }),
     guardedPayloadCase({

@@ -80,6 +80,18 @@ const EXPECTED_COMMANDS = [
         true
     ),
     expectedCommand(
+        'moveClip',
+        'Move one unlocked clip to an absolute beat on an existing clip-host track.',
+        {
+            clipId: { type: 'string', description: 'Existing unlocked clip ID' },
+            trackId: { type: 'string', description: 'Existing destination track ID that accepts clips' },
+            startBeat: { type: 'number', minimum: 0, description: 'Non-negative absolute destination beat' },
+        },
+        ['clipId', 'trackId', 'startBeat'],
+        'bounded-reversible',
+        false
+    ),
+    expectedCommand(
         'renameClip',
         'Rename an existing clip.',
         { clipId: { type: 'string' }, name: { type: 'string' } },
@@ -941,6 +953,31 @@ const EXPECTED_GROUNDING = [
         intentPhrases: ['delete clip', 'remove clip', 'delete', 'remove'],
         targetRules: [{ argument: 'clipId', capability: 'editable-clip' }],
         valueRules: [],
+    },
+    {
+        actionType: 'moveClip',
+        intentPhrases: [
+            'move clip',
+            'move the clip',
+            'move selected clip',
+            'move the selected clip',
+            'move current clip',
+            'move the current clip',
+            'move this clip',
+        ],
+        targetRules: [
+            { argument: 'clipId', capability: 'editable-clip', promptRole: 'source' },
+            { argument: 'trackId', capability: 'track', allowBatchLocal: false, promptRole: 'destination' },
+        ],
+        valueRules: [
+            {
+                argument: 'startBeat',
+                kind: 'number-if-present',
+                requiredInPrompt: true,
+                connector: 'beat',
+                match: 'exact',
+            },
+        ],
     },
     {
         actionType: 'renameClip',

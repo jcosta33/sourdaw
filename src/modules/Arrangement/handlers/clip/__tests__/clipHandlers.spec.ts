@@ -6,17 +6,20 @@ import { handleDiscardDuplicatedClip } from '../handleDiscardDuplicatedClip';
 import { handleDuplicateClip } from '../handleDuplicateClip';
 import { handleMoveClip } from '../handleMoveClip';
 import { handleRemoveClip } from '../handleRemoveClip';
+import { handleRestoreClipPlacement } from '../handleRestoreClipPlacement';
 
 describe('clipHandlers', () => {
     it('exports a map of clip operation handlers', () => {
         expect(clipHandlers).toHaveProperty('addClip');
         expect(clipHandlers).toHaveProperty('moveClip');
+        expect(clipHandlers).toHaveProperty('restoreClipPlacement');
         expect(clipHandlers).toHaveProperty('discardDuplicatedClip');
         expect(clipHandlers).toHaveProperty('duplicateClip');
         expect(clipHandlers).toHaveProperty('removeClip');
 
         expect(clipHandlers.addClip).toBe(handleAddClip);
         expect(clipHandlers.moveClip).toBe(handleMoveClip);
+        expect(clipHandlers.restoreClipPlacement).toBe(handleRestoreClipPlacement);
         expect(clipHandlers.discardDuplicatedClip).toBe(handleDiscardDuplicatedClip);
         expect(clipHandlers.duplicateClip).toBe(handleDuplicateClip);
         expect(clipHandlers.removeClip).toBe(handleRemoveClip);
@@ -26,6 +29,7 @@ describe('clipHandlers', () => {
         const expectedKeys = [
             'addClip',
             'moveClip',
+            'restoreClipPlacement',
             'discardDuplicatedClip',
             'duplicateClip',
             'duplicateClipToNextBar',

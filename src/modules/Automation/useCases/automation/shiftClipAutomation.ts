@@ -1,6 +1,6 @@
 import { automationStore } from '../../stores/automationStore';
 
-export function shiftClipAutomation(clipId: string, beatDelta: number): void {
+export function shiftClipAutomation(clipId: string, beatDelta: number, targetTrackId?: string): void {
     const state = automationStore.value;
     if (!state) {
         return;
@@ -13,6 +13,7 @@ export function shiftClipAutomation(clipId: string, beatDelta: number): void {
             }
             return {
                 ...lane,
+                trackId: targetTrackId ?? lane.trackId,
                 // Clamp to >= 0: a clip never lives before the timeline origin,
                 // so a negative net beat would detach the automation from the
                 // audio it rides. Sort afterwards because the clamp can collide

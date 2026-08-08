@@ -118,6 +118,11 @@ function findClip(context: ProjectContext, clipId: unknown) {
     return undefined;
 }
 
+function findEditableClip(context: ProjectContext, clipId: unknown) {
+    const target = findClip(context, clipId);
+    return target?.clip.locked === true ? undefined : target;
+}
+
 function findEditableMidiClip(context: ProjectContext, clipId: unknown) {
     const target = findClip(context, clipId);
     if (!target || target.clip.type !== 'midi' || target.clip.locked === true || target.clip.noteCount < 1) {
@@ -210,6 +215,24 @@ function findAutomationLane(context: ProjectContext, laneId: unknown) {
         return undefined;
     }
     return (context.automationLanes ?? []).find((lane) => lane.id === laneId);
+}
+
+function getClipAutomationLaneIds(context: ProjectContext, clipId: string): string[] {
+    return (context.automationLanes ?? []).filter((lane) => lane.clipId === clipId).map((lane) => lane.id);
+}
+
+function getAutomationTransformLaneId(action: RuntimeAction): string | null {
+    if (
+        action.type === 'scaleAutomation' ||
+        action.type === 'stretchAutomation' ||
+        action.type === 'invertAutomation' ||
+        action.type === 'reverseAutomation' ||
+        action.type === 'thinAutomation' ||
+        action.type === 'quantizeAutomation'
+    ) {
+        return action.payload.laneId;
+    }
+    return null;
 }
 
 function findVcaGroup(context: ProjectContext, vcaGroupId: unknown) {
@@ -870,6 +893,29 @@ function bridgeToolCall({
             return rejection(index, call.name, 'Expected only an available non-master trackId');
         }
         return { type: 'removeTrack', payload: { trackId: track.id } };
+    }
+
+    if (call.name === 'moveClip') {
+        const source = findEditableClip(context, args.clipId);
+        const destination = findTrack(context, args.trackId);
+        if (
+            !hasExactKeys(args, ['clipId', 'trackId', 'startBeat']) ||
+            !source ||
+            !destination ||
+            destination.kind === 'vca' ||
+            !isFiniteNumber(args.startBeat) ||
+            args.startBeat < 0
+        ) {
+            return rejection(
+                index,
+                call.name,
+                'Expected one unlocked clip, one existing clip-host track, and a finite non-negative startBeat'
+            );
+        }
+        return {
+            type: 'moveClip',
+            payload: { clipId: source.clip.id, trackId: destination.id, startBeat: args.startBeat },
+        };
     }
 
     if (call.name === 'duplicateClip' || call.name === 'duplicateClipToNextBar') {
@@ -1685,6 +1731,7 @@ function getClipTargetIds(action: RuntimeAction): string[] {
     if (
         action.type === 'duplicateClip' ||
         action.type === 'duplicateClipToNextBar' ||
+        action.type === 'moveClip' ||
         action.type === 'removeClip' ||
         action.type === 'renameClip' ||
         action.type === 'trimClipStart' ||
@@ -1896,6 +1943,15 @@ function getMutationKeys(
             `clip:${action.payload.clipId}:loop`,
             `clip:${action.payload.clipId}:stretch`,
             `clip:${action.payload.clipId}:notes`,
+        ];
+    }
+    if (action.type === 'moveClip') {
+        return [
+            `clip:${action.payload.clipId}:membership`,
+            `clip:${action.payload.clipId}:geometry`,
+            ...getClipAutomationLaneIds(context, action.payload.clipId).map(
+                (laneId) => `automation-lane-points:${laneId}`
+            ),
         ];
     }
     if (action.type === 'renameClip') {
@@ -2238,6 +2294,7 @@ export function bridgeLlmToolCalls({
     const removedDeviceTrackIds = new Set<string>();
     const automationPointWriteLaneIds = new Set<string>();
     const automationTransformLaneIds = new Set<string>();
+    const movedClipAutomationLaneIds = new Set<string>();
 
     for (const [index, call] of calls.entries()) {
         const result = bridgeToolCall({
@@ -2250,20 +2307,26 @@ export function bridgeLlmToolCalls({
         if ('type' in result) {
             const actionClipTargetIds = getClipTargetIds(result);
             const actionClipTrackIds = [
-                ...new Set(
-                    actionClipTargetIds.flatMap((clipTargetId) => {
+                ...new Set([
+                    ...actionClipTargetIds.flatMap((clipTargetId) => {
                         const trackId = findClip(context, clipTargetId)?.track.id;
                         return trackId ? [trackId] : [];
-                    })
-                ),
+                    }),
+                    ...(result.type === 'moveClip' ? [result.payload.trackId] : []),
+                ]),
             ];
             const deviceTarget = getDeviceBatchTarget(result, context);
             const mutationKeysForAction = getMutationKeys(result, context, sectionSignatures);
             const automationPointLaneId = result.type === 'addAutomationPoint' ? result.payload.laneId : null;
-            const automationTransformKey = mutationKeysForAction.find((key) =>
-                key.startsWith('automation-lane-points:')
-            );
-            const automationTransformLaneId = automationTransformKey?.slice('automation-lane-points:'.length) ?? null;
+            const automationTransformLaneId = getAutomationTransformLaneId(result);
+            const automationMutationLaneId = automationPointLaneId ?? automationTransformLaneId;
+            const movedAutomationLaneIds =
+                result.type === 'moveClip' ? getClipAutomationLaneIds(context, result.payload.clipId) : [];
+            const hasMoveAutomationConflict =
+                movedAutomationLaneIds.some(
+                    (laneId) => automationPointWriteLaneIds.has(laneId) || automationTransformLaneIds.has(laneId)
+                ) ||
+                (automationMutationLaneId !== null && movedClipAutomationLaneIds.has(automationMutationLaneId));
             const hasAutomationCollectionConflict =
                 (automationPointLaneId !== null && automationTransformLaneIds.has(automationPointLaneId)) ||
                 (automationTransformLaneId !== null && automationPointWriteLaneIds.has(automationTransformLaneId));
@@ -2290,6 +2353,12 @@ export function bridgeLlmToolCalls({
                     (deviceTarget.kind === 'remove' &&
                         (addedDeviceTrackIds.has(deviceTarget.trackId) ||
                             removedDeviceTrackIds.has(deviceTarget.trackId))));
+            if (hasMoveAutomationConflict) {
+                rejections.push(
+                    rejection(index, call.name, 'Provider batch mixes clip movement with automation point writes')
+                );
+                continue;
+            }
             if (hasAutomationCollectionConflict) {
                 const conflictingLaneId = automationPointLaneId ?? automationTransformLaneId;
                 for (let actionIndex = actions.length - 1; actionIndex >= 0; actionIndex -= 1) {
@@ -2363,6 +2432,9 @@ export function bridgeLlmToolCalls({
             }
             if (automationTransformLaneId !== null) {
                 automationTransformLaneIds.add(automationTransformLaneId);
+            }
+            for (const laneId of movedAutomationLaneIds) {
+                movedClipAutomationLaneIds.add(laneId);
             }
             for (const clipTargetId of actionClipTargetIds) {
                 clipTargetIds.add(clipTargetId);

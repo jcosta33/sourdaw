@@ -102,6 +102,17 @@ export type ClipSnapshot = {
     readonly startBeat: number;
     readonly endBeat: number;
 };
+export type ClipAutomationLaneActionSnapshot = {
+    readonly id: string;
+    readonly trackId: string;
+    readonly points: readonly AutomationPointSnapshot[];
+};
+export type ClipMoveActionSnapshot = {
+    readonly trackId: string;
+    readonly startBeat: number;
+    readonly endBeat: number;
+    readonly automationLanes: readonly ClipAutomationLaneActionSnapshot[];
+};
 export type ClipStretchStateSnapshot = {
     readonly startBeat: number;
     readonly endBeat: number;
@@ -495,6 +506,15 @@ export type AppAction =
           };
       }
     | { type: 'moveClip'; payload: { clipId: string; trackId: string; startBeat: number } }
+    | {
+          /** Internal guarded inverse for exact clip track membership and geometry. */
+          type: 'restoreClipPlacement';
+          payload: {
+              clipId: string;
+              expected: ClipMoveActionSnapshot;
+              replacement: ClipMoveActionSnapshot;
+          };
+      }
     | { type: 'duplicateClip'; payload: { clipId: string; targetClipId?: string } }
     | { type: 'duplicateClipToNextBar'; payload: { clipId: string; targetClipId?: string } }
     | { type: 'duplicateTrack'; payload: { trackId: string; targetTrackId?: string; select?: boolean } }

@@ -93,22 +93,21 @@ export function getProjectContext(): ProjectContext {
         availableDeviceTypes: getPlatformPlugins()
             .filter((plugin) => plugin.id !== 'crust')
             .map((plugin) => ({ id: plugin.id, name: plugin.name })),
-        automationLanes: (automationState?.lanes ?? [])
-            .filter((lane) => lane.clipId === undefined)
-            .map((lane) => ({
-                id: lane.id,
-                trackId: lane.trackId,
-                parameterId: lane.parameterId,
-                name: lane.parameterName,
-                enabled: lane.enabled,
-                minValue: lane.minValue,
-                maxValue: lane.maxValue,
-                points: lane.points.map((point) => ({
-                    beat: point.beat,
-                    value: point.value,
-                    curve: point.curve,
-                })),
+        automationLanes: (automationState?.lanes ?? []).map((lane) => ({
+            id: lane.id,
+            trackId: lane.trackId,
+            ...(lane.clipId === undefined ? {} : { clipId: lane.clipId }),
+            parameterId: lane.parameterId,
+            name: lane.parameterName,
+            enabled: lane.enabled,
+            minValue: lane.minValue,
+            maxValue: lane.maxValue,
+            points: lane.points.map((point) => ({
+                beat: point.beat,
+                value: point.value,
+                curve: point.curve,
             })),
+        })),
         sidechainRoutes: (sidechainState?.routes ?? []).map((route) => ({
             id: route.id,
             sourceTrackId: route.sourceTrackId,

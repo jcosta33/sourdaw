@@ -177,7 +177,11 @@ const validators = {
     splitClip: (param): param is PayloadOf<'splitClip'> =>
         isObj(param) && isString(param.clipId) && isNumber(param.beat),
     moveClip: (param): param is PayloadOf<'moveClip'> =>
-        isObj(param) && isString(param.clipId) && isString(param.trackId) && isNumber(param.startBeat),
+        isObj(param) &&
+        hasExactKeys(param, ['clipId', 'trackId', 'startBeat']) &&
+        isNonEmptyString(param.clipId) &&
+        isNonEmptyString(param.trackId) &&
+        isNonNegativeNumber(param.startBeat),
     duplicateClip: hasClipId,
 
     // Device lifecycle

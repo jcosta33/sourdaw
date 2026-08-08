@@ -326,7 +326,7 @@ describe('getProjectContext', () => {
         expect(second.sidechainRoutes).toEqual([]);
     });
 
-    it('maps non-clip automation lanes and invalidates the cache when automation state changes', () => {
+    it('maps automation lanes with clip ownership and invalidates the cache when automation state changes', () => {
         mocks.automationStoreValue.value = {
             lanes: [
                 {
@@ -371,6 +371,17 @@ describe('getProjectContext', () => {
                     { beat: 0, value: 0.4, curve: 'linear' },
                     { beat: 8, value: 0.8, curve: 'smooth' },
                 ],
+            },
+            {
+                id: 'lane-clip-gain',
+                trackId: 'track-vocals',
+                clipId: 'clip-verse',
+                parameterId: 'gain',
+                name: 'Clip Gain',
+                enabled: true,
+                minValue: 0,
+                maxValue: 1,
+                points: [{ beat: 0, value: 1, curve: 'linear' }],
             },
         ]);
 

@@ -22,6 +22,7 @@ import { handlePasteClip } from './handlePasteClip';
 import { handleRemoveClip } from './handleRemoveClip';
 import { handleRenameClip } from './handleRenameClip';
 import { handleRestoreClipLoop } from './handleRestoreClipLoop';
+import { handleRestoreClipPlacement } from './handleRestoreClipPlacement';
 import { handleRestoreCrossfadeClips } from './handleRestoreCrossfadeClips';
 import { handleReverseClip } from './handleReverseClip';
 import { handleSetClipColor } from './handleSetClipColor';
@@ -37,6 +38,7 @@ import { handleTrimClipStart } from './handleTrimClipStart';
 export const clipHandlers = {
     addClip: handleAddClip,
     moveClip: handleMoveClip,
+    restoreClipPlacement: handleRestoreClipPlacement,
     discardDuplicatedClip: handleDiscardDuplicatedClip,
     duplicateClip: handleDuplicateClip,
     duplicateClipToNextBar: handleDuplicateClipToNextBar,

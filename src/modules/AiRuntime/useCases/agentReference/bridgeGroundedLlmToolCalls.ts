@@ -1322,6 +1322,94 @@ function getTargetPromptScope(
     return `to ${actionScope.text.slice(separator.index + separator[0].length).trim()}`;
 }
 
+const moveBeatAssertionPattern = /\bbeat\b[\s:=]*(-?(?:\d+(?:\.\d+)?|\.\d+)(?:\s*\/\s*(?:\d+(?:\.\d+)?|\.\d+))?%?)/giu;
+
+function getMoveBeatAssertions(text: string): RegExpExecArray[] {
+    return [...text.matchAll(moveBeatAssertionPattern)];
+}
+
+function hasExactlyOneMoveBeatAssertion(actionScope: string): boolean {
+    const assertions = getMoveBeatAssertions(actionScope);
+    if (assertions.length !== 1) {
+        return false;
+    }
+    return assertions.every((assertion) => {
+        const rawValue = assertion[1];
+        if (!rawValue || rawValue.endsWith('%')) {
+            return false;
+        }
+        const suffix = actionScope.slice(assertion.index + assertion[0].length);
+        return !/^\s*(?:bars?|beats?|seconds?|secs?|minutes?|mins?|%)/iu.test(suffix);
+    });
+}
+
+function hasGroundedMoveBeatAssertions({
+    catalog,
+    context,
+    expectedMoveCount,
+    plannedActionNames,
+    prompt,
+}: {
+    catalog: GroundingCatalog;
+    context: ProjectContext;
+    expectedMoveCount: number;
+    plannedActionNames: readonly string[];
+    prompt: string;
+}): boolean {
+    const maskedPrompt = maskProjectReferences(prompt, context);
+    let moveClauseCount = 0;
+    for (const clause of getPromptClauses(prompt, maskedPrompt)) {
+        const assertions = getMoveBeatAssertions(clause.text);
+        if (assertions.length === 0) {
+            continue;
+        }
+        const intent = resolveClauseActionIntent(clause.masked, catalog);
+        if (intent?.actionType === 'moveClip') {
+            if (!hasExactlyOneMoveBeatAssertion(clause.text)) {
+                return false;
+            }
+            moveClauseCount += 1;
+            continue;
+        }
+        if (!intent || !plannedActionNames.includes(intent.actionType)) {
+            return false;
+        }
+    }
+    return moveClauseCount === expectedMoveCount;
+}
+
+function isDirectMoveClipDestination(
+    actionScope: ActionPromptScope,
+    trackId: unknown,
+    context: ProjectContext
+): boolean {
+    if (typeof trackId !== 'string') {
+        return false;
+    }
+    const track = context.tracks.find((candidate) => candidate.id === trackId);
+    if (!track) {
+        return false;
+    }
+    if (/\b(?:through|(?:according|next)\s+to)\b/iu.test(actionScope.masked)) {
+        return false;
+    }
+    const targetScope = normalizePromptText(getTargetPromptScope(actionScope, 'destination')).replace(/^to\s+/u, '');
+    const references = [track.id, track.name]
+        .map((reference) => normalizePromptText(reference))
+        .filter((reference) => reference.length > 0)
+        .sort((left, right) => right.length - left.length);
+    return references.some((reference) =>
+        [
+            reference,
+            `the ${reference}`,
+            `track ${reference}`,
+            `the track ${reference}`,
+            `${reference} track`,
+            `the ${reference} track`,
+        ].some((prefix) => targetScope === prefix || targetScope.startsWith(`${prefix} `))
+    );
+}
+
 type GroundingValueRule = GroundingRules['valueRules'][number];
 
 type PromptNumber = {
@@ -2428,6 +2516,18 @@ function groundToolCall({
     if (!actionScope) {
         return rejection(index, call.name, 'Provider action is not grounded in the user request');
     }
+    if (
+        call.name === 'moveClip' &&
+        !hasGroundedMoveBeatAssertions({
+            catalog,
+            context,
+            expectedMoveCount: sameActionCallCount,
+            plannedActionNames,
+            prompt,
+        })
+    ) {
+        return rejection(index, call.name, 'Provider clip move requires exactly one explicit absolute beat per move');
+    }
     if (call.name === 'setPlayback' && !isExplicitSetPlaybackScope(actionScope)) {
         return rejection(index, call.name, 'Provider action is not grounded in an explicit playback request');
     }
@@ -2538,6 +2638,9 @@ function groundToolCall({
         }
 
         groundedArguments[targetRule.argument] = result.id;
+    }
+    if (call.name === 'moveClip' && !isDirectMoveClipDestination(actionScope, groundedArguments.trackId, context)) {
+        return rejection(index, call.name, 'Provider clip destination is not the direct object of the move request');
     }
     if (
         call.name === 'removeTrack' &&

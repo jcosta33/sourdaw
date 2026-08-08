@@ -101,6 +101,24 @@ describe('describePlannedAction', () => {
         ).toBe('Remove clip');
     });
 
+    it('names the moved clip, destination track, and absolute beat', () => {
+        expect(
+            describePlannedAction({
+                action: {
+                    type: 'moveClip',
+                    payload: { clipId: 'clip-verse', trackId: 'track-drums', startBeat: 16 },
+                },
+                context,
+            })
+        ).toBe('Move clip "Verse Lead" to track "Drums" at beat 16');
+        expect(
+            describePlannedAction({
+                action: { type: 'moveClip', payload: { clipId: 'missing', trackId: 'missing', startBeat: 4 } },
+                context,
+            })
+        ).toBe('Move clip to beat 4');
+    });
+
     it('names the normalization target, measurement, and optional level', () => {
         expect(
             describePlannedAction({

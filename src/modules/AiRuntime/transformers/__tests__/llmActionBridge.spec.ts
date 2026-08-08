@@ -1298,6 +1298,16 @@ describe('bridgeLlmToolCalls', () => {
                 action: { type: 'removeClip', payload: { clipId: 'clip-verse' } },
             },
             {
+                call: {
+                    name: 'moveClip',
+                    arguments: { clipId: 'clip-verse', trackId: 'bus-reverb', startBeat: 16 },
+                },
+                action: {
+                    type: 'moveClip',
+                    payload: { clipId: 'clip-verse', trackId: 'bus-reverb', startBeat: 16 },
+                },
+            },
+            {
                 call: { name: 'renameClip', arguments: { clipId: 'clip-verse', name: 'Lead Verse' } },
                 action: { type: 'renameClip', payload: { clipId: 'clip-verse', name: 'Lead Verse' } },
             },
@@ -1377,6 +1387,118 @@ describe('bridgeLlmToolCalls', () => {
 
         expect(results.map(({ actions }) => actions[0])).toEqual(cases.map(({ action }) => action));
         expect(results.flatMap(({ rejections }) => rejections)).toEqual([]);
+    });
+
+    it('rejects unsafe clip moves and every overlapping lifecycle or geometry write in either order', () => {
+        const move = {
+            name: 'moveClip',
+            arguments: { clipId: 'clip-verse', trackId: 'bus-reverb', startBeat: 16 },
+        };
+        const lockedContext = replaceTrack(projectContext, 'track-vocals', (track) => ({
+            ...track,
+            clips: track.clips.map((clip) => ({ ...clip, locked: true })),
+        }));
+        const vcaContext: ProjectContext = {
+            ...projectContext,
+            tracks: [...projectContext.tracks, { ...projectContext.tracks[1]!, id: 'vca-1', name: 'VCA', kind: 'vca' }],
+        };
+        const rejected = [
+            bridge({ calls: [{ ...move, arguments: { ...move.arguments, clipId: 'missing' } }] }),
+            bridge({ context: lockedContext, calls: [move] }),
+            bridge({ calls: [{ ...move, arguments: { ...move.arguments, trackId: 'missing' } }] }),
+            bridge({ context: vcaContext, calls: [{ ...move, arguments: { ...move.arguments, trackId: 'vca-1' } }] }),
+            bridge({ calls: [{ ...move, arguments: { ...move.arguments, startBeat: -1 } }] }),
+            bridge({ calls: [{ ...move, arguments: { ...move.arguments, startBeat: Number.NaN } }] }),
+            bridge({ calls: [{ ...move, arguments: { ...move.arguments, startBeat: Number.POSITIVE_INFINITY } }] }),
+            bridge({ calls: [{ ...move, arguments: { ...move.arguments, startBeat: '16' } }] }),
+            bridge({ calls: [{ ...move, arguments: { ...move.arguments, extra: true } }] }),
+        ];
+        const conflicts = [
+            { name: 'moveClip', arguments: { clipId: 'clip-verse', trackId: 'track-vocals', startBeat: 4 } },
+            { name: 'trimClipStart', arguments: { clipId: 'clip-verse', newStartBeat: 1 } },
+            { name: 'trimClipEnd', arguments: { clipId: 'clip-verse', newEndBeat: 7 } },
+            { name: 'nudgeClip', arguments: { clipId: 'clip-verse', beats: 1 } },
+            { name: 'lockClip', arguments: { clipId: 'clip-verse', locked: true } },
+            { name: 'removeClip', arguments: { clipId: 'clip-verse' } },
+            { name: 'removeTrack', arguments: { trackId: 'track-vocals' } },
+            { name: 'removeTrack', arguments: { trackId: 'bus-reverb' } },
+        ].flatMap((conflict) => [bridge({ calls: [move, conflict] }), bridge({ calls: [conflict, move] })]);
+        const clipAutomationContext: ProjectContext = {
+            ...projectContext,
+            automationLanes: [
+                ...projectContext.automationLanes!,
+                {
+                    ...projectContext.automationLanes![0]!,
+                    id: 'lane-verse-gain',
+                    clipId: 'clip-verse',
+                    name: 'Verse Gain',
+                },
+            ],
+        };
+        const automationConflicts = [
+            { name: 'addAutomationPoint', arguments: { laneId: 'lane-verse-gain', beat: 6, value: 0.5 } },
+            { name: 'scaleAutomation', arguments: { laneId: 'lane-verse-gain', factor: 0.5 } },
+        ].flatMap((conflict) => [
+            bridge({ context: clipAutomationContext, calls: [move, conflict] }),
+            bridge({ context: clipAutomationContext, calls: [conflict, move] }),
+        ]);
+        conflicts.push(...automationConflicts);
+        const crossfadeContext = createCrossfadeContext();
+        const crossfade = crossfadeCall({ clipAId: 'clip-verse', clipBId: 'clip-chorus', durationBeats: 1 });
+        conflicts.push(
+            bridge({ context: crossfadeContext, calls: [move, crossfade] }),
+            bridge({ context: crossfadeContext, calls: [crossfade, move] })
+        );
+        const destinationWithClip: ProjectContext = {
+            ...projectContext,
+            tracks: projectContext.tracks.map((track) =>
+                track.id === 'bus-reverb'
+                    ? {
+                          ...track,
+                          clipCount: 1,
+                          clips: [
+                              {
+                                  ...projectContext.tracks[0]!.clips[0]!,
+                                  id: 'clip-bus-return',
+                                  name: 'Bus Return',
+                              },
+                          ],
+                      }
+                    : track
+            ),
+        };
+        const removeDestinationClip = { name: 'removeClip', arguments: { clipId: 'clip-bus-return' } };
+        conflicts.push(
+            bridge({ context: destinationWithClip, calls: [move, removeDestinationClip] }),
+            bridge({ context: destinationWithClip, calls: [removeDestinationClip, move] })
+        );
+
+        expect(rejected.every((result) => result.actions.length === 0)).toBe(true);
+        expect(conflicts.every((result) => result.actions.length === 1)).toBe(true);
+        expect(conflicts.every((result) => result.rejections.length === 1)).toBe(true);
+    });
+
+    it('allows clip movement with automation writes on a lane not bound to that clip', () => {
+        const move = {
+            name: 'moveClip',
+            arguments: { clipId: 'clip-verse', trackId: 'bus-reverb', startBeat: 16 },
+        };
+        const addPoint = {
+            name: 'addAutomationPoint',
+            arguments: { laneId: 'lane-vocal-gain', beat: 6, value: 0.5 },
+        };
+        const transform = { name: 'scaleAutomation', arguments: { laneId: 'lane-vocal-gain', factor: 0.5 } };
+
+        for (const calls of [
+            [move, addPoint],
+            [addPoint, move],
+            [move, transform],
+            [transform, move],
+        ]) {
+            const result = bridge({ calls });
+            expect(result.actions).toHaveLength(2);
+            expect(result.rejections).toEqual([]);
+        }
     });
 
     it('canonicalizes default peak normalization and rejects unsafe normalization calls', () => {
