@@ -287,6 +287,7 @@ export const TrackHeader = ({ track, isSelected }: TrackHeaderProps): ReactEleme
                                     variant="amber"
                                     size="icon-sm"
                                     aria-label={track.muted ? `Unmute ${track.name}` : `Mute ${track.name}`}
+                                    data-testid={`track-mute-${track.id}`}
                                     className="font-bold text-[9px]"
                                     onClick={(event) => {
                                         event.stopPropagation();
@@ -306,6 +307,7 @@ export const TrackHeader = ({ track, isSelected }: TrackHeaderProps): ReactEleme
                                     variant="cyan"
                                     size="icon-sm"
                                     aria-label={track.soloed ? `Unsolo ${track.name}` : `Solo ${track.name}`}
+                                    data-testid={`track-solo-${track.id}`}
                                     className="font-bold text-[9px]"
                                     onClick={(event) => {
                                         event.stopPropagation();

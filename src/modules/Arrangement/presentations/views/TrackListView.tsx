@@ -333,6 +333,7 @@ const AddTrackMenu = ({ trackCount }: { trackCount: number }): ReactElement => {
     const templates = getTrackTemplates();
 
     return (
+        <div data-testid="add-track-button">
         <DropdownMenu>
             <Tooltip>
                 <TooltipTrigger asChild>
@@ -348,6 +349,7 @@ const AddTrackMenu = ({ trackCount }: { trackCount: number }): ReactElement => {
             <DropdownMenuContent align="end" sideOffset={4} className="w-44">
                 <DropdownMenuItem
                     onClick={() => createTrackOfKind('audio')}
+                    data-testid="add-track-audio"
                     className="flex items-center gap-2 px-3 py-1.5 text-xs focus:bg-white/[0.06] cursor-pointer"
                 >
                     <Mic2 className="size-3 text-[var(--color-accent-cyan)]" />
@@ -355,6 +357,7 @@ const AddTrackMenu = ({ trackCount }: { trackCount: number }): ReactElement => {
                 </DropdownMenuItem>
                 <DropdownMenuItem
                     onClick={() => createTrackOfKind('midi')}
+                    data-testid="add-track-midi"
                     className="flex items-center gap-2 px-3 py-1.5 text-xs focus:bg-white/[0.06] cursor-pointer"
                 >
                     <Music className="size-3 text-[var(--color-accent-mint)]" />
@@ -385,5 +388,6 @@ const AddTrackMenu = ({ trackCount }: { trackCount: number }): ReactElement => {
                 ) : null}
             </DropdownMenuContent>
         </DropdownMenu>
+        </div>
     );
 };
