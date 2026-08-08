@@ -380,6 +380,71 @@ fn detection_mode_tracks_the_ratio_the_gain_computer_is_set_to() {
 }
 
 #[test]
+fn a_gluten_that_is_sent_no_detector_settings_uses_the_ones_it_declares() {
+    // Every other guard states `detection` and `stereo_link` explicitly, which
+    // leaves the *shipped* configuration untested — a mutation that dropped the
+    // constructor's push of the declared defaults down into the topologies
+    // passed the entire rest of this file.
+    //
+    // The declared defaults are `detection: 0` (rms) and `stereoLink: 1`
+    // (GlutenDescriptor.ts, DEFAULT_GLUTEN_PATCH). A device that is added and
+    // never patched has to render as those, not as whatever the topologies
+    // happened to be constructed with.
+    let untouched = render(
+        |i| {
+            i.set_param("topology", TOPOLOGY_VCA);
+            i.set_param("threshold", -18.0);
+            i.set_param("ratio", 4.0);
+            i.set_param("attack", 5.0);
+            i.set_param("release", 100.0);
+            i.set_param("auto_release", 0.0);
+            i.set_param("knee", 0.0);
+            i.set_param("mix", 1.0);
+        },
+        LOUD,
+        QUIET,
+    );
+
+    let base = compressing(TOPOLOGY_VCA);
+    let declared = render(
+        |i| {
+            base(i);
+            i.set_param("detection", DETECTION_RMS);
+            i.set_param("stereo_link", 1.0);
+        },
+        LOUD,
+        QUIET,
+    );
+    let base = compressing(TOPOLOGY_VCA);
+    let peak_instead = render(
+        |i| {
+            base(i);
+            i.set_param("detection", DETECTION_PEAK);
+            i.set_param("stereo_link", 1.0);
+        },
+        LOUD,
+        QUIET,
+    );
+
+    assert!(
+        (untouched.left_db - declared.left_db).abs() < 0.01
+            && (untouched.right_db - declared.right_db).abs() < 0.01,
+        "an unpatched Gluten rendered ({:.3}, {:.3}) dB where its declared defaults render \
+         ({:.3}, {:.3}) dB",
+        untouched.left_db,
+        untouched.right_db,
+        declared.left_db,
+        declared.right_db
+    );
+    assert!(
+        (untouched.left_db - peak_instead.left_db).abs() > 0.5,
+        "the declared default and peak detection render the same ({:.3} dB), so this guard \
+         cannot tell which one the constructor chose",
+        untouched.left_db
+    );
+}
+
+#[test]
 fn an_unlinked_detector_still_reaches_the_ceiling_the_linked_one_does() {
     // The dual gain path is new state, and new state is where a NaN or a
     // runaway hides. Drive both channels hard, unlinked, through every
