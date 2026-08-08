@@ -1,5 +1,7 @@
 import { describe, expect, expectTypeOf, it } from 'vitest';
 
+import { getExecutableAppActionToolSchemas } from '#/modules/Command/useCases';
+
 import { type RuntimeAction, type RuntimeActionType } from '../../models/RuntimeAction';
 import { PAYLOAD_VALIDATORS } from '../validateActionPayload';
 import { validateActions } from '../validateActions';
@@ -48,6 +50,195 @@ const guardedPayloadContractCases = [
         actionType: 'clearSolos',
         validPayload: undefined,
         invalidPayloads: [{}, null, { trackId: 'track-1' }],
+    }),
+    guardedPayloadCase({
+        actionType: 'muteTrack',
+        validPayload: { trackId: 'track-1', muted: true },
+        invalidPayloads: [
+            { trackId: '', muted: true },
+            { trackId: 'track-1', muted: 'yes' },
+            { trackId: 'track-1' },
+            { trackId: 'track-1', muted: true, extra: true },
+            Object.assign({ trackId: 'track-1', muted: true }, { [Symbol('extra')]: true }),
+        ],
+    }),
+    guardedPayloadCase({
+        actionType: 'soloTrack',
+        validPayload: { trackId: 'track-1', soloed: false },
+        invalidPayloads: [
+            { trackId: '', soloed: false },
+            { trackId: 'track-1', soloed: 0 },
+            { trackId: 'track-1' },
+            { trackId: 'track-1', soloed: false, extra: true },
+        ],
+    }),
+    guardedPayloadCase({
+        actionType: 'reorderTrack',
+        validPayload: { trackId: 'track-1', newIndex: 0 },
+        invalidPayloads: [
+            { trackId: '', newIndex: 0 },
+            { trackId: 'track-1', newIndex: -1 },
+            { trackId: 'track-1', newIndex: 1.5 },
+            { trackId: 'track-1', newIndex: Number.NaN },
+            { trackId: 'track-1', newIndex: Number.POSITIVE_INFINITY },
+            { trackId: 'track-1', newIndex: 0, extra: true },
+        ],
+    }),
+    guardedPayloadCase({
+        actionType: 'setTrackGain',
+        validPayload: { trackId: 'track-1', gain: 1 },
+        invalidPayloads: [
+            { trackId: '', gain: 1 },
+            { trackId: 'track-1', gain: -0.01 },
+            { trackId: 'track-1', gain: 1.01 },
+            { trackId: 'track-1', gain: Number.NaN },
+            { trackId: 'track-1', gain: Number.POSITIVE_INFINITY },
+            { trackId: 'track-1', gain: 1, extra: true },
+        ],
+    }),
+    guardedPayloadCase({
+        actionType: 'setTrackPan',
+        validPayload: { trackId: 'track-1', pan: -50 },
+        invalidPayloads: [
+            { trackId: '', pan: 0 },
+            { trackId: 'track-1', pan: -50.01 },
+            { trackId: 'track-1', pan: 50.01 },
+            { trackId: 'track-1', pan: Number.NaN },
+            { trackId: 'track-1', pan: Number.NEGATIVE_INFINITY },
+            { trackId: 'track-1', pan: Number.POSITIVE_INFINITY },
+            { trackId: 'track-1', pan: 0, extra: true },
+        ],
+    }),
+    guardedPayloadCase({
+        actionType: 'setTrackColor',
+        validPayload: { trackId: 'track-1', color: '#Aa00Ff' },
+        invalidPayloads: [
+            { trackId: '', color: '#aa00ff' },
+            { trackId: 'track-1', color: 'purple' },
+            { trackId: 'track-1', color: '#a0f' },
+            { trackId: 'track-1', color: '#gg00ff' },
+            { trackId: 'track-1', color: '#aa00ff', extra: true },
+        ],
+    }),
+    guardedPayloadCase({
+        actionType: 'setTrackOutput',
+        validPayload: { trackId: 'track-1', outputId: 'bus-1', expectedOutputId: 'master' },
+        invalidPayloads: [
+            { trackId: '', outputId: 'bus-1' },
+            { trackId: 'track-1', outputId: '' },
+            { trackId: 'track-1', outputId: 'track-1' },
+            { trackId: 'track-1', outputId: 'bus-1', expectedOutputId: '' },
+            { trackId: 'track-1', outputId: 'bus-1', expectedOutputId: 1 },
+            Object.assign(Object.create({ expectedOutputId: 'master' }), {
+                trackId: 'track-1',
+                outputId: 'bus-1',
+            }),
+            { trackId: 'track-1', outputId: 'bus-1', extra: true },
+        ],
+    }),
+    guardedPayloadCase({
+        actionType: 'bypassDevice',
+        validPayload: { deviceId: 'device-1', bypassed: true },
+        invalidPayloads: [
+            { deviceId: '', bypassed: true },
+            { deviceId: 'device-1', bypassed: 'yes' },
+            { deviceId: 'device-1' },
+            { deviceId: 'device-1', bypassed: true, extra: true },
+        ],
+    }),
+    guardedPayloadCase({
+        actionType: 'setSend',
+        validPayload: {
+            trackId: 'track-1',
+            busId: 'bus-1',
+            level: 1,
+            expectedLevel: 0,
+            expectedPreFader: false,
+        },
+        invalidPayloads: [
+            { trackId: '', busId: 'bus-1', level: 0.5 },
+            { trackId: 'track-1', busId: '', level: 0.5 },
+            { trackId: 'track-1', busId: 'track-1', level: 0.5 },
+            { trackId: 'track-1', busId: 'bus-1', level: -0.01 },
+            { trackId: 'track-1', busId: 'bus-1', level: 1.01 },
+            { trackId: 'track-1', busId: 'bus-1', level: Number.NaN },
+            { trackId: 'track-1', busId: 'bus-1', level: Number.POSITIVE_INFINITY },
+            { trackId: 'track-1', busId: 'bus-1', level: 0.5, expectedLevel: 1.01 },
+            { trackId: 'track-1', busId: 'bus-1', level: 0.5, expectedLevel: Number.NaN },
+            { trackId: 'track-1', busId: 'bus-1', level: 0.5, expectedPreFader: 'yes' },
+            Object.assign(Object.create({ expectedLevel: 0.25 }), {
+                trackId: 'track-1',
+                busId: 'bus-1',
+                level: 0.5,
+            }),
+            Object.assign(Object.create({ expectedPreFader: true }), {
+                trackId: 'track-1',
+                busId: 'bus-1',
+                level: 0.5,
+            }),
+            Object.assign({ trackId: 'track-1', busId: 'bus-1', level: 0.5 }, { [Symbol('extra')]: true }),
+            { trackId: 'track-1', busId: 'bus-1', level: 0.5, extra: true },
+        ],
+    }),
+    guardedPayloadCase({
+        actionType: 'addSend',
+        validPayload: {
+            trackId: 'track-1',
+            busId: 'bus-1',
+            level: 0,
+            preFader: true,
+            expectedAbsent: true,
+        },
+        invalidPayloads: [
+            { trackId: '', busId: 'bus-1', level: 0.5 },
+            { trackId: 'track-1', busId: '', level: 0.5 },
+            { trackId: 'track-1', busId: 'track-1', level: 0.5 },
+            { trackId: 'track-1', busId: 'bus-1', level: -0.01 },
+            { trackId: 'track-1', busId: 'bus-1', level: 1.01 },
+            { trackId: 'track-1', busId: 'bus-1', level: Number.NaN },
+            { trackId: 'track-1', busId: 'bus-1', level: Number.NEGATIVE_INFINITY },
+            { trackId: 'track-1', busId: 'bus-1', level: 0.5, preFader: 'yes' },
+            { trackId: 'track-1', busId: 'bus-1', level: 0.5, expectedAbsent: false },
+            Object.assign(Object.create({ preFader: true }), {
+                trackId: 'track-1',
+                busId: 'bus-1',
+                level: 0.5,
+            }),
+            Object.assign(Object.create({ expectedAbsent: true }), {
+                trackId: 'track-1',
+                busId: 'bus-1',
+                level: 0.5,
+            }),
+            { trackId: 'track-1', busId: 'bus-1', level: 0.5, extra: true },
+        ],
+    }),
+    guardedPayloadCase({
+        actionType: 'removeSend',
+        validPayload: {
+            trackId: 'track-1',
+            busId: 'bus-1',
+            expectedLevel: 0,
+            expectedPreFader: true,
+        },
+        invalidPayloads: [
+            { trackId: '', busId: 'bus-1' },
+            { trackId: 'track-1', busId: '' },
+            { trackId: 'track-1', busId: 'track-1' },
+            { trackId: 'track-1', busId: 'bus-1', expectedLevel: -0.01 },
+            { trackId: 'track-1', busId: 'bus-1', expectedLevel: 1.01 },
+            { trackId: 'track-1', busId: 'bus-1', expectedLevel: Number.NaN },
+            { trackId: 'track-1', busId: 'bus-1', expectedLevel: Number.POSITIVE_INFINITY },
+            { trackId: 'track-1', busId: 'bus-1', expectedPreFader: 'yes' },
+            Object.assign(Object.create({ expectedLevel: 0.25 }), {
+                trackId: 'track-1',
+                busId: 'bus-1',
+            }),
+            Object.assign(Object.create({ expectedPreFader: true }), {
+                trackId: 'track-1',
+                busId: 'bus-1',
+            }),
+            { trackId: 'track-1', busId: 'bus-1', extra: true },
+        ],
     }),
     guardedPayloadCase({
         actionType: 'setMasterGain',
@@ -545,6 +736,14 @@ const guardedPayloadContractCases = [
 ] as const;
 
 describe('validateActionPayload / PAYLOAD_VALIDATORS', () => {
+    it('backs every executable app-action tool with a strict payload validator', () => {
+        const uncheckedActionTypes = getExecutableAppActionToolSchemas()
+            .map((schema) => schema.function.name)
+            .filter((actionType) => PAYLOAD_VALIDATORS[actionType] === 'unchecked');
+
+        expect(uncheckedActionTypes).toEqual([]);
+    });
+
     describe('declared RuntimeAction payload contracts', () => {
         it.each(guardedPayloadContractCases)(
             'should accept valid $actionType payloads',
@@ -571,6 +770,23 @@ describe('validateActionPayload / PAYLOAD_VALIDATORS', () => {
                 }
             }
         );
+    });
+
+    it.each([
+        ['setTrackGain', { trackId: 'track-1', gain: 0 }],
+        ['setTrackPan', { trackId: 'track-1', pan: 50 }],
+        ['setTrackOutput', { trackId: 'track-1', outputId: 'master' }],
+        ['setSend', { trackId: 'track-1', busId: 'bus-1', level: 0 }],
+        ['addSend', { trackId: 'track-1', busId: 'bus-1', level: 1 }],
+        ['removeSend', { trackId: 'track-1', busId: 'bus-1' }],
+    ] as const)('accepts canonical %s payloads without optional freshness metadata', (actionType, payload) => {
+        const guard = PAYLOAD_VALIDATORS[actionType];
+        expect(guard).not.toBe('unchecked');
+        if (guard === 'unchecked') {
+            return;
+        }
+
+        expect(guard(payload)).toBe(true);
     });
 
     it('accepts thinAutomation with its default tolerance omitted', () => {
