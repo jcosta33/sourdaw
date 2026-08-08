@@ -1,0 +1,29 @@
+src/modules/TimelineEditor/presentations/views/ClipView/PianoRollToolbar.tsx
+  s_ff450dbc62f46f::t_e95dc1278c9b36 203,218,235,252,281,311,342
+tests/e2e/midiEditorTestId.spec.ts
+  s_bc88af7d3b054c::t_7768ed08558469 1-137
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "7af368765693f4a93514b4a147700cdc7b1a7e44",
+  "prompts": {},
+  "sessions": {
+    "s_bc88af7d3b054c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f9b4a-11a2-7f61-8dfb-76eed0eb2a9c",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_ff450dbc62f46f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-ac505b39b06558e56",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
