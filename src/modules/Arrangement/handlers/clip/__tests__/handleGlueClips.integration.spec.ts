@@ -5,7 +5,9 @@ import { automationStore } from '#/modules/Automation/stores';
 import { clearHandlerRegistry, macroStore, registerHandlerMap } from '#/modules/Command/stores';
 import {
     clearUndoHistory,
+    executeAppAction,
     executeAppActionBatch,
+    getMacroHandlers,
     redo,
     resetActionReplayAuthority,
     setActionHistoryMetadataPort,
@@ -18,17 +20,70 @@ import {
     resetCrdtProjectAuthority,
 } from '#/modules/CrdtDocument/useCases';
 import { midiStore } from '#/modules/MIDI/stores';
+import { type AppAction, type ClipGlueActionSnapshot } from '#/utils/handlerContract';
 
 import { ClipDummy } from '../../../__tests__/ClipDummy';
 import { TrackDummy } from '../../../__tests__/TrackDummy';
+import { takeLaneStore } from '../../../stores/takeLaneStore';
 import { trackStore } from '../../../stores/trackStore';
 import { getArrangementHandlers } from '../../../useCases/getArrangementHandlers';
+import { handleGlueClips } from '../handleGlueClips';
 
 const noActionHistoryMetadataPort = {
     record: () => [],
     markReverted: () => ({ status: 'unavailable' as const }),
     clear: () => undefined,
 };
+
+const LEGACY_GLUE_MACRO_ID = 'legacy-glue-macro';
+
+function withProbability(snapshot: ClipGlueActionSnapshot, probability: number): ClipGlueActionSnapshot {
+    return {
+        ...snapshot,
+        midi: {
+            ...snapshot.midi,
+            clips: snapshot.midi.clips.map((clip) => ({
+                ...clip,
+                data: {
+                    ...clip.data,
+                    notes: {
+                        ...clip.data.notes,
+                        value: clip.data.notes.value.map((note) => ({ ...note, probability })),
+                    },
+                },
+            })),
+        },
+    };
+}
+
+function persistLegacyGlueMacro(probability?: number): Extract<AppAction, { type: 'glueClips' }> {
+    const action: Extract<AppAction, { type: 'glueClips' }> = {
+        type: 'glueClips',
+        payload: { clipIds: ['clip-a', 'clip-b'] },
+    };
+    const description = handleGlueClips.describe(action);
+    if (!description.inverseAction || !action.payload.expected || !action.payload.replacement) {
+        throw new Error('Expected legacy glue snapshots');
+    }
+    if (probability !== undefined) {
+        action.payload.expected = withProbability(action.payload.expected, probability);
+        action.payload.replacement = withProbability(action.payload.replacement, probability);
+    }
+    const persistedAction = structuredClone(action);
+    macroStore.set({
+        macros: [
+            {
+                id: LEGACY_GLUE_MACRO_ID,
+                name: 'Legacy glue',
+                actions: [persistedAction],
+                createdAt: 1,
+            },
+        ],
+        recording: false,
+        currentRecording: [],
+    });
+    return persistedAction;
+}
 
 describe('handleGlueClips atomic integration', () => {
     beforeEach(() => {
@@ -38,6 +93,7 @@ describe('handleGlueClips atomic integration', () => {
         createCrdtDoc('root');
         registerCrdtStorageRuntime();
         clearHandlerRegistry();
+        registerHandlerMap(getMacroHandlers());
         registerHandlerMap(getArrangementHandlers());
         clearUndoHistory();
         resetActionReplayAuthority();
@@ -77,6 +133,7 @@ describe('handleGlueClips atomic integration', () => {
             migratedAbsoluteNoteClipIds: ['clip-a', 'clip-b'],
         });
         automationStore.set({ lanes: [] });
+        takeLaneStore.set({ lanes: [] });
     });
 
     afterEach(() => {
@@ -86,6 +143,7 @@ describe('handleGlueClips atomic integration', () => {
         trackStore.set({ tracks: [], selectedTrackId: null, ghostClips: [] });
         midiStore.set({ notesByClipId: {}, ccByClipId: {}, pitchBendByClipId: {} });
         automationStore.set({ lanes: [] });
+        takeLaneStore.set({ lanes: [] });
         configureAutomergeStoragePort(null);
         removeCrdtDoc('root');
     });
@@ -121,6 +179,131 @@ describe('handleGlueClips atomic integration', () => {
             { id: 'note-b', startBeat: 5 },
         ]);
         expect(midiStore.value!.migratedAbsoluteNoteClipIds).toEqual([glued.id]);
+    });
+
+    it('re-preflights a legacy macro instead of replaying stale snapshots over probabilistic notes', async () => {
+        const persistedAction = persistLegacyGlueMacro(50);
+        midiStore.set({
+            ...midiStore.value!,
+            notesByClipId: Object.fromEntries(
+                Object.entries(midiStore.value!.notesByClipId).map(([clipId, notes]) => [
+                    clipId,
+                    notes.map((note) => ({ ...note, probability: 50 })),
+                ])
+            ),
+        });
+        const originalTracks = structuredClone(trackStore.value!.tracks);
+        const originalMidi = structuredClone(midiStore.value);
+
+        await executeAppAction({ type: 'playMacro', payload: { macroId: LEGACY_GLUE_MACRO_ID } });
+
+        expect(trackStore.value!.tracks).toEqual(originalTracks);
+        expect(midiStore.value).toEqual(originalMidi);
+        expect(macroStore.value?.macros[0]?.actions).toEqual([persistedAction]);
+    });
+
+    it('re-preflights a legacy macro instead of bypassing duplicate migration markers', async () => {
+        const persistedAction = persistLegacyGlueMacro();
+        midiStore.set({
+            ...midiStore.value!,
+            migratedAbsoluteNoteClipIds: ['clip-a', 'clip-b', 'unrelated', 'unrelated'],
+        });
+        const originalTracks = structuredClone(trackStore.value!.tracks);
+        const originalMidi = structuredClone(midiStore.value);
+
+        await executeAppAction({ type: 'playMacro', payload: { macroId: LEGACY_GLUE_MACRO_ID } });
+
+        expect(trackStore.value!.tracks).toEqual(originalTracks);
+        expect(midiStore.value).toEqual(originalMidi);
+        expect(macroStore.value?.macros[0]?.actions).toEqual([persistedAction]);
+    });
+
+    it('re-preflights a safe legacy macro and keeps its replay undoable and redoable', async () => {
+        const persistedAction = persistLegacyGlueMacro();
+
+        await executeAppAction({ type: 'playMacro', payload: { macroId: LEGACY_GLUE_MACRO_ID } });
+
+        const glued = trackStore.value!.tracks[0]!.clips[0]!;
+        expect(trackStore.value!.tracks[0]!.clips).toMatchObject([{ id: glued.id, name: 'Intro A (glued)' }]);
+        expect(macroStore.value?.macros[0]?.actions).toEqual([persistedAction]);
+
+        await undo();
+        expect(trackStore.value!.tracks[0]!.clips).toMatchObject([{ id: 'clip-a' }, { id: 'clip-b' }]);
+
+        await redo();
+        expect(trackStore.value!.tracks[0]!.clips).toMatchObject([{ id: glued.id, name: 'Intro A (glued)' }]);
+    });
+
+    it('refuses glue when a source note probability depends on the source clip identity', async () => {
+        midiStore.set({
+            ...midiStore.value!,
+            notesByClipId: {
+                ...midiStore.value!.notesByClipId,
+                'clip-a': [
+                    {
+                        ...midiStore.value!.notesByClipId['clip-a']![0]!,
+                        probability: 50,
+                    },
+                ],
+            },
+        });
+        const originalTracks = structuredClone(trackStore.value!.tracks);
+        const originalMidi = structuredClone(midiStore.value);
+
+        await executeAppActionBatch([{ type: 'glueClips', payload: { clipIds: ['clip-a', 'clip-b'] } }], {
+            source: 'prompt',
+            requireCompensation: true,
+        });
+
+        expect(trackStore.value!.tracks).toEqual(originalTracks);
+        expect(midiStore.value).toEqual(originalMidi);
+    });
+
+    it('refuses glue when migration markers contain duplicates', async () => {
+        midiStore.set({
+            ...midiStore.value!,
+            migratedAbsoluteNoteClipIds: ['clip-a', 'clip-a', 'clip-b'],
+        });
+        const originalTracks = structuredClone(trackStore.value!.tracks);
+        const originalMidi = structuredClone(midiStore.value);
+
+        await executeAppActionBatch([{ type: 'glueClips', payload: { clipIds: ['clip-a', 'clip-b'] } }], {
+            source: 'prompt',
+            requireCompensation: true,
+        });
+
+        expect(trackStore.value!.tracks).toEqual(originalTracks);
+        expect(midiStore.value).toEqual(originalMidi);
+    });
+
+    it('round-trips Unicode equal-time order exactly and redoes in code-unit order', async () => {
+        midiStore.set({
+            ...midiStore.value!,
+            notesByClipId: {
+                'clip-a': [
+                    { id: 'é-note', pitch: 60, startBeat: 3, duration: 1, velocity: 100 },
+                    { id: 'z-note', pitch: 62, startBeat: 3, duration: 1, velocity: 100 },
+                ],
+                'clip-b': [],
+            },
+            ccByClipId: {},
+            pitchBendByClipId: {},
+        });
+        const originalMidi = structuredClone(midiStore.value);
+
+        await executeAppActionBatch([{ type: 'glueClips', payload: { clipIds: ['clip-a', 'clip-b'] } }], {
+            source: 'prompt',
+            requireCompensation: true,
+        });
+        const glued = trackStore.value!.tracks[0]!.clips[0]!;
+
+        expect(midiStore.value!.notesByClipId[glued.id]?.map((note) => note.id)).toEqual(['z-note', 'é-note']);
+
+        await undo();
+        expect(midiStore.value).toEqual(originalMidi);
+
+        await redo();
+        expect(midiStore.value!.notesByClipId[glued.id]?.map((note) => note.id)).toEqual(['z-note', 'é-note']);
     });
 
     it('keeps the glue and undo entry when the target gains clip automation', async () => {
@@ -181,6 +364,81 @@ describe('handleGlueClips atomic integration', () => {
         trackStore.set({ ...trackStore.value!, ghostClips: [] });
         await undo();
         expect(trackStore.value!.tracks[0]!.clips).toMatchObject([{ id: 'clip-a' }, { id: 'clip-b' }]);
+    });
+
+    it('keeps the glue and undo entry when a take lane references the generated target', async () => {
+        await executeAppActionBatch([{ type: 'glueClips', payload: { clipIds: ['clip-a', 'clip-b'] } }], {
+            source: 'prompt',
+            requireCompensation: true,
+        });
+        const glued = trackStore.value!.tracks[0]!.clips[0]!;
+        takeLaneStore.set({
+            lanes: [
+                {
+                    id: 'lane-track-midi',
+                    trackId: 'track-midi',
+                    takes: [
+                        {
+                            id: 'take-glued',
+                            clipId: glued.id,
+                            name: 'Glued take',
+                            startBeat: 8,
+                            endBeat: 16,
+                            selected: true,
+                        },
+                    ],
+                    activeCompRegions: [{ startBeat: 8, endBeat: 16, takeId: 'take-glued' }],
+                },
+            ],
+        });
+        const previousTakeLanes = structuredClone(takeLaneStore.value);
+
+        await undo();
+
+        expect(trackStore.value!.tracks[0]!.clips).toMatchObject([{ id: glued.id }]);
+        expect(takeLaneStore.value).toEqual(previousTakeLanes);
+
+        takeLaneStore.set({ lanes: [] });
+        await undo();
+        expect(trackStore.value!.tracks[0]!.clips).toMatchObject([{ id: 'clip-a' }, { id: 'clip-b' }]);
+    });
+
+    it('keeps the source clips and redo entry when a take lane references a source', async () => {
+        await executeAppActionBatch([{ type: 'glueClips', payload: { clipIds: ['clip-a', 'clip-b'] } }], {
+            source: 'prompt',
+            requireCompensation: true,
+        });
+        const glued = trackStore.value!.tracks[0]!.clips[0]!;
+        await undo();
+        takeLaneStore.set({
+            lanes: [
+                {
+                    id: 'lane-track-midi',
+                    trackId: 'track-midi',
+                    takes: [
+                        {
+                            id: 'take-clip-a',
+                            clipId: 'clip-a',
+                            name: 'Take A',
+                            startBeat: 8,
+                            endBeat: 12,
+                            selected: true,
+                        },
+                    ],
+                    activeCompRegions: [{ startBeat: 8, endBeat: 12, takeId: 'take-clip-a' }],
+                },
+            ],
+        });
+        const previousTakeLanes = structuredClone(takeLaneStore.value);
+
+        await redo();
+
+        expect(trackStore.value!.tracks[0]!.clips).toMatchObject([{ id: 'clip-a' }, { id: 'clip-b' }]);
+        expect(takeLaneStore.value).toEqual(previousTakeLanes);
+
+        takeLaneStore.set({ lanes: [] });
+        await redo();
+        expect(trackStore.value!.tracks[0]!.clips).toMatchObject([{ id: glued.id }]);
     });
 
     it('preserves unrelated clip and migration edits through undo and redo', async () => {

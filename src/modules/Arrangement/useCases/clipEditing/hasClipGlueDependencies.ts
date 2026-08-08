@@ -1,6 +1,7 @@
 import { getAutomationLanes } from '#/modules/Automation/useCases';
 
 import { getEnvelope } from '../../stores/gainEnvelopeStore';
+import { takeLaneStore } from '../../stores/takeLaneStore';
 import { warpStates } from '../../stores/warpStates';
 import { getTrackStoreState } from '../getTrackStoreState';
 
@@ -10,6 +11,12 @@ export function hasClipGlueDependencies(clipIds: readonly string[]): boolean {
         return true;
     }
     if (getAutomationLanes().some((lane) => lane.clipId !== undefined && clipIdSet.has(lane.clipId))) {
+        return true;
+    }
+    const hasTakeLaneDependency = (takeLaneStore.value?.lanes ?? []).some((lane) =>
+        lane.takes.some((take) => clipIdSet.has(take.clipId))
+    );
+    if (hasTakeLaneDependency) {
         return true;
     }
     const state = getTrackStoreState();
