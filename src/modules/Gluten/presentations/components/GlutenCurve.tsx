@@ -11,7 +11,13 @@ type GlutenCurveProps = {
     inputDb: number;
     width?: number;
     height?: number;
-    onThresholdChange?: (value: number) => void;
+    /**
+     * `isTransient` is true for every intermediate value of a drag and false for
+     * the value the pointer settles on, matching `RotaryKnob`'s contract. The
+     * owning view commits only the non-transient call, so one drag across the
+     * curve is one undo entry rather than one per pointer-move.
+     */
+    onThresholdChange?: (value: number, isTransient: boolean) => void;
     accentColor?: string;
 };
 
@@ -47,6 +53,7 @@ export const GlutenCurve = ({
 }: GlutenCurveProps): ReactElement => {
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const isDragging = useRef<'threshold' | null>(null);
+    const draggedThreshold = useRef<number | null>(null);
 
     useEffect(() => {
         const canvas = canvasRef.current;
@@ -230,6 +237,7 @@ export const GlutenCurve = ({
         }
 
         isDragging.current = 'threshold';
+        draggedThreshold.current = null;
         canvas.setPointerCapture(event.pointerId);
         canvas.style.cursor = 'grabbing';
     }
@@ -248,7 +256,9 @@ export const GlutenCurve = ({
         const plotH = height - 20;
         const yRatio = (event.clientY - rect.top - 10) / plotH;
         const db = DB_MAX - yRatio * (DB_MAX - DB_MIN);
-        onThresholdChange(Math.max(-60, Math.min(0, db)));
+        const next = Math.max(-60, Math.min(0, db));
+        draggedThreshold.current = next;
+        onThresholdChange(next, true);
     }
 
     function handlePointerUp(event: React.PointerEvent<HTMLCanvasElement>): void {
@@ -261,9 +271,19 @@ export const GlutenCurve = ({
             return;
         }
 
+        const wasDragging = isDragging.current === 'threshold';
+        const settled = draggedThreshold.current;
         isDragging.current = null;
+        draggedThreshold.current = null;
         canvas.releasePointerCapture(event.pointerId);
         canvas.style.cursor = 'grab';
+
+        // The commit. A press that never moved has no settled value and must not
+        // write anything — otherwise a stray click would land an undo entry that
+        // changes nothing.
+        if (wasDragging && settled !== null) {
+            onThresholdChange(settled, false);
+        }
     }
 
     return (

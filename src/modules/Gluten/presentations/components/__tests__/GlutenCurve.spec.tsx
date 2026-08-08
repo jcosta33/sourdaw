@@ -143,6 +143,74 @@ describe('GlutenCurve — threshold drag interaction', () => {
         expect(value).toBeLessThanOrEqual(0);
     });
 
+    it('marks every intermediate value transient and commits the settled one exactly once', () => {
+        const onThresholdChange = vi.fn();
+        const { container } = render(
+            <GlutenCurve
+                threshold={-18}
+                ratio={3}
+                knee={2}
+                makeup={0}
+                grDb={0}
+                inputDb={-12}
+                width={340}
+                height={180}
+                onThresholdChange={onThresholdChange}
+            />
+        );
+        const canvas = container.querySelector('canvas') as HTMLCanvasElement;
+        canvas.getBoundingClientRect = () => ({
+            left: 0,
+            top: 0,
+            width: 340,
+            height: 180,
+            right: 340,
+            bottom: 180,
+            x: 0,
+            y: 0,
+            toJSON: () => ({}),
+        });
+
+        fireEvent.pointerDown(canvas, { clientY: 50, pointerId: 1 });
+        // Three interior points, then release. Asserting only the endpoints
+        // could not tell a coalesced drag from a reshaped one.
+        for (const clientY of [40, 30, 20]) {
+            fireEvent.pointerMove(canvas, { clientY, pointerId: 1 });
+        }
+        fireEvent.pointerUp(canvas, { pointerId: 1 });
+
+        const transientFlags = onThresholdChange.mock.calls.map(([, isTransient]) => isTransient);
+        expect(transientFlags).toEqual([true, true, true, false]);
+
+        // The commit carries the value the pointer settled on, not a re-read of
+        // the `threshold` prop, which the owning view has not re-rendered yet.
+        const values = onThresholdChange.mock.calls.map(([value]) => value);
+        expect(values[3]).toBe(values[2]);
+        // yRatio = (20 - 10) / 160 = 0.0625 -> db = -3.75
+        expect(values[3]).toBeCloseTo(-3.75, 2);
+    });
+
+    it('commits nothing when the pointer is pressed and released without moving', () => {
+        const onThresholdChange = vi.fn();
+        const { container } = render(
+            <GlutenCurve
+                threshold={-18}
+                ratio={3}
+                knee={2}
+                makeup={0}
+                grDb={0}
+                inputDb={-12}
+                onThresholdChange={onThresholdChange}
+            />
+        );
+        const canvas = container.querySelector('canvas') as HTMLCanvasElement;
+
+        fireEvent.pointerDown(canvas, { clientY: 50, pointerId: 1 });
+        fireEvent.pointerUp(canvas, { pointerId: 1 });
+
+        expect(onThresholdChange).not.toHaveBeenCalled();
+    });
+
     it('changes cursor to grabbing during active drag', () => {
         const { container } = render(
             <GlutenCurve

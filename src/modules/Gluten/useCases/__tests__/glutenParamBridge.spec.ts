@@ -8,6 +8,7 @@ const {
     mockSetGlutenParam,
     mockResolveDeviceTarget,
     mockTrackStoreValue,
+    mockExecuteAppAction,
 } = vi.hoisted(() => {
     const mockTrackStoreValue: { value: unknown } = { value: null };
     return {
@@ -16,8 +17,13 @@ const {
         mockSetGlutenParam: vi.fn(),
         mockResolveDeviceTarget: vi.fn(),
         mockTrackStoreValue,
+        mockExecuteAppAction: vi.fn(() => Promise.resolve()),
     };
 });
+
+vi.mock('#/modules/Command/useCases', () => ({
+    executeAppAction: mockExecuteAppAction,
+}));
 
 vi.mock('#/modules/AudioEngine/useCases', () => ({
     updateDeviceParam: mockUpdateDeviceParam,
@@ -64,13 +70,28 @@ describe('glutenParamBridge', () => {
         });
     });
 
-    it('setGlutenParamWithAudio forwards numeric params to engine + persistence via rAF flush', () => {
+    it('commits a settled numeric param through the undoable action, not a bare store write', () => {
         mockTrackStoreValue.value = { tracks: [{ id: 't1', devices: [{ id: 'd1' }] }] };
 
         setGlutenParamWithAudio('d1', 'threshold', -12);
 
+        expect(mockExecuteAppAction).toHaveBeenCalledWith({
+            type: 'setDeviceParameter',
+            payload: { deviceId: 'd1', paramId: 'threshold', value: -12 },
+        });
+        // `setDeviceParameter` owns the engine write and the project-truth write
+        // on the commit path; going round it would be the write with no history.
+        expect(mockPersistDeviceParam).not.toHaveBeenCalled();
+    });
+
+    it('previews a transient param on the engine and keeps it out of project truth and history', () => {
+        mockTrackStoreValue.value = { tracks: [{ id: 't1', devices: [{ id: 'd1' }] }] };
+
+        setGlutenParamWithAudio('d1', 'threshold', -12, true);
+
         expect(mockUpdateDeviceParam).toHaveBeenCalledWith('t1', 'd1', 'threshold', -12);
-        expect(mockPersistDeviceParam).toHaveBeenCalledWith('d1', 'threshold', -12);
+        expect(mockPersistDeviceParam).not.toHaveBeenCalled();
+        expect(mockExecuteAppAction).not.toHaveBeenCalled();
     });
 
     it('setGlutenParamWithAudio noops when device cannot be found', () => {

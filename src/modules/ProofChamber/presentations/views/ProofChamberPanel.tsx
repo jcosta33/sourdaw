@@ -15,7 +15,8 @@ import { DawReadoutRow } from '#/components/daw/DawReadoutRow';
 import { RotaryKnob } from '#/components/daw/RotaryKnob';
 import { logger } from '#/infra/logger/appLogger';
 import { useStore } from '#/infra/store/useStore';
-import { executeAppAction } from '#/modules/Command/useCases';
+import { executeAppAction, executeAppActionBatch, generateGroupId } from '#/modules/Command/useCases';
+import { type AppAction } from '#/utils/handlerContract';
 import { decayToRt60Seconds } from '#/utils/reverbDecayLaw';
 
 import {
@@ -226,14 +227,28 @@ export const ProofChamberPanel = ({ deviceId }: { deviceId: string }): ReactElem
         });
     }
 
+    /**
+     * Load a space preset as **one** history step.
+     *
+     * This used to fire one bare `executeAppAction` per expanded parameter —
+     * upwards of twenty independent Automerge transactions and twenty undo
+     * entries for a single click on a space tile, so undoing a preset meant
+     * pressing undo twenty times and watching the reverb rebuild itself one
+     * field at a time. `executeAppActionBatch` runs the whole expansion inside a
+     * single transaction and tags every resulting entry with one `groupId`,
+     * which `undo` pops as a unit.
+     */
     function selectSpace(space: SpaceType): void {
         const nextParams = expandSpacePreset(space);
 
         updateChamberEngine(deviceId, () => nextParams);
-        void executeAppAction({
-            type: 'setDeviceParameter',
-            payload: { deviceId, paramId: 'algorithm', value: ALGORITHM_MAP[nextParams.algorithm] ?? 0 },
-        });
+
+        const actions: AppAction[] = [
+            {
+                type: 'setDeviceParameter',
+                payload: { deviceId, paramId: 'algorithm', value: ALGORITHM_MAP[nextParams.algorithm] ?? 0 },
+            },
+        ];
 
         for (const [key, rawValue] of Object.entries(nextParams)) {
             if (key === 'algorithm' || key === 'space') {
@@ -245,17 +260,20 @@ export const ProofChamberPanel = ({ deviceId }: { deviceId: string }): ReactElem
             }
 
             if (typeof rawValue === 'boolean') {
-                void executeAppAction({
+                actions.push({
                     type: 'setDeviceParameter',
                     payload: { deviceId, paramId: rustKey, value: rawValue ? 1 : 0 },
                 });
             } else if (typeof rawValue === 'number') {
-                void executeAppAction({
+                actions.push({
                     type: 'setDeviceParameter',
                     payload: { deviceId, paramId: rustKey, value: rawValue },
                 });
             }
         }
+
+        const { groupId, groupLabel } = generateGroupId(`Load ${space} space`);
+        void executeAppActionBatch(actions, { groupId, groupLabel });
     }
 
     let tailViewLed = 'Live tail';
