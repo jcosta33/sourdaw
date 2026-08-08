@@ -100,6 +100,7 @@ export const MixerPanel = ({ style }: MixerPanelProps): ReactElement => {
                             variant="ghost"
                             size="icon-xs"
                             aria-label={`Channel width: ${channelStripWidth}`}
+                            data-testid="mixer-channel-width"
                             title={`Channel width: ${channelStripWidth} (click to cycle)`}
                             onClick={cycleChannelStripWidth}
                         >
