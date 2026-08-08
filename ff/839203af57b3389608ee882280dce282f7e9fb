@@ -1,0 +1,29 @@
+src/modules/AudioRendering/presentations/views/ExportDialog.tsx
+  s_14f2bbc9f385dd::t_e0e7e612244f7e 835,841,890,905
+tests/e2e/exportTestId.spec.ts
+  s_ac9b259eab20ba::t_d09fb707fc6cd3 1-67
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "ff839203af57b3389608ee882280dce282f7e9fb",
+  "prompts": {},
+  "sessions": {
+    "s_14f2bbc9f385dd": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f9a61a1d-66b3-4146-938d-a04f45f4b060",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_ac9b259eab20ba": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8699-3865-7842-8c54-afbac6cfd266",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
