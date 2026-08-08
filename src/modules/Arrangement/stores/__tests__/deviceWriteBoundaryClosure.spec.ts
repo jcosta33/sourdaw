@@ -153,8 +153,27 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         'src/modules/Fermenter/useCases/fermenterParamBridge/loadFermenterPatchWithAudio.ts': 6,
         'src/modules/Fermenter/useCases/fermenterParamBridge/setFermenterParamWithAudio.ts': 4,
         'src/modules/Fermenter/useCases/presetMorph/applyMorphedPatch.ts': 6,
-        'src/modules/Gluten/useCases/glutenParamBridge/createFlushHandlers.ts': 4,
+        // Count provenance: measured 5, was 4. #1437 added `previewParam`, the
+        // transient half of a knob gesture — it drives the engine and writes
+        // nothing to project truth, so it contributes one `updateDeviceParam`
+        // and no persistence identifier. The committing paths are unchanged:
+        // `flushParam` and `pushParamImmediately` each still pair one
+        // `updateDeviceParam` with one `persistDeviceParam`. Measured with
+        // `grep -o` over the four sink identifiers: updateDeviceParam 3,
+        // persistDeviceParam 2, persistDevicePatch 0, updateDevicePatch 0.
+        'src/modules/Gluten/useCases/glutenParamBridge/createFlushHandlers.ts': 5,
         'src/modules/Gluten/useCases/glutenParamBridge/helpers.ts': 8,
+        // Count provenance: new entry, measured 2, and **both matches are
+        // doc-comment prose — this file performs no write**. #1437 rewrote the
+        // header to explain why a drag is one edit rather than ninety: it names
+        // `persistDeviceParam` as what the transient half no longer calls, and
+        // `updateDeviceParam` as what `setDeviceParameter` calls on its behalf.
+        // The commit now goes through `executeAppAction`, so the sink
+        // identifiers appear here only as references to the path that was left
+        // behind and the one that replaced it. Measured with `grep -o` over the
+        // four sink identifiers: persistDeviceParam 1, updateDeviceParam 1,
+        // persistDevicePatch 0, updateDevicePatch 0.
+        'src/modules/Gluten/useCases/glutenParamBridge/setGlutenParamWithAudio.ts': 2,
         'src/modules/Grinder/useCases/grinderParamBridge/grinderParamBridgeDependencies.ts': 6,
         'src/modules/Grinder/useCases/grinderParamBridge/helpers.ts': 4,
         'src/modules/Grinder/useCases/grinderParamBridge/loadGrinderPatchWithAudio.ts': 3,
