@@ -39,6 +39,14 @@ type RecordingSessionState = {
     pendingPoints: Map<string, AutomationPoint[]>;
     /** Keys whose parameter is currently being touched (touch/latch arm). */
     touchActive: Set<string>;
+    /**
+     * Each touched lane's points as they stood *before* this session's first
+     * write to it, keyed by lane id. The undo entry built at stop has to diff
+     * against this, not against a stop-time snapshot: a touch release flushes
+     * into the lane mid-session, so by stop the store already contains the pass
+     * and a stop-time "before" would produce an empty diff and no undo entry.
+     */
+    laneBaselines: Map<string, AutomationPoint[]>;
 };
 
 function createRecordingSessionState(): RecordingSessionState {
@@ -46,6 +54,7 @@ function createRecordingSessionState(): RecordingSessionState {
         activeRecording: new Map<string, RecordingSession>(),
         pendingPoints: new Map<string, AutomationPoint[]>(),
         touchActive: new Set<string>(),
+        laneBaselines: new Map<string, AutomationPoint[]>(),
     };
 }
 
@@ -59,3 +68,4 @@ const sessionState: RecordingSessionState = createRecordingSessionState();
 export const activeRecording = sessionState.activeRecording;
 export const pendingPoints = sessionState.pendingPoints;
 export const touchActive = sessionState.touchActive;
+export const laneBaselines = sessionState.laneBaselines;

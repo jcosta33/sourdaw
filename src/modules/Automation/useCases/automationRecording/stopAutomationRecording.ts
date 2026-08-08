@@ -5,10 +5,11 @@ import { type AutomationPoint } from '../../models/Automation';
 import { automationStore } from '../../stores/automationStore';
 
 import { pendingAutoMatch } from './autoMatchState';
+import { captureLaneBaseline } from './captureLaneBaseline';
 import { clearPointsInRange } from './clearPointsInRange';
 import { findLaneId } from './findLaneId';
 import { flushPendingPoints } from './flushPendingPoints';
-import { activeRecording, pendingPoints, touchActive } from './recordingSessionState';
+import { activeRecording, laneBaselines, pendingPoints, touchActive } from './recordingSessionState';
 
 /** Snapshot the points of one lane, or null if the lane is absent. */
 function snapshotLanePoints(laneId: string): AutomationPoint[] | null {
@@ -42,17 +43,21 @@ export function stopAutomationRecording(): void {
     // Per-lane before/after snapshots, scoped to ONLY the lanes this session
     // touched. A whole-store snapshot would let undo clobber concurrent edits
     // to other lanes (and order-sensitive JSON.stringify defeats the CRDT merge).
-    const before = new Map<string, AutomationPoint[]>();
-
+    //
+    // The "before" side is `laneBaselines`, captured before each lane's FIRST
+    // write in this session — not here. A touch release flushes its points into
+    // the lane mid-session, so a snapshot taken at stop would already contain
+    // the pass, diff to nothing, and leave the whole recording without an undo
+    // entry (audit M-052).
     for (const [key, session] of activeRecording) {
         const track = tracks.find((time) => time.id === session.trackId);
         const laneId = findLaneId(session.trackId, session.parameterId);
 
-        if (laneId && !before.has(laneId)) {
-            const snapshot = snapshotLanePoints(laneId);
-            if (snapshot) {
-                before.set(laneId, snapshot);
-            }
+        if (laneId) {
+            // Write mode buffers everything until now, so its lanes reach stop
+            // with no baseline yet. First capture wins, so a lane already
+            // baselined by a release keeps its true pre-session state.
+            captureLaneBaseline(laneId);
         }
 
         const points = pendingPoints.get(key);
@@ -72,7 +77,7 @@ export function stopAutomationRecording(): void {
     // over the CURRENT store lanes and replaces `points` for only the affected
     // lanes — leaving concurrent edits to every other lane intact.
     const laneEdits: Array<{ laneId: string; beforePoints: AutomationPoint[]; afterPoints: AutomationPoint[] }> = [];
-    for (const [laneId, beforePoints] of before) {
+    for (const [laneId, beforePoints] of laneBaselines) {
         const afterPoints = snapshotLanePoints(laneId) ?? [];
         if (!pointsEqual(beforePoints, afterPoints)) {
             laneEdits.push({ laneId, beforePoints, afterPoints });
@@ -112,6 +117,7 @@ export function stopAutomationRecording(): void {
     activeRecording.clear();
     pendingPoints.clear();
     touchActive.clear();
+    laneBaselines.clear();
     // A stop or locate ends the session outright, so any AutoMatch glide
     // still in flight is abandoned rather than resumed against a clock that has
     // since jumped. Without this a pending release would blend on the first tick
