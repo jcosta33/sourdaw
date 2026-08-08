@@ -481,6 +481,21 @@ const ORDINAL_PROBES: Readonly<Record<string, OrdinalProbe>> = {
         to: 2,
         why: 'an instant jump versus a two-second glide from the prior note; glide has no origin without one',
     },
+    portamentoMode: {
+        // Both arms play and release note 48 before the probed note, so no key
+        // is down when either note starts. `Layer::portamento_time_for_note_on`
+        // therefore suppresses the glide on both of them in legato mode and on
+        // neither of them in always mode. The prelude is what makes the switch
+        // reachable at all: at the default glide time of 0 every note snaps
+        // whichever mode is selected, and the row would be green over an engine
+        // that ignored the field — which is exactly what it did until
+        // `Layer::portamento_time_for_note_on` existed.
+        prelude: [['portamento', 5]],
+        priorNote: 48,
+        from: 0,
+        to: 1,
+        why: 'always-glide versus legato-only, with no key held at either note-on, so mode 1 snaps where mode 0 glides',
+    },
 
     // ── Reverb ──────────────────────────────────────────────────────────
     reverbType: { from: 0, to: 1, why: 'the plate algorithm versus the FDN one, at the 0.2 default mix' },
