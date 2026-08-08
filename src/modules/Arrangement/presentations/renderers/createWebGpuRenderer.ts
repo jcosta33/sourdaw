@@ -4,7 +4,7 @@ import { resolveToken } from '#/utils/UI/resolveToken';
 import { type TimelineRenderer } from '../../models/RendererBackend';
 import { type TimelineRenderModel } from '../../models/TimelineRenderModel';
 
-import { CLIP_LABEL_BLOCK_HEIGHT_CSS_PX, computeClipLabelLayout } from './clipLabel';
+import { computeClipLabelLayout } from './clipLabel';
 import { createClipLabelTextureCache } from './createClipLabelTextureCache';
 
 // ─── WGSL shaders ────────────────────────────────────────────────────────────
@@ -358,6 +358,12 @@ export async function createWebGpuRenderer(canvas: HTMLCanvasElement): Promise<T
             device,
             bindGroupLayout: textPipeline.getBindGroupLayout(0),
             sampler: labelSampler,
+            // One frame can draw up to `MAX_LABELS` distinct names, so the cache
+            // has to be able to hold that many or every frame throws away work
+            // the next one immediately redoes. Retaining less is safe — the
+            // cache pins the open frame's entries — but it is not free, so the
+            // two numbers are deliberately the same one.
+            maxCachedLabels: MAX_LABELS,
         });
 
         // ─── Vertex buffer (CPU-mapped every frame) ───────────────────────
@@ -423,8 +429,14 @@ export async function createWebGpuRenderer(canvas: HTMLCanvasElement): Promise<T
                     return;
                 }
 
-                const x1 = layout.xCssPx * dpr;
-                const y1 = layout.blockTopYCssPx * dpr;
+                // Snap to whole device pixels and take the quad's size straight
+                // from the raster. The sampler filters linearly, so a quad that
+                // lands a fraction of a texel off the grid — which the scroll
+                // offset and any non-integer zoom guarantee — resolves as a
+                // blur that crawls as the timeline moves. Integer origin plus
+                // the raster's own device-px extent maps texels 1:1.
+                const x1 = Math.round(layout.xCssPx * dpr + label.offsetXDevicePx);
+                const y1 = Math.round(layout.blockTopYCssPx * dpr + label.offsetYDevicePx);
                 textOffset = pushTexturedQuad(
                     textCpuBuf,
                     textOffset,
@@ -433,8 +445,8 @@ export async function createWebGpuRenderer(canvas: HTMLCanvasElement): Promise<T
                     // The raster is sized to the glyph run, not to the clip, so
                     // the quad has to be too — using the clip's width here would
                     // stretch a short name across the whole clip.
-                    x1 + label.widthCssPx * dpr,
-                    y1 + CLIP_LABEL_BLOCK_HEIGHT_CSS_PX * dpr,
+                    x1 + label.widthDevicePx,
+                    y1 + label.heightDevicePx,
                     w,
                     h
                 );
@@ -660,6 +672,8 @@ export async function createWebGpuRenderer(canvas: HTMLCanvasElement): Promise<T
             }
 
             if (rectCount === 0) {
+                // Nothing to submit, so nothing holds the frame's textures.
+                labelCache.endFrame();
                 return;
             }
 
@@ -701,6 +715,12 @@ export async function createWebGpuRenderer(canvas: HTMLCanvasElement): Promise<T
 
             renderPass.end();
             device.queue.submit([encoder.finish()]);
+
+            // Only now is it safe to destroy anything this frame's eviction
+            // wanted gone: the command buffer referencing those textures has
+            // been submitted, and the implementation keeps them alive until the
+            // GPU is finished with it.
+            labelCache.endFrame();
         }
 
         function resize(w: number, h: number): void {
