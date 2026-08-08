@@ -1,0 +1,151 @@
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+
+import { automationStore } from '#/modules/Automation/stores';
+import { midiStore } from '#/modules/MIDI/stores';
+
+import { ClipDummy } from '../../../__tests__/ClipDummy';
+import { TrackDummy } from '../../../__tests__/TrackDummy';
+import { __resetGainEnvelopesForTest, setEnvelope } from '../../../stores/gainEnvelopeStore';
+import { trackStore } from '../../../stores/trackStore';
+import { glueClips } from '../glueClips';
+
+describe('glueClips MIDI state integration', () => {
+    beforeEach(() => {
+        const first = ClipDummy.create({
+            id: 'clip-a',
+            trackId: 'track-midi',
+            type: 'midi',
+            startBeat: 8,
+            endBeat: 12,
+            midiOffsetBeats: 2,
+        });
+        const second = ClipDummy.create({
+            id: 'clip-b',
+            trackId: 'track-midi',
+            type: 'midi',
+            startBeat: 12,
+            endBeat: 16,
+            midiOffsetBeats: 1,
+        });
+        const track = TrackDummy.create({ id: 'track-midi', kind: 'midi', clips: [first, second] });
+        trackStore.set({ tracks: [track], selectedTrackId: track.id, ghostClips: [] });
+        midiStore.set({
+            notesByClipId: {
+                'clip-a': [
+                    { id: 'note-a', pitch: 60, startBeat: 3, duration: 1, velocity: 100 },
+                    { id: 'note-a-cropped', pitch: 62, startBeat: 1, duration: 2, velocity: 100 },
+                    { id: 'note-a-hidden', pitch: 63, startBeat: 7, duration: 1, velocity: 100 },
+                ],
+                'clip-b': [{ id: 'note-b', pitch: 64, startBeat: 2, duration: 1, velocity: 100 }],
+            },
+            ccByClipId: {
+                'clip-a': [{ id: 'cc-a-hidden', controller: 1, value: 0.25, beat: 6, channel: 0 }],
+                'clip-b': [{ id: 'cc-b', controller: 1, value: 0.5, beat: 2, channel: 0 }],
+            },
+            pitchBendByClipId: {
+                'clip-a': [{ id: 'bend-a-hidden', value: 0.1, beat: 6, channel: 0 }],
+                'clip-b': [{ id: 'bend-b', value: 0.25, beat: 3, channel: 0 }],
+            },
+        });
+        automationStore.set({ lanes: [] });
+        __resetGainEnvelopesForTest();
+    });
+
+    afterEach(() => {
+        trackStore.set({ tracks: [], selectedTrackId: null, ghostClips: [] });
+        midiStore.set({ notesByClipId: {}, ccByClipId: {}, pitchBendByClipId: {} });
+        automationStore.set({ lanes: [] });
+        __resetGainEnvelopesForTest();
+    });
+
+    it('rebases every source MIDI event into the glued clip local timeline', () => {
+        expect(glueClips(['clip-a', 'clip-b'])).toBe(true);
+
+        const glued = trackStore.value!.tracks[0]!.clips[0]!;
+        expect(glued).toMatchObject({ startBeat: 8, endBeat: 16, type: 'midi' });
+        expect(midiStore.value!.notesByClipId[glued.id]).toMatchObject([
+            { id: 'note-a-cropped', startBeat: 0, duration: 1 },
+            { id: 'note-a', startBeat: 1 },
+            { id: 'note-b', startBeat: 5 },
+        ]);
+        expect(midiStore.value!.ccByClipId[glued.id]).toMatchObject([{ id: 'cc-b', beat: 5 }]);
+        expect(midiStore.value!.pitchBendByClipId[glued.id]).toMatchObject([{ id: 'bend-b', beat: 6 }]);
+        expect(midiStore.value!.migratedAbsoluteNoteClipIds).toEqual([glued.id]);
+    });
+
+    it('refuses glue while a source clip owns automation instead of stranding the lane', () => {
+        automationStore.set({
+            lanes: [
+                {
+                    id: 'lane-clip-a-gain',
+                    trackId: 'track-midi',
+                    clipId: 'clip-a',
+                    parameterId: 'gain',
+                    parameterName: 'Gain',
+                    points: [{ id: 'point-a', beat: 9, value: 0.5, curve: 'linear', tension: 0.5 }],
+                    objects: [],
+                    visible: true,
+                    enabled: true,
+                    collapsed: false,
+                    minValue: 0,
+                    maxValue: 1,
+                },
+            ],
+        });
+        const previousTracks = trackStore.value!.tracks;
+
+        expect(glueClips(['clip-a', 'clip-b'])).toBe(false);
+
+        expect(trackStore.value!.tracks).toEqual(previousTracks);
+        expect(automationStore.value!.lanes).toMatchObject([{ id: 'lane-clip-a-gain', clipId: 'clip-a' }]);
+        expect(midiStore.value!.notesByClipId).toHaveProperty('clip-a');
+        expect(midiStore.value!.notesByClipId).toHaveProperty('clip-b');
+    });
+
+    it('refuses glue while a source clip owns a gain envelope', () => {
+        setEnvelope('clip-a', { clipId: 'clip-a', enabled: true, points: [] });
+
+        expect(glueClips(['clip-a', 'clip-b'])).toBe(false);
+
+        expect(trackStore.value!.tracks[0]!.clips).toMatchObject([{ id: 'clip-a' }, { id: 'clip-b' }]);
+        expect(midiStore.value!.notesByClipId).toHaveProperty('clip-a');
+    });
+
+    it('refuses glue when another clip is linked to a source', () => {
+        const linked = ClipDummy.create({
+            id: 'clip-linked',
+            trackId: 'track-child',
+            type: 'midi',
+            parentClipId: 'clip-a',
+            isLinkedInstance: true,
+        });
+        trackStore.set({
+            ...trackStore.value!,
+            tracks: [
+                ...trackStore.value!.tracks,
+                TrackDummy.create({ id: 'track-child', kind: 'midi', clips: [linked] }),
+            ],
+        });
+
+        expect(glueClips(['clip-a', 'clip-b'])).toBe(false);
+
+        expect(trackStore.value!.tracks[0]!.clips).toMatchObject([{ id: 'clip-a' }, { id: 'clip-b' }]);
+        expect(trackStore.value!.tracks[1]!.clips).toMatchObject([{ id: 'clip-linked', parentClipId: 'clip-a' }]);
+    });
+
+    it('refuses glue when a ghost clip is linked to a source', () => {
+        const ghost = ClipDummy.create({
+            id: 'clip-ghost',
+            trackId: 'track-midi',
+            type: 'midi',
+            parentClipId: 'clip-a',
+            isGhost: true,
+        });
+        trackStore.set({ ...trackStore.value!, ghostClips: [ghost] });
+
+        expect(glueClips(['clip-a', 'clip-b'])).toBe(false);
+
+        expect(trackStore.value!.tracks[0]!.clips).toMatchObject([{ id: 'clip-a' }, { id: 'clip-b' }]);
+        expect(trackStore.value!.ghostClips).toMatchObject([{ id: 'clip-ghost', parentClipId: 'clip-a' }]);
+    });
+});

@@ -213,6 +213,22 @@ export type MidiClipDataActionSnapshot = {
     readonly controlChanges: { readonly present: boolean; readonly value: readonly MidiClipCcSnapshot[] };
     readonly pitchBends: { readonly present: boolean; readonly value: readonly MidiClipPitchBendSnapshot[] };
 };
+export type MidiClipGlueActionSnapshot = {
+    readonly clips: readonly {
+        readonly clipId: string;
+        readonly data: MidiClipDataActionSnapshot;
+    }[];
+    readonly migratedAbsoluteNoteClipIds: {
+        readonly present: boolean;
+        readonly value: readonly string[];
+    };
+};
+export type ClipGlueActionSnapshot = {
+    readonly trackId: string;
+    readonly clips: readonly ClipStateSnapshot[];
+    readonly clipOrder: readonly string[];
+    readonly midi: MidiClipGlueActionSnapshot;
+};
 export type ClipSplitActionSnapshot = {
     readonly trackId: string;
     readonly leftClip: ClipStateSnapshot;
@@ -733,7 +749,23 @@ export type AppAction =
     | { type: 'importMidiFile'; payload?: undefined }
     | { type: 'normalizeClip'; payload: { clipId: string; mode?: 'peak' | 'rms' | 'lufs'; targetDb?: number } }
     | { type: 'reverseClip'; payload: { clipId: string } }
-    | { type: 'glueClips'; payload: { clipIds: string[] } }
+    | {
+          type: 'glueClips';
+          payload: {
+              clipIds: string[];
+              /** Internal deterministic replay fields. AiRuntime validation rejects these fields. */
+              targetClipId?: string;
+              expected?: ClipGlueActionSnapshot;
+              replacement?: ClipGlueActionSnapshot;
+          };
+      }
+    | {
+          type: 'restoreClipGlueState';
+          payload: {
+              expected: ClipGlueActionSnapshot;
+              replacement: ClipGlueActionSnapshot;
+          };
+      }
     | { type: 'nudgeClip'; payload: { clipId: string; beats: number } }
     | { type: 'crossfadeClips'; payload: { clipAId: string; clipBId: string; durationBeats?: number } }
     | {

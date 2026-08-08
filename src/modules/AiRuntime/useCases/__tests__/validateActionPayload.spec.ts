@@ -435,6 +435,19 @@ const guardedPayloadContractCases = [
         ],
     }),
     guardedPayloadCase({
+        actionType: 'glueClips',
+        validPayload: { clipIds: ['clip-1', 'clip-2'] },
+        invalidPayloads: [
+            { clipIds: [] },
+            { clipIds: ['clip-1'] },
+            { clipIds: ['clip-1', 'clip-1'] },
+            { clipIds: ['clip-1', ''] },
+            { clipIds: ['clip-1', 2] },
+            { clipIds: ['clip-1', 'clip-2'], extra: true },
+            null,
+        ],
+    }),
+    guardedPayloadCase({
         actionType: 'setClipStretchMode',
         validPayload: { clipId: 'clip-1', mode: 'timestretch' },
         invalidPayloads: [
