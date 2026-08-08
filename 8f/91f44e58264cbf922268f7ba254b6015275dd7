@@ -1,0 +1,63 @@
+src/modules/Gluten/useCases/__tests__/glutenParamBridge.spec.ts
+  s_14f2bbc9f385dd::t_58f596946a789c 11,20,24-26
+  s_14f2bbc9f385dd::t_a3c229cc531b6a 73,78-91,93-94
+  s_14f2bbc9f385dd::t_01cdda32e8cb43 27
+src/modules/ProofChamber/presentations/views/ProofChamberPanel.tsx
+  s_14f2bbc9f385dd::t_671c6debf3010d 275-276
+  s_14f2bbc9f385dd::t_167dc7470bf1b4 230-240,245-251,263,268,274
+  s_14f2bbc9f385dd::t_2abf3c009064d3 19
+  s_14f2bbc9f385dd::t_fc1b808d60506e 18
+src/modules/Gluten/useCases/glutenParamBridge/createFlushHandlers.ts
+  s_14f2bbc9f385dd::t_65072e1b03ed82 50
+  s_14f2bbc9f385dd::t_87fe1629d5205b 5,10-29
+src/modules/Gluten/presentations/components/GlutenCurve.tsx
+  s_14f2bbc9f385dd::t_3008fe94263d91 240
+  s_14f2bbc9f385dd::t_e7e5b8d8f9b7ae 14-20
+  s_14f2bbc9f385dd::t_4f113804711f50 274-275,277,280-286
+  s_14f2bbc9f385dd::t_21e8987b747bb3 56
+  s_14f2bbc9f385dd::t_32217ca36c25fa 259-261
+src/modules/Gluten/useCases/glutenParamBridge/helpers.ts
+  s_14f2bbc9f385dd::t_1f909fa0e8ba07 8
+  s_14f2bbc9f385dd::t_243b0f96dc138e 29,36
+src/modules/Gluten/presentations/views/GlutenPanel.tsx
+  s_14f2bbc9f385dd::t_73381669e4a150 304-306
+  s_14f2bbc9f385dd::t_9b0a9397c30b71 555-556
+src/modules/ProofChamber/presentations/views/__tests__/ProofChamberPanel.spec.tsx
+  s_14f2bbc9f385dd::t_bac605c63e0e9a 15-16
+  s_14f2bbc9f385dd::t_6aecfc8a541dbd 44-51,54
+src/modules/ProofChamber/presentations/views/__tests__/proofChamberPresetUndo.integration.spec.tsx
+  s_14f2bbc9f385dd::t_35f24ce02f4e0e 191-192,194-197
+  s_14f2bbc9f385dd::t_1719aa66244a6e 1-4,6-77,120-146,148-165,167-187,189-190,193,198-201
+  s_14f2bbc9f385dd::t_424aa06ce80305 5
+  s_14f2bbc9f385dd::t_70da452baeae81 78-119
+  s_14f2bbc9f385dd::t_c796a8273b8e22 147
+  s_14f2bbc9f385dd::t_c305d86c531489 166,188
+.agents/specs/device-parameter-undo/spec.md
+  s_14f2bbc9f385dd::t_81313020700729 1-207
+src/modules/Gluten/useCases/glutenParamBridge/__tests__/glutenParameterUndo.integration.spec.ts
+  s_14f2bbc9f385dd::t_557209036fc8db 4
+  s_14f2bbc9f385dd::t_bcd503a93ef6f8 1-3,5-54,97-99,101-125,130-197,199-206,208-228
+  s_14f2bbc9f385dd::t_eb4f050372bb56 55-96
+  s_14f2bbc9f385dd::t_5a8cdb34074a8a 126-129
+  s_14f2bbc9f385dd::t_d41dbb95b034fe 100,198,207
+src/modules/Gluten/useCases/glutenParamBridge/setGlutenParamWithAudio.ts
+  s_14f2bbc9f385dd::t_a5f16de048594c 7,9-40,44-45,60-69
+src/modules/Gluten/useCases/glutenParamBridge/__tests__/createFlushHandlers.spec.ts
+  s_14f2bbc9f385dd::t_95723e54413a35 30,58,78
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "8f91f44e58264cbf922268f7ba254b6015275dd7",
+  "prompts": {},
+  "sessions": {
+    "s_14f2bbc9f385dd": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f9a61a1d-66b3-4146-938d-a04f45f4b060",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
