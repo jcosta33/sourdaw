@@ -1,0 +1,29 @@
+src/modules/Arrangement/presentations/views/TrackHeader.tsx
+  s_bc88af7d3b054c::t_01acf363d3885d 290,310
+src/modules/Arrangement/presentations/views/TrackListView.tsx
+  s_fd6c82ce1c8269::t_7b5d6d96bb6b95 336,352,360,391
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "c73af6d5c7eb29a955e4ce996e0ec8f86c99b892",
+  "prompts": {},
+  "sessions": {
+    "s_bc88af7d3b054c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f9b4a-11a2-7f61-8dfb-76eed0eb2a9c",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_fd6c82ce1c8269": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-ae1c7a7bb47f0766d",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
