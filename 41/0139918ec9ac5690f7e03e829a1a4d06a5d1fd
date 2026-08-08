@@ -1,0 +1,16 @@
+src/modules/DawInterchange/useCases/__tests__/serializeMetadataXml.spec.ts
+  h_1228e573df1f42 1-59
+src/modules/Toaster/useCases/__tests__/toasterEngineMap.spec.ts
+  h_1228e573df1f42 1-68
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "410139918ec9ac5690f7e03e829a1a4d06a5d1fd",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
