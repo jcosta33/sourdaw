@@ -10,7 +10,7 @@ use super::{
     engines::{DrumEngineResources, DrumEngineType, DrumSynthEngine},
     pad::Pad,
 };
-use crate::primitives::{flush_denormal, q_from_normalized_resonance};
+use crate::primitives::{flush_denormal, hz_from_normalized_cutoff, q_from_normalized_resonance};
 
 /// Simple state-variable filter for per-voice filtering.
 pub struct SvfFilter {
@@ -42,8 +42,15 @@ impl SvfFilter {
 
     /// Process one sample, returns lowpass output.
     pub fn tick(&mut self, input: f32, sample_rate: f32) -> f32 {
-        // Map normalized cutoff to frequency (20Hz - 20kHz, exponential)
-        let freq = 20.0 * (self.cutoff * 10.0).exp2().min(20000.0);
+        // Map normalized cutoff back to frequency. `Pad::set_param` normalises
+        // Hz against the span's true width; this used to re-expand with
+        // `20.0 * (self.cutoff * 10.0).exp2()`, rounding `log2(1000) = 9.9658`
+        // up to 10 and delivering every corner sharp by `2^(0.0342 * cutoff)` —
+        // 2.06% at 7.5 kHz, 2.40% at the top. Its `.min(20_000.0)` bound to
+        // `exp2()` rather than the product, so it compared a unitless 1024
+        // against a frequency and the real ceiling was 20480 Hz. Both directions
+        // live in `primitives::cutoff`, which also owns the saturation.
+        let freq = hz_from_normalized_cutoff(self.cutoff);
         let g = (TAU * freq / sample_rate * 0.5).tan();
         // `k` is 1/Q in this topology, so re-expanding the normalised resonance
         // has to go through Q. It used to read `2.0 - 1.9 * self.resonance` —

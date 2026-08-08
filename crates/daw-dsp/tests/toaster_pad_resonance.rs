@@ -20,6 +20,7 @@
 
 use std::f32::consts::TAU;
 
+use daw_dsp::primitives::hz_from_normalized_cutoff;
 use daw_dsp::toaster::{pad::Pad, voice::SvfFilter};
 
 const SAMPLE_RATE: f32 = 48_000.0;
@@ -28,10 +29,14 @@ const SAMPLE_RATE: f32 = 48_000.0;
 /// Nyquist so the measurement reads resonance rather than prewarp error.
 const CUTOFF_NORM: f32 = 0.5;
 
-/// `SvfFilter::tick`'s own cutoff mapping, restated so the stimulus lands on
-/// the frequency the filter actually resonates at.
+/// The frequency the filter resonates at, so the stimulus lands on it.
+///
+/// This used to restate `SvfFilter::tick`'s expansion inline, which meant it
+/// carried a copy of that expansion's `log2(1000) ≈ 10` error and stayed
+/// accidentally correct only because both sides were wrong together. It now
+/// calls the same primitive the filter does.
 fn cutoff_hz(cutoff_norm: f32) -> f32 {
-    20.0 * (cutoff_norm * 10.0).exp2().min(20_000.0)
+    hz_from_normalized_cutoff(cutoff_norm)
 }
 
 /// Drive a sine at the cutoff frequency through the voice filter and return the
