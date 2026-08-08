@@ -261,6 +261,7 @@ export const TrackHeader = ({ track, isSelected }: TrackHeaderProps): ReactEleme
                                     variant="red"
                                     size="icon-sm"
                                     aria-label={track.armed ? `Disarm ${track.name}` : `Arm ${track.name}`}
+                                    data-testid={`track-arm-${track.id}`}
                                     onClick={(event) => {
                                         event.stopPropagation();
                                         void executeAppAction({
