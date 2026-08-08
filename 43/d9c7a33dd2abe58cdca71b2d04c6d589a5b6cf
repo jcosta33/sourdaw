@@ -1,0 +1,19 @@
+tests/e2e/COVERAGE.md
+  s_14f2bbc9f385dd::t_bc00d785a70641 792-793,795,797
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "43d9c7a33dd2abe58cdca71b2d04c6d589a5b6cf",
+  "prompts": {},
+  "sessions": {
+    "s_14f2bbc9f385dd": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f9a61a1d-66b3-4146-938d-a04f45f4b060",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
