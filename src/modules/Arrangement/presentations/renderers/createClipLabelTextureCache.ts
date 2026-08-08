@@ -13,26 +13,21 @@
  * zoom changed therefore misses the cache and is redrawn; an unchanged one is
  * reused.
  *
- * ## Why eviction is deferred
+ * ## Why the open frame's entries are pinned
  *
  * The caller collects a frame's bind groups while it walks the clips and only
  * encodes them into the render pass once that walk is done. A texture destroyed
  * part-way through the walk is therefore destroyed while a bind group naming it
  * is already committed to the frame — and WebGPU rejects the *entire* command
  * buffer at submit, not just that one label. A frame with more distinct labels
- * than the cache retains used to be a black timeline, every frame.
+ * than the cache retained used to be a black timeline, every frame.
  *
- * Two rules make that unrepresentable, and they hold whatever the retention
- * bound is set to:
- *
- * 1. **An entry acquired in the current frame is pinned** and cannot be chosen
- *    as an eviction victim. If a frame asks for more distinct labels than the
- *    cache retains, the cache overshoots for that frame rather than destroying
- *    something the frame is using.
- * 2. **Destruction is deferred to `endFrame`**, which the caller invokes after
- *    `queue.submit`. Destroying a texture that a *submitted* command buffer
- *    references is explicitly legal — the implementation keeps the memory alive
- *    until the GPU is done with it — so this is the point at which it is safe.
+ * One rule makes that unrepresentable, and it holds whatever the retention
+ * bound is set to: **an entry acquired since the last `endFrame` is pinned**
+ * and can never be chosen as an eviction victim. A frame that asks for more
+ * distinct labels than the cache retains overshoots the bound for the duration
+ * of that frame and hands the excess back at `endFrame`, rather than destroying
+ * something the frame is drawing with.
  *
  * Raising the retention bound alone would not have fixed this: it moves the
  * cliff without removing it, and any later change to the caller's per-frame
@@ -89,11 +84,12 @@ export type ClipLabelTextureCache = {
     /** Rasterise (or reuse) `text` and return its bind group, or null if unrenderable. */
     acquire: (input: AcquireClipLabelInput) => ClipLabelTexture | null;
     /**
-     * Close the frame the acquires belong to: unpin them, evict back down to
-     * the retention bound, and destroy everything eviction deferred.
+     * Close the frame the acquires belong to: unpin them and evict back down to
+     * the retention bound.
      *
-     * Call this *after* submitting the frame's command buffer. Calling it
-     * before submit reintroduces the bug it exists to prevent.
+     * Call this *after* submitting the frame's command buffer. Unpinning is
+     * what makes the frame's own entries evictable, and destroying one is only
+     * legal once the command buffer using it has been submitted.
      */
     endFrame: () => void;
     /** Destroy every held texture. */
@@ -160,10 +156,6 @@ export function createClipLabelTextureCache({
     // Keys acquired since the last `endFrame`. Eviction may not touch these —
     // their bind groups are already committed to the frame being built.
     const pinnedThisFrame = new Set<string>();
-
-    // Textures evicted while a frame was open. Destroyed by `endFrame`, once
-    // the caller has submitted.
-    const pendingDestroy: GPUTexture[] = [];
 
     // One 1x1 scratch context, kept for the cache's lifetime, purely to measure
     // glyph runs before deciding how large the real raster needs to be. Its own
@@ -306,10 +298,13 @@ export function createClipLabelTextureCache({
 
     /**
      * Evict back towards the retention bound, skipping anything the open frame
-     * has already handed out. Victims go to `pendingDestroy` rather than being
-     * destroyed here: `acquire` runs while the caller is still building the
-     * frame, and a texture destroyed at that moment takes the whole frame with
-     * it.
+     * has already handed out.
+     *
+     * Destroying here is safe *because* of that skip, and only because of it: a
+     * victim the open frame never asked for has no bind group queued in the
+     * frame being built, and a command buffer that already went to `submit`
+     * keeps its textures alive until the GPU is done with them. Take the skip
+     * away and this line destroys a texture the current frame is drawing with.
      */
     function evictUnpinned(): void {
         if (entries.size <= maxCachedLabels) {
@@ -323,15 +318,8 @@ export function createClipLabelTextureCache({
                 continue;
             }
             entries.delete(key);
-            pendingDestroy.push(entry.texture);
+            entry.texture.destroy();
         }
-    }
-
-    function flushPendingDestroy(): void {
-        for (const texture of pendingDestroy) {
-            texture.destroy();
-        }
-        pendingDestroy.length = 0;
     }
 
     function toPublic(entry: CacheEntry): ClipLabelTexture {
@@ -383,11 +371,9 @@ export function createClipLabelTextureCache({
             // Nothing is pinned now, so a frame that overshot the bound gives
             // its excess back here rather than carrying it forever.
             evictUnpinned();
-            flushPendingDestroy();
         },
 
         dispose(): void {
-            flushPendingDestroy();
             for (const entry of entries.values()) {
                 entry.texture.destroy();
             }

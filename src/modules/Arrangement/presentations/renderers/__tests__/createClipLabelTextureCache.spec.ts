@@ -303,7 +303,7 @@ describe('createClipLabelTextureCache', () => {
         expect(handles.destroyedTextures).toEqual(['tex-1']);
     });
 
-    it('holds an evicted texture until endFrame rather than destroying it mid-frame', () => {
+    it('overshoots the bound rather than destroying a label the open frame drew', () => {
         const cache = makeCache();
 
         // All 257 in one frame. The 257th pushes the cache past its bound, but
