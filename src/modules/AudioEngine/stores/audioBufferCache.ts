@@ -90,8 +90,7 @@ function audioCacheSet(id: string, buffer: AudioBuffer): void {
             if (lruKey === undefined) {
                 break;
             }
-            cache.delete(lruKey);
-            clearWaveformCachesForId(lruKey);
+            evictCachedBuffer(lruKey);
         }
     }
     cache.set(id, buffer);
@@ -113,8 +112,7 @@ function replacePinnedBufferIds(ids: readonly string[]): void {
         if (lruKey === undefined) {
             break;
         }
-        cache.delete(lruKey);
-        clearWaveformCachesForId(lruKey);
+        evictCachedBuffer(lruKey);
     }
 }
 
@@ -153,17 +151,60 @@ const STORE_NAME = 'buffers';
  * `getWaveformPeaks()` run per clip per timeline paint, and each one refreshes
  * the buffer's access stamp; before this, every one of those calls opened its
  * own IndexedDB connection that nothing ever closed. Measured in
- * `audioBufferCacheConnectionChurn.spec.ts`: one persist plus six reads issued
- * seven `indexedDB.open` calls, and now issues one.
+ * `audioBufferCacheConnectionChurn.spec.ts`: one persist plus six reads that
+ * each refreshed a stamp issued seven `indexedDB.open` calls, and now issue
+ * one. (Reverting only this memo, with refresh coalescing left in place, gives
+ * two — one for the persist and one for the single surviving refresh.)
  *
  * `IDBDatabase` is designed to be held, so the memo is the platform's own
- * shape rather than a pool. It self-heals in both directions a held connection
- * can go bad: a failed open is forgotten so the next caller retries, and a
- * browser-initiated `versionchange` or `close` drops it so the next caller
- * reconnects instead of reusing a dead handle. The generation counter keeps a
- * late loss event from clearing a memo that has already been replaced. */
+ * shape rather than a pool. It self-heals in the two ways a held connection can
+ * go bad while the database is still ours to open: a failed open is forgotten
+ * so the next caller retries, and an abnormal `close` drops the memo so the
+ * next caller reconnects instead of reusing a dead handle. The generation
+ * counter keeps a late loss event from clearing a memo that has already been
+ * replaced. `versionchange` is the third way, and it does not reconnect — see
+ * `versionChangeLatched`. */
 let dbPromise: Promise<IDBDatabase> | null = null;
 let dbConnectionGeneration = 0;
+
+/** `versionchange` means another context is upgrading or deleting this database
+ * and is blocked on our connection. Closing is necessary but not sufficient:
+ * the very next timeline paint calls `refreshAccessTime` -> `openDb()`, which
+ * would reconnect within a frame and re-block the upgrade it just yielded to.
+ * So the close latches, and `openDb()` refuses for the rest of the page's life.
+ *
+ * Playback and waveform drawing are unaffected, because the decoded buffers
+ * live in the in-memory `cache` and nothing here touches it. Persistence,
+ * removal, the access-time refresh and the store clear degrade to a warning.
+ *
+ * It is **not** true that only durability pauses. `exportBuffers` resolves
+ * ids the LRU has evicted by reading them back out of IDB, and that read is
+ * now permanently unavailable, so a `.sourdaw` export taken while latched
+ * omits the PCM for every non-resident id. The in-memory cache holds 64
+ * entries, so any project past that exports short. It is reported rather than
+ * silent — the omissions become `buildProjectData`'s `missingBufferCount` and
+ * `exportProjectFile` raises a user-facing warning — but the file is still
+ * written, and no reload un-writes a file already on disk. Reachable only at a
+ * `DB_VERSION` bump; on the migration checklist for that bump.
+ *
+ * Nothing resets this in-process on purpose. The upgrade completing is not an
+ * event this context can observe, and the reason to reconnect afterwards would
+ * be to talk to a schema this module was not compiled against. A reload
+ * re-evaluates this module against the new schema, which is the only point at
+ * which reconnecting is correct.
+ *
+ * The latch is read on entry to `openDb()`, so it cannot rescue a caller that
+ * already holds a resolved connection when `versionchange` fires — that one
+ * still gets `InvalidStateError` off the closed handle. Nothing in this file
+ * is exposed to that today, and the reason is an invariant with no guard on
+ * it: **every `await openDb()` here is followed synchronously by
+ * `db.transaction()`**. `versionchange` is delivered as a task while the
+ * post-`await` continuation is a microtask, so no `versionchange` can be
+ * interleaved between the two. Put any new `await` between an `openDb()` and
+ * its `transaction()` and that stops being true. */
+let versionChangeLatched = false;
+
+const VERSION_CHANGE_LATCH_MESSAGE = 'IDB connection surrendered to a versionchange; reload to reconnect';
 
 function openDbConnection(onConnectionLoss: () => void): Promise<IDBDatabase> {
     return new Promise((resolve, reject) => {
@@ -179,6 +220,9 @@ function openDbConnection(onConnectionLoss: () => void): Promise<IDBDatabase> {
             db.onversionchange = () => {
                 // Another context wants to upgrade or delete the database;
                 // holding this connection open would block it indefinitely.
+                // Latch before closing: dropping the memo without the latch just
+                // hands the next caller a fresh connection that blocks it again.
+                versionChangeLatched = true;
                 db.close();
                 onConnectionLoss();
             };
@@ -190,6 +234,9 @@ function openDbConnection(onConnectionLoss: () => void): Promise<IDBDatabase> {
 }
 
 function openDb(): Promise<IDBDatabase> {
+    if (versionChangeLatched) {
+        return Promise.reject(new Error(VERSION_CHANGE_LATCH_MESSAGE));
+    }
     if (dbPromise !== null) {
         return dbPromise;
     }
@@ -311,7 +358,8 @@ async function updateAccessTimeInIdb(id: string): Promise<void> {
  * the read path opening connections, but each read still ran its own readwrite
  * get+put transaction on the object store buffer persistence uses — measured in
  * `audioBufferCacheConnectionChurn.spec.ts`: one persist plus ten reads opened
- * eleven readwrite transactions, and now opens two.
+ * eleven readwrite transactions, and now opens one, because `set()` seeds the
+ * stamp from the record it writes and every read inside the window is free.
  *
  * The stamp only has to be accurate enough for the consumer that reads it, and
  * the age-based collector thinks in days (`garbageCollectByAge(maxAgeDays)`),
@@ -324,6 +372,12 @@ const ACCESS_REFRESH_WINDOW_MS = 60_000;
 const accessRefreshStampById = new Map<string, number>();
 
 function refreshAccessTime(id: string): void {
+    if (versionChangeLatched) {
+        // The stamp has nowhere to go and will not for the life of the page.
+        // Without this the refresh keeps calling a permanently-rejecting
+        // `openDb()`, logging one warning per resident id per window forever.
+        return;
+    }
     const now = Date.now();
     const lastRefreshedAt = accessRefreshStampById.get(id);
     if (lastRefreshedAt !== undefined && now - lastRefreshedAt < ACCESS_REFRESH_WINDOW_MS) {
@@ -356,10 +410,6 @@ async function persistSerializedToIdb(id: string, data: SerializedBuffer): Promi
     }
 }
 
-async function persistToIdb(id: string, buffer: AudioBuffer): Promise<void> {
-    await persistSerializedToIdb(id, serializeBuffer(buffer));
-}
-
 async function removeFromIdb(id: string): Promise<void> {
     const generation = claimPersistenceGeneration(id);
     try {
@@ -388,6 +438,26 @@ function clearWaveformCachesForId(id: string) {
             waveformCache.delete(key);
         }
     }
+}
+
+/** Drop every in-memory trace of one buffer id: the decoded buffer, its
+ * waveform and mipmap caches, and its access-refresh stamp.
+ *
+ * The stamp has to go with the rest (audit M-045). It is keyed by id and
+ * nothing else prunes it, so leaving it behind retains an entry per buffer the
+ * cache no longer holds, and — because the window is fixed rather than sliding
+ * — it also suppresses the first refresh for up to a window if the same id
+ * comes back. Every site that drops a buffer *by id* goes through here: LRU
+ * eviction, the pinned-set rebuild, and all three collectors.
+ *
+ * `clear()` is the exception and stays hand-written, because it drops
+ * everything at once and empties each map rather than walking ids. It has to
+ * empty `mipmapLevel1Cache` too — that is the map this helper reaches only
+ * via `clearWaveformCachesForId`. */
+function evictCachedBuffer(id: string): void {
+    cache.delete(id);
+    clearWaveformCachesForId(id);
+    accessRefreshStampById.delete(id);
 }
 
 type PreparedAudioBuffers = {
@@ -504,17 +574,18 @@ export const audioBufferCache = {
     set(id: string, buffer: AudioBuffer): void {
         audioCacheSet(id, buffer);
         clearWaveformCachesForId(id);
-        void persistToIdb(id, buffer);
+        const data = serializeBuffer(buffer);
+        // Seed the coalescing stamp from the record being written (audit M-045).
+        // The persisted `lastAccessed` *is* a fresh access stamp, so without
+        // this the first read after every persist spends a whole readwrite
+        // get+put transaction rewriting a timestamp that is already current.
+        accessRefreshStampById.set(id, data.lastAccessed);
+        void persistSerializedToIdb(id, data);
     },
 
     remove(id: string): void {
-        cache.delete(id);
         pinnedBufferIds.delete(id);
-        clearWaveformCachesForId(id);
-        // Release the coalescing stamp alongside this id's other cache state
-        // (audit M-045), so the map does not retain an entry per buffer the
-        // cache no longer holds.
-        accessRefreshStampById.delete(id);
+        evictCachedBuffer(id);
         void removeFromIdb(id);
     },
 
@@ -665,14 +736,28 @@ export const audioBufferCache = {
         cache.clear();
         pinnedBufferIds.clear();
         waveformCache.clear();
+        // The level-1 mipmap is keyed by id alone and is not bounded. Leaving it
+        // behind is both a leak across every project switch (~PCM/256 per
+        // buffer) and wrong: `restoreFromIdb`'s publish path calls
+        // `audioCacheSet` without clearing waveform state, so a different
+        // buffer arriving under a reused id would draw the previous project's
+        // peaks at any zoom that reads the mipmap.
+        mipmapLevel1Cache.clear();
         persistenceGenerationById.clear();
         accessRefreshStampById.clear();
         // Deliberately keeps the memoized connection (audit M-045). Clearing the
-        // object store does not invalidate the connection, and dropping it here
-        // would both leak the handle the clear is running on and put the clear
-        // and any immediately following write on two different connections,
-        // which have no ordering guarantee between them — a `set()` right after
-        // a `clear()` could be wiped by it.
+        // object store does not invalidate the connection, so dropping the memo
+        // here would abandon the handle the clear is still running on: the clear
+        // holds it alive to completion while every later caller opens a second
+        // one, and the orphan then blocks any `versionchange` for the life of
+        // the page. That leak is the whole reason, and it is sufficient on its
+        // own.
+        //
+        // Ordering is *not* part of the reason, whatever an earlier draft of
+        // this comment claimed. IDB 3.0 §2.7.2 orders overlapping-scope
+        // "readwrite" transactions by creation order across the *database* —
+        // there is no same-connection qualifier — so a `clear()` and a `set()`
+        // right after it commit in that order even on two connections.
         openDb()
             .then(async (db) => {
                 const tx = db.transaction(STORE_NAME, 'readwrite');
@@ -740,8 +825,18 @@ export const audioBufferCache = {
                         channelData: await Promise.all(data.channelData.map(float32ToBase64)),
                     };
                 }
-            } catch {
-                // IDB unavailable — those IDs remain absent from the result
+            } catch (error) {
+                // IDB unreachable, so every id the LRU had evicted is absent
+                // from the result and the caller writes a project file short of
+                // that PCM. `buildProjectData` counts the gap and
+                // `exportProjectFile` warns the user, but the cache layer must
+                // say so too — under the `versionchange` latch this is
+                // permanent rather than transient, and a silent catch here is
+                // the only trace.
+                logger.warn('[audioBufferCache] Export could not read evicted buffers from IndexedDB', {
+                    unresolvedIds: missingIds.filter((id) => !(id in result)),
+                    error,
+                });
             }
         }
 
@@ -943,8 +1038,7 @@ export const audioBufferCache = {
         // Remove from memory cache
         for (const key of cache.keys()) {
             if (key.startsWith('freeze-') && !activeIds.has(key)) {
-                cache.delete(key);
-                clearWaveformCachesForId(key);
+                evictCachedBuffer(key);
             }
         }
 
@@ -986,8 +1080,7 @@ export const audioBufferCache = {
                 }
                 if ((item.lastAccessed ?? 0) < threshold) {
                     store.delete(key);
-                    cache.delete(key);
-                    clearWaveformCachesForId(key);
+                    evictCachedBuffer(key);
                     deletedCount++;
                 }
             }
@@ -1030,8 +1123,7 @@ export const audioBufferCache = {
                     continue;
                 }
                 store.delete(entry.id);
-                cache.delete(entry.id);
-                clearWaveformCachesForId(entry.id);
+                evictCachedBuffer(entry.id);
                 currentTotal -= entry.size;
                 deletedCount++;
             }

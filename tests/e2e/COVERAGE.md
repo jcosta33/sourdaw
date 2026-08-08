@@ -736,5 +736,11 @@ Re-measured after additional PRs since threshold raise #3 (PR #1231). Lines cros
 - **PR #1357**: ControllerProfile — Push 2 profile validation — 7 tests.
 - **PR #1358**: getMidiGrooveHandlers — 9-handler map contract — 4 tests.
 - **PR #1359**: usePromptDialog — pending lifecycle, trim, cancel, displacement — 7 tests.
+- **PR #1361**: toPadStoreUpdate — boolean/string/numeric field dispatch — 13 tests.
+- **PR #1362**: registerCrdtStorageRuntime — storage port wiring delegation — 8 tests.
+- **PR #1363**: fermenterDependencies + getPitchHandlers — DI holder, handler map — 8 tests.
+- **PR #1364**: initCrumbsDeviceStatePersistence — playback-key dedup, first-sight, stale cleanup — 7 tests.
+- **PR #1365**: initLevainDeviceStatePersistence — identity-key dedup, first-sight, stale cleanup — 7 tests.
+- **PR #1366**: yeastPreviewRevision + RenderProgress — pub/sub revision, quality steps — 8 tests.
 
-**Campaign total to date: 228 PRs, ~2425 assertions. Lines coverage at 90.30%.**
+**Campaign total to date: 234 PRs, ~2469 assertions. Lines coverage at 90.30%.**

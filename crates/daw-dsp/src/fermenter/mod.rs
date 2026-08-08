@@ -39,7 +39,21 @@ use wasm_bindgen::prelude::*;
 /// into the next block — the ceiling delays events, it does not lose them.
 const MAX_BLOCK_EVENTS: usize = 256;
 
-const AUTOMATION_PARAM_NAMES: [&str; 15] = [
+/// Offline/scheduled automation ordinals, mirrored by
+/// `FERMENTER_AUTOMATION_PARAM_IDS` in `src/modules/AudioEngine/engine/FermenterNode.ts`.
+///
+/// The two tables use different spellings on purpose (`osc_level`/`oscLevel`,
+/// `mod_lfo_to_pitch`/`lfoPitchAmount`), so their only contract is that index
+/// `n` names the same parameter on both sides. Nothing in either language
+/// type-checks that, and no test in this crate can see a transposition.
+///
+/// The contract is enforced from TypeScript, against the shipped binary, by
+/// `src/modules/AudioEngine/wasm/__tests__/dawDspFermenterAutomationOrdinals.spec.ts`:
+/// it reproduces each Rust name here from the TS key through the production
+/// `mapFermenterParamToDspParam` translation and asserts `set_param_by_id(n, v)`
+/// renders identically to `set_param(name, v)`. Editing this array without
+/// making the matching edit to `FERMENTER_AUTOMATION_PARAM_IDS` fails there.
+const AUTOMATION_PARAM_NAMES: [&str; 16] = [
     "osc_level",
     "cutoff",
     "resonance",
@@ -55,6 +69,7 @@ const AUTOMATION_PARAM_NAMES: [&str; 15] = [
     "grain_density",
     "grain_size",
     "grain_spray",
+    "osc_waveform",
 ];
 
 /// WASM-exported Fermenter instance for AudioWorklet.
@@ -278,6 +293,77 @@ mod tests {
     /// Index of the first sample the instance rendered as non-zero.
     fn first_sounding_sample(instance: &FermenterInstance, size: usize) -> Option<usize> {
         (0..size).find(|&index| instance.left_buf[index] != 0.0 || instance.right_buf[index] != 0.0)
+    }
+
+    /// Render one note through a freshly configured instance, four blocks deep.
+    fn render_configured<F: FnOnce(&mut FermenterInstance)>(configure: F) -> Vec<f32> {
+        let mut instance = FermenterInstance::new(48_000.0, 8);
+        configure(&mut instance);
+        instance.note_on(60, 100);
+        let mut rendered = Vec::with_capacity(512);
+        for _ in 0..4 {
+            instance.process(128);
+            rendered.extend_from_slice(&instance.left_buf[..128]);
+        }
+        rendered
+    }
+
+    fn energy(samples: &[f32]) -> f32 {
+        samples.iter().map(|sample| sample * sample).sum()
+    }
+
+    fn difference(left: &[f32], right: &[f32]) -> f32 {
+        left.iter()
+            .zip(right.iter())
+            .map(|(a, b)| (a - b) * (a - b))
+            .sum()
+    }
+
+    /// **This covers ordinal 15 only, and is not the ordinal pin.**
+    ///
+    /// The whole map is pinned on the TypeScript side by
+    /// `src/modules/AudioEngine/wasm/__tests__/dawDspFermenterAutomationOrdinals.spec.ts`,
+    /// which drives every ordinal through the *shipped binary* and compares it
+    /// against `set_param` under the name the production translation derives.
+    /// That is the guard a transposition has to get past; this one is a fast
+    /// native-side check that does not need a wasm build.
+    ///
+    /// Be precise about what it does and does not catch: transposing entries
+    /// **other than 15** leaves this test — and the entire crate suite — green.
+    /// Swapping ordinals 0 and 1 (`osc_level`/`cutoff`, an automated level ride
+    /// bouncing as a filter sweep) was measured at `508 passed; 0 failed`,
+    /// exit 0, while the TypeScript pin failed on both rows.
+    ///
+    /// Drives between waveform 0 (sine) and 2 (square). Neither is the engine's
+    /// constructed default of 1 (saw), so an ordinal that reaches nothing
+    /// renders both positions as saw and both assertions below go red.
+    #[test]
+    fn automation_ordinal_15_reaches_the_oscillator_waveform_and_no_other_parameter() {
+        let by_id_sine = render_configured(|instance| instance.set_param_by_id(15, 0.0));
+        let by_id_square = render_configured(|instance| instance.set_param_by_id(15, 2.0));
+        let by_name_sine = render_configured(|instance| instance.set_param("osc_waveform", 0.0));
+        let by_name_square = render_configured(|instance| instance.set_param("osc_waveform", 2.0));
+
+        assert!(
+            energy(&by_id_sine) > 0.001 && energy(&by_id_square) > 0.001,
+            "the instance rendered silence, so neither assertion below means anything"
+        );
+        // The ordinal moves the render at all.
+        assert!(
+            difference(&by_id_sine, &by_id_square) > 0.01,
+            "set_param_by_id(15, ..) did not change the rendered signal: ordinal 15 is dead"
+        );
+        // ...and it moves *this* parameter. A transposition inside
+        // AUTOMATION_PARAM_NAMES leaves the two by-id renders at the default
+        // saw table while the by-name renders still switch, so these diverge.
+        assert_eq!(
+            by_id_sine, by_name_sine,
+            "ordinal 15 and set_param(\"osc_waveform\") disagree at waveform 0"
+        );
+        assert_eq!(
+            by_id_square, by_name_square,
+            "ordinal 15 and set_param(\"osc_waveform\") disagree at waveform 2"
+        );
     }
 
     #[test]

@@ -100,7 +100,7 @@ describe('audioBufferCache write observation', () => {
     });
 
     // Mutation: removing `store.put(existing, id)` from updateAccessTimeInIdb
-    // reds `expect(record?.lastAccessed).toBe(2_000)` — the age-based garbage
+    // reds `expect(record?.lastAccessed).toBe(70_000)` — the age-based garbage
     // collector would then delete buffers of an open project.
     it('commits a refreshed access time when a cached buffer is read', async () => {
         const audioBufferCache = await importCache();
@@ -111,11 +111,13 @@ describe('audioBufferCache write observation', () => {
         await flushIndexedDbTasks();
         expect(controls.committed.get('pcm')?.lastAccessed).toBe(1_000);
 
-        now.mockReturnValue(2_000);
+        // Past the 60 s coalescing window the persist seeded, so this read is
+        // the one that has to reach the store.
+        now.mockReturnValue(70_000);
         expect(audioBufferCache.get('pcm')).not.toBeUndefined();
         await flushIndexedDbTasks();
 
-        expect(controls.committed.get('pcm')?.lastAccessed).toBe(2_000);
+        expect(controls.committed.get('pcm')?.lastAccessed).toBe(70_000);
         expect(mocks.loggerWarn).not.toHaveBeenCalled();
     });
 
