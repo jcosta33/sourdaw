@@ -6,6 +6,7 @@ import { AiSection } from '../AiSection';
 const mockConfigureCloudProvider = vi.fn<(configuration: unknown) => void>();
 const mockRemoveCloudApi = vi.fn<() => void>();
 const mockSetAiBackendPreference = vi.fn<(preference: string) => void>();
+const mockNativeAvailable = { value: false };
 const mockBackendPreference = { value: 'auto' };
 const mockLlmStatus = {
     value: { state: 'idle' } as
@@ -46,6 +47,7 @@ vi.mock('#/modules/AiRuntime/useCases', () => ({
     removeCloudApi: (): void => {
         mockRemoveCloudApi();
     },
+    isNativeAiRuntimeAvailable: () => mockNativeAvailable.value,
     resolveBackend: () => mockResolveBackend(),
     setAiBackendPreference: (preference: string): void => {
         mockSetAiBackendPreference(preference);
@@ -72,6 +74,7 @@ describe('AiSection', () => {
         mockBackendPreference.value = 'auto';
         mockLlmStatus.value = { state: 'idle' };
         mockResolveBackend.mockReturnValue('none');
+        mockNativeAvailable.value = false;
     });
 
     it('renders the browser AI and model manager panels', () => {
@@ -89,10 +92,29 @@ describe('AiSection', () => {
         expect(screen.queryByRole('button', { name: 'Remove Key' })).not.toBeInTheDocument();
     });
 
-    it('shows "Native (in-process)" when the backend resolves to native', () => {
+    it('hides automatic and native backend choices in the browser', () => {
+        render(<AiSection />);
+
+        const backend = screen.getByLabelText('AI execution backend');
+        expect(backend).toHaveValue('webllm');
+        expect(screen.queryByRole('option', { name: /Automatic/ })).not.toBeInTheDocument();
+        expect(screen.queryByRole('option', { name: 'Native local' })).not.toBeInTheDocument();
+        expect(screen.getByRole('option', { name: 'Browser WebLLM' })).toBeInTheDocument();
+        expect(screen.getByRole('option', { name: 'Hosted provider' })).toBeInTheDocument();
+
+        const model = screen.getByLabelText('Hosted AI model');
+        expect(model.tagName).toBe('SELECT');
+        expect(model).toHaveValue('claude-sonnet-5');
+        expect(screen.getByRole('option', { name: 'Claude Fable 5 — Highest quality' })).toBeInTheDocument();
+    });
+
+    it('shows native local only when the desktop runtime is available', () => {
+        mockNativeAvailable.value = true;
         mockResolveBackend.mockReturnValue('native');
         render(<AiSection />);
 
+        expect(screen.getByRole('option', { name: 'Automatic failover' })).toBeInTheDocument();
+        expect(screen.getByRole('option', { name: 'Native local' })).toBeInTheDocument();
         expect(screen.getByText('Native (in-process)')).toBeInTheDocument();
     });
 
@@ -100,7 +122,7 @@ describe('AiSection', () => {
         mockResolveBackend.mockReturnValue('cloud');
         mockHostedProviderStatus.value = {
             provider: 'anthropic',
-            model: 'claude-sonnet-4-20250514',
+            model: 'claude-sonnet-5',
             baseUrl: null,
         };
         render(<AiSection />);
@@ -164,7 +186,7 @@ describe('AiSection', () => {
         expect(mockConfigureCloudProvider).toHaveBeenCalledWith({
             provider: 'anthropic',
             apiKey: '  sk-ant-test  ',
-            model: 'claude-sonnet-4-20250514',
+            model: 'claude-sonnet-5',
             baseUrl: undefined,
         });
         expect(input.value).toBe('');
@@ -174,20 +196,24 @@ describe('AiSection', () => {
         render(<AiSection />);
 
         fireEvent.change(screen.getByLabelText('Hosted AI provider'), { target: { value: 'openai' } });
-        expect(screen.getByLabelText('Hosted AI model')).toHaveValue('gpt-5.2');
+        expect(screen.getByLabelText('Hosted AI model').tagName).toBe('SELECT');
+        expect(screen.getByLabelText('Hosted AI model')).toHaveValue('gpt-5.6-terra');
+        expect(screen.getByRole('option', { name: 'GPT-5.6 Sol — Highest quality' })).toBeInTheDocument();
+        expect(screen.getByRole('option', { name: 'GPT-5.6 Terra — Recommended' })).toBeInTheDocument();
         fireEvent.change(screen.getByLabelText('OpenAI API key'), { target: { value: 'sk-openai' } });
         fireEvent.click(screen.getByRole('button', { name: 'Save' }));
 
         expect(mockConfigureCloudProvider).toHaveBeenLastCalledWith({
             provider: 'openai',
             apiKey: 'sk-openai',
-            model: 'gpt-5.2',
+            model: 'gpt-5.6-terra',
             baseUrl: undefined,
         });
 
         fireEvent.change(screen.getByLabelText('Hosted AI provider'), {
             target: { value: 'openai-compatible' },
         });
+        expect(screen.getByLabelText('Hosted AI model').tagName).toBe('INPUT');
         fireEvent.change(screen.getByLabelText('Hosted AI model'), { target: { value: 'qwen-local' } });
         fireEvent.change(screen.getByLabelText('OpenAI-compatible base URL'), {
             target: { value: 'http://localhost:1234/v1' },
@@ -200,6 +226,28 @@ describe('AiSection', () => {
             apiKey: 'local-key',
             model: 'qwen-local',
             baseUrl: 'http://localhost:1234/v1',
+        });
+    });
+
+    it('preserves a configured first-party custom model and resubmits it without retyping', () => {
+        mockHostedProviderStatus.value = {
+            provider: 'anthropic',
+            model: 'claude-private-preview',
+            baseUrl: null,
+        };
+        render(<AiSection />);
+
+        expect(screen.getByLabelText('Hosted AI model')).toHaveValue('custom');
+        expect(screen.getByLabelText('Custom Anthropic model ID')).toHaveValue('claude-private-preview');
+
+        fireEvent.change(screen.getByLabelText('Anthropic API key'), { target: { value: 'sk-ant-test' } });
+        fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+
+        expect(mockConfigureCloudProvider).toHaveBeenCalledWith({
+            provider: 'anthropic',
+            apiKey: 'sk-ant-test',
+            model: 'claude-private-preview',
+            baseUrl: undefined,
         });
     });
 

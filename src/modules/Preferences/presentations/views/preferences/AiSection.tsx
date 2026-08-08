@@ -10,6 +10,7 @@ import { useStore } from '#/infra/store/useStore';
 import { aiBackendPreferenceStore, hostedLlmProviderStatusStore, llmStatusStore } from '#/modules/AiRuntime/stores';
 import {
     configureCloudProvider,
+    isNativeAiRuntimeAvailable,
     removeCloudApi,
     resolveBackend,
     setAiBackendPreference,
@@ -22,9 +23,36 @@ import { SectionTitle, FieldGroup } from '../preferencesShared';
 type HostedProviderSelection = 'anthropic' | 'openai' | 'openai-compatible';
 type BackendSelection = 'auto' | 'native' | 'webllm' | 'cloud';
 
+type HostedModelOption = {
+    label: string;
+    value: string;
+};
+
+type SelectedBackendInput = {
+    backend: 'native' | 'webllm' | 'cloud' | 'none';
+    nativeAvailable: boolean;
+    preference: 'auto' | BackendSelection;
+};
+
+const HOSTED_MODEL_OPTIONS: Record<Exclude<HostedProviderSelection, 'openai-compatible'>, HostedModelOption[]> = {
+    anthropic: [
+        { value: 'claude-sonnet-5', label: 'Claude Sonnet 5 — Recommended' },
+        { value: 'claude-fable-5', label: 'Claude Fable 5 — Highest quality' },
+        { value: 'claude-opus-5', label: 'Claude Opus 5 — Agentic and enterprise' },
+        { value: 'claude-haiku-4-5', label: 'Claude Haiku 4.5 — Faster, lower cost' },
+    ],
+    openai: [
+        { value: 'gpt-5.6-terra', label: 'GPT-5.6 Terra — Recommended' },
+        { value: 'gpt-5.6-sol', label: 'GPT-5.6 Sol — Highest quality' },
+        { value: 'gpt-5.6-luna', label: 'GPT-5.6 Luna — Faster, lower cost' },
+    ],
+};
+
+const CUSTOM_MODEL_VALUE = 'custom';
+
 const DEFAULT_MODELS: Record<HostedProviderSelection, string> = {
-    anthropic: 'claude-sonnet-4-20250514',
-    openai: 'gpt-5.2',
+    anthropic: HOSTED_MODEL_OPTIONS.anthropic[0]!.value,
+    openai: HOSTED_MODEL_OPTIONS.openai[0]!.value,
     'openai-compatible': '',
 };
 
@@ -34,6 +62,19 @@ function isHostedProviderSelection(value: string): value is HostedProviderSelect
 
 function isBackendSelection(value: string): value is BackendSelection {
     return value === 'auto' || value === 'native' || value === 'webllm' || value === 'cloud';
+}
+
+function getSelectedBackend({ backend, nativeAvailable, preference }: SelectedBackendInput): BackendSelection {
+    if (nativeAvailable) {
+        return preference;
+    }
+    if (preference !== 'auto' && preference !== 'native') {
+        return preference;
+    }
+    if (backend !== 'none' && backend !== 'native') {
+        return backend;
+    }
+    return 'webllm';
 }
 
 function getProviderLabel(provider: HostedProviderSelection): string {
@@ -57,17 +98,24 @@ function getApiKeyPlaceholder(provider: HostedProviderSelection): string {
 }
 
 export const AiSection = (): ReactElement => {
-    const [apiKey, setApiKey] = useState('');
-    const [showKey, setShowKey] = useState(false);
-    const [provider, setProvider] = useState<HostedProviderSelection>('anthropic');
-    const [model, setModel] = useState(DEFAULT_MODELS.anthropic);
-    const [baseUrl, setBaseUrl] = useState('');
-    const [configurationError, setConfigurationError] = useState<string | null>(null);
     const backendPreference = useStore(aiBackendPreferenceStore, 'auto');
     const configuredProvider = useStore(hostedLlmProviderStatusStore, null);
     const llmStatus = useStore(llmStatusStore, { state: 'idle' });
+    const [apiKey, setApiKey] = useState('');
+    const [showKey, setShowKey] = useState(false);
+    const [provider, setProvider] = useState<HostedProviderSelection>(configuredProvider?.provider ?? 'anthropic');
+    const [model, setModel] = useState(
+        configuredProvider?.model ?? DEFAULT_MODELS[configuredProvider?.provider ?? 'anthropic']
+    );
+    const [baseUrl, setBaseUrl] = useState(configuredProvider?.baseUrl ?? '');
+    const [configurationError, setConfigurationError] = useState<string | null>(null);
     const backend = llmStatus.state === 'ready' ? llmStatus.backend : resolveBackend();
+    const nativeAvailable = isNativeAiRuntimeAvailable();
+    const selectedBackend = getSelectedBackend({ backend, nativeAvailable, preference: backendPreference });
     const cloudAvailable = configuredProvider !== null;
+    const modelOptions = provider === 'openai-compatible' ? [] : HOSTED_MODEL_OPTIONS[provider];
+    const customFirstPartyModel =
+        provider !== 'openai-compatible' && !modelOptions.some((option) => option.value === model);
     const renderIife_16 = () => {
         if (backend === 'native') {
             return 'success';
@@ -101,7 +149,7 @@ export const AiSection = (): ReactElement => {
             <SectionTitle icon={<Sparkles className="size-4" />} title="AI" />
             <FieldGroup label="AI execution backend">
                 <select
-                    value={backendPreference}
+                    value={selectedBackend}
                     onChange={(event) => {
                         const selection = event.target.value;
                         if (isBackendSelection(selection)) {
@@ -111,13 +159,15 @@ export const AiSection = (): ReactElement => {
                     className="h-8 w-full rounded-md border border-input bg-background px-2 text-xs"
                     aria-label="AI execution backend"
                 >
-                    <option value="auto">Automatic</option>
-                    <option value="native">Native local</option>
+                    {nativeAvailable ? <option value="auto">Automatic failover</option> : null}
+                    {nativeAvailable ? <option value="native">Native local</option> : null}
                     <option value="webllm">Browser WebLLM</option>
                     <option value="cloud">Hosted provider</option>
                 </select>
                 <p className="mt-1 text-[10px] leading-relaxed text-muted-foreground">
-                    Automatic prefers an already-running backend, then native local, WebLLM, and hosted AI.
+                    {nativeAvailable
+                        ? 'Choose one backend, or let the desktop app fail over between native local, WebLLM, and your hosted provider.'
+                        : 'Choose where prompts run. WebLLM stays in this browser; hosted AI uses your configured provider.'}
                 </p>
             </FieldGroup>
             <FieldGroup label="Active Backend">
@@ -166,17 +216,53 @@ export const AiSection = (): ReactElement => {
                         <option value="openai">OpenAI</option>
                         <option value="openai-compatible">OpenAI-compatible</option>
                     </select>
+                    {provider === 'openai-compatible' ? (
+                        <div>
+                            <Input
+                                value={model}
+                                onChange={(event) => {
+                                    setModel(event.target.value);
+                                    setConfigurationError(null);
+                                }}
+                                placeholder="Model identifier from your provider"
+                                className="h-8 text-xs font-mono"
+                                aria-label="Hosted AI model"
+                            />
+                            <p className="mt-1 text-[9px] leading-tight text-muted-foreground">
+                                Custom endpoints define their own model IDs.
+                            </p>
+                        </div>
+                    ) : (
+                        <select
+                            value={customFirstPartyModel ? CUSTOM_MODEL_VALUE : model}
+                            onChange={(event) => {
+                                setModel(event.target.value === CUSTOM_MODEL_VALUE ? '' : event.target.value);
+                                setConfigurationError(null);
+                            }}
+                            className="h-8 rounded-md border border-input bg-background px-2 text-xs"
+                            aria-label="Hosted AI model"
+                        >
+                            {HOSTED_MODEL_OPTIONS[provider].map((option) => (
+                                <option key={option.value} value={option.value}>
+                                    {option.label}
+                                </option>
+                            ))}
+                            <option value={CUSTOM_MODEL_VALUE}>Custom model ID…</option>
+                        </select>
+                    )}
+                </div>
+                {customFirstPartyModel ? (
                     <Input
                         value={model}
                         onChange={(event) => {
                             setModel(event.target.value);
                             setConfigurationError(null);
                         }}
-                        placeholder="Model identifier"
-                        className="h-8 text-xs font-mono"
-                        aria-label="Hosted AI model"
+                        placeholder="Model ID from your provider account"
+                        className="h-8 text-xs font-mono mb-1.5"
+                        aria-label={`Custom ${getProviderLabel(provider)} model ID`}
                     />
-                </div>
+                ) : null}
                 {provider === 'openai-compatible' ? (
                     <Input
                         value={baseUrl}
