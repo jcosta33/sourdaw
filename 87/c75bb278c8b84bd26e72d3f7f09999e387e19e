@@ -1,0 +1,49 @@
+src/modules/Arrangement/presentations/renderers/__tests__/createWebGpuRenderer.spec.ts
+  s_14f2bbc9f385dd::t_a70ddc405dc96f 103-119
+  s_14f2bbc9f385dd::t_ceb2a5c4965e6c 522-627
+  s_14f2bbc9f385dd::t_be9c11458bacf3 293-302
+  s_14f2bbc9f385dd::t_b850a7b9b552c6 149
+  s_14f2bbc9f385dd::t_2808ab3aed4d1e 235-236
+  s_14f2bbc9f385dd::t_07c0862e1f0e9b 628-727
+  s_14f2bbc9f385dd::t_43bf03ac41abeb 166
+  s_14f2bbc9f385dd::t_ffbd42e62694d9 127
+  s_14f2bbc9f385dd::t_ee79b9b4764899 207-208
+  s_14f2bbc9f385dd::t_628babe80e4c67 159-165,167-183,185-206,209-210
+  s_14f2bbc9f385dd::t_e41c2473c6f5f8 184
+  s_14f2bbc9f385dd::t_9731a144304d5e 211-216,237-242,249,252,303-308,728-729
+src/modules/Arrangement/presentations/renderers/__tests__/createClipLabelTextureCache.spec.ts
+  s_14f2bbc9f385dd::t_47222692f6e987 139
+  s_14f2bbc9f385dd::t_eb70dfe9eac6bd 186-193
+  s_14f2bbc9f385dd::t_b26857be330331 205
+  s_14f2bbc9f385dd::t_2a4f451bf0d924 154,159
+  s_14f2bbc9f385dd::t_8fe6621f893434 220
+  s_14f2bbc9f385dd::t_c486df4f4685ff 22-35,38,41,50,58
+  s_14f2bbc9f385dd::t_46459b23712649 74
+  s_14f2bbc9f385dd::t_de569d46eebbe5 286,289,293-294,297-298,300,303-345,354-355,360,363-377
+  s_14f2bbc9f385dd::t_aca713d9084f9f 379-471
+  s_14f2bbc9f385dd::t_b061a9a7d8ce2e 378
+src/modules/Arrangement/presentations/renderers/createWebGpuRenderer.ts
+  s_14f2bbc9f385dd::t_d68a5b8d3c5adc 675-676
+  s_14f2bbc9f385dd::t_1f968440992606 7
+  s_14f2bbc9f385dd::t_7cc7f3b68cf212 361-366
+  s_14f2bbc9f385dd::t_46e0f0876395f7 718-723
+  s_14f2bbc9f385dd::t_2d219c062da39b 432-439,448-449
+src/modules/Arrangement/presentations/renderers/createClipLabelTextureCache.ts
+  s_14f2bbc9f385dd::t_b0551b6ce479e7 14-39,45,54,56-61,63-76,91-98,108-116,122-139,142-149,154,160-167,174,184-190,192-199,215-216,218-239,241-248,250-258,270,273,283,294-304,307-315,318-344,354-357,359,365-366,375-385,389,394
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "87c75bb278c8b84bd26e72d3f7f09999e387e19e",
+  "prompts": {},
+  "sessions": {
+    "s_14f2bbc9f385dd": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f9a61a1d-66b3-4146-938d-a04f45f4b060",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
