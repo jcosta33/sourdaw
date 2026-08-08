@@ -234,6 +234,7 @@ export const TransportControls = ({
                         aria-label="Punch in/out"
                         aria-pressed={punchInEnabled}
                         onClick={togglePunchEnabled}
+                        data-testid="transport-punch"
                     >
                         <Scissors className="size-3.5" aria-hidden="true" />
                     </LatchButton>
@@ -250,6 +251,7 @@ export const TransportControls = ({
                         aria-label="Count-in"
                         aria-pressed={countInEnabled}
                         onClick={toggleCountIn}
+                        data-testid="transport-countin"
                     >
                         <ListOrdered className="size-3.5" aria-hidden="true" />
                     </LatchButton>
