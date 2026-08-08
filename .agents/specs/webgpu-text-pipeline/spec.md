@@ -2,7 +2,7 @@
 type: spec
 id: SPEC-webgpu-text-pipeline
 title: WebGPU timeline text pipeline
-status: draft
+status: ready
 owner: The Sourdaw team
 related:
     - ../webgpu-automation-rendering/spec.md
@@ -107,10 +107,10 @@ by up to 0.5 CSS px. Sub-pixel, but it is exactly the class of drift that accumu
 ## Recommendation
 
 **Keep whole-string Canvas2D rasterisation as the glyph source; replace per-string textures with one
-shared shelf-packed atlas drawn in a single instanced draw; generalise it from clip names to all
-eight layers.**
+shared shelf-packed atlas drawn in a single instanced draw; truncate rather than condense; and
+generalise the whole thing from clip names to all eight layers.**
 
-These are two separable decisions and both should be stated plainly.
+Three separable decisions. All three stated plainly, none of them escalated.
 
 ### Decision 1 — the glyph source stays Canvas2D whole-string raster
 
@@ -209,18 +209,30 @@ Our own constants already agree: `CLIP_LABEL_FONT` is a fixed `500 10px` (`clipL
 The consequence is the important part. **Zoom is a layout problem here, not a rasterisation
 problem.** Rasters need re-cutting on a change of text, style or DPR — not on zoom.
 
-### The one thing zoom currently does touch
+### Decision 3 — labels truncate, they do not condense
 
-Our labels are *condensed* rather than truncated: Canvas2D's `maxWidth` argument squeezes the glyph
-run to fit (`clipDrawing.ts:163`, documented at `clipLabel.ts:11-16`). Because the squeeze factor
-moves with zoom, the raster is zoom-dependent after all, which is why the cache key carries a
-quantised width (`createClipLabelTextureCache.ts:184-185`) and why a zoom drag re-cuts every label
-at every 1 px step.
+Our labels are currently *condensed* rather than truncated: Canvas2D's `maxWidth` argument squeezes
+the glyph run to fit (`clipDrawing.ts:163`, documented at `clipLabel.ts:11-16`). Because the squeeze
+factor moves with zoom, the raster is zoom-dependent after all — which is the only reason the cache
+key carries a quantised width (`createClipLabelTextureCache.ts:184-185`) and why a zoom drag re-cuts
+every label at every 1 px step.
 
-Adopting the field standard — fixed size, truncate with an ellipsis, hide below a floor — makes the
-cache key `(text, style, dpr)` and removes zoom from rasterisation entirely. It is both the
-field-standard behaviour and the cheaper engineering. It is also a **visible change to how every
-existing project looks**, so it is carried as the one open question below rather than assumed.
+**This phase adopts the field standard: fixed size, truncate with an ellipsis, hide below a floor.**
+Not escalated, because research settles it. The field is unanimous and cited above — Cubase ships a
+preference named "Hide Truncated Event Names", REAPER exposes `itemlabel_hideheight` as a pixel
+threshold, label size lives in a separate global setting wherever one exists, and clip names are a
+boolean toggle in Premiere, Studio One and Pro Tools. No surveyed product condenses. Decades of
+shipping DAWs answer this question and the answer is looked up, not forked.
+
+It is also the cheaper engineering: the cache key collapses to `(text, style, dpr)` and **zoom leaves
+rasterisation entirely**. A zoom drag stops re-cutting rasters altogether. Truncation is a pure
+layout operation, applied by moving the quad's right edge and its `u` coordinate — no new raster.
+
+**This is a visible change to how every existing project looks.** Long clip names that today appear
+horizontally squeezed will instead appear at normal proportions, cut at the clip edge with an
+ellipsis; names below the hide floor will disappear rather than squeeze into illegibility. Both
+backends change together because the rule lives in the shared layout module, so the change is
+uniform, not a new divergence. The requirement is AC-013.
 
 ## Requirements
 
@@ -304,9 +316,8 @@ Verify with: the future owning test, run as
 ### AC-006 — Rasterisation count over a zoom sweep equals the number of distinct label identities, exactly
 
 Over a 240-frame continuous zoom sweep at fixed DPR with a fixed set of L labels, the number of
-rasterisations must equal an exact enumerated number, stated in the test — L if the truncation
-decision lands (see Open questions), otherwise L × the enumerated set of width buckets the sweep
-crosses.
+rasterisations must equal **exactly L**. Under AC-013 the cache key is `(text, style, dpr)`, none of
+which zoom touches, so a zoom sweep must produce no rasterisation at all after the first frame.
 
 **It must be an exact equality, not a bound and not a ratio.** A bound re-based onto the last
 observed value cannot be exceeded by construction, which is the failure this repo has already
@@ -379,7 +390,47 @@ Verify with: `pnpm deps:validate`
 
 Verify with: `pnpm typecheck && pnpm typecheck:test`
 
-### AC-013 — Labels are legible and identical between backends at each DPR — eyes required
+### AC-013 — Labels truncate with an ellipsis and hide below a floor; nothing condenses
+
+The shared layout module must, for every layer, return a truncated string plus a clip width rather
+than a condensation budget. No backend may pass a `maxWidth` argument to `fillText` for the purpose
+of squeezing a glyph run. Below a stated hide floor the layer is not drawn at all.
+
+Both backends must produce the same truncation point for the same string and width, at the five zoom
+points and four DPRs of AC-002, including the boundary cases: a string that exactly fits, one glyph
+over, and exactly at the hide floor and one pixel below it.
+
+Observation that violates it: any `fillText` call carrying a squeeze `maxWidth`; a backend truncating
+at a different glyph index than the other; a label drawn below the hide floor; or a truncated string
+rendered without the ellipsis.
+
+Mutation that reds it: restore the `maxWidth` argument at `clipDrawing.ts:163`.
+
+Verify with: the future owning test, run as
+`pnpm test:run --dir src src/modules/Arrangement/presentations/renderers/__tests__/timelineTextTruncation.spec.ts`
+
+### AC-014 — The text pipeline is observed once against a real GPU device, not only a stub
+
+Every other machine-verifiable criterion here runs against a stubbed adapter, device and canvas
+context (`createWebGpuRenderer.spec.ts:120`, `:168-193`). Nothing in the suite has ever constructed
+a real `GPUDevice` — see "Harness fidelity" below. #1415 established that a harness testing a
+mutilated approximation of what ships can stay green while the real thing throws.
+
+This phase must add at least one observation of the real path: a Playwright run under Chromium with
+WebGPU enabled that loads a fixture project, asserts `renderer.backend === 'webgpu'`, and reads back
+non-background pixels inside each of the eight layers' expected label boxes and background pixels
+just outside them. If WebGPU cannot be obtained under the e2e runner on this target, the spec
+requires a written statement of what was tried and what the fallback observes instead — not silence.
+"Its draw list contains the label" and "the label is legible on screen" are different claims; do not
+write the second without the pixel.
+
+Observation that violates it: the backend resolving to `canvas2d` under the run, or an expected label
+box reading uniform background.
+
+Verify with: `pnpm test:e2e tests/e2e/webgpuTextPipeline.spec.ts` — future owning test; **note that
+`pnpm test:e2e` is a local-only gate and is not part of CI health gates.**
+
+### AC-015 — Labels are legible and identical between backends at each DPR — eyes required
 
 Load the same project on the same machine under each backend and compare, at
 `devicePixelRatio ∈ {1, 1.5, 2, 3}` — the non-1 values are the point; DPR 1 alone proves nothing.
@@ -394,7 +445,7 @@ different in weight, position or fringing.
 Verify with: `manual` — run the app under each backend at each DPR and compare all eight layers side
 by side
 
-### AC-014 — No shimmer during scroll or zoom — eyes required
+### AC-016 — No shimmer during scroll or zoom — eyes required
 
 Record a 3-second horizontal scroll drag and a 3-second zoom drag. Glyph edges must stay stable;
 labels must not pulse, crawl or breathe. This is the observable consequence of AC-003 and cannot be
@@ -405,7 +456,7 @@ unchanged.
 
 Verify with: `manual` — record a scroll drag and a zoom drag and step through frames
 
-### AC-015 — Non-Latin, RTL and emoji names render correctly and identically — eyes required
+### AC-017 — Non-Latin, RTL and emoji names render correctly and identically — eyes required
 
 Name clips and tracks in Japanese, Simplified Chinese, Korean, Arabic, Hebrew and Devanagari, plus
 one emoji and one combining-diacritic string, and compare both backends. Arabic must be joined and
@@ -417,16 +468,44 @@ monochrome or missing emoji, or ink clipped at a texture boundary.
 
 Verify with: `manual` — set the fixture names, screenshot both backends, compare glyph by glyph
 
+## Harness fidelity — what nothing in this repo currently observes
+
+**No test anywhere establishes which backend a given machine gets, and no test has ever run the
+WebGPU renderer against a real `GPUDevice`.** Every criterion above except AC-014 is verified against
+a stand-in. Stated plainly because it changes what the machine-verifiable set is worth.
+
+| Where selection is exercised                      | What it actually observes                                                                                        |
+| ------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| `models/__tests__/RendererBackend.spec.ts:10-20`   | The boolean branch, by `Object.defineProperty(navigator, 'gpu', { value: {} })` on jsdom. `{}` is not a `GPU`. It proves the `if`, not the platform. |
+| `renderers/__tests__/createTimelineRenderer.spec.ts:9-19` | Nothing real: `getPreferredRendererBackend`, `createWebGpuRenderer` **and** `createCanvasRenderer` are all `vi.mock`ed. No renderer is ever constructed. |
+| `renderers/__tests__/createWebGpuRenderer.spec.ts:327,357,381,403` | The factory *is* called — against a stubbed `requestAdapter` (`:189`), a hand-written `limits` object (`:168`) and a stubbed `getContext` (`:120,:193`). No adapter is requested from a driver. |
+| `tests/e2e/`                                       | Zero occurrences of `webgpu`, `navigator.gpu` or `backend`. Nothing end-to-end has ever looked.                    |
+| `playwright.config.ts:24-28`                       | One `chromium` project on `devices['Desktop Chrome']`, no GPU flags. WebGPU availability under the runner is neither requested nor asserted. |
+
+The consequence is the point: `getPreferredRendererBackend()` selects WebGPU on `'gpu' in navigator`
+(`RendererBackend.ts:10-12`), which is every current Chromium, so **the path most capable machines
+take is the one nothing observes.** #1415 is the precedent — a harness that evaluated a regex-mutilated
+copy of worklet source stayed green on a processor that would `ReferenceError` in a browser, and was
+replaced with one that evaluates the bundled artifact the app loads. The same failure is available
+here in a stronger form, because our stand-in is not a mutilated copy of the renderer but a mutilated
+copy of the *GPU*.
+
+AC-014 exists to close it. It is the only criterion in this spec observed against the real render
+path, and it is the one that should be written first.
+
 ## Machine-verifiable versus eyes-required
 
-| Machine-verifiable                            | Eyes-required          |
-| --------------------------------------------- | ---------------------- |
-| AC-001 … AC-012 (twelve)                       | AC-013, AC-014, AC-015 (three) |
+| Category                              | Criteria                        | Count |
+| ------------------------------------- | ------------------------------- | ----- |
+| Machine-verifiable, against stubs      | AC-001 … AC-013                  | 13    |
+| Machine-verifiable, against a real GPU | AC-014 (local e2e lane only)     | 1     |
+| Eyes-required                          | AC-015, AC-016, AC-017           | 3     |
 
-The split is real and not a formality. AC-003 can prove a quad is integer-aligned; only AC-014 can
-prove the result does not shimmer. AC-010 can prove the whole string reached `fillText`; only AC-015
-can prove the glyphs came out right. Claiming the machine set alone closes this phase would be the
-unfalsifiable move.
+The split is real and not a formality. AC-003 can prove a quad is integer-aligned; only AC-016 can
+prove the result does not shimmer. AC-010 can prove the whole string reached `fillText`; only AC-017
+can prove the glyphs came out right. And per the table above, AC-001 … AC-013 all prove things about
+a stubbed device — necessary, and not sufficient. Claiming the stub set alone closes this phase would
+be the unfalsifiable move.
 
 ## Verification commands — confirmed versus unrun
 
@@ -438,23 +517,16 @@ were executed here.** What was confirmed is that each one is real:
 | `pnpm deps:validate`                        | script exists in `package.json`                                  | no       |
 | `pnpm typecheck`, `pnpm typecheck:test`     | scripts exist in `package.json`                                  | no       |
 | `pnpm test:run --dir src <path>`            | `test:run` is `vitest run`; the `--dir src` form is used at `../parameter-automation-coverage/spec.md:146` | no |
-| the seven `__tests__/timelineText*.spec.ts` paths | **do not exist yet** — they are the future owning tests this phase creates, following the house form used throughout `../hardware-controller-ecosystem/spec.md` | no |
+| `pnpm test:e2e <path>`                      | script exists in `package.json` (`playwright test`). **Local-only — not a CI health gate.** | no |
+| the eight `__tests__/timelineText*.spec.ts` and `tests/e2e/webgpuTextPipeline.spec.ts` paths | **do not exist yet** — they are the future owning tests this phase creates, following the house form used throughout `../hardware-controller-ecosystem/spec.md` | no |
 | `manual` verifications                      | require a WebGPU-capable machine and a human                     | no       |
 
-No `Verify with:` line here invokes a script that does not exist. The vitest paths are declared as
-future artifacts rather than presented as runnable today, which is the distinction that a previous
-spec got wrong.
+No `Verify with:` line here invokes a script that does not exist. The vitest and Playwright paths are
+declared as future artifacts rather than presented as runnable today, which is the distinction that a
+previous spec got wrong.
 
 ## Open questions
 
-- [ ] **Condense or truncate?** Labels are currently condensed to fit
-      (`clipDrawing.ts:163`, `clipLabel.ts:11-16`). The field standard is fixed size with truncation
-      or hiding, sourced above, and it also removes zoom from the cache key entirely. Adopting it is
-      a **visible change to how every existing project looks**, so it is an owner call.
-      **Recommendation: adopt truncation with an ellipsis and a hide floor, applied in the shared
-      layout module so both backends change together.** If the owner declines, AC-006's exact number
-      becomes L × the enumerated width buckets and the cache key keeps its width term; nothing else
-      in this spec moves. Blocks `status: ready`.
 - [ ] (non-blocking) If the atlas allocator in Decision 2 proves larger than this phase, fall back to
       the Canvas2D overlay layer assessed above — it gives parity by construction at the cost of a
       second compositing surface. Proposed trigger: the allocator alone exceeding the phase budget.
@@ -470,11 +542,21 @@ spec got wrong.
 - `src/modules/Arrangement/presentations/renderers/createClipLabelTextureCache.ts` — generalises from
   clip labels to all eight layers; ink-bounds sizing; eviction safety
 - `src/modules/Arrangement/presentations/renderers/clipLabel.ts` — becomes the shared multi-layer
-  layout and typography module both backends read
+  layout and typography module both backends read, and gains the truncation rule of AC-013
 - `src/modules/Arrangement/presentations/renderers/createCanvasRenderer.ts`,
   `clipDrawing.ts` — read layout and typography from the shared module instead of inline literals;
-  no behavioural change beyond whatever the truncation decision settles
-- `src/modules/Arrangement/presentations/renderers/__tests__/` — seven new specs
+  drop the squeeze `maxWidth` arguments per AC-013
+- `src/modules/Arrangement/presentations/renderers/__tests__/` — eight new specs
+- `tests/e2e/webgpuTextPipeline.spec.ts` — the AC-014 real-device observation
+
+### Sequencing note — D1 is not this phase's to fix
+
+D1 (the destroy-while-referenced frame loss) is a **live bug**, not a missing feature, and is being
+fixed in a separate lane so it does not wait on a spec merge. This phase must not touch
+`createClipLabelTextureCache.ts:26` / `createWebGpuRenderer.ts:74` ahead of that lane. AC-004 and
+AC-005 remain requirements of the finished pipeline — they are the guards that must still hold once
+the cache becomes an atlas, and they should be re-derived against whatever the fix lands, not against
+the constants cited here.
 
 ## Out-of-scope observations
 
@@ -499,5 +581,5 @@ Found while verifying, with evidence. Not folded in; not fixed here.
    choose Canvas2D, and no way for a reviewer to A/B the two without editing source.
    `../webgpu-automation-rendering/spec.md` AC-005 assumes "disable WebGPU via flag"; no such flag
    exists.
-6. **No end-to-end test exercises WebGPU.** No file under `tests/e2e/` mentions WebGPU or
-   `navigator.gpu`, so nothing in the suite has ever observed the backend the majority of users get.
+6. **No test observes which backend a machine gets.** Promoted out of this list into its own section
+   — see "Harness fidelity" above — because it is not adjacent to this phase, it is underneath it.
