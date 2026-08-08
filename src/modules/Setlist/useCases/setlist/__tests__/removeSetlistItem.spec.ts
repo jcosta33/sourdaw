@@ -94,14 +94,16 @@ describe('removeSetlistItem', () => {
         );
     });
 
+    // The cursor sits at an interior index with a song still after it, so the
+    // out-of-range clamp cannot stand in for the shift and make this pass.
     it('keeps the cursor on the same song when an earlier song is removed', () => {
         mockSetlistStore.value = {
             name: 'S',
-            items: [item('a', 10), item('b', 20), item('c', 5)],
+            items: [item('a', 10), item('b', 20), item('c', 5), item('d', 5)],
             currentIndex: 2,
             autoAdvance: false,
             countInBars: 1,
-            totalDuration: 35,
+            totalDuration: 40,
         };
 
         removeSetlistItem('a');
