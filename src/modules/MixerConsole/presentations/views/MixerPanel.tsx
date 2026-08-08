@@ -112,6 +112,7 @@ export const MixerPanel = ({ style }: MixerPanelProps): ReactElement => {
                             variant="ghost"
                             size="icon-xs"
                             aria-label="Save mixer snapshot"
+                            data-testid="mixer-save-snapshot"
                             title="Save mixer snapshot"
                             onClick={handleSaveSnapshot}
                         >
@@ -123,6 +124,7 @@ export const MixerPanel = ({ style }: MixerPanelProps): ReactElement => {
                             size="icon-xs"
                             className="text-[var(--color-accent-lavender)] hover:bg-[var(--color-accent-lavender)]/10 hover:text-[var(--color-accent-lavender)]"
                             aria-label="AI Mix Health Analysis"
+                            data-testid="mixer-ai-health"
                             title="AI Mix Health Analysis"
                             onClick={() => setShowMixHealth(true)}
                         >
@@ -134,6 +136,7 @@ export const MixerPanel = ({ style }: MixerPanelProps): ReactElement => {
                                 variant={showSnapshots ? 'secondary' : 'ghost'}
                                 size="icon-xs"
                                 aria-label="Recall mixer snapshot"
+                                data-testid="mixer-recall-snapshot"
                                 title="Recall mixer snapshot"
                                 onClick={() => setShowSnapshots((prev) => !prev)}
                                 disabled={snapshots.length === 0}
