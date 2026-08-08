@@ -238,6 +238,7 @@ export const PromptBar = (): ReactElement => {
                     placeholder={renderIife_5()}
                     className="h-7 border-0 bg-transparent text-xs shadow-none focus-visible:ring-0 placeholder:text-muted-foreground/60"
                     aria-label="Prompt command input"
+                    data-testid="prompt-input"
                     aria-autocomplete="list"
                     aria-expanded={dropdownOpen}
                     aria-controls="prompt-results"
@@ -251,6 +252,7 @@ export const PromptBar = (): ReactElement => {
                     }}
                     title="AI action history"
                     aria-label="Toggle AI action history"
+                    data-testid="toggle-ai-history"
                     type="button"
                 >
                     <History className="size-3.5" />
