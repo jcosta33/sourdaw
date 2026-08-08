@@ -200,6 +200,7 @@ export const PianoRollToolbar = ({
             )}
             aria-pressed={isFolded}
             aria-label="Toggle fold to scale"
+            data-testid="toolbar-fold-to-scale"
         >
             Fold
         </Button>
@@ -214,6 +215,7 @@ export const PianoRollToolbar = ({
             )}
             aria-pressed={constrainToScale}
             aria-label="Constrain notes to scale"
+            data-testid="toolbar-constrain"
         >
             Constrain
         </Button>
@@ -230,6 +232,7 @@ export const PianoRollToolbar = ({
             )}
             aria-pressed={stepInput}
             aria-label="Toggle step input mode"
+            data-testid="toolbar-step-input"
         >
             Step
         </Button>
@@ -246,6 +249,7 @@ export const PianoRollToolbar = ({
             )}
             aria-pressed={showGhostNotes}
             aria-label="Toggle ghost notes"
+            data-testid="toolbar-ghost"
         >
             Ghost
         </Button>
@@ -274,6 +278,7 @@ export const PianoRollToolbar = ({
             )}
             aria-pressed={chordMode}
             aria-label="Toggle chord stamp mode"
+            data-testid="toolbar-chord"
         >
             Chord
         </Button>
@@ -303,6 +308,7 @@ export const PianoRollToolbar = ({
             )}
             aria-pressed={paintMode}
             aria-label="Toggle paint mode"
+            data-testid="toolbar-paint"
         >
             Paint
         </Button>
@@ -333,6 +339,7 @@ export const PianoRollToolbar = ({
             )}
             aria-pressed={showExpressionView}
             aria-label="Toggle Expression View (I4)"
+            data-testid="toolbar-expression"
         >
             Expression
         </Button>
