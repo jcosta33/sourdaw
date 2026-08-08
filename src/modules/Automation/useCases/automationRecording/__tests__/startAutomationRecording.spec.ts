@@ -8,18 +8,34 @@ type TestTrack = {
     automationMode: 'read' | 'write' | 'touch' | 'latch';
 };
 
-const { activeRecording, pendingPoints, touchActive, automationSnapshot, trackSnapshot, transportSnapshot } =
-    vi.hoisted(() => {
-        const activeRecording = new Map<string, import('../recordingSessionState').RecordingSession>();
-        const pendingPoints = new Map<string, import('../../../models/Automation').AutomationPoint[]>();
-        const touchActive = new Set<string>();
-        const automationSnapshot: {
-            value: { lanes: Array<import('../../../models/Automation').AutomationLane> } | null;
-        } = { value: null };
-        const trackSnapshot: { value: { tracks: TestTrack[] } | null } = { value: null };
-        const transportSnapshot: { value: { playheadPosition: number } | null } = { value: null };
-        return { activeRecording, pendingPoints, touchActive, automationSnapshot, trackSnapshot, transportSnapshot };
-    });
+const {
+    activeRecording,
+    pendingPoints,
+    touchActive,
+    laneBaselines,
+    automationSnapshot,
+    trackSnapshot,
+    transportSnapshot,
+} = vi.hoisted(() => {
+    const activeRecording = new Map<string, import('../recordingSessionState').RecordingSession>();
+    const pendingPoints = new Map<string, import('../../../models/Automation').AutomationPoint[]>();
+    const touchActive = new Set<string>();
+    const laneBaselines = new Map<string, import('../../../models/Automation').AutomationPoint[]>();
+    const automationSnapshot: {
+        value: { lanes: Array<import('../../../models/Automation').AutomationLane> } | null;
+    } = { value: null };
+    const trackSnapshot: { value: { tracks: TestTrack[] } | null } = { value: null };
+    const transportSnapshot: { value: { playheadPosition: number } | null } = { value: null };
+    return {
+        activeRecording,
+        pendingPoints,
+        touchActive,
+        laneBaselines,
+        automationSnapshot,
+        trackSnapshot,
+        transportSnapshot,
+    };
+});
 
 vi.mock('#/modules/Arrangement/stores', async (importOriginal) => {
     const actual = await importOriginal<typeof import('#/modules/Arrangement/stores')>();
@@ -50,6 +66,7 @@ vi.mock('../recordingSessionState', () => ({
     activeRecording,
     pendingPoints,
     touchActive,
+    laneBaselines,
 }));
 
 vi.mock('../../../stores/automationStore', () => ({
@@ -75,6 +92,7 @@ describe('startAutomationRecording', () => {
         });
         pendingPoints.set('stale', []);
         touchActive.add('stale');
+        laneBaselines.set('stale-lane', [{ beat: 0, value: 0.5, curve: 'linear', tension: 0 }]);
         automationSnapshot.value = null;
         trackSnapshot.value = null;
         transportSnapshot.value = null;
@@ -86,6 +104,9 @@ describe('startAutomationRecording', () => {
         expect(activeRecording.has('stale')).toBe(false);
         expect(pendingPoints.has('stale')).toBe(false);
         expect(touchActive.has('stale')).toBe(false);
+        // An abandoned session's lane baseline would make this session's undo
+        // restore that session's starting state (audit M-052).
+        expect(laneBaselines.has('stale-lane')).toBe(false);
     });
 
     it('returns early when automation store has no snapshot', () => {

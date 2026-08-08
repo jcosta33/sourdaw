@@ -1,6 +1,7 @@
 import { batchAddAutomationPoints } from '../automation/batchAddAutomationPoints';
 import { simplifyGesturePoints } from '../automation/simplifyGesturePoints';
 
+import { captureLaneBaseline } from './captureLaneBaseline';
 import { findLaneId } from './findLaneId';
 import { activeRecording, pendingPoints } from './recordingSessionState';
 
@@ -15,6 +16,11 @@ export function flushPendingPoints(key: string): void {
     if (!laneId) {
         return;
     }
+
+    // A touch release flushes here, mid-session. Take the lane's pre-session
+    // baseline before the write lands, or the undo entry built at stop has
+    // nothing to diff against and the whole released pass goes unrecorded.
+    captureLaneBaseline(laneId);
 
     // Thin the recorded gesture on flush with the single shared RDP so a
     // full-rate fader/MIDI ride does not persist raw into project truth, the

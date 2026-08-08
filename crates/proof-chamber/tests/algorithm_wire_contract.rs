@@ -113,10 +113,29 @@ fn reverse_advertises_only_parameters_the_host_declares() {
 
     assert_eq!(
         names,
-        vec!["algorithm", "vintage", "mix", "decay", "size"],
+        vec![
+            "algorithm",
+            "vintage",
+            "mix",
+            "decay",
+            "size",
+            "high_cut",
+            "low_cut"
+        ],
         "Reverse must advertise the host-facing parameter names. A name the descriptor never \
          declares is a control the host cannot send, and a declared control the engine drops \
          is a dead knob."
+    );
+
+    // `width` is declared by the descriptor and is *not* here on purpose. This
+    // engine's wet path is one mono sample copied to both channels, so the
+    // mid/side matrix has no side component to scale: a `width` arm would
+    // accept the write and provably not move an output sample. It stays a
+    // recorded gap until the reverse buffer is stereo, rather than becoming a
+    // knob that reports success and does nothing.
+    assert!(
+        !names.iter().any(|n| n == "width"),
+        "Reverse advertised `width` while its wet path is still mono: {names:?}"
     );
 
     // The unadvertised alias still has to work, or dropping it from the

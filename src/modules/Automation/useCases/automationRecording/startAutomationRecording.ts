@@ -4,12 +4,15 @@ import { transportStore } from '#/modules/Transport/stores';
 import { automationStore } from '../../stores/automationStore';
 
 import { makeKey } from './makeKey';
-import { RECORDING_MODES, activeRecording, pendingPoints, touchActive } from './recordingSessionState';
+import { RECORDING_MODES, activeRecording, laneBaselines, pendingPoints, touchActive } from './recordingSessionState';
 
 export function startAutomationRecording(): void {
     activeRecording.clear();
     pendingPoints.clear();
     touchActive.clear();
+    // Baselines are per-session: a leftover entry from an abandoned session
+    // would make this session's undo restore that one's starting state.
+    laneBaselines.clear();
 
     const tracks = trackStore.value?.tracks ?? [];
 

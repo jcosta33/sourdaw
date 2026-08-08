@@ -25,6 +25,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '#/components/ui/tooltip
 import { useStore } from '#/infra/store/useStore';
 import { useStoreSelector } from '#/infra/store/useStoreSelector';
 import { injectPromptCommand } from '#/modules/AiRuntime/useCases';
+import { executeAppAction } from '#/modules/Command/useCases';
 import { preferencesStore, type Preferences } from '#/modules/Preferences/stores';
 import { defaultPreferences, setTrackHeight } from '#/modules/Preferences/useCases';
 import { setWorkspaceMode } from '#/modules/WorkspaceShell/useCases';
@@ -35,7 +36,6 @@ import { addTrack } from '../../useCases/addTrack';
 import { createFolder } from '../../useCases/folder/createFolder';
 import { getTrackTemplates } from '../../useCases/getTrackTemplates';
 import { loadTrackTemplate } from '../../useCases/loadTrackTemplate';
-import { removeTrack } from '../../useCases/removeTrack';
 import { reorderTrack } from '../../useCases/toggleTrackState/reorderTrack';
 import { selectTrack } from '../../useCases/toggleTrackState/selectTrack';
 import { useTracks } from '../hooks/useTracks';
@@ -180,12 +180,18 @@ export const TrackListView = ({
                     void (async () => {
                         const ok = await confirmUser({
                             title: `Delete "${track.name}"?`,
-                            message: 'This action cannot be undone.',
+                            message: 'The track, its clips and its devices are removed. Undo restores them.',
                             confirmLabel: 'Delete',
                             variant: 'danger',
                         });
                         if (ok) {
-                            removeTrack(selectedTrackId);
+                            // Same gesture as the context menu's Delete Track,
+                            // so it takes the same undoable route: the bare
+                            // `removeTrack` use case captures nothing for undo.
+                            void executeAppAction({
+                                type: 'removeTrack',
+                                payload: { trackId: selectedTrackId },
+                            });
                         }
                     })();
                 }
@@ -336,60 +342,60 @@ const AddTrackMenu = ({ trackCount }: { trackCount: number }): ReactElement => {
 
     return (
         <div data-testid="add-track-button">
-        <DropdownMenu>
-            <Tooltip>
-                <TooltipTrigger asChild>
-                    <DropdownMenuTrigger asChild>
-                        <Button variant="ghost" size="icon-xs" aria-label="Add track">
-                            <Plus className="size-3" aria-hidden="true" />
-                        </Button>
-                    </DropdownMenuTrigger>
-                </TooltipTrigger>
-                <TooltipContent>Add Track</TooltipContent>
-            </Tooltip>
+            <DropdownMenu>
+                <Tooltip>
+                    <TooltipTrigger asChild>
+                        <DropdownMenuTrigger asChild>
+                            <Button variant="ghost" size="icon-xs" aria-label="Add track">
+                                <Plus className="size-3" aria-hidden="true" />
+                            </Button>
+                        </DropdownMenuTrigger>
+                    </TooltipTrigger>
+                    <TooltipContent>Add Track</TooltipContent>
+                </Tooltip>
 
-            <DropdownMenuContent align="end" sideOffset={4} className="w-44">
-                <DropdownMenuItem
-                    onClick={() => createTrackOfKind('audio')}
-                    data-testid="add-track-audio"
-                    className="flex items-center gap-2 px-3 py-1.5 text-xs focus:bg-white/[0.06] cursor-pointer"
-                >
-                    <Mic2 className="size-3 text-[var(--color-accent-cyan)]" />
-                    Audio Track
-                </DropdownMenuItem>
-                <DropdownMenuItem
-                    onClick={() => createTrackOfKind('midi')}
-                    data-testid="add-track-midi"
-                    className="flex items-center gap-2 px-3 py-1.5 text-xs focus:bg-white/[0.06] cursor-pointer"
-                >
-                    <Music className="size-3 text-[var(--color-accent-mint)]" />
-                    MIDI Track
-                </DropdownMenuItem>
-                <DropdownMenuItem
-                    onClick={() => createTrackOfKind('bus')}
-                    className="flex items-center gap-2 px-3 py-1.5 text-xs focus:bg-white/[0.06] cursor-pointer"
-                >
-                    <GitBranch className="size-3 text-[var(--color-accent-peach)]" />
-                    Bus Track
-                </DropdownMenuItem>
-                {templates.length > 0 ? (
-                    <>
-                        <DropdownMenuSeparator className="border-border/50" />
-                        <DawMenuSectionLabel>Templates</DawMenuSectionLabel>
-                        {templates.map((tmpl) => (
-                            <DropdownMenuItem
-                                key={tmpl.id}
-                                onClick={() => loadTrackTemplate(tmpl.id)}
-                                className="flex items-center gap-2 px-3 py-1.5 text-xs focus:bg-white/[0.06] cursor-pointer"
-                            >
-                                <FileStack className="size-3 text-[var(--color-accent-lavender)]" />
-                                {tmpl.name}
-                            </DropdownMenuItem>
-                        ))}
-                    </>
-                ) : null}
-            </DropdownMenuContent>
-        </DropdownMenu>
+                <DropdownMenuContent align="end" sideOffset={4} className="w-44">
+                    <DropdownMenuItem
+                        onClick={() => createTrackOfKind('audio')}
+                        data-testid="add-track-audio"
+                        className="flex items-center gap-2 px-3 py-1.5 text-xs focus:bg-white/[0.06] cursor-pointer"
+                    >
+                        <Mic2 className="size-3 text-[var(--color-accent-cyan)]" />
+                        Audio Track
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                        onClick={() => createTrackOfKind('midi')}
+                        data-testid="add-track-midi"
+                        className="flex items-center gap-2 px-3 py-1.5 text-xs focus:bg-white/[0.06] cursor-pointer"
+                    >
+                        <Music className="size-3 text-[var(--color-accent-mint)]" />
+                        MIDI Track
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                        onClick={() => createTrackOfKind('bus')}
+                        className="flex items-center gap-2 px-3 py-1.5 text-xs focus:bg-white/[0.06] cursor-pointer"
+                    >
+                        <GitBranch className="size-3 text-[var(--color-accent-peach)]" />
+                        Bus Track
+                    </DropdownMenuItem>
+                    {templates.length > 0 ? (
+                        <>
+                            <DropdownMenuSeparator className="border-border/50" />
+                            <DawMenuSectionLabel>Templates</DawMenuSectionLabel>
+                            {templates.map((tmpl) => (
+                                <DropdownMenuItem
+                                    key={tmpl.id}
+                                    onClick={() => loadTrackTemplate(tmpl.id)}
+                                    className="flex items-center gap-2 px-3 py-1.5 text-xs focus:bg-white/[0.06] cursor-pointer"
+                                >
+                                    <FileStack className="size-3 text-[var(--color-accent-lavender)]" />
+                                    {tmpl.name}
+                                </DropdownMenuItem>
+                            ))}
+                        </>
+                    ) : null}
+                </DropdownMenuContent>
+            </DropdownMenu>
         </div>
     );
 };

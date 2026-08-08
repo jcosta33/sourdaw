@@ -33,6 +33,20 @@ const PLATE_SOURCE = join(REPO_ROOT, 'crates/proof-chamber/src/proof_chamber.rs'
 const INSTANCE_SOURCE = join(REPO_ROOT, 'crates/proof-chamber/src/lib.rs');
 
 /**
+ * Stages the plate delegates a `set_param` write to before its own `match`.
+ *
+ * `ProofChamber::set_param` opens with `if self.output.set_param(name, value)
+ * { return; }`, so an arm inside the shared wet-path stage is an arm the plate
+ * answers to just as much as one written in `proof_chamber.rs`. Reading only
+ * the plate file would report `high_cut` and `low_cut` as orphans the moment
+ * they moved out of it — a refactor reported as a dead knob.
+ *
+ * A file only belongs here while the plate really does consult it: the
+ * delegation is asserted below rather than assumed.
+ */
+const DELEGATED_SOURCES: readonly string[] = [join(REPO_ROOT, 'crates/proof-chamber/src/output_stage.rs')];
+
+/**
  * Keys of the engine state that are not engine parameters.
  *
  * `space` is the preset the panel expanded to produce every other field; it
@@ -73,7 +87,12 @@ function acceptedParamNames(source: string): ReadonlySet<string> {
     return names;
 }
 
-const plateNames = acceptedParamNames(readFileSync(PLATE_SOURCE, 'utf8'));
+const plateSource = readFileSync(PLATE_SOURCE, 'utf8');
+const plateNames = new Set(
+    [plateSource, ...DELEGATED_SOURCES.map((path) => readFileSync(path, 'utf8'))].flatMap((source) => [
+        ...acceptedParamNames(source),
+    ])
+);
 const instanceNames = acceptedParamNames(readFileSync(INSTANCE_SOURCE, 'utf8'));
 
 const engineStateKeys = Object.keys(DEFAULT_PARAMS).filter((key) => !NON_ENGINE_KEYS.includes(key));
@@ -84,6 +103,17 @@ describe('Dutch Oven PARAM_MAP closure', () => {
         // every "the plate answers to this" assertion below vacuously true.
         expect(plateNames.has('mix')).toBe(true);
         expect(plateNames.size).toBeGreaterThan(15);
+    });
+
+    it('only lets a delegated stage vouch for a name the plate actually forwards to it', () => {
+        // Without this, adding a file to `DELEGATED_SOURCES` would launder any
+        // arm inside it into "the plate answers to this". The delegation is a
+        // single line in `ProofChamber::set_param`, so read it: the plate must
+        // consult `self.output` and return on a hit, and the arm the stage
+        // owns must be absent from the plate's own match.
+        expect(plateSource).toContain('if self.output.set_param(name, value) {');
+        expect(acceptedParamNames(plateSource).has('high_cut')).toBe(false);
+        expect(plateNames.has('high_cut')).toBe(true);
     });
 
     it('gives every engine-state field a wire name', () => {

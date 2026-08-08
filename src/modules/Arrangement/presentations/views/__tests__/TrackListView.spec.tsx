@@ -116,6 +116,10 @@ vi.mock('#/modules/AiRuntime/useCases', () => ({
     injectPromptCommand: vi.fn(),
 }));
 
+vi.mock('#/modules/Command/useCases', () => ({
+    executeAppAction: vi.fn(),
+}));
+
 vi.mock('#/modules/WorkspaceShell/useCases', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/WorkspaceShell/useCases')>()),
     setWorkspaceMode: vi.fn(),
@@ -347,6 +351,7 @@ describe('TrackListView', () => {
 
     it('removes the selected track on Delete after user confirmation', async () => {
         const { removeTrack } = await import('../../../useCases/removeTrack');
+        const { executeAppAction } = await import('#/modules/Command/useCases');
         const { confirmUser } = await import('#/utils/Notification/confirmUser');
         vi.mocked(confirmUser).mockResolvedValue(true);
         renderWithTooltip(<TrackListView />);
@@ -354,11 +359,16 @@ describe('TrackListView', () => {
         // confirmUser is async; flush microtasks.
         await Promise.resolve();
         await Promise.resolve();
-        expect(removeTrack).toHaveBeenCalledWith('t1');
+        // The Delete key takes the undoable `removeTrack` action, not the bare
+        // use case, which captures no inverse (audit M-015). The end-to-end
+        // undo is asserted in `trackDeleteUndo.integration.spec.tsx`.
+        expect(executeAppAction).toHaveBeenCalledWith({ type: 'removeTrack', payload: { trackId: 't1' } });
+        expect(removeTrack).not.toHaveBeenCalled();
     });
 
     it('keeps the track when the user cancels deletion', async () => {
         const { removeTrack } = await import('../../../useCases/removeTrack');
+        const { executeAppAction } = await import('#/modules/Command/useCases');
         const { confirmUser } = await import('#/utils/Notification/confirmUser');
         vi.mocked(confirmUser).mockResolvedValue(false);
         renderWithTooltip(<TrackListView />);
@@ -366,6 +376,7 @@ describe('TrackListView', () => {
         await Promise.resolve();
         await Promise.resolve();
         expect(removeTrack).not.toHaveBeenCalled();
+        expect(executeAppAction).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'removeTrack' }));
     });
 
     it('reorders a track via drag and drop', async () => {

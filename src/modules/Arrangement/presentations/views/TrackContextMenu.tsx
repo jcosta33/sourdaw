@@ -19,7 +19,6 @@ import { freezeTrack } from '../../useCases/freezeBounce/freezeTrack';
 import { unfreezeTrack } from '../../useCases/freezeBounce/unfreezeTrack';
 import { importAudioClipToTrack } from '../../useCases/importAudioClipToTrack';
 import { importMidiFile } from '../../useCases/importMidiFile';
-import { removeTrack } from '../../useCases/removeTrack';
 import { renameTrack } from '../../useCases/renameTrack';
 import { saveTrackAsTemplate } from '../../useCases/saveTrackAsTemplate';
 import { setInputMonitoring } from '../../useCases/setTrackGainPan/setInputMonitoring';
@@ -190,12 +189,18 @@ export const TrackContextMenu = ({ track, children }: TrackContextMenuProps): Re
                 void (async () => {
                     const ok = await confirmUser({
                         title: `Delete "${track.name}"?`,
-                        message: 'This action cannot be undone.',
+                        message: 'The track, its clips and its devices are removed. Undo restores them.',
                         confirmLabel: 'Delete',
                         variant: 'danger',
                     });
                     if (ok) {
-                        void removeTrack(track.id);
+                        // `removeTrack` (the use case) captures nothing, so the
+                        // menu's delete used to be unrecoverable while the same
+                        // delete issued as an action stayed undoable. The
+                        // `removeTrack` handler snapshots clips, devices,
+                        // routing, automation lanes, MIDI and takes for its
+                        // `restoreTrack` inverse — route through it.
+                        void executeAppAction({ type: 'removeTrack', payload: { trackId: track.id } });
                     }
                 })();
             },

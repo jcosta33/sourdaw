@@ -10,6 +10,7 @@ pub mod decay_eq;
 pub mod early_reflections;
 pub mod fdn;
 pub mod hybrid;
+pub mod output_stage;
 pub mod proof_chamber;
 pub mod reverse;
 pub mod spring;
@@ -246,19 +247,25 @@ impl ProofChamberInstance {
         let mut names: Vec<&str> = vec!["algorithm", "vintage"];
         let engine_names: Vec<&str> = match &self.engine {
             ReverbEngine::Plate(p) => p.param_names(),
-            ReverbEngine::Fdn8(_) | ReverbEngine::Fdn16(_) => vec![
-                "mix",
-                // The host-facing name is the descriptor's `decay`; `rt60` stays
-                // accepted as the seconds-native alias but is not advertised.
-                "decay",
-                "damping",
-                "predelay",
-                "size",
-                "mod_depth",
-                "early_late",
-                "matrix",
-                "saturation",
-            ],
+            ReverbEngine::Fdn8(_) | ReverbEngine::Fdn16(_) => {
+                let mut names = vec![
+                    "mix",
+                    // The host-facing name is the descriptor's `decay`; `rt60`
+                    // stays accepted as the seconds-native alias but is not
+                    // advertised.
+                    "decay",
+                    "damping",
+                    "predelay",
+                    "size",
+                    "mod_depth",
+                    "early_late",
+                    "matrix",
+                    "saturation",
+                ];
+                names.extend(output_stage::OutputStage::PARAM_NAMES);
+                names.push(output_stage::OutputStage::WIDTH);
+                names
+            }
             ReverbEngine::Spring(s) => s.param_names(),
             ReverbEngine::Convolution(c) => c.param_names(),
             ReverbEngine::Hybrid(h) => h.param_names(),

@@ -342,7 +342,7 @@ export const CrumbsPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
                             onParamChange={(paramId, value, isTransient) =>
                                 setCrumbsParamWithAudio(deviceId, paramId, value, isTransient)
                             }
-                            onStackChange={(updates) => updateVoiceStack(deviceId, updates)}
+                            onStackChange={(updates, isTransient) => updateVoiceStack(deviceId, updates, isTransient)}
                         />
                     </SectionCard>
                 </aside>
