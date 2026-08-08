@@ -1,0 +1,37 @@
+src/modules/Arrangement/models/PluginDescriptors/__tests__/declaredRangeVsKnobTravel.spec.ts
+  s_14f2bbc9f385dd::t_d80861e0388f52 925-934
+  s_14f2bbc9f385dd::t_39a1877a5bebba 1172-1177
+  s_14f2bbc9f385dd::t_4c7c0e9a27121e 354-357
+  s_14f2bbc9f385dd::t_fcef2318e28d4c 53-64
+  s_14f2bbc9f385dd::t_e818931e863d21 828-832
+  s_14f2bbc9f385dd::t_5946c4b53ae641 437-448
+  s_14f2bbc9f385dd::t_89050305e65184 312,501-509
+  s_14f2bbc9f385dd::t_35d495e34b747f 799-800,803-815
+  s_14f2bbc9f385dd::t_b8b665fac6ab07 1419-1421
+  s_14f2bbc9f385dd::t_adc21706b66b03 1408-1413
+  s_14f2bbc9f385dd::t_bf6db9b96ee876 749-750
+  s_14f2bbc9f385dd::t_ea70ffe63b2a7c 860-861,867-884
+  s_14f2bbc9f385dd::t_c4b7e5591a6405 1191-1192,1197-1198,1200,1210-1336,1338,1599
+  s_14f2bbc9f385dd::t_b9de7f02699a9b 705-715,720-721
+  s_14f2bbc9f385dd::t_05ed821688c1f6 221-236,246-257,259-273,278-311
+  s_14f2bbc9f385dd::t_33067fb3bdb57e 1437-1580
+  s_14f2bbc9f385dd::t_d46cff2796ea2a 512
+  s_14f2bbc9f385dd::t_b7b5fc0e35ccdd 404-407
+  s_14f2bbc9f385dd::t_1f074eab68cbb0 30,50,313,408-410,449-451,510-511,515,722-724,737-739,751,753,786,816,833,885,895-896,935,957,1178,1337,1339,1414,1422,1425,1581,1596-1598,1602,1620
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "ccfff6fd8103d4653cb4f086c6b2f96de02f07b0",
+  "prompts": {},
+  "sessions": {
+    "s_14f2bbc9f385dd": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f9a61a1d-66b3-4146-938d-a04f45f4b060",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
