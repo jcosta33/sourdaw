@@ -763,7 +763,12 @@ Re-measured after additional PRs since threshold raise #3 (PR #1231). Lines cros
 - **PR #1412**: Virtual keyboard & panel toggles — VK open/close, inspector, bottom dock — 5 tests.
 - **PR #1414**: Punch recording & count-in — toggle, bars pill — 3 tests.
 - **PR #1417**: Timeline clip operations — create, open piano roll, context menu — 3 tests.
+- **PR #1421**: Project menu — new project, menu items, export — 4 tests.
+- **PR #1422**: Panel toggles — track list, inspector, dock, dual view — 5 tests.
+- **PR #1423**: Collaboration panel — toggle, open, close, status — 5 tests.
+- **PR #1424**: Command palette — open, search, navigate, close — 5 tests.
+- **PR #1426**: Prompt bar & AI history — input, autocomplete, toggle — 5 tests.
 
-**E2E: 61 tests across 13 spec files using data-testid selectors.**
+**E2E: 85 tests across 19 spec files using data-testid selectors.**
 
-**Campaign total to date: 253 PRs, ~2588 assertions. Lines coverage at 90.30%.**
+**Campaign total to date: 258 PRs, ~2623 assertions. Lines coverage at 90.30%.**
