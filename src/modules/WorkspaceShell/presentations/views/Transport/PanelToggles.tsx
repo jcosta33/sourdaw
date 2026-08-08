@@ -156,6 +156,7 @@ export const PanelToggles = ({
                         aria-label="Toggle virtual keyboard"
                         aria-pressed={virtualKeyboardOpen}
                         onClick={toggleVirtualKeyboard}
+                        data-testid="toggle-virtual-keyboard"
                         className={virtualKeyboardOpen ? 'text-[var(--color-accent-lavender)]' : ''}
                     >
                         <Piano className="size-3.5" aria-hidden="true" />
