@@ -52,6 +52,9 @@ function isString(value: unknown): value is string {
 function isNonEmptyString(value: unknown): value is string {
     return isString(value) && value.trim().length > 0;
 }
+function isSafeTrackColor(value: unknown): value is string {
+    return isString(value) && /^#[\dA-Fa-f]{6}$/.test(value);
+}
 function isNumber(value: unknown): value is number {
     return typeof value === 'number' && Number.isFinite(value);
 }
@@ -66,6 +69,18 @@ function isNonNegativeNumber(value: unknown): value is number {
 }
 function isOptional<Value>(value: unknown, check: (value: unknown) => value is Value): value is Value | undefined {
     return value === undefined || check(value);
+}
+
+function isOptionalOwn<Value>(
+    object: Record<string, unknown>,
+    key: string,
+    check: (value: unknown) => value is Value
+): boolean {
+    if (!Object.hasOwn(object, key)) {
+        return !(key in object);
+    }
+
+    return isOptional(object[key], check);
 }
 
 function hasExactKeys(value: Record<string, unknown>, keys: readonly string[]): boolean {
@@ -361,10 +376,18 @@ const validators = {
     zoomTracksVertical: 'unchecked',
     setTrackHeight: 'unchecked',
 
-    // Track state toggles — trusted (they already check trackId in the handler)
+    // Track state
     selectTrack: 'unchecked',
-    muteTrack: 'unchecked',
-    soloTrack: 'unchecked',
+    muteTrack: (param): param is PayloadOf<'muteTrack'> =>
+        isObj(param) &&
+        hasExactKeys(param, ['trackId', 'muted']) &&
+        isNonEmptyString(param.trackId) &&
+        typeof param.muted === 'boolean',
+    soloTrack: (param): param is PayloadOf<'soloTrack'> =>
+        isObj(param) &&
+        hasExactKeys(param, ['trackId', 'soloed']) &&
+        isNonEmptyString(param.trackId) &&
+        typeof param.soloed === 'boolean',
     setSoloSafe: (param): param is PayloadOf<'setSoloSafe'> =>
         isObj(param) &&
         hasExactKeys(param, ['trackId', 'soloSafe']) &&
@@ -376,11 +399,36 @@ const validators = {
         hasExactKeys(param, ['trackId', 'armed']) &&
         isNonEmptyString(param.trackId) &&
         typeof param.armed === 'boolean',
-    reorderTrack: 'unchecked',
-    setTrackGain: 'unchecked',
-    setTrackPan: 'unchecked',
-    setTrackColor: 'unchecked',
-    setTrackOutput: 'unchecked',
+    reorderTrack: (param): param is PayloadOf<'reorderTrack'> =>
+        isObj(param) &&
+        hasExactKeys(param, ['trackId', 'newIndex']) &&
+        isNonEmptyString(param.trackId) &&
+        isNonNegativeNumber(param.newIndex) &&
+        Number.isInteger(param.newIndex),
+    setTrackGain: (param): param is PayloadOf<'setTrackGain'> =>
+        isObj(param) &&
+        hasExactKeys(param, ['trackId', 'gain']) &&
+        isNonEmptyString(param.trackId) &&
+        isInRange(param.gain, 0, 1),
+    setTrackPan: (param): param is PayloadOf<'setTrackPan'> =>
+        isObj(param) &&
+        hasExactKeys(param, ['trackId', 'pan']) &&
+        isNonEmptyString(param.trackId) &&
+        isInRange(param.pan, -50, 50),
+    setTrackColor: (param): param is PayloadOf<'setTrackColor'> =>
+        isObj(param) &&
+        hasExactKeys(param, ['trackId', 'color']) &&
+        isNonEmptyString(param.trackId) &&
+        isSafeTrackColor(param.color),
+    setTrackOutput: (param): param is PayloadOf<'setTrackOutput'> =>
+        isObj(param) &&
+        hasOnlyKeys(param, ['trackId', 'outputId', 'expectedOutputId']) &&
+        Object.hasOwn(param, 'trackId') &&
+        Object.hasOwn(param, 'outputId') &&
+        isNonEmptyString(param.trackId) &&
+        isNonEmptyString(param.outputId) &&
+        param.trackId !== param.outputId &&
+        isOptionalOwn(param, 'expectedOutputId', isNonEmptyString),
     setTrackInput: 'unchecked',
     setTrackNotes: 'unchecked',
     hideTrack: 'unchecked',
@@ -392,7 +440,11 @@ const validators = {
     clearSolos: hasNoPayload,
 
     // Clip state
-    bypassDevice: 'unchecked',
+    bypassDevice: (param): param is PayloadOf<'bypassDevice'> =>
+        isObj(param) &&
+        hasExactKeys(param, ['deviceId', 'bypassed']) &&
+        isNonEmptyString(param.deviceId) &&
+        typeof param.bypassed === 'boolean',
     trimClipStart: (param): param is PayloadOf<'trimClipStart'> =>
         isObj(param) &&
         hasExactKeys(param, ['clipId', 'newStartBeat']) &&
@@ -500,9 +552,40 @@ const validators = {
     createBus: (param): param is PayloadOf<'createBus'> =>
         isObj(param) && hasExactKeys(param, ['name']) && normalizeSafeProjectName(param.name) !== null,
     createFolder: 'unchecked',
-    setSend: 'unchecked',
-    addSend: 'unchecked',
-    removeSend: 'unchecked',
+    setSend: (param): param is PayloadOf<'setSend'> =>
+        isObj(param) &&
+        hasOnlyKeys(param, ['trackId', 'busId', 'level', 'expectedLevel', 'expectedPreFader']) &&
+        Object.hasOwn(param, 'trackId') &&
+        Object.hasOwn(param, 'busId') &&
+        Object.hasOwn(param, 'level') &&
+        isNonEmptyString(param.trackId) &&
+        isNonEmptyString(param.busId) &&
+        param.trackId !== param.busId &&
+        isInRange(param.level, 0, 1) &&
+        isOptionalOwn(param, 'expectedLevel', (value): value is number => isInRange(value, 0, 1)) &&
+        isOptionalOwn(param, 'expectedPreFader', (value): value is boolean => typeof value === 'boolean'),
+    addSend: (param): param is PayloadOf<'addSend'> =>
+        isObj(param) &&
+        hasOnlyKeys(param, ['trackId', 'busId', 'level', 'preFader', 'expectedAbsent']) &&
+        Object.hasOwn(param, 'trackId') &&
+        Object.hasOwn(param, 'busId') &&
+        Object.hasOwn(param, 'level') &&
+        isNonEmptyString(param.trackId) &&
+        isNonEmptyString(param.busId) &&
+        param.trackId !== param.busId &&
+        isInRange(param.level, 0, 1) &&
+        isOptionalOwn(param, 'preFader', (value): value is boolean => typeof value === 'boolean') &&
+        isOptionalOwn(param, 'expectedAbsent', (value): value is true => value === true),
+    removeSend: (param): param is PayloadOf<'removeSend'> =>
+        isObj(param) &&
+        hasOnlyKeys(param, ['trackId', 'busId', 'expectedLevel', 'expectedPreFader']) &&
+        Object.hasOwn(param, 'trackId') &&
+        Object.hasOwn(param, 'busId') &&
+        isNonEmptyString(param.trackId) &&
+        isNonEmptyString(param.busId) &&
+        param.trackId !== param.busId &&
+        isOptionalOwn(param, 'expectedLevel', (value): value is number => isInRange(value, 0, 1)) &&
+        isOptionalOwn(param, 'expectedPreFader', (value): value is boolean => typeof value === 'boolean'),
 
     // Markers / sections / time signature / adjustments
     addMarker: (param): param is PayloadOf<'addMarker'> =>
