@@ -1,0 +1,42 @@
+src/modules/PluginHost/useCases/pluginScan/__tests__/startPluginScan.spec.ts
+  s_0d39f3a4a4357a::t_75d284c008ceed 36
+src/modules/PluginHost/stores/__tests__/pluginScanStore.spec.ts
+  s_0d39f3a4a4357a::t_b2fa22f2b2c4ad 15
+src-tauri/src/commands/plugins.rs
+  s_0d39f3a4a4357a::t_8d0333f8d7e10c 53-90,92-101
+  s_0d39f3a4a4357a::t_644648a8948559 91
+  s_0d39f3a4a4357a::t_8649ca93f5fda7 1089-1165
+  s_0d39f3a4a4357a::t_c1b3a37c38a4cf 127-129,131
+src/modules/PluginHost/useCases/pluginScan/scanning/__tests__/scanCustomPaths.spec.ts
+  s_0d39f3a4a4357a::t_bdb5cc9d255c89 17
+crates/daw-plugin-host/src/scanner.rs
+  s_0d39f3a4a4357a::t_61c0ff782647ae 21-24,31-70
+  s_0d39f3a4a4357a::t_292fb88872cf6c 179-190,192,198,202-207,211
+  s_0d39f3a4a4357a::t_1da9ebf66edcc1 71,392-397,401,405,410,415,422,427,441-473,477,481,488,492,497,502,506-511
+  s_0d39f3a4a4357a::t_93e139993b9720 327-387
+  s_0d39f3a4a4357a::t_c3325c95753708 72
+src/modules/PluginHost/models/ScannedPlugin.ts
+  s_0d39f3a4a4357a::t_39afa0ef6dcf67 18-24
+src/modules/PluginHost/useCases/pluginScan/__tests__/queries.spec.ts
+  s_0d39f3a4a4357a::t_6760b73a9d09c4 16
+src/modules/PluginHost/useCases/pluginScan/scanning/__tests__/startPluginScan.spec.ts
+  s_0d39f3a4a4357a::t_335679122ef8c9 17
+src/modules/AudioEngine/presentations/views/PluginBrowser.tsx
+  s_0d39f3a4a4357a::t_74359b97241893 268-275
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "63c551d1beed0eb170f94818be99aed609a2d80c",
+  "prompts": {},
+  "sessions": {
+    "s_0d39f3a4a4357a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "60da6a2e-7d79-4d98-8624-e993f5a9f94e",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
