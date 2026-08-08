@@ -1,0 +1,125 @@
+src/utils/handlerContract.ts
+  s_bc88af7d3b054c::t_782228386bf2d2 105-149,198-223,594-599,601-614
+  s_bc88af7d3b054c::t_d2c3356db5b68b 600
+src/modules/Arrangement/useCases/clipEditing/__tests__/splitClip.spec.ts
+  s_bc88af7d3b054c::t_e56a85150742ad 193,258
+  s_bc88af7d3b054c::t_b7e8230ec1bb87 8,16-19,57-70
+  s_bc88af7d3b054c::t_29a35139420d02 107-118
+src/modules/AiRuntime/transformers/__tests__/llmActionBridge.spec.ts
+  s_bc88af7d3b054c::t_d2fba3b2582dfc 1311-1313,1508-1513,1517-1522
+  s_bc88af7d3b054c::t_09acb78d47f30b 1514-1516,1523,2807-2837,2844-2849,2851-2859
+  s_bc88af7d3b054c::t_fd027f3e971671 1310,2764-2771,2787-2806
+  s_bc88af7d3b054c::t_127677b9e2976a 2838-2843,2850
+  s_14f2bbc9f385dd::t_0c83cc06db17c2 1524,2860
+src/modules/MIDI/useCases/midiClipData/prepareMidiClipSplit.ts
+  s_bc88af7d3b054c::t_a0a0b4e57bd6ee 1-95
+src/modules/Arrangement/useCases/clipEditing/splitClip.ts
+  s_bc88af7d3b054c::t_fa2314a3c498a9 2,10-24,52-53
+  s_bc88af7d3b054c::t_d2c3356db5b68b 37-38,47,62
+  s_bc88af7d3b054c::t_4bb01d6e6e0653 49,69,74
+  s_bc88af7d3b054c::t_1e1cfa331343d7 8-9,33-36,39,54-58,60-61,63-64,66-68,70-71
+  s_14f2bbc9f385dd::t_eaeddc54434ac4 7
+src/modules/Arrangement/handlers/clip/handleRestoreClipSplitState.ts
+  s_bc88af7d3b054c::t_7eabd22557527d 1-25
+src/modules/AiRuntime/useCases/__tests__/validateActionPayload.spec.ts
+  s_bc88af7d3b054c::t_59030d1b284d11 480,482,484-487
+src/modules/AiRuntime/useCases/validateActionPayload.ts
+  s_bc88af7d3b054c::t_0c2b722fa5bc5e 178-180
+  s_bc88af7d3b054c::t_58a924922facb9 181
+src/modules/MIDI/useCases/midiClipData/restoreMidiClipSplitState.ts
+  s_bc88af7d3b054c::t_849cd8e8bebcbb 59
+  s_bc88af7d3b054c::t_8f5a307c5d821f 28-31,73
+  s_bc88af7d3b054c::t_a0a0b4e57bd6ee 1-27,32-58,60-72,74-90
+src/modules/AiRuntime/transformers/llmActionBridge.ts
+  s_bc88af7d3b054c::t_0c2b722fa5bc5e 921-938,1753,1976-1980,1984,1988,1990
+  s_bc88af7d3b054c::t_348bb28a2791bd 1981-1983,1985-1987
+  s_bc88af7d3b054c::t_29bb83759fb622 2332,2334,2385-2389,2392-2394,2473-2477,2507-2508,2512-2513
+  s_bc88af7d3b054c::t_e3532869bc428f 2333,2335,2390-2391,2395-2397,2478-2487,2509-2511,2514-2517
+  s_14f2bbc9f385dd::t_4df6ea7284f628 1989,2398,2488,2518
+src/modules/Command/useCases/executableAppActionRegistry.ts
+  s_bc88af7d3b054c::t_e3532869bc428f 299,325-327,330
+  s_bc88af7d3b054c::t_76d4e421e7836b 312
+  s_bc88af7d3b054c::t_8caa178c5927bf 300
+  s_bc88af7d3b054c::t_0c2b722fa5bc5e 297-298,301-311,313-324,331-334
+  s_bc88af7d3b054c::t_a440a5e6209221 328-329
+  s_14f2bbc9f385dd::t_1aa56af7f29641 296
+src/modules/MIDI/useCases/midiNoteCrud/splitMidiNotesAtBeat.ts
+  s_bc88af7d3b054c::t_a0a0b4e57bd6ee 15,23,44
+src/modules/Arrangement/useCases/clipEditing/replaceClipSplitTrackState.ts
+  s_bc88af7d3b054c::t_c28df6dedcc114 57-58
+  s_bc88af7d3b054c::t_7eabd22557527d 1-56,59-82
+src/modules/Arrangement/handlers/clip/clipHandlers.ts
+  s_bc88af7d3b054c::t_d8abb49f02c8ec 26
+  s_bc88af7d3b054c::t_7eabd22557527d 49
+src/modules/Arrangement/handlers/clip/__tests__/handleSplitClip.integration.spec.ts
+  s_bc88af7d3b054c::t_7f685f43035d9e 1,92,174
+  s_bc88af7d3b054c::t_84c32e916bf44e 2-3,5-20,23-34,47-55,57-82,84-91,94-99,104-156,212
+  s_bc88af7d3b054c::t_c86372e6006198 4,21-22,35-46,56,83,93,100-103,157-173,175-198,200-202,204-211
+  s_bc88af7d3b054c::t_034322fedd62a8 199,203
+src/modules/MIDI/useCases/index.ts
+  s_bc88af7d3b054c::t_a0a0b4e57bd6ee 48-49
+src/modules/AiRuntime/models/RuntimeAction.ts
+  s_bc88af7d3b054c::t_782228386bf2d2 266,307
+src/modules/Arrangement/handlers/clip/__tests__/clipHandlers.spec.ts
+  s_bc88af7d3b054c::t_29b95c6749ef5d 39
+src/modules/AiRuntime/useCases/agentReference/bridgeGroundedLlmToolCalls.ts
+  s_bc88af7d3b054c::t_f2b657251d5892 1399-1402,1404-1406
+  s_bc88af7d3b054c::t_e3532869bc428f 1382-1398,1403,1407-1412,1416-1425,1458-1470,2608-2618,2735-2736
+  s_bc88af7d3b054c::t_475b66b09fc3d6 1325-1326,1474-1487
+  s_bc88af7d3b054c::t_e56a85150742ad 1488-1489,2734
+  s_bc88af7d3b054c::t_a440a5e6209221 1413-1415
+  s_14f2bbc9f385dd::t_f02bf392f4b61a 1471-1473,2619
+src/modules/Command/useCases/__tests__/executableAppActionRegistry.spec.ts
+  s_bc88af7d3b054c::t_a94d01475b26e2 53
+  s_bc88af7d3b054c::t_007ff199e89131 49
+  s_bc88af7d3b054c::t_8caa178c5927bf 52
+  s_bc88af7d3b054c::t_e54225615b6d6a 54-56
+  s_bc88af7d3b054c::t_09acb78d47f30b 47-48,50-51,57
+src/modules/Arrangement/useCases/clipEditing/prepareClipSplit.ts
+  s_bc88af7d3b054c::t_d2c3356db5b68b 14,18-29,54
+  s_bc88af7d3b054c::t_1e1cfa331343d7 1-3,5-12,15-17,30-41,43-44,46,48-53,55-60,62-77,79-104,106-108
+  s_bc88af7d3b054c::t_4bb01d6e6e0653 4,13,42,45,47,61,78,105
+src/modules/Arrangement/handlers/clip/handleSplitClip.ts
+  s_bc88af7d3b054c::t_7eabd22557527d 4-5,12-17,19-23,27-29,31-36,39-46,52,54-72,74
+  s_bc88af7d3b054c::t_d2c3356db5b68b 18,24-26,37-38
+  s_bc88af7d3b054c::t_2b58db1c60c636 2,9-11
+  s_bc88af7d3b054c::t_e3532869bc428f 47-51,53
+src/modules/Arrangement/handlers/clip/__tests__/handleSplitClip.spec.ts
+  s_bc88af7d3b054c::t_29a35139420d02 39,107,164,167-168,171-172,174
+  s_bc88af7d3b054c::t_09acb78d47f30b 110,119-121,123-163,165-166,169-170
+  s_bc88af7d3b054c::t_c2e0ebace79044 3-4,95,98
+  s_bc88af7d3b054c::t_29b95c6749ef5d 8-9,13-20,28-29,54-94,99-106,109,111-118,179
+  s_bc88af7d3b054c::t_e54225615b6d6a 122,173
+src/modules/AiRuntime/useCases/agentReference/__tests__/bridgeGroundedLlmToolCalls.spec.ts
+  s_bc88af7d3b054c::t_09acb78d47f30b 1234,1248-1249,1256-1258,1260
+  s_bc88af7d3b054c::t_a94d01475b26e2 1235-1240
+  s_bc88af7d3b054c::t_0f922dbfbe9354 1250-1254
+  s_bc88af7d3b054c::t_d2fba3b2582dfc 1223-1233,1255,1261-1262,1267-1269
+  s_bc88af7d3b054c::t_08bedd72367064 1263-1266
+  s_bc88af7d3b054c::t_483a2e5f09772c 1241-1247,1259
+  s_bc88af7d3b054c::t_0853fe4ecef06f 1220-1222
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "9aebb8837ddc9c6640a7a8037c2b7b25eaea204d",
+  "prompts": {},
+  "sessions": {
+    "s_14f2bbc9f385dd": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f9a61a1d-66b3-4146-938d-a04f45f4b060",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_bc88af7d3b054c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f9b4a-11a2-7f61-8dfb-76eed0eb2a9c",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
