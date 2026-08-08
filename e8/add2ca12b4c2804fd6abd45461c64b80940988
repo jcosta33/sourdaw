@@ -1,0 +1,14 @@
+tests/e2e/COVERAGE.md
+  h_1228e573df1f42 766-770,772,774
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "e8add2ca12b4c2804fd6abd45461c64b80940988",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
