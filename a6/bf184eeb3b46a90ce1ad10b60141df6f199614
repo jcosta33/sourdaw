@@ -1,0 +1,22 @@
+src/modules/Arrangement/presentations/renderers/__tests__/createWebGpuRenderer.spec.ts
+  s_14f2bbc9f385dd::t_068a17c051c254 527,533
+  s_14f2bbc9f385dd::t_dac7a8ec8cd305 628-647
+src/modules/Arrangement/presentations/renderers/__tests__/createClipLabelTextureCache.spec.ts
+  s_14f2bbc9f385dd::t_4828be3bb1a40e 348-364
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "a6bf184eeb3b46a90ce1ad10b60141df6f199614",
+  "prompts": {},
+  "sessions": {
+    "s_14f2bbc9f385dd": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f9a61a1d-66b3-4146-938d-a04f45f4b060",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
