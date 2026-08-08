@@ -73,6 +73,8 @@ export const ValueField = ({
     const [isDragging, setIsDragging] = useState(false);
     const [pendingValue, setPendingValue] = useState<number | null>(null);
     const draggingRef = useRef(false);
+    /** The one pointer that owns the in-flight drag, and the only id ever released. */
+    const activePointerIdRef = useRef<number | null>(null);
     const pendingValueRef = useRef<number | null>(null);
     const startY = useRef(0);
     const startValue = useRef(value);
@@ -85,6 +87,7 @@ export const ValueField = ({
             return;
         } // Only left click
         event.currentTarget.setPointerCapture(event.pointerId);
+        activePointerIdRef.current = event.pointerId;
         draggingRef.current = true;
         setIsDragging(true);
         startY.current = event.clientY;
@@ -93,6 +96,9 @@ export const ValueField = ({
 
     const handlePointerMove = (event: PointerEvent<HTMLDivElement>) => {
         if (!draggingRef.current) {
+            return;
+        }
+        if (event.pointerId !== activePointerIdRef.current) {
             return;
         }
 
@@ -123,32 +129,37 @@ export const ValueField = ({
     };
 
     const handlePointerUp = (event: PointerEvent<HTMLDivElement>) => {
-        const wasDragging = draggingRef.current;
-        draggingRef.current = false;
-        setIsDragging(false);
         /**
-         * `handlePointerDown` takes no capture when the field is read-only or the
-         * press is not the primary button, and both still deliver a `pointerup`
-         * here. Releasing unconditionally therefore raised an uncaught
-         * `NotFoundError` on every right-click and every press on a read-only
-         * field — the spec throws when `pointerId` matches no captured pointer.
+         * A drag belongs to the pointer that started it. This used to end on *any*
+         * `pointerup`: a second finger lifting, or a press that never became a drag
+         * at all (read-only field, non-primary button — both early-return from
+         * `handlePointerDown` without capturing), cleared the drag state and asked
+         * the element to release a capture it had never taken for that id.
          *
-         * The guard covers the presses that never captured; the catch covers a
-         * capture the browser already released on its own. Same pair as
-         * `Fader.finalizeDrag`.
+         * Releasing the id we captured rather than `event.pointerId` is what
+         * `Fader.finalizeDrag` and `RotaryKnob` already do.
+         *
+         * This is not about an exception. Measured in Chromium: releasing an id
+         * that never captured does *not* throw — `releasePointerCapture` raises
+         * `NotFoundError` only for an id that is no longer an active pointer, and a
+         * pointer delivering `pointerup` is active by construction. That is also
+         * why this handler needs no `try`/`catch`: it only ever releases the id of
+         * the event being dispatched. The siblings wrap their release because
+         * theirs runs from blur / visibilitychange / `pointercancel` finalizers,
+         * outside any pointer event, where the stored id can genuinely be stale.
          */
-        if (wasDragging) {
-            try {
-                event.currentTarget.releasePointerCapture(event.pointerId);
-            } catch {
-                // The browser may have already released capture before this handler runs.
-            }
+        if (event.pointerId !== activePointerIdRef.current) {
+            return;
         }
+        draggingRef.current = false;
+        activePointerIdRef.current = null;
+        setIsDragging(false);
+        event.currentTarget.releasePointerCapture(event.pointerId);
 
         const committed = pendingValueRef.current;
         pendingValueRef.current = null;
         setPendingValue(null);
-        if (wasDragging && commitMode === 'release' && committed !== null) {
+        if (commitMode === 'release' && committed !== null) {
             onChange(committed);
         }
     };

@@ -1,5 +1,5 @@
 import { render, screen, fireEvent } from '@testing-library/react';
-import { describe, it, expect, onTestFinished, vi } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 
 import { ValueField } from '../ValueField';
 
@@ -186,82 +186,69 @@ describe('ValueField', () => {
     });
 
     /**
-     * ADR 0012 — the capture calls used to sit behind `typeof … === 'function'`
-     * probes whose false branch no shipped engine can take. All the probe could
-     * do was convert a missing capture into a scrub that silently stops
-     * updating once the pointer leaves the field's box.
+     * A drag belongs to one pointer. These cover the id bookkeeping: which
+     * pointer may scrub, which pointer may end the scrub, and which id is
+     * handed back to the browser.
      *
-     * These assert the *call sites*, not the effect: `src/setupTests.ts` stubs
-     * both methods as no-ops and jsdom implements no capture semantics, so
-     * nothing here proves that pointer events are actually retargeted. It
-     * proves the element is asked to take capture when a scrub starts, is asked
-     * to give it back when the scrub ends, and is not asked at all for a press
-     * that never becomes a scrub.
+     * They assert the *call sites*, not the effect: `src/setupTests.ts` stubs
+     * both capture methods as no-ops and jsdom implements no capture semantics,
+     * so nothing here proves that pointer events are actually retargeted.
      */
     describe('pointer capture call sites', () => {
-        type CaptureSpy = {
-            field: HTMLElement;
-            calls: string[];
-            /** Messages of DOMExceptions that escaped a React handler to the window. */
-            uncaught: string[];
-        };
-
         /**
-         * The spy replaces `src/setupTests.ts`'s no-op capture stubs for this
-         * block. Unlike them it can *fail*: `releasePointerCapture` raises
-         * `NotFoundError` when `pointerId` matches no pointer this element has
-         * captured, which is the one rule the Pointer Events spec gives it and
-         * the one a no-op stub can never express.
+         * Replaces `src/setupTests.ts`'s no-op capture stubs for this block, and
+         * unlike them it can fail — but only where the platform actually fails.
          *
-         * A React handler that throws does not propagate out of `fireEvent` —
-         * jsdom reports it as an uncaught error on the window — so `uncaught`
-         * is where the DOMException shows up, exactly as it does in Chromium.
+         * `releasePointerCapture` throws `NotFoundError` when the id matches no
+         * *active pointer*; when the element merely holds no capture for an
+         * active id, the algorithm terminates silently. Measured in Chromium via
+         * Playwright: a right-click `pointerup` on an element that never captured
+         * releases cleanly, a touch `pointerup` reports `hasCapture=true` from
+         * implicit capture and releases cleanly, and only an id never seen as a
+         * pointer at all throws. So the spy tracks *active* ids, not captured
+         * ones — modelling it the other way invents an exception the platform
+         * does not raise.
          */
-        const renderWithCaptureSpy = (readOnly = false): CaptureSpy => {
+        const renderWithCaptureSpy = (readOnly = false): { field: HTMLElement; calls: string[] } => {
             render(<ValueField value={0} onChange={vi.fn()} min={-10} max={10} readOnly={readOnly} />);
             const field = screen.getByRole('spinbutton');
             const calls: string[] = [];
-            const captured = new Set<number>();
+            // Any id delivering any pointer event is, at that moment, an active
+            // pointer — which is why the component can never make the release
+            // throw. Registered at the target, so it lands before React's
+            // delegated handler at the root container runs.
+            const activePointers = new Set<number>();
+            for (const type of ['pointerdown', 'pointermove', 'pointerup']) {
+                field.addEventListener(type, (event: Event): void => {
+                    activePointers.add((event as globalThis.PointerEvent).pointerId);
+                });
+            }
             Object.defineProperty(field, 'setPointerCapture', {
                 configurable: true,
                 value: (pointerId: number): void => {
                     calls.push(`set:${pointerId}`);
-                    captured.add(pointerId);
                 },
             });
             Object.defineProperty(field, 'releasePointerCapture', {
                 configurable: true,
                 value: (pointerId: number): void => {
-                    // Recorded before the throw: a release that raises is still a
-                    // release the component asked for, and that ask is the defect.
-                    calls.push(`release:${pointerId}`);
-                    if (!captured.has(pointerId)) {
+                    if (!activePointers.has(pointerId)) {
                         throw new DOMException(`No active pointer with id ${pointerId}`, 'NotFoundError');
                     }
-                    captured.delete(pointerId);
+                    calls.push(`release:${pointerId}`);
                 },
             });
-            const uncaught: string[] = [];
-            const handleWindowError = (event: ErrorEvent): void => {
-                uncaught.push(String(event.message));
-            };
-            window.addEventListener('error', handleWindowError);
-            onTestFinished(() => {
-                window.removeEventListener('error', handleWindowError);
-            });
-            return { field, calls, uncaught };
+            return { field, calls };
         };
 
         it('should take capture on pointer down and give it back on pointer up', () => {
-            const { field, calls, uncaught } = renderWithCaptureSpy();
+            const { field, calls } = renderWithCaptureSpy();
             fireEvent.pointerDown(field, { button: 0, pointerId: 21, clientY: 100 });
             expect(calls).toEqual(['set:21']);
             fireEvent.pointerUp(field, { pointerId: 21 });
-            // A drag that captured must still hand the capture back — guarding the
-            // release must not become "never release", which leaks the capture and
-            // leaves every later pointermove on the page retargeted to this field.
+            // Skipping a release must not become "never release": that leaks the
+            // capture and leaves later pointer events retargeted to this field.
             expect(calls).toEqual(['set:21', 'release:21']);
-            expect(uncaught).toEqual([]);
         });
 
         it('should take no capture when the field is read-only', () => {
@@ -276,38 +263,85 @@ describe('ValueField', () => {
             expect(calls).toEqual([]);
         });
 
-        it('should not release a capture it never took when the press was read-only', () => {
-            const { field, calls, uncaught } = renderWithCaptureSpy(true);
+        it('should not ask to release a capture it never took, on a read-only press', () => {
+            const { field, calls } = renderWithCaptureSpy(true);
 
             fireEvent.pointerDown(field, { button: 0, pointerId: 24, clientY: 100 });
             fireEvent.pointerUp(field, { pointerId: 24 });
 
             expect(calls).toEqual([]);
-            expect(uncaught).toEqual([]);
         });
 
-        it('should not release a capture it never took when the press was a right-click', () => {
-            const { field, calls, uncaught } = renderWithCaptureSpy();
+        it('should not ask to release a capture it never took, on a right-click', () => {
+            const { field, calls } = renderWithCaptureSpy();
 
             fireEvent.pointerDown(field, { button: 2, pointerId: 25, clientY: 100 });
             fireEvent.pointerUp(field, { pointerId: 25 });
 
             expect(calls).toEqual([]);
-            expect(uncaught).toEqual([]);
         });
 
-        it('should survive a release the browser has already performed', () => {
-            // Mid-drag the capture goes away on its own — the browser releases it
-            // implicitly, or a second pointer's `pointerup` arrives. The release
-            // is still reached, so the guard alone does not cover this: only the
-            // `catch` keeps the stale id from raising `NotFoundError`.
-            const { field, calls, uncaught } = renderWithCaptureSpy();
+        it('should release the pointer it captured, not the one that happened to lift', () => {
+            const { field, calls } = renderWithCaptureSpy();
 
             fireEvent.pointerDown(field, { button: 0, pointerId: 26, clientY: 100 });
+            fireEvent.pointerDown(field, { button: 2, pointerId: 27, clientY: 100 });
             fireEvent.pointerUp(field, { pointerId: 27 });
+            expect(calls).toEqual(['set:26']);
 
-            expect(calls).toEqual(['set:26', 'release:27']);
-            expect(uncaught).toEqual([]);
+            fireEvent.pointerUp(field, { pointerId: 26 });
+            expect(calls).toEqual(['set:26', 'release:26']);
+        });
+    });
+
+    describe('a drag belongs to the pointer that started it', () => {
+        it('should keep scrubbing after a second pointer lifts', () => {
+            const onChange = vi.fn();
+            render(<ValueField value={0} onChange={onChange} min={-100} max={100} step={1} />);
+            const field = screen.getByRole('spinbutton');
+
+            fireEvent.pointerDown(field, { button: 0, pointerId: 31, clientY: 100 });
+            // A second finger touches down and lifts mid-drag. It never owned the
+            // drag, so it must not end it.
+            fireEvent.pointerDown(field, { button: 2, pointerId: 32, clientY: 100 });
+            fireEvent.pointerUp(field, { pointerId: 32 });
+
+            fireEvent.pointerMove(field, { pointerId: 31, clientY: 80 });
+
+            expect(onChange).toHaveBeenCalledTimes(1);
+            expect(onChange).toHaveBeenLastCalledWith(10);
+        });
+
+        it('should ignore movement from a pointer that does not own the drag', () => {
+            const onChange = vi.fn();
+            render(<ValueField value={0} onChange={onChange} min={-100} max={100} step={1} />);
+            const field = screen.getByRole('spinbutton');
+
+            fireEvent.pointerDown(field, { button: 0, pointerId: 33, clientY: 100 });
+            fireEvent.pointerMove(field, { pointerId: 34, clientY: 20 });
+
+            expect(onChange).not.toHaveBeenCalled();
+
+            fireEvent.pointerMove(field, { pointerId: 33, clientY: 90 });
+            expect(onChange).toHaveBeenCalledTimes(1);
+            expect(onChange).toHaveBeenLastCalledWith(5);
+        });
+
+        it('should commit once on release in release mode, ignoring a foreign pointer up', () => {
+            const onChange = vi.fn();
+            render(<ValueField value={0} onChange={onChange} commitMode="release" min={-100} max={100} step={1} />);
+            const field = screen.getByRole('spinbutton');
+
+            fireEvent.pointerDown(field, { button: 0, pointerId: 35, clientY: 100 });
+            fireEvent.pointerMove(field, { pointerId: 35, clientY: 80 });
+            fireEvent.pointerUp(field, { pointerId: 36 });
+
+            expect(onChange).not.toHaveBeenCalled();
+
+            fireEvent.pointerUp(field, { pointerId: 35 });
+
+            expect(onChange).toHaveBeenCalledTimes(1);
+            expect(onChange).toHaveBeenCalledWith(10);
         });
     });
 });
