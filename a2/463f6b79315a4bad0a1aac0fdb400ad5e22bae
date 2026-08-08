@@ -1,0 +1,37 @@
+src/modules/Project/useCases/projectTemplates/templateDefinitions/__tests__/helpers.spec.ts
+  s_ac9b259eab20ba::t_ea9c24b3773d28 32,35-37
+.agents/specs/render-parity-instrumentation/spec.md
+  s_ac9b259eab20ba::t_ac6f0246284edf 4,12-13,74,87,108-114,118,133-145
+src/modules/Project/models/ProjectData.ts
+  s_ac9b259eab20ba::t_ea9c24b3773d28 55-56
+tests/e2e/desktopRuntime.spec.ts
+  s_ac9b259eab20ba::t_47ceb9212bf7ef 3,13,17,61,97-98,101,110
+playwright.config.ts
+  s_ac9b259eab20ba::t_ea9c24b3773d28 5
+src/modules/Project/useCases/projectPersistence/__tests__/loadProjectMidiHydration.spec.ts
+  s_ac9b259eab20ba::t_ac6f0246284edf 82
+tests/e2e/exportAudioEvidence.spec.ts
+  s_ac9b259eab20ba::t_55be99b55e93a3 98-99,101-102,104-105
+  s_ac9b259eab20ba::t_47ceb9212bf7ef 15,19,65,69,100,106,113,117
+crates/daw-dsp/tests/toaster_pad_cutoff.rs
+  s_ac9b259eab20ba::t_77fc7dbcfcf3b3 115-116,118,121-123
+src/modules/TimelineEditor/presentations/views/Inspector/__tests__/ClipAudioAiSection.analyzeStall.spec.tsx
+  s_ac9b259eab20ba::t_e64a1b70a5c2b3 25-28
+  s_ac9b259eab20ba::t_319a198b5dbb0b 2
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "a2463f6b79315a4bad0a1aac0fdb400ad5e22bae",
+  "prompts": {},
+  "sessions": {
+    "s_ac9b259eab20ba": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8699-3865-7842-8c54-afbac6cfd266",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": null
+    }
+  }
+}
