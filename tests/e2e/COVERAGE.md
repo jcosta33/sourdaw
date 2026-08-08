@@ -739,5 +739,8 @@ Re-measured after additional PRs since threshold raise #3 (PR #1231). Lines cros
 - **PR #1361**: toPadStoreUpdate — boolean/string/numeric field dispatch — 13 tests.
 - **PR #1362**: registerCrdtStorageRuntime — storage port wiring delegation — 8 tests.
 - **PR #1363**: fermenterDependencies + getPitchHandlers — DI holder, handler map — 8 tests.
+- **PR #1364**: initCrumbsDeviceStatePersistence — playback-key dedup, first-sight, stale cleanup — 7 tests.
+- **PR #1365**: initLevainDeviceStatePersistence — identity-key dedup, first-sight, stale cleanup — 7 tests.
+- **PR #1366**: yeastPreviewRevision + RenderProgress — pub/sub revision, quality steps — 8 tests.
 
-**Campaign total to date: 231 PRs, ~2454 assertions. Lines coverage at 90.30%.**
+**Campaign total to date: 234 PRs, ~2469 assertions. Lines coverage at 90.30%.**
