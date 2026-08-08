@@ -201,10 +201,12 @@ export function quantiseDeviceParameterValue({ deviceType, paramId, value }: Cla
     }
 
     if (Object.is(rounded, -0)) {
-        // `Math.round(-0.2)` is `-0`, and the input is reachable: three stepped
-        // parameters declare a negative minimum (`fermenter/oscCoarse` -24..24,
-        // `fermenter/oscFine` -100..100, `grinder/gateThreshold` -80..0), so a
-        // ride through zero produces it.
+        // `Math.round(-0.2)` is `-0`, and the input is reachable: two stepped
+        // parameters declare a negative minimum (`fermenter/oscCoarse` -24..24
+        // and `grinder/gateThreshold` -80..0), so a ride through zero produces
+        // it. `fermenter/oscFine` was a third until it stopped declaring a
+        // step — cents are continuous in the engine and in every synth that
+        // ships a fine-tune control, so it is `float` and never reaches here.
         //
         // Nothing downstream is broken by `-0` today — the only comparison on a
         // delivered value is `delivered !== previousDelivered`, and `-0 !== 0`

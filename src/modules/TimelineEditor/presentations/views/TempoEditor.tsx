@@ -45,7 +45,7 @@ export const TempoEditor = (): ReactElement => {
         <div className="daw-readout-well relative flex h-8 items-center gap-2 rounded-sm px-2">
             <Tooltip>
                 <TooltipTrigger asChild>
-                    <div>
+                    <div data-testid="transport-tempo-bpm">
                         <ValueField
                             value={tempoField.tempo}
                             onChange={time.setTempoValue}
@@ -154,6 +154,7 @@ export const TempoEditor = (): ReactElement => {
                             size="sm"
                             onClick={time.startTimeSigEdit}
                             aria-label={`Time signature: ${time.transport.timeSignatureNumerator}/${time.transport.timeSignatureDenominator}. Click to edit.`}
+                            data-testid="transport-time-signature"
                             className="px-2 py-0.5"
                         >
                             <span className="text-lg font-mono font-medium text-muted-foreground">

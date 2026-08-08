@@ -41,7 +41,7 @@ export const PARAMETER_LEVEL_OFFLINE_AUTOMATION_EXEMPTIONS: Readonly<Record<stri
             oscCoarse:
                 'unclassified: declared `int` — AC-1 must decide class (b) structural selector vs class (c) stepped-but-automatable before an ordinal is wired',
             oscFine:
-                'unclassified: declared `int` — AC-1 must decide class (b) structural selector vs class (c) stepped-but-automatable before an ordinal is wired',
+                'unclassified: declared `float`, continuous in the engine — SPEC-parameter-automation-coverage AC-1 class (a) candidate, no offline ordinal wired',
             pulseWidth:
                 'unclassified: declared `float`, continuous in the engine — SPEC-parameter-automation-coverage AC-1 class (a) candidate, no offline ordinal wired',
             unisonVoices:

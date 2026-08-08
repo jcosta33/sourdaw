@@ -275,6 +275,66 @@ describe('applyAutomation — stepped device parameters', () => {
         expect(delivered).toEqual([1, 2, 3]);
     });
 
+    it("delivers whole semitones to Fermenter's oscCoarse while riding 0 → 12", () => {
+        // Coarse tune stays stepped, and it has to be asserted next to the fine
+        // tune case below or "fine is continuous" reads as "tuning stopped being
+        // quantised". `oscCoarse` selects a semitone: Vital declares the same
+        // control `kIndexed` and its host bridge rounds it, VST3 gives it a
+        // non-zero `ParameterInfo::stepCount`, and every synth that ships a
+        // coarse/fine pair steps the coarse half. The ride 0 → 12 is an octave,
+        // and every value the slew produces on the way lands strictly between
+        // two semitones — the rounded path and the raw path disagree on all of
+        // them.
+        seedSteppedLane({ deviceId: 'device-f3', deviceType: 'fermenter', paramId: 'oscCoarse', startValue: 0 });
+
+        ride({ startValue: 0, endValue: 12 });
+
+        const delivered = vi.mocked(applyFermenterRuntimeParam).mock.calls.map(([input]) => input.value);
+
+        expect(delivered.filter((value) => !Number.isInteger(value))).toEqual([]);
+        // Pinned in full: it moves through several semitones (a ride parked at
+        // one would satisfy the integer assertion vacuously) and it arrives at
+        // the octave rather than stalling a semitone under it.
+        // Measured: the slew (α = 0.4) runs 4.8, 7.68, 9.408, 10.44, 11.07,
+        // 11.44, 11.66 … which round and dedupe to this.
+        expect(delivered).toEqual([5, 8, 9, 10, 11, 12]);
+    });
+
+    it("delivers fractional cents to Fermenter's oscFine while riding 0 → 7", () => {
+        // The half of the same pair that must NOT be quantised. `oscFine` is
+        // cents: `layer.rs` clamps it as a continuous `f32`, the sibling
+        // `unisonDetune` declares the same unit and range with no step, and no
+        // surveyed product steps a fine-tune control (Vital's `tune` is
+        // `kLinear` and passes its host bridge unrounded). While it carried
+        // `step: 1` the descriptor builder typed it `int`, so this ride handed
+        // the node 3, 4, 5, 6, 7 — a whole-cent staircase on a control whose
+        // entire purpose is the sub-semitone detune between it and `oscCoarse`.
+        //
+        // 7 cents is deliberately small: it is the size of drift a fine tune is
+        // used for, and it is where a 1 ct grid is coarsest relative to the
+        // gesture.
+        seedSteppedLane({ deviceId: 'device-f4', deviceType: 'fermenter', paramId: 'oscFine', startValue: 0 });
+
+        ride({ startValue: 0, endValue: 7 });
+
+        const delivered = vi.mocked(applyFermenterRuntimeParam).mock.calls.map(([input]) => input.value);
+
+        // The claim is the fractions, so assert they are actually there rather
+        // than only that the sequence matches — the pinned array below would
+        // still be "a sequence" if every entry were whole.
+        expect(delivered.filter((value) => Number.isInteger(value))).toEqual([]);
+        // The whole ride, pinned. Twelve deliveries where the `int` law gave
+        // five (`3, 4, 5, 6, 7`, measured): the repeat gate reads on the
+        // delivered domain, so seven of these twelve ticks used to send nothing
+        // at all — the last six consecutively, with the detune parked on 7 ct
+        // while the filter was still climbing through it. IEEE-754 doubles, so
+        // these values are exact and reproducible rather than approximated.
+        expect(delivered).toEqual([
+            2.8000000000000003, 4.48, 5.488, 6.0928, 6.45568, 6.673408, 6.8040448, 6.88242688, 6.929456128,
+            6.9576736768, 6.9746042060799995, 6.9847625236479995,
+        ]);
+    });
+
     it('leaves a float device parameter unrounded while riding 0 → 0.75', () => {
         // The complement, so the fix cannot be "round everything": Bacteria's
         // `mix` is declared `float` (step 0.01), and its slewed ride must still

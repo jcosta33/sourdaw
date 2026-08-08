@@ -131,7 +131,10 @@ describe('quantiseDeviceParameterValue', () => {
                 .filter((parameter) => parameter.type !== 'float' && parameter.minValue < 0 && parameter.maxValue >= 0)
                 .map((parameter) => `${plugin.id}:${parameter.id}`)
         );
-        expect(straddlingZero).toEqual(['fermenter:oscCoarse', 'fermenter:oscFine', 'grinder:gateThreshold']);
+        // Two, not the three this list held before `fermenter/oscFine` stopped
+        // declaring a step: a cent is not an index, so fine tune is `float` and
+        // never reaches the rounding branch at all.
+        expect(straddlingZero).toEqual(['fermenter:oscCoarse', 'grinder:gateThreshold']);
         for (const identity of straddlingZero) {
             const [deviceType, paramId] = identity.split(':') as [string, string];
             expect(
