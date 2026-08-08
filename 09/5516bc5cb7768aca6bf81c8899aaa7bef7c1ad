@@ -1,0 +1,58 @@
+src/modules/Preferences/models/__tests__/Preferences.spec.ts
+  s_14f2bbc9f385dd::t_4f7867cb178369 19,23-32
+  s_14f2bbc9f385dd::t_dbaadefe4117c5 33-34
+src/modules/Setlist/useCases/setlist/reorderSetlistItems.ts
+  s_14f2bbc9f385dd::t_c22b3b580aa808 11,18-23,25
+src/modules/Setlist/useCases/setlist/removeSetlistItem.ts
+  s_14f2bbc9f385dd::t_987fa50ee8cb98 10-11,15-31,35-36
+src/modules/Setlist/useCases/setlist/__tests__/removeSetlistItem.spec.ts
+  s_14f2bbc9f385dd::t_0dd4756b72500f 96-163
+src/modules/Preferences/useCases/gridSnapBeats.ts
+  s_14f2bbc9f385dd::t_7ed90d49703c2b 1,3-7
+src/modules/ContentBrowser/presentations/views/Sidebar/__tests__/EffectsTab.spec.tsx
+  s_14f2bbc9f385dd::t_aefa220f2d4072 1,11-18
+  s_14f2bbc9f385dd::t_2ab1fdfd5bc7bc 77-136
+  s_14f2bbc9f385dd::t_a3f0e1ce1431b5 19
+src/modules/SessionLauncher/presentations/views/LoopStationPanel.tsx
+  s_14f2bbc9f385dd::t_cd5152c465c835 31
+  s_14f2bbc9f385dd::t_bb648f8ce6cf45 172
+src/modules/SessionLauncher/presentations/views/__tests__/LoopStationPanel.spec.tsx
+  s_14f2bbc9f385dd::t_aec2388ab1a7f9 87
+  s_14f2bbc9f385dd::t_541c47b48b9c1d 164-188
+  s_14f2bbc9f385dd::t_a5b804aab6bfb4 40
+src/modules/Setlist/useCases/setlist/__tests__/reorderSetlistItems.spec.ts
+  s_14f2bbc9f385dd::t_41a94b99a81d30 107-158
+src/modules/Onboarding/useCases/dismissOnboardingTour.ts
+  s_14f2bbc9f385dd::t_9de83d53a2235c 3,7
+src/modules/ContentBrowser/presentations/views/Sidebar/EffectsTab.tsx
+  s_14f2bbc9f385dd::t_91ac3b1703fb1e 142-143
+  s_14f2bbc9f385dd::t_2a7682ab7086e3 158-159
+src/modules/Preferences/models/Preferences.ts
+  s_14f2bbc9f385dd::t_61362442b06a7b 23-28
+src/modules/Preferences/useCases/__tests__/gridSnapBeats.spec.ts
+  s_14f2bbc9f385dd::t_d6f97e8278c836 18-20,25-36
+  s_14f2bbc9f385dd::t_d917f08ca8a19f 37
+src/modules/Onboarding/useCases/markOnboardingCompleted.ts
+  s_14f2bbc9f385dd::t_f59c205923de23 1-15
+src/modules/Onboarding/useCases/advanceOnboardingStep.ts
+  s_14f2bbc9f385dd::t_c6f2baf9556bb4 3-4
+  s_14f2bbc9f385dd::t_e90333452292e4 16-18,20
+src/modules/Onboarding/useCases/__tests__/onboarding.spec.ts
+  s_14f2bbc9f385dd::t_2bdf3f33d6bcda 32-52
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "095516bc5cb7768aca6bf81c8899aaa7bef7c1ad",
+  "prompts": {},
+  "sessions": {
+    "s_14f2bbc9f385dd": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f9a61a1d-66b3-4146-938d-a04f45f4b060",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
