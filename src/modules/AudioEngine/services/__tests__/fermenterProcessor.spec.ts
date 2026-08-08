@@ -392,9 +392,14 @@ describe('FermenterProcessor message handling', () => {
             send(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });
             resetRecording();
 
+            // Derived, not a literal. A restated "obviously out of range"
+            // ordinal rots the moment the table grows: this was `99`, which
+            // stopped being out of range when the map went from 16 entries to
+            // 102 and the case silently started asserting the opposite of what
+            // it names.
             send(proc, {
                 type: 'paramAutomation',
-                paramId: 99,
+                paramId: Object.keys(FERMENTER_AUTOMATION_PARAM_IDS).length,
                 segments: [{ startFrame: 0, endFrame: 10, startValue: 0, endValue: 1 }],
             });
             send(proc, {
