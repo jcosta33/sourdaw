@@ -339,9 +339,7 @@ describe('serializeProjectXml — tempo / time-signature point lanes', () => {
         // unconditionally inside <Transport> from the same fixture values, so a
         // bare substring match here passes even if this lane renders nothing.
         const points = xml.match(/<TimeSignaturePoint\b[^>]*\/>/g) ?? [];
-        expect(points).toEqual([
-            '<TimeSignaturePoint time="0" numerator="3" denominator="4"/>',
-        ]);
+        expect(points).toEqual(['<TimeSignaturePoint time="0" numerator="3" denominator="4"/>']);
     });
 });
 
