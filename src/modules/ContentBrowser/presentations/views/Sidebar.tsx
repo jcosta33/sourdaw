@@ -254,6 +254,7 @@ export const Sidebar = ({ style, onClose, panelActions }: SidebarProps): ReactEl
                     }}
                     className="h-7 border-0 bg-transparent text-xs shadow-none focus-visible:ring-0 px-1"
                     aria-label="Search browser"
+                    data-testid="browser-search"
                 />
                 <Button variant="ghost" size="icon-xs" onClick={onClose} aria-label="Close browser">
                     <X className="size-3.5" />
