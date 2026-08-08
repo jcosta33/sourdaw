@@ -61,6 +61,27 @@
  *   `rawDeltaSec` and the measured shortfall `rawDeltaSec - clamped`. The
  *   shortfall is observed, not predicted from reading the clamp.
  *
+ * `workerWakeLatenessMs` SATURATES — do not read it as worker health
+ * ---------------------------------------------------------------------
+ * `sentAtMs - scheduledAtMs` **cannot exceed one grain**, by construction.
+ * `schedulerWorker.ts:65-67` re-bases `scheduledAtMs` onto the *most recent*
+ * missed boundary before stamping the message:
+ *
+ *     elapsedIntervals = max(1, floor((sentAtMs - nextScheduledAtMs)/interval) + 1)
+ *     scheduledAtMs    = nextScheduledAtMs + (elapsedIntervals - 1) * interval
+ *
+ * so however long the worker thread was blocked, the difference the metric
+ * reports is the remainder, bounded by `intervalMs`. Blocking the worker thread
+ * for 200 ms out of every 400 ms leaves the metric reading p50 3.8 / p99 5.5 /
+ * max 6.1 ms — indistinguishable from idle.
+ *
+ * **The metric that actually detects a stalled worker is `sequenceJump`**, and
+ * it is sensitive: the same 200/400 ms block drives `maxSequenceJump` to 20
+ * while wake lateness does not move. Any claim about worker health must rest on
+ * `maxSequenceJump` and `coalesced`, never on wake lateness. The row is still
+ * printed — a saturating metric is useful as a saturation check — but it is
+ * labelled, and it must not carry a conclusion.
+ *
  * What it does not establish. It says nothing about Yeast generator phase
  * drift, which has no wall clock in it at all and is measured deterministically
  * by `scripts/measureYeastGeneratorDrift.ts` instead. It also does not observe
@@ -97,6 +118,34 @@ import { launchRenderDeadlineBrowser } from './renderDeadlineBrowser.ts';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const SCHEDULER_WORKER_SOURCE = resolve(HERE, '../src/modules/Transport/workers/schedulerWorker.ts');
+const SCHEDULER_SOURCE = resolve(HERE, '../src/modules/Transport/useCases/playheadScheduler/startPlayheadScheduler.ts');
+const TRANSPORT_STATE_SOURCE = resolve(HERE, '../src/modules/Transport/models/TransportState.ts');
+
+/**
+ * The two constants below are product values, and neither is exported — the
+ * grain is a field of a default object literal and the look-ahead is a
+ * module-private `const`. So they are restated here and then **checked against
+ * the source text at startup**. If the product changes one and this harness is
+ * not updated, the run aborts instead of silently measuring the wrong grain and
+ * publishing it as the shipped one.
+ *
+ * This is the weaker half of the file's "no second copy to drift" claim: the
+ * worker itself is genuinely read off disk, these two numbers are merely
+ * guarded. Prefer exporting them from the product and importing them here.
+ */
+function assertProductConstant(sourcePath: string, pattern: RegExp, expected: number, label: string): void {
+    const source = readFileSync(sourcePath, 'utf8');
+    const match = pattern.exec(source);
+    if (match === null) {
+        throw new Error(`${label}: could not find the constant in ${sourcePath}. The harness needs updating.`);
+    }
+    const found = Number(match[1]);
+    if (found !== expected) {
+        throw new Error(
+            `${label}: ${sourcePath} says ${found}, this harness assumes ${expected}. Update the harness and re-measure.`
+        );
+    }
+}
 
 /** `TransportState.ts:38` — the grain the product actually ships. */
 const DEFAULT_SCHEDULE_GRAIN_MS = 10;
@@ -219,6 +268,67 @@ type GranularityRun = {
 const PROBE_HTML = `<!doctype html>
 <html><head><meta charset="utf-8"><title>transport clock probe</title></head>
 <body><h1>transport clock probe</h1></body></html>`;
+
+type RenderSizeProbe = {
+    requested: number | 'hardware-default' | 'unset';
+    actualSampleRate: number;
+    /** `AudioContext.renderQuantumSize`, if the target exposes it at all. */
+    renderQuantumSizeAttribute: number | null;
+    measuredStepFrames: number;
+};
+
+/**
+ * Is 128 a property of the clock, or a property of this Chrome?
+ *
+ * The spec is normative that `currentTime` advances "in uniform increments,
+ * corresponding to one render quantum" — so a quantised clock is guaranteed.
+ * But `AudioContextOptions.renderSizeHint` makes the quantum *size*
+ * configurable in principle, which means "128 forever" is a claim about the
+ * implementation and not about the clock. This leg pins which one it is, so a
+ * future reader can tell a Chrome gap from a platform invariant, and so this
+ * harness reds if Chrome ever starts honouring the hint.
+ */
+async function probeRenderSize(page: Page, pollMs: number): Promise<RenderSizeProbe[]> {
+    return page.evaluate(async (input: number) => {
+        const requests: (number | 'hardware-default' | 'unset')[] = ['unset', 32, 128, 256, 1024, 'hardware-default'];
+        const results = [];
+        for (const requested of requests) {
+            const options: Record<string, unknown> = { latencyHint: 'interactive' };
+            if (requested !== 'unset') {
+                options.renderSizeHint = requested;
+            }
+            let ctx: AudioContext;
+            try {
+                ctx = new AudioContext(options);
+            } catch {
+                continue;
+            }
+            await ctx.resume();
+            await new Promise((resolve) => setTimeout(resolve, 150));
+
+            let previous = ctx.currentTime;
+            let smallestStep = Infinity;
+            const deadline = performance.now() + input;
+            while (performance.now() < deadline) {
+                const now = ctx.currentTime;
+                if (now > previous) {
+                    smallestStep = Math.min(smallestStep, now - previous);
+                    previous = now;
+                }
+            }
+
+            const attribute: unknown = Reflect.get(ctx, 'renderQuantumSize');
+            results.push({
+                requested,
+                actualSampleRate: ctx.sampleRate,
+                renderQuantumSizeAttribute: typeof attribute === 'number' ? attribute : null,
+                measuredStepFrames: Number.isFinite(smallestStep) ? Math.round(smallestStep * ctx.sampleRate) : 0,
+            });
+            await ctx.close();
+        }
+        return results;
+    }, pollMs);
+}
 
 async function measureGranularity(page: Page): Promise<GranularityRun[]> {
     return page.evaluate(async (pollMs: number) => {
@@ -455,7 +565,9 @@ function reportTickRun(run: TickRun): Percentiles {
     const interArrival = percentiles(run.samples.map((sample) => sample.interArrivalMs));
     const lateness = percentiles(run.samples.map((sample) => sample.deliveryLatenessMs));
     const wake = percentiles(run.samples.map((sample) => sample.workerWakeLatenessMs));
-    const coalesced = run.samples.filter((sample) => sample.sequenceJump > 1).length;
+    const jumps = run.samples.map((sample) => sample.sequenceJump);
+    const coalesced = jumps.filter((jump) => jump > 1).length;
+    const maxJump = jumps.length === 0 ? 0 : Math.max(...jumps);
 
     process.stdout.write(`\n  ${run.condition.toUpperCase()} — ${run.loadDescription}\n`);
     process.stdout.write(`    ticks observed              ${interArrival.samples}\n`);
@@ -465,11 +577,15 @@ function reportTickRun(run: TickRun): Percentiles {
     process.stdout.write(
         `    main-thread delivery late   p50 ${formatMs(lateness.p50)}  p95 ${formatMs(lateness.p95)}  p99 ${formatMs(lateness.p99)}  worst ${formatMs(lateness.max)}\n`
     );
-    process.stdout.write(
-        `    worker wake lateness        p50 ${formatMs(wake.p50)}  p95 ${formatMs(wake.p95)}  p99 ${formatMs(wake.p99)}  worst ${formatMs(wake.max)}\n`
-    );
+    // The worker-health metrics. `maxSequenceJump` is the load-bearing one:
+    // it is the only figure here that can distinguish a healthy worker thread
+    // from a stalled one. See WORKER_HEALTH_NOTE.
+    process.stdout.write(`    max sequence jump           ${maxJump} (1 = no grain was ever missed)\n`);
     process.stdout.write(
         `    coalesced messages          ${coalesced} of ${interArrival.samples} carried more than one grain\n`
+    );
+    process.stdout.write(
+        `    worker wake lateness        p50 ${formatMs(wake.p50)}  p95 ${formatMs(wake.p95)}  p99 ${formatMs(wake.p99)}  worst ${formatMs(wake.max)}  [SATURATING — see header]\n`
     );
     return interArrival;
 }
@@ -520,7 +636,21 @@ async function main(): Promise<void> {
     if (loadPerCore > ADVISORY_LOAD_PER_CORE) {
         process.stdout.write('WARNING: the box is contended. Tick figures below include that contention.\n');
     }
-    process.stdout.write(`grain under test  ${DEFAULT_SCHEDULE_GRAIN_MS} ms (TransportState.ts:38)\n`);
+    assertProductConstant(
+        TRANSPORT_STATE_SOURCE,
+        /scheduleGrainMs:\s*(\d+(?:\.\d+)?)/,
+        DEFAULT_SCHEDULE_GRAIN_MS,
+        'scheduleGrainMs'
+    );
+    assertProductConstant(
+        SCHEDULER_SOURCE,
+        /const SCHEDULE_AHEAD_SECONDS\s*=\s*(\d+(?:\.\d+)?)/,
+        MAX_DELTA_SECONDS,
+        'SCHEDULE_AHEAD_SECONDS'
+    );
+    process.stdout.write(
+        `grain under test  ${DEFAULT_SCHEDULE_GRAIN_MS} ms, look-ahead ${MAX_DELTA_SECONDS * 1000} ms (both checked against source)\n`
+    );
     process.stdout.write(
         `placement budget  ${PLACEMENT_BUDGET_MS.toFixed(5)} ms (1 sample at ${REFERENCE_SAMPLE_RATE} Hz)\n`
     );
@@ -568,7 +698,34 @@ async function main(): Promise<void> {
                 `    modal step  ${formatMs(run.modalStepSec * 1000)}  = ${frames.toFixed(1)} frames   (min step ${formatMs(run.minStepSec * 1000)}, ${run.distinctSteps} distinct, ${run.advances} advances in ${run.polls} polls)\n`
             );
             process.stdout.write(
-                `    vs 1-sample budget: ${((run.modalStepSec * 1000) / PLACEMENT_BUDGET_MS).toFixed(0)}x coarser\n`
+                // Expressed in this context's OWN samples. Against a fixed
+                // 48 kHz budget a 96 kHz context reads as "64x coarser", which
+                // sounds like a higher rate buys precision. It does not: the
+                // step is 128 frames at every rate, so the sample-domain error
+                // against a 1-sample budget is 128 everywhere.
+                `    vs 1-sample budget: ${frames.toFixed(0)} samples at this context's own rate\n`
+            );
+        }
+
+        process.stdout.write('\n  renderSizeHint probe — is 128 the clock, or is it this Chrome?\n');
+        const renderSizeProbes = await probeRenderSize(page, 400);
+        for (const probe of renderSizeProbes) {
+            const attribute =
+                probe.renderQuantumSizeAttribute === null ? 'absent' : String(probe.renderQuantumSizeAttribute);
+            process.stdout.write(
+                `    renderSizeHint ${String(probe.requested).padEnd(18)} -> measured ${probe.measuredStepFrames} frames, renderQuantumSize attribute ${attribute}\n`
+            );
+        }
+        const honoured = renderSizeProbes.some(
+            (probe) => typeof probe.requested === 'number' && probe.measuredStepFrames !== 128
+        );
+        if (honoured) {
+            process.stdout.write(
+                '    HINT IS HONOURED — the quantum is configurable on this target. Every "128" above is a default, not a floor.\n'
+            );
+        } else {
+            process.stdout.write(
+                '    hint ignored on every value: 128 holds here because of a Chrome gap, NOT because the clock cannot be finer.\n'
             );
         }
 

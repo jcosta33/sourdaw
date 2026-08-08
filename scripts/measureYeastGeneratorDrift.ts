@@ -56,9 +56,42 @@ import { createServer } from 'vite';
  * other way would mean maintaining a second resolution story that can drift
  * from the one the app builds with — and the whole point of this harness is
  * that it measures the shipped classes, not a copy of them.
+ *
+ * These paths reach into `Yeast/workers/processors/`, which is a private folder
+ * behind the module's contract barrels, and they are strings rather than
+ * imports, so nothing type-checks them and nothing renames them for you. That
+ * is deliberate and it is a real cost: **if a processor moves, this harness
+ * throws at load rather than silently measuring nothing.** The alternative is
+ * worse — the generators are not exported from any barrel, and measuring a
+ * re-exported wrapper would measure the wrapper. `deps:validate` does not cover
+ * `scripts/`, so this boundary crossing is invisible to it; it is recorded here
+ * instead. If Yeast ever grows a barrel that exposes the processor classes,
+ * switch to it.
  */
-type MidiEvent = { timeSamples: number; kind: { type: string } };
-type TransportInfo = Record<string, unknown>;
+type MidiEventKind = { type: string; value?: number; note?: number };
+type MidiEvent = { timeSamples: number; kind: MidiEventKind };
+/**
+ * Mirrors the fields of `Yeast/models/MidiEvent.ts`'s `TransportInfo` that the
+ * generators actually read. Spelled out rather than left as an index signature
+ * so a field renamed in the product fails to typecheck here instead of silently
+ * arriving as `undefined` and being defaulted — which would turn a real drift
+ * into a clean-looking zero.
+ */
+type TransportInfo = {
+    sampleRate: number;
+    bpm: number;
+    blockStartSamples: number;
+    blockEndSamples: number;
+    ppqPosition: number;
+    isPlaying: boolean;
+    barIndex: number;
+    beatInBar: number;
+    timeSigNum: number;
+    timeSigDen: number;
+    loopEnabled: boolean;
+    loopStartPpq: number;
+    loopEndPpq: number;
+};
 type Generator = {
     processMidi: (input: readonly MidiEvent[], output: MidiEvent[], transport: TransportInfo) => void;
     setParam: (name: string, value: number) => void;
@@ -233,7 +266,10 @@ if (stepsDemanded <= 64) {
         `    over ${BLOCKS} such blocks: last step emitted at sample ${lastEmitted.toFixed(0)}, window ended at ${idealLast}\n`
     );
     process.stdout.write(
-        `    phase debt: ${debt.toFixed(0)} samples = ${samplesToMs(debt).toFixed(0)} ms = ${(debt / fastStepLen).toFixed(1)} steps, accrued at ${((stepsDemanded - 64) * BLOCKS) / BLOCKS} steps per block\n`
+        `    phase debt: ${debt.toFixed(0)} samples = ${samplesToMs(debt).toFixed(0)} ms = ${(debt / fastStepLen).toFixed(1)} steps over ${BLOCKS} blocks\n`
+    );
+    process.stdout.write(
+        `    steps emitted ${truncated.length}, steps the grid demanded ${stepsDemanded * BLOCKS} — shortfall ${stepsDemanded * BLOCKS - truncated.length}\n`
     );
     process.stdout.write('    the debt is permanent: lastStepTime is left behind, not caught up.\n');
 }
@@ -243,28 +279,66 @@ process.stdout.write('accumPhase advances a whole 64-sample increment per iterat
 process.stdout.write('how much of the block remains. Block lengths here are beat-derived, so not\n');
 process.stdout.write('multiples of 64 — which is the realistic case, not a contrived one.\n');
 
-function driveCcPhase(blockLengthSamples: number, blocks: number): number {
+/** `setParam('shape', 3)` selects `sawUp` — see the shape table in CCGenerator.ts. */
+const SHAPE_SAW_UP = 3;
+/** A straight 1/4 — `rateToBeats` gives 1 beat, so the LFO period is one beat. */
+const CC_RATE_DENOM = 4;
+const CC_PERIOD_SAMPLES = SAMPLES_PER_BEAT;
+/**
+ * A `sawUp` ramps 0 -> 127 and drops back on each phase wrap, so a large
+ * negative jump between consecutive emitted CC values localises the wrap. The
+ * post-wrap value is far outside `changeThreshold`, so it is always emitted at
+ * the first 64-sample boundary after the wrap: detection error is in [0, 64)
+ * samples, bounded and non-accumulating. The drift being measured reaches
+ * thousands of samples, so it is far outside that noise floor.
+ */
+const WRAP_VALUE_DROP = 60;
+
+/** Observed wrap times, from the generator's own emitted CC events. */
+function driveCcWraps(blockLengthSamples: number, blocks: number): number[] {
     const generator = new CCGenerator('probe');
+    generator.setParam('shape', SHAPE_SAW_UP);
+    generator.setParam('rate_denom', CC_RATE_DENOM);
+
+    const wraps: number[] = [];
+    let previousValue = -1;
     for (let index = 0; index < blocks; index++) {
         const start = index * blockLengthSamples;
-        generator.processMidi([], [], transportAt(start, start + blockLengthSamples));
+        const output: MidiEvent[] = [];
+        generator.processMidi([], output, transportAt(start, start + blockLengthSamples));
+        for (const event of output) {
+            if (event.kind.type !== 'cc' || event.kind.value === undefined) {
+                continue;
+            }
+            const value = event.kind.value;
+            if (previousValue >= 0 && previousValue - value >= WRAP_VALUE_DROP) {
+                wraps.push(event.timeSamples);
+            }
+            previousValue = value;
+        }
     }
-    // `accumPhase` is private; the observable proxy is the phase the generator
-    // believes it is at, recovered from the iteration count the loop performs.
-    const iterationsPerBlock = Math.ceil(blockLengthSamples / 64);
-    return iterationsPerBlock * 64 * blocks;
+    return wraps;
 }
 
 for (const blockLength of [4_800, 6_000, 1_777, 100]) {
     const blocks = 200;
-    const believed = driveCcPhase(blockLength, blocks);
-    const actual = blockLength * blocks;
-    const errorSamples = believed - actual;
+    const wraps = driveCcWraps(blockLength, blocks);
+    process.stdout.write(`    block ${String(blockLength).padStart(5)} samples x ${blocks}:\n`);
+    if (wraps.length === 0) {
+        process.stdout.write('      no phase wrap observed in this configuration\n');
+        continue;
+    }
+    // Wrap N should land at N * period. The generator emits correct block times
+    // and a wrong phase, so an over-advanced phase makes the wrap arrive early.
+    const lastIndex = wraps.length;
+    const observedLast = wraps[lastIndex - 1] ?? 0;
+    const idealLast = lastIndex * CC_PERIOD_SAMPLES;
+    const errorSamples = idealLast - observedLast;
     process.stdout.write(
-        `    block ${String(blockLength).padStart(5)} samples x ${blocks}: phase advanced as if ${believed} samples had passed, ${actual} did\n`
+        `      ${wraps.length} wraps observed; wrap ${lastIndex} landed at sample ${observedLast}, the tempo map puts it at ${idealLast}\n`
     );
     process.stdout.write(
-        `      error ${errorSamples} samples = ${samplesToMs(errorSamples).toFixed(1)} ms = ${(errorSamples / SAMPLES_PER_BEAT).toFixed(3)} beats, and it grows without bound\n`
+        `      error ${errorSamples} samples = ${samplesToMs(errorSamples).toFixed(1)} ms = ${(errorSamples / SAMPLES_PER_BEAT).toFixed(3)} beats (early = LFO running fast)\n`
     );
 }
 
