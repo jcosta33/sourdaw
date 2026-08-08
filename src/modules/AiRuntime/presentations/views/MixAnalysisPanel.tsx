@@ -73,6 +73,7 @@ export const MixAnalysisPanel = (): ReactElement | null => {
                             disabled={state.isAnalyzing}
                             title="Refresh analysis"
                             aria-label="Refresh mix analysis"
+                            data-testid="mix-analysis-refresh"
                         >
                             <RefreshCw className={`size-3 ${state.isAnalyzing ? 'animate-spin' : ''}`} />
                         </Button>
