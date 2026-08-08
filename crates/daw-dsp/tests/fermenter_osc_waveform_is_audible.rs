@@ -36,6 +36,21 @@
 //! `unison_voices > 1` — `Voice::render` picks between them on
 //! `has_unison = self.unison_voices > 1`. A guard run only at the default count
 //! of 1 never enters the unison bank, so both counts are driven: 1 and 4.
+//!
+//! # Why two engines
+//!
+//! `Voice::render` tests `has_unison` *before* it matches on the engine, so
+//! engine 1 (Analog) only reaches its own `PolyBlepOsc` at
+//! `unison_voices == 1`; above that it renders the same `UnisonOsc` bank as
+//! engine 0 and follows the selector for the same reason engine 0 does. The
+//! Analog cases below therefore carry the whole claim at unison 1, and the
+//! unison-4 case exists to pin that narrowing rather than to test new code.
+//!
+//! The two engines are not band-limited the same way — engine 0 reads
+//! peak-normalized mip-mapped tables, engine 1 generates directly with polyBLEP
+//! for its step discontinuities and polyBLAMP for the triangle's corners — but
+//! both are approximations of the *same* four harmonic series, so one table of
+//! ratio bounds identifies a waveform on either.
 
 use daw_dsp::fermenter::FermenterInstance;
 
@@ -97,8 +112,12 @@ const WAVEFORM_CASES: [WaveformCase; 4] = [
 /// A patch with nothing in the signal path that could add or remove harmonics:
 /// no noise, no drift, no unison detune, no modulation, no drive, no effects,
 /// and a lowpass parked far above the third harmonic.
-fn configure_bare_oscillator(instance: &mut FermenterInstance, unison_voices: f32) {
-    instance.set_param("engine", 0.0); // wavetable
+fn configure_bare_oscillator(instance: &mut FermenterInstance, engine: f32, unison_voices: f32) {
+    // 0 = wavetable, 1 = analog.
+    instance.set_param("engine", engine);
+    // Symmetric pulse, so engine 1's square has the even harmonics of a square
+    // and not those of an off-centre pulse.
+    instance.set_param("pulse_width", 0.5);
     instance.set_param("osc_level", 0.5);
     instance.set_param("osc_coarse", 0.0);
     instance.set_param("osc_fine", 0.0);
@@ -145,9 +164,9 @@ fn configure_bare_oscillator(instance: &mut FermenterInstance, unison_voices: f3
 }
 
 /// Render the sustained probe note for one waveform setting.
-fn render_sustain(setting: f32, unison_voices: f32) -> Vec<f32> {
+fn render_sustain(setting: f32, engine: f32, unison_voices: f32) -> Vec<f32> {
     let mut instance = FermenterInstance::new(SAMPLE_RATE, 16);
-    configure_bare_oscillator(&mut instance, unison_voices);
+    configure_bare_oscillator(&mut instance, engine, unison_voices);
     instance.set_param("osc_waveform", setting);
     instance.note_on(PROBE_NOTE, PROBE_VELOCITY);
 
@@ -182,17 +201,17 @@ fn bin_magnitude(samples: &[f32], freq: f32) -> f32 {
     (real.hypot(imaginary) / frame_count) as f32
 }
 
-fn assert_waveform_identity(case: &WaveformCase, unison_voices: f32) {
-    let samples = render_sustain(case.setting, unison_voices);
+fn assert_waveform_identity(case: &WaveformCase, engine: f32, unison_voices: f32) {
+    let samples = render_sustain(case.setting, engine, unison_voices);
     let h1 = bin_magnitude(&samples, FUNDAMENTAL_HZ);
     let h2 = bin_magnitude(&samples, FUNDAMENTAL_HZ * 2.0);
     let h3 = bin_magnitude(&samples, FUNDAMENTAL_HZ * 3.0);
 
     assert!(
         h1 > MIN_FUNDAMENTAL,
-        "{} at unison {unison_voices}: fundamental is {h1:.5}, below the \
-         {MIN_FUNDAMENTAL} floor — the render is silent, so the harmonic \
-         ratios below would be meaningless",
+        "{} on engine {engine} at unison {unison_voices}: fundamental is \
+         {h1:.5}, below the {MIN_FUNDAMENTAL} floor — the render is silent, so \
+         the harmonic ratios below would be meaningless",
         case.name
     );
 
@@ -201,18 +220,18 @@ fn assert_waveform_identity(case: &WaveformCase, unison_voices: f32) {
 
     assert!(
         h2_ratio >= case.h2_ratio.0 && h2_ratio <= case.h2_ratio.1,
-        "osc_waveform={} should render {} at unison {unison_voices}, whose \
-         second harmonic is {:?} of the fundamental; measured {h2_ratio:.4} \
-         (h1={h1:.5}, h2={h2:.5})",
+        "osc_waveform={} should render {} on engine {engine} at unison \
+         {unison_voices}, whose second harmonic is {:?} of the fundamental; \
+         measured {h2_ratio:.4} (h1={h1:.5}, h2={h2:.5})",
         case.setting,
         case.name,
         case.h2_ratio
     );
     assert!(
         h3_ratio >= case.h3_ratio.0 && h3_ratio <= case.h3_ratio.1,
-        "osc_waveform={} should render {} at unison {unison_voices}, whose \
-         third harmonic is {:?} of the fundamental; measured {h3_ratio:.4} \
-         (h1={h1:.5}, h3={h3:.5})",
+        "osc_waveform={} should render {} on engine {engine} at unison \
+         {unison_voices}, whose third harmonic is {:?} of the fundamental; \
+         measured {h3_ratio:.4} (h1={h1:.5}, h3={h3:.5})",
         case.setting,
         case.name,
         case.h3_ratio
@@ -222,23 +241,81 @@ fn assert_waveform_identity(case: &WaveformCase, unison_voices: f32) {
 #[test]
 fn each_osc_waveform_setting_renders_its_own_harmonic_series() {
     for case in &WAVEFORM_CASES {
-        assert_waveform_identity(case, 1.0);
+        assert_waveform_identity(case, 0.0, 1.0);
     }
 }
 
 #[test]
 fn the_unison_bank_follows_the_osc_waveform_setting() {
     for case in &WAVEFORM_CASES {
-        assert_waveform_identity(case, 4.0);
+        assert_waveform_identity(case, 0.0, 4.0);
+    }
+}
+
+/// The Analog engine's own oscillator must render the selected waveform.
+///
+/// This is the path that used to render `PolyBlepOsc::pulse` unconditionally:
+/// `PolyBlepOsc` held no waveform, so all four settings produced a square, and
+/// three of the four rows below failed on h2 or h3. It is reached only at
+/// `unison_voices == 1` — see the module header.
+#[test]
+fn the_analog_engine_renders_its_own_harmonic_series_per_waveform() {
+    for case in &WAVEFORM_CASES {
+        assert_waveform_identity(case, 1.0, 1.0);
+    }
+}
+
+/// Above one unison voice the Analog engine renders the *wavetable* bank,
+/// because `Voice::render` resolves `has_unison` before it matches on the
+/// engine. That is what narrows the defect to `unison_voices == 1`.
+///
+/// Asserted as sample-identity against engine 0 rather than as harmonic bounds,
+/// because after the fix both engines render the right waveform and bounds
+/// alone can no longer tell which oscillator produced it. Identity can: nothing
+/// but the shared `UnisonOsc` makes two different engines agree sample for
+/// sample.
+#[test]
+fn above_one_unison_voice_the_analog_engine_renders_the_wavetable_bank() {
+    for case in &WAVEFORM_CASES {
+        assert_waveform_identity(case, 1.0, 4.0);
+
+        let analog = render_sustain(case.setting, 1.0, 4.0);
+        let wavetable = render_sustain(case.setting, 0.0, 4.0);
+        assert_eq!(
+            analog, wavetable,
+            "{} at unison 4: the Analog engine should render the same bank as \
+             the wavetable engine, sample for sample",
+            case.name
+        );
+    }
+}
+
+/// The counterpart to the test above: at one voice the two engines must *not*
+/// agree, because engine 1 renders its own `PolyBlepOsc` there.
+///
+/// Without this, moving every engine onto the wavetable oscillator would
+/// satisfy the whole file — the Analog engine would be correct by no longer
+/// being the Analog engine.
+#[test]
+fn at_one_unison_voice_the_analog_engine_renders_its_own_oscillator() {
+    for case in &WAVEFORM_CASES {
+        let analog = render_sustain(case.setting, 1.0, 1.0);
+        let wavetable = render_sustain(case.setting, 0.0, 1.0);
+        assert_ne!(
+            analog, wavetable,
+            "{} at unison 1: the Analog engine should render its own polyBLEP \
+             oscillator, not the wavetable one",
+            case.name
+        );
     }
 }
 
 /// Render a sustained note that starts on one waveform and is switched to
 /// another while it is still sounding. Both stretches are warmed up, so the
 /// analysis window contains only post-switch samples.
-fn render_sustain_after_switch(initial: f32, switched_to: f32) -> Vec<f32> {
+fn render_sustain_after_switch(initial: f32, switched_to: f32, engine: f32) -> Vec<f32> {
     let mut instance = FermenterInstance::new(SAMPLE_RATE, 16);
-    configure_bare_oscillator(&mut instance, 1.0);
+    configure_bare_oscillator(&mut instance, engine, 1.0);
     instance.set_param("osc_waveform", initial);
     instance.note_on(PROBE_NOTE, PROBE_VELOCITY);
     for _ in 0..WARMUP_BLOCKS {
@@ -274,46 +351,48 @@ fn render_sustain_after_switch(initial: f32, switched_to: f32) -> Vec<f32> {
 /// satisfied by the note-on value it began with.
 #[test]
 fn moving_the_selector_rewrites_a_note_already_sounding() {
-    for case in &WAVEFORM_CASES {
-        let initial = (case.setting + 1.0) % 4.0;
-        assert_ne!(
-            initial, case.setting,
-            "the case must be switched away from a different waveform, or the \
-             note-on value alone would satisfy it"
-        );
+    for engine in [0.0, 1.0] {
+        for case in &WAVEFORM_CASES {
+            let initial = (case.setting + 1.0) % 4.0;
+            assert_ne!(
+                initial, case.setting,
+                "the case must be switched away from a different waveform, or \
+                 the note-on value alone would satisfy it"
+            );
 
-        let samples = render_sustain_after_switch(initial, case.setting);
-        let h1 = bin_magnitude(&samples, FUNDAMENTAL_HZ);
-        let h2 = bin_magnitude(&samples, FUNDAMENTAL_HZ * 2.0);
-        let h3 = bin_magnitude(&samples, FUNDAMENTAL_HZ * 3.0);
+            let samples = render_sustain_after_switch(initial, case.setting, engine);
+            let h1 = bin_magnitude(&samples, FUNDAMENTAL_HZ);
+            let h2 = bin_magnitude(&samples, FUNDAMENTAL_HZ * 2.0);
+            let h3 = bin_magnitude(&samples, FUNDAMENTAL_HZ * 3.0);
 
-        assert!(
-            h1 > MIN_FUNDAMENTAL,
-            "{}: fundamental is {h1:.5} after the switch, below the \
-             {MIN_FUNDAMENTAL} floor",
-            case.name
-        );
+            assert!(
+                h1 > MIN_FUNDAMENTAL,
+                "{} on engine {engine}: fundamental is {h1:.5} after the \
+                 switch, below the {MIN_FUNDAMENTAL} floor",
+                case.name
+            );
 
-        let h2_ratio = h2 / h1;
-        let h3_ratio = h3 / h1;
-        assert!(
-            h2_ratio >= case.h2_ratio.0 && h2_ratio <= case.h2_ratio.1,
-            "switching a sounding note from osc_waveform={initial} to {} should \
-             render {}, whose second harmonic is {:?} of the fundamental; \
-             measured {h2_ratio:.4}",
-            case.setting,
-            case.name,
-            case.h2_ratio
-        );
-        assert!(
-            h3_ratio >= case.h3_ratio.0 && h3_ratio <= case.h3_ratio.1,
-            "switching a sounding note from osc_waveform={initial} to {} should \
-             render {}, whose third harmonic is {:?} of the fundamental; \
-             measured {h3_ratio:.4}",
-            case.setting,
-            case.name,
-            case.h3_ratio
-        );
+            let h2_ratio = h2 / h1;
+            let h3_ratio = h3 / h1;
+            assert!(
+                h2_ratio >= case.h2_ratio.0 && h2_ratio <= case.h2_ratio.1,
+                "switching a sounding note on engine {engine} from \
+                 osc_waveform={initial} to {} should render {}, whose second \
+                 harmonic is {:?} of the fundamental; measured {h2_ratio:.4}",
+                case.setting,
+                case.name,
+                case.h2_ratio
+            );
+            assert!(
+                h3_ratio >= case.h3_ratio.0 && h3_ratio <= case.h3_ratio.1,
+                "switching a sounding note on engine {engine} from \
+                 osc_waveform={initial} to {} should render {}, whose third \
+                 harmonic is {:?} of the fundamental; measured {h3_ratio:.4}",
+                case.setting,
+                case.name,
+                case.h3_ratio
+            );
+        }
     }
 }
 
@@ -324,9 +403,9 @@ fn moving_the_selector_rewrites_a_note_already_sounding() {
 const MIN_FIRST_BLOCK_DIFFERENCE: f32 = 0.10;
 
 /// One block containing a note scheduled at its first sample.
-fn render_scheduled_first_block(setting: f32) -> Vec<f32> {
+fn render_scheduled_first_block(setting: f32, engine: f32) -> Vec<f32> {
     let mut instance = FermenterInstance::new(SAMPLE_RATE, 16);
-    configure_bare_oscillator(&mut instance, 1.0);
+    configure_bare_oscillator(&mut instance, engine, 1.0);
     instance.set_param("osc_waveform", setting);
     assert!(
         instance.push_note_on(PROBE_NOTE, PROBE_VELOCITY, 0, 0),
@@ -360,35 +439,44 @@ fn peak(block: &[f32]) -> f32 {
 /// the block is attributable to the selector alone.
 #[test]
 fn a_note_scheduled_inside_a_block_starts_on_the_selected_waveform() {
-    let blocks: Vec<(&'static str, Vec<f32>)> = WAVEFORM_CASES
-        .iter()
-        .map(|case| (case.name, render_scheduled_first_block(case.setting)))
-        .collect();
+    for engine in [0.0, 1.0] {
+        let blocks: Vec<(&'static str, Vec<f32>)> = WAVEFORM_CASES
+            .iter()
+            .map(|case| {
+                (
+                    case.name,
+                    render_scheduled_first_block(case.setting, engine),
+                )
+            })
+            .collect();
 
-    for (name, block) in &blocks {
-        assert!(
-            peak(block) > MIN_FUNDAMENTAL,
-            "{name}: the scheduled note's first block peaks at {:.5}, so the \
-             comparison below would be between two silences",
-            peak(block)
-        );
-    }
-
-    for (index, (left_name, left_block)) in blocks.iter().enumerate() {
-        for (right_name, right_block) in blocks.iter().skip(index + 1) {
-            let loudest = peak(left_block).max(peak(right_block));
-            let difference = left_block
-                .iter()
-                .zip(right_block.iter())
-                .fold(0.0f32, |best, (a, b)| best.max((a - b).abs()));
+        for (name, block) in &blocks {
             assert!(
-                difference >= loudest * MIN_FIRST_BLOCK_DIFFERENCE,
-                "{left_name} and {right_name} should already differ in the \
-                 block their note starts in; peak difference is \
-                 {difference:.5} against a peak of {loudest:.5}, a ratio of \
-                 {:.4} under the {MIN_FIRST_BLOCK_DIFFERENCE} floor",
-                difference / loudest
+                peak(block) > MIN_FUNDAMENTAL,
+                "{name} on engine {engine}: the scheduled note's first block \
+                 peaks at {:.5}, so the comparison below would be between two \
+                 silences",
+                peak(block)
             );
+        }
+
+        for (index, (left_name, left_block)) in blocks.iter().enumerate() {
+            for (right_name, right_block) in blocks.iter().skip(index + 1) {
+                let loudest = peak(left_block).max(peak(right_block));
+                let difference = left_block
+                    .iter()
+                    .zip(right_block.iter())
+                    .fold(0.0f32, |best, (a, b)| best.max((a - b).abs()));
+                assert!(
+                    difference >= loudest * MIN_FIRST_BLOCK_DIFFERENCE,
+                    "{left_name} and {right_name} should already differ on \
+                     engine {engine} in the block their note starts in; peak \
+                     difference is {difference:.5} against a peak of \
+                     {loudest:.5}, a ratio of {:.4} under the \
+                     {MIN_FIRST_BLOCK_DIFFERENCE} floor",
+                    difference / loudest
+                );
+            }
         }
     }
 }
