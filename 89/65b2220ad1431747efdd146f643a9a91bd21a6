@@ -1,0 +1,21 @@
+tests/e2e/commandPaletteTestId.spec.ts
+  s_14f2bbc9f385dd::t_e7883603b27dc8 1-86
+src/modules/CommandInterface/presentations/views/CommandPalette.tsx
+  s_14f2bbc9f385dd::t_985c857b8e371e 82
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "8965b2220ad1431747efdd146f643a9a91bd21a6",
+  "prompts": {},
+  "sessions": {
+    "s_14f2bbc9f385dd": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f9a61a1d-66b3-4146-938d-a04f45f4b060",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
