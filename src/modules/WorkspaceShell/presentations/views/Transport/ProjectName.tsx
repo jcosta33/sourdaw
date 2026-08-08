@@ -48,6 +48,7 @@ export const ProjectName = ({ name, dirty }: ProjectNameProps): ReactElement => 
             <TooltipTrigger asChild>
                 <button
                     type="button"
+                    data-testid="project-name"
                     className="flex items-center gap-1.5 rounded-sm px-1.5 py-1 hover:bg-white/[0.04] transition-colors cursor-pointer group shrink-0"
                     onClick={() => {
                         setEditing(true);

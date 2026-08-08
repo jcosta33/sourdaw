@@ -224,6 +224,7 @@ export const PanelToggles = ({
                         variant="ghost"
                         size="icon-sm"
                         aria-label="Open Preferences"
+                        data-testid="toggle-preferences"
                         onClick={openPreferencesDialog}
                     >
                         <Settings2 className="size-3.5" aria-hidden="true" />
