@@ -1,0 +1,19 @@
+tests/e2e/exportFidelityTestId.spec.ts
+  s_712d55850cdfe5::t_269f6e9bd6e0c2 1-56
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "3a28828359787fd583d3254e9c66fa4e730d5597",
+  "prompts": {},
+  "sessions": {
+    "s_712d55850cdfe5": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe391-f23e-7b23-a5e5-d227f947c040",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
