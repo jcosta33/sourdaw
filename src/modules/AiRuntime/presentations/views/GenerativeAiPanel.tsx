@@ -186,6 +186,7 @@ export const GenerativeAiPanel = (): ReactElement | null => {
                     variant={activeTab === 'midi' ? 'secondary' : 'ghost'}
                     size="sm"
                     className="flex-1"
+                    data-testid="generate-tab-midi"
                     onClick={() => setActiveTab('midi')}
                 >
                     <Music className="size-3" /> MIDI
@@ -194,6 +195,7 @@ export const GenerativeAiPanel = (): ReactElement | null => {
                     variant={activeTab === 'audio' ? 'secondary' : 'ghost'}
                     size="sm"
                     className="flex-1"
+                    data-testid="generate-tab-audio"
                     onClick={() => setActiveTab('audio')}
                 >
                     <AudioWaveform className="size-3" /> Audio
