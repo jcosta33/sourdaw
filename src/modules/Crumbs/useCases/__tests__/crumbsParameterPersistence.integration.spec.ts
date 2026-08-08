@@ -80,6 +80,13 @@ const COMMITTED: Readonly<Record<CrumbsPersistedParamId, number>> = {
     filterResonance: 7.5,
     tune: -9.5,
     pan: 0.62,
+    // Voice stack: interior values, so a clamp at either declared end cannot
+    // agree with them for the wrong reason. `stackCount` is the one `int` here
+    // and 5 is a whole voice count, so the round-trip asserts persistence rather
+    // than rounding.
+    stackCount: 5,
+    detuneSpread: 42.5,
+    stackSpread: 0.65,
 };
 
 /** What the fixture starts at: not the default, and not what the test writes. */
@@ -94,6 +101,9 @@ const CONSTRUCTED: Readonly<Record<CrumbsPersistedParamId, number>> = {
     filterResonance: 14.25,
     tune: 6.5,
     pan: -0.4,
+    stackCount: 3,
+    detuneSpread: 18.5,
+    stackSpread: 0.3,
 };
 
 /**
@@ -149,6 +159,9 @@ function readParam(state: CrumbsState, paramId: CrumbsPersistedParamId): number 
     const target = CRUMBS_PARAM_TARGETS[paramId];
     if (target.kind === 'envelope') {
         return state.envelope[target.key];
+    }
+    if (target.kind === 'voiceStack') {
+        return state.voiceStack[target.key];
     }
     return state[target.key];
 }

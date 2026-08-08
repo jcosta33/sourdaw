@@ -76,6 +76,7 @@ import { TrackNode, type TrackNodeDeps } from '../TrackNode';
 const harness = vi.hoisted(() => ({
     updateParam: null as null | ((deviceId: string, paramId: string, value: number) => void),
     updatePatch: null as null | ((deviceId: string, patch: Record<string, unknown>) => void),
+    ensureTrackStrip: null as null | ((trackId: string) => unknown),
 }));
 
 vi.mock('../../repositories/createWebAudioEngine', async (importOriginal) => {
@@ -93,6 +94,15 @@ vi.mock('../../repositories/createWebAudioEngine', async (importOriginal) => {
                     return (_trackId: string, deviceId: string, patch: Record<string, unknown>): void => {
                         harness.updatePatch?.(deviceId, patch);
                     };
+                }
+                // Route B — the module resolves a handle off the strip itself
+                // rather than pushing a param through the engine. The real
+                // singleton would try to build a strip here and die on
+                // `createStereoPanner`; this hands back the same `TrackNode`
+                // the Route A interception writes into, so both routes are
+                // observed on one node rather than two.
+                if (property === 'ensureTrackStrip') {
+                    return (trackId: string): unknown => harness.ensureTrackStrip?.(trackId);
                 }
                 const value: unknown = Reflect.get(target, property, receiver);
                 if (typeof value === 'function') {
@@ -271,8 +281,10 @@ function installStrip(deviceId: string, deviceType: string): StripHarness {
             },
         },
         // The control surface `wasmDeviceRegistry` publishes on the rendering
-        // Crumbs node (`AudioEngineState.ts:336`). `setMode` is on it, and the
-        // question below is whether anything ever calls it.
+        // Crumbs node (`AudioEngineState.ts:336`). `setMode` sat on it with zero
+        // callers for the whole life of the mode defect — the node was always
+        // reachable, nothing reached it. `sendCrumbsModeToEngine` is what does
+        // now, and this records what it was told.
         crumbsControls: {
             ready: true,
             noteOn: () => {},
@@ -296,6 +308,7 @@ function installStrip(deviceId: string, deviceType: string): StripHarness {
     harness.updatePatch = (targetId, patch) => {
         track.updatePatch(targetId, patch);
     };
+    harness.ensureTrackStrip = () => track.strip;
 
     return {
         writes,
@@ -304,6 +317,7 @@ function installStrip(deviceId: string, deviceType: string): StripHarness {
         dispose: () => {
             harness.updateParam = null;
             harness.updatePatch = null;
+            harness.ensureTrackStrip = null;
         },
     };
 }

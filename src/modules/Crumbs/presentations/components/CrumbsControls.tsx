@@ -32,7 +32,14 @@ type CrumbsControlsProps = {
      * dropped — reaches the use case that decides preview from commit.
      */
     onParamChange: (paramId: CrumbsPersistedParamId, value: number, isTransient?: boolean) => void;
-    onStackChange?: (updates: Partial<VoiceStackParams>) => void;
+    /**
+     * Same gesture contract as {@link CrumbsControlsProps.onParamChange}: the
+     * three voice-stack ids are declared descriptor parameters too, so a drag
+     * has to preview and a release has to commit. Dropping the flag here is what
+     * made these three the last knobs whose every pointer sample would have been
+     * its own undo entry.
+     */
+    onStackChange?: (updates: Partial<VoiceStackParams>, isTransient?: boolean) => void;
 };
 
 const MODES: CrumbsMode[] = ['quick', 'drum', 'slice', 'warp', 'record'];
@@ -242,7 +249,7 @@ export const CrumbsControls = ({
                     <div className="grid grid-cols-3 gap-x-2 gap-y-3">
                         <Knob
                             value={voiceStack.stackCount}
-                            onChange={(v) => onStackChange({ stackCount: Math.round(v) })}
+                            onChange={(v, isTransient) => onStackChange({ stackCount: Math.round(v) }, isTransient)}
                             label="Voices"
                             min={1}
                             max={8}
@@ -252,7 +259,7 @@ export const CrumbsControls = ({
                         />
                         <Knob
                             value={voiceStack.detuneSpread}
-                            onChange={(v) => onStackChange({ detuneSpread: v })}
+                            onChange={(v, isTransient) => onStackChange({ detuneSpread: v }, isTransient)}
                             label="Detune"
                             min={0}
                             max={100}
@@ -262,7 +269,7 @@ export const CrumbsControls = ({
                         />
                         <Knob
                             value={voiceStack.stackSpread}
-                            onChange={(v) => onStackChange({ stackSpread: v })}
+                            onChange={(v, isTransient) => onStackChange({ stackSpread: v }, isTransient)}
                             label="Spread"
                             min={0}
                             max={1}

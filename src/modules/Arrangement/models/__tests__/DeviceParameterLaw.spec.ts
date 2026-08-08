@@ -293,8 +293,10 @@ describe('quantiseDeviceParameterValue', () => {
         const steppedDevices = BUILTIN_PLUGINS.filter((plugin) =>
             plugin.parameters.some((parameter) => parameter.type !== 'float')
         );
-        expect(steppedDevices.length).toBe(27);
+        // 28 since `builtin-crumbs` declared `stackCount` as an `int`; it was 27.
+        expect(steppedDevices.length).toBe(28);
         expect(steppedDevices.map((plugin) => plugin.id)).toContain('crust');
+        expect(steppedDevices.map((plugin) => plugin.id)).toContain('builtin-crumbs');
     });
 
     it('declares no logarithmic parameter stepped', () => {

@@ -300,6 +300,12 @@ export function applyCrumbsParamValue(instanceId: string, paramId: CrumbsPersist
                 [instanceId]: { ...inst, envelope: { ...inst.envelope, [target.key]: value } },
             };
         }
+        if (target.kind === 'voiceStack') {
+            return {
+                ...s,
+                [instanceId]: { ...inst, voiceStack: { ...inst.voiceStack, [target.key]: value } },
+            };
+        }
         return {
             ...s,
             [instanceId]: { ...inst, [target.key]: value },

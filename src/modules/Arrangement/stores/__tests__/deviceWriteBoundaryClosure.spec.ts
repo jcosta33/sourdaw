@@ -135,6 +135,14 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         // and its only engine write went to the *native* instance, which is not
         // the one that renders.
         'src/modules/Crumbs/useCases/setCrumbsParamWithAudio.ts': 3,
+        // Count provenance: new file entry, measured 1 — a single doc-comment
+        // mention of `updateDeviceParam` naming the route the three voice-stack
+        // ids now take, and no write of its own. The file delegates every field
+        // to `setCrumbsParamWithAudio`, which is where the sink is counted; it
+        // used to call `setCrumbsParamThrottled` only, which is the native
+        // instance and not a sink in this family at all — the reason a census
+        // that counts sinks could not see the defect.
+        'src/modules/Crumbs/useCases/voiceStacking.ts': 1,
         'src/modules/Crust/useCases/crustParamBridge/createFlushHandlers.ts': 4,
         'src/modules/Crust/useCases/crustParamBridge/helpers.ts': 8,
         // Count provenance: new file entry, measured 2 — the `updateDeviceParam`

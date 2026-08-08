@@ -275,7 +275,12 @@ describe('offline device-param automation capability coverage', () => {
         // count is untouched, which is the point of counting the two classes
         // apart — parameter-level work must not move a device-level number.
         expect(census.verdicts).toBe(107);
-        expect(census.deviceLevelExemptions).toBe(182);
+        // 185, was 182: `builtin-crumbs` declared `stackCount`, `detuneSpread`
+        // and `stackSpread` as automatable parameters, and Crumbs is already
+        // exempt at the *device* level, so the three new pairs land in that
+        // class rather than in `uncovered`. A device-level number moving because
+        // a device gained parameters is the one legitimate way it moves.
+        expect(census.deviceLevelExemptions).toBe(185);
         expect(census.parameterLevelExemptions).toBe(19);
 
         // (v) `knead` is a factory entry and a canonical native device type with
