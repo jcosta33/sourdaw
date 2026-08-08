@@ -83,7 +83,7 @@ describe('setGrandBouleSympatheticSend', () => {
     });
 
     it('does nothing when the store holds no state', () => {
-        const store = createStore<GrandBouleState>({ initialData: null });
+        const store = createStore<GrandBouleState>();
 
         setGrandBouleSympatheticSend({ deviceId: 'gb-1', engine: engine(), store, amount: 0.66 });
 

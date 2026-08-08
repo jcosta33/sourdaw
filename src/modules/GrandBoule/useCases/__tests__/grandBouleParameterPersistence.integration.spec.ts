@@ -17,16 +17,13 @@ import {
     resetCrdtProjectAuthority,
 } from '#/modules/CrdtDocument/useCases';
 
+import { createDefaultGrandBouleConfig } from '../../models/GrandBouleConfig';
 import {
     createDisconnectedGrandBouleEngineHandle,
     type GrandBouleEngineHandle,
 } from '../../repositories/grandBouleEngineHandle';
-import { createDefaultGrandBouleConfig } from '../../models/GrandBouleConfig';
 import { createGrandBouleStore, resetGrandBouleStores } from '../../stores/grandBouleStore';
-import {
-    GRAND_BOULE_PERSISTED_PARAM_IDS,
-    type GrandBoulePersistedParamId,
-} from '../grandBouleParamBridge/helpers';
+import { GRAND_BOULE_PERSISTED_PARAM_IDS, type GrandBoulePersistedParamId } from '../grandBouleParamBridge/helpers';
 import { hydrateGrandBouleConfigFromProject } from '../hydrateGrandBouleConfigFromProject';
 import { setGrandBouleMasterGain } from '../setGrandBouleMasterGain';
 import { setGrandBouleSoundboardSend } from '../setGrandBouleSoundboardSend';
@@ -97,9 +94,7 @@ const CONSTRUCTED: Readonly<Record<GrandBoulePersistedParamId, number>> = {
     sympatheticSend: 0.07,
 };
 
-const SETTERS: Readonly<
-    Record<GrandBoulePersistedParamId, (value: number, isTransient?: boolean) => void>
-> = {
+const SETTERS: Readonly<Record<GrandBoulePersistedParamId, (value: number, isTransient?: boolean) => void>> = {
     masterGain: (value, isTransient) =>
         setGrandBouleMasterGain({
             deviceId: DEVICE_ID,
