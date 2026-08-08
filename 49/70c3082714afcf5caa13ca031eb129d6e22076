@@ -1,0 +1,53 @@
+crates/daw-plugin-host/src/clap_host.rs
+  s_0d39f3a4a4357a::t_f62a51ff77b339 160-163,188-189,220,237-238,248-250
+crates/daw-plugin-host/src/clap_wrapper.rs
+  s_0d39f3a4a4357a::t_6a5ea7b3e841b4 171,1077-1142
+  s_0d39f3a4a4357a::t_b2eef96622c04a 497-498,1610-1611
+  s_0d39f3a4a4357a::t_f2c425b5173f0e 135-136,138-143
+  s_0d39f3a4a4357a::t_074e72bde85b33 889-893
+  s_0d39f3a4a4357a::t_419cd8963ec6e3 1592-1595,1609
+  s_0d39f3a4a4357a::t_ff667dc0030201 146-159
+  s_0d39f3a4a4357a::t_1bb965a2d4e861 28-32,34
+  s_0d39f3a4a4357a::t_3df4ca20ccf249 2138-2143
+  s_0d39f3a4a4357a::t_3a251862a3a7d3 496
+  s_0d39f3a4a4357a::t_ef6e838c025d6d 899-907,909-910,912-926,928
+  s_0d39f3a4a4357a::t_7d77181ca6ceb1 54-55,63-134,137,144-145,160-170
+  s_0d39f3a4a4357a::t_afd0f138c140f8 1034-1043,1047
+  s_0d39f3a4a4357a::t_89a32589be8612 1204-1206,1212-1215,1234-1236
+  s_0d39f3a4a4357a::t_c040501d04a5bd 1788-2128
+  s_0d39f3a4a4357a::t_f661e7dc444d3b 970-982
+  s_0d39f3a4a4357a::t_eda7db469562e1 1066-1076
+  s_0d39f3a4a4357a::t_020966cb5315ad 436-449,467-469
+  s_0d39f3a4a4357a::t_67e01026784d9a 201-209
+  s_0d39f3a4a4357a::t_9f3dcf86ab74f8 870-888,894-898,908,911,927,929-957
+  s_0d39f3a4a4357a::t_1b02d653996299 172
+src-tauri/src/host/native_bridge.rs
+  s_0d39f3a4a4357a::t_09cc8681632d54 640,651-652,654-655
+  s_0d39f3a4a4357a::t_e42b134de92c4b 12-15,23-37
+  s_0d39f3a4a4357a::t_a04a440ec09c20 305,313,318-322
+  s_0d39f3a4a4357a::t_85e38c6d63d26e 494-497
+  s_0d39f3a4a4357a::t_f6893999b5d1eb 527-555
+  s_0d39f3a4a4357a::t_fcaf9f722bddda 290-292
+  s_0d39f3a4a4357a::t_e8230eea96c4ba 498
+  s_0d39f3a4a4357a::t_7eb7cbf79cb56f 387-391
+  s_0d39f3a4a4357a::t_52f6b4ffb44ae3 323,807-887
+  s_0d39f3a4a4357a::t_a2c71f810297b1 324
+crates/daw-plugin-host/src/lib.rs
+  s_0d39f3a4a4357a::t_575e6ca0c547e3 8
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "4970c3082714afcf5caa13ca031eb129d6e22076",
+  "prompts": {},
+  "sessions": {
+    "s_0d39f3a4a4357a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "60da6a2e-7d79-4d98-8624-e993f5a9f94e",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
