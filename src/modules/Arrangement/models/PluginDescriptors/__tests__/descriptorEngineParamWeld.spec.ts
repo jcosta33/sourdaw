@@ -1,5 +1,5 @@
 import { readdirSync, readFileSync, statSync } from 'node:fs';
-import { join, resolve } from 'node:path';
+import { join, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { describe, expect, it } from 'vitest';
@@ -35,35 +35,149 @@ import { BUILTIN_PLUGINS } from '../../DeviceParameter';
  * translation from the worklet processor that performs it. All three are
  * maintained by work with no reason to think about this file, so a new orphan
  * appears here without anyone editing it.
+ *
+ * ## Why the census is per *engine* and not per crate
+ *
+ * The first revision of this file resolved each device against one directory of
+ * Rust sources, unioned. That is the right shape for a device whose
+ * `set_param` reaches every sub-processor it owns — Gluten broadcasts a name to
+ * its VCA, opto, FET and diode topologies at once, so an arm found anywhere
+ * under `gluten/` really is an arm the device answers to.
+ *
+ * It is the wrong shape for a device that dispatches *exclusively*: one of
+ * several alternatives is live, chosen at runtime, and only that one receives
+ * the write. Dutch Oven is that device. `ProofChamberInstance::set_param`
+ * (`crates/proof-chamber/src/lib.rs:151-165`) forwards to whichever
+ * `ReverbEngine` variant is currently constructed, and the seven variants have
+ * seven different arm sets. Unioning them says "some algorithm handles this",
+ * which is not the claim a user's knob makes.
+ *
+ * #1481 is what that costs. `early_late` was advertised, automatable, sent
+ * correctly by the panel, and dropped by `ProofChamber::set_param`'s `_ => {}`
+ * on the **plate** — the algorithm every project runs until something writes
+ * the selector. The census passed it because `FdnReverb::set_param`
+ * (`fdn.rs:299`) had the arm. A different engine vouched for it.
+ *
+ * So the population here is (device, engine, parameter), and the load-bearing
+ * assertion is the one about the *default* engine: whatever a freshly
+ * constructed device runs must answer every id the descriptor advertises, with
+ * no exemption table in front of it.
  */
 
 const REPO_ROOT = resolve(fileURLToPath(import.meta.url), '../../../../../../../');
 
 /**
- * Where each native device's `set_param` arms live.
+ * One alternative a device can be running.
+ *
+ * `variants` names the Rust enum variants the selector dispatch constructs this
+ * alternative as — two wire values can land on one engine (`Fdn8` and `Fdn16`
+ * are both `FdnReverb`), so the mapping is many-to-one. Empty for a device with
+ * no selector.
+ *
+ * `sources` are the files reachable *only* while this alternative is live.
+ * Empty means the device has one alternative and everything is shared.
+ */
+type EngineAlternative = {
+    readonly engineId: string;
+    readonly variants: readonly string[];
+    readonly sources: readonly string[];
+};
+
+/** Where the wire value → engine dispatch lives, and which descriptor id drives it. */
+type EngineSelector = {
+    readonly paramId: string;
+    readonly source: string;
+    readonly enumName: string;
+};
+
+/**
+ * Where each native device's `set_param` arms live, split by which of them a
+ * given write can actually reach.
  *
  * Typed as a total `Record` over the canonical type union on purpose: adding a
  * native device makes this fail to compile until someone says which sources
  * answer for it, the same way `NATIVE_DSP_DEVICE_TYPES` breaks the hydration
- * table. A directory rather than a file list, so a sub-processor added beside
- * an existing one is picked up without an edit here.
+ * table. Directories rather than file lists wherever possible, so a
+ * sub-processor added beside an existing one is picked up without an edit here;
+ * a directory listed as shared yields everything under it *minus* the files an
+ * alternative claims and minus the out-of-band sub-trees, so adding a file to
+ * one engine does not silently widen the others.
  */
-const ENGINE_SOURCE_ROOTS: Record<NativeDspDeviceType, string> = {
-    fermenter: 'crates/daw-dsp/src/fermenter',
-    toaster: 'crates/daw-dsp/src/toaster',
-    levain: 'crates/daw-dsp/src/levain',
-    'builtin-crumbs': 'crates/daw-dsp/src/crumbs',
-    'grand-boule': 'crates/daw-dsp/src/grand_boule',
-    gluten: 'crates/daw-dsp/src/gluten',
-    crust: 'crates/daw-dsp/src/crust',
-    bacteria: 'crates/daw-dsp/src/bacteria',
-    grinder: 'crates/daw-dsp/src/grinder',
-    proof: 'crates/daw-dsp/src/proof',
-    // The ProofChamber reverb ships under its bakery name in device ids.
-    'dutch-oven': 'crates/proof-chamber/src',
+type DeviceEngines = {
+    readonly sharedSources: readonly string[];
+    readonly alternatives: readonly EngineAlternative[];
+    /** The alternative a freshly-constructed device runs. */
+    readonly defaultEngineId: string;
+    readonly selector: EngineSelector | null;
+    /**
+     * Sub-trees whose arms are reached through a *different* entry point than
+     * the one a descriptor parameter takes, and which therefore must not vouch
+     * for a descriptor id.
+     */
+    readonly outOfBand: readonly { readonly path: string; readonly reason: string }[];
+};
+
+/** A device with one engine: nothing is exclusive, so the sole alternative owns no sources. */
+function singleEngine(root: string): DeviceEngines {
+    return {
+        sharedSources: [root],
+        alternatives: [{ engineId: 'engine', variants: [], sources: [] }],
+        defaultEngineId: 'engine',
+        selector: null,
+        outOfBand: [],
+    };
+}
+
+const PROOF_CHAMBER = 'crates/proof-chamber/src';
+
+const ENGINE_SOURCES: Record<NativeDspDeviceType, DeviceEngines> = {
+    fermenter: singleEngine('crates/daw-dsp/src/fermenter'),
+    toaster: {
+        ...singleEngine('crates/daw-dsp/src/toaster'),
+        outOfBand: [
+            {
+                path: 'crates/daw-dsp/src/toaster/engines',
+                reason:
+                    'Toaster has the same exclusive-dispatch shape Dutch Oven does — `PadEngine::set_param` ' +
+                    '(`toaster/engines/mod.rs:409-441`) forwards to one of twenty-nine variants — but no descriptor ' +
+                    'parameter enters it. The pad path is a different entry point (`set_pad_param`, ' +
+                    '`toaster/engine.rs:486`) with its own `PAD_PARAM_MAP`, while the four ids the descriptor ' +
+                    'advertises are kit-level and land in `toaster/engine.rs`. Excluded so a pad-engine arm cannot ' +
+                    'vouch for a device-level id: the day someone adds a pad parameter to the descriptor, this reds ' +
+                    'instead of resolving against whichever of the twenty-nine happens to spell it the same way.',
+            },
+        ],
+    },
+    levain: singleEngine('crates/daw-dsp/src/levain'),
+    'builtin-crumbs': singleEngine('crates/daw-dsp/src/crumbs'),
+    'grand-boule': singleEngine('crates/daw-dsp/src/grand_boule'),
+    gluten: singleEngine('crates/daw-dsp/src/gluten'),
+    crust: singleEngine('crates/daw-dsp/src/crust'),
+    bacteria: singleEngine('crates/daw-dsp/src/bacteria'),
+    grinder: singleEngine('crates/daw-dsp/src/grinder'),
+    proof: singleEngine('crates/daw-dsp/src/proof'),
+    // The ProofChamber reverb ships under its bakery name in device ids, and is
+    // the one device whose descriptor writes cross an exclusive dispatch.
+    // Shared keeps `lib.rs` (the `algorithm` and `vintage` arms every engine
+    // sees) and the stages the engines share — `early_reflections.rs` is used
+    // by the plate and the FDN both, `vintage.rs` runs after every algorithm.
+    'dutch-oven': {
+        sharedSources: [PROOF_CHAMBER],
+        alternatives: [
+            { engineId: 'plate', variants: ['Plate'], sources: [`${PROOF_CHAMBER}/proof_chamber.rs`] },
+            { engineId: 'fdn', variants: ['Fdn8', 'Fdn16'], sources: [`${PROOF_CHAMBER}/fdn.rs`] },
+            { engineId: 'spring', variants: ['Spring'], sources: [`${PROOF_CHAMBER}/spring.rs`] },
+            { engineId: 'reverse', variants: ['Reverse'], sources: [`${PROOF_CHAMBER}/reverse.rs`] },
+            { engineId: 'convolution', variants: ['Convolution'], sources: [`${PROOF_CHAMBER}/convolution.rs`] },
+            { engineId: 'hybrid', variants: ['Hybrid'], sources: [`${PROOF_CHAMBER}/hybrid.rs`] },
+        ],
+        defaultEngineId: 'plate',
+        selector: { paramId: 'algorithm', source: `${PROOF_CHAMBER}/lib.rs`, enumName: 'ReverbEngine' },
+        outOfBand: [],
+    },
     // The Tuner, whose engine is the `scoring` crate.
-    'native-scoring': 'crates/scoring/src',
-    knead: 'crates/daw-dsp/src/knead',
+    'native-scoring': singleEngine('crates/scoring/src'),
+    knead: singleEngine('crates/daw-dsp/src/knead'),
 };
 
 const SERVICES = 'src/modules/AudioEngine/services';
@@ -153,8 +267,147 @@ const PARAM_EXEMPTIONS: readonly ParamExemption[] = [
  * broken in the way `bandGain` was — advertised, automatable, and inert — and
  * that fixing it is more than a name change. It is asserted in both directions,
  * so the row cannot outlive the defect.
+ *
+ * Neither table can hold a **default-engine** gap. That assertion takes no
+ * exemptions at all, because a parameter dead on the engine every project runs
+ * is the defect this census exists for.
  */
 const KNOWN_ORPHANS: readonly ParamExemption[] = [];
+
+/**
+ * A descriptor id one engine answers to under a *different* name, because the
+ * dispatcher rewrites it on the way in.
+ *
+ * Not a translation table entry: the worklet sends `diffusion` to every
+ * algorithm, and only the spring path re-sends it. Asserted in both directions
+ * — the target must be a name that engine really answers to, and the row must
+ * still be needed — so an alias cannot outlive the shim that justifies it.
+ */
+type EngineAlias = {
+    readonly deviceId: NativeDspDeviceType;
+    readonly engineId: string;
+    readonly paramId: string;
+    readonly handledAs: string;
+    readonly reason: string;
+};
+
+const ENGINE_PARAM_ALIASES: readonly EngineAlias[] = [
+    {
+        deviceId: 'dutch-oven',
+        engineId: 'spring',
+        paramId: 'diffusion',
+        handledAs: 'dispersion',
+        reason:
+            'The dispatcher re-sends it: `lib.rs:154-159` calls `s.set_param(name, value)` and then, when the name is ' +
+            '`diffusion`, calls `s.set_param("dispersion", value)`. A spring reverb disperses rather than diffuses, so ' +
+            'the engine spells its arm `dispersion` and only this one algorithm needs the bridge. The literal is a ' +
+            'call argument, not a match arm, so the arm scanner cannot see it and the shim has to be declared.',
+    },
+];
+
+/**
+ * Descriptor parameters a *non-default* engine drops on the floor.
+ *
+ * These are the same class of defect as `bandGain`: the panel renders every
+ * control for every algorithm — `ProofChamberPanel` gates nothing on
+ * `params.algorithm` except the decay readout's units — so on these algorithms
+ * the knob turns, the automation lane records, and the DSP never hears it.
+ * They are grouped by engine rather than listed one row per parameter because
+ * the reason is per engine: it is one missing feature set, not forty-three
+ * unrelated omissions.
+ *
+ * Recorded rather than fixed because each row is a DSP feature to write, not a
+ * wire to reconnect. Asserted in both directions: a listed parameter that gains
+ * an arm reds until the row is deleted, and an unlisted gap reds immediately.
+ */
+type EngineGap = {
+    readonly deviceId: NativeDspDeviceType;
+    readonly engineId: string;
+    readonly paramIds: readonly string[];
+    readonly reason: string;
+};
+
+const KNOWN_ENGINE_GAPS: readonly EngineGap[] = [
+    {
+        deviceId: 'dutch-oven',
+        engineId: 'fdn',
+        paramIds: [
+            'mod_rate',
+            'diffusion',
+            'high_cut',
+            'low_cut',
+            'width',
+            'freeze',
+            'shimmer',
+            'shimmer_amount',
+            'shimmer_pitch',
+            'gravity',
+            'saturation_type',
+            'density',
+        ],
+        reason:
+            '`FdnReverb::set_param` (`fdn.rs:270-310`) answers to mix, rt60/decay, rt60_hf, damping, size, mod_depth, ' +
+            'early_late, predelay, matrix and saturation, and drops the rest through `_ => {}`. The FDN has no ' +
+            'shimmer pitch-shifter, no freeze latch, no tone filters, no width stage, no gravity and no saturation ' +
+            'curve selector — the stages simply are not built, so these are twelve features to write rather than ' +
+            'twelve names to reconnect. `saturation` is accepted here, which is why only the *curve* selector is ' +
+            'listed.',
+    },
+    {
+        deviceId: 'dutch-oven',
+        engineId: 'spring',
+        paramIds: [
+            'predelay',
+            'mod_rate',
+            'high_cut',
+            'low_cut',
+            'width',
+            'freeze',
+            'shimmer',
+            'shimmer_amount',
+            'shimmer_pitch',
+            'gravity',
+            'saturation',
+            'saturation_type',
+            'early_late',
+            'density',
+        ],
+        reason:
+            '`SpringReverb::set_param` (`spring.rs:103-115`) answers to mix, decay, feedback, damping, size, ' +
+            'dispersion and mod_depth. Its own `param_names()` advertises six of those, so the engine is at least ' +
+            'honest with a host that asks; the descriptor is the layer that over-promises. `early_late` is on this ' +
+            'list for the same reason it was on the plate before #1481 — no early-reflection stage exists here to ' +
+            'balance against.',
+    },
+    {
+        deviceId: 'dutch-oven',
+        engineId: 'reverse',
+        paramIds: [
+            'damping',
+            'predelay',
+            'mod_rate',
+            'mod_depth',
+            'diffusion',
+            'high_cut',
+            'low_cut',
+            'width',
+            'freeze',
+            'shimmer',
+            'shimmer_amount',
+            'shimmer_pitch',
+            'gravity',
+            'saturation',
+            'saturation_type',
+            'early_late',
+            'density',
+        ],
+        reason:
+            '`ReverseReverb::set_param` (`reverse.rs:54-62`) answers to mix, decay, size and its own `reverse_time`, ' +
+            'and nothing else. Seventeen of the twenty non-global ids the descriptor advertises are inert on this ' +
+            'algorithm — the widest gap of the four, and the one most likely to read as a broken device rather than a ' +
+            'sparse one.',
+    },
+];
 
 // ── Source reading ─────────────────────────────────────────────────────────
 
@@ -211,10 +464,14 @@ function readSource(relativePath: string): string {
 
 // ── Rust side: the names `set_param` matches on ────────────────────────────
 
-function collectRustSources(directory: string): string[] {
+/** Absolute `.rs` files under `path`, which may itself be a file. */
+function collectRustSources(path: string): string[] {
+    if (statSync(path).isFile()) {
+        return path.endsWith('.rs') ? [path] : [];
+    }
     const files: string[] = [];
-    for (const entry of readdirSync(directory)) {
-        const full = join(directory, entry);
+    for (const entry of readdirSync(path)) {
+        const full = join(path, entry);
         if (statSync(full).isDirectory()) {
             files.push(...collectRustSources(full));
             continue;
@@ -224,6 +481,15 @@ function collectRustSources(directory: string): string[] {
         }
     }
     return files;
+}
+
+function absolute(relativePath: string): string {
+    return join(REPO_ROOT, relativePath);
+}
+
+/** True when `file` is `root` or sits under it. */
+function isUnder(file: string, root: string): boolean {
+    return file === root || file.startsWith(root + sep);
 }
 
 /**
@@ -259,9 +525,9 @@ function readMatchArmNames(body: string): string[] {
     return [...flattened.matchAll(arm)].map((match) => match[1]!);
 }
 
-function readEngineParamNames(deviceType: NativeDspDeviceType): ReadonlySet<string> {
+function readArmsFromFiles(files: readonly string[]): ReadonlySet<string> {
     const names = new Set<string>();
-    for (const file of collectRustSources(join(REPO_ROOT, ENGINE_SOURCE_ROOTS[deviceType]))) {
+    for (const file of files) {
         for (const body of readParamFunctionBodies(stripComments(readFileSync(file, 'utf8')))) {
             for (const name of readMatchArmNames(body)) {
                 names.add(name);
@@ -269,6 +535,68 @@ function readEngineParamNames(deviceType: NativeDspDeviceType): ReadonlySet<stri
         }
     }
     return names;
+}
+
+/**
+ * The Rust files a write reaches, split into the ones every alternative sees
+ * and the ones each alternative owns alone.
+ *
+ * A shared directory yields everything under it *minus* whatever an alternative
+ * claims and minus the out-of-band sub-trees. That subtraction is the whole
+ * point: `crates/proof-chamber/src` listed as shared must not hand `fdn.rs`'s
+ * arms to the plate.
+ */
+function resolveEngineFiles(deviceType: NativeDspDeviceType): {
+    shared: readonly string[];
+    perEngine: ReadonlyMap<string, readonly string[]>;
+} {
+    const config = ENGINE_SOURCES[deviceType];
+    const perEngine = new Map<string, readonly string[]>();
+    const claimed: string[] = [];
+
+    for (const alternative of config.alternatives) {
+        const files = alternative.sources.flatMap((source) => collectRustSources(absolute(source)));
+        perEngine.set(alternative.engineId, files);
+        claimed.push(...alternative.sources.map((source) => absolute(source)));
+    }
+
+    const excluded = [...claimed, ...config.outOfBand.map((entry) => absolute(entry.path))];
+    const shared = config.sharedSources
+        .flatMap((source) => collectRustSources(absolute(source)))
+        .filter((file) => !excluded.some((root) => isUnder(file, root)));
+
+    return { shared, perEngine };
+}
+
+/**
+ * Wire value → engine id, read out of the selector's dispatch.
+ *
+ * The digit on the left of the arrow is what distinguishes the dispatch from
+ * every other `match` over the same enum: `process` and `get_latency` bind a
+ * variant on the *left* of `=>`, this one constructs one on the right.
+ */
+function readSelectorWireValues(deviceType: NativeDspDeviceType): ReadonlyMap<number, string> {
+    const config = ENGINE_SOURCES[deviceType];
+    if (config.selector === null) {
+        return new Map();
+    }
+    const source = readSource(config.selector.source).replaceAll(/\s+/g, ' ');
+    const dispatch = new RegExp(String.raw`(\d+) => ${config.selector.enumName}::(\w+)\s*\(`, 'g');
+    const byVariant = new Map<string, string>();
+    for (const alternative of config.alternatives) {
+        for (const variant of alternative.variants) {
+            byVariant.set(variant, alternative.engineId);
+        }
+    }
+
+    const wire = new Map<number, string>();
+    for (const match of source.matchAll(dispatch)) {
+        const engineId = byVariant.get(match[2]!);
+        if (engineId !== undefined) {
+            wire.set(Number(match[1]!), engineId);
+        }
+    }
+    return wire;
 }
 
 // ── TypeScript side: the translation each processor performs ───────────────
@@ -321,30 +649,103 @@ function buildTranslator(deviceType: NativeDspDeviceType): (paramId: string) => 
 
 // ── Population ─────────────────────────────────────────────────────────────
 
-const NATIVE_DESCRIPTORS = BUILTIN_PLUGINS.flatMap((descriptor) => {
+type NativeDescriptor = {
+    readonly deviceType: NativeDspDeviceType;
+    readonly paramIds: readonly string[];
+    readonly legalSets: ReadonlyMap<string, readonly number[]>;
+};
+
+const NATIVE_DESCRIPTORS: readonly NativeDescriptor[] = BUILTIN_PLUGINS.flatMap((descriptor) => {
     const deviceType = resolveNativeDspDeviceType(descriptor.id);
     if (deviceType === null) {
         return [];
     }
-    return [{ deviceType, paramIds: descriptor.parameters.map((param) => param.id) }];
+    const legalSets = new Map<string, readonly number[]>();
+    for (const param of descriptor.parameters) {
+        if (param.legalSet !== undefined) {
+            legalSets.set(param.id, param.legalSet.values);
+        }
+    }
+    return [{ deviceType, paramIds: descriptor.parameters.map((param) => param.id), legalSets }];
 });
 
-const ENGINE_PARAM_NAMES = new Map<NativeDspDeviceType, ReadonlySet<string>>(
-    NATIVE_DSP_DEVICE_TYPES.map((deviceType) => [deviceType, readEngineParamNames(deviceType)])
+const ENGINE_FILES = new Map(NATIVE_DSP_DEVICE_TYPES.map((deviceType) => [deviceType, resolveEngineFiles(deviceType)]));
+
+/** Arms every alternative of a device inherits — the dispatcher's own and the always-present stages. */
+const SHARED_PARAM_NAMES = new Map<NativeDspDeviceType, ReadonlySet<string>>(
+    NATIVE_DSP_DEVICE_TYPES.map((deviceType) => [deviceType, readArmsFromFiles(ENGINE_FILES.get(deviceType)!.shared)])
+);
+
+/** Arms only the named alternative answers to. */
+const ENGINE_PARAM_NAMES = new Map<NativeDspDeviceType, ReadonlyMap<string, ReadonlySet<string>>>(
+    NATIVE_DSP_DEVICE_TYPES.map((deviceType) => [
+        deviceType,
+        new Map(
+            [...ENGINE_FILES.get(deviceType)!.perEngine].map(([engineId, files]) => [
+                engineId,
+                readArmsFromFiles(files),
+            ])
+        ),
+    ])
+);
+
+const SELECTOR_WIRE_VALUES = new Map<NativeDspDeviceType, ReadonlyMap<number, string>>(
+    NATIVE_DSP_DEVICE_TYPES.map((deviceType) => [deviceType, readSelectorWireValues(deviceType)])
 );
 
 const TRANSLATORS = new Map<NativeDspDeviceType, (paramId: string) => string>(
     NATIVE_DSP_DEVICE_TYPES.map((deviceType) => [deviceType, buildTranslator(deviceType)])
 );
 
-function engineAnswersTo(deviceType: NativeDspDeviceType, paramId: string): boolean {
-    return ENGINE_PARAM_NAMES.get(deviceType)!.has(TRANSLATORS.get(deviceType)!(paramId));
+/**
+ * Engine ids a wire value can actually select.
+ *
+ * A device with no selector has exactly its default. Dutch Oven's convolution
+ * and hybrid engines are built and render but no `algorithm` value constructs
+ * them (`lib.rs:122-134`), so they are deliberately absent: a census that
+ * demanded descriptor coverage from an engine nothing can reach would be
+ * inventing work.
+ */
+function selectableEngineIds(deviceType: NativeDspDeviceType): readonly string[] {
+    const config = ENGINE_SOURCES[deviceType];
+    if (config.selector === null) {
+        return [config.defaultEngineId];
+    }
+    return [...new Set(SELECTOR_WIRE_VALUES.get(deviceType)!.values())];
+}
+
+function engineAnswersTo(deviceType: NativeDspDeviceType, engineId: string, paramId: string): boolean {
+    const translated = TRANSLATORS.get(deviceType)!(paramId);
+    const shared = SHARED_PARAM_NAMES.get(deviceType)!;
+    const own = ENGINE_PARAM_NAMES.get(deviceType)!.get(engineId);
+
+    if (shared.has(translated) || own?.has(translated) === true) {
+        return true;
+    }
+
+    const alias = ENGINE_PARAM_ALIASES.find(
+        (row) => row.deviceId === deviceType && row.engineId === engineId && row.paramId === paramId
+    );
+    if (alias === undefined) {
+        return false;
+    }
+    return shared.has(alias.handledAs) || own?.has(alias.handledAs) === true;
+}
+
+function defaultEngineAnswersTo(deviceType: NativeDspDeviceType, paramId: string): boolean {
+    return engineAnswersTo(deviceType, ENGINE_SOURCES[deviceType].defaultEngineId, paramId);
 }
 
 const ALL_DECLARED_ROWS: readonly ParamExemption[] = [...PARAM_EXEMPTIONS, ...KNOWN_ORPHANS];
 
 function isDeclared(deviceType: NativeDspDeviceType, paramId: string): boolean {
     return ALL_DECLARED_ROWS.some((row) => row.deviceId === deviceType && row.paramId === paramId);
+}
+
+function isDeclaredGap(deviceType: NativeDspDeviceType, engineId: string, paramId: string): boolean {
+    return KNOWN_ENGINE_GAPS.some(
+        (row) => row.deviceId === deviceType && row.engineId === engineId && row.paramIds.includes(paramId)
+    );
 }
 
 describe('descriptor parameter ids are welded to engine set_param arms', () => {
@@ -355,12 +756,51 @@ describe('descriptor parameter ids are welded to engine set_param arms', () => {
         // `format!`, or arms only ever read from one file — would not show up in
         // the orphan list at all. Pin arms from three different files, and the
         // shape that must stay absent.
-        const bacteria = ENGINE_PARAM_NAMES.get('bacteria')!;
+        const bacteria = SHARED_PARAM_NAMES.get('bacteria')!;
 
         expect(bacteria.has('crossoverFreq1')).toBe(true); // engine.rs, BacteriaEngine
         expect(bacteria.has('gain')).toBe(true); // engine.rs, BandChain
         expect(bacteria.has('grainSize')).toBe(true); // granular.rs
         expect(bacteria.has('bandGain')).toBe(false);
+    });
+
+    it('keeps one alternative’s arms out of the next one’s set', () => {
+        // The pin for the split itself. Before it, all five reverb engines read
+        // out of one directory and any arm satisfied all of them. `matrix` is
+        // the FDN's feedback-matrix selector and exists nowhere else; `dispersion`
+        // is the spring's; `reverse_time` is the reverse engine's. Each must be
+        // visible to exactly its own engine, and the shared set — `lib.rs` and
+        // the stages every algorithm runs — must hold the two globals and none
+        // of the three.
+        const dutchOven = ENGINE_PARAM_NAMES.get('dutch-oven')!;
+        const shared = SHARED_PARAM_NAMES.get('dutch-oven')!;
+
+        expect(dutchOven.get('fdn')!.has('matrix')).toBe(true);
+        expect(dutchOven.get('plate')!.has('matrix')).toBe(false);
+        expect(dutchOven.get('spring')!.has('dispersion')).toBe(true);
+        expect(dutchOven.get('plate')!.has('dispersion')).toBe(false);
+        expect(dutchOven.get('reverse')!.has('reverse_time')).toBe(true);
+        expect(dutchOven.get('fdn')!.has('reverse_time')).toBe(false);
+
+        expect(shared.has('algorithm')).toBe(true); // lib.rs, before the forward
+        expect(shared.has('vintage')).toBe(true);
+        expect(shared.has('matrix')).toBe(false);
+        expect(shared.has('dispersion')).toBe(false);
+    });
+
+    it('does not let an out-of-band sub-tree vouch for a device-level id', () => {
+        // Toaster's pad engines are reached through `set_pad_param`, never
+        // through the descriptor's route. These three are arms no file outside
+        // `engines/` carries — the kick's transient click, the modal engine's
+        // exciter and the cymbal's shimmer — so if the exclusion stopped
+        // working they would appear in the device's arm set and a descriptor
+        // could advertise any of them and pass.
+        const toaster = SHARED_PARAM_NAMES.get('toaster')!;
+
+        expect(toaster.has('master_gain')).toBe(true); // engine.rs, kit level
+        expect(toaster.has('click_level')).toBe(false);
+        expect(toaster.has('exciter_length')).toBe(false);
+        expect(toaster.has('shimmer_rate')).toBe(false);
     });
 
     it('reads the name translation each processor actually performs', () => {
@@ -397,17 +837,128 @@ describe('descriptor parameter ids are welded to engine set_param arms', () => {
         expect(stale).toEqual([]);
     });
 
-    it('every advertised parameter id is one the engine answers to', () => {
+    it('the default engine is one the device declares', () => {
+        const undeclared = NATIVE_DSP_DEVICE_TYPES.filter(
+            (deviceType) =>
+                !ENGINE_SOURCES[deviceType].alternatives.some(
+                    (alternative) => alternative.engineId === ENGINE_SOURCES[deviceType].defaultEngineId
+                )
+        );
+
+        expect(undeclared).toEqual([]);
+    });
+
+    it('the wire values the Rust dispatch accepts are the ones the descriptor calls legal', () => {
+        // Two independent sources: the numbers `ProofChamberInstance::set_param`
+        // constructs an engine for, and the `legalSet` the descriptor publishes
+        // for the same parameter. A new algorithm wired in Rust without a
+        // descriptor update — or a descriptor that keeps advertising a value the
+        // dispatch dropped — shows up here rather than as a selector that lands
+        // on the fallback.
+        const drift: string[] = [];
+
+        for (const deviceType of NATIVE_DSP_DEVICE_TYPES) {
+            const selector = ENGINE_SOURCES[deviceType].selector;
+            if (selector === null) {
+                continue;
+            }
+            const descriptor = NATIVE_DESCRIPTORS.find((entry) => entry.deviceType === deviceType);
+            const declared = [...(descriptor?.legalSets.get(selector.paramId) ?? [])].sort((a, b) => a - b);
+            const dispatched = [...SELECTOR_WIRE_VALUES.get(deviceType)!.keys()].sort((a, b) => a - b);
+            if (declared.join(',') !== dispatched.join(',')) {
+                drift.push(
+                    `${deviceType}.${selector.paramId}: descriptor [${declared.join(', ')}] vs Rust [${dispatched.join(', ')}]`
+                );
+            }
+        }
+
+        expect(drift).toEqual([]);
+    });
+
+    it('every advertised parameter reaches the engine the device runs by default', () => {
+        // The assertion #1481 needed and did not have. `early_late` was welded
+        // by `fdn.rs` while `ProofChamber::set_param` dropped it, and the plate
+        // is what a freshly constructed Dutch Oven is — so every project heard a
+        // dead knob while the census stayed green. No exemption table stands in
+        // front of this one.
         const orphans: string[] = [];
         for (const { deviceType, paramIds } of NATIVE_DESCRIPTORS) {
             for (const paramId of paramIds) {
-                if (!engineAnswersTo(deviceType, paramId) && !isDeclared(deviceType, paramId)) {
-                    orphans.push(`${deviceType}.${paramId}`);
+                if (!defaultEngineAnswersTo(deviceType, paramId) && !isDeclared(deviceType, paramId)) {
+                    orphans.push(`${deviceType}.${ENGINE_SOURCES[deviceType].defaultEngineId}.${paramId}`);
                 }
             }
         }
 
         expect(orphans).toEqual([]);
+    });
+
+    it('every advertised parameter reaches every selectable engine, or the gap is named', () => {
+        // The rest of the matrix. A parameter one algorithm handles and another
+        // drops is not automatically a defect — but it is never a non-event
+        // either, because `ProofChamberPanel` renders every control whatever the
+        // algorithm, so the user gets a live knob wired to nothing. Each gap has
+        // to be named in `KNOWN_ENGINE_GAPS` with a reason.
+        const gaps: string[] = [];
+        for (const { deviceType, paramIds } of NATIVE_DESCRIPTORS) {
+            for (const engineId of selectableEngineIds(deviceType)) {
+                for (const paramId of paramIds) {
+                    if (
+                        !engineAnswersTo(deviceType, engineId, paramId) &&
+                        !isDeclared(deviceType, paramId) &&
+                        !isDeclaredGap(deviceType, engineId, paramId)
+                    ) {
+                        gaps.push(`${deviceType}.${engineId}.${paramId}`);
+                    }
+                }
+            }
+        }
+
+        expect(gaps).toEqual([]);
+    });
+
+    it('every named engine gap still names a parameter that engine still drops', () => {
+        // Both reverse directions for the gap table in one place: the row must
+        // still describe a descriptor parameter, the engine must still be
+        // selectable, and the arm must still be missing. The moment someone
+        // writes the DSP, the row is a lie and has to go.
+        const stale: string[] = [];
+        for (const row of KNOWN_ENGINE_GAPS) {
+            const descriptor = NATIVE_DESCRIPTORS.find((entry) => entry.deviceType === row.deviceId);
+            if (!selectableEngineIds(row.deviceId).includes(row.engineId)) {
+                stale.push(`${row.deviceId}.${row.engineId}: not a selectable engine`);
+                continue;
+            }
+            for (const paramId of row.paramIds) {
+                if (descriptor?.paramIds.includes(paramId) !== true) {
+                    stale.push(`${row.deviceId}.${row.engineId}.${paramId}: not a descriptor parameter`);
+                    continue;
+                }
+                if (engineAnswersTo(row.deviceId, row.engineId, paramId)) {
+                    stale.push(`${row.deviceId}.${row.engineId}.${paramId}: the engine answers to it now`);
+                }
+            }
+        }
+
+        expect(stale).toEqual([]);
+    });
+
+    it('every alias still bridges a name the engine answers to, and is still needed', () => {
+        const broken: string[] = [];
+        for (const row of ENGINE_PARAM_ALIASES) {
+            const shared = SHARED_PARAM_NAMES.get(row.deviceId)!;
+            const own = ENGINE_PARAM_NAMES.get(row.deviceId)!.get(row.engineId);
+            const translated = TRANSLATORS.get(row.deviceId)!(row.paramId);
+
+            if (!shared.has(row.handledAs) && own?.has(row.handledAs) !== true) {
+                broken.push(`${row.deviceId}.${row.engineId}.${row.paramId}: no ${row.handledAs} arm to bridge to`);
+            }
+            if (shared.has(translated) || own?.has(translated) === true) {
+                broken.push(`${row.deviceId}.${row.engineId}.${row.paramId}: answered directly, alias is dead`);
+            }
+        }
+
+        expect(broken).toEqual([]);
     });
 
     it('every declared row still names a parameter the descriptor declares', () => {
@@ -423,19 +974,29 @@ describe('descriptor parameter ids are welded to engine set_param arms', () => {
 
     it('every declared row still lacks the engine arm it was granted for', () => {
         // The reverse direction that stops either table becoming a place orphans
-        // go to be forgotten: the moment the engine answers to one of these, the
-        // row is a lie and has to be deleted.
-        const wired = ALL_DECLARED_ROWS.filter((row) => engineAnswersTo(row.deviceId, row.paramId)).map(
-            (row) => `${row.deviceId}.${row.paramId}`
-        );
+        // go to be forgotten: the moment *any* selectable engine answers to one
+        // of these, the row is a lie and has to be deleted.
+        const wired = ALL_DECLARED_ROWS.filter((row) =>
+            selectableEngineIds(row.deviceId).some((engineId) => engineAnswersTo(row.deviceId, engineId, row.paramId))
+        ).map((row) => `${row.deviceId}.${row.paramId}`);
 
         expect(wired).toEqual([]);
     });
 
     it('every declared row carries a reason', () => {
-        const unreasoned = ALL_DECLARED_ROWS.filter((row) => row.reason.trim().length === 0).map(
-            (row) => `${row.deviceId}.${row.paramId}`
-        );
+        const unreasoned = [
+            ...ALL_DECLARED_ROWS.map((row) => ({ id: `${row.deviceId}.${row.paramId}`, reason: row.reason })),
+            ...KNOWN_ENGINE_GAPS.map((row) => ({ id: `${row.deviceId}.${row.engineId}`, reason: row.reason })),
+            ...ENGINE_PARAM_ALIASES.map((row) => ({
+                id: `${row.deviceId}.${row.engineId}.${row.paramId}`,
+                reason: row.reason,
+            })),
+            ...Object.entries(ENGINE_SOURCES).flatMap(([deviceType, config]) =>
+                config.outOfBand.map((entry) => ({ id: `${deviceType}:${entry.path}`, reason: entry.reason }))
+            ),
+        ]
+            .filter((row) => row.reason.trim().length === 0)
+            .map((row) => row.id);
 
         expect(unreasoned).toEqual([]);
     });
