@@ -1,0 +1,21 @@
+src/modules/WorkspaceShell/presentations/views/StatusBar.tsx
+  s_14f2bbc9f385dd::t_ba687dfb6700ab 221
+tests/e2e/collaborationTestId.spec.ts
+  s_14f2bbc9f385dd::t_eb3f3dce4fda00 1-58
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "1e27652a5d98e3c6fe8cc8d1c08a0d8321c239fb",
+  "prompts": {},
+  "sessions": {
+    "s_14f2bbc9f385dd": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f9a61a1d-66b3-4146-938d-a04f45f4b060",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
