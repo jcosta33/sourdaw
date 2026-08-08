@@ -699,5 +699,9 @@ Re-measured after additional PRs since threshold raise #3 (PR #1231). Lines cros
 - **PR #1295**: SourdawLogo — loaf/particle image structure, className passthrough — 4 tests.
 - **PR #1296**: ClipAndDevice tools — 205 LOC tool schema registry — 7 tests.
 - **PR #1297**: FaustEffectDescriptors + faustEffectPresets — unique ids, categories, device prefixes — 11 tests.
+- **PR #1307**: adaptGrooveTemplateForConsumer — subdivision/dynamics rejection, slot projection — 5 tests.
+- **PR #1308**: restoreGrooveAssignment — null-store guard, remove/add/replace, divergence/validation throws — 7 tests.
+- **PR #1309**: CrumbsDescriptor + BacteriaDescriptor — ids, params, float ranges — 10 tests.
+- **PR #1310**: faustEffectPresets — unique ids, device type/params validation — 6 tests.
 
-**Campaign total to date: 191 PRs, ~2134 assertions. Lines coverage at 90.04%.**
+**Campaign total to date: 195 PRs, ~2162 assertions. Lines coverage at 90.07%.**
