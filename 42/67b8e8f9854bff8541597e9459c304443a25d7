@@ -1,0 +1,19 @@
+src/modules/Preferences/presentations/views/preferences/AiSection.tsx
+  s_bc88af7d3b054c::t_7e66844add4a61 74
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "4267b8e8f9854bff8541597e9459c304443a25d7",
+  "prompts": {},
+  "sessions": {
+    "s_bc88af7d3b054c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f9b4a-11a2-7f61-8dfb-76eed0eb2a9c",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
