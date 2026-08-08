@@ -397,6 +397,7 @@ export const PianoRollToolbar = ({
             step={25}
             className="w-20"
             aria-label="Piano roll zoom"
+            data-testid="toolbar-zoom"
         />
     </DawControlStrip>
 );
