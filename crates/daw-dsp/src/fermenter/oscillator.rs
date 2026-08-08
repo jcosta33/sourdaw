@@ -213,6 +213,25 @@ impl PolyBlepOsc {
     /// samples either side of a corner: an oscillator knows where its corners
     /// are from the phase and the increment, so the ones just ahead of the
     /// current sample are as available as the ones just behind it.
+    ///
+    /// # The high-frequency droop is inherited, and deliberately uncompensated
+    ///
+    /// The residual is a lowpass, and its support is four samples wide however
+    /// fast the oscillator runs — so the higher the note, the larger the share
+    /// of a period the rounding covers, and the more of the waveform it takes
+    /// with it. Measured on this code at 48 kHz, the rendered peak falls from
+    /// -0.04 dB at 110 Hz to -1.5 dB at 4 kHz and -5.8 dB at 12.5 kHz, and a
+    /// partial still below Nyquist loses about 12 dB (the third harmonic of a
+    /// 6.86 kHz triangle, at 20.6 kHz, comes out 0.0248 against the trivial
+    /// waveform's 0.1050).
+    ///
+    /// This is the published behaviour of the method and not a fault in this
+    /// transcription: the paper cited on [`poly_blamp`] measures the same droop
+    /// and suggests a compensating shelving EQ. None is applied here, because
+    /// adding one changes how every triangle patch sounds and that is a voicing
+    /// decision rather than a correctness one. Recorded so that the falling peak
+    /// is not mistaken for a bug and "fixed" — and so that anyone who does want
+    /// the compensation knows it is a deliberate omission with a known remedy.
     #[inline]
     pub fn triangle(&mut self, freq: f32, sample_rate: f32) -> f32 {
         let inc = freq / sample_rate;
@@ -625,24 +644,58 @@ mod tests {
         );
     }
 
-    /// A triangle's corners are what alias, and the correction is what removes
-    /// them: without it the peak sample sits on the trivial `4|p-0.5|-1` value.
+    /// The residual must be multiplied by the *right* scaling, not merely by
+    /// some scaling that rounds the corner.
     ///
-    /// Driven at an increment that puts a sample close to the peak, so the
-    /// correction is near its full 7/30 weight and the claim is about a real
-    /// rounding rather than a rounding error. The band-limited peak must sit
-    /// *below* the trivial one — the residual is subtracted at a maximum.
+    /// This is the level above the one
+    /// [`the_polyblamp_residual_matches_the_values_its_source_states`] closes,
+    /// and it was open: an inequality against the trivial waveform cannot tell
+    /// a correct scaling from a wrong one, because every wrong scaling also
+    /// produces a smooth, plausible, band-limited-looking corner. At
+    /// `INC = 1/64` the rendered peak is 0.98542 at `4 * inc`, 0.97083 at the
+    /// shipped `8 * inc` and 0.94167 at `16 * inc` — half, double *and*
+    /// quadruple all satisfy "rounded below the trivial 1.0". Only a scaling of
+    /// zero fails it, and that is the degenerate case the residual test already
+    /// covers.
+    ///
+    /// So the peak is pinned to its closed form instead. `INC = 1/64` puts a
+    /// sample exactly on the phase-0 corner, where `corner_distance` is 0 and
+    /// the residual is at its full 7/30 while the trivial waveform is at +1:
+    ///
+    /// ```text
+    ///   1 - 8 * inc * 7/30  =  1 - (8/64)(7/30)  =  0.97083333...
+    /// ```
+    ///
+    /// [`PEAK_TOLERANCE`] is 1e-6, about eight f32 ulp at unity — headroom for
+    /// rounding and nothing else. The nearest surviving mutation, `4 * inc`,
+    /// misses by 1.46e-2, four orders of magnitude outside it. Widening this to
+    /// a value that tolerates a factor-of-two error would reopen the exact gap
+    /// it exists to close.
+    ///
+    /// The scaling is also checked against the waveform rather than against
+    /// itself. The trivial triangle's per-sample slope is measured either side
+    /// of the corner, and the *change* across it must be that same `8 * inc` —
+    /// the quantity Sec. 4.1 of the cited paper calls `2 * mu`. Taking it from
+    /// the waveform means the constant is derived here, not restated.
     #[test]
-    fn the_triangle_rounds_its_corners_below_the_trivial_waveform() {
+    fn the_triangle_corner_is_scaled_by_the_slope_change_the_waveform_has() {
         // 1/64 cycle per sample places a sample exactly on the phase-0 corner.
         const INC: f32 = 1.0 / 64.0;
+        /// The residual's value at the corner, from Fig. 3(d).
+        const CORNER_RESIDUAL: f32 = 7.0 / 30.0;
+        /// About eight f32 ulp at unity. See this test's header before touching
+        /// it: its whole job is to be narrower than a factor-of-two error.
+        const PEAK_TOLERANCE: f32 = 1e-6;
+
         let mut osc = PolyBlepOsc::new();
         osc.set_waveform(3);
 
-        let mut rendered = Vec::with_capacity(64);
-        let mut trivial = Vec::with_capacity(64);
+        // One sample past a full cycle, so the corner sample has a neighbour on
+        // each side and the slope can be measured across it.
+        let mut rendered = Vec::with_capacity(65);
+        let mut trivial = Vec::with_capacity(65);
         let mut phase = 0.0f32;
-        for _ in 0..64 {
+        for _ in 0..65 {
             rendered.push(osc.tick(INC, 1.0));
             phase += INC;
             if phase >= 1.0 {
@@ -651,17 +704,72 @@ mod tests {
             trivial.push(4.0 * (phase - 0.5).abs() - 1.0);
         }
 
-        let rendered_peak = rendered.iter().fold(f32::MIN, |best, s| best.max(*s));
-        let trivial_peak = trivial.iter().fold(f32::MIN, |best, s| best.max(*s));
+        // The corner is wherever the trivial waveform peaks; found rather than
+        // hard-coded so the index cannot drift out of step with the loop.
+        let corner = trivial
+            .iter()
+            .enumerate()
+            .fold((0usize, f32::MIN), |best, (index, value)| {
+                if *value > best.1 {
+                    (index, *value)
+                } else {
+                    best
+                }
+            })
+            .0;
         assert!(
-            (trivial_peak - 1.0).abs() < 1e-5,
-            "the trivial reference should reach +1 at the corner; got \
-             {trivial_peak}"
+            (trivial[corner] - 1.0).abs() < 1e-6,
+            "the trivial reference should reach exactly +1 at the corner, or \
+             the closed form below is not anchored on the corner at all; got \
+             {} at index {corner}",
+            trivial[corner]
         );
         assert!(
-            rendered_peak < trivial_peak - 0.01,
-            "the corrected peak should be rounded down from the trivial {trivial_peak}; \
-             got {rendered_peak}"
+            corner > 0 && corner + 1 < trivial.len(),
+            "the corner should have a neighbour either side for the slope \
+             measurement; it is at index {corner} of {}",
+            trivial.len()
+        );
+
+        // The scaling, taken from the waveform: its slope flips sign at the
+        // corner, and the size of that flip is what the residual is weighted by.
+        let before = trivial[corner] - trivial[corner - 1];
+        let after = trivial[corner + 1] - trivial[corner];
+        let slope_change = (after - before).abs();
+        assert!(
+            (slope_change - 8.0 * INC).abs() < 1e-6,
+            "the trivial triangle's own slope should change by 8 * inc = {} \
+             across the corner — that is the weight the residual is scaled by; \
+             measured {slope_change} (slope {before} before, {after} after)",
+            8.0 * INC
+        );
+
+        let expected_peak = 1.0 - slope_change * CORNER_RESIDUAL;
+        let rendered_peak = rendered.iter().fold(f32::MIN, |best, s| best.max(*s));
+        assert!(
+            (rendered_peak - expected_peak).abs() < PEAK_TOLERANCE,
+            "the sample on the corner should be the trivial +1 less the full \
+             residual at the measured slope change: 1 - {slope_change} * 7/30 \
+             = {expected_peak}. Measured {rendered_peak}, off by {}. A miss of \
+             ~1.5e-2 is the residual being scaled by 4 * inc, ~2.9e-2 is \
+             16 * inc — both round the corner and neither is correct.",
+            (rendered_peak - expected_peak).abs()
+        );
+        assert_eq!(
+            rendered
+                .iter()
+                .enumerate()
+                .fold((0usize, f32::MIN), |best, (index, value)| {
+                    if *value > best.1 {
+                        (index, *value)
+                    } else {
+                        best
+                    }
+                })
+                .0,
+            corner,
+            "the corrected waveform should still peak on the corner sample, \
+             not somewhere the correction pushed it"
         );
 
         // Away from both corners the two must agree — the residual has finite
@@ -674,6 +782,126 @@ mod tests {
              rendered {} against trivial {}",
             rendered[mid],
             trivial[mid]
+        );
+    }
+
+    /// Magnitude of one DFT bin, rectangular window.
+    ///
+    /// No window function, because the probe below is exactly periodic in the
+    /// analysis length — a Hann window would only smear lines that already land
+    /// dead on a bin, and its sidelobes would sit at the same level as the
+    /// alias being measured.
+    fn bin_magnitude(samples: &[f32], freq: f64) -> f64 {
+        let frame_count = samples.len() as f64;
+        let mut real = 0.0f64;
+        let mut imaginary = 0.0f64;
+        for (index, sample) in samples.iter().enumerate() {
+            let phase = std::f64::consts::TAU * freq * index as f64 / f64::from(SAMPLE_RATE);
+            real += f64::from(*sample) * phase.cos();
+            imaginary += f64::from(*sample) * phase.sin();
+        }
+        2.0 * real.hypot(imaginary) / frame_count
+    }
+
+    /// PolyBLAMP exists to suppress aliasing, and nothing measured that.
+    ///
+    /// The probe is a triangle at 9600 Hz — one fifth of the 48 kHz sample rate,
+    /// so the waveform is exactly five-periodic and its entire spectrum sits on
+    /// multiples of 9600 Hz. Two of those are below Nyquist: 9600 and 19200.
+    /// A triangle has no even harmonics, so **19200 Hz cannot be signal** —
+    /// every contribution to that bin is a partial that folded, h=3 from
+    /// 28800 Hz first, then h=7, h=13 and onwards. The bin is a pure alias
+    /// meter, and because the signal is periodic in the analysis length the
+    /// rectangular-windowed DFT reads it with no leakage to argue about.
+    ///
+    /// Measured here, sweeping the scaling the residual is multiplied by:
+    ///
+    /// | scaling      | fundamental | alias   | alias / h1 |
+    /// | ------------ | ----------- | ------- | ---------- |
+    /// | uncorrected  | 0.83777     | 0.12223 | 0.1459     |
+    /// | 2 * inc      | 0.78353     | 0.09314 | 0.1189     |
+    /// | 4 * inc      | 0.72928     | 0.06405 | 0.0878     |
+    /// | 8 * inc      | 0.62079     | 0.00587 | 0.0095     |
+    /// | 16 * inc     | 0.40381     | 0.11048 | 0.2736     |
+    /// | 32 * inc     | 0.03014     | 0.34319 | 11.386     |
+    ///
+    /// The alias floor is a sharp minimum at the shipped scaling — nine times
+    /// below the best wrong one — because cancelling the corner's alias
+    /// contribution is what the correct scaling *is*. That is what makes the
+    /// 0.02 bound a measurement rather than an invention: it sits 2.1x above
+    /// the 0.0095 this renders and 4.4x below what the nearest wrong scaling
+    /// manages.
+    ///
+    /// Two companion assertions stop it passing for the wrong reason. The
+    /// uncorrected reference must genuinely be aliasing, or there would be
+    /// nothing to remove and a clean bin would prove nothing. And the corrected
+    /// fundamental must survive, or "render silence" would score a perfect
+    /// alias floor — which is precisely how `32 * inc`, whose fundamental
+    /// collapses to 0.03, ends up with an alias *above* its signal.
+    #[test]
+    fn the_triangle_suppresses_the_aliasing_its_corners_would_otherwise_fold() {
+        /// One fifth of the sample rate: five-periodic, so the spectrum is
+        /// exactly the 9600 Hz grid and nothing else.
+        const PROBE_HZ: f32 = 9_600.0;
+        /// A triangle's only in-band line above the fundamental would have to
+        /// be an even harmonic, which a triangle does not have.
+        const ALIAS_HZ: f64 = 19_200.0;
+        /// 800 whole periods.
+        const FRAMES: usize = 4_000;
+        /// Measured 0.1459 uncorrected — there has to be aliasing to remove.
+        const MIN_UNCORRECTED_ALIAS: f64 = 0.10;
+        /// Measured 0.0095 corrected, against 0.0878 for the nearest wrong
+        /// scaling. See this test's header before moving it.
+        const MAX_CORRECTED_ALIAS: f64 = 0.02;
+        /// Measured 0.62079 corrected, against 0.83777 uncorrected.
+        const MIN_CORRECTED_FUNDAMENTAL: f64 = 0.50;
+
+        let mut osc = PolyBlepOsc::new();
+        osc.set_waveform(3);
+
+        let mut corrected = Vec::with_capacity(FRAMES);
+        let mut uncorrected = Vec::with_capacity(FRAMES);
+        let inc = PROBE_HZ / SAMPLE_RATE;
+        let mut phase = 0.0f32;
+        for _ in 0..FRAMES {
+            corrected.push(osc.tick(PROBE_HZ, SAMPLE_RATE));
+            phase += inc;
+            if phase >= 1.0 {
+                phase -= 1.0;
+            }
+            uncorrected.push(4.0 * (phase - 0.5).abs() - 1.0);
+        }
+
+        let uncorrected_h1 = bin_magnitude(&uncorrected, f64::from(PROBE_HZ));
+        let uncorrected_alias = bin_magnitude(&uncorrected, ALIAS_HZ);
+        let uncorrected_ratio = uncorrected_alias / uncorrected_h1;
+        assert!(
+            uncorrected_ratio > MIN_UNCORRECTED_ALIAS,
+            "the uncorrected triangle should be audibly aliasing at \
+             {PROBE_HZ} Hz, or the corrected reading below would be measuring \
+             an absence rather than a suppression; alias/h1 is \
+             {uncorrected_ratio:.5} (h1 {uncorrected_h1:.5}, alias \
+             {uncorrected_alias:.5})"
+        );
+
+        let corrected_h1 = bin_magnitude(&corrected, f64::from(PROBE_HZ));
+        let corrected_alias = bin_magnitude(&corrected, ALIAS_HZ);
+        let corrected_ratio = corrected_alias / corrected_h1;
+        assert!(
+            corrected_h1 > MIN_CORRECTED_FUNDAMENTAL,
+            "the corrected fundamental should survive the correction — a \
+             scaling that crushes the output would post a perfect alias figure \
+             for the worst possible reason; h1 is {corrected_h1:.5} against \
+             the uncorrected {uncorrected_h1:.5}"
+        );
+        assert!(
+            corrected_ratio < MAX_CORRECTED_ALIAS,
+            "polyBLAMP should fold {ALIAS_HZ} Hz down to under \
+             {MAX_CORRECTED_ALIAS} of the fundamental, from the uncorrected \
+             {uncorrected_ratio:.5}; measured {corrected_ratio:.5} (h1 \
+             {corrected_h1:.5}, alias {corrected_alias:.5}). A reading near \
+             0.088 is the residual scaled by 4 * inc and near 0.27 is \
+             16 * inc — both suppress *some* aliasing and neither is correct."
         );
     }
 }
