@@ -155,6 +155,7 @@ export const ExpandedChannelStrip = ({ track, isSelected, widthClass }: Expanded
             onContextMenu={handleContextMenu}
             role="group"
             aria-label={`${track.name} channel`}
+            data-testid={`channel-${track.id}`}
         >
             {/* Color bar */}
             <div className="h-1.5 w-full rounded-t-sm -mt-2 mb-1" style={{ backgroundColor: track.color }} />
@@ -205,6 +206,7 @@ export const ExpandedChannelStrip = ({ track, isSelected, widthClass }: Expanded
                             variant="amber"
                             size="icon-sm"
                             aria-label={track.muted ? 'Unmute' : 'Mute'}
+                            data-testid={`channel-mute-${track.id}`}
                             className="font-bold text-[10px]"
                             onClick={(event) => {
                                 event.stopPropagation();
@@ -223,6 +225,7 @@ export const ExpandedChannelStrip = ({ track, isSelected, widthClass }: Expanded
                             variant="cyan"
                             size="icon-sm"
                             aria-label={track.soloed ? 'Unsolo' : 'Solo'}
+                            data-testid={`channel-solo-${track.id}`}
                             className="font-bold text-[10px]"
                             onClick={(event) => {
                                 event.stopPropagation();
@@ -288,6 +291,7 @@ export const ExpandedChannelStrip = ({ track, isSelected, widthClass }: Expanded
                     <div
                         role="presentation"
                         className="shrink-0"
+                        data-testid={`channel-gain-${track.id}`}
                         onPointerUp={actions.releaseGainAutomation}
                         onKeyUp={actions.releaseGainAutomation}
                     >
@@ -308,7 +312,7 @@ export const ExpandedChannelStrip = ({ track, isSelected, widthClass }: Expanded
             />
             {/* Pan */}
             <div className="w-full px-1 flex flex-col items-center mt-2 mb-2">
-                <div onPointerUp={actions.releasePanAutomation}>
+                <div data-testid={`channel-pan-${track.id}`} onPointerUp={actions.releasePanAutomation}>
                     <RotaryKnob
                         value={track.pan}
                         onChange={actions.setPan}
