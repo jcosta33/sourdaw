@@ -274,6 +274,7 @@ export const RoutingGraph = (): ReactElement => {
                     className="min-w-[420px]"
                     role="img"
                     aria-label="Signal routing graph"
+                    data-testid="routing-graph"
                 >
                     {[...sources, ...buses].map((pos) => {
                         const targetId = pos.track.outputId;
