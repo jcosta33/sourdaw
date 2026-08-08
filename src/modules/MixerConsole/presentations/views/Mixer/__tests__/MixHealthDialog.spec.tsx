@@ -118,7 +118,7 @@ describe('MixHealthDialog', () => {
         fireEvent.click(screen.getByRole('button', { name: "Explain Like I'm 5" }));
 
         expect(await screen.findByText(/Partial explanation/)).toBeInTheDocument();
-        expect(screen.getByText(/Hosted AI response incomplete: token limit/)).toBeInTheDocument();
+        expect(await screen.findByText(/Hosted AI response incomplete: token limit/)).toBeInTheDocument();
     });
 
     it('disables the ELI5 button until a report exists, and Close notifies the caller', async () => {
