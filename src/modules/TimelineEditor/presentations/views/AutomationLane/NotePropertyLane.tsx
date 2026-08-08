@@ -1,4 +1,4 @@
-import { type ReactElement, type PointerEvent, type RefObject, useRef, useLayoutEffect, useEffect } from 'react';
+import { type ReactElement, type PointerEvent, useRef, useLayoutEffect } from 'react';
 
 import { useStore } from '#/infra/store/useStore';
 import { trackStore } from '#/modules/Arrangement/stores';
@@ -7,6 +7,7 @@ import { midiStore } from '#/modules/MIDI/stores';
 import { resolveToken } from '#/utils/UI/resolveToken';
 
 import { colorWithAlpha, brightenColor } from '../../helpers/oklchColor';
+import { useLaneDragSession, type LanePointerPosition } from '../../hooks/useLaneDragSession';
 
 type MidiNote = NonNullable<typeof midiStore.value>['notesByClipId'][string][number];
 
@@ -26,41 +27,6 @@ type NotePropertyTrackState = {
         }>;
     }>;
     selectedTrackId: string | null;
-};
-
-type LanePointerPosition = {
-    clientX: number;
-    clientY: number;
-};
-
-/**
- * One in-flight drag gesture. The pointer is captured on `captureTarget`, so every
- * subsequent event for `pointerId` is retargeted there by the browser — no window
- * listeners, and a release outside the window still arrives as pointerup/pointercancel.
- */
-type LaneDragSession = {
-    pointerId: number;
-    captureTarget: Element;
-    move: (position: LanePointerPosition) => void;
-    commit: () => void;
-};
-
-/**
- * End the in-flight gesture exactly once: clear the session first so the `lostpointercapture`
- * that Chromium fires immediately after the release cannot commit a second undo entry.
- */
-const finalizeLaneDrag = (sessionRef: RefObject<LaneDragSession | null>): void => {
-    const session = sessionRef.current;
-    if (!session) {
-        return;
-    }
-    sessionRef.current = null;
-    try {
-        session.captureTarget.releasePointerCapture(session.pointerId);
-    } catch {
-        // The browser releases capture itself on pointercancel and on element removal.
-    }
-    session.commit();
 };
 
 type NotePropertyLaneProps = {
@@ -95,56 +61,7 @@ export const NotePropertyLane = ({
 }: NotePropertyLaneProps): ReactElement => {
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const containerRef = useRef<HTMLDivElement>(null);
-    const dragSessionRef = useRef<LaneDragSession | null>(null);
-
-    useEffect(() => {
-        const handleWindowBlur = (): void => {
-            finalizeLaneDrag(dragSessionRef);
-        };
-        const handleVisibilityChange = (): void => {
-            if (document.visibilityState === 'hidden') {
-                finalizeLaneDrag(dragSessionRef);
-            }
-        };
-
-        window.addEventListener('blur', handleWindowBlur);
-        document.addEventListener('visibilitychange', handleVisibilityChange);
-        return () => {
-            window.removeEventListener('blur', handleWindowBlur);
-            document.removeEventListener('visibilitychange', handleVisibilityChange);
-        };
-    }, []);
-
-    useEffect(() => {
-        return () => {
-            finalizeLaneDrag(dragSessionRef);
-        };
-    }, []);
-
-    /**
-     * Take capture *before* the gesture's first write. If capture throws, the drag has no owner —
-     * a value already written at that point would be stranded with no undo entry to commit it.
-     */
-    const beginDrag = (session: LaneDragSession): void => {
-        session.captureTarget.setPointerCapture(session.pointerId);
-        dragSessionRef.current = session;
-    };
-
-    const handleDragMove = (event: PointerEvent<Element>): void => {
-        const session = dragSessionRef.current;
-        if (!session || session.pointerId !== event.pointerId) {
-            return;
-        }
-        session.move({ clientX: event.clientX, clientY: event.clientY });
-    };
-
-    const handleDragEnd = (event: PointerEvent<Element>): void => {
-        const session = dragSessionRef.current;
-        if (!session || session.pointerId !== event.pointerId) {
-            return;
-        }
-        finalizeLaneDrag(dragSessionRef);
-    };
+    const { hasActiveDrag, beginDrag, dragHandlers } = useLaneDragSession();
 
     const midiState = useStore<MidiLaneStoreState>(midiStore, {
         notesByClipId: {},
@@ -240,7 +157,7 @@ export const NotePropertyLane = ({
 
     const handleCanvasPointerDown = (event: PointerEvent<HTMLCanvasElement>): void => {
         // Primary contact only — the right button opens the piano roll's context menu.
-        if (!clipId || dragSessionRef.current || event.button !== 0) {
+        if (!clipId || hasActiveDrag() || event.button !== 0) {
             return;
         }
         const canvas = canvasRef.current;
@@ -392,7 +309,7 @@ export const NotePropertyLane = ({
 
     const handleRampDrag = (side: 'left' | 'right', event: PointerEvent<HTMLDivElement>) => {
         // Primary contact only — the right button opens the piano roll's context menu.
-        if (!clipId || dragSessionRef.current || event.button !== 0) {
+        if (!clipId || hasActiveDrag() || event.button !== 0) {
             return;
         }
         const container = containerRef.current;
@@ -516,10 +433,7 @@ export const NotePropertyLane = ({
             style={{ touchAction: 'none' }}
             role="group"
             aria-label={`${label} lane`}
-            onPointerMove={handleDragMove}
-            onPointerUp={handleDragEnd}
-            onPointerCancel={handleDragEnd}
-            onLostPointerCapture={handleDragEnd}
+            {...dragHandlers}
         >
             <canvas
                 ref={canvasRef}

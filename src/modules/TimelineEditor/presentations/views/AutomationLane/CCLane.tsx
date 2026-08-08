@@ -1,12 +1,4 @@
-import {
-    type ReactElement,
-    type MouseEvent,
-    type PointerEvent,
-    type RefObject,
-    useState,
-    useRef,
-    useEffect,
-} from 'react';
+import { type ReactElement, type MouseEvent, type PointerEvent, useState, useRef } from 'react';
 
 import { DawBlockedState } from '#/components/daw/DawBlockedState';
 import { useStore } from '#/infra/store/useStore';
@@ -16,6 +8,7 @@ import { addMidiCC, removeMidiCC, moveMidiCC } from '#/modules/MIDI/useCases';
 import { cn } from '#/utils/Styles/cn';
 
 import { type MidiCC } from '../../../models/MidiNoteViewTypes';
+import { useLaneDragSession, type LanePointerPosition } from '../../hooks/useLaneDragSession';
 
 type CCLaneProps = {
     clipId: string | null;
@@ -30,102 +23,10 @@ type MidiLaneStoreState = {
     pitchBendByClipId: Record<string, unknown[]>;
 };
 
-type LanePointerPosition = {
-    clientX: number;
-    clientY: number;
-};
-
-/**
- * One in-flight drag gesture. The pointer is captured on `captureTarget`, so every
- * subsequent event for `pointerId` is retargeted there by the browser — no window
- * listeners, and a release outside the window still arrives as pointerup/pointercancel.
- */
-type LaneDragSession = {
-    pointerId: number;
-    captureTarget: Element;
-    move: (position: LanePointerPosition) => void;
-    commit: () => void;
-};
-
-/**
- * End the in-flight gesture exactly once. What guarantees that is the clear happening *at all*,
- * synchronously, before this returns: the trailing `pointerup`/`lostpointercapture` the browser
- * still delivers then finds no gesture to finalize. Placing the clear ahead of `commit()` is cheap
- * insurance against a future re-entrant commit only — `releasePointerCapture()` merely nulls the
- * pending capture target, and `lostpointercapture` fires from the process-pending-pointer-capture
- * steps before the next pointer event rather than synchronously here (Blink matches the spec), so
- * no current path re-enters and no test can red the ordering. See M16 on the PR.
- */
-const finalizeLaneDrag = (sessionRef: RefObject<LaneDragSession | null>): void => {
-    const session = sessionRef.current;
-    if (!session) {
-        return;
-    }
-    sessionRef.current = null;
-    try {
-        session.captureTarget.releasePointerCapture(session.pointerId);
-    } catch {
-        // The browser releases capture itself on pointercancel and on element removal.
-    }
-    session.commit();
-};
-
 export const CCLane = ({ clipId, controller, beatWidth }: CCLaneProps): ReactElement => {
     const containerRef = useRef<HTMLDivElement>(null);
-    const dragSessionRef = useRef<LaneDragSession | null>(null);
+    const { hasActiveDrag, beginDrag, dragHandlers } = useLaneDragSession();
     const [dragId, setDragId] = useState<string | null>(null);
-
-    useEffect(() => {
-        const handleWindowBlur = (): void => {
-            finalizeLaneDrag(dragSessionRef);
-        };
-        const handleVisibilityChange = (): void => {
-            if (document.visibilityState === 'hidden') {
-                finalizeLaneDrag(dragSessionRef);
-            }
-        };
-
-        window.addEventListener('blur', handleWindowBlur);
-        document.addEventListener('visibilitychange', handleVisibilityChange);
-        return () => {
-            window.removeEventListener('blur', handleWindowBlur);
-            document.removeEventListener('visibilitychange', handleVisibilityChange);
-        };
-    }, []);
-
-    useEffect(() => {
-        return () => {
-            finalizeLaneDrag(dragSessionRef);
-        };
-    }, []);
-
-    /**
-     * Capture first, arm second. Unlike NotePropertyLane the pointerdown here writes no value, so
-     * the ordering is not protecting a write — it is protecting the arm. Swap these two lines and
-     * a `setPointerCapture` that throws leaves `dragSessionRef.current` set with no capture, and
-     * the live-session guard in `handlePointPointerDown` then refuses every later press: the lane
-     * is dead until it remounts.
-     */
-    const beginDrag = (session: LaneDragSession): void => {
-        session.captureTarget.setPointerCapture(session.pointerId);
-        dragSessionRef.current = session;
-    };
-
-    const handleDragMove = (event: PointerEvent<Element>): void => {
-        const session = dragSessionRef.current;
-        if (!session || session.pointerId !== event.pointerId) {
-            return;
-        }
-        session.move({ clientX: event.clientX, clientY: event.clientY });
-    };
-
-    const handleDragEnd = (event: PointerEvent<Element>): void => {
-        const session = dragSessionRef.current;
-        if (!session || session.pointerId !== event.pointerId) {
-            return;
-        }
-        finalizeLaneDrag(dragSessionRef);
-    };
 
     const midiState = useStore<MidiLaneStoreState>(midiStore, {
         notesByClipId: {},
@@ -171,7 +72,7 @@ export const CCLane = ({ clipId, controller, beatWidth }: CCLaneProps): ReactEle
     const handlePointPointerDown = (ccId: string, event: PointerEvent<HTMLDivElement>) => {
         event.stopPropagation();
         // Primary contact only — a right-button press belongs to the context menu, not to an edit.
-        if (!clipId || dragSessionRef.current || event.button !== 0) {
+        if (!clipId || hasActiveDrag() || event.button !== 0) {
             return;
         }
         const container = containerRef.current;
@@ -264,10 +165,7 @@ export const CCLane = ({ clipId, controller, beatWidth }: CCLaneProps): ReactEle
             onClick={handleContainerClick}
             role="group"
             aria-label={`CC ${controller} automation lane`}
-            onPointerMove={handleDragMove}
-            onPointerUp={handleDragEnd}
-            onPointerCancel={handleDragEnd}
-            onLostPointerCapture={handleDragEnd}
+            {...dragHandlers}
         >
             {points.length > 1 ? (
                 <svg className="absolute inset-0 pointer-events-none" width="100%" height="100%">
