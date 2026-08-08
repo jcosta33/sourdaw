@@ -1,0 +1,30 @@
+src/modules/Project/useCases/projectPersistence/__tests__/loadProjectDirtyTracking.integration.spec.ts
+  s_14f2bbc9f385dd::t_e41601334232fd 1-137
+src/modules/Project/useCases/projectPersistence/helpers/replaceProjectData.ts
+  s_14f2bbc9f385dd::t_e8b5e23469df96 21
+  s_14f2bbc9f385dd::t_e8b7da13d71a42 190-196,203
+  s_14f2bbc9f385dd::t_8482a678fb9192 204-205
+src/modules/Project/useCases/projectPersistence/saveProject/markDirty.ts
+  s_14f2bbc9f385dd::t_8817be42d5e4b5 8-16
+src/modules/Project/useCases/projectPersistence/loadProject.ts
+  s_14f2bbc9f385dd::t_0bfea481f0df1d 94-103
+  s_14f2bbc9f385dd::t_f42ccc9552eb3d 104
+src/app/__tests__/bootstrap.spec.ts
+  s_14f2bbc9f385dd::t_f094018c5700e4 255
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "1e291c89c7d4404b155aea823197f75c6d1c3d7a",
+  "prompts": {},
+  "sessions": {
+    "s_14f2bbc9f385dd": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f9a61a1d-66b3-4146-938d-a04f45f4b060",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
