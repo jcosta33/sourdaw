@@ -56,7 +56,61 @@ function readEngineReleaseMap(): number[] {
         .map((arm) => arm.releaseMs);
 }
 
-/** The millisecond figures the Recovery hint prints, in the order it prints them. */
+/**
+ * The release times a hint sentence states, normalised to milliseconds.
+ *
+ * Pure, and separated from the file read so the reword cases below can exercise
+ * it directly. Three things it has to survive, because all three are edits a
+ * copy editor could reasonably make while leaving the claim true:
+ *
+ * - **Figures outside the run.** "Recovery 1 to 5 select fixed release times: …"
+ *   names two positions before it names a time. So the scrape is anchored: it
+ *   starts at the word `release` and stops at the end of that sentence, and a
+ *   sentence end is a period followed by space or end-of-string — not any
+ *   period, or `1.5` would truncate it.
+ * - **Mixed units.** `docs/manual/devices/07-gluten.md:145` writes the last
+ *   figure as `1.5 s`. A guard that punished the panel for matching the
+ *   manual's own convention would be a guard someone deletes rather than fixes,
+ *   so an `s` figure is multiplied by 1000.
+ * - **One trailing unit for the whole run.** The shipped caption writes
+ *   "50, 100, 400, 800 and 1500 ms" — four bare figures and one unit. So the
+ *   unit is optional per figure, and a bare figure inherits from the next
+ *   figure that names one. That is why this is not simply
+ *   `/(\d+(?:\.\d+)?)\s*(ms|s)\b/g`: requiring a unit on every figure would
+ *   read the shipped caption as a single number.
+ */
+function parseHintReleaseTimes(sentence: string): number[] {
+    const text = sentence.replaceAll(/\s+/g, ' ');
+    const start = text.search(/release/i);
+    if (start === -1) {
+        return [];
+    }
+
+    const fromRun = text.slice(start);
+    const sentenceEnd = fromRun.search(/\.(?=\s|$)/);
+    const run = sentenceEnd === -1 ? fromRun : fromRun.slice(0, sentenceEnd);
+
+    const figures = [...run.matchAll(/(\d+(?:\.\d+)?)\s*(ms|s)?\b/g)].map((figure) => ({
+        value: Number(figure[1]!),
+        unit: figure[2],
+    }));
+
+    // Walk backwards so a bare figure takes the unit of the next one that names
+    // a unit — the trailing-unit convention. Milliseconds when none is named at
+    // all, which is what the crate speaks.
+    const milliseconds: number[] = [];
+    let inherited = 'ms';
+    for (let index = figures.length - 1; index >= 0; index -= 1) {
+        const figure = figures[index]!;
+        const unit = figure.unit ?? inherited;
+        inherited = unit;
+        milliseconds.unshift(unit === 's' ? figure.value * 1000 : figure.value);
+    }
+
+    return milliseconds;
+}
+
+/** The release times the shipped Recovery hint states, in the order it states them. */
 function readHintReleaseTimes(): number[] {
     const source = readSource(PANEL_SOURCE);
     const chips = source.indexOf('`Recovery ${value}`');
@@ -69,7 +123,7 @@ function readHintReleaseTimes(): number[] {
         return [];
     }
 
-    return [...paragraph[1]!.matchAll(/\d+(?:\.\d+)?/g)].map((figure) => Number(figure[0]));
+    return parseHintReleaseTimes(paragraph[1]!);
 }
 
 describe('the Diode Recovery hint states the release map the engine runs', () => {
@@ -93,5 +147,50 @@ describe('the Diode Recovery hint states the release map the engine runs', () =>
         // ascending list is what makes the hint true; the old copy claimed the
         // reverse and this is the assertion that would have caught it.
         expect(readHintReleaseTimes()).toEqual(readEngineReleaseMap());
+    });
+
+    it('survives rewordings that leave the claim true', () => {
+        // The point of guarding the ordering rather than the prose is that copy
+        // can move. These are the edits that used to red: naming the positions
+        // before the times put 1 and 5 in the list, and matching the manual's
+        // own unit convention put 1.5 in it. Both are pinned here so the
+        // tolerance cannot be lost again without a test saying so.
+        const engineMap = readEngineReleaseMap();
+
+        expect(
+            parseHintReleaseTimes(
+                'Recovery 1 to 5 select fixed release times: 50, 100, 400, 800 and 1500 ms. Low positions let the level spring back between hits.'
+            )
+        ).toEqual(engineMap);
+
+        expect(
+            parseHintReleaseTimes(
+                'Each position is a fixed release time: 50 ms, 100 ms, 400 ms, 800 ms, and 1.5 s. High positions hold the reduction through the tail.'
+            )
+        ).toEqual(engineMap);
+
+        expect(
+            parseHintReleaseTimes('Release: 0.05 s, 0.1 s, 0.4 s, 0.8 s and 1.5 s across the five positions.')
+        ).toEqual(engineMap);
+    });
+
+    it('still catches a reworded caption that states the wrong order', () => {
+        // The other half of loosening the scrape: tolerance must not become
+        // blindness. Each of these is well-formed prose the parser now reads
+        // cleanly, and each states something the engine does not do.
+        const engineMap = readEngineReleaseMap();
+
+        // The defect this PR fixes, dressed in the new wording.
+        expect(parseHintReleaseTimes('Recovery 1 to 5 sets release times: 1500, 800, 400, 100 and 50 ms.')).not.toEqual(
+            engineMap
+        );
+
+        // A retune the caption did not follow.
+        expect(parseHintReleaseTimes('Recovery 1 to 5 sets release times: 50, 100, 300, 800 and 1500 ms.')).not.toEqual(
+            engineMap
+        );
+
+        // Right numbers, wrong unit — 50 s is not 50 ms.
+        expect(parseHintReleaseTimes('Release times: 50, 100, 400, 800 and 1500 s.')).not.toEqual(engineMap);
     });
 });
