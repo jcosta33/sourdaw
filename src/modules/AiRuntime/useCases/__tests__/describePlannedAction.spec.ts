@@ -155,6 +155,21 @@ describe('describePlannedAction', () => {
         ).toBe('Set clip stretch mode to off');
     });
 
+    it('names the clip and target beat duration for fit actions', () => {
+        expect(
+            describePlannedAction({
+                action: { type: 'fitClipToBeats', payload: { clipId: 'clip-verse', targetBeats: 8 } },
+                context,
+            })
+        ).toBe('Fit clip "Verse Lead" to 8 beats');
+        expect(
+            describePlannedAction({
+                action: { type: 'fitClipToBeats', payload: { clipId: 'missing', targetBeats: 4 } },
+                context,
+            })
+        ).toBe('Fit clip to 4 beats');
+    });
+
     it('names the exact local marker removal target and falls back when it is unavailable', () => {
         mocks.markerStoreValue.value = {
             markers: [{ id: 'marker-chorus', beat: 16, name: 'Chorus', color: 'oklch(0.40 0.07 200)' }],

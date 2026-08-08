@@ -828,6 +828,25 @@ function isClipFadeValueSeparator({
     return /^(?:fade in|fade out)(?: to| at)? -?\d/u.test(suffix);
 }
 
+function isBeatDurationValueSeparator({
+    maskedPrompt,
+    separatorEnd,
+    separatorStart,
+    start,
+}: {
+    maskedPrompt: string;
+    separatorEnd: number;
+    separatorStart: number;
+    start: number;
+}): boolean {
+    const prefix = normalizePromptText(maskedPrompt.slice(start, separatorStart));
+    const suffix = maskedPrompt.slice(separatorEnd).trim();
+    return (
+        /\bfit\b.*\bclip\b.*\bbeats?\b/u.test(prefix) &&
+        /^-?(?:\d+(?:\.\d+)?|\.\d+)(?:\s*\/\s*(?:\d+(?:\.\d+)?|\.\d+))?%?\s+beats?\b/u.test(suffix)
+    );
+}
+
 function hasInvalidNamedClipFadeField(prompt: string): boolean {
     for (const clause of getPromptClauses(prompt, prompt)) {
         const normalizedClause = normalizePromptText(clause.text);
@@ -860,6 +879,12 @@ function getPromptClauses(prompt: string, maskedPrompt: string): PromptClause[] 
         if (
             isVcaMemberListSeparator ||
             isClipFadeValueSeparator({
+                maskedPrompt,
+                separatorEnd,
+                separatorStart: match.index,
+                start,
+            }) ||
+            isBeatDurationValueSeparator({
                 maskedPrompt,
                 separatorEnd,
                 separatorStart: match.index,
@@ -1386,6 +1411,15 @@ function findStretchRatioNumbers(maskedScope: string, numbers: readonly PromptNu
     return matches;
 }
 
+function findBeatDurationNumbers(maskedScope: string, numbers: readonly PromptNumber[]): PromptNumber[] {
+    return numbers.filter((number) => /^\s*beats?\b/iu.test(maskedScope.slice(number.end)));
+}
+
+function isBoundBeatDurationNumber(maskedScope: string, number: PromptNumber): boolean {
+    const prefix = normalizePromptText(maskedScope.slice(0, number.index));
+    return /\bfit(?: the)? clip(?: duration)? to$/u.test(prefix);
+}
+
 function findDirectionBoundNumber(maskedScope: string, numbers: readonly PromptNumber[]): PromptNumber | null {
     return numbers.find((number) => /^\s*(?:left|right)\b/iu.test(maskedScope.slice(number.end))) ?? null;
 }
@@ -1472,6 +1506,19 @@ function getExpectedNumbers(
             return ratioNumbers.length === 0 ? [] : null;
         }
         return [normalizePromptNumber(ratioNumbers[0]!, actionScope, valueRule, automationLane)];
+    }
+    if (valueRule.unit === 'beat-duration') {
+        const beatNumbers = findBeatDurationNumbers(actionScope.masked, numbers);
+        if (beatNumbers.some((number) => number.raw.endsWith('%'))) {
+            return null;
+        }
+        if (beatNumbers.length !== 1) {
+            return beatNumbers.length === 0 ? [] : null;
+        }
+        if (!isBoundBeatDurationNumber(actionScope.masked, beatNumbers[0]!)) {
+            return null;
+        }
+        return [normalizePromptNumber(beatNumbers[0]!, actionScope, valueRule, automationLane)];
     }
     if (valueRule.keywords) {
         const keywordBoundNumber = findKeywordBoundNumber(actionScope.masked, numbers, valueRule.keywords);

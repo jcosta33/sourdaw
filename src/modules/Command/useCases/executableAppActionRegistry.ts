@@ -53,7 +53,7 @@ export type ExecutableAppActionValueRule =
           scale?: 'unit-interval' | 'percentage-only' | 'automation-lane-range';
           direction?: 'pan';
           qualitativeDirection?: 'track-gain' | 'track-pan' | 'device-parameter';
-          unit?: 'stretch-ratio';
+          unit?: 'beat-duration' | 'stretch-ratio';
       }
     | { argument: string; kind: 'string-literal' }
     | { argument: string; kind: 'marker-name' }
@@ -589,6 +589,40 @@ export const executableAppActionDescriptors = [
                 },
             },
             required: ['clipId', 'ratio'],
+        },
+    },
+    {
+        actionType: 'fitClipToBeats',
+        risk: 'broad-reversible',
+        description: 'Fit one unlocked audio clip to an explicit duration in beats.',
+        intentPhrases: [
+            'fit clip to',
+            'fit the clip to',
+            'fit clip to beats',
+            'fit the clip to beats',
+            'fit clip duration',
+            'fit the clip duration',
+        ],
+        targetRules: editableAudioClipTargetRules,
+        valueRules: [
+            {
+                argument: 'targetBeats',
+                kind: 'number-if-present',
+                requiredInPrompt: true,
+                match: 'exact',
+                unit: 'beat-duration',
+            },
+        ],
+        parameters: {
+            properties: {
+                clipId: { type: 'string', description: 'Existing unlocked audio clip ID' },
+                targetBeats: {
+                    type: 'number',
+                    exclusiveMinimum: 0,
+                    description: 'Target clip duration in beats; must be greater than 0',
+                },
+            },
+            required: ['clipId', 'targetBeats'],
         },
     },
     {

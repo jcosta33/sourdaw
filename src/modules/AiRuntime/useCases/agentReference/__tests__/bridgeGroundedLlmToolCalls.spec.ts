@@ -1089,6 +1089,86 @@ describe('bridgeGroundedLlmToolCalls', () => {
         expect(rejected.every((result) => result.rejections[0]?.reason.includes('does not match'))).toBe(true);
     });
 
+    it('grounds only one explicit clip-fit duration expressed in beats', () => {
+        const context = createClipContext();
+        const accepted = bridge(
+            [{ name: 'fitClipToBeats', arguments: { clipId: 'clip-intro', targetBeats: 8 } }],
+            'fit the Intro clip duration to 8 beats',
+            context
+        );
+        const natural = bridge(
+            [{ name: 'fitClipToBeats', arguments: { clipId: 'clip-intro', targetBeats: 8 } }],
+            'fit the Intro clip to 8 beats',
+            context
+        );
+        const rejected = [
+            bridge(
+                [{ name: 'fitClipToBeats', arguments: { clipId: 'clip-intro', targetBeats: 4 } }],
+                'fit the Intro clip duration to 8 beats',
+                context
+            ),
+            bridge(
+                [{ name: 'fitClipToBeats', arguments: { clipId: 'clip-intro', targetBeats: 8 } }],
+                'fit the Intro clip duration',
+                context
+            ),
+            bridge(
+                [{ name: 'fitClipToBeats', arguments: { clipId: 'clip-intro', targetBeats: 8 } }],
+                'fit the Intro clip duration to 8 bars',
+                context
+            ),
+            bridge(
+                [{ name: 'fitClipToBeats', arguments: { clipId: 'clip-intro', targetBeats: 8 } }],
+                'fit the Intro clip duration to 8 seconds',
+                context
+            ),
+            bridge(
+                [{ name: 'fitClipToBeats', arguments: { clipId: 'clip-intro', targetBeats: 8 } }],
+                'fit the Intro clip duration to 8 or 16 beats',
+                context
+            ),
+            bridge(
+                [{ name: 'fitClipToBeats', arguments: { clipId: 'clip-intro', targetBeats: 8 } }],
+                'fit the Intro clip duration to 8 beats and 16 beats',
+                context
+            ),
+            bridge(
+                [{ name: 'fitClipToBeats', arguments: { clipId: 'clip-intro', targetBeats: 8 } }],
+                'fit the Intro clip duration to 8% beats',
+                context
+            ),
+            bridge(
+                [{ name: 'fitClipToBeats', arguments: { clipId: 'clip-intro', targetBeats: 8 } }],
+                'fit the Intro clip fade to 8 beats',
+                context
+            ),
+            bridge(
+                [{ name: 'fitClipToBeats', arguments: { clipId: 'clip-intro', targetBeats: 8 } }],
+                'fit the Intro clip to start at 8 beats',
+                context
+            ),
+            bridge(
+                [{ name: 'fitClipToBeats', arguments: { clipId: 'clip-intro', targetBeats: 8 } }],
+                'fit the Intro clip duration to 8 beats and 1/2  beats',
+                context
+            ),
+            bridge(
+                [{ name: 'fitClipToBeats', arguments: { clipId: 'clip-intro', targetBeats: 8 } }],
+                'fit the Intro clip duration to 8 beats and 16% beats',
+                context
+            ),
+        ];
+
+        expect(accepted.actions).toEqual([
+            { type: 'fitClipToBeats', payload: { clipId: 'clip-intro', targetBeats: 8 } },
+        ]);
+        expect(accepted.rejections).toEqual([]);
+        expect(natural.actions).toEqual(accepted.actions);
+        expect(natural.rejections).toEqual([]);
+        expect(rejected.every((result) => result.actions.length === 0)).toBe(true);
+        expect(rejected.every((result) => result.rejections.length === 1)).toBe(true);
+    });
+
     it('allows explicit clip unlock while rejecting edits to a locked clip', () => {
         const base = createClipContext();
         const context: ProjectContext = {

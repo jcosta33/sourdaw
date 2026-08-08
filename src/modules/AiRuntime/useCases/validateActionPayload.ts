@@ -506,7 +506,11 @@ const validators = {
         hasExactKeys(param, ['clipId', 'ratio']) &&
         isNonEmptyString(param.clipId) &&
         isInRange(param.ratio, 0.25, 4),
-    fitClipToBeats: 'unchecked',
+    fitClipToBeats: (param): param is PayloadOf<'fitClipToBeats'> =>
+        isObj(param) &&
+        hasExactKeys(param, ['clipId', 'targetBeats']) &&
+        isNonEmptyString(param.clipId) &&
+        isPositiveNumber(param.targetBeats),
     duplicateClipToNextBar: hasClipId,
     normalizeClip: (param): param is PayloadOf<'normalizeClip'> => {
         if (
