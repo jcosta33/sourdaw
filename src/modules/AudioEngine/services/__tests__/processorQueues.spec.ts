@@ -4,6 +4,9 @@ import path from 'path';
 import ts from 'typescript';
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 
+import { FERMENTER_AUTOMATION_PARAM_IDS } from '../../models/FermenterAutomationParams';
+import { PROOF_CHAMBER_AUTOMATION_PARAM_IDS } from '../../models/ProofChamberAutomationParams';
+import { TOASTER_AUTOMATION_PARAM_IDS } from '../../models/ToasterAutomationParams';
 import { resolveProcessorWasmModule } from '../../transformers/resolveProcessorWasmModule';
 import { WasmView } from '../wasmView';
 
@@ -31,6 +34,18 @@ function loadProcessorClass(filePath: string, className: string) {
         console,
         WasmView,
         resolveProcessorWasmModule,
+        // Ordinal tables the processors read at module scope to *derive* their
+        // automation guards. The real tables, per the note above: a stub would
+        // make these specs agree with themselves instead of with the contract.
+        //
+        // `fermenterProcessor` has needed this since the table moved into
+        // `models/`; the three Fermenter cases in this file were failing with
+        // `FERMENTER_AUTOMATION_PARAM_IDS is not defined` before this branch
+        // touched anything, because the import stripping is invisible until a
+        // processor references an imported symbol during class evaluation.
+        FERMENTER_AUTOMATION_PARAM_IDS,
+        TOASTER_AUTOMATION_PARAM_IDS,
+        PROOF_CHAMBER_AUTOMATION_PARAM_IDS,
     };
 
     // Strip TypeScript types so `new Function` can parse pure JS. Use ESNext

@@ -12,10 +12,31 @@
  *   { type: 'bypass', bypassed }
  */
 
+import { PROOF_CHAMBER_AUTOMATION_PARAM_IDS } from '../models/ProofChamberAutomationParams';
 import { resolveProcessorWasmModule } from '../transformers/resolveProcessorWasmModule';
 import { initSync, ProofChamberInstance } from '../wasm/proof_chamber.js';
 
 import { WasmView } from './wasmView';
+
+/**
+ * The offline automation ordinals this worklet will forward to the engine,
+ * **derived** from the shared table rather than restated.
+ *
+ * The guard below used to read `paramId > 1` — the ordinal bound written inline,
+ * not even as a named constant, in a file that could not see the two-key table
+ * it was restating. A third parameter added to that table would have been
+ * dropped here without a sound, the same shape as the Fermenter `oscWaveform`
+ * bug.
+ *
+ * A **set**, not a bound: `PROOF_CHAMBER_AUTOMATION_PARAM_IDS` is a `Record`, so
+ * nothing forces its ordinals to stay dense `0..n-1`, and `<= max` is only a
+ * valid test while they are. Membership is what the contract actually wants —
+ * admit exactly the ordinals the crate can dispatch. Built once at module scope;
+ * `Set.has` on the message path allocates nothing.
+ */
+const PROOF_CHAMBER_AUTOMATION_ORDINALS: ReadonlySet<number> = new Set(
+    Object.values(PROOF_CHAMBER_AUTOMATION_PARAM_IDS)
+);
 
 type ParamAutomationSegment = {
     startFrame: number;
@@ -100,7 +121,7 @@ class ProofChamberProcessor extends AudioWorkletProcessor {
     }
 
     _setParamAutomation(paramId: number, segments: ParamAutomationSegment[]): void {
-        if (!Number.isInteger(paramId) || paramId < 0 || paramId > 1 || segments.length === 0) {
+        if (!Number.isInteger(paramId) || !PROOF_CHAMBER_AUTOMATION_ORDINALS.has(paramId) || segments.length === 0) {
             return;
         }
         const schedule: ParamAutomationSchedule = { paramId, segments, segmentIndex: 0, lastValue: undefined };
