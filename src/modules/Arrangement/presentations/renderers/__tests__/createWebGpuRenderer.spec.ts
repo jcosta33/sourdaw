@@ -524,13 +524,13 @@ describe('createWebGpuRenderer clip name labels', () => {
  * cache keys in a single frame is exactly `clipCount`. Every clip is 25 CSS px
  * wide, which clears the 12 px inset pair and so renders a label.
  */
-const create_many_labelled_clips_model = (clipCount: number): TimelineRenderModel => {
+const create_many_labelled_clips_model = (clipCount: number, namePrefix = 'Clip'): TimelineRenderModel => {
     const base = create_test_model();
     const template = base.tracks[0]!.clips[0]!;
     const clips = Array.from({ length: clipCount }, (_unused, index) => ({
         ...template,
         id: `clip-${index}`,
-        name: `Clip ${index}`,
+        name: `${namePrefix} ${index}`,
         startBeat: index,
         endBeat: index + 1,
         audioBufferId: undefined,
@@ -624,6 +624,26 @@ describe('createWebGpuRenderer label texture lifetime across one frame', () => {
         // evicts inside the frame re-rasterises all 400 every frame.
         expect(afterFirstFrame).toBe(400);
         expect(handles.createTexture.mock.calls.length).toBe(400);
+    });
+
+    it('reclaims label textures once later frames stop naming them', async () => {
+        const canvas = create_wide_renderer_canvas(400);
+        const handles = install_webgpu_mocks(canvas);
+        const { createWebGpuRenderer } = await import('../createWebGpuRenderer');
+        const renderer = await createWebGpuRenderer(canvas);
+        if (!renderer) {
+            throw new Error('expected WebGPU renderer');
+        }
+
+        // Two frames, 400 distinct names each, none shared — renaming a folder
+        // of takes, or scrolling a long arrangement. 800 rasters against a 512
+        // retention bound, so 288 of the first frame's must be given back.
+        renderer.render(create_many_labelled_clips_model(400, 'First'));
+        renderer.render(create_many_labelled_clips_model(400, 'Second'));
+
+        // Deferring destruction is not the same as never destroying. A renderer
+        // that stops closing its frames leaks every texture it ever rasterised.
+        expect(handles.destroyedTextureIds).toHaveLength(288);
     });
 });
 

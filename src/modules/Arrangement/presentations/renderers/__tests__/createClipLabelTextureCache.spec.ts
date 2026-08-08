@@ -345,6 +345,23 @@ describe('createClipLabelTextureCache', () => {
         expect(handles.destroyedTextures).toHaveLength(296);
     });
 
+    it('serves a name the same frame already drew instead of rasterising it twice', () => {
+        // Two clips can share a name — a copied loop, a take, a duplicated
+        // region — so one frame asks for the same string more than once. With
+        // the bound set to 4 and ten distinct names, a cache that evicts as it
+        // goes has thrown the early names away by the time the second round
+        // asks for them, and pays for all ten again.
+        const cache = makeCache(4);
+
+        for (let round = 0; round < 2; round += 1) {
+            for (let i = 0; i < 10; i += 1) {
+                cache.acquire({ text: `label-${i}`, maxWidthCssPx: 100, dpr: 1 });
+            }
+        }
+
+        expect(handles.device.createTexture).toHaveBeenCalledTimes(10);
+    });
+
     it('promotes a re-acquired entry to most-recent so it survives a later eviction', () => {
         const cache = makeCache();
 
