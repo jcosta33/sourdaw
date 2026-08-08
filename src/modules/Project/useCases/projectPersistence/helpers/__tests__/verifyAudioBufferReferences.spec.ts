@@ -22,6 +22,7 @@ vi.mock('#/utils/Notification/notifyUser', () => ({
 import { type Clip, type Track, type TrackStoreState } from '#/modules/Arrangement/stores';
 import { getCachedAudioBuffer } from '#/modules/AudioEngine/useCases';
 
+import { defaultMissingMediaStoreState, missingMediaStore } from '../../../../stores/missingMediaStore';
 import { verifyAudioBufferReferences } from '../verifyAudioBufferReferences';
 
 function makeClip(overrides: Partial<Clip>): Clip {
@@ -162,5 +163,108 @@ describe('verifyAudioBufferReferences', () => {
         verifyAudioBufferReferences();
 
         expect(notifyUser).toHaveBeenCalledWith(expect.stringMatching(/and 1 more/), 'warning');
+    });
+
+    describe('durable record', () => {
+        beforeEach(() => {
+            missingMediaStore.set(defaultMissingMediaStoreState);
+        });
+
+        it('records the clip id so a relink has a target, alongside the owning track', () => {
+            vi.mocked(getCachedAudioBuffer).mockReturnValue(null);
+            trackStoreMock.value = makeTrackState([
+                makeTrack({
+                    id: 'track-7',
+                    name: 'Guitars',
+                    clips: [makeClip({ id: 'clip-9', name: 'Lost Take', audioBufferId: 'gone' })],
+                }),
+            ]);
+
+            verifyAudioBufferReferences();
+
+            expect(missingMediaStore.value?.items).toEqual([
+                {
+                    bufferId: 'gone',
+                    clipId: 'clip-9',
+                    kind: 'clip',
+                    label: 'Lost Take',
+                    trackId: 'track-7',
+                    trackName: 'Guitars',
+                },
+            ]);
+        });
+
+        it('marks a frozen track with no clip id, because it has no relink target', () => {
+            vi.mocked(getCachedAudioBuffer).mockReturnValue(null);
+            trackStoreMock.value = makeTrackState([
+                makeTrack({
+                    id: 'track-3',
+                    name: 'Pad',
+                    freezeState: { status: 'frozen', frozenBufferId: 'frozen-gone' },
+                }),
+            ]);
+
+            verifyAudioBufferReferences();
+
+            const item = missingMediaStore.value?.items[0];
+            expect(item?.kind).toBe('frozenTrack');
+            expect(item?.clipId).toBeUndefined();
+            expect(item?.bufferId).toBe('frozen-gone');
+        });
+
+        it('clears a prior record when a later scan resolves everything', () => {
+            missingMediaStore.set({
+                items: [
+                    {
+                        bufferId: 'stale',
+                        clipId: 'stale-clip',
+                        kind: 'clip',
+                        label: 'Stale',
+                        trackId: 'stale-track',
+                        trackName: 'Stale',
+                    },
+                ],
+                scannedAt: 1,
+            });
+            vi.mocked(getCachedAudioBuffer).mockReturnValue({
+                copyFromChannel: vi.fn(),
+                copyToChannel: vi.fn(),
+                duration: 1,
+                getChannelData: vi.fn(() => new Float32Array(1)),
+                length: 1,
+                numberOfChannels: 1,
+                sampleRate: 48_000,
+            });
+            trackStoreMock.value = makeTrackState([
+                makeTrack({ clips: [makeClip({ name: 'ok', audioBufferId: 'buf-1' })] }),
+            ]);
+
+            verifyAudioBufferReferences();
+
+            expect(missingMediaStore.value?.items).toEqual([]);
+            expect(missingMediaStore.value?.scannedAt).toBeGreaterThan(1);
+        });
+
+        it('clears a prior record when there is no track state to make a claim about', () => {
+            missingMediaStore.set({
+                items: [
+                    {
+                        bufferId: 'stale',
+                        clipId: 'stale-clip',
+                        kind: 'clip',
+                        label: 'Stale',
+                        trackId: 'stale-track',
+                        trackName: 'Stale',
+                    },
+                ],
+                scannedAt: 1,
+            });
+            trackStoreMock.value = null;
+
+            verifyAudioBufferReferences();
+
+            expect(missingMediaStore.value?.items).toEqual([]);
+            expect(notifyUser).not.toHaveBeenCalled();
+        });
     });
 });
