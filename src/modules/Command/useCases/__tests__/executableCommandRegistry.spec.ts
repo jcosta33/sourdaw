@@ -92,6 +92,22 @@ const EXPECTED_COMMANDS = [
         false
     ),
     expectedCommand(
+        'splitClip',
+        "Split one unlocked clip at an explicit absolute beat inside the clip. Audio clips split at the nearest zero crossing when the clip's audio buffer is available; otherwise they split at the requested beat.",
+        {
+            clipId: { type: 'string', description: 'Existing unlocked clip ID' },
+            beat: {
+                type: 'number',
+                minimum: 0,
+                description:
+                    'Absolute beat strictly inside the clip; audio uses the nearest zero crossing when the audio buffer is available, otherwise the requested beat',
+            },
+        },
+        ['clipId', 'beat'],
+        'bounded-reversible',
+        false
+    ),
+    expectedCommand(
         'renameClip',
         'Rename an existing clip.',
         { clipId: { type: 'string' }, name: { type: 'string' } },
@@ -972,6 +988,30 @@ const EXPECTED_GROUNDING = [
         valueRules: [
             {
                 argument: 'startBeat',
+                kind: 'number-if-present',
+                requiredInPrompt: true,
+                connector: 'beat',
+                match: 'exact',
+            },
+        ],
+    },
+    {
+        actionType: 'splitClip',
+        intentPhrases: [
+            'split clip',
+            'split the clip',
+            'split selected clip',
+            'split the selected clip',
+            'split current clip',
+            'split the current clip',
+            'split this clip',
+            'cut clip',
+            'cut the clip',
+        ],
+        targetRules: [{ argument: 'clipId', capability: 'editable-clip' }],
+        valueRules: [
+            {
+                argument: 'beat',
                 kind: 'number-if-present',
                 requiredInPrompt: true,
                 connector: 'beat',
