@@ -736,5 +736,6 @@ Re-measured after additional PRs since threshold raise #3 (PR #1231). Lines cros
 - **PR #1357**: ControllerProfile — Push 2 profile validation — 7 tests.
 - **PR #1358**: getMidiGrooveHandlers — 9-handler map contract — 4 tests.
 - **PR #1359**: usePromptDialog — pending lifecycle, trim, cancel, displacement — 7 tests.
+- **PR #1361**: toPadStoreUpdate — boolean/string/numeric field dispatch — 13 tests.
 
-**Campaign total to date: 228 PRs, ~2425 assertions. Lines coverage at 90.30%.**
+**Campaign total to date: 229 PRs, ~2438 assertions. Lines coverage at 90.30%.**
