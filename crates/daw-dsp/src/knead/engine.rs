@@ -4,6 +4,9 @@ use crate::knead::psola::{psola_process_span, PsolaConfig};
 use crate::knead::voicing::{is_voiced, VoicingConfig};
 use crate::knead::yin::{yin_frame, YinConfig};
 
+/// Distance from the retune target, in semitones, at which the glide snaps.
+const RETUNE_SETTLE_SEMITONES: f32 = 0.001;
+
 pub struct KneadEngine {
     pub yin_cfg: YinConfig,
     pub voicing_cfg: VoicingConfig,
@@ -62,6 +65,21 @@ pub struct KneadEngine {
     out_count: usize,
 
     pub shift_semitones: f32,
+    /// The shift actually rendered this frame, gliding toward
+    /// [`Self::shift_semitones`] at [`Self::retune_speed_ms`].
+    ///
+    /// Separate from the target because the target steps: it is recomputed
+    /// per render quantum from the blob under the playhead, so every blob
+    /// boundary is a discontinuity in it. Retune speed is the control that
+    /// decides whether that discontinuity reaches the ear as a step or as a
+    /// portamento, and it needs somewhere to put the intermediate value.
+    applied_shift: f32,
+    /// Glide time constant in milliseconds. `0` snaps — the hard, immediate
+    /// arrival that is the whole point of the control's bottom end.
+    retune_speed_ms: f32,
+    /// Whether the spectral envelope stays put while the fundamental moves.
+    /// Drives [`PsolaConfig::grain_rate`]; see that field for the mechanism.
+    formant_preserve: bool,
     pub always_analyze: bool, // Set to true when UI is open to see pitch
     psola_cfg: PsolaConfig,
 
@@ -117,6 +135,9 @@ impl KneadEngine {
             out_write_pos: 0,
             out_count: 0,
             shift_semitones: 0.0,
+            applied_shift: 0.0,
+            retune_speed_ms: 0.0,
+            formant_preserve: true,
             always_analyze: false,
             psola_cfg: PsolaConfig {
                 sample_rate,
@@ -137,8 +158,15 @@ impl KneadEngine {
             self.in_buffer_r.push(right[i]);
 
             if self.in_buffer_l.len() >= self.yin_cfg.frame_size {
-                // Determine if we need to run YIN
-                let needs_analysis = self.shift_semitones != 0.0 || self.always_analyze;
+                // Determine if we need to run YIN.
+                //
+                // `applied_shift` is in the gate as well as the target: a
+                // glide that is still unwinding toward zero is still shifting
+                // audio, and keying bypass off the target alone would cut the
+                // glide off at the blob boundary — exactly the step the
+                // retune-speed control exists to remove.
+                let needs_analysis =
+                    self.shift_semitones != 0.0 || self.applied_shift != 0.0 || self.always_analyze;
 
                 if !needs_analysis {
                     // Flush any held tail from a preceding shifted frame
@@ -190,6 +218,13 @@ impl KneadEngine {
     }
 
     fn analyze_and_shift(&mut self) {
+        // Advance the retune glide once per analysis frame, which is the rate
+        // at which this engine can change its rendered pitch at all (the
+        // target f0 is constant across a frame's synthesis lattice). The
+        // control therefore resolves to `frame_size` samples, not to one.
+        let frame_ms = self.in_buffer_l.len() as f32 * 1000.0 / self.yin_cfg.sample_rate;
+        self.advance_retune_glide(frame_ms);
+
         let yin_res = yin_frame(
             &self.in_buffer_l,
             &self.yin_cfg,
@@ -205,10 +240,16 @@ impl KneadEngine {
         let frame_len = self.in_buffer_l.len();
         let mut shifted = false;
 
-        if self.shift_semitones != 0.0 && self.is_actively_voiced {
+        if self.applied_shift != 0.0 && self.is_actively_voiced {
             if let Some(f0_val) = yin_res.f0_hz {
-                let ratio = 2.0_f32.powf(self.shift_semitones / 12.0);
+                let ratio = 2.0_f32.powf(self.applied_shift / 12.0);
                 let target_f0 = f0_val * ratio;
+
+                // Formant correction, decided per frame because the ratio it
+                // tracks moves with the glide. Preserving is `1.0` (grains
+                // copied, envelope fixed); not preserving reads each grain at
+                // the pitch ratio so the envelope rides along.
+                self.psola_cfg.grain_rate = if self.formant_preserve { 1.0 } else { ratio };
 
                 // Output margin: one target period, capped at one frame so
                 // the hold/completion bookkeeping stays inside this frame.
@@ -450,12 +491,181 @@ impl KneadEngine {
     pub fn set_shift_semitones(&mut self, semitones: f32) {
         // Reset continuity state when re-engaging from bypass: a stale held
         // tail would replay pre-bypass audio at the next clip boundary.
-        if self.shift_semitones == 0.0 && semitones != 0.0 {
+        // `applied_shift` is in the test because a glide still unwinding is
+        // still rendering — the engine never went to bypass, so there is
+        // nothing stale to discard and discarding it would cut the glide.
+        if self.shift_semitones == 0.0 && self.applied_shift == 0.0 && semitones != 0.0 {
             self.held_len = 0;
             self.overhang_len = 0;
             self.synth_phase = 0.0;
         }
         self.shift_semitones = semitones;
+    }
+
+    /// Retune speed, in milliseconds, for the glide from one blob's shift to
+    /// the next. `0` snaps.
+    ///
+    /// The range and sense follow the pitch-corrector convention the panel
+    /// already advertises (Antares Auto-Tune's Retune Speed, Waves Tune's
+    /// Speed, Logic Flex Pitch): a time constant in ms where the fast end is
+    /// the hard, immediately-arriving correction and the slow end lets the
+    /// note slide into place. Non-finite input is refused rather than
+    /// propagated into `exp()`.
+    pub fn set_retune_speed_ms(&mut self, ms: f32) {
+        if !ms.is_finite() {
+            return;
+        }
+        self.retune_speed_ms = ms.max(0.0);
+    }
+
+    /// Whether the spectral envelope stays fixed while the fundamental moves.
+    pub fn set_formant_preserve(&mut self, preserve: bool) {
+        self.formant_preserve = preserve;
+    }
+
+    /// The shift being rendered right now, which trails
+    /// [`Self::shift_semitones`] whenever the retune speed is above zero.
+    pub fn applied_shift_semitones(&self) -> f32 {
+        self.applied_shift
+    }
+
+    /// One-pole step of the retune glide, `frame_ms` of output time wide.
+    ///
+    /// The deadband is what makes the glide *terminate*: a one-pole approach
+    /// is asymptotic, and without a snap the residual would hold
+    /// `applied_shift` non-zero forever, pinning the analysis gate open on a
+    /// clip that has returned to unshifted. 0.001 st is 0.1 cent — an order
+    /// of magnitude under the ~1 cent that is audible on a sustained tone.
+    fn advance_retune_glide(&mut self, frame_ms: f32) {
+        let target = self.shift_semitones;
+        if self.retune_speed_ms <= 0.0 {
+            self.applied_shift = target;
+            return;
+        }
+        let alpha = 1.0 - (-frame_ms / self.retune_speed_ms).exp();
+        self.applied_shift += (target - self.applied_shift) * alpha;
+        if (target - self.applied_shift).abs() < RETUNE_SETTLE_SEMITONES {
+            self.applied_shift = target;
+        }
+    }
+}
+
+#[cfg(test)]
+mod retune_glide_tests {
+    use super::*;
+
+    const SR: f32 = 44_100.0;
+
+    /// Frame duration in ms at the configured analysis frame — the glide's
+    /// step size. Derived from the engine's own frame size rather than
+    /// restated, so a change to `YinConfig::frame_size` moves the expectation
+    /// with it instead of silently invalidating it.
+    fn frame_ms(engine: &KneadEngine) -> f32 {
+        engine.yin_cfg.frame_size as f32 * 1000.0 / engine.yin_cfg.sample_rate
+    }
+
+    /// The trajectory, not just the endpoints. A glide that jumped to the
+    /// target on frame 1 and a glide that never moved both satisfy "ends at
+    /// the target"; the interior samples are what separate them, and the
+    /// expected values come from the one-pole law rather than from the code.
+    #[test]
+    fn glide_follows_the_one_pole_trajectory_at_interior_frames() {
+        let mut engine = KneadEngine::new(SR);
+        engine.set_retune_speed_ms(200.0);
+        engine.set_shift_semitones(12.0);
+
+        let step = frame_ms(&engine);
+        let alpha = 1.0 - (-step / 200.0_f32).exp();
+
+        let mut expected = 0.0_f32;
+        for frame in 1..=5 {
+            engine.advance_retune_glide(step);
+            expected += (12.0 - expected) * alpha;
+            let applied = engine.applied_shift_semitones();
+            assert!(
+                (applied - expected).abs() < 1e-4,
+                "frame {frame}: applied {applied:.4} st, one-pole law says {expected:.4} st"
+            );
+            assert!(
+                applied > 0.0 && applied < 12.0,
+                "frame {frame}: applied {applied:.4} st left the open interval (0, 12) — \
+                 a snap or a stall, not a glide"
+            );
+        }
+    }
+
+    /// Downward is not a mirror by construction — the deadband and the
+    /// analysis gate both compare against zero, which is the destination in
+    /// this direction and not in the other.
+    #[test]
+    fn glide_descends_through_interior_points_and_settles_exactly_on_zero() {
+        let mut engine = KneadEngine::new(SR);
+        engine.set_retune_speed_ms(200.0);
+        engine.set_shift_semitones(12.0);
+        engine.set_retune_speed_ms(0.0);
+        engine.advance_retune_glide(frame_ms(&engine));
+        assert_eq!(engine.applied_shift_semitones(), 12.0);
+
+        engine.set_retune_speed_ms(200.0);
+        engine.set_shift_semitones(0.0);
+        let step = frame_ms(&engine);
+
+        let mut seen_interior = 0;
+        let mut frames_to_settle = 0;
+        for frame in 1..400 {
+            engine.advance_retune_glide(step);
+            let applied = engine.applied_shift_semitones();
+            if applied > 0.0 && applied < 12.0 {
+                seen_interior += 1;
+            }
+            if applied == 0.0 {
+                frames_to_settle = frame;
+                break;
+            }
+        }
+        assert!(
+            seen_interior >= 5,
+            "descent passed through only {seen_interior} interior values"
+        );
+        assert_eq!(
+            engine.applied_shift_semitones(),
+            0.0,
+            "the deadband must land the glide exactly on the target, not near it"
+        );
+        // One-pole to within 0.001 of 12 st is ln(12/0.001) time constants;
+        // computed, not copied off a run.
+        let expected_frames = ((12.0_f32 / RETUNE_SETTLE_SEMITONES).ln() * 200.0 / step).ceil();
+        assert!(
+            (frames_to_settle as f32 - expected_frames).abs() <= 2.0,
+            "settled in {frames_to_settle} frames, one-pole law says ~{expected_frames:.0}"
+        );
+    }
+
+    /// The bottom of the range is a hard snap, which is the behaviour every
+    /// existing engine test was written against.
+    #[test]
+    fn retune_speed_zero_snaps_within_one_frame() {
+        let mut engine = KneadEngine::new(SR);
+        engine.set_shift_semitones(-5.0);
+        engine.advance_retune_glide(frame_ms(&engine));
+        assert_eq!(engine.applied_shift_semitones(), -5.0);
+    }
+
+    /// A non-finite write must not reach `exp()`, where it would poison every
+    /// subsequent glide step into NaN and silence the engine.
+    #[test]
+    fn non_finite_retune_speed_is_refused() {
+        let mut engine = KneadEngine::new(SR);
+        engine.set_retune_speed_ms(120.0);
+        engine.set_retune_speed_ms(f32::NAN);
+        engine.set_shift_semitones(12.0);
+        engine.advance_retune_glide(frame_ms(&engine));
+        let applied = engine.applied_shift_semitones();
+        assert!(applied.is_finite(), "glide produced {applied}");
+        assert!(
+            applied > 0.0 && applied < 12.0,
+            "the refused write must leave the previous 120 ms in force, got {applied:.4} st"
+        );
     }
 }
 

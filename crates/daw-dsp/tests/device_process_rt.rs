@@ -1137,6 +1137,67 @@ fn knead_process_does_not_allocate_while_shifting_pitch() {
     );
 }
 
+/// The guard above runs Knead in its *shipped default* configuration —
+/// formant preservation on, retune speed 0 — and neither of the two branches
+/// those controls open is reached there. `grain_rate != 1.0` is a separate
+/// grain loop with a fractional source read, and a retune glide in flight is a
+/// per-frame `exp()` plus a shift the analysis gate has to keep engaged after
+/// the target has already left. Both are audio-thread code and both need their
+/// own allocation guard, driven at a *non-default* value, with the shift target
+/// stepping inside the guarded region so the glide is actively unwinding rather
+/// than settled.
+#[test]
+fn knead_process_does_not_allocate_with_formant_tracking_and_a_glide_in_flight() {
+    use daw_dsp::knead::KneadInstance;
+
+    let mut instance = KneadInstance::new(SAMPLE_RATE);
+    instance.set_formant_preserve(false);
+    instance.set_retune_speed_ms(200.0);
+    instance.set_shift_semitones(4.0);
+
+    for block in 0..24 {
+        unsafe {
+            fill_input(
+                instance.get_input_left_ptr(),
+                instance.get_input_right_ptr(),
+                BLOCK,
+                block * BLOCK,
+            );
+        }
+        let out = unsafe { read_output(instance.process(BLOCK as u32), BLOCK) };
+        assert_all_finite(&out, "knead formant/glide");
+    }
+
+    assert_no_alloc(|| {
+        for block in 24..(24 + GUARDED_BLOCKS) {
+            // Step the target mid-region, both directions, so the glide is
+            // never settled while the guard is watching.
+            if block == 30 {
+                instance.set_shift_semitones(-3.0);
+            }
+            if block == 40 {
+                instance.set_shift_semitones(7.0);
+            }
+            unsafe {
+                fill_input(
+                    instance.get_input_left_ptr(),
+                    instance.get_input_right_ptr(),
+                    BLOCK,
+                    block * BLOCK,
+                );
+            }
+            instance.process(BLOCK as u32);
+        }
+    });
+
+    let out = unsafe { read_output(instance.process(BLOCK as u32), BLOCK) };
+    assert_all_finite(&out, "knead formant/glide");
+    assert!(
+        peak(&out) > 1e-4,
+        "knead fell silent, so the guarded region did not exercise the formant-tracking grain"
+    );
+}
+
 #[test]
 fn levain_process_does_not_allocate_with_notes_held() {
     use daw_dsp::levain::LevainInstance;

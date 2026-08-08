@@ -1415,6 +1415,24 @@ export class KneadInstance {
         return ret >>> 0;
     }
     /**
+     * Formant correction. `true` (the default) keeps the spectral envelope
+     * where the singer put it while the fundamental moves; `false` lets the
+     * envelope track the pitch, the varispeed relation.
+     * @param {boolean} preserve
+     */
+    set_formant_preserve(preserve) {
+        wasm.kneadinstance_set_formant_preserve(this.__wbg_ptr, preserve);
+    }
+    /**
+     * Retune speed in milliseconds: how long the rendered shift takes to
+     * arrive at a new blob's target. `0` snaps, which is what the engine did
+     * unconditionally before this export existed.
+     * @param {number} ms
+     */
+    set_retune_speed_ms(ms) {
+        wasm.kneadinstance_set_retune_speed_ms(this.__wbg_ptr, ms);
+    }
+    /**
      * Set the real-time pitch shift in semitones. Without this export the
      * worklet's per-quantum `set_shift_semitones` call throws a TypeError
      * and the processor faults into permanent passthrough.
