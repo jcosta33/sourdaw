@@ -1,0 +1,28 @@
+src/modules/Project/useCases/index.ts
+  s_14f2bbc9f385dd::t_429e3d7c43c6b8 7
+src/modules/Project/useCases/projectPersistence/saveProject/initProjectDirtyTracking.ts
+  s_14f2bbc9f385dd::t_d0df01d4fb33ac 1-14
+src/app/bootstrap.ts
+  s_14f2bbc9f385dd::t_b19daf72064a92 410
+  s_14f2bbc9f385dd::t_2aef8cd7538dfb 12
+  s_14f2bbc9f385dd::t_a8981a92f6a8f7 113
+src/modules/Project/useCases/projectPersistence/saveProject/__tests__/projectLoadDirtyTracking.integration.spec.ts
+  s_14f2bbc9f385dd::t_01e53e2d1f1042 1-171
+  s_14f2bbc9f385dd::t_dc87f07c068817 172-174
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "7899f2345af539e1ad558fd9f965d3da68744b86",
+  "prompts": {},
+  "sessions": {
+    "s_14f2bbc9f385dd": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f9a61a1d-66b3-4146-938d-a04f45f4b060",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
