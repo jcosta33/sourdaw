@@ -20,6 +20,8 @@ import { WasmView } from './wasmView';
  */
 type KneadRuntimeInstance = KneadInstance & {
     set_shift_semitones?(semitones: number): void;
+    set_retune_speed_ms?(ms: number): void;
+    set_formant_preserve?(preserve: boolean): void;
     get_right_ptr?(): number;
 };
 
@@ -34,7 +36,23 @@ type KneadClip = {
     startBeat: number;
     endBeat: number;
     blobs: KneadClipBlob[];
+    /**
+     * Per-clip pitch-correction settings. `syncKneadState` already ships the
+     * whole `KneadClipState` record over this port — these two fields were
+     * arriving in the payload and being dropped on the floor because nothing
+     * here declared or read them.
+     */
+    retuneSpeedMs?: number;
+    formantPreserve?: boolean;
 };
+
+/**
+ * Fallbacks for a clip record that predates these fields, matching the seed in
+ * `Knead/useCases/updateClipKneadState.ts` and the editor's own `?? 25` /
+ * `?? true` so a reloaded project renders what its panel shows.
+ */
+const DEFAULT_RETUNE_SPEED_MS = 25;
+const DEFAULT_FORMANT_PRESERVE = true;
 
 type KneadMsg =
     | { type: 'init'; transportSAB?: SharedArrayBuffer }
@@ -178,6 +196,8 @@ class KneadProcessor extends AudioWorkletProcessor {
 
         // Resolve current temporal position
         let currentShiftSemitones = 0;
+        let currentRetuneSpeedMs = DEFAULT_RETUNE_SPEED_MS;
+        let currentFormantPreserve = DEFAULT_FORMANT_PRESERVE;
         if (this._transportView && this._transportSeqView) {
             const view = this._transportView;
             const seq = this._transportSeqView;
@@ -211,6 +231,18 @@ class KneadProcessor extends AudioWorkletProcessor {
                 }
 
                 if (activeClip) {
+                    // Clip-wide settings, resolved whether or not a blob is
+                    // under the playhead: the retune glide has to keep its
+                    // time constant while it unwinds off the end of a blob,
+                    // which is exactly where the shift target has gone to 0.
+                    const retuneSpeedMs = activeClip.retuneSpeedMs;
+                    if (typeof retuneSpeedMs === 'number' && Number.isFinite(retuneSpeedMs)) {
+                        currentRetuneSpeedMs = retuneSpeedMs;
+                    }
+                    if (typeof activeClip.formantPreserve === 'boolean') {
+                        currentFormantPreserve = activeClip.formantPreserve;
+                    }
+
                     const songTimeSeconds = (currentBeat / tempo) * 60;
                     const clipStartTimeSeconds = (activeClip.startBeat / tempo) * 60;
                     const clipTimeSeconds = songTimeSeconds - clipStartTimeSeconds;
@@ -254,6 +286,13 @@ class KneadProcessor extends AudioWorkletProcessor {
                 return true;
             }
 
+            // Order matters: the retune speed decides how the shift written on
+            // the next line is approached, so it must be current before the
+            // target moves. Both are cheap setters on the instance, written
+            // every quantum rather than diffed — a diff would need per-field
+            // state that buys nothing over two field writes.
+            inst.set_retune_speed_ms?.(currentRetuneSpeedMs);
+            inst.set_formant_preserve?.(currentFormantPreserve);
             inst.set_shift_semitones?.(currentShiftSemitones);
 
             const inputLeftPtr = inst.get_input_left_ptr();

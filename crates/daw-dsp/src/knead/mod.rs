@@ -71,6 +71,20 @@ impl KneadInstance {
         self.engine.set_shift_semitones(semitones);
     }
 
+    /// Retune speed in milliseconds: how long the rendered shift takes to
+    /// arrive at a new blob's target. `0` snaps, which is what the engine did
+    /// unconditionally before this export existed.
+    pub fn set_retune_speed_ms(&mut self, ms: f32) {
+        self.engine.set_retune_speed_ms(ms);
+    }
+
+    /// Formant correction. `true` (the default) keeps the spectral envelope
+    /// where the singer put it while the fundamental moves; `false` lets the
+    /// envelope track the pitch, the varispeed relation.
+    pub fn set_formant_preserve(&mut self, preserve: bool) {
+        self.engine.set_formant_preserve(preserve);
+    }
+
     /// Samples of group delay this instance imposes, for plugin delay
     /// compensation. Mirrors `GlutenInstance::get_latency_samples`; the worklet
     /// forwards it on the ready handshake so PDC can offset the track.

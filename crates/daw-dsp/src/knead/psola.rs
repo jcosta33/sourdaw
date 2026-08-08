@@ -5,6 +5,24 @@ use crate::knead::utils::hann_window_inplace;
 pub struct PsolaConfig {
     pub sample_rate: f32,
     pub max_semitones_transparent: f32,
+    /// Rate at which each grain reads its source, relative to output time.
+    ///
+    /// `1.0` is textbook TD-PSOLA: the grain is copied unresampled and only
+    /// its *spacing* changes, so the spectral envelope — the formants — stays
+    /// where the singer put it while the fundamental moves. That is formant
+    /// correction ON, and it is the shape every pitch corrector ships as the
+    /// vocal default (Auto-Tune's Formant Correction, Melodyne's Formants,
+    /// Logic Flex Pitch's Formant Shift at 0).
+    ///
+    /// Setting this to the pitch ratio makes each grain read `ratio` source
+    /// samples per output sample, which scales the grain's whole spectrum by
+    /// `ratio` — formants included. Combined with the epoch respacing that
+    /// already moved the fundamental, the result is the varispeed/"chipmunk"
+    /// relation between pitch and formants, i.e. formant correction OFF.
+    ///
+    /// Level is unaffected either way: the Hann window is still applied in
+    /// output coordinates at width 2·P_t and hop P_t, so COLA still sums to 1.
+    pub grain_rate: f32,
 }
 
 impl Default for PsolaConfig {
@@ -12,6 +30,7 @@ impl Default for PsolaConfig {
         Self {
             sample_rate: 44100.0,
             max_semitones_transparent: 4.0,
+            grain_rate: 1.0,
         }
     }
 }
@@ -173,6 +192,33 @@ pub(crate) fn psola_process_span(
         let window = &mut window_scratchpad[..full_len];
         hann_window_inplace(window);
 
+        // Formant-tracking grain: read the source at `grain_rate` samples per
+        // output sample instead of one-for-one. Driven from the *output* offset
+        // `d` rather than the source index, because the grain's output width is
+        // still 2·P_t while the span of source it consumes is 2·P_t·rate.
+        // Bounds-skipped, not clamped, so the edge behaviour matches the
+        // unresampled path (a clamp would smear the first/last sample across
+        // the whole overhang).
+        if cfg.grain_rate != 1.0 {
+            for d in -half_grain..half_grain {
+                let pos = pm as f32 + d as f32 * cfg.grain_rate;
+                if pos < 0.0 || pos >= (input.len() - 1) as f32 {
+                    continue;
+                }
+                let base = pos.floor();
+                let index = base as usize;
+                let frac = pos - base;
+                let sample = input[index] * (1.0 - frac) + input[index + 1] * frac;
+                let win = window[((d + half_grain) as usize).min(full_len - 1)];
+                let dst_idx = center + d + out_offset;
+                if dst_idx >= 0 && (dst_idx as usize) < out.len() {
+                    out[dst_idx as usize] += sample * win;
+                }
+            }
+            out_t += target_period_samples;
+            continue;
+        }
+
         for src_idx in start..end {
             let win_idx = (src_idx as isize - pm as isize + half_grain) as usize;
             let win = window[win_idx.min(full_len - 1)];
@@ -232,10 +278,21 @@ mod tests {
     }
 
     fn run_psola(input: &[f32], f0: f32, target_f0: f32, sample_rate: f32) -> Vec<f32> {
+        run_psola_at_rate(input, f0, target_f0, sample_rate, 1.0)
+    }
+
+    fn run_psola_at_rate(
+        input: &[f32],
+        f0: f32,
+        target_f0: f32,
+        sample_rate: f32,
+        grain_rate: f32,
+    ) -> Vec<f32> {
         let (marks, curve) = marks_and_curve(f0, target_f0, sample_rate, input.len());
         let cfg = PsolaConfig {
             sample_rate,
             max_semitones_transparent: 12.0,
+            grain_rate,
         };
         let mut scratch = vec![0.0_f32; (sample_rate / 20.0) as usize * 4];
         let mut out = vec![0.0_f32; input.len()];
@@ -315,6 +372,112 @@ mod tests {
     /// Interior output must never go near-silent for more than a fraction of
     /// a target period (grain edges can legitimately approach zero between
     /// epochs of a periodic signal, so bound the *run*, not the minima).
+    /// A pulse-like tone whose harmonic amplitudes are shaped by a Gaussian
+    /// centred on `formant_hz` — a synthetic vowel. The fundamental and the
+    /// spectral envelope are independent by construction, which is exactly the
+    /// pair `grain_rate` decides the coupling of.
+    fn voweled(f0: f32, formant_hz: f32, sample_rate: f32, len: usize) -> Vec<f32> {
+        let width = 500.0_f32;
+        let harmonics = ((sample_rate * 0.45) / f0) as usize;
+        let raw: Vec<f32> = (0..len)
+            .map(|n| {
+                let mut s = 0.0_f32;
+                for h in 1..=harmonics {
+                    let freq = f0 * h as f32;
+                    let amp = (-((freq - formant_hz) / width).powi(2)).exp();
+                    s += amp * (TAU * freq * n as f32 / sample_rate).sin();
+                }
+                s
+            })
+            .collect();
+        let max = raw.iter().map(|s| s.abs()).fold(0.0_f32, f32::max);
+        raw.iter().map(|s| s / max).collect()
+    }
+
+    /// Magnitude-weighted mean frequency over a Hann-windowed DFT. Naive and
+    /// slow, which is fine for one 8192-point frame in a unit test.
+    fn spectral_centroid(x: &[f32], sample_rate: f32) -> f32 {
+        let n = 8192.min(x.len());
+        let frame = &x[x.len() / 2 - n / 2..x.len() / 2 + n / 2];
+        let mut num = 0.0_f64;
+        let mut den = 0.0_f64;
+        for k in 1..n / 2 {
+            let (mut re, mut im) = (0.0_f64, 0.0_f64);
+            for (i, &sample) in frame.iter().enumerate() {
+                let w = 0.5 - 0.5 * (TAU * i as f32 / n as f32).cos();
+                let phase = -std::f64::consts::TAU * (k as f64) * (i as f64) / (n as f64);
+                let v = (sample * w) as f64;
+                re += v * phase.cos();
+                im += v * phase.sin();
+            }
+            let mag = (re * re + im * im).sqrt();
+            let freq = k as f64 * sample_rate as f64 / n as f64;
+            num += mag * freq;
+            den += mag;
+        }
+        (num / den.max(1e-12)) as f32
+    }
+
+    /// The formant-correction claim, measured rather than asserted about the
+    /// code: at `grain_rate == 1.0` a +7 semitone shift leaves the spectral
+    /// envelope where it was, and at `grain_rate == ratio` the envelope moves
+    /// with the pitch. Both directions are measured against the *same* shift,
+    /// so the only difference between the two renders is the control.
+    #[test]
+    fn grain_rate_decides_whether_the_formant_follows_the_pitch() {
+        let ratio = 2.0_f32.powf(7.0 / 12.0);
+        let f0 = 200.0_f32;
+        let formant = 1_200.0_f32;
+        let input = voweled(f0, formant, SR, SR as usize);
+
+        let centroid_in = spectral_centroid(&input, SR);
+        let preserved = run_psola(&input, f0, f0 * ratio, SR);
+        let tracked = run_psola_at_rate(&input, f0, f0 * ratio, SR, ratio);
+
+        let centroid_preserved = spectral_centroid(&preserved, SR);
+        let centroid_tracked = spectral_centroid(&tracked, SR);
+
+        // Preserved: the envelope, and so the centroid, barely moves. It
+        // cannot be exactly still — the harmonic comb under the envelope
+        // re-samples it at the new spacing — but it stays near the source.
+        let preserved_drift = centroid_preserved / centroid_in;
+        assert!(
+            (0.88..=1.12).contains(&preserved_drift),
+            "formant preservation moved the centroid by {preserved_drift:.3}x \
+             ({centroid_in:.0} Hz -> {centroid_preserved:.0} Hz); expected it to hold"
+        );
+
+        // Tracked: the envelope scales by the pitch ratio, so the centroid
+        // does too. Compared against the preserved render, not the input, so
+        // the comb re-sampling above cancels out of the claim.
+        let tracked_over_preserved = centroid_tracked / centroid_preserved;
+        assert!(
+            (tracked_over_preserved - ratio).abs() < 0.15,
+            "formant tracking scaled the centroid by {tracked_over_preserved:.3}x, \
+             expected the pitch ratio {ratio:.3} \
+             ({centroid_preserved:.0} Hz -> {centroid_tracked:.0} Hz)"
+        );
+    }
+
+    /// The formant-tracking branch must not cost level: its window is still
+    /// applied in output coordinates at hop P_t, so COLA still sums to ~1.
+    /// A grain loop that windowed in *source* coordinates would pass the
+    /// centroid test above and fail this one.
+    #[test]
+    fn formant_tracking_holds_level() {
+        let ratio = 2.0_f32.powf(7.0 / 12.0);
+        let input = voweled(200.0, 1_200.0, SR, SR as usize);
+        let rms_in = rms(&input[SKIP..input.len() - SKIP]);
+
+        let tracked = run_psola_at_rate(&input, 200.0, 200.0 * ratio, SR, ratio);
+        let rms_out = rms(&tracked[SKIP..tracked.len() - SKIP]);
+        let db = 20.0 * (rms_out / rms_in).log10();
+        assert!(
+            db.abs() < 1.5,
+            "formant-tracking rms deviation {db:+.2} dB, expected |dB| < 1.5"
+        );
+    }
+
     #[test]
     fn no_zero_run_dropouts() {
         let input = pitched(220.0, SR, SR as usize, 1.0);
