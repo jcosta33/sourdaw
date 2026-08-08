@@ -771,7 +771,10 @@ Re-measured after additional PRs since threshold raise #3 (PR #1231). Lines cros
 - **PR #1428**: Inspector — notes, gain, toggle — 3 tests.
 - **PR #1430**: Timeline navigation — minimap, canvas, playhead — 4 tests.
 - **PR #1432**: Voice button & tempo editor — map toggle, BPM, voice, time sig — 4 tests.
+- **PR #1435**: Track arm & Ableton Link — arm toggle, isolation, arm/disarm both — 5 tests.
+- **PR #1436**: Track list header — height cycle, add folder — 5 tests.
+- **PR #1439**: Project name & preferences — display, rename click, prefs dialog — 5 tests.
 
-**E2E: 97 tests across 22 spec files using data-testid selectors.**
+**E2E: 117 tests across 27 spec files using data-testid selectors.**
 
-**Campaign total to date: 262 PRs, ~2647 assertions. Lines coverage at 90.30%.**
+**Campaign total to date: 267 PRs, ~2672 assertions. Lines coverage at 90.30%.**
