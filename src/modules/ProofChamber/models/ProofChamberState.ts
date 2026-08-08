@@ -22,7 +22,11 @@ export type ProofChamberEngineState = {
     shimmerPitch: number; // 0=fifth, 1=octave
     gravity: number;
     saturation: boolean;
+    /** Which saturation curve the plate runs: 0=tanh, 1=Chebyshev, 2=hard clip. */
+    saturationType: number;
     earlyLateBalance: number;
+    /** Cross-coupling between the plate's tank halves. 0=sparse, 1=dense. */
+    density: number;
     vintage: number; // 0=modern, 1=80s, 2=70s
 };
 
@@ -46,7 +50,14 @@ export const DEFAULT_PARAMS: ProofChamberEngineState = {
     shimmerPitch: 1,
     gravity: 0.5,
     saturation: false,
+    // Curve 0 is what every project has heard so far, because nothing could
+    // write this parameter; the engine has always defaulted to it too.
+    saturationType: 0,
     earlyLateBalance: 0.4,
+    // Matches the plate's constructor, where `left_mod_ap_gain` starts at the
+    // full -0.70 — i.e. density 1.0. A different default here would have moved
+    // the shipped sound the moment the parameter became writable.
+    density: 1.0,
     vintage: 0,
 };
 
@@ -148,7 +159,9 @@ export const PARAM_MAP: Record<string, string> = {
     shimmerPitch: 'shimmer_pitch',
     gravity: 'gravity',
     saturation: 'saturation',
+    saturationType: 'saturation_type',
     earlyLateBalance: 'early_late',
+    density: 'density',
     algorithm: 'algorithm',
     vintage: 'vintage',
 };

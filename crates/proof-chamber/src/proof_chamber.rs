@@ -6,7 +6,9 @@
 ///
 /// Features: modulated tank with allpass interpolation, 14-tap stereo output,
 /// freeze, shimmer (granular pitch shifter in feedback), and pre-delay.
-use std::f32::consts::{PI, TAU};
+use std::f32::consts::TAU;
+
+use crate::early_reflections::EarlyReflections;
 
 // ---------------------------------------------------------------------------
 // Reference delays at 29761 Hz (Dattorro Table 1)
@@ -324,10 +326,24 @@ pub struct ProofChamber {
     gravity: f32,        // -1 to +1: negative = reverse swell, positive = normal
     saturation_type: u8, // 0=tanh, 1=chebyshev, 2=hard clip
     saturation_enabled: bool,
+    /// 0 = all early reflections, 1 = all tank. Same meaning and same blend as
+    /// `FdnReverb::early_late_balance`, so the shipped default of 0.4 sounds
+    /// like the same control on both engines.
+    early_late_balance: f32,
 
     // Input section
     bandwidth_filter: OnePole,
     input_diffusers: [Allpass; 4],
+
+    /// Early reflections, tapped off the pre-delayed input ahead of the tank.
+    ///
+    /// One instance, not the FDN's pair. The plate sums its input to mono
+    /// before the pre-delay, so a second instance fed the same signal with the
+    /// same tap table would produce a bit-identical second copy — twice the
+    /// buffer and twice the tap sum for nothing. The stereo image of this
+    /// engine comes from the tank's 14 output taps, which the blend leaves
+    /// untouched.
+    early_reflections: EarlyReflections,
 
     // Pre-delay
     predelay: DelayLine,
@@ -433,6 +449,7 @@ impl ProofChamber {
             gravity: 0.5,
             saturation_type: 0,
             saturation_enabled: false,
+            early_late_balance: 0.4,
 
             bandwidth_filter: OnePole::new(1.0 - 0.9995), // bandwidth=0.9995
             input_diffusers: [
@@ -444,6 +461,11 @@ impl ProofChamber {
 
             predelay: DelayLine::new(predelay_max),
             predelay_len: ((15.0 / 1000.0) * sample_rate) as usize,
+
+            // Seeded at the same room size the FDN uses, so a project that
+            // never touches Size hears the same reflection pattern whichever
+            // of the two engines it selects.
+            early_reflections: EarlyReflections::new(sample_rate, 0.5),
 
             left_mod_ap: DelayLine::new(scaled_left_mod),
             left_mod_ap_gain: -0.70,
@@ -494,7 +516,18 @@ impl ProofChamber {
                 self.predelay_len = ((value / 1000.0) * self.sample_rate) as usize;
                 self.predelay_len = self.predelay_len.min(self.predelay.len - 1);
             }
-            "size" => self.size = value.clamp(0.0, 1.0),
+            "size" => {
+                let clamped = value.clamp(0.0, 1.0);
+                self.size = clamped;
+                // Reflection spacing follows room size, exactly as it does on
+                // the FDN (`fdn.rs`, the same arm). The plate's *tank* delays
+                // still do not scale with Size — they are fixed at Dattorro's
+                // Table 1 lengths — so Size remains partly inert on this
+                // engine. That is a separate defect from this one and needs
+                // the tank rebuilt against a maximum length, not a wire.
+                self.early_reflections
+                    .update_room_size(self.sample_rate, clamped);
+            }
             "mod_rate" => self.mod_rate = value.clamp(0.1, 5.0),
             "mod_depth" => self.mod_depth = value.clamp(0.0, 1.0),
             "diffusion" => {
@@ -529,6 +562,11 @@ impl ProofChamber {
                 self.shimmer.pitch_ratio = if value < 0.5 { 1.5 } else { 2.0 }; // fifth or octave
             }
             "gravity" => self.gravity = value.clamp(-1.0, 1.0),
+            // Same name, same range and the same blend as `FdnReverb`. The
+            // panel has always sent this and the plate has always dropped it,
+            // which mattered more here than anywhere else: plate is the
+            // default algorithm.
+            "early_late" => self.early_late_balance = value.clamp(0.0, 1.0),
             "saturation" => self.saturation_enabled = value > 0.5,
             "saturation_type" => self.saturation_type = (value as u8).min(2),
             "density" => {
@@ -574,6 +612,9 @@ impl ProofChamber {
             // Pre-delay
             self.predelay.write(mono);
             let predelayed = self.predelay.read(self.predelay_len);
+
+            // Early reflections, tapped off the same point the FDN taps.
+            let early = self.early_reflections.process(predelayed);
 
             // Bandwidth filter
             let filtered = self.bandwidth_filter.process(predelayed);
@@ -694,6 +735,19 @@ impl ProofChamber {
                 wet_r += sample * gain;
             }
 
+            // ── Early/late balance ───────────────────────────────
+            //
+            // Same formula as `FdnReverb::process`, so the knob reads the same
+            // on both engines. Placed *before* the output EQ and width rather
+            // than after, where the FDN puts it: this engine has an output
+            // stage and the FDN does not, and blending afterwards would leave
+            // the early half unfiltered — Hi Cut, Lo Cut and Width would go
+            // progressively inert as the knob turned down, trading one dead
+            // control for three.
+            let el = self.early_late_balance;
+            wet_l = early * (1.0 - el) + wet_l * el;
+            wet_r = early * (1.0 - el) + wet_r * el;
+
             // Output EQ — stereo (independent filter instances per channel).
             wet_l = self.high_cut_l.process(wet_l);
             wet_l = self.low_cut_l.process(wet_l);
@@ -734,6 +788,7 @@ impl ProofChamber {
             "saturation",
             "saturation_type",
             "density",
+            "early_late",
         ]
     }
 }

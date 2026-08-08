@@ -54,6 +54,19 @@ const VINTAGE_MODES = [
     { id: 2, label: '70s' },
 ] as const;
 
+/**
+ * The three saturation curves the plate implements, in the engine's own order.
+ *
+ * The ids are the wire values `ProofChamber::set_param` reads through
+ * `(value as u8).min(2)`, so the labels and the curves cannot drift apart
+ * without someone renumbering this list.
+ */
+const SATURATION_CURVES = [
+    { id: 0, label: 'Tanh' },
+    { id: 1, label: 'Cheby' },
+    { id: 2, label: 'Clip' },
+] as const;
+
 const ALGORITHMS: ReadonlyArray<{ id: ProofChamberAlgorithm; label: string }> = [
     { id: 'plate', label: 'Plate' },
     { id: 'fdn-8', label: 'FDN 8' },
@@ -526,6 +539,19 @@ export const ProofChamberPanel = ({ deviceId }: { deviceId: string }): ReactElem
                                     />
                                 </div>
                             ) : null}
+                            {params.saturation ? (
+                                <div className="flex flex-wrap gap-1.5">
+                                    {SATURATION_CURVES.map((curve) => (
+                                        <ChamberChip
+                                            key={curve.id}
+                                            active={params.saturationType === curve.id}
+                                            onClick={() => setParam('saturationType', curve.id)}
+                                        >
+                                            {curve.label}
+                                        </ChamberChip>
+                                    ))}
+                                </div>
+                            ) : null}
                         </SectionCard>
                     </DawPluginRail>
                 </div>
@@ -714,6 +740,17 @@ export const ProofChamberPanel = ({ deviceId }: { deviceId: string }): ReactElem
                                     defaultValue={0}
                                     size="md"
                                     readout={VINTAGE_MODES[Math.round(params.vintage)]?.label ?? 'Modern'}
+                                />
+                                <KnobCell
+                                    label="Density"
+                                    value={params.density}
+                                    onChange={(value) => setParam('density', value)}
+                                    min={0}
+                                    max={1}
+                                    step={0.01}
+                                    defaultValue={1}
+                                    size="md"
+                                    readout={formatValue(params.density, '%')}
                                 />
                             </div>
                             <div className="flex flex-wrap gap-1.5">

@@ -11,6 +11,10 @@ use std::f32::consts::TAU;
 // The `decay` contract is crate-wide: `decay` is a normalised coefficient, and
 // this engine is the one that needs it expressed in seconds.
 use crate::decay_curve::{decay_to_rt60_seconds, MAX_RT60_SECONDS, MIN_RT60_SECONDS};
+// `early_late` is a crate-wide contract too, and used to be honoured only
+// here. The tapped delay line moved out so the plate could blend the same
+// early signal against its own tank.
+use crate::early_reflections::EarlyReflections;
 
 // ---------------------------------------------------------------------------
 // Mixing matrices
@@ -143,73 +147,6 @@ impl AbsorptiveFilter {
         let low = self.state;
         let high = input - low;
         low * self.g_low + high * self.g_high
-    }
-}
-
-// ---------------------------------------------------------------------------
-// Tapped delay line for early reflections
-// ---------------------------------------------------------------------------
-
-struct EarlyReflections {
-    buffer: Vec<f32>,
-    write_pos: usize,
-    taps: Vec<(usize, f32)>, // (delay_samples, gain)
-    len: usize,
-}
-
-impl EarlyReflections {
-    fn new(sample_rate: f32, room_size: f32) -> Self {
-        let max_delay = (sample_rate * 0.1) as usize; // 100ms max
-                                                      // Generate tap pattern based on room size
-                                                      // First reflections from 6 walls, decreasing as 1/sqrt(t)
-        let base_delay_ms = 5.0 + room_size * 45.0; // 5-50ms for first reflection
-        let mut taps = Vec::new();
-
-        // 12 taps with varying delays and gains
-        let tap_times_ms = [
-            1.0, 3.2, 5.1, 7.8, 11.3, 15.7, 20.4, 26.1, 33.0, 41.2, 52.8, 67.0,
-        ];
-
-        for (i, &t) in tap_times_ms.iter().enumerate() {
-            let delay = ((t * room_size + base_delay_ms * 0.1) / 1000.0 * sample_rate) as usize;
-            let gain = 0.7 / (1.0 + (i as f32) * 0.3).sqrt();
-            // Alternate signs for decorrelation
-            let sign = if i % 2 == 0 { 1.0 } else { -1.0 };
-            taps.push((delay.min(max_delay - 1), gain * sign));
-        }
-
-        Self {
-            buffer: vec![0.0; max_delay],
-            write_pos: 0,
-            taps,
-            len: max_delay,
-        }
-    }
-
-    #[inline]
-    fn process(&mut self, input: f32) -> f32 {
-        self.buffer[self.write_pos] = input;
-        self.write_pos = (self.write_pos + 1) % self.len;
-
-        let mut sum = 0.0_f32;
-        for &(delay, gain) in &self.taps {
-            let pos = (self.write_pos + self.len - delay) % self.len;
-            sum += self.buffer[pos] * gain;
-        }
-        sum
-    }
-
-    fn update_room_size(&mut self, sample_rate: f32, room_size: f32) {
-        let base_delay_ms = 5.0 + room_size * 45.0;
-        let tap_times_ms = [
-            1.0, 3.2, 5.1, 7.8, 11.3, 15.7, 20.4, 26.1, 33.0, 41.2, 52.8, 67.0,
-        ];
-        for (i, &t) in tap_times_ms.iter().enumerate() {
-            if i < self.taps.len() {
-                let delay = ((t * room_size + base_delay_ms * 0.1) / 1000.0 * sample_rate) as usize;
-                self.taps[i].0 = delay.min(self.len - 1);
-            }
-        }
     }
 }
 

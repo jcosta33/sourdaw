@@ -1,8 +1,10 @@
 import { render, fireEvent, screen } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+import { useStore } from '#/infra/store/useStore';
 import { executeAppAction } from '#/modules/Command/useCases';
 
+import { DEFAULT_PARAMS } from '../../../models/ProofChamberState';
 import { ProofChamberPanel } from '../ProofChamberPanel';
 
 // Mock dependencies
@@ -61,6 +63,10 @@ function railChip(label: string): HTMLElement {
 describe('ProofChamberPanel', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        // `clearAllMocks` clears recorded calls, not implementations, so a
+        // `mockReturnValue` from one test would otherwise decide what every
+        // later test's panel renders.
+        vi.mocked(useStore).mockImplementation((_store, defaultValue) => defaultValue);
     });
 
     it('should render without crashing', () => {
@@ -135,5 +141,45 @@ describe('ProofChamberPanel', () => {
 
         expect(screen.getByText('A1')).toBeTruthy();
         expect(screen.queryByText('A7')).toBeNull();
+    });
+
+    /**
+     * The plate implements three saturation curves and always ran the first
+     * one, because no surface could write `saturation_type`. The curve chips
+     * are the surface, and they hang off the Saturation switch that gates the
+     * branch running them — offering a curve while saturation is off would
+     * advertise a choice with no effect.
+     */
+    it('hides the saturation curve chips while saturation is off', () => {
+        render(<ProofChamberPanel deviceId="test-device" />);
+
+        expect(screen.queryByRole('button', { name: 'Cheby' })).toBeNull();
+        expect(screen.queryByRole('button', { name: 'Clip' })).toBeNull();
+    });
+
+    it('dispatches the saturation curve at the index the engine matches on', () => {
+        vi.mocked(useStore).mockReturnValue({
+            activeInstanceId: 'test-device',
+            instances: {
+                'test-device': {
+                    id: 'test-device',
+                    isBypassed: false,
+                    uiLevel: 1,
+                    engineState: { ...DEFAULT_PARAMS, saturation: true },
+                },
+            },
+        });
+
+        render(<ProofChamberPanel deviceId="test-device" />);
+
+        fireEvent.click(screen.getByRole('button', { name: 'Cheby' }));
+
+        // 1 is the Chebyshev arm of `soft_saturate`, reached through
+        // `(value as u8).min(2)`. A chip that sent an ordinal from its own
+        // position in some other list would land on a different curve.
+        expect(executeAppAction).toHaveBeenCalledWith({
+            type: 'setDeviceParameter',
+            payload: { deviceId: 'test-device', paramId: 'saturation_type', value: 1 },
+        });
     });
 });
