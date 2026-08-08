@@ -1,0 +1,62 @@
+src/modules/ProofChamber/presentations/views/__tests__/ProofChamberPanel.spec.tsx
+  s_14f2bbc9f385dd::t_0f6012090d0e1f 4,7
+  s_14f2bbc9f385dd::t_c61603f23218d6 66-69
+  s_14f2bbc9f385dd::t_2cf79fa312320f 145-184
+src/modules/Arrangement/models/PluginDescriptors/NativeDspDescriptors.ts
+  s_14f2bbc9f385dd::t_f006a882a1aec7 255-273
+  s_14f2bbc9f385dd::t_b10d0452e2a764 253-254
+crates/proof-chamber/src/early_reflections.rs
+  s_14f2bbc9f385dd::t_5419a900c589ea 1-100
+src/modules/ProofChamber/models/__tests__/proofChamberParamMapClosure.spec.ts
+  s_14f2bbc9f385dd::t_d85470a0f70452 1-128
+crates/proof-chamber/tests/plate_parameter_surface.rs
+  s_14f2bbc9f385dd::t_4618a28a4c3d4d 1-318
+crates/proof-chamber/src/fdn.rs
+  s_14f2bbc9f385dd::t_e1e0d27dd0f35f 14-17
+crates/proof-chamber/src/lib.rs
+  s_14f2bbc9f385dd::t_25ee7aa60df907 10
+src/modules/ProofChamber/models/ProofChamberState.ts
+  s_14f2bbc9f385dd::t_59fbc0ab883ccd 25-26,28-29
+  s_14f2bbc9f385dd::t_abc3facfa09ac3 162,164
+  s_14f2bbc9f385dd::t_667052cf24f994 53-55,57-60
+src/modules/ProofChamber/presentations/views/ProofChamberPanel.tsx
+  s_14f2bbc9f385dd::t_400a51bdde2ca1 542-554
+  s_14f2bbc9f385dd::t_ec325c39ce3937 57-69
+  s_14f2bbc9f385dd::t_1bf810fac22f3e 744-754
+crates/proof-chamber/src/proof_chamber.rs
+  s_14f2bbc9f385dd::t_bd0294a9a087ff 9-11
+  s_14f2bbc9f385dd::t_3182e3068ad4ed 738-750
+  s_14f2bbc9f385dd::t_66c671f75433ab 565-569
+  s_14f2bbc9f385dd::t_739c2ecf268585 329-332
+  s_14f2bbc9f385dd::t_b7b8693b7e8e89 519-530
+  s_14f2bbc9f385dd::t_fc678e9a876f05 791
+  s_14f2bbc9f385dd::t_bc48255ed64942 338-346
+  s_14f2bbc9f385dd::t_34cc515d0912d8 452
+  s_14f2bbc9f385dd::t_4cc0513ebaf0e5 465-469
+  s_14f2bbc9f385dd::t_c8994063269fa4 616-618
+  s_14f2bbc9f385dd::t_c67fff5b518b69 347
+public/wasm/manifest.json
+  s_14f2bbc9f385dd::t_16972c9ad1b9d3 26,30-32,35
+public/wasm/proof-chamber/proof_chamber.d.ts
+  s_14f2bbc9f385dd::t_4eb3fa6043c882 1
+public/wasm/proof-chamber/proof_chamber_bg.wasm.d.ts
+  s_14f2bbc9f385dd::t_248f6f77351273 1
+src/modules/AudioEngine/wasm/proof_chamber.d.ts
+  s_14f2bbc9f385dd::t_f275a57fb756b6 1
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "968fbd77b9af16a458f1123dc01d795612aa6ada",
+  "prompts": {},
+  "sessions": {
+    "s_14f2bbc9f385dd": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f9a61a1d-66b3-4146-938d-a04f45f4b060",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
