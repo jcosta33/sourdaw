@@ -1496,19 +1496,40 @@ describe('bridgeLlmToolCalls', () => {
             bridge({ context: midiContext, calls: [fit] }),
             bridge({ context: lockedContext, calls: [fit] }),
             bridge({ calls: [{ name: 'fitClipToBeats', arguments: { clipId: 'clip-verse', targetBeats: 0 } }] }),
-            bridge({ calls: [{ name: 'fitClipToBeats', arguments: { clipId: 'clip-verse', targetBeats: Number.NaN } }] }),
+            bridge({ calls: [{ name: 'fitClipToBeats', arguments: { clipId: 'clip-verse', targetBeats: -1 } }] }),
+            bridge({
+                calls: [{ name: 'fitClipToBeats', arguments: { clipId: 'clip-verse', targetBeats: Number.NaN } }],
+            }),
+            bridge({
+                calls: [
+                    {
+                        name: 'fitClipToBeats',
+                        arguments: { clipId: 'clip-verse', targetBeats: Number.POSITIVE_INFINITY },
+                    },
+                ],
+            }),
+            bridge({ calls: [{ name: 'fitClipToBeats', arguments: { clipId: 'clip-verse', targetBeats: '8' } }] }),
             bridge({
                 calls: [{ name: 'fitClipToBeats', arguments: { clipId: 'clip-verse', targetBeats: 8, extra: true } }],
             }),
         ];
         const conflicts = [
+            { name: 'fitClipToBeats', arguments: { clipId: 'clip-verse', targetBeats: 4 } },
             { name: 'setClipStretchRatio', arguments: { clipId: 'clip-verse', ratio: 1.5 } },
             { name: 'setClipStretchMode', arguments: { clipId: 'clip-verse', mode: 'timestretch' } },
             { name: 'trimClipStart', arguments: { clipId: 'clip-verse', newStartBeat: 1 } },
             { name: 'trimClipEnd', arguments: { clipId: 'clip-verse', newEndBeat: 7 } },
             { name: 'nudgeClip', arguments: { clipId: 'clip-verse', beats: 1 } },
+            { name: 'lockClip', arguments: { clipId: 'clip-verse', locked: true } },
             { name: 'removeClip', arguments: { clipId: 'clip-verse' } },
+            { name: 'removeTrack', arguments: { trackId: 'track-vocals' } },
         ].flatMap((conflict) => [bridge({ calls: [fit, conflict] }), bridge({ calls: [conflict, fit] })]);
+        const crossfadeContext = createCrossfadeContext();
+        const crossfade = crossfadeCall({ clipAId: 'clip-verse', clipBId: 'clip-chorus', durationBeats: 1 });
+        conflicts.push(
+            bridge({ context: crossfadeContext, calls: [fit, crossfade] }),
+            bridge({ context: crossfadeContext, calls: [crossfade, fit] })
+        );
 
         expect(rejected.every((result) => result.actions.length === 0)).toBe(true);
         expect(conflicts.every((result) => result.actions.length === 1)).toBe(true);

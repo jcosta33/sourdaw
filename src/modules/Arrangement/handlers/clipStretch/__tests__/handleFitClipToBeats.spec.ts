@@ -73,8 +73,18 @@ describe('handleFitClipToBeats', () => {
             type: 'restoreClipStretchState',
             payload: {
                 clipId: 'c1',
-                expected: desc.inverseAction?.payload.replacement,
-                replacement: desc.inverseAction?.payload.expected,
+                expected: {
+                    startBeat: 2,
+                    endBeat: 10,
+                    mode: { present: true, value: 'off' },
+                    ratio: { present: true, value: 1.5 },
+                },
+                replacement: {
+                    startBeat: 2,
+                    endBeat: 10,
+                    mode: { present: true, value: 'repitch' },
+                    ratio: { present: true, value: 1.5 },
+                },
             },
         });
     });
@@ -113,5 +123,6 @@ describe('handleFitClipToBeats', () => {
 
     it('is undoable', () => {
         expect(handleFitClipToBeats.undoable).toBe(true);
+        expect(handleFitClipToBeats.requiresAbortCompensation).toBe(false);
     });
 });

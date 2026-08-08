@@ -1133,7 +1133,14 @@ const EXPECTED_GROUNDING = [
     },
     {
         actionType: 'fitClipToBeats',
-        intentPhrases: ['fit clip to beats', 'fit the clip to beats', 'fit clip duration', 'fit the clip duration'],
+        intentPhrases: [
+            'fit clip to',
+            'fit the clip to',
+            'fit clip to beats',
+            'fit the clip to beats',
+            'fit clip duration',
+            'fit the clip duration',
+        ],
         targetRules: [{ argument: 'clipId', capability: 'editable-audio-clip' }],
         valueRules: [
             {
