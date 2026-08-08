@@ -30,11 +30,28 @@ function makeAudioParamStub() {
  * `offlineAutomationExemptions.ts`, and the whole point is that they are
  * different files with different authors.
  *
- * Known limit, stated rather than hidden: a Vitest census cannot construct the
- * real worklet nodes (no AudioContext, no wasm), so a node that gained a
- * `scheduleParam` without being added here would still be counted device-level.
- * The parameter-level half — this spec's subject — is not affected: within a
- * listed device the predicate under test is the shipped one.
+ * **Be clear about which half of this census is load-bearing.**
+ *
+ * The *device-level* half is tautological and is not a capability check. This
+ * table decides which branch the walk takes, so for a device absent from it the
+ * strategy is constructed with no scheduling pair and returns null by
+ * construction — `null === null`. It is a **population** guard: it proves the
+ * enumeration reached the device and that the device carries a reason, not that
+ * the device is genuinely incapable. A node that grew a `scheduleParam` without
+ * being added here would still be counted device-level and nothing would red.
+ * Closing that needs a real AudioContext and a real worklet, which Vitest does
+ * not have.
+ *
+ * The *parameter-level* half — this spec's subject — is not tautological,
+ * because the verdict and the expectation come from different files: the
+ * ordinal maps below versus `offlineAutomationExemptions.ts`.
+ *
+ * One more thing not to overstate: this re-implements `acceptsScheduledParam`
+ * as `Object.hasOwn(map, name)` rather than calling the node's own, which is
+ * created inside `createFermenterNode` and unreachable here. What is shipped
+ * and under test is the **ordinal map**; the predicate around it is restated.
+ * The map's ordinals are pinned against the real binary by
+ * `wasm/__tests__/dawDspFermenterAutomationOrdinals.spec.ts`.
  */
 const SCHEDULING_CAPABLE_NODES: ReadonlyArray<{
     accepts: (deviceId: string) => boolean;
@@ -46,8 +63,6 @@ const SCHEDULING_CAPABLE_NODES: ReadonlyArray<{
 ];
 
 type NativeDspCensus = {
-    factoriesWalked: number;
-    pairsWalked: number;
     verdicts: number;
     deviceLevelExemptions: number;
     parameterLevelExemptions: number;
@@ -69,8 +84,6 @@ type NativeDspCensus = {
 function walkNativeDspCensus(): NativeDspCensus {
     const plugins = getBuiltinPlugins();
     const census: NativeDspCensus = {
-        factoriesWalked: 0,
-        pairsWalked: 0,
         verdicts: 0,
         deviceLevelExemptions: 0,
         parameterLevelExemptions: 0,
@@ -82,7 +95,6 @@ function walkNativeDspCensus(): NativeDspCensus {
     };
 
     for (const factory of NATIVE_DSP_DEVICE_FACTORIES) {
-        census.factoriesWalked += 1;
         const descriptors = plugins.filter((plugin) => factory.matches(plugin.id));
         if (descriptors.length === 0) {
             census.noDescriptorFactories.push(factory.type);
@@ -93,10 +105,11 @@ function walkNativeDspCensus(): NativeDspCensus {
             descriptors.some((descriptor) => entry.accepts(descriptor.id))
         )?.params;
         const deviceLevel = scheduled === undefined;
-        // The real strategy. A device-level entry is built with no scheduling
-        // pair at all, exactly as `NativeDspDeviceStrategy` sees a node that
-        // declares none — so its nulls come from the production branch rather
-        // than from this file deciding the answer.
+        // The real strategy, but note which way the causality runs: for a
+        // device absent from SCHEDULING_CAPABLE_NODES this file supplies no
+        // scheduling pair, so the null below is this file's decision, not the
+        // device's. Only the parameter-level branch asks a question whose answer
+        // this file does not already contain.
         const strategy = new NativeDspDeviceStrategy({
             workletNode: {} as AudioWorkletNode,
             ready: Promise.resolve({}),
@@ -114,7 +127,6 @@ function walkNativeDspCensus(): NativeDspCensus {
                 if (!parameter.automatable) {
                     continue;
                 }
-                census.pairsWalked += 1;
                 const pair = `${factory.type}:${parameter.id}`;
                 const binding = strategy.resolveOfflineAutomation(parameter.id);
                 const exemption = deviceLevel
@@ -246,32 +258,26 @@ describe('offline device-param automation capability coverage', () => {
         expect(census.uncovered).toEqual([]);
         expect(census.rottenExemptions).toEqual([]);
 
-        // (i) Cardinality pinned against the registry sourced directly, not
-        // against the census's own walk — a walk that silently stopped at the
-        // first factory would otherwise agree with itself.
-        expect(census.factoriesWalked).toBe(NATIVE_DSP_DEVICE_FACTORIES.length);
-
         // (iv) The two classes are counted separately. A census reporting one
         // total hides the entire parameter-level class: a device passes a
         // per-device census the moment it schedules a single parameter, which is
         // how Fermenter's ninety survived the last census design.
+        //
+        // These three exact counts are also the presence pin for the two empty
+        // assertions above (ADR 0015 rule 4). A walk that went blind reaches
+        // zero pairs and cannot produce 21/182/105, so `uncovered === []` cannot
+        // be satisfied by an empty extraction — the shape that let a device-write
+        // census spend 41 commits comparing nothing against a four-element
+        // expectation.
         expect(census.verdicts).toBe(21);
         expect(census.deviceLevelExemptions).toBe(182);
         expect(census.parameterLevelExemptions).toBe(105);
-        expect(census.deviceLevelExemptions + census.parameterLevelExemptions).toBe(287);
 
         // (v) `knead` is a factory entry and a canonical native device type with
         // no descriptor anywhere. It is not an exemption row: two of the three
         // laws that read a descriptor fail *open* when none is found, so a
         // Knead parameter is automatable and unclamped by default. AC-6 owns it.
         expect(census.noDescriptorFactories).toEqual([...NO_DESCRIPTOR_NATIVE_DEVICE_TYPES]);
-
-        // Presence pin for the absence assertions above (ADR 0015 rule 4): the
-        // walk reached real pairs rather than going blind and agreeing with an
-        // empty extraction. A device-write census once spent 41 commits
-        // comparing an empty extraction against a four-element expectation.
-        expect(census.pairsWalked).toBe(census.verdicts + 287);
-        expect(census.pairsWalked).toBeGreaterThan(300);
     });
 
     it('counts Fermenter’s own coverage as the parameter-level class, not as a covered device', () => {

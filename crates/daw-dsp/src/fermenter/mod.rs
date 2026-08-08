@@ -44,9 +44,15 @@ const MAX_BLOCK_EVENTS: usize = 256;
 ///
 /// The two tables use different spellings on purpose (`osc_level`/`oscLevel`,
 /// `mod_lfo_to_pitch`/`lfoPitchAmount`), so their only contract is that index
-/// `n` names the same parameter on both sides. Nothing type-checks that.
-/// **Append only** — inserting or transposing an entry repoints every ordinal
-/// after it, silently, on both sides.
+/// `n` names the same parameter on both sides. Nothing in either language
+/// type-checks that, and no test in this crate can see a transposition.
+///
+/// The contract is enforced from TypeScript, against the shipped binary, by
+/// `src/modules/AudioEngine/wasm/__tests__/dawDspFermenterAutomationOrdinals.spec.ts`:
+/// it reproduces each Rust name here from the TS key through the production
+/// `mapFermenterParamToDspParam` translation and asserts `set_param_by_id(n, v)`
+/// renders identically to `set_param(name, v)`. Editing this array without
+/// making the matching edit to `FERMENTER_AUTOMATION_PARAM_IDS` fails there.
 const AUTOMATION_PARAM_NAMES: [&str; 16] = [
     "osc_level",
     "cutoff",
@@ -313,12 +319,20 @@ mod tests {
             .sum()
     }
 
-    /// The TS/Rust automation tables are two hand-written arrays whose only
-    /// contract is that index `n` names the same parameter on both sides, and
-    /// nothing type-checks that. A length pin compares two constants and
-    /// survives a transposition; a name pin is unwritable, because the two
-    /// sides spell the same parameter differently on purpose. So the ordinal is
-    /// pinned by what it *does*.
+    /// **This covers ordinal 15 only, and is not the ordinal pin.**
+    ///
+    /// The whole map is pinned on the TypeScript side by
+    /// `src/modules/AudioEngine/wasm/__tests__/dawDspFermenterAutomationOrdinals.spec.ts`,
+    /// which drives every ordinal through the *shipped binary* and compares it
+    /// against `set_param` under the name the production translation derives.
+    /// That is the guard a transposition has to get past; this one is a fast
+    /// native-side check that does not need a wasm build.
+    ///
+    /// Be precise about what it does and does not catch: transposing entries
+    /// **other than 15** leaves this test — and the entire crate suite — green.
+    /// Swapping ordinals 0 and 1 (`osc_level`/`cutoff`, an automated level ride
+    /// bouncing as a filter sweep) was measured at `508 passed; 0 failed`,
+    /// exit 0, while the TypeScript pin failed on both rows.
     ///
     /// Drives between waveform 0 (sine) and 2 (square). Neither is the engine's
     /// constructed default of 1 (saw), so an ordinal that reaches nothing

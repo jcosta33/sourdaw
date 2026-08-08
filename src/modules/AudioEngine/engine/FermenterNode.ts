@@ -34,17 +34,21 @@ const DEFAULT_WASM_URL = '/wasm/daw-dsp/daw_dsp_bg.wasm';
  * `AUTOMATION_PARAM_NAMES` (`crates/daw-dsp/src/fermenter/mod.rs`) positionally.
  * The two sides use different spellings by design (`oscLevel`/`osc_level`,
  * `lfoPitchAmount`/`mod_lfo_to_pitch`), so their only contract is **ordinal
- * agreement** and no textual pin can express it.
+ * agreement**, and no compiler in either language checks it.
  *
- * Two consequences for anyone editing this map:
- *  - **Append only.** Inserting or reordering silently repoints every ordinal
- *    after the edit at a different parameter, on both the live-scheduled and the
- *    offline path, with no type error anywhere.
- *  - The ordinals are pinned behaviourally, not textually. `oscWaveform`'s is
- *    pinned by `ordinal_15_reaches_the_oscillator_waveform` in
- *    `crates/daw-dsp/src/fermenter/mod.rs`, which drives `set_param_by_id(15, …)`
- *    through the real engine and asserts the rendered signal changes. The other
- *    fifteen are not yet pinned — SPEC-parameter-automation-coverage AC-3.
+ * **Every ordinal here is pinned**, by
+ * `wasm/__tests__/dawDspFermenterAutomationOrdinals.spec.ts`: it derives each
+ * Rust name from the key beside it through `mapFermenterParamToDspParam` — the
+ * same translation the live write path uses — and asserts that driving the
+ * ordinal through the shipped wasm renders identically to driving that name.
+ * Each row also asserts its probe actually moves the engine, so the comparison
+ * cannot pass by both arms doing nothing.
+ *
+ * So this map may be edited freely, including inserting rather than appending:
+ * a transposition fails that spec on both affected rows. What it must stay is
+ * **dense 0..n-1** and **in step with `AUTOMATION_PARAM_NAMES`**
+ * (`crates/daw-dsp/src/fermenter/mod.rs`); adding a key here needs the matching
+ * Rust entry, a probe in that spec, and a wasm rebuild.
  */
 export const FERMENTER_AUTOMATION_PARAM_IDS: Readonly<Record<string, number>> = {
     oscLevel: 0,
