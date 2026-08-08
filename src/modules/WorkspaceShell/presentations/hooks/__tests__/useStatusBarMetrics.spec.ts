@@ -382,6 +382,7 @@ describe('useStatusBarMetrics', () => {
             masterGain: 1,
             currentTime: 0,
             baseLatency: 0.01,
+            outputLatency: 0.02,
         });
         // No meter tap: the engine cannot say what the output level is. Rendering
         // "-∞ dB" here is a lie — it is the readout for a genuinely silent mix, so
