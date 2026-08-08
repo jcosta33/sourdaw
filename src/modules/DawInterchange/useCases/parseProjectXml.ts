@@ -68,6 +68,17 @@ function parseTransport(transport: XmlQuery | null): {
 }
 
 function classifyTrackKind(track: XmlQuery): DawProjectParsedTrack['kind'] {
+    // An explicit channel role wins over `contentType`. A bus carries
+    // contentType="audio" — that is what audio flows through it — so reading
+    // contentType first classified every bus as a plain audio track and lost
+    // the role on every round-trip (audit M-261).
+    const groupType = track.attr('type');
+    if (groupType === 'masterChannel' || track.attr('master') === 'true') {
+        return 'master';
+    }
+    if (groupType === 'bus') {
+        return 'bus';
+    }
     const role = track.attr('contentType') ?? '';
     const loweredRole = role.toLowerCase();
     if (loweredRole.includes('audio')) {
@@ -79,13 +90,6 @@ function classifyTrackKind(track: XmlQuery): DawProjectParsedTrack['kind'] {
     const hasChildTrack = track.children('Track').length > 0;
     if (hasChildTrack) {
         return 'folder';
-    }
-    const groupType = track.attr('type');
-    if (groupType === 'masterChannel' || track.attr('master') === 'true') {
-        return 'master';
-    }
-    if (groupType === 'bus') {
-        return 'bus';
     }
     return 'audio';
 }

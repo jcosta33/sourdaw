@@ -30,6 +30,24 @@ function contentTypeForKind(kind: ProjectTrack['kind']): string {
     return 'tracks';
 }
 
+/**
+ * The `type` attribute the parser reads to recover a channel role.
+ *
+ * `contentType` cannot carry it: master is "mix" and a bus is indistinguishable
+ * from an audio track, so a round-trip demoted both to plain audio tracks
+ * (audit M-261). Empty for the kinds `contentType` already identifies, so
+ * ordinary tracks keep the exact element they had before.
+ */
+function typeAttributeForKind(kind: ProjectTrack['kind']): string {
+    if (kind === 'master') {
+        return ' type="masterChannel"';
+    }
+    if (kind === 'bus') {
+        return ' type="bus"';
+    }
+    return '';
+}
+
 function formatNumber(value: number): string {
     if (!Number.isFinite(value)) {
         return '0';
@@ -97,7 +115,7 @@ function renderTrackNode(node: TrackTreeNode, indent: string): string {
     const { track, children } = node;
     const parts: string[] = [];
     parts.push(
-        `${indent}<Track id="${escapeXml(track.id)}" name="${escapeXml(track.name)}" contentType="${contentTypeForKind(track.kind)}" color="${escapeXml(track.color || '#64748b')}">`
+        `${indent}<Track id="${escapeXml(track.id)}" name="${escapeXml(track.name)}" contentType="${contentTypeForKind(track.kind)}"${typeAttributeForKind(track.kind)} color="${escapeXml(track.color || '#64748b')}">`
     );
     parts.push(renderChannelXml(track, `${indent}    `));
     for (const child of children) {
