@@ -717,14 +717,8 @@ Re-measured after additional PRs since threshold raise #3 (PR #1231). Lines cros
 - **PR #1327**: measureTruePeak — inter-sample peak, multi-channel, linearity — 8 tests.
 - **PR #1328**: readLegacyChordTrackStorage — read, remove, stale-guard, error swallow — 6 tests.
 - **PR #1329**: buildDawProjectZip — zip output, content, determinism — 7 tests.
+- **PR #1331**: clipboardStore — cross-field preservation (clip/note) — 7 tests.
+- **PR #1332**: trackPitch — windowing, clarity threshold, note conversion — 8 tests.
+- **PR #1333**: trigger16Level — velocity/tune/decay/filter scaling — 6 tests.
 
-| Metric | Threshold (prev) | Measured | Threshold (new) |
-|--------|-----------------|----------|-----------------|
-| Lines | 90 | **90.30%** | 90 |
-| Statements | 87 | **87.09%** | 87 |
-| Branches | 76 | **76.20%** | 76 |
-| Functions | 88 | **88.01%** | 88 |
-
-Thresholds held at 90/87/76/88 — margins thin (0.2–0.3%); will raise after next wave batch.
-
-**Campaign total to date: 209 PRs, ~2292 assertions. Lines coverage at 90.30%.**
+**Campaign total to date: 212 PRs, ~2313 assertions. Lines coverage at 90.30%.**
