@@ -213,6 +213,7 @@ export const TrackListView = ({
                                     variant="ghost"
                                     size="icon-xs"
                                     aria-label={`Track height: ${HEIGHT_LABELS[currentHeight]}`}
+                                    data-testid="track-height-cycle"
                                     onClick={() => {
                                         const idx = HEIGHT_CYCLE.indexOf(currentHeight);
                                         const next = HEIGHT_CYCLE[(idx + 1) % HEIGHT_CYCLE.length]!;
@@ -247,6 +248,7 @@ export const TrackListView = ({
                                     variant="ghost"
                                     size="icon-xs"
                                     aria-label="Add folder"
+                                    data-testid="add-folder-button"
                                     onClick={() =>
                                         createFolder(
                                             `Folder ${tracks.filter((time) => time.kind === 'folder').length + 1}`
