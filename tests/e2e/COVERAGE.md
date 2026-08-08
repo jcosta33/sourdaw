@@ -793,6 +793,9 @@ Re-measured after additional PRs since threshold raise #3 (PR #1231). Lines cros
 - **PR #1467**: Status bar — footer, undo history, collaboration, metrics — 5 tests.
 - **PR #1469**: Generate panel tabs — MIDI, Audio switching — 5 tests.
 
-**E2E: 199 tests across 45 spec files using data-testid selectors.**
+- **PR #1471**: EDM template tracks — mute, solo, transport, playhead — 5 tests.
+- **PR #1472**: Keyboard shortcuts — Space, Escape, M, L, Cmd+K — 5 tests.
 
-**Campaign total to date: 296 PRs, ~2772 assertions. Lines coverage at 90.30%.**
+**E2E: 209 tests across 47 spec files using data-testid selectors.**
+
+**Campaign total to date: 299 PRs, ~2782 assertions. Lines coverage at 90.30%.**
