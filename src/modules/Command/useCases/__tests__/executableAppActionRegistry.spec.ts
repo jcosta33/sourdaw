@@ -121,6 +121,10 @@ describe('executableAppActionRegistry', () => {
             },
         });
         expect(descriptor?.parameters.properties).not.toHaveProperty('expectedEnabled');
+        expect(descriptor?.intentPhrases).toContain('enable punch in/out');
+        expect(descriptor?.intentPhrases).toContain('disable punch in/out');
+        expect(descriptor?.intentPhrases).not.toContain('enable punch recording');
+        expect(descriptor?.intentPhrases).not.toContain('disable punch recording');
         expect(descriptor?.intentPhrases).not.toContain('punch');
         expect(descriptor?.intentPhrases).not.toContain('punch in');
         expect(descriptor?.intentPhrases).not.toContain('punch out');

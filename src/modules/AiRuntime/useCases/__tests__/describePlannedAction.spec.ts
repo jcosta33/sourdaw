@@ -396,14 +396,14 @@ describe('describePlannedAction', () => {
         );
     });
 
-    it('describes punch enablement as a stopped-transport next-start change with unchanged endpoints', () => {
+    it('describes durable punch enablement with unchanged endpoints and background capture', () => {
         expect(
             describePlannedAction({
                 action: { type: 'setPunchEnabled', payload: { enabled: false } },
                 context,
             })
         ).toBe(
-            'Disable punch recording for the next transport start; punch region remains beats 4–12; background capture is unchanged'
+            'Disable Transport Punch In/Out until changed; applies to the next and later transport starts; punch region remains beats 4–12; background capture is unchanged'
         );
     });
 });

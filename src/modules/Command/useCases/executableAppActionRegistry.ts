@@ -1382,14 +1382,14 @@ export const executableAppActionDescriptors = [
         actionType: 'setPunchEnabled',
         risk: 'authority-sensitive',
         description:
-            'Enable or disable punch recording for the next transport start without changing the punch region or background capture.',
+            'Enable or disable Transport Punch In/Out until changed without changing the punch region or background capture.',
         intentPhrases: [
-            'enable punch recording',
-            'disable punch recording',
+            'enable punch in/out',
+            'disable punch in/out',
+            'turn punch in/out on',
+            'turn punch in/out off',
             'enable punch mode',
             'disable punch mode',
-            'turn punch recording on',
-            'turn punch recording off',
             'turn punch mode on',
             'turn punch mode off',
         ],
@@ -1398,16 +1398,11 @@ export const executableAppActionDescriptors = [
             {
                 argument: 'enabled',
                 kind: 'boolean-intent',
-                truePhrases: [
-                    'enable punch recording',
-                    'enable punch mode',
-                    'turn punch recording on',
-                    'turn punch mode on',
-                ],
+                truePhrases: ['enable punch in/out', 'turn punch in/out on', 'enable punch mode', 'turn punch mode on'],
                 falsePhrases: [
-                    'disable punch recording',
+                    'disable punch in/out',
+                    'turn punch in/out off',
                     'disable punch mode',
-                    'turn punch recording off',
                     'turn punch mode off',
                 ],
             },
@@ -1416,7 +1411,7 @@ export const executableAppActionDescriptors = [
             properties: {
                 enabled: {
                     type: 'boolean',
-                    description: 'true=enable punch recording, false=disable; punch endpoints remain unchanged',
+                    description: 'true=enable Transport Punch In/Out, false=disable; punch endpoints remain unchanged',
                 },
             },
             required: ['enabled'],

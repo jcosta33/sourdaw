@@ -8,7 +8,7 @@ export const handleSetPunchEnabled = createHandler<'setPunchEnabled'>({
     isNoop: (action) => getTransportState()?.punchInEnabled === action.payload.enabled,
     describe: (action) => {
         const previous = getTransportState()?.punchInEnabled;
-        const label = action.payload.enabled ? 'Enable punch recording' : 'Disable punch recording';
+        const label = action.payload.enabled ? 'Enable Punch In/Out' : 'Disable Punch In/Out';
         if (previous === undefined) {
             return { label, inverseAction: null };
         }

@@ -37,6 +37,20 @@ export const transportPresets: readonly PresetAction[] = [
         buildAction: () => ({ type: 'toggleMetronome' }),
     },
     {
+        id: 'punch-in-out-on',
+        label: 'Enable Punch In/Out',
+        keywords: ['enable punch in/out', 'turn punch in/out on'],
+        category: 'Transport',
+        buildAction: () => ({ type: 'setPunchEnabled', payload: { enabled: true } }),
+    },
+    {
+        id: 'punch-in-out-off',
+        label: 'Disable Punch In/Out',
+        keywords: ['disable punch in/out', 'turn punch in/out off'],
+        category: 'Transport',
+        buildAction: () => ({ type: 'setPunchEnabled', payload: { enabled: false } }),
+    },
+    {
         id: 'count-in',
         label: 'Toggle Count-In',
         keywords: ['count in', 'count-in', 'precount', 'toggle count'],

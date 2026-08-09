@@ -89,7 +89,8 @@ export function tryPresetMatch(normalized: string, context: PresetContext): Runt
                 action.type === 'retrogradeNotes' ||
                 action.type === 'quantizeNoteLengths' ||
                 action.type === 'scaleAllVelocities' ||
-                action.type === 'setAllVelocities'
+                action.type === 'setAllVelocities' ||
+                action.type === 'setPunchEnabled'
         )
     ) {
         return [];

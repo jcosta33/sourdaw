@@ -340,7 +340,7 @@ describe('parsePromptToActions', () => {
             completePlan([{ name: 'setPunchEnabled', arguments: { enabled: true } }])
         );
 
-        const result = await parsePromptToActions('enable punch recording', {
+        const result = await parsePromptToActions('enable punch in/out', {
             ...baseContext,
             punchInEnabled: false,
         });
@@ -353,7 +353,7 @@ describe('parsePromptToActions', () => {
             'command user message',
             getExecutableAppActionToolSchemas(),
             undefined,
-            'enable punch recording'
+            'enable punch in/out'
         );
     });
 

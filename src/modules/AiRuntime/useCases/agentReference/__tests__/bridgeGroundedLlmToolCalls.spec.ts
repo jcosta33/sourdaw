@@ -4428,37 +4428,37 @@ describe('bridgeGroundedLlmToolCalls', () => {
     });
 
     it('grounds only one direct stopped-transport punch enablement command', () => {
-        const enabled = bridge([{ name: 'setPunchEnabled', arguments: { enabled: true } }], 'enable punch recording', {
+        const enabled = bridge([{ name: 'setPunchEnabled', arguments: { enabled: true } }], 'enable punch in/out', {
             ...projectContext,
             punchInEnabled: false,
         });
-        const disabled = bridge([{ name: 'setPunchEnabled', arguments: { enabled: false } }], 'turn punch mode off');
+        const disabled = bridge([{ name: 'setPunchEnabled', arguments: { enabled: false } }], 'turn punch in/out off');
         const polite = bridge(
             [{ name: 'setPunchEnabled', arguments: { enabled: true } }],
-            'please enable punch mode!',
+            'please enable punch in/out!',
             { ...projectContext, punchInEnabled: false }
         );
         const rejected = [
             bridge([{ name: 'setPunchEnabled', arguments: { enabled: true } }], 'punch'),
             bridge([{ name: 'setPunchEnabled', arguments: { enabled: true } }], 'set punch in at beat 20'),
-            bridge([{ name: 'setPunchEnabled', arguments: { enabled: false } }], 'enable punch recording'),
-            bridge([{ name: 'setPunchEnabled', arguments: { enabled: true } }], 'do not enable punch recording'),
-            bridge([{ name: 'setPunchEnabled', arguments: { enabled: true } }], 'enable punch recording, cancel that'),
-            bridge([{ name: 'setPunchEnabled', arguments: { enabled: true } }], 'can you enable punch recording?'),
-            bridge([{ name: 'setPunchEnabled', arguments: { enabled: true } }], 'if stopped, enable punch recording'),
+            bridge([{ name: 'setPunchEnabled', arguments: { enabled: false } }], 'enable punch in/out'),
+            bridge([{ name: 'setPunchEnabled', arguments: { enabled: true } }], 'do not enable punch in/out'),
+            bridge([{ name: 'setPunchEnabled', arguments: { enabled: true } }], 'enable punch in/out, cancel that'),
+            bridge([{ name: 'setPunchEnabled', arguments: { enabled: true } }], 'can you enable punch in/out?'),
+            bridge([{ name: 'setPunchEnabled', arguments: { enabled: true } }], 'if stopped, enable punch in/out'),
             bridge(
                 [{ name: 'setPunchEnabled', arguments: { enabled: true } }],
-                'enable punch recording; set tempo to 100'
+                'enable punch in/out; set tempo to 100'
             ),
             bridge([{ name: 'setPunchEnabled', arguments: { enabled: true } }], 'enable background punch recording'),
-            bridge([{ name: 'setPunchEnabled', arguments: { enabled: true } }], 'enable punch recording is a bad idea'),
+            bridge([{ name: 'setPunchEnabled', arguments: { enabled: true } }], 'enable punch recording'),
+            bridge([{ name: 'setPunchEnabled', arguments: { enabled: true } }], 'enable punch in/out is a bad idea'),
             bridge([{ name: 'setPunchIn', arguments: { beat: 20 } }], 'enable punch recording'),
-            bridge([{ name: 'setTempo', arguments: { bpm: 100 } }], 'enable punch recording; set tempo to 100'),
-            bridge([{ name: 'setPunchEnabled', arguments: { enabled: false } }], 'disable punch recording', {
+            bridge([{ name: 'setPunchEnabled', arguments: { enabled: false } }], 'disable punch in/out', {
                 ...projectContext,
                 isPlaying: true,
             }),
-            bridge([{ name: 'setPunchEnabled', arguments: { enabled: false } }], 'disable punch recording', {
+            bridge([{ name: 'setPunchEnabled', arguments: { enabled: false } }], 'disable punch in/out', {
                 ...projectContext,
                 isRecording: true,
             }),
@@ -4469,6 +4469,46 @@ describe('bridgeGroundedLlmToolCalls', () => {
         expect(polite.actions).toEqual([{ type: 'setPunchEnabled', payload: { enabled: true } }]);
         for (const result of rejected) {
             expect(result.actions).toEqual([]);
+        }
+    });
+
+    it('omits an all-cancelled punch-family request while preserving one unrelated exact action', () => {
+        const punchFirst = bridge(
+            [{ name: 'setTempo', arguments: { bpm: 100 } }],
+            'enable punch in/out, cancel that; set tempo to 100'
+        );
+        const punchLast = bridge(
+            [{ name: 'setTempo', arguments: { bpm: 100 } }],
+            'set tempo to 100; enable punch in/out, cancel that'
+        );
+
+        expect(punchFirst.actions).toEqual([{ type: 'setTempo', payload: { bpm: 100 } }]);
+        expect(punchLast.actions).toEqual([{ type: 'setTempo', payload: { bpm: 100 } }]);
+    });
+
+    it('rejects mixed active and cancelled punch-family requests in both orders', () => {
+        const activeFirst = bridge(
+            [{ name: 'setPunchEnabled', arguments: { enabled: true } }],
+            'enable punch in/out; set punch in at beat 20, cancel that',
+            { ...projectContext, punchInEnabled: false }
+        );
+        const cancelledFirst = bridge(
+            [{ name: 'setPunchEnabled', arguments: { enabled: true } }],
+            'set punch in at beat 20, cancel that; enable punch in/out',
+            { ...projectContext, punchInEnabled: false }
+        );
+        const endpointFirst = bridge(
+            [{ name: 'setPunchIn', arguments: { beat: 20 } }],
+            'set punch in at beat 20; disable punch in/out, cancel that'
+        );
+        const cancelledEnablementFirst = bridge(
+            [{ name: 'setPunchIn', arguments: { beat: 20 } }],
+            'disable punch in/out, cancel that; set punch in at beat 20'
+        );
+
+        for (const result of [activeFirst, cancelledFirst, endpointFirst, cancelledEnablementFirst]) {
+            expect(result.actions).toEqual([]);
+            expect(result.rejections[0]?.reason).toContain('exactly one direct command');
         }
     });
 });

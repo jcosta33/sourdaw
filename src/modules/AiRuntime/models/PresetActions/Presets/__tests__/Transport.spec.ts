@@ -43,10 +43,13 @@ describe('transportPresets', () => {
         expect(actions.map((action) => action.type)).not.toContain('togglePunch');
     });
 
-    it('does not fuzzy-match punch commands before provider grounding', () => {
+    it('offers explicit punch in/out picker entries without a state-dependent toggle', () => {
+        const enable = transportPresets.find((preset) => preset.id === 'punch-in-out-on');
+        const disable = transportPresets.find((preset) => preset.id === 'punch-in-out-off');
         const keywords = transportPresets.flatMap((preset) => preset.keywords);
 
-        expect(transportPresets.some((preset) => preset.id.startsWith('punch'))).toBe(false);
+        expect(enable?.buildAction(context)).toEqual({ type: 'setPunchEnabled', payload: { enabled: true } });
+        expect(disable?.buildAction(context)).toEqual({ type: 'setPunchEnabled', payload: { enabled: false } });
         expect(keywords).not.toContain('punch');
         expect(keywords).not.toContain('punch in');
         expect(keywords).not.toContain('punch out');

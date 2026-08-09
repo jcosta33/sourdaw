@@ -1245,7 +1245,7 @@ function resolveActionPromptScope({
         catalog,
         plannedActionNames
     );
-    if (isPunchActionType(actionName) || hasPunchEndpointReference(prompt)) {
+    if (isPunchActionType(actionName) || hasPunchFamilyReference(prompt)) {
         const promptActionAnalysis = analyzePromptActionRequests(prompt, catalog);
         const hasCancelledPunchRequest = promptActionAnalysis.requests.some(
             (request) => isPunchActionType(request.actionType) && request.cancelled
@@ -3320,8 +3320,8 @@ function isPunchActionType(actionType: string): actionType is 'setPunchIn' | 'se
     return actionType === 'setPunchIn' || actionType === 'setPunchOut' || actionType === 'setPunchEnabled';
 }
 
-function hasPunchEndpointReference(prompt: string): boolean {
-    return /\bpunch\s+(?:in|out)\b/u.test(normalizePromptText(maskQuotedLabels(prompt)));
+function hasPunchFamilyReference(prompt: string): boolean {
+    return /\bpunch\b/u.test(normalizePromptText(maskQuotedLabels(prompt)));
 }
 
 function isExactPunchCommandClause(clause: PromptClause): boolean {
@@ -3336,7 +3336,7 @@ function isExactPunchCommandClause(clause: PromptClause): boolean {
 function isExactPunchEnabledCommandClause(clause: PromptClause): boolean {
     let commandSource = clause.masked.trim();
     commandSource = commandSource.replace(/^please\s+/iu, '');
-    return /^(?:(?:enable|disable)\s+punch\s+(?:recording|mode)|turn\s+punch\s+(?:recording|mode)\s+(?:on|off))(?:\s+please)?\s*[!.]?$/iu.test(
+    return /^(?:(?:enable|disable)\s+punch\s+(?:in\s*\/\s*out|mode)|turn\s+punch\s+(?:in\s*\/\s*out|mode)\s+(?:on|off))(?:\s+please)?\s*[!.]?$/iu.test(
         commandSource
     );
 }

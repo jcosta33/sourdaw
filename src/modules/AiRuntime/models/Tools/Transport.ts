@@ -53,7 +53,7 @@ export const transportTools: readonly ToolSchema[] = [
     tool('setPunchOut', 'Set the punch-out point for recording.', { beat: { type: 'number' } }, ['beat']),
     tool(
         'setPunchEnabled',
-        'Enable or disable punch recording for the next transport start without changing punch endpoints.',
+        'Enable or disable Transport Punch In/Out until changed without changing punch endpoints.',
         { enabled: { type: 'boolean' } },
         ['enabled']
     ),

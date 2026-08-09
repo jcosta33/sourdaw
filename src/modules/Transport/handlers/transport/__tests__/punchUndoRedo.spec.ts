@@ -189,7 +189,7 @@ describe('Transport punch action undo/redo', () => {
                 payload: { enabled: true },
             })
         ).toEqual({
-            label: 'Enable punch recording',
+            label: 'Enable Punch In/Out',
             inverseAction: {
                 type: 'setPunchEnabled',
                 payload: { enabled: false, expectedEnabled: true },

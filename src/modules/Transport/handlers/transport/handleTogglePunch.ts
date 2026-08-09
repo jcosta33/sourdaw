@@ -9,11 +9,11 @@ export const handleTogglePunch = createHandler<'togglePunch'>({
     describe: () => {
         const previous = getTransportState()?.punchInEnabled;
         if (previous === undefined) {
-            return { label: 'Toggle punch recording', inverseAction: null };
+            return { label: 'Toggle Punch In/Out', inverseAction: null };
         }
         const next = !previous;
         return {
-            label: next ? 'Enable punch recording' : 'Disable punch recording',
+            label: next ? 'Enable Punch In/Out' : 'Disable Punch In/Out',
             inverseAction: {
                 type: 'setPunchEnabled',
                 payload: { enabled: previous, expectedEnabled: next },

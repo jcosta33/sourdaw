@@ -631,10 +631,10 @@ function bridgeToolCall({
             return rejection(index, call.name, 'Expected only a boolean enabled value');
         }
         if (context.isPlaying || context.isRecording) {
-            return rejection(index, call.name, 'Punch recording mode can change only while transport is stopped');
+            return rejection(index, call.name, 'Transport Punch In/Out can change only while transport is stopped');
         }
         if (context.punchInEnabled === args.enabled) {
-            return rejection(index, call.name, 'Requested punch recording mode already matches project state');
+            return rejection(index, call.name, 'Requested Transport Punch In/Out state already matches project state');
         }
         return { type: 'setPunchEnabled', payload: { enabled: args.enabled } };
     }
