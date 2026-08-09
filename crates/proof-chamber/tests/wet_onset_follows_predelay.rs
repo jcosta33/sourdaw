@@ -126,6 +126,11 @@ const ENVELOPE_WINDOW_MS: f32 = 5.0;
 /// allow.
 const HOLE_FLOOR_DB: f32 = -120.0;
 
+/// How far apart the same onset may land on the clock at two sample rates.
+/// Sized from the measured spread — see
+/// `onset_lands_at_the_same_time_on_the_clock_at_every_rate`.
+const CROSS_RATE_TOLERANCE_MS: f32 = 0.1;
+
 /// Algorithms whose output is expected to begin as soon as their Pre-Delay
 /// expires.
 ///
@@ -357,10 +362,16 @@ fn no_engine_stays_silent_longer_than_the_predelay_it_was_given() {
 /// that freedom: a buffer whose length stopped following `sample_rate` puts the
 /// two onsets in different places on the clock.
 ///
-/// The tolerance is one millisecond, which is four samples at 44.1 kHz — enough
-/// for the rounding in `scale_delay` and in the early-reflection tap table,
-/// which are integer sample counts derived from a rate ratio, and far below the
-/// 8.8 ms a 48 kHz-shaped pre-delay buffer would introduce at 44.1 kHz.
+/// The tolerance is sized from the spread the engines actually show, not from a
+/// round number. Measured across all sixteen rows below, the largest
+/// disagreement between 44.1 and 48 kHz at head is **0.0187 ms** — under one
+/// sample at either rate, which is the rounding in `scale_delay` and the
+/// early-reflection tap table, both integer sample counts derived from a rate
+/// ratio. `CROSS_RATE_TOLERANCE_MS` is 0.1, five times that and no more.
+///
+/// The first draft used 1 ms, which is fifty times the real spread, and it was
+/// too loose to be worth having: a hard-coded 48 kHz in the early-reflection
+/// tap table produces a 0.29 ms discrepancy and passed. It reds at 0.1.
 #[test]
 fn onset_lands_at_the_same_time_on_the_clock_at_every_rate() {
     for (algorithm, name) in PROMPT {
@@ -383,10 +394,11 @@ fn onset_lands_at_the_same_time_on_the_clock_at_every_rate() {
             let (first_rate, first) = measured[0];
             for &(rate, seconds) in &measured[1..] {
                 assert!(
-                    (seconds - first).abs() < 0.001,
+                    (seconds - first).abs() * 1000.0 < CROSS_RATE_TOLERANCE_MS,
                     "{name} starts {first:.5} s after the burst at {first_rate} Hz \
-                     but {seconds:.5} s at {rate} Hz, a difference of {:.2} ms, \
-                     at Pre-Delay {predelay_ms} ms. A delay whose length stopped \
+                     but {seconds:.5} s at {rate} Hz, a difference of {:.4} ms \
+                     against a tolerance of {CROSS_RATE_TOLERANCE_MS} ms, at \
+                     Pre-Delay {predelay_ms} ms. A delay whose length stopped \
                      following the sample rate reads exactly like this — and the \
                      lateness sweep cannot see it, because it scales its own \
                      budget by the same rate.",
