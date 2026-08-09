@@ -146,13 +146,19 @@ describe('ExpandedChannelStrip', () => {
         renderWithTooltip(<ExpandedChannelStrip track={mockTrack} isSelected={false} widthClass="w-40" />);
 
         fireEvent.click(screen.getByRole('button', { name: 'Mute' }));
-        expect(mocks.muteTrack).toHaveBeenCalledWith('track-1', true);
+        expect(mocks.executeAppAction).toHaveBeenCalledWith({
+            type: 'muteTrack',
+            payload: { trackId: 'track-1', muted: true },
+        });
 
         fireEvent.click(screen.getByRole('button', { name: 'Solo' }));
         expect(mocks.soloTrackExclusive).toHaveBeenCalledWith('track-1');
 
         fireEvent.click(screen.getByRole('button', { name: 'Solo' }), { metaKey: true });
-        expect(mocks.soloTrack).toHaveBeenCalledWith('track-1', true);
+        expect(mocks.executeAppAction).toHaveBeenCalledWith({
+            type: 'soloTrack',
+            payload: { trackId: 'track-1', soloed: true },
+        });
 
         fireEvent.click(screen.getByRole('button', { name: 'Arm' }));
         expect(mocks.executeAppAction).toHaveBeenCalledWith({
@@ -172,13 +178,16 @@ describe('ExpandedChannelStrip', () => {
         fireEvent.doubleClick(screen.getByText('Track 1'));
         fireEvent.keyDown(screen.getByDisplayValue('Track 1'), { key: 'Escape' });
         expect(screen.queryByDisplayValue('Track 1')).not.toBeInTheDocument();
-        expect(mocks.renameTrack).not.toHaveBeenCalled();
+        expect(mocks.executeAppAction).not.toHaveBeenCalled();
 
         fireEvent.doubleClick(screen.getByText('Track 1'));
         const input = screen.getByDisplayValue('Track 1');
         fireEvent.change(input, { target: { value: 'Kick In' } });
         fireEvent.keyDown(input, { key: 'Enter' });
-        expect(mocks.renameTrack).toHaveBeenCalledWith('track-1', 'Kick In');
+        expect(mocks.executeAppAction).toHaveBeenCalledWith({
+            type: 'renameTrack',
+            payload: { trackId: 'track-1', name: 'Kick In' },
+        });
         expect(screen.queryByDisplayValue('Kick In')).not.toBeInTheDocument();
     });
 
@@ -189,7 +198,10 @@ describe('ExpandedChannelStrip', () => {
         expect(screen.getByRole('menu')).toHaveStyle({ left: '42px', top: '17px' });
 
         fireEvent.click(screen.getByRole('menuitem', { name: 'Mute' }));
-        expect(mocks.muteTrack).toHaveBeenCalledWith('track-1', true);
+        expect(mocks.executeAppAction).toHaveBeenCalledWith({
+            type: 'muteTrack',
+            payload: { trackId: 'track-1', muted: true },
+        });
         expect(screen.queryByRole('menu')).not.toBeInTheDocument();
     });
 
@@ -212,10 +224,16 @@ describe('ExpandedChannelStrip', () => {
         openContextMenu();
         fireEvent.click(screen.getByRole('menuitem', { name: 'Remove Channel' }));
         await waitFor(() => expect(mocks.confirmUser).toHaveBeenCalledTimes(1));
-        expect(mocks.removeTrack).not.toHaveBeenCalled();
+        expect(mocks.executeAppAction).not.toHaveBeenCalled();
 
         openContextMenu();
         fireEvent.click(screen.getByRole('menuitem', { name: 'Remove Channel' }));
-        await waitFor(() => expect(mocks.removeTrack).toHaveBeenCalledWith('track-1'));
+        await waitFor(() =>
+            expect(mocks.executeAppAction).toHaveBeenCalledWith({
+                type: 'removeTrack',
+                payload: { trackId: 'track-1' },
+            })
+        );
+        expect(mocks.removeTrack).not.toHaveBeenCalled();
     });
 });

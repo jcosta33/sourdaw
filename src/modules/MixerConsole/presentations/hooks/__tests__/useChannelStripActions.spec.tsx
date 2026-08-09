@@ -1,4 +1,4 @@
-import { renderHook, waitFor } from '@testing-library/react';
+import { act, renderHook, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { useChannelStripActions } from '../useChannelStripActions';
@@ -104,20 +104,27 @@ describe('useChannelStripActions', () => {
         expect(mocks.selectTrack).toHaveBeenCalledWith('track-42');
     });
 
-    it('toggleMute mutes an unmuted track', () => {
+    it('toggleMute mutes an unmuted track through the canonical write path', () => {
         const { result } = renderHook(() => useChannelStripActions(makeTrack({ id: 'track-1', muted: false })));
 
         result.current.toggleMute();
 
-        expect(mocks.muteTrack).toHaveBeenCalledWith('track-1', true);
+        expect(mocks.executeAppAction).toHaveBeenCalledWith({
+            type: 'muteTrack',
+            payload: { trackId: 'track-1', muted: true },
+        });
+        expect(mocks.muteTrack).not.toHaveBeenCalled();
     });
 
-    it('toggleMute unmutes a muted track', () => {
+    it('toggleMute unmutes a muted track through the canonical write path', () => {
         const { result } = renderHook(() => useChannelStripActions(makeTrack({ id: 'track-1', muted: true })));
 
         result.current.toggleMute();
 
-        expect(mocks.muteTrack).toHaveBeenCalledWith('track-1', false);
+        expect(mocks.executeAppAction).toHaveBeenCalledWith({
+            type: 'muteTrack',
+            payload: { trackId: 'track-1', muted: false },
+        });
     });
 
     it('toggleSolo(additive) toggles solo state without exclusivity', () => {
@@ -125,17 +132,22 @@ describe('useChannelStripActions', () => {
 
         result.current.toggleSolo(true);
 
-        expect(mocks.soloTrack).toHaveBeenCalledWith('track-1', true);
+        expect(mocks.executeAppAction).toHaveBeenCalledWith({
+            type: 'soloTrack',
+            payload: { trackId: 'track-1', soloed: true },
+        });
         expect(mocks.soloTrackExclusive).not.toHaveBeenCalled();
     });
 
+    // Exclusive solo has no `AppAction` to dispatch — see the comment on
+    // `toggleSolo`. Pinned so the gap is visible rather than assumed converted.
     it('toggleSolo(non-additive) solos exclusively instead of toggling', () => {
         const { result } = renderHook(() => useChannelStripActions(makeTrack({ id: 'track-1' })));
 
         result.current.toggleSolo(false);
 
         expect(mocks.soloTrackExclusive).toHaveBeenCalledWith('track-1');
-        expect(mocks.soloTrack).not.toHaveBeenCalled();
+        expect(mocks.executeAppAction).not.toHaveBeenCalled();
     });
 
     it('toggleArm routes the inverse armed flag through the canonical AppAction write path', () => {
@@ -162,39 +174,93 @@ describe('useChannelStripActions', () => {
 
         result.current.toggleSoloSafeFlag();
 
-        expect(mocks.toggleSoloSafe).toHaveBeenCalledWith('track-1');
+        expect(mocks.executeAppAction).toHaveBeenCalledWith({
+            type: 'toggleSoloSafe',
+            payload: { trackId: 'track-1' },
+        });
+        expect(mocks.toggleSoloSafe).not.toHaveBeenCalled();
     });
 
-    it('setGain forwards the raw value to setTrackGain', () => {
+    it('setGain drives only the engine while the gesture is transient', () => {
         const { result } = renderHook(() => useChannelStripActions(makeTrack({ id: 'track-1' })));
 
-        result.current.setGain(0.42);
+        act(() => {
+            result.current.setGain(0.42, true);
+        });
 
-        expect(mocks.setTrackGain).toHaveBeenCalledWith('track-1', 0.42);
+        expect(mocks.setTrackGain).toHaveBeenCalledWith('track-1', 0.42, true);
+        expect(mocks.executeAppAction).not.toHaveBeenCalled();
+        // And the strip draws the gesture rather than the untouched project value.
+        expect(result.current.displayGain).toBe(0.42);
     });
 
-    it('setPan forwards the raw value to setTrackPan', () => {
+    it('setGain commits the settled value as one action', () => {
+        const { result } = renderHook(() => useChannelStripActions(makeTrack({ id: 'track-1', gain: 0.8 })));
+
+        act(() => {
+            result.current.setGain(0.42, true);
+            result.current.setGain(0.31, false);
+        });
+
+        expect(mocks.executeAppAction).toHaveBeenCalledTimes(1);
+        expect(mocks.executeAppAction).toHaveBeenCalledWith({
+            type: 'setTrackGain',
+            payload: { trackId: 'track-1', gain: 0.31 },
+        });
+        // Gesture state is released, so the strip goes back to project truth.
+        expect(result.current.displayGain).toBe(0.8);
+    });
+
+    it('setPan drives only the engine while the gesture is transient', () => {
         const { result } = renderHook(() => useChannelStripActions(makeTrack({ id: 'track-1' })));
 
-        result.current.setPan(-0.5);
+        act(() => {
+            result.current.setPan(-25, true);
+        });
 
-        expect(mocks.setTrackPan).toHaveBeenCalledWith('track-1', -0.5);
+        expect(mocks.setTrackPan).toHaveBeenCalledWith('track-1', -25, true);
+        expect(mocks.executeAppAction).not.toHaveBeenCalled();
+        expect(result.current.displayPan).toBe(-25);
     });
 
-    it('setColor forwards the raw color to setTrackColor', () => {
+    it('setPan commits the settled value as one action', () => {
+        const { result } = renderHook(() => useChannelStripActions(makeTrack({ id: 'track-1', pan: 0 })));
+
+        act(() => {
+            result.current.setPan(-25, true);
+            result.current.setPan(-30, false);
+        });
+
+        expect(mocks.executeAppAction).toHaveBeenCalledTimes(1);
+        expect(mocks.executeAppAction).toHaveBeenCalledWith({
+            type: 'setTrackPan',
+            payload: { trackId: 'track-1', pan: -30 },
+        });
+        expect(result.current.displayPan).toBe(0);
+    });
+
+    it('setColor dispatches setTrackColor through the canonical write path', () => {
         const { result } = renderHook(() => useChannelStripActions(makeTrack({ id: 'track-1' })));
 
         result.current.setColor('#00ff00');
 
-        expect(mocks.setTrackColor).toHaveBeenCalledWith('track-1', '#00ff00');
+        expect(mocks.executeAppAction).toHaveBeenCalledWith({
+            type: 'setTrackColor',
+            payload: { trackId: 'track-1', color: '#00ff00' },
+        });
+        expect(mocks.setTrackColor).not.toHaveBeenCalled();
     });
 
-    it('rename forwards the raw name to renameTrack', () => {
+    it('rename dispatches renameTrack through the canonical write path', () => {
         const { result } = renderHook(() => useChannelStripActions(makeTrack({ id: 'track-1' })));
 
         result.current.rename('New Name');
 
-        expect(mocks.renameTrack).toHaveBeenCalledWith('track-1', 'New Name');
+        expect(mocks.executeAppAction).toHaveBeenCalledWith({
+            type: 'renameTrack',
+            payload: { trackId: 'track-1', name: 'New Name' },
+        });
+        expect(mocks.renameTrack).not.toHaveBeenCalled();
     });
 
     it('toggleVca forwards the group id to toggleVcaMembership', () => {
@@ -261,7 +327,7 @@ describe('useChannelStripActions', () => {
         expect(mocks.releaseTouchAutomation).not.toHaveBeenCalled();
     });
 
-    it('removeWithConfirm prompts with the track name and removes the track once confirmed', async () => {
+    it('removeWithConfirm says what the delete costs rather than that it is permanent', async () => {
         mocks.confirmUser.mockResolvedValue(true);
         const { result } = renderHook(() => useChannelStripActions(makeTrack({ id: 'track-1', name: 'Lead Vocal' })));
 
@@ -269,13 +335,17 @@ describe('useChannelStripActions', () => {
 
         expect(mocks.confirmUser).toHaveBeenCalledWith({
             title: 'Delete "Lead Vocal"?',
-            message: 'This action cannot be undone.',
+            message: 'The track, its clips and its devices are removed. Undo restores them.',
             confirmLabel: 'Delete',
             variant: 'danger',
         });
         await waitFor(() => {
-            expect(mocks.removeTrack).toHaveBeenCalledWith('track-1');
+            expect(mocks.executeAppAction).toHaveBeenCalledWith({
+                type: 'removeTrack',
+                payload: { trackId: 'track-1' },
+            });
         });
+        expect(mocks.removeTrack).not.toHaveBeenCalled();
     });
 
     it('removeWithConfirm does not remove the track when the prompt is declined', async () => {
@@ -287,6 +357,7 @@ describe('useChannelStripActions', () => {
         await waitFor(() => {
             expect(mocks.confirmUser).toHaveBeenCalledTimes(1);
         });
+        expect(mocks.executeAppAction).not.toHaveBeenCalled();
         expect(mocks.removeTrack).not.toHaveBeenCalled();
     });
 });

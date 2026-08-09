@@ -94,11 +94,15 @@ resize, split, or delete notes and clips, and each gesture goes on the stack as 
 many notes it touched.
 
 > [!WARNING]
-> **Not yet active.** Undo covers almost nothing on the mixer, and its coverage of devices is
-> uneven. Moving a fader or a pan control, and adding or removing a device by hand, apply
-> immediately and are not recorded — undo will skip straight past them to the last material edit.
-> Arming a track is the one mixer control that does record, so seeing "Arm track" in the history
-> panel is not a sign the rest of the strip is covered.
+> **Not yet active.** Undo's coverage of the mixer is now split down the middle, and its coverage of
+> devices is uneven. The channel strip's own controls record: riding a fader or a pan control goes on
+> the stack as one step per gesture rather than one per twitch, and removing a channel puts the track
+> back with its clips and its devices. Soloing is the exception still outstanding — a plain click on
+> S, which solos that channel alone, is not recorded, while ⌘-clicking to add a channel to the solo
+> set is. The device chain below the strip is not covered at all: adding or removing a device by hand
+> applies immediately and is not recorded, so undo will skip straight past it to the last recorded
+> step. Seeing a strip move in the history panel is not a sign that everything on the same strip is
+> covered.
 >
 > Whether a device records anything is decided device by device, so the device page is the
 > authority where there is one. Gluten is the furthest along: moving a control and releasing it is
@@ -143,10 +147,11 @@ audio file, converting audio to MIDI, detecting song structure, clearing MIDI ma
 assistant's automatic mix fix are unrecorded however you reach them.
 
 Recorded when you do it by hand today: editing clips and notes, arming a track, tempo and time
-signature, deleting a track from the timeline or the track list, adjustment layers, the chord track,
-and track alternatives. Not recorded: the mixer strip — gain, pan, mute, solo, rename, colour, and
-the strip's own delete — along with adding or removing a device, macros, and device parameters on
-the devices that do not record their own controls.
+signature, the channel strip's own controls, deleting a track from wherever you delete it — the
+timeline, the track list, or the mixer — adjustment layers, the chord track, and track alternatives.
+Not recorded: adding or removing a device, macros, device parameters on the devices that do not
+record their own controls, and the mute and solo buttons on the track header, which are a different
+surface from the strip's and have not been converted.
 
 **Every list on this page is what we know of, not the whole map** — including the claim that the
 command list and the assistant record. The split is decided one operation at a time, the same

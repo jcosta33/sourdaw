@@ -29,7 +29,7 @@ describe('Fader', () => {
         const { container } = render(<Fader value={-10} onChange={onChange} defaultValue={0} min={-70} max={6} />);
         const root = container.firstChild as HTMLElement;
         fireEvent.doubleClick(root);
-        expect(onChange).toHaveBeenCalledWith(0);
+        expect(onChange).toHaveBeenCalledWith(0, false);
     });
 
     it('should render dB scale when showScale is true', () => {
@@ -147,49 +147,49 @@ describe('Fader', () => {
         it('should raise the value by one step on ArrowUp', () => {
             const onChange = renderFader(-10);
             fireEvent.keyDown(screen.getByRole('slider'), { key: 'ArrowUp' });
-            expect(onChange).toHaveBeenCalledWith(-9.5);
+            expect(onChange).toHaveBeenCalledWith(-9.5, false);
         });
 
         it('should raise the value by one step on ArrowRight', () => {
             const onChange = renderFader(-10);
             fireEvent.keyDown(screen.getByRole('slider'), { key: 'ArrowRight' });
-            expect(onChange).toHaveBeenCalledWith(-9.5);
+            expect(onChange).toHaveBeenCalledWith(-9.5, false);
         });
 
         it('should lower the value by one step on ArrowDown', () => {
             const onChange = renderFader(-10);
             fireEvent.keyDown(screen.getByRole('slider'), { key: 'ArrowDown' });
-            expect(onChange).toHaveBeenCalledWith(-10.5);
+            expect(onChange).toHaveBeenCalledWith(-10.5, false);
         });
 
         it('should lower the value by one step on ArrowLeft', () => {
             const onChange = renderFader(-10);
             fireEvent.keyDown(screen.getByRole('slider'), { key: 'ArrowLeft' });
-            expect(onChange).toHaveBeenCalledWith(-10.5);
+            expect(onChange).toHaveBeenCalledWith(-10.5, false);
         });
 
         it('should use the fine step while shift is held', () => {
             const onChange = renderFader(-10);
             fireEvent.keyDown(screen.getByRole('slider'), { key: 'ArrowUp', shiftKey: true });
-            expect(onChange).toHaveBeenCalledWith(-9.9);
+            expect(onChange).toHaveBeenCalledWith(-9.9, false);
         });
 
         it('should jump to the minimum on Home and the maximum on End', () => {
             const onChange = renderFader(-10);
             const slider = screen.getByRole('slider');
             fireEvent.keyDown(slider, { key: 'Home' });
-            expect(onChange).toHaveBeenCalledWith(-70);
+            expect(onChange).toHaveBeenCalledWith(-70, false);
             fireEvent.keyDown(slider, { key: 'End' });
-            expect(onChange).toHaveBeenCalledWith(6);
+            expect(onChange).toHaveBeenCalledWith(6, false);
         });
 
         it('should move a coarse step on PageUp and PageDown', () => {
             const onChange = renderFader(-10);
             const slider = screen.getByRole('slider');
             fireEvent.keyDown(slider, { key: 'PageUp' });
-            expect(onChange).toHaveBeenCalledWith(-5);
+            expect(onChange).toHaveBeenCalledWith(-5, false);
             fireEvent.keyDown(slider, { key: 'PageDown' });
-            expect(onChange).toHaveBeenCalledWith(-15);
+            expect(onChange).toHaveBeenCalledWith(-15, false);
         });
 
         it('should quantise a keyboard step onto the step grid without float residue', () => {
@@ -198,7 +198,7 @@ describe('Fader', () => {
             // readout, permanent in the project. The emitted value must be exactly 5.1.
             render(<Fader value={5} onChange={onChange} min={0} max={10} step={0.1} />);
             fireEvent.keyDown(screen.getByRole('slider'), { key: 'ArrowUp' });
-            expect(onChange).toHaveBeenCalledWith(5.1);
+            expect(onChange).toHaveBeenCalledWith(5.1, false);
         });
 
         it('should not emit a change when already at the bound', () => {
@@ -267,7 +267,72 @@ describe('Fader', () => {
         it('should keep dragging while the pointer is still down', () => {
             const { slider, onChange } = startDrag();
             fireEvent.pointerMove(slider, { pointerId: 7, clientY: 10 });
-            expect(onChange).toHaveBeenCalledWith(6);
+            expect(onChange).toHaveBeenCalledWith(6, true);
+        });
+    });
+
+    /**
+     * The settle-then-commit half of the `onChange` contract, mirroring
+     * `RotaryKnob`. Without it a caller that persists on every sample turns one
+     * drag into one project write per pointer move — and one undo entry each.
+     */
+    describe('gesture settling', () => {
+        type ChangeSpy = ReturnType<typeof vi.fn<(value: number, isTransient?: boolean) => void>>;
+
+        const dragTo = (clientY: number): ChangeSpy => {
+            const onChange: ChangeSpy = vi.fn();
+            render(<Fader value={0} onChange={onChange} min={-70} max={6} height={100} />);
+            const slider = screen.getByRole('slider');
+            const cap = slider.querySelector('[data-role="fader-cap"]') as HTMLElement;
+            fireEvent.pointerDown(cap, { button: 0, pointerId: 9, clientY: 50 });
+            fireEvent.pointerMove(slider, { pointerId: 9, clientY });
+            return onChange;
+        };
+
+        it('should flag every pointer sample transient and commit once on release', () => {
+            const onChange = dragTo(45);
+            const slider = screen.getByRole('slider');
+            fireEvent.pointerMove(slider, { pointerId: 9, clientY: 40 });
+            const duringDrag = onChange.mock.calls.map((call) => call[1]);
+            expect(duringDrag).toEqual([true, true]);
+
+            fireEvent.pointerUp(slider, { pointerId: 9 });
+
+            const commits = onChange.mock.calls.filter((call) => call[1] === false);
+            expect(commits).toHaveLength(1);
+            expect(commits[0]![0]).toBe(onChange.mock.calls.at(-2)![0]);
+        });
+
+        it('should commit the settled value when the OS steals the gesture', () => {
+            const onChange = dragTo(40);
+            const draggedValue = onChange.mock.calls.at(-1)![0];
+
+            fireEvent.pointerCancel(screen.getByRole('slider'), { pointerId: 9 });
+
+            expect(onChange.mock.calls.filter((call) => call[1] === false)).toEqual([[draggedValue, false]]);
+        });
+
+        it('should commit nothing when the press never moved the value', () => {
+            const onChange = vi.fn();
+            render(<Fader value={0} onChange={onChange} min={-70} max={6} height={100} />);
+            const slider = screen.getByRole('slider');
+            const cap = slider.querySelector('[data-role="fader-cap"]') as HTMLElement;
+            fireEvent.pointerDown(cap, { button: 0, pointerId: 9, clientY: 50 });
+            fireEvent.pointerUp(slider, { pointerId: 9 });
+            expect(onChange).not.toHaveBeenCalled();
+        });
+
+        it('should commit a groove press that jumped the value without ever moving', () => {
+            const onChange = vi.fn();
+            const { container } = render(<Fader value={-70} onChange={onChange} min={-70} max={6} height={100} />);
+            const root = container.firstChild as HTMLElement;
+            fireEvent.pointerDown(root, { button: 0, pointerId: 9, clientY: 50, clientX: 20, bubbles: true });
+            const jumped = onChange.mock.calls.at(-1)!;
+            expect(jumped[1]).toBe(true);
+
+            fireEvent.pointerUp(root, { pointerId: 9 });
+
+            expect(onChange.mock.calls.filter((call) => call[1] === false)).toEqual([[jumped[0], false]]);
         });
     });
 
