@@ -12,6 +12,8 @@ export type ExportedAudioBuffer = {
     numberOfChannels: number;
     /** One base64-encoded Float32Array string per channel, in channel order. */
     channelData: string[];
+    /** Explicit freeze ownership survives a `.sourdaw` round-trip. Legacy files omit it. */
+    freezeProjectId?: number;
 };
 
 /** Base64-encode one channel of PCM for the `.sourdaw` export. The only caller
@@ -46,7 +48,9 @@ function isValidExportedAudioBuffer(data: ExportedAudioBuffer): boolean {
         data.sampleRate <= 0 ||
         !Number.isInteger(data.numberOfChannels) ||
         data.numberOfChannels <= 0 ||
-        data.channelData.length !== data.numberOfChannels
+        data.channelData.length !== data.numberOfChannels ||
+        (data.freezeProjectId !== undefined &&
+            (!Number.isSafeInteger(data.freezeProjectId) || data.freezeProjectId < 0))
     ) {
         return false;
     }
@@ -955,6 +959,23 @@ export const audioBufferCache = {
      * omitted from the result. */
     async exportBuffers(ids: string[]): Promise<Record<string, ExportedAudioBuffer>> {
         const result: Record<string, ExportedAudioBuffer> = {};
+        const metadataById = new Map<string, BufferMeta>();
+        try {
+            const db = await openDb();
+            const tx = db.transaction(META_STORE_NAME, 'readonly');
+            const metaStore = tx.objectStore(META_STORE_NAME);
+            const metadataRows = await Promise.all(
+                ids.map((id) => awaitRequest(metaStore.get(id) as IDBRequest<BufferMeta | undefined>))
+            );
+            for (let index = 0; index < ids.length; index++) {
+                const metadata = metadataRows[index];
+                if (metadata) {
+                    metadataById.set(ids[index]!, metadata);
+                }
+            }
+        } catch (error) {
+            logger.warn('[audioBufferCache] Export could not read buffer metadata from IndexedDB', { ids, error });
+        }
 
         // Pass 1: serialize buffers already in the in-memory cache
         for (const id of ids) {
@@ -963,7 +984,7 @@ export const audioBufferCache = {
                 continue;
             }
             refreshAccessTime(id);
-            result[id] = {
+            const exported: ExportedAudioBuffer = {
                 sampleRate: buf.sampleRate,
                 numberOfChannels: buf.numberOfChannels,
                 channelData: await Promise.all(
@@ -972,6 +993,11 @@ export const audioBufferCache = {
                     )
                 ),
             };
+            const freezeProjectId = metadataById.get(id)?.freezeProjectId;
+            if (freezeProjectId !== undefined) {
+                exported.freezeProjectId = freezeProjectId;
+            }
+            result[id] = exported;
         }
 
         // Pass 2: for IDs evicted from the LRU cache, read SerializedBuffer
@@ -993,11 +1019,16 @@ export const audioBufferCache = {
                         continue;
                     }
                     refreshAccessTime(id);
-                    result[id] = {
+                    const exported: ExportedAudioBuffer = {
                         sampleRate: data.sampleRate,
                         numberOfChannels: data.numberOfChannels,
                         channelData: await Promise.all(data.channelData.map(float32ToBase64)),
                     };
+                    const freezeProjectId = metadataById.get(id)?.freezeProjectId;
+                    if (freezeProjectId !== undefined) {
+                        exported.freezeProjectId = freezeProjectId;
+                    }
+                    result[id] = exported;
                 }
             } catch (error) {
                 // IDB unreachable, so every id the LRU had evicted is absent
@@ -1050,6 +1081,7 @@ export const audioBufferCache = {
             id: string;
             sampleRate: number;
             numberOfChannels: number;
+            freezeProjectId?: number;
             resident: AudioBuffer | null;
             readChannels: () => Float32Array[];
         };
@@ -1066,6 +1098,7 @@ export const audioBufferCache = {
                 id,
                 sampleRate: data.sampleRate,
                 numberOfChannels: data.numberOfChannels,
+                freezeProjectId: data.freezeProjectId,
                 resident: null,
                 readChannels: () => data.channelData.map(base64ToFloat32),
             });
@@ -1175,7 +1208,11 @@ export const audioBufferCache = {
                         // Same transaction as the record, so an aborted import
                         // — which `abortImportPersistenceExcept` does routinely
                         // when a later candidate wins — leaves neither behind.
-                        metaStore.put({ lastAccessed, sizeInBytes } satisfies BufferMeta, entry.id);
+                        const metadata: BufferMeta = { lastAccessed, sizeInBytes };
+                        if (entry.freezeProjectId !== undefined) {
+                            metadata.freezeProjectId = entry.freezeProjectId;
+                        }
+                        metaStore.put(metadata, entry.id);
                     }
                     await awaitTransaction(activeTransaction);
                     if (candidateId !== activeImportCandidateId || candidateId !== committedImportCandidateId) {
