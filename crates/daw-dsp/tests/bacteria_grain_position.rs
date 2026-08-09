@@ -116,6 +116,18 @@ fn render(sample_rate: f32, position_ms: f32, cloud: &Cloud, tail_ms: f32) -> Re
     engine.set_param("bandCount", 1.0);
     engine.set_param("band0_granularEnabled", 1.0);
     engine.set_param("band0_grainMix", 1.0);
+    // Pitch is pinned at 0 and is not a swept dimension, for a reason that is
+    // a property of the device rather than of this test. At `grainPitch != 0`
+    // a grain's read head advances by `pitch_ratio` per sample while the write
+    // head advances by one, so Position stops being a delay: it is a start
+    // offset, and when the grain replays a given input sample depends on which
+    // grain caught it. Worse for an impulse probe specifically, the read is
+    // `grain.read_pos as usize` with no interpolation, so at +12 st the head
+    // steps two slots at a time and visits only every other one — a one-sample
+    // impulse is then hit or missed by parity. Measured onsets at Position
+    // 100 ms wander accordingly (+12 st: 2399 before this fix, 3999 after),
+    // which is the probe failing, not the scheduler. A pitched Position needs
+    // a sustained stimulus and its own criterion; it is not covered here.
     engine.set_param("band0_grainPitch", 0.0);
     engine.set_param("band0_grainSize", cloud.grain_size_ms);
     engine.set_param("band0_grainDensity", cloud.density);
