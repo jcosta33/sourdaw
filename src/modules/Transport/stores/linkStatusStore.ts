@@ -1,7 +1,6 @@
 import { createStore } from '#/infra/store/createStore';
 
 export type LinkStatus = {
-    supported: boolean;
     enabled: boolean;
     tempo: number;
     quantum: number;
@@ -11,7 +10,6 @@ export type LinkStatus = {
 };
 
 export const defaultLinkStatus: LinkStatus = {
-    supported: false,
     enabled: false,
     tempo: 120,
     quantum: 4,

@@ -8,7 +8,6 @@ describe('linkStatusStore', () => {
     });
 
     it('should have initial state', () => {
-        expect(linkStatusStore.value?.supported).toBe(false);
         expect(linkStatusStore.value?.enabled).toBe(false);
         expect(linkStatusStore.value?.tempo).toBe(120);
     });
