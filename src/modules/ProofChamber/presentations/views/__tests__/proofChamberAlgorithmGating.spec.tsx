@@ -320,11 +320,17 @@ describe('the Dutch Oven panel offers only controls the live algorithm can hear'
         expect(width?.hasAttribute('disabled')).toBe(false);
     });
 
-    it('writes the algorithm and nothing else, because the engine now keeps the rest', () => {
-        // This row was planted to red when the parameter cache landed, and it
-        // did not — because it asserts the panel's *action payload*, and the
-        // cache is in Rust. Coming back to it is the point: the payload shape
-        // is unchanged, and what changed is that it is now the right shape.
+    it('writes the algorithm and nothing else; the engine-side replay is guarded in crates/proof-chamber/tests/algorithm_switch_parameter_retention.rs', () => {
+        // The name says what this row observes, and nothing more. It asserts
+        // the panel's *action payload* against a mocked `executeAppAction`;
+        // deleting `replay_cached_parameters()` from `lib.rs` leaves it green,
+        // so it is not a guard on engine retention and must not be read as one
+        // — a title is what a reader or a coverage census scans.
+        //
+        // It was planted during #1519 to red when the parameter cache landed,
+        // and it did not, because the cache is in Rust. Coming back to it is
+        // the point: the payload shape is unchanged, and what changed is that
+        // it is now the right shape.
         //
         // `ProofChamberInstance::set_param` used to construct a new engine when
         // `algorithm` arrived and replay nothing into it, so this single write

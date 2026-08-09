@@ -318,6 +318,34 @@ export const ProofChamberPanel = ({ deviceId }: { deviceId: string }): ReactElem
      * field at a time. `executeAppActionBatch` runs the whole expansion inside a
      * single transaction and tags every resulting entry with one `groupId`,
      * which `undo` pops as a unit.
+     *
+     * ## This batch needed the engine-side cache too
+     *
+     * `algorithm` goes first and the expanded parameters follow, and every one
+     * of those parameter actions is subject to `handleSetDeviceParameter`'s
+     * `isNoop` (`parameterValues[paramId] === value`), which
+     * `executeAppActionBatch` uses to skip an action whose value already equals
+     * project truth. So on a **repeat** click of a tile whose values are still
+     * in the project — load `hall`, audition another algorithm from the rail,
+     * click `hall` again — the twenty-one non-algorithm actions are all no-ops
+     * and the only thing that reaches the device is the bare `algorithm` write.
+     *
+     * Before the parameter cache that write reconstructed the engine and
+     * replayed nothing into it, so a re-clicked space tile loaded a reverb at
+     * constructor defaults: measured on the PR base, a re-clicked `hall`
+     * rendered bit-identical to a plate that had never been told anything, and
+     * 13.511 dB peak away from the preset the tile claims to load. All eight
+     * `SPACE_PRESETS` were reachable in that state. The cache
+     * (`crates/proof-chamber/src/lib.rs`, replayed at `lib.rs:363`) is what
+     * makes this tile actually load its preset on the second click; the batch
+     * here was never the missing half.
+     *
+     * `selectAlgorithm` below explains why a panel-side replay cannot fix that,
+     * and the no-op filter it defends as correct is the same filter that had
+     * been eating this function's preset batch. Both are true: the filter is
+     * right about *project truth* — nothing changed, so nothing is written —
+     * and the engine losing its state is not a change in truth, so it has to be
+     * resynced where the loss happens.
      */
     function selectSpace(space: SpaceType): void {
         const nextParams = expandSpacePreset(space);
@@ -382,6 +410,13 @@ export const ProofChamberPanel = ({ deviceId }: { deviceId: string }): ReactElem
      * contradictory. A replay is an engine *resync*, and `executeAppAction*`
      * propagates *changes to truth*; the no-op filter is right and the payload
      * was the wrong shape for it.
+     *
+     * That filter is not a hypothetical objection to a replay nobody wrote. It
+     * had already been emptying `selectSpace`'s preset batch above — on a
+     * repeat click of a space tile the twenty-one parameter actions all equal
+     * project truth, so the device received only `algorithm` and, before the
+     * cache, rebuilt at defaults. Same filter, same correctness, one function
+     * up; see that note for the measurement.
      *
      * The fix is a parameter cache inside `ProofChamberInstance`
      * (`crates/proof-chamber/src/lib.rs`, replayed at `lib.rs:363`), the one
