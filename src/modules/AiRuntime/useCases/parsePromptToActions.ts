@@ -19,10 +19,12 @@ import { bridgeGroundedLlmToolCalls } from './agentReference/bridgeGroundedLlmTo
 import { materializeBatchLocalActionIdentities } from './agentReference/materializeBatchLocalActionIdentities';
 import { type ProjectContext } from './getProjectContext';
 import { generateToolPlanningOutcome } from './llmOrchestration/inference';
+import { materializeActionStateGuards } from './materializeActionStateGuards';
 import { validateActions } from './validateActions';
 
 type CreateFastPathResultInput = {
     actions: RuntimeAction[];
+    context: ProjectContext;
     prompt: string;
 };
 
@@ -41,10 +43,20 @@ function createFastPathResult(input: CreateFastPathResultInput): IntentResult {
         };
     }
 
+    const materialized = materializeActionStateGuards(validated, input.context);
+    if (materialized.status === 'rejected') {
+        return {
+            actions: [],
+            rawText: input.prompt,
+            requiresConfirmation: false,
+            rejectionReason: `Recognized command could not bind current project state: ${materialized.reason}`,
+        };
+    }
+
     return {
-        actions: validated,
+        actions: materialized.actions,
         rawText: input.prompt,
-        requiresConfirmation: requiresAppActionConfirmation(validated),
+        requiresConfirmation: requiresAppActionConfirmation(materialized.actions),
     };
 }
 
@@ -79,19 +91,19 @@ export const parsePromptToActions = inject({ logger })(
             const presetCtx = buildPresetContext(context);
             const presetResult = tryPresetMatch(normalized, presetCtx);
             if (presetResult.length > 0) {
-                return createFastPathResult({ actions: presetResult, prompt });
+                return createFastPathResult({ actions: presetResult, context, prompt });
             }
 
             // 3. Try parameterized patterns (need value extraction)
             const paramResult = tryParameterizedPath(normalized, context);
             if (paramResult.length > 0) {
-                return createFastPathResult({ actions: paramResult, prompt });
+                return createFastPathResult({ actions: paramResult, context, prompt });
             }
 
             // 4. Try compound fast path (multi-track creation etc.)
             const compoundResult = tryCompoundFastPath(normalized, context);
             if (compoundResult !== null) {
-                return createFastPathResult({ actions: compoundResult, prompt });
+                return createFastPathResult({ actions: compoundResult, context, prompt });
             }
 
             if (signal?.aborted) {
@@ -189,10 +201,21 @@ export const parsePromptToActions = inject({ logger })(
                         };
                     }
 
+                    const guarded = materializeActionStateGuards(materialized.actions, context);
+                    if (guarded.status === 'rejected') {
+                        logger.warn(`[AI] Rejected LLM action batch because ${guarded.reason}`);
+                        return {
+                            actions: [],
+                            rawText: prompt,
+                            requiresConfirmation: false,
+                            rejectionReason: `Provider action state binding rejected: ${guarded.reason}`,
+                        };
+                    }
+
                     return {
-                        actions: materialized.actions,
+                        actions: guarded.actions,
                         rawText: prompt,
-                        requiresConfirmation: requiresAppActionConfirmation(materialized.actions),
+                        requiresConfirmation: requiresAppActionConfirmation(guarded.actions),
                         executionMode: 'atomic',
                     };
                 }

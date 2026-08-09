@@ -1,10 +1,10 @@
+import { type AppAction } from '#/utils/handlerContract';
+
 import { type RuntimeAction } from './RuntimeAction';
 
-type CreateBusRuntimeAction = Extract<RuntimeAction, { type: 'createBus' }>;
+export type ExecutableRuntimeAction = AppAction;
 
-export type ExecutableRuntimeAction =
-    | Exclude<RuntimeAction, CreateBusRuntimeAction>
-    | {
-          type: 'createBus';
-          payload: CreateBusRuntimeAction['payload'] & { busId?: string };
-      };
+type CreateBusRuntimeAction = Extract<RuntimeAction, { type: 'createBus' }>;
+type CreateBusAppAction = Extract<AppAction, { type: 'createBus' }>;
+
+export type MaterializableRuntimeAction = Exclude<RuntimeAction, CreateBusRuntimeAction> | CreateBusAppAction;

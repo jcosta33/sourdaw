@@ -3,6 +3,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { configureAutomergeStoragePort } from '#/infra/store/storage/createAutomergeStorage';
 import { trackStore, type Track } from '#/modules/Arrangement/stores';
 import { getArrangementHandlers, setArrangementEventBus } from '#/modules/Arrangement/useCases';
+import { automationStore } from '#/modules/Automation/stores';
+import {
+    setAutomationRecordingDependencies,
+    startAutomationRecording,
+    stopAutomationRecording,
+} from '#/modules/Automation/useCases';
 import { clearHandlerRegistry, macroStore, registerHandlerMap, undoStore } from '#/modules/Command/stores';
 import {
     clearUndoHistory,
@@ -18,6 +24,7 @@ import {
     removeCrdtDoc,
     resetCrdtProjectAuthority,
 } from '#/modules/CrdtDocument/useCases';
+import { defaultTransportState, transportStore } from '#/modules/Transport/stores';
 
 import { cloudSession } from '../../repositories/cloudLlm/cloudSession';
 import { generateWebLlmCompletion } from '../../repositories/webLlm/generateWebLlmCompletion';
@@ -224,6 +231,8 @@ describe('mix prompt workflow', () => {
             createTrack('track-bass', 'Bass'),
         ];
         trackStore.set({ tracks, selectedTrackId: null, ghostClips: [] });
+        automationStore.set({ lanes: [] });
+        transportStore.set({ ...defaultTransportState });
         runtimeMocks.gains.clear();
         runtimeMocks.pans.clear();
         runtimeMocks.mutes.clear();
@@ -247,6 +256,8 @@ describe('mix prompt workflow', () => {
         clearAiHistory();
         clearPendingActionConfirmations();
         trackStore.set({ tracks: [], selectedTrackId: null, ghostClips: [] });
+        automationStore.set({ lanes: [] });
+        transportStore.set({ ...defaultTransportState });
         configureAutomergeStoragePort(null);
         cloudSession.clear();
         removeCrdtDoc('root');
@@ -268,10 +279,10 @@ describe('mix prompt workflow', () => {
         expect(providerRequest).toContain('track-drum-bus');
         const confirmation = getPendingActionConfirmation(getConfirmationId());
         expect(confirmation?.actions).toEqual([
-            { type: 'setTrackGain', payload: { trackId: 'track-lead-vocal', gain: 0.7 } },
-            { type: 'setTrackPan', payload: { trackId: 'track-guitar-left', pan: -20 } },
-            { type: 'setTrackPan', payload: { trackId: 'track-guitar-right', pan: 20 } },
-            { type: 'muteTrack', payload: { trackId: 'track-room-mic', muted: true } },
+            { type: 'setTrackGain', payload: { trackId: 'track-lead-vocal', gain: 0.7, expectedGain: 1 } },
+            { type: 'setTrackPan', payload: { trackId: 'track-guitar-left', pan: -20, expectedPan: 0 } },
+            { type: 'setTrackPan', payload: { trackId: 'track-guitar-right', pan: 20, expectedPan: 0 } },
+            { type: 'muteTrack', payload: { trackId: 'track-room-mic', muted: true, expectedMuted: false } },
         ]);
         expect(confirmation).toMatchObject({
             executionMode: 'atomic',
@@ -348,9 +359,12 @@ describe('mix prompt workflow', () => {
         expect(providerRequest).toContain('track-room-mic');
         expect(providerRequest).toContain('track-drum-bus');
         const confirmation = getPendingActionConfirmation(getConfirmationId());
-        expect(confirmation?.actions).toEqual(
-            providerPlan.map((call) => ({ type: call.name, payload: call.arguments }))
-        );
+        expect(confirmation?.actions).toEqual([
+            { type: 'setTrackGain', payload: { trackId: 'track-lead-vocal', gain: 0.7, expectedGain: 1 } },
+            { type: 'setTrackPan', payload: { trackId: 'track-guitar-left', pan: -20, expectedPan: 0 } },
+            { type: 'setTrackPan', payload: { trackId: 'track-guitar-right', pan: 20, expectedPan: 0 } },
+            { type: 'muteTrack', payload: { trackId: 'track-room-mic', muted: true, expectedMuted: false } },
+        ]);
 
         await expect(confirmPendingChatActions({ confirmationId: confirmation?.id ?? '' })).resolves.toEqual({
             status: 'executed',
@@ -387,6 +401,72 @@ describe('mix prompt workflow', () => {
         expect(runtimeMocks.pans).toEqual(runtimeBefore.pans);
         expect(runtimeMocks.mutes).toEqual(runtimeBefore.mutes);
         expect(undoStore.value?.past).toEqual([]);
+    });
+
+    it('preserves collaborator mixer edits and keeps grouped undo and redo retryable', async () => {
+        await sendChatMessage(PROMPT);
+        const confirmation = getPendingActionConfirmation(getConfirmationId());
+        if (!confirmation) {
+            throw new Error('Expected the proposed mix batch');
+        }
+        await confirmPendingChatActions({ confirmationId: confirmation.id });
+
+        const collaboratorMuted = false;
+        trackStore.set({
+            ...trackStore.value!,
+            tracks: trackStore.value!.tracks.map((track) =>
+                track.id === 'track-room-mic' ? { ...track, muted: collaboratorMuted } : track
+            ),
+        });
+        runtimeMocks.mutes.set('track-room-mic', collaboratorMuted);
+        const pastBeforeConflict = structuredClone(undoStore.value?.past);
+
+        await undo();
+
+        expect(getTrack('track-room-mic').muted).toBe(collaboratorMuted);
+        expect(runtimeMocks.mutes.get('track-room-mic')).toBe(collaboratorMuted);
+        expect(undoStore.value?.past).toEqual(pastBeforeConflict);
+        expect(undoStore.value?.future).toEqual([]);
+
+        trackStore.set({
+            ...trackStore.value!,
+            tracks: trackStore.value!.tracks.map((track) =>
+                track.id === 'track-room-mic' ? { ...track, muted: true } : track
+            ),
+        });
+        runtimeMocks.mutes.set('track-room-mic', true);
+        await undo();
+        expect(undoStore.value?.past).toEqual([]);
+        expect(undoStore.value?.future).toHaveLength(4);
+
+        const collaboratorPan = 7;
+        trackStore.set({
+            ...trackStore.value!,
+            tracks: trackStore.value!.tracks.map((track) =>
+                track.id === 'track-guitar-left' ? { ...track, pan: collaboratorPan } : track
+            ),
+        });
+        runtimeMocks.pans.set('track-guitar-left', collaboratorPan);
+        const futureBeforeConflict = structuredClone(undoStore.value?.future);
+
+        await redo();
+
+        expect(getTrack('track-guitar-left').pan).toBe(collaboratorPan);
+        expect(runtimeMocks.pans.get('track-guitar-left')).toBe(collaboratorPan);
+        expect(undoStore.value?.past).toEqual([]);
+        expect(undoStore.value?.future).toEqual(futureBeforeConflict);
+
+        trackStore.set({
+            ...trackStore.value!,
+            tracks: trackStore.value!.tracks.map((track) =>
+                track.id === 'track-guitar-left' ? { ...track, pan: 0 } : track
+            ),
+        });
+        runtimeMocks.pans.set('track-guitar-left', 0);
+        await redo();
+        expectExactMix();
+        expect(undoStore.value?.past).toHaveLength(4);
+        expect(undoStore.value?.future).toEqual([]);
     });
 
     it('compensates runtime effects and publishes no project prefix, receipt, or undo after a later action fails', async () => {
@@ -430,4 +510,63 @@ describe('mix prompt workflow', () => {
         expect(terminalMessage?.content).not.toContain('Affected IDs:');
         expect(terminalMessage?.content).not.toContain('Outcome: committed');
     });
+
+    it.each(['write', 'touch', 'latch'] as const)(
+        'rolls back %s-mode automation buffered by a failed atomic mix batch',
+        async (automationMode) => {
+            const beforePoints = [
+                { beat: 0, value: 0.25, curve: 'linear' as const, tension: 0 },
+                { beat: 32, value: 0.4, curve: 'linear' as const, tension: 0 },
+            ];
+            trackStore.set({
+                ...trackStore.value!,
+                tracks: trackStore.value!.tracks.map((track) =>
+                    track.id === 'track-lead-vocal' ? { ...track, automationMode } : track
+                ),
+            });
+            automationStore.set({
+                lanes: [
+                    {
+                        id: 'lane-lead-vocal-gain',
+                        trackId: 'track-lead-vocal',
+                        parameterId: 'gain',
+                        parameterName: 'Gain',
+                        points: beforePoints.map((point) => ({ ...point })),
+                        objects: [],
+                        visible: true,
+                        enabled: true,
+                        collapsed: false,
+                        minValue: 0,
+                        maxValue: 1,
+                    },
+                ],
+            });
+            transportStore.set({
+                ...defaultTransportState,
+                isPlaying: true,
+                playheadPosition: 4,
+                tempo: 120,
+            });
+            setAutomationRecordingDependencies({
+                getAudioContext: () => ({ baseLatency: 0, outputLatency: 0 }) as AudioContext,
+                getCompensationDelay: () => 0,
+            });
+            startAutomationRecording();
+            await sendChatMessage(PROMPT);
+            const confirmation = getPendingActionConfirmation(getConfirmationId());
+            if (!confirmation) {
+                throw new Error('Expected the proposed mix batch');
+            }
+            runtimeMocks.setTrackMute.mockImplementationOnce(() => {
+                throw new Error('injected Room Mic runtime failure');
+            });
+
+            await confirmPendingChatActions({ confirmationId: confirmation.id });
+            stopAutomationRecording();
+
+            expect(automationStore.value?.lanes[0]?.points).toEqual(beforePoints);
+            expect(undoStore.value?.past).toEqual([]);
+            expect(undoStore.value?.future).toEqual([]);
+        }
+    );
 });

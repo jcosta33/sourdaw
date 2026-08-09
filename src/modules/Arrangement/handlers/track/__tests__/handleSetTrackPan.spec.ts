@@ -22,11 +22,24 @@ describe('handleSetTrackPan', () => {
 
     describe('execute', () => {
         it('calls setTrackPan', () => {
+            mocks.getTrackStoreState.mockReturnValue({ tracks: [{ id: 't1', pan: 0 }] });
             void handleSetTrackPan.execute({
                 type: 'setTrackPan',
-                payload: { trackId: 't1', pan: -0.5 },
+                payload: { trackId: 't1', pan: -0.5, expectedPan: 0 },
             });
             expect(mocks.setTrackPan).toHaveBeenCalledWith('t1', -0.5);
+        });
+
+        it('rejects a pan write when current project truth diverged', () => {
+            mocks.getTrackStoreState.mockReturnValue({ tracks: [{ id: 't1', pan: 12 }] });
+
+            const result = handleSetTrackPan.execute({
+                type: 'setTrackPan',
+                payload: { trackId: 't1', pan: -20, expectedPan: 0 },
+            });
+
+            expect(result).toEqual({ status: 'conflict' });
+            expect(mocks.setTrackPan).not.toHaveBeenCalled();
         });
     });
 
@@ -36,13 +49,17 @@ describe('handleSetTrackPan', () => {
 
             const desc = handleSetTrackPan.describe({
                 type: 'setTrackPan',
-                payload: { trackId: 't1', pan: -0.5 },
+                payload: { trackId: 't1', pan: -0.5, expectedPan: 0.5 },
             });
 
             expect(desc.label).toBe('Set track pan');
             expect(desc.inverseAction).toEqual({
                 type: 'setTrackPan',
-                payload: { trackId: 't1', pan: 0.5 },
+                payload: { trackId: 't1', pan: 0.5, expectedPan: -0.5 },
+            });
+            expect(desc.redoAction).toEqual({
+                type: 'setTrackPan',
+                payload: { trackId: 't1', pan: -0.5, expectedPan: 0.5 },
             });
         });
 
@@ -51,7 +68,7 @@ describe('handleSetTrackPan', () => {
 
             const desc = handleSetTrackPan.describe({
                 type: 'setTrackPan',
-                payload: { trackId: 't1', pan: -0.5 },
+                payload: { trackId: 't1', pan: -0.5, expectedPan: 0 },
             });
 
             expect(desc.inverseAction).toBeNull();
