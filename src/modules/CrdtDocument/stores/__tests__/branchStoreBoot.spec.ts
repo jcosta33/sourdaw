@@ -164,6 +164,41 @@ describe('branchStore module evaluation with a rejecting localStorage', () => {
             expect(window.localStorage.getItem(BRANCH_SESSION_BACKUP_STORAGE_KEY)).toBe(stringify(localState));
         });
 
+        it('keeps the backup when a notification fires without a durable write', async () => {
+            // `trySet` notifies whether or not the write landed, so a
+            // notification alone is not evidence that anything reached the
+            // backing store — this is the rollback path in
+            // `runBranchLineageTransition`. Invalidating here would drop the
+            // backup while durable state is still the host's, losing the
+            // pre-session branch list outright.
+            const remoteState = {
+                branches: [validMainBranch, validFeatureBranch],
+                activeBranchId: validFeatureBranch.branchId,
+            } satisfies BranchStoreState;
+            const localState = {
+                branches: [validMainBranch],
+                activeBranchId: MAIN_BRANCH_ID,
+            } satisfies BranchStoreState;
+
+            window.localStorage.setItem(BRANCH_STORAGE_KEY, stringify(remoteState));
+            window.localStorage.setItem(BRANCH_SESSION_BACKUP_STORAGE_KEY, stringify(localState));
+            blockEveryDurableWrite();
+
+            const module = await import('../branchStore');
+            expect(module.restoreBranchStateFromSessionBackup()).toBe('state-not-persisted');
+
+            // Notifies, does not persist, and `removeItem` is not blocked — so
+            // only the durability check stands between this and a dropped backup.
+            expect(
+                module.branchStore.trySet({
+                    branches: [validMainBranch, validFeatureBranch],
+                    activeBranchId: MAIN_BRANCH_ID,
+                })
+            ).toBe(false);
+
+            expect(window.localStorage.getItem(BRANCH_SESSION_BACKUP_STORAGE_KEY)).toBe(stringify(localState));
+        });
+
         it('drops the backup on the first durable write after the failure', async () => {
             const remoteState = {
                 branches: [validMainBranch, validFeatureBranch],
