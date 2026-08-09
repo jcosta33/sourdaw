@@ -12,31 +12,45 @@ import { BUILTIN_PLUGINS } from '../../DeviceParameter';
  * A device's default for one parameter is written down in several places, and
  * nothing checked that they say the same number.
  *
- * They are not redundant copies — each is read by a different surface:
+ * They are not redundant copies — each is read by a different surface, and
+ * which surface reads which is worth stating exactly, because an earlier
+ * revision of this comment got it backwards and a wrong verdict followed:
  *
- * - The **descriptor** (`BUILTIN_PLUGINS`) supplies `defaultValue` to the
- *   generic Inspector and to the automation lane, which draws its baseline at
- *   the declared default.
+ * - The **descriptor** (`BUILTIN_PLUGINS`) is what a freshly added device
+ *   sends to the engine. `addDevice` seeds `parameterValues` from every
+ *   descriptor `param.value` (`addDevice.ts:61-65`) and then calls
+ *   `updateDeviceParam` once per parameter (`addDevice.ts:103-105`) whenever
+ *   the track has a live strip. It also supplies the Inspector readout and the
+ *   automation lane's baseline.
  * - The **module default declarations** under `src/modules/<Device>/models/`
- *   are the state a freshly added device gets and the state the param bridge
- *   pushes to the engine. There are two shapes and a device can have both:
- *   an object patch (`DEFAULT_PATCH`) and a parameter table
- *   (`GRINDER_PARAMS`, `FERMENTER_PARAMS` — arrays of
+ *   are what the *panel* renders, and what the param bridge pushes on preset
+ *   load and snapshot recall. They are **not** what a new instance sends to the
+ *   engine, and this was the mis-model: `syncGrinderPatchToAudio` has exactly
+ *   two callers — `loadGrinderPatchWithAudio` and
+ *   `recallGrinderSnapshotWithAudio` — neither reached on add or on mount, and
+ *   `registerChamberInstance` writes only `chamberStore`. There are two shapes
+ *   and a device can have both: an object patch (`DEFAULT_PATCH`) and a
+ *   parameter table (`GRINDER_PARAMS`, `FERMENTER_PARAMS` — arrays of
  *   `{ id, min, max, default }` rows).
  * - The **panel reset value** (`defaultValue` on a knob) is where a
  *   double-click puts the control.
  *
- * So a disagreement is not cosmetic. Grinder's noise gate is what it costs:
- * `7690f7139` reworked `NoiseGate` so the user's attack and release times drive
- * the *gain* stage as well as the detector (before it, the open ramp was a
- * hard-coded `0.05` coefficient and the close was a hard-coded `*= 0.999`), and
- * raised `DEFAULT_PATCH` from 0.5 ms / 50 ms to 2 ms / 120 ms to suit the new
- * shape. `2b080af5a` then authored the panel knobs with the same 2 / 120. The
- * parameter table and its inlined descriptor copy were never touched, so for
- * four months a fresh Grinder showed 2 ms / 120 ms on its own panel while the
- * Inspector and the automation lane called the default 0.5 ms / 50 ms — the
- * lane drawing its baseline four times and 2.4 times away from the value the
- * device was actually running.
+ * So when these disagree, the engine and the panel are showing the user two
+ * different numbers for the same control, and the first double-click jumps
+ * from one to the other. Grinder is the case this change fixes: `7690f7139`
+ * reworked `NoiseGate` so the user's attack and release times drive the *gain*
+ * stage as well as the detector, and raised `DEFAULT_PATCH` from 0.5 ms / 50 ms
+ * to 2 ms / 120 ms; `2b080af5a` authored the panel knobs with the same 2 / 120.
+ * The parameter table and its inlined descriptor copy were never touched, so a
+ * fresh Grinder ran 0.5 / 50 in the engine, read 2 / 120 on its own panel, and
+ * offered the lane a baseline four times and 2.4 times from the panel figure.
+ *
+ * Nobody has heard that: `gateEnabled` defaults to false, the descriptor
+ * advertises no `gateEnabled` at all, so `addDevice` never writes it and the
+ * Rust gate stays bypassed. The claim this file makes is **consistency**, not
+ * voicing — which of 0.5 / 50 and 2 / 120 is the better gate is a separate
+ * question, and 2 ms is in fact slow for an attack next to the sub-millisecond
+ * defaults on comparable gates. Whoever opens that question starts here.
  *
  * ## Every source is compared to the descriptor, never merged
  *
@@ -625,9 +639,11 @@ const NON_DEFAULT_MODEL_DECLARATIONS: readonly {
         exportName: 'SPACE_PRESETS',
         reason:
             'Per-space preset overlays applied *on top of* `DEFAULT_PARAMS`, so they are presets rather than ' +
-            'defaults. Worth noting for the `damping` row below: the `hall` overlay a fresh Dutch Oven runs ' +
-            "(`DEFAULT_PARAMS.space` is `hall`) also says `damping: 0.3`, so the descriptor's 0.0005 is " +
-            'outvoted a third time.',
+            'defaults. Note for the `damping` row below, where an earlier revision of this file counted the ' +
+            '`hall` overlay as a third vote for 0.3: it is not one. `expandSpacePreset` has a single production ' +
+            'caller — the space-tile click handler in `ProofChamberPanel` — so no overlay runs until a user ' +
+            'picks a space, and `DEFAULT_PARAMS.space` naming `hall` does not mean the hall overlay has been ' +
+            'applied.',
     },
     {
         file: 'src/modules/ProofChamber/models/ProofChamberState.ts',
@@ -700,15 +716,26 @@ const KNOWN_DEFAULT_DIVERGENCES: readonly DefaultDivergence[] = [
         deviceId: 'dutch-oven',
         paramId: 'damping',
         reason:
-            'Descriptor 0.0005 against 0.3 in both `DEFAULT_PARAMS` and the panel knob. **The descriptor is the ' +
-            'wrong one**, and its number has a traceable origin: 0.0005 is the literal the Rust plate seeds its ' +
-            '`damping` field with (`crates/proof-chamber/src/proof_chamber.rs:394`), an internal one-pole ' +
-            'coefficient that holds only until the first parameter write. It was transcribed into the descriptor ' +
-            'as if it were a user-facing default. It is not one: `ProofChamberPanel` renders damping as a ' +
-            'percentage (`formatValue(params.damping, "%")`), so a fresh Dutch Oven reads 30% on its own panel ' +
-            'while the Inspector and the automation lane call the default 0.05%. Recorded, not fixed here: ' +
-            'ProofChamber is being changed on another lane (`feat/dutch-oven-panel-algorithm-gating`), and a ' +
-            'descriptor edit under it belongs with that work, not under a Grinder fix.',
+            'Three values, two of which agree. Descriptor `0.0005`; Rust plate constructor `0.0005` ' +
+            '(`crates/proof-chamber/src/proof_chamber.rs:394`); `DEFAULT_PARAMS` and the panel knob `0.3`. ' +
+            'There is no scaling between them — `proof_chamber.rs:471` is ' +
+            '`"damping" => self.damping = value.clamp(0.0, 0.9999)`, so the knob writes the constructor\'s field ' +
+            'directly and the two numbers are the same quantity. ' +
+            'What a fresh instance runs is `0.0005`: `addDevice` writes every descriptor `param.value` through ' +
+            '`updateDeviceParam`, and nothing pushes `DEFAULT_PARAMS` — `registerChamberInstance` writes only ' +
+            '`chamberStore`, and `expandSpacePreset` runs solely from the space-tile click handler, so the ' +
+            '`hall` overlay is not a third vote for 0.3. So the engine is damped at 0.0005 while the panel reads ' +
+            '30% and the spectrogram draws 0.3, and the first double-click on Damp is a 600x jump in the ' +
+            'coefficient. `damping` is the only field where `DEFAULT_PARAMS` departs from the constructor; every ' +
+            'other Dutch Oven default matches it exactly, and the file header cites Dattorro 1997, whose damping ' +
+            'is 0.0005. ' +
+            'Two ways to close it, and they are not equivalent. Move `DEFAULT_PARAMS` and the panel to 0.0005: ' +
+            'the panel then tells the truth about what every existing project has been hearing, and nothing ' +
+            'sounds different. Move the descriptor and the constructor to 0.3: the panel keeps its current ' +
+            'reading and the reverb gains real damping, at the cost of changing the sound of every new instance ' +
+            'and departing from the paper the implementation is transcribed from. That is a voicing decision, ' +
+            'not a consistency one, so it is recorded here rather than taken — and ProofChamber is being changed ' +
+            'on another lane (`feat/dutch-oven-panel-algorithm-gating`) besides.',
     },
 ];
 

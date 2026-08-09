@@ -18,9 +18,17 @@ const GRINDER_PARAMS: readonly PluginParamDef[] = [
     // reworked `NoiseGate` so these times drive the gain stage as well as the
     // detector — before it the gate opened on a hard-coded `0.05` coefficient
     // and closed on `*= 0.999`, so the knobs only shaped the envelope follower
-    // — and raised `DEFAULT_PATCH` to suit. This table was not updated, so the
-    // Inspector and the automation lane have disagreed with the panel and with
-    // the engine ever since. See `declaredDefaultConsensus.spec.ts`.
+    // — and raised `DEFAULT_PATCH` to suit. This table was not updated.
+    //
+    // This descriptor is what a new instance sends to the engine: `addDevice`
+    // writes every `param.value` through `updateDeviceParam`, while
+    // `syncGrinderPatchToAudio` runs only on preset load and snapshot recall.
+    // So the engine ran 0.5 / 50 while the panel read 2 / 120 — the descriptor
+    // and the panel disagreed, and the descriptor is the one that was heard.
+    // Aligned on the pair the panel and the patch already shared; this is a
+    // consistency fix, not a voicing one, and nothing is audible today because
+    // `gateEnabled` defaults false and is not advertised here at all. See
+    // `declaredDefaultConsensus.spec.ts`.
     { id: 'gateAttack', label: 'Gate Atk', min: 0.1, max: 50, default: 2, unit: 'ms', scaling: 'log' },
     { id: 'gateRelease', label: 'Gate Rel', min: 5, max: 500, default: 120, unit: 'ms', scaling: 'log' },
 

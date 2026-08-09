@@ -495,8 +495,9 @@ export const GRINDER_PARAMS: readonly GrinderParamDef[] = [
     // Kept equal to `DEFAULT_PATCH` above. This table is the one the Arrangement
     // descriptor was copied out of in `27d7ce794`, and the copy inherited the
     // 0.5 / 50 these two rows still held after `7690f7139` moved the patch to
-    // 2 / 120 — which is how the Inspector and the automation lane came to
-    // advertise a default no fresh Grinder has used since April.
+    // 2 / 120 — which is how a fresh Grinder came to run 0.5 / 50 in the engine
+    // (the descriptor is what `addDevice` writes) while its own panel read
+    // 2 / 120.
     { id: 'gateAttack', label: 'Gate Atk', min: 0.1, max: 50, default: 2, unit: 'ms', group: 'gate', scaling: 'log' },
     { id: 'gateRelease', label: 'Gate Rel', min: 5, max: 500, default: 120, unit: 'ms', group: 'gate', scaling: 'log' },
 
