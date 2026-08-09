@@ -38,6 +38,17 @@ vi.mock('#/infra/store/useStore', () => ({
 // omission is only harmless while ArrangeView does not render that view — mount
 // it and every render in this file reds on `undefined` (#1393).
 //
+// The spread is not free here, and the alternatives were measured rather than
+// assumed. `TimelineSurface` and `TrackListView` are stubbed three lines below, but
+// `importOriginal()` evaluates their real modules first, which costs this file
+// 4.15s → 7.25s (+75%) when run alone. Cutting the contract barrels they enter
+// through (`AiRuntime/useCases`, `Command/useCases`) recovers 0.55s of the 3.10s —
+// the weight is inside Arrangement's own private modules and no published contract
+// reaches it. Mocking those two private modules directly does recover it (4.79s),
+// and `deps:validate` rejects it: two NEW `cross-module-index-only` edges on the
+// tests cruise. Baselining those would be buying 2.4s with the boundary rule, so
+// the cost stands. Do not re-derive this; the numbers are in PR #1572.
+//
 // The height constants are deliberately *not* overridden: the spread supplies the
 // real 22 / 20 / 18, and re-stating those numbers here would change nothing today
 // while pinning the layout assertions to a stale value the day production moves
