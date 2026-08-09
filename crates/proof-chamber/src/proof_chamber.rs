@@ -434,8 +434,15 @@ impl ProofChamber {
             //   as it decays is a ringing tank. 0.3 puts the corner at 10.6 kHz
             //   and the same measurement at -8.45 dB.
             //
-            // #1546 has the peer survey and the EMT 140 TS target; the rendered
-            // figures are pinned in `tests/plate_default_damping.rs`.
+            // #1546 has the EMT 140 TS target; the rendered figures are pinned
+            // in `tests/plate_default_damping.rs`, and the peer defaults — with
+            // the layer named for each, because library and application
+            // disagree in at least two of them — are in `fdn.rs` beside the
+            // FDN's own damping literal. For this algorithm the nearest
+            // reference point is Faust's `dm.dattorro_rev_demo`, which ships its
+            // Damping slider at 0.625: the demo application built on the same
+            // paper defaults to more than double 0.3. That cuts against 0.3
+            // being too dark, not for it.
             damping: 0.3,
             predelay_ms: 15.0,
             size: 0.75,

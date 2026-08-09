@@ -89,14 +89,22 @@ export const NATIVE_DSP_DESCRIPTORS: PluginDescriptor[] = [
                 //   (`spring.rs:102`, unchanged since the crate's first commit). The
                 //   old 0.0005 was overwriting it and pushing its late tail to
                 //   +7.36 dB, treble above midrange, the same defect as the plate's.
-                //   This restores it.
+                //   This restores it. For scale, the open-source spring models that
+                //   publish a default cluster at 4.5-8.5 kHz of wet-path low-pass
+                //   (Faust `dm.springreverb_demo` Tone 0.5 -> 6500 Hz; daleonov's
+                //   SpringReverb Tone 5 -> 6500 Hz; Chowdhury BYOD `damping` 0.5 ->
+                //   ~8485 Hz; smiarx/aelapse 4500 Hz); the commercial ones publish
+                //   nothing.
                 // - **FDN 8/16** — `rt60_hf/rt60 = (1 - damping) * 0.5`, so 0.3 gives
-                //   0.35 where 0.0005 gave 0.4998. That old ratio matched the peer
-                //   convention almost exactly (zita-rev1's 6000 Hz `HF Damping` and
-                //   Dragonfly Hall's `high_mult` are both 0.50), so on the FDN this
-                //   change is a real darkening — 25.9 dB more HF loss in the late
-                //   window on an impulse — and its crossover is hard-coded at 2 kHz
-                //   against the peers' 5.5-6 kHz, so it bites lower too.
+                //   0.35 where 0.0005 gave 0.4998. The old ratio sat almost exactly on
+                //   the convention among reverbs that publish a real RT60 ratio — all
+                //   near 0.50 — so on the FDN this change is a real darkening, 25.9 dB
+                //   more HF loss in the late window on an impulse, and its crossover
+                //   is hard-coded at 2 kHz against their 5.5-6 kHz, so it bites lower
+                //   too. `crates/proof-chamber/src/fdn.rs` carries the citations with
+                //   the layer named for each, which matters: zita-rev1 initialises
+                //   3000 Hz in the library and 6000 Hz in the shipped application, and
+                //   Faust's `reverbs.lib` publishes no defaults at all.
                 // - **Reverse** — `damping` is bit-dead across the whole range. Already
                 //   recorded in `nativeDspEngineGaps.ts` and gated in the panel, so
                 //   this value is inert there.

@@ -276,13 +276,38 @@ impl FdnReverb {
             // because moving it would change nothing a user hears while
             // desynchronising this file from the ratio it documents.
             //
-            // 0.35 is darker than the peer convention — zita-rev1's `HF Damping`
-            // default of 6000 Hz and Dragonfly Hall's shipped `high_mult` are
-            // both 0.50 — and the crossover here is hard-coded at 2 kHz against
-            // their 5.5–6 kHz, so it bites lower too. That is a real divergence
-            // and its fix is a per-algorithm default table rather than a
-            // different single number: 0.3 is correct on the plate, and is the
-            // spring's own constructor value. See the `damping` row in
+            // 0.35 is darker than the convention among the reverbs that publish
+            // an actual RT60 ratio, and all three land near 0.50:
+            //
+            // - **Dragonfly Hall** ships `High Mult` at 0.50 above a 5500 Hz
+            //   crossover. It is a genuine ratio — `DSP.cpp:91-94` routes it to
+            //   `late.setrt60_factor_high(value)`, a Freeverb3 RT60 multiplier.
+            // - **zita-rev1** builds the HF target as `0.5 * _rtmid`
+            //   (`reverb.cc:262`), so the 0.5 is structural rather than a
+            //   preset. Its crossover depends on which layer you mean:
+            //   `reverb.cc:209` initialises `_fdamp = 3000 Hz`, while
+            //   `mainwin.cc:65` constructs the knob at 6000 Hz and pushes it
+            //   into the engine — 6000 is the shipped *application*, 3000 the
+            //   library a headless caller gets.
+            // - **Faust `dm.fdnrev0_demo`** gives per-band T60 defaults of
+            //   8.4/6.5/5.0/3.8/2.7 s, so the top band is 0.54x the 2 kHz band.
+            //   Note the layer: `reverbs.lib` publishes no defaults at all —
+            //   every number lives in `demos.lib`, and the `dattorro_rev(…)`
+            //   values in its doc comments are illustrative calls. "The Faust
+            //   library defaults to X" is never a correct sentence.
+            //
+            // Nothing credible defaults to the 0.7-1.0x regime, which is where
+            // the old 0.4998 sat — so this change moves the FDN past the
+            // convention rather than toward it, having started level with it.
+            // (Dragonfly *Room* is not comparable: its `Early Damp`/`Late Damp`
+            // are Hz-valued in-loop cutoffs via `late.setdamp` /
+            // `late.setoutputdamp`, not a ratio.)
+            //
+            // The crossover here is also hard-coded at 2 kHz against their
+            // 5.5-6 kHz, so 0.35 bites lower as well as harder. That is a real
+            // divergence and its fix is a per-algorithm default table rather
+            // than a different single number: 0.3 is correct on the plate, and
+            // is the spring's own constructor value. See the `damping` row in
             // `NativeDspDescriptors.ts`.
             damping: 0.2,
             size: 0.5,
