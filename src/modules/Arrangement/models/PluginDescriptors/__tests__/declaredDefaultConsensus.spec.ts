@@ -708,6 +708,21 @@ const PARAM_KEY_ALIASES: readonly {
 type DefaultDivergence = {
     readonly deviceId: NativeDspDeviceType;
     readonly paramId: string;
+    /**
+     * The three legs as measured when the row was written.
+     *
+     * Pinned because suppressing a parameter suppresses it everywhere: with
+     * only a "does it still disagree" check, moving `DEFAULT_PARAMS.damping` to
+     * 0.0005 and leaving the panel at 0.3 kept this file green, because the
+     * panel still disagreed with the descriptor and the row still applied. A
+     * half-resolved divergence would have looked exactly like an untouched one.
+     * Any leg moving now reds until the row is rewritten or deleted.
+     */
+    readonly observed: {
+        readonly descriptor: number;
+        readonly declared: readonly number[];
+        readonly panel: number | null;
+    };
     readonly reason: string;
 };
 
@@ -715,6 +730,7 @@ const KNOWN_DEFAULT_DIVERGENCES: readonly DefaultDivergence[] = [
     {
         deviceId: 'dutch-oven',
         paramId: 'damping',
+        observed: { descriptor: 0.0005, declared: [0.3], panel: 0.3 },
         reason:
             'Three values, two of which agree. Descriptor `0.0005`; Rust plate constructor `0.0005` ' +
             '(`crates/proof-chamber/src/proof_chamber.rs:394`); `DEFAULT_PARAMS` and the panel knob `0.3`. ' +
@@ -1172,6 +1188,20 @@ describe('a device default is the same number wherever it is declared', () => {
                 (panelValue === undefined || panelValue === declared);
             if (agrees) {
                 stale.push(`${row.deviceId}.${row.paramId}: the declarations agree now`);
+                continue;
+            }
+
+            // Every leg as pinned, so a partial resolution cannot hide behind a
+            // divergence that is still technically present.
+            const measured = {
+                descriptor: declared,
+                declared: moduleValues,
+                panel: panelValue ?? null,
+            };
+            if (JSON.stringify(measured) !== JSON.stringify(row.observed)) {
+                stale.push(
+                    `${row.deviceId}.${row.paramId}: measured ${JSON.stringify(measured)}, row pins ${JSON.stringify(row.observed)}`
+                );
             }
         }
 
