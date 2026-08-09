@@ -1,0 +1,92 @@
+src/modules/AiRuntime/models/__tests__/RuntimeAction.spec.ts
+  s_a40848e8f8cca9::t_a21e39932760b1 106-108
+src/modules/AiRuntime/useCases/__tests__/validateActionPayload.spec.ts
+  s_a40848e8f8cca9::t_a21e39932760b1 61,97,111
+src/modules/MixerConsole/presentations/views/Mixer/__tests__/ExpandedChannelStrip.spec.tsx
+  s_a40848e8f8cca9::t_889e72ea92f3c4 150,202
+src/modules/Arrangement/handlers/track/handleSetTrackGain.ts
+  s_a40848e8f8cca9::t_1bc11d64944fc7 11-13,15-17,19,26-33,35-44
+  s_a40848e8f8cca9::t_24658241e77834 1,8
+  s_a40848e8f8cca9::t_b43236b7532801 10,18
+src/modules/AiRuntime/models/RuntimeAction.ts
+  s_a40848e8f8cca9::t_781c0377824e59 252-254,298-300
+src/modules/AiRuntime/useCases/__tests__/mixPromptWorkflow.spec.ts
+  s_a40848e8f8cca9::t_c1adb96fabaaec 6-11,27,234-235,259-260,513-571
+  s_a40848e8f8cca9::t_2c8cbd10c603ff 282-285,362-367,406-413,415-417,419-420,422-425,428-433,435-436,438-469
+  s_a40848e8f8cca9::t_ddfe4418f2f23c 414,418,421,426-427,434,437
+  s_a40848e8f8cca9::t_3efe695f37ca2a 470-471
+src/modules/AiRuntime/useCases/aiPanelActions/runAppAction.ts
+  s_a40848e8f8cca9::t_94f37740d392c2 4-5,14-19
+src/modules/AiRuntime/useCases/parsePromptToActions.ts
+  s_a40848e8f8cca9::t_ba86b7548bb6e6 22,27,46-55,57,59,94,100,106,204-214,216,218
+src/modules/AiRuntime/useCases/__tests__/sendChatMessage.spec.ts
+  s_a40848e8f8cca9::t_a195b66fa85133 435-442
+src/modules/Arrangement/handlers/track/__tests__/muteTrack.spec.ts
+  s_a40848e8f8cca9::t_991d968ef565a4 33,38-48,50-53,55-62,67-70,72-75,83
+src/modules/Command/useCases/executeAppActionBatch.ts
+  s_a40848e8f8cca9::t_128dcff4ae1ec0 185-186,190
+  s_a40848e8f8cca9::t_40b39c5e16e778 54,165,179-184,187-189,191-212,349,416,420,422,441,444,447,473,475,478
+src/modules/AiRuntime/useCases/aiRuntimeQueries/resolvePresetActions.ts
+  s_a40848e8f8cca9::t_94f37740d392c2 4-5,30-32
+src/modules/MixerConsole/presentations/views/Mixer/__tests__/mixerStripUndo.integration.spec.tsx
+  s_a40848e8f8cca9::t_a195b66fa85133 681-684
+src/modules/MixerConsole/presentations/hooks/useChannelStripActions.ts
+  s_a40848e8f8cca9::t_3f2f8573cd67f2 224-227,264-270,279-285
+src/modules/MixerConsole/presentations/hooks/__tests__/useChannelStripActions.spec.tsx
+  s_a40848e8f8cca9::t_921808cb35d9b1 133,145,234,395
+src/modules/AiRuntime/models/ExecutableRuntimeAction.ts
+  s_a40848e8f8cca9::t_781c0377824e59 1-2,5
+  s_a40848e8f8cca9::t_b43236b7532801 10
+  s_a40848e8f8cca9::t_6f9c47b1925ad1 6,8
+src/modules/AiRuntime/useCases/materializeActionStateGuards.ts
+  s_a40848e8f8cca9::t_e447d60c7498de 8
+  s_a40848e8f8cca9::t_781c0377824e59 1-2,4-7,9-10,12-55
+  s_a40848e8f8cca9::t_6f9c47b1925ad1 3,11
+src/modules/Automation/useCases/automationRecording/captureAutomationRecordingRollback.ts
+  s_a40848e8f8cca9::t_a5644adc6d32bb 1-41
+src/modules/AiRuntime/useCases/__tests__/pendingChatActions.spec.ts
+  s_a40848e8f8cca9::t_a195b66fa85133 62-64
+  s_a40848e8f8cca9::t_5f9f2876c5f342 438
+src/modules/Arrangement/handlers/track/__tests__/handleSetTrackPan.spec.ts
+  s_a40848e8f8cca9::t_991d968ef565a4 25,28,32-43,52,58-62,71
+src/modules/Arrangement/handlers/track/muteTrack.ts
+  s_a40848e8f8cca9::t_1bc11d64944fc7 9-11,13-15,17,23-34
+  s_a40848e8f8cca9::t_b43236b7532801 8,16
+src/modules/AiRuntime/useCases/agentReference/materializeBatchLocalActionIdentities.ts
+  s_a40848e8f8cca9::t_6f9c47b1925ad1 1,7,33
+src/modules/AudioAnalysis/handlers/analysis/handleAutoFixMix.ts
+  s_a40848e8f8cca9::t_3f2f8573cd67f2 56
+src/modules/Arrangement/handlers/track/handleSetTrackPan.ts
+  s_a40848e8f8cca9::t_b43236b7532801 10,18
+  s_a40848e8f8cca9::t_24658241e77834 1,8
+  s_a40848e8f8cca9::t_1bc11d64944fc7 11-13,15-17,19,26-33,35-44
+src/utils/createHandler.ts
+  s_a40848e8f8cca9::t_8ef65caff1c428 19,29
+src/utils/handlerContract.ts
+  s_a40848e8f8cca9::t_781c0377824e59 506,732-733
+  s_a40848e8f8cca9::t_8ef65caff1c428 1276-1277
+src/modules/Arrangement/handlers/track/__tests__/handleSetTrackGain.spec.ts
+  s_a40848e8f8cca9::t_991d968ef565a4 25,28,32-43,52,58-62,71
+src/modules/AiRuntime/useCases/__tests__/parsePromptToActions.spec.ts
+  s_a40848e8f8cca9::t_1c024ba21da221 113-139,235,237-240,1090,1101-1102,1238,1241-1242
+src/modules/CommandInterface/useCases/commands/TrackCommands.ts
+  s_a40848e8f8cca9::t_3f2f8573cd67f2 183-188
+src/modules/Automation/useCases/index.ts
+  s_a40848e8f8cca9::t_a5644adc6d32bb 12
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "38bcde3c949e86d686a619651938b9f0f7856dfc",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
