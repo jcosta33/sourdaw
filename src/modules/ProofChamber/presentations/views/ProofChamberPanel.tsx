@@ -100,42 +100,6 @@ function algorithmBadge(algorithm: ProofChamberAlgorithm): string {
     return `A${position + 1}`;
 }
 
-/**
- * Every parameter write the engine has to be told about, for one engine state.
- *
- * Excludes `algorithm` — that is the selector, and it has to be *first* in any
- * batch that carries it, because `ProofChamberInstance::set_param` constructs a
- * brand-new engine when it arrives and anything written before it is thrown
- * away with the old one.
- *
- * Shared by the space tiles and the algorithm chips so the two cannot drift on
- * what "re-send the device's state" means.
- */
-function chamberParameterActions(deviceId: string, engineState: ProofChamberEngineState): AppAction[] {
-    const actions: AppAction[] = [];
-    for (const [key, rawValue] of Object.entries(engineState)) {
-        if (key === 'algorithm' || key === 'space') {
-            continue;
-        }
-        const rustKey = PARAM_MAP[key];
-        if (!rustKey) {
-            continue;
-        }
-        if (typeof rawValue === 'boolean') {
-            actions.push({
-                type: 'setDeviceParameter',
-                payload: { deviceId, paramId: rustKey, value: rawValue ? 1 : 0 },
-            });
-        } else if (typeof rawValue === 'number') {
-            actions.push({
-                type: 'setDeviceParameter',
-                payload: { deviceId, paramId: rustKey, value: rawValue },
-            });
-        }
-    }
-    return actions;
-}
-
 function formatValue(value: number, unit: string): string {
     if (unit === '%') {
         return `${Math.round(value * 100)}%`;
@@ -365,52 +329,72 @@ export const ProofChamberPanel = ({ deviceId }: { deviceId: string }): ReactElem
                 type: 'setDeviceParameter',
                 payload: { deviceId, paramId: 'algorithm', value: ALGORITHM_MAP[nextParams.algorithm] ?? 0 },
             },
-            ...chamberParameterActions(deviceId, nextParams),
         ];
+
+        for (const [key, rawValue] of Object.entries(nextParams)) {
+            if (key === 'algorithm' || key === 'space') {
+                continue;
+            }
+            const rustKey = PARAM_MAP[key];
+            if (!rustKey) {
+                continue;
+            }
+
+            if (typeof rawValue === 'boolean') {
+                actions.push({
+                    type: 'setDeviceParameter',
+                    payload: { deviceId, paramId: rustKey, value: rawValue ? 1 : 0 },
+                });
+            } else if (typeof rawValue === 'number') {
+                actions.push({
+                    type: 'setDeviceParameter',
+                    payload: { deviceId, paramId: rustKey, value: rawValue },
+                });
+            }
+        }
 
         const { groupId, groupLabel } = generateGroupId(`Load ${space} space`);
         void executeAppActionBatch(actions, { groupId, groupLabel });
     }
 
     /**
-     * Change algorithm without throwing the device's settings away.
+     * Select a reverb algorithm.
      *
-     * `ProofChamberInstance::set_param` builds a **new** engine when
-     * `algorithm` arrives (`lib.rs:117-136`) and replays nothing into it, so a
-     * bare `algorithm` write silently reset every parameter to the
-     * constructor's defaults. Measured plate → reverse → plate: the round trip
-     * rendered bit-identical to an engine nobody had ever written to
-     * (`max_delta = 0e0` against defaults, `7.77e-1` against the settings the
-     * user actually had). `mix`, which no gate touches, was lost with the rest.
+     * One function rather than two identical chip handlers — the selector is
+     * drawn twice, on the rail and in the Engine card.
      *
-     * That made the panel's own disabled-control text a lie — it promises a
-     * gated parameter comes back on an algorithm that reads it — and it was a
-     * lie for ungated parameters too, on every switch, before any of this.
+     * ## Known, live, and not fixed here: this resets the device
      *
-     * So the chip does what `selectSpace` already did: `algorithm` first, then
-     * the whole state re-sent into the engine it just constructed, as one
-     * `executeAppActionBatch` so the switch stays a single undo step.
+     * `ProofChamberInstance::set_param` constructs a **new** engine when
+     * `algorithm` arrives (`lib.rs:117-136`) and replays nothing into it, so
+     * every parameter on the device reverts to the constructor's defaults.
+     * Measured plate → reverse → plate: bit-identical to an engine nobody had
+     * ever written to (`max_delta = 0e0` against defaults, `7.77e-1` against
+     * the settings the user had). `mix` is lost the same way, so this has
+     * nothing to do with gating and predates it.
      *
-     * The durable fix is a parameter cache inside `ProofChamberInstance`
-     * replayed into the new engine, which would also cover automation, presets
-     * and a peer's write. That is engine work; this is the bounded correct
-     * version of it and is what makes the panel's promise true today.
+     * A panel-side replay was tried here and removed, because it cannot work at
+     * this layer. Sourcing it from the store writes stale values over project
+     * truth; sourcing it from project truth makes every replayed action satisfy
+     * `handleSetDeviceParameter`'s `isNoop` — `parameterValues[paramId] ===
+     * value` — so `executeAppActionBatch` skips all of them and the engine is
+     * never told. The two required fixes are contradictory. A replay is an
+     * engine *resync*, and `executeAppAction*` propagates *changes to truth*;
+     * the no-op filter is right and the payload was the wrong shape for it.
+     *
+     * The fix is a parameter cache inside `ProofChamberInstance`, replayed into
+     * each newly constructed engine — the one place every writer of `algorithm`
+     * must pass through, which the Inspector, MIDI learn, undo and the initial
+     * project projection all do without any of them being able to carry a
+     * replay of their own.
      */
     function selectAlgorithm(next: ProofChamberAlgorithm): void {
-        const nextParams: ProofChamberEngineState = { ...params, algorithm: next };
-
         updateChamberEngine(deviceId, (prev: ProofChamberEngineState) => ({ ...prev, algorithm: next }));
 
-        const actions: AppAction[] = [
-            {
-                type: 'setDeviceParameter',
-                payload: { deviceId, paramId: 'algorithm', value: ALGORITHM_MAP[next] ?? 0 },
-            },
-            ...chamberParameterActions(deviceId, nextParams),
-        ];
-
-        const { groupId, groupLabel } = generateGroupId(`Select ${ALGORITHM_LABELS[next]} algorithm`);
-        void executeAppActionBatch(actions, { groupId, groupLabel });
+        void executeAppAction({
+            type: 'setDeviceParameter',
+            payload: { deviceId, paramId: 'algorithm', value: ALGORITHM_MAP[next] ?? 0 },
+        });
     }
 
     let tailViewLed = 'Live tail';

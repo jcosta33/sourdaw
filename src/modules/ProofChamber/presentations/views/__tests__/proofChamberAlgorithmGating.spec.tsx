@@ -2,7 +2,7 @@ import { render, fireEvent, screen, cleanup } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { useStore } from '#/infra/store/useStore';
-import { executeAppAction, executeAppActionBatch } from '#/modules/Command/useCases';
+import { executeAppAction } from '#/modules/Command/useCases';
 import { NATIVE_DSP_ENGINE_GAPS, findNativeDspEngineGapParam } from '#/utils/nativeDspEngineGaps';
 
 import { chamberEngineIdForAlgorithm } from '../../../models/ProofChamberAlgorithmGating';
@@ -281,13 +281,19 @@ describe('the Dutch Oven panel offers only controls the live algorithm can hear'
 
         expect(width?.getAttribute('title')).toBe(
             'Width does not apply to the Reverse algorithm. This engine writes one mono buffer and copies each ' +
-                'sample to both channels, so a mid/side matrix has no side component to scale. Its value is kept ' +
-                'and takes effect again on an algorithm that reads it.'
+                'sample to both channels, so a mid/side matrix has no side component to scale.'
         );
         expect(damp?.getAttribute('title')).toBe(
-            'Damp is not implemented on the Reverse algorithm yet, so this engine ignores it. Its value is kept ' +
-                'and takes effect again on an algorithm that reads it.'
+            'Damp is not implemented on the Reverse algorithm yet, so this engine ignores it.'
         );
+
+        // Deliberately absent: any claim about what happens after an algorithm
+        // change. The engine resets the device on a switch, so a sentence
+        // promising the value comes back would be false — that was this
+        // change's original defect and it is not repeated in softer wording.
+        for (const title of [width?.getAttribute('title'), damp?.getAttribute('title')]) {
+            expect(title).not.toMatch(/again|kept|automation/i);
+        }
     });
 
     it('says nothing on a control the live algorithm can hear', () => {
@@ -314,41 +320,37 @@ describe('the Dutch Oven panel offers only controls the live algorithm can hear'
         expect(width?.hasAttribute('disabled')).toBe(false);
     });
 
-    it('replays the whole device into the engine the algorithm switch just constructed', () => {
-        // The first version of this test asserted `['algorithm']` and called it
-        // "leaving every automated parameter alone". It was right about the
-        // code and wrong about the meaning.
+    it('writes the algorithm and nothing else, which is a known reset this panel does not fix', () => {
+        // Deliberately *not* dressed up as correct behaviour.
         //
-        // `ProofChamberInstance::set_param` builds a *new* engine when
+        // `ProofChamberInstance::set_param` constructs a new engine when
         // `algorithm` arrives (`lib.rs:117-136`) and replays nothing into it,
-        // so a bare `algorithm` write is not "leaving parameters alone" — it is
-        // discarding all of them. Measured plate -> reverse -> plate: the round
-        // trip rendered bit-identical to an engine nobody had ever written to.
+        // so this write resets every parameter on the device — `mix` included,
+        // which no gate touches. Measured plate -> reverse -> plate:
+        // bit-identical to an engine nobody had ever written to.
         //
-        // So the panel re-sends the device after the switch, and the order is
-        // the assertion: `algorithm` must come first, because anything sent
-        // before it is thrown away with the engine it was written to.
+        // A panel-side replay was written to fix that and removed: sourced from
+        // the store it writes stale values over project truth, and sourced from
+        // project truth every action satisfies `handleSetDeviceParameter`'s
+        // `isNoop` (`parameterValues[paramId] === value`) so
+        // `executeAppActionBatch` skips all of them. The fix is the
+        // `ProofChamberInstance` parameter cache, in Rust.
+        //
+        // This test pins the *current* shape so the cache PR reds here and has
+        // to come back and update it. It is not a claim that the shape is good.
         renderPanel('plate');
-        vi.mocked(executeAppActionBatch).mockClear();
+        vi.mocked(executeAppAction).mockClear();
 
         const [reverseChip] = screen.getAllByRole('button', { name: 'Reverse' });
         fireEvent.click(reverseChip!);
 
-        const [batch] = vi.mocked(executeAppActionBatch).mock.calls;
-        const written = (batch?.[0] ?? [])
+        const written = vi
+            .mocked(executeAppAction)
+            .mock.calls.map(([action]) => action)
             .filter((action) => action.type === 'setDeviceParameter')
-            .map((action) => (action.type === 'setDeviceParameter' ? action.payload.paramId : ''));
+            .map((action) => (action.type === 'setDeviceParameter' ? action.payload : null));
 
-        expect(written[0]).toBe('algorithm');
-        expect(written.indexOf('algorithm')).toBe(written.lastIndexOf('algorithm'));
-
-        // Everything the panel can write is replayed, gated or not. `width` is
-        // dead on reverse and still re-sent: the value is real, it is what the
-        // user gets back on switching away, and the disabled control's text
-        // promises exactly that.
-        const replayed = new Set(written.slice(1));
-        const expected = Object.values(PARAM_MAP).filter((paramId) => paramId !== 'algorithm');
-        expect([...expected].filter((paramId) => !replayed.has(paramId))).toEqual([]);
+        expect(written).toEqual([{ deviceId: DEVICE_ID, paramId: 'algorithm', value: 6 }]);
     });
 
     it('reads project truth back into the store on mount, so the gate opens against the saved algorithm', () => {
@@ -360,23 +362,5 @@ describe('the Dutch Oven panel offers only controls the live algorithm can hear'
         renderPanel('plate');
 
         expect(vi.mocked(hydrateChamberStateFromProject).mock.calls).toEqual([[DEVICE_ID]]);
-    });
-
-    it('sends one batch, so an algorithm change stays a single undo step', () => {
-        // Twenty-two bare dispatches would be twenty-two Automerge
-        // transactions and twenty-two undo entries for one click — the defect
-        // `selectSpace` was already fixed for.
-        renderPanel('plate');
-        vi.mocked(executeAppAction).mockClear();
-        vi.mocked(executeAppActionBatch).mockClear();
-
-        const [springChip] = screen.getAllByRole('button', { name: 'Spring' });
-        fireEvent.click(springChip!);
-
-        expect(vi.mocked(executeAppActionBatch).mock.calls.length).toBe(1);
-        expect(vi.mocked(executeAppAction).mock.calls.length).toBe(0);
-        // One group id across the whole replay is what `undo` pops as a unit,
-        // and the label is what the user is offered.
-        expect(vi.mocked(executeAppActionBatch).mock.calls[0]?.[1]?.groupLabel).toBe('Select Spring algorithm');
     });
 });

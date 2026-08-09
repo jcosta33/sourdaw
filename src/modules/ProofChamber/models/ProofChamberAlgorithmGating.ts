@@ -53,37 +53,33 @@ export type ChamberControlGate = {
 const LIVE: ChamberControlGate = { isInert: false, kind: null, explanation: null };
 
 /**
- * The clause every disabled control ends with.
+ * ## Why a disabled control says nothing about what happens later
  *
- * ## What happens to a value when the algorithm changes
+ * An earlier version of this file ended every explanation with *"Automation
+ * already drawn for it is kept and plays again on an algorithm that reads it"*,
+ * rendered into the `title` of up to fifteen controls per algorithm. It was
+ * false. `ProofChamberInstance::set_param` constructs a **new** engine when
+ * `algorithm` arrives (`lib.rs:117-136`) and replays nothing into it, so
+ * switching algorithm resets every parameter on the device — measured plate →
+ * reverse → plate as bit-identical to an engine nobody had ever written to.
  *
- * Gating refuses *manual* entry and nothing else. It does not touch the
- * descriptor's `automatable` flag, the automation lane picker, the stored
- * value, or any curve a project has already drawn.
+ * That was this change's original sin: taking a silent engine defect and
+ * converting it into an explicit written promise. A panel-side replay was then
+ * written to make the promise true, and removed once measurement showed it
+ * cannot work at that layer — see `selectAlgorithm` for why the two required
+ * fixes are contradictory.
  *
- * That was not enough on its own, and the first version of this file shipped a
- * sentence that was false because of it. `ProofChamberInstance::set_param`
- * constructs a **new** engine when `algorithm` arrives (`lib.rs:117-136`) and
- * replays nothing into it, so the switch discarded every parameter on the
- * device — gated or not, automated or not. Measured plate → reverse → plate:
- * bit-identical to an engine nobody had ever written to. The panel now re-sends
- * the whole device after the selector, in one batch, with `algorithm` first;
- * `proofChamberAlgorithmGating.spec.tsx` pins that order.
+ * **The rule this file now follows: say what the control's state is and why it
+ * is in that state, and nothing about what happens later.** Replacing a false
+ * promise with a weaker promise the engine also breaks would repeat the same
+ * mistake in miniature. When the `ProofChamberInstance` parameter cache lands
+ * and a render-delta test proves values survive a switch, the claim can be
+ * earned back — not before.
  *
- * What the sentence below therefore claims, and no more: the **value** is kept
- * and takes effect again. Two things it deliberately does not claim:
- *
- * - An automation lane holding a *flat* value across the switch does not
- *   re-deliver on its own — `applyAutomation` writes on a discontinuity or a
- *   slew-threshold change, and a flat hold is neither. What the engine gets is
- *   the replayed store value, which is the same number in every case a user
- *   would notice, but it arrives from the panel rather than from the lane.
- * - A peer's write and an undo do not reach the panel at all; see
- *   `hydrateChamberStateFromProject`.
- *
- * Both are closed properly by a parameter cache inside `ProofChamberInstance`
- * replayed into each newly constructed engine, which is engine work and is
- * recorded as the follow-up rather than done here.
+ * What is true today and needs no promise in the UI: gating refuses manual
+ * entry and nothing else. The descriptor's `automatable` flag, the automation
+ * lane picker, the stored `parameterValues` and any curve a project has drawn
+ * are all untouched by it.
  *
  * Three alternatives were considered and rejected:
  *
@@ -104,7 +100,7 @@ const LIVE: ChamberControlGate = { isInert: false, kind: null, explanation: null
  *    and explains them only in the manual — and it is what this panel did until
  *    now. Rejected because it is indistinguishable from the bug: a user turning
  *    a knob and hearing nothing has no way to tell "inert on this algorithm"
- *    from "broken". The disabled state plus the sentence below carries that
+ *    from "broken". The disabled state plus its explanation carries that
  *    information; a live knob carries none.
  *
  * The chosen shape is the one Nielsen's review of inactive controls recommends
@@ -112,7 +108,6 @@ const LIVE: ChamberControlGate = { isInert: false, kind: null, explanation: null
  * SP2016 ships for the same situation. It is a product call rather than a
  * technical one, and it is the part of this change most worth a second opinion.
  */
-const AUTOMATION_CLAUSE = 'Its value is kept and takes effect again on an algorithm that reads it.';
 
 export type ChamberControlGateInput = {
     readonly algorithm: ProofChamberAlgorithm;
@@ -163,9 +158,9 @@ function explain({
     algorithmLabel: string;
 }): string {
     if (gap.kind === 'structural') {
-        return `${controlLabel} does not apply to the ${algorithmLabel} algorithm. ${gap.note} ${AUTOMATION_CLAUSE}`;
+        return `${controlLabel} does not apply to the ${algorithmLabel} algorithm. ${gap.note}`;
     }
-    return `${controlLabel} is not implemented on the ${algorithmLabel} algorithm yet, so this engine ignores it. ${AUTOMATION_CLAUSE}`;
+    return `${controlLabel} is not implemented on the ${algorithmLabel} algorithm yet, so this engine ignores it.`;
 }
 
 /**

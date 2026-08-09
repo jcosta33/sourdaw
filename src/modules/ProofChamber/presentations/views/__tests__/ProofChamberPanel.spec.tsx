@@ -2,7 +2,7 @@ import { render, fireEvent, screen } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { useStore } from '#/infra/store/useStore';
-import { executeAppAction, executeAppActionBatch } from '#/modules/Command/useCases';
+import { executeAppAction } from '#/modules/Command/useCases';
 
 import { DEFAULT_PARAMS } from '../../../models/ProofChamberState';
 import { ProofChamberPanel } from '../ProofChamberPanel';
@@ -107,17 +107,10 @@ describe('ProofChamberPanel', () => {
      * carries 6 rather than 4, because 4 and 5 are reserved for the two
      * convolution-backed engines that have no impulse response to render.
      */
-    /**
-     * The algorithm write moved into `executeAppActionBatch` when the panel
-     * started re-sending the device after a switch: the engine is rebuilt from
-     * scratch on `algorithm`, so the selector and the replay have to land in
-     * one transaction, and the wire value is now the first action in that
-     * batch rather than a lone dispatch.
-     */
-    function algorithmValuesFromBatches(): number[] {
+    function dispatchedAlgorithmValues(): number[] {
         return vi
-            .mocked(executeAppActionBatch)
-            .mock.calls.flatMap(([actions]) => actions)
+            .mocked(executeAppAction)
+            .mock.calls.map(([action]) => action)
             .filter((action) => action.type === 'setDeviceParameter' && action.payload.paramId === 'algorithm')
             .map((action) => (action.type === 'setDeviceParameter' ? action.payload.value : -1));
     }
@@ -127,7 +120,7 @@ describe('ProofChamberPanel', () => {
 
         fireEvent.click(railChip('Reverse'));
 
-        expect(algorithmValuesFromBatches()).toEqual([6]);
+        expect(dispatchedAlgorithmValues()).toEqual([6]);
     });
 
     it('offers no chip that would select an engine with no impulse response', () => {
@@ -137,7 +130,7 @@ describe('ProofChamberPanel', () => {
             fireEvent.click(railChip(label));
         }
 
-        expect(algorithmValuesFromBatches()).toEqual([0, 1, 2, 3, 6]);
+        expect(dispatchedAlgorithmValues()).toEqual([0, 1, 2, 3, 6]);
     });
 
     /**
