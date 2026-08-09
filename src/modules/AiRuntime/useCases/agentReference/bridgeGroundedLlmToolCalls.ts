@@ -1501,21 +1501,32 @@ function isDeclarativeGlueClause(commandText: string): boolean {
     return /^(?:glue|join)\b.*\b(?:is|are) (?:an? )?clips?$/u.test(commandText);
 }
 
-function hasClipReference(text: string, context: ProjectContext): boolean {
-    return context.tracks.some((track) =>
-        track.clips.some((clip) =>
-            [clip.id, clip.name].some((reference) => getReferenceRanges(text, reference).length > 0)
-        )
-    );
-}
-
-function isPotentialGlueCommand(commandText: string, clauseText: string, context: ProjectContext): boolean {
+function isPotentialGlueCommand(commandText: string, context: ProjectContext): boolean {
     if (/^glue\b/u.test(commandText)) {
         return true;
     }
-    return (
-        /^join\b/u.test(commandText) &&
-        (/\b(?:clip|clips|selected clips)\b/u.test(commandText) || hasClipReference(clauseText, context))
+    if (!/^join\b/u.test(commandText)) {
+        return false;
+    }
+    const targetText = commandText.replace(/^join\s+/u, '');
+    if (/^(?:(?:the )?selected clips|(?:the )?clips?)(?: |$)/u.test(targetText)) {
+        return true;
+    }
+    return context.tracks.some((track) =>
+        track.clips.some((clip) =>
+            [clip.id, clip.name].some((reference) => {
+                const normalizedReference = normalizePromptText(reference);
+                const directTargets = [
+                    normalizedReference,
+                    `the ${normalizedReference}`,
+                    `clip ${normalizedReference}`,
+                    `the clip ${normalizedReference}`,
+                ];
+                return directTargets.some(
+                    (directTarget) => targetText === directTarget || targetText.startsWith(`${directTarget} `)
+                );
+            })
+        )
     );
 }
 
@@ -1523,7 +1534,7 @@ function isGlueCancellationClause(clause: PromptClause, clipIds: [string, string
     const visibleText = normalizePromptText(clause.masked);
     const normalizedText = normalizePromptText(clause.text);
     const visibleCancellation =
-        /^(?:but )?(?:(?:actually )?(?:do not|don t|dont|never) (?:glue|join)\b|(?:cancel|abort|scratch)\b|keep\b|leave\b|actually (?:do not|don t|dont)\b|without\b)/u;
+        /^(?:but )?(?:never mind\b|(?:actually )?(?:do not|don t|dont|never) (?:glue|join)\b|(?:cancel|abort|scratch)\b|keep\b|leave\b|actually (?:do not|don t|dont)\b|without\b)/u;
     if (!visibleCancellation.test(visibleText)) {
         return false;
     }
@@ -1536,7 +1547,8 @@ function isGlueCancellationClause(clause: PromptClause, clipIds: [string, string
             `^(?:but )?(?:actually )?(?:do not|don t|dont|never) (?:glue|join) (?:them|the clips|the exact pair|${targetPattern})(?: |$)`,
             'u'
         ),
-        /^(?:but )?(?:cancel|abort|scratch) (?:them|the clips|the exact pair)(?: |$)/u,
+        /^(?:but )?(?:cancel|abort|scratch) (?:it|them|the clips|the exact pair)(?: |$)/u,
+        /^(?:but )?never mind(?: |$)/u,
         /^(?:but )?keep (?:them|the clips|the exact pair) separate(?: |$)/u,
         /^(?:but )?leave (?:(?:them|the clips|the exact pair) )?unchanged(?: |$)/u,
         /^(?:but )?actually (?:do not|don t|dont)(?: |$)/u,
@@ -1552,7 +1564,8 @@ function analyzeGluePrompt(prompt: string, context: ProjectContext): GluePromptA
     const clauses = getGluePromptClauses(prompt, context);
     for (const [clauseIndex, clause] of clauses.entries()) {
         const commandText = normalizePromptText(stripPoliteGlueCommandCarrier(clause.text));
-        if (!/^(?:glue|join)\b/u.test(commandText) || isDeclarativeGlueClause(commandText)) {
+        const maskedCommandText = normalizePromptText(stripPoliteGlueCommandCarrier(clause.masked));
+        if (!/^(?:glue|join)\b/u.test(maskedCommandText) || isDeclarativeGlueClause(maskedCommandText)) {
             continue;
         }
         pairs ??= getGlueClipPairs(context);
@@ -1567,7 +1580,7 @@ function analyzeGluePrompt(prompt: string, context: ProjectContext): GluePromptA
             requests.push({ clauseIndex, clipIds: matches[0]! });
             continue;
         }
-        if (isPotentialGlueCommand(commandText, clause.text, context)) {
+        if (isPotentialGlueCommand(commandText, context)) {
             hasInvalidRequest = true;
         }
     }

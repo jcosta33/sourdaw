@@ -1050,6 +1050,27 @@ describe('bridgeGroundedLlmToolCalls', () => {
         expect(result.rejections).toEqual([]);
     });
 
+    it('does not treat a quoted glue target suffix as a declarative clause', () => {
+        const context = createGlueClipContext();
+        const namedTargetContext = {
+            ...context,
+            tracks: context.tracks.map((track) => ({
+                ...track,
+                clips: track.clips.map((clip) => (clip.id === 'clip-midi-verse' ? { ...clip, name: 'This Is' } : clip)),
+            })),
+        };
+        const result = bridge(
+            [{ name: 'glueClips', arguments: { clipIds: ['clip-midi-intro', 'clip-midi-verse'] } }],
+            'glue "MIDI Intro" and "This Is" clips',
+            namedTargetContext
+        );
+
+        expect(result.actions).toEqual([
+            { type: 'glueClips', payload: { clipIds: ['clip-midi-intro', 'clip-midi-verse'] } },
+        ]);
+        expect(result.rejections).toEqual([]);
+    });
+
     it('grounds exactly two selected clips and rejects selected sets with the wrong cardinality', () => {
         const context = createGlueClipContext();
         const accepted = bridge(
@@ -1123,6 +1144,17 @@ describe('bridgeGroundedLlmToolCalls', () => {
         );
 
         expect(results.every((result) => result.actions.length === 0)).toBe(true);
+    });
+
+    it('ignores a non-glue join command while preserving an unrelated grounded action', () => {
+        const result = bridge(
+            [{ name: 'setTempo', arguments: { bpm: 130 } }],
+            'join the call after reviewing MIDI Intro and MIDI Verse clips, then set tempo to 130',
+            createGlueClipContext()
+        );
+
+        expect(result.actions).toEqual([{ type: 'setTempo', payload: { bpm: 130 } }]);
+        expect(result.rejections).toEqual([]);
     });
 
     it('rejects the whole provider plan for multiple, incomplete, ambiguous, unmatched, or mismatched glue requests', () => {
@@ -1206,6 +1238,8 @@ describe('bridgeGroundedLlmToolCalls', () => {
             'glue MIDI Intro and MIDI Verse clips, but leave unchanged for review, then set tempo to 130',
             "glue MIDI Intro and MIDI Verse clips, actually don't because the phase is wrong, then set tempo to 130",
             'glue MIDI Intro and MIDI Verse clips; without changes because this is a dry run; set tempo to 130',
+            'glue MIDI Intro and MIDI Verse clips, never mind because the phase is wrong, then set tempo to 130',
+            'glue MIDI Intro and MIDI Verse clips, then cancel it because the timing is wrong, then set tempo to 130',
         ];
 
         const results = prompts.map((prompt) => bridge([glue, tempo], prompt, context));
@@ -2565,6 +2599,20 @@ describe('bridgeGroundedLlmToolCalls', () => {
                 payload: { name: 'Strings', trackIds: [guitar.id, 'track-guitar-2'] },
             },
         ]);
+    });
+
+    it('keeps a quoted Glue declaration inert before a VCA assignment', () => {
+        const glueVca = { id: 'vca-glue', name: 'Glue', gain: 1, muted: false, trackIds: [] };
+        const result = bridge(
+            [{ name: 'assignToVca', arguments: { trackId: guitar.id, vcaGroupId: glueVca.id } }],
+            '"Glue" is our VCA group; assign Guitar to Glue VCA',
+            { ...projectContext, vcaGroups: [...(projectContext.vcaGroups ?? []), glueVca] }
+        );
+
+        expect(result.actions).toEqual([
+            { type: 'assignToVca', payload: { trackId: guitar.id, vcaGroupId: glueVca.id } },
+        ]);
+        expect(result.rejections).toEqual([]);
     });
 
     it('preserves VCA array-target grounding for a member named Never Enough', () => {
