@@ -1,0 +1,23 @@
+.agents/decisions/0020-deferred-deallocation-off-the-audio-thread.md
+  s_bc88af7d3b054c::t_4c8ca308cd35ba 35-37
+.agents/decisions/0021-plugin-isolation-by-binary-with-per-plugin-override.md
+  s_bc88af7d3b054c::t_4c8ca308cd35ba 42,58-71
+docs/architecture/loudness-and-true-peak-conformance.md
+  s_bc88af7d3b054c::t_4c8ca308cd35ba 22,43-47,49-52,54-57,62,64-67
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "c5c657133b92734e247d639cf72cd809d1b86e05",
+  "prompts": {},
+  "sessions": {
+    "s_bc88af7d3b054c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f9b4a-11a2-7f61-8dfb-76eed0eb2a9c",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
