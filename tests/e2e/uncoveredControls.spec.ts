@@ -70,18 +70,23 @@ test.describe('Preferences settings', () => {
         await page.keyboard.press('Escape');
     });
 
-    test('Performance section exposes buffer size and sample rate selectors', async ({ page }) => {
+    test('Performance section exposes the audio-processing-profile selector and switches its description', async ({ page }) => {
         const dialog = page.getByRole('dialog').filter({ hasText: /Preferences/i });
         // Navigate to the Performance section (not the default General view).
         await dialog.getByRole('button', { name: 'Performance', exact: true }).click();
 
-        const buffer = dialog.getByRole('combobox', { name: /Buffer size/i });
-        await expect(buffer).toBeVisible();
-        expect(await buffer.locator('option').count()).toBeGreaterThan(1);
+        const profile = dialog.getByRole('combobox', { name: 'Audio processing profile' });
+        await expect(profile).toBeVisible();
+        // Two named profiles are offered (low-latency and high-capacity).
+        expect(await profile.locator('option').count()).toBeGreaterThanOrEqual(2);
 
-        const rate = dialog.getByRole('combobox', { name: /Sample rate/i });
-        await expect(rate).toBeVisible();
-        expect(await rate.locator('option').count()).toBeGreaterThan(0);
+        // The descriptive paragraph tracks the selected profile, so changing the
+        // select is a state change a test can observe — not a static control.
+        const description = dialog.getByText(/Chrome chooses the actual device latency/i);
+        // Default is low-latency → live-playing copy.
+        await expect(description).toContainText('live playing');
+        await profile.selectOption('highCapacity');
+        await expect(description).toContainText('dense sessions');
     });
 
     test('Appearance section exposes a UI scale slider with a value', async ({ page }) => {
