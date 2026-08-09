@@ -1117,6 +1117,22 @@ mod tests {
     }
 
     #[test]
+    fn a_delay_longer_than_the_line_is_silently_clamped_to_what_fits() {
+        let mut line = DelayLine::new(4);
+        for sample in [1.0, 2.0, 3.0, 4.0] {
+            line.write(sample);
+        }
+
+        // `read` clamps to `len - 1` rather than wrapping or panicking, so a
+        // short line asked for a long delay quietly returns the longest it
+        // holds. Lengthening a tap without resizing its buffer therefore does
+        // nothing at all, silently — in a plate whose buffers are sized from the
+        // same constants that name the taps, that is a live trap.
+        assert_eq!(line.read(3), 2.0);
+        assert_eq!(line.read(9), 2.0);
+    }
+
+    #[test]
     fn allpass_delays_its_stored_term_by_the_full_length() {
         let delay = 5;
         let mut line = DelayLine::new(delay + 1);
@@ -1223,10 +1239,16 @@ mod tests {
             right_arrival + plate.apf4_len
         );
         // None of 229, 173, 447 or 611 is a sum of the others, so each echo
-        // position identifies one allpass and driving a line with a different
-        // length empties its slot. What this cannot catch — and no test can — is
-        // exchanging `apf1_len` with `apf2_len`: two allpasses in series with the
-        // same coefficient are an LTI cascade, so swapping them is the same
-        // filter.
+        // position identifies one allpass and driving a line with a *shorter*
+        // length than its own empties that line's slot.
+        //
+        // Two things this deliberately does not catch, both measured rather than
+        // assumed. Driving a line with a length longer than its own buffer is a
+        // no-op, because `read` clamps — see
+        // `a_delay_longer_than_the_line_is_silently_clamped_to_what_fits`.
+        // And exchanging `APF1_LEN` with `APF2_LEN` coherently, buffer and tap
+        // together, leaves the whole crate green: the two input allpasses share
+        // a coefficient and sit in series with no feedback around them, so they
+        // are an LTI cascade and the exchange is the same filter.
     }
 }
