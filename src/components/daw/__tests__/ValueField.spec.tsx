@@ -425,6 +425,47 @@ describe('ValueField', () => {
             expect(onChange).toHaveBeenLastCalledWith(5);
         });
 
+        it('should accept a new drag after the tab is hidden mid-drag', () => {
+            const onChange = vi.fn();
+            render(<ValueField value={0} onChange={onChange} commitMode="release" min={-100} max={100} step={1} />);
+            const field = screen.getByRole('spinbutton');
+            const visibility = vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('hidden');
+            onTestFinished(() => {
+                visibility.mockRestore();
+            });
+
+            startDrag(field, 48);
+            fireEvent.pointerMove(field, { pointerId: 48, clientY: 80 });
+            fireEvent(document, new Event('visibilitychange'));
+
+            // The interrupted drag is aborted, not committed...
+            expect(onChange).not.toHaveBeenCalled();
+            expect(field).toHaveAttribute('aria-valuetext', '0');
+
+            // ...and the field is not stranded: a new pointer can take it.
+            startDrag(field, 49);
+            fireEvent.pointerMove(field, { pointerId: 49, clientY: 90 });
+            fireEvent.pointerUp(field, { pointerId: 49 });
+
+            expect(onChange).toHaveBeenCalledTimes(1);
+            expect(onChange).toHaveBeenCalledWith(5);
+        });
+
+        it('should keep dragging while the tab stays visible', () => {
+            // The listener must key on `visibilityState`, not fire on every event:
+            // a `visibilitychange` that reports "visible" must not abort a drag.
+            const onChange = vi.fn();
+            render(<ValueField value={0} onChange={onChange} min={-100} max={100} step={1} />);
+            const field = screen.getByRole('spinbutton');
+
+            startDrag(field, 50);
+            fireEvent(document, new Event('visibilitychange'));
+            fireEvent.pointerMove(field, { pointerId: 50, clientY: 90 });
+
+            expect(onChange).toHaveBeenCalledTimes(1);
+            expect(onChange).toHaveBeenLastCalledWith(5);
+        });
+
         it('should discard the pending value when the gesture is cancelled, not commit it', () => {
             const onChange = vi.fn();
             render(<ValueField value={0} onChange={onChange} commitMode="release" min={-100} max={100} step={1} />);

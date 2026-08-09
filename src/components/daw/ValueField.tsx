@@ -331,7 +331,14 @@ export const ValueField = ({
                 onDoubleClick={handleDoubleClick}
                 onKeyDown={handleKeyDown}
                 className={cn(
-                    'daw-inset-surface flex items-center justify-center rounded-micro px-1.5 py-0.5 font-mono tabular-nums select-none',
+                    // `touch-none`: without it the browser claims a single-finger
+                    // drag as a scroll/pan gesture and answers our capture with
+                    // `pointercancel`, so the field cannot be scrubbed by touch at
+                    // all — measured as pointerdown → gotpointercapture →
+                    // pointercancel, zero `onChange`. `RotaryKnob` already carries
+                    // it. `select-none` only stops text selection; it does not
+                    // surrender the gesture.
+                    'daw-inset-surface flex items-center justify-center rounded-micro px-1.5 py-0.5 font-mono tabular-nums select-none touch-none',
                     'transition-[color,box-shadow,border-color,filter] duration-fast',
                     'cursor-ns-resize',
                     isDragging
