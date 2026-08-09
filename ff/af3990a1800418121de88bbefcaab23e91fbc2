@@ -1,0 +1,18 @@
+src/modules/Project/useCases/projectPersistence/saveProject/__tests__/saveProject.durability.spec.ts
+  h_1228e573df1f42 201-208
+src/modules/Project/useCases/projectPersistence/saveProject/__tests__/saveProject.spec.ts
+  h_1228e573df1f42 149-173
+src/modules/Project/useCases/projectPersistence/saveProject/saveProject.ts
+  h_1228e573df1f42 99,102-112,123-125
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "ffaf3990a1800418121de88bbefcaab23e91fbc2",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
