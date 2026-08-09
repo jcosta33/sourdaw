@@ -1,7 +1,11 @@
 //! Does a Dutch Oven nobody has written to actually damp?
 //!
-//! The plate shipped `damping: 0.0005` in its constructor while its own panel
-//! knob read 30% and reset to `0.3` (#1546). Nothing could see it. Every guard
+//! The plate shipped `damping: 0.0005` in its constructor while the Damp
+//! knob's reset target and `DEFAULT_PARAMS.damping` both said `0.3` (#1546).
+//! The knob's *readout* was not part of the disagreement — it displays the
+//! stored value, so an old device read "0%" and agreed with the engine, which
+//! is why nobody saw this by looking. Nothing else could see it either: every
+//! guard
 //! in `plate_parameter_surface.rs` compares two renders that both run through
 //! the same mapping, and the TypeScript census
 //! (`declaredDefaultConsensus.spec.ts`) compares declared *numbers* to each
@@ -261,10 +265,11 @@ fn damping_monotonically_darkens_the_tail() {
 
 #[test]
 fn the_constructor_default_renders_as_the_value_the_panel_resets_to() {
-    // The panel's Damp knob resets to 0.3 and its readout reads 30%
-    // (`ProofChamberPanel.tsx`), and `DEFAULT_PARAMS.damping` is 0.3. This is
-    // the render-side half of that: an instance nobody has written to must be
-    // bit-identical to one explicitly set to 0.3.
+    // The panel's Damp knob resets to 0.3 (`ProofChamberPanel.tsx`) and
+    // `DEFAULT_PARAMS.damping` is 0.3. This is the render-side half of that: an
+    // instance nobody has written to must be bit-identical to one explicitly
+    // set to 0.3, so the reset target and the shipped instance are the same
+    // reverb rather than two.
     //
     // 0.3 is on the knob's `step={0.001}` grid and survives the f32 round trip
     // through `set_param`, so "identical" is the right strength here — an

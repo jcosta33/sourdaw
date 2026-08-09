@@ -64,12 +64,22 @@ export const NATIVE_DSP_DESCRIPTORS: PluginDescriptor[] = [
                 // `updateDeviceParam`, so it is what a newly added Dutch Oven actually
                 // sounds like — and 0.0005 in the tank's `OnePole` takes 0.0087 dB off
                 // at Nyquist, leaving the 6-12 kHz band louder than 400-1200 Hz two
-                // seconds into the tail. It is also off the panel knob's `step={0.001}`
-                // grid, so a user who touched Damp could never return to it. 0.0005 is
-                // Dattorro Table 1's own recommended value and was transcribed
-                // correctly; what was wrong was shipping it as a product default while
-                // every surface here claimed 0.3. The plate constructor,
-                // `DEFAULT_PARAMS.damping` and the knob's `defaultValue` all read 0.3.
+                // seconds into the tail.
+                //
+                // What disagreed with it were the two *reset/default* declarations —
+                // `DEFAULT_PARAMS.damping` and the Damp knob's `defaultValue`, both
+                // 0.3. The knob's readout was not part of the disagreement: it shows
+                // the stored value through `Math.round(v * 100)`, so an old device read
+                // "0%" and agreed with the engine, which is why looking at the panel
+                // never revealed this. And because the knob is `step={0.001}`, that
+                // wrong reset target was the only route back to 0.0005 — once a user
+                // touched Damp, the value their device booted at was unreachable.
+                //
+                // 0.0005 is Dattorro Table 1's own recommended value and was
+                // transcribed correctly; what was wrong was shipping a reference
+                // preset as a product default. The plate constructor,
+                // `DEFAULT_PARAMS.damping` and the knob's `defaultValue` now all read
+                // 0.3.
                 value: 0.3,
                 defaultValue: 0.3,
                 minValue: 0,

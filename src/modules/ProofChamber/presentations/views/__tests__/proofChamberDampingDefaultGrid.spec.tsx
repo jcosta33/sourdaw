@@ -112,6 +112,32 @@ describe('the Dutch Oven Damp knob can return to the value it ships at', () => {
         expect(DEFAULT_PARAMS.damping).toBe(0.3);
     });
 
+    it('displays the stored value and not the reset target', () => {
+        // Which surface said what, pinned — because the first revision of
+        // #1546's PR got it backwards and wrote the wrong story into a source
+        // comment that outlives the PR.
+        //
+        // The Damp knob displays `params.damping`, which
+        // `hydrateChamberStateFromProject` seeds from `Device.parameterValues`
+        // on mount, through `formatValue(value, '%')` — `Math.round(v * 100)`.
+        // So a device added at the old descriptor default read **0%** and
+        // agreed with the engine. What disagreed with the descriptor and the
+        // Rust constructor were the two *reset/default* declarations,
+        // `DEFAULT_PARAMS.damping` and the knob's `defaultValue`, both 0.3.
+        //
+        // `Math.round` is also why the old value was invisible rather than
+        // merely wrong: 0.0005 and a true zero both render "0%".
+        const oldDefault = renderDampKnobAt(0.0005);
+        expect(oldDefault.getAttribute('aria-valuenow')).toBe('0.0005');
+        expect(oldDefault.parentElement?.textContent).toContain('0%');
+        expect(oldDefault.parentElement?.textContent).not.toContain('30%');
+
+        cleanup();
+        const newDefault = renderDampKnobAt(DEFAULT_PARAMS.damping);
+        expect(newDefault.getAttribute('aria-valuenow')).toBe('0.3');
+        expect(newDefault.parentElement?.textContent).toContain('30%');
+    });
+
     it('steps off the shipped default and back onto it exactly', () => {
         const knob = renderDampKnobAt(DEFAULT_PARAMS.damping);
         fireEvent.keyDown(knob, { key: 'ArrowUp' });

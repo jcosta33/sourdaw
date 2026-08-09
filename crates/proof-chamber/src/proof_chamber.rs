@@ -414,12 +414,19 @@ impl ProofChamber {
             //
             // Three reasons, none of them about the paper:
             //
-            // * It contradicted the product. The Damp knob reads 30%, resets
-            //   to 0.3, and `DEFAULT_PARAMS.damping` is 0.3. `addDevice` pushes
-            //   the descriptor value, so a new device ran 0.0005 while every
-            //   surface claimed 0.3.
+            // * It contradicted its own reset target and the module default.
+            //   Two declarations said 0.3 — `DEFAULT_PARAMS.damping` and the
+            //   Damp knob's `defaultValue` — while `addDevice` pushed the
+            //   descriptor's 0.0005 to the engine. The knob's *readout* is not
+            //   part of that disagreement and an earlier revision of this
+            //   comment said it was: it displays the stored value through
+            //   `Math.round(v * 100)`, so an old device read "0%" and agreed
+            //   with the engine. That agreement is what made this invisible —
+            //   0.0005 and a true zero are the same three characters on screen.
             // * It is off the control's grid. The knob is `step={0.001}`, so
-            //   0.0005 is unreachable once the user touches Damp.
+            //   the reset target above was the only way back to 0.0005 and it
+            //   pointed somewhere else; once the user touched Damp, the value
+            //   their device booted at was unreachable.
             // * It does not sound like a plate. In this file's `OnePole` that
             //   coefficient removes 0.0087 dB at Nyquist; measured on an
             //   impulse at mix 1, the 6-12 kHz band came out +0.21 dB *above*
@@ -454,14 +461,14 @@ impl ProofChamber {
             //   Its entire authority is its response at Nyquist,
             //   20*log10(0.9995/1.0005) = -0.0087 dB. The same number in the
             //   two positions is not the same amount of filtering.
-            // * **No contradicted claim.** `damping` had a descriptor entry, a
-            //   `set_param` arm, a `DEFAULT_PARAMS` entry and a knob reading
-            //   30%, and disagreed with all of them; that contradiction is what
-            //   made it a defect rather than a preference. `bandwidth` has none
-            //   of those — no descriptor parameter, no arm, no module default,
-            //   no control. Nothing in the product says it is anything other
-            //   than what it is, and the user-facing treble control on this
-            //   path is the output stage's 12 kHz `high_cut`.
+            // * **No contradicted claim.** `damping` contradicted its own reset
+            //   target and the module default — the Damp knob's `defaultValue`
+            //   and `DEFAULT_PARAMS.damping`, both 0.3 — and that contradiction
+            //   is what made it a defect rather than a preference. `bandwidth`
+            //   has no reset target, no module default, no descriptor entry, no
+            //   `set_param` arm and no control, so there is nothing for it to
+            //   contradict. The user-facing treble control on this path is the
+            //   output stage's 12 kHz `high_cut`.
             //
             // The paper does **not** separate the two, and an earlier revision
             // of this comment claimed it did. Table 1 reads
