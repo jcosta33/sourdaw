@@ -194,7 +194,13 @@ describe('useChannelStripActions', () => {
         expect(result.current.displayGain).toBe(0.42);
     });
 
-    it('setGain commits the settled value as one action', () => {
+    it('setGain commits the settled value as one action and keeps drawing it until the write lands', async () => {
+        let settleCommit = (): void => undefined;
+        mocks.executeAppAction.mockReturnValueOnce(
+            new Promise<void>((resolve) => {
+                settleCommit = resolve;
+            })
+        );
         const { result } = renderHook(() => useChannelStripActions(makeTrack({ id: 'track-1', gain: 0.8 })));
 
         act(() => {
@@ -207,7 +213,33 @@ describe('useChannelStripActions', () => {
             type: 'setTrackGain',
             payload: { trackId: 'track-1', gain: 0.31 },
         });
-        // Gesture state is released, so the strip goes back to project truth.
+        // While the commit is in flight the strip still draws the settled value.
+        // Handing the display straight back to `track.gain` here showed the
+        // pre-gesture 0.8 for as long as the action took, so the fader snapped
+        // back to where the move started at the end of every gesture.
+        expect(result.current.displayGain).toBe(0.31);
+
+        await act(async () => {
+            settleCommit();
+            // Let the commit continuation's `finally` run before asserting.
+            await Promise.resolve();
+        });
+
+        // Only once the write has landed does the strip go back to project
+        // truth — which is also what makes it clamping-proof, since the stored
+        // value need not equal the value that was committed.
+        expect(result.current.displayGain).toBe(0.8);
+    });
+
+    it('hands the display back to project truth even when the commit rejects', async () => {
+        mocks.executeAppAction.mockRejectedValueOnce(new Error('commit failed'));
+        const { result } = renderHook(() => useChannelStripActions(makeTrack({ id: 'track-1', gain: 0.8 })));
+
+        await act(async () => {
+            result.current.setGain(0.31, false);
+            await Promise.resolve();
+        });
+
         expect(result.current.displayGain).toBe(0.8);
     });
 
@@ -223,7 +255,13 @@ describe('useChannelStripActions', () => {
         expect(result.current.displayPan).toBe(-25);
     });
 
-    it('setPan commits the settled value as one action', () => {
+    it('setPan commits the settled value as one action and keeps drawing it until the write lands', async () => {
+        let settleCommit = (): void => undefined;
+        mocks.executeAppAction.mockReturnValueOnce(
+            new Promise<void>((resolve) => {
+                settleCommit = resolve;
+            })
+        );
         const { result } = renderHook(() => useChannelStripActions(makeTrack({ id: 'track-1', pan: 0 })));
 
         act(() => {
@@ -236,7 +274,56 @@ describe('useChannelStripActions', () => {
             type: 'setTrackPan',
             payload: { trackId: 'track-1', pan: -30 },
         });
+        expect(result.current.displayPan).toBe(-30);
+
+        await act(async () => {
+            settleCommit();
+            // Let the commit continuation's `finally` run before asserting.
+            await Promise.resolve();
+        });
+
         expect(result.current.displayPan).toBe(0);
+    });
+
+    it('releases touch automation after the commit rather than before it', async () => {
+        let settleCommit = (): void => undefined;
+        mocks.executeAppAction.mockReturnValueOnce(
+            new Promise<void>((resolve) => {
+                settleCommit = resolve;
+            })
+        );
+        const { result } = renderHook(() =>
+            useChannelStripActions(makeTrack({ id: 'track-1', automationMode: 'touch' }))
+        );
+
+        act(() => {
+            result.current.setGain(0.31, false);
+        });
+
+        // The write has not landed, so the lane must still be armed — releasing
+        // here would be re-armed by the commit's own automation write.
+        expect(mocks.releaseTouchAutomation).not.toHaveBeenCalled();
+
+        await act(async () => {
+            settleCommit();
+            // Let the commit continuation's `finally` run before asserting.
+            await Promise.resolve();
+        });
+
+        expect(mocks.releaseTouchAutomation).toHaveBeenCalledWith('track-1', 'gain');
+    });
+
+    it('does not release touch automation for a track that is not in touch mode', async () => {
+        const { result } = renderHook(() =>
+            useChannelStripActions(makeTrack({ id: 'track-1', automationMode: 'write' }))
+        );
+
+        await act(async () => {
+            result.current.setGain(0.31, false);
+            await Promise.resolve();
+        });
+
+        expect(mocks.releaseTouchAutomation).not.toHaveBeenCalled();
     });
 
     it('setColor dispatches setTrackColor through the canonical write path', () => {

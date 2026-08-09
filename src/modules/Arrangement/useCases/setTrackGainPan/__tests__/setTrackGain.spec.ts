@@ -81,9 +81,14 @@ describe('setTrackGain', () => {
         expect(mocks.recordAutomationValue).toHaveBeenCalledWith('t1', 'gain', 0.8, 10);
     });
 
-    it('skips persistence and automation when the change is transient', () => {
-        // A transient (e.g. live drag) change still drives the engine live value
-        // but must not write the store or record automation until committed.
+    it('skips persistence but still records the gesture when the change is transient', () => {
+        // `isTransient` splits persistence from the gesture, not the gesture
+        // from its recording. A live drag sample must not write the store or
+        // the Toaster pad mirror — project truth belongs to the committed
+        // value — but the ride itself is the automation, so it still reaches
+        // `recordAutomationValue`, which buffers it for the RDP thinning
+        // `flushPendingPoints` runs on release. Recording only the committed
+        // endpoint replaced a whole fader ride with a step at the release beat.
         mocks.getTrackById.mockReturnValue({ id: 't1', automationMode: 'write' });
         mocks.transportStoreValue = { isPlaying: true, playheadPosition: 10 };
 
@@ -91,7 +96,16 @@ describe('setTrackGain', () => {
 
         expect(mocks.engineSetTrackGain).toHaveBeenCalledWith('t1', 0.8);
         expect(mocks.updateTrack).not.toHaveBeenCalled();
-        expect(mocks.recordAutomationValue).not.toHaveBeenCalled();
         expect(mocks.updateDeviceParam).not.toHaveBeenCalled();
+        expect(mocks.recordAutomationValue).toHaveBeenCalledWith('t1', 'gain', 0.8, 10);
+    });
+
+    it('records nothing from a transient change while the transport is stopped', () => {
+        mocks.getTrackById.mockReturnValue({ id: 't1', automationMode: 'write' });
+        mocks.transportStoreValue = { isPlaying: false };
+
+        setTrackGain('t1', 0.8, true);
+
+        expect(mocks.recordAutomationValue).not.toHaveBeenCalled();
     });
 });

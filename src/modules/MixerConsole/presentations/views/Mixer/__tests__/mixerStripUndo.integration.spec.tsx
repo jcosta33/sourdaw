@@ -8,6 +8,12 @@ import { configureAutomergeStoragePort } from '#/infra/store/storage/createAutom
 import { trackStore } from '#/modules/Arrangement/stores';
 import { getArrangementHandlers, setArrangementEventBus } from '#/modules/Arrangement/useCases';
 import { setTrackGain as engineSetTrackGain } from '#/modules/AudioEngine/useCases';
+import { automationStore } from '#/modules/Automation/stores';
+import {
+    isRecordingAutomation,
+    setAutomationRecordingDependencies,
+    stopAutomationRecording,
+} from '#/modules/Automation/useCases';
 import { clearHandlerRegistry, macroStore, registerHandlerMap, undoStore } from '#/modules/Command/stores';
 import {
     clearUndoHistory,
@@ -21,6 +27,7 @@ import {
     removeCrdtDoc,
     resetCrdtProjectAuthority,
 } from '#/modules/CrdtDocument/useCases';
+import { defaultTransportState, transportStore } from '#/modules/Transport/stores';
 import { confirmUser } from '#/utils/Notification/confirmUser';
 
 import { useTracks } from '../../../hooks/useTracks';
@@ -260,6 +267,79 @@ function openStripMenu(): void {
     fireEvent.contextMenu(strip(), { clientX: 0, clientY: 0 });
 }
 
+const GAIN_LANE_ID = 'lane-gain-strip-track';
+
+/**
+ * Arm a real automation recording session for the strip's gain: a lane to write
+ * into, a rolling transport, and the latency-compensation seam the recorder
+ * reads. `getCompensationDelay` is zero so a recorded beat is the playhead beat
+ * and the assertions can name exact beats.
+ */
+function armGainAutomation(mode: 'write' | 'touch'): void {
+    setAutomationRecordingDependencies({
+        getAudioContext: () => ({ baseLatency: 0, outputLatency: 0 }) as unknown as AudioContext,
+        getCompensationDelay: () => 0,
+    });
+    automationStore.set({
+        lanes: [
+            {
+                id: GAIN_LANE_ID,
+                trackId: TRACK_ID,
+                parameterId: 'gain',
+                parameterName: 'Gain',
+                points: [],
+                objects: [],
+                visible: true,
+                enabled: true,
+                collapsed: false,
+                minValue: 0,
+                maxValue: 1,
+            },
+        ],
+    });
+    trackStore.set({
+        ...trackStore.value!,
+        tracks: (trackStore.value?.tracks ?? []).map((track) =>
+            track.id === TRACK_ID ? { ...track, automationMode: mode } : track
+        ),
+    });
+    transportStore.set({ ...defaultTransportState, isPlaying: true, tempo: 120, playheadPosition: 0 });
+}
+
+function movePlayheadTo(beat: number): void {
+    transportStore.set({ ...transportStore.value!, playheadPosition: beat });
+}
+
+function recordedGainPoints(): Array<{ beat: number; value: number }> {
+    const lane = automationStore.value?.lanes.find((candidate) => candidate.id === GAIN_LANE_ID);
+    return (lane?.points ?? []).map((point) => ({ beat: point.beat, value: point.value }));
+}
+
+/**
+ * A V-shaped ride: down to the floor and back up. A straight ramp would collapse
+ * to its two endpoints under `simplifyGesturePoints`' RDP pass and could not
+ * tell a recorded gesture apart from a recorded endpoint, which is the whole
+ * question here. The vertex survives thinning, so its presence is the proof the
+ * ride itself was recorded.
+ */
+function rideFaderInAVee(fader: HTMLElement): void {
+    const cap = fader.querySelector('[data-role="fader-cap"]')!;
+    fireEvent.pointerDown(cap, { button: 0, pointerId: 5, clientY: 50 });
+    const samples: Array<[number, number]> = [
+        [1, 60],
+        [2, 70],
+        [3, 80],
+        [4, 70],
+        [5, 60],
+    ];
+    for (const [beat, clientY] of samples) {
+        movePlayheadTo(beat);
+        fireEvent.pointerMove(fader, { pointerId: 5, clientY });
+    }
+    movePlayheadTo(6);
+    fireEvent.pointerUp(fader, { pointerId: 5 });
+}
+
 describe('mixer strip writes reach the project through the recorded path', () => {
     beforeEach(() => {
         vi.clearAllMocks();
@@ -284,6 +364,8 @@ describe('mixer strip writes reach the project through the recorded path', () =>
         resetActionReplayAuthority();
         clearHandlerRegistry();
         trackStore.set({ tracks: [], selectedTrackId: null, ghostClips: [] });
+        automationStore.set({ lanes: [] });
+        transportStore.set({ ...defaultTransportState });
         configureAutomergeStoragePort(null);
         removeCrdtDoc('root');
     });
@@ -427,6 +509,107 @@ describe('mixer strip writes reach the project through the recorded path', () =>
         await undo();
         expect(trackStore.value?.tracks.find((candidate) => candidate.id === TRACK_ID)?.pan).toBe(0);
         expect(within(strip()).getByText('C')).toBeTruthy();
+    });
+
+    /**
+     * A fader ride *is* the automation, not a value that happens to land at the
+     * end of one. Every DAW that records mixer moves records the ride and then
+     * offers to thin it — Pro Tools writes "a series of very small steps" and
+     * ships Degree of Thinning; Live warns about envelopes with many
+     * breakpoints "e.g., after recording automation" and ships Simplify
+     * Envelope; REAPER ships point reduction; Logic records "any controller
+     * movements" as nodes. This repo already agrees:
+     * `flushPendingPoints.ts` thins on flush precisely so "a full-rate
+     * fader/MIDI ride does not persist raw into project truth".
+     *
+     * Splitting the gesture from its commit must not throw the gesture away.
+     */
+    it('records the shape of a fader ride in touch mode, not just where it stopped', async () => {
+        armGainAutomation('touch');
+        render(<MixerStripRow />);
+
+        rideFaderInAVee(screen.getByRole('slider', { name: 'Lead Vocal gain' }));
+
+        await vi.waitFor(() => {
+            expect(undoLabels()).toEqual(['Set track gain']);
+        });
+
+        const points = recordedGainPoints();
+        // The vertex is the ride. A lane holding only the release value cannot
+        // contain it, and RDP keeps it because it is the turn.
+        const vertex = points.find((point) => point.beat === 3);
+        expect(vertex?.value).toBeCloseTo(0.35, 5);
+        // The ride spans the beats it was performed over rather than collapsing
+        // onto the release beat.
+        expect(points.filter((point) => point.beat >= 1 && point.beat <= 5).length).toBeGreaterThanOrEqual(3);
+    });
+
+    it('records the shape of a fader ride in write mode, not just where it stopped', async () => {
+        armGainAutomation('write');
+        render(<MixerStripRow />);
+
+        rideFaderInAVee(screen.getByRole('slider', { name: 'Lead Vocal gain' }));
+
+        await vi.waitFor(() => {
+            expect(undoLabels()).toEqual(['Set track gain']);
+        });
+        // Write mode holds its pass in the recording buffer until the transport
+        // stops — that is where its flush lives, not on release.
+        stopAutomationRecording();
+
+        const points = recordedGainPoints();
+        const vertex = points.find((point) => point.beat === 3);
+        expect(vertex?.value).toBeCloseTo(0.35, 5);
+        expect(points.filter((point) => point.beat >= 1 && point.beat <= 5).length).toBeGreaterThanOrEqual(3);
+    });
+
+    /**
+     * `releaseGainAutomation` fires synchronously on pointerup while the commit
+     * that follows it is a dispatch — so a commit that records automation lands
+     * *after* the release and re-arms the lane. `releaseTouchAutomation.ts`
+     * exists to stop exactly that: a lane left armed keeps being skipped by
+     * `applyAutomation` and the engine drifts off the curve until transport
+     * stop.
+     */
+    it('leaves touch automation released after the gain commit has settled', async () => {
+        armGainAutomation('touch');
+        render(<MixerStripRow />);
+
+        rideFaderInAVee(screen.getByRole('slider', { name: 'Lead Vocal gain' }));
+
+        await vi.waitFor(() => {
+            expect(undoLabels()).toEqual(['Set track gain']);
+        });
+
+        expect(isRecordingAutomation(TRACK_ID, 'gain')).toBe(false);
+    });
+
+    /**
+     * The commit is asynchronous, so handing the display back to project truth
+     * at dispatch time shows the pre-gesture value until the write lands — the
+     * fader visibly snaps back for a frame at the end of every move.
+     */
+    it('does not snap the fader back to its pre-gesture value while the commit is in flight', async () => {
+        render(<MixerStripRow />);
+
+        const fader = screen.getByRole('slider', { name: 'Lead Vocal gain' });
+        const cap = fader.querySelector('[data-role="fader-cap"]')!;
+        fireEvent.pointerDown(cap, { button: 0, pointerId: 6, clientY: 50 });
+        fireEvent.pointerMove(fader, { pointerId: 6, clientY: 70 });
+        expect(Number(fader.getAttribute('aria-valuenow'))).toBeCloseTo(0.5, 5);
+
+        fireEvent.pointerUp(fader, { pointerId: 6 });
+
+        // Read before awaiting anything: this is the frame the user sees between
+        // releasing the fader and the write landing.
+        expect(storedTrack()?.gain).toBeCloseTo(0.8, 5);
+        expect(Number(fader.getAttribute('aria-valuenow'))).toBeCloseTo(0.5, 5);
+        expect(within(strip()).getByText('-12.0 dB')).toBeTruthy();
+
+        await vi.waitFor(() => {
+            expect(storedTrack()?.gain).toBeCloseTo(0.5, 5);
+        });
+        expect(Number(fader.getAttribute('aria-valuenow'))).toBeCloseTo(0.5, 5);
     });
 
     it('records a strip mute and gives it back on undo', async () => {

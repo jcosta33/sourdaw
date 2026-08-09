@@ -79,21 +79,19 @@ export type ChannelStripActions = {
  *
  * **Gain and pan settle before they commit.** `Fader` and `RotaryKnob` both emit
  * `isTransient` true for each sample under the pointer and false once for the
- * settled value. The transient half drives only the audio engine, through
- * `setTrackGain`/`setTrackPan`'s existing transient path, so the level follows
- * the fader in real time; the settled value dispatches, which is what puts one
- * Automerge transaction and one undo entry on a whole sweep.
- * `handleSetTrackGain.describe()` runs before the write, so the inverse it
- * snapshots is the value from before the gesture began rather than the
- * second-to-last pointer sample — one press of undo returns the whole move.
+ * settled value. The transient half drives the audio engine and the automation
+ * recorder, through `setTrackGain`/`setTrackPan`'s transient path, so the level
+ * follows the fader in real time and a ride performed against a rolling
+ * transport still reaches its lane sample by sample; the settled value
+ * dispatches, which is what puts one Automerge transaction and one undo entry on
+ * a whole sweep. `handleSetTrackGain.describe()` runs before the write, so the
+ * inverse it snapshots is the value from before the gesture began rather than
+ * the second-to-last pointer sample — one press of undo returns the whole move.
  * Same bridge as `setGlutenParamWithAudio`.
  *
- * Consequence worth knowing: with the transient half no longer persisting, a
- * fader ridden during playback in an automation write mode records one point per
- * gesture rather than one per pointer sample. That follows from `isTransient`'s
- * pinned contract ("skips persistence and automation when the change is
- * transient", `setTrackGain.spec.ts`) and matches what the Inspector's
- * `TrackLevelSection` already does with the same use cases.
+ * What is split is *persistence*, not the gesture: undo granularity and
+ * automation resolution are separate questions, and answering the first must not
+ * silently answer the second. See `setTrackGain` for why.
  */
 export function useChannelStripActions(track: Track): ChannelStripActions {
     // Mid-gesture value, held only for the duration of a drag. Project truth is
@@ -111,6 +109,53 @@ export function useChannelStripActions(track: Track): ChannelStripActions {
     if (gesturePan !== null) {
         displayPan = gesturePan;
     }
+
+    /**
+     * Touch mode disarms only after the write it belongs to has landed.
+     *
+     * `releaseTouchAutomation` clears the lane's armed flag, and the strip also
+     * calls it straight from the fader's `pointerup`. That alone is now too
+     * early: the commit is a dispatch, so its own `recordAutomationValue` runs
+     * *after* the synchronous release and re-arms the lane — which is precisely
+     * what `releaseTouchAutomation` exists to prevent, and leaves
+     * `applyAutomation` skipping the lane until transport stop. Releasing again
+     * in the dispatch continuation puts the release back on the far side of the
+     * write. The two calls are not redundant: the pointerup one is what
+     * disarms a gesture that ends without a committed change and therefore
+     * never dispatches at all.
+     */
+    const releaseTouch = (parameterId: 'gain' | 'pan'): void => {
+        if (track.automationMode === 'touch') {
+            releaseTouchAutomation(track.id, parameterId);
+        }
+    };
+
+    /**
+     * Commit a settled gesture and hold its value on screen until the write has
+     * landed.
+     *
+     * Handing the display straight back to `track.gain` at dispatch time showed
+     * the *pre-gesture* value for as long as the action took to commit, so the
+     * fader visibly snapped back to where the move started on every release.
+     * Clearing in `finally` rather than on success means a rejected action also
+     * returns the control to project truth instead of stranding it on a value
+     * the project never took — and it is clamping-proof, which comparing the
+     * committed value against `track.gain` would not be.
+     */
+    const commitGesture = (
+        action: Parameters<typeof executeAppAction>[0],
+        parameterId: 'gain' | 'pan',
+        clearGesture: () => void
+    ): void => {
+        void (async () => {
+            try {
+                await executeAppAction(action);
+            } finally {
+                clearGesture();
+                releaseTouch(parameterId);
+            }
+        })();
+    };
 
     return {
         select: () => selectTrack(track.id),
@@ -148,22 +193,24 @@ export function useChannelStripActions(track: Track): ChannelStripActions {
             void executeAppAction({ type: 'toggleSoloSafe', payload: { trackId: track.id } });
         },
         setGain: (value, isTransient = false) => {
+            setGestureGain(value);
             if (isTransient) {
-                setGestureGain(value);
                 setTrackGain(track.id, value, true);
                 return;
             }
-            setGestureGain(null);
-            void executeAppAction({ type: 'setTrackGain', payload: { trackId: track.id, gain: value } });
+            commitGesture({ type: 'setTrackGain', payload: { trackId: track.id, gain: value } }, 'gain', () =>
+                setGestureGain(null)
+            );
         },
         setPan: (value, isTransient = false) => {
+            setGesturePan(value);
             if (isTransient) {
-                setGesturePan(value);
                 setTrackPan(track.id, value, true);
                 return;
             }
-            setGesturePan(null);
-            void executeAppAction({ type: 'setTrackPan', payload: { trackId: track.id, pan: value } });
+            commitGesture({ type: 'setTrackPan', payload: { trackId: track.id, pan: value } }, 'pan', () =>
+                setGesturePan(null)
+            );
         },
         setColor: (color) => {
             void executeAppAction({ type: 'setTrackColor', payload: { trackId: track.id, color } });
@@ -190,16 +237,8 @@ export function useChannelStripActions(track: Track): ChannelStripActions {
         toggleVca: (groupId) => toggleVcaMembership(track.id, groupId),
         createVcaAndAssign: () => createAndAssignVcaGroup(track.id),
         removeFromVca: () => removeFromVca(track.id),
-        releaseGainAutomation: () => {
-            if (track.automationMode === 'touch') {
-                releaseTouchAutomation(track.id, 'gain');
-            }
-        },
-        releasePanAutomation: () => {
-            if (track.automationMode === 'touch') {
-                releaseTouchAutomation(track.id, 'pan');
-            }
-        },
+        releaseGainAutomation: () => releaseTouch('gain'),
+        releasePanAutomation: () => releaseTouch('pan'),
         displayGain,
         displayPan,
     };
