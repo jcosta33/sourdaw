@@ -1,0 +1,19 @@
+tests/e2e/exportAudioEvidence.spec.ts
+  s_6fdd4509c1738a::t_03624282c89c2c 79-88
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "812667e9f960eff0bedf9ff118d86d74d5885c3a",
+  "prompts": {},
+  "sessions": {
+    "s_6fdd4509c1738a": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7f5-4164-7562-b4dc-d1f69fe1a8b4",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
