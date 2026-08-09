@@ -1,83 +1,114 @@
-# 0019 — Retrospective capture: event-bounded, inactivity-flushed, MIDI first
+# 0019 — Retrospective capture: events for MIDI, ~60 seconds for audio, one explicit target
 
-**Status: proposed** — resolves `SPEC-retrospective-capture` DG-001, DG-002, DG-003 and DG-006.
+**Status: proposed** — resolves `SPEC-retrospective-capture` DG-001, DG-002, DG-003, DG-005 and DG-006.
 
-These four gates block 68 acceptance criteria between them. Nothing retrospective exists in the tree
-today: `startBackgroundCapture.ts` guards on `!state.enabled` and pushes a bookkeeping record into a
-store, no ring is allocated, and MIDI retains nothing either.
+These gates block 68 acceptance criteria. Nothing retrospective exists in the tree:
+`startBackgroundCapture.ts` guards on `!state.enabled` and pushes a bookkeeping record into a store,
+no ring is allocated, and MIDI retains nothing either.
 
 ## What the industry does
 
-All three reference DAWs ship this feature, and they agree on more than they differ on.
+Seven DAWs surveyed from vendor documentation. The feature is near-universal for MIDI, rare for
+audio, and the conventions are sharp where they exist.
 
-**Cubase — bounded by event count, not by time.** The Retrospective Record Buffer Size preference
-"determine[s] how much MIDI data can be captured in the buffer"; the buffer "captures up to 10000
-MIDI events, which can amount to a MIDI recording of around 2 minutes and 30 seconds. However, if you
-use a keyboard that produces a large amount of MIDI controller events, such as the ROLI Seaboard,
-this only corresponds to a recording of around 20 seconds." When full, "the MIDI events that were
-captured first are replaced by the new events." Insertion targets the selected track, and the buffer
-persists after an insert — Cubase ships a separate "Emptying the Retrospective Record Buffer"
-command.
+### MIDI buffers are sized in events, not seconds
 
-That single passage is the most useful piece of evidence available: it states the bound in events,
-gives the time range it implies, and names the exact case where the two diverge by a factor of seven.
+- **Cubase** — the preference is literally named *Retrospective Record Buffer Size **in Events***.
+  "The buffer captures up to 10000 MIDI events." "This can amount to a MIDI recording of around 2
+  minutes and 30 seconds." And then the sentence that settles the units question: for a controller
+  like the ROLI Seaboard "this only corresponds to a recording of around 20 seconds." Overflow drops
+  oldest: "the MIDI events that were captured first are replaced by the new events."
+- **Ableton Live** — "Whenever 16384 events are reached, the oldest 1024 events are discarded."
+  Block eviction, not per-event.
 
-**Logic — bounded by inactivity.** Flashback Capture "captures and temporarily stores incoming MIDI
-events or audio from a performance." "After a pause of 20 seconds between incoming MIDI events, those
-initial MIDI events before the pause are discarded." With Cycle off it "creates a region containing
-all the MIDI events received during playback", and on stop "a separate region containing all the MIDI
-events received since the last playback."
+A factor of seven between the same buffer's best and worst case is why a duration bound is a promise
+the implementation cannot keep.
 
-**Live — MIDI only, monitored tracks.** "Capture MIDI lets you retrieve the material you've just
-played on those tracks." "A new clip containing the phrase you played will be created on every
-monitored MIDI track." The manual states no buffer bound.
+### Audio retrospective is rare, opt-in, and always bounded near a minute
 
-**Only Logic retains audio**, and it does so behind a separate documented feature ("Capture a recent
-audio performance") rather than as part of the MIDI path.
+Three of seven have it, and all three land in the same place:
+
+- **Logic Pro 11.2+** (renamed *Flashback Capture*, which also added audio) — "Flashback Capture can
+  save up to one minute of audio." Playback only: "You can capture audio only while the project is
+  playing… While a project is stopped, no audio is captured." Floor: "The project must play for a
+  minimum of four seconds." Silence-gated: it saves "when there is an incoming audio signal… but not
+  when there is silence."
+- **Cubase / Nuendo** — *Audio Pre-Record*, opt-in and per-track: "You can capture up to 1 minute of
+  any incoming audio", set via "Audio Pre-Record Seconds" (max 60), and "the audio track [must be]
+  record-enabled".
+- **MOTU Digital Performer 11+** — *Retrospective Audio Record*, gated on arming: "DP starts
+  capturing audio as soon as you record-enable an audio track", with user-set "Time to capture per
+  track" and "Maximum total memory" caps, oldest-dropped when full.
+
+Pro Tools, Studio One and REAPER document retrospective **MIDI only**. Bitwig and Cakewalk document
+no retrospective capture at all.
+
+Note the asymmetry every one of the three enforces: MIDI is captured passively, audio is gated on
+arming or an explicit opt-in. Nobody buffers audio for free.
+
+### Targeting is the real fork
+
+This is where the industry genuinely splits, and it is worth choosing deliberately:
+
+| DAW | Target |
+| --- | --- |
+| Ableton Live | **fans out** — "created on every monitored MIDI track" |
+| Logic Pro | last-focused track; audio inherits "the settings of the last focused audio track" |
+| Cubase, Studio One | the **selected** track |
+| REAPER | the caller chooses — separate actions for "armed" vs "armed and selected" |
+| MOTU DP | record-armed, with a documented location precedence: time-range selection, then insertion point, then playback wiper |
 
 ## Decisions
 
-**DG-006 — MIDI first; audio is a separate later feature.** Two of three DAWs capture MIDI only, and
-the one that captures audio ships it as a distinct feature with its own settings. Splitting the same
-way keeps the always-on cost proportionate: a MIDI ring is kilobytes, an audio ring is megabytes per
-channel-minute, and the spec's own AC-013 already gates audio start on the route being *armed*.
+**DG-006 — MIDI passive, audio gated.** Capture MIDI always on armed or monitored tracks; capture
+audio only when the track is armed, matching Cubase and DP. Two of three audio implementations
+require arming and the third is playback-only; none buffers audio unconditionally.
 
-**DG-001 — bound the buffer by event count, not by duration.** Follow Cubase. A duration bound is a
-promise the implementation cannot keep, because event density varies by more than an order of
-magnitude between a keyboard part and an MPE controller — the ROLI case in Cubase's own manual is the
-proof. State the bound in events, publish the implied time range, and say what it degrades to.
+**DG-001 — MIDI bounded in events; audio bounded at 60 seconds.** State the MIDI ceiling in events
+and publish the implied duration range rather than promising a duration. Sixty seconds is the audio
+figure all three implementations independently landed on.
 
-**DG-003 — flush on inactivity, retain across a successful capture.** Logic discards after a 20-second
-gap between events; Cubase keeps the buffer after an insert and provides an explicit empty command.
-Take both: an inactivity timeout bounds unbounded growth without a wall-clock ring, and retaining
-after capture means a mis-aimed capture can be repeated rather than lost.
+**DG-003 — flush on inactivity, retain across a successful capture.** Logic discards after a
+20-second gap between events; Cubase expires stop-mode material after 30 seconds of not playing and
+ships explicit "Empty All Buffers" / "Empty Retrospective Record Buffer" commands. Retaining after
+capture means a mis-aimed capture can be repeated; Cubase's explicit clear is the escape hatch.
 
-**DG-002 — no content threshold.** The spec already flags that its source's informative text cites a
-`≥16`-note threshold that no acceptance criterion accepts. No manual surveyed states a minimum-content
-rule. Capture whatever is in the buffer; an empty buffer produces no clip and says so.
+**DG-002 — no content threshold.** The spec already flags that its source cites a `≥16`-note
+threshold no acceptance criterion accepts. No manual surveyed states a minimum-content rule for MIDI.
+What they do instead is **make the affordance the indicator**: Live greys the button out "when
+there's no MIDI data to capture"; Logic dims it until material exists. Do that.
 
-**DG-005 — the selected eligible track.** Cubase inserts into the selected track; Live targets every
-monitored MIDI track. Prefer Cubase's single explicit target — `trackStore.selectedTrackId` and
-`Track.armed` both already exist, so this needs no new state.
+**DG-005 — the selected eligible track, single target.** Follow Cubase and Studio One.
+`trackStore.selectedTrackId` and `Track.armed` already exist, so this needs no new state. Live's
+fan-out is coherent inside Live's session model and would surprise here.
 
 ## Consequences
 
-The event bound must be published in the UI in the units the user can reason about, which means
-showing both the event ceiling and its current implied duration rather than one or the other.
+Show the event ceiling and its current implied duration together — one without the other is the
+misleading half.
 
-Retaining the buffer after capture requires an explicit clear command, as Cubase has.
+An explicit clear command is required, as Cubase has.
 
-The only shipped ring in the app is `recordingSession.ts`'s `RING_FLOATS = 524_288` ("~= 10.9 s @
-48 kHz"), which is mono audio with a bare 4-byte write head. It is not a model for this — a MIDI event
-ring is a different shape, and that ring's own protocol is already slated for replacement.
+Tempo inference is conditional in every implementation that has it (Live only in an empty Set with
+transport stopped, clamped 80–160 BPM; Logic only under Smart Tempo Adapt; DP only when the sequence
+is empty). Do not infer tempo unconditionally.
+
+**On the shortcut:** the spec proposes `Shift+C`. Pro Tools moved Retrospective Record *off*
+`Shift+C` to `Alt+Shift+Z` in 2018.12 "to avoid a conflict", Logic uses `Shift-R`, and in our own
+registry `shift+c` is already bound to a Loop Station record pad while `mod+shift+c` is Chrome's
+Inspect Element on our primary web target. Pick something else.
 
 ## Sources
 
-- Cubase Pro 15 — Retrospective Record: https://www.steinberg.help/r/cubase-pro/15.0/en/cubase_nuendo/topics/recording/recording_inserting_retrospective_recording_from_all_midi_inputs_t.html and Record–MIDI preferences: https://www.steinberg.help/r/cubase-le/14.0/en/cubase_nuendo/topics/preferences/preferences_record_midi_r.html
-- Logic Pro — Flashback Capture: https://support.apple.com/guide/logicpro/overview-of-flashback-capture-lgcp8f89929b/mac and https://support.apple.com/guide/logicpro/capture-your-most-recent-midi-performance-lgcpdc0bf889/mac
-- Ableton Live 12 — Recording New Clips: https://www.ableton.com/en/manual/recording-new-clips/
+- Logic Pro: https://support.apple.com/guide/logicpro/capture-your-most-recent-midi-performance-lgcpdc0bf889/mac · https://support.apple.com/guide/logicpro/capture-a-recent-audio-performance-lgcpa5d2f9b8/mac · release notes https://support.apple.com/en-us/126835
+- Ableton Live: https://www.ableton.com/en/manual/recording-new-clips/ · https://help.ableton.com/hc/en-us/articles/360000776450-Capture-MIDI
+- Cubase: https://www.steinberg.help/r/cubase-pro/15.0/en/cubase_nuendo/topics/recording/recording_recovering_midi_recordings_c.html · https://www.steinberg.help/r/cubase-pro/15.0/en/cubase_nuendo/topics/recording/recording_audio_specifying_an_audio_prerecord_time_t.html
+- Studio One: https://fenderstudiopromanual.fender.com/en/Content/Fundamentals_Topics/Retrospective_Record.htm
+- REAPER user guide v7.78 §13.52 · MOTU DP11 new-features PDF and User Guide ch. 29 · Pro Tools shortcuts PDF and 2018.12 read-me
 
-**Unverified:** Live's exact buffer bound. Secondary sources report 16,384 events with the oldest
-1,024 discarded and a ~30-second inactivity clear; the manual states neither, and Ableton's help-centre
-article is not fetchable. Cubase's figures are quoted from Steinberg's own documentation and carry the
-argument on their own.
+**Unverified:** Logic's MIDI buffer size (only the 20-second and 1.5-bar rules are stated), Cubase's
+default buffer-size value, and buffer sizes for Studio One, REAPER and DP — all named as preferences
+without printed defaults.
+
+**Superseded draft:** an earlier revision of this ADR stated that only Logic captures audio. Cubase
+and MOTU DP do as well; the corrected survey is above.

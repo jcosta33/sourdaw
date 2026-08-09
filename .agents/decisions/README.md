@@ -34,6 +34,7 @@ ADR numbers 0001 and 0002 are reserved and must not be reused.
 | [0018](0018-clip-release-is-not-a-toggle-concern.md) | Release actions belong to gate-style launches, not to toggle — **status: proposed** |
 | [0019](0019-retrospective-capture-bounds.md)      | Retrospective capture: event-bounded, inactivity-flushed, MIDI first — **status: proposed** |
 | [0020](0020-deferred-deallocation-off-the-audio-thread.md) | Retired allocations leave the audio thread over a return channel — **status: proposed** |
+| [0021](0021-plugin-isolation-by-binary-with-per-plugin-override.md) | One helper per plugin binary, with a per-plugin full-isolation override — **status: proposed** |
 
 Genuinely open decisions that are not yet ADRs live in the
 [open-decision docket](open-decision-docket.md).
