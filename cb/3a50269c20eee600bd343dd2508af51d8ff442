@@ -1,0 +1,23 @@
+src/modules/Project/useCases/projectPersistence/saveProject/__tests__/interruptedProjectLoadDirtyTracking.integration.spec.ts
+  s_14f2bbc9f385dd::t_1e0fd5159977bc 63-68,70
+  s_14f2bbc9f385dd::t_d4058bdf7461b1 345
+  s_14f2bbc9f385dd::t_d39c89da239b58 324-329
+  s_14f2bbc9f385dd::t_38fefe4f02d915 232-239
+  s_14f2bbc9f385dd::t_386f19f9a8dfba 60-62,69
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "cb3a50269c20eee600bd343dd2508af51d8ff442",
+  "prompts": {},
+  "sessions": {
+    "s_14f2bbc9f385dd": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f9a61a1d-66b3-4146-938d-a04f45f4b060",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
