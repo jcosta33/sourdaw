@@ -40,7 +40,10 @@ const GLUTEN_PARAMS: readonly PluginParamDef[] = [
     // below already carry non-unit steps and are `float` today; this makes the
     // three sidechain filter corners agree instead of one of them being `int`.
     { id: 'scHpfFreq', label: 'SC HPF', min: 20, max: 500, default: 80, unit: 'Hz', scaling: 'log' },
-    { id: 'scHpfEnabled', label: 'SC HPF On', min: 0, max: 1, default: 1, unit: '', step: 1 },
+    // Off by default: a fresh Gluten is a VCA, and the detector filters reach
+    // only the diode. Moves with `DEFAULT_PATCH.scHpfEnabled`, which carries the
+    // reasoning.
+    { id: 'scHpfEnabled', label: 'SC HPF On', min: 0, max: 1, default: 0, unit: '', step: 1 },
     { id: 'thrust', label: 'Thrust', min: 0, max: 2, default: 0, unit: '', step: 1 },
     { id: 'detection', label: 'Detection', min: 0, max: 1, default: 0, unit: '', step: 1 },
     { id: 'scLpfFreq', label: 'SC LPF', min: 1000, max: 20000, default: 20000, unit: 'Hz', step: 100, scaling: 'log' },
@@ -62,7 +65,10 @@ const GLUTEN_PARAMS: readonly PluginParamDef[] = [
         label: 'OS',
         min: 1,
         max: 4,
-        default: 2,
+        // 1× by default: a fresh Gluten is a VCA, whose stage is not
+        // oversampled. Moves with `DEFAULT_PATCH.oversampling`, which carries
+        // the reasoning.
+        default: 1,
         unit: '',
         step: 1,
         legalSet: { values: [1, 2, 4], resolution: 'floor' },

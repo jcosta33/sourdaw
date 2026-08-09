@@ -20,7 +20,12 @@ describe('GLUTEN_DESCRIPTOR', () => {
     // [id, min, max, default] for the nine panel-exposed params that the
     // inventory missed. Defaults match GlutenPatch (booleans encoded as 0).
     const panelExposedParams: ReadonlyArray<readonly [string, number, number, number]> = [
-        ['oversampling', 1, 4, 2],
+        // 1×, matching `DEFAULT_PATCH.oversampling`. It was 2× on both sides
+        // until the panel started gating: a fresh device is a VCA, whose stage
+        // is not oversampled, so 2× drew a lit-and-greyed chip claiming a path
+        // that does not run. The seven FET and Diode presets state 2×
+        // themselves, so none of them changed.
+        ['oversampling', 1, 4, 1],
         ['scEqFreq', 20, 20000, 1000],
         ['scEqGain', -18, 18, 0],
         ['scEqQ', 0.1, 10, 1],

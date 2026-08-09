@@ -28,18 +28,39 @@ Picking the topology is most of the work. The rest of this page is what each one
 ## Topology
 
 Topology is the first choice, not a flavour applied afterwards. Each one responds to a different
-subset of the controls, and the ones it ignores stay visible but do nothing.
+subset of the controls. The ones it does not read stay in place and go grey, and hovering one tells
+you which topology cannot hear it and why — so the layout never shifts under you when you switch,
+and a knob that does nothing is never mistaken for a knob that is broken. Greying refuses your hand
+only: automation lanes, saved values, and anything already drawn are untouched.
 
 | Topology | Character | Shaped by |
 |---|---|---|
 | **VCA** | Clean, disciplined, predictable | Threshold, Ratio, Knee, Attack, Release, Auto rel, Range, Color, VCA type, Feedback / Feed forward |
 | **Opto** | Slow, self-levelling, forgiving | Threshold, Compress / Limit |
-| **FET** | Fast, aggressive, harmonically rich | Threshold, Ratio, Attack, Release, Input, Output, Xfmr, Odd, Even, All buttons |
-| **Diode** | Dense and weighty | Threshold, Ratio, Attack, Recovery, and the sidechain filters |
+| **FET** | Fast, aggressive, harmonically rich | Threshold, Ratio, Attack, Release, OS, Input, Output, Xfmr, Odd, Even, All buttons |
+| **Diode** | Dense and weighty | Threshold, Ratio, Attack, Recovery, OS, and the sidechain filters |
 
-Opto ignores Ratio, Attack, Release, Knee, and Range entirely — its timing comes from the modelled
-cell, and Threshold is the only shaping control you have. If you want to dial timing by hand, pick
-another topology.
+Every topology ignores something, and the table above only lists what each one *reads*. Stated the
+other way round, because a greyed control needs a page to look it up on:
+
+| Topology | Ignores |
+|---|---|
+| **VCA** | OS |
+| **Opto** | Ratio, Attack, Release, Auto rel, Knee, Range, OS |
+| **FET** | Knee, Range, Auto rel |
+| **Diode** | Release, Auto rel, Knee, Range |
+
+Opto is the widest gap: its timing comes from the modelled cell, and Threshold is the only shaping
+control you have. If you want to dial timing by hand, pick another topology. **Knee** and **Range**
+are fixed constants inside the FET and Diode stages rather than absent ideas — the compressors use a
+knee and a reduction ceiling, you just cannot set them. **Auto rel** exists only on the VCA. **OS**
+oversamples a nonlinear stage, and only the FET and the Diode have one.
+
+Add the twelve Detector controls to Opto, VCA and FET — see the warning in that section.
+
+Stage two reopens any of them. A control the first topology cannot hear goes live again the moment
+**Stage 2** is above zero with a topology behind it that can — Release on Diode with VCA in stage
+two is a real control, and the panel treats it as one.
 
 Two controls read a narrower range on some topologies than the knob offers. **Attack** spans
 0.02–250 ms on the knob, but FET only accepts 0.02–2 ms and Diode only 0.5–30 ms — turn Attack past
@@ -83,13 +104,24 @@ it, and touching either one afterwards overrides what Amount set. Use one or the
 
 **Mix** blends against the lookahead-delayed dry signal, so parallel settings stay phase-aligned at
 any **Look** value. **Match** acts only while the device is bypassed — it is for honest A/B, not for
-setting output level.
+setting output level. It is the one control that does nothing in the device's ordinary running state
+and is still left fully live, because greying it whenever the device is *not* bypassed would hide it
+for almost the whole session.
+
+**Stage 2** goes grey when the Stage two section names the topology you already selected as the
+primary — the second stage only runs when the two differ. Stage two starts on Opto, so selecting
+Opto as your primary is enough to reach that state; the Stage two section shows all four topologies
+with your primary greyed, so you can see the clash, and picking a different one brings the knob back.
+
+Anything greyed on a card also gets one line on that card naming what is refused and what to do
+about it, so you do not need to hover a control to find out.
 
 **Link** is on the detector, never on the output. At 100% both channels read the louder of the two
 and duck together, so the stereo image stays put — this is what you want on a bus. At 0% each
 channel gets its own reading and they breathe independently, which widens the image and can pull it
 off centre when one side is much louder. Anything in between blends the two readings. It applies on
-all four topologies.
+all four topologies — but not under **Dual mono**, which *is* an unlinked detector, so Link goes
+grey while that stereo mode is selected.
 
 ## Detector
 
@@ -106,16 +138,18 @@ The Detector section shapes what the compressor listens to, without changing wha
 | **Ext SC** | On / Off | Off | Detects from a routed sidechain source instead of the input. |
 | **RMS · PEAK** | — | RMS | What the detector measures. RMS averages over 10 ms and follows loudness; PEAK reacts to the instant. |
 | **Stereo · Mid · Side · Dual mono** | — | Stereo | Which part of the stereo image is compressed. Dual mono also forces Link to 0. |
-| **OS** | 1× · 2× · 4× | 2× | Oversamples the nonlinear stages. |
+| **OS** | 1× · 2× · 4× | 2× | Oversamples the nonlinear stages. FET and Diode only — the VCA's stage is not oversampled yet, and Opto has no nonlinearity to oversample. |
 
-The bell is a no-op until **EQ Gain** leaves 0 dB, so **EQ Q** on its own changes nothing — set the
-gain first, then narrow or widen.
+The bell is a no-op until **EQ Gain** leaves 0 dB, so **SC EQ** and **EQ Q** go grey until you move
+it — set the gain first, then centre and narrow.
 
 > [!WARNING]
-> **Not yet active.** SC HPF, SC LPF, SC EQ, EQ Gain, EQ Q, Thrust, and Ext SC reach the detector on
-> the **Diode** topology only. On VCA, Opto, and FET the detector listens to the unfiltered input
-> and these seven controls have no effect. VCA is the default topology, so ducking one track under
-> another requires switching to Diode first.
+> **Not yet active off Diode.** All twelve controls in this section — SC HPF, SC LPF, SC EQ, EQ
+> Gain, EQ Q, the HPF, LPF, SC EQ and Ext SC toggles, and the three Thrust chips — shape a detector
+> signal only the **Diode** topology reads. On VCA, Opto, and FET the detector listens to the
+> unfiltered input, so all twelve go grey and say so. VCA is the default topology, so ducking one
+> track under another means selecting Diode first — or running Diode in **Stage two**, which brings
+> the whole section back on any primary.
 
 RMS is the default and the usual choice for glue: it ignores single transients and follows how loud
 the material actually is. Switch to PEAK when you need the compressor to catch the transient itself
@@ -127,7 +161,11 @@ input, then turn on **Ext SC**.
 
 ## Character
 
-The Character section changes with the topology you selected.
+The Character section changes with the topology you selected. It also shows the Stage-two topology's
+controls, under their own headings — the second stage is a real compressor and hears its own
+controls, so a Diode running behind a VCA has its Recovery switch here even though Diode is not the
+primary. Those controls stay on the page while **Stage 2** sits at 0% and go grey instead of
+vanishing, so nothing moves under your hand as you turn the knob up.
 
 **VCA** — **Color** (0 to 0.02, default 0.003) adds nonlinearity to the gain element. **VCA type**
 selects Ideal, THAT 2181, or DBX 202, and starts on THAT 2181. **Feedback / Feed forward** switches
@@ -141,9 +179,10 @@ for it. **Xfmr** (0 to 3, default 1.2) sets transformer drive. **Odd** (0 to 0.5
 **Even** (0 to 0.3, default 0) set harmonic content directly. **All buttons** engages the
 ratio-crush mode.
 
-**Diode** — **Recovery 1** to **Recovery 5** (default 3) replaces Release on this topology. Each
-position is a fixed release time: 50 ms, 100 ms, 400 ms, 800 ms, and 1.5 s. Low positions let the
-level spring back between hits; high positions hold the reduction through the tail and pump more.
+**Diode** — **Recovery 1** to **Recovery 5** (default 3) replaces Release on this topology, and the
+Release knob and **Auto rel** go grey while Diode is selected to say so. Each position is a fixed
+release time: 50 ms, 100 ms, 400 ms, 800 ms, and 1.5 s. Low positions let the level spring back
+between hits; high positions hold the reduction through the tail and pump more.
 
 ## Stage two
 
@@ -151,10 +190,15 @@ Stage two runs a second topology **in series** behind the first — the second c
 the first one's output, and **Stage 2** in the Finish section crossfades between the single-stage
 and dual-stage result. At 0% the second stage is off entirely.
 
-The Stage two section picks which topology runs second. It offers the three you have not already
-selected, so the two stages are always different; the pair defaults to Opto. Changing the first
-topology re-offers the list. A slow topology behind a fast one is the usual pairing: FET for
-transients, then VCA or Opto for the sustained level.
+The Stage two section picks which topology runs second. It shows all four with your primary greyed,
+because the two stages have to differ for the second one to run at all — so if Stage 2 is greyed,
+this is where you can see why. The pair defaults to Opto, which means selecting Opto as your primary
+puts the device in exactly that state. A slow topology behind a fast one is the usual pairing: FET
+for transients, then VCA or Opto for the sustained level.
+
+Stage two also reopens controls the first topology cannot hear. A Diode in stage two makes the whole
+Detector section live on any primary; a VCA in stage two brings back Knee, Range and Auto rel. The
+reason text on each greyed control names which topologies would do it.
 
 ## Meters and readouts
 

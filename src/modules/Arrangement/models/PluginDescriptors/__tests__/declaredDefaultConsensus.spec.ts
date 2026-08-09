@@ -809,6 +809,22 @@ const NON_DEFAULT_MODEL_DECLARATIONS: readonly {
             'rather than by anyone remembering to declare it, which is the population rule doing its job.',
     },
     {
+        file: 'src/modules/Gluten/models/GlutenTopologyGating.ts',
+        exportName: 'GLUTEN_TOPOLOGY_LABELS',
+        reason:
+            'Display names for the topology selector, and for the sentence a disabled control shows. String ' +
+            'values, keyed by topology rather than by parameter — the same shape and the same job as the Dutch ' +
+            'Oven’s `ALGORITHM_LABELS` above.',
+    },
+    {
+        file: 'src/modules/Gluten/models/GlutenTopologyGating.ts',
+        exportName: 'GLUTEN_TOPOLOGY_OWNED_CONTROLS',
+        reason:
+            'Which patch keys each topology’s Character card already renders behind its own conditional. A list ' +
+            'of key *names* per topology, with no values of any kind, used to account for every name the ' +
+            'worklet can send when the gap census is derived.',
+    },
+    {
         file: 'src/modules/Tuner/models/TunerState.ts',
         exportName: 'DEFAULT_TUNER_STATE',
         reason:
