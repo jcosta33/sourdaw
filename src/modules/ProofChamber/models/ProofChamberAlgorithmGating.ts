@@ -55,15 +55,35 @@ const LIVE: ChamberControlGate = { isInert: false, kind: null, explanation: null
 /**
  * The clause every disabled control ends with.
  *
- * ## What happens to a lane already drawn when the algorithm changes: nothing
+ * ## What happens to a value when the algorithm changes
  *
  * Gating refuses *manual* entry and nothing else. It does not touch the
  * descriptor's `automatable` flag, the automation lane picker, the stored
- * value, or any curve a project has already drawn. A lane keeps playing, keeps
- * saving, and becomes audible again the moment the user selects an algorithm
- * whose engine reads the parameter. The panel's algorithm chip dispatches
- * `algorithm` and nothing else, which
- * `proofChamberAlgorithmGating.spec.tsx` pins.
+ * value, or any curve a project has already drawn.
+ *
+ * That was not enough on its own, and the first version of this file shipped a
+ * sentence that was false because of it. `ProofChamberInstance::set_param`
+ * constructs a **new** engine when `algorithm` arrives (`lib.rs:117-136`) and
+ * replays nothing into it, so the switch discarded every parameter on the
+ * device — gated or not, automated or not. Measured plate → reverse → plate:
+ * bit-identical to an engine nobody had ever written to. The panel now re-sends
+ * the whole device after the selector, in one batch, with `algorithm` first;
+ * `proofChamberAlgorithmGating.spec.tsx` pins that order.
+ *
+ * What the sentence below therefore claims, and no more: the **value** is kept
+ * and takes effect again. Two things it deliberately does not claim:
+ *
+ * - An automation lane holding a *flat* value across the switch does not
+ *   re-deliver on its own — `applyAutomation` writes on a discontinuity or a
+ *   slew-threshold change, and a flat hold is neither. What the engine gets is
+ *   the replayed store value, which is the same number in every case a user
+ *   would notice, but it arrives from the panel rather than from the lane.
+ * - A peer's write and an undo do not reach the panel at all; see
+ *   `hydrateChamberStateFromProject`.
+ *
+ * Both are closed properly by a parameter cache inside `ProofChamberInstance`
+ * replayed into each newly constructed engine, which is engine work and is
+ * recorded as the follow-up rather than done here.
  *
  * Three alternatives were considered and rejected:
  *
@@ -92,7 +112,7 @@ const LIVE: ChamberControlGate = { isInert: false, kind: null, explanation: null
  * SP2016 ships for the same situation. It is a product call rather than a
  * technical one, and it is the part of this change most worth a second opinion.
  */
-const AUTOMATION_CLAUSE = 'Automation already drawn for it is kept and plays again on an algorithm that reads it.';
+const AUTOMATION_CLAUSE = 'Its value is kept and takes effect again on an algorithm that reads it.';
 
 export type ChamberControlGateInput = {
     readonly algorithm: ProofChamberAlgorithm;

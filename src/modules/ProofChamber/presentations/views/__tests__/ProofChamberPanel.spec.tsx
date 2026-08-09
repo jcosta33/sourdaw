@@ -2,7 +2,7 @@ import { render, fireEvent, screen } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { useStore } from '#/infra/store/useStore';
-import { executeAppAction } from '#/modules/Command/useCases';
+import { executeAppAction, executeAppActionBatch } from '#/modules/Command/useCases';
 
 import { DEFAULT_PARAMS } from '../../../models/ProofChamberState';
 import { ProofChamberPanel } from '../ProofChamberPanel';
@@ -26,6 +26,9 @@ vi.mock('../../../useCases/proofChamber/registerChamberInstance', () => ({
 }));
 vi.mock('../../../useCases/proofChamber/updateChamberEngine', () => ({
     updateChamberEngine: vi.fn(),
+}));
+vi.mock('../../../useCases/proofChamber/hydrateChamberStateFromProject', () => ({
+    hydrateChamberStateFromProject: vi.fn(),
 }));
 
 // Replace the canvas-driven decay-EQ overlay with a button that surfaces its
@@ -104,15 +107,27 @@ describe('ProofChamberPanel', () => {
      * carries 6 rather than 4, because 4 and 5 are reserved for the two
      * convolution-backed engines that have no impulse response to render.
      */
+    /**
+     * The algorithm write moved into `executeAppActionBatch` when the panel
+     * started re-sending the device after a switch: the engine is rebuilt from
+     * scratch on `algorithm`, so the selector and the replay have to land in
+     * one transaction, and the wire value is now the first action in that
+     * batch rather than a lone dispatch.
+     */
+    function algorithmValuesFromBatches(): number[] {
+        return vi
+            .mocked(executeAppActionBatch)
+            .mock.calls.flatMap(([actions]) => actions)
+            .filter((action) => action.type === 'setDeviceParameter' && action.payload.paramId === 'algorithm')
+            .map((action) => (action.type === 'setDeviceParameter' ? action.payload.value : -1));
+    }
+
     it('dispatches the reverse algorithm at the wire value the engine dispatch expects', () => {
         render(<ProofChamberPanel deviceId="test-device" />);
 
         fireEvent.click(railChip('Reverse'));
 
-        expect(executeAppAction).toHaveBeenCalledWith({
-            type: 'setDeviceParameter',
-            payload: { deviceId: 'test-device', paramId: 'algorithm', value: 6 },
-        });
+        expect(algorithmValuesFromBatches()).toEqual([6]);
     });
 
     it('offers no chip that would select an engine with no impulse response', () => {
@@ -122,13 +137,7 @@ describe('ProofChamberPanel', () => {
             fireEvent.click(railChip(label));
         }
 
-        const dispatched = vi
-            .mocked(executeAppAction)
-            .mock.calls.map(([action]) => action)
-            .filter((action) => action.type === 'setDeviceParameter' && action.payload.paramId === 'algorithm')
-            .map((action) => (action.type === 'setDeviceParameter' ? action.payload.value : -1));
-
-        expect(dispatched).toEqual([0, 1, 2, 3, 6]);
+        expect(algorithmValuesFromBatches()).toEqual([0, 1, 2, 3, 6]);
     });
 
     /**

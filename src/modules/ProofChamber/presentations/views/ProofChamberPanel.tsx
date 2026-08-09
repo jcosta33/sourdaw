@@ -30,12 +30,14 @@ import {
     DEFAULT_PARAMS,
     PARAM_MAP,
     type ProofChamberEngineState,
+    PROOF_CHAMBER_ALGORITHMS,
     expandSpacePreset,
     type SpaceType,
     usesRt60DecayLaw,
 } from '../../models/ProofChamberState';
 import { chamberStore } from '../../stores/chamberStore';
 import { decodeImpulseResponse } from '../../useCases/proofChamber/decodeImpulseResponse';
+import { hydrateChamberStateFromProject } from '../../useCases/proofChamber/hydrateChamberStateFromProject';
 import { registerChamberInstance } from '../../useCases/proofChamber/registerChamberInstance';
 import { updateChamberEngine } from '../../useCases/proofChamber/updateChamberEngine';
 import { DecayEqOverlay } from '../components/DecayEqOverlay';
@@ -77,9 +79,10 @@ const SATURATION_CURVES = [
  * come from the gating model, because the disabled-control explanations name
  * the algorithm and the two must not drift into calling it different things.
  */
-const ALGORITHMS: ReadonlyArray<{ id: ProofChamberAlgorithm; label: string }> = (
-    ['plate', 'fdn-8', 'fdn-16', 'spring', 'reverse'] as const
-).map((id) => ({ id, label: ALGORITHM_LABELS[id] }));
+const ALGORITHMS: ReadonlyArray<{ id: ProofChamberAlgorithm; label: string }> = PROOF_CHAMBER_ALGORITHMS.map((id) => ({
+    id,
+    label: ALGORITHM_LABELS[id],
+}));
 
 /**
  * The badge on the Flavor card, numbered by position in the list the panel
@@ -95,6 +98,42 @@ function algorithmBadge(algorithm: ProofChamberAlgorithm): string {
         return 'A1';
     }
     return `A${position + 1}`;
+}
+
+/**
+ * Every parameter write the engine has to be told about, for one engine state.
+ *
+ * Excludes `algorithm` — that is the selector, and it has to be *first* in any
+ * batch that carries it, because `ProofChamberInstance::set_param` constructs a
+ * brand-new engine when it arrives and anything written before it is thrown
+ * away with the old one.
+ *
+ * Shared by the space tiles and the algorithm chips so the two cannot drift on
+ * what "re-send the device's state" means.
+ */
+function chamberParameterActions(deviceId: string, engineState: ProofChamberEngineState): AppAction[] {
+    const actions: AppAction[] = [];
+    for (const [key, rawValue] of Object.entries(engineState)) {
+        if (key === 'algorithm' || key === 'space') {
+            continue;
+        }
+        const rustKey = PARAM_MAP[key];
+        if (!rustKey) {
+            continue;
+        }
+        if (typeof rawValue === 'boolean') {
+            actions.push({
+                type: 'setDeviceParameter',
+                payload: { deviceId, paramId: rustKey, value: rawValue ? 1 : 0 },
+            });
+        } else if (typeof rawValue === 'number') {
+            actions.push({
+                type: 'setDeviceParameter',
+                payload: { deviceId, paramId: rustKey, value: rawValue },
+            });
+        }
+    }
+    return actions;
 }
 
 function formatValue(value: number, unit: string): string {
@@ -262,6 +301,12 @@ export const ProofChamberPanel = ({ deviceId }: { deviceId: string }): ReactElem
 
     useEffect(() => {
         registerChamberInstance(deviceId);
+        // Read project truth back into the store the panel draws from, so a
+        // reverb saved on Reverse reopens gated for Reverse. `chamberStore`
+        // otherwise starts every session at `DEFAULT_PARAMS` while the engine
+        // is replayed from `Device.parameterValues`, and the gate would trust
+        // the wrong one.
+        hydrateChamberStateFromProject(deviceId);
     }, [deviceId]);
     const [decayEqMults, setDecayEqMults] = useState([1.0, 1.0, 1.0, 1.0, 1.0, 1.0]);
     const [showDecayEq, setShowDecayEq] = useState(false);
@@ -320,31 +365,51 @@ export const ProofChamberPanel = ({ deviceId }: { deviceId: string }): ReactElem
                 type: 'setDeviceParameter',
                 payload: { deviceId, paramId: 'algorithm', value: ALGORITHM_MAP[nextParams.algorithm] ?? 0 },
             },
+            ...chamberParameterActions(deviceId, nextParams),
         ];
 
-        for (const [key, rawValue] of Object.entries(nextParams)) {
-            if (key === 'algorithm' || key === 'space') {
-                continue;
-            }
-            const rustKey = PARAM_MAP[key];
-            if (!rustKey) {
-                continue;
-            }
-
-            if (typeof rawValue === 'boolean') {
-                actions.push({
-                    type: 'setDeviceParameter',
-                    payload: { deviceId, paramId: rustKey, value: rawValue ? 1 : 0 },
-                });
-            } else if (typeof rawValue === 'number') {
-                actions.push({
-                    type: 'setDeviceParameter',
-                    payload: { deviceId, paramId: rustKey, value: rawValue },
-                });
-            }
-        }
-
         const { groupId, groupLabel } = generateGroupId(`Load ${space} space`);
+        void executeAppActionBatch(actions, { groupId, groupLabel });
+    }
+
+    /**
+     * Change algorithm without throwing the device's settings away.
+     *
+     * `ProofChamberInstance::set_param` builds a **new** engine when
+     * `algorithm` arrives (`lib.rs:117-136`) and replays nothing into it, so a
+     * bare `algorithm` write silently reset every parameter to the
+     * constructor's defaults. Measured plate → reverse → plate: the round trip
+     * rendered bit-identical to an engine nobody had ever written to
+     * (`max_delta = 0e0` against defaults, `7.77e-1` against the settings the
+     * user actually had). `mix`, which no gate touches, was lost with the rest.
+     *
+     * That made the panel's own disabled-control text a lie — it promises a
+     * gated parameter comes back on an algorithm that reads it — and it was a
+     * lie for ungated parameters too, on every switch, before any of this.
+     *
+     * So the chip does what `selectSpace` already did: `algorithm` first, then
+     * the whole state re-sent into the engine it just constructed, as one
+     * `executeAppActionBatch` so the switch stays a single undo step.
+     *
+     * The durable fix is a parameter cache inside `ProofChamberInstance`
+     * replayed into the new engine, which would also cover automation, presets
+     * and a peer's write. That is engine work; this is the bounded correct
+     * version of it and is what makes the panel's promise true today.
+     */
+    function selectAlgorithm(next: ProofChamberAlgorithm): void {
+        const nextParams: ProofChamberEngineState = { ...params, algorithm: next };
+
+        updateChamberEngine(deviceId, (prev: ProofChamberEngineState) => ({ ...prev, algorithm: next }));
+
+        const actions: AppAction[] = [
+            {
+                type: 'setDeviceParameter',
+                payload: { deviceId, paramId: 'algorithm', value: ALGORITHM_MAP[next] ?? 0 },
+            },
+            ...chamberParameterActions(deviceId, nextParams),
+        ];
+
+        const { groupId, groupLabel } = generateGroupId(`Select ${ALGORITHM_LABELS[next]} algorithm`);
         void executeAppActionBatch(actions, { groupId, groupLabel });
     }
 
@@ -401,20 +466,7 @@ export const ProofChamberPanel = ({ deviceId }: { deviceId: string }): ReactElem
                                 <ChamberChip
                                     key={algorithm.id}
                                     active={active}
-                                    onClick={() => {
-                                        updateChamberEngine(deviceId, (prev: ProofChamberEngineState) => ({
-                                            ...prev,
-                                            algorithm: algorithm.id,
-                                        }));
-                                        void executeAppAction({
-                                            type: 'setDeviceParameter',
-                                            payload: {
-                                                deviceId,
-                                                paramId: 'algorithm',
-                                                value: ALGORITHM_MAP[algorithm.id] ?? 0,
-                                            },
-                                        });
-                                    }}
+                                    onClick={() => selectAlgorithm(algorithm.id)}
                                 >
                                     {algorithm.label}
                                 </ChamberChip>
@@ -871,20 +923,7 @@ export const ProofChamberPanel = ({ deviceId }: { deviceId: string }): ReactElem
                                             <ChamberChip
                                                 key={algorithm.id}
                                                 active={params.algorithm === algorithm.id}
-                                                onClick={() => {
-                                                    updateChamberEngine(deviceId, (prev: ProofChamberEngineState) => ({
-                                                        ...prev,
-                                                        algorithm: algorithm.id,
-                                                    }));
-                                                    void executeAppAction({
-                                                        type: 'setDeviceParameter',
-                                                        payload: {
-                                                            deviceId,
-                                                            paramId: 'algorithm',
-                                                            value: ALGORITHM_MAP[algorithm.id] ?? 0,
-                                                        },
-                                                    });
-                                                }}
+                                                onClick={() => selectAlgorithm(algorithm.id)}
                                             >
                                                 {algorithm.label}
                                             </ChamberChip>
