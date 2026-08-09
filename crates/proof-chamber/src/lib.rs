@@ -480,6 +480,7 @@ impl ProofChamberInstance {
                     "matrix",
                     "saturation",
                 ];
+                names.extend(decay_eq::PARAM_NAMES);
                 names.extend(output_stage::OutputStage::PARAM_NAMES);
                 names.push(output_stage::OutputStage::WIDTH);
                 names

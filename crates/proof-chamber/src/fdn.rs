@@ -11,6 +11,11 @@ use std::f32::consts::TAU;
 // The `decay` contract is crate-wide: `decay` is a normalised coefficient, and
 // this engine is the one that needs it expressed in seconds.
 use crate::decay_curve::{decay_to_rt60_seconds, MAX_RT60_SECONDS, MIN_RT60_SECONDS};
+// The Decay Rate EQ is the multi-band generalisation of the `AbsorptiveFilter`
+// below: that stage gives the tail two decay rates either side of 2 kHz, this
+// one gives it six. They compose rather than compete — `damping` still sets the
+// broad HF tilt and the EQ shapes around it.
+use crate::decay_eq::{DecayRateEq, NUM_PROBES};
 // `early_late` is a crate-wide contract too, and used to be honoured only
 // here. The tapped delay line moved out so the plate could blend the same
 // early signal against its own tank.
@@ -152,6 +157,34 @@ impl AbsorptiveFilter {
         let high = input - low;
         low * self.g_low + high * self.g_high
     }
+
+    /// `|H(f)|` of this filter, which **is** the line's per-pass loop gain:
+    /// the mixing matrix is orthonormal and nothing else in the loop has gain.
+    ///
+    /// `out = L*g_low + (1 - L)*g_high` where `L` is the one-pole lowpass, so
+    /// `H = g_high + L*(g_low - g_high)` — complex, because `L` is, and taking
+    /// the magnitude of the two bands separately would report a filter with no
+    /// crossover phase. This is what the Decay Rate EQ is told, and getting it
+    /// as a single low-frequency scalar is what made a requested 4.0x deliver
+    /// 0.98x above 2 kHz at the shipped damping.
+    fn magnitude_at(&self, freq: f32, sample_rate: f32) -> f32 {
+        let w = TAU * freq / sample_rate;
+        let real = 1.0 - self.coeff * w.cos();
+        let imag = self.coeff * w.sin();
+        let denominator = real * real + imag * imag;
+        if denominator <= 1e-30 {
+            return self.g_low.abs();
+        }
+        // L = (1 - c) / (1 - c e^-jw), rationalised.
+        let scale = (1.0 - self.coeff) / denominator;
+        let low_real = scale * real;
+        let low_imag = -scale * imag;
+
+        let delta = self.g_low - self.g_high;
+        let total_real = self.g_high + delta * low_real;
+        let total_imag = delta * low_imag;
+        (total_real * total_real + total_imag * total_imag).sqrt()
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -171,6 +204,14 @@ pub struct FdnReverb {
 
     // Per-line absorptive filters
     absorptive_filters: Vec<AbsorptiveFilter>,
+
+    /// Per-line Decay Rate EQ, sitting in the same place in the feedback path.
+    ///
+    /// One per line rather than one shared instance because each line has its
+    /// own length, so each runs at its own per-pass gain — and the whole point
+    /// of the stage is to be expressed *relative* to that gain. A single shared
+    /// filter would apply the short lines' shaping to the long ones.
+    decay_eqs: Vec<DecayRateEq>,
 
     // Mixing matrix scratch buffer
     mix_buf: [f32; MAX_FDN_CHANNELS],
@@ -232,6 +273,22 @@ impl FdnReverb {
             .map(|&len| AbsorptiveFilter::new(len, sample_rate, 2.0, 0.8))
             .collect();
 
+        // Seeded flat and corrected at the end of this constructor, where
+        // `update_absorptive_filters` hands each stage the real
+        // frequency-dependent magnitude of the line it sits in.
+        //
+        // The correcting call is load-bearing and used to be missing. Nothing
+        // reached the broken state — `addDevice` writes the descriptor's
+        // `decay` before the first render and that write calls
+        // `update_absorptive_filters` itself — but a bare `FdnReverb::new`
+        // kept `loop_gains = [1.0; NUM_PROBES]`, designed every band at 0 dB,
+        // and rendered a Decay EQ that did nothing while this comment said
+        // otherwise.
+        let decay_eqs: Vec<DecayRateEq> = delay_lengths
+            .iter()
+            .map(|_| DecayRateEq::new(sample_rate, 1.0))
+            .collect();
+
         // Incommensurate LFO frequencies (Costello-inspired)
         let base_freqs = [
             0.7, 1.1, 1.7, 2.3, 0.5, 1.3, 1.9, 2.9, 0.6, 1.4, 2.1, 0.8, 1.6, 2.7, 0.9, 1.2,
@@ -245,13 +302,14 @@ impl FdnReverb {
 
         let predelay_max = (sample_rate * 0.5) as usize;
 
-        Self {
+        let mut reverb = Self {
             sample_rate,
             num_channels: n,
             buffers,
             write_positions,
             delay_lengths,
             absorptive_filters,
+            decay_eqs,
             mix_buf: [0.0; MAX_FDN_CHANNELS],
             lfo_phases,
             lfo_freqs,
@@ -321,7 +379,11 @@ impl FdnReverb {
             output: OutputStage::new(sample_rate),
             smooth_mix: 0.3,
             smooth_coeff: 1.0 - (-1.0 / (0.030 * sample_rate)).exp(),
-        }
+        };
+
+        // Make the seeding above true before anyone can render through it.
+        reverb.update_absorptive_filters();
+        reverb
     }
 
     pub fn set_param(&mut self, name: &str, value: f32) {
@@ -367,6 +429,19 @@ impl FdnReverb {
             }
             "matrix" => self.use_hadamard = value > 0.5,
             "saturation" => self.saturation_enabled = value > 0.5,
+            // Decay Rate EQ. The six literals are spelled out rather than
+            // matched by prefix because `descriptorEngineParamWeld.spec.ts`
+            // reads the arm names out of this file to decide which engines
+            // answer to which id.
+            "decay_eq_0" | "decay_eq_1" | "decay_eq_2" | "decay_eq_3" | "decay_eq_4"
+            | "decay_eq_5" => {
+                let clamped = value.clamp(0.25, 4.0);
+                if let Some(band) = crate::decay_eq::band_index_for_name(name) {
+                    for eq in self.decay_eqs.iter_mut() {
+                        eq.set_band_multiplier(band, clamped);
+                    }
+                }
+            }
             _ => {}
         }
     }
@@ -388,6 +463,32 @@ impl FdnReverb {
                     self.rt60_hf,
                 );
             }
+        }
+
+        // The decay EQ shapes *relative* to the loop's own per-pass loss, so it
+        // has to be re-told that loss whenever it moves. Reached from
+        // `decay`/`rt60`, from `damping`, and — the case a stage that stored
+        // its delay length at construction would have got wrong — from `size`,
+        // which rewrites every `delay_lengths[i]` before calling this.
+        //
+        // The magnitude comes from the absorptive filter that is actually in
+        // the line rather than from `loop_gain_from_rt60`, which reports only
+        // the low-frequency figure. Above the 2 kHz crossover the two differ by
+        // the whole of `damping`, and the difference is not a detail: told the
+        // low-frequency figure, this stage supplied about half the dB it needed
+        // up there and a requested 4.0x came out below neutral.
+        let sample_rate = self.sample_rate;
+        for (i, eq) in self.decay_eqs.iter_mut().enumerate() {
+            if i >= self.absorptive_filters.len() {
+                continue;
+            }
+            let filter = &self.absorptive_filters[i];
+            let probes = *eq.probe_frequencies();
+            let mut gains = [0.0_f32; NUM_PROBES];
+            for (index, freq) in probes.iter().enumerate() {
+                gains[index] = filter.magnitude_at(*freq, sample_rate);
+            }
+            eq.set_loop_gains(&gains);
         }
     }
 
@@ -446,9 +547,13 @@ impl FdnReverb {
                 self.mix_buf[ch] = self.buffers[ch][read_pos];
             }
 
-            // Apply absorptive filters
+            // Apply absorptive filters, then the per-band decay shaping over
+            // the top of them. Both are in the feedback path and before the
+            // matrix, which is where a per-pass gain has to be for its effect
+            // to compound into a decay rate rather than a one-shot tone change.
             for ch in 0..n {
                 self.mix_buf[ch] = self.absorptive_filters[ch].process(self.mix_buf[ch]);
+                self.mix_buf[ch] = self.decay_eqs[ch].process(self.mix_buf[ch]);
             }
 
             // Soft saturation (before matrix) for infinite sustain
@@ -521,6 +626,32 @@ impl FdnReverb {
 #[cfg(test)]
 mod tests {
     use super::{decay_to_rt60_seconds, FdnReverb, MAX_RT60_SECONDS, MIN_RT60_SECONDS};
+
+    #[test]
+    fn a_bare_instance_has_already_told_its_decay_eq_what_the_loop_does() {
+        // `FdnReverb::new` seeds every Decay Rate EQ with a flat loop gain of
+        // 1.0 and then corrects it. The correcting call went missing and the
+        // comment beside the seeding said it was there, so a bare instance
+        // designed every band at 0 dB while claiming otherwise.
+        //
+        // **Unreachable through the engine's public path, and guarded here for
+        // that reason.** `addDevice` writes the descriptor's `decay` before the
+        // first render and that write calls `update_absorptive_filters` itself,
+        // so no render-level guard can see the difference — removing the call
+        // again leaves every test in `decay_eq_parameter_surface.rs` green. A
+        // constructor whose stated post-condition is only true because of what
+        // happens next is a trap for the next caller, so the post-condition is
+        // asserted where it can be.
+        let reverb = FdnReverb::new(48_000.0, 8);
+        for (index, eq) in reverb.decay_eqs.iter().enumerate() {
+            let worst = eq.worst_loop_gain_without_stage();
+            assert!(
+                worst < 1.0,
+                "line {index} was left with a flat unity loop gain of {worst}, so its Decay EQ \
+                 has been told the tail never decays"
+            );
+        }
+    }
 
     // The `decay` parameter as declared by the `dutch-oven` descriptor in
     // src/modules/Arrangement/models/PluginDescriptors/NativeDspDescriptors.ts.

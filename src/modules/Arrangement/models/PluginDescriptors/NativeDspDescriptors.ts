@@ -1,5 +1,13 @@
 import { type PluginDescriptor } from '../DeviceParameterTypes';
 
+/**
+ * Band names for the Dutch Oven's Decay Rate EQ, in band order.
+ *
+ * The same six the overlay draws (`BAND_LABELS` in `DecayEqOverlay.tsx`), so
+ * the generic Inspector and the bespoke panel call each band the same thing.
+ */
+const DECAY_EQ_BAND_LABELS = ['LF', 'LM', 'Mid', 'UM', 'HF', 'Air'] as const;
+
 /** Premium WASM plugin descriptors (Dutch Oven, Scoring). */
 export const NATIVE_DSP_DESCRIPTORS: PluginDescriptor[] = [
     {
@@ -353,6 +361,47 @@ export const NATIVE_DSP_DESCRIPTORS: PluginDescriptor[] = [
                 automatable: true,
                 hasAutomation: false,
             },
+            // ── Decay Rate EQ ──────────────────────────────────────────────
+            //
+            // Six bands of decay-time multiplier, 0.25x…4.0x, centred at 100,
+            // 400, 1200, 3500, 8000 and 12000 Hz. The wire ids and the band
+            // order are `PARAM_NAMES` / `default_bands()` in
+            // `crates/proof-chamber/src/decay_eq.rs`.
+            //
+            // These existed as writes long before they existed as parameters:
+            // `DecayEqOverlay` has been dragging six nodes into
+            // `executeAppAction` since it shipped, and no engine had an arm for
+            // any of them (#1539). Because they were not declared here, the
+            // engine-gap census could not see them either — its population is
+            // the descriptor's — so seventeen controls were greyed out for
+            // being inaudible while these six sat live beside them, inaudible
+            // on every algorithm.
+            //
+            // Declared as ordinary rows rather than as a bespoke surface, which
+            // is what puts them in reach of the generic Inspector, automation,
+            // MIDI learn and the LLM action bridge — none of which knows the
+            // overlay exists. `automatable: true`: a decay curve that opens up
+            // over the length of a phrase is an ordinary reverb move, and the
+            // engine takes these writes at block rate through the same
+            // `set_param` every other continuous control uses.
+            //
+            // The range is the overlay's own travel (`MIN_MULT` / `MAX_MULT` in
+            // `DecayEqOverlay.tsx`) and the engine's own clamp
+            // (`value.clamp(0.25, 4.0)` in each of the three engines that
+            // answer). `declaredRangeVsKnobTravel.spec.ts` welds all three.
+            ...([0, 1, 2, 3, 4, 5] as const).map((band) => ({
+                id: `decay_eq_${band}`,
+                deviceId: 'dutch-oven' as const,
+                name: `Decay EQ ${DECAY_EQ_BAND_LABELS[band]}`,
+                type: 'float' as const,
+                value: 1,
+                defaultValue: 1,
+                minValue: 0.25,
+                maxValue: 4,
+                unit: 'x',
+                automatable: true,
+                hasAutomation: false,
+            })),
             {
                 id: 'algorithm',
                 deviceId: 'dutch-oven',
