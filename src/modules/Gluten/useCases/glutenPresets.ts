@@ -75,20 +75,31 @@ export const GLUTEN_PRESETS: readonly GlutenPreset[] = [
     }),
 
     // ── Opto / Smooth ──
+    // Every preset below this point states `autoRelease: false`, and none of
+    // them would otherwise: `DEFAULT_PATCH.autoRelease` is `true`, so a preset
+    // that says nothing inherits an Auto rel that only the VCA implements. That
+    // left ten presets shipping the chip lit on a topology that cannot hear it
+    // — the same defect as `Loud Master`'s `thrust: 2`, one flag over, and
+    // found by the rule written to catch that one rather than by inspection.
+    // The default is left alone because it is correct for the VCA, which is
+    // what a fresh device runs.
     preset('opto-vocal', 'Opto Vocal', 'vocal', {
         topology: 'opto',
         threshold: -25,
         limitMode: false,
+        autoRelease: false,
     }),
     preset('opto-leveler', 'Opto Leveler', 'bus', {
         topology: 'opto',
         threshold: -20,
         limitMode: false,
+        autoRelease: false,
     }),
     preset('opto-limit', 'Opto Limiter', 'mastering', {
         topology: 'opto',
         threshold: -15,
         limitMode: true,
+        autoRelease: false,
     }),
 
     // ── FET / Punch ──
@@ -99,6 +110,7 @@ export const GLUTEN_PRESETS: readonly GlutenPreset[] = [
         attack: 0.2,
         release: 250,
         inputGain: 6,
+        autoRelease: false,
     }),
     preset('fet-vocal', 'FET Vocal Bite', 'vocal', {
         topology: 'fet',
@@ -106,6 +118,7 @@ export const GLUTEN_PRESETS: readonly GlutenPreset[] = [
         ratio: 4,
         attack: 0.8,
         release: 300,
+        autoRelease: false,
     }),
     preset('fet-all-buttons', 'All Buttons In', 'creative', {
         topology: 'fet',
@@ -114,6 +127,7 @@ export const GLUTEN_PRESETS: readonly GlutenPreset[] = [
         attack: 0.1,
         release: 100,
         inputGain: 12,
+        autoRelease: false,
     }),
     preset('fet-parallel', 'Parallel Smash', 'drums', {
         topology: 'fet',
@@ -123,6 +137,7 @@ export const GLUTEN_PRESETS: readonly GlutenPreset[] = [
         release: 200,
         mix: 0.3,
         inputGain: 12,
+        autoRelease: false,
     }),
 
     // ── Diode Bridge ──
@@ -131,12 +146,14 @@ export const GLUTEN_PRESETS: readonly GlutenPreset[] = [
         threshold: -16,
         ratio: 2,
         recovery: 3,
+        autoRelease: false,
     }),
     preset('diode-warm', 'Warm Diode Glue', 'bus', {
         topology: 'diode',
         threshold: -18,
         ratio: 3,
         recovery: 4,
+        autoRelease: false,
     }),
 
     // ── Mastering ──
@@ -193,5 +210,6 @@ export const GLUTEN_PRESETS: readonly GlutenPreset[] = [
         release: 150,
         mix: 0.35,
         inputGain: 10,
+        autoRelease: false,
     }),
 ];
