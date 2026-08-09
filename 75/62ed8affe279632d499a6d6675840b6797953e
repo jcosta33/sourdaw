@@ -1,0 +1,14 @@
+tests/e2e/deviceKnobKeyboardTestId.spec.ts
+  h_1228e573df1f42 1-85
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "7562ed8affe279632d499a6d6675840b6797953e",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
