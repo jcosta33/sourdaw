@@ -98,9 +98,77 @@ impl DelayLine {
         self.write_pos = (self.write_pos + 1) % self.len;
     }
 
+    /// Read `delay` samples back from the **most recently written** sample.
+    /// `read(0)` is that sample itself, `read(n)` is the one `n` writes before
+    /// it.
+    ///
+    /// Deliberately phrased against the write history rather than as "a delay
+    /// of `delay` samples", because the two are not the same thing at every
+    /// call site and this file has both kinds. Three of the six callers write
+    /// first and then read — the pre-delay, the two fixed tank delays per half,
+    /// and the fourteen output taps — and for those `read(n)` is a delay of
+    /// exactly `n` relative to the sample entering the line this cycle. The
+    /// other three read *before* writing — `Allpass::process` and, through
+    /// `read_allpass_interp`, the two modulated tank allpasses — and for those
+    /// the most recent sample is last cycle's, so `read(n)` is a delay of
+    /// `n + 1`. A doc line promising "a delay of `delay`" would be wrong for
+    /// half the file, so this one promises what the expression does.
     #[inline]
     fn read(&self, delay: usize) -> f32 {
-        let pos = (self.write_pos + self.len - delay.min(self.len - 1)) % self.len;
+        // The `- 1` is the whole of #1547. `write` post-increments, so by the
+        // time a caller reads, `write_pos` addresses the slot the *next* sample
+        // will occupy and `write_pos - 1` holds the most recently written one.
+        // The count therefore starts at `write_pos - 1`.
+        //
+        // Counting from `write_pos` instead — which is what this line did —
+        // shifted every read one sample earlier in the line, and cost two
+        // separate things:
+        //
+        // * Taps arrived one sample early. Dattorro's Table 2 positions are
+        //   literal sample delays into the tank lines, so `delay_48_54[266]` is
+        //   266 samples and this line delivered 265. All fourteen output taps
+        //   now land where the paper puts them, as do the six Schroeder
+        //   allpasses, whose `read(len - 1)` ahead of the write is a delay of
+        //   exactly their buffer length.
+        //
+        //   Six reads are still not the paper's number, and the fix is not what
+        //   makes them wrong. The four fixed tank delays pass `scaled_delays[i]`,
+        //   which *is* their buffer length, so `.min(len - 1)` clamps and they
+        //   deliver `len - 1` — one short, as they were one shorter still
+        //   before. The two `read_allpass_interp` calls run before their write
+        //   and so deliver `mod_delay + 1`, where before they delivered
+        //   `mod_delay` and were the only correct reads in the file. Both are a
+        //   single sample on lines of 4453 and 672 at the reference rate, which
+        //   is why they are recorded here rather than chased: correcting them
+        //   means widening two buffers and subtracting one from two call sites,
+        //   and every render digest in the crate moves for 0.01% of a delay
+        //   length.
+        //
+        // * `read(0)` had no representation at all. `(write_pos + len - 0) % len`
+        //   is `write_pos`, the *oldest* slot — so a caller asking for the
+        //   minimum delay silently got the maximum, `len - 1` samples. That is
+        //   not a rounding error on a tank tap, where the argument is a
+        //   compile-time constant that is never zero. It is a half-second on
+        //   the pre-delay, whose line is `sample_rate * 0.5` long and whose
+        //   argument is a user control declared from 0 ms. Pre-Delay at its own
+        //   minimum rendered an engine that emitted nothing at all for 500 ms
+        //   and then started.
+        //
+        // The defect is a class, not an instance: the same expression on the
+        // same pointer order is live in `bacteria/granular.rs` (#1570), where
+        // Position at its declared minimum of 0 plays audio from two seconds
+        // ago, and latent in `convolution.rs`'s true-stereo head. The copy in
+        // this crate's `early_reflections.rs` was fixed alongside this one.
+        //
+        // The FDN's inline pre-delay (`fdn.rs`, `pd_read`) reads *before* it
+        // advances its write position and has always been correct; this is the
+        // same expression evaluated at the same point in the cycle.
+        //
+        // `delay.min(self.len - 1)` saturates rather than wrapping, so an
+        // over-long request reads the oldest sample the line holds instead of
+        // aliasing back to a short delay. The subtraction cannot underflow:
+        // the clamp bounds it by `len - 1`.
+        let pos = (self.write_pos + self.len - 1 - delay.min(self.len - 1)) % self.len;
         self.buffer[pos]
     }
 
@@ -883,6 +951,81 @@ mod tests {
 
     const SR: f32 = 48_000.0;
     const BLOCK: usize = 128;
+
+    /// What `DelayLine::read` returns, pinned directly on the primitive.
+    ///
+    /// `wet_onset_follows_predelay.rs` is the right instrument for #1547 — it
+    /// listens to the engine and notices the reverb is not there yet — and it
+    /// is blind to everything on this line that is not half a second long. A
+    /// one-sample shift in the argument's meaning does not move a rendered
+    /// onset past a 20 ms budget, and it is exactly what #1547 turned out to
+    /// be. So the contract is pinned where it is written.
+    ///
+    /// Nothing here reads a delay-length constant. The line is fed a counting
+    /// ramp and asked what came back, which is the only way to distinguish
+    /// "`read(n)` means n" from "`read(n)` means n + 1" — the distinction the
+    /// whole issue was.
+    #[test]
+    fn read_counts_back_from_the_most_recently_written_sample() {
+        let mut line = DelayLine::new(8);
+
+        // Write 100, 101 … 107, so a returned value names the write that
+        // produced it.
+        for step in 0..8 {
+            line.write(100.0 + step as f32);
+        }
+
+        assert_eq!(
+            line.read(0),
+            107.0,
+            "read(0) must be the sample just written, not the oldest one the \
+             line holds. Returning 100.0 here is #1547: on the pre-delay line \
+             that is `sample_rate * 0.5` samples of silence instead of none."
+        );
+        for back in 0..8 {
+            assert_eq!(
+                line.read(back),
+                107.0 - back as f32,
+                "read({back}) must be {back} writes before the newest sample"
+            );
+        }
+
+        // Past the end of the line the read saturates on the oldest sample
+        // rather than wrapping round to a short delay.
+        assert_eq!(line.read(7), 100.0);
+        assert_eq!(line.read(8), 100.0, "read(len) must clamp, not alias to 0");
+        assert_eq!(line.read(9_999), 100.0);
+    }
+
+    /// The pre-delay's zero case on the real line size, which is where the
+    /// half-second came from. A ring buffer's wrap is the thing that turns a
+    /// one-sample confusion into an audible defect, so it is exercised.
+    #[test]
+    fn a_full_length_line_still_returns_the_newest_sample_at_zero() {
+        let len = (SR * 0.5) as usize;
+        let mut line = DelayLine::new(len);
+
+        // Fill the line more than once so `write_pos` has wrapped and the
+        // slot `read(0)` used to land on holds something distinguishable.
+        for step in 0..(len + 137) {
+            line.write(step as f32 + 1.0);
+        }
+
+        let newest = (len + 137) as f32;
+        assert_eq!(
+            line.read(0),
+            newest,
+            "read(0) on a {len}-sample line returned a sample from {} writes \
+             ago instead of the newest one",
+            newest - line.read(0)
+        );
+        assert_eq!(line.read(1), newest - 1.0);
+        assert_eq!(
+            line.read(len - 1),
+            newest - (len - 1) as f32,
+            "the oldest addressable sample is len - 1 writes back"
+        );
+    }
 
     /// Magnitude of a `OnePole` at DC and at Nyquist, measured by driving the
     /// real struct rather than derived from its coefficient.
