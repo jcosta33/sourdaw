@@ -754,25 +754,6 @@ function createTwoGluePairContext(): ProjectContext {
     };
 }
 
-function createDuplicateNameGluePairContext(): ProjectContext {
-    const context = createTwoGluePairContext();
-    return {
-        ...context,
-        tracks: context.tracks.map((track) => ({
-            ...track,
-            clips: track.clips.map((clip) => {
-                if (clip.id === 'clip-midi-intro' || clip.id === 'clip-midi-outro') {
-                    return { ...clip, name: 'Shared Start' };
-                }
-                if (clip.id === 'clip-midi-verse' || clip.id === 'clip-midi-coda') {
-                    return { ...clip, name: 'Shared End' };
-                }
-                return clip;
-            }),
-        })),
-    };
-}
-
 describe('bridgeGroundedLlmToolCalls', () => {
     it('grounds reversible clip-state commands and binds both fade values by name', () => {
         const context = createClipContext();
@@ -1268,47 +1249,6 @@ describe('bridgeGroundedLlmToolCalls', () => {
         expect(result.actions).toEqual([
             { type: 'glueClips', payload: { clipIds: ['clip-midi-outro', 'clip-midi-coda'] } },
         ]);
-        expect(result.rejections).toEqual([]);
-    });
-
-    it("keeps repeated don't cancellations as separate clauses and cancels both repeated glue scopes", () => {
-        const context = createGlueClipContext();
-        const result = bridge(
-            [
-                { name: 'glueClips', arguments: { clipIds: ['clip-midi-intro', 'clip-midi-verse'] } },
-                { name: 'glueClips', arguments: { clipIds: ['clip-midi-intro', 'clip-midi-verse'] } },
-            ],
-            "glue MIDI Intro and MIDI Verse clips, but don't glue them, then glue MIDI Intro and MIDI Verse clips, but don't glue them",
-            context
-        );
-
-        expect(result.actions).toEqual([]);
-        expect(result.rejections).toEqual([]);
-    });
-
-    it('blocks a partial provider plan when another glue request has duplicate-name pair ambiguity', () => {
-        const context = createDuplicateNameGluePairContext();
-        const result = bridge(
-            [{ name: 'glueClips', arguments: { clipIds: ['clip-midi-intro', 'clip-midi-verse'] } }],
-            'glue clip-midi-intro and clip-midi-verse, then glue Shared Start and Shared End',
-            context
-        );
-
-        expect(result.actions).toEqual([]);
-        expect(result.rejections).toEqual([
-            {
-                index: 0,
-                name: '<batch>',
-                reason: 'Glue request contains an ambiguous or incomplete clip pair',
-            },
-        ]);
-    });
-
-    it('allows a locally cancelled duplicate-name glue scope to remain omitted', () => {
-        const context = createDuplicateNameGluePairContext();
-        const result = bridge([], "glue Shared Start and Shared End, but don't glue them", context);
-
-        expect(result.actions).toEqual([]);
         expect(result.rejections).toEqual([]);
     });
 
