@@ -3,6 +3,7 @@ import { canPrepareMidiClipGlueState } from '#/modules/MIDI/useCases';
 import { createClipWriteTargetIndex } from '../../stores/resolveEligibleClipWriteTarget';
 import { getTrackStoreState } from '../getTrackStoreState';
 
+import { getClipIdCensus } from './getClipIdCensus';
 import { getMidiClipGlueSources } from './getMidiClipGlueSources';
 import { hasClipGlueDependencies } from './hasClipGlueDependencies';
 import { isPlainMidiGlueClip } from './isPlainMidiGlueClip';
@@ -16,6 +17,8 @@ export function getGlueEligibleClipPairs(): Array<[string, string]> {
     if (writeTargets.status !== 'valid') {
         return [];
     }
+    const activeClipIds = writeTargets.tracks.flatMap((owner) => owner.clips.map((clip) => clip.id));
+    const clipIdCensus = getClipIdCensus({ clipIds: activeClipIds, state });
 
     const pairs: Array<[string, string]> = [];
     for (const owner of writeTargets.tracks) {
@@ -35,6 +38,17 @@ export function getGlueEligibleClipPairs(): Array<[string, string]> {
         for (const first of clips) {
             for (const second of clipsByStartBeat.get(first.endBeat) ?? []) {
                 const clipIds: [string, string] = [first.id, second.id];
+                const hasExactActiveOwnership = clipIds.every((clipId) => {
+                    const occurrences = clipIdCensus.get(clipId) ?? [];
+                    return (
+                        occurrences.length === 1 &&
+                        occurrences[0]!.location === 'active' &&
+                        occurrences[0]!.trackId === owner.id
+                    );
+                });
+                if (!hasExactActiveOwnership) {
+                    continue;
+                }
                 if (hasClipGlueDependencies(clipIds)) {
                     continue;
                 }

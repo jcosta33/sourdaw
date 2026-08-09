@@ -7,6 +7,7 @@ import { getNextClipId } from '../../repositories/clipIdCounter';
 import { getTrackState } from '../../repositories/track/getTrackState';
 import { resolveEligibleClipWriteTarget } from '../../stores/resolveEligibleClipWriteTarget';
 
+import { getClipIdCensus } from './getClipIdCensus';
 import { getMidiClipGlueSources } from './getMidiClipGlueSources';
 import { hasClipGlueDependencies } from './hasClipGlueDependencies';
 import { isPlainMidiGlueClip } from './isPlainMidiGlueClip';
@@ -24,6 +25,19 @@ export function prepareClipGlue({ clipIds, targetClipId }: PrepareClipGlueInput)
     if (clipIds.length < 2 || new Set(clipIds).size !== clipIds.length) {
         return null;
     }
+    const state = getTrackState();
+    if (!state) {
+        return null;
+    }
+    const sourceCensus = getClipIdCensus({ clipIds, state });
+    if (
+        clipIds.some((clipId) => {
+            const occurrences = sourceCensus.get(clipId) ?? [];
+            return occurrences.length !== 1 || occurrences[0]!.location !== 'active';
+        })
+    ) {
+        return null;
+    }
     const ownerTrackIds = new Set<string>();
     for (const clipId of clipIds) {
         const resolution = resolveEligibleClipWriteTarget({ clipId });
@@ -37,10 +51,9 @@ export function prepareClipGlue({ clipIds, targetClipId }: PrepareClipGlueInput)
         return null;
     }
 
-    const state = getTrackState();
     const [ownerTrackId] = ownerTrackIds;
-    const track = state?.tracks.find((candidate) => candidate.id === ownerTrackId);
-    if (!state || !track) {
+    const track = state.tracks.find((candidate) => candidate.id === ownerTrackId);
+    if (!track) {
         return null;
     }
     const clips = track.clips
@@ -75,14 +88,8 @@ export function prepareClipGlue({ clipIds, targetClipId }: PrepareClipGlueInput)
         logger.warn('glueClips: clip dependencies must be removed or consolidated before gluing');
         return null;
     }
-    const idAlreadyUsed =
-        (state.ghostClips ?? []).some((clip) => clip.id === gluedId) ||
-        state.tracks.some(
-            (candidate) =>
-                candidate.clips.some((clip) => clip.id === gluedId) ||
-                candidate.alternatives.some((alternative) => alternative.clips.some((clip) => clip.id === gluedId))
-        );
-    if (gluedId.length === 0 || idAlreadyUsed) {
+    const targetIdOccurrences = getClipIdCensus({ clipIds: [gluedId], state }).get(gluedId) ?? [];
+    if (gluedId.length === 0 || targetIdOccurrences.length > 0) {
         return null;
     }
     const startBeat = clips[0]!.startBeat;

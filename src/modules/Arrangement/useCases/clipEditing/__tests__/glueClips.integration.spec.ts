@@ -134,6 +134,39 @@ describe('glueClips MIDI state integration', () => {
         expect(glueClips(['clip-a', 'clip-b'])).toBe(false);
     });
 
+    it.each(['alternative', 'ghost'] as const)(
+        'does not advertise or glue a source id duplicated in a hidden %s clip',
+        (hiddenLocation) => {
+            const source = structuredClone(trackStore.value!.tracks[0]!.clips[0]!);
+            const tracks = trackStore.value!.tracks.map((track) => {
+                if (hiddenLocation !== 'alternative') {
+                    return track;
+                }
+                return {
+                    ...track,
+                    alternatives: track.alternatives.map((alternative, index) =>
+                        index === 0 ? { ...alternative, clips: [source] } : alternative
+                    ),
+                };
+            });
+            const ghostClips =
+                hiddenLocation === 'ghost'
+                    ? [
+                          {
+                              ...source,
+                              isGhost: true,
+                          },
+                      ]
+                    : [];
+            trackStore.set({ ...trackStore.value!, tracks, ghostClips });
+            const originalState = structuredClone(trackStore.value);
+
+            expect(getGlueEligibleClipPairs()).toEqual([]);
+            expect(glueClips(['clip-a', 'clip-b'])).toBe(false);
+            expect(trackStore.value).toEqual(originalState);
+        }
+    );
+
     it('rebases every source MIDI event into the glued clip local timeline', () => {
         expect(glueClips(['clip-a', 'clip-b'])).toBe(true);
 
