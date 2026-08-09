@@ -194,9 +194,10 @@ controls the name is the only way to tell which lane is which:
 | Quick moves · Stage two chooser | Style · Blend Topo |
 
 > [!WARNING]
-> **Not yet active.** Gluten changes are not recorded in the history panel and cannot be undone.
-> Moving a control, loading a preset, and pressing a Quick move all apply immediately and
-> permanently. Save a preset before you experiment.
+> **Not yet active.** Loading a preset and pressing a Quick move are not recorded in the history
+> panel and cannot be undone — they apply immediately and permanently. Individual control moves
+> *are* undoable: release a knob, press undo, and it goes back where it was. One drag is one step,
+> however far it travelled. Save a preset before you load another one.
 
 ## See also
 

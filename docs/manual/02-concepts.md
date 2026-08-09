@@ -94,11 +94,15 @@ resize, split, or delete notes and clips, and each gesture goes on the stack as 
 many notes it touched.
 
 > [!WARNING]
-> **Not yet active.** Undo does not yet cover the mixer or devices. Moving a fader or a pan control,
-> adding or removing a device, turning a device knob, and loading a device preset all apply
-> immediately and are not recorded — undo will skip straight past them to the last material edit.
-> The one exception runs the other way: the reverb records every parameter of a loaded space as a
-> separate step, so undoing one takes many presses.
+> **Not yet active.** Undo does not yet cover the mixer, and its coverage of devices is uneven.
+> Moving a fader or a pan control, and adding or removing a device by hand, apply immediately and
+> are not recorded — undo will skip straight past them to the last material edit.
+>
+> Whether a device records anything is decided device by device, so the device page is the
+> authority. Gluten is the furthest along: a settled control move is one undo step, while loading a
+> preset or pressing a Quick move is not recorded at all. Grinder records nothing — knobs, presets,
+> and snapshot recalls alike. The reverb records a loaded space as one grouped step, so a single
+> press of undo puts the whole space back.
 >
 > Save a preset or duplicate the track before you experiment with a device.
 
