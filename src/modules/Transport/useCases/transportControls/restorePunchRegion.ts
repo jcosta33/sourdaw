@@ -35,11 +35,11 @@ export function restorePunchRegion(input: RestorePunchRegionInput): RestorePunch
     if (!current) {
         return { status: 'no-write' };
     }
-    if (!isSamePunchRegion(current, input.expected)) {
-        return { status: 'conflict' };
-    }
     if (isSamePunchRegion(current, input.replacement)) {
         return { status: 'no-write' };
+    }
+    if (!isSamePunchRegion(current, input.expected)) {
+        return { status: 'conflict' };
     }
 
     updateTransportState(input.replacement);

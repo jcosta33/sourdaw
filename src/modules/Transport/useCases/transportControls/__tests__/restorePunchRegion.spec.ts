@@ -60,6 +60,16 @@ describe('restorePunchRegion', () => {
         expect(updateTransportState).not.toHaveBeenCalled();
     });
 
+    it('returns no-write when a distinct guarded replacement is already current', () => {
+        const replacement = { punchInBeat: 20, punchOutBeat: 21 };
+        vi.mocked(getTransportState).mockReturnValue(replacement as TransportState);
+
+        const result = restorePunchRegion({ expected: CURRENT_REGION, replacement });
+
+        expect(result).toEqual({ status: 'no-write' });
+        expect(updateTransportState).not.toHaveBeenCalled();
+    });
+
     it('returns no-write when Transport state is unavailable', () => {
         vi.mocked(getTransportState).mockReturnValue(null);
 

@@ -114,12 +114,12 @@ describe('Transport punch action undo/redo', () => {
         }
     );
 
-    it('retains a collaborator punch edit and keeps stale undo retryable', async () => {
+    it('advances stale undo history when a collaborator later achieves its replacement', async () => {
         const before = { punchInBeat: 4, punchOutBeat: 12 };
         const after = { punchInBeat: 20, punchOutBeat: 21 };
         transportStore.set({ ...defaultTransportState, ...before });
 
-        await executeAppAction({ type: 'setPunchIn', payload: { beat: 20 } });
+        await executeAppAction({ type: 'setPunchIn', payload: { beat: after.punchInBeat } });
         setPunchOut(40);
 
         await undo();
@@ -128,7 +128,8 @@ describe('Transport punch action undo/redo', () => {
         expect(undoStore.value?.past).toHaveLength(1);
         expect(undoStore.value?.future).toHaveLength(0);
 
-        setPunchOut(after.punchOutBeat);
+        setPunchIn(before.punchInBeat);
+        setPunchOut(before.punchOutBeat);
         await undo();
 
         expect(get_punch_region()).toEqual(before);
@@ -136,7 +137,7 @@ describe('Transport punch action undo/redo', () => {
         expect(undoStore.value?.future).toHaveLength(1);
     });
 
-    it('retains a collaborator punch edit and keeps stale redo retryable', async () => {
+    it('advances stale redo history when a collaborator later achieves its replacement', async () => {
         const before = { punchInBeat: 4, punchOutBeat: 12 };
         const after = { punchInBeat: 1, punchOutBeat: 2 };
         transportStore.set({ ...defaultTransportState, ...before });
@@ -151,7 +152,7 @@ describe('Transport punch action undo/redo', () => {
         expect(undoStore.value?.past).toHaveLength(0);
         expect(undoStore.value?.future).toHaveLength(1);
 
-        setPunchIn(before.punchInBeat);
+        setPunchOut(after.punchOutBeat);
         await redo();
 
         expect(get_punch_region()).toEqual(after);
