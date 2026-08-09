@@ -1,0 +1,29 @@
+src/app/__tests__/bootstrap.spec.ts
+  s_14f2bbc9f385dd::t_0307cd8556060f 494-502
+  s_14f2bbc9f385dd::t_a2ae18cd7a4c60 340-349
+  s_5555d487dda566::t_41ac32c6a6e968 56,83
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "b6d8fa82a3f548c4ff70954051030c8b2d008ebe",
+  "prompts": {},
+  "sessions": {
+    "s_14f2bbc9f385dd": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f9a61a1d-66b3-4146-938d-a04f45f4b060",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_5555d487dda566": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-a60b12890d99fc141",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
