@@ -13,6 +13,7 @@ See `package.json` for all scripts.
 - **Type check (app):** `pnpm typecheck` — `tsconfig.app.json`; **excludes** `*.spec.ts(x)`. (The base `tsconfig.json` is spec-inclusive so oxlint's type-aware linting sees real types in tests.)
 - **Type check (tests):** `pnpm typecheck:test` — spec-inclusive (`tsconfig.test.json`: all of `src` **including** `*.spec.ts(x)`). Run after touching any spec, dummy factory, or model shape that fixtures mirror; must stay at zero errors.
 - **Module boundaries:** `pnpm deps:validate` (main + causal reachability + type-edge + test-inclusive cruises). New **error** edges and stale baseline rows fail; known debt is exact and reviewable.
+- **Barrel mocks:** `pnpm test:barrel-mocks` — a `vi.mock` of a `presentations/views` contract barrel whose factory lists exports by hand must not omit a name the spec's module graph imports, or the next export added to that barrel resolves to `undefined` and reds every test in the file. Either name the missing export (free) or spread `importOriginal` (loads the real module — measure first); `exemptions` in `scripts/checkBarrelMockCoverage.ts` is the documented exit for a deliberately narrow mock. See `docs/06-testing.md` §5.
 
 After cross-module moves or bulk import changes, re-run `pnpm deps:validate` before claiming done (at least every ~10 files during large refactors).
 

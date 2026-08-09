@@ -34,7 +34,13 @@ import { join } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
-import { analyzeSpecs, readFileFacts, scanRepository, type FileFacts } from '../checkBarrelMockCoverage';
+import {
+    allBarrelKinds,
+    analyzeSpecs,
+    readFileFacts,
+    scanRepository,
+    type FileFacts,
+} from '../checkBarrelMockCoverage';
 
 const repoRoot = join(import.meta.dirname, '../..');
 const sourceRoot = join(repoRoot, 'src');
@@ -317,5 +323,26 @@ describe('checkBarrelMockCoverage — the real tree', () => {
         expect(result.analyzedSpecCount).toBeGreaterThanOrEqual(5);
         expect(result.resolvedMockCount).toBeGreaterThanOrEqual(50);
         expect(result.graphNodeCount).toBeGreaterThanOrEqual(500);
+    });
+
+    /**
+     * The ratchet over the three barrel kinds the gate does not block.
+     *
+     * A per-row baseline was refused, and that refusal was about a table whose only
+     * content is "pre-existing" — 109 rows nobody reads, each needing exemption
+     * semantics. It said nothing about a scalar, and without one nothing holds the
+     * number at all: `--all` is invoked by no script, and the gate itself only ever
+     * scans `presentations/views`. So the 109 could become 130 unnoticed.
+     *
+     * One assertion, no table: pair 110 reds, and every pair repaid is a free
+     * ratchet down (lower the number in the same commit). The unit is the (spec,
+     * barrel) pair, not the violation, because one pair is counted once per
+     * consuming module and the pair is what a person actually fixes.
+     */
+    it('does not grow the ungated barrel-mock debt beyond its measured 109 pairs', () => {
+        const result = scanRepository(allBarrelKinds);
+        const pairs = new Set(result.violations.map((violation) => `${violation.spec} ${violation.barrel}`));
+
+        expect(pairs.size).toBeLessThanOrEqual(109);
     });
 });

@@ -28,6 +28,9 @@ printf '%s\n' \
     'if [ "${1:-}" = "test:collection-scope" ]; then' \
     '    exit "${FAKE_COLLECTION_SCOPE_STATUS:-0}"' \
     'fi' \
+    'if [ "${1:-}" = "test:barrel-mocks" ]; then' \
+    '    exit "${FAKE_BARREL_MOCKS_STATUS:-0}"' \
+    'fi' \
     > "$fake_bin/pnpm"
 printf '%s\n' \
     '#!/bin/sh' \
@@ -122,6 +125,30 @@ printf '%s\n' \
     'pnpm test:collection-scope' \
     > "$temp_root/expected-collection-scope-failure.log"
 diff -u "$temp_root/expected-collection-scope-failure.log" "$temp_root/collection-scope-failure.log"
+
+# A barrel-mock coverage failure must abort the same way. True today only because
+# health-gates-web.sh runs under `set -eu`; asserted here so a later refactor that
+# swallows a non-zero status cannot pass this file. Same shape as the check above.
+set +e
+PATH="$fake_bin:$PATH" \
+    COMMAND_LOG="$temp_root/barrel-mocks-failure.log" \
+    FAKE_BARREL_MOCKS_STATUS=1 \
+    sh "$temp_root/scripts/health-gates-web.sh" >/dev/null 2>&1
+barrel_mocks_status=$?
+set -e
+test "$barrel_mocks_status" -eq 1
+printf '%s\n' \
+    'pnpm wasm:verify' \
+    'pnpm deps:validate' \
+    'pnpm typecheck' \
+    'pnpm typecheck:test' \
+    'pnpm typecheck:scripts' \
+    'pnpm lint --quiet' \
+    'pnpm test:collection-scope' \
+    'pnpm test:barrel-mocks' \
+    > "$temp_root/expected-barrel-mocks-failure.log"
+diff -u "$temp_root/expected-barrel-mocks-failure.log" "$temp_root/barrel-mocks-failure.log"
+echo "barrel mock coverage failure stops before the suite: PASS"
 
 set +e
 server_output=$(PATH="$fake_bin:$PATH" \

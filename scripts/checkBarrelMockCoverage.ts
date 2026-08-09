@@ -64,7 +64,7 @@ const sourceRoot = join(repoRoot, 'src');
  * ever one of these, so this list is the population definition, not a sample.
  * `Common/` and `Supporting/` are the namespaced module groups.
  */
-const allBarrelKinds = ['useCases', 'stores', 'events', 'presentations/views'] as const;
+export const allBarrelKinds = ['useCases', 'stores', 'events', 'presentations/views'] as const;
 
 /**
  * What the gate fails on, and why the line is here rather than around all four.
@@ -97,6 +97,12 @@ const moduleExtensions = ['.ts', '.tsx', '.js', '.jsx'] as const;
  * Exemptions. Each row must carry the spec, the barrel, and the reason the mock is
  * deliberately narrower than the graph. Empty is the correct state; a row here is
  * debt with a name on it, not a silenced check.
+ *
+ * This is a documented exit, not evasion, and the failure output and
+ * `docs/06-testing.md` §5 both name it — a knob nobody can find from the error is
+ * the same as no knob, and `AGENTS.md` rightly tells people that editing a checker
+ * is cheating. Adding a row with a real reason is not that; deleting the check, or
+ * adding a row because the gate was inconvenient, is.
  */
 const exemptions: ReadonlyArray<{ spec: string; barrel: string; reason: string }> = [];
 
@@ -731,7 +737,18 @@ function checkDerivation(result: AnalysisResult): string[] {
     return failures;
 }
 
-/** Human-readable report for one violation; shared by the CLI and the guard spec. */
+/**
+ * Human-readable report for one violation; shared by the CLI and the guard spec.
+ *
+ * Remedy order matters, and it used to be wrong. The violation is "this factory
+ * omits X", and adding a stub for X costs nothing; spreading the barrel loads the
+ * real module and everything behind it. Printing only the spread sent developers
+ * to the expensive fix with no hint that the cheap one exists — on
+ * `src/app/__tests__/App.spec.tsx`, whose exhaustive mock exists precisely so the
+ * composition root does not load the whole DAW, that trade is 573ms → 20.89s.
+ * Cheapest first, then the spread, then the exemption table, which is a real exit
+ * and must be findable from the failure rather than only from this source file.
+ */
 export function formatViolation(violation: Violation): string {
     const spec = relative(repoRoot, violation.spec).split(sep).join('/');
     const usedBy = relative(repoRoot, violation.usedBy).split(sep).join('/');
@@ -739,12 +756,41 @@ export function formatViolation(violation: Violation): string {
         `  ✗ ${spec}:${violation.line}`,
         `    mocks ${violation.barrel} without spreading importOriginal,`,
         `    and omits ${violation.missing.join(', ')} — imported by ${usedBy}.`,
-        '    Spread the barrel first: vi.mock(spec, async (importOriginal) => ({',
-        "        ...(await importOriginal<typeof import('…')>()), …overrides }))",
+        '',
+        `    Cheapest fix — add the missing key(s) to the factory: ${violation.missing.join(', ')}.`,
+        '      Costs nothing: the factory keeps replacing the whole barrel.',
+        '    Or spread the barrel so later additions resolve for free:',
+        "      vi.mock(spec, async (importOriginal) => ({ ...(await importOriginal<typeof import('…')>()), …overrides }))",
+        '      Loads the real module and its graph — measure before choosing this for a heavy barrel.',
+        '    Or, if the mock is deliberately narrower than the graph, add a reasoned row to',
+        '      `exemptions` in scripts/checkBarrelMockCoverage.ts. That is a documented exit,',
+        '      not evasion: the row carries the spec, the barrel and the reason, and is reviewed.',
     ].join('\n');
 }
 
+const usage = [
+    'pnpm test:barrel-mocks [--all] [--help]',
+    '',
+    '  (no flags)  Fail when a spec mocks a presentations/views contract barrel without',
+    '              spreading importOriginal and omits an export its own module graph',
+    '              imports from that barrel. This is the gate; it must stay at zero.',
+    '  --all       Report the same violation across all four contract barrels',
+    '              (useCases, stores, events, presentations/views). Not gated: those',
+    '              carry pre-existing debt this measures rather than blocks. Exits 1',
+    '              when it finds any, so it is a measurement command, not a check.',
+    '  --help      This text.',
+    '',
+    'Remedies, cheapest first: add the missing key to the factory; spread the barrel;',
+    'or add a reasoned row to `exemptions` in scripts/checkBarrelMockCoverage.ts.',
+    'Background: docs/06-testing.md §5.1, and PR #1572.',
+].join('\n');
+
 function main(): number {
+    if (process.argv.includes('--help') || process.argv.includes('-h')) {
+        console.log(usage);
+        return 0;
+    }
+
     const scanAll = process.argv.includes('--all');
     const kinds = scanAll ? allBarrelKinds : gatedBarrelKinds;
     const result = scanRepository(kinds);

@@ -122,6 +122,35 @@ The business layer uses the `inject()` DI pattern (see `docs/architecture/03-typ
 
 Do not mix `vi.mock()` with `injectDependencies()` for the same dependency. Pick one.
 
+### Mocking a contract barrel
+
+A `vi.mock` of another module's contract barrel (`useCases`, `stores`, `events`, `presentations/views`) whose factory lists every export by hand goes stale silently. Anything added to that barrel later resolves to `undefined` in this spec. For a view that means React throws on render, so **every** test in the mocking file reds — in a module the author's diff never touched. That is not hypothetical: adding `MissingMediaPanel` to `Project/presentations/views` took out all 13 tests in `WorkspaceShell/…/TransportBar.spec.tsx`.
+
+Two shapes are correct, and the cheap one is first:
+
+```ts
+// 1. Name every export the spec's module graph actually imports from the barrel.
+//    Costs nothing at import time — the factory still replaces the whole barrel.
+//    Use this when the barrel is heavy, or when the point of the mock is that the
+//    real module must not load (`src/app/__tests__/App.spec.tsx` is the example).
+vi.mock('#/modules/Project/presentations/views', () => ({
+    RecentProjectsMenu: () => <div data-testid="recent-projects" />,
+    ArrangementSelector: () => <div data-testid="arrangement-selector" />,
+    MissingMediaPanel: () => <div data-testid="missing-media-panel" />,
+}));
+
+// 2. Spread the original first, then override only what you stub. Later additions
+//    resolve to the real export instead of `undefined`. This loads the real module
+//    and its graph, so measure before using it on a heavy barrel — on
+//    `ArrangeView.spec.tsx` the spread costs +75% wall time.
+vi.mock('#/modules/Project/presentations/views', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Project/presentations/views')>()),
+    RecentProjectsMenu: () => <div data-testid="recent-projects" />,
+}));
+```
+
+`pnpm test:barrel-mocks` enforces this for `presentations/views` barrels: it walks each spec's module graph and fails when a non-spread factory omits a name that graph imports. It runs in `scripts/health-gates-web.sh`, and its guard spec runs in the ordinary suite. The failure names the spec, the barrel, the missing export and the consuming module, and prints all three remedies — including adding a reasoned row to `exemptions` in `scripts/checkBarrelMockCoverage.ts`, which is the documented exit for a mock that is deliberately narrower than the graph. `--all` reports the same class across the other three barrel kinds, which are measured rather than gated. Background: PR #1572, issue #1393.
+
 ### Canonical test shape for an injectable
 
 ```typescript
