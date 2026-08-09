@@ -82,6 +82,7 @@ export const DawPluginChip = ({
     return (
         <button
             type={type}
+            aria-pressed={active || undefined}
             className={cn(
                 'inline-flex items-center justify-center border font-medium transition-[background-color,border-color,color,box-shadow]',
                 'disabled:pointer-events-none disabled:opacity-45',
