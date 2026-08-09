@@ -125,18 +125,21 @@ Most operations are available three ways:
 3. **Natural language** — describing what you want to the assistant, from the prompt bar in the
    transport or the chat panel.
 
-The three are not yet equivalent, and the difference shows up in undo. What the assistant does is
-recorded as a matter of course, because everything it performs runs through the recorded path. Doing
-the same thing by hand is patchier: editing clips and notes is recorded, and so are a few controls
-that were wired up individually — arming a track, changing the tempo — but most of the mixer and most
-device work is not.
+The three are not yet equivalent, and the difference shows up in undo. What decides whether a change
+is recorded is the surface you touched, not who asked for it. The assistant records everything it
+does, and so does the command list — both run every operation through the same recorded path.
+Direct manipulation is the uneven one, and it is being evened out a surface at a time.
 
-The list of operations that split this way is long and still moving, so treat it as a rule rather
-than something to memorise: if it is not a clip or note edit, assume your own hand does not record it.
-Track gain and pan, mute, solo, rename, track colour, deleting a track, adding or removing a device,
-and device parameters on the devices that do not record their own controls all behave this way — one
-undo step from the assistant, nothing at all from you. Until that evens out, ask the assistant for a
-change you may want to walk back.
+Recorded when you do it by hand today: editing clips and notes, arming a track, tempo and time
+signature, deleting a track from the timeline or the track list, adjustment layers, the chord track,
+track alternatives, and macros. Not recorded: the mixer strip — gain, pan, mute, solo, rename,
+colour, and the strip's own delete — along with adding or removing a device, and device parameters
+on the devices that do not record their own controls.
+
+**Those two lists are the ones we know of, not the whole map.** The split is decided one surface at
+a time, the same gesture can land on either side depending on where you performed it, and both lists
+move as surfaces are converted. When it matters, do not try to remember which side you are on: use
+the command list or ask the assistant, and the change is recorded either way.
 
 ## Where sound actually comes out
 
