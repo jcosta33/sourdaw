@@ -43,6 +43,7 @@ const projectContext: ProjectContext = {
     tempo: 120,
     timeSignature: [4, 4],
     isPlaying: false,
+    isRecording: false,
     isLooping: true,
     loopStart: 4,
     loopEnd: 12,
@@ -1007,6 +1008,105 @@ describe('bridgeGroundedLlmToolCalls', () => {
             expect
                 .soft(result.actions)
                 .toEqual([{ type: 'glueClips', payload: { clipIds: ['clip-midi-intro', 'clip-midi-verse'] } }]);
+            expect.soft(result.rejections).toEqual([]);
+        }
+    });
+
+    it('grounds only one explicit clip loop-length request in beats', () => {
+        const context = createClipContext();
+        const call = {
+            name: 'setClipLoopLength',
+            arguments: { clipId: 'clip-intro', loopLength: 4 },
+        };
+        const named = bridge([call], 'set the Intro clip loop length to 4 beats', context);
+        const selected = bridge([call], 'please set the selected clip loop length to 4 beats', context);
+        const rejectedPrompts = [
+            'set the Intro clip loop length to 4 bars',
+            'set the Intro clip loop length to 4 seconds',
+            'set the Intro clip loop length to 4 ticks',
+            'set the Intro clip loop length to 4 samples',
+            'set the Intro clip loop length to 4 percent',
+            'increase the Intro clip loop length by 4 beats',
+            'set the Intro loop region to 4 beats',
+            'fit the Intro clip loop to 4 beats',
+            'trim the Intro clip loop to 4 beats',
+            'loop the Intro clip every 4 beats',
+            'could the Intro clip loop length be 4 beats?',
+            'if needed set the Intro clip loop length to 4 beats',
+            'set the Intro clip loop length to 4 beats because it is too long',
+            'do not set the Intro clip loop length to 4 beats',
+            'set the Intro clip loop length to 4 beats, cancel that',
+        ];
+
+        expect(named.actions).toEqual([
+            { type: 'setClipLoopLength', payload: { clipId: 'clip-intro', loopLength: 4 } },
+        ]);
+        expect(named.rejections).toEqual([]);
+        expect(selected.actions).toEqual(named.actions);
+        expect(selected.rejections).toEqual([]);
+        expect(rejectedPrompts.every((prompt) => bridge([call], prompt, context).actions.length === 0)).toBe(true);
+    });
+
+    it('requires one complete singleton provider plan for an active clip loop-length request', () => {
+        const context = createClipContext();
+        const lengthCall = {
+            name: 'setClipLoopLength',
+            arguments: { clipId: 'clip-intro', loopLength: 4 },
+        };
+        const enableCall = { name: 'setClipLoop', arguments: { clipId: 'clip-intro', enabled: true } };
+        const tempoCall = { name: 'setTempo', arguments: { bpm: 130 } };
+
+        const omitted = bridge([], 'set the Intro clip loop length to 4 beats', context);
+        const mixed = bridge(
+            [lengthCall, tempoCall],
+            'set the Intro clip loop length to 4 beats; set tempo to 130',
+            context
+        );
+        const partialLength = bridge(
+            [lengthCall],
+            'enable looping on the Intro clip and set the Intro clip loop length to 4 beats',
+            context
+        );
+        const partialEnable = bridge(
+            [enableCall],
+            'enable looping on the Intro clip and set the Intro clip loop length to 4 beats',
+            context
+        );
+
+        for (const result of [omitted, mixed, partialLength, partialEnable]) {
+            expect.soft(result.actions).toEqual([]);
+            expect.soft(result.rejections[0]?.name).toBe('<batch>');
+        }
+    });
+
+    it('allows an omitted cancelled-only clip loop-length request without weakening another exact action', () => {
+        const context = createClipContext();
+        const result = bridge(
+            [{ name: 'setTempo', arguments: { bpm: 130 } }],
+            'set the Intro clip loop length to 4 beats, cancel that; set tempo to 130',
+            context
+        );
+
+        expect(result.actions).toEqual([{ type: 'setTempo', payload: { bpm: 130 } }]);
+        expect(result.rejections).toEqual([]);
+    });
+
+    it('accepts explicit natural named clip loop-length forms with exact binding', () => {
+        const context = createClipContext();
+        const call = {
+            name: 'setClipLoopLength',
+            arguments: { clipId: 'clip-intro', loopLength: 4 },
+        };
+
+        for (const prompt of [
+            'set the clip loop length of Intro to 4 beats',
+            'set the clip loop length for Intro to 4 beats',
+            "set Intro's clip loop length to 4 beats",
+        ]) {
+            const result = bridge([call], prompt, context);
+            expect
+                .soft(result.actions)
+                .toEqual([{ type: 'setClipLoopLength', payload: { clipId: 'clip-intro', loopLength: 4 } }]);
             expect.soft(result.rejections).toEqual([]);
         }
     });
@@ -4424,5 +4524,103 @@ describe('bridgeGroundedLlmToolCalls', () => {
 
         expect(result.actions).toEqual([]);
         expect(result.rejections[0]?.reason).toContain('ambiguous');
+    });
+
+    it('grounds only one direct stopped-transport punch enablement command', () => {
+        const enabled = bridge([{ name: 'setPunchEnabled', arguments: { enabled: true } }], 'enable punch in/out', {
+            ...projectContext,
+            punchInEnabled: false,
+        });
+        const disabled = bridge([{ name: 'setPunchEnabled', arguments: { enabled: false } }], 'turn punch in/out off');
+        const polite = bridge(
+            [{ name: 'setPunchEnabled', arguments: { enabled: true } }],
+            'please enable punch in/out!',
+            { ...projectContext, punchInEnabled: false }
+        );
+        const politeQuestionPrompts = [
+            'can you enable punch in/out?',
+            'could you please enable punch in/out?',
+            'would you enable punch in/out please?',
+        ];
+        const rejected = [
+            bridge([{ name: 'setPunchEnabled', arguments: { enabled: true } }], 'punch'),
+            bridge([{ name: 'setPunchEnabled', arguments: { enabled: true } }], 'set punch in at beat 20'),
+            bridge([{ name: 'setPunchEnabled', arguments: { enabled: false } }], 'enable punch in/out'),
+            bridge([{ name: 'setPunchEnabled', arguments: { enabled: true } }], 'do not enable punch in/out'),
+            bridge([{ name: 'setPunchEnabled', arguments: { enabled: true } }], 'enable punch in/out, cancel that'),
+            bridge([{ name: 'setPunchEnabled', arguments: { enabled: true } }], 'if stopped, enable punch in/out'),
+            bridge(
+                [{ name: 'setPunchEnabled', arguments: { enabled: true } }],
+                'enable punch in/out; set tempo to 100'
+            ),
+            bridge([{ name: 'setPunchEnabled', arguments: { enabled: true } }], 'enable background punch recording'),
+            bridge([{ name: 'setPunchEnabled', arguments: { enabled: true } }], 'enable punch recording'),
+            bridge([{ name: 'setPunchEnabled', arguments: { enabled: true } }], 'enable punch in/out is a bad idea'),
+            bridge([{ name: 'setPunchIn', arguments: { beat: 20 } }], 'enable punch recording'),
+            bridge([{ name: 'setPunchEnabled', arguments: { enabled: false } }], 'disable punch in/out', {
+                ...projectContext,
+                isPlaying: true,
+            }),
+            bridge([{ name: 'setPunchEnabled', arguments: { enabled: false } }], 'disable punch in/out', {
+                ...projectContext,
+                isRecording: true,
+            }),
+        ];
+
+        expect(enabled.actions).toEqual([{ type: 'setPunchEnabled', payload: { enabled: true } }]);
+        expect(disabled.actions).toEqual([{ type: 'setPunchEnabled', payload: { enabled: false } }]);
+        expect(polite.actions).toEqual([{ type: 'setPunchEnabled', payload: { enabled: true } }]);
+        for (const prompt of politeQuestionPrompts) {
+            const result = bridge([{ name: 'setPunchEnabled', arguments: { enabled: true } }], prompt, {
+                ...projectContext,
+                punchInEnabled: false,
+            });
+            expect(result.actions, `${prompt}: ${JSON.stringify(result.rejections)}`).toEqual([
+                { type: 'setPunchEnabled', payload: { enabled: true } },
+            ]);
+        }
+        for (const result of rejected) {
+            expect(result.actions).toEqual([]);
+        }
+    });
+
+    it('omits an all-cancelled punch-family request while preserving one unrelated exact action', () => {
+        const punchFirst = bridge(
+            [{ name: 'setTempo', arguments: { bpm: 100 } }],
+            'enable punch in/out, cancel that; set tempo to 100'
+        );
+        const punchLast = bridge(
+            [{ name: 'setTempo', arguments: { bpm: 100 } }],
+            'set tempo to 100; enable punch in/out, cancel that'
+        );
+
+        expect(punchFirst.actions).toEqual([{ type: 'setTempo', payload: { bpm: 100 } }]);
+        expect(punchLast.actions).toEqual([{ type: 'setTempo', payload: { bpm: 100 } }]);
+    });
+
+    it('rejects mixed active and cancelled punch-family requests in both orders', () => {
+        const activeFirst = bridge(
+            [{ name: 'setPunchEnabled', arguments: { enabled: true } }],
+            'enable punch in/out; set punch in at beat 20, cancel that',
+            { ...projectContext, punchInEnabled: false }
+        );
+        const cancelledFirst = bridge(
+            [{ name: 'setPunchEnabled', arguments: { enabled: true } }],
+            'set punch in at beat 20, cancel that; enable punch in/out',
+            { ...projectContext, punchInEnabled: false }
+        );
+        const endpointFirst = bridge(
+            [{ name: 'setPunchIn', arguments: { beat: 20 } }],
+            'set punch in at beat 20; disable punch in/out, cancel that'
+        );
+        const cancelledEnablementFirst = bridge(
+            [{ name: 'setPunchIn', arguments: { beat: 20 } }],
+            'disable punch in/out, cancel that; set punch in at beat 20'
+        );
+
+        for (const result of [activeFirst, cancelledFirst, endpointFirst, cancelledEnablementFirst]) {
+            expect(result.actions).toEqual([]);
+            expect(result.rejections[0]?.reason).toContain('exactly one direct command');
+        }
     });
 });

@@ -1,4 +1,5 @@
 import { takeLaneStore, type Track } from '#/modules/Arrangement/stores';
+import { projectClipLoopExpansion } from '#/modules/Arrangement/useCases';
 import { automationStore } from '#/modules/Automation/stores';
 import { type MidiStoreState } from '#/modules/MIDI/stores';
 import {
@@ -573,15 +574,19 @@ export async function scheduleTrackClips({
             if (!sourceNotes || clipVisualLength <= 0) {
                 continue;
             }
-            const rawLoopLength = clip.loopEnabled ? (clip.loopLength ?? clipVisualLength) : clipVisualLength;
-            const loopLength = rawLoopLength > 0 ? rawLoopLength : clipVisualLength;
+            const loopProjection = projectClipLoopExpansion({
+                clipDurationBeats: clipVisualLength,
+                configuredLoopLengthBeats: clip.loopLength,
+                loopEnabled: clip.loopEnabled ?? false,
+            });
+            const loopLength = loopProjection.loopLengthBeats;
             const sourceOccurrenceOffset = getSourceOccurrenceOffset({
                 sourceStartBeat: clip.sourceStartBeat,
                 segmentStartBeat: clip.startBeat,
                 loopLength,
                 loopEnabled: clip.loopEnabled ?? false,
             });
-            const iterationCount = clip.loopEnabled ? Math.ceil(clipVisualLength / loopLength) : 1;
+            const iterationCount = loopProjection.iterationCount;
             for (let iteration = 0; iteration < iterationCount; iteration++) {
                 const absoluteOccurrenceIndex = sourceOccurrenceOffset + iteration;
                 iterations.push({
@@ -650,10 +655,13 @@ export async function scheduleTrackClips({
             continue;
         }
 
-        const rawLoopLen = clip.loopEnabled ? (clip.loopLength ?? clipVisualLength) : clipVisualLength;
-        // Guard against corrupt loopLength (zero or negative would cause infinite loops / NaN).
-        const loopLen = rawLoopLen > 0 ? rawLoopLen : clipVisualLength;
-        const maxIterations = clip.loopEnabled ? Math.ceil(clipVisualLength / loopLen) : 1;
+        const loopProjection = projectClipLoopExpansion({
+            clipDurationBeats: clipVisualLength,
+            configuredLoopLengthBeats: clip.loopLength,
+            loopEnabled: clip.loopEnabled ?? false,
+        });
+        const loopLen = loopProjection.loopLengthBeats;
+        const maxIterations = loopProjection.iterationCount;
         const sourceOccurrenceOffset = getSourceOccurrenceOffset({
             sourceStartBeat: clip.sourceStartBeat,
             segmentStartBeat: clip.startBeat,

@@ -27,6 +27,7 @@
  * transient AI lifecycle events. The line is "would a malformed payload
  * cause data loss, persistent corruption, or an exploit".
  */
+import { MIN_CLIP_LOOP_LENGTH_BEATS } from '#/modules/Arrangement/useCases';
 import { resolveMarkerColorName } from '#/utils/markerColorPalette';
 
 import { type RuntimeAction, type RuntimeActionType } from '../models/RuntimeAction';
@@ -235,6 +236,8 @@ const validators = {
         isObj(param) && hasExactKeys(param, ['enabled']) && typeof param.enabled === 'boolean',
     setMetronomeEnabled: (param): param is PayloadOf<'setMetronomeEnabled'> =>
         isObj(param) && hasExactKeys(param, ['enabled']) && typeof param.enabled === 'boolean',
+    setPunchEnabled: (param): param is PayloadOf<'setPunchEnabled'> =>
+        isObj(param) && hasExactKeys(param, ['enabled']) && typeof param.enabled === 'boolean',
     setLoopRegion: (param): param is PayloadOf<'setLoopRegion'> =>
         isObj(param) &&
         hasExactKeys(param, ['startBeat', 'endBeat']) &&
@@ -381,7 +384,6 @@ const validators = {
     toggleRecording: 'unchecked',
     toggleLoop: 'unchecked',
     toggleMetronome: 'unchecked',
-    togglePunch: 'unchecked',
     toggleCountIn: 'unchecked',
     togglePreRoll: 'unchecked',
     setPunchIn: hasValidPunchInBeat,
@@ -518,7 +520,12 @@ const validators = {
         hasExactKeys(param, ['clipId', 'enabled']) &&
         isNonEmptyString(param.clipId) &&
         typeof param.enabled === 'boolean',
-    setClipLoopLength: 'unchecked',
+    setClipLoopLength: (param): param is PayloadOf<'setClipLoopLength'> =>
+        isObj(param) &&
+        hasExactKeys(param, ['clipId', 'loopLength']) &&
+        isNonEmptyString(param.clipId) &&
+        isNumber(param.loopLength) &&
+        param.loopLength >= MIN_CLIP_LOOP_LENGTH_BEATS,
     setClipStretchMode: (param): param is PayloadOf<'setClipStretchMode'> =>
         isObj(param) &&
         hasExactKeys(param, ['clipId', 'mode']) &&

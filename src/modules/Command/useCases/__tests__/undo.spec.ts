@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+import { clearHandlerRegistry, registerHandlerMap } from '../../stores/handlerRegistry';
 import { undo } from '../undo';
 
 import type { ActionUndoEntry, CallbackUndoEntry, UndoEntry } from '../../models/UndoEntry';
@@ -65,6 +66,7 @@ describe('undo', () => {
         mocks.executeAppAction.mockReset();
         mocks.undoTreeMoveTo.mockReset();
         mocks.undoStoreValue.value = { past: [], future: [] };
+        clearHandlerRegistry();
     });
 
     it('should execute inverseAction with skipUndo and move the entry to future', async () => {
@@ -135,6 +137,44 @@ describe('undo', () => {
             future: [first, second, future],
         });
         expect(mocks.undoTreeMoveTo).toHaveBeenCalledWith('previous');
+    });
+
+    it('de-groups legacy mixed singleton history before undoing only the newest entry', async () => {
+        registerHandlerMap({
+            setEditingTool: {
+                batchExecution: 'singleton',
+                execute: () => ({ status: 'written' }),
+                describe: () => ({ label: 'Set editing tool', inverseAction: null }),
+                undoable: true,
+            },
+        });
+        const singleton = actionEntry({
+            id: 'singleton',
+            action: { type: 'setEditingTool', payload: { tool: 'marquee' } },
+            inverseAction: { type: 'setEditingTool', payload: { tool: 'select' } },
+            groupId: 'legacy-group',
+            groupLabel: 'Legacy group',
+        });
+        const companion = actionEntry({
+            id: 'companion',
+            action: { type: 'toggleLoop' },
+            inverseAction: { type: 'toggleLoop' },
+            groupId: 'legacy-group',
+            groupLabel: 'Legacy group',
+        });
+        mocks.undoStoreValue.value = { past: [singleton, companion], future: [] };
+
+        await undo();
+
+        expect(mocks.executeAppAction).toHaveBeenCalledTimes(1);
+        expect(mocks.executeAppAction).toHaveBeenCalledWith(companion.inverseAction, {
+            skipUndo: true,
+            skipMacroRecording: true,
+        });
+        expect(mocks.undoStoreSet).toHaveBeenLastCalledWith({
+            past: [expect.not.objectContaining({ groupId: 'legacy-group' })],
+            future: [expect.not.objectContaining({ groupId: 'legacy-group' })],
+        });
     });
 
     it('should drop an inert action entry instead of leaving it to wedge the stack', async () => {

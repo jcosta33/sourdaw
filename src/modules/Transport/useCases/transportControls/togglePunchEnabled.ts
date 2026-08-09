@@ -1,10 +1,11 @@
 import { getTransportState } from '../../repositories/transport/getTransportState';
-import { updateTransportState } from '../../repositories/transport/updateTransportState';
 
-export function togglePunchEnabled(): void {
+import { setPunchEnabled } from './setPunchEnabled';
+
+export function togglePunchEnabled(): ReturnType<typeof setPunchEnabled> {
     const state = getTransportState();
     if (!state) {
-        return;
+        return { status: 'no-write' };
     }
-    updateTransportState({ punchInEnabled: !state.punchInEnabled });
+    return setPunchEnabled({ enabled: !state.punchInEnabled, expectedEnabled: state.punchInEnabled });
 }

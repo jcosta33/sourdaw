@@ -1,5 +1,11 @@
 import { clipSelectionStore, trackStore, vcaGroupStore } from '#/modules/Arrangement/stores';
-import { getGlueEligibleClipPairs, getPlatformPlugins, getPluginById } from '#/modules/Arrangement/useCases';
+import {
+    MIN_CLIP_LOOP_LENGTH_BEATS,
+    getGlueEligibleClipPairs,
+    getPlatformPlugins,
+    getPluginById,
+    projectClipLoopExpansion,
+} from '#/modules/Arrangement/useCases';
 import { automationStore } from '#/modules/Automation/stores';
 import { midiStore } from '#/modules/MIDI/stores';
 import { sidechainStore } from '#/modules/Routing/stores';
@@ -89,6 +95,7 @@ export function getProjectContext(): ProjectContext {
         tempo: transportState?.tempo ?? 120,
         timeSignature: [transportState?.timeSignatureNumerator ?? 4, transportState?.timeSignatureDenominator ?? 4],
         isPlaying: transportState?.isPlaying ?? false,
+        isRecording: transportState?.isRecording ?? false,
         isLooping: transportState?.isLooping ?? false,
         loopStart: transportState?.loopStart ?? 0,
         loopEnd: transportState?.loopEnd ?? 0,
@@ -159,6 +166,12 @@ export function getProjectContext(): ProjectContext {
                 fadeInBeats: context.fadeInBeats,
                 fadeOutBeats: context.fadeOutBeats,
                 loopEnabled: context.loopEnabled ?? false,
+                loopLength: context.loopLength,
+                minimumLoopLengthBeats: projectClipLoopExpansion({
+                    clipDurationBeats: context.endBeat - context.startBeat,
+                    configuredLoopLengthBeats: MIN_CLIP_LOOP_LENGTH_BEATS,
+                    loopEnabled: true,
+                }).loopLengthBeats,
                 noteCount: context.type === 'midi' ? (notesByClipId?.[context.id]?.length ?? 0) : 0,
             })),
             devices: time.devices.map((data) => {

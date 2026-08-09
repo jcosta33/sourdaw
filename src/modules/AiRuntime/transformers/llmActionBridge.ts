@@ -626,6 +626,19 @@ function bridgeToolCall({
         return { type: 'setPunchOut', payload: { beat } };
     }
 
+    if (call.name === 'setPunchEnabled') {
+        if (!hasExactKeys(args, ['enabled']) || typeof args.enabled !== 'boolean') {
+            return rejection(index, call.name, 'Expected only a boolean enabled value');
+        }
+        if (context.isPlaying || context.isRecording) {
+            return rejection(index, call.name, 'Transport Punch In/Out can change only while transport is stopped');
+        }
+        if (context.punchInEnabled === args.enabled) {
+            return rejection(index, call.name, 'Requested Transport Punch In/Out state already matches project state');
+        }
+        return { type: 'setPunchEnabled', payload: { enabled: args.enabled } };
+    }
+
     if (call.name === 'setMetronomeEnabled') {
         if (!hasExactKeys(args, ['enabled']) || typeof args.enabled !== 'boolean') {
             return rejection(index, call.name, 'Expected only a boolean enabled value');
@@ -1524,6 +1537,32 @@ function bridgeToolCall({
         return { type: 'setClipLoop', payload: { clipId: source.clip.id, enabled: args.enabled } };
     }
 
+    if (call.name === 'setClipLoopLength') {
+        const source = findClip(context, args.clipId);
+        const clipDurationBeats = source ? source.clip.endBeat - source.clip.startBeat : Number.NaN;
+        if (
+            !hasExactKeys(args, ['clipId', 'loopLength']) ||
+            !source ||
+            source.clip.locked === true ||
+            context.isPlaying ||
+            context.isRecording ||
+            !isFiniteNumber(args.loopLength) ||
+            args.loopLength < (source.clip.minimumLoopLengthBeats ?? 1 / 480) ||
+            !Number.isFinite(clipDurationBeats) ||
+            clipDurationBeats <= 0
+        ) {
+            return rejection(
+                index,
+                call.name,
+                'Expected one unlocked clip, a stopped transport, and a finite loopLength in beats at least one project tick'
+            );
+        }
+        if (source.clip.loopLength === args.loopLength) {
+            return rejection(index, call.name, 'Requested clip loop length already matches project state');
+        }
+        return { type: 'setClipLoopLength', payload: { clipId: source.clip.id, loopLength: args.loopLength } };
+    }
+
     if (call.name === 'renameTrack') {
         if (!hasExactKeys(args, ['trackId', 'name']) || !hasTrack(context, args.trackId)) {
             return rejection(index, call.name, 'Expected an available trackId and name');
@@ -1910,6 +1949,7 @@ function getClipTargetIds(action: RuntimeAction): string[] {
         action.type === 'setClipFade' ||
         action.type === 'lockClip' ||
         action.type === 'setClipLoop' ||
+        action.type === 'setClipLoopLength' ||
         action.type === 'normalizeClip' ||
         action.type === 'setClipStretchMode' ||
         action.type === 'setClipStretchRatio' ||
@@ -2013,6 +2053,9 @@ function getMutationKeys(
     }
     if (action.type === 'setPunchIn' || action.type === 'setPunchOut') {
         return ['punch:region'];
+    }
+    if (action.type === 'setPunchEnabled') {
+        return ['punch:enabled'];
     }
     if (action.type === 'setMetronomeEnabled') {
         return ['metronome:enabled'];
@@ -2191,6 +2234,13 @@ function getMutationKeys(
     }
     if (action.type === 'setClipLoop') {
         return [`clip:${action.payload.clipId}:loop`];
+    }
+    if (action.type === 'setClipLoopLength') {
+        return [
+            `clip:${action.payload.clipId}:loop`,
+            `clip:${action.payload.clipId}:geometry`,
+            `clip:${action.payload.clipId}:stretch`,
+        ];
     }
     if (
         action.type === 'quantizeNotes' ||
@@ -2419,13 +2469,13 @@ export function bridgeLlmToolCalls({
         };
     }
 
-    const punchCalls = calls.filter((call) => call.name === 'setPunchIn' || call.name === 'setPunchOut');
+    const punchCalls = calls.filter(
+        (call) => call.name === 'setPunchIn' || call.name === 'setPunchOut' || call.name === 'setPunchEnabled'
+    );
     if (punchCalls.length > 0 && (punchCalls.length !== 1 || calls.length !== 1)) {
         return {
             actions: [],
-            rejections: [
-                rejection(0, '<batch>', 'Provider punch endpoint command must be the only action in its batch'),
-            ],
+            rejections: [rejection(0, '<batch>', 'Provider punch command must be the only action in its batch')],
         };
     }
 
@@ -2792,6 +2842,7 @@ export function buildLlmActionUserMessage({ prompt, context }: { prompt: string;
         tempo: context.tempo,
         timeSignature: context.timeSignature,
         isPlaying: context.isPlaying,
+        isRecording: context.isRecording,
         isLooping: context.isLooping,
         loopStart: context.loopStart,
         loopEnd: context.loopEnd,
@@ -2859,6 +2910,8 @@ export function buildLlmActionUserMessage({ prompt, context }: { prompt: string;
                 fadeInBeats: clip.fadeInBeats ?? 0,
                 fadeOutBeats: clip.fadeOutBeats ?? 0,
                 loopEnabled: clip.loopEnabled ?? false,
+                loopLength: clip.loopLength,
+                minimumLoopLengthBeats: clip.minimumLoopLengthBeats,
             })),
         })),
     };

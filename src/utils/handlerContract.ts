@@ -796,6 +796,14 @@ export type AppAction =
     | { type: 'setPunchIn'; payload: { beat: number } }
     | { type: 'setPunchOut'; payload: { beat: number } }
     | {
+          type: 'setPunchEnabled';
+          payload: {
+              enabled: boolean;
+              /** Internal compare-and-swap guard. AiRuntime payload validation rejects this field. */
+              expectedEnabled?: boolean;
+          };
+      }
+    | {
           /** Internal compare-and-swap replay action for both punch endpoints. */
           type: 'restorePunchRegion';
           payload: {
@@ -911,6 +919,15 @@ export type AppAction =
           };
       }
     | { type: 'setClipLoopLength'; payload: { clipId: string; loopLength: number } }
+    | {
+          /** Internal exact-state replay for optional clip loop-length metadata. */
+          type: 'restoreClipLoopLength';
+          payload: {
+              clipId: string;
+              expected: { present: boolean; value: number };
+              replacement: { present: boolean; value: number };
+          };
+      }
     | {
           type: 'createGrooveTemplate';
           payload: Omit<GrooveTemplateActionSnapshot, 'schemaVersion'>;
@@ -1262,6 +1279,8 @@ export type ActionHandler<Action extends AppAction = AppAction> = {
     requiresAbortCompensation?: boolean;
     /** Runtime handlers execute outside Automerge and cannot join project-mutation batches. */
     executionKind?: 'project' | 'runtime';
+    /** Actions whose preflight description depends on live state must not be combined with other batch writes. */
+    batchExecution?: 'singleton';
     undoable: boolean;
 };
 

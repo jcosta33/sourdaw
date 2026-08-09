@@ -1,0 +1,46 @@
+#!/usr/bin/env bash
+# Conventional commit subject. Harness-agnostic: every agent and every human runs `git commit`,
+# so this is the one title gate that binds Claude, Codex, Kimi, zcode and people equally.
+#
+# Enable once per clone:  git config core.hooksPath .githooks
+#
+# Bypass for a genuine exception:  git commit --no-verify
+
+set -uo pipefail
+
+msg_file="$1"
+subject="$(head -1 "$msg_file")"
+
+# Let git's own generated messages through untouched.
+case "$subject" in
+  "Merge "*|"Revert "*|"fixup! "*|"squash! "*|"Reapply "*) exit 0 ;;
+  "#"*|"") exit 0 ;;
+esac
+
+pattern='^(feat|fix|chore|docs|test|refactor|perf|build|ci|style|revert)(\([a-z0-9,._/-]+\))?!?: .+'
+
+if printf '%s' "$subject" | grep -Eq "$pattern"; then
+  if [ "${#subject}" -gt 100 ]; then
+    printf 'commit-msg: subject is %s chars (max 100).\n\n  %s\n\n' "${#subject}" "$subject" >&2
+    echo 'Put the detail in the body, one blank line down.' >&2
+    exit 1
+  fi
+  exit 0
+fi
+
+cat >&2 <<EOF
+commit-msg: subject does not match this repo's convention.
+
+  $subject
+
+Expected  type(scope): subject
+Types     feat fix chore docs test refactor perf build ci style revert
+Scope     the module or crate — fermenter, proof-chamber, arrangement, infra …
+
+  fix(fermenter): correct the plate tank delays that read a sample short
+  feat(proof-chamber): wire the Decay EQ bands to the engines
+  test(e2e): cover the recorder arm and overdub flow
+
+Deliberate exception: git commit --no-verify
+EOF
+exit 1

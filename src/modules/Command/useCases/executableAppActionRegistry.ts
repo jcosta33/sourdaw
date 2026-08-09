@@ -613,6 +613,41 @@ export const executableAppActionDescriptors = [
         },
     },
     {
+        actionType: 'setClipLoopLength',
+        risk: 'bounded-reversible',
+        description:
+            'Set the explicit loop length in beats on one existing unlocked audio or MIDI clip without enabling looping or changing clip geometry.',
+        intentPhrases: [
+            'set clip loop length',
+            'set the clip loop length',
+            'set selected clip loop length',
+            'change clip loop length',
+            'change the clip loop length',
+            'clip loop length',
+        ],
+        targetRules: editableClipTargetRules,
+        valueRules: [
+            {
+                argument: 'loopLength',
+                kind: 'number-if-present',
+                requiredInPrompt: true,
+                match: 'exact',
+                unit: 'beat-duration',
+            },
+        ],
+        parameters: {
+            properties: {
+                clipId: { type: 'string', description: 'Existing unlocked audio or MIDI clip ID' },
+                loopLength: {
+                    type: 'number',
+                    minimum: 1 / 480,
+                    description: 'Explicit loop length in beats, at least one project tick',
+                },
+            },
+            required: ['clipId', 'loopLength'],
+        },
+    },
+    {
         actionType: 'normalizeClip',
         risk: 'destructive-reversible',
         description: 'Non-destructively normalize one unlocked audio clip.',
@@ -1376,6 +1411,45 @@ export const executableAppActionDescriptors = [
                 },
             },
             required: ['beat'],
+        },
+    },
+    {
+        actionType: 'setPunchEnabled',
+        risk: 'authority-sensitive',
+        description:
+            'Enable or disable Transport Punch In/Out until changed without changing the punch region or background capture.',
+        intentPhrases: [
+            'enable punch in/out',
+            'disable punch in/out',
+            'turn punch in/out on',
+            'turn punch in/out off',
+            'enable punch mode',
+            'disable punch mode',
+            'turn punch mode on',
+            'turn punch mode off',
+        ],
+        targetRules: [],
+        valueRules: [
+            {
+                argument: 'enabled',
+                kind: 'boolean-intent',
+                truePhrases: ['enable punch in/out', 'turn punch in/out on', 'enable punch mode', 'turn punch mode on'],
+                falsePhrases: [
+                    'disable punch in/out',
+                    'turn punch in/out off',
+                    'disable punch mode',
+                    'turn punch mode off',
+                ],
+            },
+        ],
+        parameters: {
+            properties: {
+                enabled: {
+                    type: 'boolean',
+                    description: 'true=enable Transport Punch In/Out, false=disable; punch endpoints remain unchanged',
+                },
+            },
+            required: ['enabled'],
         },
     },
     {

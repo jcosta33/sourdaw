@@ -437,6 +437,18 @@ describe('scheduleTrackClips — audio clip scheduling', () => {
         expect(sources[0]!.start).toHaveBeenCalledWith(0, 0, 1);
     });
 
+    it('bounds malformed persisted loop expansion at the shared maximum iteration count', async () => {
+        mocks.audioBufferCache.get.mockReturnValue(makeBuffer(10));
+        const { ctx, sources } = makeRecordingOfflineCtx();
+        const track = TrackDummy.create({
+            clips: [makeAudioClip({ startBeat: 0, endBeat: 10, loopEnabled: true, loopLength: 1 / 4097 })],
+        });
+
+        await run({ track, ctx });
+
+        expect(sources).toHaveLength(4096);
+    });
+
     it('trims a clip that straddles the export region start by advancing the buffer offset', async () => {
         mocks.audioBufferCache.get.mockReturnValue(makeBuffer(10));
         const { ctx, sources } = makeRecordingOfflineCtx();

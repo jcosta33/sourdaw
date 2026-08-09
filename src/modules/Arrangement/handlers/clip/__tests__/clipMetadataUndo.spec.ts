@@ -8,6 +8,7 @@ import { handleRestoreClipLoop } from '../handleRestoreClipLoop';
 import { handleSetClipColor } from '../handleSetClipColor';
 import { handleSetClipFade } from '../handleSetClipFade';
 import { handleSetClipLoop } from '../handleSetClipLoop';
+import { handleSetClipLoopLength } from '../handleSetClipLoopLength';
 
 const clip: Clip = {
     id: 'clip-1',
@@ -174,6 +175,30 @@ describe('clip metadata handler replay', () => {
         expect(handleSetClipLoop.isNoop?.(action)).toBe(false);
         expect(handleSetClipLoop.execute(action)).toEqual({ status: 'written' });
         expect(handleSetClipLoop.isNoop?.(action)).toBe(true);
+    });
+
+    it('captures presence-aware guarded loop-length undo and redo actions', () => {
+        const action = { type: 'setClipLoopLength', payload: { clipId: clip.id, loopLength: 4 } } as const;
+
+        expect(handleSetClipLoopLength.describe(action)).toEqual({
+            label: 'Set clip loop length to 4 beats; clip looping is disabled, so the stored length is dormant until enabled',
+            inverseAction: {
+                type: 'restoreClipLoopLength',
+                payload: {
+                    clipId: clip.id,
+                    expected: { present: true, value: 4 },
+                    replacement: { present: false, value: 0 },
+                },
+            },
+            redoAction: {
+                type: 'restoreClipLoopLength',
+                payload: {
+                    clipId: clip.id,
+                    expected: { present: false, value: 0 },
+                    replacement: { present: true, value: 4 },
+                },
+            },
+        });
     });
 
     it('restores an absent loopEnabled property exactly across undo and redo', () => {

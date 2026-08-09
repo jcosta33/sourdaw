@@ -45,6 +45,7 @@ vi.mock('../commitUndoEntry', () => ({ commitUndoEntry: mocks.commitUndoEntry })
 vi.mock('../macro/recording/recordAction', () => ({ recordAction: mocks.recordAction }));
 
 function createHandler<Action extends AppAction>(input: {
+    batchExecution?: ActionHandler<Action>['batchExecution'];
     execute: ActionHandler<Action>['execute'];
     describe?: ActionHandler<Action>['describe'];
     executionKind?: ActionHandler<Action>['executionKind'];
@@ -53,6 +54,7 @@ function createHandler<Action extends AppAction>(input: {
     undoable?: boolean;
 }): ActionHandler<Action> {
     return {
+        batchExecution: input.batchExecution,
         execute: input.execute,
         describe: input.describe ?? ((action) => ({ label: 'Batch action', inverseAction: action })),
         executionKind: input.executionKind,
@@ -138,6 +140,32 @@ describe('executeAppActionBatch', () => {
 
         expect(result.status).toBe('committed');
         expect(mocks.commitUndoEntry).toHaveBeenCalledWith(expect.objectContaining({ action, redoAction }));
+    });
+
+    it('rejects a singleton-only action mixed with another action before dispatch and runs it alone', async () => {
+        const singletonExecute = vi.fn();
+        const companionExecute = vi.fn();
+        const singletonAction: SetEditingToolAction = { type: 'setEditingTool', payload: { tool: 'marquee' } };
+        registerHandlerMap({
+            setEditingTool: createHandler<SetEditingToolAction>({
+                batchExecution: 'singleton',
+                execute: singletonExecute,
+            }),
+            setSnapValue: createHandler<SetSnapValueAction>({ execute: companionExecute }),
+        });
+
+        await expect(
+            executeAppActionBatch([singletonAction, { type: 'setSnapValue', payload: { value: 0.5 } }])
+        ).resolves.toEqual({
+            status: 'rejected',
+            reason: 'Action must execute as a singleton batch: setEditingTool',
+            actions: [],
+        });
+        expect(singletonExecute).not.toHaveBeenCalled();
+        expect(companionExecute).not.toHaveBeenCalled();
+
+        await expect(executeAppActionBatch([singletonAction])).resolves.toMatchObject({ status: 'committed' });
+        expect(singletonExecute).toHaveBeenCalledOnce();
     });
 
     it('runs deferred external effects after the project transaction commits', async () => {

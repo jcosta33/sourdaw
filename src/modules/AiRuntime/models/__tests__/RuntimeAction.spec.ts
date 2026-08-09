@@ -21,7 +21,7 @@ describe('RuntimeAction', () => {
         expect(RUNTIME_ACTION_TYPES).toHaveLength(239);
         expect(new Set(RUNTIME_ACTION_TYPES).size).toBe(RUNTIME_ACTION_TYPES.length);
         expect(RUNTIME_ACTION_TYPES).not.toContain('replayGeneratedMidi');
-        expect(digest >>> 0).toBe(3_627_151_884);
+        expect(digest >>> 0).toBe(75_615_929);
     });
 
     it('derives initiating payloads without exposing command-owned replay fields', () => {
@@ -52,6 +52,7 @@ describe('RuntimeAction', () => {
             { type: 'setClipFade', payload: { clipId: 'clip-1', fadeInBeats: 1, fadeOutBeats: 2 } },
             { type: 'setClipLoop', payload: { clipId: 'clip-1', enabled: true } },
             { type: 'glueClips', payload: { clipIds: ['clip-1', 'clip-2'] } },
+            { type: 'setPunchEnabled', payload: { enabled: true } },
         ];
 
         expect(actions.map((action) => action.type)).toEqual([
@@ -75,6 +76,7 @@ describe('RuntimeAction', () => {
             'setClipFade',
             'setClipLoop',
             'glueClips',
+            'setPunchEnabled',
         ]);
         expectTypeOf<PayloadHasKey<'duplicateClip', 'targetClipId'>>().toEqualTypeOf<false>();
         expectTypeOf<PayloadHasKey<'addAutomationLane', 'laneId'>>().toEqualTypeOf<false>();
@@ -100,5 +102,6 @@ describe('RuntimeAction', () => {
         expectTypeOf<PayloadHasKey<'glueClips', 'targetClipId'>>().toEqualTypeOf<false>();
         expectTypeOf<PayloadHasKey<'glueClips', 'expected'>>().toEqualTypeOf<false>();
         expectTypeOf<PayloadHasKey<'glueClips', 'replacement'>>().toEqualTypeOf<false>();
+        expectTypeOf<PayloadHasKey<'setPunchEnabled', 'expectedEnabled'>>().toEqualTypeOf<false>();
     });
 });

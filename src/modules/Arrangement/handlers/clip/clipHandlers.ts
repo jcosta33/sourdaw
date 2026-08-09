@@ -23,6 +23,7 @@ import { handleRemoveClip } from './handleRemoveClip';
 import { handleRenameClip } from './handleRenameClip';
 import { handleRestoreClipGlueState } from './handleRestoreClipGlueState';
 import { handleRestoreClipLoop } from './handleRestoreClipLoop';
+import { handleRestoreClipLoopLength } from './handleRestoreClipLoopLength';
 import { handleRestoreClipPlacement } from './handleRestoreClipPlacement';
 import { handleRestoreClipSplitState } from './handleRestoreClipSplitState';
 import { handleRestoreCrossfadeClips } from './handleRestoreCrossfadeClips';
@@ -67,6 +68,7 @@ export const clipHandlers = {
     setClipLoop: handleSetClipLoop,
     restoreClipLoop: handleRestoreClipLoop,
     setClipLoopLength: handleSetClipLoopLength,
+    restoreClipLoopLength: handleRestoreClipLoopLength,
     consolidateSelection: handleConsolidateSelection,
     bounceSelection: handleBounceSelection,
     muteClip: handleMuteClip,

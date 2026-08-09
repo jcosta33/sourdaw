@@ -89,7 +89,8 @@ export function tryPresetMatch(normalized: string, context: PresetContext): Runt
                 action.type === 'retrogradeNotes' ||
                 action.type === 'quantizeNoteLengths' ||
                 action.type === 'scaleAllVelocities' ||
-                action.type === 'setAllVelocities'
+                action.type === 'setAllVelocities' ||
+                action.type === 'setPunchEnabled'
         )
     ) {
         return [];
@@ -164,16 +165,6 @@ export function tryParameterizedPath(normalized: string, context: ProjectContext
             {
                 type: 'setClipStretchRatio',
                 payload: { clipId: selectedClipId, ratio: parseFloat(stretchRatioMatch[1]!) },
-            },
-        ];
-    }
-
-    const loopLengthMatch = normalized.match(/^set\s+loop\s+length\s+(?:to\s+)?(\d+(?:\.\d+)?)\s+beats?$/i);
-    if (loopLengthMatch && selectedClipId) {
-        return [
-            {
-                type: 'setClipLoopLength',
-                payload: { clipId: selectedClipId, loopLength: parseFloat(loopLengthMatch[1]!) },
             },
         ];
     }

@@ -39,9 +39,14 @@ vi.mock('#/modules/Arrangement/stores', () => ({
 }));
 
 vi.mock('#/modules/Arrangement/useCases', () => ({
+    MIN_CLIP_LOOP_LENGTH_BEATS: 1 / 480,
     getGlueEligibleClipPairs: mocks.getGlueEligibleClipPairs,
     getPluginById: mocks.getPluginById,
     getPlatformPlugins: mocks.getPlatformPlugins,
+    projectClipLoopExpansion: ({ clipDurationBeats }: { clipDurationBeats: number }) => ({
+        iterationCount: Math.min(4096, Math.ceil(clipDurationBeats / Math.max(1 / 480, clipDurationBeats / 4096))),
+        loopLengthBeats: Math.max(1 / 480, clipDurationBeats / 4096),
+    }),
 }));
 
 vi.mock('#/modules/Automation/stores', () => ({
@@ -120,6 +125,7 @@ describe('getProjectContext', () => {
         expect(context.tempo).toBe(120);
         expect(context.timeSignature).toEqual([4, 4]);
         expect(context.isPlaying).toBe(false);
+        expect(context.isRecording).toBe(false);
         expect(context.isLooping).toBe(false);
         expect(context.loopStart).toBe(0);
         expect(context.loopEnd).toBe(0);
@@ -172,6 +178,7 @@ describe('getProjectContext', () => {
                             fadeInBeats: 0.5,
                             fadeOutBeats: 1,
                             loopEnabled: true,
+                            loopLength: 2,
                         },
                     ],
                     devices: [
@@ -213,6 +220,7 @@ describe('getProjectContext', () => {
             timeSignatureDenominator: 4,
             playheadPosition: 16,
             isPlaying: true,
+            isRecording: false,
             isLooping: true,
             loopStart: 4,
             loopEnd: 12,
@@ -251,6 +259,7 @@ describe('getProjectContext', () => {
         expect(context.tempo).toBe(130);
         expect(context.timeSignature).toEqual([3, 4]);
         expect(context.isPlaying).toBe(true);
+        expect(context.isRecording).toBe(false);
         expect(context.isLooping).toBe(true);
         expect(context.loopStart).toBe(4);
         expect(context.loopEnd).toBe(12);
@@ -297,6 +306,8 @@ describe('getProjectContext', () => {
             fadeInBeats: 0.5,
             fadeOutBeats: 1,
             loopEnabled: true,
+            loopLength: 2,
+            minimumLoopLengthBeats: 1 / 480,
             noteCount: 0,
         });
         expect(context.tracks[0]?.devices[0]).toEqual({

@@ -53,6 +53,20 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
 vi.mock('#/modules/Arrangement/useCases', () => ({
     resolveClipsWithComping: vi.fn(() => []),
     getGainAtBeat: vi.fn(() => 0),
+    projectClipLoopExpansion: vi.fn(({ clipDurationBeats, configuredLoopLengthBeats, loopEnabled }) => {
+        if (!Number.isFinite(clipDurationBeats) || clipDurationBeats <= 0) {
+            return { iterationCount: 0, loopLengthBeats: 1 / 480 };
+        }
+        if (!loopEnabled) {
+            return { iterationCount: 1, loopLengthBeats: clipDurationBeats };
+        }
+        const requestedLength = configuredLoopLengthBeats ?? clipDurationBeats;
+        const loopLengthBeats = Math.max(1 / 480, clipDurationBeats / 4096, requestedLength);
+        return {
+            iterationCount: Math.min(4096, Math.max(1, Math.ceil(clipDurationBeats / loopLengthBeats))),
+            loopLengthBeats,
+        };
+    }),
 }));
 vi.mock('#/utils/Notification/notifyUser', () => ({
     notifyUser: vi.fn(),
@@ -512,6 +526,42 @@ describe('scheduleAudioClips', () => {
         scheduleAudioClips(0, 16, 0, new Set(), new Set(), [], defaultTransportState, 120);
 
         expect(mockCreateBufferSource).toHaveBeenCalledTimes(2);
+    });
+
+    it('bounds malformed persisted loop expansion at the shared maximum iteration count', () => {
+        const fakeSource = makeFakeSource();
+        mockCreateBufferSource.mockReturnValue(fakeSource as unknown as AudioBufferSourceNode);
+        mockGetCachedAudioBuffer.mockReturnValue({ duration: 100 } as AudioBuffer);
+        mockResolveClips.mockReturnValue([
+            makeAudioClip({ startBeat: 0, endBeat: 10, loopEnabled: true, loopLength: 1 / 4097 }),
+        ] as never);
+        trackStoreState.value = { tracks: [makeAudioTrack([])] };
+
+        scheduleAudioClips(0, 11, 0, new Set(), new Set(), [], defaultTransportState, 120);
+
+        expect(mockCreateBufferSource).toHaveBeenCalledTimes(4096);
+    });
+
+    it('allocates only loop occurrences intersecting the live scheduler window', () => {
+        const fakeSource = makeFakeSource();
+        mockCreateBufferSource.mockReturnValue(fakeSource as unknown as AudioBufferSourceNode);
+        mockGetCachedAudioBuffer.mockReturnValue({ duration: 100 } as AudioBuffer);
+        mockResolveClips.mockReturnValue([
+            makeAudioClip({ startBeat: 0, endBeat: 10, loopEnabled: true, loopLength: 1 / 480 }),
+        ] as never);
+        trackStoreState.value = { tracks: [makeAudioTrack([])] };
+        const scheduled = new Set<string>();
+
+        scheduleAudioClips(4, 4.01, 4, scheduled, new Set(), [], defaultTransportState, 120);
+
+        expect(mockCreateBufferSource).toHaveBeenCalledTimes(5);
+
+        scheduleAudioClips(4, 4.01, 4, scheduled, new Set(), [], defaultTransportState, 120);
+        expect(mockCreateBufferSource).toHaveBeenCalledTimes(5);
+
+        scheduleAudioClips(4.01, 4.02, 4.01, scheduled, new Set(), [], defaultTransportState, 120);
+        expect(mockCreateBufferSource.mock.calls.length).toBeGreaterThan(5);
+        expect(mockCreateBufferSource.mock.calls.length).toBeLessThan(12);
     });
 
     it('breaks the loop when an iteration starts at or past clip end', () => {

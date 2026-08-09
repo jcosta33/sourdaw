@@ -35,6 +35,8 @@ export const executeAppAction: ExecuteAppAction = inject({ logger })(
                 logger.error(error);
                 throw error;
             }
+            const historyGroupId = handler.batchExecution === 'singleton' ? undefined : options?.groupId;
+            const historyGroupLabel = historyGroupId ? options?.groupLabel : undefined;
 
             if (handler.executionKind === 'runtime') {
                 if (options?.shouldExecute && !options.shouldExecute()) {
@@ -202,8 +204,8 @@ export const executeAppAction: ExecuteAppAction = inject({ logger })(
                             actionKind: action.type,
                             source: options?.source ?? 'manual',
                             timestamp: Date.now(),
-                            groupId: options?.groupId,
-                            groupLabel: options?.groupLabel,
+                            groupId: historyGroupId,
+                            groupLabel: historyGroupLabel,
                             reverted: false,
                         };
                         const evicted_entry_ids = actionHistoryMetadataPort.record(metadata);
@@ -227,9 +229,9 @@ export const executeAppAction: ExecuteAppAction = inject({ logger })(
                             options?.source ?? 'manual',
                             undoResult.redoAction
                         );
-                        if (options?.groupId) {
-                            entry.groupId = options.groupId;
-                            entry.groupLabel = options.groupLabel;
+                        if (historyGroupId) {
+                            entry.groupId = historyGroupId;
+                            entry.groupLabel = historyGroupLabel;
                         }
                         commitUndoEntry(entry);
                     }

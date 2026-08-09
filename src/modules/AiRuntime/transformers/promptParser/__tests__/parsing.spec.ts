@@ -38,6 +38,7 @@ describe('promptParser parsing', () => {
                 tempo: 120,
                 timeSignature: [4, 4],
                 isPlaying: false,
+                isRecording: false,
                 isLooping: false,
                 loopStart: 0,
                 loopEnd: 0,
@@ -108,6 +109,8 @@ describe('promptParser parsing', () => {
             expect(tryPresetMatch('quantize note lengths to 1/8 beat', context)).toEqual([]);
             expect(tryPresetMatch('scale all velocities to 50%', context)).toEqual([]);
             expect(tryPresetMatch('set all velocities to 96', context)).toEqual([]);
+            expect(tryPresetMatch('enable punch in/out', context)).toEqual([]);
+            expect(tryPresetMatch('disable punch in/out', context)).toEqual([]);
         });
     });
 
@@ -116,6 +119,7 @@ describe('promptParser parsing', () => {
             tempo: 120,
             timeSignature: [4, 4],
             isPlaying: false,
+            isRecording: false,
             isLooping: false,
             loopStart: 0,
             loopEnd: 0,
@@ -171,6 +175,7 @@ describe('promptParser parsing', () => {
             expect(tryParameterizedPath('set all velocities to 96', context)).toEqual([]);
             expect(tryParameterizedPath('quantize note lengths on Piano MIDI to 1/16', context)).toEqual([]);
             expect(tryParameterizedPath('quantize note lengths to 1/0', context)).toEqual([]);
+            expect(tryParameterizedPath('set loop length to 4 beats', context)).toEqual([]);
         });
 
         it('parses add device to track by name', () => {
@@ -218,6 +223,7 @@ describe('promptParser parsing', () => {
             tempo: 120,
             timeSignature: [4, 4],
             isPlaying: false,
+            isRecording: false,
             isLooping: false,
             loopStart: 0,
             loopEnd: 0,

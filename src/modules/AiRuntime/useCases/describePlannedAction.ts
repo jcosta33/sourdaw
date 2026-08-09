@@ -12,6 +12,14 @@ type DescribePlannedActionInput = {
 };
 
 export function describePlannedAction({ action, context }: DescribePlannedActionInput): string {
+    if (action.type === 'setPunchEnabled') {
+        const verb = action.payload.enabled ? 'Enable' : 'Disable';
+        const region = `${String(context.punchInBeat)}–${String(context.punchOutBeat)}`;
+        if (action.payload.enabled) {
+            return `${verb} Transport Punch In/Out until changed; during playback with an armed track, recording starts at punch-in beat ${String(context.punchInBeat)} and stops at punch-out beat ${String(context.punchOutBeat)}; punch region remains beats ${region}; background capture is unchanged`;
+        }
+        return `${verb} Transport Punch In/Out until changed; armed-track playback will no longer start and stop recording at punch region beats ${region}; punch region remains beats ${region}; background capture is unchanged`;
+    }
     if (action.type === 'setPunchIn' || action.type === 'setPunchOut') {
         const current = { punchInBeat: context.punchInBeat, punchOutBeat: context.punchOutBeat };
         const edge = action.type === 'setPunchIn' ? 'in' : 'out';
@@ -32,6 +40,22 @@ export function describePlannedAction({ action, context }: DescribePlannedAction
                 oppositeChange = `punch-in moves from beat ${String(current.punchInBeat)} to ${String(next.punchInBeat)}`;
             }
             return `Set punch-out to beat ${String(action.payload.beat)}; ${oppositeChange}; resulting region ${String(next.punchInBeat)}–${String(next.punchOutBeat)}; punch recording remains ${enabledState}`;
+        }
+    }
+    if (action.type === 'setClipLoopLength') {
+        for (const track of context.tracks) {
+            const clip = track.clips.find((candidate) => candidate.id === action.payload.clipId);
+            if (!clip) {
+                continue;
+            }
+            const previous =
+                clip.loopLength === undefined
+                    ? `the implicit clip duration of ${String(clip.endBeat - clip.startBeat)} beats`
+                    : `${String(clip.loopLength)} beats`;
+            const loopState = clip.loopEnabled
+                ? 'clip looping remains enabled'
+                : 'clip looping remains disabled, so this stored length is dormant until looping is enabled';
+            return `Set clip "${clip.name}" (${clip.id}) on track "${track.name}" (${track.id}) loop length from ${previous} to ${String(action.payload.loopLength)} beats; ${loopState}; clip range remains beats ${String(clip.startBeat)}–${String(clip.endBeat)}`;
         }
     }
     if (action.type === 'removeTrack') {
