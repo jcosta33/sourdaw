@@ -37,6 +37,12 @@ vi.mock('#/infra/store/useStore', () => ({
 // no longer exports, and it omitted `TakeLanesView`, which the barrel gained. The
 // omission is only harmless while ArrangeView does not render that view — mount
 // it and every render in this file reds on `undefined` (#1393).
+//
+// The height constants are deliberately *not* overridden: the spread supplies the
+// real 22 / 20 / 18, and re-stating those numbers here would change nothing today
+// while pinning the layout assertions to a stale value the day production moves
+// one. `getAdjustmentLayerStripHeight` stays overridden — that one does not match
+// production, so it is a real stub rather than a copy.
 vi.mock('#/modules/Arrangement/presentations/views', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/Arrangement/presentations/views')>()),
     AdjustmentLayerStrip: () => <div data-testid="adjustment-layer-strip">Adjustment Layer Strip</div>,
@@ -48,11 +54,8 @@ vi.mock('#/modules/Arrangement/presentations/views', async (importOriginal) => (
         </div>
     ),
     ArrangementBar: () => <div data-testid="arrangement-bar">Arrangement Bar</div>,
-    ARRANGEMENT_BAR_HEIGHT: 22,
     MarkerLane: () => <div data-testid="marker-lane">Marker Lane</div>,
-    MARKER_LANE_HEIGHT: 20,
     BeatRulerBar: () => <div data-testid="beat-ruler">Beat Ruler</div>,
-    BEAT_RULER_HEIGHT: 18,
     TimelineChromeSurface: ({ children, className }: { children?: React.ReactNode; className?: string }) => (
         <div className={className}>{children}</div>
     ),

@@ -82,7 +82,8 @@ vi.mock('#/modules/ElasticAudio/presentations/views', async (importOriginal) => 
     ElasticEditorPanel: elasticEditorPanelMock,
 }));
 
-vi.mock('#/modules/Routing/presentations/views', () => ({
+vi.mock('#/modules/Routing/presentations/views', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Routing/presentations/views')>()),
     RoutingMatrix: () => <div data-testid="routing-matrix">Routing</div>,
 }));
 
@@ -97,7 +98,12 @@ vi.mock('#/modules/Setlist/presentations/views', async (importOriginal) => ({
     SetlistPanel: () => <div data-testid="setlist-panel">Setlist</div>,
 }));
 
-vi.mock('#/modules/Metering/presentations/views', () => ({
+// Spread, like every other barrel in this file. `Metering` is reached twice over
+// through the spread-mocked `TimelineEditor` barrel — `MasterVisualizationsSection`
+// wants eight of its views and `MixerLevelReadout` wants `LevelMeter` — none of
+// which an exhaustive factory here would supply.
+vi.mock('#/modules/Metering/presentations/views', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Metering/presentations/views')>()),
     AnalysisPanel: () => <div data-testid="analysis-panel">Analysis</div>,
 }));
 
