@@ -27,7 +27,7 @@ import { BUILTIN_PLUGINS } from '../../DeviceParameter';
  *     declared range  ==  knob travel  ==  engine clamp
  *
  * Two of those legs are derivable for every parameter this file compares; the
- * third is derivable for 112 of the 192. So the census is **three-way where it
+ * third is derivable for 116 of the 192. So the census is **three-way where it
  * can be and two-way where it cannot**, and it says which is which rather than
  * implying uniform coverage. A two-way row that is honest beats a three-way one
  * that fabricates a clamp from a comment.
@@ -47,7 +47,7 @@ import { BUILTIN_PLUGINS } from '../../DeviceParameter';
  *
  * **Leg 3 — engine clamp.** The two-sided numeric `value.clamp(a, b)` in the
  * Rust `set_param` arm, read the way `descriptorEngineParamWeld` reads the arm
- * names. Covers 112 of 192; every shape it cannot read is named in
+ * names, split per exclusive alternative where a device has one. Covers 116 of 192; every shape it cannot read is named in
  * `ENGINE_CLAMP_COVERAGE`, at the point where the derivation stops.
  *
  * ## Coverage is part of the claim
@@ -668,7 +668,7 @@ function camelToSnake(paramId: string): string {
     return paramId.replaceAll(/[A-Z]/g, (letter) => `_${letter.toLowerCase()}`);
 }
 
-function readEngineClamps(deviceId: string): {
+function readEngineClampsUnioned(deviceId: string): {
     byName: ReadonlyMap<string, Clamp>;
     contested: readonly string[];
 } {
@@ -679,6 +679,139 @@ function readEngineClamps(deviceId: string): {
     return readClampsFromFiles(collectRust(join(REPO_ROOT, root)));
 }
 
+/**
+ * A device whose `set_param` reaches several **alternatives**, only one of which
+ * is live at a time, chosen by a parameter the user controls.
+ *
+ * Unioning arm names across such a device is wrong for exactly the reason
+ * `descriptorEngineParamWeld.spec.ts:546-565` splits Dutch Oven's sources into
+ * `shared` + `perEngine`: "some alternative handles this" is not the claim a
+ * user's knob makes. This census made the mirror of that mistake with *values*
+ * rather than names — it saw two intervals for one arm name, called the name
+ * `contested`, and filed it as a derivation limit.
+ *
+ * **Nothing was contested.** Each interval is deterministically attributable to
+ * a named topology, and the selector is itself a declared parameter. Filing it
+ * as unreadable traded two representable findings for silence — and the silence
+ * covered dead zones an order of magnitude larger than any row the census did
+ * record. See `KNOWN_CLAMP_DISAGREEMENTS` for `gluten.ratio` and `gluten.attack`.
+ *
+ * `selectorParamId` is the declared parameter that picks the alternative, and it
+ * is asserted to exist on the descriptor: an alternative set whose selector is
+ * not a real user control would not justify per-alternative rows.
+ */
+type DeviceEngineSplit = {
+    readonly root: string;
+    readonly selectorParamId: string;
+    readonly alternatives: readonly { readonly engineId: string; readonly source: string }[];
+};
+
+const ENGINE_SPLITS: Readonly<Record<string, DeviceEngineSplit>> = {
+    // Four compressor topologies. `gluten/engine.rs:320-332` forwards every
+    // non-global name to all four; `:456` processes through `active_topology`
+    // alone, so only the selected one is audible.
+    gluten: {
+        root: 'crates/daw-dsp/src/gluten',
+        selectorParamId: 'topology',
+        alternatives: [
+            { engineId: 'vca', source: 'crates/daw-dsp/src/gluten/vca.rs' },
+            { engineId: 'opto', source: 'crates/daw-dsp/src/gluten/opto.rs' },
+            { engineId: 'fet', source: 'crates/daw-dsp/src/gluten/fet.rs' },
+            { engineId: 'diode', source: 'crates/daw-dsp/src/gluten/diode.rs' },
+        ],
+    },
+    // The reverb algorithms, split on the same basis and by the same file list
+    // `descriptorEngineParamWeld` uses.
+    'dutch-oven': {
+        root: 'crates/proof-chamber/src',
+        selectorParamId: 'algorithm',
+        alternatives: [
+            { engineId: 'plate', source: 'crates/proof-chamber/src/proof_chamber.rs' },
+            { engineId: 'fdn', source: 'crates/proof-chamber/src/fdn.rs' },
+            { engineId: 'spring', source: 'crates/proof-chamber/src/spring.rs' },
+            { engineId: 'reverse', source: 'crates/proof-chamber/src/reverse.rs' },
+            { engineId: 'convolution', source: 'crates/proof-chamber/src/convolution.rs' },
+            { engineId: 'hybrid', source: 'crates/proof-chamber/src/hybrid.rs' },
+        ],
+    },
+};
+
+type EngineClamps = {
+    /** Arms every alternative sees — the dispatcher's own and the always-present stages. */
+    readonly shared: ReadonlyMap<string, Clamp>;
+    /** Arms an alternative owns alone. Empty for a device with no split. */
+    readonly perEngine: ReadonlyMap<string, ReadonlyMap<string, Clamp>>;
+    /**
+     * Names still unattributable **after** the split: two files inside one
+     * source group clamping the same name differently. A genuine derivation
+     * limit, unlike the per-alternative case this used to be conflated with.
+     */
+    readonly contested: readonly string[];
+};
+
+function readEngineClamps(deviceId: string): EngineClamps {
+    const split = ENGINE_SPLITS[deviceId];
+    if (split === undefined) {
+        const unioned = readEngineClampsUnioned(deviceId);
+        return { shared: unioned.byName, perEngine: new Map(), contested: unioned.contested };
+    }
+
+    const claimed = split.alternatives.map((alternative) => join(REPO_ROOT, alternative.source));
+    const sharedFiles = collectRust(join(REPO_ROOT, split.root)).filter((file) => !claimed.includes(file));
+    const shared = readClampsFromFiles(sharedFiles);
+
+    const perEngine = new Map<string, ReadonlyMap<string, Clamp>>();
+    for (const alternative of split.alternatives) {
+        perEngine.set(alternative.engineId, readClampsFromFiles([join(REPO_ROOT, alternative.source)]).byName);
+    }
+    return { shared: shared.byName, perEngine, contested: shared.contested };
+}
+
+/**
+ * Every (engineId, clamp) a write to `name` can actually meet on this device.
+ *
+ * `null` engineId means the clamp is shared — one bound for every alternative,
+ * which is the ordinary case and the one that yields a plain three-way row.
+ */
+function hasPerEngineArm(engine: EngineClamps, name: string): boolean {
+    for (const clamps of engine.perEngine.values()) {
+        if (clamps.has(name)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+function resolveClamps(engine: EngineClamps, name: string): { engineId: string | null; clamp: Clamp }[] {
+    if (engine.perEngine.size === 0) {
+        const shared = engine.shared.get(name);
+        return shared === undefined ? [] : [{ engineId: null, clamp: shared }];
+    }
+
+    const rows: { engineId: string | null; clamp: Clamp }[] = [];
+    for (const [engineId, clamps] of engine.perEngine) {
+        // An alternative with no arm of its own falls back to the shared one;
+        // an alternative with neither simply does not answer to the name and
+        // contributes no interval rather than a guessed one.
+        const own = clamps.get(name) ?? engine.shared.get(name);
+        if (own !== undefined) {
+            rows.push({ engineId, clamp: own });
+        }
+    }
+    if (rows.length === 0) {
+        return [];
+    }
+
+    // Collapse to one shared row when every alternative agrees, so a device
+    // that merely repeats the same bound per file does not produce a row per
+    // alternative and inflate the population.
+    const spans = new Set(rows.map((row) => `${row.clamp[0]},${row.clamp[1]}`));
+    if (spans.size === 1 && rows.length === engine.perEngine.size) {
+        return [{ engineId: null, clamp: rows[0]!.clamp }];
+    }
+    return rows;
+}
+
 // ── The join ───────────────────────────────────────────────────────────────
 
 type Comparison = {
@@ -686,8 +819,21 @@ type Comparison = {
     readonly paramId: string;
     readonly declared: readonly [number, number];
     readonly travel: readonly [number, number];
+    /** Uniform clamp, when every alternative agrees. `null` when they do not, or when leg 3 is blind. */
     readonly clamp: Clamp | null;
+    /** One entry per alternative that answers to this name, when they disagree. */
+    readonly clampsByEngine: readonly { readonly engineId: string; readonly clamp: Clamp }[];
     readonly at: string;
+};
+
+/** One (device, parameter, engine) clamp that disagrees with the declared range. */
+type ClampRow = {
+    readonly deviceId: string;
+    readonly paramId: string;
+    /** `null` when the clamp is shared across every alternative. */
+    readonly engineId: string | null;
+    readonly declared: readonly [number, number];
+    readonly clamp: Clamp;
 };
 
 type Census = {
@@ -715,8 +861,8 @@ type Census = {
     readonly comparedPerDevice: ReadonlyMap<string, number>;
     /** Compared rows that also carry a derived engine clamp — the three-way subset. */
     readonly threeWay: readonly Comparison[];
-    /** Three-way rows where the clamp disagrees with the declared range. */
-    readonly clampDisagree: readonly Comparison[];
+    /** Every (device, parameter, engine) clamp that disagrees with the declared range. */
+    readonly clampDisagree: readonly ClampRow[];
     /**
      * Arm names whose clamp differs between two files on the same device, so no
      * single interval can be claimed. The seventh not-derivable shape.
@@ -733,7 +879,7 @@ function buildCensus(): Census {
     const notContinuous: string[] = [];
     const unboundKnobs = new Map<string, number>();
     const threeWay: Comparison[] = [];
-    const clampDisagree: Comparison[] = [];
+    const clampDisagree: ClampRow[] = [];
     const strayBindings = new Map<string, readonly string[]>();
     const comparedPerDevice = new Map<string, number>();
     const contestedClamps = new Map<string, readonly string[]>();
@@ -773,21 +919,35 @@ function buildCensus(): Census {
             // and taking whichever the arms answer to is conservative: a name
             // that resolves to neither yields no clamp and lands outside the
             // three-way subset rather than being compared against a guess.
-            const clamp = engine.byName.get(param.id) ?? engine.byName.get(camelToSnake(param.id)) ?? null;
+            const armName =
+                engine.shared.has(param.id) || hasPerEngineArm(engine, param.id) ? param.id : camelToSnake(param.id);
+            const resolved = resolveClamps(engine, armName);
+            const uniform = resolved.length === 1 && resolved[0]!.engineId === null ? resolved[0]!.clamp : null;
             const row: Comparison = {
                 deviceId: descriptor.id,
                 paramId: param.id,
                 declared: [param.minValue, param.maxValue],
                 travel: [knob.min, knob.max],
-                clamp,
+                clamp: uniform,
+                clampsByEngine: resolved
+                    .filter((entry) => entry.engineId !== null)
+                    .map((entry) => ({ engineId: entry.engineId!, clamp: entry.clamp })),
                 at: knob.at,
             };
             compared.push(row);
             comparedHere++;
-            if (clamp !== null) {
+            if (resolved.length > 0) {
                 threeWay.push(row);
-                if (clamp[0] !== param.minValue || clamp[1] !== param.maxValue) {
-                    clampDisagree.push(row);
+                for (const entry of resolved) {
+                    if (entry.clamp[0] !== param.minValue || entry.clamp[1] !== param.maxValue) {
+                        clampDisagree.push({
+                            deviceId: descriptor.id,
+                            paramId: param.id,
+                            engineId: entry.engineId,
+                            declared: [param.minValue, param.maxValue],
+                            clamp: entry.clamp,
+                        });
+                    }
                 }
             }
             if (knob.min === param.minValue && knob.max === param.maxValue) {
@@ -867,18 +1027,28 @@ const KNOWN_RANGE_DISAGREEMENTS: readonly RangeDisagreement[] = [
             'defect points the other way. An automation lane drawn on LFO Rate offers a curve up to 5000, the lane ' +
             'picker scales its editor to that span, and 99.6% of the drawable range is travel the panel never ' +
             'offers.\n\n' +
-            '**The knob is the wrong side, and leg 3 is what settles it.** ' +
-            '`crates/daw-dsp/src/fermenter/layer.rs:631` is ' +
-            '`"lfo_rate" => self.lfo_rate.set(value.clamp(0.0, 5000.0))` — the two-sided literal shape, which this ' +
-            "census derives (the row's `clamp` above is read, not typed). So the *engine* independently agrees with " +
-            'the declaration at 0..5000, and the descriptor is not a stray copy of anything: the DSP was built to ' +
-            'accept audio-rate LFO, which is a real synthesis technique and the reason a modulator would be given ' +
-            'that ceiling deliberately.\n\n' +
-            'An earlier revision of this row marked it `unresolved` and asserted that `lfo_rate` "is not statically ' +
+            '**The knob is the wrong side. What settles it is where the LFO is ticked, not the clamp.**\n' +
+            '`crates/daw-dsp/src/fermenter/voice.rs:567` — `let lfo_val = self.lfo.tick(p.lfo_rate, ' +
+            'p.sample_rate);` — sits **inside the per-sample inner loop** opened at `:560` (`for i in ' +
+            '0..block_size`). The LFO is evaluated once per sample, not once per block, so 5000 Hz is functionally ' +
+            'reachable modulation rather than a number the DSP would alias away. A control-rate LFO ticked per block ' +
+            'could not honour 5000 Hz at all, and that would have made 20 the right ceiling.\n\n' +
+            'The clamp (`layer.rs:631`, `"lfo_rate" => self.lfo_rate.set(value.clamp(0.0, 5000.0))`) agrees, and this ' +
+            "census derives it — the row's `clamp` above is read, not typed — but it is **weaker evidence than the " +
+            'tick and should not be leaned on alone**: a hand-written bound in Rust is exactly as copyable between ' +
+            'parameters as a number in a descriptor, so it cannot by itself refute a copy theory.\n\n' +
+            '**The strongest counter-argument, stated and answered.** Fermenter has a *separate, dedicated* ' +
+            'audio-rate modulator: `audio_mod_rate`, clamped to the identical 0..5000 (`layer.rs:727`) and ' +
+            'documented `// 0-5000 Hz` (`voice.rs:43`). If the synth already has a purpose-built audio-rate path, ' +
+            'the natural reading is that `lfoRate` copied its ceiling by accident and the LFO was only ever meant to ' +
+            'be a 0..20 Hz modulator — which would make the *declaration* wrong, not the knob. That argument loses ' +
+            'on the tick: a parameter copied by accident would not also have been wired through a per-sample ' +
+            'evaluation. `audio_mod_rate` targets the oscillator directly (ring/FM-style), while `lfo_rate` runs ' +
+            'through the mod matrix (`voice.rs:570-575`) — two audio-rate sources with different destinations is a ' +
+            'design, not a duplication.\n\n' +
+            'An earlier revision marked this row `unresolved` and asserted that `lfo_rate` "is not statically ' +
             'resolvable to a clamp". That was simply false — the census was already deriving the clamp while the ' +
-            'prose beside it denied the clamp existed. It also floated a theory that 5000 was copied from ' +
-            '`audioModRate` (declared [0..5000] on the same descriptor); the engine clamp rules that out, because a ' +
-            'copied *descriptor* number would not also appear as a hand-written bound in the Rust.\n\n' +
+            'prose beside it denied the clamp existed.\n\n' +
             'Two legs against one, so the knob is the under-provisioned side. **Not fixed here.** Widening a shipped ' +
             "control's travel 250× changes its feel across its whole useful range, and a 0..5000 Hz LFO wants a log " +
             'taper rather than the linear one it has — that is a control-design change, not a number change, and it ' +
@@ -892,8 +1062,8 @@ const KNOWN_RANGE_DISAGREEMENTS: readonly RangeDisagreement[] = [
  * Written here, at the point the derivation stops, rather than only in a PR
  * description: a future lane reading this file will otherwise assume the third
  * leg is covered everywhere and build on it. It is **not** a population-wide
- * equality. It covers 112 of the 192 compared parameters — the ones whose arm
- * contains a two-sided numeric `value.clamp(a, b)`. The remaining 80 are not
+ * equality. It covers 116 of the 192 compared parameters — the ones whose arm
+ * contains a two-sided numeric `value.clamp(a, b)`. The remaining 76 are not
  * skipped for effort; each shape below yields no interval to compare, and
  * inventing one is exactly the "fabricate a clamp from a comment" this census
  * must not do.
@@ -922,16 +1092,28 @@ const KNOWN_RANGE_DISAGREEMENTS: readonly RangeDisagreement[] = [
  *     `MAX_BANDS`, `MAX_BURSTS` and `MAX_VOICES` are each defined more than once
  *     with different values in different modules (`crust/bands.rs:19` = 5 against
  *     `bacteria/engine.rs:22` = 6), so a name-only resolver picks the wrong one.
- *  6. **Two files on one device clamping the same name differently.** Unioning
- *     arm names across a device's sources means a name can carry two intervals,
- *     and there is then no single clamp to claim. `readClampsFromFiles` collects
- *     these as `contested` and refuses the name outright rather than picking a
- *     file. Live today on `gluten` (`ratio`, `attack`), `dutch-oven` (`decay`,
- *     `damping`), `bacteria` (`spectralBlur`) and seven Toaster arms.
- *     **`gluten.ratio` and `gluten.attack` are in the compared population**, so
- *     they are two-way rows for this reason and not for one of the others — the
- *     distinction is why this needs its own entry rather than being folded into
- *     "clamp applied in a callee".
+ *  6. **Two files in one source group clamping the same name differently.**
+ *     A name can then carry two intervals with nothing to attribute them to.
+ *     `contested` collects these and refuses the name rather than picking a
+ *     file.
+ *
+ *     **This entry used to be much larger, and most of it was this census's own
+ *     mistake.** Clamps were unioned per *device*, so a name clamped differently
+ *     by two exclusive alternatives looked identical to a genuinely ambiguous
+ *     one. `gluten` (`ratio`, `attack`) and `dutch-oven` (`decay`, `damping`)
+ *     were filed here — and they are not ambiguous at all: each interval belongs
+ *     to a named topology or algorithm, selected by a parameter the *descriptor
+ *     itself declares*. Filing them as unreadable traded eight recordable
+ *     findings for silence, and the silence covered the largest dead zone in the
+ *     census (`gluten.ratio` on Diode: 14 of 19 units of travel). Clamps are now
+ *     keyed by (source group, name) — see `ENGINE_SPLITS` — and both devices are
+ *     empty here.
+ *
+ *     What remains is the real thing: `bacteria.spectralBlur`, clamped 0..1 in
+ *     `spectral.rs:35` and 0..0.999 in `stft.rs:219` — two stages of one signal
+ *     path, both live at once, with no selector to attribute them to — and seven
+ *     Toaster arms spread across its twenty-nine pad engines, none of which is a
+ *     declared parameter.
  *  7. **Crumbs' enum dispatch, specifically.** The public `set_param`
  *     (`crumbs/mod.rs:95-101`) clamps nothing: it maps the name to a
  *     `CrumbsParam` through `parse_crumbs_param` (`crumbs/types.rs:321`) and
@@ -962,6 +1144,16 @@ const ENGINE_CLAMP_COVERAGE = {
 type ClampDisagreement = {
     readonly deviceId: string;
     readonly paramId: string;
+    /**
+     * The alternative this clamp belongs to, or `null` when the bound is shared
+     * across every alternative.
+     *
+     * A non-null engine id makes the row's cost *conditional on a user setting*,
+     * which is why it has to be part of the row rather than flattened away: the
+     * `gluten` rows below are inert travel **only while that topology is
+     * selected**, and a fix that ignores the condition breaks the others.
+     */
+    readonly engineId: string | null;
     readonly declared: readonly [number, number];
     readonly clamp: readonly [number, number];
     /**
@@ -996,6 +1188,7 @@ const KNOWN_CLAMP_DISAGREEMENTS: readonly ClampDisagreement[] = [
     {
         deviceId: 'fermenter',
         paramId: 'samplerStart',
+        engineId: null,
         declared: [0, 1],
         clamp: [0, 0.99],
         direction: 'engine-narrower',
@@ -1011,6 +1204,7 @@ const KNOWN_CLAMP_DISAGREEMENTS: readonly ClampDisagreement[] = [
     {
         deviceId: 'fermenter',
         paramId: 'samplerEnd',
+        engineId: null,
         declared: [0, 1],
         clamp: [0.01, 1],
         direction: 'engine-narrower',
@@ -1022,6 +1216,7 @@ const KNOWN_CLAMP_DISAGREEMENTS: readonly ClampDisagreement[] = [
     {
         deviceId: 'bacteria',
         paramId: 'chorusFeedback',
+        engineId: null,
         declared: [-1, 1],
         clamp: [-0.95, 0.95],
         direction: 'engine-narrower',
@@ -1043,6 +1238,7 @@ const KNOWN_CLAMP_DISAGREEMENTS: readonly ClampDisagreement[] = [
     {
         deviceId: 'bacteria',
         paramId: 'phaserFeedback',
+        engineId: null,
         declared: [-1, 1],
         clamp: [-0.95, 0.95],
         direction: 'engine-narrower',
@@ -1055,6 +1251,7 @@ const KNOWN_CLAMP_DISAGREEMENTS: readonly ClampDisagreement[] = [
     {
         deviceId: 'fermenter',
         paramId: 'fmModAmount',
+        engineId: null,
         declared: [0, 4],
         clamp: [0, 10],
         direction: 'engine-wider',
@@ -1068,6 +1265,7 @@ const KNOWN_CLAMP_DISAGREEMENTS: readonly ClampDisagreement[] = [
     {
         deviceId: 'bacteria',
         paramId: 'grainSize',
+        engineId: null,
         declared: [10, 500],
         clamp: [1, 500],
         direction: 'engine-wider',
@@ -1080,6 +1278,7 @@ const KNOWN_CLAMP_DISAGREEMENTS: readonly ClampDisagreement[] = [
     {
         deviceId: 'bacteria',
         paramId: 'grainDensity',
+        engineId: null,
         declared: [1, 100],
         clamp: [0.1, 100],
         direction: 'engine-wider',
@@ -1087,6 +1286,137 @@ const KNOWN_CLAMP_DISAGREEMENTS: readonly ClampDisagreement[] = [
             '`"grainDensity" => self.density = value.clamp(0.1, 100.0)` (`bacteria/granular.rs:100`). Engine floor ' +
             '0.1 grains/s against a UI floor of 1. Same reading as `grainSize`: the UI offers a subset of what the ' +
             'DSP accepts, which truncates nothing.',
+    },
+    {
+        deviceId: 'gluten',
+        paramId: 'ratio',
+        engineId: 'diode',
+        declared: [1, 20],
+        clamp: [1.5, 6],
+        direction: 'engine-narrower',
+        reason:
+            '**The largest dead zone in this census, and the first revision hid it.** ' +
+            '`"ratio" => self.ratio = value.clamp(1.5, 6.0), // 33609 has limited ratio range` ' +
+            '(`crates/daw-dsp/src/gluten/diode.rs:92`), against VCA and FET which both clamp 1.0..20.0 ' +
+            '(`vca.rs:152`, `fet.rs:92`) and Opto which has no `ratio` arm at all.\n\n' +
+            '`gluten/engine.rs:320-332` forwards every non-global name to all four topologies, but `:456` processes ' +
+            'through `active_topology` alone — so only the selected topology is audible. **With Diode selected the ' +
+            'Ratio knob is inert from 6:1 to 20:1**: 14 of its 19 units of travel do nothing while the readout keeps ' +
+            'printing up to `20:1`. Reachable by hand, not only by automation.\n\n' +
+            '**The engine is right.** The comment in the Rust is the justification: the Neve 33609 this topology ' +
+            'models has a limited ratio range, and a diode-bridge compressor that offered 20:1 would not be modelling ' +
+            'it. The 1.5 floor is the same fact from the other end.\n\n' +
+            '**The production fix is a topology-aware knob range or readout — NOT a descriptor narrowing.** Narrowing ' +
+            '`ratio` to 1..6 globally would silently break VCA and FET, which legitimately use the full span, and ' +
+            'would clamp saved automation on every project using them. The declaration is correct *for three of the ' +
+            'four topologies*; what is missing is that the control does not know which one is live. Recorded rather ' +
+            'than fixed because making a knob range depend on another parameter is a panel-behaviour change with its ' +
+            'own automation questions (what happens to a drawn curve when the topology switches?), and that is a ' +
+            'product decision.',
+    },
+    {
+        deviceId: 'gluten',
+        paramId: 'attack',
+        engineId: 'fet',
+        declared: [0.02, 250],
+        clamp: [0.02, 2],
+        direction: 'engine-narrower',
+        reason:
+            '`"attack" => self.attack_ms = value.clamp(0.02, 2.0)` (`crates/daw-dsp/src/gluten/fet.rs:93-96`), ' +
+            'against VCA at 0.02..250 (`vca.rs:153-156`). **With FET selected the Attack knob is inert above 2 ms** — ' +
+            'over half of a 4.1-decade log taper, readout still printing up to `250 ms`.\n\n' +
+            'Worse reach than the Diode row: **FET is what the shipped "Punch" style selects** ' +
+            '(`GlutenPanel.tsx:119-122`), so this is not an exotic configuration a user has to go looking for. ' +
+            "The engine is again right — an 1176-style FET compressor's attack is specified in microseconds to a " +
+            'couple of milliseconds, and 250 ms would not be that circuit.\n\n' +
+            'Same fix and same warning as `ratio`: **topology-aware range or readout, not a descriptor narrowing.** ' +
+            "Clamping the declaration to 0.02..2 would destroy VCA's entire useful attack range.",
+    },
+    {
+        deviceId: 'gluten',
+        paramId: 'attack',
+        engineId: 'diode',
+        declared: [0.02, 250],
+        clamp: [0.5, 30],
+        direction: 'engine-narrower',
+        reason:
+            '`"attack" => self.attack_ms = value.clamp(0.5, 30.0)` (`gluten/diode.rs:93-96`). Dead at **both** ends: ' +
+            'below 0.5 ms and above 30 ms. Listed as its own row rather than folded into the FET one because the ' +
+            'interval is different and either could be fixed without the other — the same reason ' +
+            '`chorusFeedback` and `phaserFeedback` are two rows.',
+    },
+
+    // ── Dutch Oven, surfaced by the same split ────────────────────────────
+    //
+    // Five rows the union hid under `contested: ['damping', 'decay']`. Both
+    // names are declared 0..0.999 and both knobs travel 0..0.999
+    // (`ProofChamberPanel.tsx:557`, `:617`), so the declaration and the knob
+    // agree and only the per-algorithm clamp differs.
+    {
+        deviceId: 'dutch-oven',
+        paramId: 'decay',
+        engineId: 'spring',
+        declared: [0, 0.999],
+        clamp: [0, 0.95],
+        direction: 'engine-narrower',
+        reason:
+            '`"decay" | "feedback" => { self.feedback = value.clamp(0.0, 0.95); }` ' +
+            '(`crates/proof-chamber/src/spring.rs:123-125`). **The substantive one of the five.** With the Spring ' +
+            'algorithm selected the Decay knob is inert over its top 4.9% — the same order as the ' +
+            '`bacteria.chorusFeedback` dead zone, and for the same physical reason: this is a recirculating ' +
+            'feedback coefficient, so the engine bound is a stability limit, not a taste choice. The engine is ' +
+            'right.\n\n' +
+            'Same fix and same warning as the Gluten rows: **algorithm-aware knob range or readout, not a descriptor ' +
+            'narrowing.** Plate accepts 0.9999 and would lose its longest tails if `decay` were clamped to 0.95 ' +
+            'globally.',
+    },
+    {
+        deviceId: 'dutch-oven',
+        paramId: 'decay',
+        engineId: 'reverse',
+        declared: [0, 0.999],
+        clamp: [0, 0.99],
+        direction: 'engine-narrower',
+        reason:
+            '`"decay" => self.decay = value.clamp(0.0, 0.99)` (`crates/proof-chamber/src/reverse.rs:70`). Dead over ' +
+            'the top 0.9% of travel. Recorded for completeness and judged **marginal**: 0.99 against a declared ' +
+            '0.999 is a rounding-scale difference on a coefficient whose audible effect is already asymptotic near ' +
+            'the top. Not worth a control change on its own; worth knowing when the Spring row above is fixed, ' +
+            'because a per-algorithm range would naturally cover it.',
+    },
+    {
+        deviceId: 'dutch-oven',
+        paramId: 'damping',
+        engineId: 'spring',
+        declared: [0, 0.999],
+        clamp: [0, 0.99],
+        direction: 'engine-narrower',
+        reason:
+            '`"damping" => self.damping = value.clamp(0.0, 0.99)` (`crates/proof-chamber/src/spring.rs:126`). Same ' +
+            'marginal 0.9% as the reverse `decay` row, same reading.',
+    },
+    {
+        deviceId: 'dutch-oven',
+        paramId: 'decay',
+        engineId: 'plate',
+        declared: [0, 0.999],
+        clamp: [0, 0.9999],
+        direction: 'engine-wider',
+        reason:
+            '`"decay" => self.decay = value.clamp(0.0, 0.9999)` (`crates/proof-chamber/src/proof_chamber.rs:470`). ' +
+            'Not a defect: the plate accepts one extra nine that the declaration and the knob decline to offer. ' +
+            'Nothing is truncated and nothing is inert. Recorded so the direction is on the record — this is the ' +
+            'row that makes it concrete that a global narrowing to fix Spring would be narrowing away real Plate ' +
+            'capability.',
+    },
+    {
+        deviceId: 'dutch-oven',
+        paramId: 'damping',
+        engineId: 'plate',
+        declared: [0, 0.999],
+        clamp: [0, 0.9999],
+        direction: 'engine-wider',
+        reason: '`"damping" => self.damping = value.clamp(0.0, 0.9999)` (`proof_chamber.rs:471`). As above.',
     },
 ];
 
@@ -1197,8 +1527,10 @@ describe('declared parameter range agrees with the knob that drives it', () => {
         // clamp. 112 of 192 is the honest size of the three-way census; the
         // other 80 are two-way only, for the shapes named in
         // `ENGINE_CLAMP_COVERAGE.notDerivable`.
-        expect(CENSUS.threeWay.length).toBe(112);
-        expect(CENSUS.clampDisagree.length).toBe(7);
+        expect(CENSUS.threeWay.length).toBe(116);
+        // 15, not 7: keyed by (device, parameter, **engine**). Eight of the
+        // eight added rows were invisible while clamps were unioned per device.
+        expect(CENSUS.clampDisagree.length).toBe(15);
 
         // `legalSet` selectors: oversampling factors and the like. A set of legal
         // values has no "travel" — the control steps between members rather than
@@ -1324,17 +1656,32 @@ describe('declared parameter range agrees with the knob that drives it', () => {
             crust: [],
             'grand-boule': [],
             'native-scoring': [],
-            'dutch-oven': ['damping', 'decay'],
-            gluten: ['attack', 'ratio'],
+            // Gluten and Dutch Oven are ABSENT now — their intervals were
+            // per-alternative, not unattributable, and are recorded as findings.
+            'dutch-oven': [],
+            gluten: [],
             bacteria: ['spectralBlur'],
             toaster: ['amp_decay', 'base_freq', 'noise_level', 'pitch_amount', 'pitch_decay', 'ratio', 'tone'],
         });
 
-        // The refusal is the point: a contested name must yield no clamp at all
-        // rather than whichever file the directory walk reached first.
-        expect(readEngineClamps('gluten').byName.has('ratio')).toBe(false);
-        expect(CENSUS.threeWay.some((row) => row.deviceId === 'gluten' && row.paramId === 'ratio')).toBe(false);
-        expect(CENSUS.compared.some((row) => row.deviceId === 'gluten' && row.paramId === 'ratio')).toBe(true);
+        // The selector each split names must be a **declared** parameter. An
+        // alternative set chosen by something the user cannot address would not
+        // justify per-alternative rows — the row's whole claim is "inert while
+        // you have this selected", and that needs a `this` the user can select.
+        for (const [deviceId, split] of Object.entries(ENGINE_SPLITS)) {
+            const descriptor = BUILTIN_PLUGINS.find((candidate) => candidate.id === deviceId);
+            expect(descriptor?.parameters.some((param) => param.id === split.selectorParamId)).toBe(true);
+        }
+
+        // And the split is real rather than nominal: Gluten's four topologies
+        // must actually disagree on `ratio`, which is the fact that turns a
+        // "contested" non-finding into two recorded dead zones.
+        const gluten = readEngineClamps('gluten');
+        expect(gluten.perEngine.get('vca')?.get('ratio')).toStrictEqual([1, 20]);
+        expect(gluten.perEngine.get('fet')?.get('ratio')).toStrictEqual([1, 20]);
+        expect(gluten.perEngine.get('diode')?.get('ratio')).toStrictEqual([1.5, 6]);
+        expect(gluten.perEngine.get('opto')?.has('ratio')).toBe(false);
+        expect(CENSUS.threeWay.some((row) => row.deviceId === 'gluten' && row.paramId === 'ratio')).toBe(true);
     });
 
     it('reads real clamps out of the Rust it claims to read', () => {
@@ -1343,10 +1690,10 @@ describe('declared parameter range agrees with the knob that drives it', () => {
         // report zero clamps, `threeWay` would empty, and the equality assertion
         // would pass vacuously. Pin clamps from four crates, verified by reading
         // the arm.
-        expect(readEngineClamps('bacteria').byName.get('filterCutoff')).toStrictEqual([20, 20000]);
-        expect(readEngineClamps('fermenter').byName.get('osc_coarse')).toStrictEqual([-24, 24]);
-        expect(readEngineClamps('crust').byName.get('ceiling')).toStrictEqual([-24, 0]);
-        expect(readEngineClamps('grand-boule').byName.get('velocity_curve')).toStrictEqual([0.5, 2]);
+        expect(readEngineClamps('bacteria').shared.get('filterCutoff')).toStrictEqual([20, 20000]);
+        expect(readEngineClamps('fermenter').shared.get('osc_coarse')).toStrictEqual([-24, 24]);
+        expect(readEngineClamps('crust').shared.get('ceiling')).toStrictEqual([-24, 0]);
+        expect(readEngineClamps('grand-boule').shared.get('velocity_curve')).toStrictEqual([0.5, 2]);
 
         // And the shape that must stay ABSENT. `(value / 10.0).clamp(0.0, 1.0)`
         // at `crates/daw-dsp/src/grinder/pedals.rs:36-38` bounds the transformed
@@ -1354,27 +1701,34 @@ describe('declared parameter range agrees with the knob that drives it', () => {
         // disagreement against a control whose wire domain is 0..10. If the
         // regex ever stops requiring `value` immediately before `.clamp`, this
         // reds.
-        expect(readEngineClamps('grinder').byName.has('drive')).toBe(false);
+        expect(readEngineClamps('grinder').shared.has('drive')).toBe(false);
 
         // Crumbs is the device #1474's defects were found on, and this scanner
         // reads NOTHING for it — the arms are enum variants behind
         // `parse_crumbs_param`, not string literals. Pinned so the gap is a
         // stated fact rather than an assumption; the day someone builds the
         // name→variant join, this reds and the note above has to be rewritten.
-        expect(readEngineClamps('builtin-crumbs').byName.size).toBe(0);
+        expect(readEngineClamps('builtin-crumbs').shared.size).toBe(0);
     });
 
     it('every derivable engine clamp equals the declared range', () => {
+        // Matched on (device, parameter, **engine**). Matching on the pair alone
+        // would let one recorded topology silently vouch for a second one that
+        // appeared later — the same "a different engine vouched for it" shape
+        // `descriptorEngineParamWeld` was bitten by on `early_late`.
         const unexpected = CENSUS.clampDisagree.filter(
             (row) =>
                 !KNOWN_CLAMP_DISAGREEMENTS.some(
-                    (known) => known.deviceId === row.deviceId && known.paramId === row.paramId
+                    (known) =>
+                        known.deviceId === row.deviceId &&
+                        known.paramId === row.paramId &&
+                        known.engineId === row.engineId
                 )
         );
         expect(
             unexpected.map(
                 (row) =>
-                    `${row.deviceId}.${row.paramId} declared[${row.declared.join('..')}] clamp[${row.clamp?.join('..')}]`
+                    `${row.deviceId}.${row.paramId}${row.engineId === null ? '' : `@${row.engineId}`} declared[${row.declared.join('..')}] clamp[${row.clamp.join('..')}]`
             )
         ).toStrictEqual([]);
     });
@@ -1382,7 +1736,10 @@ describe('declared parameter range agrees with the knob that drives it', () => {
     it('every recorded clamp disagreement is still one, with the numbers recorded', () => {
         for (const known of KNOWN_CLAMP_DISAGREEMENTS) {
             const row = CENSUS.clampDisagree.find(
-                (candidate) => candidate.deviceId === known.deviceId && candidate.paramId === known.paramId
+                (candidate) =>
+                    candidate.deviceId === known.deviceId &&
+                    candidate.paramId === known.paramId &&
+                    candidate.engineId === known.engineId
             );
             expect(row, `${known.deviceId}.${known.paramId} no longer disagrees — delete the row`).toBeDefined();
             expect(row!.declared).toStrictEqual(known.declared);
