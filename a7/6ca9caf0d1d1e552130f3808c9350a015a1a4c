@@ -1,0 +1,44 @@
+src/modules/Arrangement/handlers/clip/handleSetClipLoopLength.ts
+  s_bc88af7d3b054c::t_8f5fb09a1a0764 15
+src/modules/Arrangement/handlers/clip/__tests__/handleSetClipLoopLength.integration.spec.ts
+  s_bc88af7d3b054c::t_4adffcfa351c48 25,119-122,138-141
+  s_bc88af7d3b054c::t_66accaef90df04 117-118,123-137,142-186
+  s_14f2bbc9f385dd::t_c91b5449812085 187
+src/modules/Transport/useCases/scheduling/__tests__/scheduleAudioClips.spec.ts
+  s_bc88af7d3b054c::t_66accaef90df04 545-552,554,556-557
+  s_bc88af7d3b054c::t_66b48ba922ae6d 553,555,558-564
+  s_14f2bbc9f385dd::t_eab9c4c94c8513 565-566
+src/modules/Arrangement/handlers/clip/handleRestoreClipLoopLength.ts
+  s_bc88af7d3b054c::t_8f5fb09a1a0764 10-12,25-28,30
+  s_14f2bbc9f385dd::t_3ce09b4aac4ae6 7-9
+src/modules/Transport/useCases/scheduling/__tests__/scheduleMidiNotes.spec.ts
+  s_bc88af7d3b054c::t_66accaef90df04 1492-1505
+  s_bc88af7d3b054c::t_1c33585cdf2c70 1506
+  s_14f2bbc9f385dd::t_155071f98c253d 1507-1508
+src/modules/Transport/useCases/scheduling/scheduleAudioClips.ts
+  s_bc88af7d3b054c::t_1c33585cdf2c70 151-158,160,166-170
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "a76ca9caf0d1d1e552130f3808c9350a015a1a4c",
+  "prompts": {},
+  "sessions": {
+    "s_14f2bbc9f385dd": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f9a61a1d-66b3-4146-938d-a04f45f4b060",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_bc88af7d3b054c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f9b4a-11a2-7f61-8dfb-76eed0eb2a9c",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
