@@ -156,36 +156,35 @@ describe('automation recording across a loop boundary', () => {
     });
 
     /**
-     * The wrap also re-anchors where the new pass starts. Arming mid-loop makes
-     * lap one's start later than lap two's, so a session that kept lap one's
-     * `startBeat` would clear only the tail of what lap two passed over and
-     * leave whatever was already on the lane in front of it — a curve lap two
-     * overwrote in the engine but not in the project.
+     * The wrap also re-anchors where the new pass starts, and the pre-existing
+     * "lowest beat seen wins" anchor cannot do it: that only ever moves the
+     * start earlier. Recording rolled in from before the loop start gives the
+     * first pass a head the loop never revisits, and a session that kept lap
+     * one's `startBeat` would clear that head on lap two — erasing a stretch
+     * the playhead never passed over on the second lap.
      */
-    it('overwrites the whole span the second pass covers, not just the first pass’s span', () => {
-        const lane = automationStore.value!.lanes[0]!;
-        automationStore.set({
-            lanes: [{ ...lane, points: [{ beat: 0.5, value: 0.95, curve: 'linear', tension: 0 }] }],
-        });
-
-        // Recording armed mid-loop: lap one starts at beat 3.
+    it('leaves the pre-roll head of the first pass alone when the loop wraps behind it', () => {
+        // Armed at beat 1, rolling into a loop that runs 2..4.
         playPass([
+            [1, 0.6],
+            [2, 0.6],
             [3, 0.6],
-            [3.5, 0.6],
             [4, 0.6],
         ]);
-        // Lap two runs the whole loop and passes straight over beat 0.5.
+        // Lap two covers only the loop.
         playPass([
-            [0, 0.2],
-            [1, 0.2],
             [2, 0.2],
             [3, 0.2],
             [4, 0.2],
         ]);
         stopAutomationRecording();
 
-        expect(recordedPoints().some((point) => point.beat === 0.5)).toBe(false);
-        expect(recordedPoints().every((point) => point.value === 0.2)).toBe(true);
+        const points = recordedPoints();
+        // Beat 1 is outside the loop: lap two never reached it, so lap one's
+        // value there is still the truth.
+        expect(points.find((point) => point.beat === 1)?.value).toBe(0.6);
+        // Inside the loop, lap two won.
+        expect(points.filter((point) => point.beat >= 2).every((point) => point.value === 0.2)).toBe(true);
     });
 
     it('keeps a single uninterrupted pass intact', () => {
