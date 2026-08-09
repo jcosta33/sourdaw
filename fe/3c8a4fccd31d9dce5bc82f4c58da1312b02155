@@ -1,0 +1,21 @@
+.agents/decisions/0023-allpass-fractional-delay-in-the-string-loop.md
+  s_14f2bbc9f385dd::t_305c43eca8f239 1-107
+.agents/decisions/README.md
+  s_14f2bbc9f385dd::t_11301f2019ee50 39
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "fe3c8a4fccd31d9dce5bc82f4c58da1312b02155",
+  "prompts": {},
+  "sessions": {
+    "s_14f2bbc9f385dd": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f9a61a1d-66b3-4146-938d-a04f45f4b060",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
