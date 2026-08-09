@@ -112,6 +112,37 @@ describe('buildProjectData', () => {
         });
     });
 
+    it('binds newly exported freeze buffers to the project envelope', async () => {
+        arrangementStoreMock.value = sanitize_arrangement_store_state({
+            arrangements: [
+                {
+                    id: 'arrangement-1',
+                    name: 'Arrangement 1',
+                    tracks: {
+                        tracks: [
+                            {
+                                id: 'track-1',
+                                freezeState: { status: 'frozen', frozenBufferId: 'freeze-track-1' },
+                            },
+                        ],
+                        selectedTrackId: null,
+                    },
+                    automation: { lanes: [] },
+                    midi: { notesByClipId: {}, ccByClipId: {}, pitchBendByClipId: {} },
+                },
+            ],
+            activeArrangementId: 'arrangement-1',
+        });
+        const buffer = { sampleRate: 48_000, numberOfChannels: 1, channelData: ['QUJD'] };
+        exportCachedAudioBuffersMock.mockResolvedValue({ 'freeze-track-1': buffer });
+
+        const built = await buildProjectData({ includeAudioBuffers: true });
+
+        expect(built?.data.audioBuffers).toEqual({
+            'freeze-track-1': { ...buffer, freezeProjectId: 1 },
+        });
+    });
+
     it('serializes the current chord-track read contract into project truth', async () => {
         arrangementStoreMock.value = sanitize_arrangement_store_state({
             arrangements: [],

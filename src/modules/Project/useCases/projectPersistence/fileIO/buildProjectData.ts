@@ -58,6 +58,16 @@ function collectBufferIds(trackState: TrackStoreState | null | undefined): Set<s
     return ids;
 }
 
+function collectFrozenBufferIds(trackState: TrackStoreState | null | undefined): Set<string> {
+    const ids = new Set<string>();
+    for (const track of trackState?.tracks ?? []) {
+        if (track.freezeState.frozenBufferId) {
+            ids.add(track.freezeState.frozenBufferId);
+        }
+    }
+    return ids;
+}
+
 /** Result of serializing the live project: the `ProjectData` snapshot plus the
  * count of referenced audio buffers that could not be embedded (so the export
  * UX can warn the user; the in-app save snapshot ignores it). */
@@ -113,17 +123,30 @@ export async function buildProjectData({
     // Collect all audioBufferIds referenced by the project (current track state
     // and every arrangement, including non-active ones).
     const allBufferIds = new Set<string>();
+    const frozenBufferIds = new Set<string>();
     for (const id of collectBufferIds(tracks)) {
         allBufferIds.add(id);
+    }
+    for (const id of collectFrozenBufferIds(tracks)) {
+        frozenBufferIds.add(id);
     }
     for (const arr of arrState.arrangements) {
         for (const id of collectBufferIds(arr.tracks)) {
             allBufferIds.add(id);
         }
+        for (const id of collectFrozenBufferIds(arr.tracks)) {
+            frozenBufferIds.add(id);
+        }
     }
     const audioBuffers: Record<string, ProjectExportedAudioBuffer> = includeAudioBuffers
         ? await exportCachedAudioBuffers({ bufferIds: [...allBufferIds] })
         : {};
+    for (const id of frozenBufferIds) {
+        const buffer = audioBuffers[id];
+        if (buffer) {
+            audioBuffers[id] = { ...buffer, freezeProjectId: project.createdAt };
+        }
+    }
 
     const resolvedIds = new Set(Object.keys(audioBuffers));
     const missingBufferCount = includeAudioBuffers ? [...allBufferIds].filter((id) => !resolvedIds.has(id)).length : 0;
