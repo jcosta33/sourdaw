@@ -22,6 +22,17 @@ use super::stepseq::StepSequencer;
 /// site for why it is unreachable in the current gate and why it is still here.
 const MIN_BALANCE_SUM: f32 = 1e-6;
 
+/// Equal-tempered frequency of a MIDI note, A4 = 440 Hz.
+///
+/// Shared so that the pitch a note glides *to* and the pitch a later note glides
+/// *from* are computed by one expression: `Layer` records a played note's
+/// frequency as the next glide's origin, and an origin that disagreed with the
+/// destination formula by even a rounding step would put an audible sub-cent
+/// ramp on a note that should have snapped.
+pub(super) fn note_frequency(note: u8) -> f32 {
+    440.0 * 2.0f32.powf((note as f32 - 69.0) / 12.0)
+}
+
 /// All per-block parameters passed from MasterSynth to Voice::render.
 pub struct VoiceParams<'a> {
     pub tables: &'a [Wavetable],
@@ -162,6 +173,9 @@ impl Voice {
             lorenz: LorenzMod::new(),
             perlin: PerlinMod::new(),
             engine: 0,
+            // Both are overwritten by `note_on` before the voice can render a
+            // sample — it is the only thing that sets `active` — so neither
+            // value is ever heard. They are not a starting pitch.
             target_freq: 440.0,
             current_freq: 440.0,
             glide_coeff: 1.0,
@@ -180,7 +194,28 @@ impl Voice {
         }
     }
 
-    pub fn note_on(&mut self, note: u8, channel: u8, velocity: f32, sample_rate: f32) {
+    /// Start a note.
+    ///
+    /// `glide_origin` is the pitch the note's glide starts from, and it is a
+    /// parameter rather than a separate setter so that **there is no way to
+    /// start a note without stating it**. It used to be its own
+    /// `set_glide_origin` call that `Layer::note_on_with_channel` made just
+    /// before this one, which left `current_freq`'s 440 Hz construction seed
+    /// reachable by any second call site that forgot the extra step — silently,
+    /// only under glide, and only in the polyphonic cases nobody catches by ear.
+    /// That is exactly how the original defect survived, so the shape that
+    /// allowed it is gone rather than merely unused.
+    pub fn note_on(
+        &mut self,
+        note: u8,
+        channel: u8,
+        velocity: f32,
+        glide_origin: f32,
+        sample_rate: f32,
+    ) {
+        // Before the snap check below, which overrides it when there is no
+        // glide to run.
+        self.current_freq = glide_origin;
         self.active = true;
         self.note = note;
         self.channel = channel;
@@ -191,7 +226,7 @@ impl Voice {
         self.expr_bend_semitones = 0.0;
         self.expr_pressure = 0.0;
         self.expr_slide = 0.0;
-        let new_freq = 440.0 * 2.0f32.powf((note as f32 - 69.0) / 12.0);
+        let new_freq = note_frequency(note);
         self.target_freq = new_freq;
         self.frequency = new_freq;
         // If no portamento (glide_coeff == 1.0), snap immediately
@@ -901,12 +936,12 @@ impl Voice {
 
 #[cfg(test)]
 mod tests {
-    use super::Voice;
+    use super::{note_frequency, Voice};
 
     #[test]
     fn note_on_clears_expression_so_a_recycled_voice_starts_neutral() {
         let mut voice = Voice::new(48_000.0);
-        voice.note_on(69, 0, 0.8, 48_000.0);
+        voice.note_on(69, 0, 0.8, note_frequency(69), 48_000.0);
         voice.set_expression(12.0, 1.0, -1.0);
         assert_eq!(voice.expr_bend_semitones, 12.0);
         assert_eq!(voice.expr_pressure, 1.0);
@@ -914,7 +949,7 @@ mod tests {
 
         // Voice stealing hands the same struct to a different MIDI note, so a
         // stale bend would detune an unrelated note (audit MD-2).
-        voice.note_on(60, 0, 0.8, 48_000.0);
+        voice.note_on(60, 0, 0.8, note_frequency(60), 48_000.0);
         assert_eq!(voice.expr_bend_semitones, 0.0);
         assert_eq!(voice.expr_pressure, 0.0);
         assert_eq!(voice.expr_slide, 0.0);

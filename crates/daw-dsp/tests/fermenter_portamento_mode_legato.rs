@@ -115,7 +115,16 @@ enum PriorNote {
     Held,
 }
 
-const PRIOR_NOTE_CASES: [PriorNote; 3] = [PriorNote::None, PriorNote::Ringing, PriorNote::Held];
+/// The cases in which a glide has somewhere to start from, and so the only ones
+/// in which mode 0 can be observed gliding at all.
+///
+/// `PriorNote::None` is deliberately absent. A glide runs from the last pitch
+/// the layer played, and with no prior note there is none, so the destination is
+/// substituted and the note snaps in **both** modes — see
+/// `Layer::last_played_freq` and `fermenter_glide_origin.rs`. Before that was
+/// true the first note of a patch swept from a hardcoded 440 Hz, which is what
+/// made mode 0 look like it glided here.
+const PRIOR_NOTE_CASES: [PriorNote; 2] = [PriorNote::Ringing, PriorNote::Held];
 
 /// Nothing in the signal path that could move the measured bin: no noise, no
 /// drift, no unison, no modulation reaching pitch or filter, no drive, no
@@ -278,10 +287,34 @@ fn a_suppressed_note_renders_exactly_as_if_glide_were_off() {
     }
 }
 
-/// The switch's whole point: mode 1 with nothing held must snap.
+/// With nothing played before it, the switch has no effect: neither position
+/// glides, because there is no pitch to glide from.
+///
+/// This case used to be stated as `assert_starts_on_pitch(PriorNote::None)` —
+/// mode 1 snapping while mode 0 was still on its way. Mode 0's half of that
+/// contrast was the engine sweeping from the 440 Hz `Voice::new` seed, and with
+/// the glide origin taken from play history instead there is nothing left for it
+/// to sweep from. The claim the old assertion carried, that mode 1 snaps with no
+/// key down, is unchanged and is still measured — by
+/// `legato_mode_snaps_while_the_previous_note_rings_out_its_release`, whose
+/// fixture has a history and so can still tell the two modes apart, and by
+/// `a_suppressed_note_renders_exactly_as_if_glide_were_off`, which covers this
+/// very fixture.
 #[test]
-fn legato_mode_snaps_when_no_key_is_down() {
-    assert_starts_on_pitch(PriorNote::None);
+fn neither_mode_glides_a_note_with_nothing_played_before_it() {
+    let always = render_probe(ALWAYS_MODE, GLIDE_SECONDS, PriorNote::None, COMPARISON_BLOCKS);
+    let legato = render_probe(LEGATO_MODE, GLIDE_SECONDS, PriorNote::None, COMPARISON_BLOCKS);
+    let glide_off = render_probe(ALWAYS_MODE, GLIDE_OFF, PriorNote::None, COMPARISON_BLOCKS);
+    assert_eq!(
+        always, glide_off,
+        "always mode has no pitch to glide the first note from, so it must \
+         render it the way the engine renders it with portamento off"
+    );
+    assert_eq!(
+        legato, glide_off,
+        "and legato mode, which suppresses the glide outright here, must agree \
+         with it sample for sample"
+    );
 }
 
 /// The edge case the field has already settled. A note whose key is up is not
@@ -320,9 +353,12 @@ fn legato_mode_glides_while_the_previous_key_is_still_down() {
 
 /// Mode 0 does not consult the keyboard at all. This is the behaviour the
 /// engine already had for every value of the switch, and it must survive the
-/// switch gaining an effect — including in the two states where mode 1 now
+/// switch gaining an effect — including in the state where mode 1 now
 /// suppresses the glide, which is where a fix applied to the wrong branch would
 /// land.
+///
+/// What mode 0 does consult is whether anything has been played, which is a
+/// different question and not a keyboard one — see [`PRIOR_NOTE_CASES`].
 #[test]
 fn always_mode_glides_whatever_the_previous_key_is_doing() {
     for prior in PRIOR_NOTE_CASES {
@@ -341,10 +377,27 @@ fn always_mode_glides_whatever_the_previous_key_is_doing() {
 /// take an ordinal at all: driving this parameter moves the rendered audio by
 /// more than a rounding error. Measured here against the native build, where a
 /// failure names the engine rather than the binding.
+///
+/// Measured over `PriorNote::Ringing` rather than `PriorNote::None`: no key is
+/// down in either, but only the ringing fixture has a pitch for mode 0 to glide
+/// from, and a parameter that moves nothing in the arm it is measured in cannot
+/// evidence a binding. That is the same reason
+/// `dawDspFermenterAutomationOrdinals.spec.ts` plays a `priorNote` on both of
+/// its portamento rows.
 #[test]
 fn the_two_modes_render_differently_when_no_key_is_down() {
-    let always = render_probe(ALWAYS_MODE, GLIDE_SECONDS, PriorNote::None, COMPARISON_BLOCKS);
-    let legato = render_probe(LEGATO_MODE, GLIDE_SECONDS, PriorNote::None, COMPARISON_BLOCKS);
+    let always = render_probe(
+        ALWAYS_MODE,
+        GLIDE_SECONDS,
+        PriorNote::Ringing,
+        COMPARISON_BLOCKS,
+    );
+    let legato = render_probe(
+        LEGATO_MODE,
+        GLIDE_SECONDS,
+        PriorNote::Ringing,
+        COMPARISON_BLOCKS,
+    );
     let difference = total_difference(&always, &legato);
     assert!(
         difference > MIN_BINDING_DIFFERENCE,

@@ -6,6 +6,7 @@ use super::effects::{
 };
 use super::layer::Layer;
 use super::oscillator::Wavetable;
+use super::voice::note_frequency;
 use super::params::SmoothedParam;
 use crate::primitives::{ProcessLifecycle, TailLength};
 
@@ -45,6 +46,77 @@ pub struct MasterSynth {
     layers: [Layer; MAX_LAYERS],
     num_active_layers: usize, // 1-4
     active_layer: usize,      // which layer receives MIDI and param changes (0-3)
+
+    /// The pitch the next glide starts from: the frequency of the last note the
+    /// **player** played, or `None` when none has been played.
+    ///
+    /// **Why the synth holds this, not the voice.** The glide source used to be
+    /// `Voice::current_freq`, per-slot state seeded at 440 Hz.
+    /// `Layer::note_on_with_channel` allocates the first *inactive* slot, so a
+    /// note that overlapped anything took a different slot from the note before
+    /// it and glided from whatever pitch that slot was last left holding — or
+    /// from 440 Hz if it had never been used. Only strictly sequential
+    /// monophonic playing recycles the previous note's slot, which is why the
+    /// origin looked right for the one way of playing anybody checks.
+    ///
+    /// **Why the synth, not the layer.** `note_on_with_channel` fans a note out
+    /// only to layers that are unmuted, solo-eligible and inside
+    /// `num_active_layers`. A per-layer record would therefore mean "what was
+    /// *this layer* last audible for", not "what did the player last play" — a
+    /// layer that was out of range while notes were played would keep the pitch
+    /// from before and glide its next note from there. `num_layers` is an
+    /// automatable patch parameter, so that is a reachable state and not a
+    /// hypothetical. One record above the filter is also one record instead of
+    /// four copies of the same keyboard fact.
+    ///
+    /// **The consequence, which is a choice.** A layer brought into range for
+    /// the first time in a session inherits this history, so its first note
+    /// *glides* rather than snapping. That is deliberate: the field means the
+    /// last note the player played, and the player did play those notes — a
+    /// layer switching on mid-phrase is not the same event as an instrument
+    /// that has never sounded. Only [`Self::last_played_freq`] being `None`,
+    /// which is true exactly once per instance, makes a note snap.
+    ///
+    /// **Why `None` rather than a starting pitch.** With no history there is no
+    /// pitch to come from, so `note_on_with_channel` substitutes the
+    /// destination and the ramp has nowhere to travel. Vital does exactly this,
+    /// initialising `last_played_note_` to `-1.0f` and falling back to the note
+    /// being played (`voice_handler.cpp`). Surge XT instead starts its
+    /// scene-global `last_key` at MIDI 60, but that is only ever read in its
+    /// monophonic modes, and seeding a fixed pitch here would merely move the
+    /// arbitrary constant this field exists to remove.
+    ///
+    /// **Written at note-on only.** A note-off leaves it alone: releasing a key
+    /// does not change which note was last played. Both sources agree — neither
+    /// writes its store from a release path. That is consistent with, not
+    /// contrary to, the `Voice::held` predicate in
+    /// `Layer::portamento_time_for_note_on`: whether a key is *still down*
+    /// decides if a glide happens at all, while what was *last played* decides
+    /// where a glide that does happen begins. A release ends the first and not
+    /// the second.
+    ///
+    /// **Under polyphony every note-on reads it and then overwrites it**, so a
+    /// chord entered as three note-ons glides its second note from its first and
+    /// its third from its second. That is Vital's behaviour and it falls out of
+    /// the same three lines.
+    ///
+    /// **It is the nominal note frequency, not the pitch that sounded.** An MPE
+    /// note bent up a fifth and released leaves its *un-bent* pitch as the next
+    /// glide's origin, because `note_frequency(note)` is what goes in and
+    /// per-note expression never touches this field. Vital does the same —
+    /// `last_played_note_ = tuned_note`, the note rather than anything applied
+    /// to it afterwards — so this is a convention rather than an oversight, and
+    /// it is the one that keeps a glide origin meaning "the note you played".
+    /// The same reasoning covers an unfinished glide: the record is the note,
+    /// not where its ramp had reached.
+    ///
+    /// **A future `reset()` should clear this to `None`.** There is no reset
+    /// path today (#1556 owns whether one is needed); if one is added, the
+    /// intent is that it makes the instrument indistinguishable from a fresh
+    /// one, and an instrument that has played nothing has no pitch to glide
+    /// from. Carrying a pitch across a reset would put a glide on the first note
+    /// after it — the exact defect the `None` case exists to prevent.
+    last_played_freq: Option<f32>,
 
     tables: Vec<Wavetable>,
 
@@ -178,6 +250,7 @@ impl MasterSynth {
             last_output_quiet: true,
             tail_samples_remaining: 0,
             wake_requested: false,
+            last_played_freq: None,
         }
     }
 
@@ -732,6 +805,14 @@ impl MasterSynth {
     /// Note-on carrying the MPE member channel that owns the note. Channel 0 is
     /// the non-MPE default and what `note_on` uses.
     pub fn note_on_with_channel(&mut self, note: u8, velocity: u8, channel: u8) {
+        // Resolved and recorded **above the playability filter below**, and that
+        // placement is the whole point — see `last_played_freq`. A note the
+        // player played is a note the player played whether or not any given
+        // layer was in range, unmuted and solo-eligible at the time.
+        let destination_freq = note_frequency(note);
+        let glide_origin = self.last_played_freq.unwrap_or(destination_freq);
+        self.last_played_freq = Some(destination_freq);
+
         let any_solo = self.layers[..self.num_active_layers].iter().any(|l| l.solo);
         for layer in &mut self.layers[..self.num_active_layers] {
             if layer.muted {
@@ -740,7 +821,7 @@ impl MasterSynth {
             if any_solo && !layer.solo {
                 continue;
             }
-            layer.note_on_with_channel(note, velocity, channel);
+            layer.note_on_with_channel(note, velocity, channel, glide_origin);
         }
     }
 
