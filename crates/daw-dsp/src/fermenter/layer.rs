@@ -76,6 +76,10 @@ pub struct Layer {
     pub lfo_pitch_amount: f32,
     pub lfo_filter_amount: f32,
     pub portamento_time: f32,
+    /// Glide mode: 0 = always, 1 = legato only. Read at note-on by
+    /// [`Layer::portamento_time_for_note_on`], which is the only place it has
+    /// any effect — the per-block push in `advance_block_params` deliberately
+    /// does not consult it (see that function).
     pub portamento_mode: u8,
     pub pulse_width: f32,
     pub osc_coarse: f32,
@@ -222,6 +226,45 @@ impl Layer {
         }
     }
 
+    /// Glide time this note-on should start with, after the glide-mode switch.
+    ///
+    /// Mode 0 ("always") glides every note, which is what the engine did for
+    /// every value of `portamento_mode` before this existed. Mode 1 ("legato")
+    /// glides only when the player was **still holding a key** as the new note
+    /// arrived, and snaps otherwise — the standard legato/fingered-portamento
+    /// behaviour.
+    ///
+    /// `Voice::held` is the whole predicate, and it is the right one because it
+    /// is set at note-on and cleared by `Voice::note_off` while the voice stays
+    /// `active` through its release tail. So a note the player has let go of
+    /// does not make the next note legato even though it is still sounding —
+    /// legato is a statement about the keyboard, not about the decay. That
+    /// distinction is why this reads `held` rather than `is_active`.
+    ///
+    /// Returning a time of 0 rather than reaching into the voice is deliberate:
+    /// `Voice::set_portamento(0.0, _)` sets `glide_coeff` to 1.0, and
+    /// `Voice::note_on` snaps `current_freq` to the new pitch exactly when the
+    /// coefficient is at 1.0. The suppression therefore lands through the
+    /// existing "no portamento" path instead of a second one.
+    ///
+    /// Known limitation, shared with mode 0 and not introduced here: the glide
+    /// *origin* is whatever pitch the recycled voice slot was left on, not the
+    /// pitch of the note being glided from. For monophonic playing the slot is
+    /// the previous note and the origin is right; when notes overlap — which is
+    /// every legato glide — a free slot is taken instead and the origin is
+    /// stale. Fixing that moves mode 0's rendered output too, so it is its own
+    /// change with its own guard.
+    fn portamento_time_for_note_on(&self) -> f32 {
+        if self.portamento_mode != 1 {
+            return self.portamento_time;
+        }
+        let a_key_is_still_down = self.voices.iter().any(|voice| voice.held);
+        if a_key_is_still_down {
+            return self.portamento_time;
+        }
+        0.0
+    }
+
     pub fn note_on(&mut self, note: u8, velocity: u8) {
         self.note_on_with_channel(note, velocity, 0);
     }
@@ -230,6 +273,10 @@ impl Layer {
     /// is the non-MPE default and what `note_on` uses.
     pub fn note_on_with_channel(&mut self, note: u8, velocity: u8, channel: u8) {
         let vel = velocity as f32 / 127.0;
+        // Read before any voice is touched: voice stealing below swaps the
+        // displaced voice out of `self.voices` into a steal tail, so asking
+        // after it would be asking a pool the new note has already altered.
+        let portamento_time = self.portamento_time_for_note_on();
 
         // Find a free voice, or steal the quietest
         let mut target = None;
@@ -274,7 +321,9 @@ impl Layer {
             // waveform can be set before it renders its first sample.
             voice.set_waveform(self.osc_waveform);
             voice.set_pulse_width(self.pulse_width);
-            voice.set_portamento(self.portamento_time, self.sample_rate);
+            // The glide-mode switch is resolved here and nowhere else — this is
+            // the only moment at which "was a key still down?" has an answer.
+            voice.set_portamento(portamento_time, self.sample_rate);
             voice.set_granular_params(
                 self.grain_density,
                 self.grain_size,
@@ -481,6 +530,14 @@ impl Layer {
             voice.set_waveform(self.osc_waveform);
             voice.set_engine(self.engine, self.sample_rate);
             voice.set_pulse_width(self.pulse_width);
+            // Unconditionally the raw time, *not* `portamento_time_for_note_on`.
+            // A legato-suppressed note has already snapped `current_freq` onto
+            // `target_freq` inside `Voice::note_on`, and nothing moves the
+            // target again for the life of the note, so restoring the glide
+            // coefficient here cannot restart a glide that was suppressed. What
+            // it does preserve is the live-edit behaviour every other line in
+            // this loop has: turning the glide time up mid-note is heard on the
+            // next note, not swallowed.
             voice.set_portamento(self.portamento_time, self.sample_rate);
             voice.set_ks_damping(self.ks_damping);
             voice.set_granular_params(

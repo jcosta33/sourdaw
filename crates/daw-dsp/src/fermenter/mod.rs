@@ -43,18 +43,14 @@ const MAX_BLOCK_EVENTS: usize = 256;
 /// `FERMENTER_AUTOMATION_PARAM_IDS` in
 /// `src/modules/AudioEngine/models/FermenterAutomationParams.ts`.
 ///
-/// This covers 102 of the 105 parameters the Fermenter descriptor declares
-/// automatable. Three are deliberately absent because **no two values of any of
+/// This covers 103 of the 105 parameters the Fermenter descriptor declares
+/// automatable. Two are deliberately absent because **no two values of either of
 /// them render differently**, so the behavioural pin below could not fail:
 ///
 ///  - `active_layer` writes no DSP state. `MasterSynth::set_param` reads it only
 ///    to route *subsequent* writes to a layer; neither `note_on_with_channel`
 ///    nor `render_layers` consults it. Binding it would also make every other
 ///    scheduled lane's destination depend on schedule ordering.
-///  - `portamento_mode` is a dead control: `Layer::set_param` stores the field
-///    and nothing in this crate reads it. `Layer::note_on` passes only
-///    `portamento_time` to `Voice::set_portamento`, so the legato-only glide the
-///    control names is not implemented.
 ///  - `grain_pan_spread` is computed and discarded: `GranularEngine::tick` pans
 ///    each grain into an L/R pair, and `Voice::render` sums the oscillator pair
 ///    to mono before the filter and restores the L/R ratio only on the unison
@@ -72,7 +68,7 @@ const MAX_BLOCK_EVENTS: usize = 256;
 /// `mapFermenterParamToDspParam` translation and asserts `set_param_by_id(n, v)`
 /// renders identically to `set_param(name, v)`. Editing this array without
 /// making the matching edit to `FERMENTER_AUTOMATION_PARAM_IDS` fails there.
-const AUTOMATION_PARAM_NAMES: [&str; 102] = [
+const AUTOMATION_PARAM_NAMES: [&str; 103] = [
     "osc_level",
     "cutoff",
     "resonance",
@@ -175,6 +171,7 @@ const AUTOMATION_PARAM_NAMES: [&str; 102] = [
     "chaos_amount",
     "chaos_speed",
     "master_gain",
+    "portamento_mode",
 ];
 
 /// WASM-exported Fermenter instance for AudioWorklet.

@@ -34,14 +34,14 @@
  * message was dropped before it reached the engine. A pure model both sides may
  * import is the only place that makes the count *derived* rather than restated.
  *
- * ## Why 102 and not 105
+ * ## Why 103 and not 105
  *
  * The Fermenter descriptor declares **105** automatable parameters. Every one is
- * here except three, and all three exclusions are measurements rather than
+ * here except two, and both exclusions are measurements rather than
  * preferences: **the engine renders no difference between any two values of
- * any of them**, so a per-parameter guard for them could not fail, and a
- * binding that cannot be guarded is a claim with nothing behind it. All three
- * keep reason-bearing rows in `offlineAutomationExemptions.ts`.
+ * either of them**, so a per-parameter guard for them could not fail, and a
+ * binding that cannot be guarded is a claim with nothing behind it. Both keep
+ * reason-bearing rows in `offlineAutomationExemptions.ts`.
  *
  *  - **`activeLayer`** writes no DSP state. `MasterSynth::set_param`
  *    (`crates/daw-dsp/src/fermenter/synth.rs`) reads it only to pick which layer
@@ -50,12 +50,6 @@
  *    consulting it. Binding it would additionally make every other lane's
  *    destination depend on the order the offline schedules happen to sit in
  *    `_paramAutomation`.
- *  - **`portamentoMode`** is a dead control. `Layer::set_param` stores it
- *    (`layer.rs`: `"portamento_mode" => self.portamento_mode = ...`) and
- *    **nothing in the crate ever reads the field** — `Layer::note_on` passes
- *    only `portamento_time` to `Voice::set_portamento`. The legato-only glide
- *    the control names is not implemented, so the descriptor offers a mode
- *    switch the engine does not have. That is a DSP gap, not a binding gap.
  *  - **`grainPanSpread`** is computed and then discarded. `GranularEngine::tick`
  *    pans each grain into an L/R pair, but `Voice::render` sums the oscillator
  *    pair to mono before the filter (`voice.rs`: "Filter — mono (sum L+R, filter
@@ -85,9 +79,11 @@
  * recomputes one biquad. The real expensive class is `additive_tilt`,
  * `additive_odd` and `additive_partials`, which loop 16 voices and recompute 64
  * partial amplitudes per voice through `powf`/`log2`: 100-160x the cheap class.
- * Even so, all 102 moving in one quantum costs ~13.8 us against the 2.667 ms
- * budget (0.52%), and `_applyParamAutomation` skips a schedule whose
- * interpolated value has not changed, so a parked lane costs nothing.
+ * Even so, the 102 that measurement covered moving in one quantum costs ~13.8 us
+ * against the 2.667 ms budget (0.52%), and `_applyParamAutomation` skips a
+ * schedule whose interpolated value has not changed, so a parked lane costs
+ * nothing. Ordinals added since are plain field writes on `Layer`, which is the
+ * cheap class above.
  */
 export const FERMENTER_AUTOMATION_PARAM_IDS: Readonly<Record<string, number>> = {
     oscLevel: 0,
@@ -192,4 +188,5 @@ export const FERMENTER_AUTOMATION_PARAM_IDS: Readonly<Record<string, number>> = 
     chaosAmount: 99,
     chaosSpeed: 100,
     masterGain: 101,
+    portamentoMode: 102,
 };
