@@ -380,9 +380,9 @@ describe('a refused control’s reason is readable without a pointer', () => {
         // One line per card that has refused controls, so several cards carry
         // one at once — the Clamp card's is the one that names Knee.
         const lines = screen.getAllByText(/inert here/).map((node) => node.textContent);
-        const clampLine = lines.find((line) => line.includes('Knee'));
+        const clampLine = lines.find((line) => line.includes('Knee')) ?? '';
 
-        expect(clampLine).toContain('Release');
+        expect(clampLine, `no card line named Knee; lines were ${JSON.stringify(lines)}`).toContain('Release');
         expect(clampLine).toContain('Select VCA');
     });
 
