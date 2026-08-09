@@ -8,17 +8,27 @@
  * gated on `dirty === true`), and `pickAndImportProjectFile`'s save-before-
  * import guard reads a permanently clean project and discards the user's work.
  *
- * Two families of interruption are covered:
- *   - the eight abort returns, which must hand the previous session's transient
- *     flags back the way `newProject`'s `failNewProjectActivation` does;
- *   - a throwing notification flush on the committed path, which must still
- *     reach `finishProjectLoading`.
+ * All eight abort returns are covered, but they do not all want the same
+ * answer. Five are genuine failures a transition can hit while it can still
+ * activate: those must hand the previous session's transient flags back, the
+ * way `newProject`'s `failNewProjectActivation` does. The other three
+ * (`prepare()` false, `activate()` false, and the IndexedDB read returning
+ * null) are only reachable by losing the ordering race, and on those the
+ * successor owns the flags and nothing may be restored. Plus a throwing
+ * notification flush on the committed path, which must still reach
+ * `finishProjectLoading`.
  *
  * The wiring is the real one: `initProjectDirtyTracking` is the subscription the
  * composition root installs, both stores are the real singletons, and
  * `batchStoreUpdates` is the real implementation (wrapped only so a flush
  * failure can be injected). Only the audio graph, CRDT durability and transport
  * edges are stubbed, because they reach IndexedDB and an AudioContext.
+ *
+ * Scope, stated so it is not read as more than it is: every assertion here
+ * reads `projectStore` or `trackStore`. `resetCrdtProjectAuthority`,
+ * `resetAudioGraph` and `ensureTrackStrips` are no-op mocks, so this spec says
+ * nothing about whether the previous CRDT authority or audio graph survives an
+ * abort — only about the transient flags and the two stores' contents.
  */
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -117,6 +127,7 @@ const OPEN_TRACK_ID = 'track-the-user-is-working-on';
 const OPEN_TRACK_NAME = 'Vocals';
 const INCOMING_PROJECT_NAME = 'Project That Fails To Open';
 const INCOMING_TRACK_NAME = 'Never Arrives';
+const SUCCESSOR_PROJECT_NAME = 'The Newer Load';
 
 function projectData({ name, trackId, trackName }: { name: string; trackId: string; trackName: string }) {
     return {
@@ -150,18 +161,54 @@ const transactionControls = {
  * exactly. Fusing them erases the window between entry and activation, where a
  * transition may still claim the store but does not yet own it — which is where
  * the entry write lives.
+ *
+ * The `lost` latch keeps the fake from modelling states production cannot
+ * produce. No caller of `replaceProjectData` allocates with `yieldToInFlight`
+ * (`applyImportedProjectData` and `loadRecentProject` are the only two, and
+ * `loadProject` — the one that does yield — never reaches here), and for a
+ * non-yielding transition every way `prepare()` or `activate()` can return
+ * false is a lost ordering slot: `prepare()` false means
+ * `transitionId < latestPreparedProjectTransitionId`, `activate()` false means
+ * a newer transition holds the active or prepared slot. Both drive
+ * `canActivate()` false. A fake that let those resolve false while still
+ * claiming to be activatable would invite guards asserting a restore that can
+ * never happen.
  */
 function loadTransaction(): ProjectLoadTransaction {
     let activated = false;
+    let lost = false;
+    const ownable = (): boolean => !lost && !transactionControls.superseded;
     return {
-        prepare: () => transactionControls.prepare(),
+        prepare: async () => {
+            const prepared = await transactionControls.prepare();
+            if (!prepared) {
+                lost = true;
+            }
+            return prepared;
+        },
         activate: () => {
-            activated = !transactionControls.superseded && transactionControls.activate();
+            activated = ownable() && transactionControls.activate();
+            if (!activated) {
+                lost = true;
+            }
             return activated;
         },
-        canActivate: () => !transactionControls.superseded,
-        isCurrent: () => activated && !transactionControls.superseded,
+        canActivate: () => ownable(),
+        isCurrent: () => activated && ownable(),
     };
+}
+
+/**
+ * A newer transition takes the ordering slots and writes its own entry state,
+ * exactly as `replaceProjectData` and `newProject` do on entry. After this the
+ * older transition owns nothing and must leave the store alone.
+ */
+function takeOverByNewerLoad(): void {
+    transactionControls.superseded = true;
+    const current = projectStore.value;
+    if (current) {
+        projectStore.set({ ...current, name: SUCCESSOR_PROJECT_NAME, loading: true, initialized: false });
+    }
 }
 
 function openProject(name: string, trackId: string, trackName: string) {
@@ -183,24 +230,11 @@ function editTheArrangement(): void {
 }
 
 /**
- * Every abort return in `replaceProjectData`, by the failure a user could
- * actually hit there. The two supersession-only returns are exercised
- * separately, below, because handing the flags back is the wrong move once
- * another load owns the store.
+ * The five abort returns a transition can reach while it can still activate.
+ * Each is a genuine failure rather than a lost race, so the entry write really
+ * did happen and really must be undone.
  */
 const restoringAborts: Array<{ label: string; arrange: () => void }> = [
-    {
-        label: 'the transaction declines to prepare (a boot restore standing down)',
-        arrange: () => {
-            transactionControls.prepare = () => Promise.resolve(false);
-        },
-    },
-    {
-        label: 'the transaction declines to activate',
-        arrange: () => {
-            transactionControls.activate = () => false;
-        },
-    },
     {
         label: 'preparation throws while leaving the collaboration session',
         arrange: () => {
@@ -209,6 +243,9 @@ const restoringAborts: Array<{ label: string; arrange: () => void }> = [
     },
     {
         label: 'the embedded audio buffers are unreadable',
+        // `importBuffers` returns null on invalid buffer data
+        // (`audioBufferCache.ts:1051`, `:1067`), not only on `shouldContinue`,
+        // so this one is reachable with the transition still activatable.
         arrange: () => {
             mockImportCachedAudioBuffers.mockResolvedValue(null as never);
         },
@@ -217,12 +254,6 @@ const restoringAborts: Array<{ label: string; arrange: () => void }> = [
         label: 'decoding the embedded audio buffers throws',
         arrange: () => {
             mockImportCachedAudioBuffers.mockRejectedValue(new Error('decode failed'));
-        },
-    },
-    {
-        label: 'the stored audio buffers cannot be read back from IndexedDB',
-        arrange: () => {
-            mockPrepareCachedAudioBuffersFromIdb.mockResolvedValue(null as never);
         },
     },
     {
@@ -237,6 +268,52 @@ const restoringAborts: Array<{ label: string; arrange: () => void }> = [
             mockResetCrdtProjectAuthority.mockImplementation(() => {
                 throw new Error('authority reset failed');
             });
+        },
+    },
+];
+
+/**
+ * The three abort returns that only a lost race can reach. Production cannot
+ * arrive at any of them with `canActivate()` still true — `prepare()` false and
+ * `activate()` false both mean a newer transition took the ordering slot, and
+ * `prepareBuffersFromIdb` returns null *only* through `shouldContinue`
+ * (`audioBufferCache.ts:643`, `:647`, `:662`, `:677`), which is
+ * `transaction.isCurrent`. So the correct behaviour on all three is to restore
+ * nothing: the successor owns the flags and clears them on its own commit.
+ */
+const successorOwnedAborts: Array<{ label: string; arrange: () => void }> = [
+    {
+        label: 'a newer transition takes the prepared slot before this one prepares',
+        arrange: () => {
+            transactionControls.prepare = () => {
+                takeOverByNewerLoad();
+                return Promise.resolve(false);
+            };
+        },
+    },
+    {
+        label: 'a newer transition becomes active before this one activates',
+        arrange: () => {
+            transactionControls.activate = () => {
+                takeOverByNewerLoad();
+                return false;
+            };
+        },
+    },
+    {
+        label: 'a newer transition supersedes this one during the IndexedDB buffer read',
+        arrange: () => {
+            mockPrepareCachedAudioBuffersFromIdb.mockImplementation(
+                ({ shouldContinue }: { shouldContinue?: () => boolean }) => {
+                    takeOverByNewerLoad();
+                    // What `prepareBuffersFromIdb` does: the null is produced by
+                    // `shouldContinue`, never independently of it.
+                    if (shouldContinue?.() === false) {
+                        return Promise.resolve(null as never);
+                    }
+                    return Promise.resolve({ publish: vi.fn() });
+                }
+            );
         },
     },
 ];
@@ -291,8 +368,16 @@ describe('interrupted project load dirty tracking', () => {
                 });
 
                 expect(aborted.status).toBe('aborted');
-                // The session the user was in is still the one on screen: their
-                // arrangement, their project, not a wedged loading overlay.
+                // Scope: the two stores only. The previous session's arrangement
+                // and project metadata are still in place and the transient
+                // flags are back, so no loading overlay is wedged and dirty
+                // tracking is live.
+                //
+                // NOT covered here, and deliberately not claimed: whether the
+                // previous CRDT authority or audio graph survived.
+                // `resetCrdtProjectAuthority`, `resetAudioGraph` and
+                // `ensureTrackStrips` are all no-op mocks in this spec, so
+                // nothing below could detect a regression in them.
                 expect(trackStore.value?.tracks.map((track) => track.name)).toContain(OPEN_TRACK_NAME);
                 expect(projectStore.value?.name).toBe(OPEN_PROJECT_NAME);
                 expect(projectStore.value?.loading).toBe(false);
@@ -305,6 +390,39 @@ describe('interrupted project load dirty tracking', () => {
                 editTheArrangement();
 
                 expect(projectStore.value?.dirty).toBe(true);
+            });
+        }
+
+        for (const { label, arrange } of successorOwnedAborts) {
+            it(`restores nothing when ${label}`, async () => {
+                const opened = await openProject(OPEN_PROJECT_NAME, OPEN_TRACK_ID, OPEN_TRACK_NAME);
+                expect(opened.status).toBe('committed');
+
+                arrange();
+                const aborted = await replaceProjectData({
+                    context: 'applyImportedProjectData',
+                    data: projectData({
+                        name: INCOMING_PROJECT_NAME,
+                        trackId: 'incoming-track',
+                        trackName: INCOMING_TRACK_NAME,
+                    }),
+                    transaction: loadTransaction(),
+                });
+
+                expect(aborted.status).toBe('aborted');
+                // The successor's entry state stands untouched. Restoring here
+                // would clear its `loading` mid-load and mark the project it is
+                // hydrating dirty; the successor clears the flags itself when it
+                // commits.
+                expect(projectStore.value?.name).toBe(SUCCESSOR_PROJECT_NAME);
+                expect(projectStore.value?.loading).toBe(true);
+                expect(projectStore.value?.initialized).toBe(false);
+
+                // And while the successor is still loading, its hydration writes
+                // are not the user's edits.
+                editTheArrangement();
+
+                expect(projectStore.value?.dirty).toBe(false);
             });
         }
 
@@ -351,11 +469,7 @@ describe('interrupted project load dirty tracking', () => {
             // takes the transaction and writes its own loading state, exactly
             // as `replaceProjectData` does on entry.
             mockStopPlayback.mockImplementation(() => {
-                transactionControls.superseded = true;
-                const current = projectStore.value;
-                if (current) {
-                    projectStore.set({ ...current, name: 'The Newer Load', loading: true, initialized: false });
-                }
+                takeOverByNewerLoad();
                 return Promise.resolve();
             });
 
@@ -373,7 +487,7 @@ describe('interrupted project load dirty tracking', () => {
             // The newer load owns the store now, and its own commit is what
             // clears these. Restoring here would clear `loading` mid-hydration
             // and mark the newer project dirty the moment it hydrates.
-            expect(projectStore.value?.name).toBe('The Newer Load');
+            expect(projectStore.value?.name).toBe(SUCCESSOR_PROJECT_NAME);
             expect(projectStore.value?.loading).toBe(true);
             expect(projectStore.value?.initialized).toBe(false);
         });

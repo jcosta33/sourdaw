@@ -105,7 +105,14 @@ export async function replaceProjectData({
         // load has superseded this one, these entry values are stale: the newer
         // load has already written its own `loading: true`, and clearing it
         // mid-hydration would mark the project it is loading dirty.
-        if (transaction.isCurrent() || transaction.canActivate()) {
+        //
+        // `canActivate()` alone, and it is the same predicate the entry write
+        // uses — claiming and restoring are one decision. An `isCurrent() ||`
+        // disjunct here would be dead: `isCurrent()` requires `activated` plus
+        // `===` on both ordering counters, `canActivate()` only `>=` on the same
+        // two, so `isCurrent()` implies `canActivate()`. `newProject.ts:31`
+        // carries that dead disjunct; left alone, it is not this PR's file.
+        if (transaction.canActivate()) {
             const project = projectStore.value;
             if (project && previousTransientState) {
                 projectStore.set({ ...project, ...previousTransientState });
