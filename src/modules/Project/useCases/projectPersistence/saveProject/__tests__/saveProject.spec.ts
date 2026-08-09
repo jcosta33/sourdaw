@@ -146,6 +146,31 @@ describe('saveProject', () => {
         await expect(saveProject()).resolves.toBe(true);
     });
 
+    it('clears the dirty flag once persistence succeeds and the revision is unchanged', async () => {
+        // Both captureProjectRevision calls (before and after persist) return
+        // the same value, modelling a save with no concurrent edit.
+        mocks.captureProjectRevision.mockReturnValue('same-revision');
+        await saveProject();
+
+        expect(mocks.projectStoreSet).toHaveBeenCalledWith(
+            expect.objectContaining({ dirty: false }),
+        );
+    });
+
+    it('keeps the dirty flag asserted when an edit lands during the snapshot write', async () => {
+        // Models the genuine concurrent-edit case the guard exists for: after
+        // persist settles (the revision is captured) a concurrent edit during
+        // the async IndexedDB write advances the revision, so the snapshot is
+        // stale and dirty must stay asserted for the next save.
+        mocks.captureProjectRevision.mockReturnValueOnce('pre-write').mockReturnValueOnce('post-write');
+
+        await saveProject();
+
+        expect(mocks.projectStoreSet).not.toHaveBeenCalledWith(
+            expect.objectContaining({ dirty: false }),
+        );
+    });
+
     it('notifies and resolves false when persistence fails', async () => {
         const failure = new Error('idb write failed');
         mocks.persistCrdtProject.mockRejectedValue(failure);

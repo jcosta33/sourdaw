@@ -96,11 +96,19 @@ export async function saveProject(): Promise<boolean> {
         }
 
         // buildProjectData synchronizes the current arrangement projection into
-        // project truth. Capture that resulting authority, then persist it. An
-        // edit arriving after this boundary changes the final token comparison
-        // and leaves dirty asserted for the next snapshot.
-        const savedRevision = captureProjectRevision();
+        // project truth, then persist it.
         await persistCrdtProject();
+
+        // Capture the revision AFTER the save's own CRDT bookkeeping
+        // (buildProjectData's arrangement sync + the incremental persist) has
+        // settled. Capturing before persist compared the post-save guard
+        // against a baseline the save itself invalidated — persistCrdtProject
+        // advances the Automerge mutationEpoch/heads as a side effect of its
+        // own commit, so the pre-persist token never matched the post-persist
+        // one and dirty could never clear. The guard now trips only on an edit
+        // arriving after persist but before the snapshot write commits — the
+        // genuine concurrent-edit case it was written to catch.
+        const savedRevision = captureProjectRevision();
 
         // Awaited, so a rejected transaction reaches the catch below rather
         // than being reported as a successful save.
@@ -112,9 +120,9 @@ export async function saveProject(): Promise<boolean> {
         addToRecentProjects(project.name, recentKey);
 
         // A save clears dirty only when the complete project authority still
-        // matches the revision serialized above. Any edit or project identity
-        // transition during the async snapshot keeps dirty asserted so the
-        // next autosave cannot be suppressed by a stale completion.
+        // matches the revision captured above. Any edit or project identity
+        // transition during the async snapshot write keeps dirty asserted so
+        // the next autosave cannot be suppressed by a stale completion.
         const latest = projectStore.value;
         if (latest?.createdAt === project.createdAt && captureProjectRevision() === savedRevision) {
             projectStore.set({ ...latest, dirty: false });

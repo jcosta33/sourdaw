@@ -198,8 +198,14 @@ describe('saveProject durability', () => {
         const buildOrder = mocks.buildProjectData.mock.invocationCallOrder[0];
         const captureOrder = mocks.captureProjectRevision.mock.invocationCallOrder[0];
         const persistOrder = mocks.persistCrdtProject.mock.invocationCallOrder[0];
-        expect(buildOrder ?? 0).toBeLessThan(captureOrder ?? 0);
-        expect(captureOrder ?? 0).toBeLessThan(persistOrder ?? 0);
+        // build → persist → capture: the revision baseline is captured AFTER
+        // persist settles so the save's own CRDT bookkeeping (the persist
+        // commit's mutationEpoch/heads advance) is in the baseline, not in the
+        // post-save guard's delta. Capturing before persist compared the guard
+        // against a baseline the save itself invalidated, so dirty could never
+        // clear.
+        expect(buildOrder ?? 0).toBeLessThan(persistOrder ?? 0);
+        expect(persistOrder ?? 0).toBeLessThan(captureOrder ?? 0);
     });
 
     // AC-5. The live save snapshot references audio by id; the PCM itself lives
