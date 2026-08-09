@@ -1,0 +1,41 @@
+src/infra/store/storage/storageFullNotice.ts
+  s_14f2bbc9f385dd::t_0135cca9540a49 1-72
+src/modules/Preferences/useCases/__tests__/preferenceWritesUnderStoragePressure.spec.ts
+  s_14f2bbc9f385dd::t_24f35724fca353 12-25,27,30,35-38,42
+  s_14f2bbc9f385dd::t_b34f4cf1e2fb0a 74-76,91,105,116-121,123,126-176
+src/app/bootstrap.ts
+  s_14f2bbc9f385dd::t_b7c5cb84a3eea3 227-233
+  s_14f2bbc9f385dd::t_f2e12bfdb88d2c 4
+src/modules/Collaboration/useCases/collaboration/sessionManagement.ts
+  s_14f2bbc9f385dd::t_03f3b7d4679f1a 432-439
+  s_14f2bbc9f385dd::t_9c9f4036f1b17b 215
+  s_14f2bbc9f385dd::t_963095dc46017c 413
+  s_14f2bbc9f385dd::t_8ad99b92e7138f 227,249-283
+src/infra/store/storage/createLocalStorage.ts
+  s_14f2bbc9f385dd::t_688cabd9a1f4f6 6
+src/infra/store/storage/createPlainJsonLocalStorage.ts
+  s_14f2bbc9f385dd::t_95e7d30dd2b4c5 78-80
+  s_14f2bbc9f385dd::t_9eedcd4393d3dd 4
+src/infra/store/storage/__tests__/plainJsonStorageFullNotice.spec.ts
+  s_14f2bbc9f385dd::t_3e48c5c4b04ce8 1-65
+src/modules/WorkspaceShell/useCases/__tests__/alphaNoticeWritesUnderStoragePressure.spec.ts
+  s_14f2bbc9f385dd::t_bf36423a19b60d 1-48
+src/modules/Collaboration/useCases/collaboration/__tests__/sessionTeardownUnderStoragePressure.spec.ts
+  s_14f2bbc9f385dd::t_a9e73a90714599 63,159-184
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "a13392f93a904844da8576362c54627a81b90a58",
+  "prompts": {},
+  "sessions": {
+    "s_14f2bbc9f385dd": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f9a61a1d-66b3-4146-938d-a04f45f4b060",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
