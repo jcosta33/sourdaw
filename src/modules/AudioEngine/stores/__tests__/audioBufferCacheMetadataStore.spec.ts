@@ -555,10 +555,12 @@ describe('audioBufferCache metadata store', () => {
                 legacyRecord({ frames: 3, channels: 1, lastAccessed: 1_000 })
             );
             controls.committedMeta.set('freeze-project-200-track-stale-1', {
+                freezeProjectId: 200,
                 lastAccessed: 1_000,
                 sizeInBytes: 12,
             });
             controls.committedMeta.set('freeze-project-200-track-live-2', {
+                freezeProjectId: 200,
                 lastAccessed: 1_000,
                 sizeInBytes: 12,
             });
@@ -572,26 +574,32 @@ describe('audioBufferCache metadata store', () => {
             expect([...controls.committedMeta.keys()]).toEqual(['freeze-project-200-track-live-2']);
         });
 
-        it('collects only orphaned freezes owned by the open project', async () => {
+        it('collects only explicitly owned orphaned freezes from the open project', async () => {
             const audioBufferCache = await importCache();
-            const songAActive = 'freeze-project-100-track-a-active-1';
-            const songAOrphan = 'freeze-project-100-track-a-orphan-2';
-            const songBActive = 'freeze-project-200-track-b-active-3';
-            const songBOrphan = 'freeze-project-200-track-b-orphan-4';
-            const legacyFreeze = 'freeze-legacy-track-5';
-            for (const id of [songAActive, songAOrphan, songBActive, songBOrphan, legacyFreeze]) {
-                controls.committed.set(id, legacyRecord({ frames: 3, channels: 1, lastAccessed: 1_000 }));
-                controls.committedMeta.set(id, { lastAccessed: 1_000, sizeInBytes: 12 });
-            }
+            const songAFreeze = 'freeze-track-a-1';
+            const songBActive = 'freeze-track-b-active-2';
+            const songBOrphan = 'freeze-track-b-orphan-3';
+            const legacyCollision = 'freeze-project-200-track-a-4';
+            const buffer = makeAudioBuffer([new Float32Array([0.5])]);
+            audioBufferCache.set(songAFreeze, buffer, { freezeProjectId: 100 });
+            audioBufferCache.set(songBActive, buffer, { freezeProjectId: 200 });
+            audioBufferCache.set(songBOrphan, buffer, { freezeProjectId: 200 });
+            audioBufferCache.set(legacyCollision, buffer);
+            await flushIndexedDbTasks();
 
             await audioBufferCache.garbageCollectFreezeFiles({ activeIds: new Set([songBActive]), projectId: 200 });
 
-            expect([...controls.committed.keys()].sort()).toEqual(
-                [legacyFreeze, songAActive, songAOrphan, songBActive].sort()
-            );
+            expect([...controls.committed.keys()].sort()).toEqual([legacyCollision, songAFreeze, songBActive].sort());
             expect([...controls.committedMeta.keys()].sort()).toEqual(
-                [legacyFreeze, songAActive, songAOrphan, songBActive].sort()
+                [legacyCollision, songAFreeze, songBActive].sort()
             );
+            expect(controls.committedMeta.get(songAFreeze)?.freezeProjectId).toBe(100);
+            expect(controls.committedMeta.get(songBActive)?.freezeProjectId).toBe(200);
+            expect(controls.committedMeta.get(legacyCollision)?.freezeProjectId).toBeUndefined();
+            expect(audioBufferCache.has(songAFreeze)).toBe(true);
+            expect(audioBufferCache.has(songBActive)).toBe(true);
+            expect(audioBufferCache.has(songBOrphan)).toBe(false);
+            expect(audioBufferCache.has(legacyCollision)).toBe(true);
         });
 
         // Mutation: dropping the metadata clear from `clear()` reds

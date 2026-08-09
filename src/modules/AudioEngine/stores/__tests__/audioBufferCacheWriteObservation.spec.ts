@@ -160,6 +160,16 @@ describe('audioBufferCache write observation', () => {
         controls.committed.set('freeze-project-200-track-active-1', storedRecord([new Float32Array([0.1])], 1_000));
         controls.committed.set('freeze-project-200-track-stale-2', storedRecord([new Float32Array([0.2])], 1_000));
         controls.committed.set('audio-1', storedRecord([new Float32Array([0.3])], 1_000));
+        controls.committedMeta.set('freeze-project-200-track-active-1', {
+            freezeProjectId: 200,
+            lastAccessed: 1_000,
+            sizeInBytes: 4,
+        });
+        controls.committedMeta.set('freeze-project-200-track-stale-2', {
+            freezeProjectId: 200,
+            lastAccessed: 1_000,
+            sizeInBytes: 4,
+        });
 
         await audioBufferCache.garbageCollectFreezeFiles({
             activeIds: new Set(['freeze-project-200-track-active-1']),
@@ -175,6 +185,11 @@ describe('audioBufferCache write observation', () => {
     it('reports a freeze-file collection whose transaction aborts', async () => {
         const audioBufferCache = await importCache();
         controls.committed.set('freeze-project-200-track-stale-2', storedRecord([new Float32Array([0.2])], 1_000));
+        controls.committedMeta.set('freeze-project-200-track-stale-2', {
+            freezeProjectId: 200,
+            lastAccessed: 1_000,
+            sizeInBytes: 4,
+        });
         controls.abortWrites();
 
         await audioBufferCache.garbageCollectFreezeFiles({ activeIds: new Set(), projectId: 200 });

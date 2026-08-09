@@ -437,8 +437,12 @@ describe('audioBufferCache garbage collection', () => {
             lastAccessed: 1,
             sizeInBytes: 4,
         });
-        audioBufferCache.set('freeze-project-200-track-stale-1', createAudioBuffer({ length: 1 }));
-        audioBufferCache.set('freeze-project-200-track-kept-2', createAudioBuffer({ length: 1 }));
+        audioBufferCache.set('freeze-project-200-track-stale-1', createAudioBuffer({ length: 1 }), {
+            freezeProjectId: 200,
+        });
+        audioBufferCache.set('freeze-project-200-track-kept-2', createAudioBuffer({ length: 1 }), {
+            freezeProjectId: 200,
+        });
 
         await audioBufferCache.garbageCollectFreezeFiles({
             activeIds: new Set(['freeze-project-200-track-kept-2']),

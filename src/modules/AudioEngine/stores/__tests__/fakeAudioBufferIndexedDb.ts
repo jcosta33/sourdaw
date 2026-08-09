@@ -39,9 +39,9 @@ export type StoredAudioBuffer = {
     sizeInBytes: number;
 };
 
-/** The v2 metadata row: everything the age and size collectors read, and
- * nothing else. Mirrors `BufferMeta` in `audioBufferCache.ts`. */
+/** The v2 metadata row. Mirrors `BufferMeta` in `audioBufferCache.ts`. */
 export type StoredBufferMeta = {
+    freezeProjectId?: number;
     lastAccessed: number;
     sizeInBytes: number;
 };

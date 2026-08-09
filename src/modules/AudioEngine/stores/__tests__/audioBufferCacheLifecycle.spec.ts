@@ -498,8 +498,12 @@ describe('audioBufferCache lifecycle', () => {
     describe('garbage collection', () => {
         it('drops inactive freeze buffers from memory while keeping active and non-freeze entries', async () => {
             installFakeIndexedDb();
-            audioBufferCache.set('freeze-project-200-track-old-1', createAudioBuffer({ length: 1 }));
-            audioBufferCache.set('freeze-project-200-track-active-2', createAudioBuffer({ length: 1 }));
+            audioBufferCache.set('freeze-project-200-track-old-1', createAudioBuffer({ length: 1 }), {
+                freezeProjectId: 200,
+            });
+            audioBufferCache.set('freeze-project-200-track-active-2', createAudioBuffer({ length: 1 }), {
+                freezeProjectId: 200,
+            });
             audioBufferCache.set('clip-normal', createAudioBuffer({ length: 1 }));
 
             await audioBufferCache.garbageCollectFreezeFiles({

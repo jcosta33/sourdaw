@@ -1,9 +1,4 @@
-import {
-    cacheAudioBuffer,
-    createFreezeAudioBufferId,
-    getCompensationDelay,
-    getDeviceChainTailSeconds,
-} from '#/modules/AudioEngine/useCases';
+import { cacheAudioBuffer, getCompensationDelay, getDeviceChainTailSeconds } from '#/modules/AudioEngine/useCases';
 import { getAutomationLanes } from '#/modules/Automation/useCases';
 import { projectStore } from '#/modules/Project/stores';
 import { FREEZE_BAKE_VERSION } from '#/utils/frozenBufferTail';
@@ -19,6 +14,36 @@ import { detectSilentBake } from './detectSilentBake';
 import { renderTrackOffline, type RenderScheduleTally } from './renderOffline';
 
 export const activeFreezeTasks = new Map<string, AbortController>();
+
+type FreezeTaskIdentity = {
+    abortController: AbortController;
+    projectId: number;
+    trackId: string;
+};
+
+function isEligibleActiveProjectTrack({ projectId, trackId }: Omit<FreezeTaskIdentity, 'abortController'>): boolean {
+    const activeProject = projectStore.value;
+    const activeState = trackStore.value;
+    if (!activeProject || activeProject.createdAt !== projectId || !activeState) {
+        return false;
+    }
+    const activeTrack = activeState.tracks.find((candidate) => candidate.id === trackId);
+    return (
+        activeTrack !== undefined &&
+        activeTrack.freezeState.status !== 'frozen' &&
+        getTrackEligibility(activeTrack.kind).acceptsFreeze
+    );
+}
+
+function isCurrentFreezeTask({ abortController, projectId, trackId }: FreezeTaskIdentity): boolean {
+    return activeFreezeTasks.get(trackId) === abortController && isEligibleActiveProjectTrack({ projectId, trackId });
+}
+
+function clearFreezeTaskIfCurrent(trackId: string, abortController: AbortController): void {
+    if (activeFreezeTasks.get(trackId) === abortController) {
+        activeFreezeTasks.delete(trackId);
+    }
+}
 
 export async function freezeTrack(trackId: string): Promise<boolean> {
     const state = trackStore.value;
@@ -48,6 +73,11 @@ export async function freezeTrack(trackId: string): Promise<boolean> {
 
     try {
         const hash = await computeTrackHash(track.clips, track.devices);
+        const taskIdentity = { abortController, projectId: project.createdAt, trackId };
+        if (!isCurrentFreezeTask(taskIdentity)) {
+            clearFreezeTaskIfCurrent(trackId, abortController);
+            return false;
+        }
 
         let startBeat = Infinity;
         let endBeat = -Infinity;
@@ -90,6 +120,9 @@ export async function freezeTrack(trackId: string): Promise<boolean> {
             targetMixer: 'keepLive',
             abortSignal: abortController.signal,
             onProgress: (param) => {
+                if (!isCurrentFreezeTask(taskIdentity)) {
+                    return;
+                }
                 updateTrack(trackId, (time) => ({
                     ...time,
                     freezeState: { ...time.freezeState, renderProgress: param },
@@ -97,7 +130,11 @@ export async function freezeTrack(trackId: string): Promise<boolean> {
             },
         });
 
-        activeFreezeTasks.delete(trackId);
+        if (!isCurrentFreezeTask(taskIdentity)) {
+            clearFreezeTaskIfCurrent(trackId, abortController);
+            return false;
+        }
+        clearFreezeTaskIfCurrent(trackId, abortController);
 
         if (!renderedBuffer) {
             throw new Error('Render failed');
@@ -139,8 +176,8 @@ export async function freezeTrack(trackId: string): Promise<boolean> {
         }
 
         const renderedAt = Date.now();
-        const freezeId = createFreezeAudioBufferId({ projectId: project.createdAt, renderedAt, trackId });
-        cacheAudioBuffer({ buffer: renderedBuffer, bufferId: freezeId });
+        const freezeId = `freeze-${trackId}-${String(renderedAt)}`;
+        cacheAudioBuffer({ buffer: renderedBuffer, bufferId: freezeId, freezeProjectId: project.createdAt });
 
         // FX-4 residual — pin the compensation the chain carried while the
         // buffer was baked. Frozen playback compensates against this, so a later
@@ -174,7 +211,14 @@ export async function freezeTrack(trackId: string): Promise<boolean> {
             },
         }));
     } catch (error) {
-        activeFreezeTasks.delete(trackId);
+        const currentTask = activeFreezeTasks.get(trackId);
+        clearFreezeTaskIfCurrent(trackId, abortController);
+        if (
+            (currentTask !== undefined && currentTask !== abortController) ||
+            !isEligibleActiveProjectTrack({ projectId: project.createdAt, trackId })
+        ) {
+            return false;
+        }
 
         if (abortController.signal.aborted) {
             // User cancelled
