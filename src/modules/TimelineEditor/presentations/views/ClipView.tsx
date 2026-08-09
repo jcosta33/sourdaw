@@ -145,6 +145,15 @@ export const ClipView = (): ReactElement => {
             <DawControlStrip className="px-3 py-1.5">
                 <span className="text-xs font-medium text-foreground">{selectedTrack.name}</span>
                 {selectedClip ? <span className="text-xs text-muted-foreground">— {selectedClip.name}</span> : null}
+                {selectedClip ? (
+                    <span
+                        className="text-[10px] text-muted-foreground/60"
+                        data-testid="selected-clip-start-beat"
+                        aria-label={`Selected clip starts at beat ${selectedClip.startBeat}`}
+                    >
+                        @ {selectedClip.startBeat} beats
+                    </span>
+                ) : null}
                 <span
                     className="text-[10px] text-muted-foreground/60"
                     data-testid="selected-track-clip-count"
