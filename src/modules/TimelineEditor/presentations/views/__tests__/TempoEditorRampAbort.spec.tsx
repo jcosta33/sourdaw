@@ -243,6 +243,71 @@ describe('TempoEditor — a tempo drag aborted by the playhead entering a ramp',
         expect(field).toHaveAttribute('aria-valuetext', '130 BPM');
     });
 
+    it('should change its reported value every frame inside a ramp with no drag at all', () => {
+        // The premise behind the live region, measured rather than asserted. The
+        // rejected argument for reverting the readout was that the revert is
+        // itself the signal that the control went inert. It cannot be: the value
+        // already changes on every animation frame, so one more change carries no
+        // information. This is the control case with no gesture in flight.
+        render(<TempoEditor />);
+        const field = screen.getByRole('spinbutton');
+        const reported: (string | null)[] = [];
+
+        for (const beat of [1, 2, 3, 4, 5, 6]) {
+            advancePlayheadTo(beat);
+            reported.push(field.getAttribute('aria-valuenow'));
+        }
+
+        expect(reported).toEqual(['146', '142', '138', '134', '130', '126']);
+    });
+
+    it('should announce the lock and attach its reason to the field, since neither the value nor aria-readonly says so', () => {
+        // `aria-valuenow` cannot carry this. It already moves every animation
+        // frame off the playhead — measured at 146/142/138/134/130/126 across six
+        // frames inside a ramp with no drag at all — so the abort's revert is one
+        // more change in that stream. `aria-readonly` flipping is not announced.
+        // Without a status message and a referenced reason, a screen-reader user
+        // gets a control that silently stops responding.
+        render(<TempoEditor />);
+        const field = screen.getByRole('spinbutton');
+
+        expect(screen.getByRole('status')).toHaveTextContent('');
+        expect(field).not.toHaveAttribute('aria-describedby');
+
+        startDragAt(field);
+        advancePlayheadTo(2.5);
+
+        // Names the control and the transition rather than repeating the hint:
+        // "edit its end points in the tempo map", arriving unprompted, does not
+        // tell a user that the field they were dragging has just gone inert.
+        expect(screen.getByRole('status')).toHaveTextContent(
+            'Tempo field locked: the playhead is inside a tempo ramp.'
+        );
+        expect(field).toHaveAccessibleDescription('ramp');
+
+        // ...and it goes quiet again when the control comes back, rather than
+        // leaving a stale reason attached to a field that is now writable.
+        advancePlayheadTo(20);
+
+        expect(screen.getByRole('status')).toHaveTextContent('');
+        expect(field).not.toHaveAttribute('aria-describedby');
+    });
+
+    it('should keep an adjustment key it owns while the ramp holds, instead of leaking it to the workspace', () => {
+        // A keyboard user stepping the tempo crosses into a ramp; before this the
+        // next arrow scrolled the workspace, unannounced.
+        render(<TempoEditor />);
+        const field = screen.getByRole('spinbutton');
+
+        advancePlayheadTo(5);
+        expect(field).toHaveAttribute('aria-readonly', 'true');
+
+        const arrowUp = fireEvent.keyDown(field, { key: 'ArrowUp', cancelable: true });
+
+        expect(arrowUp).toBe(false);
+        expect(mockExecuteAppAction).not.toHaveBeenCalled();
+    });
+
     it('should accept a fresh drag once the playhead leaves the ramp, and write it to the event now governing', () => {
         // The abort must not strand the control: `handlePointerDown` refuses a
         // field that still records a pointer owner, so a half-cleared abort
