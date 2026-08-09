@@ -1,0 +1,27 @@
+src/modules/AiRuntime/useCases/__tests__/parsePromptToActions.spec.ts
+  s_14f2bbc9f385dd::t_515a92f4da2d9b 82-87
+src/modules/AudioEngine/useCases/offlineRender/scheduleTrackClips.ts
+  s_14f2bbc9f385dd::t_a15ae72df9ff77 13-15
+src/modules/Arrangement/handlers/clip/__tests__/handleSetClipLoopLength.integration.spec.ts
+  s_14f2bbc9f385dd::t_fe021463b4cfeb 401-422
+src/modules/Arrangement/handlers/clip/clipLoopLengthState.ts
+  s_14f2bbc9f385dd::t_bd84c08522c371 8-15
+src/modules/Transport/useCases/scheduling/__tests__/scheduleAudioClips.spec.ts
+  s_14f2bbc9f385dd::t_82c9e572193301 53-55
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "aa3fe39bf6495bdee9742a9b1ec11efe00cd1d9a",
+  "prompts": {},
+  "sessions": {
+    "s_14f2bbc9f385dd": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f9a61a1d-66b3-4146-938d-a04f45f4b060",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
