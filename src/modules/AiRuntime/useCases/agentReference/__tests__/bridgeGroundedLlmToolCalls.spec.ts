@@ -1275,7 +1275,7 @@ describe('bridgeGroundedLlmToolCalls', () => {
         const context = createTwoGluePairContext();
         const pronoun = bridge(
             [{ name: 'glueClips', arguments: { clipIds: ['clip-midi-intro', 'clip-midi-verse'] } }],
-            "glue MIDI Intro and MIDI Verse clips, but don't glue them because I changed my mind",
+            "glue MIDI Intro and MIDI Verse clips, but don't glue them due to phase issues",
             context
         );
         const explicitPair = bridge(
@@ -1283,12 +1283,12 @@ describe('bridgeGroundedLlmToolCalls', () => {
                 { name: 'glueClips', arguments: { clipIds: ['clip-midi-intro', 'clip-midi-verse'] } },
                 { name: 'glueClips', arguments: { clipIds: ['clip-midi-outro', 'clip-midi-coda'] } },
             ],
-            "glue MIDI Intro and MIDI Verse clips, then glue MIDI Outro and MIDI Coda clips, but don't glue MIDI Intro and MIDI Verse because I changed my mind",
+            "glue MIDI Intro and MIDI Verse clips, then glue MIDI Outro and MIDI Coda clips, but don't glue MIDI Intro and MIDI Verse due to phase issues",
             context
         );
         const quotedLiteral = bridge(
             [{ name: 'glueClips', arguments: { clipIds: ['clip-midi-intro', 'clip-midi-verse'] } }],
-            `glue MIDI Intro and MIDI Verse clips, then "don't glue them because I changed my mind" is a project note`,
+            `glue MIDI Intro and MIDI Verse clips, then "don't glue them due to phase issues" is a project note`,
             context
         );
 
@@ -1305,14 +1305,29 @@ describe('bridgeGroundedLlmToolCalls', () => {
     });
 
     it('does not plan a glue action from a declarative glue-prefixed clause', () => {
-        const result = bridge(
+        const context = createGlueClipContext();
+        const simpleDeclarative = bridge(
             [{ name: 'setTempo', arguments: { bpm: 130 } }],
             'Glue is a clip, then set tempo to 130',
-            createGlueClipContext()
+            context
+        );
+        const directPairDeclarativeContext = {
+            ...context,
+            tracks: context.tracks.map((track) => ({
+                ...track,
+                clips: track.clips.map((clip) => (clip.id === 'clip-midi-intro' ? { ...clip, name: 'Intro' } : clip)),
+            })),
+        };
+        const directPairDeclarative = bridge(
+            [{ name: 'setTempo', arguments: { bpm: 130 } }],
+            'Glue Intro and MIDI Verse are clips, then set tempo to 130',
+            directPairDeclarativeContext
         );
 
-        expect(result.actions).toEqual([{ type: 'setTempo', payload: { bpm: 130 } }]);
-        expect(result.rejections).toEqual([]);
+        expect(simpleDeclarative.actions).toEqual([{ type: 'setTempo', payload: { bpm: 130 } }]);
+        expect(simpleDeclarative.rejections).toEqual([]);
+        expect(directPairDeclarative.actions).toEqual([{ type: 'setTempo', payload: { bpm: 130 } }]);
+        expect(directPairDeclarative.rejections).toEqual([]);
     });
 
     it("keeps repeated don't cancellations as separate clauses and cancels both repeated glue scopes", () => {
@@ -1337,6 +1352,21 @@ describe('bridgeGroundedLlmToolCalls', () => {
             'glue clip-midi-intro and clip-midi-verse, then glue Shared Start and Shared End',
             context
         );
+        const directPairContext = {
+            ...context,
+            tracks: context.tracks.map((track) => ({
+                ...track,
+                clips: track.clips.map((clip) => ({
+                    ...clip,
+                    name: clip.id === 'clip-midi-intro' || clip.id === 'clip-midi-outro' ? 'Part A' : 'Part B',
+                })),
+            })),
+        };
+        const exactDirectPair = bridge(
+            [{ name: 'glueClips', arguments: { clipIds: ['clip-midi-intro', 'clip-midi-verse'] } }],
+            'glue clip-midi-intro and clip-midi-verse, then glue Part A and Part B clips',
+            directPairContext
+        );
 
         expect(result.actions).toEqual([]);
         expect(result.rejections).toEqual([
@@ -1346,6 +1376,8 @@ describe('bridgeGroundedLlmToolCalls', () => {
                 reason: 'Glue request contains an ambiguous or incomplete clip pair',
             },
         ]);
+        expect(exactDirectPair.actions).toEqual([]);
+        expect(exactDirectPair.rejections).toEqual(result.rejections);
     });
 
     it('allows a locally cancelled duplicate-name glue scope to remain omitted', () => {

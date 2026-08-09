@@ -1535,11 +1535,9 @@ function isExplicitGluePairCancellationClause(text: string, targetPattern: strin
     if (/^["'“‘]/u.test(text.trimStart())) {
         return false;
     }
-    const politeTail = '(?: (?:please|thanks|after all))*';
-    const rationaleTail = '(?: (?:because|since|as) .+)?';
     const normalizedText = normalizePromptText(text);
     return new RegExp(
-        `^(?:but )?(?:actually )?(?:do not|don t|dont|never) (?:glue|join) ${targetPattern}${politeTail}${rationaleTail}$`,
+        `^(?:but )?(?:actually )?(?:do not|don t|dont|never) (?:glue|join) ${targetPattern}(?: |$)`,
         'u'
     ).test(normalizedText);
 }
@@ -1549,10 +1547,9 @@ function isImplicitGlueCancellationClause(text: string): boolean {
         return false;
     }
     const politeTail = '(?: (?:please|thanks|after all))*';
-    const rationaleTail = '(?: (?:because|since|as) .+)?';
     const normalizedText = normalizePromptText(text);
     const pronounCancellation = new RegExp(
-        `^(?:but )?(?:actually )?(?:do not|don t|dont|never) (?:glue|join) (?:them|the clips)${politeTail}${rationaleTail}$`,
+        '^(?:but )?(?:actually )?(?:do not|don t|dont|never) (?:glue|join) (?:them|the clips)(?: |$)',
         'u'
     );
     if (pronounCancellation.test(normalizedText)) {
@@ -1578,6 +1575,29 @@ function isImplicitGlueCancellationClause(text: string): boolean {
 
 function isGlueCancellationClause(text: string, targetPattern: string): boolean {
     return isExplicitGluePairCancellationClause(text, targetPattern) || isImplicitGlueCancellationClause(text);
+}
+
+function hasMaskedDirectGlueTargetGrammar(actionScope: ActionPromptScope): boolean {
+    const commandText = stripPoliteGlueCommandCarrier(actionScope.masked).trim();
+    const selectedTarget = /^(?:glue|join)\s+(?:the\s+)?selected\s+clips(?:\s+(.+))?$/iu.exec(commandText);
+    const maskedReferencePattern = `["'“‘]?(?:clip□*|□+)["'”’]?`;
+    const maskedTargetPattern = `(?:the\\s+)?${maskedReferencePattern}(?:\\s+clips?)?`;
+    const pairTarget = new RegExp(
+        `^(?:glue|join)\\s+${maskedTargetPattern}(?:\\s+with\\s+|\\s{2,})${maskedTargetPattern}(?:\\s+(.+))?$`,
+        'iu'
+    ).exec(commandText);
+    if (!selectedTarget && !pairTarget) {
+        return false;
+    }
+    const suffix = selectedTarget?.[1] ?? pairTarget?.[1];
+    if (!suffix) {
+        return true;
+    }
+    if (isImplicitGlueCancellationClause(suffix)) {
+        return true;
+    }
+    const normalizedSuffix = normalizePromptText(suffix);
+    return /^(?:but )?(?:actually )?(?:do not|don t|dont|never) (?:glue|join)\b/u.test(normalizedSuffix);
 }
 
 function getInlineGlueCancellationText(actionScope: ActionPromptScope, targetPattern: string): string | null {
@@ -1649,10 +1669,7 @@ function getGlueActionScopePlan(
     if (!/^(?:glue|join)\b/u.test(commandText)) {
         return null;
     }
-    const targetText = commandText.replace(/^(?:glue|join)\s+/u, '');
-    const hasSelectedClipTarget = /^(?:the )?selected clips(?: |$)/u.test(targetText);
-    const hasPairTarget = /\S+ (?:and|with) \S+/u.test(targetText);
-    if (!hasSelectedClipTarget && !hasPairTarget) {
+    if (!hasMaskedDirectGlueTargetGrammar(actionScope)) {
         return null;
     }
     const matches = candidates.flatMap((candidate) => {
