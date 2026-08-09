@@ -542,6 +542,28 @@ describe('scheduleAudioClips', () => {
         expect(mockCreateBufferSource).toHaveBeenCalledTimes(4096);
     });
 
+    it('allocates only loop occurrences intersecting the live scheduler window', () => {
+        const fakeSource = makeFakeSource();
+        mockCreateBufferSource.mockReturnValue(fakeSource as unknown as AudioBufferSourceNode);
+        mockGetCachedAudioBuffer.mockReturnValue({ duration: 100 } as AudioBuffer);
+        mockResolveClips.mockReturnValue([
+            makeAudioClip({ startBeat: 0, endBeat: 10, loopEnabled: true, loopLength: 1 / 480 }),
+        ] as never);
+        trackStoreState.value = { tracks: [makeAudioTrack([])] };
+        const scheduled = new Set<string>();
+
+        scheduleAudioClips(4, 4.01, 4, scheduled, new Set(), [], defaultTransportState, 120);
+
+        expect(mockCreateBufferSource).toHaveBeenCalledTimes(5);
+
+        scheduleAudioClips(4, 4.01, 4, scheduled, new Set(), [], defaultTransportState, 120);
+        expect(mockCreateBufferSource).toHaveBeenCalledTimes(5);
+
+        scheduleAudioClips(4.01, 4.02, 4.01, scheduled, new Set(), [], defaultTransportState, 120);
+        expect(mockCreateBufferSource.mock.calls.length).toBeGreaterThan(5);
+        expect(mockCreateBufferSource.mock.calls.length).toBeLessThan(12);
+    });
+
     it('breaks the loop when an iteration starts at or past clip end', () => {
         const fakeSource = makeFakeSource();
         mockCreateBufferSource.mockReturnValue(fakeSource as unknown as AudioBufferSourceNode);

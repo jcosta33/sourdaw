@@ -12,6 +12,7 @@ function transportIsBusy(): boolean {
 }
 
 export const handleSetClipLoopLength = createHandler<'setClipLoopLength'>({
+    batchExecution: 'singleton',
     execute: (action) => {
         const clip = findClipForLoopLength(action.payload.clipId);
         if (

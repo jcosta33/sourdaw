@@ -4,7 +4,12 @@ import { createHandler } from '#/utils/createHandler';
 import { restoreClipLoopLength } from '../../useCases/clipLoop/restoreClipLoopLength';
 import { toHandlerExecutionResult } from '../toHandlerExecutionResult';
 
-import { clipLoopLengthStatesMatch, findClipForLoopLength, readClipLoopLengthState } from './clipLoopLengthState';
+import {
+    clipLoopLengthStatesMatch,
+    findClipForLoopLength,
+    isSafeRequestedClipLoopLength,
+    readClipLoopLengthState,
+} from './clipLoopLengthState';
 
 function transportIsBusy(): boolean {
     const transport = getTransportState();
@@ -17,14 +22,17 @@ export const handleRestoreClipLoopLength = createHandler<'restoreClipLoopLength'
         if (transportIsBusy() || !clip || clip.locked) {
             return { status: 'conflict' };
         }
+        const replacement = action.payload.replacement;
+        if (replacement.present && !isSafeRequestedClipLoopLength(clip, replacement.value)) {
+            return { status: 'conflict' };
+        }
         const current = readClipLoopLengthState(clip);
-        if (clipLoopLengthStatesMatch(current, action.payload.replacement)) {
+        if (clipLoopLengthStatesMatch(current, replacement)) {
             return { status: 'no-write' };
         }
         if (!clipLoopLengthStatesMatch(current, action.payload.expected)) {
             return { status: 'conflict' };
         }
-        const replacement = action.payload.replacement;
         return toHandlerExecutionResult(
             restoreClipLoopLength(action.payload.clipId, replacement.present ? replacement.value : undefined)
         );

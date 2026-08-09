@@ -1489,6 +1489,23 @@ describe('scheduleMidiNotes', () => {
             );
         });
 
+        it('keeps tiny-loop projection bounded to the live scheduler window', async () => {
+            const track = midiTrack({
+                clips: [midiClip({ endBeat: 10, loopEnabled: true, loopLength: 1 / 480 })],
+            });
+            (trackStore as { value: unknown }).value = { tracks: [track] };
+            (midiStore as { value: unknown }).value = {
+                notesByClipId: {
+                    'clip-1': [{ id: 'loop-note', pitch: 60, startBeat: 0, duration: 1 / 960, velocity: 100 }],
+                },
+            };
+
+            await scheduleMidiNotes(4, 4.01, 4, 4, new Set<string>(), [], defaultTransportState, 120);
+
+            expect(projectClipMidiEvents).toHaveBeenCalledTimes(5);
+            expect(scheduleNote).toHaveBeenCalledTimes(4);
+        });
+
         it('bounds projection work for a dense looping clip', async () => {
             const track = midiTrack({
                 clips: [midiClip({ endBeat: 256, loopEnabled: true, loopLength: 128 })],

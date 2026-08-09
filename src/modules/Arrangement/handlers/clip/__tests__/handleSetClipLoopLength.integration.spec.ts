@@ -22,6 +22,7 @@ import { defaultTransportState, transportStore } from '#/modules/Transport/store
 
 import { ClipDummy } from '../../../__tests__/ClipDummy';
 import { TrackDummy } from '../../../__tests__/TrackDummy';
+import { trimClipEnd } from '../../../useCases/clipEditing/trimClipEnd';
 import { restoreClipLoopLength } from '../../../useCases/clipLoop/restoreClipLoopLength';
 import { setClipLoopLength } from '../../../useCases/clipLoop/setClipLoopLength';
 
@@ -111,6 +112,77 @@ describe('handleSetClipLoopLength atomic integration', () => {
         expect(currentClip().loopLength).toBe(2);
         expect(undoStore.value?.past).toHaveLength(1);
         expect(undoStore.value?.future).toHaveLength(0);
+    });
+
+    it('retains undo until a present replacement is safe for collaborator-adjusted geometry', async () => {
+        setClipLoopLength('clip-1', 1);
+        await executeAppActionBatch([{ type: 'setClipLoopLength', payload: { clipId: 'clip-1', loopLength: 2 } }], {
+            source: 'prompt',
+            requireCompensation: true,
+        });
+        trimClipEnd('clip-1', 10_000);
+
+        await undo();
+        expect(currentClip()).toMatchObject({ endBeat: 10_000, loopLength: 2 });
+        expect(undoStore.value?.past).toHaveLength(1);
+        expect(undoStore.value?.future).toHaveLength(0);
+
+        trimClipEnd('clip-1', 8);
+        await undo();
+        expect(currentClip()).toMatchObject({ endBeat: 8, loopLength: 1 });
+        expect(undoStore.value?.past).toHaveLength(0);
+        expect(undoStore.value?.future).toHaveLength(1);
+    });
+
+    it('retains redo until a present replacement is safe for collaborator-adjusted geometry', async () => {
+        await executeAppActionBatch([{ type: 'setClipLoopLength', payload: { clipId: 'clip-1', loopLength: 2 } }], {
+            source: 'prompt',
+            requireCompensation: true,
+        });
+        await undo();
+        trimClipEnd('clip-1', 10_000);
+
+        await redo();
+        expect(currentClip().endBeat).toBe(10_000);
+        expect(Object.hasOwn(currentClip(), 'loopLength')).toBe(false);
+        expect(undoStore.value?.past).toHaveLength(0);
+        expect(undoStore.value?.future).toHaveLength(1);
+
+        trimClipEnd('clip-1', 8);
+        await redo();
+        expect(currentClip()).toMatchObject({ endBeat: 8, loopLength: 2 });
+        expect(undoStore.value?.past).toHaveLength(1);
+        expect(undoStore.value?.future).toHaveLength(0);
+    });
+
+    it('rejects geometry, stretch, lifecycle, and loop companions in both batch orders before any write', async () => {
+        type BatchAction = Parameters<typeof executeAppActionBatch>[0][number];
+        const loopLengthAction = {
+            type: 'setClipLoopLength',
+            payload: { clipId: 'clip-1', loopLength: 2 },
+        } satisfies BatchAction;
+        const companions = [
+            { type: 'trimClipEnd', payload: { clipId: 'clip-1', newEndBeat: 6 } },
+            { type: 'setClipStretchRatio', payload: { clipId: 'clip-1', ratio: 2 } },
+            { type: 'removeClip', payload: { clipId: 'clip-1' } },
+            { type: 'setClipLoop', payload: { clipId: 'clip-1', enabled: true } },
+        ] satisfies BatchAction[];
+
+        for (const companion of companions) {
+            for (const actions of [
+                [loopLengthAction, companion],
+                [companion, loopLengthAction],
+            ]) {
+                const result = await executeAppActionBatch(actions);
+                expect.soft(result).toMatchObject({
+                    status: 'rejected',
+                    reason: 'Action must execute as a singleton batch: setClipLoopLength',
+                });
+                expect.soft(currentClip()).toMatchObject({ startBeat: 0, endBeat: 8, loopEnabled: false });
+                expect.soft(Object.hasOwn(currentClip(), 'loopLength')).toBe(false);
+                expect.soft(undoStore.value?.past).toHaveLength(0);
+            }
+        }
     });
 
     it('rejects writes while playback or recording is active without creating history', async () => {
