@@ -786,6 +786,7 @@ function bridgeToolCall({
             const send = findSend(context, trackId, bus.id);
             return (
                 !isProviderRoutableSource(track) ||
+                track.automationMode === 'off' ||
                 !send ||
                 !Number.isFinite(send.level) ||
                 send.level <= 0 ||
@@ -798,7 +799,7 @@ function bridgeToolCall({
             return rejection(
                 index,
                 call.name,
-                'Expected every source to own a positive send to the bus without existing send automation'
+                'Expected every source to read automation and own a positive send to the bus without existing send automation'
             );
         }
         return {

@@ -427,6 +427,21 @@ describe('verse Hall send automation workflow', () => {
         expect(undoStore.value?.past).toEqual([]);
     });
 
+    it('fails closed before confirmation when an exact vocal target has automation off', async () => {
+        trackStore.set({
+            ...trackStore.value!,
+            tracks: trackStore.value!.tracks.map((track) =>
+                track.id === 'track-backing-vocal' ? { ...track, automationMode: 'off' } : track
+            ),
+        });
+
+        await sendChatMessage(PROMPT);
+
+        expect(chatStore.value?.messages.every((message) => !message.pendingActionConfirmationId)).toBe(true);
+        expect(getSendLanes()).toEqual([]);
+        expect(undoStore.value?.past).toEqual([]);
+    });
+
     it('rejects stale confirmation when a collaborator changes one guarded Hall send', async () => {
         await sendChatMessage(PROMPT);
         const confirmation = getPendingActionConfirmation(getConfirmationId());
@@ -450,6 +465,27 @@ describe('verse Hall send automation workflow', () => {
         expect(getSendLanes()).toEqual([]);
         expect(undoStore.value?.past).toEqual([]);
         expect(trackStore.value?.tracks.find((track) => track.id === 'track-backing-vocal')?.sends[0]?.level).toBe(0.3);
+    });
+
+    it('rejects stale confirmation when a collaborator turns automation off for one vocal', async () => {
+        await sendChatMessage(PROMPT);
+        const confirmation = getPendingActionConfirmation(getConfirmationId());
+        trackStore.set({
+            ...trackStore.value!,
+            tracks: trackStore.value!.tracks.map((track) =>
+                track.id === 'track-backing-vocal' ? { ...track, automationMode: 'off' } : track
+            ),
+        });
+
+        const result = await confirmPendingChatActions({ confirmationId: confirmation?.id ?? '' });
+
+        expect(result.status).toBe('failed');
+        expect(getSendLanes()).toEqual([]);
+        expect(undoStore.value?.past).toEqual([]);
+        const proposal = chatStore.value?.messages.find(
+            (message) => message.pendingActionConfirmationId === confirmation?.id
+        );
+        expect(proposal?.content).not.toContain('Outcome: committed');
     });
 
     it('aborts the automation write without receipt or undo when its store write fails', async () => {

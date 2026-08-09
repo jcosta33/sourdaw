@@ -58,7 +58,12 @@ function currentStateMatches(payload: MaterializedPayload): boolean {
     for (const expected of payload.expectedSends) {
         const track = trackStore.value?.tracks.find((candidate) => candidate.id === expected.trackId);
         const send = track?.sends.find((candidate) => candidate.busId === payload.busId);
-        if (!send || send.level !== expected.level || send.preFader !== expected.preFader) {
+        if (
+            track?.automationMode === 'off' ||
+            !send ||
+            send.level !== expected.level ||
+            send.preFader !== expected.preFader
+        ) {
             return false;
         }
         const laneId = `auto-send-${encodeURIComponent(expected.trackId)}-${encodeURIComponent(payload.busId)}`;
