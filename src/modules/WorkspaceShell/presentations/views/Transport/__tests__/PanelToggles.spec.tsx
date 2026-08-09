@@ -4,7 +4,6 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { TooltipProvider } from '#/components/ui/tooltip';
 import { useStore } from '#/infra/store/useStore';
 import { aiStore } from '#/modules/AiGeneration/stores';
-import { linkStatusStore } from '#/modules/Transport/stores';
 
 import { PanelToggles } from '../PanelToggles';
 
@@ -18,8 +17,6 @@ const mocks = vi.hoisted(() => ({
     toggleChatPanel: vi.fn(),
     toggleAiPanel: vi.fn(),
     openPreferencesDialog: vi.fn(),
-    enableLink: vi.fn(() => Promise.resolve()),
-    disableLink: vi.fn(() => Promise.resolve()),
 }));
 
 vi.mock('#/infra/store/useStore', () => ({
@@ -28,10 +25,6 @@ vi.mock('#/infra/store/useStore', () => ({
 
 vi.mock('#/modules/AiGeneration/useCases', () => ({
     toggleAiPanel: mocks.toggleAiPanel,
-}));
-vi.mock('#/modules/Transport/useCases', () => ({
-    enableLink: mocks.enableLink,
-    disableLink: mocks.disableLink,
 }));
 
 vi.mock('#/modules/WorkspaceShell/useCases/dialogs/openPreferencesDialog', () => ({
@@ -146,9 +139,6 @@ describe('PanelToggles', () => {
             if (store === aiStore) {
                 return { isPanelOpen: true };
             }
-            if (store === linkStatusStore) {
-                return { enabled: false };
-            }
             return { enabled: false };
         });
 
@@ -161,68 +151,9 @@ describe('PanelToggles', () => {
         expect(screen.getByLabelText('Generate')).toHaveClass('text-[var(--color-accent-lavender)]');
     });
 
-    describe('Ableton Link toggle', () => {
-        it('enables Link when currently disabled', () => {
-            vi.mocked(useStore).mockImplementation((store) => {
-                if (store === aiStore) {
-                    return { isPanelOpen: false };
-                }
-                return { enabled: false };
-            });
+    it('does not advertise Link while native integration is unsupported', () => {
+        renderWithTooltip(<PanelToggles {...allClosed} />);
 
-            renderWithTooltip(<PanelToggles {...allClosed} />);
-            fireEvent.click(screen.getByLabelText('Enable Ableton Link sync'));
-
-            expect(mocks.enableLink).toHaveBeenCalledTimes(1);
-            expect(mocks.disableLink).not.toHaveBeenCalled();
-        });
-
-        it('disables Link when currently enabled', () => {
-            vi.mocked(useStore).mockImplementation((store) => {
-                if (store === aiStore) {
-                    return { isPanelOpen: false };
-                }
-                return { enabled: true };
-            });
-
-            renderWithTooltip(<PanelToggles {...allClosed} />);
-            fireEvent.click(screen.getByLabelText('Ableton Link active — click to disable'));
-
-            expect(mocks.disableLink).toHaveBeenCalledTimes(1);
-            expect(mocks.enableLink).not.toHaveBeenCalled();
-        });
-
-        it('shows the active label and pressed state when Link is enabled', () => {
-            vi.mocked(useStore).mockImplementation((store) => {
-                if (store === aiStore) {
-                    return { isPanelOpen: false };
-                }
-                return { enabled: true };
-            });
-
-            renderWithTooltip(<PanelToggles {...allClosed} />);
-
-            const linkBtn = screen.getByLabelText('Ableton Link active — click to disable');
-            expect(linkBtn).toHaveAttribute('aria-pressed', 'true');
-            expect(linkBtn).toHaveClass('text-[var(--color-accent-amber)]');
-        });
-
-        it('gracefully handles enableLink rejection', async () => {
-            vi.mocked(useStore).mockImplementation((store) => {
-                if (store === aiStore) {
-                    return { isPanelOpen: false };
-                }
-                return { enabled: false };
-            });
-            mocks.enableLink.mockRejectedValueOnce(new Error('not available'));
-
-            renderWithTooltip(<PanelToggles {...allClosed} />);
-            fireEvent.click(screen.getByLabelText('Enable Ableton Link sync'));
-
-            // The catch handler is a no-op — must not throw.
-            await vi.waitFor(() => {
-                expect(mocks.enableLink).toHaveBeenCalledTimes(1);
-            });
-        });
+        expect(screen.queryByTestId('toggle-ableton-link')).not.toBeInTheDocument();
     });
 });
