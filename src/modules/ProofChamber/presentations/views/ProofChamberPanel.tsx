@@ -20,17 +20,24 @@ import { type AppAction } from '#/utils/handlerContract';
 import { decayToRt60Seconds } from '#/utils/reverbDecayLaw';
 
 import {
+    ALGORITHM_LABELS,
+    chamberControlGate,
+    type ChamberControlGate,
+} from '../../models/ProofChamberAlgorithmGating';
+import {
     type ProofChamberAlgorithm,
     ALGORITHM_MAP,
     DEFAULT_PARAMS,
     PARAM_MAP,
     type ProofChamberEngineState,
+    PROOF_CHAMBER_ALGORITHMS,
     expandSpacePreset,
     type SpaceType,
     usesRt60DecayLaw,
 } from '../../models/ProofChamberState';
 import { chamberStore } from '../../stores/chamberStore';
 import { decodeImpulseResponse } from '../../useCases/proofChamber/decodeImpulseResponse';
+import { hydrateChamberStateFromProject } from '../../useCases/proofChamber/hydrateChamberStateFromProject';
 import { registerChamberInstance } from '../../useCases/proofChamber/registerChamberInstance';
 import { updateChamberEngine } from '../../useCases/proofChamber/updateChamberEngine';
 import { DecayEqOverlay } from '../components/DecayEqOverlay';
@@ -67,13 +74,15 @@ const SATURATION_CURVES = [
     { id: 2, label: 'Clip' },
 ] as const;
 
-const ALGORITHMS: ReadonlyArray<{ id: ProofChamberAlgorithm; label: string }> = [
-    { id: 'plate', label: 'Plate' },
-    { id: 'fdn-8', label: 'FDN 8' },
-    { id: 'fdn-16', label: 'FDN 16' },
-    { id: 'spring', label: 'Spring' },
-    { id: 'reverse', label: 'Reverse' },
-];
+/**
+ * The selector's order, which is also what `algorithmBadge` numbers by. Labels
+ * come from the gating model, because the disabled-control explanations name
+ * the algorithm and the two must not drift into calling it different things.
+ */
+const ALGORITHMS: ReadonlyArray<{ id: ProofChamberAlgorithm; label: string }> = PROOF_CHAMBER_ALGORITHMS.map((id) => ({
+    id,
+    label: ALGORITHM_LABELS[id],
+}));
 
 /**
  * The badge on the Flavor card, numbered by position in the list the panel
@@ -169,6 +178,35 @@ const ChamberLed = ({ tone = 'cyan', ...props }: ComponentProps<typeof DawPlugin
     <DawPluginLed tone={tone} {...props} />
 );
 
+/**
+ * A chip that refuses its write while the live algorithm cannot hear the
+ * parameter behind it.
+ *
+ * `aria-disabled` rather than the `disabled` attribute: a disabled chip here is
+ * always carrying a `title` that explains itself, and the HTML attribute would
+ * take the chip out of the tab order and out of a screen reader's reach, which
+ * would leave a keyboard user with a control that is dead *and* silent about
+ * why. The click handler is guarded rather than removed so the refusal is the
+ * component's behaviour and not an accident of how the parent spelled a prop.
+ */
+const GatedChip = ({
+    gate,
+    onClick,
+    ...props
+}: ComponentProps<typeof DawPluginChip> & { gate: ChamberControlGate }): ReactElement => (
+    <ChamberChip
+        {...props}
+        aria-disabled={gate.isInert || undefined}
+        title={gate.explanation ?? undefined}
+        onClick={(event) => {
+            if (gate.isInert) {
+                return;
+            }
+            onClick?.(event);
+        }}
+    />
+);
+
 function KnobCell({
     label,
     value,
@@ -180,6 +218,7 @@ function KnobCell({
     size,
     readout,
     bipolar,
+    gate,
 }: {
     label: string;
     value: number;
@@ -191,6 +230,7 @@ function KnobCell({
     size: 'sm' | 'md' | 'lg' | 'xl';
     readout?: string;
     bipolar?: boolean;
+    gate: ChamberControlGate;
 }): ReactElement {
     return (
         <div className="flex min-w-[68px] flex-col items-center gap-1 rounded-[18px] border border-white/8 bg-[var(--color-bg-panelInset)] px-2 py-2 shadow-[var(--shadow-elevation-inset)]">
@@ -204,6 +244,14 @@ function KnobCell({
                 size={size}
                 bipolar={bipolar}
                 tone="amber"
+                // The visible label is drawn in the sibling below, so the knob
+                // itself has none — and `RotaryKnob` falls back to the shared
+                // "Parameter control" name when it is given nothing, which is
+                // what every knob on this panel was called. Naming it here
+                // rather than passing `label` keeps the layout as it was.
+                aria-label={label}
+                disabled={gate.isInert}
+                title={gate.explanation ?? undefined}
             />
             <div className="text-[8px] uppercase tracking-[0.2em] text-white/58">{label}</div>
             {readout ? <div className="font-mono text-[9px] text-white/42">{readout}</div> : null}
@@ -217,6 +265,12 @@ export const ProofChamberPanel = ({ deviceId }: { deviceId: string }): ReactElem
 
     useEffect(() => {
         registerChamberInstance(deviceId);
+        // Read project truth back into the store the panel draws from, so a
+        // reverb saved on Reverse reopens gated for Reverse. `chamberStore`
+        // otherwise starts every session at `DEFAULT_PARAMS` while the engine
+        // is replayed from `Device.parameterValues`, and the gate would trust
+        // the wrong one.
+        hydrateChamberStateFromProject(deviceId);
     }, [deviceId]);
     const [decayEqMults, setDecayEqMults] = useState([1.0, 1.0, 1.0, 1.0, 1.0, 1.0]);
     const [showDecayEq, setShowDecayEq] = useState(false);
@@ -238,6 +292,20 @@ export const ProofChamberPanel = ({ deviceId }: { deviceId: string }): ReactElem
             type: 'setDeviceParameter',
             payload: { deviceId, paramId: rustKey, value: numericValue },
         });
+    }
+
+    /**
+     * Whether the algorithm now selected can hear this parameter at all.
+     *
+     * Every control on the panel asks, and the answer comes from the engine-gap
+     * census in `#/utils/nativeDspEngineGaps` — the same table
+     * `descriptorEngineParamWeld.spec.ts` asserts in both directions. Nothing
+     * here enumerates which knobs are dead; the day a gap is closed in Rust its
+     * row is deleted (the weld spec reds until it is) and the control comes
+     * back on its own.
+     */
+    function gateFor(paramKey: keyof ProofChamberEngineState, controlLabel: string): ChamberControlGate {
+        return chamberControlGate({ algorithm: params.algorithm, paramKey, controlLabel });
     }
 
     /**
@@ -287,6 +355,46 @@ export const ProofChamberPanel = ({ deviceId }: { deviceId: string }): ReactElem
 
         const { groupId, groupLabel } = generateGroupId(`Load ${space} space`);
         void executeAppActionBatch(actions, { groupId, groupLabel });
+    }
+
+    /**
+     * Select a reverb algorithm.
+     *
+     * One function rather than two identical chip handlers — the selector is
+     * drawn twice, on the rail and in the Engine card.
+     *
+     * ## Known, live, and not fixed here: this resets the device
+     *
+     * `ProofChamberInstance::set_param` constructs a **new** engine when
+     * `algorithm` arrives (`lib.rs:117-136`) and replays nothing into it, so
+     * every parameter on the device reverts to the constructor's defaults.
+     * Measured plate → reverse → plate: bit-identical to an engine nobody had
+     * ever written to (`max_delta = 0e0` against defaults, `7.77e-1` against
+     * the settings the user had). `mix` is lost the same way, so this has
+     * nothing to do with gating and predates it.
+     *
+     * A panel-side replay was tried here and removed, because it cannot work at
+     * this layer. Sourcing it from the store writes stale values over project
+     * truth; sourcing it from project truth makes every replayed action satisfy
+     * `handleSetDeviceParameter`'s `isNoop` — `parameterValues[paramId] ===
+     * value` — so `executeAppActionBatch` skips all of them and the engine is
+     * never told. The two required fixes are contradictory. A replay is an
+     * engine *resync*, and `executeAppAction*` propagates *changes to truth*;
+     * the no-op filter is right and the payload was the wrong shape for it.
+     *
+     * The fix is a parameter cache inside `ProofChamberInstance`, replayed into
+     * each newly constructed engine — the one place every writer of `algorithm`
+     * must pass through, which the Inspector, MIDI learn, undo and the initial
+     * project projection all do without any of them being able to carry a
+     * replay of their own.
+     */
+    function selectAlgorithm(next: ProofChamberAlgorithm): void {
+        updateChamberEngine(deviceId, (prev: ProofChamberEngineState) => ({ ...prev, algorithm: next }));
+
+        void executeAppAction({
+            type: 'setDeviceParameter',
+            payload: { deviceId, paramId: 'algorithm', value: ALGORITHM_MAP[next] ?? 0 },
+        });
     }
 
     let tailViewLed = 'Live tail';
@@ -342,20 +450,7 @@ export const ProofChamberPanel = ({ deviceId }: { deviceId: string }): ReactElem
                                 <ChamberChip
                                     key={algorithm.id}
                                     active={active}
-                                    onClick={() => {
-                                        updateChamberEngine(deviceId, (prev: ProofChamberEngineState) => ({
-                                            ...prev,
-                                            algorithm: algorithm.id,
-                                        }));
-                                        void executeAppAction({
-                                            type: 'setDeviceParameter',
-                                            payload: {
-                                                deviceId,
-                                                paramId: 'algorithm',
-                                                value: ALGORITHM_MAP[algorithm.id] ?? 0,
-                                            },
-                                        });
-                                    }}
+                                    onClick={() => selectAlgorithm(algorithm.id)}
                                 >
                                     {algorithm.label}
                                 </ChamberChip>
@@ -369,18 +464,27 @@ export const ProofChamberPanel = ({ deviceId }: { deviceId: string }): ReactElem
                         <ChamberChip active={showFlow} onClick={() => setShowFlow((value) => !value)}>
                             Flow
                         </ChamberChip>
-                        <ChamberChip active={params.freeze} onClick={() => setParam('freeze', !params.freeze)}>
+                        <GatedChip
+                            gate={gateFor('freeze', 'Freeze')}
+                            active={params.freeze}
+                            onClick={() => setParam('freeze', !params.freeze)}
+                        >
                             Freeze
-                        </ChamberChip>
-                        <ChamberChip active={params.shimmer} onClick={() => setParam('shimmer', !params.shimmer)}>
+                        </GatedChip>
+                        <GatedChip
+                            gate={gateFor('shimmer', 'Shimmer')}
+                            active={params.shimmer}
+                            onClick={() => setParam('shimmer', !params.shimmer)}
+                        >
                             Shimmer
-                        </ChamberChip>
-                        <ChamberChip
+                        </GatedChip>
+                        <GatedChip
+                            gate={gateFor('saturation', 'Saturation')}
                             active={params.saturation}
                             onClick={() => setParam('saturation', !params.saturation)}
                         >
                             Saturation
-                        </ChamberChip>
+                        </GatedChip>
                     </div>
                 </SectionCard>
 
@@ -497,26 +601,33 @@ export const ProofChamberPanel = ({ deviceId }: { deviceId: string }): ReactElem
                         </SectionCard>
                         <SectionCard title="Switches" detail={params.freeze ? 'Frozen' : 'Moving'}>
                             <div className="flex flex-wrap gap-1.5">
-                                <ChamberChip
+                                <GatedChip
+                                    gate={gateFor('shimmer', 'Shimmer')}
                                     active={params.shimmer}
                                     onClick={() => setParam('shimmer', !params.shimmer)}
                                 >
                                     Shimmer
-                                </ChamberChip>
-                                <ChamberChip active={params.freeze} onClick={() => setParam('freeze', !params.freeze)}>
+                                </GatedChip>
+                                <GatedChip
+                                    gate={gateFor('freeze', 'Freeze')}
+                                    active={params.freeze}
+                                    onClick={() => setParam('freeze', !params.freeze)}
+                                >
                                     Freeze
-                                </ChamberChip>
-                                <ChamberChip
+                                </GatedChip>
+                                <GatedChip
+                                    gate={gateFor('saturation', 'Saturation')}
                                     active={params.saturation}
                                     onClick={() => setParam('saturation', !params.saturation)}
                                 >
                                     Saturation
-                                </ChamberChip>
+                                </GatedChip>
                             </div>
                             {params.shimmer ? (
                                 <div className="grid grid-cols-2 gap-2">
                                     <KnobCell
                                         label="Amount"
+                                        gate={gateFor('shimmerAmount', 'Amount')}
                                         value={params.shimmerAmount}
                                         onChange={(value) => setParam('shimmerAmount', value)}
                                         min={0}
@@ -528,6 +639,7 @@ export const ProofChamberPanel = ({ deviceId }: { deviceId: string }): ReactElem
                                     />
                                     <KnobCell
                                         label="Pitch"
+                                        gate={gateFor('shimmerPitch', 'Pitch')}
                                         value={params.shimmerPitch}
                                         onChange={(value) => setParam('shimmerPitch', Math.round(value))}
                                         min={0}
@@ -542,13 +654,14 @@ export const ProofChamberPanel = ({ deviceId }: { deviceId: string }): ReactElem
                             {params.saturation ? (
                                 <div className="flex flex-wrap gap-1.5">
                                     {SATURATION_CURVES.map((curve) => (
-                                        <ChamberChip
+                                        <GatedChip
                                             key={curve.id}
+                                            gate={gateFor('saturationType', 'The saturation curve')}
                                             active={params.saturationType === curve.id}
                                             onClick={() => setParam('saturationType', curve.id)}
                                         >
                                             {curve.label}
-                                        </ChamberChip>
+                                        </GatedChip>
                                     ))}
                                 </div>
                             ) : null}
@@ -573,6 +686,7 @@ export const ProofChamberPanel = ({ deviceId }: { deviceId: string }): ReactElem
                             <div className="grid grid-cols-2 gap-2">
                                 <KnobCell
                                     label="Size"
+                                    gate={gateFor('size', 'Size')}
                                     value={params.size}
                                     onChange={(value) => setParam('size', value)}
                                     min={0}
@@ -584,6 +698,7 @@ export const ProofChamberPanel = ({ deviceId }: { deviceId: string }): ReactElem
                                 />
                                 <KnobCell
                                     label="Decay"
+                                    gate={gateFor('decay', 'Decay')}
                                     value={params.decay}
                                     onChange={(value) => setParam('decay', value)}
                                     min={0}
@@ -595,6 +710,7 @@ export const ProofChamberPanel = ({ deviceId }: { deviceId: string }): ReactElem
                                 />
                                 <KnobCell
                                     label="Mix"
+                                    gate={gateFor('mix', 'Mix')}
                                     value={params.mix}
                                     onChange={(value) => setParam('mix', value)}
                                     min={0}
@@ -606,6 +722,7 @@ export const ProofChamberPanel = ({ deviceId }: { deviceId: string }): ReactElem
                                 />
                                 <KnobCell
                                     label="Pre"
+                                    gate={gateFor('predelay', 'Pre')}
                                     value={params.predelay}
                                     onChange={(value) => setParam('predelay', value)}
                                     min={0}
@@ -622,6 +739,7 @@ export const ProofChamberPanel = ({ deviceId }: { deviceId: string }): ReactElem
                             <div className="grid grid-cols-2 gap-2">
                                 <KnobCell
                                     label="Hi Cut"
+                                    gate={gateFor('highCut', 'Hi Cut')}
                                     value={params.highCut}
                                     onChange={(value) => setParam('highCut', value)}
                                     min={1000}
@@ -633,6 +751,7 @@ export const ProofChamberPanel = ({ deviceId }: { deviceId: string }): ReactElem
                                 />
                                 <KnobCell
                                     label="Lo Cut"
+                                    gate={gateFor('lowCut', 'Lo Cut')}
                                     value={params.lowCut}
                                     onChange={(value) => setParam('lowCut', value)}
                                     min={20}
@@ -644,6 +763,7 @@ export const ProofChamberPanel = ({ deviceId }: { deviceId: string }): ReactElem
                                 />
                                 <KnobCell
                                     label="Damp"
+                                    gate={gateFor('damping', 'Damp')}
                                     value={params.damping}
                                     onChange={(value) => setParam('damping', value)}
                                     min={0}
@@ -655,6 +775,7 @@ export const ProofChamberPanel = ({ deviceId }: { deviceId: string }): ReactElem
                                 />
                                 <KnobCell
                                     label="Diffuse"
+                                    gate={gateFor('diffusion', 'Diffuse')}
                                     value={params.diffusion}
                                     onChange={(value) => setParam('diffusion', value)}
                                     min={0}
@@ -671,6 +792,7 @@ export const ProofChamberPanel = ({ deviceId }: { deviceId: string }): ReactElem
                             <div className="grid grid-cols-2 gap-2">
                                 <KnobCell
                                     label="Rate"
+                                    gate={gateFor('modRate', 'Rate')}
                                     value={params.modRate}
                                     onChange={(value) => setParam('modRate', value)}
                                     min={0.1}
@@ -682,6 +804,7 @@ export const ProofChamberPanel = ({ deviceId }: { deviceId: string }): ReactElem
                                 />
                                 <KnobCell
                                     label="Depth"
+                                    gate={gateFor('modDepth', 'Depth')}
                                     value={params.modDepth}
                                     onChange={(value) => setParam('modDepth', value)}
                                     min={0}
@@ -693,6 +816,7 @@ export const ProofChamberPanel = ({ deviceId }: { deviceId: string }): ReactElem
                                 />
                                 <KnobCell
                                     label="Width"
+                                    gate={gateFor('width', 'Width')}
                                     value={params.width}
                                     onChange={(value) => setParam('width', value)}
                                     min={0}
@@ -704,6 +828,7 @@ export const ProofChamberPanel = ({ deviceId }: { deviceId: string }): ReactElem
                                 />
                                 <KnobCell
                                     label="E/L"
+                                    gate={gateFor('earlyLateBalance', 'E/L')}
                                     value={params.earlyLateBalance}
                                     onChange={(value) => setParam('earlyLateBalance', value)}
                                     min={0}
@@ -720,6 +845,7 @@ export const ProofChamberPanel = ({ deviceId }: { deviceId: string }): ReactElem
                             <div className="grid grid-cols-2 gap-2">
                                 <KnobCell
                                     label="Gravity"
+                                    gate={gateFor('gravity', 'Gravity')}
                                     value={params.gravity}
                                     onChange={(value) => setParam('gravity', value)}
                                     min={-1}
@@ -732,6 +858,7 @@ export const ProofChamberPanel = ({ deviceId }: { deviceId: string }): ReactElem
                                 />
                                 <KnobCell
                                     label="Vintage"
+                                    gate={gateFor('vintage', 'Vintage')}
                                     value={params.vintage}
                                     onChange={(value) => setParam('vintage', Math.round(value))}
                                     min={0}
@@ -743,6 +870,7 @@ export const ProofChamberPanel = ({ deviceId }: { deviceId: string }): ReactElem
                                 />
                                 <KnobCell
                                     label="Density"
+                                    gate={gateFor('density', 'Density')}
                                     value={params.density}
                                     onChange={(value) => setParam('density', value)}
                                     min={0}
@@ -779,20 +907,7 @@ export const ProofChamberPanel = ({ deviceId }: { deviceId: string }): ReactElem
                                             <ChamberChip
                                                 key={algorithm.id}
                                                 active={params.algorithm === algorithm.id}
-                                                onClick={() => {
-                                                    updateChamberEngine(deviceId, (prev: ProofChamberEngineState) => ({
-                                                        ...prev,
-                                                        algorithm: algorithm.id,
-                                                    }));
-                                                    void executeAppAction({
-                                                        type: 'setDeviceParameter',
-                                                        payload: {
-                                                            deviceId,
-                                                            paramId: 'algorithm',
-                                                            value: ALGORITHM_MAP[algorithm.id] ?? 0,
-                                                        },
-                                                    });
-                                                }}
+                                                onClick={() => selectAlgorithm(algorithm.id)}
                                             >
                                                 {algorithm.label}
                                             </ChamberChip>

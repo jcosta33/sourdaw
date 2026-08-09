@@ -131,6 +131,34 @@ fn identical(a: &[f32], b: &[f32]) -> bool {
     a.len() == b.len() && a.iter().zip(b.iter()).all(|(x, y)| x.to_bits() == y.to_bits())
 }
 
+/// FNV-1a over every sample's bit pattern, so any change anywhere in the
+/// buffer moves it.
+fn digest(output: &[f32]) -> u64 {
+    let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
+    for sample in output {
+        hash ^= u64::from(sample.to_bits());
+        hash = hash.wrapping_mul(0x0000_0100_0000_01b3);
+    }
+    hash
+}
+
+/// What the plate renders with nothing written to it but `algorithm` and
+/// `mix`, which is what every project that never touched a control hears.
+///
+/// A `render(&[])`-versus-`render(&[(name, default)])` comparison — the shape
+/// the three older rows in this file use — cannot pin this. Both sides of that
+/// comparison run the *same* mapping, so it catches a default that drifts away
+/// from the constructor and is blind to a mapping that is wrong at the default
+/// in the same way on both sides. That blindness is not hypothetical: a
+/// candidate `gravity` tilt neutral at 0 rather than at the shipped 0.5 passed
+/// every other assertion in this file while quietly changing what every
+/// existing project sounds like.
+///
+/// So the reference is a constant rather than a second render. Changing this
+/// number is not a maintenance chore — it means an untouched project now
+/// sounds different, and that belongs in a release note.
+const UNTOUCHED_PLATE_DIGEST: u64 = 0x9107_053e_5140_7165;
+
 // ---------------------------------------------------------------------------
 // early_late
 // ---------------------------------------------------------------------------
@@ -297,6 +325,111 @@ fn density_defaults_to_full_cross_coupling() {
         !identical(&untouched, &sparse),
         "the shipped default renders identically to density=0.0"
     );
+}
+
+// ---------------------------------------------------------------------------
+// gravity
+// ---------------------------------------------------------------------------
+
+#[test]
+fn gravity_renders_differently_at_interior_settings() {
+    // The row that made this file's whole premise necessary. `gravity` had a
+    // `set_param` arm, was clamped and stored in a field, was advertised by
+    // `param_names`, was declared in the descriptor and was automatable — and
+    // the field was never read, so `max_delta(-1, +1)` was exactly 0e0 across
+    // the entire declared range. Every acceptance-shaped check in the repo
+    // passed against it, including the descriptor/engine census, which defines
+    // a gap as a missing match arm and therefore could not see this one.
+    //
+    // Interior points rather than only the bounds, and points on both sides of
+    // the 0.5 default, so a tilt that only reacted at the extremes or only in
+    // one direction still reds.
+    let swell = render(&[("gravity", -0.5)]);
+    let low = render(&[("gravity", 0.0)]);
+    let default_side = render(&[("gravity", 0.5)]);
+    let normal = render(&[("gravity", 1.0)]);
+
+    for (left, right, names) in [
+        (&swell, &low, "-0.50 vs 0.00"),
+        (&low, &default_side, "0.00 vs 0.50"),
+        (&default_side, &normal, "0.50 vs 1.00"),
+    ] {
+        let delta = max_delta(left, right);
+        assert!(
+            delta > 1e-4,
+            "gravity {names} should render differently; peak difference {delta:e}"
+        );
+    }
+}
+
+#[test]
+fn gravity_spans_the_whole_declared_range() {
+    // The measurement the reviewer of #1519 ran to prove the parameter was
+    // dead, kept as the regression: end to end across the descriptor's
+    // declared -1…+1, the two extremes must not render the same buffer.
+    let bottom = render(&[("gravity", -1.0)]);
+    let top = render(&[("gravity", 1.0)]);
+    let delta = max_delta(&bottom, &top);
+
+    assert!(
+        delta > 1e-3,
+        "gravity -1 and +1 should be audibly different; peak difference {delta:e}"
+    );
+}
+
+#[test]
+fn gravity_defaults_to_the_documented_value() {
+    // The constraint that keeps this fix from changing what every existing
+    // project sounds like. The tilt is exactly 1.0 at 0.5, so an engine nobody
+    // wrote to must render bit-identically to one written to its default —
+    // and, before this parameter did anything, to what the plate has always
+    // rendered.
+    let untouched = render(&[]);
+    let explicit = render(&[("gravity", 0.5)]);
+    assert!(
+        identical(&untouched, &explicit),
+        "an engine nobody wrote to should render as gravity=0.5; peak difference {:e}",
+        max_delta(&untouched, &explicit)
+    );
+
+    let swell = render(&[("gravity", -1.0)]);
+    assert!(
+        !identical(&untouched, &swell),
+        "the shipped default renders identically to gravity=-1.0"
+    );
+}
+
+#[test]
+fn the_untouched_plate_still_renders_what_it_always_has() {
+    // The claim `gravity` had to satisfy to be implementable at all: the tilt
+    // is exactly 1.0 at the shipped default, so wiring a parameter that was
+    // inert does not move a single sample of any project that never wrote it.
+    //
+    // This digest was taken from the plate *before* gravity read its field,
+    // and it has not changed since.
+    let digest_now = digest(&render(&[]));
+    assert_eq!(
+        digest_now, UNTOUCHED_PLATE_DIGEST,
+        "the untouched plate changed: an existing project that never wrote a \
+         control now renders differently. digest {digest_now:#x}"
+    );
+}
+
+#[test]
+fn gravity_leaves_the_tank_stable_at_both_extremes() {
+    // The tilt scales a feedback allpass coefficient, so the failure mode of
+    // getting the span wrong is a tank that rings instead of decaying rather
+    // than a wrong-sounding one. Both extremes must still be decaying half a
+    // second after the burst ends.
+    for setting in [-1.0_f32, 1.0] {
+        let output = render(&[("gravity", setting)]);
+        let early = early_rms(&output);
+        let tail = tail_rms(&output);
+        assert!(
+            tail < early,
+            "gravity {setting} should still decay; early RMS {early:e}, tail RMS {tail:e}"
+        );
+    }
 }
 
 // ---------------------------------------------------------------------------

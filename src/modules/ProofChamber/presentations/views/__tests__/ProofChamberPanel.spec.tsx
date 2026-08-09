@@ -27,6 +27,9 @@ vi.mock('../../../useCases/proofChamber/registerChamberInstance', () => ({
 vi.mock('../../../useCases/proofChamber/updateChamberEngine', () => ({
     updateChamberEngine: vi.fn(),
 }));
+vi.mock('../../../useCases/proofChamber/hydrateChamberStateFromProject', () => ({
+    hydrateChamberStateFromProject: vi.fn(),
+}));
 
 // Replace the canvas-driven decay-EQ overlay with a button that surfaces its
 // `onChange` callback so the panel's dispatch contract can be exercised through
@@ -104,15 +107,20 @@ describe('ProofChamberPanel', () => {
      * carries 6 rather than 4, because 4 and 5 are reserved for the two
      * convolution-backed engines that have no impulse response to render.
      */
+    function dispatchedAlgorithmValues(): number[] {
+        return vi
+            .mocked(executeAppAction)
+            .mock.calls.map(([action]) => action)
+            .filter((action) => action.type === 'setDeviceParameter' && action.payload.paramId === 'algorithm')
+            .map((action) => (action.type === 'setDeviceParameter' ? action.payload.value : -1));
+    }
+
     it('dispatches the reverse algorithm at the wire value the engine dispatch expects', () => {
         render(<ProofChamberPanel deviceId="test-device" />);
 
         fireEvent.click(railChip('Reverse'));
 
-        expect(executeAppAction).toHaveBeenCalledWith({
-            type: 'setDeviceParameter',
-            payload: { deviceId: 'test-device', paramId: 'algorithm', value: 6 },
-        });
+        expect(dispatchedAlgorithmValues()).toEqual([6]);
     });
 
     it('offers no chip that would select an engine with no impulse response', () => {
@@ -122,13 +130,7 @@ describe('ProofChamberPanel', () => {
             fireEvent.click(railChip(label));
         }
 
-        const dispatched = vi
-            .mocked(executeAppAction)
-            .mock.calls.map(([action]) => action)
-            .filter((action) => action.type === 'setDeviceParameter' && action.payload.paramId === 'algorithm')
-            .map((action) => (action.type === 'setDeviceParameter' ? action.payload.value : -1));
-
-        expect(dispatched).toEqual([0, 1, 2, 3, 6]);
+        expect(dispatchedAlgorithmValues()).toEqual([0, 1, 2, 3, 6]);
     });
 
     /**
