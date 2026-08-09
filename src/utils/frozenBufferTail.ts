@@ -49,8 +49,35 @@ export const LEGACY_FREEZE_MIN_TAIL_BEATS = 4;
  * Version 1 is the first that (a) sizes its tail from device tail declarations
  * rather than a device-name substring test and (b) prints at unity fader and
  * centre pan. Absent means version 0: everything written before either rule.
+ *
+ * Version 2 is #1547. The Dutch Oven's pre-delay read its line at an index that
+ * aliased zero to the whole buffer, so a chain carrying one at Pre-Delay 0 ms —
+ * which is the control's declared minimum and what the shipped `plate` space
+ * preset sets — printed a reverb that started 503 ms after the note instead of
+ * 3 ms after it. A buffer baked before that fix holds the late version; the same
+ * project played live now holds the prompt one, and the two play against each
+ * other in the same session half a second apart.
+ *
+ * This is exactly the case the rule above exists for, and nothing else catches
+ * it. The other staleness path compares a content hash of clips and devices, and
+ * #1547 changed **no parameter** — the stored `predelay` is still 0 and the hash
+ * is byte-for-byte identical — so a frozen track would have been trusted
+ * forever. The version is the only signal that can fire when the meaning of a
+ * buffer changes without its inputs changing.
+ *
+ * The cost is that it is coarse: this stales *every* frozen track, not only
+ * those hosting a Dutch Oven, because `bakeVersion` is per-buffer and carries no
+ * device inventory. That is accepted rather than overlooked. Narrowing it means
+ * either recording a device list per frozen buffer or re-deriving one from the
+ * track at load, and both are a larger change than the thing being fixed; the
+ * remedy for a false positive is one re-freeze of a buffer that would have
+ * rendered identically, against a false negative that is a track playing a
+ * half-second-late reverb with no indication anything is wrong.
+ *
+ * Bounced clips and exported stems carry no version at all and are outside this
+ * mechanism entirely. They can only be handled in the release note.
  */
-export const FREEZE_BAKE_VERSION = 1;
+export const FREEZE_BAKE_VERSION = 2;
 
 /**
  * Floor for an unknown baked tail, in seconds.
