@@ -1,0 +1,42 @@
+src/modules/MIDI/useCases/stepRecording/__tests__/hasActiveStepRecordingDependency.spec.ts
+  s_bc88af7d3b054c::t_6886c290cf1b2b 1-33
+src/modules/Arrangement/useCases/clipEditing/__tests__/glueClips.integration.spec.ts
+  s_bc88af7d3b054c::t_0fac7026171a30 4,54,63,172-186
+  s_bc88af7d3b054c::t_de7807a585a6f5 188-203
+  s_14f2bbc9f385dd::t_c85a75c0f8afaa 187
+src/modules/Arrangement/handlers/clip/__tests__/handleGlueClips.integration.spec.ts
+  s_bc88af7d3b054c::t_0fac7026171a30 22,137,148,420-451
+  s_14f2bbc9f385dd::t_892c58071dd172 452-453
+src/modules/Arrangement/useCases/clipEditing/__tests__/glueClips.spec.ts
+  s_bc88af7d3b054c::t_dd8984bd1fe4b9 18,29
+src/modules/MIDI/useCases/stepRecording/hasActiveStepRecordingDependency.ts
+  s_bc88af7d3b054c::t_6886c290cf1b2b 1-6
+src/modules/MIDI/useCases/index.ts
+  s_bc88af7d3b054c::t_6886c290cf1b2b 128
+src/modules/Arrangement/useCases/clipEditing/hasClipGlueDependencies.ts
+  s_bc88af7d3b054c::t_6886c290cf1b2b 2,11-13
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "1128e44d679265a42efd40ffa5180ec73bb58201",
+  "prompts": {},
+  "sessions": {
+    "s_14f2bbc9f385dd": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f9a61a1d-66b3-4146-938d-a04f45f4b060",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_bc88af7d3b054c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f9b4a-11a2-7f61-8dfb-76eed0eb2a9c",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
