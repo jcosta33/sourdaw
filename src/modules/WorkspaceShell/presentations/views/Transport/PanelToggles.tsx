@@ -36,6 +36,7 @@ type AiPanelState = {
 };
 
 type LinkStatusView = {
+    supported: boolean;
     enabled: boolean;
 };
 
@@ -62,6 +63,9 @@ export const PanelToggles = ({
     const linkStatus = useStore<LinkStatusView>(linkStatusStore, defaultLinkStatus);
 
     const handleLinkToggle = (): void => {
+        if (!linkStatus.supported) {
+            return;
+        }
         if (linkStatus.enabled) {
             void disableLink();
         } else {
@@ -200,24 +204,28 @@ export const PanelToggles = ({
                 <TooltipContent>Generate</TooltipContent>
             </Tooltip>
             <div className="mx-0.5 h-4 w-px daw-seam" />
-            <Tooltip>
-                <TooltipTrigger asChild>
-                    <Button
-                        variant={linkStatus.enabled ? 'secondary' : 'ghost'}
-                        size="icon-sm"
-                        aria-label={
-                            linkStatus.enabled ? 'Ableton Link active — click to disable' : 'Enable Ableton Link sync'
-                        }
-                        aria-pressed={linkStatus.enabled}
-                        onClick={handleLinkToggle}
-                        data-testid="toggle-ableton-link"
-                        className={linkStatus.enabled ? 'text-[var(--color-accent-amber)]' : ''}
-                    >
-                        <LinkIcon className="size-3.5" aria-hidden="true" />
-                    </Button>
-                </TooltipTrigger>
-                <TooltipContent>Ableton Link{linkStatus.enabled ? ' (active)' : ''}</TooltipContent>
-            </Tooltip>
+            {linkStatus.supported ? (
+                <Tooltip>
+                    <TooltipTrigger asChild>
+                        <Button
+                            variant={linkStatus.enabled ? 'secondary' : 'ghost'}
+                            size="icon-sm"
+                            aria-label={
+                                linkStatus.enabled
+                                    ? 'Ableton Link active — click to disable'
+                                    : 'Enable Ableton Link sync'
+                            }
+                            aria-pressed={linkStatus.enabled}
+                            onClick={handleLinkToggle}
+                            data-testid="toggle-ableton-link"
+                            className={linkStatus.enabled ? 'text-[var(--color-accent-amber)]' : ''}
+                        >
+                            <LinkIcon className="size-3.5" aria-hidden="true" />
+                        </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>Ableton Link{linkStatus.enabled ? ' (active)' : ''}</TooltipContent>
+                </Tooltip>
+            ) : null}
             <Tooltip>
                 <TooltipTrigger asChild>
                     <Button

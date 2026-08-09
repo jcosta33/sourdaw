@@ -162,12 +162,27 @@ describe('PanelToggles', () => {
     });
 
     describe('Ableton Link toggle', () => {
+        it('does not advertise Link when native support is unavailable', () => {
+            vi.mocked(useStore).mockImplementation((store) => {
+                if (store === aiStore) {
+                    return { isPanelOpen: false };
+                }
+                return { enabled: false, supported: false };
+            });
+
+            renderWithTooltip(<PanelToggles {...allClosed} />);
+
+            expect(screen.queryByTestId('toggle-ableton-link')).not.toBeInTheDocument();
+            expect(mocks.enableLink).not.toHaveBeenCalled();
+            expect(mocks.disableLink).not.toHaveBeenCalled();
+        });
+
         it('enables Link when currently disabled', () => {
             vi.mocked(useStore).mockImplementation((store) => {
                 if (store === aiStore) {
                     return { isPanelOpen: false };
                 }
-                return { enabled: false };
+                return { enabled: false, supported: true };
             });
 
             renderWithTooltip(<PanelToggles {...allClosed} />);
@@ -182,7 +197,7 @@ describe('PanelToggles', () => {
                 if (store === aiStore) {
                     return { isPanelOpen: false };
                 }
-                return { enabled: true };
+                return { enabled: true, supported: true };
             });
 
             renderWithTooltip(<PanelToggles {...allClosed} />);
@@ -197,7 +212,7 @@ describe('PanelToggles', () => {
                 if (store === aiStore) {
                     return { isPanelOpen: false };
                 }
-                return { enabled: true };
+                return { enabled: true, supported: true };
             });
 
             renderWithTooltip(<PanelToggles {...allClosed} />);
@@ -212,7 +227,7 @@ describe('PanelToggles', () => {
                 if (store === aiStore) {
                     return { isPanelOpen: false };
                 }
-                return { enabled: false };
+                return { enabled: false, supported: true };
             });
             mocks.enableLink.mockRejectedValueOnce(new Error('not available'));
 
