@@ -1,0 +1,144 @@
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+
+import { configureAutomergeStoragePort } from '#/infra/store/storage/createAutomergeStorage';
+import { trackStore } from '#/modules/Arrangement/stores';
+import { getArrangementHandlers } from '#/modules/Arrangement/useCases';
+import { clearHandlerRegistry, macroStore, registerHandlerMap, undoStore } from '#/modules/Command/stores';
+import {
+    clearUndoHistory,
+    executeAppActionBatch,
+    redo,
+    resetActionReplayAuthority,
+    setActionHistoryMetadataPort,
+    undo,
+} from '#/modules/Command/useCases';
+import {
+    createCrdtDoc,
+    registerCrdtStorageRuntime,
+    removeCrdtDoc,
+    resetCrdtProjectAuthority,
+} from '#/modules/CrdtDocument/useCases';
+import { defaultTransportState, transportStore } from '#/modules/Transport/stores';
+
+import { ClipDummy } from '../../../__tests__/ClipDummy';
+import { TrackDummy } from '../../../__tests__/TrackDummy';
+import { restoreClipLoopLength } from '../../../useCases/clipLoop/restoreClipLoopLength';
+import { setClipLoopLength } from '../../../useCases/clipLoop/setClipLoopLength';
+
+const noActionHistoryMetadataPort = {
+    record: () => [],
+    markReverted: () => ({ status: 'unavailable' as const }),
+    clear: () => undefined,
+};
+
+function currentClip() {
+    const clip = trackStore.value?.tracks[0]?.clips[0];
+    if (!clip) {
+        throw new Error('Expected clip fixture');
+    }
+    return clip;
+}
+
+describe('handleSetClipLoopLength atomic integration', () => {
+    beforeEach(() => {
+        configureAutomergeStoragePort(null);
+        resetCrdtProjectAuthority('clip loop length atomic integration');
+        removeCrdtDoc('root');
+        createCrdtDoc('root');
+        registerCrdtStorageRuntime();
+        clearHandlerRegistry();
+        registerHandlerMap(getArrangementHandlers());
+        clearUndoHistory();
+        resetActionReplayAuthority();
+        setActionHistoryMetadataPort(noActionHistoryMetadataPort);
+        macroStore.set({ macros: [], recording: false, currentRecording: [] });
+        transportStore.set({ ...defaultTransportState, isPlaying: false, isRecording: false });
+        const clip = ClipDummy.create({ id: 'clip-1', endBeat: 8, loopEnabled: false });
+        const track = TrackDummy.create({ id: 'track-1', clips: [clip] });
+        trackStore.set({ tracks: [track], selectedTrackId: track.id, ghostClips: [] });
+    });
+
+    afterEach(() => {
+        clearUndoHistory();
+        resetActionReplayAuthority();
+        clearHandlerRegistry();
+        trackStore.set({ tracks: [], selectedTrackId: null, ghostClips: [] });
+        transportStore.set(defaultTransportState);
+        configureAutomergeStoragePort(null);
+        removeCrdtDoc('root');
+    });
+
+    it('round-trips optional loop length without changing geometry or enabled state', async () => {
+        const action = { type: 'setClipLoopLength' as const, payload: { clipId: 'clip-1', loopLength: 2 } };
+
+        const result = await executeAppActionBatch([action], { source: 'prompt', requireCompensation: true });
+
+        expect(result.status).toBe('committed');
+        expect(currentClip()).toMatchObject({ startBeat: 0, endBeat: 8, loopEnabled: false, loopLength: 2 });
+
+        await undo();
+        expect(currentClip()).toMatchObject({ startBeat: 0, endBeat: 8, loopEnabled: false });
+        expect(Object.hasOwn(currentClip(), 'loopLength')).toBe(false);
+
+        await redo();
+        expect(currentClip()).toMatchObject({ startBeat: 0, endBeat: 8, loopEnabled: false, loopLength: 2 });
+    });
+
+    it('retains stale undo and redo entries until the expected state or replacement is present', async () => {
+        const action = { type: 'setClipLoopLength' as const, payload: { clipId: 'clip-1', loopLength: 2 } };
+        await executeAppActionBatch([action], { source: 'prompt', requireCompensation: true });
+
+        setClipLoopLength('clip-1', 3);
+        await undo();
+        expect(currentClip().loopLength).toBe(3);
+        expect(undoStore.value?.past).toHaveLength(1);
+        expect(undoStore.value?.future).toHaveLength(0);
+
+        restoreClipLoopLength('clip-1', undefined);
+        await undo();
+        expect(Object.hasOwn(currentClip(), 'loopLength')).toBe(false);
+        expect(undoStore.value?.past).toHaveLength(0);
+        expect(undoStore.value?.future).toHaveLength(1);
+
+        setClipLoopLength('clip-1', 3);
+        await redo();
+        expect(currentClip().loopLength).toBe(3);
+        expect(undoStore.value?.past).toHaveLength(0);
+        expect(undoStore.value?.future).toHaveLength(1);
+
+        setClipLoopLength('clip-1', 2);
+        await redo();
+        expect(currentClip().loopLength).toBe(2);
+        expect(undoStore.value?.past).toHaveLength(1);
+        expect(undoStore.value?.future).toHaveLength(0);
+    });
+
+    it('rejects writes while playback or recording is active without creating history', async () => {
+        const action = { type: 'setClipLoopLength' as const, payload: { clipId: 'clip-1', loopLength: 2 } };
+
+        transportStore.set({ ...defaultTransportState, isPlaying: true });
+        const playing = await executeAppActionBatch([action], { source: 'prompt', requireCompensation: true });
+        expect(playing.status).toBe('conflicted');
+
+        transportStore.set({ ...defaultTransportState, isRecording: true });
+        const recording = await executeAppActionBatch([action], { source: 'prompt', requireCompensation: true });
+        expect(recording.status).toBe('conflicted');
+        expect(Object.hasOwn(currentClip(), 'loopLength')).toBe(false);
+        expect(undoStore.value?.past).toHaveLength(0);
+    });
+
+    it('rejects a length that would exceed the shared loop-iteration bound at the action boundary', async () => {
+        const clip = ClipDummy.create({ id: 'clip-1', startBeat: 0, endBeat: 100, loopEnabled: true });
+        const track = TrackDummy.create({ id: 'track-1', clips: [clip] });
+        trackStore.set({ tracks: [track], selectedTrackId: track.id, ghostClips: [] });
+
+        const result = await executeAppActionBatch(
+            [{ type: 'setClipLoopLength', payload: { clipId: 'clip-1', loopLength: 1 / 480 } }],
+            { source: 'prompt', requireCompensation: true }
+        );
+
+        expect(result.status).toBe('conflicted');
+        expect(Object.hasOwn(currentClip(), 'loopLength')).toBe(false);
+        expect(undoStore.value?.past).toHaveLength(0);
+    });
+});

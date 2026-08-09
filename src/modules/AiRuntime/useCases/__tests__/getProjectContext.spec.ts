@@ -39,9 +39,14 @@ vi.mock('#/modules/Arrangement/stores', () => ({
 }));
 
 vi.mock('#/modules/Arrangement/useCases', () => ({
+    MIN_CLIP_LOOP_LENGTH_BEATS: 1 / 480,
     getGlueEligibleClipPairs: mocks.getGlueEligibleClipPairs,
     getPluginById: mocks.getPluginById,
     getPlatformPlugins: mocks.getPlatformPlugins,
+    projectClipLoopExpansion: ({ clipDurationBeats }: { clipDurationBeats: number }) => ({
+        iterationCount: Math.min(4096, Math.ceil(clipDurationBeats / Math.max(1 / 480, clipDurationBeats / 4096))),
+        loopLengthBeats: Math.max(1 / 480, clipDurationBeats / 4096),
+    }),
 }));
 
 vi.mock('#/modules/Automation/stores', () => ({
@@ -173,6 +178,7 @@ describe('getProjectContext', () => {
                             fadeInBeats: 0.5,
                             fadeOutBeats: 1,
                             loopEnabled: true,
+                            loopLength: 2,
                         },
                     ],
                     devices: [
@@ -300,6 +306,8 @@ describe('getProjectContext', () => {
             fadeInBeats: 0.5,
             fadeOutBeats: 1,
             loopEnabled: true,
+            loopLength: 2,
+            minimumLoopLengthBeats: 1 / 480,
             noteCount: 0,
         });
         expect(context.tracks[0]?.devices[0]).toEqual({

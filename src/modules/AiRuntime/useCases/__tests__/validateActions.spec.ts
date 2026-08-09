@@ -84,6 +84,24 @@ describe('validateActions', () => {
         );
     });
 
+    it('should reject the Command-only clip loop-length inverse as unavailable to AI', () => {
+        const actions = [
+            {
+                type: 'restoreClipLoopLength',
+                payload: {
+                    clipId: 'clip-1',
+                    expected: { present: true, value: 2 },
+                    replacement: { present: false, value: 0 },
+                },
+            },
+        ] as unknown as RuntimeAction[];
+
+        expect(validateActions(actions)).toEqual([]);
+        expect(mockLogger.warn).toHaveBeenCalledWith(
+            expect.stringContaining('Unknown action type rejected: restoreClipLoopLength')
+        );
+    });
+
     it('should reject the internal legacy VCA restoration action as unavailable to AI', () => {
         const actions = [
             { type: 'restoreLegacyVcaState', payload: { groups: [], trackMemberships: [] } },

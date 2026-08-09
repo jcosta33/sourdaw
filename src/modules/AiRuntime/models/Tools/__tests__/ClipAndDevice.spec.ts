@@ -25,6 +25,7 @@ describe('ClipAndDevice tools', () => {
         const names = clipTools.map((t) => t.function.name);
         expect(names).toContain('renameClip');
         expect(names).not.toContain('glueClips');
+        expect(names).not.toContain('setClipLoopLength');
     });
 
     it('includes well-known device tools', () => {

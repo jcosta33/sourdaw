@@ -1,5 +1,5 @@
 import { trackStore } from '#/modules/Arrangement/stores';
-import { getGainAtBeat, resolveClipsWithComping } from '#/modules/Arrangement/useCases';
+import { getGainAtBeat, projectClipLoopExpansion, resolveClipsWithComping } from '#/modules/Arrangement/useCases';
 import {
     createBufferSource,
     ensureTrackStrip,
@@ -143,8 +143,13 @@ export function scheduleAudioClips(
             }
 
             const clipVisualLength = clip.endBeat - clip.startBeat;
-            const loopLen = clip.loopEnabled ? (clip.loopLength ?? clipVisualLength) : clipVisualLength;
-            const maxIterations = clip.loopEnabled ? Math.ceil(clipVisualLength / loopLen) : 1;
+            const loopProjection = projectClipLoopExpansion({
+                clipDurationBeats: clipVisualLength,
+                configuredLoopLengthBeats: clip.loopLength,
+                loopEnabled: clip.loopEnabled ?? false,
+            });
+            const loopLen = loopProjection.loopLengthBeats;
+            const maxIterations = loopProjection.iterationCount;
 
             for (let iter = 0; iter < maxIterations; iter++) {
                 const iterOffsetBeats = iter * loopLen;

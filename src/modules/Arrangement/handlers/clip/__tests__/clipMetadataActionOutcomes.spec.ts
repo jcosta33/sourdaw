@@ -1,5 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { trackStore } from '#/modules/Arrangement/stores';
+import { defaultTransportState, transportStore } from '#/modules/Transport/stores';
+
+import { ClipDummy } from '../../../__tests__/ClipDummy';
+import { TrackDummy } from '../../../__tests__/TrackDummy';
 import { handleLockClip } from '../handleLockClip';
 import { handleMuteClip } from '../handleMuteClip';
 import { handleRenameClip } from '../handleRenameClip';
@@ -87,6 +92,10 @@ const metadataActions = [
 describe('clip metadata action outcomes', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        transportStore.set(defaultTransportState);
+        const clip = ClipDummy.create({ id: 'clip-1', endBeat: 8 });
+        const track = TrackDummy.create({ id: 'track-1', clips: [clip] });
+        trackStore.set({ tracks: [track], selectedTrackId: track.id, ghostClips: [] });
     });
 
     it.each(metadataActions)('$name reports no-write when the repository rejects the write', ({ execute }) => {
@@ -111,7 +120,7 @@ describe('clip metadata action outcomes', () => {
             payload: { clipId: 'clip-1', loopLength },
         });
 
-        expect(result).toEqual({ status: 'no-write' });
+        expect(result).toEqual({ status: 'conflict' });
         expect(mocks.updateClip).not.toHaveBeenCalled();
     });
 });

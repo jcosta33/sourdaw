@@ -75,6 +75,17 @@ describe('describePlannedAction', () => {
         mocks.markerStoreValue.value = null;
     });
 
+    it('discloses the exact clip, track, range, and dormant loop-length effect', () => {
+        expect(
+            describePlannedAction({
+                action: { type: 'setClipLoopLength', payload: { clipId: 'clip-verse', loopLength: 2 } },
+                context,
+            })
+        ).toBe(
+            'Set clip "Verse Lead" (clip-verse) on track "Drums" (track-drums) loop length from the implicit clip duration of 8 beats to 2 beats; clip looping remains disabled, so this stored length is dormant until looping is enabled; clip range remains beats 0–8'
+        );
+    });
+
     it('names a resolved removal target and falls back when the target is unavailable', () => {
         expect(
             describePlannedAction({

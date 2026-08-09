@@ -1,5 +1,9 @@
 import { trackStore } from '#/modules/Arrangement/stores';
-import { resolveClipsWithComping, getSynthParamsForTrack } from '#/modules/Arrangement/useCases';
+import {
+    getSynthParamsForTrack,
+    projectClipLoopExpansion,
+    resolveClipsWithComping,
+} from '#/modules/Arrangement/useCases';
 import {
     applyNoteExpression,
     ensureTrackStrip,
@@ -410,17 +414,19 @@ export async function scheduleMidiNotes(
                 }
 
                 const clipVisualLength = clip.endBeat - clip.startBeat;
-                const loopLength = clip.loopEnabled ? (clip.loopLength ?? clipVisualLength) : clipVisualLength;
-                if (loopLength <= 0) {
-                    continue;
-                }
+                const loopProjection = projectClipLoopExpansion({
+                    clipDurationBeats: clipVisualLength,
+                    configuredLoopLengthBeats: clip.loopLength,
+                    loopEnabled: clip.loopEnabled ?? false,
+                });
+                const loopLength = loopProjection.loopLengthBeats;
                 const sourceOccurrenceOffset = getSourceOccurrenceOffset({
                     sourceStartBeat: clip.sourceStartBeat,
                     segmentStartBeat: clip.startBeat,
                     loopLength,
                     loopEnabled: clip.loopEnabled ?? false,
                 });
-                const iterationCount = clip.loopEnabled ? Math.ceil(clipVisualLength / loopLength) : 1;
+                const iterationCount = loopProjection.iterationCount;
                 const activeIterationRange = getScheduledIterationRange({
                     clipStartBeat: clip.startBeat,
                     fromBeat,
@@ -554,11 +560,13 @@ export async function scheduleMidiNotes(
             const synthParams = drumKit || drumKitDef ? null : getSynthParamsForTrack(track.id);
             const compensation = getCompensationDelay(track.id);
             const clipVisualLength = clip.endBeat - clip.startBeat;
-            const loopLen = clip.loopEnabled ? (clip.loopLength ?? clipVisualLength) : clipVisualLength;
-            if (loopLen <= 0) {
-                continue;
-            }
-            const maxIterations = clip.loopEnabled ? Math.ceil(clipVisualLength / loopLen) : 1;
+            const loopProjection = projectClipLoopExpansion({
+                clipDurationBeats: clipVisualLength,
+                configuredLoopLengthBeats: clip.loopLength,
+                loopEnabled: clip.loopEnabled ?? false,
+            });
+            const loopLen = loopProjection.loopLengthBeats;
+            const maxIterations = loopProjection.iterationCount;
             const scheduledIterationRange = getScheduledIterationRange({
                 clipStartBeat: clip.startBeat,
                 fromBeat,

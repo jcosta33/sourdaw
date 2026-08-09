@@ -2003,7 +2003,19 @@ function findBeatDurationNumbers(maskedScope: string, numbers: readonly PromptNu
 
 function isBoundBeatDurationNumber(maskedScope: string, number: PromptNumber): boolean {
     const prefix = normalizePromptText(maskedScope.slice(0, number.index));
-    return /\bfit(?: the)? clip(?: duration)? to$/u.test(prefix);
+    return (
+        /\bfit(?: the)? clip(?: duration)? to$/u.test(prefix) ||
+        /\b(?:set|change)(?: the)? .+ clip loop length to$/u.test(prefix)
+    );
+}
+
+function isExplicitClipLoopLengthPrompt(prompt: string): boolean {
+    const beatValue = String.raw`(?:\d+(?:\.\d+)?|\.\d+)(?:\s*\/\s*(?:\d+(?:\.\d+)?|\.\d+))?`;
+    const directRequest = new RegExp(
+        String.raw`^(?:please\s+)?(?:set|change)\s+(?:the\s+)?(?:selected|.+?)\s+clip\s+loop\s+length\s+to\s+${beatValue}\s+beats?\s*[.!]?$`,
+        'iu'
+    );
+    return directRequest.test(prompt.trim());
 }
 
 function findDirectionBoundNumber(maskedScope: string, numbers: readonly PromptNumber[]): PromptNumber | null {
@@ -3020,6 +3032,13 @@ function groundToolCall({
 }: GroundToolCallInput): ToolCallResult | LlmActionRejection {
     if (call.name === 'stopPlayback' && !isExplicitStopPlaybackPrompt(prompt)) {
         return rejection(index, call.name, 'Provider action is not grounded in an explicit transport-stop request');
+    }
+    if (call.name === 'setClipLoopLength' && !isExplicitClipLoopLengthPrompt(prompt)) {
+        return rejection(
+            index,
+            call.name,
+            'Provider clip loop-length action requires one direct named or selected clip request in beats'
+        );
     }
     const groundingRules = getExecutableAppActionGroundingRules(call.name);
     if (!groundingRules) {

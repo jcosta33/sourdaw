@@ -169,16 +169,6 @@ export function tryParameterizedPath(normalized: string, context: ProjectContext
         ];
     }
 
-    const loopLengthMatch = normalized.match(/^set\s+loop\s+length\s+(?:to\s+)?(\d+(?:\.\d+)?)\s+beats?$/i);
-    if (loopLengthMatch && selectedClipId) {
-        return [
-            {
-                type: 'setClipLoopLength',
-                payload: { clipId: selectedClipId, loopLength: parseFloat(loopLengthMatch[1]!) },
-            },
-        ];
-    }
-
     const joinMatch = normalized.match(/^join\s+session\s+(.+)$/i);
     if (joinMatch) {
         return [{ type: 'joinCollabSession', payload: { inviteString: joinMatch[1]!.trim(), peerName: 'Peer' } }];

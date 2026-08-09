@@ -56,6 +56,7 @@ describe('clipHandlers', () => {
             'setClipLoop',
             'restoreClipLoop',
             'setClipLoopLength',
+            'restoreClipLoopLength',
             'consolidateSelection',
             'bounceSelection',
             'muteClip',
