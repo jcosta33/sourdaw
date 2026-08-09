@@ -1,0 +1,27 @@
+tests/e2e/deepInteractions.spec.ts
+  s_a40848e8f8cca9::t_fc374a7144b659 182,186-188
+tests/e2e/deviceAndModulator.spec.ts
+  s_a40848e8f8cca9::t_44f98422e86667 51,54,61,67,69-72,74
+tests/e2e/midiModSetlistDeep.spec.ts
+  s_a40848e8f8cca9::t_eeb4283f4d31d8 160,171,173-175,177
+tests/e2e/mixerAdvanced.spec.ts
+  s_a40848e8f8cca9::t_937d0f4876b05b 54-61
+tests/e2e/uncoveredControls.spec.ts
+  s_a40848e8f8cca9::t_3509f1b6470ebd 73,78-89
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "fd94e45d9714ac89813d763b3eaadb564f8f473a",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
