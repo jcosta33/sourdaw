@@ -1,0 +1,21 @@
+src/modules/AudioEngine/stores/audioBufferCache.ts
+  s_bc88af7d3b054c::t_3b1f5dcd8b530d 15-16,51-53,962-978,987,996-1000,1022,1027-1031,1084,1101,1211-1215
+src/modules/AudioEngine/stores/__tests__/audioBufferCacheBase64Surface.spec.ts
+  s_bc88af7d3b054c::t_081dd26180fa35 170-195
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "f555041beb07c376a91bacc2eac80610f6cb2251",
+  "prompts": {},
+  "sessions": {
+    "s_bc88af7d3b054c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f9b4a-11a2-7f61-8dfb-76eed0eb2a9c",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
