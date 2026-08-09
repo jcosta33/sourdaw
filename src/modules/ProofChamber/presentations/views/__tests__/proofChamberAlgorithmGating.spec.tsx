@@ -320,24 +320,30 @@ describe('the Dutch Oven panel offers only controls the live algorithm can hear'
         expect(width?.hasAttribute('disabled')).toBe(false);
     });
 
-    it('writes the algorithm and nothing else, which is a known reset this panel does not fix', () => {
-        // Deliberately *not* dressed up as correct behaviour.
+    it('writes the algorithm and nothing else, because the engine now keeps the rest', () => {
+        // This row was planted to red when the parameter cache landed, and it
+        // did not — because it asserts the panel's *action payload*, and the
+        // cache is in Rust. Coming back to it is the point: the payload shape
+        // is unchanged, and what changed is that it is now the right shape.
         //
-        // `ProofChamberInstance::set_param` constructs a new engine when
-        // `algorithm` arrives (`lib.rs:117-136`) and replays nothing into it,
-        // so this write resets every parameter on the device — `mix` included,
-        // which no gate touches. Measured plate -> reverse -> plate:
-        // bit-identical to an engine nobody had ever written to.
+        // `ProofChamberInstance::set_param` used to construct a new engine when
+        // `algorithm` arrived and replay nothing into it, so this single write
+        // reset every parameter on the device — `mix` included, which no gate
+        // touches. Measured plate -> reverse -> plate: bit-identical to an
+        // engine nobody had ever written to.
         //
         // A panel-side replay was written to fix that and removed: sourced from
         // the store it writes stale values over project truth, and sourced from
         // project truth every action satisfies `handleSetDeviceParameter`'s
         // `isNoop` (`parameterValues[paramId] === value`) so
         // `executeAppActionBatch` skips all of them. The fix is the
-        // `ProofChamberInstance` parameter cache, in Rust.
+        // `ProofChamberInstance` parameter cache, replayed into each newly
+        // constructed engine (`crates/proof-chamber/src/lib.rs:363`), and it is
+        // guarded by render delta in
+        // `crates/proof-chamber/tests/algorithm_switch_parameter_retention.rs`.
         //
-        // This test pins the *current* shape so the cache PR reds here and has
-        // to come back and update it. It is not a claim that the shape is good.
+        // So a second write from here would be wrong, not missing: the panel
+        // sends the algorithm, and the engine keeps the rest.
         renderPanel('plate');
         vi.mocked(executeAppAction).mockClear();
 

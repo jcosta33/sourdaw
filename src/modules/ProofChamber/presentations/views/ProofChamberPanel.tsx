@@ -363,30 +363,33 @@ export const ProofChamberPanel = ({ deviceId }: { deviceId: string }): ReactElem
      * One function rather than two identical chip handlers — the selector is
      * drawn twice, on the rail and in the Engine card.
      *
-     * ## Known, live, and not fixed here: this resets the device
+     * ## Why this writes `algorithm` and nothing else
      *
-     * `ProofChamberInstance::set_param` constructs a **new** engine when
-     * `algorithm` arrives (`lib.rs:117-136`) and replays nothing into it, so
-     * every parameter on the device reverts to the constructor's defaults.
-     * Measured plate → reverse → plate: bit-identical to an engine nobody had
-     * ever written to (`max_delta = 0e0` against defaults, `7.77e-1` against
-     * the settings the user had). `mix` is lost the same way, so this has
-     * nothing to do with gating and predates it.
+     * It used to reset the device. `ProofChamberInstance::set_param`
+     * constructed a **new** engine when `algorithm` arrived and replayed
+     * nothing into it, so every parameter reverted to the constructor's
+     * defaults — measured plate → reverse → plate as bit-identical to an
+     * engine nobody had ever written to (`max_delta = 0e0` against defaults,
+     * `7.77e-1` against the settings the user had). `mix` went the same way,
+     * so it had nothing to do with gating and predated it.
      *
-     * A panel-side replay was tried here and removed, because it cannot work at
-     * this layer. Sourcing it from the store writes stale values over project
-     * truth; sourcing it from project truth makes every replayed action satisfy
-     * `handleSetDeviceParameter`'s `isNoop` — `parameterValues[paramId] ===
-     * value` — so `executeAppActionBatch` skips all of them and the engine is
-     * never told. The two required fixes are contradictory. A replay is an
-     * engine *resync*, and `executeAppAction*` propagates *changes to truth*;
-     * the no-op filter is right and the payload was the wrong shape for it.
+     * A panel-side replay was tried here and removed, because it cannot work
+     * at this layer. Sourcing it from the store writes stale values over
+     * project truth; sourcing it from project truth makes every replayed
+     * action satisfy `handleSetDeviceParameter`'s `isNoop` —
+     * `parameterValues[paramId] === value` — so `executeAppActionBatch` skips
+     * all of them and the engine is never told. The two required fixes are
+     * contradictory. A replay is an engine *resync*, and `executeAppAction*`
+     * propagates *changes to truth*; the no-op filter is right and the payload
+     * was the wrong shape for it.
      *
-     * The fix is a parameter cache inside `ProofChamberInstance`, replayed into
-     * each newly constructed engine — the one place every writer of `algorithm`
-     * must pass through, which the Inspector, MIDI learn, undo and the initial
-     * project projection all do without any of them being able to carry a
-     * replay of their own.
+     * The fix is a parameter cache inside `ProofChamberInstance`
+     * (`crates/proof-chamber/src/lib.rs`, replayed at `lib.rs:363`), the one
+     * place every writer of `algorithm` must pass through — which the
+     * Inspector, MIDI learn, undo and the initial project projection all do
+     * without any of them being able to carry a replay of their own. So this
+     * handler stays a single write, and that is now correct rather than merely
+     * unavoidable.
      */
     function selectAlgorithm(next: ProofChamberAlgorithm): void {
         updateChamberEngine(deviceId, (prev: ProofChamberEngineState) => ({ ...prev, algorithm: next }));

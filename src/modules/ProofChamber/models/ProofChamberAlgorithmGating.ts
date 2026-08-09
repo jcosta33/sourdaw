@@ -58,9 +58,9 @@ const LIVE: ChamberControlGate = { isInert: false, kind: null, explanation: null
  * An earlier version of this file ended every explanation with *"Automation
  * already drawn for it is kept and plays again on an algorithm that reads it"*,
  * rendered into the `title` of up to fifteen controls per algorithm. It was
- * false. `ProofChamberInstance::set_param` constructs a **new** engine when
- * `algorithm` arrives (`lib.rs:117-136`) and replays nothing into it, so
- * switching algorithm resets every parameter on the device — measured plate →
+ * false when it was written. `ProofChamberInstance::set_param` constructed a
+ * **new** engine when `algorithm` arrived and replayed nothing into it, so
+ * switching algorithm reset every parameter on the device — measured plate →
  * reverse → plate as bit-identical to an engine nobody had ever written to.
  *
  * That was this change's original sin: taking a silent engine defect and
@@ -72,9 +72,19 @@ const LIVE: ChamberControlGate = { isInert: false, kind: null, explanation: null
  * **The rule this file now follows: say what the control's state is and why it
  * is in that state, and nothing about what happens later.** Replacing a false
  * promise with a weaker promise the engine also breaks would repeat the same
- * mistake in miniature. When the `ProofChamberInstance` parameter cache lands
- * and a render-delta test proves values survive a switch, the claim can be
- * earned back — not before.
+ * mistake in miniature.
+ *
+ * Both conditions for earning the claim back have since been met: the
+ * `ProofChamberInstance` parameter cache landed, and
+ * `crates/proof-chamber/tests/algorithm_switch_parameter_retention.rs` proves
+ * by render delta that values survive a switch on every exposed engine. The
+ * explanations below still say nothing about what happens later, because
+ * putting a promise back into fifteen tooltips is a copy decision with its own
+ * cost — and because the engine has one measured exception (the plate latches
+ * `shimmer` off inside `freeze`, and a value cache cannot re-fire a latch), so
+ * "everything survives" would still not be literally true. The rule is no
+ * longer forced by the engine; it is now a choice, and changing it is a
+ * separate decision rather than a bug fix.
  *
  * What is true today and needs no promise in the UI: gating refuses manual
  * entry and nothing else. The descriptor's `automatable` flag, the automation

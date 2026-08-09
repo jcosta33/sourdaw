@@ -89,16 +89,24 @@ pub enum UnexposedEngine {
 /// The longest name any engine answers to is `saturation_type` (15), so this
 /// is roughly double the requirement. A longer name is not cached rather than
 /// truncated — a truncated key would collide with a real one and replay the
-/// wrong value into the wrong arm.
+/// wrong value into the wrong arm. It is still forwarded live, so the cached
+/// set is a subset of the forwarded set rather than equal to it; the bound is
+/// what keeps that subset total in practice.
 const MAX_CACHED_NAME_LEN: usize = 32;
 
 /// How many distinct forwarded names the cache holds.
 ///
-/// The union of every engine's parameter list is 35 names. The headroom covers
-/// the engine-native aliases (`rt60`, `feedback`, `reverse_time`,
-/// `dispersion`, `ir_stretch`) and anything a preset or a model-emitted write
-/// invents. Past the limit new names are dropped rather than growing the
-/// backing store, because growing it would allocate — see `record`.
+/// The union of every exposed engine's `get_param_names` is 24, of which 22
+/// are cacheable once `algorithm` and `vintage` are excluded. The headroom
+/// covers the engine-native aliases that are accepted but not advertised
+/// (`rt60`, `rt60_hf`, `feedback`, `reverse_time`, `dispersion`,
+/// `ir_stretch`, the six `ir_eq_*`, `hybrid_mode`, `hybrid_blend`,
+/// `conv_mix`) and anything a preset or a model-emitted write invents.
+///
+/// The limit is a bound, not a policy: it exists because growing the backing
+/// store would allocate on the audio thread. Past it `record` evicts the
+/// least-recently-written entry rather than refusing the incoming one — see
+/// there for why that direction.
 const PARAMETER_CACHE_CAPACITY: usize = 64;
 
 /// One remembered `set_param` write.
@@ -194,11 +202,24 @@ impl CachedParameter {
 /// invert that pair whenever the earlier-introduced name was rewritten later.
 /// `tests/algorithm_switch_parameter_retention.rs` discriminates the two.
 ///
+/// # The one exception, and it is measured
+///
 /// This is a cache of values, not a log of writes, so a latch fired by a value
-/// that was later overwritten is not reproduced: the plate's `freeze` arm
-/// switches `shimmer` off as a side effect, and a `freeze` that has since been
-/// turned off cannot re-fire it. That side effect is arguably the plate's own
-/// bug and is left alone here rather than modelled.
+/// that was later overwritten is not reproduced. Exactly one such latch exists
+/// in the crate: `ProofChamber::set_param`'s `freeze` arm switches
+/// `shimmer.enabled` off as a side effect, and a `freeze` that has since been
+/// turned off does not re-fire it. A round trip therefore comes back with
+/// shimmer **on** where the engine it replaced had it off — a quarter of full
+/// scale on the default algorithm, and reachable with two clicks.
+///
+/// It is not modelled here because the honest fix is in the plate: shimmer
+/// should be a function of the write set (`shimmer && !freeze`, computed at
+/// process time, exactly as `decay`, `input_gain`, `damp` and `mod_depth`
+/// already are) rather than derived state stored at write time. Changing that
+/// moves what a frozen plate renders, which is a separate change with its own
+/// evidence. What this change owes is that the exception cannot widen
+/// silently, so `algorithm_switch_parameter_retention.rs` pins it as a known
+/// non-zero delta rather than leaving it to this comment.
 struct ParameterCache {
     entries: Vec<CachedParameter>,
 }
@@ -225,8 +246,23 @@ impl ParameterCache {
             return;
         }
 
-        if self.entries.len() == PARAMETER_CACHE_CAPACITY {
-            return;
+        // A full cache evicts its oldest entry rather than refusing the write
+        // that has just arrived. Refusing it is the worse direction by some
+        // distance: the incoming name would be forwarded live and then
+        // dropped at the next reconstruction, which is #1544 again, silently
+        // and permanently for that name — while the entry being protected is
+        // the one nobody has touched for longest. Entries are already held in
+        // recency order, so the victim is the front.
+        //
+        // Unreachable through any writer that exists: `ProofChamberNode`
+        // sends descriptor ids, the `dutch-oven` descriptor declares 22
+        // forwarded ids, and the accepted aliases take the union to the low
+        // thirties against a limit of 64. The arm is here because
+        // `handleSetDeviceParameter` does no descriptor validation and
+        // `parameterValues` is an unvalidated string-keyed CRDT map, so the
+        // limit is reachable in principle by something that invents names.
+        if self.entries.len() >= PARAMETER_CACHE_CAPACITY {
+            self.entries.remove(0);
         }
 
         if let Some(entry) = CachedParameter::new(name, value) {
@@ -475,9 +511,13 @@ impl ProofChamberInstance {
             UnexposedEngine::Convolution => ReverbEngine::Convolution(ConvolutionEngine::new(sr)),
             UnexposedEngine::Hybrid => ReverbEngine::Hybrid(HybridReverb::new(sr)),
         };
-        // Same reconstruction, same replay. Both engine-construction sites
-        // behave identically so this one cannot drift into the defect the
-        // wire path just came out of.
+        // Same reconstruction, same replay, so this site cannot drift into
+        // the defect the wire path just came out of. What the replay does not
+        // carry is the impulse response: `load_ir` state is not a parameter
+        // and is not cached, so a reconstruction still drops it. That is the
+        // same defect shape one level down, and it is not fixed here because
+        // `load_ir` has no caller anywhere in the application — when a
+        // transport for it exists, it needs the same treatment.
         self.replay_cached_parameters();
     }
 
