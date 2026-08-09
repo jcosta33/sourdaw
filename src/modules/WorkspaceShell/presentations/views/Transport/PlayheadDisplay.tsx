@@ -27,6 +27,14 @@ export const PlayheadDisplay = ({ tempo, numerator, timeDisplayMode }: PlayheadD
     const isMusical = timeDisplayMode === 'musical';
     const transportState = useStore(transportStore, defaultTransportState);
     const isPlaying = transportState.isPlaying;
+    // The rAF loop below is gated on `isPlaying`, so it repaints every frame
+    // during playback but stops entirely when paused. That means a `Stop` while
+    // already paused (which resets `playheadPosition` to 0 in the store and the
+    // ref) would never trigger another `updateOnce()`, leaving the readout
+    // frozen at the paused beat instead of snapping back to 1.1.000. The store's
+    // discrete `playheadPosition` write (seek / stop / pause) re-runs this effect
+    // and forces one repaint, without re-entering the per-frame loop.
+    const discretePlayheadPosition = transportState.playheadPosition;
 
     // Refs for direct DOM updates
     const seg1Ref = useRef<HTMLSpanElement>(null);
@@ -74,7 +82,7 @@ export const PlayheadDisplay = ({ tempo, numerator, timeDisplayMode }: PlayheadD
         };
         rafRef.current = requestAnimationFrame(loop);
         return () => cancelAnimationFrame(rafRef.current);
-    }, [isPlaying, isMusical, numerator, tempo]);
+    }, [isPlaying, isMusical, numerator, tempo, discretePlayheadPosition]);
 
     // Compute initial values for SSR / first paint
     const position = playheadPositionRef.current;
