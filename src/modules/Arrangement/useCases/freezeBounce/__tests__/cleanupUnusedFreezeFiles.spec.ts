@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-import { projectLoadFailureStore } from '#/modules/Project/stores';
+import { projectLoadFailureStore, projectStore } from '#/modules/Project/stores';
 
 import { trackStore } from '../../../stores/trackStore';
 import { cleanupUnusedFreezeFiles } from '../cleanupUnusedFreezeFiles';
@@ -24,6 +24,11 @@ describe('cleanupUnusedFreezeFiles', () => {
         vi.clearAllMocks();
         trackStore.set({ tracks: [], selectedTrackId: null });
         projectLoadFailureStore.set(null);
+        const project = projectStore.value;
+        if (!project) {
+            throw new Error('Expected project fixture');
+        }
+        projectStore.set({ ...project, createdAt: 200 });
     });
 
     it('should do nothing if store state is missing', async () => {
@@ -68,6 +73,7 @@ describe('cleanupUnusedFreezeFiles', () => {
 
         expect(mocks.garbageCollectFreezeAudioBuffers).toHaveBeenCalledWith({
             activeBufferIds: new Set(['buf-1', 'buf-2']),
+            projectId: 200,
         });
         expect(mocks.garbageCollectCachedAudioBuffersByAge).toHaveBeenCalledWith({ maxAgeDays: 30 });
         expect(mocks.garbageCollectCachedAudioBuffersBySize).toHaveBeenCalledWith({

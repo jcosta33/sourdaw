@@ -91,7 +91,11 @@ function buildInvocations(): Record<string, () => unknown> {
             candidate?.publish();
             return candidate?.persist();
         },
-        garbageCollectFreezeFiles: () => audioBufferCache.garbageCollectFreezeFiles(new Set(['freeze-keep'])),
+        garbageCollectFreezeFiles: () =>
+            audioBufferCache.garbageCollectFreezeFiles({
+                activeIds: new Set(['freeze-project-200-track-keep-1']),
+                projectId: 200,
+            }),
         garbageCollectByAge: () => audioBufferCache.garbageCollectByAge(30),
         garbageCollectBySize: () => audioBufferCache.garbageCollectBySize(2 ** 31),
     };

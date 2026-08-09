@@ -1,5 +1,7 @@
 import { logger } from '#/infra/logger/appLogger';
 
+import { isFreezeAudioBufferOwnedByProject } from '../models/FreezeAudioBufferId';
+
 /** Serialized form of an AudioBuffer embedded inside a .sourdaw project file.
  * Each channel's Float32 PCM data is base64-encoded to survive JSON round-trips.
  *
@@ -721,6 +723,11 @@ async function prepareBuffersFromIdb({
     };
 }
 
+type GarbageCollectFreezeFilesInput = {
+    activeIds: Set<string>;
+    projectId: number;
+};
+
 export const audioBufferCache = {
     get(id: string): AudioBuffer | undefined {
         const buf = audioCacheGet(id);
@@ -1204,10 +1211,17 @@ export const audioBufferCache = {
         };
     },
 
-    async garbageCollectFreezeFiles(activeIds: Set<string>): Promise<void> {
+    async garbageCollectFreezeFiles({ activeIds, projectId }: GarbageCollectFreezeFilesInput): Promise<void> {
+        function shouldCollect(key: string): boolean {
+            if (!key.startsWith('freeze-') || activeIds.has(key)) {
+                return false;
+            }
+            return isFreezeAudioBufferOwnedByProject({ bufferId: key, projectId });
+        }
+
         // Remove from memory cache
         for (const key of cache.keys()) {
-            if (key.startsWith('freeze-') && !activeIds.has(key)) {
+            if (shouldCollect(key)) {
                 evictCachedBuffer(key);
             }
         }
@@ -1228,10 +1242,12 @@ export const audioBufferCache = {
             // not collect" rule belongs to the two stamp-driven collectors
             // below, where absence means "not yet migrated" and a wrong guess
             // deletes audio. Here absence means nothing: an unreferenced freeze
-            // file is garbage whether or not it has been migrated.
+            // file owned by this project is garbage whether or not it has been
+            // migrated. Foreign and legacy unowned keys stay available to their
+            // projects and remain eligible for the global age/size collectors.
             const keys = await awaitRequest(store.getAllKeys());
             for (const key of keys) {
-                if (typeof key === 'string' && key.startsWith('freeze-') && !activeIds.has(key)) {
+                if (typeof key === 'string' && shouldCollect(key)) {
                     store.delete(key);
                     metaStore.delete(key);
                 }

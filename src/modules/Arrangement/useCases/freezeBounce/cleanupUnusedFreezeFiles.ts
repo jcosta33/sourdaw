@@ -3,7 +3,7 @@ import {
     garbageCollectCachedAudioBuffersBySize,
     garbageCollectFreezeAudioBuffers,
 } from '#/modules/AudioEngine/useCases';
-import { projectLoadFailureStore } from '#/modules/Project/stores';
+import { projectLoadFailureStore, projectStore } from '#/modules/Project/stores';
 
 import { trackStore } from '../../stores/trackStore';
 
@@ -20,8 +20,9 @@ export async function cleanupUnusedFreezeFiles(): Promise<void> {
         return;
     }
 
+    const project = projectStore.value;
     const state = trackStore.value;
-    if (!state) {
+    if (!project || !state) {
         return;
     }
 
@@ -33,7 +34,7 @@ export async function cleanupUnusedFreezeFiles(): Promise<void> {
     }
 
     // 1. Remove files not referenced by any track
-    await garbageCollectFreezeAudioBuffers({ activeBufferIds });
+    await garbageCollectFreezeAudioBuffers({ activeBufferIds, projectId: project.createdAt });
 
     // 2. Prune by age (30 days)
     await garbageCollectCachedAudioBuffersByAge({ maxAgeDays: 30 });

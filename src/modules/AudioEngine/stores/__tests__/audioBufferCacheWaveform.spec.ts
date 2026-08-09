@@ -430,19 +430,22 @@ describe('audioBufferCache garbage collection', () => {
 
     it('drops orphaned freeze-* buffers not in the active set', async () => {
         const backing = installFakeIndexedDb();
-        backing.set('freeze-stale', {
+        backing.set('freeze-project-200-track-stale-1', {
             sampleRate: 48_000,
             numberOfChannels: 1,
             channelData: [new Float32Array([0.1])],
             lastAccessed: 1,
             sizeInBytes: 4,
         });
-        audioBufferCache.set('freeze-stale', createAudioBuffer({ length: 1 }));
-        audioBufferCache.set('freeze-kept', createAudioBuffer({ length: 1 }));
+        audioBufferCache.set('freeze-project-200-track-stale-1', createAudioBuffer({ length: 1 }));
+        audioBufferCache.set('freeze-project-200-track-kept-2', createAudioBuffer({ length: 1 }));
 
-        await audioBufferCache.garbageCollectFreezeFiles(new Set(['freeze-kept']));
-        expect(audioBufferCache.get('freeze-stale')).toBeUndefined();
-        expect(audioBufferCache.get('freeze-kept')).toBeDefined();
+        await audioBufferCache.garbageCollectFreezeFiles({
+            activeIds: new Set(['freeze-project-200-track-kept-2']),
+            projectId: 200,
+        });
+        expect(audioBufferCache.get('freeze-project-200-track-stale-1')).toBeUndefined();
+        expect(audioBufferCache.get('freeze-project-200-track-kept-2')).toBeDefined();
     });
 });
 

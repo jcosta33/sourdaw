@@ -1,5 +1,11 @@
-import { cacheAudioBuffer, getCompensationDelay, getDeviceChainTailSeconds } from '#/modules/AudioEngine/useCases';
+import {
+    cacheAudioBuffer,
+    createFreezeAudioBufferId,
+    getCompensationDelay,
+    getDeviceChainTailSeconds,
+} from '#/modules/AudioEngine/useCases';
 import { getAutomationLanes } from '#/modules/Automation/useCases';
+import { projectStore } from '#/modules/Project/stores';
 import { FREEZE_BAKE_VERSION } from '#/utils/frozenBufferTail';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
@@ -16,7 +22,8 @@ export const activeFreezeTasks = new Map<string, AbortController>();
 
 export async function freezeTrack(trackId: string): Promise<boolean> {
     const state = trackStore.value;
-    if (!state) {
+    const project = projectStore.value;
+    if (!state || !project) {
         return false;
     }
 
@@ -131,7 +138,8 @@ export async function freezeTrack(trackId: string): Promise<boolean> {
             return false;
         }
 
-        const freezeId = `freeze-${trackId}-${Date.now()}`;
+        const renderedAt = Date.now();
+        const freezeId = createFreezeAudioBufferId({ projectId: project.createdAt, renderedAt, trackId });
         cacheAudioBuffer({ buffer: renderedBuffer, bufferId: freezeId });
 
         // FX-4 residual — pin the compensation the chain carried while the
@@ -162,7 +170,7 @@ export async function freezeTrack(trackId: string): Promise<boolean> {
                     tailLengthSeconds: tailSeconds,
                     bakeVersion: FREEZE_BAKE_VERSION,
                 },
-                renderedAt: Date.now(),
+                renderedAt,
             },
         }));
     } catch (error) {

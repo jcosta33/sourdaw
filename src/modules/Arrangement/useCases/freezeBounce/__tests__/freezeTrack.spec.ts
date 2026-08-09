@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { cacheAudioBuffer, getCompensationDelay } from '#/modules/AudioEngine/useCases';
+import { projectStore } from '#/modules/Project/stores';
 import { FREEZE_BAKE_VERSION } from '#/utils/frozenBufferTail';
 
 import { createTrack } from '../../../models/Track';
@@ -97,7 +98,11 @@ describe('freezeTrack', () => {
             length: 44100,
             numberOfChannels: 2,
         };
-        const expectedBufferId = 'freeze-t1-1234567890';
+        const project = projectStore.value;
+        if (!project) {
+            throw new Error('Expected project fixture');
+        }
+        const expectedBufferId = `freeze-project-${String(project.createdAt)}-t1-1234567890`;
 
         vi.mocked(renderTrackOffline).mockResolvedValue(renderedBuffer);
 

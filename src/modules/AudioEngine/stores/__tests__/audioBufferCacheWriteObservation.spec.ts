@@ -157,13 +157,16 @@ describe('audioBufferCache write observation', () => {
     // even issued.
     it('resolves the freeze-file collection only once the deletes have committed', async () => {
         const audioBufferCache = await importCache();
-        controls.committed.set('freeze-active', storedRecord([new Float32Array([0.1])], 1_000));
-        controls.committed.set('freeze-stale', storedRecord([new Float32Array([0.2])], 1_000));
+        controls.committed.set('freeze-project-200-track-active-1', storedRecord([new Float32Array([0.1])], 1_000));
+        controls.committed.set('freeze-project-200-track-stale-2', storedRecord([new Float32Array([0.2])], 1_000));
         controls.committed.set('audio-1', storedRecord([new Float32Array([0.3])], 1_000));
 
-        await audioBufferCache.garbageCollectFreezeFiles(new Set(['freeze-active']));
+        await audioBufferCache.garbageCollectFreezeFiles({
+            activeIds: new Set(['freeze-project-200-track-active-1']),
+            projectId: 200,
+        });
 
-        expect([...controls.committed.keys()].sort()).toEqual(['audio-1', 'freeze-active']);
+        expect([...controls.committed.keys()].sort()).toEqual(['audio-1', 'freeze-project-200-track-active-1']);
         expect(mocks.loggerWarn).not.toHaveBeenCalled();
     });
 
@@ -171,12 +174,12 @@ describe('audioBufferCache write observation', () => {
     // `expect(mocks.loggerWarn).toHaveBeenCalledWith(…)`.
     it('reports a freeze-file collection whose transaction aborts', async () => {
         const audioBufferCache = await importCache();
-        controls.committed.set('freeze-stale', storedRecord([new Float32Array([0.2])], 1_000));
+        controls.committed.set('freeze-project-200-track-stale-2', storedRecord([new Float32Array([0.2])], 1_000));
         controls.abortWrites();
 
-        await audioBufferCache.garbageCollectFreezeFiles(new Set());
+        await audioBufferCache.garbageCollectFreezeFiles({ activeIds: new Set(), projectId: 200 });
 
-        expect(controls.committed.has('freeze-stale')).toBe(true);
+        expect(controls.committed.has('freeze-project-200-track-stale-2')).toBe(true);
         expect(mocks.loggerWarn).toHaveBeenCalledWith(
             '[audioBufferCache] Freeze-file collection failed',
             expect.any(Object)

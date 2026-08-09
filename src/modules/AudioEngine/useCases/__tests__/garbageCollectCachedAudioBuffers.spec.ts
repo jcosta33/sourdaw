@@ -6,7 +6,7 @@ import { garbageCollectFreezeAudioBuffers } from '../garbageCollectFreezeAudioBu
 
 const mocks = vi.hoisted(() => ({
     audioBufferCacheGarbageCollectFreezeFiles: vi
-        .fn<(activeBufferIds: Set<string>) => Promise<void>>()
+        .fn<(input: { activeIds: Set<string>; projectId: number }) => Promise<void>>()
         .mockResolvedValue(),
     audioBufferCacheGarbageCollectByAge: vi.fn<(maxAgeDays: number) => Promise<number>>().mockResolvedValue(0),
     audioBufferCacheGarbageCollectBySize: vi.fn<(maxSizeBytes: number) => Promise<number>>().mockResolvedValue(0),
@@ -28,9 +28,12 @@ describe('garbage collect cached audio buffers use cases', () => {
     it('should delegate freeze garbage collection to the private audio buffer cache', async () => {
         const activeBufferIds = new Set(['freeze-track-1', 'freeze-track-2']);
 
-        await garbageCollectFreezeAudioBuffers({ activeBufferIds });
+        await garbageCollectFreezeAudioBuffers({ activeBufferIds, projectId: 200 });
 
-        expect(mocks.audioBufferCacheGarbageCollectFreezeFiles).toHaveBeenCalledWith(activeBufferIds);
+        expect(mocks.audioBufferCacheGarbageCollectFreezeFiles).toHaveBeenCalledWith({
+            activeIds: activeBufferIds,
+            projectId: 200,
+        });
     });
 
     it('should delegate age garbage collection to the private audio buffer cache', async () => {

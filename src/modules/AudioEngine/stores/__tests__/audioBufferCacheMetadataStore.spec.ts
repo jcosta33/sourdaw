@@ -546,15 +546,52 @@ describe('audioBufferCache metadata store', () => {
         // reds `committedMeta` — the stale freeze row survives its record.
         it('collect a freeze record and its metadata row together', async () => {
             const audioBufferCache = await importCache();
-            controls.committed.set('freeze-stale', legacyRecord({ frames: 3, channels: 1, lastAccessed: 1_000 }));
-            controls.committed.set('freeze-live', legacyRecord({ frames: 3, channels: 1, lastAccessed: 1_000 }));
-            controls.committedMeta.set('freeze-stale', { lastAccessed: 1_000, sizeInBytes: 12 });
-            controls.committedMeta.set('freeze-live', { lastAccessed: 1_000, sizeInBytes: 12 });
+            controls.committed.set(
+                'freeze-project-200-track-stale-1',
+                legacyRecord({ frames: 3, channels: 1, lastAccessed: 1_000 })
+            );
+            controls.committed.set(
+                'freeze-project-200-track-live-2',
+                legacyRecord({ frames: 3, channels: 1, lastAccessed: 1_000 })
+            );
+            controls.committedMeta.set('freeze-project-200-track-stale-1', {
+                lastAccessed: 1_000,
+                sizeInBytes: 12,
+            });
+            controls.committedMeta.set('freeze-project-200-track-live-2', {
+                lastAccessed: 1_000,
+                sizeInBytes: 12,
+            });
 
-            await audioBufferCache.garbageCollectFreezeFiles(new Set(['freeze-live']));
+            await audioBufferCache.garbageCollectFreezeFiles({
+                activeIds: new Set(['freeze-project-200-track-live-2']),
+                projectId: 200,
+            });
 
-            expect([...controls.committed.keys()]).toEqual(['freeze-live']);
-            expect([...controls.committedMeta.keys()]).toEqual(['freeze-live']);
+            expect([...controls.committed.keys()]).toEqual(['freeze-project-200-track-live-2']);
+            expect([...controls.committedMeta.keys()]).toEqual(['freeze-project-200-track-live-2']);
+        });
+
+        it('collects only orphaned freezes owned by the open project', async () => {
+            const audioBufferCache = await importCache();
+            const songAActive = 'freeze-project-100-track-a-active-1';
+            const songAOrphan = 'freeze-project-100-track-a-orphan-2';
+            const songBActive = 'freeze-project-200-track-b-active-3';
+            const songBOrphan = 'freeze-project-200-track-b-orphan-4';
+            const legacyFreeze = 'freeze-legacy-track-5';
+            for (const id of [songAActive, songAOrphan, songBActive, songBOrphan, legacyFreeze]) {
+                controls.committed.set(id, legacyRecord({ frames: 3, channels: 1, lastAccessed: 1_000 }));
+                controls.committedMeta.set(id, { lastAccessed: 1_000, sizeInBytes: 12 });
+            }
+
+            await audioBufferCache.garbageCollectFreezeFiles({ activeIds: new Set([songBActive]), projectId: 200 });
+
+            expect([...controls.committed.keys()].sort()).toEqual(
+                [legacyFreeze, songAActive, songAOrphan, songBActive].sort()
+            );
+            expect([...controls.committedMeta.keys()].sort()).toEqual(
+                [legacyFreeze, songAActive, songAOrphan, songBActive].sort()
+            );
         });
 
         // Mutation: dropping the metadata clear from `clear()` reds
