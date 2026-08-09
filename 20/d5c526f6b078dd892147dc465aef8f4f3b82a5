@@ -1,0 +1,32 @@
+crates/daw-dsp/src/fermenter/effects.rs
+  s_14f2bbc9f385dd::t_ba8cc20451ad8a 849-850,854-855,865-866
+  s_14f2bbc9f385dd::t_31aef01a8ac46d 755,1044-1170
+  s_14f2bbc9f385dd::t_2fd91f11c668c5 860-861
+  s_14f2bbc9f385dd::t_294f67ae6caed3 691-710,724,737-754
+  s_14f2bbc9f385dd::t_365bb65ebddb92 871-872
+  s_14f2bbc9f385dd::t_4b52a2fe8afe5b 887
+public/wasm/daw-dsp/daw_dsp.d.ts
+  s_14f2bbc9f385dd::t_8e4f382dafd4f3 1
+public/wasm/daw-dsp/daw_dsp_bg.wasm.d.ts
+  s_14f2bbc9f385dd::t_2a37932df38d6f 1
+public/wasm/manifest.json
+  s_14f2bbc9f385dd::t_03a9c10a9cc4a4 12,16-18,21
+src/modules/AudioEngine/wasm/daw_dsp.d.ts
+  s_14f2bbc9f385dd::t_a642d64e108ae2 1
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "20d5c526f6b078dd892147dc465aef8f4f3b82a5",
+  "prompts": {},
+  "sessions": {
+    "s_14f2bbc9f385dd": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f9a61a1d-66b3-4146-938d-a04f45f4b060",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
