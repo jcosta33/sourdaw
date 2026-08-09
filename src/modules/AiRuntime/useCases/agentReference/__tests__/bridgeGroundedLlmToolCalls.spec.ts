@@ -121,6 +121,36 @@ describe('setPlayback grounding', () => {
     });
 });
 
+describe('trailing negative constraints', () => {
+    it('cancels the current boolean action through a matching negated pronoun carrier', () => {
+        const muteClip = bridge(
+            [{ name: 'muteClip', arguments: { clipId: 'clip-intro', muted: true } }],
+            'mute the Intro clip, but dont mute it',
+            createClipContext()
+        );
+        const enableMetronome = bridge(
+            [{ name: 'setMetronomeEnabled', arguments: { enabled: true } }],
+            'enable metronome, but dont enable it'
+        );
+
+        expect(muteClip.actions).toEqual([]);
+        expect(enableMetronome.actions).toEqual([]);
+    });
+
+    it('keeps the planned action when a trailing negation constrains another action', () => {
+        const prompts = [
+            'set tempo to 130, but dont change the time signature',
+            'set tempo to 130, but dont automate it',
+        ];
+
+        for (const prompt of prompts) {
+            const result = bridge([{ name: 'setTempo', arguments: { bpm: 130 } }], prompt);
+            expect.soft(result.actions).toEqual([{ type: 'setTempo', payload: { bpm: 130 } }]);
+            expect.soft(result.rejections).toEqual([]);
+        }
+    });
+});
+
 describe('stopPlayback grounding', () => {
     it('accepts only explicit transport-stop wording even when playback is visibly stopped', () => {
         const stopPlayback = bridge([{ name: 'stopPlayback', arguments: {} }], 'stop playback', {
@@ -2850,6 +2880,70 @@ describe('bridgeGroundedLlmToolCalls', () => {
 
         expect(result.actions).toEqual([]);
         expect(result.rejections).toHaveLength(1);
+    });
+
+    it('grounds direct commands whose track or clip target is named after the action', () => {
+        const muteTrack = createTrack({ id: 'track-mute', name: 'Mute' });
+        const soloTrack = createTrack({ id: 'track-solo', name: 'Solo' });
+        const armTrack = createTrack({ id: 'track-arm', name: 'Arm' });
+        const trackContext = {
+            ...projectContext,
+            tracks: [...projectContext.tracks, muteTrack, soloTrack, armTrack],
+        };
+        const clipContext = createClipContext();
+        const actionClipContext = {
+            ...clipContext,
+            tracks: clipContext.tracks.map((track) => ({
+                ...track,
+                clips: track.clips.map((clip) => {
+                    if (clip.id === 'clip-intro') {
+                        return { ...clip, name: 'Mute' };
+                    }
+                    if (clip.id === 'clip-chorus') {
+                        return { ...clip, name: 'Lock' };
+                    }
+                    return clip;
+                }),
+            })),
+        };
+        const cases = [
+            {
+                call: { name: 'muteTrack', arguments: { trackId: muteTrack.id, muted: true } },
+                prompt: 'mute Mute',
+                context: trackContext,
+                action: { type: 'muteTrack', payload: { trackId: muteTrack.id, muted: true } },
+            },
+            {
+                call: { name: 'soloTrack', arguments: { trackId: soloTrack.id, soloed: true } },
+                prompt: 'solo Solo',
+                context: trackContext,
+                action: { type: 'soloTrack', payload: { trackId: soloTrack.id, soloed: true } },
+            },
+            {
+                call: { name: 'armTrack', arguments: { trackId: armTrack.id, armed: true } },
+                prompt: 'arm Arm',
+                context: trackContext,
+                action: { type: 'armTrack', payload: { trackId: armTrack.id, armed: true } },
+            },
+            {
+                call: { name: 'muteClip', arguments: { clipId: 'clip-intro', muted: true } },
+                prompt: 'mute the Mute clip',
+                context: actionClipContext,
+                action: { type: 'muteClip', payload: { clipId: 'clip-intro', muted: true } },
+            },
+            {
+                call: { name: 'lockClip', arguments: { clipId: 'clip-chorus', locked: true } },
+                prompt: 'lock the Lock clip',
+                context: actionClipContext,
+                action: { type: 'lockClip', payload: { clipId: 'clip-chorus', locked: true } },
+            },
+        ] as const;
+
+        for (const testCase of cases) {
+            const result = bridge([testCase.call], testCase.prompt, testCase.context);
+            expect.soft(result.actions).toEqual([testCase.action]);
+            expect.soft(result.rejections).toEqual([]);
+        }
     });
 
     it('segments sentence-ending periods after numeric values', () => {
