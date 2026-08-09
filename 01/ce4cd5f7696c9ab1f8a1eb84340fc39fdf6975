@@ -1,0 +1,40 @@
+src/modules/Command/useCases/executeAppActionBatch.ts
+  s_bc88af7d3b054c::t_8b3432b679c758 324-331
+  s_bc88af7d3b054c::t_017a41202707df 323
+src/modules/WorkspaceShell/presentations/views/Transport/TransportControls.tsx
+  s_bc88af7d3b054c::t_017a41202707df 122-128
+  s_bc88af7d3b054c::t_8b3432b679c758 11,56-61,248-249
+src/modules/Transport/handlers/transport/handleTogglePunch.ts
+  s_bc88af7d3b054c::t_8b3432b679c758 7
+src/modules/WorkspaceShell/presentations/views/Transport/__tests__/TransportControls.integration.spec.tsx
+  s_bc88af7d3b054c::t_aeebf527ba7ecc 1-4,6-77
+  s_bc88af7d3b054c::t_017a41202707df 5
+src/utils/createHandler.ts
+  s_bc88af7d3b054c::t_8b3432b679c758 22,31
+src/modules/Transport/handlers/transport/__tests__/punchUndoRedo.spec.ts
+  s_bc88af7d3b054c::t_aeebf527ba7ecc 5,178-198,202-203,206,210-212
+  s_bc88af7d3b054c::t_017a41202707df 199-201
+  s_bc88af7d3b054c::t_3eab5241b84ea1 204-205
+  s_bc88af7d3b054c::t_e917159900447d 207-209
+  s_bc88af7d3b054c::t_c6d126e152a372 213
+src/modules/WorkspaceShell/presentations/views/Transport/__tests__/TransportControls.spec.tsx
+  s_bc88af7d3b054c::t_aeebf527ba7ecc 9,21-24,155,158-171
+src/utils/handlerContract.ts
+  s_bc88af7d3b054c::t_8b3432b679c758 1273-1274
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "01ce4cd5f7696c9ab1f8a1eb84340fc39fdf6975",
+  "prompts": {},
+  "sessions": {
+    "s_bc88af7d3b054c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f9b4a-11a2-7f61-8dfb-76eed0eb2a9c",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
