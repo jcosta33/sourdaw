@@ -5,10 +5,7 @@ import { type AutomationPoint } from '../../models/Automation';
 import { automationStore } from '../../stores/automationStore';
 
 import { pendingAutoMatch } from './autoMatchState';
-import { captureLaneBaseline } from './captureLaneBaseline';
-import { clearPointsInRange } from './clearPointsInRange';
-import { findLaneId } from './findLaneId';
-import { flushPendingPoints } from './flushPendingPoints';
+import { commitRecordedPass } from './commitRecordedPass';
 import { activeRecording, laneBaselines, pendingPoints, touchActive } from './recordingSessionState';
 
 /** Snapshot the points of one lane, or null if the lane is absent. */
@@ -51,26 +48,10 @@ export function stopAutomationRecording(): void {
     // entry (audit M-052).
     for (const [key, session] of activeRecording) {
         const track = tracks.find((time) => time.id === session.trackId);
-        const laneId = findLaneId(session.trackId, session.parameterId);
-
-        if (laneId) {
-            // Write mode buffers everything until now, so its lanes reach stop
-            // with no baseline yet. First capture wins, so a lane already
-            // baselined by a release keeps its true pre-session state.
-            captureLaneBaseline(laneId);
-        }
-
-        const points = pendingPoints.get(key);
-        const lastBeat = points && points.length > 0 ? points[points.length - 1]!.beat : session.startBeat;
-
-        // write + latch overwrite the recorded span. Clear it ONCE here rather
-        // than per recorded value (the old hot-path full lane re-map at ~100Hz).
+        // write + latch overwrite the span they pass over. A loop wrap ends a
+        // pass the same way a stop does, so both go through the same commit.
         const overwrites = track?.automationMode === 'write' || track?.automationMode === 'latch';
-        if (overwrites && laneId && session.lastValue !== null && lastBeat > session.startBeat) {
-            clearPointsInRange(laneId, session.startBeat, lastBeat);
-        }
-
-        flushPendingPoints(key);
+        commitRecordedPass(key, overwrites);
     }
 
     // Build the scoped undo from the lanes actually touched. Each callback maps

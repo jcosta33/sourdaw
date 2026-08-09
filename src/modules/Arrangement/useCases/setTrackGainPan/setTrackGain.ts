@@ -26,14 +26,25 @@ import { maybeRecordAutomation } from './maybeRecordAutomation';
  * `flushPendingPoints` runs the shared RDP on release so "a full-rate
  * fader/MIDI ride does not persist raw into project truth". Recording only the
  * committed endpoint left that thinning nothing to thin.
+ *
+ * The Toaster pad mirror is on the engine side of that split, not the
+ * persistence side. `syncToasterPadParam` writes through `updateDeviceParam` —
+ * "the single door every device-parameter write reaches the DSP through", whose
+ * store-side twin is `persistDeviceParam` — and on a Toaster pad track the pad
+ * gain sits in series with the strip gain on the same audio, because
+ * `createWebAudioEngine` connects the pad output into the child track's
+ * `gainNode`. Left behind the persistence guard, a drag ran at
+ * `padGain x oldTrackGain` while the thumb was down and `padGain x newTrackGain`
+ * the instant it lifted: an audible step on release, about 6 dB for a
+ * 0.8 -> 0.4 move. Only `updateTrack` belongs inside the guard.
  */
 export function setTrackGain(trackId: string, gain: number, isTransient = false): void {
     const clamped = clampFaderGain(gain);
     engineSetTrackGain(trackId, clamped);
+    syncToasterPadParam(trackId, 'volume', clamped, { updateDeviceParam, getAllTracks });
 
     if (!isTransient) {
         updateTrack(trackId, (time) => ({ ...time, gain: clamped }));
-        syncToasterPadParam(trackId, 'volume', clamped, { updateDeviceParam, getAllTracks });
     }
 
     maybeRecordAutomation(

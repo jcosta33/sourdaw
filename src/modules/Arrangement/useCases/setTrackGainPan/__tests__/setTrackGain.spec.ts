@@ -1,5 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+import { TrackDummy } from '../../../__tests__/TrackDummy';
+import { trackStore } from '../../../stores/trackStore';
 import { setTrackGain } from '../setTrackGain';
 
 const mocks = vi.hoisted(() => {
@@ -83,12 +85,12 @@ describe('setTrackGain', () => {
 
     it('skips persistence but still records the gesture when the change is transient', () => {
         // `isTransient` splits persistence from the gesture, not the gesture
-        // from its recording. A live drag sample must not write the store or
-        // the Toaster pad mirror — project truth belongs to the committed
-        // value — but the ride itself is the automation, so it still reaches
-        // `recordAutomationValue`, which buffers it for the RDP thinning
-        // `flushPendingPoints` runs on release. Recording only the committed
-        // endpoint replaced a whole fader ride with a step at the release beat.
+        // from its recording. A live drag sample must not write the store —
+        // project truth belongs to the committed value — but the ride itself is
+        // the automation, so it still reaches `recordAutomationValue`, which
+        // buffers it for the RDP thinning `flushPendingPoints` runs on release.
+        // Recording only the committed endpoint replaced a whole fader ride
+        // with a step at the release beat.
         mocks.getTrackById.mockReturnValue({ id: 't1', automationMode: 'write' });
         mocks.transportStoreValue = { isPlaying: true, playheadPosition: 10 };
 
@@ -96,8 +98,49 @@ describe('setTrackGain', () => {
 
         expect(mocks.engineSetTrackGain).toHaveBeenCalledWith('t1', 0.8);
         expect(mocks.updateTrack).not.toHaveBeenCalled();
-        expect(mocks.updateDeviceParam).not.toHaveBeenCalled();
         expect(mocks.recordAutomationValue).toHaveBeenCalledWith('t1', 'gain', 0.8, 10);
+    });
+
+    /**
+     * The Toaster pad mirror is an engine write, not a persistence write.
+     * `updateDeviceParam` is "the single door every device-parameter write
+     * reaches the DSP through" (its own docblock; `persistDeviceParam` is the
+     * store-side twin), and the pad gain sits in series with the track's strip
+     * gain on the same audio — `createWebAudioEngine` connects the pad output
+     * into the child track's `gainNode`. Leaving the mirror behind the
+     * persistence guard meant a drag on a Toaster pad track ran at
+     * `padGain × oldTrackGain` while the thumb was down and
+     * `padGain × newTrackGain` the instant it lifted: an audible step on
+     * release, ~6 dB for a 0.8 → 0.4 move.
+     */
+    it('mirrors a transient change onto the Toaster pad in the same breath as the engine write', () => {
+        trackStore.set({
+            tracks: [
+                TrackDummy.create({
+                    id: 'toaster-bus',
+                    kind: 'bus',
+                    devices: [
+                        {
+                            id: 'toaster-device',
+                            name: 'Toaster',
+                            type: 'toaster',
+                            bypassed: false,
+                            parameterValues: {},
+                        },
+                    ],
+                }),
+                TrackDummy.create({ id: 't1', kind: 'audio', parentId: 'toaster-bus' }),
+            ],
+            selectedTrackId: null,
+            ghostClips: [],
+        });
+        mocks.getAllTracks.mockReturnValue(trackStore.value!.tracks);
+
+        setTrackGain('t1', 0.4, true);
+
+        expect(mocks.updateDeviceParam).toHaveBeenCalledWith('toaster-bus', 'toaster-device', 'pad_0_volume', 0.4);
+        // Still no persistence — only the engine side crossed the guard.
+        expect(mocks.updateTrack).not.toHaveBeenCalled();
     });
 
     it('records nothing from a transient change while the transport is stopped', () => {

@@ -1,5 +1,6 @@
 import { useState } from 'react';
 
+import { logger } from '#/infra/logger/appLogger';
 import {
     soloTrackExclusive,
     toggleInputMonitoring,
@@ -150,6 +151,12 @@ export function useChannelStripActions(track: Track): ChannelStripActions {
         void (async () => {
             try {
                 await executeAppAction(action);
+            } catch (error) {
+                // `void` on a rejecting promise is an unhandled rejection, not a
+                // handled one — the `finally` below runs but nothing consumes
+                // the failure, so a commit that throws took down the page's
+                // rejection handler while every test around it still passed.
+                logger.error(new Error(`Channel strip commit failed for action: ${action.type}`, { cause: error }));
             } finally {
                 clearGesture();
                 releaseTouch(parameterId);
