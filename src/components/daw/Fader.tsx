@@ -41,7 +41,18 @@ const TONE_CLASS_NAMES: Record<Tone, string> = {
 
 type FaderProps = {
     value: number;
-    onChange: (val: number) => void;
+    /**
+     * `isTransient` is `true` for the samples emitted while the cap is under the
+     * pointer and `false` for the one value that settles the gesture — the same
+     * contract `RotaryKnob` already exposes.
+     *
+     * A caller that ignores the flag sees the behaviour it had before: every
+     * sample arrives, and the settled value arrives once more at the end. A
+     * caller that reads it can drive the engine from the transient half and
+     * commit project truth once, which is what turns a whole drag into one undo
+     * entry instead of ninety.
+     */
+    onChange: (val: number, isTransient?: boolean) => void;
     min?: number;
     max?: number;
     step?: number;
@@ -117,6 +128,10 @@ export const Fader = ({
     const trackRef = useRef<HTMLDivElement>(null);
     const startY = useRef(0);
     const startValue = useRef(value);
+    /** The value the gesture began from, so the finalizer knows whether the drag moved anything. */
+    const gestureStartValue = useRef(value);
+    /** The latest value emitted during the gesture — the one the finalizer commits. */
+    const currentValue = useRef(value);
     /** audit M-082: the id of the captured pointer, so a finalizer that has no event can still release it. */
     const activePointerIdRef = useRef<number | null>(null);
     const finalizeDragRef = useRef<() => void>(() => {});
@@ -147,6 +162,14 @@ export const Fader = ({
         draggingRef.current = false;
         activePointerIdRef.current = null;
         setIsDragging(false);
+        // The commit that closes the gesture. It is emitted for every way a drag
+        // can end — pointerup, cancel, lost capture, blur, tab switch — because a
+        // caller that only persists on the commit would otherwise lose the whole
+        // sweep when the OS steals the gesture. A drag that never moved emits
+        // nothing, so a bare click on the cap stays a no-op.
+        if (!Object.is(currentValue.current, gestureStartValue.current)) {
+            onChange(currentValue.current, false);
+        }
         if (pointerId === null || !rootRef.current) {
             return;
         }
@@ -160,6 +183,15 @@ export const Fader = ({
     useLayoutEffect(() => {
         finalizeDragRef.current = finalizeDrag;
     });
+
+    // Outside a gesture the control follows the prop; inside one the refs are
+    // the gesture's own record and the prop may legitimately lag behind, since a
+    // transient-aware caller is not writing it.
+    useLayoutEffect(() => {
+        if (!draggingRef.current) {
+            currentValue.current = value;
+        }
+    }, [value]);
 
     // audit M-082: a drag interrupted by a window/tab switch never sees pointerup.
     useEffect(() => {
@@ -185,13 +217,17 @@ export const Fader = ({
             return;
         }
         if (event.altKey) {
-            onChange(defaultValue);
+            onChange(defaultValue, false);
             return;
         }
         event.currentTarget.setPointerCapture(event.pointerId);
         activePointerIdRef.current = event.pointerId;
         draggingRef.current = true;
         setIsDragging(true);
+        // Where the gesture began, not where the press landed: a press on the
+        // groove jumps the value immediately, and that jump is part of what the
+        // finalizer has to commit.
+        gestureStartValue.current = value;
 
         const capEl = event.currentTarget.querySelector('[data-role="fader-cap"]');
         const isCapClick = capEl?.contains(event.target as Node);
@@ -200,10 +236,12 @@ export const Fader = ({
             const rect = trackRef.current.getBoundingClientRect();
             const percent = 1 - (event.clientY - rect.top) / rect.height;
             const newValue = clampAndSnap(min + percent * (max - min));
-            onChange(newValue);
+            onChange(newValue, true);
+            currentValue.current = newValue;
             startValue.current = newValue;
             startY.current = event.clientY;
         } else {
+            currentValue.current = value;
             startValue.current = value;
             startY.current = event.clientY;
         }
@@ -222,7 +260,9 @@ export const Fader = ({
         }
         let newValue = startValue.current + deltaY * sensitivity;
         newValue = Math.round(newValue / currentStep) * currentStep;
-        onChange(clampAndSnap(newValue));
+        const clamped = clampAndSnap(newValue);
+        currentValue.current = clamped;
+        onChange(clamped, true);
     };
 
     const handlePointerUp = () => {
@@ -231,8 +271,8 @@ export const Fader = ({
 
     /**
      * audit M-083: the APG slider keyboard contract — arrows step, Shift for the
-     * fine step, Home/End to the bounds, PageUp/PageDown coarse. `onChange` has no
-     * transient flag, so each keypress is one committed write, not a stream.
+     * fine step, Home/End to the bounds, PageUp/PageDown coarse. Each keypress is
+     * one committed write, not a stream — it is emitted with `isTransient` false.
      * https://www.w3.org/WAI/ARIA/apg/patterns/slider/
      */
     const handleKeyDown = (event: KeyboardEvent<HTMLDivElement>): void => {
@@ -275,11 +315,14 @@ export const Fader = ({
         if (Object.is(nextValue, value)) {
             return;
         }
-        onChange(nextValue);
+        // A keypress is a whole gesture, so it commits directly — there is no
+        // transient phase to settle.
+        currentValue.current = nextValue;
+        onChange(nextValue, false);
     };
 
     const handleDoubleClick = () => {
-        onChange(defaultValue);
+        onChange(defaultValue, false);
     };
 
     const capBottomPct = normalized * 100;

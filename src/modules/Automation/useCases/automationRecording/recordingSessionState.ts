@@ -27,6 +27,16 @@ export type RecordingSession = {
      * lands (older sessions seeded before this field omit it entirely).
      */
     tempoAtStart?: number | null;
+    /**
+     * The raw playhead beat of the previous recorded value — the transport's own
+     * position, before latency compensation. Compared against the next one to
+     * spot a loop wrap: forward playback only ever moves this forward, so a
+     * decrease is the playhead having jumped back, which ends the current pass.
+     * The *raw* position is used deliberately; the compensated beat shifts with
+     * PDC and would make a delay recomputation look like a wrap.
+     * Absent/`null` until the first value lands.
+     */
+    lastRawBeat?: number | null;
 };
 
 export const RECORDING_MODES: ReadonlySet<AutomationMode> = new Set(['write', 'touch', 'latch']);

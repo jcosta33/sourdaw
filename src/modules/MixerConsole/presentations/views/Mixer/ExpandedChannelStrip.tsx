@@ -60,13 +60,13 @@ export const ExpandedChannelStrip = ({ track, isSelected, widthClass }: Expanded
         setCtxMenu(null);
     };
     const renderIife_1 = () => {
-        if (track.pan === 0) {
+        if (actions.displayPan === 0) {
             return 'C';
         }
-        if (track.pan > 0) {
-            return `R${Math.round(track.pan)}`;
+        if (actions.displayPan > 0) {
+            return `R${Math.round(actions.displayPan)}`;
         }
-        return `L${Math.abs(Math.round(track.pan))}`;
+        return `L${Math.abs(Math.round(actions.displayPan))}`;
     };
     const renderIife_2 = () => {
         if (ctxMenu) {
@@ -296,7 +296,12 @@ export const ExpandedChannelStrip = ({ track, isSelected, widthClass }: Expanded
                         onKeyUp={actions.releaseGainAutomation}
                     >
                         <Fader
-                            value={track.gain}
+                            // Mid-drag the strip draws the gesture, not project
+                            // truth: the transient half of the gesture only
+                            // reaches the audio engine, so reading `track.gain`
+                            // here would leave the cap pinned while the level
+                            // moved.
+                            value={actions.displayGain}
                             onChange={actions.setGain}
                             min={0}
                             max={1.5}
@@ -308,13 +313,13 @@ export const ExpandedChannelStrip = ({ track, isSelected, widthClass }: Expanded
                         />
                     </div>
                 }
-                value={<>{track.gain === 0 ? '-∞' : `${((track.gain - 0.8) * 40).toFixed(1)}`} dB</>}
+                value={<>{actions.displayGain === 0 ? '-∞' : `${((actions.displayGain - 0.8) * 40).toFixed(1)}`} dB</>}
             />
             {/* Pan */}
             <div className="w-full px-1 flex flex-col items-center mt-2 mb-2">
                 <div data-testid={`channel-pan-${track.id}`} onPointerUp={actions.releasePanAutomation}>
                     <RotaryKnob
-                        value={track.pan}
+                        value={actions.displayPan}
                         onChange={actions.setPan}
                         min={-50}
                         max={50}
