@@ -1,4 +1,4 @@
-import { readdirSync, readFileSync, statSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -703,35 +703,88 @@ function readEngineClampsUnioned(deviceId: string): {
 type DeviceEngineSplit = {
     readonly root: string;
     readonly selectorParamId: string;
-    readonly alternatives: readonly { readonly engineId: string; readonly source: string }[];
+    /**
+     * `sources` is a **list**, not a single path. A topology whose `set_param`
+     * spans two files was previously inexpressible, and its second file fell
+     * through to `shared` — where its bounds would be attributed to every
+     * alternative including ones with no such arm at all.
+     */
+    readonly alternatives: readonly { readonly engineId: string; readonly sources: readonly string[] }[];
+    /**
+     * Every remaining `.rs` file under `root`, **named**.
+     *
+     * This is the fix for the worst failure this file has had. `sharedFiles`
+     * used to be computed by *subtraction* — everything under `root` not listed
+     * as an alternative — so a fifth topology added without an `ENGINE_SPLITS`
+     * entry silently became a shared bound that all four existing alternatives
+     * were claimed to meet. The census stayed green; changing the new file's
+     * clamp then produced `gluten.ratio@opto clamp[2..12]`, naming a topology
+     * whose `opto.rs` has no `ratio` arm at all. That is "one alternative
+     * vouching for another" — the exact defect the split exists to prevent —
+     * inverted so an *unregistered* file vouched for every alternative.
+     *
+     * Naming the shared set makes the partition an identity rather than a
+     * difference: `alternatives ∪ shared` must equal what is on disk, exactly,
+     * so a new file has to be classified before the census will run. It is the
+     * same discipline `PANEL_BINDINGS` gets against `hasCustomUI`, and the same
+     * remedy applied to the knob leg two rounds ago.
+     */
+    readonly sharedSources: readonly string[];
 };
+
+const GLUTEN = 'crates/daw-dsp/src/gluten';
+const CHAMBER = 'crates/proof-chamber/src';
 
 const ENGINE_SPLITS: Readonly<Record<string, DeviceEngineSplit>> = {
     // Four compressor topologies. `gluten/engine.rs:320-332` forwards every
     // non-global name to all four; `:456` processes through `active_topology`
     // alone, so only the selected one is audible.
     gluten: {
-        root: 'crates/daw-dsp/src/gluten',
+        root: GLUTEN,
         selectorParamId: 'topology',
         alternatives: [
-            { engineId: 'vca', source: 'crates/daw-dsp/src/gluten/vca.rs' },
-            { engineId: 'opto', source: 'crates/daw-dsp/src/gluten/opto.rs' },
-            { engineId: 'fet', source: 'crates/daw-dsp/src/gluten/fet.rs' },
-            { engineId: 'diode', source: 'crates/daw-dsp/src/gluten/diode.rs' },
+            { engineId: 'vca', sources: [`${GLUTEN}/vca.rs`] },
+            { engineId: 'opto', sources: [`${GLUTEN}/opto.rs`] },
+            { engineId: 'fet', sources: [`${GLUTEN}/fet.rs`] },
+            { engineId: 'diode', sources: [`${GLUTEN}/diode.rs`] },
+        ],
+        // The dispatcher and the stages every topology runs through.
+        sharedSources: [
+            `${GLUTEN}/detector.rs`,
+            `${GLUTEN}/engine.rs`,
+            `${GLUTEN}/gain_computer.rs`,
+            `${GLUTEN}/lookahead.rs`,
+            `${GLUTEN}/mod.rs`,
+            `${GLUTEN}/oversample.rs`,
+            `${GLUTEN}/params.rs`,
+            `${GLUTEN}/sidechain.rs`,
+            `${GLUTEN}/smoother.rs`,
+            `${GLUTEN}/stereo.rs`,
         ],
     },
     // The reverb algorithms, split on the same basis and by the same file list
     // `descriptorEngineParamWeld` uses.
     'dutch-oven': {
-        root: 'crates/proof-chamber/src',
+        root: CHAMBER,
         selectorParamId: 'algorithm',
         alternatives: [
-            { engineId: 'plate', source: 'crates/proof-chamber/src/proof_chamber.rs' },
-            { engineId: 'fdn', source: 'crates/proof-chamber/src/fdn.rs' },
-            { engineId: 'spring', source: 'crates/proof-chamber/src/spring.rs' },
-            { engineId: 'reverse', source: 'crates/proof-chamber/src/reverse.rs' },
-            { engineId: 'convolution', source: 'crates/proof-chamber/src/convolution.rs' },
-            { engineId: 'hybrid', source: 'crates/proof-chamber/src/hybrid.rs' },
+            { engineId: 'plate', sources: [`${CHAMBER}/proof_chamber.rs`] },
+            { engineId: 'fdn', sources: [`${CHAMBER}/fdn.rs`] },
+            { engineId: 'spring', sources: [`${CHAMBER}/spring.rs`] },
+            { engineId: 'reverse', sources: [`${CHAMBER}/reverse.rs`] },
+            { engineId: 'convolution', sources: [`${CHAMBER}/convolution.rs`] },
+            { engineId: 'hybrid', sources: [`${CHAMBER}/hybrid.rs`] },
+        ],
+        // `lib.rs` holds the arms every algorithm sees; the rest are stages
+        // shared across algorithms (`early_reflections.rs` serves plate and FDN
+        // both, `vintage.rs` runs after every algorithm).
+        sharedSources: [
+            `${CHAMBER}/decay_curve.rs`,
+            `${CHAMBER}/decay_eq.rs`,
+            `${CHAMBER}/early_reflections.rs`,
+            `${CHAMBER}/lib.rs`,
+            `${CHAMBER}/output_stage.rs`,
+            `${CHAMBER}/vintage.rs`,
         ],
     },
 };
@@ -747,24 +800,50 @@ type EngineClamps = {
      * limit, unlike the per-alternative case this used to be conflated with.
      */
     readonly contested: readonly string[];
+    /**
+     * Declared source paths that are not on disk — a renamed or deleted file
+     * whose `ENGINE_SPLITS` entry was not updated.
+     *
+     * Collected rather than thrown. `git mv gluten/opto.rs optical.rs` used to
+     * kill the spec at module load with a raw `ENOENT` and **zero tests run**,
+     * so nothing named the stale entry and no assertion fired. A guarded read
+     * turns that into a normal red that says which entry to fix.
+     */
+    readonly missingSources: readonly string[];
+    /** `.rs` files on disk that no alternative and no `sharedSources` entry claims. */
+    readonly undeclaredSources: readonly string[];
 };
 
 function readEngineClamps(deviceId: string): EngineClamps {
     const split = ENGINE_SPLITS[deviceId];
     if (split === undefined) {
         const unioned = readEngineClampsUnioned(deviceId);
-        return { shared: unioned.byName, perEngine: new Map(), contested: unioned.contested };
+        return {
+            shared: unioned.byName,
+            perEngine: new Map(),
+            contested: unioned.contested,
+            missingSources: [],
+            undeclaredSources: [],
+        };
     }
 
-    const claimed = split.alternatives.map((alternative) => join(REPO_ROOT, alternative.source));
-    const sharedFiles = collectRust(join(REPO_ROOT, split.root)).filter((file) => !claimed.includes(file));
-    const shared = readClampsFromFiles(sharedFiles);
+    const declared = [...split.alternatives.flatMap((alternative) => alternative.sources), ...split.sharedSources];
+    const missingSources = declared.filter((source) => !existsSync(join(REPO_ROOT, source)));
+    const onDisk = new Set(collectRust(join(REPO_ROOT, split.root)));
+    for (const source of declared) {
+        onDisk.delete(join(REPO_ROOT, source));
+    }
+    const undeclaredSources = [...onDisk].map((file) => file.slice(REPO_ROOT.length + 1)).sort();
 
+    const present = (sources: readonly string[]): string[] =>
+        sources.map((source) => join(REPO_ROOT, source)).filter((file) => existsSync(file));
+
+    const shared = readClampsFromFiles(present(split.sharedSources));
     const perEngine = new Map<string, ReadonlyMap<string, Clamp>>();
     for (const alternative of split.alternatives) {
-        perEngine.set(alternative.engineId, readClampsFromFiles([join(REPO_ROOT, alternative.source)]).byName);
+        perEngine.set(alternative.engineId, readClampsFromFiles(present(alternative.sources)).byName);
     }
-    return { shared: shared.byName, perEngine, contested: shared.contested };
+    return { shared: shared.byName, perEngine, contested: shared.contested, missingSources, undeclaredSources };
 }
 
 /**
@@ -859,6 +938,20 @@ type Census = {
     readonly strayBindings: ReadonlyMap<string, readonly string[]>;
     /** Compared parameters per device — a zero here means the device is uncovered. */
     readonly comparedPerDevice: ReadonlyMap<string, number>;
+    /**
+     * Three-way parameters per device — a zero here means **leg 3 is blind for
+     * that whole device** and every one of its rows is silently two-way.
+     *
+     * Split out from the `threeWay` total for the reason the knob leg was:
+     * deleting a device's `ENGINE_SOURCES` entry moved exactly one aggregate
+     * number, and since adding a device already forces seven count edits, a low
+     * total reads as one more expected change. Per-device it is a named zero.
+     */
+    readonly threeWayPerDevice: ReadonlyMap<string, number>;
+    /** Split source paths declared but absent from disk, per device. */
+    readonly missingEngineSources: ReadonlyMap<string, readonly string[]>;
+    /** `.rs` files under a split root that no entry claims, per device. */
+    readonly undeclaredEngineSources: ReadonlyMap<string, readonly string[]>;
     /** Compared rows that also carry a derived engine clamp — the three-way subset. */
     readonly threeWay: readonly Comparison[];
     /** Every (device, parameter, engine) clamp that disagrees with the declared range. */
@@ -882,7 +975,10 @@ function buildCensus(): Census {
     const clampDisagree: ClampRow[] = [];
     const strayBindings = new Map<string, readonly string[]>();
     const comparedPerDevice = new Map<string, number>();
+    const threeWayPerDevice = new Map<string, number>();
     const contestedClamps = new Map<string, readonly string[]>();
+    const missingEngineSources = new Map<string, readonly string[]>();
+    const undeclaredEngineSources = new Map<string, readonly string[]>();
 
     for (const descriptor of BUILTIN_PLUGINS) {
         const binding = PANEL_BINDINGS[descriptor.id];
@@ -893,10 +989,13 @@ function buildCensus(): Census {
         const engine = readEngineClamps(descriptor.id);
         unboundKnobs.set(descriptor.id, panel.unbound);
         contestedClamps.set(descriptor.id, [...engine.contested].sort());
+        missingEngineSources.set(descriptor.id, [...engine.missingSources].sort());
+        undeclaredEngineSources.set(descriptor.id, [...engine.undeclaredSources].sort());
         const declaredIds = new Set(descriptor.parameters.map((param) => param.id));
         strayBindings.set(descriptor.id, [...panel.byParam.keys()].filter((id) => !declaredIds.has(id)).sort());
         const missing: string[] = [];
         let comparedHere = 0;
+        let threeWayHere = 0;
 
         for (const param of descriptor.parameters) {
             if (param.legalSet !== undefined) {
@@ -938,6 +1037,7 @@ function buildCensus(): Census {
             comparedHere++;
             if (resolved.length > 0) {
                 threeWay.push(row);
+                threeWayHere++;
                 for (const entry of resolved) {
                     if (entry.clamp[0] !== param.minValue || entry.clamp[1] !== param.maxValue) {
                         clampDisagree.push({
@@ -958,6 +1058,7 @@ function buildCensus(): Census {
         }
         noKnob.set(descriptor.id, missing.sort());
         comparedPerDevice.set(descriptor.id, comparedHere);
+        threeWayPerDevice.set(descriptor.id, threeWayHere);
     }
 
     return {
@@ -970,6 +1071,9 @@ function buildCensus(): Census {
         unboundKnobs,
         strayBindings,
         comparedPerDevice,
+        threeWayPerDevice,
+        missingEngineSources,
+        undeclaredEngineSources,
         threeWay,
         clampDisagree,
         contestedClamps,
@@ -1136,7 +1240,7 @@ const ENGINE_CLAMP_COVERAGE = {
         'clamp on a transformed value (`(value / 10.0).clamp(…)`) — bounds the result, not the wire domain',
         'clamp applied in a callee or in a sub-processor the arm delegates to',
         'named-constant bounds — the same constant name is defined with different values in different modules',
-        'contested — two files on one device clamp the same arm name to different intervals',
+        'contested — two files in one source group clamp the same arm name to different intervals',
         'Crumbs: enum-variant arms behind `parse_crumbs_param`, not string arms',
     ],
 } as const;
@@ -1524,19 +1628,49 @@ describe('declared parameter range agrees with the knob that drives it', () => {
         expect(CENSUS.ambiguous).toStrictEqual([]);
 
         // threeWay = the subset of `compared` that ALSO has a derivable engine
-        // clamp. 112 of 192 is the honest size of the three-way census; the
-        // other 80 are two-way only, for the shapes named in
-        // `ENGINE_CLAMP_COVERAGE.notDerivable`.
+        // clamp. 116 of 192 is the honest size of the three-way census; the
+        // other 76 are two-way only, for the shapes named in
+        // `ENGINE_CLAMP_COVERAGE.notDerivable`. Distribution is pinned
+        // separately, by identity, in `threeWayPerDevice`.
         expect(CENSUS.threeWay.length).toBe(116);
-        // 15, not 7: keyed by (device, parameter, **engine**). Eight of the
-        // eight added rows were invisible while clamps were unioned per device.
-        expect(CENSUS.clampDisagree.length).toBe(15);
+
+        // The findings themselves, **by identity**. This was a bare count, which
+        // is the wrong shape for a list of named defects: one row leaving while
+        // another arrives is invisible to a count and is exactly the swap the
+        // per-device pins exist to catch. Keyed by engine, because a row is
+        // per (device, parameter, alternative).
+        expect(
+            CENSUS.clampDisagree.map((row) => `${row.deviceId}.${row.paramId}@${row.engineId ?? 'shared'}`)
+        ).toStrictEqual([
+            'dutch-oven.decay@plate',
+            'dutch-oven.decay@spring',
+            'dutch-oven.decay@reverse',
+            'dutch-oven.damping@plate',
+            'dutch-oven.damping@spring',
+            'fermenter.samplerStart@shared',
+            'fermenter.samplerEnd@shared',
+            'fermenter.fmModAmount@shared',
+            'gluten.ratio@diode',
+            'gluten.attack@fet',
+            'gluten.attack@diode',
+            'bacteria.chorusFeedback@shared',
+            'bacteria.phaserFeedback@shared',
+            'bacteria.grainSize@shared',
+            'bacteria.grainDensity@shared',
+        ]);
 
         // `legalSet` selectors: oversampling factors and the like. A set of legal
         // values has no "travel" — the control steps between members rather than
         // sweeping — so the three-way comparison does not apply and forcing it
-        // would report every one of them as a disagreement.
-        expect(CENSUS.notContinuous.length).toBe(3);
+        // would report every one of them as a disagreement. Named rather than
+        // counted: with `noKnob` and `ambiguous` already identity-pinned, this
+        // was the last route by which a parameter could leave `compared` without
+        // any assertion naming it.
+        expect(CENSUS.notContinuous).toStrictEqual([
+            'dutch-oven.algorithm',
+            'gluten.oversampling',
+            'crust.oversampling',
+        ]);
     });
 
     it('pins compared coverage per device, so a device at zero is stated not implied', () => {
@@ -1582,6 +1716,89 @@ describe('declared parameter range agrees with the knob that drives it', () => {
             // `max={2}` knob, i.e. exactly #1474's shape, uncovered.
             'grand-boule': 0,
         });
+    });
+
+    it('pins three-way coverage per device, so leg 3 cannot go dark on one device', () => {
+        // Same remedy as `comparedPerDevice`, applied to the leg that still had
+        // the hole. Deleting a device's `ENGINE_SOURCES` entry — the shape of
+        // adding a device and forgetting it, since a missing key was handled
+        // exactly like Yeast's deliberate `null` — moved **one** aggregate
+        // number and nothing else. Adding a device already forces seven count
+        // edits, so a low total reads as one more expected change. Per device it
+        // is a named zero that has to be justified.
+        expect(Object.fromEntries(CENSUS.threeWayPerDevice)).toStrictEqual({
+            fermenter: 53,
+            gluten: 21,
+            bacteria: 19,
+            'dutch-oven': 12,
+            // Only four of Grinder's 25 compared parameters reach leg 3: most of
+            // its arms are the transformed-value shape `(value / 10.0).clamp(…)`
+            // (`grinder/pedals.rs:36-38`), deliberately unreadable.
+            grinder: 4,
+            toaster: 3,
+            crust: 2,
+            levain: 1,
+            proof: 1,
+
+            // ── Leg 3 is blind for these five, each for a stated reason. ──────
+            //
+            // Crumbs' arms are enum variants behind `parse_crumbs_param`, so the
+            // string-arm scanner reads nothing — see `ENGINE_CLAMP_COVERAGE`.
+            // This is the device #1474's defects were found on; its knob leg is
+            // fully covered, its clamp leg is not.
+            'builtin-crumbs': 0,
+            // No parameter compared at all — see `comparedPerDevice`.
+            'native-scoring': 0,
+            'grand-boule': 0,
+            // No Rust engine exists, so leg 3 is not blind here, it is absent.
+            yeast: 0,
+        });
+
+        // The distribution must account for the total, or one of the two is
+        // stale. Cheap, and it is the assertion that would have caught a
+        // per-device map drifting out of step with the number above it.
+        const summed = [...CENSUS.threeWayPerDevice.values()].reduce((total, count) => total + count, 0);
+        expect(summed).toBe(CENSUS.threeWay.length);
+    });
+
+    it('requires every source under a split root to be classified, by identity not subtraction', () => {
+        // The worst regression this file has had, closed. `sharedSources` used
+        // to be computed by subtraction, so a fifth Gluten topology added
+        // without an `ENGINE_SPLITS` entry became a *shared* bound that all four
+        // existing alternatives were claimed to meet — census green, and then
+        // `gluten.ratio@opto` reporting a clamp from a file that is not opto and
+        // for an arm `opto.rs` does not have.
+        //
+        // Now the partition is an identity: alternatives ∪ shared must equal
+        // what is on disk. A new file must be classified before the census runs.
+        expect(Object.fromEntries(CENSUS.undeclaredEngineSources)).toStrictEqual(
+            Object.fromEntries([...CENSUS.undeclaredEngineSources.keys()].map((deviceId) => [deviceId, []]))
+        );
+
+        // And the other direction: a declared path that is no longer on disk.
+        // `git mv gluten/opto.rs optical.rs` used to kill the run at module load
+        // with a raw ENOENT and zero tests executed, so nothing named the stale
+        // entry. It is now a normal assertion that says which one to fix.
+        expect(Object.fromEntries(CENSUS.missingEngineSources)).toStrictEqual(
+            Object.fromEntries([...CENSUS.missingEngineSources.keys()].map((deviceId) => [deviceId, []]))
+        );
+
+        // A split's `root` duplicated `ENGINE_SOURCES` with nothing tying them
+        // together, and for a split device `readEngineClamps` never reads
+        // `ENGINE_SOURCES` at all — so the two could disagree indefinitely.
+        for (const [deviceId, split] of Object.entries(ENGINE_SPLITS)) {
+            expect(split.root).toBe(ENGINE_SOURCES[deviceId]);
+        }
+    });
+
+    it('requires an engine-source decision for every device with a panel', () => {
+        // `ENGINE_SOURCES` is keyed by hand and consulted by lookup, so a device
+        // added to `PANEL_BINDINGS` and forgotten here read as `undefined` and
+        // was treated exactly like Yeast's deliberate `null`. Making the key
+        // sets identical turns "forgot the entry" into a red, and forces `null`
+        // — "this device has no Rust engine" — to be written down on purpose.
+        expect(Object.keys(ENGINE_SOURCES).sort()).toStrictEqual(Object.keys(PANEL_BINDINGS).sort());
+        expect(ENGINE_SOURCES.yeast).toBeNull();
     });
 
     it('counts bindings that resolved to an id no descriptor declares', () => {
@@ -1974,6 +2191,18 @@ describe('declared parameter range agrees with the knob that drives it', () => {
         // how much of the population is three-way. If a later lane closes one of
         // these shapes — most usefully the Crumbs enum-variant join — this list
         // shrinks and the test reds, which is the prompt to come back and say so.
-        expect(ENGINE_CLAMP_COVERAGE.notDerivable.length).toBe(7);
+        // By identity, not length. A count of 7 states nothing — the title of
+        // this test promises the coverage is *stated*, and a later lane could
+        // have swapped one shape for another without a red. These strings are
+        // the file's public claim about what leg 3 cannot see.
+        expect(ENGINE_CLAMP_COVERAGE.notDerivable).toStrictEqual([
+            'bare assignment (`self.x = value`, `x.set(value)`) — no interval exists',
+            'one-sided (`value.max(0.0)`, `.min(n)`) — one endpoint only, the other would have to be invented',
+            'clamp on a transformed value (`(value / 10.0).clamp(…)`) — bounds the result, not the wire domain',
+            'clamp applied in a callee or in a sub-processor the arm delegates to',
+            'named-constant bounds — the same constant name is defined with different values in different modules',
+            'contested — two files in one source group clamp the same arm name to different intervals',
+            'Crumbs: enum-variant arms behind `parse_crumbs_param`, not string arms',
+        ]);
     });
 });
