@@ -140,15 +140,6 @@ export const clipTools: readonly ToolSchema[] = [
         ['clipId', 'enabled']
     ),
     tool(
-        'setClipLoopLength',
-        'Set the loop length of a clip in beats.',
-        {
-            clipId: { type: 'string' },
-            loopLength: { type: 'number' },
-        },
-        ['clipId', 'loopLength']
-    ),
-    tool(
         'crossfadeClips',
         'Create a crossfade between two adjacent clips.',
         {

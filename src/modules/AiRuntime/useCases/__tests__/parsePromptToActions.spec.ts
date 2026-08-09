@@ -317,6 +317,29 @@ describe('parsePromptToActions', () => {
         expect(result.executionMode).toBe('atomic');
     });
 
+    it('routes one explicit clip loop-length request through the provider-neutral grounded path', async () => {
+        const actualBridge = await vi.importActual<typeof import('../agentReference/bridgeGroundedLlmToolCalls')>(
+            '../agentReference/bridgeGroundedLlmToolCalls'
+        );
+        mockBridgeGroundedLlmToolCalls.mockImplementation(actualBridge.bridgeGroundedLlmToolCalls);
+        vi.mocked(generateToolCalls).mockResolvedValue(
+            completePlan([{ name: 'setClipLoopLength', arguments: { clipId: 'clip-intro', loopLength: 4 } }])
+        );
+        const providerContext = createGlueProviderContext();
+
+        const result = await parsePromptToActions('set the Intro clip loop length to 4 beats', {
+            ...providerContext,
+            selectedClipId: 'clip-intro',
+            selectedClipIds: ['clip-intro'],
+        });
+
+        expect(result.actions).toEqual([
+            { type: 'setClipLoopLength', payload: { clipId: 'clip-intro', loopLength: 4 } },
+        ]);
+        expect(result.requiresConfirmation).toBe(false);
+        expect(result.executionMode).toBe('atomic');
+    });
+
     it('routes one explicit punch endpoint through the provider-neutral grounded action path', async () => {
         const actualBridge = await vi.importActual<typeof import('../agentReference/bridgeGroundedLlmToolCalls')>(
             '../agentReference/bridgeGroundedLlmToolCalls'

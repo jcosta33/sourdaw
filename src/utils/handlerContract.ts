@@ -920,6 +920,15 @@ export type AppAction =
       }
     | { type: 'setClipLoopLength'; payload: { clipId: string; loopLength: number } }
     | {
+          /** Internal exact-state replay for optional clip loop-length metadata. */
+          type: 'restoreClipLoopLength';
+          payload: {
+              clipId: string;
+              expected: { present: boolean; value: number };
+              replacement: { present: boolean; value: number };
+          };
+      }
+    | {
           type: 'createGrooveTemplate';
           payload: Omit<GrooveTemplateActionSnapshot, 'schemaVersion'>;
       }

@@ -1414,6 +1414,10 @@ describe('bridgeLlmToolCalls', () => {
                 action: { type: 'setClipLoop', payload: { clipId: 'clip-verse', enabled: true } },
             },
             {
+                call: { name: 'setClipLoopLength', arguments: { clipId: 'clip-verse', loopLength: 4 } },
+                action: { type: 'setClipLoopLength', payload: { clipId: 'clip-verse', loopLength: 4 } },
+            },
+            {
                 call: {
                     name: 'normalizeClip',
                     arguments: { clipId: 'clip-verse', mode: 'lufs', targetDb: -14 },
@@ -1447,6 +1451,68 @@ describe('bridgeLlmToolCalls', () => {
 
         expect(results.map(({ actions }) => actions[0])).toEqual(cases.map(({ action }) => action));
         expect(results.flatMap(({ rejections }) => rejections)).toEqual([]);
+    });
+
+    it('rejects unsafe clip loop lengths and conflicting loop, geometry, stretch, or lifecycle writes', () => {
+        const loopLength = {
+            name: 'setClipLoopLength',
+            arguments: { clipId: 'clip-verse', loopLength: 2 },
+        };
+        const lockedContext = replaceTrack(projectContext, 'track-vocals', (track) => ({
+            ...track,
+            clips: track.clips.map((clip) => ({ ...clip, locked: true })),
+        }));
+        const longClipContext = replaceTrack(projectContext, 'track-vocals', (track) => ({
+            ...track,
+            clips: track.clips.map((clip) => ({ ...clip, endBeat: 100, minimumLoopLengthBeats: 100 / 4096 })),
+        }));
+        const noOpContext = replaceTrack(projectContext, 'track-vocals', (track) => ({
+            ...track,
+            clips: track.clips.map((clip) => ({ ...clip, loopLength: 2 })),
+        }));
+        const collapsedClipContext = replaceTrack(projectContext, 'track-vocals', (track) => ({
+            ...track,
+            clips: track.clips.map((clip) => ({ ...clip, endBeat: clip.startBeat })),
+        }));
+        const rejected = [
+            bridge({ calls: [{ ...loopLength, arguments: { ...loopLength.arguments, loopLength: 0 } }] }),
+            bridge({ calls: [{ ...loopLength, arguments: { ...loopLength.arguments, loopLength: Number.NaN } }] }),
+            bridge({ calls: [{ ...loopLength, arguments: { ...loopLength.arguments, loopLength: 1 / 481 } }] }),
+            bridge({
+                context: longClipContext,
+                calls: [{ ...loopLength, arguments: { ...loopLength.arguments, loopLength: 1 / 480 } }],
+            }),
+            bridge({ context: lockedContext, calls: [loopLength] }),
+            bridge({ context: { ...projectContext, isPlaying: true }, calls: [loopLength] }),
+            bridge({ context: { ...projectContext, isRecording: true }, calls: [loopLength] }),
+            bridge({ context: noOpContext, calls: [loopLength] }),
+            bridge({ context: collapsedClipContext, calls: [loopLength] }),
+        ];
+        const conflicts = [
+            { name: 'setClipLoop', arguments: { clipId: 'clip-verse', enabled: true } },
+            { name: 'setClipLoopLength', arguments: { clipId: 'clip-verse', loopLength: 4 } },
+            { name: 'removeClip', arguments: { clipId: 'clip-verse' } },
+            { name: 'splitClip', arguments: { clipId: 'clip-verse', beat: 4 } },
+            { name: 'trimClipEnd', arguments: { clipId: 'clip-verse', newEndBeat: 6 } },
+            { name: 'setClipStretchRatio', arguments: { clipId: 'clip-verse', ratio: 1.5 } },
+        ].flatMap((conflict) => [bridge({ calls: [loopLength, conflict] }), bridge({ calls: [conflict, loopLength] })]);
+        const glueContext = createGlueClipContext();
+        const glueLength = {
+            name: 'setClipLoopLength',
+            arguments: { clipId: 'clip-midi-intro', loopLength: 2 },
+        };
+        const glue = {
+            name: 'glueClips',
+            arguments: { clipIds: ['clip-midi-intro', 'clip-midi-verse'] },
+        };
+        conflicts.push(
+            bridge({ context: glueContext, calls: [glueLength, glue] }),
+            bridge({ context: glueContext, calls: [glue, glueLength] })
+        );
+
+        expect(rejected.every((result) => result.actions.length === 0)).toBe(true);
+        expect(conflicts.every((result) => result.actions.length === 1)).toBe(true);
+        expect(conflicts.every((result) => result.rejections.length === 1)).toBe(true);
     });
 
     it('rejects unsafe clip moves and every overlapping lifecycle or geometry write in either order', () => {

@@ -422,6 +422,17 @@ const guardedPayloadContractCases = [
         ],
     }),
     guardedPayloadCase({
+        actionType: 'setClipLoopLength',
+        validPayload: { clipId: 'clip-1', loopLength: 4 },
+        invalidPayloads: [
+            { clipId: '', loopLength: 4 },
+            { clipId: 'clip-1', loopLength: 0 },
+            { clipId: 'clip-1', loopLength: Number.NaN },
+            { clipId: 'clip-1', loopLength: Number.POSITIVE_INFINITY },
+            { clipId: 'clip-1', loopLength: 4, extra: true },
+        ],
+    }),
+    guardedPayloadCase({
         actionType: 'normalizeClip',
         validPayload: { clipId: 'clip-1', mode: 'lufs', targetDb: -14 },
         invalidPayloads: [
@@ -1157,6 +1168,10 @@ describe('validateActionPayload / PAYLOAD_VALIDATORS', () => {
 
     it('should not expose the internal punch-region inverse to model payload validation', () => {
         expect(PAYLOAD_VALIDATORS).not.toHaveProperty('restorePunchRegion');
+    });
+
+    it('should not expose the internal clip loop-length inverse to model payload validation', () => {
+        expect(PAYLOAD_VALIDATORS).not.toHaveProperty('restoreClipLoopLength');
     });
 
     it('should not expose the internal automation-lane inverse to model payload validation', () => {

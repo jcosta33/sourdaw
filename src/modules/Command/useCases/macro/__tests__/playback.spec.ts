@@ -6,14 +6,19 @@ import { playMacro } from '../playback';
 
 const STORAGE_KEY = 'sourdaw:macros';
 
-const { executeAppActionMock } = vi.hoisted(() => ({
+const { executeAppActionMock, findSingletonBatchActionMock } = vi.hoisted(() => ({
     executeAppActionMock: vi
         .fn<typeof import('../../executeAppAction').executeAppAction>()
         .mockResolvedValue(undefined),
+    findSingletonBatchActionMock: vi.fn<typeof import('../../findSingletonBatchAction').findSingletonBatchAction>(),
 }));
 
 vi.mock('../../executeAppAction', () => ({
     executeAppAction: executeAppActionMock,
+}));
+
+vi.mock('../../findSingletonBatchAction', () => ({
+    findSingletonBatchAction: findSingletonBatchActionMock,
 }));
 
 describe('playMacro', () => {
@@ -28,6 +33,8 @@ describe('playMacro', () => {
         localStorage.removeItem(STORAGE_KEY);
         macroStore.set({ macros: [macro], recording: false, currentRecording: [] });
         executeAppActionMock.mockClear();
+        findSingletonBatchActionMock.mockReset();
+        findSingletonBatchActionMock.mockReturnValue(null);
     });
 
     afterEach(() => {
@@ -50,6 +57,23 @@ describe('playMacro', () => {
         expect(secondAction).toEqual({ type: 'toggleLoop' });
         expect(firstOptions?.groupId).toBe(secondOptions?.groupId);
         expect(firstOptions?.groupLabel).toBe('Macro: Two steps');
+    });
+
+    it('rejects a singleton macro companion before dispatching either action', async () => {
+        const singletonAction = { type: 'setClipLoopLength' as const, payload: { clipId: 'clip-1', loopLength: 2 } };
+        const unsafeMacro: Macro = {
+            id: 'unsafe-1',
+            name: 'Unsafe pair',
+            actions: [singletonAction, { type: 'trimClipEnd', payload: { clipId: 'clip-1', newEndBeat: 6 } }],
+            createdAt: 0,
+        };
+        macroStore.set({ macros: [unsafeMacro], recording: false, currentRecording: [] });
+        findSingletonBatchActionMock.mockReturnValue(singletonAction);
+
+        await expect(playMacro('unsafe-1')).rejects.toThrow(
+            'Action must execute as a singleton batch: setClipLoopLength'
+        );
+        expect(executeAppActionMock).not.toHaveBeenCalled();
     });
 
     it('should no-op when macro id is missing', async () => {

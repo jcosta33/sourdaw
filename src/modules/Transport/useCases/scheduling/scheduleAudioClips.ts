@@ -1,5 +1,5 @@
 import { trackStore } from '#/modules/Arrangement/stores';
-import { getGainAtBeat, resolveClipsWithComping } from '#/modules/Arrangement/useCases';
+import { getGainAtBeat, projectClipLoopExpansion, resolveClipsWithComping } from '#/modules/Arrangement/useCases';
 import {
     createBufferSource,
     ensureTrackStrip,
@@ -123,8 +123,6 @@ export function scheduleAudioClips(
                 continue;
             }
 
-            scheduledAudioClipsSet.add(clipKey);
-
             const strip = ensureTrackStrip(track.id);
             const stretchRatio = clip.stretchMode && clip.stretchMode !== 'off' ? (clip.stretchRatio ?? 1) : 1;
             const clipTempo = getTempoAtBeat(changes, clip.startBeat, transport.tempo);
@@ -143,15 +141,33 @@ export function scheduleAudioClips(
             }
 
             const clipVisualLength = clip.endBeat - clip.startBeat;
-            const loopLen = clip.loopEnabled ? (clip.loopLength ?? clipVisualLength) : clipVisualLength;
-            const maxIterations = clip.loopEnabled ? Math.ceil(clipVisualLength / loopLen) : 1;
+            const loopProjection = projectClipLoopExpansion({
+                clipDurationBeats: clipVisualLength,
+                configuredLoopLengthBeats: clip.loopLength,
+                loopEnabled: clip.loopEnabled ?? false,
+            });
+            const loopLen = loopProjection.loopLengthBeats;
+            const maxIterations = loopProjection.iterationCount;
+            const loopEnabled = clip.loopEnabled ?? false;
+            let startIteration = 0;
+            let endIteration = Math.min(1, maxIterations);
+            if (loopEnabled) {
+                startIteration = Math.max(0, Math.floor((fromBeat - clip.startBeat) / loopLen));
+                endIteration = Math.min(maxIterations, Math.ceil((toBeat - clip.startBeat) / loopLen));
+                startIteration = Math.min(startIteration, endIteration);
+            }
 
-            for (let iter = 0; iter < maxIterations; iter++) {
+            for (let iter = startIteration; iter < endIteration; iter++) {
                 const iterOffsetBeats = iter * loopLen;
                 const iterStartBeat = clip.startBeat + iterOffsetBeats;
                 if (iterStartBeat >= clip.endBeat) {
                     break;
                 }
+                const scheduledIterationKey = loopEnabled ? `${clipKey}:${String(iter)}` : clipKey;
+                if (scheduledAudioClipsSet.has(scheduledIterationKey)) {
+                    continue;
+                }
+                scheduledAudioClipsSet.add(scheduledIterationKey);
 
                 const remainingBeats = clip.endBeat - iterStartBeat;
                 const iterDurationBeats = Math.min(loopLen, remainingBeats);

@@ -61,6 +61,20 @@ vi.mock('#/modules/Arrangement/useCases', () => ({
         }))
     ),
     getSynthParamsForTrack: vi.fn(() => ({})),
+    projectClipLoopExpansion: vi.fn(({ clipDurationBeats, configuredLoopLengthBeats, loopEnabled }) => {
+        if (!Number.isFinite(clipDurationBeats) || clipDurationBeats <= 0) {
+            return { iterationCount: 0, loopLengthBeats: 1 / 480 };
+        }
+        if (!loopEnabled) {
+            return { iterationCount: 1, loopLengthBeats: clipDurationBeats };
+        }
+        const requestedLength = configuredLoopLengthBeats ?? clipDurationBeats;
+        const loopLengthBeats = Math.max(1 / 480, clipDurationBeats / 4096, requestedLength);
+        return {
+            iterationCount: Math.min(4096, Math.max(1, Math.ceil(clipDurationBeats / loopLengthBeats))),
+            loopLengthBeats,
+        };
+    }),
 }));
 vi.mock('#/modules/AudioEngine/useCases', () => ({
     applyNoteExpression: vi.fn(),
@@ -1473,6 +1487,23 @@ describe('scheduleMidiNotes', () => {
             expect(shouldPlayMidiEvent).toHaveBeenCalledWith(
                 expect.objectContaining({ eventId: 'loop-note', absoluteOccurrenceIndex: 16 })
             );
+        });
+
+        it('keeps tiny-loop projection bounded to the live scheduler window', async () => {
+            const track = midiTrack({
+                clips: [midiClip({ endBeat: 10, loopEnabled: true, loopLength: 1 / 480 })],
+            });
+            (trackStore as { value: unknown }).value = { tracks: [track] };
+            (midiStore as { value: unknown }).value = {
+                notesByClipId: {
+                    'clip-1': [{ id: 'loop-note', pitch: 60, startBeat: 0, duration: 1 / 960, velocity: 100 }],
+                },
+            };
+
+            await scheduleMidiNotes(4, 4.01, 4, 4, new Set<string>(), [], defaultTransportState, 120);
+
+            expect(projectClipMidiEvents).toHaveBeenCalledTimes(5);
+            expect(scheduleNote).toHaveBeenCalledTimes(4);
         });
 
         it('bounds projection work for a dense looping clip', async () => {

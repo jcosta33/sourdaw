@@ -78,6 +78,8 @@ export type ProjectContextClip = {
     fadeInBeats?: number;
     fadeOutBeats?: number;
     loopEnabled?: boolean;
+    loopLength?: number;
+    minimumLoopLengthBeats?: number;
     noteCount: number;
 };
 

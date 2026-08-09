@@ -37,6 +37,7 @@ type MockCommandHandler<Action extends AppAction> = ActionHandler<Action> & {
 };
 
 type CreateMockHandlerInput<Action extends AppAction> = {
+    batchExecution?: ActionHandler<Action>['batchExecution'];
     label?: string;
     execute?: (action: Action) => void | HandlerExecutionResult | Promise<void | HandlerExecutionResult>;
     describe?: (action: Action) => HandlerDescribeResult;
@@ -48,6 +49,7 @@ type CreateMockHandlerInput<Action extends AppAction> = {
 type CreateMockHandlerOutput<Action extends AppAction> = MockCommandHandler<Action>;
 
 function create_mock_handler<Action extends AppAction>({
+    batchExecution,
     label = 'Mock Label',
     execute = () => undefined,
     describe = () => ({ label }),
@@ -56,6 +58,7 @@ function create_mock_handler<Action extends AppAction>({
     undoable = true,
 }: CreateMockHandlerInput<Action> = {}): CreateMockHandlerOutput<Action> {
     return {
+        batchExecution,
         execute:
             vi.fn<(action: Action) => void | HandlerExecutionResult | Promise<void | HandlerExecutionResult>>(execute),
         describe: vi.fn<(action: Action) => HandlerDescribeResult>(describe),
@@ -562,6 +565,21 @@ describe('executeAppAction', () => {
         expect(mocks.recordAction).not.toHaveBeenCalled();
         expect(mocks.commitUndoEntry).toHaveBeenCalled();
         expect(mocks.recordActionHistoryMetadata).toHaveBeenCalled();
+    });
+
+    it('excludes singleton actions from caller-supplied undo and metadata groups', async () => {
+        const action: SetEditingToolAction = { type: 'setEditingTool', payload: { tool: 'marquee' } };
+        const handler = create_mock_handler<SetEditingToolAction>({ batchExecution: 'singleton' });
+        registerHandlerMap({ [action.type]: handler });
+
+        await executeAppAction(action, { groupId: 'group-1', groupLabel: 'Unsafe group' });
+
+        const metadata = mocks.recordActionHistoryMetadata.mock.calls[0]?.[0];
+        const undoEntry = mocks.commitUndoEntry.mock.calls[0]?.[0];
+        expect(metadata?.groupId).toBeUndefined();
+        expect(metadata?.groupLabel).toBeUndefined();
+        expect(undoEntry?.groupId).toBeUndefined();
+        expect(undoEntry?.groupLabel).toBeUndefined();
     });
 
     it('keeps macro recording enabled when only undo-history recording is suppressed', async () => {

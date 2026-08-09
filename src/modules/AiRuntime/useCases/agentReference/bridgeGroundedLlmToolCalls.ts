@@ -1245,12 +1245,25 @@ function resolveActionPromptScope({
         catalog,
         plannedActionNames
     );
-    if (isPunchActionType(actionName) || hasPunchFamilyReference(prompt)) {
+    if (
+        isPunchActionType(actionName) ||
+        hasPunchFamilyReference(prompt) ||
+        actionName === 'setClipLoopLength' ||
+        hasClipLoopLengthFamilyReference(prompt)
+    ) {
         const promptActionAnalysis = analyzePromptActionRequests(prompt, catalog);
         const hasCancelledPunchRequest = promptActionAnalysis.requests.some(
             (request) => isPunchActionType(request.actionType) && request.cancelled
         );
         if (isPunchActionType(actionName) || hasCancelledPunchRequest) {
+            hasActionCancellation = promptActionAnalysis.requests.some(
+                (request) => request.actionType === actionName && request.cancelled
+            );
+        }
+        const hasCancelledClipLoopLengthRequest = promptActionAnalysis.requests.some(
+            (request) => request.actionType === 'setClipLoopLength' && request.cancelled
+        );
+        if (actionName === 'setClipLoopLength' || hasCancelledClipLoopLengthRequest) {
             hasActionCancellation = promptActionAnalysis.requests.some(
                 (request) => request.actionType === actionName && request.cancelled
             );
@@ -2003,7 +2016,25 @@ function findBeatDurationNumbers(maskedScope: string, numbers: readonly PromptNu
 
 function isBoundBeatDurationNumber(maskedScope: string, number: PromptNumber): boolean {
     const prefix = normalizePromptText(maskedScope.slice(0, number.index));
-    return /\bfit(?: the)? clip(?: duration)? to$/u.test(prefix);
+    return (
+        /\bfit(?: the)? clip(?: duration)? to$/u.test(prefix) ||
+        /\b(?:set|change)(?: the)? .+ clip loop length to$/u.test(prefix) ||
+        /\b(?:set|change)(?: the)? clip loop length (?:of|for) .+ to$/u.test(prefix)
+    );
+}
+
+function isExplicitClipLoopLengthPrompt(prompt: string): boolean {
+    const beatValue = String.raw`(?:\d+(?:\.\d+)?|\.\d+)(?:\s*\/\s*(?:\d+(?:\.\d+)?|\.\d+))?`;
+    const directSubjectRequest = new RegExp(
+        String.raw`^(?:please\s+)?(?:set|change)\s+(?:the\s+)?(?:selected|.+?)\s+clip\s+loop\s+length\s+to\s+${beatValue}\s+beats?\s*[.!]?$`,
+        'iu'
+    );
+    const trailingSubjectRequest = new RegExp(
+        String.raw`^(?:please\s+)?(?:set|change)\s+(?:the\s+)?clip\s+loop\s+length\s+(?:of|for)\s+(?:the\s+)?(?:selected\s+clip|.+?)\s+to\s+${beatValue}\s+beats?\s*[.!]?$`,
+        'iu'
+    );
+    const trimmedPrompt = prompt.trim();
+    return directSubjectRequest.test(trimmedPrompt) || trailingSubjectRequest.test(trimmedPrompt);
 }
 
 function findDirectionBoundNumber(maskedScope: string, numbers: readonly PromptNumber[]): PromptNumber | null {
@@ -3021,6 +3052,13 @@ function groundToolCall({
     if (call.name === 'stopPlayback' && !isExplicitStopPlaybackPrompt(prompt)) {
         return rejection(index, call.name, 'Provider action is not grounded in an explicit transport-stop request');
     }
+    if (call.name === 'setClipLoopLength' && !isExplicitClipLoopLengthPrompt(prompt)) {
+        return rejection(
+            index,
+            call.name,
+            'Provider clip loop-length action requires one direct named or selected clip request in beats'
+        );
+    }
     const groundingRules = getExecutableAppActionGroundingRules(call.name);
     if (!groundingRules) {
         return call;
@@ -3324,6 +3362,10 @@ function hasPunchFamilyReference(prompt: string): boolean {
     return /\bpunch\b/u.test(normalizePromptText(maskQuotedLabels(prompt)));
 }
 
+function hasClipLoopLengthFamilyReference(prompt: string): boolean {
+    return /\bclip loop length\b/u.test(normalizePromptText(maskQuotedLabels(prompt)));
+}
+
 function isExactPunchCommandClause(clause: PromptClause): boolean {
     let commandSource = clause.masked.trim();
     commandSource = commandSource.replace(/^(?:please\s+)?(?:can|could|would)\s+you(?:\s+please)?\s+/iu, '');
@@ -3350,6 +3392,20 @@ function isExactPunchActionCommandClause(request: PromptActionRequest): boolean 
 }
 
 function isPunchPromptFullyCovered(analysis: PromptActionAnalysis): boolean {
+    const requestClauses = new Set(analysis.requests.map((request) => request.clause));
+    return analysis.clauses.every(
+        (clause) =>
+            requestClauses.has(clause) ||
+            analysis.cancellationClauses.has(clause) ||
+            normalizePromptText(clause.masked).length === 0
+    );
+}
+
+function isExactClipLoopLengthCommandClause(request: PromptActionRequest): boolean {
+    return request.actionType === 'setClipLoopLength' && isExplicitClipLoopLengthPrompt(request.clause.masked);
+}
+
+function isClipLoopLengthPromptFullyCovered(analysis: PromptActionAnalysis): boolean {
     const requestClauses = new Set(analysis.requests.map((request) => request.clause));
     return analysis.clauses.every(
         (clause) =>
@@ -3431,6 +3487,38 @@ export function bridgeGroundedLlmToolCalls({
             return {
                 actions: [],
                 rejections: [rejection(0, '<batch>', 'Punch request must name exactly one direct command')],
+            };
+        }
+    }
+    const totalClipLoopLengthPromptRequests = promptActionRequests.filter(
+        (request) => request.actionType === 'setClipLoopLength'
+    );
+    const clipLoopLengthPromptRequests = activePromptActionRequests.filter(
+        (request) => request.actionType === 'setClipLoopLength'
+    );
+    const clipLoopLengthProviderCalls = effectiveCalls.filter((call) => call.name === 'setClipLoopLength');
+    const hasOnlyCancelledClipLoopLengthRequests =
+        totalClipLoopLengthPromptRequests.length > 0 && clipLoopLengthPromptRequests.length === 0;
+    if (
+        !hasOnlyCancelledClipLoopLengthRequests &&
+        (clipLoopLengthPromptRequests.length > 0 || clipLoopLengthProviderCalls.length > 0)
+    ) {
+        const promptRequest = clipLoopLengthPromptRequests[0];
+        const providerCall = clipLoopLengthProviderCalls[0];
+        const isExactSingleton =
+            totalClipLoopLengthPromptRequests.length === 1 &&
+            clipLoopLengthPromptRequests.length === 1 &&
+            clipLoopLengthProviderCalls.length === 1 &&
+            effectiveCalls.length === 1 &&
+            activePromptActionRequests.length === 1 &&
+            promptRequest !== undefined &&
+            isExactClipLoopLengthCommandClause(promptRequest) &&
+            isClipLoopLengthPromptFullyCovered(promptActionAnalysis) &&
+            providerCall?.name === promptRequest.actionType;
+        if (!isExactSingleton) {
+            return {
+                actions: [],
+                rejections: [rejection(0, '<batch>', 'Clip loop-length request must name exactly one direct command')],
             };
         }
     }

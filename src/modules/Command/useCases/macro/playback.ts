@@ -2,6 +2,7 @@ import { type AppAction } from '#/utils/handlerContract';
 
 import { macroStore } from '../../stores/macroStore';
 import { executeAppAction } from '../executeAppAction';
+import { findSingletonBatchAction } from '../findSingletonBatchAction';
 import { generateGroupId } from '../generateGroupId';
 
 type ReplayIdMappings = {
@@ -320,6 +321,11 @@ export async function playMacro(macroId: string): Promise<void> {
     const macro = state.macros.find((message) => message.id === macroId);
     if (!macro) {
         return;
+    }
+
+    const singletonAction = findSingletonBatchAction(macro.actions);
+    if (singletonAction) {
+        throw new Error(`Action must execute as a singleton batch: ${singletonAction.type}`);
     }
 
     const { groupId, groupLabel } = generateGroupId(`Macro: ${macro.name}`);

@@ -1537,6 +1537,32 @@ function bridgeToolCall({
         return { type: 'setClipLoop', payload: { clipId: source.clip.id, enabled: args.enabled } };
     }
 
+    if (call.name === 'setClipLoopLength') {
+        const source = findClip(context, args.clipId);
+        const clipDurationBeats = source ? source.clip.endBeat - source.clip.startBeat : Number.NaN;
+        if (
+            !hasExactKeys(args, ['clipId', 'loopLength']) ||
+            !source ||
+            source.clip.locked === true ||
+            context.isPlaying ||
+            context.isRecording ||
+            !isFiniteNumber(args.loopLength) ||
+            args.loopLength < (source.clip.minimumLoopLengthBeats ?? 1 / 480) ||
+            !Number.isFinite(clipDurationBeats) ||
+            clipDurationBeats <= 0
+        ) {
+            return rejection(
+                index,
+                call.name,
+                'Expected one unlocked clip, a stopped transport, and a finite loopLength in beats at least one project tick'
+            );
+        }
+        if (source.clip.loopLength === args.loopLength) {
+            return rejection(index, call.name, 'Requested clip loop length already matches project state');
+        }
+        return { type: 'setClipLoopLength', payload: { clipId: source.clip.id, loopLength: args.loopLength } };
+    }
+
     if (call.name === 'renameTrack') {
         if (!hasExactKeys(args, ['trackId', 'name']) || !hasTrack(context, args.trackId)) {
             return rejection(index, call.name, 'Expected an available trackId and name');
@@ -1923,6 +1949,7 @@ function getClipTargetIds(action: RuntimeAction): string[] {
         action.type === 'setClipFade' ||
         action.type === 'lockClip' ||
         action.type === 'setClipLoop' ||
+        action.type === 'setClipLoopLength' ||
         action.type === 'normalizeClip' ||
         action.type === 'setClipStretchMode' ||
         action.type === 'setClipStretchRatio' ||
@@ -2207,6 +2234,13 @@ function getMutationKeys(
     }
     if (action.type === 'setClipLoop') {
         return [`clip:${action.payload.clipId}:loop`];
+    }
+    if (action.type === 'setClipLoopLength') {
+        return [
+            `clip:${action.payload.clipId}:loop`,
+            `clip:${action.payload.clipId}:geometry`,
+            `clip:${action.payload.clipId}:stretch`,
+        ];
     }
     if (
         action.type === 'quantizeNotes' ||
@@ -2876,6 +2910,8 @@ export function buildLlmActionUserMessage({ prompt, context }: { prompt: string;
                 fadeInBeats: clip.fadeInBeats ?? 0,
                 fadeOutBeats: clip.fadeOutBeats ?? 0,
                 loopEnabled: clip.loopEnabled ?? false,
+                loopLength: clip.loopLength,
+                minimumLoopLengthBeats: clip.minimumLoopLengthBeats,
             })),
         })),
     };

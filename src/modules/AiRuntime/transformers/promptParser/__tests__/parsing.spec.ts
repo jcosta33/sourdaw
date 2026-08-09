@@ -175,6 +175,7 @@ describe('promptParser parsing', () => {
             expect(tryParameterizedPath('set all velocities to 96', context)).toEqual([]);
             expect(tryParameterizedPath('quantize note lengths on Piano MIDI to 1/16', context)).toEqual([]);
             expect(tryParameterizedPath('quantize note lengths to 1/0', context)).toEqual([]);
+            expect(tryParameterizedPath('set loop length to 4 beats', context)).toEqual([]);
         });
 
         it('parses add device to track by name', () => {
