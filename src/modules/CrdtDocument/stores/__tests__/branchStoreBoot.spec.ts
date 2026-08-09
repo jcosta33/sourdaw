@@ -218,6 +218,14 @@ describe('branchStore module evaluation with a rejecting localStorage', () => {
                 activeBranchId: MAIN_BRANCH_ID,
             } satisfies BranchStoreState;
 
+            // The new session's host publishes a list that differs from the one
+            // already on disk — otherwise nothing durable moves and the
+            // invalidation correctly declines for an unrelated reason.
+            const newHostProjectedState = {
+                branches: [validMainBranch, { ...validFeatureBranch, branchId: 'someone-else', name: 'Theirs' }],
+                activeBranchId: MAIN_BRANCH_ID,
+            } satisfies BranchStoreState;
+
             window.localStorage.setItem(BRANCH_STORAGE_KEY, stringify(hostProjectedState));
             window.localStorage.setItem(BRANCH_SESSION_BACKUP_STORAGE_KEY, stringify(localState));
             const blocked = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
@@ -235,7 +243,7 @@ describe('branchStore module evaluation with a rejecting localStorage', () => {
             preserve.preserveBranchStateForSession();
 
             // The host's list projects, durably.
-            branchStoreModule.branchStore.set(hostProjectedState);
+            branchStoreModule.branchStore.set(newHostProjectedState);
 
             // The backup is the only remaining copy of the local-only branch.
             expect(window.localStorage.getItem(BRANCH_SESSION_BACKUP_STORAGE_KEY)).toBe(stringify(localState));
