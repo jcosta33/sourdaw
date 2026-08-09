@@ -988,6 +988,9 @@ describe('bridgeGroundedLlmToolCalls', () => {
             'glue the MIDI Intro and MIDI Verse clips',
             'join MIDI Intro with MIDI Verse',
             'glue "MIDI Intro" and "MIDI Verse" clips',
+            "glue 'MIDI Intro' and 'MIDI Verse' clips",
+            'please glue MIDI Intro and MIDI Verse clips',
+            'could you join MIDI Intro with MIDI Verse please',
         ];
 
         for (const prompt of prompts) {
@@ -1003,11 +1006,55 @@ describe('bridgeGroundedLlmToolCalls', () => {
         }
     });
 
+    it('grounds a direct pair when a clip target is named with the Glue action word', () => {
+        const context = createGlueClipContext();
+        const namedGlueContext = {
+            ...context,
+            tracks: context.tracks.map((track) => ({
+                ...track,
+                clips: track.clips.map((clip) => (clip.id === 'clip-midi-intro' ? { ...clip, name: 'Glue' } : clip)),
+            })),
+        };
+        const result = bridge(
+            [{ name: 'glueClips', arguments: { clipIds: ['clip-midi-intro', 'clip-midi-verse'] } }],
+            'please glue clip Glue and MIDI Verse please',
+            namedGlueContext
+        );
+
+        expect(result.actions).toEqual([
+            { type: 'glueClips', payload: { clipIds: ['clip-midi-intro', 'clip-midi-verse'] } },
+        ]);
+        expect(result.rejections).toEqual([]);
+    });
+
+    it('does not treat cancellation words inside a quoted clip target as cancellation', () => {
+        const context = createGlueClipContext();
+        const namedTargetContext = {
+            ...context,
+            tracks: context.tracks.map((track) => ({
+                ...track,
+                clips: track.clips.map((clip) =>
+                    clip.id === 'clip-midi-intro' ? { ...clip, name: "Actually Don't" } : clip
+                ),
+            })),
+        };
+        const result = bridge(
+            [{ name: 'glueClips', arguments: { clipIds: ['clip-midi-intro', 'clip-midi-verse'] } }],
+            `glue "Actually Don't" and MIDI Verse clips please`,
+            namedTargetContext
+        );
+
+        expect(result.actions).toEqual([
+            { type: 'glueClips', payload: { clipIds: ['clip-midi-intro', 'clip-midi-verse'] } },
+        ]);
+        expect(result.rejections).toEqual([]);
+    });
+
     it('grounds exactly two selected clips and rejects selected sets with the wrong cardinality', () => {
         const context = createGlueClipContext();
         const accepted = bridge(
             [{ name: 'glueClips', arguments: { clipIds: ['clip-midi-intro', 'clip-midi-verse'] } }],
-            'glue the selected clips',
+            'please glue the selected clips please',
             context
         );
         const rejected = bridge(
@@ -1076,6 +1123,117 @@ describe('bridgeGroundedLlmToolCalls', () => {
         );
 
         expect(results.every((result) => result.actions.length === 0)).toBe(true);
+    });
+
+    it('rejects the whole provider plan for multiple, incomplete, ambiguous, unmatched, or mismatched glue requests', () => {
+        const context = createGlueClipContext();
+        const duplicateNameContext = {
+            ...context,
+            tracks: context.tracks.map((track) => ({
+                ...track,
+                clips: track.clips.map((clip) => {
+                    if (clip.id === 'clip-midi-intro' || clip.id === 'clip-midi-outro') {
+                        return { ...clip, name: 'Shared Start' };
+                    }
+                    return { ...clip, name: 'Shared End' };
+                }),
+            })),
+        };
+        const glue = { name: 'glueClips', arguments: { clipIds: ['clip-midi-intro', 'clip-midi-verse'] } };
+        const tempo = { name: 'setTempo', arguments: { bpm: 130 } };
+        const results = [
+            bridge(
+                [glue, tempo],
+                'glue MIDI Intro and MIDI Verse clips, then glue MIDI Verse and MIDI Outro clips, then set tempo to 130',
+                context
+            ),
+            bridge([tempo], 'glue MIDI Intro, then set tempo to 130', context),
+            bridge([tempo], 'glue MIDI Intro and MIDI Verse clips, then set tempo to 130', context),
+            bridge(
+                [glue, tempo],
+                'glue Shared Start and Shared End clips, then set tempo to 130',
+                duplicateNameContext
+            ),
+            bridge([glue, tempo], 'glue MIDI Intro and Missing clips, then set tempo to 130', context),
+            bridge(
+                [{ name: 'glueClips', arguments: { clipIds: ['clip-midi-intro', 'clip-midi-outro'] } }, tempo],
+                'glue MIDI Intro and MIDI Verse clips, then set tempo to 130',
+                context
+            ),
+            bridge([glue, glue, tempo], 'glue MIDI Intro and MIDI Verse clips, then set tempo to 130', context),
+        ];
+
+        expect(results.map((result) => result.actions)).toEqual([[], [], [], [], [], [], []]);
+        expect(results.every((result) => result.rejections.length === 1)).toBe(true);
+        expect(results.every((result) => result.rejections[0]?.name === '<batch>')).toBe(true);
+    });
+
+    it('ignores declarative Glue entity text before an unrelated action', () => {
+        const context = createGlueClipContext();
+        const introNamedContext = {
+            ...context,
+            tracks: context.tracks.map((track) => ({
+                ...track,
+                clips: track.clips.map((clip) => (clip.id === 'clip-midi-intro' ? { ...clip, name: 'Intro' } : clip)),
+            })),
+        };
+        const tempo = [{ name: 'setTempo', arguments: { bpm: 130 } }];
+        const results = [
+            bridge(tempo, 'Glue is a clip, then set tempo to 130', context),
+            bridge(tempo, 'Glue Intro and MIDI Verse are clips, then set tempo to 130', introNamedContext),
+        ];
+
+        expect(results.map((result) => result.actions)).toEqual([
+            [{ type: 'setTempo', payload: { bpm: 130 } }],
+            [{ type: 'setTempo', payload: { bpm: 130 } }],
+        ]);
+        expect(results.every((result) => result.rejections.length === 0)).toBe(true);
+    });
+
+    it('omits one explicitly cancelled glue call while preserving unrelated grounded actions', () => {
+        const context = createGlueClipContext();
+        const glue = { name: 'glueClips', arguments: { clipIds: ['clip-midi-intro', 'clip-midi-verse'] } };
+        const tempo = { name: 'setTempo', arguments: { bpm: 130 } };
+        const prompts = [
+            "glue MIDI Intro and MIDI Verse clips, but don't glue them due to phase issues, then set tempo to 130",
+            "glue MIDI Intro and MIDI Verse clips, but don't glue them because I don't want phase issues, then set tempo to 130",
+            'glue MIDI Intro and MIDI Verse clips, but do not glue the clips because they overlap, then set tempo to 130',
+            'glue MIDI Intro and MIDI Verse clips, but never glue MIDI Intro and MIDI Verse because they are takes, then set tempo to 130',
+            'glue MIDI Intro and MIDI Verse clips, then cancel them due to timing, then set tempo to 130',
+            'glue MIDI Intro and MIDI Verse clips; abort them because the edit is risky; set tempo to 130',
+            'glue MIDI Intro and MIDI Verse clips; scratch them since the source changed; set tempo to 130',
+            'glue MIDI Intro and MIDI Verse clips, but keep them separate for comping, then set tempo to 130',
+            'glue MIDI Intro and MIDI Verse clips, but leave unchanged for review, then set tempo to 130',
+            "glue MIDI Intro and MIDI Verse clips, actually don't because the phase is wrong, then set tempo to 130",
+            'glue MIDI Intro and MIDI Verse clips; without changes because this is a dry run; set tempo to 130',
+        ];
+
+        const results = prompts.map((prompt) => bridge([glue, tempo], prompt, context));
+        const providerOmittedGlue = bridge(
+            [tempo],
+            "glue MIDI Intro and MIDI Verse clips, but don't glue them after all, then set tempo to 130",
+            context
+        );
+
+        expect(results.every((result) => result.actions.length === 1)).toBe(true);
+        expect(results.every((result) => result.actions[0]?.type === 'setTempo')).toBe(true);
+        expect(results.every((result) => result.rejections.length === 0)).toBe(true);
+        expect(providerOmittedGlue.actions).toEqual([{ type: 'setTempo', payload: { bpm: 130 } }]);
+        expect(providerOmittedGlue.rejections).toEqual([]);
+    });
+
+    it('keeps quoted cancellation prose inert', () => {
+        const context = createGlueClipContext();
+        const result = bridge(
+            [{ name: 'glueClips', arguments: { clipIds: ['clip-midi-intro', 'clip-midi-verse'] } }],
+            `glue MIDI Intro and MIDI Verse clips, then "don't glue them due to phase issues" is a project note`,
+            context
+        );
+
+        expect(result.actions).toEqual([
+            { type: 'glueClips', payload: { clipIds: ['clip-midi-intro', 'clip-midi-verse'] } },
+        ]);
+        expect(result.rejections).toEqual([]);
     });
 
     it('grounds an explicit clip stretch ratio without allowing provider invention or omission', () => {
@@ -2407,6 +2565,20 @@ describe('bridgeGroundedLlmToolCalls', () => {
                 payload: { name: 'Strings', trackIds: [guitar.id, 'track-guitar-2'] },
             },
         ]);
+    });
+
+    it('preserves VCA array-target grounding for a member named Never Enough', () => {
+        const neverEnough = createTrack({ id: 'track-never-enough', name: 'Never Enough' });
+        const result = bridge(
+            [{ name: 'createVcaGroup', arguments: { name: 'Dynamics', trackIds: [neverEnough.id] } }],
+            'create VCA group for Never Enough named Dynamics',
+            { ...projectContext, tracks: [...projectContext.tracks, neverEnough] }
+        );
+
+        expect(result.actions).toEqual([
+            { type: 'createVcaGroup', payload: { name: 'Dynamics', trackIds: [neverEnough.id] } },
+        ]);
+        expect(result.rejections).toEqual([]);
     });
 
     it('rejects invented, ambiguous, ineligible, incomplete, and no-op VCA membership plans', () => {

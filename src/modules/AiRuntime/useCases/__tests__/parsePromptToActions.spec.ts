@@ -101,6 +101,52 @@ function completePlan<TToolCall>(toolCalls: TToolCall[]) {
     return { status: 'complete' as const, toolCalls };
 }
 
+function createGlueProviderContext(): ProjectContext {
+    const clips = [
+        { id: 'clip-intro', name: 'Intro', startBeat: 0, endBeat: 8 },
+        { id: 'clip-verse', name: 'Verse', startBeat: 8, endBeat: 16 },
+        { id: 'clip-outro', name: 'Outro', startBeat: 16, endBeat: 24 },
+    ].map((clip) => ({
+        ...clip,
+        type: 'midi' as const,
+        gain: 1,
+        locked: false,
+        muted: false,
+        loopEnabled: false,
+        noteCount: 4,
+    }));
+    return {
+        ...baseContext,
+        glueEligibleClipPairs: [
+            ['clip-intro', 'clip-verse'],
+            ['clip-verse', 'clip-outro'],
+        ],
+        tracks: [
+            {
+                id: 'track-midi',
+                name: 'Keys',
+                kind: 'midi',
+                muted: false,
+                soloed: false,
+                soloSafe: false,
+                armed: false,
+                gain: 0.8,
+                pan: 0,
+                automationMode: 'read',
+                outputId: 'master',
+                clipCount: clips.length,
+                deviceCount: 0,
+                clips,
+                devices: [],
+                sends: [],
+            },
+        ],
+        selectedTrackId: 'track-midi',
+        selectedClipId: 'clip-intro',
+        selectedClipIds: ['clip-intro', 'clip-verse'],
+    };
+}
+
 describe('parsePromptToActions', () => {
     beforeEach(() => {
         vi.clearAllMocks();
@@ -672,6 +718,53 @@ describe('parsePromptToActions', () => {
         expect(result.actions).toEqual([{ type: 'glueClips', payload: { clipIds: ['clip-intro', 'clip-verse'] } }]);
         expect(result.requiresConfirmation).toBe(true);
         expect(result.executionMode).toBe('atomic');
+    });
+
+    it('omits a cancelled provider glue call and keeps an unrelated grounded action', async () => {
+        const actualBridge = await vi.importActual<typeof import('../agentReference/bridgeGroundedLlmToolCalls')>(
+            '../agentReference/bridgeGroundedLlmToolCalls'
+        );
+        mockBridgeGroundedLlmToolCalls.mockImplementation(actualBridge.bridgeGroundedLlmToolCalls);
+        vi.mocked(generateToolCalls).mockResolvedValue(
+            completePlan([
+                { name: 'glueClips', arguments: { clipIds: ['clip-intro', 'clip-verse'] } },
+                { name: 'setTempo', arguments: { bpm: 130 } },
+            ])
+        );
+
+        const result = await parsePromptToActions(
+            "glue Intro and Verse clips, but don't glue them due to phase issues, then set tempo to 130",
+            createGlueProviderContext()
+        );
+
+        expect(result.actions).toEqual([{ type: 'setTempo', payload: { bpm: 130 } }]);
+        expect(result.requiresConfirmation).toBe(true);
+        expect(result.executionMode).toBe('atomic');
+        expect(result.rejectionReason).toBeUndefined();
+    });
+
+    it('rejects the whole mixed provider plan when the prompt contains multiple glue commands', async () => {
+        const actualBridge = await vi.importActual<typeof import('../agentReference/bridgeGroundedLlmToolCalls')>(
+            '../agentReference/bridgeGroundedLlmToolCalls'
+        );
+        mockBridgeGroundedLlmToolCalls.mockImplementation(actualBridge.bridgeGroundedLlmToolCalls);
+        vi.mocked(generateToolCalls).mockResolvedValue(
+            completePlan([
+                { name: 'glueClips', arguments: { clipIds: ['clip-intro', 'clip-verse'] } },
+                { name: 'setTempo', arguments: { bpm: 130 } },
+            ])
+        );
+
+        const result = await parsePromptToActions(
+            'glue Intro and Verse clips, then glue Verse and Outro clips, then set tempo to 130',
+            createGlueProviderContext()
+        );
+
+        expect(result.actions).toEqual([]);
+        expect(result.requiresConfirmation).toBe(false);
+        expect(result.rejectionReason).toBe(
+            'Provider action rejected: <batch>: Glue request must contain exactly one unambiguous direct clip pair or selected-clips command'
+        );
     });
 
     it('proposes a grounded whole-clip MIDI transform as one confirmable atomic action', async () => {
