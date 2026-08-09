@@ -297,6 +297,68 @@ function readDetectorAwareTopologies(): Set<string> {
 
 const ALL_TOPOLOGIES: GlutenTopology[] = ['vca', 'opto', 'fet', 'diode'];
 
+/**
+ * The arm reader, against arm shapes that are not in the crate *yet*.
+ *
+ * Everything else in this file reads the live sources, which means it can only
+ * guard the parse against shapes already written. That is the wrong way round
+ * for this particular reader: its whole job is to keep working when someone
+ * changes those sources, and the change most likely to break it — collapsing
+ * two dead parameters into one or-pattern — is exactly how the FET's `knee` and
+ * `range` get implemented, by this file's own account.
+ *
+ * Narrowing `ARM_HEAD_PATTERN` back to one literal per arm is invisible against
+ * today's crate: no arm uses an or-pattern, so both versions agree. These
+ * fixtures are what make that mutation red.
+ */
+describe('the set_param arm reader', () => {
+    const INLINE_OR = '            "knee" | "range" => {\n                self.x = value;\n            }\n';
+    const MULTILINE_OR =
+        '            "knee"\n            | "range" => {\n                self.x = value;\n            }\n';
+    const NESTED_CALL =
+        '            "amount" => {\n                self.vca.set_param("threshold", t);\n            }\n';
+
+    function namesIn(block: string): string[] {
+        return readArmHeads(block)
+            .flatMap((arm) => arm.names)
+            .sort();
+    }
+
+    it('reads both names out of an inline or-pattern', () => {
+        expect(namesIn(INLINE_OR)).toEqual(['knee', 'range']);
+    });
+
+    it('reads both names out of a multi-line or-pattern', () => {
+        expect(namesIn(MULTILINE_OR)).toEqual(['knee', 'range']);
+    });
+
+    it('still refuses a nested set_param call that is not an arm', () => {
+        // The other half of the bound: `GlutenEngine`'s `amount` arm *calls*
+        // `self.vca.set_param("threshold", …)`, and reading that as an arm
+        // would file `threshold` as engine-handled and drop it out of the
+        // forwarded population entirely.
+        expect(namesIn(NESTED_CALL)).toEqual(['amount']);
+    });
+
+    it('maps every name of an or-pattern to the arm’s one body', () => {
+        const [arm] = readArmHeads('            "knee" | "range" => { self.x = value; }\n');
+        expect(arm?.names).toEqual(['knee', 'range']);
+    });
+
+    it('reports a name it could not read as an arm head', () => {
+        // Fail-closed. A guard arm (`"knee" if … =>`) is a shape this parse
+        // cannot read, and reading zero arms from it would widen the derived
+        // gap population in silence.
+        const block = '            "knee" if value > 0.0 => {\n                self.x = value;\n            }\n';
+        expect(uncapturedArmNames(block, new Set(namesIn(block)))).toEqual(['knee']);
+    });
+
+    it('reports nothing when every arm head was read', () => {
+        const block = '            "knee" | "range" => {\n                self.x = value;\n            }\n';
+        expect(uncapturedArmNames(block, new Set(namesIn(block)))).toEqual([]);
+    });
+});
+
 describe('Gluten topology gap census', () => {
     it.each(ALL_TOPOLOGIES)('matches the %s struct’s set_param arms exactly', (topology) => {
         const arms = readSetParamArms(TOPOLOGY_SOURCES[topology]);
