@@ -1,6 +1,7 @@
 import { useState } from 'react';
 
 import { logger } from '#/infra/logger/appLogger';
+import { trackStore } from '#/modules/Arrangement/stores';
 import {
     soloTrackExclusive,
     toggleInputMonitoring,
@@ -16,6 +17,13 @@ import { executeAppAction } from '#/modules/Command/useCases';
 import { confirmUser } from '#/utils/Notification/confirmUser';
 
 import { type Track } from '../../models/TrackViewTypes';
+
+/**
+ * Dispatch options for the strip's performative toggles — see the note on
+ * `useChannelStripActions`. The write still runs inside its Automerge
+ * transaction; only the claim on the shared, capped action history is declined.
+ */
+const PERFORMATIVE_TOGGLE = { skipUndo: true } as const;
 
 export type ChannelStripActions = {
     select: () => void;
@@ -61,22 +69,35 @@ export type ChannelStripActions = {
  * was only ever a routing change at the call sites. Arming already dispatched,
  * which is why the file was inconsistent with itself.
  *
- * **Mute and solo are recorded, deliberately.** Shipping DAWs do not agree here:
- * Logic Pro puts mute and solo in the Undo History and the standing user request
- * is to get them *out* (logicprohelp.com "Remove Solo and Mute from undo
- * history?"); Ableton Live leaves solo out and the standing request is to put it
- * *in* (forum.ableton.com t=244579, "SOLO Actions should be saved to UNDO
- * HISTORY", Live 11); Pro Tools records neither and gets asked for both; REAPER
- * refuses to decide and exposes it as a preference (`undomask`). With the
- * industry split, this is not a question the mixer strip gets to answer on its
- * own — and this project has already answered it, in the one place that binds
- * every dispatcher: `handleMuteTrack`, `handleSoloTrack` and
- * `handleToggleSoloSafe` are `undoable: true`, so a mute the assistant performs
- * is on the stack today. Suppressing it here (with `skipUndo`) would make the
- * same operation behave differently depending on which surface issued it, which
- * is the exact defect being closed. If the project later decides performative
- * toggles do not belong in history, the lever is `undoable` on those handlers —
- * one place, all dispatchers — not a bypass at a call site.
+ * **Mute, solo and solo-safe from the buttons are not recorded, deliberately.**
+ * Shipping DAWs do not agree: Logic Pro puts mute and solo in the Undo History
+ * and the standing user request is to get them *out* (logicprohelp.com "Remove
+ * Solo and Mute from undo history?"); Ableton Live leaves solo out and the
+ * standing request is to put it *in* (forum.ableton.com t=244579, Live 11); Pro
+ * Tools records neither and gets asked for both; REAPER refuses to decide and
+ * exposes it as a preference (`undomask`). An industry split settles nothing, so
+ * the deciding fact has to be a local one — and it is `actionHistoryStore`.
+ *
+ * That store is not a local scratchpad. It is `createAutomergeStorage('root',
+ * 'actionHistory')` — a slot of the *synced* root document, shared with every
+ * peer, capped at `MAX_HISTORY` 200 and evicting oldest first, with each
+ * eviction revoking the replay capability for the entry that vanished. So a
+ * toggle recorded here does not cost this user a slot in their own undo stack;
+ * it costs *every collaborator* a slot in a shared, capped one. A mixing pass
+ * measured at 7 entries, 6 of them toggles, fills a 50-entry history panel in
+ * about seven passes and pushes real structural edits over the eviction edge.
+ * Live and Pro Tools leaving these out reads differently once the resource is
+ * shared: it is not taste, it is the right default.
+ *
+ * The lever is `skipUndo` at this call site rather than `undoable: false` on the
+ * three handlers, and the difference is the point. A hand on the M button during
+ * a mix is a *performance*; the assistant muting twelve tracks, or the command
+ * list issuing the same action, is an *edit*, and an edit must stay reversible.
+ * Turning the handlers off would take both. `skipUndo` declines only the history
+ * claim: the write still runs inside the Automerge transaction, so it syncs,
+ * persists and merges exactly as any other write, and every non-performative
+ * dispatcher keeps its entry. That is the same "one canonical write path"
+ * this file exists to enforce — history membership is a separate axis from it.
  *
  * **Gain and pan settle before they commit.** `Fader` and `RotaryKnob` both emit
  * `isTransient` true for each sample under the pointer and false once for the
@@ -132,6 +153,34 @@ export function useChannelStripActions(track: Track): ChannelStripActions {
     };
 
     /**
+     * Put the engine back on project truth after a commit that never landed.
+     *
+     * The transient half of a gesture drives the engine and nothing else, so a
+     * rejected commit that only restored the *display* left the strip reading
+     * project truth, the project agreeing, every peer hearing project truth —
+     * and this user alone hearing the abandoned value, silently, until the next
+     * write to that track. `trackStore` is read here rather than the bound
+     * `track` prop because a commit can fail *after* it wrote (an
+     * `AppActionCommittedError` from a post-commit effect), in which case truth
+     * is the new value and the prop in this closure is a render behind.
+     *
+     * Routed through the same use case the gesture used, so the Toaster pad
+     * mirror is corrected with the strip gain rather than left on the abandoned
+     * value. That also means the correction reaches the automation recorder
+     * while a pass is rolling — a restatement being recorded as if it were a
+     * gesture, which is the same projection-versus-gesture gap tracked against
+     * `projectTrackToLiveStrip`.
+     */
+    const restoreEngineFromProjectTruth = (parameterId: 'gain' | 'pan'): void => {
+        const committed = trackStore.value?.tracks.find((candidate) => candidate.id === track.id);
+        if (parameterId === 'gain') {
+            setTrackGain(track.id, committed?.gain ?? track.gain, true);
+            return;
+        }
+        setTrackPan(track.id, committed?.pan ?? track.pan, true);
+    };
+
+    /**
      * Commit a settled gesture and hold its value on screen until the write has
      * landed.
      *
@@ -157,6 +206,10 @@ export function useChannelStripActions(track: Track): ChannelStripActions {
                 // the failure, so a commit that throws took down the page's
                 // rejection handler while every test around it still passed.
                 logger.error(new Error(`Channel strip commit failed for action: ${action.type}`, { cause: error }));
+                // Before the `finally` hands the display back: the display and
+                // the engine have to arrive at project truth together, or the
+                // user is looking at one value and hearing another.
+                restoreEngineFromProjectTruth(parameterId);
             } finally {
                 clearGesture();
                 releaseTouch(parameterId);
@@ -167,17 +220,17 @@ export function useChannelStripActions(track: Track): ChannelStripActions {
     return {
         select: () => selectTrack(track.id),
         toggleMute: () => {
-            void executeAppAction({
-                type: 'muteTrack',
-                payload: { trackId: track.id, muted: !track.muted },
-            });
+            void executeAppAction(
+                { type: 'muteTrack', payload: { trackId: track.id, muted: !track.muted } },
+                PERFORMATIVE_TOGGLE
+            );
         },
         toggleSolo: (additive) => {
             if (additive) {
-                void executeAppAction({
-                    type: 'soloTrack',
-                    payload: { trackId: track.id, soloed: !track.soloed },
-                });
+                void executeAppAction(
+                    { type: 'soloTrack', payload: { trackId: track.id, soloed: !track.soloed } },
+                    PERFORMATIVE_TOGGLE
+                );
                 return;
             }
             // Exclusive solo has no `AppAction`: it rewrites every track's solo
@@ -197,7 +250,7 @@ export function useChannelStripActions(track: Track): ChannelStripActions {
         },
         toggleMonitoring: () => toggleInputMonitoring(track.id),
         toggleSoloSafeFlag: () => {
-            void executeAppAction({ type: 'toggleSoloSafe', payload: { trackId: track.id } });
+            void executeAppAction({ type: 'toggleSoloSafe', payload: { trackId: track.id } }, PERFORMATIVE_TOGGLE);
         },
         setGain: (value, isTransient = false) => {
             setGestureGain(value);

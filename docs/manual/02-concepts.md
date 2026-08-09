@@ -95,14 +95,24 @@ many notes it touched.
 
 > [!WARNING]
 > **Not yet active.** Undo's coverage of the mixer is now split down the middle, and its coverage of
-> devices is uneven. The channel strip's own controls record: riding a fader or a pan control goes on
-> the stack as one step per gesture rather than one per twitch, and removing a channel puts the track
-> back with its clips and its devices. Soloing is the exception still outstanding — a plain click on
-> S, which solos that channel alone, is not recorded, while ⌘-clicking to add a channel to the solo
-> set is. The device chain below the strip is not covered at all: adding or removing a device by hand
-> applies immediately and is not recorded, so undo will skip straight past it to the last recorded
-> step. Seeing a strip move in the history panel is not a sign that everything on the same strip is
-> covered.
+> devices is uneven. The channel strip's level controls record: riding a fader or a pan control goes
+> on the stack as one step per gesture rather than one per twitch, and removing a channel puts the
+> track back with its clips and its devices. Its buttons do not, on purpose — muting, soloing and
+> solo-safing a channel are things you do *while* listening, dozens of times a pass, and the history
+> is shared with everyone in the session, so those toggles are left out of it rather than spending
+> your collaborators' history on them. They still apply, save, and sync like anything else; they are
+> simply not something ⌘Z walks back. The device chain below the strip is not covered at all: adding
+> or removing a device by hand applies immediately and is not recorded, so undo will skip straight
+> past it to the last recorded step. Seeing a strip move in the history panel is not a sign that
+> everything on the same strip is covered.
+>
+> Two things about the strip are worth knowing before you rely on them. Because a fader move is now
+> recorded as one step taken at the end of the gesture, someone else in the session no longer watches
+> your fader travel — for them it jumps to its final position when you let go. And undo restores
+> **your** view of the project: if a collaborator changed the same track while your change was in
+> flight, undoing yours can take their work with it, and deleting a track can lose a clip they added
+> to it in the same moment. Take a branch before anything you would be unhappy to lose in a shared
+> session.
 >
 > Whether a device records anything is decided device by device, so the device page is the
 > authority where there is one. Gluten is the furthest along: moving a control and releasing it is
@@ -147,11 +157,13 @@ audio file, converting audio to MIDI, detecting song structure, clearing MIDI ma
 assistant's automatic mix fix are unrecorded however you reach them.
 
 Recorded when you do it by hand today: editing clips and notes, arming a track, tempo and time
-signature, the channel strip's own controls, deleting a track from wherever you delete it — the
+signature, the channel strip's level and pan, deleting a track from wherever you delete it — the
 timeline, the track list, or the mixer — adjustment layers, the chord track, and track alternatives.
 Not recorded: adding or removing a device, macros, device parameters on the devices that do not
-record their own controls, and the mute and solo buttons on the track header, which are a different
-surface from the strip's and have not been converted.
+record their own controls, and mute and solo — from the strip because they are performance rather
+than editing, and from the track header because that surface has not been converted at all. The
+assistant and the command list still record a mute they issue: what you are doing decides it, not
+only where.
 
 **Every list on this page is what we know of, not the whole map** — including the claim that the
 command list and the assistant record. The split is decided one operation at a time, the same

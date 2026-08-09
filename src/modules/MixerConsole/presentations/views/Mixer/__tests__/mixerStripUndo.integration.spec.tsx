@@ -17,6 +17,7 @@ import {
 import { clearHandlerRegistry, macroStore, registerHandlerMap, undoStore } from '#/modules/Command/stores';
 import {
     clearUndoHistory,
+    executeAppAction,
     resetActionReplayAuthority,
     setActionHistoryMetadataPort,
     undo,
@@ -111,8 +112,18 @@ const stubArrangementEventBus: Parameters<typeof setArrangementEventBus>[0] = {
     emit: () => Promise.resolve(),
 };
 
-const noActionHistoryMetadataPort = {
-    record: () => [],
+/**
+ * Stands in for `actionHistoryStore`, which is an Automerge slot of the *root*
+ * document — shared with every peer, capped at 200 entries, evicting oldest
+ * first. Recording what reaches it is how the tests below can tell a local undo
+ * entry apart from a claim on a collaborator's history panel.
+ */
+const sharedHistoryLabels: string[] = [];
+const recordingActionHistoryMetadataPort = {
+    record: (metadata: { label: string }) => {
+        sharedHistoryLabels.push(metadata.label);
+        return [];
+    },
     markReverted: () => ({ status: 'unavailable' as const }),
     clear: () => undefined,
 };
@@ -352,7 +363,8 @@ describe('mixer strip writes reach the project through the recorded path', () =>
         registerHandlerMap(getArrangementHandlers());
         clearUndoHistory();
         resetActionReplayAuthority();
-        setActionHistoryMetadataPort(noActionHistoryMetadataPort);
+        setActionHistoryMetadataPort(recordingActionHistoryMetadataPort);
+        sharedHistoryLabels.length = 0;
         macroStore.set({ macros: [], recording: false, currentRecording: [] });
         setArrangementEventBus(stubArrangementEventBus);
         vi.mocked(confirmUser).mockResolvedValue(true);
@@ -612,7 +624,20 @@ describe('mixer strip writes reach the project through the recorded path', () =>
         expect(Number(fader.getAttribute('aria-valuenow'))).toBeCloseTo(0.5, 5);
     });
 
-    it('records a strip mute and gives it back on undo', async () => {
+    /**
+     * A hand on the M button during a mix is a performance, not an edit, and
+     * `actionHistoryStore` is not a local scratchpad — it is an Automerge slot
+     * of the *root* document, shared with every peer, capped at 200 and evicting
+     * oldest first. A mixing pass measured at 7 entries, 6 of them toggles,
+     * therefore spends a collaborator's 50-entry panel in about seven passes and
+     * pushes their structural entries toward eviction, which revokes their
+     * replay capability for the ones that vanish.
+     *
+     * So the toggle is dispatched with `skipUndo`: the write still runs inside
+     * the Automerge transaction, so it syncs, persists and merges exactly as
+     * before — only the history claim is declined.
+     */
+    it('mutes through the transaction without spending a shared history entry', async () => {
         render(<MixerStripRow />);
 
         fireEvent.click(screen.getByTestId(`channel-mute-${TRACK_ID}`));
@@ -620,7 +645,43 @@ describe('mixer strip writes reach the project through the recorded path', () =>
         await vi.waitFor(() => {
             expect(trackStore.value?.tracks.find((candidate) => candidate.id === TRACK_ID)?.muted).toBe(true);
         });
+        expect(undoLabels()).toEqual([]);
+        expect(sharedHistoryLabels).toEqual([]);
+
+        // The button reflects it, so the toggle is not merely unrecorded — it
+        // landed everywhere a peer would see it.
+        expect(within(strip()).getByRole('button', { name: 'Unmute' })).toBeTruthy();
+    });
+
+    it('solos and solo-safes through the transaction without spending a shared history entry', async () => {
+        render(<MixerStripRow />);
+
+        fireEvent.click(screen.getByTestId(`channel-solo-${TRACK_ID}`), { metaKey: true });
+        await vi.waitFor(() => {
+            expect(trackStore.value?.tracks.find((candidate) => candidate.id === TRACK_ID)?.soloed).toBe(true);
+        });
+
+        openStripMenu();
+        fireEvent.click(screen.getByText('Solo Safe'));
+        await vi.waitFor(() => {
+            expect(trackStore.value?.tracks.find((candidate) => candidate.id === TRACK_ID)?.soloSafe).toBe(true);
+        });
+
+        expect(undoLabels()).toEqual([]);
+        expect(sharedHistoryLabels).toEqual([]);
+    });
+
+    /**
+     * The handlers stay `undoable: true`. Declining the entry is the *surface's*
+     * decision, so a mute the assistant or the command list issues is still an
+     * edit and still reversible — which is the half of this that a blanket
+     * `undoable: false` on the handler would have thrown away.
+     */
+    it('still records a mute issued as an ordinary action rather than as a performance', async () => {
+        await executeAppAction({ type: 'muteTrack', payload: { trackId: TRACK_ID, muted: true } });
+
         expect(undoLabels()).toEqual(['Mute track']);
+        expect(sharedHistoryLabels).toEqual(['Mute track']);
 
         await undo();
         expect(trackStore.value?.tracks.find((candidate) => candidate.id === TRACK_ID)?.muted).toBe(false);

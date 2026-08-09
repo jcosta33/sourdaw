@@ -1,5 +1,7 @@
 import { act, renderHook, waitFor } from '@testing-library/react';
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+
+import { trackStore } from '#/modules/Arrangement/stores';
 
 import { useChannelStripActions } from '../useChannelStripActions';
 
@@ -94,9 +96,24 @@ const baseTrack: Track = {
 
 const makeTrack = (overrides: Partial<Track> = {}): Track => ({ ...baseTrack, ...overrides });
 
+/**
+ * Put a track into project truth. The strip's rejection path reads the store
+ * rather than its bound prop, because a commit can fail after it wrote.
+ * MixerConsole's `Track` is a structural mirror of Arrangement's, so the same
+ * literal serves both.
+ */
+const seedProjectTruth = (overrides: Partial<Track> = {}): void => {
+    trackStore.set({ tracks: [makeTrack(overrides)], selectedTrackId: null, ghostClips: [] });
+};
+
 describe('useChannelStripActions', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        trackStore.set({ tracks: [], selectedTrackId: null, ghostClips: [] });
+    });
+
+    afterEach(() => {
+        trackStore.set({ tracks: [], selectedTrackId: null, ghostClips: [] });
     });
 
     it('select dispatches selectTrack with the bound track id', () => {
@@ -112,10 +129,10 @@ describe('useChannelStripActions', () => {
 
         result.current.toggleMute();
 
-        expect(mocks.executeAppAction).toHaveBeenCalledWith({
-            type: 'muteTrack',
-            payload: { trackId: 'track-1', muted: true },
-        });
+        expect(mocks.executeAppAction).toHaveBeenCalledWith(
+            { type: 'muteTrack', payload: { trackId: 'track-1', muted: true } },
+            { skipUndo: true }
+        );
         expect(mocks.muteTrack).not.toHaveBeenCalled();
     });
 
@@ -124,10 +141,10 @@ describe('useChannelStripActions', () => {
 
         result.current.toggleMute();
 
-        expect(mocks.executeAppAction).toHaveBeenCalledWith({
-            type: 'muteTrack',
-            payload: { trackId: 'track-1', muted: false },
-        });
+        expect(mocks.executeAppAction).toHaveBeenCalledWith(
+            { type: 'muteTrack', payload: { trackId: 'track-1', muted: false } },
+            { skipUndo: true }
+        );
     });
 
     it('toggleSolo(additive) toggles solo state without exclusivity', () => {
@@ -135,10 +152,10 @@ describe('useChannelStripActions', () => {
 
         result.current.toggleSolo(true);
 
-        expect(mocks.executeAppAction).toHaveBeenCalledWith({
-            type: 'soloTrack',
-            payload: { trackId: 'track-1', soloed: true },
-        });
+        expect(mocks.executeAppAction).toHaveBeenCalledWith(
+            { type: 'soloTrack', payload: { trackId: 'track-1', soloed: true } },
+            { skipUndo: true }
+        );
         expect(mocks.soloTrackExclusive).not.toHaveBeenCalled();
     });
 
@@ -177,10 +194,10 @@ describe('useChannelStripActions', () => {
 
         result.current.toggleSoloSafeFlag();
 
-        expect(mocks.executeAppAction).toHaveBeenCalledWith({
-            type: 'toggleSoloSafe',
-            payload: { trackId: 'track-1' },
-        });
+        expect(mocks.executeAppAction).toHaveBeenCalledWith(
+            { type: 'toggleSoloSafe', payload: { trackId: 'track-1' } },
+            { skipUndo: true }
+        );
         expect(mocks.toggleSoloSafe).not.toHaveBeenCalled();
     });
 
@@ -232,6 +249,62 @@ describe('useChannelStripActions', () => {
         // truth — which is also what makes it clamping-proof, since the stored
         // value need not equal the value that was committed.
         expect(result.current.displayGain).toBe(0.8);
+    });
+
+    /**
+     * The gesture drives the engine and nothing else, so a rejected commit that
+     * only restores the *display* leaves the engine on the abandoned value: the
+     * fader reads project truth, the project agrees, every peer hears project
+     * truth, and this user alone hears the value that never landed — silently,
+     * until the next write to that track.
+     */
+    it('re-drives the engine from project truth when the commit rejects', async () => {
+        seedProjectTruth({ id: 'track-1', gain: 0.8 });
+        mocks.executeAppAction.mockRejectedValueOnce(new Error('commit failed'));
+        const { result } = renderHook(() => useChannelStripActions(makeTrack({ id: 'track-1', gain: 0.8 })));
+
+        act(() => {
+            result.current.setGain(0.35, true);
+        });
+        expect(mocks.setTrackGain).toHaveBeenLastCalledWith('track-1', 0.35, true);
+
+        await act(async () => {
+            result.current.setGain(0.35, false);
+            await Promise.resolve();
+        });
+
+        expect(mocks.setTrackGain).toHaveBeenLastCalledWith('track-1', 0.8, true);
+        expect(result.current.displayGain).toBe(0.8);
+    });
+
+    it('re-drives the pan engine from project truth when the commit rejects', async () => {
+        seedProjectTruth({ id: 'track-1', pan: 12 });
+        mocks.executeAppAction.mockRejectedValueOnce(new Error('commit failed'));
+        const { result } = renderHook(() => useChannelStripActions(makeTrack({ id: 'track-1', pan: 12 })));
+
+        await act(async () => {
+            result.current.setPan(-30, true);
+            result.current.setPan(-30, false);
+            await Promise.resolve();
+        });
+
+        expect(mocks.setTrackPan).toHaveBeenLastCalledWith('track-1', 12, true);
+    });
+
+    it('does not re-drive the engine when the commit succeeds', async () => {
+        seedProjectTruth({ id: 'track-1', gain: 0.35 });
+        const { result } = renderHook(() => useChannelStripActions(makeTrack({ id: 'track-1', gain: 0.8 })));
+
+        await act(async () => {
+            result.current.setGain(0.35, true);
+            result.current.setGain(0.35, false);
+            await Promise.resolve();
+        });
+
+        // The committed write already put 0.35 on the engine; a corrective
+        // re-drive here would be a second, redundant engine write per gesture.
+        expect(mocks.setTrackGain).toHaveBeenCalledTimes(1);
+        expect(mocks.setTrackGain).toHaveBeenLastCalledWith('track-1', 0.35, true);
     });
 
     it('hands the display back to project truth even when the commit rejects', async () => {
