@@ -1,0 +1,33 @@
+src/modules/Arrangement/useCases/clipEditing/restoreClipGlueState.ts
+  s_bc88af7d3b054c::t_fa970767b42d19 112
+  s_bc88af7d3b054c::t_deedb249659e1d 8,87,107-111,113-120
+  s_bc88af7d3b054c::t_f164e6bcb47781 121-122
+src/modules/Arrangement/handlers/clip/__tests__/handleGlueClips.integration.spec.ts
+  s_bc88af7d3b054c::t_fb28e540ead5e4 369-417
+src/modules/Arrangement/useCases/clipEditing/getClipIdCensus.ts
+  s_bc88af7d3b054c::t_fa970767b42d19 17,22
+  s_bc88af7d3b054c::t_deedb249659e1d 1-16,18-21,23-39
+src/modules/Arrangement/useCases/clipEditing/getGlueEligibleClipPairs.ts
+  s_bc88af7d3b054c::t_deedb249659e1d 6,20-21,41-51
+src/modules/Arrangement/useCases/clipEditing/__tests__/glueClips.integration.spec.ts
+  s_bc88af7d3b054c::t_fb28e540ead5e4 137-169
+src/modules/Arrangement/useCases/clipEditing/prepareClipGlue.ts
+  s_bc88af7d3b054c::t_fa970767b42d19 55
+  s_bc88af7d3b054c::t_deedb249659e1d 10,28-40,56,91-92
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "8173d6cb6006d13eb58db2ea305aac624a6b4cd0",
+  "prompts": {},
+  "sessions": {
+    "s_bc88af7d3b054c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f9b4a-11a2-7f61-8dfb-76eed0eb2a9c",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
