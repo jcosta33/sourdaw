@@ -1,6 +1,7 @@
 // registerDependencies owns app singleton construction; bootstrap wires those
 // instances into module-owned dependency ports before runtime subscribers start.
 import { setRuntimeLogger } from '#/infra/logger/runtimeLogger';
+import { flushDeferredStorageNotice } from '#/infra/store/storage/storageFullNotice';
 import { getGenerationHandlers, getAiMidiHandlers } from '#/modules/AiGeneration/useCases';
 import {
     beginMixAnalysis,
@@ -223,6 +224,13 @@ configureYeastRuntime({ panicOutputNotes: stopAllScheduled });
 const disposeWebMidiRealtimeProcessor = setWebMidiRealtimeProcessor({ processor: processRealtimeMidiInput });
 setWebMidiRuntimeEventBus({ eventBus });
 setNotificationEventBus(eventBus);
+// Storage adapters cannot resolve `notifyUser` before this line: `inject`
+// caches the closure it builds on first call, and an unregistered token
+// resolves to the abstract class rather than throwing — so one pre-bootstrap
+// call would cache a bus with no `emit` and break every `notifyUser` site for
+// the life of the page. A store's constructor seed is exactly such a caller on
+// a sealed origin. Anything they had to hold is delivered here. See #1557.
+flushDeferredStorageNotice();
 setTimeOperationDependencies({
     prepareAutomationTimeOperation,
     prepareAutomationTimeStateRestore,

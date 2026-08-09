@@ -1,6 +1,7 @@
 import { logger } from '#/infra/logger/appLogger';
 import { type LocalStorageKey } from '#/infra/store/storage/LocalStorageKeys';
 
+import { reportStorageFullOnce } from './storageFullNotice';
 import { type StorageAdapter } from './types';
 
 type CreatePlainJsonLocalStorageInput<TData> = {
@@ -74,6 +75,9 @@ export const createPlainJsonLocalStorage = <TData>(
                         'The value is live for this session but will not survive a reload.',
                     error
                 );
+                // Same origin, same notice. Omitting this made a refused
+                // export-settings write silent even on a healthy boot.
+                reportStorageFullOnce();
                 return false;
             }
         },

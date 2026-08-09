@@ -212,7 +212,7 @@ function startBranchSync(isHost: boolean): void {
  * Stop branch sync and restore the pre-session branchStore state.
  * Removes the `__branches__` Automerge doc so it isn't included in future saves.
  */
-function stopBranchSync(): void {
+function stopBranchSync(): ReturnType<typeof restoreBranchStateAfterSession> | null {
     if (sessionState.unsubscribeBranchStore) {
         sessionState.unsubscribeBranchStore();
         sessionState.unsubscribeBranchStore = null;
@@ -224,9 +224,9 @@ function stopBranchSync(): void {
 
     removeCrdtDoc(DOC_BRANCHES);
 
+    let restoreOutcome: ReturnType<typeof restoreBranchStateAfterSession> | null = null;
     if (sessionState.hasBranchStateBackup) {
         sessionState.isProjectingBranches = true;
-        let restoreOutcome: ReturnType<typeof restoreBranchStateAfterSession>;
         try {
             // Reports rather than throws on purpose. This `try` has no `catch`,
             // and everything left in teardown — stopping the sync, closing the
@@ -238,29 +238,6 @@ function stopBranchSync(): void {
         } finally {
             sessionState.isProjectingBranches = false;
         }
-
-        // `notifyUser`, not `setCollaborationError`. Every caller of
-        // `cleanupSubsystems` — `leaveSession`, `createSession`, `joinSession` —
-        // replaces the whole collaboration store immediately afterwards with
-        // `error: null`, so anything written to that field during teardown is
-        // erased synchronously before it can be rendered. The store field is
-        // for errors raised while a session is live; this one outlives the
-        // session by definition. See #1557.
-        //
-        // The two failures are not the same failure and must not share a
-        // message: one loses the branch list on reload, the other keeps it now
-        // and reverts to it later. Both name the cause and an action.
-        if (restoreOutcome === 'state-not-persisted') {
-            notifyUser(
-                'Left the session, but your branch list could not be saved — it will revert when you reopen the project. Free up storage space and try again.',
-                'error'
-            );
-        } else if (restoreOutcome === 'backup-not-cleared') {
-            notifyUser(
-                'Left the session, but a leftover session backup could not be cleared — your branch list may revert when you reopen the project. Free up storage space and try again.',
-                'error'
-            );
-        }
     }
     sessionState.lastProjectedBranchesJson = null;
 
@@ -269,6 +246,41 @@ function stopBranchSync(): void {
         logger.warn('[Collaboration] Failed to persist after branch sync cleanup:', error);
         setCollaborationError('Failed to save project locally after leaving the session.');
     });
+
+    // Handed back rather than reported here. Reporting is the last thing
+    // teardown does, after the peers are closed — see `cleanupSubsystems`.
+    return restoreOutcome;
+}
+
+/**
+ * Tell the user what leaving the session cost them, if anything.
+ *
+ * `notifyUser`, not `setCollaborationError`: every caller of
+ * `cleanupSubsystems` — `leaveSession`, `createSession`, `joinSession` —
+ * replaces the whole collaboration store immediately afterwards with
+ * `error: null`, so anything written to that field during teardown is erased
+ * synchronously before it can be rendered. That field is for errors raised
+ * while a session is live; this one outlives the session by definition.
+ *
+ * The two failures are not the same failure and must not share a message: one
+ * loses the branch list on reload, the other keeps it now and reverts to it
+ * later. Both name the cause and an action. See #1557.
+ */
+function reportBranchRestoreOutcome(outcome: ReturnType<typeof restoreBranchStateAfterSession> | null): void {
+    if (outcome === 'state-not-persisted') {
+        notifyUser(
+            'Left the session, but your branch list could not be saved — it will revert when you reopen the project. Free up storage space and try again.',
+            'error'
+        );
+        return;
+    }
+
+    if (outcome === 'backup-not-cleared') {
+        notifyUser(
+            'Left the session, but a leftover session backup could not be cleared — your branch list may revert when you reopen the project. Free up storage space and try again.',
+            'error'
+        );
+    }
 }
 
 /** Surface an error to the user via the collaboration store. */
@@ -398,7 +410,7 @@ function initializeSessionRuntime(): PeerConnectionManager {
 function cleanupSubsystems(): void {
     sessionState.pendingInviteId = null;
     stopPlayheadBroadcast();
-    stopBranchSync();
+    const branchRestoreOutcome = stopBranchSync();
     for (const timer of peerCleanupTimers.values()) {
         clearTimeout(timer);
     }
@@ -417,6 +429,14 @@ function cleanupSubsystems(): void {
         sessionState.peerManager = null;
     }
     sessionState.presenceListeners.clear();
+
+    // Last, deliberately. Reporting must not be able to unwind teardown: a
+    // throw from `notifyUser` used to skip `automergeSync.stop()`, the peer
+    // cleanup timers, `cleanupProjectionBridge` and `closeAll()`, so the user
+    // hit Leave, saw nothing, and stayed connected to live peers — the exact
+    // failure the branch-restore report exists to prevent. Nothing that only
+    // talks to the user runs before the session is actually torn down.
+    reportBranchRestoreOutcome(branchRestoreOutcome);
 }
 
 // -- Asset resolution --

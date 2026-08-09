@@ -60,7 +60,7 @@ function createClosablePeerManager(): { manager: PeerConnectionManager; closeAll
 
 describe('collaboration teardown when localStorage refuses the write', () => {
     beforeEach(() => {
-        notifyUserMock.mockClear();
+        notifyUserMock.mockReset();
         window.localStorage.clear();
         collaborationStore.set({
             isEnabled: true,
@@ -155,6 +155,32 @@ describe('collaboration teardown when localStorage refuses the write', () => {
             await leaveSession();
 
             expect(notifyUserMock).not.toHaveBeenCalled();
+        });
+
+        /**
+         * A `vi.fn()` mock removes the only thing that can unwind teardown, so
+         * the peer-closure assertions above run against a path that no longer
+         * resembles production. In the real failure `notifyUser` throws:
+         * `inject` caches the closure it builds on first call, and an
+         * unregistered `NotificationEventBus` token resolves to the abstract
+         * class rather than throwing, so the cached closure calls `emit` on a
+         * class that has none. Reporting must survive that, because it is the
+         * last thing teardown does and the peers are already closed.
+         */
+        it('closes the peers even if reporting itself throws', async () => {
+            const { manager, closeAll } = createClosablePeerManager();
+            sessionRuntimePrimitives.state.peerManager = manager;
+            blockEveryDurableWrite();
+            notifyUserMock.mockImplementation(() => {
+                throw new TypeError('eventBus.emit is not a function');
+            });
+
+            await expect(leaveSession()).rejects.toThrow('eventBus.emit is not a function');
+
+            expect(notifyUserMock).toHaveBeenCalledTimes(1);
+            expect(closeAll).toHaveBeenCalledTimes(1);
+            expect(sessionRuntimePrimitives.state.automergeSync).toBeNull();
+            expect(sessionRuntimePrimitives.state.cleanupProjectionBridge).toBeNull();
         });
     });
 

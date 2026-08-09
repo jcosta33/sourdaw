@@ -2,51 +2,9 @@ import { stringify, parse } from 'superjson';
 
 import { logger } from '#/infra/logger/appLogger';
 import { type LocalStorageKey } from '#/infra/store/storage/LocalStorageKeys';
-import { notifyUser } from '#/utils/Notification/notifyUser';
 
+import { reportStorageFullOnce } from './storageFullNotice';
 import { type StorageAdapter } from './types';
-
-/**
- * One notice per session, shared across every key.
- *
- * The condition is the origin, not the key: once the quota is gone every
- * subsequent write fails too, and a toast per refused write would be its own
- * defect on a path that fires on interaction. The per-key detail stays in the
- * log, which is where someone diagnosing it will look.
- */
-let hasReportedStorageFull = false;
-
-function deliverStorageFullNotice(): boolean {
-    try {
-        notifyUser('Storage is full — your changes will not be saved. Free up space and try again.', 'error');
-        return true;
-    } catch {
-        // No notification bus in this context.
-        return false;
-    }
-}
-
-function reportStorageFullOnce(): void {
-    if (hasReportedStorageFull) {
-        return;
-    }
-    // Set before delivering, so a failed first attempt cannot let a second
-    // refused write queue a duplicate.
-    hasReportedStorageFull = true;
-
-    if (deliverStorageFullNotice()) {
-        return;
-    }
-
-    // The first refused write of a session can be a store's constructor seed,
-    // which runs during ES module evaluation — before `bootstrap.ts` registers
-    // the notification bus, so `notifyUser` throws `Token not registered` from
-    // module scope. That is the exact class of failure this change exists to
-    // remove, so it is caught above and retried once the composition root has
-    // run. If there is still no bus (a worker, a test, a boot that never
-    // reached the root) the notice is dropped and the log stands alone.
-    setTimeout(deliverStorageFullNotice, 0);
-}
 
 /**
  * Size the rejected payload so the log names both the key that could not be
