@@ -1,0 +1,41 @@
+src/modules/WorkspaceShell/presentations/views/Transport/__tests__/PanelToggles.spec.tsx
+  s_bc88af7d3b054c::t_608479789da766 165,175
+  s_bc88af7d3b054c::t_cc4040a96d8bf8 166-174,176-179
+  s_bc88af7d3b054c::t_eca0cdd1e05c7e 185,200,215,230
+src-tauri/AGENTS.md
+  s_bc88af7d3b054c::t_899df4adbad265 7
+src/modules/Transport/repositories/linkBridge/helpers.ts
+  s_bc88af7d3b054c::t_eca0cdd1e05c7e 8-9,16
+src/modules/Transport/useCases/link/enableLink.ts
+  s_bc88af7d3b054c::t_eca0cdd1e05c7e 4-5,12
+src/modules/WorkspaceShell/presentations/views/Transport/PanelToggles.tsx
+  s_bc88af7d3b054c::t_eca0cdd1e05c7e 39,66-68,207-228
+src/modules/Transport/useCases/link/__tests__/enableLink.spec.ts
+  s_bc88af7d3b054c::t_eca0cdd1e05c7e 4-5,12,32-33,40
+src/modules/Transport/stores/linkStatusStore.ts
+  s_bc88af7d3b054c::t_eca0cdd1e05c7e 4,14
+src/modules/Transport/stores/__tests__/linkStatusStore.spec.ts
+  s_bc88af7d3b054c::t_eca0cdd1e05c7e 11
+src/modules/Transport/repositories/linkBridge/__tests__/linkBridge.spec.ts
+  s_bc88af7d3b054c::t_eca0cdd1e05c7e 36-46
+src/modules/Transport/useCases/link/__tests__/getLinkStatus.spec.ts
+  s_bc88af7d3b054c::t_eca0cdd1e05c7e 4-5,12,32-33,40
+src/modules/Transport/useCases/link/getLinkStatus.ts
+  s_bc88af7d3b054c::t_eca0cdd1e05c7e 4-5,12
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "d267d86debbe7f3361c77450a89ddfd41bbeef48",
+  "prompts": {},
+  "sessions": {
+    "s_bc88af7d3b054c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f9b4a-11a2-7f61-8dfb-76eed0eb2a9c",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
