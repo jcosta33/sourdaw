@@ -28,18 +28,25 @@ Picking the topology is most of the work. The rest of this page is what each one
 ## Topology
 
 Topology is the first choice, not a flavour applied afterwards. Each one responds to a different
-subset of the controls, and the ones it ignores stay visible but do nothing.
+subset of the controls. The ones it does not read stay in place and go grey, and hovering one tells
+you which topology cannot hear it and why — so the layout never shifts under you when you switch,
+and a knob that does nothing is never mistaken for a knob that is broken. Greying refuses your hand
+only: automation lanes, saved values, and anything already drawn are untouched.
 
 | Topology | Character | Shaped by |
 |---|---|---|
 | **VCA** | Clean, disciplined, predictable | Threshold, Ratio, Knee, Attack, Release, Auto rel, Range, Color, VCA type, Feedback / Feed forward |
 | **Opto** | Slow, self-levelling, forgiving | Threshold, Compress / Limit |
-| **FET** | Fast, aggressive, harmonically rich | Threshold, Ratio, Attack, Release, Input, Output, Xfmr, Odd, Even, All buttons |
-| **Diode** | Dense and weighty | Threshold, Ratio, Attack, Recovery, and the sidechain filters |
+| **FET** | Fast, aggressive, harmonically rich | Threshold, Ratio, Attack, Release, OS, Input, Output, Xfmr, Odd, Even, All buttons |
+| **Diode** | Dense and weighty | Threshold, Ratio, Attack, Recovery, OS, and the sidechain filters |
 
-Opto ignores Ratio, Attack, Release, Knee, and Range entirely — its timing comes from the modelled
-cell, and Threshold is the only shaping control you have. If you want to dial timing by hand, pick
-another topology.
+Opto ignores Ratio, Attack, Release, Auto rel, Knee, Range, and OS entirely — its timing comes from
+the modelled cell, and Threshold is the only shaping control you have. If you want to dial timing by
+hand, pick another topology.
+
+Stage two reopens any of them. A control the first topology cannot hear goes live again the moment
+**Stage 2** is above zero with a topology behind it that can — Release on Diode with VCA in stage
+two is a real control, and the panel treats it as one.
 
 Two controls read a narrower range on some topologies than the knob offers. **Attack** spans
 0.02–250 ms on the knob, but FET only accepts 0.02–2 ms and Diode only 0.5–30 ms — turn Attack past
@@ -106,7 +113,7 @@ The Detector section shapes what the compressor listens to, without changing wha
 | **Ext SC** | On / Off | Off | Detects from a routed sidechain source instead of the input. |
 | **RMS · PEAK** | — | RMS | What the detector measures. RMS averages over 10 ms and follows loudness; PEAK reacts to the instant. |
 | **Stereo · Mid · Side · Dual mono** | — | Stereo | Which part of the stereo image is compressed. Dual mono also forces Link to 0. |
-| **OS** | 1× · 2× · 4× | 2× | Oversamples the nonlinear stages. |
+| **OS** | 1× · 2× · 4× | 2× | Oversamples the nonlinear stages. FET and Diode only — the VCA's stage is not oversampled yet, and Opto has no nonlinearity to oversample. |
 
 The bell is a no-op until **EQ Gain** leaves 0 dB, so **EQ Q** on its own changes nothing — set the
 gain first, then narrow or widen.
@@ -141,9 +148,10 @@ for it. **Xfmr** (0 to 3, default 1.2) sets transformer drive. **Odd** (0 to 0.5
 **Even** (0 to 0.3, default 0) set harmonic content directly. **All buttons** engages the
 ratio-crush mode.
 
-**Diode** — **Recovery 1** to **Recovery 5** (default 3) replaces Release on this topology. Each
-position is a fixed release time: 50 ms, 100 ms, 400 ms, 800 ms, and 1.5 s. Low positions let the
-level spring back between hits; high positions hold the reduction through the tail and pump more.
+**Diode** — **Recovery 1** to **Recovery 5** (default 3) replaces Release on this topology, and the
+Release knob and **Auto rel** go grey while Diode is selected to say so. Each position is a fixed
+release time: 50 ms, 100 ms, 400 ms, 800 ms, and 1.5 s. Low positions let the level spring back
+between hits; high positions hold the reduction through the tail and pump more.
 
 ## Stage two
 
