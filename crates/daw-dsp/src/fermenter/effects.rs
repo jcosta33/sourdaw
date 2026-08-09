@@ -706,8 +706,16 @@ const DECAY: f32 = 0.5;
 /// Rather than document the hazard and leave it reachable, the two orderings
 /// callers actually need are sealed into `tick` and `allpass` below, both of
 /// which read before they write. Keep it that way: `read` and `write` have no
-/// call sites outside this `impl`, and a new one would be free to pick the
-/// wrong order again.
+/// production call sites outside this `impl` — only the test that pins the
+/// cursor semantics calls them directly — and a new one would be free to pick
+/// the wrong order again.
+///
+/// Note for anyone generalising from this: `bacteria/chorus.rs:12` declares a
+/// second struct also named `DelayLine`, with the same post-incrementing
+/// cursor, whose callers write *then* read. It is correct because its `read`
+/// carries the compensating `- 1.0` that this one must not have. Two
+/// same-named types wanting opposite orderings is exactly how this class of
+/// bug travels; check which one you are holding before copying either.
 struct DelayLine {
     buffer: Vec<f32>,
     write_pos: usize,
@@ -1167,5 +1175,58 @@ mod tests {
             "right tank output before {right_arrival} was not silent"
         );
         assert_ne!(right[right_arrival], 0.0, "right tank output never arrived");
+    }
+
+    #[test]
+    fn each_plate_allpass_puts_its_own_length_into_the_echo_train() {
+        let mut plate = PlateReverb::new(SAMPLE_RATE);
+        // Arrival latency cannot see the allpass lengths: an allpass passes its
+        // input through instantaneously at any non-zero coefficient, and at zero
+        // decay the tank stops circulating because its feed is scaled by decay.
+        // What does see them is where each allpass puts its *stored* term. Zero
+        // damping makes the one-pole a passthrough, so the early response is a
+        // sparse echo train rather than a smeared tail, and each allpass lands
+        // its own length past the first arrival.
+        plate.set_params(0.5, 1.0, 0.0);
+        let left_arrival = plate.del1_len + plate.del2_len;
+        let right_arrival = plate.del3_len + plate.del4_len;
+        let frames = right_arrival + plate.apf4_len + 1;
+
+        let mut left = Vec::with_capacity(frames);
+        let mut right = Vec::with_capacity(frames);
+        for frame in 0..frames {
+            let stimulus = if frame == 0 { 1.0 } else { 0.0 };
+            let (l, r) = plate.process(stimulus, stimulus);
+            left.push(l);
+            right.push(r);
+        }
+
+        // Sparse: the sample straight after the first arrival is silent, because
+        // the next echo cannot come sooner than the shortest allpass.
+        assert_eq!(left[left_arrival + 1], 0.0, "early response is not sparse");
+        for (label, length) in [
+            ("apf1", plate.apf1_len),
+            ("apf2", plate.apf2_len),
+            ("apf3", plate.apf3_len),
+        ] {
+            assert_ne!(
+                left[left_arrival + length],
+                0.0,
+                "{label}'s stored term is missing from {}",
+                left_arrival + length
+            );
+        }
+        assert_ne!(
+            right[right_arrival + plate.apf4_len],
+            0.0,
+            "apf4's stored term is missing from {}",
+            right_arrival + plate.apf4_len
+        );
+        // None of 229, 173, 447 or 611 is a sum of the others, so each echo
+        // position identifies one allpass and driving a line with a different
+        // length empties its slot. What this cannot catch — and no test can — is
+        // exchanging `apf1_len` with `apf2_len`: two allpasses in series with the
+        // same coefficient are an LTI cascade, so swapping them is the same
+        // filter.
     }
 }
