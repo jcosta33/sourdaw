@@ -72,6 +72,7 @@ import { getControlRoomHandlers } from '#/modules/ControlRoom/useCases';
 import { getControlSurfaceHandlers, setMidiLearnDependencies } from '#/modules/ControlSurface/useCases';
 import { actionHistoryStore } from '#/modules/CrdtDocument/stores';
 import {
+    initBranchState,
     markActionHistoryEntryReverted,
     recordActionHistoryEntry,
     clearActionHistory as clearCrdtActionHistory,
@@ -156,6 +157,14 @@ import { eventBus, logger } from './registerDependencies';
 import { registerGlobalErrorHandlers } from './registerGlobalErrorHandlers';
 
 logCapabilities();
+
+// First, and before anything can read a branch id. Recovering the pre-session
+// branch state used to be a side effect of evaluating `branchStore.ts`, where a
+// refused `localStorage` write threw during module evaluation and stopped the
+// app booting outright — no app-level catch runs that early. It is an explicit
+// step of the composition root now, so a failure is reported and survivable.
+// See #1557.
+initBranchState();
 
 registerCrdtStorageRuntime();
 setActionHistoryMetadataPort({

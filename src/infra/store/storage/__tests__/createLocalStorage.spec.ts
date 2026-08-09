@@ -1,4 +1,7 @@
+import { stringify } from 'superjson';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+import { logger } from '#/infra/logger/appLogger';
 
 import { createLocalStorage } from '../createLocalStorage';
 
@@ -101,6 +104,61 @@ describe('createLocalStorage', () => {
 
         expect(removeItem).toHaveBeenCalledTimes(2);
         expect(storage.get()).toBeNull();
+    });
+
+    describe('trySet', () => {
+        it('reports true and persists when the backing store accepts the write', () => {
+            const storage = createLocalStorage<{ count: number }>('sourdaw-preferences');
+
+            expect(storage.trySet({ count: 42 })).toBe(true);
+            expect(localStorage.getItem('sourdaw-preferences')).not.toBeNull();
+            expect(createLocalStorage<{ count: number }>('sourdaw-preferences').get()).toEqual({ count: 42 });
+        });
+
+        it('reports false without throwing when the origin quota refuses the write', () => {
+            const storage = createLocalStorage<{ count: number }>('sourdaw-preferences');
+            storage.set({ count: 42 });
+
+            vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+                throw new DOMException('The quota has been exceeded.', 'QuotaExceededError');
+            });
+
+            expect(storage.trySet({ count: 84 })).toBe(false);
+        });
+
+        it('advances the visible value on a dropped write, unlike set', () => {
+            // The inverse of `set`'s pinned cache contract, and deliberately so:
+            // `trySet` exists for callers that will not retry, and leaving them
+            // reading a value they have already moved past is the second defect
+            // after the dropped write. The boolean is how they learn it is not
+            // durable.
+            const storage = createLocalStorage<{ count: number }>('sourdaw-preferences');
+            storage.set({ count: 42 });
+
+            vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+                throw new DOMException('The quota has been exceeded.', 'QuotaExceededError');
+            });
+
+            storage.trySet({ count: 84 });
+
+            expect(storage.get()).toEqual({ count: 84 });
+            expect(localStorage.getItem('sourdaw-preferences')).toBe(stringify({ count: 42 }));
+        });
+
+        it('names the refused key and its payload size so a full origin can be attributed', () => {
+            const warn = vi.spyOn(logger, 'warn').mockImplementation(() => {});
+            const storage = createLocalStorage<{ count: number }>('sourdaw-shortcuts');
+
+            vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+                throw new DOMException('The quota has been exceeded.', 'QuotaExceededError');
+            });
+
+            storage.trySet({ count: 84 });
+
+            const message = warn.mock.calls[0]?.[0];
+            expect(typeof message === 'string' ? message : '').toContain('sourdaw-shortcuts');
+            expect(typeof message === 'string' ? message : '').toContain(`${stringify({ count: 84 }).length} chars`);
+        });
     });
 
     it('should cache the value to avoid repeated localStorage reads', () => {

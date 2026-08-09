@@ -3,6 +3,21 @@ export type StorageAdapter<TData> = {
     set(value: TData | null): void;
     clear(): void;
     isSupported(): boolean;
+    /** Non-throwing `set`. Returns true when the value reached the backing
+     *  store, false when it was dropped.
+     *
+     *  Implemented by adapters whose backing store can refuse a write for
+     *  reasons the caller did not cause and cannot fix — a full origin quota, a
+     *  `localStorage` that throws `SecurityError` outright (Safari private
+     *  mode). `set` propagates those so a caller that can retry does; `trySet`
+     *  is for callers that cannot, which is not a small set: every store
+     *  declared at module scope seeds itself during module evaluation, where a
+     *  throw aborts the ES module graph before any app-level catch exists.
+     *
+     *  A dropped write still changes the visible value — the caller is told it
+     *  is not durable, not that it did not happen. Adapters that cannot fail
+     *  durably omit this and callers fall back to `set`. */
+    trySet?(value: TData | null): boolean;
     /** Hydrate the cache from the backing store without triggering a write-back.
      *  Returns true if the cached value changed. */
     hydrate?(): boolean;

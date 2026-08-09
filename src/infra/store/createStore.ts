@@ -51,6 +51,39 @@ export const createStore = <TData>(options: StoreOptions<TData> = {}): Store<TDa
     const sanitize = options.sanitize;
 
     /**
+     * Write without letting a refused backing store unwind the caller.
+     *
+     * Every store declared at module scope runs its constructor during ES
+     * module evaluation, and the constructor writes: it seeds an empty backing
+     * store, and it repairs one holding content this build sanitized. A throw
+     * from either aborts the module graph before the composition root exists,
+     * so nothing in the app can catch it and the app does not boot — which a
+     * full origin quota, or Safari private mode's outright `SecurityError` from
+     * `setItem`, is enough to cause. See #1557.
+     *
+     * Returns whether the value is durable. Adapters that can refuse a write
+     * implement `trySet` and report it themselves with the key they own;
+     * the fallback here covers adapters that cannot (memory) and any that
+     * throw for a reason no one anticipated.
+     */
+    const writeDurableValue = (value: TData | null): boolean => {
+        const adapterTrySet = storage.trySet;
+        if (adapterTrySet) {
+            return adapterTrySet.call(storage, value);
+        }
+
+        try {
+            storage.set(value);
+            return true;
+        } catch (error) {
+            if (logger) {
+                logger.error(new Error('Store write to backing storage failed', { cause: error }));
+            }
+            return false;
+        }
+    };
+
+    /**
      * Apply the sanitizer to a value arriving from backing storage.
      *
      * Sanitizing runs on inbound paths only — the initial seed and post-hydrate
@@ -97,7 +130,7 @@ export const createStore = <TData>(options: StoreOptions<TData> = {}): Store<TDa
             return true;
         }
 
-        storage.set(sanitized);
+        writeDurableValue(sanitized);
         return true;
     };
 
@@ -105,7 +138,7 @@ export const createStore = <TData>(options: StoreOptions<TData> = {}): Store<TDa
     const storedValue = storage.get();
     if (storedValue === null) {
         if (options.initialData !== undefined) {
-            storage.set(options.initialData);
+            writeDurableValue(options.initialData);
         }
     } else {
         sanitizeStorageValue(storedValue);
@@ -146,6 +179,15 @@ export const createStore = <TData>(options: StoreOptions<TData> = {}): Store<TDa
         set(value: TData | null): void {
             storage.set(value);
             queueStoreNotification(notify);
+        },
+
+        trySet(value: TData | null): boolean {
+            const persisted = writeDurableValue(value);
+            // Notify regardless: the visible value changed either way, and a
+            // caller that keeps rendering the pre-write snapshot because the
+            // write was not durable is a second failure on top of the first.
+            queueStoreNotification(notify);
+            return persisted;
         },
 
         update(updater: (current: TData | null) => TData | null): void {

@@ -225,11 +225,27 @@ function stopBranchSync(): void {
 
     if (sessionState.hasBranchStateBackup) {
         sessionState.isProjectingBranches = true;
+        let restored: boolean;
         try {
-            restoreBranchStateAfterSession();
+            // Reports rather than throws on purpose. This `try` has no `catch`,
+            // and everything left in teardown — stopping the sync, closing the
+            // WebRTC peers — runs after it. A refused `localStorage` write used
+            // to unwind from here and leave live peers connected to a session
+            // the user had left. See #1557.
+            restored = restoreBranchStateAfterSession();
             sessionState.hasBranchStateBackup = false;
         } finally {
             sessionState.isProjectingBranches = false;
+        }
+
+        if (!restored) {
+            // The one dropped write in this change that reaches the user, and
+            // only because this path already owns a place to say it. Leaving a
+            // session is deliberate, bounded and rare — the opposite of the
+            // preference and shortcut writes that fire on every interaction —
+            // and the branch the user comes back to is not something to let
+            // them discover on the next reload.
+            setCollaborationError('Left the session, but your local branch list could not be saved.');
         }
     }
     sessionState.lastProjectedBranchesJson = null;

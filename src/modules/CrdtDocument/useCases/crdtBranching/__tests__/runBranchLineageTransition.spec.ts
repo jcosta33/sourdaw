@@ -25,6 +25,10 @@ const {
     },
     mockBranchStore: {
         set: vi.fn(),
+        // The rollback path writes with trySet — a throw there would skip the
+        // projection that puts the stores back in step with the restored
+        // documents. See #1557.
+        trySet: vi.fn(() => true),
     },
     mockCompactProject: vi.fn(() => Promise.resolve()),
     mockLoadCrdtProject: vi.fn(() => Promise.resolve(true)),
@@ -154,7 +158,7 @@ describe('runBranchLineageTransition', () => {
         ).rejects.toThrow('apply failed');
 
         // Recovery: snapshots restored, branch store reset to previous, stores re-projected
-        expect(mockBranchStore.set).toHaveBeenCalledWith(previousState);
+        expect(mockBranchStore.trySet).toHaveBeenCalledWith(previousState);
         expect(mockProjectCrdtToStores).toHaveBeenCalled();
         expect(mockLoadCrdtProject).toHaveBeenCalled();
     });

@@ -61,7 +61,7 @@ describe('restoreBranchStateAfterSession', () => {
         expect(window.localStorage.getItem(BRANCH_SESSION_BACKUP_STORAGE_KEY)).toBeNull();
     });
 
-    it('should retain the backup when restored branch state fails to persist', async () => {
+    it('should retain the backup and report the failure when restored branch state cannot persist', async () => {
         const { branchStore } = await import('../../stores/branchStore');
         const { preserveBranchStateForSession } = await import('../preserveBranchStateForSession');
         const { restoreBranchStateAfterSession } = await import('../restoreBranchStateAfterSession');
@@ -77,7 +77,13 @@ describe('restoreBranchStateAfterSession', () => {
             originalSetItem.call(window.localStorage, key, value);
         });
 
-        expect(() => restoreBranchStateAfterSession()).toThrow('branch persistence failed');
+        // Reports rather than throws (#1557): this runs inside collaboration
+        // teardown's `try`/`finally` with no `catch`, and a throw from here
+        // skipped the rest of teardown and left live WebRTC peers connected.
+        expect(restoreBranchStateAfterSession()).toBe(false);
+        // The session still gets the local branch list back...
+        expect(branchStore.value).toEqual(localState);
+        // ...and the backup stays, so a later attempt can still make it durable.
         expect(window.localStorage.getItem(BRANCH_SESSION_BACKUP_STORAGE_KEY)).not.toBeNull();
     });
 });

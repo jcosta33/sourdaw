@@ -137,14 +137,38 @@ export function validateStoredBranchStoreState(value: unknown): BranchStoreState
     return { branches, activeBranchId };
 }
 
-export function restoreBranchStateFromSessionBackup(): void {
+/**
+ * Put the durable pre-session branch state back, discarding whatever a
+ * collaboration session projected over it.
+ *
+ * Not a module-evaluation side effect — it used to be, and that made a full
+ * origin quota fatal to the whole app: the write threw while `branchStore.ts`
+ * was still evaluating, so every importer across CrdtDocument, Collaboration
+ * and Project failed to initialise and no catch in the app could reach it,
+ * because the failure happened before any app code ran. The composition root
+ * calls this through `initBranchState` instead (see #1557).
+ *
+ * Returns whether the restored state is durable. When it is not, the backup is
+ * deliberately left in place: the session already holds the restored value, and
+ * keeping the backup is what lets a later boot — or a later `stopBranchSync` —
+ * try again rather than lose the pre-session state to one refused write.
+ */
+export function restoreBranchStateFromSessionBackup(): boolean {
     const backup = branchSessionBackupStorage.get();
     if (backup === null) {
-        return;
+        return true;
     }
 
-    branchStore.set(validateStoredBranchStoreState(backup));
-    branchSessionBackupStorage.clear();
+    const persisted = branchStore.trySet(validateStoredBranchStoreState(backup));
+    if (!persisted) {
+        return false;
+    }
+
+    // Dropping the backup is a removal, which a full quota does not reject —
+    // but this now runs from the composition root, where any throw is still the
+    // whole boot, and the backup is already superseded by the state above.
+    branchSessionBackupStorage.trySet(null);
+    return true;
 }
 
 export const branchStore = createStore<BranchStoreState>({
@@ -152,5 +176,3 @@ export const branchStore = createStore<BranchStoreState>({
     initialData: createDefaultBranchStoreState(),
     sanitize: validateStoredBranchStoreState,
 });
-
-restoreBranchStateFromSessionBackup();

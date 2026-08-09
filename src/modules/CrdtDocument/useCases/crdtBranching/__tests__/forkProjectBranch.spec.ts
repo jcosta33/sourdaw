@@ -14,6 +14,10 @@ const mocks = vi.hoisted(() => ({
     removeDoc: vi.fn(),
     storeValue: { branches: [{ branchId: 'main', rootDocId: 'root' }], activeBranchId: 'main' },
     storeSet: vi.fn(),
+    // The rollback path writes with trySet: it runs after the documents have
+    // been restored, where a throw would skip the projection that puts the
+    // stores back in step with them. See #1557.
+    storeTrySet: vi.fn(() => true),
     compactProject: vi.fn(),
     loadCrdtProject: vi.fn(() => Promise.resolve(true)),
     runCrdtPersistenceOperation: vi.fn(() => Promise.resolve()),
@@ -41,7 +45,7 @@ vi.mock('../../../repositories/automergeRepository', () => ({
 }));
 vi.mock('../../../stores/branchStore', () => ({
     get branchStore() {
-        return { value: mocks.storeValue, set: mocks.storeSet };
+        return { value: mocks.storeValue, set: mocks.storeSet, trySet: mocks.storeTrySet };
     },
 }));
 vi.mock('../../compactProject', () => ({ compactProject: mocks.compactProject }));
@@ -118,7 +122,7 @@ describe('forkProjectBranch', () => {
 
         await expect(forkProjectBranch('feature')).rejects.toBe(error);
         expect(mocks.loadCrdtProject).toHaveBeenCalledOnce();
-        expect(mocks.storeSet).toHaveBeenLastCalledWith(mocks.storeValue);
+        expect(mocks.storeTrySet).toHaveBeenLastCalledWith(mocks.storeValue);
         expect(mocks.removeDoc).toHaveBeenCalledTimes(2);
     });
 

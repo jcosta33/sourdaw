@@ -1,3 +1,4 @@
+import { logger } from '#/infra/logger/appLogger';
 import { type LocalStorageKey } from '#/infra/store/storage/LocalStorageKeys';
 
 import { type StorageAdapter } from './types';
@@ -28,6 +29,22 @@ export const createPlainJsonLocalStorage = <TData>(
     let hasCachedValue = false;
     let cachedValue: TData | null = null;
 
+    function persist(value: TData | null): void {
+        cachedValue = value;
+        hasCachedValue = true;
+
+        if (value === null) {
+            // eslint-disable-next-line no-restricted-syntax -- This storage adapter is the sanctioned boundary for legacy plain-JSON localStorage keys.
+            window.localStorage.removeItem(input.key);
+            return;
+        }
+
+        const serialized = JSON.stringify(value);
+
+        // eslint-disable-next-line no-restricted-syntax -- This storage adapter is the sanctioned boundary for legacy plain-JSON localStorage keys.
+        window.localStorage.setItem(input.key, serialized);
+    }
+
     return {
         get(): TData | null {
             if (hasCachedValue) {
@@ -40,19 +57,25 @@ export const createPlainJsonLocalStorage = <TData>(
         },
 
         set(value: TData | null): void {
-            cachedValue = value;
-            hasCachedValue = true;
+            persist(value);
+        },
 
-            if (value === null) {
-                // eslint-disable-next-line no-restricted-syntax -- This storage adapter is the sanctioned boundary for legacy plain-JSON localStorage keys.
-                window.localStorage.removeItem(input.key);
-                return;
+        // See `StorageAdapter.trySet`. This adapter already advances its cache
+        // ahead of the durable write, so the only thing `trySet` adds over
+        // `set` is that the caller is told the write was dropped instead of
+        // being unwound by a throw it cannot answer.
+        trySet(value: TData | null): boolean {
+            try {
+                persist(value);
+                return true;
+            } catch (error) {
+                logger.warn(
+                    `[localStorage] Dropped a write to "${input.key}". ` +
+                        'The value is live for this session but will not survive a reload.',
+                    error
+                );
+                return false;
             }
-
-            const serialized = JSON.stringify(value);
-
-            // eslint-disable-next-line no-restricted-syntax -- This storage adapter is the sanctioned boundary for legacy plain-JSON localStorage keys.
-            window.localStorage.setItem(input.key, serialized);
         },
 
         clear(): void {
