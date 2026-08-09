@@ -21,6 +21,12 @@ type PendingActionProtectedObject = {
     name: string;
 };
 
+type PendingActionApprovalSnapshot = {
+    actions: ExecutableRuntimeAction[];
+    actionLabels: string[];
+    protectedUnchanged: PendingActionProtectedObject[];
+};
+
 type PendingActionConfirmationBase = {
     id: string;
     prompt: string;
@@ -40,6 +46,7 @@ export type PendingAppActionConfirmation = PendingActionConfirmationBase & {
     kind: 'app_actions';
     projectRevision: string;
     actions: ExecutableRuntimeAction[];
+    approvalSnapshot: PendingActionApprovalSnapshot;
     executionMode: 'atomic' | undefined;
 };
 
@@ -52,6 +59,10 @@ export const pendingActionConfirmationStore = createStore<PendingActionConfirmat
 });
 
 const MAX_CONFIRMATIONS = 20;
+
+function clonePendingActionConfirmation(confirmation: PendingAppActionConfirmation): PendingAppActionConfirmation {
+    return structuredClone(confirmation);
+}
 
 type ProposePendingActionConfirmationInput = {
     id: string;
@@ -74,16 +85,22 @@ export function proposePendingActionConfirmation(
         return null;
     }
 
+    const approvalSnapshot: PendingActionApprovalSnapshot = {
+        actions: structuredClone(input.actions),
+        actionLabels: structuredClone(input.actionLabels),
+        protectedUnchanged: structuredClone(input.protectedUnchanged ?? []),
+    };
     const confirmation: PendingAppActionConfirmation = {
         kind: 'app_actions',
         id: input.id,
         prompt: input.prompt,
         assistantMessageId: input.assistantMessageId,
-        actions: [...input.actions],
+        actions: structuredClone(approvalSnapshot.actions),
+        approvalSnapshot,
         executionMode: input.executionMode,
-        actionLabels: [...input.actionLabels],
+        actionLabels: structuredClone(approvalSnapshot.actionLabels),
         affectedIds: [...(input.affectedIds ?? [])],
-        protectedUnchanged: (input.protectedUnchanged ?? []).map((target) => ({ ...target })),
+        protectedUnchanged: structuredClone(approvalSnapshot.protectedUnchanged),
         risk: input.risk ? { ...input.risk } : null,
         executedActions: [],
         status: 'proposed',
@@ -97,15 +114,14 @@ export function proposePendingActionConfirmation(
         confirmations: [...state.confirmations, confirmation].slice(-MAX_CONFIRMATIONS),
     });
 
-    return confirmation;
+    return clonePendingActionConfirmation(confirmation);
 }
 
 export function getPendingActionConfirmation(confirmationId: string): PendingAppActionConfirmation | null {
-    return (
-        pendingActionConfirmationStore.value?.confirmations.find(
-            (confirmation) => confirmation.id === confirmationId
-        ) ?? null
+    const confirmation = pendingActionConfirmationStore.value?.confirmations.find(
+        (candidate) => candidate.id === confirmationId
     );
+    return confirmation ? clonePendingActionConfirmation(confirmation) : null;
 }
 
 type RecordPendingActionExecutionInput = {
@@ -128,7 +144,7 @@ export function recordPendingActionExecution(
 
     const updated: PendingAppActionConfirmation = {
         ...current,
-        executedActions: [...current.executedActions, input.execution],
+        executedActions: [...current.executedActions, structuredClone(input.execution)],
     };
     const confirmations = state.confirmations.map((confirmation) => {
         if (confirmation.id !== input.confirmationId) {
@@ -139,7 +155,7 @@ export function recordPendingActionExecution(
     });
 
     pendingActionConfirmationStore.set({ confirmations });
-    return updated;
+    return clonePendingActionConfirmation(updated);
 }
 
 type UpdatePendingActionConfirmationStatusInput = {
@@ -176,7 +192,7 @@ export function updatePendingActionConfirmationStatus(
     });
 
     pendingActionConfirmationStore.set({ confirmations });
-    return updated;
+    return clonePendingActionConfirmation(updated);
 }
 
 export function clearPendingActionConfirmations(): void {

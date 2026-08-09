@@ -12,6 +12,7 @@ import {
     undo,
 } from '#/modules/Command/useCases';
 import {
+    captureProjectRevision,
     createCrdtDoc,
     registerCrdtStorageRuntime,
     removeCrdtDoc,
@@ -25,6 +26,8 @@ import { chatStore } from '../../stores/chatStore';
 import {
     clearPendingActionConfirmations,
     getPendingActionConfirmation,
+    pendingActionConfirmationStore,
+    proposePendingActionConfirmation,
 } from '../../stores/pendingActionConfirmationStore';
 import { confirmPendingChatActions } from '../confirmPendingChatActions';
 import { sendChatMessage } from '../sendChatMessage';
@@ -392,6 +395,51 @@ describe('drum bus prompt workflow', () => {
         expect(undoStore.value?.past).toEqual([]);
     });
 
+    it('rejects a post-proposal batch replacement that targets the protected track', async () => {
+        await sendChatMessage(PROMPT);
+        const confirmation = getPendingActionConfirmation(
+            chatStore.value?.messages.find((message) => message.pendingActionConfirmationId)
+                ?.pendingActionConfirmationId ?? ''
+        );
+        const busAction = confirmation?.actions[0];
+        const state = pendingActionConfirmationStore.value;
+        if (!confirmation || busAction?.type !== 'createBus' || !busAction.payload.busId || !state) {
+            throw new Error('Expected the proposed Drum Bus batch');
+        }
+        const revision = captureProjectRevision();
+        const replacedActions = confirmation.actions.map((action) => {
+            if (action.type !== 'setTrackOutput' || action.payload.trackId !== 'track-kick') {
+                return action;
+            }
+            return { ...action, payload: { ...action.payload, trackId: 'track-parallel' } };
+        });
+        pendingActionConfirmationStore.set({
+            confirmations: state.confirmations.map((candidate) =>
+                candidate.id === confirmation.id ? { ...candidate, actions: replacedActions } : candidate
+            ),
+        });
+        expect(captureProjectRevision()).toBe(revision);
+
+        const result = await confirmPendingChatActions({ confirmationId: confirmation.id });
+
+        expect(result).toEqual({
+            status: 'failed',
+            reason: 'The executable action batch targets protected IDs: track-parallel.',
+        });
+        expect(trackStore.value?.tracks.some((track) => track.id === busAction.payload.busId)).toBe(false);
+        expect(
+            ['track-kick', 'track-snare', 'track-hats', 'track-parallel'].map((id) => getTrack(id).outputId)
+        ).toEqual(['master', 'master', 'master', 'master']);
+        expect(runtimeMocks.setTrackOutput).not.toHaveBeenCalled();
+        expect(getPendingActionConfirmation(confirmation.id)?.executedActions).toEqual([]);
+        expect(undoStore.value?.past).toEqual([]);
+        const terminalMessage = chatStore.value?.messages.find(
+            (message) => message.pendingActionConfirmationId === confirmation.id
+        );
+        expect(terminalMessage?.content).not.toContain('Affected IDs:');
+        expect(terminalMessage?.content).not.toContain('Protected unchanged:');
+    });
+
     it('aborts the whole batch before runtime, receipt, or undo publication when a later route conflicts', async () => {
         await sendChatMessage(PROMPT);
         const confirmation = getPendingActionConfirmation(
@@ -408,7 +456,19 @@ describe('drum bus prompt workflow', () => {
             }
             return { ...action, payload: { ...action.payload, expectedOutputId: 'other-output' } };
         });
-        confirmation.actions.splice(0, confirmation.actions.length, ...conflictingActions);
+        clearPendingActionConfirmations();
+        proposePendingActionConfirmation({
+            id: confirmation.id,
+            prompt: confirmation.prompt,
+            assistantMessageId: confirmation.assistantMessageId,
+            actions: conflictingActions,
+            actionLabels: confirmation.actionLabels,
+            affectedIds: confirmation.affectedIds,
+            protectedUnchanged: confirmation.protectedUnchanged,
+            risk: confirmation.risk ?? undefined,
+            executionMode: confirmation.executionMode,
+            projectRevision: confirmation.projectRevision,
+        });
 
         const result = await confirmPendingChatActions({ confirmationId: confirmation.id });
 

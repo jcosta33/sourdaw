@@ -435,6 +435,38 @@ describe('pending chat action confirmation', () => {
         );
     });
 
+    it('does not claim a protected target stayed unchanged when the committed effect reports its ID', async () => {
+        const protectedAction: RuntimeAction = {
+            type: 'removeTrack',
+            payload: { trackId: 'track-parallel' },
+        };
+        mocks.executeAppActionBatch.mockResolvedValueOnce({
+            status: 'committed',
+            actions: [{ action: protectedAction, label: 'Remove Parallel Compression' }],
+        });
+        proposePendingActionConfirmation({
+            id: 'confirm-1',
+            prompt: 'delete drums',
+            assistantMessageId: 'assistant-1',
+            actions: [pendingAction],
+            actionLabels: ['Remove track'],
+            protectedUnchanged: [{ id: 'track-parallel', name: 'Parallel Compression' }],
+            projectRevision: 'revision-1',
+        });
+
+        await expect(confirmPendingChatActions({ confirmationId: 'confirm-1' })).resolves.toEqual({
+            status: 'executed',
+        });
+
+        const terminalUpdate: unknown = mocks.updateChatMessage.mock.lastCall?.[1];
+        if (!terminalUpdate || typeof terminalUpdate !== 'object' || !('content' in terminalUpdate)) {
+            throw new Error('Expected a terminal chat update');
+        }
+        const terminalContent = terminalUpdate.content;
+        expect(terminalContent).toContain('Affected IDs: track-parallel');
+        expect(terminalContent).not.toContain('Protected unchanged:');
+    });
+
     it('should record a confirmed runtime command as executed rather than failed', async () => {
         const warning = 'setPlayback follow-up effect failed: transport unavailable';
         mocks.executeAppActionBatch.mockResolvedValueOnce({
