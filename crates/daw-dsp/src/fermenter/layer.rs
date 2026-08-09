@@ -248,9 +248,10 @@ impl Layer {
     /// existing "no portamento" path instead of a second one.
     ///
     /// This decides *whether* a note glides. Where a glide that does happen
-    /// starts from is [`Layer::last_played_freq`], a separate question with a
-    /// separate answer — a released key stops making the next note legato but
-    /// remains the last note played.
+    /// starts from is `MasterSynth::last_played_freq` — a separate question
+    /// with a separate answer, and deliberately *not* layer state, because a
+    /// layer only hears the notes it was playable for. A released key stops
+    /// making the next note legato but remains the last note played.
     fn portamento_time_for_note_on(&self) -> f32 {
         if self.portamento_mode != 1 {
             return self.portamento_time;
@@ -271,10 +272,12 @@ impl Layer {
     ///
     /// `glide_origin` is the pitch this note's glide starts from, and it is a
     /// parameter rather than layer state on purpose — see
-    /// [`MasterSynth::last_played_freq`]. A layer only hears the notes it was
-    /// playable for, so a layer that derived the origin itself would be
-    /// answering "what was *this layer* last audible for?" when the question is
-    /// "what did the *player* last play?".
+    /// `MasterSynth::last_played_freq`, a private field on the sibling module,
+    /// referenced in plain code span because an intra-doc link cannot resolve
+    /// it from here. A layer only hears the notes it was playable for, so a
+    /// layer that derived the origin itself would be answering "what was *this
+    /// layer* last audible for?" when the question is "what did the *player*
+    /// last play?".
     pub fn note_on_with_channel(
         &mut self,
         note: u8,
