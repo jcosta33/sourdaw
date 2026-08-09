@@ -164,18 +164,28 @@ export const ValueField = ({
          * is the difference between aborting the gesture and silently dropping
          * its result. Guarding the lift alone would leave the readout tracking a
          * finger whose movement can no longer land anywhere, then swallow the
-         * commit with no feedback. The finalizer reverts the readout, hands the
-         * capture back, and clears the owner ref — the same treatment
+         * commit with no feedback. The finalizer hands the capture back and
+         * clears the owner ref, and under `commitMode="release"` it also discards
+         * the pending value so the readout reverts — the same treatment
          * `pointercancel`, lost capture, blur and tab-hide already get, and what
          * `RotaryKnob` does when `disabled` flips mid-drag.
          *
+         * There is nothing to revert under `commitMode="live"`, the default:
+         * `pendingValue` is never set, so the readout falls through to the `value`
+         * prop either way. Every move up to the lock was already reported through
+         * `onChange` while the field was still writable, and those writes stand —
+         * so a controlled parent holds the last live value and the readout keeps
+         * showing it (measured at 10 for a drag aborted there) rather than
+         * snapping back to where the gesture began. Only the moves after the lock
+         * are dropped. That is the intended outcome, not a gap in the abort.
+         *
          * This is why `@eslint-react/set-state-in-effect` now warns on
          * `finalizeDrag`'s two setters (warn-only; CI runs `lint --quiet`). The
-         * extra synchronous render is the point: a layout effect commits the
-         * reverted readout before paint, so the locked field never shows a frame
-         * of the value the aborted gesture had reached. `RotaryKnob` escapes the
-         * rule only because it carries its drag state in a DOM attribute rather
-         * than in `useState`.
+         * extra synchronous render is the point in release mode: a layout effect
+         * commits the reverted readout before paint, so the locked field never
+         * shows a frame of the pending value the aborted gesture had reached.
+         * `RotaryKnob` escapes the rule only because it carries its drag state in
+         * a DOM attribute rather than in `useState`.
          */
         if (readOnly && draggingRef.current) {
             finalizeDrag();
