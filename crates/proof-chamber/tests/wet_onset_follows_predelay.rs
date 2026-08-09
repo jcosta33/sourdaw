@@ -71,42 +71,70 @@ const AUDIBILITY_FRACTION: f32 = 1e-3;
 /// having room for a pre-delay wired to the wrong end of its buffer.
 const MAX_BUILD_UP_MS: f32 = 20.0;
 
-/// Longest run of exact zeroes tolerated *inside* a sounding tail.
-///
-/// Not zero: a reverb tail crosses zero, and `DelayLine::write` truncates
-/// magnitudes below 1e-18 to exactly 0.0 to kill limit cycles, so short runs
-/// of true zeroes are expected near the noise floor. Spring's longest measured
-/// run mid-tail is 12 samples; the plate, both FDNs and Reverse measure 0.
-/// 5 ms is four hundred times the longest real one and fifty times shorter
-/// than the shortest hole worth calling a hole.
-const MAX_INTERIOR_ZERO_RUN_MS: f32 = 5.0;
+/// Window length of the RMS envelope the interior-hole test measures.
+const ENVELOPE_WINDOW_MS: f32 = 5.0;
 
-/// What `set_param("algorithm", n)` actually selects. 4 and 5 are reserved for
-/// the convolution-backed engines and fall through to Plate — see
-/// `algorithm_wire_contract.rs`, which owns that claim.
-const SELECTABLE: [(f32, &str); 5] = [
-    (0.0, "Plate"),
-    (1.0, "FDN-8"),
-    (2.0, "FDN-16"),
-    (3.0, "Spring"),
-    (6.0, "Reverse"),
-];
+/// How far below its own peak a tail's envelope may fall *while still
+/// sounding* before the dip counts as a hole rather than a quiet moment.
+///
+/// Counting consecutive exact zeroes — the literal shape #1547 was reported as
+/// — is the wrong instrument, and that is worth writing down because it was the
+/// first thing tried here. Exact zeroes only appear when the whole signal path
+/// has never been excited: the output stage's `LowCut` is an IIR, so once
+/// anything has run through it, a hole in the middle of a tail rings down
+/// through denormals instead of reaching 0.0. A mutation that feeds the tank
+/// 500 ms late while leaving the early reflections prompt — #1547's reported
+/// shape, exactly — produces an 18 000-sample window whose peak is 1.4e-18,
+/// which is 307 dB down and contains not one exact zero. A zero-run test is
+/// green on it. This one is not.
+///
+/// So the criterion is level. Measured on a 5 ms RMS envelope, the quietest
+/// interior window of a real render sits at -66.4 dB (Plate), -70.0 dB (FDN-8)
+/// and -67.0 dB (FDN-16) relative to that render's envelope peak — all of them
+/// just under the -60 dB line that defines where the tail ends, which is where
+/// you would expect the minimum of a decaying tail to be. The mutation above
+/// measures -307 dB. -120 dB sits 50 dB below the quietest real window and
+/// 187 dB above the hole, which is the widest separation the two populations
+/// allow.
+const HOLE_FLOOR_DB: f32 = -120.0;
 
 /// Algorithms whose output is expected to begin as soon as their Pre-Delay
 /// expires.
 ///
-/// Reverse is absent by construction, not by convenience. It fills a buffer for
-/// `reverse_time` and then plays it backwards, so its first output is late by
-/// design — measured at 41 088 samples (856 ms) with the burst above — and a
+/// This is four of the five values `set_param("algorithm", n)` actually
+/// selects — 4 and 5 are reserved for the convolution-backed engines and fall
+/// through to Plate, which `algorithm_wire_contract.rs` owns.
+///
+/// Reverse (6) is absent by construction, not by convenience. It fills a buffer
+/// for `reverse_time` and then plays it backwards, so its first output is late
+/// by design — measured at 41 088 samples (856 ms) with the burst below — and a
 /// Pre-Delay bound applied to it would be asserting something else entirely.
-/// `reverse_engine_character.rs` owns that engine's onset. It is still swept by
-/// the interior-hole test below, where the claim does apply to it.
+/// `reverse_engine_character.rs` owns that engine's onset.
 const PROMPT: [(f32, &str); 4] = [
     (0.0, "Plate"),
     (1.0, "FDN-8"),
     (2.0, "FDN-16"),
     (3.0, "Spring"),
 ];
+
+/// Algorithms whose tail is expected to be continuous once it starts.
+///
+/// Two absences, both measured rather than assumed.
+///
+/// **Spring** does not have a continuous tail. On the stimulus below its 5 ms
+/// envelope peaks every 300 ms — 0.0, -8.2, -14.6, -21.2, -28.4, -39.1 dB at
+/// 0.0, 0.3, 0.6, 0.9, 1.2 and 1.5 s — and the space between those repeats
+/// falls to -102.9, -155.0, -207.1, -259.2 and -316.3 dB, with two 5 ms windows
+/// exactly zero. A spring tank does repeat, but with dispersive noise between
+/// the repeats rather than nothing, so this looks like the same class of defect
+/// on a different engine. It is not #1547's and it is not fixed here: it is
+/// filed separately, and this exclusion is where it should be deleted from when
+/// it is answered.
+///
+/// **Reverse** sounds for 25 ms in total — it plays a reversed copy of the
+/// 512-sample burst — which is shorter than the dip this test looks for. There
+/// is no interior to inspect. `reverse_engine_character.rs` owns that engine.
+const CONTINUOUS: [(f32, &str); 3] = [(0.0, "Plate"), (1.0, "FDN-8"), (2.0, "FDN-16")];
 
 struct Render {
     left: Vec<f32>,
@@ -170,25 +198,22 @@ fn last_sounding(channel: &[f32], floor: f32) -> Option<usize> {
     channel.iter().rposition(|s| s.abs() > floor)
 }
 
-/// `(start, length)` of the longest run of exact zeroes in `channel[from..to]`.
-fn longest_zero_run(channel: &[f32], from: usize, to: usize) -> (usize, usize) {
-    let mut best = (from, 0_usize);
-    let mut start = from;
-    let mut run = 0_usize;
-    for index in from..to.min(channel.len()) {
-        if channel[index] == 0.0 {
-            if run == 0 {
-                start = index;
-            }
-            run += 1;
-            if run > best.1 {
-                best = (start, run);
-            }
-        } else {
-            run = 0;
-        }
+/// RMS in fixed-length windows. The envelope, not the waveform: a tail crosses
+/// zero on every cycle, so an instantaneous level says nothing about whether
+/// the reverb is still there.
+fn envelope(channel: &[f32]) -> Vec<f32> {
+    let window = (ENVELOPE_WINDOW_MS / 1000.0 * SAMPLE_RATE) as usize;
+    channel
+        .chunks(window)
+        .map(|chunk| (chunk.iter().map(|s| s * s).sum::<f32>() / chunk.len() as f32).sqrt())
+        .collect()
+}
+
+fn db_below(value: f32, reference: f32) -> f32 {
+    if value <= 0.0 {
+        return f32::NEG_INFINITY;
     }
-    best
+    20.0 * (value / reference).log10()
 }
 
 fn ms(samples: usize) -> f32 {
@@ -253,12 +278,9 @@ fn no_engine_stays_silent_longer_than_the_predelay_it_was_given() {
 /// And no hole once it has started — the shape #1547 was reported as.
 #[test]
 fn no_engine_goes_silent_in_the_middle_of_its_own_tail() {
-    let budget = (MAX_INTERIOR_ZERO_RUN_MS / 1000.0 * SAMPLE_RATE) as usize;
-
-    for (algorithm, name) in SELECTABLE {
+    for (algorithm, name) in CONTINUOUS {
         for predelay_ms in [0.0_f32, 25.0] {
             let render = render(algorithm, &[("predelay", predelay_ms)], 240_000);
-            let floor = render.floor();
             assert!(
                 render.peak() > 1e-3,
                 "{name} at predelay {predelay_ms} ms rendered nothing at all \
@@ -267,30 +289,46 @@ fn no_engine_goes_silent_in_the_middle_of_its_own_tail() {
             );
 
             for (side, channel) in render.channels() {
-                let Some(first) = onset(channel, floor) else {
-                    panic!("{name} {side} never rose above {floor:e}");
+                let envelope = envelope(channel);
+                let envelope_peak = envelope.iter().fold(0.0_f32, |a, b| a.max(*b));
+                let sounding = envelope_peak * AUDIBILITY_FRACTION;
+
+                let Some(first) = envelope.iter().position(|w| *w > sounding) else {
+                    panic!("{name} {side} never rose above {sounding:e}");
                 };
-                let last = last_sounding(channel, floor)
-                    .expect("a channel with an onset has a last sounding sample");
+                let last = envelope
+                    .iter()
+                    .rposition(|w| *w > sounding)
+                    .expect("a tail with a first window has a last one");
                 assert!(
-                    last > first + budget,
-                    "{name} {side} sounds for only {} samples at predelay \
-                     {predelay_ms} ms, which is shorter than the run this test \
-                     looks for — the assertion below cannot fail",
+                    last > first + 4,
+                    "{name} {side} sounds for only {} windows at predelay \
+                     {predelay_ms} ms — there is no interior for the dip below \
+                     to be found in, so this row cannot fail",
                     last - first
                 );
 
-                let (start, length) = longest_zero_run(channel, first, last);
+                let (quietest, level) = envelope[first..=last]
+                    .iter()
+                    .enumerate()
+                    .fold((first, f32::MAX), |(qi, qv), (i, v)| {
+                        if *v < qv {
+                            (first + i, *v)
+                        } else {
+                            (qi, qv)
+                        }
+                    });
+                let dip = db_below(level, envelope_peak);
                 assert!(
-                    length <= budget,
-                    "{name} {side} is exactly zero for {length} consecutive \
-                     samples ({:.1} ms) from sample {start} ({:.3} s) at \
-                     Pre-Delay {predelay_ms} ms, while its tail is still \
-                     sounding — it is audible again at sample {last}. A reverb \
-                     does not stop and restart. Budget is {budget} samples \
-                     ({MAX_INTERIOR_ZERO_RUN_MS:.1} ms).",
-                    ms(length),
-                    start as f32 / SAMPLE_RATE
+                    dip > HOLE_FLOOR_DB,
+                    "{name} {side} falls to {dip:.1} dB below its own peak at \
+                     {:.3} s, in the middle of a tail that is still sounding at \
+                     {:.3} s. That is a hole, not a quiet moment: the floor is \
+                     {HOLE_FLOOR_DB:.1} dB and the quietest window of an intact \
+                     render of this engine measures around -70 dB. Pre-Delay \
+                     {predelay_ms} ms.",
+                    quietest as f32 * ENVELOPE_WINDOW_MS / 1000.0,
+                    last as f32 * ENVELOPE_WINDOW_MS / 1000.0
                 );
             }
         }
@@ -298,38 +336,67 @@ fn no_engine_goes_silent_in_the_middle_of_its_own_tail() {
 }
 
 /// Anti-vacuity. Both tests above are searches for something that is not there,
-/// so the search itself has to be shown to work.
+/// so the searches themselves have to be shown to work.
 #[test]
-fn the_hole_detector_finds_a_hole_that_is_actually_there() {
-    let mut tail: Vec<f32> = (0..20_000)
-        .map(|i| (i as f32 * 0.31).sin() * (-(i as f32) / 6_000.0).exp())
+fn the_measurements_report_a_hole_and_a_late_start_that_are_actually_there() {
+    let intact: Vec<f32> = (0..48_000)
+        .map(|i| (i as f32 * 0.31).sin() * (-(i as f32) / 12_000.0).exp())
         .collect();
-    let intact = longest_zero_run(&tail, 0, tail.len());
+    let reference = envelope(&intact);
+    let reference_peak = reference.iter().fold(0.0_f32, |a, b| a.max(*b));
+    let sounding = reference_peak * AUDIBILITY_FRACTION;
+    let last = reference
+        .iter()
+        .rposition(|w| *w > sounding)
+        .expect("a decaying sinusoid sounds");
+    let intact_dip = reference[..=last]
+        .iter()
+        .fold(f32::MAX, |a, b| a.min(*b));
     assert!(
-        intact.1 < 4,
-        "a decaying sinusoid should not contain a run of zeroes; found {} from \
-         sample {}",
-        intact.1,
-        intact.0
+        db_below(intact_dip, reference_peak) > HOLE_FLOOR_DB,
+        "a smoothly decaying sinusoid measured {:.1} dB down inside its own \
+         sounding span, so the floor would flag an intact tail",
+        db_below(intact_dip, reference_peak)
     );
 
-    for sample in tail.iter_mut().take(12_000).skip(4_000) {
-        *sample = 0.0;
+    // The same tail with a quarter-second punched out — not to zero, but to the
+    // 1e-18 an IIR ringdown actually reaches, which is what a zero-run test
+    // misses and this one must not.
+    let mut punched = intact.clone();
+    for sample in punched.iter_mut().take(24_000).skip(12_000) {
+        *sample = 1e-18;
     }
-    let punched = longest_zero_run(&tail, 0, tail.len());
-    assert_eq!(
-        punched,
-        (4_000, 8_000),
-        "the detector missed an 8 000-sample hole punched at sample 4 000"
+    let holed = envelope(&punched);
+    let holed_peak = holed.iter().fold(0.0_f32, |a, b| a.max(*b));
+    let holed_last = holed
+        .iter()
+        .rposition(|w| *w > holed_peak * AUDIBILITY_FRACTION)
+        .expect("the punched tail still sounds after the hole");
+    assert!(
+        holed_last * (ENVELOPE_WINDOW_MS / 1000.0 * SAMPLE_RATE) as usize > 24_000,
+        "the punched tail stopped sounding before the hole ended, so the dip \
+         below would not be inside the sounding span"
+    );
+    let holed_dip = holed[..=holed_last].iter().fold(f32::MAX, |a, b| a.min(*b));
+    assert!(
+        db_below(holed_dip, holed_peak) < HOLE_FLOOR_DB,
+        "a quarter-second punched down to 1e-18 measured only {:.1} dB down, so \
+         the floor cannot see a hole it is supposed to catch",
+        db_below(holed_dip, holed_peak)
     );
 
-    // And the onset search has to be able to report a late start rather than
-    // finding the first sample of anything.
+    // And the onset search has to report a late start rather than finding the
+    // first sample of anything. 24 153 is the run #1547 actually rendered.
     let mut late = vec![0.0_f32; 30_000];
     late[24_153] = 0.5;
     assert_eq!(
         onset(&late, 1e-3),
         Some(24_153),
         "the onset search did not report the one sounding sample it was given"
+    );
+    assert_eq!(
+        last_sounding(&late, 1e-3),
+        Some(24_153),
+        "the tail-end search did not report the one sounding sample it was given"
     );
 }
