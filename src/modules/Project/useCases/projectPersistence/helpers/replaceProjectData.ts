@@ -171,14 +171,10 @@ export async function replaceProjectData({
         } catch (error) {
             logger.error(new Error(`[${context}] Failed to publish the load failure`, { cause: error }));
         }
-        try {
-            notifyUser(
-                'Opening the project failed and the previous session could not be restored. Your saved projects are intact — reload to get back to them.',
-                'error'
-            );
-        } catch (error) {
-            logger.error(new Error(`[${context}] Failed-load notification failed`, { cause: error }));
-        }
+        // No `notifyUser` here. The surface above carries the same sentence and
+        // does not auto-dismiss, and a toast would say it twice — the second
+        // time invisibly, since the toast host is `z-50` under this overlay's
+        // opaque `z-[10000]`.
         return { status: 'failed' };
     }
 

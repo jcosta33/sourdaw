@@ -630,6 +630,9 @@ describe('interrupted project load dirty tracking', () => {
         it('does not dress the empty project up as a working session', async () => {
             await openProject(OPEN_PROJECT_NAME, OPEN_TRACK_ID, OPEN_TRACK_NAME);
             mockEnsureTrackStrips.mockClear();
+            // The seed open above degrades and warns on its own; this assertion
+            // is about what the *failure* path says.
+            mockNotifyUser.mockClear();
             replaceAuthorityThenThrow();
 
             const result = await replaceProjectData({
@@ -648,7 +651,11 @@ describe('interrupted project load dirty tracking', () => {
             // `{ initialized: false, loading: false }` shows the full editor
             // mid-session. `AppShell.spec.tsx` pins both halves of that.
             expect(projectLoadFailureStore.value).toMatchObject({ projectName: INCOMING_PROJECT_NAME });
-            expect(mockNotifyUser).toHaveBeenCalledWith(expect.stringContaining('could not be restored'), 'error');
+            // Deliberately not a toast: the toast host renders inside the shell
+            // root, which goes `inert` while this surface is up, so a
+            // `role="alert"` there is neither announced nor visible under the
+            // opaque overlay. The surface itself is the whole message.
+            expect(mockNotifyUser).not.toHaveBeenCalled();
             // `ensureTrackStrips` reads `trackStore.value?.tracks`, which the
             // authority switch just emptied — calling it would only look like a
             // recovery.

@@ -23,8 +23,16 @@ export async function saveProject(): Promise<boolean> {
     // Guarded here rather than at the call sites because there are eight of
     // them, and one needs no user at all: `dirty` is still true and
     // `stopPlayback()` already ran, so `useAppInitialization`'s 30 s autosave
-    // interval fires on its own within half a minute of the failure. The menu
-    // Save and the project-name double-click are the same hazard.
+    // interval fires on its own within half a minute of the failure, and
+    // `handleSaveProject` can be driven through `executeAppAction` by an AI
+    // response that resolves after it.
+    //
+    // NOTE for callers: unlike the `false` returned from the catch below, this
+    // one is NOT accompanied by a notification. The failure surface is already
+    // on screen saying so, and the shell around it is `inert`, which takes the
+    // toast host out of the accessibility tree. Do not read a `false` from this
+    // function as "the user has been told" — several comments below say
+    // "already notified", and that only holds for the catch.
     if (projectLoadFailureStore.value !== null) {
         return false;
     }

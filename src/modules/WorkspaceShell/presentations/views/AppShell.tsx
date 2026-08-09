@@ -903,9 +903,6 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
                 <CommandPalette />
                 <VoiceCommandOverlay />
                 <AiChangeToast />
-                <NotificationToast />
-                <ConfirmDialog />
-                <PromptDialog />
                 <AiActionHistoryPanel />
                 <MixAnalysisPanel />
                 <ExportDialog open={exportOpen} onClose={() => setExportOpen(false)} />
@@ -930,6 +927,18 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
                 <OnboardingTour />
             </div>
 
+            {/* Siblings of the shell root, not children, because the root goes
+                `inert` below. These are the app's only channels for telling the
+                user something and for asking them a question, and `inert`
+                removes a subtree from the accessibility tree as well as the tab
+                order — so inside it a `role="alert"` toast is neither announced
+                nor reachable, and a pending `confirmUser` becomes unclickable
+                with no way to answer it. Anything that must still speak to the
+                user while the shell is inert belongs out here. */}
+            <NotificationToast />
+            <ConfirmDialog />
+            <PromptDialog />
+
             {/* Terminal open failure: the previous session is gone and no
                 project replaced it. Gated on its own store rather than the
                 transient flags — `launchReady` latches on the first open, so
@@ -943,7 +952,12 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
                 re-enters at the first focusable node — app chrome behind the
                 modal. `inert` takes the whole shell out of the tab order and
                 out of the a11y tree, which is what `aria-modal="true"` has
-                been claiming all along. */}
+                been claiming all along.
+
+                Except for portals: Radix renders into `document.body`, outside
+                this subtree, so a tooltip or popover already open when the
+                failure lands is not covered by `inert` and can sit in the a11y
+                tree beside the dialog. Not addressed here. */}
             {projectLoadFailure ? (
                 <ProjectLoadFailureOverlay
                     message={projectLoadFailure.message}

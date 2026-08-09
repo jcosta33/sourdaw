@@ -124,6 +124,19 @@ vi.mock('../../components/ProjectLoadingOverlay', () => ({
     ProjectLoadingOverlay: () => <div data-testid="project-loading-overlay">Project Loading</div>,
 }));
 
+// The real ones render null when idle, which cannot answer "where in the tree
+// are they mounted" — and that placement is the whole point once the shell root
+// can go `inert`.
+vi.mock('#/infra/dialogService/NotificationToast', () => ({
+    NotificationToast: () => <div data-testid="notification-toast">Toast</div>,
+}));
+vi.mock('#/infra/dialogService/ConfirmDialog', () => ({
+    ConfirmDialog: () => <div data-testid="confirm-dialog-host">Confirm</div>,
+}));
+vi.mock('#/infra/dialogService/PromptDialog', () => ({
+    PromptDialog: () => <div data-testid="prompt-dialog-host">Prompt</div>,
+}));
+
 vi.mock('../../components/AlphaNoticeDialog', () => ({
     AlphaNoticeDialog: ({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) => {
         if (!open) {
@@ -664,6 +677,12 @@ describe('AppShell', () => {
             // And the dialog itself must be outside that subtree, or it goes
             // inert with everything else.
             expect(screen.getByTestId('app-shell')).not.toContainElement(screen.getByRole('alertdialog'));
+            // So must every channel that still has to reach the user while the
+            // shell is inert — `inert` removes a subtree from the accessibility
+            // tree, so a `role="alert"` toast inside it is never announced and a
+            // pending confirm can never be answered.
+            expect(screen.getByTestId('app-shell')).not.toContainElement(screen.getByTestId('notification-toast'));
+            expect(screen.getByTestId('app-shell')).not.toContainElement(screen.getByTestId('confirm-dialog-host'));
         });
 
         it('shows no failure surface on an ordinary load', () => {
