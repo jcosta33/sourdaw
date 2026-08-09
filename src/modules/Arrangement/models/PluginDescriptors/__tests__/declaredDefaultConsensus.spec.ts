@@ -653,7 +653,7 @@ const DEFAULT_SOURCES: Record<NativeDspDeviceType, DeviceDefaults> = {
                 file: 'src/modules/ProofChamber/models/ProofChamberState.ts',
                 exportName: 'DEFAULT_PARAMS',
                 shape: 'object',
-                resolved: 21,
+                resolved: 27,
                 unresolved: ['algorithm'],
             },
         ],
@@ -870,6 +870,16 @@ const PARAM_KEY_ALIASES: readonly {
             'The engine arm and the descriptor call it `early_late`; `ProofChamberEngineState` calls it ' +
             '`earlyLateBalance`. One control, two spellings, and the bridge maps between them.',
     },
+    ...([0, 1, 2, 3, 4, 5] as const).map((band) => ({
+        deviceId: 'dutch-oven' as const,
+        paramId: `decay_eq_${band}`,
+        patchKey: `decayEq${band}`,
+        reason:
+            'Derived snake→camel stops at a trailing digit — `toCamelCase` only uppercases `_[a-z]` — so ' +
+            '`decay_eq_0` resolves to `decayEq_0` while `ProofChamberEngineState` spells the field `decayEq0`. ' +
+            'The difference is the underscore before the band index and nothing else; the field is named for ' +
+            'the house camelCase convention rather than for the wire id.',
+    })),
 ];
 
 /**

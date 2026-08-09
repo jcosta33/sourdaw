@@ -11,6 +11,11 @@ use std::f32::consts::TAU;
 // The `decay` contract is crate-wide: `decay` is a normalised coefficient, and
 // this engine is the one that needs it expressed in seconds.
 use crate::decay_curve::{decay_to_rt60_seconds, MAX_RT60_SECONDS, MIN_RT60_SECONDS};
+// The Decay Rate EQ is the multi-band generalisation of the `AbsorptiveFilter`
+// below: that stage gives the tail two decay rates either side of 2 kHz, this
+// one gives it six. They compose rather than compete — `damping` still sets the
+// broad HF tilt and the EQ shapes around it.
+use crate::decay_eq::{loop_gain_from_rt60, DecayRateEq};
 // `early_late` is a crate-wide contract too, and used to be honoured only
 // here. The tapped delay line moved out so the plate could blend the same
 // early signal against its own tank.
@@ -172,6 +177,14 @@ pub struct FdnReverb {
     // Per-line absorptive filters
     absorptive_filters: Vec<AbsorptiveFilter>,
 
+    /// Per-line Decay Rate EQ, sitting in the same place in the feedback path.
+    ///
+    /// One per line rather than one shared instance because each line has its
+    /// own length, so each runs at its own per-pass gain — and the whole point
+    /// of the stage is to be expressed *relative* to that gain. A single shared
+    /// filter would apply the short lines' shaping to the long ones.
+    decay_eqs: Vec<DecayRateEq>,
+
     // Mixing matrix scratch buffer
     mix_buf: [f32; MAX_FDN_CHANNELS],
 
@@ -232,6 +245,14 @@ impl FdnReverb {
             .map(|&len| AbsorptiveFilter::new(len, sample_rate, 2.0, 0.8))
             .collect();
 
+        // Seeded from the same 2.0 s the absorptive filters are, so a line's
+        // decay EQ and its absorption agree about what "the base rate" is
+        // before the first `decay` write arrives.
+        let decay_eqs: Vec<DecayRateEq> = delay_lengths
+            .iter()
+            .map(|&len| DecayRateEq::new(sample_rate, loop_gain_from_rt60(len, sample_rate, 2.0)))
+            .collect();
+
         // Incommensurate LFO frequencies (Costello-inspired)
         let base_freqs = [
             0.7, 1.1, 1.7, 2.3, 0.5, 1.3, 1.9, 2.9, 0.6, 1.4, 2.1, 0.8, 1.6, 2.7, 0.9, 1.2,
@@ -252,6 +273,7 @@ impl FdnReverb {
             write_positions,
             delay_lengths,
             absorptive_filters,
+            decay_eqs,
             mix_buf: [0.0; MAX_FDN_CHANNELS],
             lfo_phases,
             lfo_freqs,
@@ -367,6 +389,19 @@ impl FdnReverb {
             }
             "matrix" => self.use_hadamard = value > 0.5,
             "saturation" => self.saturation_enabled = value > 0.5,
+            // Decay Rate EQ. The six literals are spelled out rather than
+            // matched by prefix because `descriptorEngineParamWeld.spec.ts`
+            // reads the arm names out of this file to decide which engines
+            // answer to which id.
+            "decay_eq_0" | "decay_eq_1" | "decay_eq_2" | "decay_eq_3" | "decay_eq_4"
+            | "decay_eq_5" => {
+                let clamped = value.clamp(0.25, 4.0);
+                if let Some(band) = crate::decay_eq::band_index_for_name(name) {
+                    for eq in self.decay_eqs.iter_mut() {
+                        eq.set_band_multiplier(band, clamped);
+                    }
+                }
+            }
             _ => {}
         }
     }
@@ -387,6 +422,21 @@ impl FdnReverb {
                     self.rt60,
                     self.rt60_hf,
                 );
+            }
+        }
+
+        // The decay EQ shapes *relative* to the base rate, so it has to be
+        // re-told the base rate whenever the base rate moves. Reached from
+        // `decay`/`rt60`, from `damping`, and — the case a stage that stored
+        // its delay length at construction would have got wrong — from `size`,
+        // which rewrites every `delay_lengths[i]` before calling this.
+        for (i, eq) in self.decay_eqs.iter_mut().enumerate() {
+            if i < self.delay_lengths.len() {
+                eq.set_base_loop_gain(loop_gain_from_rt60(
+                    self.delay_lengths[i],
+                    self.sample_rate,
+                    self.rt60,
+                ));
             }
         }
     }
@@ -446,9 +496,13 @@ impl FdnReverb {
                 self.mix_buf[ch] = self.buffers[ch][read_pos];
             }
 
-            // Apply absorptive filters
+            // Apply absorptive filters, then the per-band decay shaping over
+            // the top of them. Both are in the feedback path and before the
+            // matrix, which is where a per-pass gain has to be for its effect
+            // to compound into a decay rate rather than a one-shot tone change.
             for ch in 0..n {
                 self.mix_buf[ch] = self.absorptive_filters[ch].process(self.mix_buf[ch]);
+                self.mix_buf[ch] = self.decay_eqs[ch].process(self.mix_buf[ch]);
             }
 
             // Soft saturation (before matrix) for infinite sustain

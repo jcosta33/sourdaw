@@ -10,6 +10,7 @@ use std::f32::consts::TAU;
 // followed by an amplifier's tone stack, and every spring emulation puts its
 // filters after the tank for the same reason. Shared with the plate and the
 // FDN so Hi Cut, Lo Cut and Width mean one thing across the Dutch Oven.
+use crate::decay_eq::DecayRateEq;
 use crate::output_stage::OutputStage;
 
 // ---------------------------------------------------------------------------
@@ -60,6 +61,14 @@ pub struct SpringReverb {
     damp_state: f32,
     damping: f32,
 
+    /// Decay Rate EQ across the single feedback loop.
+    ///
+    /// One instance, because a spring tank *is* one loop — the stereo pair the
+    /// engine emits is two taps off it, not two independent paths. The base
+    /// loop gain is `feedback` directly: unlike the plate, the gain is applied
+    /// exactly once per circulation.
+    decay_eq: DecayRateEq,
+
     // Modulation (self-modulation for metallic character)
     mod_phase: f32,
     mod_rate: f32,
@@ -100,6 +109,7 @@ impl SpringReverb {
             feedback: 0.7,
             damp_state: 0.0,
             damping: 0.3,
+            decay_eq: DecayRateEq::new(sample_rate, 0.7),
             mod_phase: 0.0,
             mod_rate: 4.5, // faster modulation for metallic character
             mod_depth: 0.3,
@@ -122,6 +132,8 @@ impl SpringReverb {
             "mix" => self.mix = value.clamp(0.0, 1.0),
             "decay" | "feedback" => {
                 self.feedback = value.clamp(0.0, 0.95);
+                // The shaping is relative to the loop gain, so it moves with it.
+                self.decay_eq.set_base_loop_gain(self.feedback);
             }
             "damping" => self.damping = value.clamp(0.0, 0.99),
             "size" => {
@@ -137,6 +149,17 @@ impl SpringReverb {
                 }
             }
             "mod_depth" => self.mod_depth = value.clamp(0.0, 1.0),
+            // Decay Rate EQ. The six literals are spelled out rather than
+            // matched by prefix because `descriptorEngineParamWeld.spec.ts`
+            // reads the arm names out of this file to decide which engines
+            // answer to which id.
+            "decay_eq_0" | "decay_eq_1" | "decay_eq_2" | "decay_eq_3" | "decay_eq_4"
+            | "decay_eq_5" => {
+                let clamped = value.clamp(0.25, 4.0);
+                if let Some(band) = crate::decay_eq::band_index_for_name(name) {
+                    self.decay_eq.set_band_multiplier(band, clamped);
+                }
+            }
             _ => {}
         }
     }
@@ -172,7 +195,10 @@ impl SpringReverb {
 
             // Damping (one-pole lowpass in feedback)
             self.damp_state = delayed * (1.0 - self.damping) + self.damp_state * self.damping;
-            let feedback_signal = self.damp_state * self.feedback;
+            // Per-band decay shaping, immediately after the per-pass gain it is
+            // expressed relative to and still inside the loop — outside it the
+            // same filter would be a tone control that never compounds.
+            let feedback_signal = self.decay_eq.process(self.damp_state * self.feedback);
 
             // Input + feedback through dispersive allpass cascade
             let mut signal = mono + feedback_signal;
@@ -207,6 +233,7 @@ impl SpringReverb {
 
     pub fn param_names(&self) -> Vec<&str> {
         let mut names = vec!["mix", "decay", "damping", "size", "dispersion", "mod_depth"];
+        names.extend(crate::decay_eq::PARAM_NAMES);
         names.extend(OutputStage::PARAM_NAMES);
         names.push(OutputStage::WIDTH);
         names

@@ -15,6 +15,18 @@ const MAX_MULT = 4.0;
 type DecayEqOverlayProps = {
     multipliers: number[];
     onChange: (bandIndex: number, multiplier: number) => void;
+    /**
+     * True while the selected algorithm has no recirculating path for a
+     * per-band decay multiplier to act on, so a drag would write a value the
+     * engine drops.
+     *
+     * The curve is still drawn — it is what the project has saved, and hiding
+     * it would make a stored shape invisible rather than merely inaudible —
+     * but the nodes refuse to move. Same treatment as `GatedChip` and
+     * `KnobCell` on the panel: a knob that turns and does nothing is
+     * indistinguishable from a broken one.
+     */
+    disabled?: boolean;
     width: number;
     height: number;
 };
@@ -43,7 +55,13 @@ function yToMult(y: number, height: number): number {
     return 2 ** logMult;
 }
 
-export const DecayEqOverlay = ({ multipliers, onChange, width, height }: DecayEqOverlayProps): ReactElement => {
+export const DecayEqOverlay = ({
+    multipliers,
+    onChange,
+    disabled = false,
+    width,
+    height,
+}: DecayEqOverlayProps): ReactElement => {
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const dragRef = useRef<{ bandIndex: number } | null>(null);
 
@@ -179,6 +197,9 @@ export const DecayEqOverlay = ({ multipliers, onChange, width, height }: DecayEq
     };
 
     const handlePointerDown = (event: PointerEvent<HTMLCanvasElement>): void => {
+        if (disabled) {
+            return;
+        }
         const band = findNearestBand(event.clientX, event.clientY);
         if (band !== null) {
             dragRef.current = { bandIndex: band };
@@ -187,7 +208,7 @@ export const DecayEqOverlay = ({ multipliers, onChange, width, height }: DecayEq
     };
 
     const handlePointerMove = (event: PointerEvent<HTMLCanvasElement>): void => {
-        if (!dragRef.current) {
+        if (disabled || !dragRef.current) {
             return;
         }
         const canvas = canvasRef.current;
@@ -209,7 +230,8 @@ export const DecayEqOverlay = ({ multipliers, onChange, width, height }: DecayEq
             ref={canvasRef}
             width={width}
             height={height}
-            className="absolute inset-0 cursor-crosshair"
+            className={disabled ? 'absolute inset-0 cursor-not-allowed' : 'absolute inset-0 cursor-crosshair'}
+            aria-disabled={disabled || undefined}
             style={{ pointerEvents: 'auto' }}
             onPointerDown={handlePointerDown}
             onPointerMove={handlePointerMove}

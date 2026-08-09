@@ -80,6 +80,41 @@ describe('DecayEqOverlay — drag interaction', () => {
         expect(onChange).not.toHaveBeenCalled();
     });
 
+    it('refuses the drag while the live algorithm cannot hear the curve', () => {
+        // The reverse engine has no recirculating path for a decay multiplier
+        // to act on, so the panel hands the overlay `disabled` and the nodes
+        // must stop moving. A curve that dragged and wrote would be the defect
+        // #1539 opened on, one algorithm smaller.
+        const onChange = vi.fn();
+        const { container } = render(
+            <DecayEqOverlay multipliers={[1, 1, 1, 1, 1, 1]} onChange={onChange} disabled width={200} height={60} />
+        );
+        const canvas = container.querySelector('canvas')!;
+        mockRect(canvas, 200, 60);
+
+        fireEvent.pointerDown(canvas, { clientX: 81, clientY: 30, pointerId: 1 });
+        fireEvent.pointerMove(canvas, { clientX: 81, clientY: 10, pointerId: 1 });
+
+        expect(onChange).not.toHaveBeenCalled();
+        expect(canvas.getAttribute('aria-disabled')).toBe('true');
+    });
+
+    it('leaves the curve interactive when it is not disabled', () => {
+        // The other direction, so a blanket refusal cannot satisfy the pair.
+        const onChange = vi.fn();
+        const { container } = render(
+            <DecayEqOverlay multipliers={[1, 1, 1, 1, 1, 1]} onChange={onChange} width={200} height={60} />
+        );
+        const canvas = container.querySelector('canvas')!;
+        mockRect(canvas, 200, 60);
+
+        fireEvent.pointerDown(canvas, { clientX: 81, clientY: 30, pointerId: 1 });
+        fireEvent.pointerMove(canvas, { clientX: 81, clientY: 10, pointerId: 1 });
+
+        expect(onChange).toHaveBeenCalledTimes(1);
+        expect(canvas.getAttribute('aria-disabled')).toBeNull();
+    });
+
     it('clamps multiplier to MIN_MULT (0.25) when dragged to bottom', () => {
         const onChange = vi.fn();
         const { container } = render(
