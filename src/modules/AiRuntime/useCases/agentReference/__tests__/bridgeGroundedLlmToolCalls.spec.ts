@@ -4438,13 +4438,17 @@ describe('bridgeGroundedLlmToolCalls', () => {
             'please enable punch in/out!',
             { ...projectContext, punchInEnabled: false }
         );
+        const politeQuestionPrompts = [
+            'can you enable punch in/out?',
+            'could you please enable punch in/out?',
+            'would you enable punch in/out please?',
+        ];
         const rejected = [
             bridge([{ name: 'setPunchEnabled', arguments: { enabled: true } }], 'punch'),
             bridge([{ name: 'setPunchEnabled', arguments: { enabled: true } }], 'set punch in at beat 20'),
             bridge([{ name: 'setPunchEnabled', arguments: { enabled: false } }], 'enable punch in/out'),
             bridge([{ name: 'setPunchEnabled', arguments: { enabled: true } }], 'do not enable punch in/out'),
             bridge([{ name: 'setPunchEnabled', arguments: { enabled: true } }], 'enable punch in/out, cancel that'),
-            bridge([{ name: 'setPunchEnabled', arguments: { enabled: true } }], 'can you enable punch in/out?'),
             bridge([{ name: 'setPunchEnabled', arguments: { enabled: true } }], 'if stopped, enable punch in/out'),
             bridge(
                 [{ name: 'setPunchEnabled', arguments: { enabled: true } }],
@@ -4467,6 +4471,15 @@ describe('bridgeGroundedLlmToolCalls', () => {
         expect(enabled.actions).toEqual([{ type: 'setPunchEnabled', payload: { enabled: true } }]);
         expect(disabled.actions).toEqual([{ type: 'setPunchEnabled', payload: { enabled: false } }]);
         expect(polite.actions).toEqual([{ type: 'setPunchEnabled', payload: { enabled: true } }]);
+        for (const prompt of politeQuestionPrompts) {
+            const result = bridge([{ name: 'setPunchEnabled', arguments: { enabled: true } }], prompt, {
+                ...projectContext,
+                punchInEnabled: false,
+            });
+            expect(result.actions, `${prompt}: ${JSON.stringify(result.rejections)}`).toEqual([
+                { type: 'setPunchEnabled', payload: { enabled: true } },
+            ]);
+        }
         for (const result of rejected) {
             expect(result.actions).toEqual([]);
         }

@@ -396,14 +396,22 @@ describe('describePlannedAction', () => {
         );
     });
 
-    it('describes durable punch enablement with unchanged endpoints and background capture', () => {
+    it('describes durable punch enablement with armed-track playback behavior and the exact region', () => {
+        expect(
+            describePlannedAction({
+                action: { type: 'setPunchEnabled', payload: { enabled: true } },
+                context,
+            })
+        ).toBe(
+            'Enable Transport Punch In/Out until changed; during playback with an armed track, recording starts at punch-in beat 4 and stops at punch-out beat 12; punch region remains beats 4–12; background capture is unchanged'
+        );
         expect(
             describePlannedAction({
                 action: { type: 'setPunchEnabled', payload: { enabled: false } },
                 context,
             })
         ).toBe(
-            'Disable Transport Punch In/Out until changed; applies to the next and later transport starts; punch region remains beats 4–12; background capture is unchanged'
+            'Disable Transport Punch In/Out until changed; armed-track playback will no longer start and stop recording at punch region beats 4–12; punch region remains beats 4–12; background capture is unchanged'
         );
     });
 });

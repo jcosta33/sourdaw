@@ -3335,8 +3335,9 @@ function isExactPunchCommandClause(clause: PromptClause): boolean {
 
 function isExactPunchEnabledCommandClause(clause: PromptClause): boolean {
     let commandSource = clause.masked.trim();
+    commandSource = commandSource.replace(/^(?:please\s+)?(?:can|could|would)\s+you(?:\s+please)?\s+/iu, '');
     commandSource = commandSource.replace(/^please\s+/iu, '');
-    return /^(?:(?:enable|disable)\s+punch\s+(?:in\s*\/\s*out|mode)|turn\s+punch\s+(?:in\s*\/\s*out|mode)\s+(?:on|off))(?:\s+please)?\s*[!.]?$/iu.test(
+    return /^(?:(?:enable|disable)\s+punch\s+(?:in\s*\/\s*out|mode)|turn\s+punch\s+(?:in\s*\/\s*out|mode)\s+(?:on|off))(?:\s+please)?\s*[?!.]?$/iu.test(
         commandSource
     );
 }
