@@ -12,8 +12,14 @@ import {
     updateMidiFxParam,
 } from '#/modules/AudioEngine/useCases';
 import { automationStore } from '#/modules/Automation/stores';
-import { getAutomationValueAtBeat, isRecordingAutomation, resolveAutoMatchValue } from '#/modules/Automation/useCases';
+import {
+    getAutomationValueAtBeat,
+    getSendAutomationBusId,
+    isRecordingAutomation,
+    resolveAutoMatchValue,
+} from '#/modules/Automation/useCases';
 import { applyFermenterRuntimeParam } from '#/modules/Fermenter/useCases';
+import { setSend as setRuntimeSend } from '#/modules/Routing/useCases';
 import {
     getDeviceAutomationParameterId,
     resolveDeviceAutomationTargetIndex,
@@ -66,18 +72,20 @@ const automationState: {
      * plugin-param slew to its target instead of gliding from the pre-jump value.
      */
     lastDiscontinuityEpoch: number | undefined;
+    lastTrackStoreState: typeof trackStore.value | undefined;
     /**
      * Lane ids that wrote their parameter on the previous tick. The
      * driving → not-driving edge is what triggers the one-shot restore of the
      * manual base; without it a gated lane would either strand the parameter or
      * fight the UI by rewriting the base every tick.
      */
-    drivingLanes: Set<string>;
+    drivingLanes: Map<string, NonNullable<typeof automationStore.value>['lanes'][number]>;
 } = {
     pluginParamSlew: new Map<string, Map<string, number>>(),
     trackIndex: new Map<string, NonNullable<typeof trackStore.value>['tracks'][number]>(),
     lastDiscontinuityEpoch: undefined,
-    drivingLanes: new Set<string>(),
+    lastTrackStoreState: undefined,
+    drivingLanes: new Map(),
 };
 
 export function applyAutomation(currentBeat: number): Set<string> {
@@ -108,7 +116,7 @@ export function applyAutomation(currentBeat: number): Set<string> {
     // track's compensation so every lane schedules at `now + compensation`.
     const now = getCurrentTime();
     const compensationByTrack = new Map<string, number>();
-    const compensationFor = (trackId: string): number => {
+    function compensationFor(trackId: string): number {
         const cached = compensationByTrack.get(trackId);
         if (cached !== undefined) {
             return cached;
@@ -116,14 +124,43 @@ export function applyAutomation(currentBeat: number): Set<string> {
         const compensation = getCompensationDelay(trackId);
         compensationByTrack.set(trackId, compensation);
         return compensation;
-    };
+    }
 
-    const tracks = trackStore.value?.tracks;
+    const trackState = trackStore.value;
+    const tracks = trackState?.tracks;
+
+    // A replaced track snapshot is a new set of persisted bases. Drop runtime
+    // ownership from the previous snapshot before reconciling removed lanes so
+    // opening another project cannot restore a same-id track with stale data.
+    // A lane-only undo leaves this snapshot unchanged and reaches the removal
+    // restore below.
+    if (automationState.lastTrackStoreState !== undefined && automationState.lastTrackStoreState !== trackState) {
+        automationState.drivingLanes.clear();
+        automationState.pluginParamSlew.clear();
+    }
+    automationState.lastTrackStoreState = trackState;
 
     automationState.trackIndex.clear();
     if (tracks) {
         for (const time of tracks) {
             automationState.trackIndex.set(time.id, time);
+        }
+    }
+
+    const currentLaneIds = new Set(autoState.lanes.map((lane) => lane.id));
+    for (const [laneId, previousLane] of automationState.drivingLanes) {
+        if (currentLaneIds.has(laneId)) {
+            continue;
+        }
+        automationState.drivingLanes.delete(laneId);
+        automationState.pluginParamSlew.delete(laneId);
+        const track = automationState.trackIndex.get(previousLane.trackId);
+        if (track) {
+            restoreAutomationBaseValue({
+                lane: previousLane,
+                track,
+                landTime: now + compensationFor(previousLane.trackId),
+            });
         }
     }
 
@@ -197,7 +234,7 @@ export function applyAutomation(currentBeat: number): Set<string> {
 
         // From here the lane writes its parameter, so it is driving: the gate
         // above will restore this lane's manual base on the tick it stops.
-        automationState.drivingLanes.add(lane.id);
+        automationState.drivingLanes.set(lane.id, lane);
 
         // RT-5 param-family split. `gain` and `pan` are the only automation
         // targets backed by a real native AudioParam (fader GainNode.gain /
@@ -225,6 +262,14 @@ export function applyAutomation(currentBeat: number): Set<string> {
         } else if (lane.parameterId === 'pan') {
             scheduleTrackPan(lane.trackId, value * 50, now + compensationFor(lane.trackId));
         } else {
+            const sendBusId = getSendAutomationBusId(lane.parameterId);
+            if (sendBusId !== null) {
+                const send = track.sends.find((candidate) => candidate.busId === sendBusId);
+                if (send) {
+                    setRuntimeSend(lane.trackId, sendBusId, value, send.preFader);
+                }
+                continue;
+            }
             let laneSlew = automationState.pluginParamSlew.get(lane.id);
 
             const deviceIndex = resolveDeviceAutomationTargetIndex(

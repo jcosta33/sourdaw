@@ -754,6 +754,64 @@ function bridgeToolCall({
         };
     }
 
+    if (call.name === 'automateSendRange') {
+        const trackIds = args.trackIds;
+        const bus = findTrack(context, args.busId);
+        const sectionName = normalizeSafeProjectName(args.sectionName);
+        const sections = sectionSignatures.filter(
+            (section) =>
+                section.sectionId && normalizeMarkerName(section.name) === normalizeMarkerName(sectionName ?? '')
+        );
+        if (
+            !hasExactKeys(args, ['trackIds', 'busId', 'sectionName', 'reductionDb']) ||
+            !Array.isArray(trackIds) ||
+            trackIds.length === 0 ||
+            !trackIds.every((trackId): trackId is string => typeof trackId === 'string') ||
+            new Set(trackIds).size !== trackIds.length ||
+            bus?.kind !== 'bus' ||
+            !sectionName ||
+            sections.length !== 1 ||
+            !isFiniteNumber(args.reductionDb) ||
+            args.reductionDb <= 0 ||
+            args.reductionDb > 60
+        ) {
+            return rejection(
+                index,
+                call.name,
+                'Expected exact source IDs, one existing bus and section, and a positive bounded dB reduction'
+            );
+        }
+        const hasInvalidSource = trackIds.some((trackId) => {
+            const track = findTrack(context, trackId);
+            const send = findSend(context, trackId, bus.id);
+            return (
+                !isProviderRoutableSource(track) ||
+                !send ||
+                !Number.isFinite(send.level) ||
+                send.level <= 0 ||
+                (context.automationLanes ?? []).some(
+                    (lane) => !lane.clipId && lane.trackId === trackId && lane.parameterId === `send:${bus.id}`
+                )
+            );
+        });
+        if (hasInvalidSource) {
+            return rejection(
+                index,
+                call.name,
+                'Expected every source to own a positive send to the bus without existing send automation'
+            );
+        }
+        return {
+            type: 'automateSendRange',
+            payload: {
+                trackIds: [...trackIds],
+                busId: bus.id,
+                sectionName: sections[0]!.name,
+                reductionDb: args.reductionDb,
+            },
+        };
+    }
+
     if (call.name === 'addAutomationPoint') {
         const lane = findAutomationLane(context, args.laneId);
         const hasValidKeys =
@@ -2871,6 +2929,7 @@ export function buildLlmActionUserMessage({ prompt, context }: { prompt: string;
             targetParameterId: route.targetParameterId,
             gain: route.gain,
         })),
+        sections: context.sections ?? [],
         vcaGroups: (context.vcaGroups ?? []).map((group) => ({
             id: group.id,
             name: group.name,

@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import {
     getProjectContext,
+    type ProjectContextSection,
     type ProjectContextSidechainRoute,
     type ProjectContextVcaGroup,
 } from '../getProjectContext';
@@ -14,6 +15,7 @@ const mocks = vi.hoisted(() => ({
     clipSelectionStoreValue: { value: null } as any,
     automationStoreValue: { value: null } as any,
     sidechainStoreValue: { value: null as { routes: ProjectContextSidechainRoute[] } | null },
+    markerStoreValue: { value: null as { sections: ProjectContextSection[] } | null },
     vcaStoreValue: { value: null as { groups: ProjectContextVcaGroup[] } | null },
     getPluginById: vi.fn(),
     getPlatformPlugins: vi.fn(),
@@ -34,6 +36,11 @@ vi.mock('#/modules/Arrangement/stores', () => ({
     vcaGroupStore: {
         get value() {
             return mocks.vcaStoreValue.value;
+        },
+    },
+    markerStore: {
+        get value() {
+            return mocks.markerStoreValue.value;
         },
     },
 }));
@@ -94,6 +101,7 @@ describe('getProjectContext', () => {
         mocks.clipSelectionStoreValue.value = null;
         mocks.automationStoreValue.value = null;
         mocks.sidechainStoreValue.value = null;
+        mocks.markerStoreValue.value = null;
         mocks.vcaStoreValue.value = null;
         mocks.getPluginById.mockReturnValue(undefined);
         mocks.getGlueEligibleClipPairs.mockReturnValue([]);
@@ -133,6 +141,7 @@ describe('getProjectContext', () => {
         expect(context.availableDeviceTypes).toEqual([{ id: 'builtin-eq', name: 'EQ' }]);
         expect(context.automationLanes).toEqual([]);
         expect(context.sidechainRoutes).toEqual([]);
+        expect(context.sections).toEqual([]);
         expect(context.vcaGroups).toEqual([]);
         expect(context).not.toHaveProperty('markers');
         expect(context.tracks).toEqual([]);
@@ -444,5 +453,22 @@ describe('getProjectContext', () => {
 
         expect(second).not.toBe(first);
         expect(second.vcaGroups?.[0]?.gain).toBe(0.6);
+    });
+
+    it('maps arrangement sections and invalidates the cache when their bounds change', () => {
+        mocks.markerStoreValue.value = {
+            sections: [{ id: 'section-verse-two', name: 'Verse Two', startBeat: 16, endBeat: 32 }],
+        };
+
+        const first = getProjectContext();
+        expect(first.sections).toEqual(mocks.markerStoreValue.value.sections);
+
+        mocks.markerStoreValue.value = {
+            sections: [{ ...mocks.markerStoreValue.value.sections[0]!, endBeat: 36 }],
+        };
+        const second = getProjectContext();
+
+        expect(second).not.toBe(first);
+        expect(second.sections?.[0]?.endBeat).toBe(36);
     });
 });

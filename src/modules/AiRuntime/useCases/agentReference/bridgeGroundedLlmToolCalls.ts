@@ -3007,7 +3007,13 @@ function validateGroundedValue(
         }
         case 'section-name':
         case 'section-reference': {
-            const expectedValue = getSectionNameFromPrompt(actionScope.text);
+            let expectedValue = getSectionNameFromPrompt(actionScope.text);
+            if (expectedValue === null && valueRule.kind === 'section-reference') {
+                const matches = (context.sections ?? []).filter((section) =>
+                    ` ${normalizePromptText(actionScope.text)} `.includes(` ${normalizePromptText(section.name)} `)
+                );
+                expectedValue = matches.length === 1 ? matches[0]!.name : null;
+            }
             if (
                 expectedValue === null ||
                 typeof assertedValue !== 'string' ||
@@ -3059,11 +3065,13 @@ function resolveAgentReferenceArray({
     assertedIds,
     capability,
     context,
+    dependencyId,
     prompt,
 }: {
     assertedIds: unknown;
     capability: GroundingRules['targetRules'][number]['capability'];
     context: ProjectContext;
+    dependencyId?: unknown;
     prompt: string;
 }): ResolveAgentReferenceArrayResult {
     if (
@@ -3083,7 +3091,29 @@ function resolveAgentReferenceArray({
         return { status: 'rejected', reason: 'asserted-target-mismatch' };
     }
     let candidates: Array<{ id: string; name: string }>;
-    if (capability === 'vca-member-track') {
+    if (capability === 'routable-source') {
+        candidates = context.tracks.filter(
+            (track) =>
+                (track.kind === 'audio' || track.kind === 'midi' || track.kind === 'bus') &&
+                (typeof dependencyId !== 'string' || track.sends?.some((send) => send.busId === dependencyId))
+        );
+        if (/\bevery vocal send\b/u.test(normalizePromptText(prompt))) {
+            const vocalIds = new Set(
+                candidates
+                    .filter((candidate) => /\bvocal\b/u.test(normalizePromptText(candidate.name)))
+                    .map((candidate) => candidate.id)
+            );
+            const assertedIdSet = new Set(assertedIds);
+            if (
+                vocalIds.size > 0 &&
+                vocalIds.size === assertedIdSet.size &&
+                [...vocalIds].every((id) => assertedIdSet.has(id))
+            ) {
+                return { status: 'resolved', ids: [...assertedIds] };
+            }
+            return { status: 'rejected', reason: 'asserted-target-mismatch' };
+        }
+    } else if (capability === 'vca-member-track') {
         candidates = context.tracks.filter(
             (track) =>
                 track.kind === 'audio' || track.kind === 'midi' || track.kind === 'bus' || track.kind === 'folder'
@@ -3283,10 +3313,12 @@ function groundToolCall({
         const assertedValue = groundedArguments[targetRule.argument];
         const targetPrompt = getTargetPromptScope(actionScope, targetRule.promptRole);
         if (targetRule.cardinality === 'many') {
+            const dependencyValue = targetRule.dependsOn ? groundedArguments[targetRule.dependsOn] : undefined;
             const result = resolveAgentReferenceArray({
                 assertedIds: assertedValue,
                 capability: targetRule.capability,
                 context,
+                dependencyId: dependencyValue,
                 prompt: targetPrompt,
             });
             if (result.status === 'rejected') {

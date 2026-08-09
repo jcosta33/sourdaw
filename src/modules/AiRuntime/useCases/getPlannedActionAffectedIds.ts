@@ -22,5 +22,8 @@ export function getPlannedActionAffectedIds(action: AppAction): string[] {
     if (action.type === 'createBus' && action.payload.busId) {
         affectedIds.add(action.payload.busId);
     }
+    if (action.type === 'automateSendRange' && action.payload.sectionId) {
+        affectedIds.add(action.payload.sectionId);
+    }
     return [...affectedIds];
 }

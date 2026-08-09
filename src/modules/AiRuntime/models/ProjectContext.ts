@@ -15,6 +15,7 @@ export type ProjectContext = {
     availableDeviceTypes?: ProjectContextAvailableDeviceType[];
     automationLanes?: ProjectContextAutomationLane[];
     sidechainRoutes?: ProjectContextSidechainRoute[];
+    sections?: ProjectContextSection[];
     vcaGroups?: ProjectContextVcaGroup[];
     tracks: ProjectContextTrack[];
     selectedTrackId: string | null;
@@ -23,6 +24,13 @@ export type ProjectContext = {
     glueEligibleClipPairs?: Array<[string, string]>;
     activeView: 'arrange' | 'automation' | 'clip' | 'mix';
     playheadPosition: number;
+};
+
+export type ProjectContextSection = {
+    id: string;
+    name: string;
+    startBeat: number;
+    endBeat: number;
 };
 
 export type ProjectContextAvailableDeviceType = {

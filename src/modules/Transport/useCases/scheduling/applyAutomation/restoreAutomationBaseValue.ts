@@ -10,7 +10,9 @@ import {
     updateDeviceParam,
     updateMidiFxParam,
 } from '#/modules/AudioEngine/useCases';
+import { getSendAutomationBusId } from '#/modules/Automation/useCases';
 import { applyFermenterRuntimeParam } from '#/modules/Fermenter/useCases';
+import { setSend as setRuntimeSend } from '#/modules/Routing/useCases';
 import {
     getDeviceAutomationParameterId,
     resolveDeviceAutomationTargetIndex,
@@ -24,6 +26,7 @@ type RestoreTargetTrack = {
     pan: number;
     devices: RestoreTargetDevice[];
     midiFx: { id: string; type: string; parameterValues: Record<string, number> }[];
+    sends?: Array<{ busId: string; level: number; preFader: boolean }>;
 };
 
 export type RestoreAutomationBaseValueInput = {
@@ -77,6 +80,15 @@ export function restoreAutomationBaseValue({ lane, track, landTime }: RestoreAut
     if (lane.parameterId === 'pan') {
         // track.pan is already the canonical −50..50 the engine accepts.
         scheduleTrackPan(lane.trackId, track.pan, landTime);
+        return;
+    }
+
+    const sendBusId = getSendAutomationBusId(lane.parameterId);
+    if (sendBusId !== null) {
+        const send = track.sends?.find((candidate) => candidate.busId === sendBusId);
+        if (send) {
+            setRuntimeSend(lane.trackId, sendBusId, send.level, send.preFader);
+        }
         return;
     }
 

@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { updateDeviceParam, updateMidiFxParam } from '#/modules/AudioEngine/useCases';
 import { applyFermenterRuntimeParam } from '#/modules/Fermenter/useCases';
+import { setSend } from '#/modules/Routing/useCases';
 
 import { restoreAutomationBaseValue } from '../restoreAutomationBaseValue';
 
@@ -31,6 +32,13 @@ vi.mock('#/modules/Fermenter/useCases', async (importOriginal) => {
     return {
         ...mod,
         applyFermenterRuntimeParam: vi.fn(),
+    };
+});
+vi.mock('#/modules/Routing/useCases', async (importOriginal) => {
+    const mod = await importOriginal<typeof import('#/modules/Routing/useCases')>();
+    return {
+        ...mod,
+        setSend: vi.fn(),
     };
 });
 
@@ -73,6 +81,22 @@ describe('restoreAutomationBaseValue', () => {
         });
 
         expect(updateDeviceParam).toHaveBeenCalledWith('track-1', 'ov-1', 'mix', 0.42);
+    });
+
+    it('restores the persisted send level and tap after its lane stops driving', () => {
+        restoreAutomationBaseValue({
+            lane: { trackId: 'track-1', parameterId: 'send:bus-hall' },
+            track: {
+                gain: 0.4,
+                pan: 12,
+                devices: [],
+                midiFx: [],
+                sends: [{ busId: 'bus-hall', level: 0.5, preFader: true }],
+            },
+            landTime: 7,
+        });
+
+        expect(setSend).toHaveBeenCalledWith('track-1', 'bus-hall', 0.5, true);
     });
 
     it('restores a Fermenter base through the runtime-only mapped path', () => {
