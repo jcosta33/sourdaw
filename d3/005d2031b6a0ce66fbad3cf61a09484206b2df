@@ -1,0 +1,25 @@
+src/modules/Transport/useCases/transportControls/__tests__/restorePunchRegion.spec.ts
+  s_bc88af7d3b054c::t_d22e8b971cbf1a 63-72
+src/modules/Transport/useCases/transportControls/restorePunchRegion.ts
+  s_bc88af7d3b054c::t_c15f99bc0c69d1 41-42
+  s_bc88af7d3b054c::t_042e492b482a2f 43
+src/modules/Transport/handlers/transport/__tests__/punchUndoRedo.spec.ts
+  s_bc88af7d3b054c::t_d22e8b971cbf1a 117,131-132,140,155
+  s_bc88af7d3b054c::t_b3a8d10f9634e6 122
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "d3005d2031b6a0ce66fbad3cf61a09484206b2df",
+  "prompts": {},
+  "sessions": {
+    "s_bc88af7d3b054c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f9b4a-11a2-7f61-8dfb-76eed0eb2a9c",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
