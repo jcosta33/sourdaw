@@ -984,6 +984,56 @@ function resolveBulkTrackOutputScope(
     };
 }
 
+function resolveRepeatedTrackPanScope({
+    actionOrdinal,
+    prompt,
+    context,
+    sameActionAssertedArguments,
+    sameActionCallCount,
+}: Pick<
+    ResolveActionPromptScopeInput,
+    'actionOrdinal' | 'prompt' | 'context' | 'sameActionAssertedArguments' | 'sameActionCallCount'
+>): ActionPromptScope | null {
+    if (sameActionCallCount < 2 || sameActionAssertedArguments.length !== sameActionCallCount) {
+        return null;
+    }
+
+    const clauses = getPromptClauses(prompt, maskQuotedLabels(maskProjectReferences(prompt, context)));
+    const scopedClauses: Array<{ clause: PromptClause; index: number }> = [];
+    for (const assertedArguments of sameActionAssertedArguments) {
+        if (typeof assertedArguments.trackId !== 'string' || typeof assertedArguments.pan !== 'number') {
+            return null;
+        }
+        const track = context.tracks.find((candidate) => candidate.id === assertedArguments.trackId);
+        if (!track) {
+            return null;
+        }
+        const normalizedTrackName = normalizePromptText(track.name);
+        const matches = clauses.flatMap((clause, index) => {
+            const normalizedClause = ` ${normalizePromptText(clause.text)} `;
+            return normalizedClause.includes(` ${normalizedTrackName} `) ? [{ clause, index }] : [];
+        });
+        if (matches.length !== 1 || !/-?(?:\d+(?:\.\d+)?|\.\d+)%?\s*(?:left|right)\b/iu.test(matches[0]!.clause.text)) {
+            return null;
+        }
+        scopedClauses.push(matches[0]!);
+    }
+
+    const firstClause = scopedClauses[0];
+    if (!firstClause || !/\b(?:pan|panning)\b/iu.test(firstClause.clause.text)) {
+        return null;
+    }
+    if (scopedClauses.some((scope, index) => index > 0 && scope.index !== scopedClauses[index - 1]!.index + 1)) {
+        return null;
+    }
+
+    const selectedScope = scopedClauses[actionOrdinal];
+    if (!selectedScope) {
+        return null;
+    }
+    return { ...selectedScope.clause, directional: false, matchedIntentPhrase: 'pan' };
+}
+
 function resolveDirectionalIntentPhrase(
     maskedText: string,
     directionalIntent: NonNullable<GroundingRules['directionalIntent']>
@@ -1374,6 +1424,18 @@ function resolveActionPromptScope({
         );
         if (bulkTrackOutputScope) {
             return bulkTrackOutputScope;
+        }
+    }
+    if (actionName === 'setTrackPan') {
+        const repeatedTrackPanScope = resolveRepeatedTrackPanScope({
+            actionOrdinal,
+            prompt,
+            context,
+            sameActionAssertedArguments,
+            sameActionCallCount,
+        });
+        if (repeatedTrackPanScope) {
+            return repeatedTrackPanScope;
         }
     }
     let projectMaskedPrompt = groundingRules.targetRules.length === 0 ? prompt : maskProjectReferences(prompt, context);
