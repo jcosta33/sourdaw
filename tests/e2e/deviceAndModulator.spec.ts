@@ -48,27 +48,30 @@ test.describe('Modulation matrix form', () => {
 });
 
 // ---------------------------------------------------------------------------
-// Crust device — addDevice intentionally rejects it (not implemented).
+// Crust device — the limiter/saturator ships a full device + panel.
 // ---------------------------------------------------------------------------
 
-test.describe('Crust device — not implemented', () => {
+test.describe('Crust device — adds a real device and opens its panel', () => {
     test.beforeEach(async ({ page }) => {
         await setupWorkspace(page);
         await launch_new_project(page);
         await add_track(page, 'MIDI');
     });
 
-    test('Selecting Crust surfaces a not-implemented error and adds no device', async ({ page }) => {
+    test('Adding Crust creates a bypassable device card in the chain', async ({ page }) => {
         const inspector = page.getByRole('complementary', { name: 'Inspector panel' });
         await inspector.getByRole('button', { name: 'Add device' }).click();
 
         const devices_before = await inspector.getByRole('button', { name: /^Bypass /i }).count();
         await page.getByRole('menuitem', { name: /^Crust$/ }).click();
+        await page.waitForTimeout(800);
 
-        // Crust is intentionally unimplemented → error notification, no device added.
-        await expect(page.getByText(/Crust is not fully implemented|PluginNotImplementedError/i)).toBeVisible({ timeout: 5000 });
+        // Crust now ships — a Crust device card is added (count rises by one)
+        // and its bypass toggle is present, where the old behavior rejected the
+        // add with a not-implemented notification.
+        await expect(inspector.getByRole('button', { name: /^Bypass Crust$/i })).toBeVisible();
         const devices_after = await inspector.getByRole('button', { name: /^Bypass /i }).count();
-        expect(devices_after).toBe(devices_before);
+        expect(devices_after).toBe(devices_before + 1);
     });
 });
 
