@@ -1,10 +1,26 @@
 import { logger } from '#/infra/logger/appLogger';
 import { trackStore } from '#/modules/Arrangement/stores';
-import { analyze_pitch_wasm } from '#/modules/AudioEngine/wasm/daw_dsp.js';
+import analyzePitchWasmModule, { analyze_pitch_wasm } from '#/modules/AudioEngine/wasm/daw_dsp.js';
 
 import { analyzeNativePitch } from '../../repositories/audioAnalysis/analyze-native-pitch';
 import { listenPitchAnalysisProgress } from '../../repositories/audioAnalysis/listen-pitch-analysis-progress';
 import { audioBufferCache } from '../../stores/audioBufferCache';
+
+// `daw_dsp.js` is a wasm-bindgen module whose glue (`__wbindgen_free` etc.) is a
+// realm singleton. The GrandBoule AudioWorklet inits its own copy in the
+// worklet realm; the main thread never did, so `analyze_pitch_wasm` (and
+// `commit_pitch_edit_wasm`) read `undefined.__wbindgen_free` and threw on every
+// browser-side Knead analysis — the editor then hung on the "Analyzing…"
+// spinner because the throw propagated without resetting `isAnalyzing`. The
+// default export is the standard wasm-bindgen async init (`__wbg_init`);
+// memoize one main-thread init the same way `decodeAudioBytesWasm` does.
+let mainThreadInitPromise: Promise<unknown> | null = null;
+function ensureMainThreadWasmInit(): Promise<unknown> {
+    if (!mainThreadInitPromise) {
+        mainThreadInitPromise = analyzePitchWasmModule();
+    }
+    return mainThreadInitPromise;
+}
 
 export type PitchPoint = {
     time_ms: number;
@@ -82,6 +98,10 @@ async function analyzePitchWithWasm({ targetClip, onProgress }: AnalyzePitchWith
     if (!buffer) {
         throw new Error('Could not get audio buffer for clip');
     }
+
+    // The wasm-bindgen glue must be initialized on the main thread before any
+    // `daw_dsp` export is read — see `ensureMainThreadWasmInit` above.
+    await ensureMainThreadWasmInit();
 
     // Artificial progress steps to keep UI somewhat responsive.
     const progressSteps = [0.2, 0.5, 0.8];
