@@ -1,0 +1,37 @@
+crates/proof-chamber/src/proof_chamber.rs
+  s_14f2bbc9f385dd::t_b4abd9bd00efd8 38-49
+  s_14f2bbc9f385dd::t_d255d9ee13720e 552-575,577-580
+  s_14f2bbc9f385dd::t_3cbc57fa5cb5c2 654-655
+crates/proof-chamber/tests/plate_parameter_surface.rs
+  s_14f2bbc9f385dd::t_f4197552b2020c 302-390
+src/components/daw/RotaryKnob.tsx
+  s_14f2bbc9f385dd::t_90c1534ea49339 196-208
+src/components/daw/__tests__/RotaryKnob.spec.tsx
+  s_14f2bbc9f385dd::t_c3c95da4c9b2a1 115-141
+src/utils/nativeDspEngineGaps.ts
+  s_14f2bbc9f385dd::t_efbca2e2692884 34-54
+public/wasm/manifest.json
+  s_14f2bbc9f385dd::t_0850a961746e16 26,30-32,35
+public/wasm/proof-chamber/proof_chamber.d.ts
+  s_14f2bbc9f385dd::t_46c99d6fa04671 1
+public/wasm/proof-chamber/proof_chamber_bg.wasm.d.ts
+  s_14f2bbc9f385dd::t_f5e5f980953fe1 1
+src/modules/AudioEngine/wasm/proof_chamber.d.ts
+  s_14f2bbc9f385dd::t_86f70759177bd5 1
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "346ff3d62000fc8b82c271a8a1d38ed7bdfa94c8",
+  "prompts": {},
+  "sessions": {
+    "s_14f2bbc9f385dd": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f9a61a1d-66b3-4146-938d-a04f45f4b060",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
