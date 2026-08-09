@@ -43,6 +43,7 @@ export { resetMidiStoreForProject } from './resetMidiStoreForProject';
 export { shouldPlayMidiEvent } from './shouldPlayMidiEvent';
 export { duplicateMidiClipData } from './midiClipData/duplicateMidiClipData';
 export { glueMidiClipData } from './midiClipData/glueMidiClipData';
+export { canPrepareMidiClipGlueState } from './midiClipData/canPrepareMidiClipGlueState';
 export { prepareMidiClipGlueState } from './midiClipData/prepareMidiClipGlueState';
 export { restoreMidiClipGlueState } from './midiClipData/restoreMidiClipGlueState';
 export { removeMidiClipData } from './midiClipData/removeMidiClipData';
@@ -124,6 +125,7 @@ export { transposeNotes } from './midiNoteTransforms/transposeNotes';
 export { snapClipToScale } from './snapClipToScale';
 
 // ── Step Recording ────────────────────────────────────────────────────────────
+export { hasActiveStepRecordingDependency } from './stepRecording/hasActiveStepRecordingDependency';
 export { toggleStepRecording } from './stepRecording/toggleStepRecording';
 export { stepRecordNoteOn } from './stepRecording/stepRecordNoteOn';
 export { stepRecordNoteOff } from './stepRecording/stepRecordNoteOff';

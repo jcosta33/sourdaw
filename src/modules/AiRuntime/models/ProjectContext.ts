@@ -16,6 +16,7 @@ export type ProjectContext = {
     selectedTrackId: string | null;
     selectedClipId: string | null;
     selectedClipIds: string[];
+    glueEligibleClipPairs?: Array<[string, string]>;
     activeView: 'arrange' | 'automation' | 'clip' | 'mix';
     playheadPosition: number;
 };

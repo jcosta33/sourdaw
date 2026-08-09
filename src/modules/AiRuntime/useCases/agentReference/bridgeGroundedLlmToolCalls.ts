@@ -1151,6 +1151,14 @@ function getAssertedControlTargetReferences(
             const value = assertedArguments[targetRule.argument];
             if (typeof value === 'string') {
                 direct.add(value);
+                continue;
+            }
+            if (targetRule.capability === 'editable-clip' && Array.isArray(value)) {
+                for (const item of value) {
+                    if (typeof item === 'string') {
+                        direct.add(item);
+                    }
+                }
             }
         }
         for (const valueRule of groundingRules.valueRules) {
@@ -1162,48 +1170,54 @@ function getAssertedControlTargetReferences(
     }
     for (const targetRule of groundingRules.targetRules) {
         for (const assertedArguments of assertedArgumentSets) {
-            const assertedId = assertedArguments[targetRule.argument];
-            if (typeof assertedId !== 'string') {
-                continue;
+            const assertedValue = assertedArguments[targetRule.argument];
+            let assertedIds: readonly unknown[] = [assertedValue];
+            if (targetRule.capability === 'editable-clip' && Array.isArray(assertedValue)) {
+                assertedIds = assertedValue;
             }
-            for (const track of context.tracks) {
-                if (track.id === assertedId) {
-                    direct.add(track.id);
-                    direct.add(track.name);
+            for (const assertedId of assertedIds) {
+                if (typeof assertedId !== 'string') {
+                    continue;
                 }
-                const device = track.devices.find((candidate) => candidate.id === assertedId);
-                if (device) {
-                    direct.add(device.id);
-                    direct.add(device.type);
-                    owners.add(track.id);
-                    owners.add(track.name);
-                }
-                const clip = track.clips.find((candidate) => candidate.id === assertedId);
-                if (clip) {
-                    direct.add(clip.id);
-                    direct.add(clip.name);
-                    owners.add(track.id);
-                    owners.add(track.name);
-                }
-                for (const owningDevice of track.devices) {
-                    const parameter = owningDevice.parameters?.find((candidate) => candidate.id === assertedId);
-                    if (!parameter) {
-                        continue;
+                for (const track of context.tracks) {
+                    if (track.id === assertedId) {
+                        direct.add(track.id);
+                        direct.add(track.name);
                     }
-                    direct.add(parameter.id);
-                    direct.add(parameter.name);
-                    owners.add(track.id);
-                    owners.add(track.name);
+                    const device = track.devices.find((candidate) => candidate.id === assertedId);
+                    if (device) {
+                        direct.add(device.id);
+                        direct.add(device.type);
+                        owners.add(track.id);
+                        owners.add(track.name);
+                    }
+                    const clip = track.clips.find((candidate) => candidate.id === assertedId);
+                    if (clip) {
+                        direct.add(clip.id);
+                        direct.add(clip.name);
+                        owners.add(track.id);
+                        owners.add(track.name);
+                    }
+                    for (const owningDevice of track.devices) {
+                        const parameter = owningDevice.parameters?.find((candidate) => candidate.id === assertedId);
+                        if (!parameter) {
+                            continue;
+                        }
+                        direct.add(parameter.id);
+                        direct.add(parameter.name);
+                        owners.add(track.id);
+                        owners.add(track.name);
+                    }
                 }
-            }
-            const automationLane = context.automationLanes?.find((candidate) => candidate.id === assertedId);
-            if (automationLane) {
-                direct.add(automationLane.id);
-                direct.add(automationLane.name);
-                const owner = context.tracks.find((track) => track.id === automationLane.trackId);
-                if (owner) {
-                    owners.add(owner.id);
-                    owners.add(owner.name);
+                const automationLane = context.automationLanes?.find((candidate) => candidate.id === assertedId);
+                if (automationLane) {
+                    direct.add(automationLane.id);
+                    direct.add(automationLane.name);
+                    const owner = context.tracks.find((track) => track.id === automationLane.trackId);
+                    if (owner) {
+                        owners.add(owner.id);
+                        owners.add(owner.name);
+                    }
                 }
             }
         }
@@ -1223,16 +1237,22 @@ function resolveActionPromptScope({
     sameActionCallCount,
 }: ResolveActionPromptScopeInput): ActionPromptScope | null {
     const groundingRules = getExecutableAppActionGroundingRules(actionName);
+    const cancellationPrompt = actionName === 'glueClips' ? maskGlueQuotedLabels(prompt) : prompt;
     if (
         !groundingRules ||
-        hasTrailingIntentCancellation(prompt, actionName, catalog, plannedActionNames) ||
+        hasTrailingIntentCancellation(cancellationPrompt, actionName, catalog, plannedActionNames) ||
         (actionName === 'setClipFade' && hasInvalidNamedClipFadeField(prompt))
     ) {
         return null;
     }
-    const projectMaskedPrompt =
-        groundingRules.targetRules.length === 0 ? prompt : maskProjectReferences(prompt, context);
-    const maskedPrompt = maskQuotedLabels(projectMaskedPrompt);
+    let projectMaskedPrompt = groundingRules.targetRules.length === 0 ? prompt : maskProjectReferences(prompt, context);
+    if (actionName === 'glueClips') {
+        projectMaskedPrompt = restoreGlueCommandIntents(prompt, projectMaskedPrompt);
+    }
+    let maskedPrompt = maskQuotedLabels(projectMaskedPrompt);
+    if (actionName === 'glueClips') {
+        maskedPrompt = maskGlueClipPairConjunction(maskedPrompt);
+    }
     const matchingScopes: ActionPromptScope[] = [];
     for (const clause of getPromptClauses(prompt, maskedPrompt)) {
         const controlTargetReferences = getAssertedControlTargetReferences(
@@ -1347,6 +1367,247 @@ function maskQuotedLabels(text: string): string {
         const closingQuote = label.at(-1)!;
         return `${label[0]!}${' '.repeat(label.length - 2)}${closingQuote}`;
     });
+}
+
+function maskGlueQuotedLabels(text: string): string {
+    const quotePattern = /"[^"]*"|“[^”]*”|‘[^’]*’|(?<![\p{L}\p{N}])'[^'\n]*'(?![\p{L}\p{N}])/gu;
+    return text.replaceAll(quotePattern, (label) => {
+        const innerLabel = label.slice(1, -1).trim();
+        const containsOnlyMaskedProjectReferences = /^(?:□+|clip□*)(?:\s+(?:□+|clip□*))*$/u.test(innerLabel);
+        if (innerLabel.length === 0 || containsOnlyMaskedProjectReferences) {
+            return label;
+        }
+        return `${label[0]!}${' '.repeat(label.length - 2)}${label.at(-1)!}`;
+    });
+}
+
+function maskGlueClipPairConjunction(text: string): string {
+    const maskedReference = String.raw`(?:clip\s+)?(?:clip□*|□+)`;
+    const pattern = new RegExp(
+        `["'“‘]?${maskedReference}["'”’]?(?:\\s+clips?)?\\s+and\\s+(?=["'“‘]?${maskedReference})`,
+        'giu'
+    );
+    return text.replaceAll(pattern, (pairPrefix) => pairPrefix.replace(/\band\b/iu, '   '));
+}
+
+function stripPoliteGlueCommandCarrier(text: string): string {
+    let commandSource = text.trim();
+    commandSource = commandSource.replace(/^(?:please\s+)?(?:can|could|would|will)\s+you(?:\s+please)?\s+/iu, '');
+    commandSource = commandSource.replace(/^please\s+/iu, '');
+    return commandSource.replace(/\s+(?:please|thanks|thank you)[.!?]*\s*$/iu, '');
+}
+
+function restoreGlueCommandIntents(prompt: string, maskedPrompt: string): string {
+    const searchablePrompt = maskGlueQuotedLabels(prompt);
+    const intentPattern =
+        /(?:^|[;,\n.]|\b(?:then|and then|but)\b)\s*(?:(?:please\s+)?(?:can|could|would|will)\s+you(?:\s+please)?\s+|please\s+|(?:actually\s+)?(?:do\s+not|don['’]?t|don\s+t|dont|never)\s+)?(glue|join)\b/giu;
+    let restoredPrompt = maskedPrompt;
+    for (const match of searchablePrompt.matchAll(intentPattern)) {
+        const intent = match[1];
+        if (!intent) {
+            continue;
+        }
+        const relativeIntentStart = match[0].toLocaleLowerCase().lastIndexOf(intent.toLocaleLowerCase());
+        const intentStart = match.index + relativeIntentStart;
+        restoredPrompt = `${restoredPrompt.slice(0, intentStart)}${prompt.slice(intentStart, intentStart + intent.length)}${restoredPrompt.slice(intentStart + intent.length)}`;
+    }
+    return restoredPrompt;
+}
+
+function getGlueClipPairTargetPattern(assertedClipIds: unknown, context: ProjectContext): string | null {
+    if (
+        !Array.isArray(assertedClipIds) ||
+        assertedClipIds.length !== 2 ||
+        !assertedClipIds.every((clipId): clipId is string => typeof clipId === 'string')
+    ) {
+        return null;
+    }
+    const clips = assertedClipIds.map((clipId) =>
+        context.tracks.flatMap((track) => track.clips).find((clip) => clip.id === clipId)
+    );
+    if (clips.some((clip) => !clip)) {
+        return null;
+    }
+    function getReferencePattern(clip: NonNullable<(typeof clips)[number]>): string {
+        const references = [clip.id, clip.name]
+            .map(normalizePromptText)
+            .filter((reference) => reference.length > 0)
+            .toSorted((left, right) => right.length - left.length)
+            .map(escapeRegExp);
+        return `(?:${references.join('|')})`;
+    }
+    function orderedPair(left: string, right: string): string {
+        const leftTarget = `(?:the )?(?:clip )?${left}(?: clips?)?`;
+        const rightTarget = `(?:the )?(?:clip )?${right}(?: clips?)?`;
+        return `${leftTarget} (?:and|with) ${rightTarget}`;
+    }
+    const first = getReferencePattern(clips[0]!);
+    const second = getReferencePattern(clips[1]!);
+    return `(?:${orderedPair(first, second)}|${orderedPair(second, first)})`;
+}
+
+function isDirectGlueClipPairScope(
+    actionScope: ActionPromptScope,
+    assertedClipIds: unknown,
+    context: ProjectContext
+): boolean {
+    if (
+        !Array.isArray(assertedClipIds) ||
+        assertedClipIds.length !== 2 ||
+        !assertedClipIds.every((clipId): clipId is string => typeof clipId === 'string')
+    ) {
+        return false;
+    }
+    const normalizedScope = normalizePromptText(stripPoliteGlueCommandCarrier(actionScope.text));
+    if (/^(?:glue|join)(?: the)? selected clips$/u.test(normalizedScope)) {
+        const selectedIds = new Set(context.selectedClipIds);
+        return selectedIds.size === 2 && assertedClipIds.every((clipId) => selectedIds.has(clipId));
+    }
+    const targetPattern = getGlueClipPairTargetPattern(assertedClipIds, context);
+    if (!targetPattern) {
+        return false;
+    }
+    return new RegExp(`^(?:glue|join) ${targetPattern}$`, 'u').test(normalizedScope);
+}
+
+type GluePromptAnalysis =
+    { status: 'none' } | { status: 'invalid' } | { status: 'request'; cancelled: boolean; clipIds: [string, string] };
+
+const invalidGlueRequestReason =
+    'Glue request must contain exactly one unambiguous direct clip pair or selected-clips command';
+const mismatchedGluePlanReason = 'Provider glue plan does not exactly match the single grounded glue request';
+
+function getGluePromptClauses(prompt: string, context: ProjectContext): PromptClause[] {
+    const projectMaskedPrompt = maskProjectReferences(prompt, context);
+    const intentRestoredPrompt = restoreGlueCommandIntents(prompt, projectMaskedPrompt);
+    const quoteMaskedPrompt = maskGlueQuotedLabels(intentRestoredPrompt);
+    return getPromptClauses(prompt, maskGlueClipPairConjunction(quoteMaskedPrompt));
+}
+
+function getGlueClipPairs(context: ProjectContext): Array<[string, string]> {
+    if (context.glueEligibleClipPairs) {
+        return context.glueEligibleClipPairs.map(([firstClipId, secondClipId]) => [firstClipId, secondClipId]);
+    }
+    const clipIds = context.tracks.flatMap((track) => track.clips.map((clip) => clip.id));
+    const pairs: Array<[string, string]> = [];
+    for (const [index, clipId] of clipIds.entries()) {
+        for (const otherClipId of clipIds.slice(index + 1)) {
+            pairs.push([clipId, otherClipId]);
+        }
+    }
+    return pairs;
+}
+
+function isDeclarativeGlueClause(commandText: string): boolean {
+    return (
+        /^(?:glue|join) (?:is|are)\b/u.test(commandText) ||
+        /^(?:glue|join)\b.*\b(?:is|are) (?:an? )?clips?$/u.test(commandText)
+    );
+}
+
+function isPotentialGlueCommand(commandText: string, context: ProjectContext): boolean {
+    if (!/^(?:glue|join)\b/u.test(commandText)) {
+        return false;
+    }
+    const targetText = commandText.replace(/^(?:glue|join)\s+/u, '');
+    if (/^(?:(?:the )?selected clips|(?:the )?clips?)(?: |$)/u.test(targetText)) {
+        return true;
+    }
+    return context.tracks.some((track) =>
+        track.clips.some((clip) =>
+            [clip.id, clip.name].some((reference) => {
+                const normalizedReference = normalizePromptText(reference);
+                const directTargets = [
+                    normalizedReference,
+                    `the ${normalizedReference}`,
+                    `clip ${normalizedReference}`,
+                    `the clip ${normalizedReference}`,
+                ];
+                return directTargets.some(
+                    (directTarget) => targetText === directTarget || targetText.startsWith(`${directTarget} `)
+                );
+            })
+        )
+    );
+}
+
+function isGlueCancellationClause(clause: PromptClause, clipIds: [string, string], context: ProjectContext): boolean {
+    const visibleText = normalizePromptText(clause.masked);
+    const normalizedText = normalizePromptText(clause.text);
+    const visibleCancellation =
+        /^(?:but )?(?:never mind\b|(?:actually )?(?:do not|don t|dont|never) (?:glue|join)\b|(?:cancel|abort|scratch)\b|keep\b|leave\b|actually (?:do not|don t|dont)\b|without\b)/u;
+    if (!visibleCancellation.test(visibleText)) {
+        return false;
+    }
+    const targetPattern = getGlueClipPairTargetPattern(clipIds, context);
+    if (!targetPattern) {
+        return false;
+    }
+    const cancellationPatterns = [
+        new RegExp(
+            `^(?:but )?(?:actually )?(?:do not|don t|dont|never) (?:glue|join) (?:them|the clips|the exact pair|${targetPattern})(?: |$)`,
+            'u'
+        ),
+        /^(?:but )?(?:cancel|abort|scratch) (?:it|them|(?:that|this) (?:command|request)|the clips|the exact pair)(?: |$)/u,
+        /^(?:but )?never mind(?: |$)/u,
+        /^(?:but )?keep (?:them|the clips|the exact pair) separate(?: |$)/u,
+        /^(?:but )?leave (?:(?:them|the clips|the exact pair) )?unchanged(?: |$)/u,
+        /^(?:but )?actually (?:do not|don t|dont)(?: |$)/u,
+        /^(?:but )?without (?:(?:making|applying) (?:any )?changes|changing (?:anything|it|them)|(?:any )?changes)(?: |$)/u,
+    ];
+    return cancellationPatterns.some((pattern) => pattern.test(normalizedText));
+}
+
+function analyzeGluePrompt(prompt: string, context: ProjectContext): GluePromptAnalysis {
+    let pairs: Array<[string, string]> | null = null;
+    const requests: Array<{ clauseIndex: number; clipIds: [string, string] }> = [];
+    let hasInvalidRequest = false;
+    const clauses = getGluePromptClauses(prompt, context);
+    for (const [clauseIndex, clause] of clauses.entries()) {
+        const commandText = normalizePromptText(stripPoliteGlueCommandCarrier(clause.text));
+        const maskedCommandText = normalizePromptText(stripPoliteGlueCommandCarrier(clause.masked));
+        if (!/^(?:glue|join)\b/u.test(maskedCommandText) || isDeclarativeGlueClause(maskedCommandText)) {
+            continue;
+        }
+        pairs ??= getGlueClipPairs(context);
+        const matches = pairs.filter((clipIds) =>
+            isDirectGlueClipPairScope(
+                { ...clause, directional: false, matchedIntentPhrase: commandText.split(' ')[0]! },
+                clipIds,
+                context
+            )
+        );
+        if (matches.length === 1) {
+            requests.push({ clauseIndex, clipIds: matches[0]! });
+            continue;
+        }
+        if (isPotentialGlueCommand(commandText, context)) {
+            hasInvalidRequest = true;
+        }
+    }
+    if (hasInvalidRequest || requests.length > 1) {
+        return { status: 'invalid' };
+    }
+    const request = requests[0];
+    if (!request) {
+        return { status: 'none' };
+    }
+    const cancelled = clauses
+        .slice(request.clauseIndex + 1)
+        .some((clause) => isGlueCancellationClause(clause, request.clipIds, context));
+    return { status: 'request', cancelled, clipIds: request.clipIds };
+}
+
+function hasExactGlueClipPair(assertedClipIds: unknown, expectedClipIds: [string, string]): boolean {
+    if (
+        !Array.isArray(assertedClipIds) ||
+        assertedClipIds.length !== 2 ||
+        !assertedClipIds.every((clipId): clipId is string => typeof clipId === 'string')
+    ) {
+        return false;
+    }
+    const assertedIds = new Set(assertedClipIds);
+    return assertedIds.size === 2 && expectedClipIds.every((clipId) => assertedIds.has(clipId));
 }
 
 function getAddClipPromptEvidence(actionScope: ActionPromptScope): AddClipPromptEvidence | null {
@@ -2602,13 +2863,25 @@ function resolveAgentReferenceArray({
     ) {
         return { status: 'rejected', reason: 'ungrounded-target' };
     }
-    if (capability !== 'vca-member-track') {
+    if (capability === 'editable-clip' && /\bselected clips\b/u.test(normalizePromptText(prompt))) {
+        const selectedIds = new Set(context.selectedClipIds);
+        const assertedIdSet = new Set(assertedIds);
+        if (selectedIds.size === assertedIdSet.size && [...selectedIds].every((id) => assertedIdSet.has(id))) {
+            return { status: 'resolved', ids: [...assertedIds] };
+        }
+        return { status: 'rejected', reason: 'asserted-target-mismatch' };
+    }
+    let candidates: Array<{ id: string; name: string }>;
+    if (capability === 'vca-member-track') {
+        candidates = context.tracks.filter(
+            (track) =>
+                track.kind === 'audio' || track.kind === 'midi' || track.kind === 'bus' || track.kind === 'folder'
+        );
+    } else if (capability === 'editable-clip') {
+        candidates = context.tracks.flatMap((track) => track.clips);
+    } else {
         return { status: 'rejected', reason: 'ungrounded-target' };
     }
-
-    const candidates = context.tracks.filter(
-        (track) => track.kind === 'audio' || track.kind === 'midi' || track.kind === 'bus' || track.kind === 'folder'
-    );
     const evidenced = candidates.flatMap((candidate) => {
         const result = resolveAgentReference({
             prompt,
@@ -2898,6 +3171,9 @@ function groundToolCall({
     if (call.name === 'moveClip' && !isDirectMoveClipDestination(actionScope, groundedArguments.trackId, context)) {
         return rejection(index, call.name, 'Provider clip destination is not the direct object of the move request');
     }
+    if (call.name === 'glueClips' && !isDirectGlueClipPairScope(actionScope, groundedArguments.clipIds, context)) {
+        return rejection(index, call.name, 'Provider clips are not the direct objects of one glue request');
+    }
     if (call.name === 'splitClip' && !isDirectSplitClipScope(actionScope, groundedArguments.clipId, context)) {
         return rejection(index, call.name, 'Provider clip split is not scoped to the whole clip');
     }
@@ -2989,13 +3265,38 @@ export function bridgeGroundedLlmToolCalls({
     if (calls.length > MAX_LLM_ACTIONS_PER_BATCH) {
         return bridgeLlmToolCalls({ calls, context, markerSignatures, sectionSignatures });
     }
+    const glueAnalysis = analyzeGluePrompt(prompt, context);
+    const providerGlueCalls = calls.filter((call) => call.name === 'glueClips');
+    if (glueAnalysis.status === 'invalid') {
+        return { actions: [], rejections: [rejection(0, '<batch>', invalidGlueRequestReason)] };
+    }
+    if (glueAnalysis.status === 'none' && providerGlueCalls.length > 0) {
+        return { actions: [], rejections: [rejection(0, '<batch>', mismatchedGluePlanReason)] };
+    }
+    let effectiveCalls = calls;
+    if (glueAnalysis.status === 'request') {
+        const providerGlueCall = providerGlueCalls[0];
+        const hasMatchingProviderCall =
+            providerGlueCalls.length === 1 &&
+            providerGlueCall !== undefined &&
+            hasExactGlueClipPair(providerGlueCall.arguments.clipIds, glueAnalysis.clipIds);
+        const providerPlanMatches = glueAnalysis.cancelled
+            ? providerGlueCalls.length === 0 || hasMatchingProviderCall
+            : hasMatchingProviderCall;
+        if (!providerPlanMatches) {
+            return { actions: [], rejections: [rejection(0, '<batch>', mismatchedGluePlanReason)] };
+        }
+        if (glueAnalysis.cancelled) {
+            effectiveCalls = calls.filter((call) => call.name !== 'glueClips');
+        }
+    }
     const catalog = getExecutableAppActionGroundingCatalog();
     const promptRequestsLoopRegion = hasExplicitPromptIntent(prompt, catalog, 'setLoopRegion');
     const promptRequestsLoopEnabled = hasExplicitPromptIntent(prompt, catalog, 'setLoopEnabled');
     const requiresCompoundLoop = promptRequestsLoopRegion && promptRequestsLoopEnabled;
     if (requiresCompoundLoop) {
-        const hasLoopRegionCall = calls.some((call) => call.name === 'setLoopRegion');
-        const hasLoopEnabledCall = calls.some((call) => call.name === 'setLoopEnabled');
+        const hasLoopRegionCall = effectiveCalls.some((call) => call.name === 'setLoopRegion');
+        const hasLoopEnabledCall = effectiveCalls.some((call) => call.name === 'setLoopEnabled');
         if (!hasLoopRegionCall || !hasLoopEnabledCall) {
             return {
                 actions: [],
@@ -3005,7 +3306,7 @@ export function bridgeGroundedLlmToolCalls({
             };
         }
     }
-    const collectedBindings = collectBatchLocalBusBindings(calls, context);
+    const collectedBindings = collectBatchLocalBusBindings(effectiveCalls, context);
     if (collectedBindings.status === 'rejected') {
         return {
             actions: [],
@@ -3018,10 +3319,10 @@ export function bridgeGroundedLlmToolCalls({
     const visibleBindings = new Map<string, BatchLocalBusBinding>();
     const visiblePlannedTrackCreations: ToolCallResult[] = [];
     let prospectiveContext = context;
-    for (const [index, providerCall] of calls.entries()) {
+    for (const [index, providerCall] of effectiveCalls.entries()) {
         const call = stripBatchLocalBinding(providerCall);
-        const actionOrdinal = calls.slice(0, index).filter((candidate) => candidate.name === call.name).length;
-        const sameActionCalls = calls.filter((candidate) => candidate.name === call.name);
+        const actionOrdinal = effectiveCalls.slice(0, index).filter((candidate) => candidate.name === call.name).length;
+        const sameActionCalls = effectiveCalls.filter((candidate) => candidate.name === call.name);
         const sameActionCallCount = sameActionCalls.length;
         const grounded = groundToolCall({
             actionOrdinal,
@@ -3032,7 +3333,7 @@ export function bridgeGroundedLlmToolCalls({
             declaredBatchLocalBusBindings: collectedBindings.bindingsByName,
             index,
             prompt,
-            plannedActionNames: calls.map((candidate) => candidate.name),
+            plannedActionNames: effectiveCalls.map((candidate) => candidate.name),
             sameActionAssertedArguments: sameActionCalls.map((candidate) => candidate.arguments),
             sameActionCallCount,
             visibleGroundedCalls: acceptedGroundedCalls,
@@ -3069,7 +3370,10 @@ export function bridgeGroundedLlmToolCalls({
         }
         return groundingRejections.get(bridgeRejection.index) ?? bridgeRejection;
     });
-    const usesBatchLocalReferences = calls.some((call) =>
+    if (rejections.some((bridgeRejection) => bridgeRejection.name === 'glueClips')) {
+        return { actions: [], rejections: [rejection(0, '<batch>', invalidGlueRequestReason)] };
+    }
+    const usesBatchLocalReferences = effectiveCalls.some((call) =>
         Object.values(call.arguments).some((value) => typeof value === 'string' && value.startsWith('$'))
     );
     if (rejections.length > 0 && (usesBatchLocalReferences || collectedBindings.bindingsByName.size > 0)) {

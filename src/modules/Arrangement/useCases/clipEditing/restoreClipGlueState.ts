@@ -5,6 +5,7 @@ import { getTrackState } from '../../repositories/track/getTrackState';
 import { setTrackState } from '../../repositories/track/setTrackState';
 import { type Clip } from '../../stores/trackStore';
 
+import { getClipIdCensus } from './getClipIdCensus';
 import { hasClipGlueDependencies } from './hasClipGlueDependencies';
 
 type RestoreClipGlueStateInput = {
@@ -83,6 +84,7 @@ export function restoreClipGlueState({ expected, replacement }: RestoreClipGlueS
     const replacementClipIds = replacement.clips.map((clip) => clip.id);
     if (
         JSON.stringify(affectedClipIds) !== JSON.stringify(replacementAffectedClipIds) ||
+        new Set(affectedClipIds).size !== affectedClipIds.length ||
         new Set(expectedClipIds).size !== expectedClipIds.length ||
         new Set(replacementClipIds).size !== replacementClipIds.length ||
         new Set(expected.clipOrder).size !== expected.clipOrder.length ||
@@ -100,6 +102,22 @@ export function restoreClipGlueState({ expected, replacement }: RestoreClipGlueS
     const state = getTrackState();
     const track = state?.tracks.find((candidate) => candidate.id === expected.trackId);
     if (!state || !track) {
+        return false;
+    }
+    const clipIdCensus = getClipIdCensus({ clipIds: affectedClipIds, state });
+    const hasUnexpectedGlobalPlacement = affectedClipIds.some((clipId) => {
+        const expectedClip = expected.clips.find((clip) => clip.id === clipId);
+        const occurrences = clipIdCensus.get(clipId) ?? [];
+        if (!expectedClip) {
+            return occurrences.length > 0;
+        }
+        return (
+            occurrences.length !== 1 ||
+            occurrences[0]!.location !== 'active' ||
+            occurrences[0]!.trackId !== expected.trackId
+        );
+    });
+    if (hasUnexpectedGlobalPlacement) {
         return false;
     }
     const expectedIndexes = expected.clips.map((clip) =>

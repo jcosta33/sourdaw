@@ -716,6 +716,25 @@ function createMidiClipContext(): ProjectContext {
     };
 }
 
+function createGlueClipContext(): ProjectContext {
+    const context = createMidiClipContext();
+    const track = context.tracks.find((candidate) => candidate.id === 'track-vocals')!;
+    const intro = { ...track.clips[0]!, id: 'clip-midi-intro', name: 'MIDI Intro', startBeat: 0, endBeat: 8 };
+    const verse = { ...intro, id: 'clip-midi-verse', name: 'MIDI Verse', startBeat: 8, endBeat: 16 };
+    const outro = { ...intro, id: 'clip-midi-outro', name: 'MIDI Outro', startBeat: 16, endBeat: 24 };
+    return {
+        ...context,
+        glueEligibleClipPairs: [[intro.id, verse.id]],
+        tracks: context.tracks.map((candidate) =>
+            candidate.id === track.id
+                ? { ...candidate, kind: 'midi', clipCount: 3, clips: [intro, verse, outro] }
+                : candidate
+        ),
+        selectedClipId: intro.id,
+        selectedClipIds: [intro.id, verse.id],
+    };
+}
+
 describe('bridgeGroundedLlmToolCalls', () => {
     it('grounds reversible clip-state commands and binds both fade values by name', () => {
         const context = createClipContext();
@@ -961,6 +980,317 @@ describe('bridgeGroundedLlmToolCalls', () => {
         ]);
         expect(rejected.every((result) => result.actions.length === 0)).toBe(true);
         expect(rejected.every((result) => result.rejections[0]?.reason.includes('does not match'))).toBe(true);
+    });
+
+    it('grounds natural two-clip glue language to exactly the two named MIDI clips', () => {
+        const context = createGlueClipContext();
+        const prompts = [
+            'glue the MIDI Intro and MIDI Verse clips',
+            'join MIDI Intro with MIDI Verse',
+            'glue "MIDI Intro" and "MIDI Verse" clips',
+            "glue 'MIDI Intro' and 'MIDI Verse' clips",
+            'please glue MIDI Intro and MIDI Verse clips',
+            'could you join MIDI Intro with MIDI Verse please',
+            'glue MIDI Intro and MIDI Verse clips thanks',
+            'join MIDI Intro with MIDI Verse thank you',
+        ];
+
+        for (const prompt of prompts) {
+            const result = bridge(
+                [{ name: 'glueClips', arguments: { clipIds: ['clip-midi-intro', 'clip-midi-verse'] } }],
+                prompt,
+                context
+            );
+            expect
+                .soft(result.actions)
+                .toEqual([{ type: 'glueClips', payload: { clipIds: ['clip-midi-intro', 'clip-midi-verse'] } }]);
+            expect.soft(result.rejections).toEqual([]);
+        }
+    });
+
+    it('grounds a direct pair when a clip target is named with the Glue action word', () => {
+        const context = createGlueClipContext();
+        const namedGlueContext = {
+            ...context,
+            tracks: context.tracks.map((track) => ({
+                ...track,
+                clips: track.clips.map((clip) => (clip.id === 'clip-midi-intro' ? { ...clip, name: 'Glue' } : clip)),
+            })),
+        };
+        const result = bridge(
+            [{ name: 'glueClips', arguments: { clipIds: ['clip-midi-intro', 'clip-midi-verse'] } }],
+            'please glue clip Glue and MIDI Verse please',
+            namedGlueContext
+        );
+
+        expect(result.actions).toEqual([
+            { type: 'glueClips', payload: { clipIds: ['clip-midi-intro', 'clip-midi-verse'] } },
+        ]);
+        expect(result.rejections).toEqual([]);
+    });
+
+    it('does not treat cancellation words inside a quoted clip target as cancellation', () => {
+        const context = createGlueClipContext();
+        const namedTargetContext = {
+            ...context,
+            tracks: context.tracks.map((track) => ({
+                ...track,
+                clips: track.clips.map((clip) =>
+                    clip.id === 'clip-midi-intro' ? { ...clip, name: "Actually Don't" } : clip
+                ),
+            })),
+        };
+        const result = bridge(
+            [{ name: 'glueClips', arguments: { clipIds: ['clip-midi-intro', 'clip-midi-verse'] } }],
+            `glue "Actually Don't" and MIDI Verse clips please`,
+            namedTargetContext
+        );
+
+        expect(result.actions).toEqual([
+            { type: 'glueClips', payload: { clipIds: ['clip-midi-intro', 'clip-midi-verse'] } },
+        ]);
+        expect(result.rejections).toEqual([]);
+    });
+
+    it('does not treat a quoted glue target suffix as a declarative clause', () => {
+        const context = createGlueClipContext();
+        const namedTargetContext = {
+            ...context,
+            tracks: context.tracks.map((track) => ({
+                ...track,
+                clips: track.clips.map((clip) => (clip.id === 'clip-midi-verse' ? { ...clip, name: 'This Is' } : clip)),
+            })),
+        };
+        const result = bridge(
+            [{ name: 'glueClips', arguments: { clipIds: ['clip-midi-intro', 'clip-midi-verse'] } }],
+            'glue "MIDI Intro" and "This Is" clips',
+            namedTargetContext
+        );
+
+        expect(result.actions).toEqual([
+            { type: 'glueClips', payload: { clipIds: ['clip-midi-intro', 'clip-midi-verse'] } },
+        ]);
+        expect(result.rejections).toEqual([]);
+    });
+
+    it('grounds exactly two selected clips and rejects selected sets with the wrong cardinality', () => {
+        const context = createGlueClipContext();
+        const accepted = bridge(
+            [{ name: 'glueClips', arguments: { clipIds: ['clip-midi-intro', 'clip-midi-verse'] } }],
+            'please glue the selected clips please',
+            context
+        );
+        const rejected = bridge(
+            [{ name: 'glueClips', arguments: { clipIds: ['clip-midi-intro', 'clip-midi-verse'] } }],
+            'glue the selected clips',
+            { ...context, selectedClipIds: ['clip-midi-intro'] }
+        );
+        const acceptedThanks = bridge(
+            [{ name: 'glueClips', arguments: { clipIds: ['clip-midi-intro', 'clip-midi-verse'] } }],
+            'glue the selected clips thanks',
+            context
+        );
+        const acceptedThankYou = bridge(
+            [{ name: 'glueClips', arguments: { clipIds: ['clip-midi-intro', 'clip-midi-verse'] } }],
+            'join selected clips thank you',
+            context
+        );
+
+        expect(accepted.actions).toEqual([
+            { type: 'glueClips', payload: { clipIds: ['clip-midi-intro', 'clip-midi-verse'] } },
+        ]);
+        expect(acceptedThanks.actions).toEqual(accepted.actions);
+        expect(acceptedThankYou.actions).toEqual(accepted.actions);
+        expect(rejected.actions).toEqual([]);
+    });
+
+    it('rejects glue calls with missing, extra, mismatched, ambiguous, negated, or contextual clip evidence', () => {
+        const context = createGlueClipContext();
+        const cases = [
+            {
+                arguments: { clipIds: ['clip-midi-intro', 'clip-midi-verse'] },
+                prompt: 'glue the MIDI Intro clip',
+            },
+            {
+                arguments: { clipIds: ['clip-midi-intro', 'clip-midi-verse'] },
+                prompt: 'glue MIDI Intro, MIDI Verse, and MIDI Outro clips',
+            },
+            {
+                arguments: { clipIds: ['clip-midi-intro', 'clip-midi-outro'] },
+                prompt: 'glue MIDI Intro and MIDI Verse clips',
+            },
+            {
+                arguments: { clipIds: ['clip-midi-intro', 'clip-midi-verse'] },
+                prompt: 'do not glue MIDI Intro and MIDI Verse clips',
+            },
+            {
+                arguments: { clipIds: ['clip-midi-intro', 'clip-midi-verse'] },
+                prompt: 'use MIDI Intro as a reference while gluing MIDI Verse and MIDI Outro clips',
+            },
+            {
+                arguments: { clipIds: ['clip-midi-intro', 'clip-midi-verse'] },
+                prompt: 'join the call after reviewing MIDI Intro and MIDI Verse clips',
+            },
+            {
+                arguments: { clipIds: ['clip-midi-intro', 'clip-midi-verse'] },
+                prompt: 'glue the mix using MIDI Intro and MIDI Verse clips',
+            },
+            {
+                arguments: { clipIds: ['clip-midi-intro', 'clip-midi-verse'] },
+                prompt: 'join MIDI Intro and MIDI Verse clips without changing anything',
+            },
+            {
+                arguments: { clipIds: ['clip-midi-intro', 'clip-midi-verse'] },
+                prompt: 'join MIDI Intro and MIDI Verse clips, but leave them unchanged',
+            },
+            {
+                arguments: { clipIds: ['clip-midi-intro', 'clip-midi-verse'] },
+                prompt: "join MIDI Intro and MIDI Verse clips, actually don't",
+            },
+            {
+                arguments: { clipIds: ['clip-midi-intro', 'clip-midi-verse'] },
+                prompt: 'join MIDI Intro and MIDI Verse clips, but keep them separate',
+            },
+        ];
+
+        const results = cases.map((testCase) =>
+            bridge([{ name: 'glueClips', arguments: testCase.arguments }], testCase.prompt, context)
+        );
+
+        expect(results.every((result) => result.actions.length === 0)).toBe(true);
+    });
+
+    it('ignores a non-glue join command while preserving an unrelated grounded action', () => {
+        const result = bridge(
+            [{ name: 'setTempo', arguments: { bpm: 130 } }],
+            'join the call after reviewing MIDI Intro and MIDI Verse clips, then set tempo to 130',
+            createGlueClipContext()
+        );
+
+        expect(result.actions).toEqual([{ type: 'setTempo', payload: { bpm: 130 } }]);
+        expect(result.rejections).toEqual([]);
+    });
+
+    it('rejects the whole provider plan for multiple, incomplete, ambiguous, unmatched, or mismatched glue requests', () => {
+        const context = createGlueClipContext();
+        const duplicateNameContext = {
+            ...context,
+            tracks: context.tracks.map((track) => ({
+                ...track,
+                clips: track.clips.map((clip) => {
+                    if (clip.id === 'clip-midi-intro' || clip.id === 'clip-midi-outro') {
+                        return { ...clip, name: 'Shared Start' };
+                    }
+                    return { ...clip, name: 'Shared End' };
+                }),
+            })),
+        };
+        const glue = { name: 'glueClips', arguments: { clipIds: ['clip-midi-intro', 'clip-midi-verse'] } };
+        const tempo = { name: 'setTempo', arguments: { bpm: 130 } };
+        const results = [
+            bridge(
+                [glue, tempo],
+                'glue MIDI Intro and MIDI Verse clips, then glue MIDI Verse and MIDI Outro clips, then set tempo to 130',
+                context
+            ),
+            bridge([tempo], 'glue MIDI Intro, then set tempo to 130', context),
+            bridge([tempo], 'glue MIDI Intro and MIDI Verse clips, then set tempo to 130', context),
+            bridge(
+                [glue, tempo],
+                'glue Shared Start and Shared End clips, then set tempo to 130',
+                duplicateNameContext
+            ),
+            bridge([glue, tempo], 'glue MIDI Intro and Missing clips, then set tempo to 130', context),
+            bridge(
+                [{ name: 'glueClips', arguments: { clipIds: ['clip-midi-intro', 'clip-midi-outro'] } }, tempo],
+                'glue MIDI Intro and MIDI Verse clips, then set tempo to 130',
+                context
+            ),
+            bridge([glue, glue, tempo], 'glue MIDI Intro and MIDI Verse clips, then set tempo to 130', context),
+        ];
+
+        expect(results.map((result) => result.actions)).toEqual([[], [], [], [], [], [], []]);
+        expect(results.every((result) => result.rejections.length === 1)).toBe(true);
+        expect(results.every((result) => result.rejections[0]?.name === '<batch>')).toBe(true);
+    });
+
+    it('ignores declarative Glue entity text before an unrelated action', () => {
+        const context = createGlueClipContext();
+        const introNamedContext = {
+            ...context,
+            tracks: context.tracks.map((track) => ({
+                ...track,
+                clips: track.clips.map((clip) => (clip.id === 'clip-midi-intro' ? { ...clip, name: 'Intro' } : clip)),
+            })),
+        };
+        const tempo = [{ name: 'setTempo', arguments: { bpm: 130 } }];
+        const results = [
+            bridge(tempo, 'Glue is a clip, then set tempo to 130', context),
+            bridge(tempo, 'Glue Intro and MIDI Verse are clips, then set tempo to 130', introNamedContext),
+            bridge(tempo, 'Glue contains Guitar; set tempo to 130', context),
+            bridge(tempo, 'Glue belongs to the VCA list; set tempo to 130', context),
+        ];
+
+        expect(results.map((result) => result.actions)).toEqual([
+            [{ type: 'setTempo', payload: { bpm: 130 } }],
+            [{ type: 'setTempo', payload: { bpm: 130 } }],
+            [{ type: 'setTempo', payload: { bpm: 130 } }],
+            [{ type: 'setTempo', payload: { bpm: 130 } }],
+        ]);
+        expect(results.every((result) => result.rejections.length === 0)).toBe(true);
+    });
+
+    it('omits one explicitly cancelled glue call while preserving unrelated grounded actions', () => {
+        const context = createGlueClipContext();
+        const glue = { name: 'glueClips', arguments: { clipIds: ['clip-midi-intro', 'clip-midi-verse'] } };
+        const tempo = { name: 'setTempo', arguments: { bpm: 130 } };
+        const prompts = [
+            "glue MIDI Intro and MIDI Verse clips, but don't glue them due to phase issues, then set tempo to 130",
+            "glue MIDI Intro and MIDI Verse clips, but don't glue them because I don't want phase issues, then set tempo to 130",
+            'glue MIDI Intro and MIDI Verse clips, but do not glue the clips because they overlap, then set tempo to 130',
+            'glue MIDI Intro and MIDI Verse clips, but never glue MIDI Intro and MIDI Verse because they are takes, then set tempo to 130',
+            'glue MIDI Intro and MIDI Verse clips, then cancel them due to timing, then set tempo to 130',
+            'glue MIDI Intro and MIDI Verse clips; abort them because the edit is risky; set tempo to 130',
+            'glue MIDI Intro and MIDI Verse clips; scratch them since the source changed; set tempo to 130',
+            'glue MIDI Intro and MIDI Verse clips, but keep them separate for comping, then set tempo to 130',
+            'glue MIDI Intro and MIDI Verse clips, but leave unchanged for review, then set tempo to 130',
+            "glue MIDI Intro and MIDI Verse clips, actually don't because the phase is wrong, then set tempo to 130",
+            'glue MIDI Intro and MIDI Verse clips; without changes because this is a dry run; set tempo to 130',
+            'glue MIDI Intro and MIDI Verse clips; without making changes because this is a dry run; set tempo to 130',
+            'glue MIDI Intro and MIDI Verse clips, never mind because the phase is wrong, then set tempo to 130',
+            'glue MIDI Intro and MIDI Verse clips, then cancel it because the timing is wrong, then set tempo to 130',
+            'glue MIDI Intro and MIDI Verse clips, then cancel that command because the timing is wrong, then set tempo to 130',
+            'glue MIDI Intro and MIDI Verse clips, then cancel this command because the timing is wrong, then set tempo to 130',
+            'glue MIDI Intro and MIDI Verse clips, then cancel that request because the timing is wrong, then set tempo to 130',
+            'glue MIDI Intro and MIDI Verse clips, then cancel this request because the timing is wrong, then set tempo to 130',
+        ];
+
+        const results = prompts.map((prompt) => bridge([glue, tempo], prompt, context));
+        const providerOmittedGlue = bridge(
+            [tempo],
+            "glue MIDI Intro and MIDI Verse clips, but don't glue them after all, then set tempo to 130",
+            context
+        );
+
+        expect(results.every((result) => result.actions.length === 1)).toBe(true);
+        expect(results.every((result) => result.actions[0]?.type === 'setTempo')).toBe(true);
+        expect(results.every((result) => result.rejections.length === 0)).toBe(true);
+        expect(providerOmittedGlue.actions).toEqual([{ type: 'setTempo', payload: { bpm: 130 } }]);
+        expect(providerOmittedGlue.rejections).toEqual([]);
+    });
+
+    it('keeps quoted cancellation prose inert', () => {
+        const context = createGlueClipContext();
+        const result = bridge(
+            [{ name: 'glueClips', arguments: { clipIds: ['clip-midi-intro', 'clip-midi-verse'] } }],
+            `glue MIDI Intro and MIDI Verse clips, then "don't glue them due to phase issues" is a project note`,
+            context
+        );
+
+        expect(result.actions).toEqual([
+            { type: 'glueClips', payload: { clipIds: ['clip-midi-intro', 'clip-midi-verse'] } },
+        ]);
+        expect(result.rejections).toEqual([]);
     });
 
     it('grounds an explicit clip stretch ratio without allowing provider invention or omission', () => {
@@ -1974,6 +2304,19 @@ describe('bridgeGroundedLlmToolCalls', () => {
         expect(wrongCreatedBus.actions).toEqual([]);
     });
 
+    it.each(["Actually Don't", 'Keep Them Separate', 'Without Making Changes'])(
+        'does not treat the literal rename value %s as a generic cancellation',
+        (name) => {
+            const result = bridge(
+                [{ name: 'renameTrack', arguments: { trackId: guitar.id, name } }],
+                `rename Guitar to ${name}`
+            );
+
+            expect(result.actions).toEqual([{ type: 'renameTrack', payload: { trackId: guitar.id, name } }]);
+            expect(result.rejections).toEqual([]);
+        }
+    );
+
     it('grounds explicit solo-safe polarity and targetless clear-all intent', () => {
         const soloedContext = {
             ...projectContext,
@@ -2290,6 +2633,41 @@ describe('bridgeGroundedLlmToolCalls', () => {
             {
                 type: 'createVcaGroup',
                 payload: { name: 'Strings', trackIds: [guitar.id, 'track-guitar-2'] },
+            },
+        ]);
+    });
+
+    it.each(['"Glue" is our VCA group; assign Guitar to Glue VCA', 'Glue is our VCA group; assign Guitar to Glue VCA'])(
+        'keeps a Glue declaration inert before a VCA assignment',
+        (prompt) => {
+            const glueVca = { id: 'vca-glue', name: 'Glue', gain: 1, muted: false, trackIds: [] };
+            const result = bridge(
+                [{ name: 'assignToVca', arguments: { trackId: guitar.id, vcaGroupId: glueVca.id } }],
+                prompt,
+                { ...projectContext, vcaGroups: [...(projectContext.vcaGroups ?? []), glueVca] }
+            );
+
+            expect(result.actions).toEqual([
+                { type: 'assignToVca', payload: { trackId: guitar.id, vcaGroupId: glueVca.id } },
+            ]);
+            expect(result.rejections).toEqual([]);
+        }
+    );
+
+    it('preserves generic VCA array-target control-cue behavior for a member named Never Enough', () => {
+        const neverEnough = createTrack({ id: 'track-never-enough', name: 'Never Enough' });
+        const result = bridge(
+            [{ name: 'createVcaGroup', arguments: { name: 'Dynamics', trackIds: [neverEnough.id] } }],
+            'create VCA group for Never Enough named Dynamics',
+            { ...projectContext, tracks: [...projectContext.tracks, neverEnough] }
+        );
+
+        expect(result.actions).toEqual([]);
+        expect(result.rejections).toEqual([
+            {
+                index: 0,
+                name: 'createVcaGroup',
+                reason: 'Provider action is not grounded in the user request',
             },
         ]);
     });

@@ -440,6 +440,7 @@ const guardedPayloadContractCases = [
         invalidPayloads: [
             { clipIds: [] },
             { clipIds: ['clip-1'] },
+            { clipIds: ['clip-1', 'clip-2', 'clip-3'] },
             { clipIds: ['clip-1', 'clip-1'] },
             { clipIds: ['clip-1', ''] },
             { clipIds: ['clip-1', 2] },

@@ -7,31 +7,15 @@ import { getNextClipId } from '../../repositories/clipIdCounter';
 import { getTrackState } from '../../repositories/track/getTrackState';
 import { resolveEligibleClipWriteTarget } from '../../stores/resolveEligibleClipWriteTarget';
 
+import { getClipIdCensus } from './getClipIdCensus';
+import { getMidiClipGlueSources } from './getMidiClipGlueSources';
 import { hasClipGlueDependencies } from './hasClipGlueDependencies';
+import { isPlainMidiGlueClip } from './isPlainMidiGlueClip';
 
 type PrepareClipGlueInput = {
     clipIds: readonly string[];
     targetClipId?: string;
 };
-
-function hasUnsupportedMidiGlueState(clip: Clip): boolean {
-    return (
-        clip.locked ||
-        clip.muted ||
-        clip.gain !== 1 ||
-        (clip.stretchMode !== undefined && clip.stretchMode !== 'off') ||
-        (clip.stretchRatio !== undefined && clip.stretchRatio !== 1) ||
-        clip.followAction !== undefined ||
-        clip.generating === true ||
-        clip.isGhost === true ||
-        clip.parentClipId !== undefined ||
-        clip.isLinkedInstance === true ||
-        clip.sourceKeyRoot !== undefined ||
-        clip.sourceScaleName !== undefined ||
-        clip.overrides !== undefined ||
-        clip.kneadState !== undefined
-    );
-}
 
 export function prepareClipGlue({ clipIds, targetClipId }: PrepareClipGlueInput): {
     previous: ClipGlueActionSnapshot;
@@ -39,6 +23,19 @@ export function prepareClipGlue({ clipIds, targetClipId }: PrepareClipGlueInput)
     targetClipId: string;
 } | null {
     if (clipIds.length < 2 || new Set(clipIds).size !== clipIds.length) {
+        return null;
+    }
+    const state = getTrackState();
+    if (!state) {
+        return null;
+    }
+    const sourceCensus = getClipIdCensus({ clipIds, state });
+    if (
+        clipIds.some((clipId) => {
+            const occurrences = sourceCensus.get(clipId) ?? [];
+            return occurrences.length !== 1 || occurrences[0]!.location !== 'active';
+        })
+    ) {
         return null;
     }
     const ownerTrackIds = new Set<string>();
@@ -54,10 +51,9 @@ export function prepareClipGlue({ clipIds, targetClipId }: PrepareClipGlueInput)
         return null;
     }
 
-    const state = getTrackState();
     const [ownerTrackId] = ownerTrackIds;
-    const track = state?.tracks.find((candidate) => candidate.id === ownerTrackId);
-    if (!state || !track) {
+    const track = state.tracks.find((candidate) => candidate.id === ownerTrackId);
+    if (!track) {
         return null;
     }
     const clips = track.clips
@@ -78,7 +74,7 @@ export function prepareClipGlue({ clipIds, targetClipId }: PrepareClipGlueInput)
         logger.warn('glueClips: looped MIDI clips must be flattened before gluing');
         return null;
     }
-    if (clips.some(hasUnsupportedMidiGlueState)) {
+    if (clips.some((clip) => !isPlainMidiGlueClip(clip))) {
         logger.warn('glueClips: only plain, unlocked, unmuted MIDI clips can be glued safely');
         return null;
     }
@@ -92,14 +88,8 @@ export function prepareClipGlue({ clipIds, targetClipId }: PrepareClipGlueInput)
         logger.warn('glueClips: clip dependencies must be removed or consolidated before gluing');
         return null;
     }
-    const idAlreadyUsed =
-        (state.ghostClips ?? []).some((clip) => clip.id === gluedId) ||
-        state.tracks.some(
-            (candidate) =>
-                candidate.clips.some((clip) => clip.id === gluedId) ||
-                candidate.alternatives.some((alternative) => alternative.clips.some((clip) => clip.id === gluedId))
-        );
-    if (gluedId.length === 0 || idAlreadyUsed) {
+    const targetIdOccurrences = getClipIdCensus({ clipIds: [gluedId], state }).get(gluedId) ?? [];
+    if (gluedId.length === 0 || targetIdOccurrences.length > 0) {
         return null;
     }
     const startBeat = clips[0]!.startBeat;
@@ -119,15 +109,7 @@ export function prepareClipGlue({ clipIds, targetClipId }: PrepareClipGlueInput)
         muted: false,
     };
     const midiPlan = prepareMidiClipGlueState({
-        sources: clips.map((clip) => {
-            const midiOffsetBeats = clip.midiOffsetBeats ?? 0;
-            return {
-                clipId: clip.id,
-                beatOffset: clip.startBeat - startBeat - midiOffsetBeats,
-                visibleStartBeat: midiOffsetBeats,
-                visibleEndBeat: midiOffsetBeats + (clip.endBeat - clip.startBeat),
-            };
-        }),
+        sources: getMidiClipGlueSources({ clips, gluedStartBeat: startBeat }),
         targetClipId: gluedId,
     });
     if (!midiPlan) {

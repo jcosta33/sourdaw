@@ -1,5 +1,5 @@
 import { clipSelectionStore, trackStore, vcaGroupStore } from '#/modules/Arrangement/stores';
-import { getPlatformPlugins, getPluginById } from '#/modules/Arrangement/useCases';
+import { getGlueEligibleClipPairs, getPlatformPlugins, getPluginById } from '#/modules/Arrangement/useCases';
 import { automationStore } from '#/modules/Automation/stores';
 import { midiStore } from '#/modules/MIDI/stores';
 import { sidechainStore } from '#/modules/Routing/stores';
@@ -36,6 +36,7 @@ const contextCache: {
     midi: unknown;
     sidechain: unknown;
     vca: unknown;
+    glueEligibilitySignature: string;
     context: ProjectContext | null;
 } = {
     track: null,
@@ -46,6 +47,7 @@ const contextCache: {
     midi: null,
     sidechain: null,
     vca: null,
+    glueEligibilitySignature: '',
     context: null,
 };
 
@@ -61,6 +63,8 @@ export function getProjectContext(): ProjectContext {
     const sidechainState = sidechainStore.value;
     const vcaState = vcaGroupStore.value;
     const notesByClipId = midiState?.notesByClipId;
+    const glueEligibleClipPairs = getGlueEligibleClipPairs();
+    const glueEligibilitySignature = JSON.stringify(glueEligibleClipPairs);
 
     if (
         contextCache.context !== null &&
@@ -71,7 +75,8 @@ export function getProjectContext(): ProjectContext {
         contextCache.selection === selectionState &&
         contextCache.midi === midiState &&
         contextCache.sidechain === sidechainState &&
-        contextCache.vca === vcaState
+        contextCache.vca === vcaState &&
+        contextCache.glueEligibilitySignature === glueEligibilitySignature
     ) {
         return contextCache.context;
     }
@@ -141,7 +146,7 @@ export function getProjectContext(): ProjectContext {
             clips: time.clips.map((context) => ({
                 id: context.id,
                 name: context.name,
-                type: context.type ?? 'audio',
+                type: context.type,
                 startBeat: context.startBeat,
                 endBeat: context.endBeat,
                 gain: context.gain,
@@ -195,6 +200,7 @@ export function getProjectContext(): ProjectContext {
         selectedTrackId,
         selectedClipId,
         selectedClipIds,
+        glueEligibleClipPairs,
         activeView: workspaceState?.mode ?? 'arrange',
         playheadPosition: transportState?.playheadPosition ?? 0,
     };
@@ -207,6 +213,7 @@ export function getProjectContext(): ProjectContext {
     contextCache.midi = midiState;
     contextCache.sidechain = sidechainState;
     contextCache.vca = vcaState;
+    contextCache.glueEligibilitySignature = glueEligibilitySignature;
     contextCache.context = built;
     return built;
 }

@@ -17,6 +17,7 @@ const mocks = vi.hoisted(() => ({
     vcaStoreValue: { value: null as { groups: ProjectContextVcaGroup[] } | null },
     getPluginById: vi.fn(),
     getPlatformPlugins: vi.fn(),
+    getGlueEligibleClipPairs: vi.fn(),
 }));
 
 vi.mock('#/modules/Arrangement/stores', () => ({
@@ -38,6 +39,7 @@ vi.mock('#/modules/Arrangement/stores', () => ({
 }));
 
 vi.mock('#/modules/Arrangement/useCases', () => ({
+    getGlueEligibleClipPairs: mocks.getGlueEligibleClipPairs,
     getPluginById: mocks.getPluginById,
     getPlatformPlugins: mocks.getPlatformPlugins,
 }));
@@ -94,10 +96,22 @@ describe('getProjectContext', () => {
         mocks.sidechainStoreValue.value = null;
         mocks.vcaStoreValue.value = null;
         mocks.getPluginById.mockReturnValue(undefined);
+        mocks.getGlueEligibleClipPairs.mockReturnValue([]);
         mocks.getPlatformPlugins.mockReturnValue([
             { id: 'builtin-eq', name: 'EQ' },
             { id: 'crust', name: 'Crust' },
         ]);
+    });
+
+    it('projects glue eligibility and invalidates the cache when hidden eligibility changes', () => {
+        const first = getProjectContext();
+        mocks.getGlueEligibleClipPairs.mockReturnValue([['clip-a', 'clip-b']]);
+
+        const second = getProjectContext();
+
+        expect(first.glueEligibleClipPairs).toEqual([]);
+        expect(second.glueEligibleClipPairs).toEqual([['clip-a', 'clip-b']]);
+        expect(second).not.toBe(first);
     });
 
     it('returns context with default values when stores are empty', () => {

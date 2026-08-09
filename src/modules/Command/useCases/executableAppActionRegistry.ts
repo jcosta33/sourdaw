@@ -499,6 +499,40 @@ export const executableAppActionDescriptors = [
         },
     },
     {
+        actionType: 'glueClips',
+        risk: 'destructive-reversible',
+        description: 'Replace exactly two adjacent plain MIDI clips with one reversible glued MIDI clip.',
+        intentPhrases: [
+            'glue clips',
+            'glue the clips',
+            'glue midi clips',
+            'glue',
+            'join clips',
+            'join the clips',
+            'join',
+        ],
+        targetRules: [
+            {
+                argument: 'clipIds',
+                capability: 'editable-clip',
+                cardinality: 'many',
+            },
+        ],
+        parameters: {
+            properties: {
+                clipIds: {
+                    type: 'array',
+                    items: { type: 'string' },
+                    minItems: 2,
+                    maxItems: 2,
+                    uniqueItems: true,
+                    description: 'Exactly two distinct adjacent plain MIDI clip IDs on the same MIDI track',
+                },
+            },
+            required: ['clipIds'],
+        },
+    },
+    {
         actionType: 'crossfadeClips',
         risk: 'broad-reversible',
         description: 'Create a crossfade between two distinct unlocked clips.',

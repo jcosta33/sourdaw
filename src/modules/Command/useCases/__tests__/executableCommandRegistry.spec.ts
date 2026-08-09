@@ -209,6 +209,23 @@ const EXPECTED_COMMANDS = [
         false
     ),
     expectedCommand(
+        'glueClips',
+        'Replace exactly two adjacent plain MIDI clips with one reversible glued MIDI clip.',
+        {
+            clipIds: {
+                type: 'array',
+                items: { type: 'string' },
+                minItems: 2,
+                maxItems: 2,
+                uniqueItems: true,
+                description: 'Exactly two distinct adjacent plain MIDI clip IDs on the same MIDI track',
+            },
+        },
+        ['clipIds'],
+        'destructive-reversible',
+        true
+    ),
+    expectedCommand(
         'crossfadeClips',
         'Create a crossfade between two distinct unlocked clips.',
         {
@@ -1119,6 +1136,26 @@ const EXPECTED_GROUNDING = [
                 keywords: ['fade out', 'fade-out'],
             },
         ],
+    },
+    {
+        actionType: 'glueClips',
+        intentPhrases: [
+            'glue clips',
+            'glue the clips',
+            'glue midi clips',
+            'glue',
+            'join clips',
+            'join the clips',
+            'join',
+        ],
+        targetRules: [
+            {
+                argument: 'clipIds',
+                capability: 'editable-clip',
+                cardinality: 'many',
+            },
+        ],
+        valueRules: [],
     },
     {
         actionType: 'crossfadeClips',

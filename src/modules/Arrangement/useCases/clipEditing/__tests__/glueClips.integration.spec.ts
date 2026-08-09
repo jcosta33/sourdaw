@@ -1,13 +1,14 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { automationStore } from '#/modules/Automation/stores';
-import { midiStore } from '#/modules/MIDI/stores';
+import { defaultStepRecordState, midiStore, stepRecordStore } from '#/modules/MIDI/stores';
 
 import { ClipDummy } from '../../../__tests__/ClipDummy';
 import { TrackDummy } from '../../../__tests__/TrackDummy';
 import { __resetGainEnvelopesForTest, setEnvelope } from '../../../stores/gainEnvelopeStore';
 import { takeLaneStore } from '../../../stores/takeLaneStore';
 import { trackStore } from '../../../stores/trackStore';
+import { getGlueEligibleClipPairs } from '../getGlueEligibleClipPairs';
 import { glueClips } from '../glueClips';
 
 describe('glueClips MIDI state integration', () => {
@@ -50,6 +51,7 @@ describe('glueClips MIDI state integration', () => {
         });
         automationStore.set({ lanes: [] });
         takeLaneStore.set({ lanes: [] });
+        stepRecordStore.set(null);
         __resetGainEnvelopesForTest();
     });
 
@@ -58,7 +60,145 @@ describe('glueClips MIDI state integration', () => {
         midiStore.set({ notesByClipId: {}, ccByClipId: {}, pitchBendByClipId: {} });
         automationStore.set({ lanes: [] });
         takeLaneStore.set({ lanes: [] });
+        stepRecordStore.set(null);
         __resetGainEnvelopesForTest();
+    });
+
+    it('projects only adjacent plain source pairs without hidden clip dependencies', () => {
+        expect(getGlueEligibleClipPairs()).toEqual([['clip-a', 'clip-b']]);
+
+        trackStore.set({
+            ...trackStore.value!,
+            tracks: trackStore.value!.tracks.map((track) => ({
+                ...track,
+                clips: track.clips.map((clip) =>
+                    clip.id === 'clip-a' ? { ...clip, stretchMode: 'timestretch' as const } : clip
+                ),
+            })),
+        });
+        expect(getGlueEligibleClipPairs()).toEqual([]);
+
+        trackStore.set({
+            ...trackStore.value!,
+            tracks: trackStore.value!.tracks.map((track) => ({
+                ...track,
+                clips: track.clips.map((clip) =>
+                    clip.id === 'clip-a' ? { ...clip, stretchMode: 'off' as const } : clip
+                ),
+            })),
+        });
+        setEnvelope('clip-a', { clipId: 'clip-a', points: [], enabled: true });
+        expect(getGlueEligibleClipPairs()).toEqual([]);
+    });
+
+    it('projects an adjacent source pair across an unrelated overlapping clip', () => {
+        const overlapping = ClipDummy.create({
+            id: 'clip-overlap',
+            trackId: 'track-midi',
+            type: 'midi',
+            startBeat: 9,
+            endBeat: 10,
+        });
+        trackStore.set({
+            ...trackStore.value!,
+            tracks: trackStore.value!.tracks.map((track) => ({
+                ...track,
+                clips: [track.clips[0]!, overlapping, track.clips[1]!],
+            })),
+        });
+
+        expect(getGlueEligibleClipPairs()).toContainEqual(['clip-a', 'clip-b']);
+    });
+
+    it('does not advertise a pair whose MIDI rows cannot be glued', () => {
+        midiStore.set({
+            ...midiStore.value!,
+            notesByClipId: {
+                ...midiStore.value!.notesByClipId,
+                'clip-b': [{ id: 'note-a', pitch: 64, startBeat: 2, duration: 1, velocity: 100 }],
+            },
+        });
+
+        expect(getGlueEligibleClipPairs()).toEqual([]);
+        expect(glueClips(['clip-a', 'clip-b'])).toBe(false);
+    });
+
+    it('does not advertise clips whose declared owner disagrees with their containing track', () => {
+        trackStore.set({
+            ...trackStore.value!,
+            tracks: trackStore.value!.tracks.map((track) => ({
+                ...track,
+                clips: track.clips.map((clip) => (clip.id === 'clip-a' ? { ...clip, trackId: 'track-other' } : clip)),
+            })),
+        });
+
+        expect(getGlueEligibleClipPairs()).toEqual([]);
+        expect(glueClips(['clip-a', 'clip-b'])).toBe(false);
+    });
+
+    it.each(['alternative', 'ghost'] as const)(
+        'does not advertise or glue a source id duplicated in a hidden %s clip',
+        (hiddenLocation) => {
+            const source = structuredClone(trackStore.value!.tracks[0]!.clips[0]!);
+            const tracks = trackStore.value!.tracks.map((track) => {
+                if (hiddenLocation !== 'alternative') {
+                    return track;
+                }
+                return {
+                    ...track,
+                    alternatives: track.alternatives.map((alternative, index) =>
+                        index === 0 ? { ...alternative, clips: [source] } : alternative
+                    ),
+                };
+            });
+            const ghostClips =
+                hiddenLocation === 'ghost'
+                    ? [
+                          {
+                              ...source,
+                              isGhost: true,
+                          },
+                      ]
+                    : [];
+            trackStore.set({ ...trackStore.value!, tracks, ghostClips });
+            const originalState = structuredClone(trackStore.value);
+
+            expect(getGlueEligibleClipPairs()).toEqual([]);
+            expect(glueClips(['clip-a', 'clip-b'])).toBe(false);
+            expect(trackStore.value).toEqual(originalState);
+        }
+    );
+
+    it('does not advertise or glue a source targeted by active step recording', () => {
+        stepRecordStore.set({
+            ...defaultStepRecordState,
+            active: true,
+            clipId: 'clip-a',
+            activeNotes: new Set<number>(),
+        });
+        const originalTracks = structuredClone(trackStore.value!.tracks);
+        const originalMidi = structuredClone(midiStore.value);
+
+        expect(getGlueEligibleClipPairs()).toEqual([]);
+        expect(glueClips(['clip-a', 'clip-b'])).toBe(false);
+        expect(trackStore.value!.tracks).toEqual(originalTracks);
+        expect(midiStore.value).toEqual(originalMidi);
+    });
+
+    it('does not glue into a generated target id used by active step recording', () => {
+        const targetClipId = 'clip-generated-target';
+        stepRecordStore.set({
+            ...defaultStepRecordState,
+            active: true,
+            clipId: targetClipId,
+            activeNotes: new Set<number>(),
+        });
+        const originalTracks = structuredClone(trackStore.value!.tracks);
+        const originalMidi = structuredClone(midiStore.value);
+
+        expect(glueClips(['clip-a', 'clip-b'], targetClipId)).toBe(false);
+        expect(trackStore.value!.tracks).toEqual(originalTracks);
+        expect(midiStore.value).toEqual(originalMidi);
     });
 
     it('rebases every source MIDI event into the glued clip local timeline', () => {

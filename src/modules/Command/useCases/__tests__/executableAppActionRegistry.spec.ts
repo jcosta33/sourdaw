@@ -77,4 +77,34 @@ describe('executableAppActionRegistry', () => {
         expect(descriptor?.parameters.properties).not.toHaveProperty('type');
         expect(descriptor?.parameters.properties).not.toHaveProperty('audioBufferId');
     });
+
+    it('exposes exactly two existing clips for reversible MIDI glue', () => {
+        const descriptor = executableAppActionDescriptorByType.get('glueClips');
+
+        expect(descriptor).toMatchObject({
+            actionType: 'glueClips',
+            risk: 'destructive-reversible',
+            targetRules: [
+                {
+                    argument: 'clipIds',
+                    capability: 'editable-clip',
+                    cardinality: 'many',
+                },
+            ],
+            parameters: {
+                required: ['clipIds'],
+                properties: {
+                    clipIds: {
+                        type: 'array',
+                        minItems: 2,
+                        maxItems: 2,
+                        uniqueItems: true,
+                    },
+                },
+            },
+        });
+        expect(descriptor?.parameters.properties).not.toHaveProperty('targetClipId');
+        expect(descriptor?.parameters.properties).not.toHaveProperty('expected');
+        expect(descriptor?.parameters.properties).not.toHaveProperty('replacement');
+    });
 });

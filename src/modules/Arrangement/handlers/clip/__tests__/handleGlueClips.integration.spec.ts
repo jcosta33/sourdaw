@@ -19,7 +19,7 @@ import {
     removeCrdtDoc,
     resetCrdtProjectAuthority,
 } from '#/modules/CrdtDocument/useCases';
-import { midiStore } from '#/modules/MIDI/stores';
+import { defaultStepRecordState, midiStore, stepRecordStore } from '#/modules/MIDI/stores';
 import { type AppAction, type ClipGlueActionSnapshot } from '#/utils/handlerContract';
 
 import { ClipDummy } from '../../../__tests__/ClipDummy';
@@ -134,6 +134,7 @@ describe('handleGlueClips atomic integration', () => {
         });
         automationStore.set({ lanes: [] });
         takeLaneStore.set({ lanes: [] });
+        stepRecordStore.set(null);
     });
 
     afterEach(() => {
@@ -144,6 +145,7 @@ describe('handleGlueClips atomic integration', () => {
         midiStore.set({ notesByClipId: {}, ccByClipId: {}, pitchBendByClipId: {} });
         automationStore.set({ lanes: [] });
         takeLaneStore.set({ lanes: [] });
+        stepRecordStore.set(null);
         configureAutomergeStoragePort(null);
         removeCrdtDoc('root');
     });
@@ -364,6 +366,89 @@ describe('handleGlueClips atomic integration', () => {
         trackStore.set({ ...trackStore.value!, ghostClips: [] });
         await undo();
         expect(trackStore.value!.tracks[0]!.clips).toMatchObject([{ id: 'clip-a' }, { id: 'clip-b' }]);
+    });
+
+    it('keeps the glue and undo entry when a hidden alternative duplicates a source id', async () => {
+        await executeAppActionBatch([{ type: 'glueClips', payload: { clipIds: ['clip-a', 'clip-b'] } }], {
+            source: 'prompt',
+            requireCompensation: true,
+        });
+        const glued = trackStore.value!.tracks[0]!.clips[0]!;
+        const duplicateSource = ClipDummy.create({
+            id: 'clip-a',
+            trackId: 'track-midi',
+            type: 'midi',
+            startBeat: 20,
+            endBeat: 24,
+        });
+        trackStore.set({
+            ...trackStore.value!,
+            tracks: trackStore.value!.tracks.map((track) =>
+                track.id === 'track-midi'
+                    ? {
+                          ...track,
+                          alternatives: track.alternatives.map((alternative, index) =>
+                              index === 0 ? { ...alternative, clips: [duplicateSource] } : alternative
+                          ),
+                      }
+                    : track
+            ),
+        });
+
+        await undo();
+
+        expect(trackStore.value!.tracks[0]!.clips).toMatchObject([{ id: glued.id }]);
+        expect(trackStore.value!.tracks[0]!.alternatives[0]!.clips).toMatchObject([{ id: 'clip-a' }]);
+
+        trackStore.set({
+            ...trackStore.value!,
+            tracks: trackStore.value!.tracks.map((track) =>
+                track.id === 'track-midi'
+                    ? {
+                          ...track,
+                          alternatives: track.alternatives.map((alternative, index) =>
+                              index === 0 ? { ...alternative, clips: [] } : alternative
+                          ),
+                      }
+                    : track
+            ),
+        });
+        await undo();
+        expect(trackStore.value!.tracks[0]!.clips).toMatchObject([{ id: 'clip-a' }, { id: 'clip-b' }]);
+    });
+
+    it('keeps undo and redo retryable while step recording targets an affected clip', async () => {
+        await executeAppActionBatch([{ type: 'glueClips', payload: { clipIds: ['clip-a', 'clip-b'] } }], {
+            source: 'prompt',
+            requireCompensation: true,
+        });
+        const glued = trackStore.value!.tracks[0]!.clips[0]!;
+        stepRecordStore.set({
+            ...defaultStepRecordState,
+            active: true,
+            clipId: 'clip-a',
+            activeNotes: new Set<number>(),
+        });
+
+        await undo();
+
+        expect(trackStore.value!.tracks[0]!.clips).toMatchObject([{ id: glued.id }]);
+        stepRecordStore.set(null);
+        await undo();
+        expect(trackStore.value!.tracks[0]!.clips).toMatchObject([{ id: 'clip-a' }, { id: 'clip-b' }]);
+
+        stepRecordStore.set({
+            ...defaultStepRecordState,
+            active: true,
+            clipId: glued.id,
+            activeNotes: new Set<number>(),
+        });
+        await redo();
+
+        expect(trackStore.value!.tracks[0]!.clips).toMatchObject([{ id: 'clip-a' }, { id: 'clip-b' }]);
+        stepRecordStore.set(null);
+        await redo();
+        expect(trackStore.value!.tracks[0]!.clips).toMatchObject([{ id: glued.id }]);
     });
 
     it('keeps the glue and undo entry when a take lane references the generated target', async () => {

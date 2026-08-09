@@ -308,6 +308,41 @@ describe('describePlannedAction', () => {
         ).toBe('Set note velocities in "Verse Lead" (clip-verse) to 96');
     });
 
+    it('names the common MIDI track when other clips have identical names and ranges', () => {
+        const sourceTrack = context.tracks[0]!;
+        const sourceClip = sourceTrack.clips[0]!;
+        const targetTrack = {
+            ...sourceTrack,
+            kind: 'midi' as const,
+            clipCount: 2,
+            clips: [
+                { ...sourceClip, type: 'midi' as const, noteCount: 4 },
+                { ...sourceClip, id: 'clip-chorus', type: 'midi' as const, noteCount: 4 },
+            ],
+        };
+        const midiContext: ProjectContext = {
+            ...context,
+            tracks: [
+                {
+                    ...targetTrack,
+                    id: 'track-keys',
+                    name: 'Keys',
+                    clips: targetTrack.clips.map((clip) => ({ ...clip, id: `keys-${clip.id}` })),
+                },
+                targetTrack,
+            ],
+        };
+
+        expect(
+            describePlannedAction({
+                action: { type: 'glueClips', payload: { clipIds: ['clip-verse', 'clip-chorus'] } },
+                context: midiContext,
+            })
+        ).toBe(
+            'Glue MIDI clips "Verse Lead" (clip-verse, beats 0–8) and "Verse Lead" (clip-chorus, beats 0–8) on MIDI track "Drums" (track-drums)'
+        );
+    });
+
     it('names both sidechain endpoints with IDs and direction for confirmation', () => {
         const bassTrack = {
             ...context.tracks[0]!,
