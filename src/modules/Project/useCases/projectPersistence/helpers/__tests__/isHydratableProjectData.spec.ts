@@ -373,6 +373,37 @@ describe('isHydratableProjectData', () => {
         ).toBe(false);
     });
 
+    it('rejects embedded freeze ownership that disagrees with the project envelope', () => {
+        const project = buildValidProjectData();
+        const audioBuffer = {
+            sampleRate: 44_100,
+            numberOfChannels: 1,
+            channelData: ['audio'],
+        };
+
+        expect(
+            isHydratableProjectData({
+                ...project,
+                audioBuffers: {
+                    'freeze-track-1': { ...audioBuffer, freezeProjectId: project.meta.createdAt },
+                    'legacy-track-1': audioBuffer,
+                },
+            })
+        ).toBe(true);
+
+        expect(
+            isHydratableProjectData({
+                ...project,
+                audioBuffers: {
+                    'freeze-track-1': {
+                        ...audioBuffer,
+                        freezeProjectId: project.meta.createdAt + 1,
+                    },
+                },
+            })
+        ).toBe(false);
+    });
+
     it('rejects an arrangement snapshot with a malformed selectedTrackId', () => {
         expect(
             isHydratableProjectData({

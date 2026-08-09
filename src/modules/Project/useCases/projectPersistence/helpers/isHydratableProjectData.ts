@@ -760,7 +760,7 @@ function isAdjustmentLayers(value: unknown): value is ProjectAdjustmentLayers {
     );
 }
 
-function isAudioBuffers(value: unknown): value is Record<string, ProjectExportedAudioBuffer> {
+function isAudioBuffers(value: unknown, projectId: number): value is Record<string, ProjectExportedAudioBuffer> {
     return (
         isRecord(value) &&
         Object.values(value).every(
@@ -774,7 +774,8 @@ function isAudioBuffers(value: unknown): value is Record<string, ProjectExported
                 buffer.numberOfChannels > 0 &&
                 Array.isArray(buffer.channelData) &&
                 buffer.channelData.length === buffer.numberOfChannels &&
-                buffer.channelData.every((channel) => typeof channel === 'string')
+                buffer.channelData.every((channel) => typeof channel === 'string') &&
+                (buffer.freezeProjectId === undefined || buffer.freezeProjectId === projectId)
         )
     );
 }
@@ -849,5 +850,5 @@ export function isHydratableProjectData(value: unknown): value is HydratableProj
     if (value.activeArrangementId !== undefined && typeof value.activeArrangementId !== 'string') {
         return false;
     }
-    return value.audioBuffers === undefined || isAudioBuffers(value.audioBuffers);
+    return value.audioBuffers === undefined || isAudioBuffers(value.audioBuffers, value.meta.createdAt);
 }
