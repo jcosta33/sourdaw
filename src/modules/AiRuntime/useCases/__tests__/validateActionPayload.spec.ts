@@ -571,6 +571,16 @@ const guardedPayloadContractCases = [
         invalidPayloads: [{}, { enabled: 'yes' }, { enabled: true, extra: true }],
     }),
     guardedPayloadCase({
+        actionType: 'setPunchEnabled',
+        validPayload: { enabled: true },
+        invalidPayloads: [
+            {},
+            { enabled: 'yes' },
+            { enabled: true, extra: true },
+            { enabled: true, expectedEnabled: false },
+        ],
+    }),
+    guardedPayloadCase({
         actionType: 'setPlayback',
         validPayload: { playing: true },
         invalidPayloads: [{}, { playing: 'yes' }, { playing: true, extra: true }],

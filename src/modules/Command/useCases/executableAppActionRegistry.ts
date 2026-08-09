@@ -1379,6 +1379,50 @@ export const executableAppActionDescriptors = [
         },
     },
     {
+        actionType: 'setPunchEnabled',
+        risk: 'authority-sensitive',
+        description:
+            'Enable or disable punch recording for the next transport start without changing the punch region or background capture.',
+        intentPhrases: [
+            'enable punch recording',
+            'disable punch recording',
+            'enable punch mode',
+            'disable punch mode',
+            'turn punch recording on',
+            'turn punch recording off',
+            'turn punch mode on',
+            'turn punch mode off',
+        ],
+        targetRules: [],
+        valueRules: [
+            {
+                argument: 'enabled',
+                kind: 'boolean-intent',
+                truePhrases: [
+                    'enable punch recording',
+                    'enable punch mode',
+                    'turn punch recording on',
+                    'turn punch mode on',
+                ],
+                falsePhrases: [
+                    'disable punch recording',
+                    'disable punch mode',
+                    'turn punch recording off',
+                    'turn punch mode off',
+                ],
+            },
+        ],
+        parameters: {
+            properties: {
+                enabled: {
+                    type: 'boolean',
+                    description: 'true=enable punch recording, false=disable; punch endpoints remain unchanged',
+                },
+            },
+            required: ['enabled'],
+        },
+    },
+    {
         actionType: 'setMetronomeEnabled',
         risk: 'bounded-reversible',
         description: 'Enable or disable the metronome.',

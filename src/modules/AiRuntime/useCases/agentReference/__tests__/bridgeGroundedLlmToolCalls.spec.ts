@@ -43,6 +43,7 @@ const projectContext: ProjectContext = {
     tempo: 120,
     timeSignature: [4, 4],
     isPlaying: false,
+    isRecording: false,
     isLooping: true,
     loopStart: 4,
     loopEnd: 12,
@@ -4424,5 +4425,50 @@ describe('bridgeGroundedLlmToolCalls', () => {
 
         expect(result.actions).toEqual([]);
         expect(result.rejections[0]?.reason).toContain('ambiguous');
+    });
+
+    it('grounds only one direct stopped-transport punch enablement command', () => {
+        const enabled = bridge([{ name: 'setPunchEnabled', arguments: { enabled: true } }], 'enable punch recording', {
+            ...projectContext,
+            punchInEnabled: false,
+        });
+        const disabled = bridge([{ name: 'setPunchEnabled', arguments: { enabled: false } }], 'turn punch mode off');
+        const polite = bridge(
+            [{ name: 'setPunchEnabled', arguments: { enabled: true } }],
+            'please enable punch mode!',
+            { ...projectContext, punchInEnabled: false }
+        );
+        const rejected = [
+            bridge([{ name: 'setPunchEnabled', arguments: { enabled: true } }], 'punch'),
+            bridge([{ name: 'setPunchEnabled', arguments: { enabled: true } }], 'set punch in at beat 20'),
+            bridge([{ name: 'setPunchEnabled', arguments: { enabled: false } }], 'enable punch recording'),
+            bridge([{ name: 'setPunchEnabled', arguments: { enabled: true } }], 'do not enable punch recording'),
+            bridge([{ name: 'setPunchEnabled', arguments: { enabled: true } }], 'enable punch recording, cancel that'),
+            bridge([{ name: 'setPunchEnabled', arguments: { enabled: true } }], 'can you enable punch recording?'),
+            bridge([{ name: 'setPunchEnabled', arguments: { enabled: true } }], 'if stopped, enable punch recording'),
+            bridge(
+                [{ name: 'setPunchEnabled', arguments: { enabled: true } }],
+                'enable punch recording; set tempo to 100'
+            ),
+            bridge([{ name: 'setPunchEnabled', arguments: { enabled: true } }], 'enable background punch recording'),
+            bridge([{ name: 'setPunchEnabled', arguments: { enabled: true } }], 'enable punch recording is a bad idea'),
+            bridge([{ name: 'setPunchIn', arguments: { beat: 20 } }], 'enable punch recording'),
+            bridge([{ name: 'setTempo', arguments: { bpm: 100 } }], 'enable punch recording; set tempo to 100'),
+            bridge([{ name: 'setPunchEnabled', arguments: { enabled: false } }], 'disable punch recording', {
+                ...projectContext,
+                isPlaying: true,
+            }),
+            bridge([{ name: 'setPunchEnabled', arguments: { enabled: false } }], 'disable punch recording', {
+                ...projectContext,
+                isRecording: true,
+            }),
+        ];
+
+        expect(enabled.actions).toEqual([{ type: 'setPunchEnabled', payload: { enabled: true } }]);
+        expect(disabled.actions).toEqual([{ type: 'setPunchEnabled', payload: { enabled: false } }]);
+        expect(polite.actions).toEqual([{ type: 'setPunchEnabled', payload: { enabled: true } }]);
+        for (const result of rejected) {
+            expect(result.actions).toEqual([]);
+        }
     });
 });

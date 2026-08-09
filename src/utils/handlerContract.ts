@@ -796,6 +796,14 @@ export type AppAction =
     | { type: 'setPunchIn'; payload: { beat: number } }
     | { type: 'setPunchOut'; payload: { beat: number } }
     | {
+          type: 'setPunchEnabled';
+          payload: {
+              enabled: boolean;
+              /** Internal compare-and-swap guard. AiRuntime payload validation rejects this field. */
+              expectedEnabled?: boolean;
+          };
+      }
+    | {
           /** Internal compare-and-swap replay action for both punch endpoints. */
           type: 'restorePunchRegion';
           payload: {

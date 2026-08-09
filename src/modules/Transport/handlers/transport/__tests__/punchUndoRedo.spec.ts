@@ -159,4 +159,111 @@ describe('Transport punch action undo/redo', () => {
         expect(undoStore.value?.past).toHaveLength(1);
         expect(undoStore.value?.future).toHaveLength(0);
     });
+
+    it('undoes and redoes the legacy manual punch toggle through explicit guarded state', async () => {
+        transportStore.set({ ...defaultTransportState, punchInEnabled: false });
+
+        await executeAppAction({ type: 'togglePunch', payload: undefined });
+        expect(transportStore.value?.punchInEnabled).toBe(true);
+
+        await undo();
+        expect(transportStore.value?.punchInEnabled).toBe(false);
+        expect(undoStore.value?.future).toHaveLength(1);
+
+        await redo();
+        expect(transportStore.value?.punchInEnabled).toBe(true);
+        expect(undoStore.value?.past).toHaveLength(1);
+    });
+
+    it('undoes and redoes explicit punch enablement without changing endpoints', async () => {
+        transportStore.set({
+            ...defaultTransportState,
+            punchInEnabled: false,
+            punchInBeat: 4,
+            punchOutBeat: 12,
+        });
+
+        expect(
+            getTransportHandlers().setPunchEnabled.describe({
+                type: 'setPunchEnabled',
+                payload: { enabled: true },
+            })
+        ).toEqual({
+            label: 'Enable punch recording',
+            inverseAction: {
+                type: 'setPunchEnabled',
+                payload: { enabled: false, expectedEnabled: true },
+            },
+            redoAction: {
+                type: 'setPunchEnabled',
+                payload: { enabled: true, expectedEnabled: false },
+            },
+        });
+
+        await executeAppAction({ type: 'setPunchEnabled', payload: { enabled: true } });
+        expect(transportStore.value).toMatchObject({
+            punchInEnabled: true,
+            punchInBeat: 4,
+            punchOutBeat: 12,
+        });
+
+        await undo();
+        expect(transportStore.value).toMatchObject({
+            punchInEnabled: false,
+            punchInBeat: 4,
+            punchOutBeat: 12,
+        });
+
+        await redo();
+        expect(transportStore.value).toMatchObject({
+            punchInEnabled: true,
+            punchInBeat: 4,
+            punchOutBeat: 12,
+        });
+    });
+
+    it('retains undo and redo entries while transport is busy, then retries safely', async () => {
+        transportStore.set({ ...defaultTransportState, punchInEnabled: false });
+        await executeAppAction({ type: 'setPunchEnabled', payload: { enabled: true } });
+
+        transportStore.set({ ...transportStore.value!, isPlaying: true });
+        await undo();
+        expect(transportStore.value?.punchInEnabled).toBe(true);
+        expect(undoStore.value?.past).toHaveLength(1);
+        expect(undoStore.value?.future).toHaveLength(0);
+
+        transportStore.set({ ...transportStore.value!, isPlaying: false });
+        await undo();
+        expect(transportStore.value?.punchInEnabled).toBe(false);
+        expect(undoStore.value?.future).toHaveLength(1);
+
+        transportStore.set({ ...transportStore.value!, isRecording: true });
+        await redo();
+        expect(transportStore.value?.punchInEnabled).toBe(false);
+        expect(undoStore.value?.past).toHaveLength(0);
+        expect(undoStore.value?.future).toHaveLength(1);
+
+        transportStore.set({ ...transportStore.value!, isRecording: false });
+        await redo();
+        expect(transportStore.value?.punchInEnabled).toBe(true);
+        expect(undoStore.value?.past).toHaveLength(1);
+        expect(undoStore.value?.future).toHaveLength(0);
+    });
+
+    it('advances history when guarded undo and redo replacements are already achieved', async () => {
+        transportStore.set({ ...defaultTransportState, punchInEnabled: false });
+        await executeAppAction({ type: 'setPunchEnabled', payload: { enabled: true } });
+
+        transportStore.set({ ...transportStore.value!, punchInEnabled: false });
+        await undo();
+        expect(transportStore.value?.punchInEnabled).toBe(false);
+        expect(undoStore.value?.past).toHaveLength(0);
+        expect(undoStore.value?.future).toHaveLength(1);
+
+        transportStore.set({ ...transportStore.value!, punchInEnabled: true });
+        await redo();
+        expect(transportStore.value?.punchInEnabled).toBe(true);
+        expect(undoStore.value?.past).toHaveLength(1);
+        expect(undoStore.value?.future).toHaveLength(0);
+    });
 });

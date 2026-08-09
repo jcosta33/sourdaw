@@ -20,6 +20,7 @@ const EXPECTED_KEYS = [
     'seekPlayhead',
     'setPunchIn',
     'setPunchOut',
+    'setPunchEnabled',
     'restorePunchRegion',
     'togglePunch',
     'toggleCountIn',

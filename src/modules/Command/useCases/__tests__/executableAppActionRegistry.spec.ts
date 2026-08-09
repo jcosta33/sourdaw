@@ -107,4 +107,23 @@ describe('executableAppActionRegistry', () => {
         expect(descriptor?.parameters.properties).not.toHaveProperty('expected');
         expect(descriptor?.parameters.properties).not.toHaveProperty('replacement');
     });
+
+    it('exposes an explicit authority-sensitive punch-enabled setter without replay fields', () => {
+        const descriptor = executableAppActionDescriptorByType.get('setPunchEnabled');
+
+        expect(descriptor).toMatchObject({
+            actionType: 'setPunchEnabled',
+            risk: 'authority-sensitive',
+            targetRules: [],
+            parameters: {
+                required: ['enabled'],
+                properties: { enabled: { type: 'boolean' } },
+            },
+        });
+        expect(descriptor?.parameters.properties).not.toHaveProperty('expectedEnabled');
+        expect(descriptor?.intentPhrases).not.toContain('punch');
+        expect(descriptor?.intentPhrases).not.toContain('punch in');
+        expect(descriptor?.intentPhrases).not.toContain('punch out');
+        expect(descriptor?.intentPhrases).not.toContain('toggle punch');
+    });
 });

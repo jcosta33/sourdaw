@@ -48,6 +48,7 @@ export { toggleMetronome } from './transportControls/toggleMetronome';
 export { toggleOverdub } from './transportControls/toggleOverdub';
 export { togglePlayback } from './transportControls/togglePlayback';
 export { togglePunchEnabled } from './transportControls/togglePunchEnabled';
+export { setPunchEnabled } from './transportControls/setPunchEnabled';
 export { togglePreRoll } from './transportControls/togglePreRoll';
 export { toggleRecording } from './transportControls/toggleRecording';
 

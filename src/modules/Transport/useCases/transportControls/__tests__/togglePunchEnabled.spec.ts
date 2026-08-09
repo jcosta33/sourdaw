@@ -37,4 +37,20 @@ describe('togglePunchEnabled', () => {
 
         expect(update).not.toHaveBeenCalled();
     });
+
+    it.each([
+        { isPlaying: true, isRecording: false },
+        { isPlaying: false, isRecording: true },
+    ])('does not toggle while transport is busy: %o', (busy) => {
+        vi.mocked(getTransportState).mockReturnValue({
+            ...defaultTransportState,
+            ...busy,
+            punchInEnabled: false,
+        });
+
+        const result = togglePunchEnabled();
+
+        expect(result).toEqual({ status: 'conflict' });
+        expect(updateTransportState).not.toHaveBeenCalled();
+    });
 });

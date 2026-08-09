@@ -37,13 +37,6 @@ export const transportPresets: readonly PresetAction[] = [
         buildAction: () => ({ type: 'toggleMetronome' }),
     },
     {
-        id: 'punch',
-        label: 'Toggle Punch In/Out',
-        keywords: ['punch', 'punch in', 'punch out', 'toggle punch'],
-        category: 'Transport',
-        buildAction: () => ({ type: 'togglePunch' }),
-    },
-    {
         id: 'count-in',
         label: 'Toggle Count-In',
         keywords: ['count in', 'count-in', 'precount', 'toggle count'],

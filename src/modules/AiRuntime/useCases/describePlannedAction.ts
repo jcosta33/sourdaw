@@ -12,6 +12,10 @@ type DescribePlannedActionInput = {
 };
 
 export function describePlannedAction({ action, context }: DescribePlannedActionInput): string {
+    if (action.type === 'setPunchEnabled') {
+        const verb = action.payload.enabled ? 'Enable' : 'Disable';
+        return `${verb} punch recording for the next transport start; punch region remains beats ${String(context.punchInBeat)}–${String(context.punchOutBeat)}; background capture is unchanged`;
+    }
     if (action.type === 'setPunchIn' || action.type === 'setPunchOut') {
         const current = { punchInBeat: context.punchInBeat, punchOutBeat: context.punchOutBeat };
         const edge = action.type === 'setPunchIn' ? 'in' : 'out';

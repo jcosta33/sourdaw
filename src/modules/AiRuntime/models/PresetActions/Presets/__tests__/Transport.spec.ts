@@ -40,5 +40,16 @@ describe('transportPresets', () => {
 
         expect(actions.some((action) => action.type === 'togglePlayback')).toBe(false);
         expect(actions.some((action) => action.type === 'toggleRecording')).toBe(false);
+        expect(actions.map((action) => action.type)).not.toContain('togglePunch');
+    });
+
+    it('does not fuzzy-match punch commands before provider grounding', () => {
+        const keywords = transportPresets.flatMap((preset) => preset.keywords);
+
+        expect(transportPresets.some((preset) => preset.id.startsWith('punch'))).toBe(false);
+        expect(keywords).not.toContain('punch');
+        expect(keywords).not.toContain('punch in');
+        expect(keywords).not.toContain('punch out');
+        expect(keywords).not.toContain('toggle punch');
     });
 });
