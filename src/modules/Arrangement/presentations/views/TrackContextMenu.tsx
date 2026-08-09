@@ -98,7 +98,7 @@ export const TrackContextMenu = ({ track, children }: TrackContextMenuProps): Re
         freezeLabel = 'Unfreeze';
     }
 
-    type MenuItem = { label: string; action: () => void; destructive?: boolean };
+    type MenuItem = { label: string; action: () => void; destructive?: boolean; testId?: string };
     const actions: (MenuItem | { label: '---' })[] = [
         {
             label: 'Add Clip',
@@ -154,6 +154,7 @@ export const TrackContextMenu = ({ track, children }: TrackContextMenuProps): Re
                 }
                 close();
             },
+            testId: 'track-freeze-item',
         },
         ...(track.frozen
             ? [
@@ -163,6 +164,7 @@ export const TrackContextMenu = ({ track, children }: TrackContextMenuProps): Re
                           void flattenTrack(track.id);
                           close();
                       },
+                      testId: 'track-flatten-item',
                   },
               ]
             : []),
@@ -270,6 +272,7 @@ export const TrackContextMenu = ({ track, children }: TrackContextMenuProps): Re
                     role="menuitem"
                     tone={'destructive' in item && item.destructive ? 'danger' : 'default'}
                     onClick={(item as MenuItem).action}
+                    data-testid={(item as MenuItem).testId}
                 >
                     {item.label}
                 </DawMenuButton>

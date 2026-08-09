@@ -134,7 +134,7 @@ export const TrackHeader = ({ track, isSelected }: TrackHeaderProps): ReactEleme
     let freezeStateContent = null;
     if (isFreezing) {
         freezeStateContent = (
-            <div className="flex flex-col gap-1 w-16 ml-2">
+            <div className="flex flex-col gap-1 w-16 ml-2" data-testid="track-freezing-badge">
                 <span className="text-[8px] font-bold text-primary animate-pulse">FREEZING</span>
                 <DawMeterBar
                     value={(track.freezeState.renderProgress ?? 0) * 100}
@@ -145,7 +145,7 @@ export const TrackHeader = ({ track, isSelected }: TrackHeaderProps): ReactEleme
         );
     } else if (track.frozen) {
         freezeStateContent = (
-            <div className="flex items-center gap-1 ml-2">
+            <div className="flex items-center gap-1 ml-2" data-testid="track-frozen-badge">
                 <Snowflake className="size-2.5 text-[var(--color-accent-cyan)]" />
                 <span className="text-[9px] text-[var(--color-accent-cyan)] font-bold tracking-tight">FROZEN</span>
                 {isStale ? (
