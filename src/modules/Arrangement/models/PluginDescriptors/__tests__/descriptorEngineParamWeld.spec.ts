@@ -47,8 +47,8 @@ import { BUILTIN_PLUGINS } from '../../DeviceParameter';
  *
  * It is the wrong shape for a device that dispatches *exclusively*: one of
  * several alternatives is live, chosen at runtime, and only that one receives
- * the write. Dutch Oven is that device. `ProofChamberInstance::set_param`
- * (`crates/proof-chamber/src/lib.rs:151-165`) forwards to whichever
+ * the write. Dutch Oven is that device. `forward_to_engine`
+ * (`crates/proof-chamber/src/lib.rs:281-297`) forwards to whichever
  * `ReverbEngine` variant is currently constructed, and the seven variants have
  * seven different arm sets. Unioning them says "some algorithm handles this",
  * which is not the claim a user's knob makes.
@@ -299,7 +299,7 @@ const ENGINE_PARAM_ALIASES: readonly EngineAlias[] = [
         paramId: 'diffusion',
         handledAs: 'dispersion',
         reason:
-            'The dispatcher re-sends it: `lib.rs:154-159` calls `s.set_param(name, value)` and then, when the name is ' +
+            'The dispatcher re-sends it: `forward_to_engine` (`lib.rs:285-290`) calls `s.set_param(name, value)` and then, when the name is ' +
             '`diffusion`, calls `s.set_param("dispersion", value)`. A spring reverb disperses rather than diffuses, so ' +
             'the engine spells its arm `dispersion` and only this one algorithm needs the bridge. The literal is a ' +
             'call argument, not a match arm, so the arm scanner cannot see it and the shim has to be declared.',
@@ -617,7 +617,7 @@ const TRANSLATORS = new Map<NativeDspDeviceType, (paramId: string) => string>(
  *
  * A device with no selector has exactly its default. Dutch Oven's convolution
  * and hybrid engines are built and render but no `algorithm` value constructs
- * them (`lib.rs:122-134`), so they are deliberately absent: a census that
+ * them (`lib.rs:338-357`), so they are deliberately absent: a census that
  * demanded descriptor coverage from an engine nothing can reach would be
  * inventing work.
  */

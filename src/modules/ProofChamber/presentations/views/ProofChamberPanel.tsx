@@ -318,6 +318,34 @@ export const ProofChamberPanel = ({ deviceId }: { deviceId: string }): ReactElem
      * field at a time. `executeAppActionBatch` runs the whole expansion inside a
      * single transaction and tags every resulting entry with one `groupId`,
      * which `undo` pops as a unit.
+     *
+     * ## This batch needed the engine-side cache too
+     *
+     * `algorithm` goes first and the expanded parameters follow, and every one
+     * of those parameter actions is subject to `handleSetDeviceParameter`'s
+     * `isNoop` (`parameterValues[paramId] === value`), which
+     * `executeAppActionBatch` uses to skip an action whose value already equals
+     * project truth. So on a **repeat** click of a tile whose values are still
+     * in the project — load `hall`, audition another algorithm from the rail,
+     * click `hall` again — the twenty-one non-algorithm actions are all no-ops
+     * and the only thing that reaches the device is the bare `algorithm` write.
+     *
+     * Before the parameter cache that write reconstructed the engine and
+     * replayed nothing into it, so a re-clicked space tile loaded a reverb at
+     * constructor defaults: measured on the PR base, a re-clicked `hall`
+     * rendered bit-identical to a plate that had never been told anything, and
+     * 13.511 dB peak away from the preset the tile claims to load. All eight
+     * `SPACE_PRESETS` were reachable in that state. The cache
+     * (`crates/proof-chamber/src/lib.rs`, replayed at `lib.rs:363`) is what
+     * makes this tile actually load its preset on the second click; the batch
+     * here was never the missing half.
+     *
+     * `selectAlgorithm` below explains why a panel-side replay cannot fix that,
+     * and the no-op filter it defends as correct is the same filter that had
+     * been eating this function's preset batch. Both are true: the filter is
+     * right about *project truth* — nothing changed, so nothing is written —
+     * and the engine losing its state is not a change in truth, so it has to be
+     * resynced where the loss happens.
      */
     function selectSpace(space: SpaceType): void {
         const nextParams = expandSpacePreset(space);
@@ -363,30 +391,40 @@ export const ProofChamberPanel = ({ deviceId }: { deviceId: string }): ReactElem
      * One function rather than two identical chip handlers — the selector is
      * drawn twice, on the rail and in the Engine card.
      *
-     * ## Known, live, and not fixed here: this resets the device
+     * ## Why this writes `algorithm` and nothing else
      *
-     * `ProofChamberInstance::set_param` constructs a **new** engine when
-     * `algorithm` arrives (`lib.rs:117-136`) and replays nothing into it, so
-     * every parameter on the device reverts to the constructor's defaults.
-     * Measured plate → reverse → plate: bit-identical to an engine nobody had
-     * ever written to (`max_delta = 0e0` against defaults, `7.77e-1` against
-     * the settings the user had). `mix` is lost the same way, so this has
-     * nothing to do with gating and predates it.
+     * It used to reset the device. `ProofChamberInstance::set_param`
+     * constructed a **new** engine when `algorithm` arrived and replayed
+     * nothing into it, so every parameter reverted to the constructor's
+     * defaults — measured plate → reverse → plate as bit-identical to an
+     * engine nobody had ever written to (`max_delta = 0e0` against defaults,
+     * `7.77e-1` against the settings the user had). `mix` went the same way,
+     * so it had nothing to do with gating and predated it.
      *
-     * A panel-side replay was tried here and removed, because it cannot work at
-     * this layer. Sourcing it from the store writes stale values over project
-     * truth; sourcing it from project truth makes every replayed action satisfy
-     * `handleSetDeviceParameter`'s `isNoop` — `parameterValues[paramId] ===
-     * value` — so `executeAppActionBatch` skips all of them and the engine is
-     * never told. The two required fixes are contradictory. A replay is an
-     * engine *resync*, and `executeAppAction*` propagates *changes to truth*;
-     * the no-op filter is right and the payload was the wrong shape for it.
+     * A panel-side replay was tried here and removed, because it cannot work
+     * at this layer. Sourcing it from the store writes stale values over
+     * project truth; sourcing it from project truth makes every replayed
+     * action satisfy `handleSetDeviceParameter`'s `isNoop` —
+     * `parameterValues[paramId] === value` — so `executeAppActionBatch` skips
+     * all of them and the engine is never told. The two required fixes are
+     * contradictory. A replay is an engine *resync*, and `executeAppAction*`
+     * propagates *changes to truth*; the no-op filter is right and the payload
+     * was the wrong shape for it.
      *
-     * The fix is a parameter cache inside `ProofChamberInstance`, replayed into
-     * each newly constructed engine — the one place every writer of `algorithm`
-     * must pass through, which the Inspector, MIDI learn, undo and the initial
-     * project projection all do without any of them being able to carry a
-     * replay of their own.
+     * That filter is not a hypothetical objection to a replay nobody wrote. It
+     * had already been emptying `selectSpace`'s preset batch above — on a
+     * repeat click of a space tile the twenty-one parameter actions all equal
+     * project truth, so the device received only `algorithm` and, before the
+     * cache, rebuilt at defaults. Same filter, same correctness, one function
+     * up; see that note for the measurement.
+     *
+     * The fix is a parameter cache inside `ProofChamberInstance`
+     * (`crates/proof-chamber/src/lib.rs`, replayed at `lib.rs:363`), the one
+     * place every writer of `algorithm` must pass through — which the
+     * Inspector, MIDI learn, undo and the initial project projection all do
+     * without any of them being able to carry a replay of their own. So this
+     * handler stays a single write, and that is now correct rather than merely
+     * unavoidable.
      */
     function selectAlgorithm(next: ProofChamberAlgorithm): void {
         updateChamberEngine(deviceId, (prev: ProofChamberEngineState) => ({ ...prev, algorithm: next }));

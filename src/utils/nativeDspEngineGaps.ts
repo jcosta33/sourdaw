@@ -193,7 +193,7 @@ export const NATIVE_DSP_ENGINE_GAPS: readonly NativeDspEngineGap[] = [
  *
  * The keys are a wire format: the number is written into project files and
  * replayed verbatim on load, and `ProofChamberInstance::set_param`
- * (`crates/proof-chamber/src/lib.rs:117-136`) is the only thing that decides
+ * (`crates/proof-chamber/src/lib.rs:336-365`) is the only thing that decides
  * what each number means. 4 and 5 are reserved for the two convolution-backed
  * engines that fall through to the plate because nothing can supply an impulse
  * response; they are absent here because nothing should treat them as

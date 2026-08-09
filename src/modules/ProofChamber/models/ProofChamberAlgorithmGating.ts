@@ -58,9 +58,9 @@ const LIVE: ChamberControlGate = { isInert: false, kind: null, explanation: null
  * An earlier version of this file ended every explanation with *"Automation
  * already drawn for it is kept and plays again on an algorithm that reads it"*,
  * rendered into the `title` of up to fifteen controls per algorithm. It was
- * false. `ProofChamberInstance::set_param` constructs a **new** engine when
- * `algorithm` arrives (`lib.rs:117-136`) and replays nothing into it, so
- * switching algorithm resets every parameter on the device — measured plate →
+ * false when it was written. `ProofChamberInstance::set_param` constructed a
+ * **new** engine when `algorithm` arrived and replayed nothing into it, so
+ * switching algorithm reset every parameter on the device — measured plate →
  * reverse → plate as bit-identical to an engine nobody had ever written to.
  *
  * That was this change's original sin: taking a silent engine defect and
@@ -72,9 +72,22 @@ const LIVE: ChamberControlGate = { isInert: false, kind: null, explanation: null
  * **The rule this file now follows: say what the control's state is and why it
  * is in that state, and nothing about what happens later.** Replacing a false
  * promise with a weaker promise the engine also breaks would repeat the same
- * mistake in miniature. When the `ProofChamberInstance` parameter cache lands
- * and a render-delta test proves values survive a switch, the claim can be
- * earned back — not before.
+ * mistake in miniature.
+ *
+ * The `ProofChamberInstance` parameter cache has since landed, and
+ * `crates/proof-chamber/tests/algorithm_switch_parameter_retention.rs` proves
+ * by render delta that values survive a switch on every exposed engine. **The
+ * sentence is still not coming back.** It was dropped rather than softened
+ * exactly so that the next version of it has to be earned by something true,
+ * and "everything survives" is still not true: the plate latches `shimmer` off
+ * inside its `freeze` arm and a cache of values cannot re-fire a latch, which
+ * that test file pins as a measured exception. A promise with an asterisk in
+ * fifteen tooltips is the same mistake as the original, one size smaller.
+ *
+ * What could be said without an asterisk — *a value you set on one algorithm
+ * is there when you come back to it* — is a copy change on its own evidence,
+ * not a rider on an engine fix, and it waits until the plate's latch is
+ * settled one way or the other.
  *
  * What is true today and needs no promise in the UI: gating refuses manual
  * entry and nothing else. The descriptor's `automatable` flag, the automation

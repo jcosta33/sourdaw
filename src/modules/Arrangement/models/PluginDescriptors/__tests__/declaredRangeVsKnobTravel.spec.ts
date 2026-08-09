@@ -1190,7 +1190,7 @@ const KNOWN_RANGE_DISAGREEMENTS: readonly RangeDisagreement[] = [
  *     `.clamp`, which excludes these by construction.
  *  4. **Clamp one or more hops away.** ~118 arms are pure pass-throughs to a
  *     sub-processor's own `set_param` (`toaster/engines/mod.rs:409-435`,
- *     `proof-chamber/src/lib.rs:154`), and ~27 hand the raw value to a setter
+ *     `proof-chamber/src/lib.rs:281-297`), and ~27 hand the raw value to a setter
  *     that may or may not clamp inside (`bacteria/engine.rs:815-824`).
  *  5. **Named-constant bounds.** Resolvable in principle, refused in practice:
  *     `MAX_BANDS`, `MAX_BURSTS` and `MAX_VOICES` are each defined more than once
