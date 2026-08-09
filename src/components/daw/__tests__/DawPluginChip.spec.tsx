@@ -32,10 +32,15 @@ describe('DawPluginChip', () => {
      * user sees. "These two must not render identically" survives a rewrite of
      * the styling and is the actual claim.
      */
-    it.each([true, false])('renders an inert chip differently from a live one (active=%s)', (active) => {
+    it.each([
+        [true, true],
+        [true, 'true'],
+        [false, true],
+        [false, 'true'],
+    ] as const)('renders an inert chip differently from a live one (active=%s, aria-disabled=%s)', (active, marker) => {
         const { container } = render(
             <>
-                <DawPluginChip active={active} aria-disabled title="Inert here.">
+                <DawPluginChip active={active} aria-disabled={marker} title="Inert here.">
                     Gated
                 </DawPluginChip>
                 <DawPluginChip active={active}>Live</DawPluginChip>
@@ -44,6 +49,37 @@ describe('DawPluginChip', () => {
 
         const [gated, live] = [...container.querySelectorAll('button')];
         expect(gated?.className).not.toBe(live?.className);
+    });
+
+    /**
+     * Hover feedback is a promise that the control will respond, so an inert
+     * chip has to *lose* the hover styling rather than merely gain a dimmed
+     * one.
+     *
+     * Expressed as a set relation between two renders — the inert chip's
+     * classes must not be a superset of the live chip's — because the house
+     * rule forbids asserting on class names and jsdom applies no CSS, so a
+     * hover rule is otherwise unobservable. "It dropped something the live one
+     * has" is the claim, and it names no token.
+     *
+     * Only for the non-active chip: an active chip legitimately keeps its whole
+     * tone treatment and adds the dimming, so it *is* a superset by design.
+     */
+    it('drops the live chip’s hover affordance rather than only dimming it', () => {
+        const { container } = render(
+            <>
+                <DawPluginChip aria-disabled title="Inert here.">
+                    Gated
+                </DawPluginChip>
+                <DawPluginChip>Live</DawPluginChip>
+            </>
+        );
+
+        const [gated, live] = [...container.querySelectorAll('button')];
+        const gatedClasses = new Set((gated?.className ?? '').split(/\s+/));
+        const dropped = (live?.className ?? '').split(/\s+/).filter((name) => !gatedClasses.has(name));
+
+        expect(dropped.length).toBeGreaterThan(0);
     });
 
     it('treats aria-disabled="false" as live', () => {
