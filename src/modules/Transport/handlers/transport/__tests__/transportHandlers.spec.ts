@@ -144,22 +144,45 @@ describe('Transport Handlers', () => {
         expect(mocks.setPreRollBars).toHaveBeenCalledWith(1);
     });
 
-    it('handleSetPunchIn delegates to use case', () => {
-        void handleSetPunchIn.execute({ type: 'setPunchIn', payload: { beat: 8 } });
+    it('handleSetPunchIn delegates to use case and reports a written outcome', () => {
+        mocks.setPunchIn.mockReturnValueOnce(true);
+
+        const result = handleSetPunchIn.execute({ type: 'setPunchIn', payload: { beat: 8 } });
+
         expect(mocks.setPunchIn).toHaveBeenCalledWith(8);
+        expect(result).toEqual({ status: 'written' });
     });
 
-    it('handleSetPunchOut delegates to use case', () => {
-        void handleSetPunchOut.execute({ type: 'setPunchOut', payload: { beat: 16 } });
+    it('handleSetPunchOut delegates to use case and reports a written outcome', () => {
+        mocks.setPunchOut.mockReturnValueOnce(true);
+
+        const result = handleSetPunchOut.execute({ type: 'setPunchOut', payload: { beat: 16 } });
+
         expect(mocks.setPunchOut).toHaveBeenCalledWith(16);
+        expect(result).toEqual({ status: 'written' });
+    });
+
+    it('reports no-write when either punch setter declines the write', () => {
+        mocks.setPunchIn.mockReturnValueOnce(false);
+        mocks.setPunchOut.mockReturnValueOnce(false);
+
+        expect(handleSetPunchIn.execute({ type: 'setPunchIn', payload: { beat: 8 } })).toEqual({
+            status: 'no-write',
+        });
+        expect(handleSetPunchOut.execute({ type: 'setPunchOut', payload: { beat: 16 } })).toEqual({
+            status: 'no-write',
+        });
     });
 
     it('handleRestorePunchRegion delegates the complete pair to the atomic use case', () => {
-        const region = { punchInBeat: 4, punchOutBeat: 12 };
+        const payload = {
+            expected: { punchInBeat: 20, punchOutBeat: 21 },
+            replacement: { punchInBeat: 4, punchOutBeat: 12 },
+        };
 
-        void handleRestorePunchRegion.execute({ type: 'restorePunchRegion', payload: region });
+        void handleRestorePunchRegion.execute({ type: 'restorePunchRegion', payload });
 
-        expect(mocks.restorePunchRegion).toHaveBeenCalledWith(region);
+        expect(mocks.restorePunchRegion).toHaveBeenCalledWith(payload);
     });
 
     it('handleToggleCountIn delegates to use case', () => {

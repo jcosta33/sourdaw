@@ -69,7 +69,13 @@ describe('validateActions', () => {
 
     it('should reject the Command-only punch-region inverse as unavailable to AI', () => {
         const actions = [
-            { type: 'restorePunchRegion', payload: { punchInBeat: 4, punchOutBeat: 12 } },
+            {
+                type: 'restorePunchRegion',
+                payload: {
+                    expected: { punchInBeat: 20, punchOutBeat: 21 },
+                    replacement: { punchInBeat: 4, punchOutBeat: 12 },
+                },
+            },
         ] as unknown as RuntimeAction[];
 
         expect(validateActions(actions)).toEqual([]);

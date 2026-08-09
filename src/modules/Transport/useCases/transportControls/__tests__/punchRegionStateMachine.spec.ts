@@ -175,7 +175,7 @@ describe('punch region numerical state machine', () => {
         ];
 
         for (const region of valid_regions) {
-            restorePunchRegion(region);
+            restorePunchRegion({ expected: get_punch_region(), replacement: region });
             expect(get_punch_region()).toEqual(region);
             expect_valid_punch_region(get_punch_region());
         }
@@ -188,7 +188,7 @@ describe('punch region numerical state machine', () => {
             { punchInBeat: 4, punchOutBeat: 4 },
             { punchInBeat: 8, punchOutBeat: 4 },
         ]) {
-            restorePunchRegion(invalid_region);
+            restorePunchRegion({ expected: before_invalid_restores, replacement: invalid_region });
             expect(get_punch_region()).toEqual(before_invalid_restores);
             expect_valid_punch_region(get_punch_region());
         }
