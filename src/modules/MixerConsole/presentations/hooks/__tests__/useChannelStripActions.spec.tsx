@@ -130,7 +130,7 @@ describe('useChannelStripActions', () => {
         result.current.toggleMute();
 
         expect(mocks.executeAppAction).toHaveBeenCalledWith(
-            { type: 'muteTrack', payload: { trackId: 'track-1', muted: true } },
+            { type: 'muteTrack', payload: { trackId: 'track-1', muted: true, expectedMuted: false } },
             { skipUndo: true }
         );
         expect(mocks.muteTrack).not.toHaveBeenCalled();
@@ -142,7 +142,7 @@ describe('useChannelStripActions', () => {
         result.current.toggleMute();
 
         expect(mocks.executeAppAction).toHaveBeenCalledWith(
-            { type: 'muteTrack', payload: { trackId: 'track-1', muted: false } },
+            { type: 'muteTrack', payload: { trackId: 'track-1', muted: false, expectedMuted: true } },
             { skipUndo: true }
         );
     });
@@ -231,7 +231,7 @@ describe('useChannelStripActions', () => {
         expect(mocks.executeAppAction).toHaveBeenCalledTimes(1);
         expect(mocks.executeAppAction).toHaveBeenCalledWith({
             type: 'setTrackGain',
-            payload: { trackId: 'track-1', gain: 0.31 },
+            payload: { trackId: 'track-1', gain: 0.31, expectedGain: 0.8 },
         });
         // While the commit is in flight the strip still draws the settled value.
         // Handing the display straight back to `track.gain` here showed the
@@ -392,7 +392,7 @@ describe('useChannelStripActions', () => {
         expect(mocks.executeAppAction).toHaveBeenCalledTimes(1);
         expect(mocks.executeAppAction).toHaveBeenCalledWith({
             type: 'setTrackPan',
-            payload: { trackId: 'track-1', pan: -30 },
+            payload: { trackId: 'track-1', pan: -30, expectedPan: 0 },
         });
         expect(result.current.displayPan).toBe(-30);
 

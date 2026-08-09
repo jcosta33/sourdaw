@@ -53,7 +53,7 @@ export const handleAutoFixMix = createHandler<'autoFixMix'>({
                     const newGain = Math.max(0, Math.min(1, currentGain * reductionFactor));
                     await executeAppAction({
                         type: 'setTrackGain',
-                        payload: { trackId: tl.trackId, gain: newGain },
+                        payload: { trackId: tl.trackId, gain: newGain, expectedGain: currentGain },
                     });
                     did_apply_write = true;
                 }

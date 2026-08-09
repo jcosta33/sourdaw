@@ -678,7 +678,10 @@ describe('mixer strip writes reach the project through the recorded path', () =>
      * `undoable: false` on the handler would have thrown away.
      */
     it('still records a mute issued as an ordinary action rather than as a performance', async () => {
-        await executeAppAction({ type: 'muteTrack', payload: { trackId: TRACK_ID, muted: true } });
+        await executeAppAction({
+            type: 'muteTrack',
+            payload: { trackId: TRACK_ID, muted: true, expectedMuted: false },
+        });
 
         expect(undoLabels()).toEqual(['Mute track']);
         expect(sharedHistoryLabels).toEqual(['Mute track']);

@@ -110,6 +110,33 @@ const baseContext: ProjectContext = {
     playheadPosition: 0,
 };
 
+function createMixerContext(): ProjectContext {
+    return {
+        ...baseContext,
+        tracks: [
+            { id: 'track-vocals', name: 'Vocals' },
+            { id: 'track-guitar', name: 'Guitar' },
+        ].map(({ id, name }) => ({
+            id,
+            name,
+            kind: 'audio',
+            muted: false,
+            soloed: false,
+            soloSafe: false,
+            armed: false,
+            gain: 0.8,
+            pan: 0,
+            automationMode: 'read',
+            outputId: 'master',
+            clipCount: 0,
+            deviceCount: 0,
+            clips: [],
+            devices: [],
+            sends: [],
+        })),
+    };
+}
+
 function completePlan<TToolCall>(toolCalls: TToolCall[]) {
     return { status: 'complete' as const, toolCalls };
 }
@@ -205,9 +232,12 @@ describe('parsePromptToActions', () => {
         ];
         vi.mocked(tryCompoundFastPath).mockReturnValue(actions);
 
-        const result = await parsePromptToActions('mute vocals and lower guitar', baseContext);
+        const result = await parsePromptToActions('mute vocals and lower guitar', createMixerContext());
 
-        expect(result.actions).toEqual(actions);
+        expect(result.actions).toEqual([
+            { type: 'muteTrack', payload: { trackId: 'track-vocals', muted: true, expectedMuted: false } },
+            { type: 'setTrackGain', payload: { trackId: 'track-guitar', gain: 0.6, expectedGain: 0.8 } },
+        ]);
         expect(result.requiresConfirmation).toBe(true);
     });
 
@@ -1057,30 +1087,7 @@ describe('parsePromptToActions', () => {
 
     it('requires confirmation for a grounded multi-action provider plan', async () => {
         mockBridgeGroundedLlmToolCalls.mockImplementation(actualBridge.bridgeGroundedLlmToolCalls);
-        const providerContext: ProjectContext = {
-            ...baseContext,
-            tracks: [
-                { id: 'track-vocals', name: 'Vocals' },
-                { id: 'track-guitar', name: 'Guitar' },
-            ].map(({ id, name }) => ({
-                id,
-                name,
-                kind: 'audio',
-                muted: false,
-                soloed: false,
-                soloSafe: false,
-                armed: false,
-                gain: 0.8,
-                pan: 0,
-                automationMode: 'read',
-                outputId: 'master',
-                clipCount: 0,
-                deviceCount: 0,
-                clips: [],
-                devices: [],
-                sends: [],
-            })),
-        };
+        const providerContext = createMixerContext();
         vi.mocked(generateToolCalls).mockResolvedValue(
             completePlan([
                 { name: 'muteTrack', arguments: { trackId: 'track-vocals', muted: true } },
@@ -1091,8 +1098,8 @@ describe('parsePromptToActions', () => {
         const result = await parsePromptToActions('mute Vocals and lower Guitar', providerContext);
 
         expect(result.actions).toEqual([
-            { type: 'muteTrack', payload: { trackId: 'track-vocals', muted: true } },
-            { type: 'setTrackGain', payload: { trackId: 'track-guitar', gain: 0.6 } },
+            { type: 'muteTrack', payload: { trackId: 'track-vocals', muted: true, expectedMuted: false } },
+            { type: 'setTrackGain', payload: { trackId: 'track-guitar', gain: 0.6, expectedGain: 0.8 } },
         ]);
         expect(result.requiresConfirmation).toBe(true);
         expect(result.executionMode).toBe('atomic');
@@ -1228,11 +1235,11 @@ describe('parsePromptToActions', () => {
             rejections: [],
         });
 
-        const result = await parsePromptToActions('mute vocals and pan guitar left', baseContext);
+        const result = await parsePromptToActions('mute vocals and pan guitar left', createMixerContext());
 
         expect(result.actions).toEqual([
-            { type: 'muteTrack', payload: { trackId: 'track-vocals', muted: true } },
-            { type: 'setTrackPan', payload: { trackId: 'track-guitar', pan: -20 } },
+            { type: 'muteTrack', payload: { trackId: 'track-vocals', muted: true, expectedMuted: false } },
+            { type: 'setTrackPan', payload: { trackId: 'track-guitar', pan: -20, expectedPan: 0 } },
         ]);
         expect(result.executionMode).toBe('atomic');
     });

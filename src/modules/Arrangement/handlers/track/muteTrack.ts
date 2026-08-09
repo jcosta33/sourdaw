@@ -5,16 +5,33 @@ import { muteTrack } from '../../useCases/toggleTrackState/muteTrack';
 
 export const handleMuteTrack = createHandler<'muteTrack'>({
     execute: (action) => {
+        const currentMuted = getTrackStoreState()?.tracks.find((track) => track.id === action.payload.trackId)?.muted;
+        if (currentMuted !== action.payload.expectedMuted) {
+            return { status: 'conflict' };
+        }
         muteTrack(action.payload.trackId, action.payload.muted);
+        return { status: 'written' };
     },
-    isNoop: (action) =>
-        getTrackStoreState()?.tracks.find((track) => track.id === action.payload.trackId)?.muted ===
-        action.payload.muted,
+    isNoop: (action) => {
+        const currentMuted = getTrackStoreState()?.tracks.find((track) => track.id === action.payload.trackId)?.muted;
+        return currentMuted === action.payload.expectedMuted && currentMuted === action.payload.muted;
+    },
     describe: (action) => {
         const track = getTrackStoreState()?.tracks.find((candidate) => candidate.id === action.payload.trackId);
         return {
             label: action.payload.muted ? 'Mute track' : 'Unmute track',
-            inverseAction: track ? { type: 'muteTrack', payload: { trackId: track.id, muted: track.muted } } : null,
+            inverseAction: track
+                ? {
+                      type: 'muteTrack',
+                      payload: { trackId: track.id, muted: track.muted, expectedMuted: action.payload.muted },
+                  }
+                : null,
+            redoAction: track
+                ? {
+                      type: 'muteTrack',
+                      payload: { trackId: track.id, muted: action.payload.muted, expectedMuted: track.muted },
+                  }
+                : undefined,
         };
     },
     undoable: true,

@@ -51,6 +51,7 @@ type ExecuteAppActionBatch = (
 
 type PreparedBatchAction = {
     action: AppAction;
+    afterAbort: HandlerAfterCommit | null;
     afterCommit: HandlerAfterCommit | null;
     afterAmbiguousCommit: HandlerAfterCommit | null;
     requiresAbortCompensation: boolean;
@@ -161,6 +162,7 @@ async function executePreparedBatch(
         if (prepared.handler.isNoop?.(prepared.action)) {
             continue;
         }
+        prepared.afterAbort = prepared.handler.prepareAbort?.(prepared.action) ?? null;
         attemptedActions.push(prepared);
         const result: HandlerExecutionResult | void = await scope(() => prepared.handler.execute(prepared.action));
         if (result?.status === 'no-write' || result?.status === 'conflict') {
@@ -172,6 +174,40 @@ async function executePreparedBatch(
     }
     assertExecutionAuthorized(shouldExecute);
     return executedActions;
+}
+
+async function rollbackAttemptedBatch(
+    attemptedActions: readonly PreparedBatchAction[],
+    scope: AutomergeStorageTransactionScope
+): Promise<string | null> {
+    const failures: string[] = [];
+    for (const prepared of [...attemptedActions].reverse()) {
+        const rollback = prepared.afterAbort;
+        if (!rollback) {
+            continue;
+        }
+        try {
+            await scope(rollback);
+        } catch (error) {
+            failures.push(`${prepared.action.type}: ${failureReason(error)}`);
+        }
+    }
+    return failures.length > 0 ? failures.join('; ') : null;
+}
+
+function appendAbortFailures(
+    reason: string,
+    compensationFailure: string | null,
+    rollbackFailure: string | null
+): string {
+    let result = reason;
+    if (compensationFailure) {
+        result = `${result}; runtime compensation failed: ${compensationFailure}`;
+    }
+    if (rollbackFailure) {
+        result = `${result}; abort rollback failed: ${rollbackFailure}`;
+    }
+    return result;
 }
 
 async function compensateAttemptedBatch(
@@ -310,6 +346,7 @@ export const executeAppActionBatch: ExecuteAppActionBatch = inject({ logger })(
                 }
                 preparedActions.push({
                     action,
+                    afterAbort: null,
                     afterCommit: null,
                     afterAmbiguousCommit: null,
                     requiresAbortCompensation: handler.requiresAbortCompensation ?? true,
@@ -376,14 +413,13 @@ export const executeAppActionBatch: ExecuteAppActionBatch = inject({ logger })(
                 executedActions = await storageTransaction.value;
             } catch (error) {
                 const compensationFailure = await compensateAttemptedBatch(attemptedActions, storageTransaction.scope);
+                const rollbackFailure = await rollbackAttemptedBatch(attemptedActions, storageTransaction.scope);
                 storageTransaction.abort();
                 clearBatchSemanticContext();
                 const baseReason = failureReason(error);
-                const reason = compensationFailure
-                    ? `${baseReason}; runtime compensation failed: ${compensationFailure}`
-                    : baseReason;
+                const reason = appendAbortFailures(baseReason, compensationFailure, rollbackFailure);
                 logger.error(new Error('Action batch handler failed', { cause: error }));
-                if (error instanceof AppActionBatchCancelledError && !compensationFailure) {
+                if (error instanceof AppActionBatchCancelledError && !compensationFailure && !rollbackFailure) {
                     return { status: 'cancelled', reason: error.message, actions: [] };
                 }
                 if (error instanceof AppActionConflictError) {
@@ -402,12 +438,13 @@ export const executeAppActionBatch: ExecuteAppActionBatch = inject({ logger })(
                 assertExecutionAuthorized(options?.shouldExecute);
             } catch (error) {
                 const compensationFailure = await compensateAttemptedBatch(attemptedActions, storageTransaction.scope);
+                const rollbackFailure = await rollbackAttemptedBatch(attemptedActions, storageTransaction.scope);
                 storageTransaction.abort();
                 clearBatchSemanticContext();
-                if (compensationFailure) {
+                if (compensationFailure || rollbackFailure) {
                     return {
                         status: 'failed',
-                        reason: `${failureReason(error)}; runtime compensation failed: ${compensationFailure}`,
+                        reason: appendAbortFailures(failureReason(error), compensationFailure, rollbackFailure),
                         actions: [],
                     };
                 }
@@ -433,11 +470,12 @@ export const executeAppActionBatch: ExecuteAppActionBatch = inject({ logger })(
                     };
                 }
                 const compensationFailure = await compensateAttemptedBatch(attemptedActions, storageTransaction.scope);
+                const rollbackFailure = await rollbackAttemptedBatch(attemptedActions, storageTransaction.scope);
                 storageTransaction.abort();
-                if (compensationFailure) {
+                if (compensationFailure || rollbackFailure) {
                     return {
                         status: 'failed',
-                        reason: `${reason}; runtime compensation failed: ${compensationFailure}`,
+                        reason: appendAbortFailures(reason, compensationFailure, rollbackFailure),
                         actions: [],
                     };
                 }

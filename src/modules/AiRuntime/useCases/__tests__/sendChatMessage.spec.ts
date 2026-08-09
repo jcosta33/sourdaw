@@ -432,8 +432,14 @@ describe('sendChatMessage injectables', () => {
     });
 
     it('binds validated provider actions and admission to one project revision', async () => {
-        const action = { type: 'muteTrack', payload: { trackId: 'track-vocals', muted: true } } as const;
-        const secondAction = { type: 'setTrackPan', payload: { trackId: 'track-guitar', pan: -20 } } as const;
+        const action = {
+            type: 'muteTrack',
+            payload: { trackId: 'track-vocals', muted: true, expectedMuted: false },
+        } as const;
+        const secondAction = {
+            type: 'setTrackPan',
+            payload: { trackId: 'track-guitar', pan: -20, expectedPan: 0 },
+        } as const;
         mocks.chatStoreValue.value = {
             messages: [],
             isGenerating: false,
