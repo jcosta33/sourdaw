@@ -57,7 +57,17 @@ const {
     mockImportCachedAudioBuffers: vi.fn(() =>
         Promise.resolve({ publish: vi.fn(), persist: () => Promise.resolve(true) })
     ),
-    mockPrepareCachedAudioBuffersFromIdb: vi.fn(() => Promise.resolve({ publish: vi.fn() })),
+    // Mirrors `prepareBuffersFromIdb`: its null is produced by `shouldContinue`
+    // and never independently of it (`audioBufferCache.ts:643`, `:647`, `:662`,
+    // `:677` — invalid rows are skipped, and the catch returns an object).
+    mockPrepareCachedAudioBuffersFromIdb: vi.fn(
+        (input: { shouldContinue?: () => boolean }): Promise<{ publish: () => void } | null> => {
+            if (input.shouldContinue?.() === false) {
+                return Promise.resolve(null);
+            }
+            return Promise.resolve({ publish: vi.fn() });
+        }
+    ),
     mockResetAudioGraph: vi.fn(),
     mockClearUndoHistory: vi.fn(),
     mockCompactProject: vi.fn(() => Promise.resolve()),
@@ -219,6 +229,14 @@ function openProject(name: string, trackId: string, trackName: string) {
     });
 }
 
+/** The default IndexedDB buffer read, restored between cases. */
+function readStoredBuffers(input: { shouldContinue?: () => boolean }): Promise<{ publish: () => void } | null> {
+    if (input.shouldContinue?.() === false) {
+        return Promise.resolve(null);
+    }
+    return Promise.resolve({ publish: vi.fn() });
+}
+
 function editTheArrangement(): void {
     const current = trackStore.value ?? defaultTrackState;
     trackStore.set({
@@ -303,17 +321,12 @@ const successorOwnedAborts: Array<{ label: string; arrange: () => void }> = [
     {
         label: 'a newer transition supersedes this one during the IndexedDB buffer read',
         arrange: () => {
-            mockPrepareCachedAudioBuffersFromIdb.mockImplementation(
-                ({ shouldContinue }: { shouldContinue?: () => boolean }) => {
-                    takeOverByNewerLoad();
-                    // What `prepareBuffersFromIdb` does: the null is produced by
-                    // `shouldContinue`, never independently of it.
-                    if (shouldContinue?.() === false) {
-                        return Promise.resolve(null as never);
-                    }
-                    return Promise.resolve({ publish: vi.fn() });
-                }
-            );
+            mockPrepareCachedAudioBuffersFromIdb.mockImplementation((input) => {
+                takeOverByNewerLoad();
+                // The null comes out of the ordinary read path, via
+                // `shouldContinue` — not injected around it.
+                return readStoredBuffers(input);
+            });
         },
     },
 ];
@@ -329,7 +342,7 @@ describe('interrupted project load dirty tracking', () => {
         transactionControls.activate = () => true;
         transactionControls.superseded = false;
         mockImportCachedAudioBuffers.mockResolvedValue({ publish: vi.fn(), persist: () => Promise.resolve(true) });
-        mockPrepareCachedAudioBuffersFromIdb.mockResolvedValue({ publish: vi.fn() });
+        mockPrepareCachedAudioBuffersFromIdb.mockImplementation(readStoredBuffers);
         mockStopPlayback.mockResolvedValue(undefined);
         mockCompactProject.mockResolvedValue(undefined);
         mockResetCrdtProjectAuthority.mockImplementation(() => {});
