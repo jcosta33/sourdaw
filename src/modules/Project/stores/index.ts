@@ -6,3 +6,6 @@ export { defaultMissingMediaStoreState, missingMediaStore } from './missingMedia
 
 export type { ProjectStoreState } from './projectStore';
 export { projectStore } from './projectStore';
+
+export type { ProjectLoadFailureState } from './projectLoadFailureStore';
+export { projectLoadFailureStore } from './projectLoadFailureStore';

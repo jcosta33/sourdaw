@@ -17,6 +17,7 @@ import { clearLoadedExternalPlugins } from '#/modules/PluginHost/useCases';
 import { ensureTrackStrips, stopPlayback } from '#/modules/Transport/useCases';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
+import { projectLoadFailureStore } from '../../../stores/projectLoadFailureStore';
 import { projectStore } from '../../../stores/projectStore';
 import { finishProjectLoading } from '../../finishProjectLoading';
 
@@ -152,17 +153,27 @@ export async function replaceProjectData({
         //     the empty project as a normally opened session and let the user
         //     keep working in it while their real one is gone.
         //
-        // What is left is the honest state: no project open, so the launch
-        // screen — not a wedged overlay, and not a fake session. Nothing
-        // compacted, so IndexedDB still holds the user's project and reopening
-        // it from that screen is a real recovery.
-        const project = projectStore.value;
-        if (project) {
-            projectStore.set({ ...project, loading: false, initialized: false });
+        // What is left is a dedicated failure surface. The transient flags
+        // cannot carry this state: `{ initialized: false, loading: false }`
+        // renders as the full editor mid-session, because `AppShell` latches
+        // `launchReady` on the first open and never re-reveals the launch
+        // screen (`AppShell.tsx:436-444`). That is the same "normally opened
+        // session" outcome as restoring `initialized: true`, so the flags are
+        // left claimed and `projectLoadFailureStore` is what the shell renders.
+        //
+        // Nothing compacted, so IndexedDB still holds the user's project and a
+        // reload restores it — which is what the surface tells them to do.
+        try {
+            projectLoadFailureStore.set({
+                message: 'Your previous session was closed to open this project, and the project failed to open.',
+                projectName: data.meta.name,
+            });
+        } catch (error) {
+            logger.error(new Error(`[${context}] Failed to publish the load failure`, { cause: error }));
         }
         try {
             notifyUser(
-                'Opening the project failed and the previous session could not be restored. Your saved projects are intact — open one to continue.',
+                'Opening the project failed and the previous session could not be restored. Your saved projects are intact — reload to get back to them.',
                 'error'
             );
         } catch (error) {

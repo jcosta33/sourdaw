@@ -76,11 +76,13 @@ import { AlphaNoticeDialog } from '../components/AlphaNoticeDialog';
 import { ErrorBoundary } from '../components/ErrorBoundary';
 import { InstrumentBottomPanel } from '../components/InstrumentBottomPanel';
 import { MobileGate } from '../components/MobileGate';
+import { ProjectLoadFailureOverlay } from '../components/ProjectLoadFailureOverlay';
 import { ProjectLoadingOverlay } from '../components/ProjectLoadingOverlay';
 import { ShortcutCheatSheet } from '../components/ShortcutCheatSheet';
 import { useActiveDevicePanel } from '../hooks/useActiveDevicePanel';
 import { useAppEventHandlers } from '../hooks/useAppEventHandlers';
 import { useAppInitialization } from '../hooks/useAppInitialization';
+import { useProjectLoadFailure } from '../hooks/useProjectLoadFailure';
 import { useProjectState } from '../hooks/useProjectState';
 import { useWorkspaceState } from '../hooks/useWorkspaceState';
 
@@ -194,6 +196,7 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
     const selectedClipId = useStore(clipSelectionStore, defaultClipSelectionState).selectedClipId;
 
     const project = useProjectState();
+    const projectLoadFailure = useProjectLoadFailure();
     const prefs = useStore(preferencesStore, defaultPreferences);
     const tracksSnapshot = useStore(trackStore, { tracks: [], selectedTrackId: null });
     const isAudioClipSelected =
@@ -913,6 +916,20 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
 
                 {/* Launch screen overlay — shown for new users, fades out when project initializes */}
                 {showLaunch ? <LaunchScreen exiting={launchExiting} /> : null}
+
+                {/* Terminal open failure: the previous session is gone and no
+                    project replaced it. Rendered last and above both overlays,
+                    and gated on its own store rather than the transient flags —
+                    `launchReady` latches on the first open, so mid-session
+                    `{ initialized: false, loading: false }` shows neither the
+                    launch screen nor the loading overlay, only the editor. */}
+                {projectLoadFailure ? (
+                    <ProjectLoadFailureOverlay
+                        message={projectLoadFailure.message}
+                        projectName={projectLoadFailure.projectName}
+                        onReload={() => window.location.reload()}
+                    />
+                ) : null}
 
                 <OnboardingTour />
             </div>

@@ -29,9 +29,18 @@ export function resetCrdtProjectAuthority(name: string, onAuthorityReplaced?: ()
     flushAutomergeStorageWrites();
     void runCrdtPersistenceOperation('reset');
     automergeRepository.createProject(name);
-    // The point of no return: the previous root is gone from the repository and
-    // the projection reset below takes it out of every store. Reported first,
-    // so a throw in any of the remaining steps still tells the caller the truth.
+    // Audit CC-2 — the outgoing project's projected caches must not survive the
+    // authority switch. Left in place they are the stale-bleed source: the
+    // first projection against the fresh document would carry the previous
+    // project's tracks/automation/markers into it.
+    resetAutomergeStorageProjections(DOC_PREFIX_ROOT);
+    // The point of no return, reported only once everything it asserts is
+    // actually true: the previous root is gone from the repository *and* every
+    // root-doc projection has been reset to its default, so the previous
+    // project is out of the stores. A caller that aborts on a later throw can
+    // rely on both. `resetAutomergeStorageProjections` guards each projection
+    // individually, so it cannot leave that half-done and cannot throw past
+    // this line.
     onAuthorityReplaced?.();
     // Deferred past `createProject` deliberately. This clears the inverse-action
     // map undo replays from, and that map describes the document being replaced
@@ -39,11 +48,6 @@ export function resetCrdtProjectAuthority(name: string, onAuthorityReplaced?: ()
     // the top (where it used to be), every abort before `createProject` left the
     // user's undo entries still rendered and silently inert.
     resetActionReplayAuthority();
-    // Audit CC-2 — the outgoing project's projected caches must not survive the
-    // authority switch. Left in place they are the stale-bleed source: the
-    // first projection against the fresh document would carry the previous
-    // project's tracks/automation/markers into it.
-    resetAutomergeStorageProjections(DOC_PREFIX_ROOT);
     // `branchStore` is localStorage-backed, and that adapter deliberately
     // propagates a failed write so callers can retry (see `createLocalStorage`).
     // This caller cannot: it is the last statement of the authority switch, and

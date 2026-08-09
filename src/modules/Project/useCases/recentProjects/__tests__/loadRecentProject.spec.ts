@@ -6,7 +6,7 @@ import {
     prepareCachedAudioBuffersFromIdb,
     resetAudioGraph,
 } from '#/modules/AudioEngine/useCases';
-import { startCrdtAutoSave } from '#/modules/CrdtDocument/useCases';
+import { resetCrdtProjectAuthority, startCrdtAutoSave } from '#/modules/CrdtDocument/useCases';
 import { ensureTrackStrips } from '#/modules/Transport/useCases';
 
 import { CURRENT_PROJECT_VERSION } from '../../../models/ProjectData';
@@ -311,6 +311,24 @@ describe('loadRecentProject', () => {
         expect(hydrateModuleStoresFromProjectData).not.toHaveBeenCalled();
         // No project was replaced, so the device-store reset must not fire either.
         expect(resetModuleStoresToDefault).not.toHaveBeenCalled();
+    });
+
+    /**
+     * `aborted` tells the caller a newer transition owns the project now and it
+     * should do nothing. A load that destroyed the previous session and then
+     * failed is the opposite: nothing owns the project and no successor is
+     * coming. Collapsing the two hid that from every caller.
+     */
+    it('reports a load that destroyed the session as failed, not aborted', async () => {
+        vi.mocked(readNamedProjectJson).mockResolvedValue(validProject);
+        vi.mocked(resetCrdtProjectAuthority).mockImplementationOnce(
+            (_name: string, onAuthorityReplaced?: () => void): void => {
+                onAuthorityReplaced?.();
+                throw new DOMException('exceeded the quota', 'QuotaExceededError');
+            }
+        );
+
+        await expect(loadRecentProject('reset-failure')).resolves.toBe('failed');
     });
 
     it('leaves the live project untouched when recent-project parsing fails', async () => {

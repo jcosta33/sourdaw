@@ -17,6 +17,7 @@ const {
     mockStopPlayback,
     mockNotifyUser,
     mockProjectStore,
+    mockProjectLoadFailureStore,
     mockAutoSaveHandle,
     mockStopActiveAutoSave,
     mockHydrateArrangement,
@@ -42,6 +43,10 @@ const {
     mockStopPlayback: vi.fn(() => Promise.resolve()),
     mockNotifyUser: vi.fn(),
     mockProjectStore: {
+        value: null as Record<string, unknown> | null,
+        set: vi.fn(),
+    },
+    mockProjectLoadFailureStore: {
         value: null as Record<string, unknown> | null,
         set: vi.fn(),
     },
@@ -75,6 +80,7 @@ vi.mock('#/modules/Transport/useCases', () => ({
 }));
 vi.mock('#/utils/Notification/notifyUser', () => ({ notifyUser: mockNotifyUser }));
 vi.mock('../../../../stores/projectStore', () => ({ projectStore: mockProjectStore }));
+vi.mock('../../../../stores/projectLoadFailureStore', () => ({ projectLoadFailureStore: mockProjectLoadFailureStore }));
 vi.mock('../autoSaveHandle', () => mockAutoSaveHandle);
 vi.mock('../stopActiveAutoSave', () => ({ stopActiveAutoSave: mockStopActiveAutoSave }));
 vi.mock('../hydrateArrangementStoreFromProjectData', () => ({

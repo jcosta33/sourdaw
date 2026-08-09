@@ -568,7 +568,17 @@ const automergeStorageProjections = new Set<{
 export function resetAutomergeStorageProjections(docId: AutomergeStorageDocId): void {
     for (const projection of [...automergeStorageProjections]) {
         if (projection.docId === docId) {
-            projection.resetProjection();
+            // Guarded per projection: a throw partway through used to leave an
+            // arbitrary subset of stores still holding the outgoing project
+            // while the rest had been reset — the stale-bleed this function
+            // exists to prevent, applied to whichever projections happened to
+            // come after the failing one. Callers also treat "this returned" as
+            // "every projection is reset", so it must not exit early.
+            try {
+                projection.resetProjection();
+            } catch (error) {
+                logger.error(new Error('Automerge projection reset failed', { cause: error }));
+            }
         }
     }
 }

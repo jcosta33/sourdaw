@@ -125,6 +125,7 @@ vi.mock('../../helpers/stopActiveAutoSave', () => ({ stopActiveAutoSave: mockSto
 
 import { defaultTrackState, trackStore } from '#/modules/Arrangement/stores';
 
+import { projectLoadFailureStore } from '../../../../stores/projectLoadFailureStore';
 import { projectStore } from '../../../../stores/projectStore';
 import { replaceProjectData } from '../../helpers/replaceProjectData';
 import { initProjectDirtyTracking } from '../initProjectDirtyTracking';
@@ -642,10 +643,11 @@ describe('interrupted project load dirty tracking', () => {
             });
 
             expect(result.status).toBe('failed');
-            // No project is open, so the launch screen — not a restored session
-            // the user would keep working in, and not a wedged overlay either.
-            expect(projectStore.value?.initialized).toBe(false);
-            expect(projectStore.value?.loading).toBe(false);
+            // The shell renders off this store, not the transient flags —
+            // `AppShell` latches `launchReady` on the first open, so
+            // `{ initialized: false, loading: false }` shows the full editor
+            // mid-session. `AppShell.spec.tsx` pins both halves of that.
+            expect(projectLoadFailureStore.value).toMatchObject({ projectName: INCOMING_PROJECT_NAME });
             expect(mockNotifyUser).toHaveBeenCalledWith(expect.stringContaining('could not be restored'), 'error');
             // `ensureTrackStrips` reads `trackStore.value?.tracks`, which the
             // authority switch just emptied — calling it would only look like a

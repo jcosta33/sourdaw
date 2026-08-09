@@ -13,6 +13,7 @@ import {
     type TrackStoreState,
 } from '#/modules/Arrangement/stores';
 import { setWebMidiRuntimeEventBus } from '#/modules/MIDI/useCases';
+import { projectLoadFailureStore, type ProjectLoadFailureState } from '#/modules/Project/stores';
 import { setNotificationEventBus } from '#/utils/Notification/notificationEventBus';
 
 import { defaultWorkspaceState, type WorkspaceState } from '../../../models/WorkspaceState';
@@ -243,6 +244,7 @@ const createTrack = (clip: Clip): Track => ({
 });
 
 let projectState: ProjectState;
+let projectLoadFailureState: ProjectLoadFailureState | null;
 let alphaNoticeDismissed: boolean;
 let trackStoreState: TrackStoreState;
 let selectedClipIdState: string | null;
@@ -258,6 +260,7 @@ describe('AppShell', () => {
         workspaceStore.set({ ...defaultWorkspaceState });
         elasticEditorPanelMock.mockImplementation(() => <div data-testid="elastic-panel">Elastic</div>);
         projectState = createProjectState();
+        projectLoadFailureState = null;
         alphaNoticeDismissed = true;
         trackStoreState = { tracks: [], selectedTrackId: null, ghostClips: [] };
         selectedClipIdState = null;
@@ -275,6 +278,12 @@ describe('AppShell', () => {
             if (store === alphaNoticeStore) {
                 return alphaNoticeDismissed;
             }
+            if (store === projectLoadFailureStore) {
+                return projectLoadFailureState;
+            }
+            // NB: the fallback turns a `null` default truthy, so any store that
+            // legitimately reads null must be listed above rather than fall
+            // through here.
             return defaultValue || { past: [], future: [] };
         });
 
@@ -546,6 +555,67 @@ describe('AppShell', () => {
                 vi.advanceTimersByTime(1);
             });
             expect(screen.queryByTestId('launch-screen')).not.toBeInTheDocument();
+        });
+
+        /**
+         * The reason the terminal open failure has its own store rather than
+         * riding the transient flags. `launchReady` latches the first time a
+         * project opens and is never reset, so mid-session
+         * `{ initialized: false, loading: false }` reveals neither the launch
+         * screen nor the loading overlay — the user is left in the full editor
+         * over whatever the stores now hold.
+         */
+        it('renders the editor, not the launch screen, when a session ends mid-run', () => {
+            vi.useFakeTimers();
+            projectState = createProjectState({ initialized: false, loading: false });
+            const { rerender } = render(<AppShell>Content</AppShell>);
+
+            // Boot: launch screen, then a project opens and latches `launchReady`.
+            expect(screen.getByTestId('launch-screen')).toBeInTheDocument();
+            projectState = createProjectState({ initialized: true, loading: false });
+            rerender(<AppShell>Content</AppShell>);
+            act(() => {
+                vi.advanceTimersByTime(700);
+            });
+            expect(screen.queryByTestId('launch-screen')).not.toBeInTheDocument();
+
+            // Mid-session, back to the cold-start flag values.
+            projectState = createProjectState({ initialized: false, loading: false });
+            rerender(<AppShell>Content</AppShell>);
+
+            expect(screen.queryByTestId('launch-screen')).not.toBeInTheDocument();
+            expect(screen.queryByTestId('project-loading-overlay')).not.toBeInTheDocument();
+            // Nothing blocking: the editor chrome is what the user is left with.
+            expect(screen.getByTestId('transport-bar')).toBeInTheDocument();
+        });
+
+        it('blocks the editor with a failure surface naming the project when an open destroys the session', () => {
+            vi.useFakeTimers();
+            projectState = createProjectState({ initialized: false, loading: false });
+            projectLoadFailureState = {
+                message: 'Your previous session was closed to open this project, and the project failed to open.',
+                projectName: 'Half Finished Song',
+            };
+
+            render(<AppShell>Content</AppShell>);
+
+            const surface = screen.getByRole('alertdialog');
+            expect(surface).toHaveTextContent('Half Finished Song');
+            // The only recovery, and it is offered rather than described.
+            expect(screen.getByRole('button', { name: 'Reload' })).toBeInTheDocument();
+            // It must not auto-dismiss: still there long after a toast would be.
+            act(() => {
+                vi.advanceTimersByTime(30_000);
+            });
+            expect(screen.getByRole('alertdialog')).toBeInTheDocument();
+        });
+
+        it('shows no failure surface on an ordinary load', () => {
+            projectState = createProjectState({ initialized: true, loading: false });
+
+            render(<AppShell>Content</AppShell>);
+
+            expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
         });
 
         it('keeps the launch overlay exiting when initialized briefly flips back to false', () => {

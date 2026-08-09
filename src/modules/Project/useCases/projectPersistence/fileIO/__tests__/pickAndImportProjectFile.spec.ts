@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { projectLoadFailureStore } from '../../../../stores/projectLoadFailureStore';
 import { pickAndImportProjectFile } from '../pickAndImportProjectFile';
 
 import type { ProjectLoadTransaction } from '../../helpers/runProjectLoadTransaction';
@@ -70,6 +71,7 @@ describe('pickAndImportProjectFile', () => {
         mocks.runProjectLoadTransaction.mockReturnValue(transactionSentinel);
         mocks.saveProject.mockResolvedValue(true);
         mocks.projectStoreValue.value = null;
+        projectLoadFailureStore.set(null);
     });
 
     it('returns false without starting a transaction when no file is selected', async () => {
@@ -118,6 +120,23 @@ describe('pickAndImportProjectFile', () => {
 
         expect(mocks.notifyUser).toHaveBeenCalledWith('Invalid project file format', 'error');
         expect(mocks.loggerError).not.toHaveBeenCalled();
+    });
+
+    /**
+     * `applyImportedProjectData` returns false for "unusable file", for
+     * "superseded", and for "the open destroyed the session and then failed".
+     * Only the first is the file's fault. Telling the user their file is
+     * malformed after the third sends them back to the picker to try again
+     * while their session is already gone, and buries the real message.
+     */
+    it('does not blame the file when the open destroyed the session', async () => {
+        mocks.pickFiles.mockResolvedValue([makeFile(JSON.stringify({ version: 1 }))]);
+        mocks.applyImportedProjectData.mockResolvedValue(false);
+        projectLoadFailureStore.set({ message: 'session gone', projectName: 'Half Finished Song' });
+
+        await expect(pickAndImportProjectFile()).resolves.toBe(false);
+
+        expect(mocks.notifyUser).not.toHaveBeenCalledWith('Invalid project file format', 'error');
     });
 
     it('notifies, logs, and returns false when the file contents are not valid JSON', async () => {
