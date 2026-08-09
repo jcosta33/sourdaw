@@ -1,0 +1,23 @@
+src/modules/Arrangement/models/PluginDescriptors/GrinderDescriptor.ts
+  s_ee163ca173565e::t_52b0b33cb8b338 21-31
+src/modules/Arrangement/models/PluginDescriptors/__tests__/declaredDefaultConsensus.spec.ts
+  s_ee163ca173565e::t_c6f5afc39fa6eb 15-17,19-24,26-33,38-53,642-646,719-738
+src/modules/Grinder/models/GrinderPatch.ts
+  s_ee163ca173565e::t_53b0358b95efcb 498-500
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "c51fcf41e193398f286ddf2cf04fd16d00baa6dd",
+  "prompts": {},
+  "sessions": {
+    "s_ee163ca173565e": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-a5a53507ffb1903e8",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
