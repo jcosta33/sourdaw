@@ -1,0 +1,55 @@
+src/modules/ProofChamber/presentations/views/ProofChamberPanel.tsx
+  s_14f2bbc9f385dd::t_da9ec3111a7be5 366,368-374,376-384,386-392
+crates/proof-chamber/tests/algorithm_switch_parameter_retention.rs
+  s_14f2bbc9f385dd::t_4b87ebb0b1338c 50
+  s_14f2bbc9f385dd::t_7fe7e7f0bb0ba6 79-84
+  s_14f2bbc9f385dd::t_62f14ada5f23db 41-49
+  s_14f2bbc9f385dd::t_063e5a53123ab2 133-134,136-139
+  s_14f2bbc9f385dd::t_d7c1d0e1717440 282,284-300,304,308,311,313,318,321-328,332,335,338,340
+  s_14f2bbc9f385dd::t_f0194c1a297d2e 51
+  s_14f2bbc9f385dd::t_aa883ecca34658 569-613
+  s_14f2bbc9f385dd::t_1d8dfa28a4d112 457-566,568,614-647,650-657
+  s_14f2bbc9f385dd::t_7df3052472da51 567
+public/wasm/proof-chamber/proof_chamber.d.ts
+  s_14f2bbc9f385dd::t_734be92c6d0834 1
+crates/proof-chamber/src/lib.rs
+  s_14f2bbc9f385dd::t_02a9e6ce8434af 249-265
+  s_14f2bbc9f385dd::t_e965d66c2ab124 92-94,99-109
+  s_14f2bbc9f385dd::t_fdcf8c0084a941 514-520
+  s_14f2bbc9f385dd::t_db4a02a8e13dfa 205-206,208-222
+src/modules/AudioEngine/wasm/proof_chamber.d.ts
+  s_14f2bbc9f385dd::t_a745ff62a217d7 1
+src/modules/ProofChamber/presentations/views/__tests__/proofChamberAlgorithmGating.spec.tsx
+  s_14f2bbc9f385dd::t_563a411569f317 323-327,329-333,340-343,345-346
+src/modules/ProofChamber/models/ProofChamberAlgorithmGating.ts
+  s_14f2bbc9f385dd::t_1fe73d4202f72e 75-87
+  s_14f2bbc9f385dd::t_f797acff25d19c 61-63
+src/modules/Arrangement/models/PluginDescriptors/__tests__/descriptorEngineParamWeld.spec.ts
+  s_14f2bbc9f385dd::t_afcb6c4e09591d 620
+  s_14f2bbc9f385dd::t_69348ca66d1f77 302
+  s_14f2bbc9f385dd::t_b740db02d7e720 50-51
+public/wasm/manifest.json
+  s_14f2bbc9f385dd::t_e1ff027efb36f7 26,30-32,35
+src/utils/nativeDspEngineGaps.ts
+  s_14f2bbc9f385dd::t_fbb2833146b65b 196
+public/wasm/proof-chamber/proof_chamber_bg.wasm.d.ts
+  s_14f2bbc9f385dd::t_d1e613164f1277 1
+src/modules/Arrangement/models/PluginDescriptors/__tests__/declaredRangeVsKnobTravel.spec.ts
+  s_14f2bbc9f385dd::t_34e2ccd7c532b0 1193
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "df811e53f4ec711422a3ca9788072074989dcfdc",
+  "prompts": {},
+  "sessions": {
+    "s_14f2bbc9f385dd": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f9a61a1d-66b3-4146-938d-a04f45f4b060",
+        "model": "claude-opus-5"
+      },
+      "human_author": null
+    }
+  }
+}
