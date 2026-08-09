@@ -30,10 +30,12 @@ describe('setPunchEnabled', () => {
     });
 
     it('returns no-write when state is absent or replacement is already achieved', () => {
-        vi.mocked(getTransportState).mockReturnValueOnce(null).mockReturnValueOnce({
-            ...defaultTransportState,
-            punchInEnabled: true,
-        });
+        vi.mocked(getTransportState)
+            .mockReturnValueOnce(null)
+            .mockReturnValueOnce({
+                ...defaultTransportState,
+                punchInEnabled: true,
+            });
 
         expect(setPunchEnabled({ enabled: true })).toEqual({ status: 'no-write' });
         expect(setPunchEnabled({ enabled: true, expectedEnabled: false })).toEqual({ status: 'no-write' });
