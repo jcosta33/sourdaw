@@ -23,7 +23,10 @@ const mocks = vi.hoisted(() => ({
     removeFromVca: vi.fn(),
     releaseTouchAutomation: vi.fn(),
     confirmUser: vi.fn(),
+    logger: { error: vi.fn(), warn: vi.fn(), info: vi.fn(), debug: vi.fn() },
 }));
+
+vi.mock('#/infra/logger/appLogger', () => ({ logger: mocks.logger }));
 
 vi.mock('#/modules/Arrangement/useCases', () => ({
     muteTrack: mocks.muteTrack,
@@ -241,6 +244,29 @@ describe('useChannelStripActions', () => {
         });
 
         expect(result.current.displayGain).toBe(0.8);
+    });
+
+    /**
+     * `void` on a rejecting promise is not a handler. Without a `catch` the
+     * `finally` still ran and every assertion above still passed, while the
+     * rejection escaped to the page — the suite reported it as an unhandled
+     * error beside 26 green tests, which is exactly the shape of failure a test
+     * count does not show.
+     */
+    it('logs a rejected commit instead of leaking it as an unhandled rejection', async () => {
+        const cause = new Error('commit failed');
+        mocks.executeAppAction.mockRejectedValueOnce(cause);
+        const { result } = renderHook(() => useChannelStripActions(makeTrack({ id: 'track-1', gain: 0.8 })));
+
+        await act(async () => {
+            result.current.setGain(0.31, false);
+            await Promise.resolve();
+        });
+
+        expect(mocks.logger.error).toHaveBeenCalledTimes(1);
+        const logged = mocks.logger.error.mock.calls[0]![0] as Error;
+        expect(logged.message).toBe('Channel strip commit failed for action: setTrackGain');
+        expect(logged.cause).toBe(cause);
     });
 
     it('setPan drives only the engine while the gesture is transient', () => {
