@@ -515,20 +515,92 @@ fn a_layer_out_of_range_still_glides_from_what_the_player_played() {
         render_block(&mut instance, &mut samples);
     }
 
-    let opening = opening_frequency(&samples);
+    assert_origin_survived_the_filter(&samples, "layer 1 out of num_layers range");
+}
+
+/// The same claim through the other exclusion the filter offers: every active
+/// layer *muted* while [`SOURCE_NOTE`] is played, so the note reaches **no**
+/// layer at all.
+///
+/// This is the arm that the range fixture above cannot cover. With `num_layers`
+/// at 1 there is still a playable layer, so an implementation that recorded the
+/// pitch only when the note reached *some* layer would look correct there — the
+/// record would be taken by layer 0 into shared state and read back by layer 1
+/// later. Muting every layer removes that cover: nothing is dispatched, and an
+/// implementation that hangs the record off dispatch takes none.
+///
+/// `MasterSynth::last_played_freq`'s doc promises the record is taken "whether
+/// or not **any** given layer was in range, unmuted and solo-eligible", and this
+/// is the arm where *any* has to mean *none*.
+#[test]
+fn a_note_played_while_every_layer_is_muted_is_still_the_next_glide_origin() {
+    let mut instance = FermenterInstance::new(SAMPLE_RATE, 16);
+    configure_bare_sine(&mut instance);
+    instance.set_param("portamento", GLIDE_OFF);
+    instance.set_param("portamento_mode", ALWAYS_MODE);
+
+    // Heard, and left on the slot the probed note will recycle.
+    instance.note_on(STALE_NOTE, VELOCITY);
+    render_discarded(&mut instance, RELEASE_BLOCKS);
+    instance.note_off(STALE_NOTE);
+    render_discarded(&mut instance, RELEASE_BLOCKS);
+
+    // Reaches no layer whatsoever — but the player played it.
+    instance.set_param("layer_mute", 1.0);
+    instance.note_on(SOURCE_NOTE, VELOCITY);
+    render_discarded(&mut instance, RELEASE_BLOCKS);
+    instance.note_off(SOURCE_NOTE);
+    render_discarded(&mut instance, RELEASE_BLOCKS);
+
+    instance.set_param("layer_mute", 0.0);
+    instance.set_param("portamento", GLIDE_SECONDS);
+    instance.note_on(PROBE_NOTE, VELOCITY);
+
+    let mut samples = Vec::with_capacity(TOTAL_BLOCKS * BLOCK);
+    for _ in 0..TOTAL_BLOCKS {
+        render_block(&mut instance, &mut samples);
+    }
+
+    assert_origin_survived_the_filter(&samples, "every layer muted");
+}
+
+/// The probed note must descend from [`SOURCE_HZ`] even though the layer that
+/// renders it did not hear that note.
+///
+/// Three distinct wrong readings are named, because they are three different
+/// defects and an assertion that describes only one of them invites a red to be
+/// misread:
+///
+///  - **~83 Hz, ascending from [`STALE_NOTE`]** — the played pitch was never
+///    recorded, either because the record is kept per layer or because it is
+///    taken only when the note reaches a layer. This is also what a completely
+///    unseeded origin produces, so it is a signature of "the origin did not
+///    come from play history" rather than of this defect alone.
+///  - **~261.63 Hz, a snap** — a record that is resolved *and* overwritten
+///    inside the layer loop, so an earlier layer consumed it before the
+///    measured one read it, leaving destination-equals-origin.
+///  - **~440 Hz** — `Voice::new`'s construction seed, reachable only if
+///    `note_on` stopped applying the origin it is handed.
+fn assert_origin_survived_the_filter(samples: &[f32], case: &str) {
+    let opening = opening_frequency(samples);
     assert!(
         (700.0..=SOURCE_HZ + 1.0).contains(&opening),
-        "layer 1 was out of range when {SOURCE_NOTE} was played, but the player \
-         played it — so its next glide must descend from {SOURCE_HZ:.2} Hz and \
-         the opening window should read between 700 Hz and {SOURCE_HZ:.2} Hz; \
-         measured {opening:.2} Hz. A reading near 83 Hz is the layer gliding up \
-         from the last note it was itself audible for, which is a record kept \
-         below the playability filter instead of above it."
+        "{case}: the layer that renders this note never heard {SOURCE_NOTE}, but \
+         the player played it — so the glide must descend from {SOURCE_HZ:.2} Hz \
+         and the opening window should read between 700 Hz and {SOURCE_HZ:.2} \
+         Hz; measured {opening:.2} Hz.\n\
+         \x20 ~83 Hz  = ascending from the stale slot: the played pitch was \
+         never recorded (per-layer record, or a record taken only when the note \
+         reaches a layer).\n\
+         \x20 ~261.63 Hz = a snap: the record was resolved and overwritten \
+         inside the layer loop, so an earlier layer consumed it.\n\
+         \x20 ~440 Hz = Voice::new's seed: the origin handed to note_on was not \
+         applied."
     );
-    let interior = interior_frequency(&samples);
+    let interior = interior_frequency(samples);
     assert!(
         (PROBE_HZ + 20.0..opening - 20.0).contains(&interior),
-        "and it must still be partway down 512 ms in — below its opening \
+        "{case}: and it must still be partway down 512 ms in — below its opening \
          {opening:.2} Hz and above its destination {PROBE_HZ:.2} Hz; measured \
          {interior:.2} Hz"
     );

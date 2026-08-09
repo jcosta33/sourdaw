@@ -99,6 +99,23 @@ pub struct MasterSynth {
     /// chord entered as three note-ons glides its second note from its first and
     /// its third from its second. That is Vital's behaviour and it falls out of
     /// the same three lines.
+    ///
+    /// **It is the nominal note frequency, not the pitch that sounded.** An MPE
+    /// note bent up a fifth and released leaves its *un-bent* pitch as the next
+    /// glide's origin, because `note_frequency(note)` is what goes in and
+    /// per-note expression never touches this field. Vital does the same —
+    /// `last_played_note_ = tuned_note`, the note rather than anything applied
+    /// to it afterwards — so this is a convention rather than an oversight, and
+    /// it is the one that keeps a glide origin meaning "the note you played".
+    /// The same reasoning covers an unfinished glide: the record is the note,
+    /// not where its ramp had reached.
+    ///
+    /// **A future `reset()` should clear this to `None`.** There is no reset
+    /// path today (#1556 owns whether one is needed); if one is added, the
+    /// intent is that it makes the instrument indistinguishable from a fresh
+    /// one, and an instrument that has played nothing has no pitch to glide
+    /// from. Carrying a pitch across a reset would put a glide on the first note
+    /// after it — the exact defect the `None` case exists to prevent.
     last_played_freq: Option<f32>,
 
     tables: Vec<Wavetable>,

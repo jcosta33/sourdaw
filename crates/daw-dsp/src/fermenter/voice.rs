@@ -29,7 +29,7 @@ const MIN_BALANCE_SUM: f32 = 1e-6;
 /// frequency as the next glide's origin, and an origin that disagreed with the
 /// destination formula by even a rounding step would put an audible sub-cent
 /// ramp on a note that should have snapped.
-pub fn note_frequency(note: u8) -> f32 {
+pub(super) fn note_frequency(note: u8) -> f32 {
     440.0 * 2.0f32.powf((note as f32 - 69.0) / 12.0)
 }
 
