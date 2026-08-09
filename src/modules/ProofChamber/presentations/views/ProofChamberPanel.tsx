@@ -22,6 +22,7 @@ import { decayToRt60Seconds } from '#/utils/reverbDecayLaw';
 import {
     ALGORITHM_LABELS,
     chamberControlGate,
+    chamberDecayEqGate,
     type ChamberControlGate,
 } from '../../models/ProofChamberAlgorithmGating';
 import {
@@ -437,16 +438,27 @@ export const ProofChamberPanel = ({ deviceId }: { deviceId: string }): ReactElem
 
     /**
      * The Decay EQ's six bands are one control as far as gating is concerned:
-     * an engine either has a recirculating path for a per-band decay multiplier
-     * to act on or it does not, so the six ids are always gated together and
-     * band 0 answers for all of them.
+     * a loop either has per-pass loss for a multiplier to be relative to or it
+     * does not, so the six ids are always gated together.
+     *
+     * Three states make it inert and only one of them is about the algorithm.
+     * `chamberDecayEqGate` also answers for Freeze — which holds the tank at
+     * unity and is a chip sitting right beside the Decay EQ chip — and for the
+     * top of the Decay range, where the tail loses less per pass than the
+     * shaping would add. Both were previously silent: the nodes dragged, the
+     * writes persisted, and the render was bit-identical, which is the defect
+     * this whole PR exists to close, reappearing one layer up.
      */
-    const decayEqGate = gateFor(PROOF_CHAMBER_DECAY_EQ_BANDS[0], 'Decay EQ');
+    const decayEqGate = chamberDecayEqGate({
+        algorithm: params.algorithm,
+        freeze: params.freeze,
+        decay: params.decay,
+    });
     const decayEqMultipliers = PROOF_CHAMBER_DECAY_EQ_BANDS.map((band) => params[band]);
 
     let tailViewLed = 'Live tail';
     if (decayEqGate.isInert && showDecayEq) {
-        tailViewLed = 'EQ inert';
+        tailViewLed = 'EQ no headroom';
     } else if (showDecayEq) {
         tailViewLed = 'EQ overlay';
     } else if (showFlow) {

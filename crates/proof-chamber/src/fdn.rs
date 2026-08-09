@@ -273,9 +273,17 @@ impl FdnReverb {
             .map(|&len| AbsorptiveFilter::new(len, sample_rate, 2.0, 0.8))
             .collect();
 
-        // Seeded flat and immediately corrected: the constructor below calls
-        // `update_absorptive_filters`, which hands each stage the real
+        // Seeded flat and corrected at the end of this constructor, where
+        // `update_absorptive_filters` hands each stage the real
         // frequency-dependent magnitude of the line it sits in.
+        //
+        // The correcting call is load-bearing and used to be missing. Nothing
+        // reached the broken state — `addDevice` writes the descriptor's
+        // `decay` before the first render and that write calls
+        // `update_absorptive_filters` itself — but a bare `FdnReverb::new`
+        // kept `loop_gains = [1.0; NUM_PROBES]`, designed every band at 0 dB,
+        // and rendered a Decay EQ that did nothing while this comment said
+        // otherwise.
         let decay_eqs: Vec<DecayRateEq> = delay_lengths
             .iter()
             .map(|_| DecayRateEq::new(sample_rate, 1.0))
@@ -294,7 +302,7 @@ impl FdnReverb {
 
         let predelay_max = (sample_rate * 0.5) as usize;
 
-        Self {
+        let mut reverb = Self {
             sample_rate,
             num_channels: n,
             buffers,
@@ -371,7 +379,11 @@ impl FdnReverb {
             output: OutputStage::new(sample_rate),
             smooth_mix: 0.3,
             smooth_coeff: 1.0 - (-1.0 / (0.030 * sample_rate)).exp(),
-        }
+        };
+
+        // Make the seeding above true before anyone can render through it.
+        reverb.update_absorptive_filters();
+        reverb
     }
 
     pub fn set_param(&mut self, name: &str, value: f32) {

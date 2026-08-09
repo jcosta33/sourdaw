@@ -7,6 +7,7 @@ import {
 import {
     ALGORITHM_MAP,
     PARAM_MAP,
+    PROOF_CHAMBER_DECAY_EQ_BANDS,
     type ProofChamberAlgorithm,
     type ProofChamberEngineState,
 } from './ProofChamberState';
@@ -205,4 +206,107 @@ export function chamberControlGate({ algorithm, paramKey, controlLabel }: Chambe
         kind: gap.kind,
         explanation: explain({ gap, controlLabel, algorithmLabel: ALGORITHM_LABELS[algorithm] }),
     };
+}
+
+/**
+ * The `decay` at or above which the Dutch Oven's Decay Rate EQ has no per-pass
+ * loss left to redistribute, per algorithm.
+ *
+ * ## What the numbers are, and why there is only one
+ *
+ * The stage is *relative*: a decay multiplier asks for a fraction of what the
+ * loop already loses on each pass, so a loop that loses almost nothing has
+ * almost nothing to give. `crates/proof-chamber/src/decay_eq.rs` refuses to
+ * boost past `LIMIT_MARGIN_DB` below unity, and below `MIN_DESIGNABLE_GAIN_DB`
+ * of shaping it makes each section an exact pass-through. The refusal is
+ * correct — the alternative is a reverb whose tail grows — but it is total and
+ * silent, and a user dragging six nodes and hearing nothing cannot tell it from
+ * a broken control.
+ *
+ * **Only the plate has a row, and it was measured rather than derived.** The
+ * arithmetic for a *flat* loop puts the floor at a `decay` of about 0.995, and
+ * that is wrong for every real engine, because every one of them has a damping
+ * filter in the same loop that takes far more per pass at high frequencies than
+ * at low ones. So the upper bands keep working long after the low ones stop,
+ * and the stage does not go fully silent until the whole curve has nothing:
+ *
+ * - plate — `decay^2` per half-traversal, silent at 0.999 and shaping at 0.998;
+ * - FDN 8 / FDN 16 — measured shaping at 0.999, because their absorption is a
+ *   fraction of RT60 rather than a fixed dB and keeps opening headroom above
+ *   2 kHz. No row;
+ * - spring — `feedback` is clamped at 0.95, which is 0.446 dB of loss, an order
+ *   of magnitude above the floor. No row.
+ *
+ * `crates/proof-chamber/tests/decay_eq_parameter_surface.rs`'s
+ * `the_top_of_the_decay_range_stops_shaping_rather_than_shaping_weakly` is the
+ * measurement — it renders the plate at 0.999 and requires bit-identity with
+ * never writing the bands, and requires 0.99 to still differ.
+ * `proofChamberDecayEqHeadroom.spec.ts` welds this declaration to it, so a
+ * ceiling that stops matching the engine reds rather than drifting.
+ *
+ * Reading `DecayRateEq::design_gains_db` back from the worklet would be better
+ * than any of this. It needs a worklet-to-panel channel that does not exist;
+ * this is the interim, declared where a browser can read it and checked against
+ * the engine by a spec — the same shape as `DUTCH_OVEN_ENGINE_BY_WIRE_VALUE`.
+ */
+export const DECAY_EQ_HEADROOM_CEILING: Partial<Record<ProofChamberAlgorithm, number>> = {
+    plate: 0.999,
+};
+
+export type ChamberDecayEqGateInput = {
+    readonly algorithm: ProofChamberAlgorithm;
+    readonly freeze: boolean;
+    readonly decay: number;
+};
+
+/**
+ * Whether the Decay Rate EQ can do anything at the current settings.
+ *
+ * Three ways it cannot, and they are deliberately different sentences because
+ * they are different facts about the product:
+ *
+ * - the algorithm has no recirculating loop at all (Reverse) — the engine-gap
+ *   census answers this, and it is the same `structural` row every other dead
+ *   control on that algorithm uses;
+ * - `freeze` holds the tank at unity, so there is no decay rate for a
+ *   multiplier to be relative to. This one is exact rather than a threshold:
+ *   `ProofChamber::process` sets `target_decay = 1.0` under freeze, which is
+ *   zero loss by construction. It is also the reachable one — a chip beside the
+ *   Decay EQ chip;
+ * - `decay` is at the top of its travel, where what the loop loses per pass is
+ *   below the stage's own margin.
+ */
+export function chamberDecayEqGate({ algorithm, freeze, decay }: ChamberDecayEqGateInput): ChamberControlGate {
+    const structural = chamberControlGate({
+        algorithm,
+        paramKey: PROOF_CHAMBER_DECAY_EQ_BANDS[0],
+        controlLabel: 'Decay EQ',
+    });
+    if (structural.isInert) {
+        return structural;
+    }
+
+    if (freeze) {
+        return {
+            isInert: true,
+            kind: 'structural',
+            explanation:
+                'Decay EQ does nothing while Freeze is engaged. Freeze holds the tank at unity gain, so the tail ' +
+                'never decays and there is no decay rate for a per-band multiplier to be relative to.',
+        };
+    }
+
+    const ceiling = DECAY_EQ_HEADROOM_CEILING[algorithm];
+    if (ceiling !== undefined && decay >= ceiling) {
+        return {
+            isInert: true,
+            kind: 'structural',
+            explanation:
+                `Decay EQ does nothing at a Decay of ${ceiling} or above on the ${ALGORITHM_LABELS[algorithm]} ` +
+                'algorithm. The curve asks for a share of what the tail already loses on each pass, and at the top ' +
+                'of the Decay range it loses less than the shaping would add. Turn Decay down to use it.',
+        };
+    }
+
+    return LIVE;
 }

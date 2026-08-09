@@ -93,9 +93,15 @@ export const PARAMETER_LEVEL_OFFLINE_AUTOMATION_EXEMPTIONS: Readonly<Record<stri
                         '`set_param` every live write already uses, so an automation lane on one of these plays in the monitor path. ' +
                         '`PROOF_CHAMBER_AUTOMATION_PARAM_IDS` still declares two ordinals (`mix`, `decay`) and `set_param_by_id` still ' +
                         'answers to those two, so a *bounce* freezes these at their stored value — exactly as it does for the fifteen rows ' +
-                        'above. Deliberately not fixed here: the ordinal is a wire format shared with the crate and has no weld spec on this ' +
-                        'device (contrast `dawDspFermenterAutomationOrdinals.spec.ts`), so wiring six of twenty-one while the rest stay dark ' +
-                        'would add an unchecked contract to close a sixth of a defect this table already owns end to end.',
+                        'above. The drop is silent: `automationScheduling.ts` skips a lane the strategy will not bind with a bare `continue`, ' +
+                        'no warning and no log, so the monitor and the bounce differ with no signal that they have.\n\n' +
+                        'Deliberately not fixed here, and the reason is a **scheduling choice rather than a structural obstacle** — worth ' +
+                        'stating plainly so nobody reads this row as "cannot be done". Ordinals 2..7 are purely additive: the table is a ' +
+                        '`Record` with no density requirement, the worklet guards on membership in the declared set rather than on a bound, ' +
+                        'and `dawDspFermenterAutomationOrdinals.spec.ts` is a directly copyable weld for the Rust side. What stops it here is ' +
+                        'scope: the ordinal is a wire format shared with the crate, this device has no weld spec for it yet, and wiring six of ' +
+                        'twenty-one while the other fifteen stay dark would add an unchecked contract to close a sixth of a defect this table ' +
+                        'already owns end to end. The whole device wants doing at once, with the weld.',
                 ])
             ),
         },

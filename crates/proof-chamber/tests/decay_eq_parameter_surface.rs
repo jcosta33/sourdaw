@@ -720,6 +720,12 @@ fn the_shaping_a_band_delivers_does_not_depend_on_the_decay_setting() {
     // Bells only (bands 1-3): a shelf reaches half its design gain at its own
     // corner frequency, so its centre is the one place on the curve that does
     // not report the shelf's size.
+    //
+    // The sweep stops at 0.85 on purpose. Past there the loop has less loss
+    // than the stage's own margin and the shaping is refused outright, so an
+    // invariance claim would be asserting that a correct refusal is a
+    // regression. The top of the range has its own test above; leaving it out
+    // of the grid without saying so is what let the refusal go unnoticed.
     for (algorithm, engine) in SHAPING_ENGINES {
         for band in [1_usize, 2, 3] {
             let mut delivered = Vec::new();
@@ -776,6 +782,71 @@ fn the_shaping_a_band_delivers_does_not_depend_on_the_decay_setting() {
             }
         }
     }
+}
+
+/// The top of the Decay knob, which the sweep above deliberately does not reach.
+///
+/// **This is the axis #1580's stance 2 found missing, and it is missing for a
+/// reason worth stating rather than fixing quietly.** The invariance sweep
+/// stops at `decay = 0.85` because past there the stage runs out of headroom
+/// and stops shaping — so including 0.99 and 0.999 in *that* test would have
+/// made it fail on a behaviour that is correct. Putting them in a test of their
+/// own is what turns "the sweep does not go there" from an omission into a
+/// statement.
+///
+/// What is asserted is that the refusal is total and that the panel is told
+/// about it. Refusing to boost a loop already at the ceiling is right — the
+/// alternative is a reverb that grows — but a user dragging six nodes and
+/// hearing nothing cannot tell that from a broken control, which is why
+/// `ProofChamberPanel` gates the overlay on exactly these states.
+#[test]
+fn the_top_of_the_decay_range_stops_shaping_rather_than_shaping_weakly() {
+    // The descriptor's own maximum. The plate's loop is `decay^2`, so 0.999
+    // leaves 0.017 dB of per-pass loss — less than the stage's own margin —
+    // and the whole curve is refused.
+    let base: Vec<Write> = vec![("decay", 0.999_f32)];
+    let mut all_six = base.clone();
+    for id in BAND_PARAM_IDS {
+        all_six.push((id, MAX_MULT));
+    }
+
+    let untouched = render(48_000.0, PLATE, &base);
+    let shaped = render(48_000.0, PLATE, &all_six);
+    let differing = untouched
+        .left
+        .iter()
+        .zip(shaped.left.iter())
+        .filter(|(a, b)| a.to_bits() != b.to_bits())
+        .count();
+    assert_eq!(
+        differing, 0,
+        "plate at decay 0.999: all six bands at {MAX_MULT}x must render bit-identically to never \
+         writing them — {differing} samples differ, which would mean the bound is being \
+         approached rather than respected"
+    );
+
+    // One step down the knob and it is working again — 0.99 leaves 0.087 dB,
+    // and the tank's damper opens far more than that above a few kHz. So this
+    // is the top of a range rather than a control that has died, and the
+    // boundary is a property of the *loop*, not of a Decay number: the same
+    // 0.999 on an engine whose damper takes more per pass would still shape.
+    let mut nearly = vec![("decay", 0.99_f32)];
+    for id in BAND_PARAM_IDS {
+        nearly.push((id, MAX_MULT));
+    }
+    let nearly_untouched = render(48_000.0, PLATE, &[("decay", 0.99)]);
+    let nearly_shaped = render(48_000.0, PLATE, &nearly);
+    let nearly_differing = nearly_untouched
+        .left
+        .iter()
+        .zip(nearly_shaped.left.iter())
+        .filter(|(a, b)| a.to_bits() != b.to_bits())
+        .count();
+    assert!(
+        nearly_differing > 1_000,
+        "plate at decay 0.99 must still be shaped — only {nearly_differing} samples differ, so \
+         the refusal has spread further down the knob than the headroom explains"
+    );
 }
 
 /// The defect F5 named, pinned at the setting the product ships.

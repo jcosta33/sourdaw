@@ -913,23 +913,34 @@ mod tests {
 
     /// Every curve shape the bound has to survive, named.
     ///
-    /// `lo pair` and the two other adjacent pairs are here because a pair beats
-    /// all-six consistently — the clamp scales all boosts together, so asking
-    /// for six spreads the budget six ways while asking for two concentrates it
-    /// where the sections overlap most. A grid that only tried all-six would
-    /// miss the worst case it is supposed to bound. The mixed rows are here for
-    /// the same reason: a cut band is exempt from the boost budget, so a shape
-    /// with cuts in it reaches a higher boost scale than one without.
-    const SHAPES: [(&str, [f32; NUM_BANDS]); 12] = [
+    /// The adjacent pairs are here because a pair beats all-six consistently —
+    /// the clamp scales all boosts together, so asking for six spreads the
+    /// budget six ways while asking for two concentrates it where the sections
+    /// overlap most. A grid that only tried all-six would miss the worst case it
+    /// is supposed to bound. The mixed rows are here for the same reason: a cut
+    /// band is exempt from the boost budget, so a shape with cuts in it reaches
+    /// a higher boost scale than one without.
+    ///
+    /// **The pair rows are spelled `boosted, rest neutral` and `boosted, rest
+    /// cut` because those are two different shapes and #1580's review found
+    /// them travelling under one name.** A reviewer's `lo pair` meant
+    /// `[4, 4, 0.25, 0.25, 0.25, 0.25]` while this file's meant
+    /// `[4, 4, 1, 1, 1, 1]`, and since cuts do not spend budget the two reach
+    /// different boost scales. Neither was wrong; comparing measurements across
+    /// them was.
+    const SHAPES: [(&str, [f32; NUM_BANDS]); 15] = [
         ("band 0 alone", [4.0, 1.0, 1.0, 1.0, 1.0, 1.0]),
         ("band 1 alone", [1.0, 4.0, 1.0, 1.0, 1.0, 1.0]),
         ("band 2 alone", [1.0, 1.0, 4.0, 1.0, 1.0, 1.0]),
         ("band 3 alone", [1.0, 1.0, 1.0, 4.0, 1.0, 1.0]),
         ("band 4 alone", [1.0, 1.0, 1.0, 1.0, 4.0, 1.0]),
         ("band 5 alone", [1.0, 1.0, 1.0, 1.0, 1.0, 4.0]),
-        ("lo pair", [4.0, 4.0, 1.0, 1.0, 1.0, 1.0]),
-        ("mid pair", [1.0, 1.0, 4.0, 4.0, 1.0, 1.0]),
-        ("hi pair", [1.0, 1.0, 1.0, 1.0, 4.0, 4.0]),
+        ("lo pair, rest neutral", [4.0, 4.0, 1.0, 1.0, 1.0, 1.0]),
+        ("lo pair, rest cut", [4.0, 4.0, 0.25, 0.25, 0.25, 0.25]),
+        ("mid pair, rest neutral", [1.0, 1.0, 4.0, 4.0, 1.0, 1.0]),
+        ("mid pair, rest cut", [0.25, 0.25, 4.0, 4.0, 0.25, 0.25]),
+        ("hi pair, rest neutral", [1.0, 1.0, 1.0, 1.0, 4.0, 4.0]),
+        ("hi pair, rest cut", [0.25, 0.25, 0.25, 0.25, 4.0, 4.0]),
         ("all max", [4.0, 4.0, 4.0, 4.0, 4.0, 4.0]),
         ("all min", [0.25, 0.25, 0.25, 0.25, 0.25, 0.25]),
         ("alternating boost and cut", [4.0, 0.25, 4.0, 0.25, 4.0, 0.25]),
@@ -1062,6 +1073,63 @@ mod tests {
         }
     }
 
+
+    #[test]
+    fn a_loop_with_no_headroom_zeroes_every_band_and_not_only_the_starved_one() {
+        // **The behaviour #1580's review found, pinned as a fact rather than
+        // left to be rediscovered.** The scale is global, so it is set by the
+        // single worst probe — and when one probe sits at the loop's own
+        // ceiling, the bisection drives that scale to zero and takes every band
+        // with it, including bands two decades away that had ample headroom of
+        // their own.
+        //
+        // On the plate at `decay = 0.999` the loop is `0.999^2 = 0.998001`,
+        // which is 0.0174 dB of loss — below `LIMIT_MARGIN_DB`. Band 4 at 8 kHz
+        // still has its own headroom there, and gets nothing anyway.
+        //
+        // It is a cliff and not a fade, and that is the part worth pinning: one
+        // step down the Decay knob and the shaping is back.
+        let starved = configured(48_000.0, 0.998_001, [MAX_MULTIPLIER; NUM_BANDS]);
+        for (band, gain) in starved.design_gains_db().iter().enumerate() {
+            assert_eq!(
+                *gain, 0.0,
+                "band {band} was designed at {gain} dB on a loop with 0.017 dB to lend"
+            );
+        }
+
+        // **And the same loop shapes one band while refusing six**, which is
+        // the sharpest statement of the coupling. At a loop gain of 0.99 there
+        // is 0.087 dB to lend: one band asks for 0.05 dB of it and fits, six
+        // ask for compound gain the loop cannot cover, so the bisection drives
+        // the shared scale under `MIN_DESIGNABLE_GAIN_DB` and all six become
+        // pass-throughs — including the five that would each have fitted alone.
+        let one_band = configured(48_000.0, 0.99, [4.0, 1.0, 1.0, 1.0, 1.0, 1.0]);
+        assert!(
+            one_band.design_gains_db()[0] > 0.05,
+            "a loop with 0.087 dB to lend must still shape a single band, got {:?}",
+            one_band.design_gains_db()
+        );
+        let six_bands = configured(48_000.0, 0.99, [MAX_MULTIPLIER; NUM_BANDS]);
+        assert_eq!(
+            six_bands.design_gains_db()[0],
+            0.0,
+            "the same loop asked for six bands leaves band 0 designed at {:?}",
+            six_bands.design_gains_db()
+        );
+
+        // This is a *flat* loop, which is the worst case: no damper anywhere to
+        // open headroom up. On the real plate the tank's damper takes far more
+        // than 0.087 dB above a few kHz, so the upper bands keep working well
+        // past the point the low ones stop. That is why the panel gate is
+        // stated in terms of the states a user can see — `freeze`, and Decay at
+        // the top of its travel — rather than as one Decay number.
+
+        // The refusal is right — boosting a loop already at the ceiling is what
+        // #1580 asked not to loosen — so what this pins is that it is *total*.
+        // A user cannot tell a stage that has decided it has nothing to give
+        // from one that is broken, which is why `ProofChamberPanel` gates the
+        // overlay on the states that produce it.
+    }
 
     #[test]
     fn a_loop_running_a_bounded_curve_still_falls_silent() {
