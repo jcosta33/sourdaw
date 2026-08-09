@@ -1,0 +1,21 @@
+src/modules/Arrangement/handlers/clip/handleRestoreClipLoopLength.ts
+  s_bc88af7d3b054c::t_4e5a08cc4cd208 20
+src/modules/Arrangement/handlers/clip/__tests__/handleSetClipLoopLength.integration.spec.ts
+  s_bc88af7d3b054c::t_c6cc9cd12f1ca8 239-272
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "febac281cd274ada0aa232c9c7093c235d191f34",
+  "prompts": {},
+  "sessions": {
+    "s_bc88af7d3b054c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f9b4a-11a2-7f61-8dfb-76eed0eb2a9c",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
