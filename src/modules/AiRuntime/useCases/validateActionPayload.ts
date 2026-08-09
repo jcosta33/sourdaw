@@ -544,7 +544,7 @@ const validators = {
         isObj(param) &&
         hasExactKeys(param, ['clipIds']) &&
         isUniqueNonEmptyStringArray(param.clipIds) &&
-        param.clipIds.length >= 2,
+        param.clipIds.length === 2,
     nudgeClip: (param): param is PayloadOf<'nudgeClip'> =>
         isObj(param) &&
         hasExactKeys(param, ['clipId', 'beats']) &&
