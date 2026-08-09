@@ -125,12 +125,18 @@ Most operations are available three ways:
 3. **Natural language** — describing what you want to the assistant, from the prompt bar in the
    transport or the chat panel.
 
-The three are not yet equivalent, and the difference shows up in undo. Track gain, pan, and adding a
-device are recorded as undoable steps when the assistant performs them, but not when you perform them
-by hand. Device parameters split the same way on every device that does not record its own controls:
-ask the assistant to change a Grinder knob and the change is one undo step, where turning that knob
-yourself is not recorded at all. Until that evens out, ask the assistant for a change you may want to
-walk back.
+The three are not yet equivalent, and the difference shows up in undo. What the assistant does is
+recorded as a matter of course, because everything it performs runs through the recorded path. Doing
+the same thing by hand is patchier: editing clips and notes is recorded, and so are a few controls
+that were wired up individually — arming a track, changing the tempo — but most of the mixer and most
+device work is not.
+
+The list of operations that split this way is long and still moving, so treat it as a rule rather
+than something to memorise: if it is not a clip or note edit, assume your own hand does not record it.
+Track gain and pan, mute, solo, rename, track colour, deleting a track, adding or removing a device,
+and device parameters on the devices that do not record their own controls all behave this way — one
+undo step from the assistant, nothing at all from you. Until that evens out, ask the assistant for a
+change you may want to walk back.
 
 ## Where sound actually comes out
 
