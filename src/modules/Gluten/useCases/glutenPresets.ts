@@ -148,8 +148,15 @@ export const GLUTEN_PRESETS: readonly GlutenPreset[] = [
         autoRelease: true,
         knee: 12,
         range: 6,
+        // `scHpfFreq` without `scHpfEnabled`. Both Master presets are VCA, and
+        // the detector filters only reach the diode — so shipping the filter
+        // *engaged* advertised a sidechain HPF that never ran, and once the
+        // panel started gating those controls it became a setting the user
+        // could not switch off either. The frequency is kept because it is the
+        // preset's intent and is correct the moment the topology can hear it;
+        // the switch is not, because a preset must not enable a stage its own
+        // topology cannot run.
         scHpfFreq: 120,
-        scHpfEnabled: true,
     }),
     preset('master-loud', 'Loud Master', 'mastering', {
         topology: 'vca',
@@ -159,9 +166,11 @@ export const GLUTEN_PRESETS: readonly GlutenPreset[] = [
         autoRelease: true,
         knee: 6,
         range: 10,
+        // Same as Transparent Master above, plus `thrust` — this preset shipped
+        // `thrust: 2` on a VCA, which is the worse case: with a diode Stage two
+        // engaged the detector would have run at Thrust *loud*, a setting the
+        // user never chose and, after gating, could not zero.
         scHpfFreq: 100,
-        scHpfEnabled: true,
-        thrust: 2,
     }),
 
     // ── Creative ──

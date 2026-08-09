@@ -13,7 +13,9 @@ import {
     GLUTEN_TOPOLOGY_OWNED_CONTROLS,
     GLUTEN_UNRENDERED_PARAMS,
     glutenBlendStage,
+    glutenCardNotice,
     glutenControlGate,
+    glutenStageTwoOptionGate,
     type GlutenGapLayer,
 } from '../GlutenTopologyGating';
 
@@ -310,7 +312,7 @@ describe('glutenControlGate', () => {
             controlLabel: 'Release',
         });
 
-        expect(gate).toEqual({ isInert: false, kind: null, explanation: null });
+        expect(gate).toEqual({ isInert: false, kind: null, explanation: null, remedy: null });
     });
 
     it('leaves Release live on Diode once Stage two runs a topology that reads it', () => {
@@ -477,18 +479,111 @@ describe('glutenControlGate', () => {
     });
 
     it('has a patch-state row for every control the panel can switch off with another control', () => {
-        // The population, pinned. `gain_match_bypass` is measured `0e0` on all
-        // four topologies while the device is not bypassed and is deliberately
-        // absent — the bypass state is not in `GlutenPatch`, and Match would
-        // then be greyed in the device's resting state. The reasoning is in
-        // `GLUTEN_PATCH_STATE_GAPS`; this pins the decision so reversing it is
-        // an edit rather than a drift.
-        expect(GLUTEN_PATCH_STATE_GAPS.map((gap) => String(gap.paramKey)).sort()).toEqual([
-            'blendAmount',
-            'scEqFreq',
-            'scEqQ',
-            'stereoLink',
-        ]);
+        // The population, pinned in two halves.
+        //
+        // The four hand-written rows first. `gain_match_bypass` is measured
+        // `0e0` on all four topologies while the device is not bypassed and is
+        // deliberately absent — the bypass state is not in `GlutenPatch`, and
+        // Match would then be greyed in the device's resting state. The
+        // reasoning is in `GLUTEN_PATCH_STATE_GAPS`; this pins the decision so
+        // reversing it is an edit rather than a drift.
+        const generated = new Set(
+            Object.values(GLUTEN_TOPOLOGY_OWNED_CONTROLS)
+                .flat()
+                .map((paramKey) => String(paramKey))
+        );
+        const handWritten = GLUTEN_PATCH_STATE_GAPS.map((gap) => String(gap.paramKey)).filter(
+            (paramKey) => !generated.has(paramKey)
+        );
+        expect(handWritten.sort()).toEqual(['blendAmount', 'scEqFreq', 'scEqQ', 'stereoLink']);
+
+        // …and the generated half: every Character-card control gets a row, so
+        // the Stage-two block can stay mounted while its stage is switched off.
+        const covered = new Set(GLUTEN_PATCH_STATE_GAPS.map((gap) => String(gap.paramKey)));
+        expect([...generated].filter((paramKey) => !covered.has(paramKey))).toEqual([]);
+        expect(generated.size).toBe(11);
+    });
+
+    it('refuses a Stage-two topology’s Character controls while Stage 2 sits at zero', () => {
+        const named: GlutenPatch = { ...DEFAULT_PATCH, topology: 'vca', blendTopology: 'diode', blendAmount: 0 };
+
+        const off = glutenControlGate({ patch: named, paramKey: 'recovery', controlLabel: 'Recovery' });
+        expect(off.isInert).toBe(true);
+        expect(off.kind).toBe('overridden');
+        expect(off.remedy).toBe('Raise Stage 2 above 0% to use this.');
+
+        const on = glutenControlGate({
+            patch: { ...named, blendAmount: 0.5 },
+            paramKey: 'recovery',
+            controlLabel: 'Recovery',
+        });
+        expect(on.isInert).toBe(false);
+
+        // A topology's own Character controls stay live while it is the primary,
+        // whatever Stage two is doing.
+        expect(
+            glutenControlGate({
+                patch: { ...DEFAULT_PATCH, topology: 'diode', blendAmount: 0 },
+                paramKey: 'recovery',
+                controlLabel: 'Recovery',
+            }).isInert
+        ).toBe(false);
+    });
+
+    it('names every topology that would bring a refused control back', () => {
+        // The escape clause, derived per parameter rather than phrased
+        // generically — "run another topology in Stage two" is false. Knee
+        // comes back only under the VCA; Release under the VCA or the FET; the
+        // detector controls only under the diode.
+        function onDiode(paramKey: keyof GlutenPatch): string | null {
+            return glutenControlGate({ patch: diode, paramKey, controlLabel: 'x' }).remedy;
+        }
+
+        expect(onDiode('knee')).toBe('Select VCA, or run VCA in Stage two, to use this.');
+        expect(onDiode('release')).toBe('Select VCA or FET, or run one of them in Stage two, to use this.');
+        const onVca = glutenControlGate({
+            patch: { ...DEFAULT_PATCH, topology: 'vca' },
+            paramKey: 'scHpfFreq',
+            controlLabel: 'x',
+        });
+        expect(onVca.remedy).toBe('Select Diode, or run Diode in Stage two, to use this.');
+
+        // And it is the tail of the explanation, so a `title` reader gets it too.
+        const gate = glutenControlGate({ patch: diode, paramKey: 'knee', controlLabel: 'Knee' });
+        expect(gate.explanation?.endsWith(gate.remedy ?? '')).toBe(true);
+    });
+
+    it('builds one card line from the controls it is given', () => {
+        const gates = ['knee', 'range'].map((paramKey) =>
+            glutenControlGate({ patch: diode, paramKey: paramKey as keyof GlutenPatch, controlLabel: 'x' })
+        );
+        const notice = glutenCardNotice({ labels: ['Knee', 'Range'], gates });
+
+        // Both names, and the remedy they share stated once rather than twice.
+        expect(notice).toBe('Knee and Range are inert here. Select VCA, or run VCA in Stage two, to use this.');
+
+        expect(
+            glutenCardNotice({
+                labels: ['Threshold'],
+                gates: [glutenControlGate({ patch: diode, paramKey: 'threshold', controlLabel: 'Threshold' })],
+            })
+        ).toBeNull();
+    });
+
+    it('refuses only the primary’s own chip in the Stage-two chooser', () => {
+        // The chooser used to filter the primary out, which left it showing
+        // three chips with none active while Stage 2's own reason said "both
+        // are Opto" — a state named on screen nowhere. All four render now.
+        const opto: GlutenPatch = { ...DEFAULT_PATCH, topology: 'opto' };
+
+        const own = glutenStageTwoOptionGate({ patch: opto, option: 'opto' });
+        expect(own.isInert).toBe(true);
+        expect(own.kind).toBe('overridden');
+        expect(own.explanation).toContain('already the primary topology');
+
+        for (const option of ['vca', 'fet', 'diode'] as const) {
+            expect(glutenStageTwoOptionGate({ patch: opto, option }).isInert, option).toBe(false);
+        }
     });
 
     it('engages Stage two exactly where the engine does', () => {

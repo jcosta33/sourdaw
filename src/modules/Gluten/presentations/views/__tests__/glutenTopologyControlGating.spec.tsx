@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { DEFAULT_PATCH, type GlutenPatch, type GlutenTopology } from '../../../models/GlutenPatch';
@@ -323,16 +323,73 @@ describe('the Character card follows the DSP, not the selector', () => {
         expect(screen.getByText('Stage two — Diode')).toBeTruthy();
     });
 
-    it('shows one unlabelled block while a single stage is running', () => {
-        renderPanel({ topology: 'vca', blendAmount: 0 });
-
-        expect(screen.queryByText('Primary — VCA')).toBeNull();
-        expect(screen.queryByText('Recovery 3')).toBeNull();
-    });
-
-    it('drops the Stage-two block again when Stage 2 is turned down', () => {
+    it('keeps the Stage-two block mounted and refuses it while Stage 2 is at zero', () => {
+        // Keyed on the *named* Stage-two topology, not on engagement. Keying it
+        // on `blendAmount > 0.001` mounted and unmounted four controls and the
+        // card's scroll height while the user was still dragging the Stage 2
+        // knob across the threshold.
         renderPanel({ topology: 'vca', blendTopology: 'diode', blendAmount: 0 });
 
+        const recovery = chipFor('Recovery 3');
+        expect(recovery.getAttribute('aria-disabled')).toBe('true');
+        expect(recovery.getAttribute('title') ?? '').toContain('Raise Stage 2 above 0%');
+    });
+
+    it('does not move a control across the engagement threshold', () => {
+        // The layout claim, asserted as a claim about the layout: the same
+        // controls are present on both sides of `blendAmount > 0.001`.
+        renderPanel({ topology: 'vca', blendTopology: 'diode', blendAmount: 0.001 });
+        const belowCount = screen.queryAllByRole('button').length;
+
+        cleanup();
+        renderPanel({ topology: 'vca', blendTopology: 'diode', blendAmount: 0.002 });
+
+        expect(screen.queryAllByRole('button').length).toBe(belowCount);
+        expect(chipFor('Recovery 3').getAttribute('aria-disabled')).toBeNull();
+    });
+
+    it('shows one unheaded block when Stage two names the primary', () => {
+        // The only single-stage state, and the one `blendTopology` defaults
+        // into when the primary is Opto.
+        renderPanel({ topology: 'opto', blendTopology: 'opto' });
+
+        expect(screen.queryByText('Primary — Opto')).toBeNull();
         expect(screen.queryByText('Recovery 3')).toBeNull();
+    });
+});
+
+describe('the Stage-two chooser shows the state its reason names', () => {
+    it('renders all four topologies and refuses the primary’s own chip', () => {
+        renderPanel({ topology: 'opto', blendTopology: 'opto' });
+
+        for (const label of ['VCA', 'FET', 'Diode']) {
+            expect(chipFor(label).getAttribute('aria-disabled'), label).toBeNull();
+        }
+        const own = chipFor('Opto');
+        expect(own.getAttribute('aria-disabled')).toBe('true');
+        expect(own.getAttribute('title') ?? '').toContain('already the primary topology');
+    });
+});
+
+describe('a refused control’s reason is readable without a pointer', () => {
+    it('prints one line on the card naming the refused controls and the way back', () => {
+        // `title` has no keyboard and no touch trigger, so it cannot be the
+        // only channel. The card line is the same information on the page.
+        renderPanel({ topology: 'diode', scEqGain: 6, blendTopology: 'vca' });
+
+        // One line per card that has refused controls, so several cards carry
+        // one at once — the Clamp card's is the one that names Knee.
+        const lines = screen.getAllByText(/inert here/).map((node) => node.textContent);
+        const clampLine = lines.find((line) => line.includes('Knee'));
+
+        expect(clampLine).toContain('Release');
+        expect(clampLine).toContain('Select VCA');
+    });
+
+    it('leaves the card description alone when nothing in it is refused', () => {
+        renderPanel({ topology: 'vca', scEqGain: 6, blendTopology: 'opto' });
+
+        // The Clamp card is wholly live on the VCA.
+        expect(screen.getByText('Threshold, ratio, and timing stay front and center.')).toBeTruthy();
     });
 });

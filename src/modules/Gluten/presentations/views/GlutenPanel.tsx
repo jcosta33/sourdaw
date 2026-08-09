@@ -23,9 +23,12 @@ import {
     type GlutenTopology,
 } from '../../models/GlutenPatch';
 import {
+    GLUTEN_TOPOLOGIES,
     GLUTEN_TOPOLOGY_LABELS,
-    glutenBlendStage,
+    GLUTEN_TOPOLOGY_OWNED_CONTROLS,
+    glutenCardNotice,
     glutenControlGate,
+    glutenStageTwoOptionGate,
     type GlutenControlGate,
 } from '../../models/GlutenTopologyGating';
 import { glutenStore, getGlutenState, type GlutenState } from '../../stores/glutenStore';
@@ -154,7 +157,30 @@ const STYLE_PATCHES: Record<GlutenStyle, Partial<GlutenPatch>> = {
     },
 };
 
-const TOPOLOGIES: GlutenTopology[] = ['vca', 'opto', 'fet', 'diode'];
+const TOPOLOGIES: readonly GlutenTopology[] = GLUTEN_TOPOLOGIES;
+
+/**
+ * The printed label of each Character-card control, so a card notice can name
+ * the ones it is reporting on.
+ *
+ * Keyed by the same patch keys `GLUTEN_TOPOLOGY_OWNED_CONTROLS` lists, and
+ * asserted total against it in `glutenTopologyControlGating.spec.tsx` — a
+ * control added to a Character block without a label here would drop silently
+ * out of the notice.
+ */
+const CHARACTER_CONTROL_LABELS: Partial<Record<keyof GlutenPatch, string>> = {
+    vcaCharacter: 'Color',
+    vcaType: 'VCA type',
+    feedForward: 'Feedback / Feed forward',
+    limitMode: 'Compress / Limit',
+    inputGain: 'Input',
+    outputGain: 'Output',
+    xfmrDrive: 'Xfmr',
+    jfetK3: 'Odd',
+    xfmrK2: 'Even',
+    allButtons: 'All buttons',
+    recovery: 'Recovery',
+};
 const STYLES: GlutenStyle[] = ['glue', 'punch', 'smooth', 'pump'];
 const CATEGORIES = ['all', ...new Set(GLUTEN_PRESETS.map((preset) => preset.category))];
 
@@ -384,7 +410,6 @@ export const GlutenPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
 
     const topologyMeta = TOPOLOGY_META[currentPatch.topology];
     const accentColor = topologyMeta.color;
-    const stageTwoOptions = TOPOLOGIES.filter((topology) => topology !== currentPatch.topology);
 
     let phaseCorrStr = phaseCorr.toFixed(2);
     if (phaseCorr > 0.99) {
@@ -433,12 +458,84 @@ export const GlutenPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
      * in `a_stage_two_topology_hears_its_own_character_controls`. Both were off
      * screen with no way to reach them, while the shared controls directly
      * above resolved against both stages correctly.
+     *
+     * Keyed on the *named* Stage-two topology rather than on
+     * `glutenBlendStage`, which additionally requires `blendAmount > 0.001`.
+     * Keying it on engagement mounted and unmounted four controls and the
+     * card's scroll height as the user dragged the Stage 2 knob across the
+     * threshold — a layout shift caused by a gesture still in progress, which
+     * is the sharpest possible version of what disable-in-place exists to
+     * prevent. The block stays; its controls gate `overridden` while Stage 2 is
+     * at 0%.
      */
     const characterStages: GlutenTopology[] = [currentPatch.topology];
-    const blendStageTopology = glutenBlendStage(currentPatch);
-    if (blendStageTopology !== null) {
-        characterStages.push(blendStageTopology);
+    if (currentPatch.blendTopology !== currentPatch.topology) {
+        characterStages.push(currentPatch.blendTopology);
     }
+
+    /**
+     * One visible line per card, naming that card's refused controls and how to
+     * get them back.
+     *
+     * `title` is the only channel a disabled control had, and it has no
+     * keyboard trigger and no touch trigger — so a sighted keyboard user could
+     * not read an explanation a screen-reader user hears in full. The gates are
+     * resolved twice, here and at the control, which is free: resolution is a
+     * pure table lookup.
+     */
+    function cardNotice(entries: readonly (readonly [keyof GlutenPatch, string])[]): string | null {
+        return glutenCardNotice({
+            labels: entries.map(([, label]) => label),
+            gates: entries.map(([paramKey, label]) => gateFor(paramKey, label)),
+        });
+    }
+
+    const clampNotice = cardNotice([
+        ['threshold', 'Threshold'],
+        ['ratio', 'Ratio'],
+        ['knee', 'Knee'],
+        ['attack', 'Attack'],
+        ['release', 'Release'],
+        ['amount', 'Amount'],
+    ]);
+    const finishNotice = cardNotice([
+        ['makeup', 'Makeup'],
+        ['mix', 'Mix'],
+        ['range', 'Range'],
+        ['stereoLink', 'Link'],
+        ['lookahead', 'Look'],
+        ['blendAmount', 'Stage 2'],
+        ['autoRelease', 'Auto rel'],
+        ['autoMakeup', 'Auto gain'],
+        ['deltaListen', 'Delta'],
+        ['gainMatchBypass', 'Match'],
+    ]);
+    const detectorNotice = cardNotice([
+        ['scHpfFreq', 'SC HPF'],
+        ['scLpfFreq', 'SC LPF'],
+        ['scEqFreq', 'SC EQ'],
+        ['scEqGain', 'EQ Gain'],
+        ['scEqQ', 'EQ Q'],
+        ['oversampling', 'OS'],
+        ['scHpfEnabled', 'HPF'],
+        ['scLpfEnabled', 'LPF'],
+        ['scEqEnabled', 'SC EQ toggle'],
+        ['extSidechain', 'Ext SC'],
+        ['thrust', 'Thrust'],
+    ]);
+    const characterNotice = cardNotice(
+        characterStages.flatMap((topology) =>
+            GLUTEN_TOPOLOGY_OWNED_CONTROLS[topology].map(
+                (paramKey) => [paramKey, CHARACTER_CONTROL_LABELS[paramKey] ?? String(paramKey)] as const
+            )
+        )
+    );
+    // The Stage-two chooser's refusal is per *option*, not per parameter, so its
+    // notice is built from the option gates rather than through `cardNotice`.
+    const stageTwoNotice = glutenCardNotice({
+        labels: TOPOLOGIES.map((topology) => TOPOLOGY_META[topology].label),
+        gates: TOPOLOGIES.map((option) => glutenStageTwoOptionGate({ patch: currentPatch, option })),
+    });
 
     /**
      * Which stage a Character block belongs to, shown only while two are live.
@@ -747,7 +844,10 @@ export const GlutenPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
                 </Stack>
 
                 <DawPluginRail>
-                    <ControlCard title="Clamp" detail="Threshold, ratio, and timing stay front and center.">
+                    <ControlCard
+                        title="Clamp"
+                        detail={clampNotice ?? 'Threshold, ratio, and timing stay front and center.'}
+                    >
                         <Grid cols={3} gapX={2} gapY={3}>
                             <Knob
                                 deviceId={deviceId}
@@ -823,7 +923,10 @@ export const GlutenPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
                         </Grid>
                     </ControlCard>
 
-                    <ControlCard title="Finish" detail="Keep the lane honest while you blend and level.">
+                    <ControlCard
+                        title="Finish"
+                        detail={finishNotice ?? 'Keep the lane honest while you blend and level.'}
+                    >
                         <Grid cols={3} gapX={2} gapY={3}>
                             <Knob
                                 deviceId={deviceId}
@@ -934,7 +1037,10 @@ export const GlutenPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
 
                     <ControlCard
                         title="Detector"
-                        detail="Sidechain filters and listen modes live together instead of hiding in the header."
+                        detail={
+                            detectorNotice ??
+                            'Sidechain filters and listen modes live together instead of hiding in the header.'
+                        }
                     >
                         <Grid cols={3} gapX={2} gapY={3}>
                             <Knob
@@ -1117,7 +1223,10 @@ export const GlutenPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
                         </Stack>
                     </ControlCard>
 
-                    <ControlCard title="Character" detail="The last mile changes with the topology you picked.">
+                    <ControlCard
+                        title="Character"
+                        detail={characterNotice ?? 'The last mile changes with the topology you picked.'}
+                    >
                         {characterStages.includes('fet') ? (
                             <Stack gap={3}>
                                 {characterHeading('fet')}
@@ -1287,9 +1396,12 @@ export const GlutenPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
                         ) : null}
                     </ControlCard>
 
-                    <ControlCard title="Stage two" detail="Blend a second topology in when the first one needs backup.">
+                    <ControlCard
+                        title="Stage two"
+                        detail={stageTwoNotice ?? 'Blend a second topology in when the first one needs backup.'}
+                    >
                         <Row wrap gap={1.5}>
-                            {stageTwoOptions.map((topology) => {
+                            {TOPOLOGIES.map((topology) => {
                                 const active = patch.blendTopology === topology;
                                 return (
                                     <ToggleChip
@@ -1297,7 +1409,7 @@ export const GlutenPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
                                         label={TOPOLOGY_META[topology].label}
                                         active={active}
                                         accentColor={accentColor}
-                                        gate={gateFor('blendTopology', TOPOLOGY_META[topology].label)}
+                                        gate={glutenStageTwoOptionGate({ patch: currentPatch, option: topology })}
                                         onClick={() => setGlutenParamWithAudio(deviceId, 'blendTopology', topology)}
                                     />
                                 );

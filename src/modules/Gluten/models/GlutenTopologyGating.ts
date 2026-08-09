@@ -15,6 +15,9 @@ export const GLUTEN_TOPOLOGY_LABELS: Record<GlutenTopology, string> = {
     diode: 'Diode',
 };
 
+/** Selector order, and the order any prose here lists topologies in. */
+export const GLUTEN_TOPOLOGIES: readonly GlutenTopology[] = ['vca', 'opto', 'fet', 'diode'];
+
 /**
  * Patch keys the panel renders in a card every topology sees — the Clamp,
  * Finish and Detector cards, the topology grid, the Quick-moves chips and the
@@ -369,9 +372,39 @@ export type GlutenPatchStateGap = {
     readonly paramKey: keyof GlutenPatch;
     /** Whether this patch is in the state that makes the control a no-op. */
     readonly appliesTo: (patch: GlutenPatch) => boolean;
-    /** Why, and what to change to get the control back. Shown to the user. */
+    /** Why. Shown to the user, immediately before the remedy. */
     readonly note: (patch: GlutenPatch) => string;
+    /** The move that brings the control back, as one imperative sentence. */
+    readonly remedy: (patch: GlutenPatch) => string;
 };
+
+/**
+ * The Character-card controls of a topology that is *named* by Stage two but is
+ * not running, one row per control.
+ *
+ * Generated rather than typed out, from the same `GLUTEN_TOPOLOGY_OWNED_CONTROLS`
+ * the card renders from, so a control added to a Character block is covered
+ * without an edit.
+ *
+ * These exist because the Stage-two block is kept mounted whenever the two
+ * topologies differ, rather than appearing and disappearing as `blendAmount`
+ * crosses `0.001`. Mounting it on the threshold meant four controls and the
+ * card's scroll height arriving under the user's thumb *mid-drag* of the very
+ * knob that triggers it — a layout shift caused by a gesture in progress, which
+ * is the thing disable-in-place exists to avoid, in its most acute form.
+ */
+function stageTwoCharacterGaps(): GlutenPatchStateGap[] {
+    return GLUTEN_TOPOLOGIES.flatMap((owner) =>
+        GLUTEN_TOPOLOGY_OWNED_CONTROLS[owner].map((paramKey) => ({
+            paramKey,
+            appliesTo: (patch: GlutenPatch) => patch.topology !== owner && glutenBlendStage(patch) === null,
+            note: () =>
+                `Stage two names ${GLUTEN_TOPOLOGY_LABELS[owner]} but is not running it — the second stage is ` +
+                'switched off while Stage 2 sits at 0%.',
+            remedy: () => 'Raise Stage 2 above 0% to use this.',
+        }))
+    );
+}
 
 export const GLUTEN_PATCH_STATE_GAPS: readonly GlutenPatchStateGap[] = [
     {
@@ -379,29 +412,30 @@ export const GLUTEN_PATCH_STATE_GAPS: readonly GlutenPatchStateGap[] = [
         appliesTo: (patch) => patch.stereoMode === 'dual-mono',
         note: () =>
             'Dual mono is an unlinked detector by definition, so `apply_detector_settings` forces the link to 0 ' +
-            'while it is selected. Choose Stereo, Mid or Side to use Link.',
+            'while it is selected.',
+        remedy: () => 'Choose Stereo, Mid or Side to use Link.',
     },
     {
         paramKey: 'blendAmount',
         appliesTo: (patch) => patch.blendTopology === patch.topology,
         note: (patch) =>
-            `Stage two only runs when its topology differs from the primary, and both are ${GLUTEN_TOPOLOGY_LABELS[patch.topology]}. ` +
-            'Pick a different topology in the Stage two section.',
+            'Stage two only runs when its topology differs from the primary, and both are ' +
+            `${GLUTEN_TOPOLOGY_LABELS[patch.topology]}.`,
+        remedy: () => 'Pick a different topology in the Stage two section.',
     },
     {
         paramKey: 'scEqFreq',
         appliesTo: (patch) => patch.scEqGain === 0,
-        note: () =>
-            'The detector’s bell is flat until EQ Gain leaves 0 dB, so there is no bell for this to centre. Set ' +
-            'EQ Gain first.',
+        note: () => 'The detector’s bell is flat until EQ Gain leaves 0 dB, so there is no bell for this to centre.',
+        remedy: () => 'Set EQ Gain first.',
     },
     {
         paramKey: 'scEqQ',
         appliesTo: (patch) => patch.scEqGain === 0,
-        note: () =>
-            'The detector’s bell is flat until EQ Gain leaves 0 dB, so there is no bell for this to widen. Set ' +
-            'EQ Gain first.',
+        note: () => 'The detector’s bell is flat until EQ Gain leaves 0 dB, so there is no bell for this to widen.',
+        remedy: () => 'Set EQ Gain first.',
     },
+    ...stageTwoCharacterGaps(),
 ];
 
 /**
@@ -419,11 +453,24 @@ export type GlutenControlGate = {
     readonly isInert: boolean;
     /** `null` exactly when `isInert` is false. */
     readonly kind: GlutenControlGateKind | null;
-    /** A full sentence naming the reason, or null when the control is live. */
+    /** A full sentence naming the reason and ending with the remedy, or null when the control is live. */
     readonly explanation: string | null;
+    /**
+     * The move that brings this control back, as one imperative sentence.
+     *
+     * The last clause of `explanation`, exposed separately so an owning card can
+     * print it once for a whole group instead of hiding it in a `title` that no
+     * keyboard or touch gesture triggers.
+     *
+     * `null` only when the control is live, or — defensively — when no live
+     * configuration exists for it. Every censused parameter has at least one
+     * topology that hears it today, so the second case is unreachable and is
+     * handled rather than asserted.
+     */
+    readonly remedy: string | null;
 };
 
-const LIVE: GlutenControlGate = { isInert: false, kind: null, explanation: null };
+const LIVE: GlutenControlGate = { isInert: false, kind: null, explanation: null, remedy: null };
 
 /**
  * The engine engages Stage two at `blend_amount > 0.001` (`engine.rs`,
@@ -481,6 +528,51 @@ function hasNonTopologyConsumer(patch: GlutenPatch, paramKey: keyof GlutenPatch)
     return paramKey === 'ratio' && patch.autoMakeup;
 }
 
+/**
+ * The topologies that *do* answer to a parameter, in selector order.
+ *
+ * Derived by subtraction from the same census the gate reads, so it cannot
+ * disagree with it: a topology hears a parameter exactly when it has no gap row
+ * for it.
+ */
+function topologiesThatHear(paramKey: keyof GlutenPatch): GlutenTopology[] {
+    return GLUTEN_TOPOLOGIES.filter((topology) => findGap(topology, paramKey) === null);
+}
+
+function joinWithOr(labels: readonly string[]): string {
+    if (labels.length <= 1) {
+        return labels[0] ?? '';
+    }
+    return `${labels.slice(0, -1).join(', ')} or ${labels.at(-1) ?? ''}`;
+}
+
+/**
+ * The move that brings a topology-gated control back.
+ *
+ * Every one of these rows has an escape and it is always the same shape —
+ * select a topology that hears the parameter, or run one behind the primary in
+ * Stage two, which `process_block` gives the same writes to. An earlier
+ * revision put this clause only on the detector-routing rows, so twenty-one
+ * explanations named the way out and twenty-four stopped at the diagnosis —
+ * while `blendHearsIt` in this very file was already honouring the escape for
+ * all of them, and `stage_two_makes_release_audible_on_diode` was already
+ * measuring it.
+ *
+ * Which topologies help is *derived* rather than phrased generically, because
+ * "run another topology in Stage two" is not true: Knee and Auto rel come back
+ * only under the VCA, Release under the VCA or the FET, OS under the FET or the
+ * diode. A remedy that sent a user to the wrong topology would be a new version
+ * of the defect this PR exists to remove.
+ */
+function remedyFor(paramKey: keyof GlutenPatch): string | null {
+    const helpers = topologiesThatHear(paramKey).map((topology) => GLUTEN_TOPOLOGY_LABELS[topology]);
+    if (helpers.length === 0) {
+        return null;
+    }
+    const list = joinWithOr(helpers);
+    return `Select ${list}, or run ${helpers.length > 1 ? 'one of them' : list} in Stage two, to use this.`;
+}
+
 function explain({
     gap,
     controlLabel,
@@ -501,21 +593,24 @@ function explain({
             `${GLUTEN_TOPOLOGY_LABELS[blend]} stage behind it does — each derives`;
     }
 
+    const remedy = remedyFor(gap.paramKey);
+    const tail = remedy === null ? '' : ` ${remedy}`;
+
     if (gap.layer === 'detector-routing') {
         // Distinct wording from the other `unbuilt` rows on purpose: this
         // control *is* built and does shape the detector — it is the topology
         // that has no way to read the filtered detector yet. Telling a user
         // "SC HPF is not implemented" would send them looking for the wrong
-        // thing, and the way back here is a move they can make now.
+        // thing.
         return (
             `${controlLabel} shapes the detector, and only the Diode topology reads the filtered detector yet. ` +
-            `${stages} its own detector from the audio path. Select Diode, or run it in Stage two, to use this.`
+            `${stages} its own detector from the audio path.${tail}`
         );
     }
     if (gap.kind === 'structural') {
-        return `${controlLabel} does not apply to ${where}. ${gap.note}`;
+        return `${controlLabel} does not apply to ${where}. ${gap.note}${tail}`;
     }
-    return `${controlLabel} is not implemented on ${where} yet, so this engine ignores it.`;
+    return `${controlLabel} is not implemented on ${where} yet, so this engine ignores it.${tail}`;
 }
 
 export type GlutenControlGateInput = {
@@ -553,17 +648,95 @@ export function glutenControlGate({ patch, paramKey, controlLabel }: GlutenContr
             isInert: true,
             kind: primaryGap.kind,
             explanation: explain({ gap: primaryGap, controlLabel, primary: patch.topology, blend }),
+            remedy: remedyFor(paramKey),
         };
     }
 
-    const patchStateGap = GLUTEN_PATCH_STATE_GAPS.find((gap) => gap.paramKey === paramKey);
-    if (patchStateGap !== undefined && patchStateGap.appliesTo(patch)) {
+    const patchStateGap = GLUTEN_PATCH_STATE_GAPS.find((gap) => gap.paramKey === paramKey && gap.appliesTo(patch));
+    if (patchStateGap !== undefined) {
+        const remedy = patchStateGap.remedy(patch);
         return {
             isInert: true,
             kind: 'overridden',
-            explanation: `${controlLabel} does nothing on this patch. ${patchStateGap.note(patch)}`,
+            explanation: `${controlLabel} does nothing on this patch. ${patchStateGap.note(patch)} ${remedy}`,
+            remedy,
         };
     }
 
     return LIVE;
+}
+
+/**
+ * One option of the Stage-two chooser.
+ *
+ * The chooser used to render only the three topologies that are *not* the
+ * primary, which made two things unreadable at once: with Stage two still
+ * naming the primary — reachable from the defaults by selecting Opto, since
+ * `blendTopology` starts there — the chooser showed three chips with none of
+ * them active, and the Stage 2 knob's own reason ("both are Opto") named a
+ * state the user could not see anywhere on screen.
+ *
+ * All four render now, and the primary's own chip is refused with the reason,
+ * so the greyed-and-active chip *is* the display of that state.
+ */
+export function glutenStageTwoOptionGate({
+    patch,
+    option,
+}: {
+    readonly patch: GlutenPatch;
+    readonly option: GlutenTopology;
+}): GlutenControlGate {
+    if (option !== patch.topology) {
+        return LIVE;
+    }
+    const label = GLUTEN_TOPOLOGY_LABELS[option];
+    const remedy = 'Pick one of the other three, or change the primary topology.';
+    return {
+        isInert: true,
+        kind: 'overridden',
+        explanation:
+            `${label} is already the primary topology, and Stage two runs a second, different compressor behind ` +
+            `the first — \`process_block\` skips the blend entirely while the two match. ${remedy}`,
+        remedy,
+    };
+}
+
+export type GlutenCardNoticeInput = {
+    readonly labels: readonly string[];
+    readonly gates: readonly GlutenControlGate[];
+};
+
+/**
+ * One visible line for a card, naming its inert controls and how to get them
+ * back — or `null` when nothing in the card is refused.
+ *
+ * `title` is the wrong and only channel a disabled control had: it has no
+ * keyboard trigger and no touch trigger, so a sighted keyboard user could not
+ * read an explanation a screen-reader user hears in full. This puts the same
+ * information on the page. `title` stays as the per-control detail, because a
+ * card line cannot carry seventeen separate reasons.
+ *
+ * Remedies are deduplicated rather than repeated: a Detector card with twelve
+ * inert controls has one remedy between them, and printing it twelve times
+ * would bury the control names that make the line worth reading.
+ */
+export function glutenCardNotice({ labels, gates }: GlutenCardNoticeInput): string | null {
+    const inert = gates
+        .map((gate, index) => ({ gate, label: labels[index] ?? '' }))
+        .filter((entry) => entry.gate.isInert);
+    if (inert.length === 0) {
+        return null;
+    }
+
+    const names = [...new Set(inert.map((entry) => entry.label))];
+    const remedies = [...new Set(inert.map((entry) => entry.gate.remedy).filter((remedy) => remedy !== null))];
+    const verb = names.length === 1 ? 'is' : 'are';
+    return `${joinWithAnd(names)} ${verb} inert here. ${remedies.join(' ')}`.trim();
+}
+
+function joinWithAnd(labels: readonly string[]): string {
+    if (labels.length <= 1) {
+        return labels[0] ?? '';
+    }
+    return `${labels.slice(0, -1).join(', ')} and ${labels.at(-1) ?? ''}`;
 }

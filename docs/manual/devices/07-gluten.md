@@ -40,9 +40,23 @@ only: automation lanes, saved values, and anything already drawn are untouched.
 | **FET** | Fast, aggressive, harmonically rich | Threshold, Ratio, Attack, Release, OS, Input, Output, Xfmr, Odd, Even, All buttons |
 | **Diode** | Dense and weighty | Threshold, Ratio, Attack, Recovery, OS, and the sidechain filters |
 
-Opto ignores Ratio, Attack, Release, Auto rel, Knee, Range, and OS entirely — its timing comes from
-the modelled cell, and Threshold is the only shaping control you have. If you want to dial timing by
-hand, pick another topology.
+Every topology ignores something, and the table above only lists what each one *reads*. Stated the
+other way round, because a greyed control needs a page to look it up on:
+
+| Topology | Ignores |
+|---|---|
+| **VCA** | OS |
+| **Opto** | Ratio, Attack, Release, Auto rel, Knee, Range, OS |
+| **FET** | Knee, Range, Auto rel |
+| **Diode** | Release, Auto rel, Knee, Range |
+
+Opto is the widest gap: its timing comes from the modelled cell, and Threshold is the only shaping
+control you have. If you want to dial timing by hand, pick another topology. **Knee** and **Range**
+are fixed constants inside the FET and Diode stages rather than absent ideas — the compressors use a
+knee and a reduction ceiling, you just cannot set them. **Auto rel** exists only on the VCA. **OS**
+oversamples a nonlinear stage, and only the FET and the Diode have one.
+
+Add the twelve Detector controls to Opto, VCA and FET — see the warning in that section.
 
 Stage two reopens any of them. A control the first topology cannot hear goes live again the moment
 **Stage 2** is above zero with a topology behind it that can — Release on Diode with VCA in stage
@@ -96,8 +110,11 @@ for almost the whole session.
 
 **Stage 2** goes grey when the Stage two section names the topology you already selected as the
 primary — the second stage only runs when the two differ. Stage two starts on Opto, so selecting
-Opto as your primary is enough to reach that state; pick a different topology in Stage two and the
-knob comes back.
+Opto as your primary is enough to reach that state; the Stage two section shows all four topologies
+with your primary greyed, so you can see the clash, and picking a different one brings the knob back.
+
+Anything greyed on a card also gets one line on that card naming what is refused and what to do
+about it, so you do not need to hover a control to find out.
 
 **Link** is on the detector, never on the output. At 100% both channels read the louder of the two
 and duck together, so the stereo image stays put — this is what you want on a bus. At 0% each
@@ -144,10 +161,11 @@ input, then turn on **Ext SC**.
 
 ## Character
 
-The Character section changes with the topology you selected. When **Stage 2** is above zero it
-shows the second topology's controls as well, under their own headings — the second stage is a real
-compressor and hears its own controls, so a Diode running behind a VCA has its Recovery switch here
-even though Diode is not the primary.
+The Character section changes with the topology you selected. It also shows the Stage-two topology's
+controls, under their own headings — the second stage is a real compressor and hears its own
+controls, so a Diode running behind a VCA has its Recovery switch here even though Diode is not the
+primary. Those controls stay on the page while **Stage 2** sits at 0% and go grey instead of
+vanishing, so nothing moves under your hand as you turn the knob up.
 
 **VCA** — **Color** (0 to 0.02, default 0.003) adds nonlinearity to the gain element. **VCA type**
 selects Ideal, THAT 2181, or DBX 202, and starts on THAT 2181. **Feedback / Feed forward** switches
@@ -172,10 +190,15 @@ Stage two runs a second topology **in series** behind the first — the second c
 the first one's output, and **Stage 2** in the Finish section crossfades between the single-stage
 and dual-stage result. At 0% the second stage is off entirely.
 
-The Stage two section picks which topology runs second. It offers the three you have not already
-selected, so the two stages are always different; the pair defaults to Opto. Changing the first
-topology re-offers the list. A slow topology behind a fast one is the usual pairing: FET for
-transients, then VCA or Opto for the sustained level.
+The Stage two section picks which topology runs second. It shows all four with your primary greyed,
+because the two stages have to differ for the second one to run at all — so if Stage 2 is greyed,
+this is where you can see why. The pair defaults to Opto, which means selecting Opto as your primary
+puts the device in exactly that state. A slow topology behind a fast one is the usual pairing: FET
+for transients, then VCA or Opto for the sustained level.
+
+Stage two also reopens controls the first topology cannot hear. A Diode in stage two makes the whole
+Detector section live on any primary; a VCA in stage two brings back Knee, Range and Auto rel. The
+reason text on each greyed control names which topologies would do it.
 
 ## Meters and readouts
 
