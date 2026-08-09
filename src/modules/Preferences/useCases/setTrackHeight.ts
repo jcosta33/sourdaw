@@ -6,5 +6,5 @@ export function setTrackHeight(height: Preferences['trackHeight']): void {
     if (!prefs) {
         return;
     }
-    preferencesStore.set({ ...prefs, trackHeight: height });
+    preferencesStore.trySet({ ...prefs, trackHeight: height });
 }

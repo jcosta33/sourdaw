@@ -15,7 +15,7 @@ vi.mock('../../stores/preferencesStore', () => ({
         get value() {
             return mocks.preferencesStoreValue.value;
         },
-        set: mocks.preferencesStoreSet,
+        trySet: mocks.preferencesStoreSet,
     },
 }));
 

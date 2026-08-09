@@ -18,6 +18,7 @@ import {
 } from '#/modules/CrdtDocument/useCases';
 import { transportStore } from '#/modules/Transport/stores';
 import { bytesToBase64 } from '#/utils/base64';
+import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import {
     type PeerId,
@@ -238,16 +239,26 @@ function stopBranchSync(): void {
             sessionState.isProjectingBranches = false;
         }
 
-        // Leaving a session is deliberate, bounded and rare, and this path
-        // already owns a place to say something — so the two failures are
-        // reported here rather than left to the console. They are not the same
-        // failure and must not share a message: one loses the branch list on
-        // reload, the other keeps it now and reverts to it later.
+        // `notifyUser`, not `setCollaborationError`. Every caller of
+        // `cleanupSubsystems` — `leaveSession`, `createSession`, `joinSession` —
+        // replaces the whole collaboration store immediately afterwards with
+        // `error: null`, so anything written to that field during teardown is
+        // erased synchronously before it can be rendered. The store field is
+        // for errors raised while a session is live; this one outlives the
+        // session by definition. See #1557.
+        //
+        // The two failures are not the same failure and must not share a
+        // message: one loses the branch list on reload, the other keeps it now
+        // and reverts to it later. Both name the cause and an action.
         if (restoreOutcome === 'state-not-persisted') {
-            setCollaborationError('Left the session, but your local branch list could not be saved.');
+            notifyUser(
+                'Left the session, but your branch list could not be saved — it will revert when you reopen the project. Free up storage space and try again.',
+                'error'
+            );
         } else if (restoreOutcome === 'backup-not-cleared') {
-            setCollaborationError(
-                'Left the session. A leftover session backup could not be cleared, so your branch list may revert when you reopen the project.'
+            notifyUser(
+                'Left the session, but a leftover session backup could not be cleared — your branch list may revert when you reopen the project. Free up storage space and try again.',
+                'error'
             );
         }
     }

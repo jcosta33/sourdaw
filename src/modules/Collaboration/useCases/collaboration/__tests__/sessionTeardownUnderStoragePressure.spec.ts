@@ -5,7 +5,13 @@ import { preserveBranchStateForSession } from '#/modules/CrdtDocument/useCases';
 
 import { type PeerConnectionManager } from '../../../repositories/peerConnection';
 import { collaborationStore } from '../../../stores/collaborationStore';
+import { leaveSession } from '../leaveSession';
 import { sessionRuntimePrimitives } from '../sessionManagement';
+
+const notifyUserMock = vi.hoisted(() =>
+    vi.fn<(message: string, level?: 'info' | 'success' | 'warning' | 'error') => void>()
+);
+vi.mock('#/utils/Notification/notifyUser', () => ({ notifyUser: notifyUserMock }));
 
 /**
  * Collaboration teardown runs `restoreBranchStateAfterSession` inside a
@@ -44,11 +50,17 @@ function blockEveryDurableWrite(): void {
 
 function createClosablePeerManager(): { manager: PeerConnectionManager; closeAll: ReturnType<typeof vi.fn> } {
     const closeAll = vi.fn();
-    return { manager: { closeAll } as unknown as PeerConnectionManager, closeAll };
+    const manager = {
+        closeAll,
+        getConnectedPeerIds: vi.fn(() => []),
+        sendCrdtSyncBuffered: vi.fn(() => Promise.resolve()),
+    };
+    return { manager: manager as unknown as PeerConnectionManager, closeAll };
 }
 
 describe('collaboration teardown when localStorage refuses the write', () => {
     beforeEach(() => {
+        notifyUserMock.mockClear();
         window.localStorage.clear();
         collaborationStore.set({
             isEnabled: true,
@@ -88,7 +100,7 @@ describe('collaboration teardown when localStorage refuses the write', () => {
         expect(sessionRuntimePrimitives.state.peerManager).toBeNull();
     });
 
-    it('restores the local branch list into the session and tells the user it was not saved', () => {
+    it('restores the local branch list into the session even when it cannot be persisted', () => {
         sessionRuntimePrimitives.state.peerManager = createClosablePeerManager().manager;
         blockEveryDurableWrite();
 
@@ -98,24 +110,52 @@ describe('collaboration teardown when localStorage refuses the write', () => {
             MAIN_BRANCH_ID,
             localOnlyBranch.branchId,
         ]);
-        expect(collaborationStore.value?.error).toBe(
-            'Left the session, but your local branch list could not be saved.'
-        );
     });
 
-    it('distinguishes a retained backup from a refused state write', () => {
-        sessionRuntimePrimitives.state.peerManager = createClosablePeerManager().manager;
-        vi.spyOn(Storage.prototype, 'removeItem').mockImplementation(() => {
-            throw new DOMException('The operation is insecure.', 'SecurityError');
+    /**
+     * Driven through `leaveSession`, which is what the Leave button binds to —
+     * not `cleanup()`, the internal step. All three callers of
+     * `cleanupSubsystems` overwrite the whole collaboration store with
+     * `error: null` immediately afterwards (`leaveSession.ts:27`,
+     * `createSession.ts:16`, `joinSession.ts:43`), so a message written to
+     * `collaborationStore.error` during teardown is erased synchronously before
+     * anything can render it. A spec that stops at `cleanup()` is green while
+     * the product is silent.
+     */
+    describe('through the path the Leave button actually takes', () => {
+        it('tells the user the branch list was not saved, and the message survives teardown', async () => {
+            sessionRuntimePrimitives.state.peerManager = createClosablePeerManager().manager;
+            blockEveryDurableWrite();
+
+            await leaveSession();
+
+            expect(notifyUserMock).toHaveBeenCalledTimes(1);
+            const [message, level] = notifyUserMock.mock.calls[0] ?? [];
+            expect(message).toContain('branch list could not be saved');
+            expect(message).toContain('Free up storage space');
+            expect(level).toBe('error');
+            // The store field this used to use is wiped by leaveSession itself.
+            expect(collaborationStore.value?.error ?? null).toBeNull();
         });
 
-        sessionRuntimePrimitives.cleanup();
+        it('tells the user a leftover backup survived, with its own message', async () => {
+            sessionRuntimePrimitives.state.peerManager = createClosablePeerManager().manager;
+            vi.spyOn(Storage.prototype, 'removeItem').mockImplementation(() => {
+                throw new DOMException('The operation is insecure.', 'SecurityError');
+            });
 
-        // The branch list was saved. Telling the user it was not would be a
-        // different lie from telling them nothing.
-        expect(collaborationStore.value?.error).toBe(
-            'Left the session. A leftover session backup could not be cleared, so your branch list may revert when you reopen the project.'
-        );
+            await leaveSession();
+
+            expect(notifyUserMock.mock.calls[0]?.[0]).toContain('leftover session backup');
+        });
+
+        it('says nothing when the restore lands', async () => {
+            sessionRuntimePrimitives.state.peerManager = createClosablePeerManager().manager;
+
+            await leaveSession();
+
+            expect(notifyUserMock).not.toHaveBeenCalled();
+        });
     });
 
     it('reports no error and consumes the backup when the write lands', () => {

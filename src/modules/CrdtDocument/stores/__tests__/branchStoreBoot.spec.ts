@@ -199,6 +199,55 @@ describe('branchStore module evaluation with a rejecting localStorage', () => {
             expect(window.localStorage.getItem(BRANCH_SESSION_BACKUP_STORAGE_KEY)).toBe(stringify(localState));
         });
 
+        /**
+         * The invalidation reads "durable branch state moved" as "the user wrote
+         * a branch". Inside a collaboration session that is wrong in the one way
+         * that matters: the host's projected list is a durable write too, and it
+         * is the write the backup exists to protect against. Left armed, the
+         * projection ate the backup and the following leave reported `restored`
+         * with the user's local-only branch gone from the store and the backup
+         * both — a permanent loss reported as success.
+         */
+        it('does not let a collaboration projection consume the backup', async () => {
+            const localState = {
+                branches: [validMainBranch, validFeatureBranch],
+                activeBranchId: MAIN_BRANCH_ID,
+            } satisfies BranchStoreState;
+            const hostProjectedState = {
+                branches: [validMainBranch],
+                activeBranchId: MAIN_BRANCH_ID,
+            } satisfies BranchStoreState;
+
+            window.localStorage.setItem(BRANCH_STORAGE_KEY, stringify(hostProjectedState));
+            window.localStorage.setItem(BRANCH_SESSION_BACKUP_STORAGE_KEY, stringify(localState));
+            const blocked = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+                throw new DOMException('The quota has been exceeded.', 'QuotaExceededError');
+            });
+
+            const branchStoreModule = await import('../branchStore');
+            const preserve = await import('../../useCases/preserveBranchStateForSession');
+
+            // Boot cannot persist the restore, so the invalidation is armed.
+            expect(branchStoreModule.restoreBranchStateFromSessionBackup()).toBe('state-not-persisted');
+
+            // The quota frees up and the user joins a session.
+            blocked.mockRestore();
+            preserve.preserveBranchStateForSession();
+
+            // The host's list projects, durably.
+            branchStoreModule.branchStore.set(hostProjectedState);
+
+            // The backup is the only remaining copy of the local-only branch.
+            expect(window.localStorage.getItem(BRANCH_SESSION_BACKUP_STORAGE_KEY)).toBe(stringify(localState));
+
+            // ...and leaving the session gets it back.
+            expect(branchStoreModule.restoreBranchStateFromSessionBackup()).toBe('restored');
+            expect(branchStoreModule.branchStore.value?.branches.map((branch) => branch.branchId)).toEqual([
+                MAIN_BRANCH_ID,
+                validFeatureBranch.branchId,
+            ]);
+        });
+
         it('drops the backup on the first durable write after the failure', async () => {
             const remoteState = {
                 branches: [validMainBranch, validFeatureBranch],

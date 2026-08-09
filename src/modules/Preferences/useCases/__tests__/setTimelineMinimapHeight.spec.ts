@@ -5,7 +5,7 @@ import { setTimelineMinimapHeight } from '../setTimelineMinimapHeight';
 
 const mocks = vi.hoisted(() => ({
     value: { current: null as typeof defaultPreferences | null },
-    set: vi.fn(),
+    trySet: vi.fn(),
 }));
 
 vi.mock('../../stores/preferencesStore', () => ({
@@ -13,7 +13,7 @@ vi.mock('../../stores/preferencesStore', () => ({
         get value() {
             return mocks.value.current;
         },
-        set: mocks.set,
+        trySet: mocks.trySet,
     },
 }));
 
@@ -31,8 +31,8 @@ describe('setTimelineMinimapHeight', () => {
     ])('normalizes $input and persists $expected through Preferences', ({ input, expected }) => {
         setTimelineMinimapHeight(input);
 
-        expect(mocks.set).toHaveBeenCalledTimes(1);
-        expect(mocks.set).toHaveBeenCalledWith({
+        expect(mocks.trySet).toHaveBeenCalledTimes(1);
+        expect(mocks.trySet).toHaveBeenCalledWith({
             ...defaultPreferences,
             timelineMinimapHeight: expected,
         });
@@ -43,6 +43,6 @@ describe('setTimelineMinimapHeight', () => {
 
         setTimelineMinimapHeight(80);
 
-        expect(mocks.set).not.toHaveBeenCalled();
+        expect(mocks.trySet).not.toHaveBeenCalled();
     });
 });

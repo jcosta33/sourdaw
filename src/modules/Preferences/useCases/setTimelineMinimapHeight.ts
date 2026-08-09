@@ -8,7 +8,7 @@ export function setTimelineMinimapHeight(height: number): void {
         return;
     }
 
-    preferencesStore.set({
+    preferencesStore.trySet({
         ...preferences,
         timelineMinimapHeight: normalizeTimelineMinimapHeight(height),
     });

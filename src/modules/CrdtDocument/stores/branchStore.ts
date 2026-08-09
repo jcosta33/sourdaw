@@ -222,6 +222,28 @@ function armSessionBackupInvalidation(durableAtFailure: BranchStoreState | null)
 }
 
 /**
+ * Stand the invalidation down for the duration of a collaboration session.
+ *
+ * The invalidation reads "the durable branch state moved" as "the user wrote a
+ * branch", and inside a session that inference is wrong in the one way that
+ * matters: the host's projected list is a durable write too, and it is the
+ * exact write the backup exists to protect against. Left armed, joining a
+ * session after a failed restore would let the projection eat the backup, and
+ * leaving again would find nothing to restore and report `restored` — the
+ * user's local-only branch gone from the store and the backup both, with
+ * success reported and nothing said.
+ *
+ * `preserveBranchStateForSession` calls this, so the window is exactly the one
+ * where a session owns the backup. If the restore at the end of the session
+ * fails, it arms again on its way out. See #1557.
+ */
+export function suspendSessionBackupInvalidation(): void {
+    durableStateAtRestoreFailure = undefined;
+    disarmSessionBackupInvalidation?.();
+    disarmSessionBackupInvalidation = null;
+}
+
+/**
  * Put the durable pre-session branch state back, discarding whatever a
  * collaboration session projected over it.
  *
