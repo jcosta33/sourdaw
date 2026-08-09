@@ -578,15 +578,7 @@ describe('ValueField', () => {
             expect(field).toHaveAttribute('aria-valuetext', '10');
 
             rerender(
-                <ValueField
-                    value={0}
-                    onChange={onChange}
-                    commitMode="release"
-                    min={-100}
-                    max={100}
-                    step={1}
-                    readOnly
-                />
+                <ValueField value={0} onChange={onChange} commitMode="release" min={-100} max={100} step={1} readOnly />
             );
 
             // The readout snaps back to the real value: an aborted gesture must
@@ -602,9 +594,7 @@ describe('ValueField', () => {
 
         it('should stop reporting moves once the field is read-only', () => {
             const onChange = vi.fn();
-            const { rerender } = render(
-                <ValueField value={0} onChange={onChange} min={-100} max={100} step={1} />
-            );
+            const { rerender } = render(<ValueField value={0} onChange={onChange} min={-100} max={100} step={1} />);
             const field = screen.getByRole('spinbutton');
 
             fireEvent.pointerDown(field, { button: 0, pointerId: 62, clientY: 100 });
@@ -642,9 +632,7 @@ describe('ValueField', () => {
 
         it('should hand back the pointer capture when the field locks mid-drag', () => {
             const onChange = vi.fn();
-            const { rerender } = render(
-                <ValueField value={0} onChange={onChange} min={-100} max={100} step={1} />
-            );
+            const { rerender } = render(<ValueField value={0} onChange={onChange} min={-100} max={100} step={1} />);
             const field = screen.getByRole('spinbutton');
             const calls: string[] = [];
             const activePointers = new Set<number>();

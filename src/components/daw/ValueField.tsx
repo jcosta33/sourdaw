@@ -168,6 +168,14 @@ export const ValueField = ({
          * capture back, and clears the owner ref — the same treatment
          * `pointercancel`, lost capture, blur and tab-hide already get, and what
          * `RotaryKnob` does when `disabled` flips mid-drag.
+         *
+         * This is why `@eslint-react/set-state-in-effect` now warns on
+         * `finalizeDrag`'s two setters (warn-only; CI runs `lint --quiet`). The
+         * extra synchronous render is the point: a layout effect commits the
+         * reverted readout before paint, so the locked field never shows a frame
+         * of the value the aborted gesture had reached. `RotaryKnob` escapes the
+         * rule only because it carries its drag state in a DOM attribute rather
+         * than in `useState`.
          */
         if (readOnly && draggingRef.current) {
             finalizeDrag();
