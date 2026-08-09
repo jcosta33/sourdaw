@@ -1,0 +1,93 @@
+src/modules/AiRuntime/useCases/__tests__/sendChatMessage.spec.ts
+  s_bc88af7d3b054c::t_ab2bf287be5b45 160-162,202-204,273-275
+src/modules/Transport/handlers/transport/handleSetPunchOut.ts
+  s_bc88af7d3b054c::t_911a682318e360 3,5,9-25,34
+src/modules/Command/useCases/__tests__/appActionExecutionPolicy.spec.ts
+  s_bc88af7d3b054c::t_a1ee3c2d613c2e 19-20
+src/modules/AiRuntime/useCases/validateActionPayload.ts
+  s_bc88af7d3b054c::t_b175f59895e738 120-137,387-388
+src/modules/Command/useCases/macro/__tests__/punchUndoRecording.spec.ts
+  s_bc88af7d3b054c::t_ed458064978c17 74-82,85-86
+  s_bc88af7d3b054c::t_7b0d23081b5f69 10,83-84
+src/modules/AiRuntime/useCases/agentReference/__tests__/bridgeGroundedLlmToolCalls.spec.ts
+  s_bc88af7d3b054c::t_0f33b8475057c6 49-51
+  s_bc88af7d3b054c::t_2232423f1cfd21 2498-2525
+src/modules/AiRuntime/useCases/__tests__/getProjectContext.spec.ts
+  s_bc88af7d3b054c::t_05394c7623a492 128
+  s_bc88af7d3b054c::t_0f33b8475057c6 126-127,219-221,257-259
+src/modules/AiRuntime/useCases/getProjectContext.ts
+  s_bc88af7d3b054c::t_b175f59895e738 95-97
+src/modules/Transport/useCases/index.ts
+  s_bc88af7d3b054c::t_b175f59895e738 41
+src/modules/AiRuntime/transformers/llmActionBridge.ts
+  s_bc88af7d3b054c::t_57b5248adb33ef 45,49-55,347,354,614,2406,2522
+  s_bc88af7d3b054c::t_9ab7f1fa20818d 2798-2800
+  s_bc88af7d3b054c::t_38c8ef8bd650a3 593,595,623-626
+  s_bc88af7d3b054c::t_6fd7cbc8f9db74 592,594,596-603,609
+  s_bc88af7d3b054c::t_6160d6f39e2181 589-591,604-608,610-613,615-622,627-628,2014-2016,2422-2427,2430
+  s_bc88af7d3b054c::t_d1f70f42c8043d 2428-2429
+  s_bc88af7d3b054c::t_ee46338021b908 2431
+src/modules/AiRuntime/transformers/promptParser/__tests__/parsing.spec.ts
+  s_bc88af7d3b054c::t_102e38396a64bc 44-46,122-124,224-226
+src/modules/AiRuntime/transformers/promptParser/__tests__/parsingDeep.spec.ts
+  s_bc88af7d3b054c::t_102e38396a64bc 14-16
+src/modules/AiRuntime/useCases/__tests__/describePlannedAction.spec.ts
+  s_bc88af7d3b054c::t_0f33b8475057c6 30-32,378-391
+  s_14f2bbc9f385dd::t_2abfa1db539bef 392-396
+src/modules/AiRuntime/useCases/aiPanelActions/__tests__/runAppAction.spec.ts
+  s_bc88af7d3b054c::t_70bc9de8d969f9 86,95-96
+src/modules/AiRuntime/useCases/__tests__/parsePromptToActions.spec.ts
+  s_bc88af7d3b054c::t_ed458064978c17 89-91,318-329
+  s_14f2bbc9f385dd::t_6dd17a105a820c 330-331
+src/modules/AiRuntime/models/ProjectContext.ts
+  s_bc88af7d3b054c::t_b175f59895e738 8-10
+src/modules/Command/useCases/executableAppActionRegistry.ts
+  s_bc88af7d3b054c::t_2ca679c1c7ce78 1337-1379
+  s_14f2bbc9f385dd::t_2f0b61417fbb94 1380
+src/modules/AiRuntime/useCases/__tests__/validateActionPayload.spec.ts
+  s_bc88af7d3b054c::t_70bc9de8d969f9 1071-1073,1081-1118,1120-1121,1124,1132,1137-1140
+  s_14f2bbc9f385dd::t_c5acd021ea30ee 1125,1131,1133-1136,1141-1144
+src/modules/AiRuntime/transformers/__tests__/llmActionBridge.spec.ts
+  s_bc88af7d3b054c::t_2232423f1cfd21 1074-1102
+  s_bc88af7d3b054c::t_0f33b8475057c6 16-18,3407-3409
+  s_bc88af7d3b054c::t_d1beccfbbb6621 172
+  s_bc88af7d3b054c::t_57b5248adb33ef 4,177-183
+src/modules/Command/useCases/__tests__/executableCommandRegistry.spec.ts
+  s_bc88af7d3b054c::t_f52868a85911d6 647-676,1642-1657
+src/modules/AiRuntime/useCases/agentReference/bridgeGroundedLlmToolCalls.ts
+  s_bc88af7d3b054c::t_57b5248adb33ef 5,3267-3273,3303-3305,3398
+  s_bc88af7d3b054c::t_f6b86bac281faf 3301-3302,3306-3326
+src/modules/Transport/handlers/transport/handleSetPunchIn.ts
+  s_bc88af7d3b054c::t_911a682318e360 3,5,9-25,34
+src/modules/AiRuntime/useCases/agentReference/__tests__/resolveAgentReference.spec.ts
+  s_bc88af7d3b054c::t_102e38396a64bc 36-38
+src/modules/WorkspaceShell/presentations/hooks/__tests__/usePromptExecution.spec.ts
+  s_bc88af7d3b054c::t_ab2bf287be5b45 365-367
+src/modules/AiRuntime/useCases/describePlannedAction.ts
+  s_bc88af7d3b054c::t_5e413f6b7b0d1e 23-26,30-33
+  s_bc88af7d3b054c::t_fa1b07ca672417 3,15-22,27-29,34-36
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "ce14a6259cf54d7f406652cdf7444eb0c5db3b47",
+  "prompts": {},
+  "sessions": {
+    "s_14f2bbc9f385dd": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f9a61a1d-66b3-4146-938d-a04f45f4b060",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_bc88af7d3b054c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f9b4a-11a2-7f61-8dfb-76eed0eb2a9c",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
