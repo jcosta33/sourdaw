@@ -1172,7 +1172,7 @@ function getAssertedControlTargetReferences(
                 direct.add(value);
                 continue;
             }
-            if (targetRule.capability === 'editable-clip' && Array.isArray(value)) {
+            if (Array.isArray(value)) {
                 for (const item of value) {
                     if (typeof item === 'string') {
                         direct.add(item);
@@ -1190,10 +1190,7 @@ function getAssertedControlTargetReferences(
     for (const targetRule of groundingRules.targetRules) {
         for (const assertedArguments of assertedArgumentSets) {
             const assertedValue = assertedArguments[targetRule.argument];
-            const assertedIds =
-                targetRule.capability === 'editable-clip' && Array.isArray(assertedValue)
-                    ? assertedValue
-                    : [assertedValue];
+            const assertedIds = Array.isArray(assertedValue) ? assertedValue : [assertedValue];
             for (const assertedId of assertedIds) {
                 if (typeof assertedId !== 'string') {
                     continue;
@@ -1536,10 +1533,9 @@ function isExplicitGluePairCancellationClause(text: string, targetPattern: strin
         return false;
     }
     const politeTail = '(?: (?:please|thanks|after all))*';
-    const rationaleTail = '(?: (?:because|since|as) .+)?';
     const normalizedText = normalizePromptText(text);
     return new RegExp(
-        `^(?:but )?(?:actually )?(?:do not|don t|dont|never) (?:glue|join) ${targetPattern}${politeTail}${rationaleTail}$`,
+        `^(?:but )?(?:actually )?(?:do not|don t|dont|never) (?:glue|join) ${targetPattern}${politeTail}$`,
         'u'
     ).test(normalizedText);
 }
@@ -1549,10 +1545,9 @@ function isImplicitGlueCancellationClause(text: string): boolean {
         return false;
     }
     const politeTail = '(?: (?:please|thanks|after all))*';
-    const rationaleTail = '(?: (?:because|since|as) .+)?';
     const normalizedText = normalizePromptText(text);
     const pronounCancellation = new RegExp(
-        `^(?:but )?(?:actually )?(?:do not|don t|dont|never) (?:glue|join) (?:them|the clips)${politeTail}${rationaleTail}$`,
+        `^(?:but )?(?:actually )?(?:do not|don t|dont|never) (?:glue|join) (?:them|the clips)${politeTail}$`,
         'u'
     );
     if (pronounCancellation.test(normalizedText)) {
@@ -1647,12 +1642,6 @@ function getGlueActionScopePlan(
 ): GlueActionScopePlan | null {
     const commandText = normalizePromptText(stripPoliteGlueCommandCarrier(actionScope.text));
     if (!/^(?:glue|join)\b/u.test(commandText)) {
-        return null;
-    }
-    const targetText = commandText.replace(/^(?:glue|join)\s+/u, '');
-    const hasSelectedClipTarget = /^(?:the )?selected clips(?: |$)/u.test(targetText);
-    const hasPairTarget = /\S+ (?:and|with) \S+/u.test(targetText);
-    if (!hasSelectedClipTarget && !hasPairTarget) {
         return null;
     }
     const matches = candidates.flatMap((candidate) => {

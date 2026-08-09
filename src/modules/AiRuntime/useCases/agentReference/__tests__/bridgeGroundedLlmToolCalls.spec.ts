@@ -1271,50 +1271,6 @@ describe('bridgeGroundedLlmToolCalls', () => {
         expect(result.rejections).toEqual([]);
     });
 
-    it('keeps explicit glue cancellations binding when their clause ends with rationale', () => {
-        const context = createTwoGluePairContext();
-        const pronoun = bridge(
-            [{ name: 'glueClips', arguments: { clipIds: ['clip-midi-intro', 'clip-midi-verse'] } }],
-            "glue MIDI Intro and MIDI Verse clips, but don't glue them because I changed my mind",
-            context
-        );
-        const explicitPair = bridge(
-            [
-                { name: 'glueClips', arguments: { clipIds: ['clip-midi-intro', 'clip-midi-verse'] } },
-                { name: 'glueClips', arguments: { clipIds: ['clip-midi-outro', 'clip-midi-coda'] } },
-            ],
-            "glue MIDI Intro and MIDI Verse clips, then glue MIDI Outro and MIDI Coda clips, but don't glue MIDI Intro and MIDI Verse because I changed my mind",
-            context
-        );
-        const quotedLiteral = bridge(
-            [{ name: 'glueClips', arguments: { clipIds: ['clip-midi-intro', 'clip-midi-verse'] } }],
-            `glue MIDI Intro and MIDI Verse clips, then "don't glue them because I changed my mind" is a project note`,
-            context
-        );
-
-        expect(pronoun.actions).toEqual([]);
-        expect(pronoun.rejections).toEqual([]);
-        expect(explicitPair.actions).toEqual([
-            { type: 'glueClips', payload: { clipIds: ['clip-midi-outro', 'clip-midi-coda'] } },
-        ]);
-        expect(explicitPair.rejections).toEqual([]);
-        expect(quotedLiteral.actions).toEqual([
-            { type: 'glueClips', payload: { clipIds: ['clip-midi-intro', 'clip-midi-verse'] } },
-        ]);
-        expect(quotedLiteral.rejections).toEqual([]);
-    });
-
-    it('does not plan a glue action from a declarative glue-prefixed clause', () => {
-        const result = bridge(
-            [{ name: 'setTempo', arguments: { bpm: 130 } }],
-            'Glue is a clip, then set tempo to 130',
-            createGlueClipContext()
-        );
-
-        expect(result.actions).toEqual([{ type: 'setTempo', payload: { bpm: 130 } }]);
-        expect(result.rejections).toEqual([]);
-    });
-
     it("keeps repeated don't cancellations as separate clauses and cancels both repeated glue scopes", () => {
         const context = createGlueClipContext();
         const result = bridge(
@@ -2758,24 +2714,6 @@ describe('bridgeGroundedLlmToolCalls', () => {
             {
                 type: 'createVcaGroup',
                 payload: { name: 'Strings', trackIds: [guitar.id, 'track-guitar-2'] },
-            },
-        ]);
-    });
-
-    it('preserves VCA control-cue handling for an array member named Never Enough', () => {
-        const neverEnough = createTrack({ id: 'track-never-enough', name: 'Never Enough' });
-        const result = bridge(
-            [{ name: 'createVcaGroup', arguments: { name: 'Dynamics', trackIds: [neverEnough.id] } }],
-            'create VCA group for Never Enough named Dynamics',
-            { ...projectContext, tracks: [...projectContext.tracks, neverEnough] }
-        );
-
-        expect(result.actions).toEqual([]);
-        expect(result.rejections).toEqual([
-            {
-                index: 0,
-                name: 'createVcaGroup',
-                reason: 'Provider action is not grounded in the user request',
             },
         ]);
     });
