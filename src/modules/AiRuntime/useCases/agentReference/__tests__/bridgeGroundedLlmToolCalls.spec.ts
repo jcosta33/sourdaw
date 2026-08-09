@@ -1003,6 +1003,49 @@ describe('bridgeGroundedLlmToolCalls', () => {
         }
     });
 
+    it('grounds polite two-clip glue requests', () => {
+        const context = createGlueClipContext();
+        const prompts = ['please glue MIDI Intro and MIDI Verse clips', 'could you join MIDI Intro with MIDI Verse'];
+
+        for (const prompt of prompts) {
+            const result = bridge(
+                [{ name: 'glueClips', arguments: { clipIds: ['clip-midi-intro', 'clip-midi-verse'] } }],
+                prompt,
+                context
+            );
+            expect
+                .soft(result.actions)
+                .toEqual([{ type: 'glueClips', payload: { clipIds: ['clip-midi-intro', 'clip-midi-verse'] } }]);
+            expect.soft(result.rejections).toEqual([]);
+        }
+    });
+
+    it('preserves the glue intent when a target clip is named Glue', () => {
+        const context = createGlueClipContext();
+        const renamedContext = {
+            ...context,
+            tracks: context.tracks.map((track) => ({
+                ...track,
+                clips: track.clips.map((clip) => {
+                    if (clip.id === 'clip-midi-intro') {
+                        return { ...clip, name: 'Glue' };
+                    }
+                    return clip;
+                }),
+            })),
+        };
+        const result = bridge(
+            [{ name: 'glueClips', arguments: { clipIds: ['clip-midi-intro', 'clip-midi-verse'] } }],
+            'glue Glue and MIDI Verse clips',
+            renamedContext
+        );
+
+        expect
+            .soft(result.actions)
+            .toEqual([{ type: 'glueClips', payload: { clipIds: ['clip-midi-intro', 'clip-midi-verse'] } }]);
+        expect(result.rejections).toEqual([]);
+    });
+
     it('grounds exactly two selected clips and rejects selected sets with the wrong cardinality', () => {
         const context = createGlueClipContext();
         const accepted = bridge(
@@ -1076,6 +1119,17 @@ describe('bridgeGroundedLlmToolCalls', () => {
         );
 
         expect(results.every((result) => result.actions.length === 0)).toBe(true);
+    });
+
+    it('rejects a trailing same-action negated restatement', () => {
+        const result = bridge(
+            [{ name: 'glueClips', arguments: { clipIds: ['clip-midi-intro', 'clip-midi-verse'] } }],
+            "glue MIDI Intro and MIDI Verse clips, but don't glue them",
+            createGlueClipContext()
+        );
+
+        expect(result.actions).toEqual([]);
+        expect(result.rejections).toHaveLength(1);
     });
 
     it('grounds an explicit clip stretch ratio without allowing provider invention or omission', () => {
