@@ -1,0 +1,19 @@
+tests/e2e/meteringViewsTestId.spec.ts
+  s_3b85d1e6806dcf::t_1856f76af8e874 1-86
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "296028d16748e88ad2847229d5bd8db485885d51",
+  "prompts": {},
+  "sessions": {
+    "s_3b85d1e6806dcf": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe8ae-568d-71d3-a566-250a6d14954e",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
