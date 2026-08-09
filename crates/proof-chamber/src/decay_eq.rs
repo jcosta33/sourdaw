@@ -521,6 +521,39 @@ mod tests {
         );
     }
 
+    /// Steady-state gain of the cascade at `freq`, measured by driving it.
+    fn gain_at(eq: &mut DecayRateEq, freq: f32, sample_rate: f32) -> f32 {
+        let step = std::f32::consts::TAU * freq / sample_rate;
+        let mut peak = 0.0_f32;
+        for index in 0..40_000 {
+            let output = eq.process((index as f32 * step).sin());
+            if index > 20_000 {
+                peak = peak.max(output.abs());
+            }
+        }
+        peak
+    }
+
+    #[test]
+    fn a_band_centre_above_nyquist_does_not_fold_back_into_the_audible_range() {
+        // `design_*` converts hertz through `TAU * freq / sample_rate`, and
+        // beyond Nyquist that angle wraps: the 12 kHz shelf at a 16 kHz rate
+        // would be designed at 4 kHz and put its whole boost in the middle of
+        // the spectrum. The clamp in `recompute_filter` is what stops it, and
+        // this is the rate that shows the difference — the two the application
+        // runs at (44.1 and 48 kHz) are both far above the fold, so a guard at
+        // either would pass with the clamp deleted.
+        let sample_rate = 16_000.0_f32;
+        let mut eq = DecayRateEq::new(sample_rate, 0.05);
+        eq.set_band_multiplier(5, MAX_MULTIPLIER);
+
+        let mid = gain_at(&mut eq, 4_000.0, sample_rate);
+        assert!(
+            mid < 1.5,
+            "the top band folded down to 4 kHz and boosted it by {mid}x"
+        );
+    }
+
     #[test]
     fn rt60_conversion_matches_the_jot_gain_the_fdn_lines_run_at() {
         // 24_000 samples at 48 kHz is 0.5 s of delay; an RT60 of 1.5 s is three
