@@ -627,6 +627,32 @@ impl FdnReverb {
 mod tests {
     use super::{decay_to_rt60_seconds, FdnReverb, MAX_RT60_SECONDS, MIN_RT60_SECONDS};
 
+    #[test]
+    fn a_bare_instance_has_already_told_its_decay_eq_what_the_loop_does() {
+        // `FdnReverb::new` seeds every Decay Rate EQ with a flat loop gain of
+        // 1.0 and then corrects it. The correcting call went missing and the
+        // comment beside the seeding said it was there, so a bare instance
+        // designed every band at 0 dB while claiming otherwise.
+        //
+        // **Unreachable through the engine's public path, and guarded here for
+        // that reason.** `addDevice` writes the descriptor's `decay` before the
+        // first render and that write calls `update_absorptive_filters` itself,
+        // so no render-level guard can see the difference — removing the call
+        // again leaves every test in `decay_eq_parameter_surface.rs` green. A
+        // constructor whose stated post-condition is only true because of what
+        // happens next is a trap for the next caller, so the post-condition is
+        // asserted where it can be.
+        let reverb = FdnReverb::new(48_000.0, 8);
+        for (index, eq) in reverb.decay_eqs.iter().enumerate() {
+            let worst = eq.worst_loop_gain_without_stage();
+            assert!(
+                worst < 1.0,
+                "line {index} was left with a flat unity loop gain of {worst}, so its Decay EQ \
+                 has been told the tail never decays"
+            );
+        }
+    }
+
     // The `decay` parameter as declared by the `dutch-oven` descriptor in
     // src/modules/Arrangement/models/PluginDescriptors/NativeDspDescriptors.ts.
     const DESCRIPTOR_MIN: f32 = 0.0;
