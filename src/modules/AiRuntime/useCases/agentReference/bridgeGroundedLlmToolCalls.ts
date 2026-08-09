@@ -2,6 +2,7 @@ import {
     getExecutableAppActionGroundingCatalog,
     getExecutableAppActionGroundingRules,
 } from '#/modules/Command/useCases';
+import { createPunchRegionPatch } from '#/modules/Transport/useCases';
 
 import { type ProjectContext } from '../../models/ProjectContext';
 import {
@@ -3263,7 +3264,13 @@ export function bridgeGroundedLlmToolCalls({
     prompt,
 }: BridgeGroundedLlmToolCallsInput): BridgeGroundedLlmToolCallsResult {
     if (calls.length > MAX_LLM_ACTIONS_PER_BATCH) {
-        return bridgeLlmToolCalls({ calls, context, markerSignatures, sectionSignatures });
+        return bridgeLlmToolCalls({
+            calls,
+            context,
+            markerSignatures,
+            projectPunchRegion: createPunchRegionPatch,
+            sectionSignatures,
+        });
     }
     const glueAnalysis = analyzeGluePrompt(prompt, context);
     const providerGlueCalls = calls.filter((call) => call.name === 'glueClips');
@@ -3291,6 +3298,32 @@ export function bridgeGroundedLlmToolCalls({
         }
     }
     const catalog = getExecutableAppActionGroundingCatalog();
+    const punchPromptIntents = getPromptClauses(prompt, prompt)
+        .map((clause) => resolveClauseActionIntent(clause.masked, catalog)?.actionType)
+        .filter(
+            (actionType): actionType is 'setPunchIn' | 'setPunchOut' =>
+                actionType === 'setPunchIn' || actionType === 'setPunchOut'
+        );
+    const punchProviderCalls = effectiveCalls.filter(
+        (call) => call.name === 'setPunchIn' || call.name === 'setPunchOut'
+    );
+    if (punchPromptIntents.length > 0 || punchProviderCalls.length > 0) {
+        const promptIntent = punchPromptIntents[0];
+        const providerCall = punchProviderCalls[0];
+        const isExactSingleton =
+            punchPromptIntents.length === 1 &&
+            punchProviderCalls.length === 1 &&
+            effectiveCalls.length === 1 &&
+            providerCall?.name === promptIntent;
+        if (!isExactSingleton) {
+            return {
+                actions: [],
+                rejections: [
+                    rejection(0, '<batch>', 'Punch endpoint request must name exactly one direct endpoint command'),
+                ],
+            };
+        }
+    }
     const promptRequestsLoopRegion = hasExplicitPromptIntent(prompt, catalog, 'setLoopRegion');
     const promptRequestsLoopEnabled = hasExplicitPromptIntent(prompt, catalog, 'setLoopEnabled');
     const requiresCompoundLoop = promptRequestsLoopRegion && promptRequestsLoopEnabled;
@@ -3362,6 +3395,7 @@ export function bridgeGroundedLlmToolCalls({
         calls: groundedCalls,
         context: prospectiveContext,
         markerSignatures,
+        projectPunchRegion: createPunchRegionPatch,
         sectionSignatures,
     });
     const rejections = bridged.rejections.map((bridgeRejection) => {

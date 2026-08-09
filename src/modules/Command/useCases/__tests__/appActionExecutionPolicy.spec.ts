@@ -16,6 +16,8 @@ describe('app action execution policy', () => {
         'removeSend',
         'addSidechainRoute',
         'removeSidechainRoute',
+        'setPunchIn',
+        'setPunchOut',
     ] as const)('requires confirmation for a single authority-sensitive %s action', (type) => {
         expect(requiresAppActionConfirmation([{ type }])).toBe(true);
     });

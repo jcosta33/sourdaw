@@ -46,6 +46,9 @@ const projectContext: ProjectContext = {
     isLooping: true,
     loopStart: 4,
     loopEnd: 12,
+    punchInEnabled: true,
+    punchInBeat: 4,
+    punchOutBeat: 12,
     metronomeEnabled: false,
     metronomeVolume: 0.5,
     masterGain: 0.8,
@@ -2490,6 +2493,34 @@ describe('bridgeGroundedLlmToolCalls', () => {
             expect.soft(result.actions).toEqual([regionAction]);
         }
         expect(implicitVolume.actions).toEqual([]);
+    });
+
+    it('grounds exactly one direct punch endpoint and rejects mismatch, ambiguity, negation, and orphan numbers', () => {
+        const punchIn = bridge([{ name: 'setPunchIn', arguments: { beat: 20 } }], 'set punch in at beat 20');
+        const punchOut = bridge([{ name: 'setPunchOut', arguments: { beat: 8 } }], 'move punch-out to beat 8');
+        const rejected = [
+            bridge([{ name: 'setPunchOut', arguments: { beat: 20 } }], 'set punch in at beat 20'),
+            bridge([{ name: 'setPunchIn', arguments: { beat: 20 } }], 'the punch in point is beat 20'),
+            bridge([{ name: 'setPunchIn', arguments: { beat: 20 } }], 'do not set punch in at beat 20'),
+            bridge([{ name: 'setPunchIn', arguments: { beat: 20 } }], 'set punch in at beat 20, cancel that'),
+            bridge([{ name: 'setPunchIn', arguments: { beat: 20 } }], '20'),
+            bridge([{ name: 'setPunchIn', arguments: { beat: 20 } }], 'set punch in'),
+            bridge(
+                [{ name: 'setPunchIn', arguments: { beat: 20 } }],
+                'set punch in at beat 20 and set punch out at beat 28'
+            ),
+            bridge(
+                [
+                    { name: 'setPunchIn', arguments: { beat: 20 } },
+                    { name: 'setPunchIn', arguments: { beat: 24 } },
+                ],
+                'set punch in at beat 20 and set punch in at beat 24'
+            ),
+        ];
+
+        expect(punchIn.actions).toEqual([{ type: 'setPunchIn', payload: { beat: 20 } }]);
+        expect(punchOut.actions).toEqual([{ type: 'setPunchOut', payload: { beat: 8 } }]);
+        expect(rejected.every((result) => result.actions.length === 0)).toBe(true);
     });
 
     it('grounds explicit changed master gain with percentage normalization', () => {

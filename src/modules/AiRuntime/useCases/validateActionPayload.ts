@@ -117,8 +117,24 @@ function isUniqueNonEmptyStringArray(value: unknown): value is string[] {
     return new Set(value).size === value.length;
 }
 
-function hasFinitePunchBeat(param: unknown): param is PayloadOf<'setPunchIn'> {
-    return isObj(param) && hasExactKeys(param, ['beat']) && isNumber(param.beat);
+function hasValidPunchInBeat(param: unknown): param is PayloadOf<'setPunchIn'> {
+    return (
+        isObj(param) &&
+        hasExactKeys(param, ['beat']) &&
+        isNumber(param.beat) &&
+        param.beat >= 0 &&
+        param.beat < Number.MAX_VALUE
+    );
+}
+
+function hasValidPunchOutBeat(param: unknown): param is PayloadOf<'setPunchOut'> {
+    return (
+        isObj(param) &&
+        hasExactKeys(param, ['beat']) &&
+        isNumber(param.beat) &&
+        param.beat > 0 &&
+        param.beat <= Number.MAX_VALUE
+    );
 }
 
 function hasNoPayload(value: unknown): value is undefined {
@@ -368,8 +384,8 @@ const validators = {
     togglePunch: 'unchecked',
     toggleCountIn: 'unchecked',
     togglePreRoll: 'unchecked',
-    setPunchIn: hasFinitePunchBeat,
-    setPunchOut: hasFinitePunchBeat,
+    setPunchIn: hasValidPunchInBeat,
+    setPunchOut: hasValidPunchOutBeat,
     setCountInBars: 'unchecked',
     setPreRollBars: 'unchecked',
     seekPlayhead: (param): param is PayloadOf<'seekPlayhead'> =>

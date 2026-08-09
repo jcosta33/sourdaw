@@ -123,6 +123,9 @@ describe('getProjectContext', () => {
         expect(context.isLooping).toBe(false);
         expect(context.loopStart).toBe(0);
         expect(context.loopEnd).toBe(0);
+        expect(context.punchInEnabled).toBe(false);
+        expect(context.punchInBeat).toBe(0);
+        expect(context.punchOutBeat).toBe(16);
         expect(context.metronomeEnabled).toBe(false);
         expect(context.metronomeVolume).toBe(0.5);
         expect(context.masterGain).toBe(0.8);
@@ -213,6 +216,9 @@ describe('getProjectContext', () => {
             isLooping: true,
             loopStart: 4,
             loopEnd: 12,
+            punchInEnabled: true,
+            punchInBeat: 6,
+            punchOutBeat: 10,
             metronomeEnabled: true,
             metronomeVolume: 0.25,
             masterGain: 65,
@@ -248,6 +254,9 @@ describe('getProjectContext', () => {
         expect(context.isLooping).toBe(true);
         expect(context.loopStart).toBe(4);
         expect(context.loopEnd).toBe(12);
+        expect(context.punchInEnabled).toBe(true);
+        expect(context.punchInBeat).toBe(6);
+        expect(context.punchOutBeat).toBe(10);
         expect(context.metronomeEnabled).toBe(true);
         expect(context.metronomeVolume).toBe(0.25);
         expect(context.masterGain).toBe(0.65);

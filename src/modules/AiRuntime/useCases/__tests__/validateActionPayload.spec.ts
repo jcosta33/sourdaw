@@ -1068,39 +1068,80 @@ describe('validateActionPayload / PAYLOAD_VALIDATORS', () => {
         });
     });
 
-    describe.each(['setPunchIn', 'setPunchOut'] as const)('%s', (actionType) => {
-        it('should accept an exact payload with any finite numeric beat', () => {
-            const guard = PAYLOAD_VALIDATORS[actionType];
+    describe('setPunchIn', () => {
+        it('should accept only an exact finite beat below the maximum', () => {
+            const guard = PAYLOAD_VALIDATORS.setPunchIn;
             expect(guard).not.toBe('unchecked');
             if (guard === 'unchecked') {
                 return;
             }
 
-            expect(guard({ beat: -4 })).toBe(true);
             expect(guard({ beat: -0 })).toBe(true);
             expect(guard({ beat: 0.25 })).toBe(true);
-            expect(guard({ beat: Number.MAX_VALUE })).toBe(true);
+            expect(guard({ beat: -4 })).toBe(false);
+            expect(guard({ beat: Number.MAX_VALUE })).toBe(false);
         });
 
-        it.each([
-            ['string payload', '4'],
-            ['missing payload', undefined],
-            ['null payload', null],
-            ['missing beat', {}],
-            ['string beat', { beat: '4' }],
-            ['null beat', { beat: null }],
-            ['NaN beat', { beat: Number.NaN }],
-            ['positive infinity beat', { beat: Number.POSITIVE_INFINITY }],
-            ['negative infinity beat', { beat: Number.NEGATIVE_INFINITY }],
-            ['extra property', { beat: 4, extra: true }],
-        ] as const)('should reject %s', (_label, payload) => {
-            const guard = PAYLOAD_VALIDATORS[actionType];
+        it('should reject malformed payloads', () => {
+            const guard = PAYLOAD_VALIDATORS.setPunchIn;
             expect(guard).not.toBe('unchecked');
             if (guard === 'unchecked') {
                 return;
             }
 
-            expect(guard(payload)).toBe(false);
+            for (const payload of [
+                '4',
+                undefined,
+                null,
+                {},
+                { beat: '4' },
+                { beat: null },
+                { beat: Number.NaN },
+                { beat: Number.POSITIVE_INFINITY },
+                { beat: Number.NEGATIVE_INFINITY },
+                { beat: 4, extra: true },
+            ]) {
+                expect(guard(payload)).toBe(false);
+            }
+        });
+    });
+
+    describe('setPunchOut', () => {
+        it('should accept only an exact positive finite beat through the maximum', () => {
+            const guard = PAYLOAD_VALIDATORS.setPunchOut;
+            expect(guard).not.toBe('unchecked');
+            if (guard === 'unchecked') {
+                return;
+            }
+
+            expect(guard({ beat: Number.MIN_VALUE })).toBe(true);
+            expect(guard({ beat: 0.25 })).toBe(true);
+            expect(guard({ beat: Number.MAX_VALUE })).toBe(true);
+            expect(guard({ beat: 0 })).toBe(false);
+            expect(guard({ beat: -4 })).toBe(false);
+        });
+
+        it('should reject malformed payloads', () => {
+            const guard = PAYLOAD_VALIDATORS.setPunchOut;
+            expect(guard).not.toBe('unchecked');
+            if (guard === 'unchecked') {
+                return;
+            }
+
+            for (const payload of [
+                '4',
+                undefined,
+                null,
+                {},
+                { beat: '4' },
+                { beat: null },
+                { beat: Number.NaN },
+                { beat: Number.POSITIVE_INFINITY },
+                { beat: Number.NEGATIVE_INFINITY },
+                { beat: 4, extra: true },
+            ]) {
+                expect(guard(payload)).toBe(false);
+            }
         });
     });
 

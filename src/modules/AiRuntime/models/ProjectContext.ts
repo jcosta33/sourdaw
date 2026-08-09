@@ -5,6 +5,9 @@ export type ProjectContext = {
     isLooping: boolean;
     loopStart: number;
     loopEnd: number;
+    punchInEnabled: boolean;
+    punchInBeat: number;
+    punchOutBeat: number;
     metronomeEnabled: boolean;
     metronomeVolume: number;
     masterGain: number;

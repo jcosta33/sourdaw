@@ -1,5 +1,6 @@
 import { markerStore } from '#/modules/Arrangement/stores';
 import { describeAction } from '#/modules/Command/useCases';
+import { createPunchRegionPatch } from '#/modules/Transport/useCases';
 import { type AppAction } from '#/utils/handlerContract';
 import { resolveMarkerColorName } from '#/utils/markerColorPalette';
 
@@ -11,6 +12,28 @@ type DescribePlannedActionInput = {
 };
 
 export function describePlannedAction({ action, context }: DescribePlannedActionInput): string {
+    if (action.type === 'setPunchIn' || action.type === 'setPunchOut') {
+        const current = { punchInBeat: context.punchInBeat, punchOutBeat: context.punchOutBeat };
+        const edge = action.type === 'setPunchIn' ? 'in' : 'out';
+        const patch = createPunchRegionPatch({ current, beat: action.payload.beat, edge });
+        if (patch !== null) {
+            const next = { ...current, ...patch };
+            const enabledState = context.punchInEnabled ? 'enabled' : 'disabled';
+            if (action.type === 'setPunchIn') {
+                let oppositeChange = `punch-out remains at beat ${String(current.punchOutBeat)}`;
+                if (next.punchOutBeat !== current.punchOutBeat) {
+                    oppositeChange = `punch-out moves from beat ${String(current.punchOutBeat)} to ${String(next.punchOutBeat)}`;
+                }
+                return `Set punch-in to beat ${String(action.payload.beat)}; ${oppositeChange}; resulting region ${String(next.punchInBeat)}–${String(next.punchOutBeat)}; punch recording remains ${enabledState}`;
+            }
+
+            let oppositeChange = `punch-in remains at beat ${String(current.punchInBeat)}`;
+            if (next.punchInBeat !== current.punchInBeat) {
+                oppositeChange = `punch-in moves from beat ${String(current.punchInBeat)} to ${String(next.punchInBeat)}`;
+            }
+            return `Set punch-out to beat ${String(action.payload.beat)}; ${oppositeChange}; resulting region ${String(next.punchInBeat)}–${String(next.punchOutBeat)}; punch recording remains ${enabledState}`;
+        }
+    }
     if (action.type === 'removeTrack') {
         const track = context.tracks.find((candidate) => candidate.id === action.payload.trackId);
         if (track) {

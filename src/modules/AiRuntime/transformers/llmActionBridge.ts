@@ -42,8 +42,16 @@ type BridgeLlmToolCallsInput = {
     calls: readonly ToolCallResult[];
     context: ProjectContext;
     markerSignatures?: readonly MarkerPlanningSignature[];
+    projectPunchRegion: ProjectPunchRegion;
     sectionSignatures?: readonly SectionPlanningSignature[];
 };
+
+type PunchRegion = Pick<ProjectContext, 'punchInBeat' | 'punchOutBeat'>;
+type ProjectPunchRegion = (input: {
+    beat: number;
+    current: PunchRegion;
+    edge: 'in' | 'out';
+}) => Partial<PunchRegion> | null;
 
 function hasExactKeys(value: Record<string, unknown>, expectedKeys: readonly string[]): boolean {
     const actualKeys = Object.keys(value);
@@ -336,12 +344,14 @@ function bridgeToolCall({
     context,
     index,
     markerSignatures,
+    projectPunchRegion,
     sectionSignatures,
 }: {
     call: ToolCallResult;
     context: ProjectContext;
     index: number;
     markerSignatures: readonly MarkerPlanningSignature[];
+    projectPunchRegion: ProjectPunchRegion;
     sectionSignatures: readonly SectionPlanningSignature[];
 }): RuntimeAction | LlmActionRejection {
     const args = call.arguments;
@@ -574,6 +584,46 @@ function bridgeToolCall({
             return rejection(index, call.name, 'Expected finite loop beats with 0 <= startBeat < endBeat');
         }
         return { type: 'setLoopRegion', payload: { startBeat: args.startBeat, endBeat: args.endBeat } };
+    }
+
+    if (call.name === 'setPunchIn' || call.name === 'setPunchOut') {
+        const beat = args.beat;
+        const isPunchIn = call.name === 'setPunchIn';
+        let expected = 'Expected exactly one finite punch-out beat with 0 < beat <= Number.MAX_VALUE';
+        if (isPunchIn) {
+            expected = 'Expected exactly one finite punch-in beat with 0 <= beat < Number.MAX_VALUE';
+        }
+        if (!hasExactKeys(args, ['beat']) || !isFiniteNumber(beat)) {
+            return rejection(index, call.name, expected);
+        }
+
+        let hasValidBeat = beat > 0 && beat <= Number.MAX_VALUE;
+        if (isPunchIn) {
+            hasValidBeat = beat >= 0 && beat < Number.MAX_VALUE;
+        }
+        const hasValidCurrentRegion =
+            isFiniteNumber(context.punchInBeat) &&
+            isFiniteNumber(context.punchOutBeat) &&
+            context.punchInBeat >= 0 &&
+            context.punchOutBeat > context.punchInBeat;
+        if (!hasValidBeat || !hasValidCurrentRegion) {
+            return rejection(index, call.name, expected);
+        }
+
+        const current = { punchInBeat: context.punchInBeat, punchOutBeat: context.punchOutBeat };
+        const patch = projectPunchRegion({ current, beat, edge: isPunchIn ? 'in' : 'out' });
+        if (patch === null) {
+            return rejection(index, call.name, 'Requested punch endpoint cannot produce a finite punch region');
+        }
+        const next = { ...current, ...patch };
+        if (next.punchInBeat === current.punchInBeat && next.punchOutBeat === current.punchOutBeat) {
+            return rejection(index, call.name, 'Requested punch endpoint already matches project state');
+        }
+
+        if (isPunchIn) {
+            return { type: 'setPunchIn', payload: { beat } };
+        }
+        return { type: 'setPunchOut', payload: { beat } };
     }
 
     if (call.name === 'setMetronomeEnabled') {
@@ -1961,6 +2011,9 @@ function getMutationKeys(
     if (action.type === 'setLoopRegion') {
         return ['loop:region'];
     }
+    if (action.type === 'setPunchIn' || action.type === 'setPunchOut') {
+        return ['punch:region'];
+    }
     if (action.type === 'setMetronomeEnabled') {
         return ['metronome:enabled'];
     }
@@ -2350,6 +2403,7 @@ export function bridgeLlmToolCalls({
     calls,
     context,
     markerSignatures = [],
+    projectPunchRegion,
     sectionSignatures = [],
 }: BridgeLlmToolCallsInput): LlmActionBridgeResult {
     if (calls.length > MAX_LLM_ACTIONS_PER_BATCH) {
@@ -2361,6 +2415,16 @@ export function bridgeLlmToolCalls({
                     '<batch>',
                     `Provider batch exceeds the ${String(MAX_LLM_ACTIONS_PER_BATCH)}-action limit`
                 ),
+            ],
+        };
+    }
+
+    const punchCalls = calls.filter((call) => call.name === 'setPunchIn' || call.name === 'setPunchOut');
+    if (punchCalls.length > 0 && (punchCalls.length !== 1 || calls.length !== 1)) {
+        return {
+            actions: [],
+            rejections: [
+                rejection(0, '<batch>', 'Provider punch endpoint command must be the only action in its batch'),
             ],
         };
     }
@@ -2455,6 +2519,7 @@ export function bridgeLlmToolCalls({
             context: prospectiveContext,
             index,
             markerSignatures,
+            projectPunchRegion,
             sectionSignatures,
         });
         if ('type' in result) {
@@ -2730,6 +2795,9 @@ export function buildLlmActionUserMessage({ prompt, context }: { prompt: string;
         isLooping: context.isLooping,
         loopStart: context.loopStart,
         loopEnd: context.loopEnd,
+        punchInEnabled: context.punchInEnabled,
+        punchInBeat: context.punchInBeat,
+        punchOutBeat: context.punchOutBeat,
         metronomeEnabled: context.metronomeEnabled,
         metronomeVolume: context.metronomeVolume,
         masterGain: context.masterGain,
