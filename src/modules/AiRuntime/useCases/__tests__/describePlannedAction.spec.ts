@@ -27,6 +27,9 @@ const context: ProjectContext = {
     isLooping: false,
     loopStart: 0,
     loopEnd: 0,
+    punchInEnabled: true,
+    punchInBeat: 4,
+    punchOutBeat: 12,
     metronomeEnabled: false,
     metronomeVolume: 0.5,
     masterGain: 0.8,
@@ -371,5 +374,24 @@ describe('describePlannedAction', () => {
                 context: sidechainContext,
             })
         ).toBe('Remove sidechain route: "Drums" (track-drums) → "Bass" (track-bass)');
+    });
+
+    it('previews the exact punch pair, opposite endpoint movement, and unchanged enabled state', () => {
+        expect(
+            describePlannedAction({
+                action: { type: 'setPunchIn', payload: { beat: 20 } },
+                context,
+            })
+        ).toBe(
+            'Set punch-in to beat 20; punch-out moves from beat 12 to 21; resulting region 20–21; punch recording remains enabled'
+        );
+        expect(
+            describePlannedAction({
+                action: { type: 'setPunchOut', payload: { beat: 8 } },
+                context,
+            })
+        ).toBe(
+            'Set punch-out to beat 8; punch-in remains at beat 4; resulting region 4–8; punch recording remains enabled'
+        );
     });
 });

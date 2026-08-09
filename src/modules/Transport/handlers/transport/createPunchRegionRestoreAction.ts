@@ -1,16 +1,10 @@
-import { getTransportState } from '../../useCases/transportQueries/getTransportState';
+import { type AppAction } from '#/utils/handlerContract';
 
-export function createPunchRegionRestoreAction() {
-    const state = getTransportState();
-    if (!state) {
-        return null;
-    }
+type RestorePunchRegionAction = Extract<AppAction, { type: 'restorePunchRegion' }>;
 
+export function createPunchRegionRestoreAction(payload: RestorePunchRegionAction['payload']): RestorePunchRegionAction {
     return {
-        type: 'restorePunchRegion' as const,
-        payload: {
-            punchInBeat: state.punchInBeat,
-            punchOutBeat: state.punchOutBeat,
-        },
+        type: 'restorePunchRegion',
+        payload,
     };
 }

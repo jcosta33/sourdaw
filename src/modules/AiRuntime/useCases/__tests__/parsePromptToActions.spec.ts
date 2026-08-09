@@ -86,6 +86,9 @@ const baseContext: ProjectContext = {
     isLooping: false,
     loopStart: 0,
     loopEnd: 0,
+    punchInEnabled: false,
+    punchInBeat: 0,
+    punchOutBeat: 16,
     metronomeEnabled: false,
     metronomeVolume: 0.5,
     masterGain: 0.8,
@@ -308,6 +311,20 @@ describe('parsePromptToActions', () => {
         const result = await parsePromptToActions('seek the playhead to beat 8.5', baseContext);
 
         expect(result.actions).toEqual([{ type: 'seekPlayhead', payload: { beat: 8.5 } }]);
+        expect(result.requiresConfirmation).toBe(true);
+        expect(result.executionMode).toBe('atomic');
+    });
+
+    it('routes one explicit punch endpoint through the provider-neutral grounded action path', async () => {
+        const actualBridge = await vi.importActual<typeof import('../agentReference/bridgeGroundedLlmToolCalls')>(
+            '../agentReference/bridgeGroundedLlmToolCalls'
+        );
+        mockBridgeGroundedLlmToolCalls.mockImplementation(actualBridge.bridgeGroundedLlmToolCalls);
+        vi.mocked(generateToolCalls).mockResolvedValue(completePlan([{ name: 'setPunchIn', arguments: { beat: 20 } }]));
+
+        const result = await parsePromptToActions('set punch in at beat 20', baseContext);
+
+        expect(result.actions).toEqual([{ type: 'setPunchIn', payload: { beat: 20 } }]);
         expect(result.requiresConfirmation).toBe(true);
         expect(result.executionMode).toBe('atomic');
     });

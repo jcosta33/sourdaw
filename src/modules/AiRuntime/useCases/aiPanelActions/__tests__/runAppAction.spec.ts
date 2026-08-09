@@ -83,7 +83,7 @@ describe('runAppAction', () => {
     );
 
     it.each(['setPunchIn', 'setPunchOut'] as const)(
-        'allows finite negative %s beats to reach owner normalization',
+        'rejects negative %s beats before owner normalization',
         async (actionType) => {
             const action: RunAppActionInput =
                 actionType === 'setPunchIn'
@@ -92,8 +92,8 @@ describe('runAppAction', () => {
 
             await runAppAction(action);
 
-            expect(mocks.executeAppAction).toHaveBeenCalledOnce();
-            expect(mocks.executeAppAction).toHaveBeenCalledWith(action);
+            expect(mocks.executeAppAction).not.toHaveBeenCalled();
+            expect(mocks.logger.warn).toHaveBeenCalledOnce();
         }
     );
 });

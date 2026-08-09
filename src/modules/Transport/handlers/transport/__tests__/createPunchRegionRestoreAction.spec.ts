@@ -1,32 +1,18 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect } from 'vitest';
 
-import { type TransportState } from '../../../models/TransportState';
-import { getTransportState } from '../../../useCases/transportQueries/getTransportState';
 import { createPunchRegionRestoreAction } from '../createPunchRegionRestoreAction';
 
-vi.mock('../../../useCases/transportQueries/getTransportState', () => ({
-    getTransportState: vi.fn(),
-}));
-
 describe('createPunchRegionRestoreAction', () => {
-    it('returns a restorePunchRegion action capturing the current punch region', () => {
-        vi.mocked(getTransportState).mockReturnValue({
-            punchInBeat: 4,
-            punchOutBeat: 12,
-        } as TransportState);
-
-        const action = createPunchRegionRestoreAction();
+    it('returns a guarded restorePunchRegion action with exact expected and replacement pairs', () => {
+        const payload = {
+            expected: { punchInBeat: 20, punchOutBeat: 21 },
+            replacement: { punchInBeat: 4, punchOutBeat: 12 },
+        };
+        const action = createPunchRegionRestoreAction(payload);
 
         expect(action).toEqual({
             type: 'restorePunchRegion',
-            payload: { punchInBeat: 4, punchOutBeat: 12 },
+            payload,
         });
-    });
-
-    it('returns null when no transport state is available', () => {
-        // Defensive guard: an absent snapshot yields no restorable region.
-        vi.mocked(getTransportState).mockReturnValue(null);
-
-        expect(createPunchRegionRestoreAction()).toBeNull();
     });
 });

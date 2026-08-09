@@ -2,6 +2,7 @@ import {
     getExecutableAppActionGroundingCatalog,
     getExecutableAppActionGroundingRules,
 } from '#/modules/Command/useCases';
+import { createPunchRegionPatch } from '#/modules/Transport/useCases';
 
 import { type ProjectContext } from '../../models/ProjectContext';
 import {
@@ -1238,9 +1239,26 @@ function resolveActionPromptScope({
 }: ResolveActionPromptScopeInput): ActionPromptScope | null {
     const groundingRules = getExecutableAppActionGroundingRules(actionName);
     const cancellationPrompt = actionName === 'glueClips' ? maskGlueQuotedLabels(prompt) : prompt;
+    let hasActionCancellation = hasTrailingIntentCancellation(
+        cancellationPrompt,
+        actionName,
+        catalog,
+        plannedActionNames
+    );
+    if (isPunchActionType(actionName) || hasPunchEndpointReference(prompt)) {
+        const promptActionAnalysis = analyzePromptActionRequests(prompt, catalog);
+        const hasCancelledPunchRequest = promptActionAnalysis.requests.some(
+            (request) => isPunchActionType(request.actionType) && request.cancelled
+        );
+        if (isPunchActionType(actionName) || hasCancelledPunchRequest) {
+            hasActionCancellation = promptActionAnalysis.requests.some(
+                (request) => request.actionType === actionName && request.cancelled
+            );
+        }
+    }
     if (
         !groundingRules ||
-        hasTrailingIntentCancellation(cancellationPrompt, actionName, catalog, plannedActionNames) ||
+        hasActionCancellation ||
         (actionName === 'setClipFade' && hasInvalidNamedClipFadeField(prompt))
     ) {
         return null;
@@ -3255,6 +3273,82 @@ function hasExplicitPromptIntent(prompt: string, catalog: GroundingCatalog, acti
     );
 }
 
+type PromptActionRequest = {
+    actionType: string;
+    cancelled: boolean;
+    clause: PromptClause;
+};
+
+type PromptActionAnalysis = {
+    cancellationClauses: ReadonlySet<PromptClause>;
+    clauses: readonly PromptClause[];
+    requests: readonly PromptActionRequest[];
+};
+
+function analyzePromptActionRequests(prompt: string, catalog: GroundingCatalog): PromptActionAnalysis {
+    const maskedPrompt = maskQuotedLabels(prompt);
+    const clauses = getPromptClauses(prompt, maskedPrompt);
+    const cancellationClauses = new Set<PromptClause>();
+    const requests: PromptActionRequest[] = [];
+    for (const clause of clauses) {
+        const intent = resolveClauseActionIntent(clause.masked, catalog);
+        if (intent) {
+            requests.push({ actionType: intent.actionType, cancelled: false, clause });
+        }
+
+        for (const cue of getCancellationCues(clause.masked.toLocaleLowerCase())) {
+            const referencedAction = getReferencedCancellationAction(cue, catalog);
+            let requestIndex = -1;
+            for (let index = requests.length - 1; index >= 0; index -= 1) {
+                const request = requests[index];
+                if (request && !request.cancelled && (!referencedAction || request.actionType === referencedAction)) {
+                    requestIndex = index;
+                    break;
+                }
+            }
+            const cancelledRequest = requests[requestIndex];
+            if (cancelledRequest) {
+                requests[requestIndex] = { ...cancelledRequest, cancelled: true };
+                cancellationClauses.add(clause);
+            }
+        }
+    }
+    return { cancellationClauses, clauses, requests };
+}
+
+function isPunchActionType(actionType: string): actionType is 'setPunchIn' | 'setPunchOut' {
+    return actionType === 'setPunchIn' || actionType === 'setPunchOut';
+}
+
+function hasPunchEndpointReference(prompt: string): boolean {
+    return /\bpunch\s+(?:in|out)\b/u.test(normalizePromptText(maskQuotedLabels(prompt)));
+}
+
+function isExactPunchCommandClause(clause: PromptClause): boolean {
+    let commandSource = clause.masked.trim();
+    commandSource = commandSource.replace(/^(?:please\s+)?(?:can|could|would)\s+you(?:\s+please)?\s+/iu, '');
+    commandSource = commandSource.replace(/^please\s+/iu, '');
+    return /^(?:set|move)\s+punch(?:\s+|-)\s*(?:in|out)\s+(?:(?:at|to)\s+)?beat\s+[+-]?(?:\d+(?:\.\d+)?|\.\d+)\s*[?!]?$/iu.test(
+        commandSource
+    );
+}
+
+function isPunchPromptFullyCovered(analysis: PromptActionAnalysis): boolean {
+    const requestClauses = new Set(analysis.requests.map((request) => request.clause));
+    return analysis.clauses.every(
+        (clause) =>
+            requestClauses.has(clause) ||
+            analysis.cancellationClauses.has(clause) ||
+            normalizePromptText(clause.masked).length === 0
+    );
+}
+
+function hasMalformedPunchNumericContinuation(maskedPrompt: string): boolean {
+    return /\b(?:set|move)\s+punch(?:\s+|-)\s*(?:in|out)\b[^;.\n]*?\bbeat\s+[+-]?(?:\d+\.\d+|\d+(?!\.\d)|\.\d+)\s*(?:,\s*|\.\s*\.\s*)[+-]?(?:\d|\.\d)/iu.test(
+        maskedPrompt
+    );
+}
+
 export function bridgeGroundedLlmToolCalls({
     calls,
     context,
@@ -3263,7 +3357,13 @@ export function bridgeGroundedLlmToolCalls({
     prompt,
 }: BridgeGroundedLlmToolCallsInput): BridgeGroundedLlmToolCallsResult {
     if (calls.length > MAX_LLM_ACTIONS_PER_BATCH) {
-        return bridgeLlmToolCalls({ calls, context, markerSignatures, sectionSignatures });
+        return bridgeLlmToolCalls({
+            calls,
+            context,
+            markerSignatures,
+            projectPunchRegion: createPunchRegionPatch,
+            sectionSignatures,
+        });
     }
     const glueAnalysis = analyzeGluePrompt(prompt, context);
     const providerGlueCalls = calls.filter((call) => call.name === 'glueClips');
@@ -3291,6 +3391,37 @@ export function bridgeGroundedLlmToolCalls({
         }
     }
     const catalog = getExecutableAppActionGroundingCatalog();
+    const promptActionAnalysis = analyzePromptActionRequests(prompt, catalog);
+    const promptActionRequests = promptActionAnalysis.requests;
+    const activePromptActionRequests = promptActionRequests.filter((request) => !request.cancelled);
+    const totalPunchPromptRequests = promptActionRequests.filter((request) => isPunchActionType(request.actionType));
+    const punchPromptRequests = activePromptActionRequests.filter((request) => isPunchActionType(request.actionType));
+    const punchProviderCalls = effectiveCalls.filter(
+        (call) => call.name === 'setPunchIn' || call.name === 'setPunchOut'
+    );
+    if (punchPromptRequests.length > 0 || punchProviderCalls.length > 0) {
+        const promptRequest = punchPromptRequests[0];
+        const providerCall = punchProviderCalls[0];
+        const isExactSingleton =
+            totalPunchPromptRequests.length === 1 &&
+            punchPromptRequests.length === 1 &&
+            punchProviderCalls.length === 1 &&
+            effectiveCalls.length === 1 &&
+            activePromptActionRequests.length === 1 &&
+            promptRequest !== undefined &&
+            isExactPunchCommandClause(promptRequest.clause) &&
+            isPunchPromptFullyCovered(promptActionAnalysis) &&
+            !hasMalformedPunchNumericContinuation(maskQuotedLabels(prompt)) &&
+            providerCall?.name === promptRequest.actionType;
+        if (!isExactSingleton) {
+            return {
+                actions: [],
+                rejections: [
+                    rejection(0, '<batch>', 'Punch endpoint request must name exactly one direct endpoint command'),
+                ],
+            };
+        }
+    }
     const promptRequestsLoopRegion = hasExplicitPromptIntent(prompt, catalog, 'setLoopRegion');
     const promptRequestsLoopEnabled = hasExplicitPromptIntent(prompt, catalog, 'setLoopEnabled');
     const requiresCompoundLoop = promptRequestsLoopRegion && promptRequestsLoopEnabled;
@@ -3362,6 +3493,7 @@ export function bridgeGroundedLlmToolCalls({
         calls: groundedCalls,
         context: prospectiveContext,
         markerSignatures,
+        projectPunchRegion: createPunchRegionPatch,
         sectionSignatures,
     });
     const rejections = bridged.rejections.map((bridgeRejection) => {

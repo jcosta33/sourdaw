@@ -1335,6 +1335,50 @@ export const executableAppActionDescriptors = [
         },
     },
     {
+        actionType: 'setPunchIn',
+        risk: 'authority-sensitive',
+        description:
+            'Set the punch-in endpoint at one explicit beat without changing whether punch recording is enabled.',
+        intentPhrases: ['set punch in', 'set punch-in', 'move punch in', 'move punch-in'],
+        targetRules: [],
+        valueRules: [
+            { argument: 'beat', kind: 'number-if-present', requiredInPrompt: true, match: 'exact', connector: 'beat' },
+        ],
+        parameters: {
+            properties: {
+                beat: {
+                    type: 'number',
+                    minimum: 0,
+                    exclusiveMaximum: Number.MAX_VALUE,
+                    description: 'Punch-in beat; may move punch-out later to preserve a valid region',
+                },
+            },
+            required: ['beat'],
+        },
+    },
+    {
+        actionType: 'setPunchOut',
+        risk: 'authority-sensitive',
+        description:
+            'Set the punch-out endpoint at one explicit beat without changing whether punch recording is enabled.',
+        intentPhrases: ['set punch out', 'set punch-out', 'move punch out', 'move punch-out'],
+        targetRules: [],
+        valueRules: [
+            { argument: 'beat', kind: 'number-if-present', requiredInPrompt: true, match: 'exact', connector: 'beat' },
+        ],
+        parameters: {
+            properties: {
+                beat: {
+                    type: 'number',
+                    exclusiveMinimum: 0,
+                    maximum: Number.MAX_VALUE,
+                    description: 'Punch-out beat; may move punch-in earlier to preserve a valid region',
+                },
+            },
+            required: ['beat'],
+        },
+    },
+    {
         actionType: 'setMetronomeEnabled',
         risk: 'bounded-reversible',
         description: 'Enable or disable the metronome.',

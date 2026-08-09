@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { getPluginById } from '#/modules/Arrangement/useCases';
+import { createPunchRegionPatch } from '#/modules/Transport/useCases';
 
 import { type ProjectContext } from '../../models/ProjectContext';
 import { bridgeLlmToolCalls, buildLlmActionSystemPrompt, buildLlmActionUserMessage } from '../llmActionBridge';
@@ -12,6 +13,9 @@ const projectContext: ProjectContext = {
     isLooping: true,
     loopStart: 4,
     loopEnd: 12,
+    punchInEnabled: true,
+    punchInBeat: 4,
+    punchOutBeat: 12,
     metronomeEnabled: false,
     metronomeVolume: 0.5,
     masterGain: 0.8,
@@ -165,12 +169,18 @@ const projectContext: ProjectContext = {
     playheadPosition: 0,
 };
 
-type BridgeInput = Omit<Parameters<typeof bridgeLlmToolCalls>[0], 'context'> & {
+type BridgeInput = Omit<Parameters<typeof bridgeLlmToolCalls>[0], 'context' | 'projectPunchRegion'> & {
     context?: ProjectContext;
 };
 
 function bridge({ calls, context = projectContext, markerSignatures, sectionSignatures }: BridgeInput) {
-    return bridgeLlmToolCalls({ calls, context, markerSignatures, sectionSignatures });
+    return bridgeLlmToolCalls({
+        calls,
+        context,
+        markerSignatures,
+        projectPunchRegion: createPunchRegionPatch,
+        sectionSignatures,
+    });
 }
 
 /**
@@ -1059,6 +1069,35 @@ describe('bridgeLlmToolCalls', () => {
             actions: [{ type: 'setLoopEnabled', payload: { enabled: false } }],
             rejections: [],
         });
+    });
+
+    it('bridges one changed punch endpoint and rejects unsafe, no-op, or compound plans', () => {
+        const punchIn = bridge({ calls: [{ name: 'setPunchIn', arguments: { beat: 20 } }] });
+        const punchOut = bridge({ calls: [{ name: 'setPunchOut', arguments: { beat: 8 } }] });
+        const rejected = [
+            bridge({ calls: [{ name: 'setPunchIn', arguments: { beat: 4 } }] }),
+            bridge({ calls: [{ name: 'setPunchOut', arguments: { beat: 12 } }] }),
+            bridge({ calls: [{ name: 'setPunchIn', arguments: { beat: -1 } }] }),
+            bridge({ calls: [{ name: 'setPunchIn', arguments: { beat: Number.MAX_VALUE } }] }),
+            bridge({ calls: [{ name: 'setPunchOut', arguments: { beat: 0 } }] }),
+            bridge({ calls: [{ name: 'setPunchOut', arguments: { beat: 8, extra: true } }] }),
+            bridge({
+                calls: [
+                    { name: 'setPunchIn', arguments: { beat: 8 } },
+                    { name: 'setPunchOut', arguments: { beat: 16 } },
+                ],
+            }),
+            bridge({
+                calls: [
+                    { name: 'setPunchIn', arguments: { beat: 8 } },
+                    { name: 'setTempo', arguments: { bpm: 130 } },
+                ],
+            }),
+        ];
+
+        expect(punchIn).toEqual({ actions: [{ type: 'setPunchIn', payload: { beat: 20 } }], rejections: [] });
+        expect(punchOut).toEqual({ actions: [{ type: 'setPunchOut', payload: { beat: 8 } }], rejections: [] });
+        expect(rejected.every((result) => result.actions.length === 0)).toBe(true);
     });
 
     it('bridges only changed exact master-gain calls and rejects repeated writes', () => {
@@ -3365,6 +3404,9 @@ describe('bridgeLlmToolCalls', () => {
         expect(userMessage).toContain('"isLooping":true');
         expect(userMessage).toContain('"loopStart":4');
         expect(userMessage).toContain('"loopEnd":12');
+        expect(userMessage).toContain('"punchInEnabled":true');
+        expect(userMessage).toContain('"punchInBeat":4');
+        expect(userMessage).toContain('"punchOutBeat":12');
         expect(userMessage).toContain('"metronomeEnabled":false');
         expect(userMessage).toContain('"metronomeVolume":0.5');
         expect(userMessage).toContain('"masterGain":0.8');

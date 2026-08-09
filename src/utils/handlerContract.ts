@@ -796,9 +796,12 @@ export type AppAction =
     | { type: 'setPunchIn'; payload: { beat: number } }
     | { type: 'setPunchOut'; payload: { beat: number } }
     | {
-          /** Internal inverse action that atomically restores both punch endpoints. */
+          /** Internal compare-and-swap replay action for both punch endpoints. */
           type: 'restorePunchRegion';
-          payload: { punchInBeat: number; punchOutBeat: number };
+          payload: {
+              expected: { punchInBeat: number; punchOutBeat: number };
+              replacement: { punchInBeat: number; punchOutBeat: number };
+          };
       }
     | { type: 'togglePunch'; payload?: undefined }
     | { type: 'toggleCountIn'; payload?: undefined }

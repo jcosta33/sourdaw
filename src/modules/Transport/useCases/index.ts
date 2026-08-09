@@ -38,6 +38,7 @@ export { setLoopRegion } from './transportControls/setLoopRegion';
 export { setMetronomeVolume } from './transportControls/setMetronomeVolume';
 export { setPreRollBars } from './transportControls/setPreRollBars';
 export { setPunchIn } from './transportControls/setPunchIn';
+export { createPunchRegionPatch } from './transportControls/punchRegion';
 export { setPunchOut } from './transportControls/setPunchOut';
 export { setPlayback } from './transportControls/setPlayback';
 export { stopPlayback } from './transportControls/stopPlayback';

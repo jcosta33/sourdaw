@@ -3,16 +3,17 @@ import { updateTransportState } from '../../repositories/transport/updateTranspo
 
 import { createPunchRegionPatch } from './punchRegion';
 
-export function setPunchOut(beat: number): void {
+export function setPunchOut(beat: number): boolean {
     const state = getTransportState();
     if (!state) {
-        return;
+        return false;
     }
 
     const patch = createPunchRegionPatch({ current: state, beat, edge: 'out' });
     if (patch === null) {
-        return;
+        return false;
     }
 
     updateTransportState(patch);
+    return true;
 }

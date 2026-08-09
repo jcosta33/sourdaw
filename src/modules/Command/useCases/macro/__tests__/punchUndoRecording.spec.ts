@@ -7,6 +7,7 @@ import { clearHandlerRegistry, registerHandlerMap } from '../../../stores/handle
 import { macroStore } from '../../../stores/macroStore';
 import { clearUndoHistory } from '../../clearUndoHistory';
 import { executeAppAction } from '../../executeAppAction';
+import { redo } from '../../redo';
 import { undo } from '../../undo';
 import { playMacro } from '../playback';
 import { startMacroRecording } from '../recording/startMacroRecording';
@@ -69,5 +70,18 @@ describe('macro recording across punch undo', () => {
         await playMacro(macro.id);
 
         expect_punch_region(20, 21);
+    });
+
+    it('does not record history or macro actions for unchanged punch endpoints', async () => {
+        startMacroRecording();
+
+        await executeAppAction({ type: 'setPunchIn', payload: { beat: 0 } });
+        await executeAppAction({ type: 'setPunchOut', payload: { beat: 16 } });
+
+        expect(macroStore.value?.currentRecording).toEqual([]);
+        await undo();
+        expect_punch_region(0, 16);
+        await redo();
+        expect_punch_region(0, 16);
     });
 });

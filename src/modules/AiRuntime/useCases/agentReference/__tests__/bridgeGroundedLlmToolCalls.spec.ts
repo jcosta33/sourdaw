@@ -46,6 +46,9 @@ const projectContext: ProjectContext = {
     isLooping: true,
     loopStart: 4,
     loopEnd: 12,
+    punchInEnabled: true,
+    punchInBeat: 4,
+    punchOutBeat: 12,
     metronomeEnabled: false,
     metronomeVolume: 0.5,
     masterGain: 0.8,
@@ -2490,6 +2493,137 @@ describe('bridgeGroundedLlmToolCalls', () => {
             expect.soft(result.actions).toEqual([regionAction]);
         }
         expect(implicitVolume.actions).toEqual([]);
+    });
+
+    it('grounds exactly one direct punch endpoint and rejects mismatch, ambiguity, negation, and orphan numbers', () => {
+        const punchIn = bridge([{ name: 'setPunchIn', arguments: { beat: 20 } }], 'set punch in at beat 20');
+        const punchOut = bridge([{ name: 'setPunchOut', arguments: { beat: 8 } }], 'move punch-out to beat 8');
+        const rejected = [
+            bridge([{ name: 'setPunchOut', arguments: { beat: 20 } }], 'set punch in at beat 20'),
+            bridge([{ name: 'setPunchIn', arguments: { beat: 20 } }], 'the punch in point is beat 20'),
+            bridge([{ name: 'setPunchIn', arguments: { beat: 20 } }], 'do not set punch in at beat 20'),
+            bridge([{ name: 'setPunchIn', arguments: { beat: 20 } }], 'set punch in at beat 20, cancel that'),
+            bridge([{ name: 'setPunchIn', arguments: { beat: 20 } }], '20'),
+            bridge([{ name: 'setPunchIn', arguments: { beat: 20 } }], 'set punch in'),
+            bridge(
+                [{ name: 'setPunchIn', arguments: { beat: 20 } }],
+                'set punch in at beat 20 and set punch out at beat 28'
+            ),
+            bridge(
+                [
+                    { name: 'setPunchIn', arguments: { beat: 20 } },
+                    { name: 'setPunchIn', arguments: { beat: 24 } },
+                ],
+                'set punch in at beat 20 and set punch in at beat 24'
+            ),
+        ];
+
+        expect(punchIn.actions).toEqual([{ type: 'setPunchIn', payload: { beat: 20 } }]);
+        expect(punchOut.actions).toEqual([{ type: 'setPunchOut', payload: { beat: 8 } }]);
+        expect(rejected.every((result) => result.actions.length === 0)).toBe(true);
+    });
+
+    it('rejects commentary after an otherwise exact punch value', () => {
+        const result = bridge(
+            [{ name: 'setPunchIn', arguments: { beat: 20 } }],
+            'set punch in at beat 20 is a bad idea'
+        );
+
+        expect(result.actions).toEqual([]);
+    });
+
+    it('rejects malformed decimal punctuation instead of truncating the punch value', () => {
+        const result = bridge([{ name: 'setPunchIn', arguments: { beat: 20 } }], 'set punch in at beat 20,5');
+
+        expect(result.actions).toEqual([]);
+    });
+
+    it('allows an unrelated exact action after a provider-omitted punch request is canceled', () => {
+        const result = bridge(
+            [{ name: 'setTempo', arguments: { bpm: 130 } }],
+            'set punch in at beat 20, cancel that; set tempo to 130'
+        );
+
+        expect(result.actions).toEqual([{ type: 'setTempo', payload: { bpm: 130 } }]);
+    });
+
+    it('keeps punch cancellation quote-aware', () => {
+        const result = bridge(
+            [{ name: 'setPunchIn', arguments: { beat: 20 } }],
+            'set punch in at beat 20; "cancel that"'
+        );
+
+        expect(result.actions).toEqual([{ type: 'setPunchIn', payload: { beat: 20 } }]);
+    });
+
+    it('binds a cancellation to the nearest executable prompt clause', () => {
+        const result = bridge(
+            [{ name: 'setPunchIn', arguments: { beat: 20 } }],
+            'set punch in at beat 20; set tempo to 130; cancel that'
+        );
+
+        expect(result.actions).toEqual([{ type: 'setPunchIn', payload: { beat: 20 } }]);
+    });
+
+    it('rejects a punch-only provider plan when the prompt contains another executable action', () => {
+        const result = bridge(
+            [{ name: 'setPunchIn', arguments: { beat: 20 } }],
+            'set punch in at beat 20 and set tempo to 130'
+        );
+
+        expect(result.actions).toEqual([]);
+    });
+
+    it('requires the punch command to occupy the whole active prompt while allowing bounded politeness', () => {
+        const prefixed = bridge(
+            [{ name: 'setPunchIn', arguments: { beat: 20 } }],
+            'after reviewing the takes, set punch in at beat 20'
+        );
+        const suffixed = bridge(
+            [{ name: 'setPunchIn', arguments: { beat: 20 } }],
+            'set punch in at beat 20; this is a bad idea'
+        );
+        const polite = bridge(
+            [{ name: 'setPunchIn', arguments: { beat: 20 } }],
+            'could you please set punch in at beat 20?'
+        );
+
+        expect(prefixed.actions).toEqual([]);
+        expect(suffixed.actions).toEqual([]);
+        expect(polite.actions).toEqual([{ type: 'setPunchIn', payload: { beat: 20 } }]);
+    });
+
+    it('rejects repeated punctuation beside a punch number instead of truncating it', () => {
+        const result = bridge([{ name: 'setPunchIn', arguments: { beat: 20 } }], 'set punch in at beat 20..5');
+
+        expect(result.actions).toEqual([]);
+    });
+
+    it('binds cancellation before filtering prompt requests to the provider plan', () => {
+        const result = bridge(
+            [{ name: 'setTempo', arguments: { bpm: 130 } }],
+            'set tempo to 130; set punch in at beat 20, cancel that'
+        );
+
+        expect(result.actions).toEqual([{ type: 'setTempo', payload: { bpm: 130 } }]);
+    });
+
+    it('rejects active punch-in when the same prompt also cancels punch-out', () => {
+        const result = bridge(
+            [{ name: 'setPunchIn', arguments: { beat: 20 } }],
+            'set punch in at beat 20; set punch out at beat 28, cancel that'
+        );
+
+        expect(result.actions).toEqual([]);
+    });
+
+    it('rejects active punch-out when the same prompt also cancels punch-in', () => {
+        const result = bridge(
+            [{ name: 'setPunchOut', arguments: { beat: 28 } }],
+            'set punch in at beat 20, cancel that; set punch out at beat 28'
+        );
+
+        expect(result.actions).toEqual([]);
     });
 
     it('grounds explicit changed master gain with percentage normalization', () => {
