@@ -438,7 +438,7 @@ function getCancellationCues(text: string): CancellationCue[] {
         /\bleave\s+(?:(?:it|them|that|this)\s+)?unchanged\b/gu,
         /\bkeep\s+(?:(?:it|them|that|this)\s+)?separate\b/gu,
         /\bwithout\s+(?:(?:making|applying)\s+(?:any\s+)?changes?|changing\s+(?:anything|it|them))\b/gu,
-        /\b(?:do not|don['’]?t|don t|dont|never|not(?!\s+only\b))\s+(?:\p{L}+\s+){0,3}(?:it|them|the\s+\p{L}+)\b/gu,
+        /\b(?:do not|don['’]?t|don t|dont|never|not(?!\s+only\b))\s+(?:\p{L}+\s+){0,3}(?:it|them)\b/gu,
         /\b(?:do not|don['’]t|don t|dont|never|not)\b(?:\s+\p{L}+){0,3}\s+(?:apply|change|do|execute|make)\s+(?:it\b|(?:that|this)\b(?!\s+\p{L})|(?:the|that|this)\s+(?:\p{L}+\s+){0,2}(?:change|command|request)\b)/gu,
     ];
     return patterns.flatMap((pattern) =>
@@ -446,15 +446,7 @@ function getCancellationCues(text: string): CancellationCue[] {
     );
 }
 
-type ReferencedCancellationAction = {
-    actionType: string;
-    phrase: string;
-};
-
-function getReferencedCancellationAction(
-    cue: CancellationCue,
-    catalog: GroundingCatalog
-): ReferencedCancellationAction | null {
+function getReferencedCancellationAction(cue: CancellationCue, catalog: GroundingCatalog): string | null {
     const matches = catalog
         .flatMap((entry) =>
             entry.intentPhrases
@@ -474,7 +466,7 @@ function getReferencedCancellationAction(
     ) {
         return null;
     }
-    return first;
+    return first.actionType;
 }
 
 function getNearestIntentAction(
@@ -495,63 +487,18 @@ function getNearestIntentAction(
     return actionType;
 }
 
-type HasTrailingIntentCancellationInput = {
-    actionName: string;
-    assertedArguments: Readonly<Record<string, unknown>>;
-    catalog: GroundingCatalog;
-    plannedActionNames: readonly string[];
-    text: string;
-};
-
-type IsCancellationForAssertedActionInput = {
-    actionName: string;
-    assertedArguments: Readonly<Record<string, unknown>>;
-    referencedAction: ReferencedCancellationAction;
-};
-
-function isCancellationForAssertedAction({
-    actionName,
-    assertedArguments,
-    referencedAction,
-}: IsCancellationForAssertedActionInput): boolean {
-    if (referencedAction.actionType !== actionName) {
-        return false;
-    }
-    const groundingRules = getExecutableAppActionGroundingRules(actionName);
-    const normalizedPhrase = normalizePromptText(referencedAction.phrase);
-    for (const valueRule of groundingRules?.valueRules ?? []) {
-        if (valueRule.kind !== 'boolean-intent') {
-            continue;
-        }
-        let referencedValue: boolean | null = null;
-        if (valueRule.truePhrases.some((phrase) => normalizePromptText(phrase) === normalizedPhrase)) {
-            referencedValue = true;
-        } else if (valueRule.falsePhrases.some((phrase) => normalizePromptText(phrase) === normalizedPhrase)) {
-            referencedValue = false;
-        }
-        if (referencedValue === null) {
-            continue;
-        }
-        const assertedValue = assertedArguments[valueRule.argument];
-        return typeof assertedValue !== 'boolean' || assertedValue === referencedValue;
-    }
-    return true;
-}
-
-function hasTrailingIntentCancellation({
-    actionName,
-    assertedArguments,
-    catalog,
-    plannedActionNames,
-    text,
-}: HasTrailingIntentCancellationInput): boolean {
+function hasTrailingIntentCancellation(
+    text: string,
+    actionName: string,
+    catalog: GroundingCatalog,
+    plannedActionNames: readonly string[]
+): boolean {
     const searchableText = text.toLocaleLowerCase();
     return getCancellationCues(searchableText).some((cue) => {
         const referencedAction = getReferencedCancellationAction(cue, catalog);
-        if (referencedAction) {
-            return isCancellationForAssertedAction({ actionName, assertedArguments, referencedAction });
-        }
-        return getNearestIntentAction(searchableText, catalog, cue.index, plannedActionNames) === actionName;
+        const cancelledAction =
+            referencedAction ?? getNearestIntentAction(searchableText, catalog, cue.index, plannedActionNames);
+        return cancelledAction === actionName;
     });
 }
 
@@ -850,14 +797,21 @@ function getSemanticClipReferenceTexts(context: ProjectContext): string[] {
 
 type MaskProjectReferencesInput = {
     context: ProjectContext;
+    intentPhrases: readonly string[];
     prompt: string;
 };
 
-function maskProjectReferences({ context, prompt }: MaskProjectReferencesInput): string {
+function maskProjectReferences({ context, intentPhrases, prompt }: MaskProjectReferencesInput): string {
     let maskedPrompt = prompt;
+    const commandSource = stripPoliteCommandCarrier(prompt);
+    const commandStart = prompt.indexOf(commandSource);
+    const leadingIntentReferences = new Set(intentPhrases.map(normalizePromptText));
     for (const reference of getSemanticClipReferenceTexts(context)) {
         const pattern = new RegExp(`(?<![\\p{L}\\p{N}])${escapeRegExp(reference)}(?![\\p{L}\\p{N}])`, 'giu');
         maskedPrompt = maskedPrompt.replaceAll(pattern, (match, offset: number) => {
+            if (offset === commandStart && leadingIntentReferences.has(normalizePromptText(match))) {
+                return match;
+            }
             const explicitEntitySuffix = /^\s+(?:clip|track|device|bus|master|output|send|parameter)\b/iu.test(
                 maskedPrompt.slice(offset + match.length)
             );
@@ -869,7 +823,12 @@ function maskProjectReferences({ context, prompt }: MaskProjectReferencesInput):
     }
     for (const reference of getProjectReferenceTexts(context)) {
         const pattern = new RegExp(`(?<![\\p{L}\\p{N}])${escapeRegExp(reference)}(?![\\p{L}\\p{N}])`, 'giu');
-        maskedPrompt = maskedPrompt.replaceAll(pattern, (match) => '□'.repeat(match.length));
+        maskedPrompt = maskedPrompt.replaceAll(pattern, (match, offset: number) => {
+            if (offset === commandStart && leadingIntentReferences.has(normalizePromptText(match))) {
+                return match;
+            }
+            return '□'.repeat(match.length);
+        });
     }
     return maskedPrompt;
 }
@@ -1299,23 +1258,14 @@ function resolveActionPromptScope({
     const groundingRules = getExecutableAppActionGroundingRules(actionName);
     if (
         !groundingRules ||
-        hasTrailingIntentCancellation({
-            actionName,
-            assertedArguments,
-            catalog,
-            plannedActionNames,
-            text: prompt,
-        }) ||
+        hasTrailingIntentCancellation(prompt, actionName, catalog, plannedActionNames) ||
         (actionName === 'setClipFade' && hasInvalidNamedClipFadeField(prompt))
     ) {
         return null;
     }
     let projectMaskedPrompt = prompt;
     if (groundingRules.targetRules.length > 0) {
-        projectMaskedPrompt = maskProjectReferences({ context, prompt });
-    }
-    if (actionName === 'glueClips') {
-        projectMaskedPrompt = preserveLeadingGlueIntent({ maskedPrompt: projectMaskedPrompt, prompt });
+        projectMaskedPrompt = maskProjectReferences({ context, intentPhrases: groundingRules.intentPhrases, prompt });
     }
     let maskedPrompt = maskQuotedLabels(projectMaskedPrompt);
     if (actionName === 'glueClips') {
@@ -1442,22 +1392,6 @@ function maskGlueClipPairConjunction(text: string): string {
         /["'“‘]?(?:clip□*|□+)["'”’]?(?:\s+clips?)?\s+and\s+(?=["'“‘]?(?:clip□*|□+))/giu,
         (pairPrefix) => pairPrefix.replace(/\band\b/iu, '   ')
     );
-}
-
-type PreserveLeadingGlueIntentInput = {
-    maskedPrompt: string;
-    prompt: string;
-};
-
-function preserveLeadingGlueIntent({ maskedPrompt, prompt }: PreserveLeadingGlueIntentInput): string {
-    const commandSource = stripPoliteCommandCarrier(prompt);
-    const intent = /^(?:glue|join)\b/iu.exec(commandSource);
-    if (!intent) {
-        return maskedPrompt;
-    }
-    const intentStart = prompt.indexOf(commandSource);
-    const intentEnd = intentStart + intent[0].length;
-    return `${maskedPrompt.slice(0, intentStart)}${intent[0]}${maskedPrompt.slice(intentEnd)}`;
 }
 
 function isDirectGlueClipPairScope(
@@ -1618,7 +1552,7 @@ function hasGroundedMoveBeatAssertions({
     plannedActionNames: readonly string[];
     prompt: string;
 }): boolean {
-    const maskedPrompt = maskProjectReferences({ context, prompt });
+    const maskedPrompt = maskProjectReferences({ context, intentPhrases: [], prompt });
     let moveClauseCount = 0;
     for (const clause of getPromptClauses(prompt, maskedPrompt)) {
         const assertions = getMoveBeatAssertions(clause.text);
@@ -1653,7 +1587,7 @@ function hasGroundedSplitBeatAssertions({
     plannedActionNames: readonly string[];
     prompt: string;
 }): boolean {
-    const maskedPrompt = maskProjectReferences({ context, prompt });
+    const maskedPrompt = maskProjectReferences({ context, intentPhrases: [], prompt });
     let splitClauseCount = 0;
     for (const clause of getPromptClauses(prompt, maskedPrompt)) {
         const assertions = getMoveBeatAssertions(clause.text);
@@ -1697,7 +1631,7 @@ function hasGroundedAddClipAssertions({
     plannedActionNames: readonly string[];
     prompt: string;
 }): boolean {
-    const maskedPrompt = maskQuotedLabels(maskProjectReferences({ context, prompt }));
+    const maskedPrompt = maskQuotedLabels(maskProjectReferences({ context, intentPhrases: [], prompt }));
     let addClipClauseCount = 0;
     for (const clause of getPromptClauses(prompt, maskedPrompt)) {
         const intent = resolveClauseActionIntent(clause.masked, catalog);
