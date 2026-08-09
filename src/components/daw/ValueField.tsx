@@ -1,4 +1,12 @@
-import { type ReactElement, type PointerEvent, type KeyboardEvent, useRef, useState } from 'react';
+import {
+    type ReactElement,
+    type PointerEvent,
+    type KeyboardEvent,
+    useEffect,
+    useLayoutEffect,
+    useRef,
+    useState,
+} from 'react';
 
 import { cn } from '#/utils/Styles/cn';
 
@@ -78,14 +86,100 @@ export const ValueField = ({
     const pendingValueRef = useRef<number | null>(null);
     const startY = useRef(0);
     const startValue = useRef(value);
+    const rootRef = useRef<HTMLDivElement>(null);
+    const finalizeDragRef = useRef<() => void>(() => {});
+
+    /**
+     * The single exit for a drag that does not end in `pointerup`: `pointercancel`
+     * (the OS steals the gesture), capture lost to something else, or a window /
+     * tab switch. Mirrors `Fader.finalizeDrag` and `RotaryKnob.clearDragState`.
+     *
+     * This is not optional alongside the "already owned" guard in
+     * `handlePointerDown`. Before that guard, an interrupted drag healed itself by
+     * accident, because the next `pointerdown` re-seized `activePointerIdRef`
+     * unconditionally. The guard removes that accidental recovery, so without a
+     * finalizer a single `pointercancel` would strand the ref and leave the field
+     * permanently deaf to the pointer. Guard and finalizer ship together.
+     *
+     * Unlike `handlePointerUp`, this runs outside any pointer event, so the stored
+     * id can be genuinely stale — the pointer may have ended without this element
+     * ever seeing its `pointerup`. Hence the `try`/`catch`: releasing an id that is
+     * no longer an active pointer is the one case that really does throw.
+     */
+    const finalizeDrag = (): void => {
+        if (!draggingRef.current) {
+            return;
+        }
+        const pointerId = activePointerIdRef.current;
+        draggingRef.current = false;
+        activePointerIdRef.current = null;
+        setIsDragging(false);
+        // An interrupted gesture is an abort, not a commit. Dropping the pending
+        // value matters most for `commitMode="release"`, where committing it would
+        // write a value the user never released on — as an undoable command.
+        pendingValueRef.current = null;
+        setPendingValue(null);
+        if (pointerId === null || !rootRef.current) {
+            return;
+        }
+        try {
+            rootRef.current.releasePointerCapture(pointerId);
+        } catch {
+            // The browser may have already released capture before this runs.
+        }
+    };
+
+    /**
+     * `pointercancel` / `lostpointercapture` arrive for pointers this field does
+     * not own: measured in Chromium, a second touch that `handlePointerDown`
+     * ignored still gets implicit capture, and still fires `lostpointercapture`
+     * here when it lifts. `finalizeDrag` takes no id, so routing those straight to
+     * it would let an intruder abort the owner's drag — the very bug the ownership
+     * guard exists to prevent, re-entering through the finalizer.
+     */
+    const handlePointerInterrupt = (event: PointerEvent<HTMLDivElement>) => {
+        if (event.pointerId !== activePointerIdRef.current) {
+            return;
+        }
+        finalizeDrag();
+    };
+
+    useLayoutEffect(() => {
+        finalizeDragRef.current = finalizeDrag;
+    });
+
+    // A drag interrupted by a window or tab switch never sees `pointerup`.
+    useEffect(() => {
+        const handleWindowBlur = (): void => {
+            finalizeDragRef.current();
+        };
+        const handleVisibilityChange = (): void => {
+            if (document.visibilityState === 'hidden') {
+                finalizeDragRef.current();
+            }
+        };
+
+        window.addEventListener('blur', handleWindowBlur);
+        document.addEventListener('visibilitychange', handleVisibilityChange);
+        return () => {
+            window.removeEventListener('blur', handleWindowBlur);
+            document.removeEventListener('visibilitychange', handleVisibilityChange);
+        };
+    }, []);
 
     const handlePointerDown = (event: PointerEvent<HTMLDivElement>) => {
         if (readOnly) {
             return;
         }
-        if (event.button !== 0) {
+        /**
+         * A drag already owns this field, so a second finger must not seize it.
+         * Without this, the intruder overwrote `activePointerIdRef`, and then the
+         * *intruder's* `pointerup` ended the drag and committed, while the real
+         * owner's lift was discarded. `RotaryKnob` guards the same way.
+         */
+        if (activePointerIdRef.current !== null || event.button !== 0) {
             return;
-        } // Only left click
+        }
         event.currentTarget.setPointerCapture(event.pointerId);
         activePointerIdRef.current = event.pointerId;
         draggingRef.current = true;
@@ -228,9 +322,12 @@ export const ValueField = ({
                 aria-valuemax={max}
                 aria-valuetext={`${roundedValue}${unit}`}
                 aria-readonly={readOnly}
+                ref={rootRef}
                 onPointerDown={handlePointerDown}
                 onPointerMove={handlePointerMove}
                 onPointerUp={handlePointerUp}
+                onPointerCancel={handlePointerInterrupt}
+                onLostPointerCapture={handlePointerInterrupt}
                 onDoubleClick={handleDoubleClick}
                 onKeyDown={handleKeyDown}
                 className={cn(

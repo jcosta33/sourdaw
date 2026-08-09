@@ -1,5 +1,5 @@
 import { render, screen, fireEvent } from '@testing-library/react';
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, onTestFinished, vi } from 'vitest';
 
 import { ValueField } from '../ValueField';
 
@@ -213,9 +213,8 @@ describe('ValueField', () => {
             render(<ValueField value={0} onChange={vi.fn()} min={-10} max={10} readOnly={readOnly} />);
             const field = screen.getByRole('spinbutton');
             const calls: string[] = [];
-            // Any id delivering any pointer event is, at that moment, an active
-            // pointer — which is why the component can never make the release
-            // throw. Registered at the target, so it lands before React's
+            // Any id delivering a pointer event is, at that moment, an active
+            // pointer. Registered at the target, so it lands before React's
             // delegated handler at the root container runs.
             const activePointers = new Set<number>();
             for (const type of ['pointerdown', 'pointermove', 'pointerup']) {
@@ -223,6 +222,18 @@ describe('ValueField', () => {
                     activePointers.add((event as globalThis.PointerEvent).pointerId);
                 });
             }
+            // ...and stops being one once it has lifted. Retiring on `document` in
+            // the bubble phase puts this after React's handler, so the component
+            // still sees an active pointer during its own `pointerup`, while a
+            // *later* release of that id — from a finalizer running outside any
+            // pointer event — throws, exactly as the platform does.
+            const retireActive = (event: Event): void => {
+                activePointers.delete((event as globalThis.PointerEvent).pointerId);
+            };
+            document.addEventListener('pointerup', retireActive);
+            onTestFinished(() => {
+                document.removeEventListener('pointerup', retireActive);
+            });
             Object.defineProperty(field, 'setPointerCapture', {
                 configurable: true,
                 value: (pointerId: number): void => {
@@ -285,7 +296,10 @@ describe('ValueField', () => {
             const { field, calls } = renderWithCaptureSpy();
 
             fireEvent.pointerDown(field, { button: 0, pointerId: 26, clientY: 100 });
-            fireEvent.pointerDown(field, { button: 2, pointerId: 27, clientY: 100 });
+            // A real second finger: `button === 0`, `isPrimary === false`. Pressing
+            // it with `button: 2` would be a right-click, which never gets past
+            // `handlePointerDown`'s button check and so never tests anything.
+            fireEvent.pointerDown(field, { button: 0, isPrimary: false, pointerId: 27, clientY: 100 });
             fireEvent.pointerUp(field, { pointerId: 27 });
             expect(calls).toEqual(['set:26']);
 
@@ -302,8 +316,9 @@ describe('ValueField', () => {
 
             fireEvent.pointerDown(field, { button: 0, pointerId: 31, clientY: 100 });
             // A second finger touches down and lifts mid-drag. It never owned the
-            // drag, so it must not end it.
-            fireEvent.pointerDown(field, { button: 2, pointerId: 32, clientY: 100 });
+            // drag, so it must not end it. `button: 0` + `isPrimary: false` is what
+            // a real second touch reports.
+            fireEvent.pointerDown(field, { button: 0, isPrimary: false, pointerId: 32, clientY: 100 });
             fireEvent.pointerUp(field, { pointerId: 32 });
 
             fireEvent.pointerMove(field, { pointerId: 31, clientY: 80 });
@@ -334,6 +349,9 @@ describe('ValueField', () => {
 
             fireEvent.pointerDown(field, { button: 0, pointerId: 35, clientY: 100 });
             fireEvent.pointerMove(field, { pointerId: 35, clientY: 80 });
+            // The stray finger presses *and* lifts — its down must not seize the
+            // drag, and its up must not commit the value the owner is still holding.
+            fireEvent.pointerDown(field, { button: 0, isPrimary: false, pointerId: 36, clientY: 100 });
             fireEvent.pointerUp(field, { pointerId: 36 });
 
             expect(onChange).not.toHaveBeenCalled();
@@ -342,6 +360,155 @@ describe('ValueField', () => {
 
             expect(onChange).toHaveBeenCalledTimes(1);
             expect(onChange).toHaveBeenCalledWith(10);
+        });
+    });
+
+    /**
+     * The "already owned" guard in `handlePointerDown` and this finalizer are one
+     * change. Before the guard, an interrupted drag recovered by accident: the next
+     * `pointerdown` re-seized the ref no matter what. With the guard and no
+     * finalizer, one `pointercancel` strands the ref and the field never responds
+     * to a pointer again.
+     */
+    describe('recovery from an interrupted drag', () => {
+        const startDrag = (field: HTMLElement, pointerId: number): void => {
+            fireEvent.pointerDown(field, { button: 0, pointerId, clientY: 100 });
+        };
+
+        it('should accept a new drag after the gesture is cancelled', () => {
+            const onChange = vi.fn();
+            render(<ValueField value={0} onChange={onChange} min={-100} max={100} step={1} />);
+            const field = screen.getByRole('spinbutton');
+
+            startDrag(field, 41);
+            fireEvent.pointerCancel(field, { pointerId: 41 });
+
+            startDrag(field, 42);
+            fireEvent.pointerMove(field, { pointerId: 42, clientY: 90 });
+
+            expect(onChange).toHaveBeenCalledTimes(1);
+            expect(onChange).toHaveBeenLastCalledWith(5);
+        });
+
+        it('should accept a new drag after the window loses focus mid-drag', () => {
+            const onChange = vi.fn();
+            render(<ValueField value={0} onChange={onChange} min={-100} max={100} step={1} />);
+            const field = screen.getByRole('spinbutton');
+
+            startDrag(field, 43);
+            fireEvent.blur(window);
+
+            startDrag(field, 44);
+            fireEvent.pointerMove(field, { pointerId: 44, clientY: 90 });
+
+            expect(onChange).toHaveBeenCalledTimes(1);
+            expect(onChange).toHaveBeenLastCalledWith(5);
+        });
+
+        it('should not end the drag when a pointer it does not own is cancelled', () => {
+            // Measured in Chromium: a second touch the ownership guard ignored still
+            // receives implicit capture, and still fires `pointercancel` /
+            // `lostpointercapture` at this element. Routing those to the finalizer
+            // without an id check would let the intruder abort the owner's drag.
+            const onChange = vi.fn();
+            render(<ValueField value={0} onChange={onChange} min={-100} max={100} step={1} />);
+            const field = screen.getByRole('spinbutton');
+
+            startDrag(field, 46);
+            fireEvent.pointerDown(field, { button: 0, isPrimary: false, pointerId: 47, clientY: 100 });
+            fireEvent.pointerCancel(field, { pointerId: 47 });
+            fireEvent.lostPointerCapture(field, { pointerId: 47 });
+
+            fireEvent.pointerMove(field, { pointerId: 46, clientY: 90 });
+
+            expect(onChange).toHaveBeenCalledTimes(1);
+            expect(onChange).toHaveBeenLastCalledWith(5);
+        });
+
+        it('should discard the pending value when the gesture is cancelled, not commit it', () => {
+            const onChange = vi.fn();
+            render(<ValueField value={0} onChange={onChange} commitMode="release" min={-100} max={100} step={1} />);
+            const field = screen.getByRole('spinbutton');
+
+            startDrag(field, 45);
+            fireEvent.pointerMove(field, { pointerId: 45, clientY: 80 });
+            expect(field).toHaveAttribute('aria-valuetext', '10');
+
+            fireEvent.pointerCancel(field, { pointerId: 45 });
+
+            // An interrupted gesture is an abort. Committing here would write a
+            // value the user never released on, as an undoable command.
+            expect(onChange).not.toHaveBeenCalled();
+            expect(field).toHaveAttribute('aria-valuetext', '0');
+        });
+    });
+
+    describe('the finalizer hands back the capture it holds', () => {
+        const renderWithCaptureSpy = (): { field: HTMLElement; calls: string[]; uncaught: string[] } => {
+            render(<ValueField value={0} onChange={vi.fn()} min={-100} max={100} step={1} />);
+            const field = screen.getByRole('spinbutton');
+            const calls: string[] = [];
+            const activePointers = new Set<number>();
+            field.addEventListener('pointerdown', (event: Event): void => {
+                activePointers.add((event as globalThis.PointerEvent).pointerId);
+            });
+            Object.defineProperty(field, 'setPointerCapture', {
+                configurable: true,
+                value: (pointerId: number): void => {
+                    calls.push(`set:${pointerId}`);
+                },
+            });
+            Object.defineProperty(field, 'releasePointerCapture', {
+                configurable: true,
+                value: (pointerId: number): void => {
+                    if (!activePointers.has(pointerId)) {
+                        throw new DOMException(`No active pointer with id ${pointerId}`, 'NotFoundError');
+                    }
+                    calls.push(`release:${pointerId}`);
+                },
+            });
+            const retire = (event: Event): void => {
+                activePointers.delete((event as globalThis.PointerEvent).pointerId);
+            };
+            document.addEventListener('pointerup', retire);
+            const uncaught: string[] = [];
+            const handleWindowError = (event: ErrorEvent): void => {
+                uncaught.push(String(event.message));
+            };
+            window.addEventListener('error', handleWindowError);
+            onTestFinished(() => {
+                document.removeEventListener('pointerup', retire);
+                window.removeEventListener('error', handleWindowError);
+            });
+            return { field, calls, uncaught };
+        };
+
+        it('should release the captured pointer when the gesture is cancelled', () => {
+            const { field, calls } = renderWithCaptureSpy();
+
+            fireEvent.pointerDown(field, { button: 0, pointerId: 51, clientY: 100 });
+            fireEvent.pointerCancel(field, { pointerId: 51 });
+
+            expect(calls).toEqual(['set:51', 'release:51']);
+        });
+
+        it('should survive finalizing a pointer that is no longer active', () => {
+            // The pointer ended without this element seeing its `pointerup` —
+            // capture was lost first, so the lift landed elsewhere. The window blur
+            // that follows finalizes with an id the platform no longer knows, which
+            // is the one case `releasePointerCapture` really does throw.
+            const { field, calls, uncaught } = renderWithCaptureSpy();
+
+            fireEvent.pointerDown(field, { button: 0, pointerId: 52, clientY: 100 });
+            fireEvent.pointerUp(document, { pointerId: 52 });
+            fireEvent.blur(window);
+
+            expect(calls).toEqual(['set:52']);
+            expect(uncaught).toEqual([]);
+
+            // And the field is still usable afterwards.
+            fireEvent.pointerDown(field, { button: 0, pointerId: 53, clientY: 100 });
+            expect(calls).toEqual(['set:52', 'set:53']);
         });
     });
 });
