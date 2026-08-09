@@ -193,6 +193,19 @@ export const RotaryKnob = ({
         onChangeRef.current = onChange;
         gestureAuthorityRef.current = gestureAuthority;
 
+        // A drag that is already in flight when `disabled` flips true has to be
+        // dropped, not merely stopped from starting. `handlePointerDown` and
+        // `handleKeyDown` guard the *entry* points, and `handlePointerMove`
+        // holds its own refs, so without this a knob that became inert
+        // mid-gesture kept emitting transient writes and still committed on
+        // pointer-up — measured at one transient and one commit. Dropping the
+        // gesture here rather than finalizing it means the in-flight value is
+        // discarded, which is the same treatment an owner change already gets
+        // below.
+        if (disabled && draggingRef.current) {
+            clearDragState();
+        }
+
         if (draggingRef.current && !Object.is(gestureOwnerAtStartRef.current, gestureOwner)) {
             clearDragState();
         }

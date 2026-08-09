@@ -31,13 +31,27 @@ import { type NativeDspDeviceType } from './nativeDspDeviceTypes';
  *
  * Two different populations live in one table and must not be confused.
  *
- * - `unbuilt` — a defect awaiting DSP. The stage is simply not written. The row
- *   is temporary; the day someone writes it, the weld spec reds until the row
- *   is deleted, and every consumer of this table re-enables the control with no
- *   further edit.
- * - `structural` — a category error. No DSP will ever arrive, because the
- *   parameter does not mean anything on this topology. Established with cited
- *   research in #1506; each row carries its own reason.
+ * - `unbuilt` — a defect awaiting DSP. The stage is simply not written, and
+ *   writing it closes the row. The row is temporary; the day someone writes it,
+ *   the weld spec reds until the row is deleted, and every consumer of this
+ *   table re-enables the control with no further edit.
+ * - `structural` — a category error *for the engine as it is built*. The
+ *   parameter has nothing to act on here, so no amount of implementing the
+ *   named feature closes the row: `width` has no side component to scale
+ *   because the wet path is mono, and shimmer has no feedback loop to put a
+ *   pitch shifter in. Established with cited research in #1506; each row
+ *   carries its own reason.
+ *
+ * The distinction is *what would have to change*, not "never" versus "later".
+ * A `structural` row can still be retired — but only by changing the engine's
+ * topology, at which point the parameter becomes an ordinary unbuilt feature
+ * or an ordinary working one. `width` on reverse is the live example: it is
+ * structural today because the buffer is mono, and
+ * `crates/proof-chamber/tests/output_stage_parameter_surface.rs` pins that
+ * mono path precisely so the row turns into a defect the day the buffer goes
+ * stereo. Reading `structural` as "nobody may ever revisit this" would make
+ * that pin pointless; reading it as "this is not a missing stage" is what the
+ * label is for.
  *
  * Research: `dutch-oven-per-algorithm-parameter-conventions.md`, workspace
  * artifacts. Both populations are inaudible to the user, so both are gated in
