@@ -120,7 +120,7 @@ describe('PlayheadDisplay', () => {
 
     describe('playing state', () => {
         it('renders the active (playing) readout when transport is playing', () => {
-            transportState.value = { isPlaying: true };
+            transportState.value = { isPlaying: true, playheadPosition: 0 };
             renderWithTooltip(<PlayheadDisplay tempo={120} numerator={4} timeDisplayMode="musical" />);
 
             const button = screen.getByRole('button', { name: /switch to wall-clock time/i });
@@ -137,7 +137,7 @@ describe('PlayheadDisplay', () => {
                 return 1;
             });
             vi.spyOn(window, 'cancelAnimationFrame').mockImplementation(() => {});
-            transportState.value = { isPlaying: true };
+            transportState.value = { isPlaying: true, playheadPosition: 0 };
             renderWithTooltip(<PlayheadDisplay tempo={120} numerator={4} timeDisplayMode="musical" />);
             const segment = screen.getByText('000');
             const initialTextNode = segment.firstChild;
