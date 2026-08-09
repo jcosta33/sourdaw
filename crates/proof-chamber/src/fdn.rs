@@ -260,7 +260,56 @@ impl FdnReverb {
             early_reflections_r: EarlyReflections::new(sample_rate, 0.5),
             rt60: 2.0,
             rt60_hf: 0.8,
-            damping: 0.2, // yields the historical rt60_hf/rt60 ratio of 0.4
+            // 0.2 gives `rt60_hf/rt60 = (1 - 0.2) * 0.5 = 0.4`, the historical
+            // ratio — but **no shipping instance renders it**, and the comment
+            // that used to sit here implied one did. `addDevice` writes the
+            // Dutch Oven descriptor's `damping` into `Device.parameterValues`,
+            // and `set_param("algorithm", …)` replays the cached parameters
+            // into every engine it constructs (`lib.rs`, and
+            // `tests/algorithm_switch_parameter_retention.rs` pins the replay
+            // bit-exactly), so an FDN reached from the panel is built with 0.2
+            // and immediately overwritten with the descriptor value.
+            //
+            // Since #1546 that value is 0.3, which is `(1 - 0.3) * 0.5 = 0.35`.
+            // So this literal is the value an FDN renders only in a test that
+            // selects the algorithm and writes nothing else. It is kept at 0.2
+            // because moving it would change nothing a user hears while
+            // desynchronising this file from the ratio it documents.
+            //
+            // 0.35 is darker than the convention among the reverbs that publish
+            // an actual RT60 ratio, and all three land near 0.50:
+            //
+            // - **Dragonfly Hall** ships `High Mult` at 0.50 above a 5500 Hz
+            //   crossover. It is a genuine ratio — `DSP.cpp:91-94` routes it to
+            //   `late.setrt60_factor_high(value)`, a Freeverb3 RT60 multiplier.
+            // - **zita-rev1** builds the HF target as `0.5 * _rtmid`
+            //   (`reverb.cc:262`), so the 0.5 is structural rather than a
+            //   preset. Its crossover depends on which layer you mean:
+            //   `reverb.cc:209` initialises `_fdamp = 3000 Hz`, while
+            //   `mainwin.cc:65` constructs the knob at 6000 Hz and pushes it
+            //   into the engine — 6000 is the shipped *application*, 3000 the
+            //   library a headless caller gets.
+            // - **Faust `dm.fdnrev0_demo`** gives per-band T60 defaults of
+            //   8.4/6.5/5.0/3.8/2.7 s, so the top band is 0.54x the 2 kHz band.
+            //   Note the layer: `reverbs.lib` publishes no defaults at all —
+            //   every number lives in `demos.lib`, and the `dattorro_rev(…)`
+            //   values in its doc comments are illustrative calls. "The Faust
+            //   library defaults to X" is never a correct sentence.
+            //
+            // Nothing credible defaults to the 0.7-1.0x regime, which is where
+            // the old 0.4998 sat — so this change moves the FDN past the
+            // convention rather than toward it, having started level with it.
+            // (Dragonfly *Room* is not comparable: its `Early Damp`/`Late Damp`
+            // are Hz-valued in-loop cutoffs via `late.setdamp` /
+            // `late.setoutputdamp`, not a ratio.)
+            //
+            // The crossover here is also hard-coded at 2 kHz against their
+            // 5.5-6 kHz, so 0.35 bites lower as well as harder. That is a real
+            // divergence and its fix is a per-algorithm default table rather
+            // than a different single number: 0.3 is correct on the plate, and
+            // is the spring's own constructor value. See the `damping` row in
+            // `NativeDspDescriptors.ts`.
+            damping: 0.2,
             size: 0.5,
             mix: 0.3,
             early_late_balance: 0.4,

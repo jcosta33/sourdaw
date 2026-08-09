@@ -403,7 +403,47 @@ impl ProofChamber {
             sample_rate,
             mix: 0.3,
             decay: 0.5,
-            damping: 0.0005,
+            // Dattorro's Table 1 gives 0.0005 here, and 0.0005 is what this
+            // engine shipped. The transcription was not the error — the row is
+            //
+            //     damping = 0.0005    High-frequency damping; no damping = 0.0
+            //
+            // so 0.0005 is the paper's own recommended value, sitting just off
+            // the neutral extreme its annotation names. What is wrong is
+            // shipping the paper's value as a *product* default.
+            //
+            // Three reasons, none of them about the paper:
+            //
+            // * It contradicted its own reset target and the module default.
+            //   Two declarations said 0.3 — `DEFAULT_PARAMS.damping` and the
+            //   Damp knob's `defaultValue` — while `addDevice` pushed the
+            //   descriptor's 0.0005 to the engine. The knob's *readout* is not
+            //   part of that disagreement and an earlier revision of this
+            //   comment said it was: it displays the stored value through
+            //   `Math.round(v * 100)`, so an old device read "0%" and agreed
+            //   with the engine. That agreement is what made this invisible —
+            //   0.0005 and a true zero are the same three characters on screen.
+            // * It is off the control's grid. The knob is `step={0.001}`, so
+            //   the reset target above was the only way back to 0.0005 and it
+            //   pointed somewhere else; once the user touched Damp, the value
+            //   their device booted at was unreachable.
+            // * It does not sound like a plate. In this file's `OnePole` that
+            //   coefficient removes 0.0087 dB at Nyquist; measured on an
+            //   impulse at mix 1, the 6-12 kHz band came out +0.21 dB *above*
+            //   400-1200 Hz 1.5-3.0 s into the tail. A plate that gets brighter
+            //   as it decays is a ringing tank. 0.3 puts the corner at 10.6 kHz
+            //   and the same measurement at -8.45 dB.
+            //
+            // #1546 has the EMT 140 TS target; the rendered figures are pinned
+            // in `tests/plate_default_damping.rs`, and the peer defaults — with
+            // the layer named for each, because library and application
+            // disagree in at least two of them — are in `fdn.rs` beside the
+            // FDN's own damping literal. For this algorithm the nearest
+            // reference point is Faust's `dm.dattorro_rev_demo`, which ships its
+            // Damping slider at 0.625: the demo application built on the same
+            // paper defaults to more than double 0.3. That cuts against 0.3
+            // being too dark, not for it.
+            damping: 0.3,
             predelay_ms: 15.0,
             size: 0.75,
             mod_rate: 1.0,
@@ -415,6 +455,46 @@ impl ProofChamber {
             saturation_enabled: false,
             early_late_balance: 0.4,
 
+            // Stays at Dattorro's `bandwidth = 0.9995`, and deliberately, even
+            // though the coefficient below is numerically the same 0.0005 the
+            // damping seed had before #1546 moved it. The two lines look like
+            // one mistake and are not:
+            //
+            // * **Topology.** `left_damp`/`right_damp` sit inside the tank's
+            //   recirculating path, so their coefficient compounds once per
+            //   circulation — hundreds of times across a three-second tail.
+            //   This filter sits on the input, ahead of the diffusers, with no
+            //   feedback around it, and is applied exactly once per sample.
+            //   Its entire authority is its response at Nyquist,
+            //   20*log10(0.9995/1.0005) = -0.0087 dB. The same number in the
+            //   two positions is not the same amount of filtering.
+            // * **No contradicted claim.** `damping` contradicted its own reset
+            //   target and the module default — the Damp knob's `defaultValue`
+            //   and `DEFAULT_PARAMS.damping`, both 0.3 — and that contradiction
+            //   is what made it a defect rather than a preference. `bandwidth`
+            //   has no reset target, no module default, no descriptor entry, no
+            //   `set_param` arm and no control, so there is nothing for it to
+            //   contradict. The user-facing treble control on this path is the
+            //   output stage's 12 kHz `high_cut`.
+            //
+            // The paper does **not** separate the two, and an earlier revision
+            // of this comment claimed it did. Table 1 reads
+            //
+            //     bandwidth = 0.9995  High-frequency attenuation on input;
+            //                         full bandwidth = 0.9999999
+            //     damping   = 0.0005  High-frequency damping; no damping = 0.0
+            //
+            // — both rows list a near-neutral value and name their own neutral
+            // extreme, and §1.3.5 gives both filters the same recommended range
+            // 0.0 to 0.9999999. Neither literal is "the paper's bypass". The
+            // split above rests on topology and on which of the two contradicts
+            // something the product says, and it does not need the paper's help.
+            //
+            // The `tests` module at the foot of this file measures this
+            // filter's coefficient on the *running* engine — after a render,
+            // and after every advertised parameter has been driven across its
+            // range — and reds if it ever acquires enough authority for the
+            // reasoning above to stop holding.
             bandwidth_filter: OnePole::new(1.0 - 0.9995), // bandwidth=0.9995
             input_diffusers: [
                 Allpass::new(s(INPUT_DIFF_DELAYS[0]), 0.750),
@@ -434,14 +514,19 @@ impl ProofChamber {
             left_mod_ap: DelayLine::new(scaled_left_mod),
             left_mod_ap_gain: -0.70,
             left_delay_1: DelayLine::new(left_d1_len),
-            left_damp: OnePole::new(0.0005),
+            // Seeded to match `damping` above, though `process()` overwrites
+            // both tank damp coefficients from `self.damping` at the top of
+            // every block, so these two literals never survive the first
+            // render. They are kept in step so that reading the constructor
+            // does not suggest a different tank than the one that runs.
+            left_damp: OnePole::new(0.3),
             left_ap: Allpass::new(left_ap_len, 0.50),
             left_delay_2: DelayLine::new(left_d2_len),
 
             right_mod_ap: DelayLine::new(scaled_right_mod),
             right_mod_ap_gain: -0.70,
             right_delay_1: DelayLine::new(right_d1_len),
-            right_damp: OnePole::new(0.0005),
+            right_damp: OnePole::new(0.3),
             right_ap: Allpass::new(right_ap_len, 0.50),
             right_delay_2: DelayLine::new(right_d2_len),
 
@@ -789,5 +874,185 @@ fn soft_saturate(x: f32, saturation_type: u8) -> f32 {
             // Hard clip
             x.clamp(-1.0, 1.0)
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const SR: f32 = 48_000.0;
+    const BLOCK: usize = 128;
+
+    /// Magnitude of a `OnePole` at DC and at Nyquist, measured by driving the
+    /// real struct rather than derived from its coefficient.
+    ///
+    /// A first-order lowpass is monotone between the two, so the ratio is the
+    /// filter's worst-case attenuation anywhere below Nyquist.
+    fn one_pole_extremes(coeff: f32) -> (f32, f32) {
+        let settle = 200_000;
+
+        let mut dc = OnePole::new(coeff);
+        let mut dc_out = 0.0;
+        for _ in 0..settle {
+            dc_out = dc.process(1.0);
+        }
+
+        // Alternating +/-1 is Nyquist at any sample rate. The steady-state
+        // magnitude is the peak of the alternating output.
+        let mut nyquist = OnePole::new(coeff);
+        let mut nyquist_out = 0.0_f32;
+        for index in 0..settle {
+            let input = if index % 2 == 0 { 1.0 } else { -1.0 };
+            nyquist_out = nyquist.process(input);
+        }
+
+        (dc_out.abs(), nyquist_out.abs())
+    }
+
+    fn worst_case_attenuation_db(coeff: f32) -> f32 {
+        let (dc, nyquist) = one_pole_extremes(coeff);
+        if dc <= 0.0 || nyquist <= 0.0 {
+            // A coefficient of 1.0 is a filter that never converges away from
+            // its initial state: it passes nothing at all. That is the maximum
+            // possible authority, not a broken measurement, so it is reported
+            // as such rather than panicking here — the caller's assertion is
+            // the one that should explain the failure.
+            return f32::INFINITY;
+        }
+        -20.0 * (nyquist / dc).log10()
+    }
+
+    fn run_a_block(chamber: &mut ProofChamber) {
+        let mut left = [0.0_f32; BLOCK];
+        let mut right = [0.0_f32; BLOCK];
+        left[0] = 1.0;
+        right[0] = 1.0;
+        chamber.process(&mut left, &mut right);
+    }
+
+    /// The input bandwidth filter's authority, measured on the **running**
+    /// engine.
+    ///
+    /// #1546 decided that `bandwidth_filter: OnePole::new(1.0 - 0.9995)` stays
+    /// where the tank's `damping` moved, and the comment beside that line rests
+    /// the decision on a magnitude: applied once, outside any feedback path,
+    /// this filter takes a hundredth of a decibel off the top of the spectrum,
+    /// so it is not a voicing choice at all.
+    ///
+    /// The first revision of this guard proved that by parsing the constructor
+    /// literal out of the source text — which proves nothing about the engine.
+    /// This file's own `left_damp: OnePole::new(0.3)` is the counter-example:
+    /// `process()` overwrites `.coeff` from `self.damping` at the top of every
+    /// block, so that literal is dead and a source parse would still have
+    /// vouched for it. Anything that gave the input filter a live coefficient
+    /// — a `process()`-time assignment, a new `set_param` arm — would have left
+    /// the parse green.
+    ///
+    /// So the coefficient is read out of the engine after it has rendered, and
+    /// after every parameter the engine advertises has been driven across its
+    /// range. A `set_param` arm that reaches this filter moves the number and
+    /// reds here.
+    #[test]
+    fn the_input_bandwidth_filter_has_no_audible_authority_on_the_running_engine() {
+        let mut chamber = ProofChamber::new(SR);
+        run_a_block(&mut chamber);
+
+        let after_render = chamber.bandwidth_filter.coeff;
+        let attenuation = worst_case_attenuation_db(after_render);
+        assert!(
+            attenuation < 0.05,
+            "after one render the input bandwidth filter removes up to \
+             {attenuation:.4} dB (live coefficient {after_render:e}). It is \
+             applied once per sample with no feedback around it, and the \
+             comment beside its constructor line justifies leaving it at \
+             Dattorro's 0.9995 on the grounds that a single pass at this \
+             coefficient is inaudible. At this magnitude that is no longer \
+             true, and the bandwidth value has become a voicing decision that \
+             needs one."
+        );
+
+        // And no advertised parameter can hand it authority. This is the arm
+        // the source parse could not see.
+        let names: Vec<String> = chamber
+            .param_names()
+            .into_iter()
+            .map(str::to_owned)
+            .collect();
+        assert!(
+            names.len() >= 20,
+            "param_names shrank to {} entries; the sweep below is only as \
+             broad as this list",
+            names.len()
+        );
+        for name in &names {
+            for value in [0.0_f32, 0.5, 1.0, 20_000.0] {
+                let mut probe = ProofChamber::new(SR);
+                probe.set_param(name, value);
+                run_a_block(&mut probe);
+                let live = probe.bandwidth_filter.coeff;
+                let attenuation = worst_case_attenuation_db(live);
+                assert!(
+                    attenuation < 0.05,
+                    "writing {name}={value} gave the input bandwidth filter \
+                     {attenuation:.4} dB of authority (live coefficient \
+                     {live:e}). The input filter is not a user control, and the \
+                     #1546 decision to leave it at Dattorro's 0.9995 assumes it \
+                     stays inaudible."
+                );
+            }
+        }
+    }
+
+    /// Anti-vacuity for the guard above: the measurement it uses has to be able
+    /// to report a filter that *does* have authority, or the threshold is
+    /// unfalsifiable.
+    #[test]
+    fn the_authority_measurement_reports_a_filter_that_is_actually_closed() {
+        let open = worst_case_attenuation_db(1.0 - 0.9995);
+        let closed = worst_case_attenuation_db(1.0 - 0.85);
+        assert!(
+            open < 0.05,
+            "the shipped coefficient measures {open:.4} dB, which the guard \
+             above would already have caught"
+        );
+        assert!(
+            closed > 1.0,
+            "a one-pole at coefficient 0.15 measured only {closed:.4} dB, so \
+             the measurement cannot distinguish an open filter from a closed \
+             one"
+        );
+    }
+
+    /// The tank's damping seeds are dead literals, and the guard set depends on
+    /// knowing that: it is why `plate_default_damping.rs` measures the rendered
+    /// tail rather than reading `left_damp.coeff`, and why the guard above
+    /// reads its coefficient *after* a render instead of before one.
+    #[test]
+    fn process_overwrites_the_tank_damp_coefficients_and_leaves_the_input_filter_alone() {
+        let mut chamber = ProofChamber::new(SR);
+        let bandwidth_before = chamber.bandwidth_filter.coeff;
+
+        chamber.set_param("damping", 0.62);
+        // Not yet: `set_param` writes the field, `process` propagates it.
+        assert_eq!(
+            chamber.left_damp.coeff, 0.3,
+            "the constructor seed changed without a render"
+        );
+
+        run_a_block(&mut chamber);
+        assert_eq!(
+            chamber.left_damp.coeff, 0.62,
+            "process() did not push `damping` into the left tank filter"
+        );
+        assert_eq!(
+            chamber.right_damp.coeff, 0.62,
+            "process() did not push `damping` into the right tank filter"
+        );
+        assert_eq!(
+            chamber.bandwidth_filter.coeff, bandwidth_before,
+            "the input bandwidth filter is not on the per-block update path and \
+             must not move when `damping` does"
+        );
     }
 }

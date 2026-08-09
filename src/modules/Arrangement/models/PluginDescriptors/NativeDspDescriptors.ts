@@ -59,8 +59,63 @@ export const NATIVE_DSP_DESCRIPTORS: PluginDescriptor[] = [
                 deviceId: 'dutch-oven',
                 name: 'Damping',
                 type: 'float',
-                value: 0.0005,
-                defaultValue: 0.0005,
+                // 0.3, not the 0.0005 this shipped with (#1546). `addDevice` writes
+                // this number into `parameterValues` and pushes it through
+                // `updateDeviceParam`, so it is what a newly added Dutch Oven actually
+                // sounds like — and 0.0005 in the tank's `OnePole` takes 0.0087 dB off
+                // at Nyquist, leaving the 6-12 kHz band louder than 400-1200 Hz two
+                // seconds into the tail.
+                //
+                // What disagreed with it were the two *reset/default* declarations —
+                // `DEFAULT_PARAMS.damping` and the Damp knob's `defaultValue`, both
+                // 0.3. The knob's readout was not part of the disagreement: it shows
+                // the stored value through `Math.round(v * 100)`, so an old device read
+                // "0%" and agreed with the engine, which is why looking at the panel
+                // never revealed this. And because the knob is `step={0.001}`, that
+                // wrong reset target was the only route back to 0.0005 — once a user
+                // touched Damp, the value their device booted at was unreachable.
+                //
+                // 0.0005 is Dattorro Table 1's own recommended value and was
+                // transcribed correctly; what was wrong was shipping a reference
+                // preset as a product default. The plate constructor,
+                // `DEFAULT_PARAMS.damping` and the knob's `defaultValue` now all read
+                // 0.3.
+                //
+                // One number, five algorithms — and 0.3 was chosen on the plate, which
+                // is the algorithm every project runs until something writes the
+                // selector. Where it lands elsewhere:
+                //
+                // - **Spring** — exactly its own constructor value
+                //   (`spring.rs:102`, unchanged since the crate's first commit). The
+                //   old 0.0005 was overwriting it and pushing its late tail to
+                //   +7.36 dB, treble above midrange, the same defect as the plate's.
+                //   This restores it. For scale, the open-source spring models that
+                //   publish a default cluster at 4.5-8.5 kHz of wet-path low-pass
+                //   (Faust `dm.springreverb_demo` Tone 0.5 -> 6500 Hz; daleonov's
+                //   SpringReverb Tone 5 -> 6500 Hz; Chowdhury BYOD `damping` 0.5 ->
+                //   ~8485 Hz; smiarx/aelapse 4500 Hz); the commercial ones publish
+                //   nothing.
+                // - **FDN 8/16** — `rt60_hf/rt60 = (1 - damping) * 0.5`, so 0.3 gives
+                //   0.35 where 0.0005 gave 0.4998. The old ratio sat almost exactly on
+                //   the convention among reverbs that publish a real RT60 ratio — all
+                //   near 0.50 — so on the FDN this change is a real darkening, 25.9 dB
+                //   more HF loss in the late window on an impulse, and its crossover
+                //   is hard-coded at 2 kHz against their 5.5-6 kHz, so it bites lower
+                //   too. `crates/proof-chamber/src/fdn.rs` carries the citations with
+                //   the layer named for each, which matters: zita-rev1 initialises
+                //   3000 Hz in the library and 6000 Hz in the shipped application, and
+                //   Faust's `reverbs.lib` publishes no defaults at all.
+                // - **Reverse** — `damping` is bit-dead across the whole range. Already
+                //   recorded in `nativeDspEngineGaps.ts` and gated in the panel, so
+                //   this value is inert there.
+                //
+                // The FDN divergence is not fixed here and is not hidden: the right
+                // fix is a per-algorithm default rather than a different single
+                // number, since 0.3 is correct on the two algorithms that have an
+                // opinion. Measured figures are in
+                // `crates/proof-chamber/tests/plate_default_damping.rs`.
+                value: 0.3,
+                defaultValue: 0.3,
                 minValue: 0,
                 maxValue: 0.999,
                 unit: '',

@@ -884,34 +884,24 @@ type DefaultDivergence = {
     readonly reason: string;
 };
 
-const KNOWN_DEFAULT_DIVERGENCES: readonly DefaultDivergence[] = [
-    {
-        deviceId: 'dutch-oven',
-        paramId: 'damping',
-        observed: { descriptor: 0.0005, declared: [0.3], panel: 0.3 },
-        reason:
-            'Three values, two of which agree. Descriptor `0.0005`; Rust plate constructor `0.0005` ' +
-            '(`crates/proof-chamber/src/proof_chamber.rs:394`); `DEFAULT_PARAMS` and the panel knob `0.3`. ' +
-            'There is no scaling between them — `proof_chamber.rs:471` is ' +
-            '`"damping" => self.damping = value.clamp(0.0, 0.9999)`, so the knob writes the constructor\'s field ' +
-            'directly and the two numbers are the same quantity. ' +
-            'What a fresh instance runs is `0.0005`: `addDevice` writes every descriptor `param.value` through ' +
-            '`updateDeviceParam`, and nothing pushes `DEFAULT_PARAMS` — `registerChamberInstance` writes only ' +
-            '`chamberStore`, and `expandSpacePreset` runs solely from the space-tile click handler, so the ' +
-            '`hall` overlay is not a third vote for 0.3. So the engine is damped at 0.0005 while the panel reads ' +
-            '30% and the spectrogram draws 0.3, and the first double-click on Damp is a 600x jump in the ' +
-            'coefficient. `damping` is the only field where `DEFAULT_PARAMS` departs from the constructor; every ' +
-            'other Dutch Oven default matches it exactly, and the file header cites Dattorro 1997, whose damping ' +
-            'is 0.0005. ' +
-            'Two ways to close it, and they are not equivalent. Move `DEFAULT_PARAMS` and the panel to 0.0005: ' +
-            'the panel then tells the truth about what every existing project has been hearing, and nothing ' +
-            'sounds different. Move the descriptor and the constructor to 0.3: the panel keeps its current ' +
-            'reading and the reverb gains real damping, at the cost of changing the sound of every new instance ' +
-            'and departing from the paper the implementation is transcribed from. That is a voicing decision, ' +
-            'not a consistency one, so it is recorded here rather than taken — and ProofChamber is being changed ' +
-            'on another lane (`feat/dutch-oven-panel-algorithm-gating`) besides.',
-    },
-];
+/**
+ * Empty, and that is a state this file is built to hold.
+ *
+ * The one row it ever carried was `dutch-oven.damping`, recorded by #1525 and
+ * closed by #1546: the descriptor and the Rust plate constructor moved from
+ * Dattorro's 0.0005 — which is bypass, 0.0087 dB at Nyquist — up to the 0.3
+ * that `DEFAULT_PARAMS` and the panel knob had been claiming. Nothing is
+ * suppressed here now, so the two directions below reduce to one: any
+ * disagreement at all reds.
+ *
+ * The forward assertion is what keeps that honest, and it needs no row to
+ * work — `isDeclaredDivergence` returns false for every parameter, so a
+ * descriptor value drifting back to 0.0005 lands in `disagreements` on the
+ * next run. The gap that a row *would* leave open is the reason to delete one
+ * rather than let it sit: a listed pair is skipped in the forward direction
+ * entirely.
+ */
+const KNOWN_DEFAULT_DIVERGENCES: readonly DefaultDivergence[] = [];
 
 /**
  * Every `.tsx` under a device module's `presentations/` tree that declares a
@@ -1298,6 +1288,16 @@ describe('a device default is the same number wherever it is declared', () => {
         // Reverse direction on the divergence table. A row that is fixed —
         // whether by correcting the descriptor or by moving the module — has to
         // be deleted, so this cannot become a place drift goes to be forgotten.
+        //
+        // With the table empty the walk below never executes and
+        // `expect(stale).toEqual([])` passes unconditionally — a test that
+        // cannot fail under any change while still reporting green. That is a
+        // dormant guard rather than a live one, and the line below is what says
+        // so out loud: it pins the emptiness that makes the walk dormant, so
+        // adding a row is the act that turns the walk back on, and this
+        // assertion goes with it.
+        expect(KNOWN_DEFAULT_DIVERGENCES).toHaveLength(0);
+
         const stale: string[] = [];
         for (const row of KNOWN_DEFAULT_DIVERGENCES) {
             const declared = DESCRIPTOR_DEFAULTS.get(row.deviceId)?.get(row.paramId);
