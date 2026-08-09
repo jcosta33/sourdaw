@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { configureAutomergeStoragePort } from '#/infra/store/storage/createAutomergeStorage';
 import { clearHandlerRegistry, registerHandlerMap, undoStore } from '#/modules/Command/stores';
-import { clearUndoHistory, executeAppAction, redo, undo } from '#/modules/Command/useCases';
+import { clearUndoHistory, executeAppAction, executeAppActionBatch, redo, undo } from '#/modules/Command/useCases';
 import { type AppAction } from '#/utils/handlerContract';
 
 import { defaultTransportState, transportStore } from '../../../stores/transportStore';
@@ -165,6 +165,42 @@ describe('Transport punch action undo/redo', () => {
 
         await executeAppAction({ type: 'togglePunch', payload: undefined });
         expect(transportStore.value?.punchInEnabled).toBe(true);
+
+        await undo();
+        expect(transportStore.value?.punchInEnabled).toBe(false);
+        expect(undoStore.value?.future).toHaveLength(1);
+
+        await redo();
+        expect(transportStore.value?.punchInEnabled).toBe(true);
+        expect(undoStore.value?.past).toHaveLength(1);
+    });
+
+    it('rejects a legacy toggle mixed with another punch-enabled action before either can write', async () => {
+        transportStore.set({ ...defaultTransportState, punchInEnabled: false });
+
+        const result = await executeAppActionBatch([
+            { type: 'setPunchEnabled', payload: { enabled: true } },
+            { type: 'togglePunch', payload: undefined },
+        ]);
+
+        expect(result).toEqual({
+            status: 'rejected',
+            reason: 'Action must execute as a singleton batch: togglePunch',
+            actions: [],
+        });
+        expect(transportStore.value?.punchInEnabled).toBe(false);
+        expect(undoStore.value?.past).toHaveLength(0);
+        expect(undoStore.value?.future).toHaveLength(0);
+    });
+
+    it('undoes and redoes a singleton legacy toggle batch from its exact preflight state', async () => {
+        transportStore.set({ ...defaultTransportState, punchInEnabled: false });
+
+        await expect(executeAppActionBatch([{ type: 'togglePunch', payload: undefined }])).resolves.toMatchObject({
+            status: 'committed',
+        });
+        expect(transportStore.value?.punchInEnabled).toBe(true);
+        expect(undoStore.value?.past).toHaveLength(1);
 
         await undo();
         expect(transportStore.value?.punchInEnabled).toBe(false);

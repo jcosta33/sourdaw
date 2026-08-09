@@ -4,6 +4,7 @@ import { togglePunchEnabled } from '../../useCases/transportControls/togglePunch
 import { getTransportState } from '../../useCases/transportQueries/getTransportState';
 
 export const handleTogglePunch = createHandler<'togglePunch'>({
+    batchExecution: 'singleton',
     execute: () => togglePunchEnabled(),
     isNoop: () => getTransportState() === null,
     describe: () => {

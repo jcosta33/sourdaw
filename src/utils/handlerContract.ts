@@ -1270,6 +1270,8 @@ export type ActionHandler<Action extends AppAction = AppAction> = {
     requiresAbortCompensation?: boolean;
     /** Runtime handlers execute outside Automerge and cannot join project-mutation batches. */
     executionKind?: 'project' | 'runtime';
+    /** Actions whose preflight description depends on live state must not be combined with other batch writes. */
+    batchExecution?: 'singleton';
     undoable: boolean;
 };
 

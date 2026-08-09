@@ -8,6 +8,7 @@ import { LED } from '#/components/daw/LED';
 import { Button } from '#/components/ui/button';
 import { Slider } from '#/components/ui/slider';
 import { Tooltip, TooltipContent, TooltipTrigger } from '#/components/ui/tooltip';
+import { executeAppAction } from '#/modules/Command/useCases';
 import {
     togglePlayback,
     stopPlayback,
@@ -16,7 +17,6 @@ import {
     toggleMetronome,
     setMetronomeVolume,
     toggleRecording,
-    togglePunchEnabled,
     toggleCountIn,
     setCountInBars,
 } from '#/modules/Transport/useCases';
@@ -53,6 +53,12 @@ export const TransportControls = ({
     countInEnabled,
     countInBars,
 }: TransportControlsProps): ReactElement => {
+    const setPunchEnabled = (): void => {
+        void executeAppAction({
+            type: 'setPunchEnabled',
+            payload: { enabled: !punchInEnabled },
+        }).catch(() => undefined);
+    };
     const cycleCountInBars = (): void => {
         let next: number;
         if (countInBars >= 4) {
@@ -113,7 +119,13 @@ export const TransportControls = ({
 
             <Tooltip>
                 <TooltipTrigger asChild>
-                    <Button variant="transport" size="icon-sm" aria-label="Stop" onClick={stopPlayback} data-testid="transport-stop">
+                    <Button
+                        variant="transport"
+                        size="icon-sm"
+                        aria-label="Stop"
+                        onClick={stopPlayback}
+                        data-testid="transport-stop"
+                    >
                         <Square className="size-3.5 fill-text-secondary" aria-hidden="true" />
                     </Button>
                 </TooltipTrigger>
@@ -233,7 +245,8 @@ export const TransportControls = ({
                         size="icon"
                         aria-label="Punch in/out"
                         aria-pressed={punchInEnabled}
-                        onClick={togglePunchEnabled}
+                        disabled={isPlaying || isRecording}
+                        onClick={setPunchEnabled}
                         data-testid="transport-punch"
                     >
                         <Scissors className="size-3.5" aria-hidden="true" />

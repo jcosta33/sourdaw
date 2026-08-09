@@ -320,6 +320,15 @@ export const executeAppActionBatch: ExecuteAppActionBatch = inject({ logger })(
                 return { status: 'no-op', actions: [] };
             }
 
+            const singletonAction = preparedActions.find((prepared) => prepared.handler.batchExecution === 'singleton');
+            if (singletonAction && preparedActions.length !== 1) {
+                return {
+                    status: 'rejected',
+                    reason: `Action must execute as a singleton batch: ${singletonAction.action.type}`,
+                    actions: [],
+                };
+            }
+
             const runtimeActions = preparedActions.filter((prepared) => prepared.handler.executionKind === 'runtime');
             if (runtimeActions.length > 0 && preparedActions.length !== 1) {
                 return {
