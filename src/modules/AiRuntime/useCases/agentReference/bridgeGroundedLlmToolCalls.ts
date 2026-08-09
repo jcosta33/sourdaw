@@ -427,11 +427,9 @@ type CancellationCue = {
 
 function getCancellationCues(text: string): CancellationCue[] {
     const patterns = [
-        /\b(?:never mind|on second thought|actually\s*,?\s+(?:no|don['’]?t|don t|dont))\b/gu,
-        /\b(?:abort|cancel|disregard|scratch)\s+(?:it\b|them\b|(?:that|this)\b(?!\s+\p{L})|(?:the|that|this)\s+(?:\p{L}+\s+){0,2}(?:change|command|request)\b)/gu,
-        /\bleave\s+(?:(?:it|them|that|this)\s+)?unchanged\b/gu,
-        /\bkeep\s+(?:(?:it|them|that|this)\s+)?separate\b/gu,
-        /\bwithout\s+(?:(?:making|applying)\s+(?:any\s+)?changes?|changing\s+(?:anything|it|them))\b/gu,
+        /\b(?:never mind|on second thought|actually\s*,?\s+no)\b/gu,
+        /\b(?:abort|cancel|disregard|scratch)\s+(?:it\b|(?:that|this)\b(?!\s+\p{L})|(?:the|that|this)\s+(?:\p{L}+\s+){0,2}(?:change|command|request)\b)/gu,
+        /\bleave\s+(?:(?:it|that|this)\s+)?unchanged\b/gu,
         /\b(?:do not|don['’]t|don t|dont|never|not)\b(?:\s+\p{L}+){0,3}\s+(?:apply|change|do|execute|make)\s+(?:it\b|(?:that|this)\b(?!\s+\p{L})|(?:the|that|this)\s+(?:\p{L}+\s+){0,2}(?:change|command|request)\b)/gu,
     ];
     return patterns.flatMap((pattern) =>
@@ -1155,7 +1153,7 @@ function getAssertedControlTargetReferences(
                 direct.add(value);
                 continue;
             }
-            if (Array.isArray(value)) {
+            if (targetRule.capability === 'editable-clip' && Array.isArray(value)) {
                 for (const item of value) {
                     if (typeof item === 'string') {
                         direct.add(item);
@@ -1173,7 +1171,10 @@ function getAssertedControlTargetReferences(
     for (const targetRule of groundingRules.targetRules) {
         for (const assertedArguments of assertedArgumentSets) {
             const assertedValue = assertedArguments[targetRule.argument];
-            const assertedIds = Array.isArray(assertedValue) ? assertedValue : [assertedValue];
+            let assertedIds: readonly unknown[] = [assertedValue];
+            if (targetRule.capability === 'editable-clip' && Array.isArray(assertedValue)) {
+                assertedIds = assertedValue;
+            }
             for (const assertedId of assertedIds) {
                 if (typeof assertedId !== 'string') {
                     continue;
@@ -1505,13 +1506,10 @@ function isDeclarativeGlueClause(commandText: string): boolean {
 }
 
 function isPotentialGlueCommand(commandText: string, context: ProjectContext): boolean {
-    if (/^glue\b/u.test(commandText)) {
-        return true;
-    }
-    if (!/^join\b/u.test(commandText)) {
+    if (!/^(?:glue|join)\b/u.test(commandText)) {
         return false;
     }
-    const targetText = commandText.replace(/^join\s+/u, '');
+    const targetText = commandText.replace(/^(?:glue|join)\s+/u, '');
     if (/^(?:(?:the )?selected clips|(?:the )?clips?)(?: |$)/u.test(targetText)) {
         return true;
     }
@@ -1555,7 +1553,7 @@ function isGlueCancellationClause(clause: PromptClause, clipIds: [string, string
         /^(?:but )?keep (?:them|the clips|the exact pair) separate(?: |$)/u,
         /^(?:but )?leave (?:(?:them|the clips|the exact pair) )?unchanged(?: |$)/u,
         /^(?:but )?actually (?:do not|don t|dont)(?: |$)/u,
-        /^(?:but )?without (?:any )?changes(?: |$)/u,
+        /^(?:but )?without (?:(?:making|applying) (?:any )?changes|changing (?:anything|it|them)|(?:any )?changes)(?: |$)/u,
     ];
     return cancellationPatterns.some((pattern) => pattern.test(normalizedText));
 }

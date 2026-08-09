@@ -1227,9 +1227,13 @@ describe('bridgeGroundedLlmToolCalls', () => {
         const results = [
             bridge(tempo, 'Glue is a clip, then set tempo to 130', context),
             bridge(tempo, 'Glue Intro and MIDI Verse are clips, then set tempo to 130', introNamedContext),
+            bridge(tempo, 'Glue contains Guitar; set tempo to 130', context),
+            bridge(tempo, 'Glue belongs to the VCA list; set tempo to 130', context),
         ];
 
         expect(results.map((result) => result.actions)).toEqual([
+            [{ type: 'setTempo', payload: { bpm: 130 } }],
+            [{ type: 'setTempo', payload: { bpm: 130 } }],
             [{ type: 'setTempo', payload: { bpm: 130 } }],
             [{ type: 'setTempo', payload: { bpm: 130 } }],
         ]);
@@ -1252,6 +1256,7 @@ describe('bridgeGroundedLlmToolCalls', () => {
             'glue MIDI Intro and MIDI Verse clips, but leave unchanged for review, then set tempo to 130',
             "glue MIDI Intro and MIDI Verse clips, actually don't because the phase is wrong, then set tempo to 130",
             'glue MIDI Intro and MIDI Verse clips; without changes because this is a dry run; set tempo to 130',
+            'glue MIDI Intro and MIDI Verse clips; without making changes because this is a dry run; set tempo to 130',
             'glue MIDI Intro and MIDI Verse clips, never mind because the phase is wrong, then set tempo to 130',
             'glue MIDI Intro and MIDI Verse clips, then cancel it because the timing is wrong, then set tempo to 130',
             'glue MIDI Intro and MIDI Verse clips, then cancel that command because the timing is wrong, then set tempo to 130',
@@ -2299,6 +2304,19 @@ describe('bridgeGroundedLlmToolCalls', () => {
         expect(wrongCreatedBus.actions).toEqual([]);
     });
 
+    it.each(["Actually Don't", 'Keep Them Separate', 'Without Making Changes'])(
+        'does not treat the literal rename value %s as a generic cancellation',
+        (name) => {
+            const result = bridge(
+                [{ name: 'renameTrack', arguments: { trackId: guitar.id, name } }],
+                `rename Guitar to ${name}`
+            );
+
+            expect(result.actions).toEqual([{ type: 'renameTrack', payload: { trackId: guitar.id, name } }]);
+            expect(result.rejections).toEqual([]);
+        }
+    );
+
     it('grounds explicit solo-safe polarity and targetless clear-all intent', () => {
         const soloedContext = {
             ...projectContext,
@@ -2636,7 +2654,7 @@ describe('bridgeGroundedLlmToolCalls', () => {
         }
     );
 
-    it('preserves VCA array-target grounding for a member named Never Enough', () => {
+    it('preserves generic VCA array-target control-cue behavior for a member named Never Enough', () => {
         const neverEnough = createTrack({ id: 'track-never-enough', name: 'Never Enough' });
         const result = bridge(
             [{ name: 'createVcaGroup', arguments: { name: 'Dynamics', trackIds: [neverEnough.id] } }],
@@ -2644,10 +2662,14 @@ describe('bridgeGroundedLlmToolCalls', () => {
             { ...projectContext, tracks: [...projectContext.tracks, neverEnough] }
         );
 
-        expect(result.actions).toEqual([
-            { type: 'createVcaGroup', payload: { name: 'Dynamics', trackIds: [neverEnough.id] } },
+        expect(result.actions).toEqual([]);
+        expect(result.rejections).toEqual([
+            {
+                index: 0,
+                name: 'createVcaGroup',
+                reason: 'Provider action is not grounded in the user request',
+            },
         ]);
-        expect(result.rejections).toEqual([]);
     });
 
     it('rejects invented, ambiguous, ineligible, incomplete, and no-op VCA membership plans', () => {

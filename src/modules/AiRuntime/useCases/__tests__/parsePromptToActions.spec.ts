@@ -722,6 +722,9 @@ describe('parsePromptToActions', () => {
 
     it.each([
         "glue Intro and Verse clips, but don't glue them due to phase issues, then set tempo to 130",
+        "glue Intro and Verse clips, actually don't because the phase is wrong, then set tempo to 130",
+        'glue Intro and Verse clips, but keep them separate for comping, then set tempo to 130',
+        'glue Intro and Verse clips, without making changes because this is a dry run, then set tempo to 130',
         'glue Intro and Verse clips, never mind because the phase is wrong, then set tempo to 130',
         'glue Intro and Verse clips, then cancel it because the timing is wrong, then set tempo to 130',
         'glue Intro and Verse clips, then cancel that command because the timing is wrong, then set tempo to 130',
