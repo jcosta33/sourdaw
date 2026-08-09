@@ -90,13 +90,21 @@ it, and touching either one afterwards overrides what Amount set. Use one or the
 
 **Mix** blends against the lookahead-delayed dry signal, so parallel settings stay phase-aligned at
 any **Look** value. **Match** acts only while the device is bypassed — it is for honest A/B, not for
-setting output level.
+setting output level. It is the one control that does nothing in the device's ordinary running state
+and is still left fully live, because greying it whenever the device is *not* bypassed would hide it
+for almost the whole session.
+
+**Stage 2** goes grey when the Stage two section names the topology you already selected as the
+primary — the second stage only runs when the two differ. Stage two starts on Opto, so selecting
+Opto as your primary is enough to reach that state; pick a different topology in Stage two and the
+knob comes back.
 
 **Link** is on the detector, never on the output. At 100% both channels read the louder of the two
 and duck together, so the stereo image stays put — this is what you want on a bus. At 0% each
 channel gets its own reading and they breathe independently, which widens the image and can pull it
 off centre when one side is much louder. Anything in between blends the two readings. It applies on
-all four topologies.
+all four topologies — but not under **Dual mono**, which *is* an unlinked detector, so Link goes
+grey while that stereo mode is selected.
 
 ## Detector
 
@@ -115,14 +123,16 @@ The Detector section shapes what the compressor listens to, without changing wha
 | **Stereo · Mid · Side · Dual mono** | — | Stereo | Which part of the stereo image is compressed. Dual mono also forces Link to 0. |
 | **OS** | 1× · 2× · 4× | 2× | Oversamples the nonlinear stages. FET and Diode only — the VCA's stage is not oversampled yet, and Opto has no nonlinearity to oversample. |
 
-The bell is a no-op until **EQ Gain** leaves 0 dB, so **EQ Q** on its own changes nothing — set the
-gain first, then narrow or widen.
+The bell is a no-op until **EQ Gain** leaves 0 dB, so **SC EQ** and **EQ Q** go grey until you move
+it — set the gain first, then centre and narrow.
 
 > [!WARNING]
-> **Not yet active.** SC HPF, SC LPF, SC EQ, EQ Gain, EQ Q, Thrust, and Ext SC reach the detector on
-> the **Diode** topology only. On VCA, Opto, and FET the detector listens to the unfiltered input
-> and these seven controls have no effect. VCA is the default topology, so ducking one track under
-> another requires switching to Diode first.
+> **Not yet active off Diode.** All twelve controls in this section — SC HPF, SC LPF, SC EQ, EQ
+> Gain, EQ Q, the HPF, LPF, SC EQ and Ext SC toggles, and the three Thrust chips — shape a detector
+> signal only the **Diode** topology reads. On VCA, Opto, and FET the detector listens to the
+> unfiltered input, so all twelve go grey and say so. VCA is the default topology, so ducking one
+> track under another means selecting Diode first — or running Diode in **Stage two**, which brings
+> the whole section back on any primary.
 
 RMS is the default and the usual choice for glue: it ignores single transients and follows how loud
 the material actually is. Switch to PEAK when you need the compressor to catch the transient itself
@@ -134,7 +144,10 @@ input, then turn on **Ext SC**.
 
 ## Character
 
-The Character section changes with the topology you selected.
+The Character section changes with the topology you selected. When **Stage 2** is above zero it
+shows the second topology's controls as well, under their own headings — the second stage is a real
+compressor and hears its own controls, so a Diode running behind a VCA has its Recovery switch here
+even though Diode is not the primary.
 
 **VCA** — **Color** (0 to 0.02, default 0.003) adds nonlinearity to the gain element. **VCA type**
 selects Ideal, THAT 2181, or DBX 202, and starts on THAT 2181. **Feedback / Feed forward** switches

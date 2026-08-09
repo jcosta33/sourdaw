@@ -22,7 +22,12 @@ import {
     type GlutenStyle,
     type GlutenTopology,
 } from '../../models/GlutenPatch';
-import { GLUTEN_TOPOLOGY_LABELS, glutenControlGate, type GlutenControlGate } from '../../models/GlutenTopologyGating';
+import {
+    GLUTEN_TOPOLOGY_LABELS,
+    glutenBlendStage,
+    glutenControlGate,
+    type GlutenControlGate,
+} from '../../models/GlutenTopologyGating';
 import { glutenStore, getGlutenState, type GlutenState } from '../../stores/glutenStore';
 import { loadGlutenPatchWithAudio } from '../../useCases/glutenParamBridge/loadGlutenPatchWithAudio';
 import { setGlutenParamWithAudio } from '../../useCases/glutenParamBridge/setGlutenParamWithAudio';
@@ -414,6 +419,45 @@ export const GlutenPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
     // The three OS chips are one control, so they share one gate rather than
     // resolving the same row three times and risking three different sentences.
     const oversamplingGate = gateFor('oversampling', 'Oversampling');
+    // Likewise the three Thrust chips.
+    const thrustGate = gateFor('thrust', 'Thrust');
+
+    /**
+     * Every topology whose Character controls are worth showing.
+     *
+     * The Character card used to render only `patch.topology`, which is a
+     * stricter rule than the DSP's: `GlutenEngine` owns all four topology
+     * structs and Stage two runs the second one on the first's output, so a
+     * diode in stage two reads `recovery` — its *only* release control — and a
+     * FET in stage two reads `input_gain`, measured at `4.18e-2` and `7.40e-1`
+     * in `a_stage_two_topology_hears_its_own_character_controls`. Both were off
+     * screen with no way to reach them, while the shared controls directly
+     * above resolved against both stages correctly.
+     */
+    const characterStages: GlutenTopology[] = [currentPatch.topology];
+    const blendStageTopology = glutenBlendStage(currentPatch);
+    if (blendStageTopology !== null) {
+        characterStages.push(blendStageTopology);
+    }
+
+    /**
+     * Which stage a Character block belongs to, shown only while two are live.
+     *
+     * With one stage the card's own title is unambiguous and a heading would be
+     * noise; with two, an unlabelled second set of controls appearing under the
+     * first is worse than not showing it at all.
+     */
+    function characterHeading(topology: GlutenTopology): ReactElement | null {
+        if (characterStages.length < 2) {
+            return null;
+        }
+        const role = topology === currentPatch.topology ? 'Primary' : 'Stage two';
+        return (
+            <div className="text-[8px] uppercase tracking-[0.26em] text-[var(--color-accent-lavender)]/68">
+                {`${role} — ${TOPOLOGY_META[topology].label}`}
+            </div>
+        );
+    }
 
     return (
         <div className="gluten-faceplate h-full min-h-0 overflow-hidden rounded-[26px] p-3">
@@ -1056,7 +1100,14 @@ export const GlutenPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
                                             active={active}
                                             tone="lavender"
                                             size="sm"
-                                            onClick={() => setGlutenParamWithAudio(deviceId, 'thrust', thrust)}
+                                            aria-disabled={thrustGate.isInert || undefined}
+                                            title={thrustGate.explanation ?? undefined}
+                                            onClick={() => {
+                                                if (thrustGate.isInert) {
+                                                    return;
+                                                }
+                                                setGlutenParamWithAudio(deviceId, 'thrust', thrust);
+                                            }}
                                         >
                                             {labels[thrust]}
                                         </DawPluginChip>
@@ -1067,8 +1118,9 @@ export const GlutenPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
                     </ControlCard>
 
                     <ControlCard title="Character" detail="The last mile changes with the topology you picked.">
-                        {patch.topology === 'fet' ? (
+                        {characterStages.includes('fet') ? (
                             <Stack gap={3}>
+                                {characterHeading('fet')}
                                 <Grid cols={3} gapX={2} gapY={3}>
                                     <Knob
                                         deviceId={deviceId}
@@ -1138,8 +1190,9 @@ export const GlutenPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
                             </Stack>
                         ) : null}
 
-                        {patch.topology === 'opto' ? (
+                        {characterStages.includes('opto') ? (
                             <Stack gap={2}>
+                                {characterHeading('opto')}
                                 <Row wrap gap={1.5}>
                                     {[false, true].map((mode, index) => {
                                         const labels = ['Compress', 'Limit'];
@@ -1162,8 +1215,9 @@ export const GlutenPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
                             </Stack>
                         ) : null}
 
-                        {patch.topology === 'diode' ? (
+                        {characterStages.includes('diode') ? (
                             <Stack gap={2}>
+                                {characterHeading('diode')}
                                 <Row wrap gap={1.5}>
                                     {[1, 2, 3, 4, 5].map((value) => {
                                         const active = patch.recovery === value;
@@ -1186,8 +1240,9 @@ export const GlutenPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
                             </Stack>
                         ) : null}
 
-                        {patch.topology === 'vca' ? (
+                        {characterStages.includes('vca') ? (
                             <Stack gap={3}>
+                                {characterHeading('vca')}
                                 <Grid cols={2} gap={2}>
                                     <Knob
                                         deviceId={deviceId}

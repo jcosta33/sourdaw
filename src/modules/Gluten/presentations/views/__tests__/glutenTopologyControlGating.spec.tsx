@@ -1,7 +1,7 @@
 import { fireEvent, render, screen } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { DEFAULT_PATCH, type GlutenPatch } from '../../../models/GlutenPatch';
+import { DEFAULT_PATCH, type GlutenPatch, type GlutenTopology } from '../../../models/GlutenPatch';
 import { GLUTEN_TOPOLOGY_GAPS } from '../../../models/GlutenTopologyGating';
 import { type GlutenState } from '../../../stores/glutenStore';
 import { setGlutenParamWithAudio } from '../../../useCases/glutenParamBridge/setGlutenParamWithAudio';
@@ -185,11 +185,40 @@ const CONTROL_LOCATORS: Record<string, () => HTMLElement[]> = {
     range: () => [knobFor('Range')],
     autoRelease: () => [chipFor('Auto rel')],
     oversampling: () => [chipFor('1×'), chipFor('2×'), chipFor('4×')],
+    scHpfFreq: () => [knobFor('SC HPF')],
+    scLpfFreq: () => [knobFor('SC LPF')],
+    scEqFreq: () => [knobFor('SC EQ')],
+    scEqGain: () => [knobFor('EQ Gain')],
+    scEqQ: () => [knobFor('EQ Q')],
+    scHpfEnabled: () => [chipFor('HPF')],
+    scLpfEnabled: () => [chipFor('LPF')],
+    scEqEnabled: () => [chipFor('SC EQ')],
+    extSidechain: () => [chipFor('Ext SC')],
+    thrust: () => [chipFor('Thrust off'), chipFor('Thrust med'), chipFor('Thrust loud')],
 };
+
+/**
+ * A patch that has no *patch-state* gap active, so this sweep measures only the
+ * topology census.
+ *
+ * `scEqGain` leaves 0 dB because a flat bell makes SC EQ and EQ Q inert for a
+ * reason that has nothing to do with the topology, and `blendTopology` is moved
+ * off Opto because it defaults there and would make Stage 2 inert the moment
+ * this sweep reached the Opto row. Both of those are asserted on their own,
+ * below.
+ */
+function patchWithNoOverrides(topology: GlutenTopology): Partial<GlutenPatch> {
+    return {
+        topology,
+        scEqGain: 6,
+        blendAmount: 0,
+        blendTopology: topology === 'vca' ? 'opto' : 'vca',
+    };
+}
 
 describe('every censused control is actually refused on the screen', () => {
     it.each(GLUTEN_TOPOLOGY_GAPS)('$topology', (gap) => {
-        renderPanel({ topology: gap.topology });
+        renderPanel(patchWithNoOverrides(gap.topology));
 
         const censused = new Set(gap.params.map((param) => String(param.paramKey)));
         expect(censused.size, `${gap.topology} must have at least one row to sweep`).toBeGreaterThan(0);
@@ -211,5 +240,99 @@ describe('every censused control is actually refused on the screen', () => {
                 }
             }
         }
+    });
+
+    it('gives every detector control back once Stage two runs the Diode', () => {
+        // The routing rows are gated per live stage, not per primary, because
+        // `process_block` hands the filtered detector to whichever stage is a
+        // diode. `a_diode_stage_two_gives_every_primary_a_working_sidechain`
+        // measures all ten as audible in exactly this configuration.
+        renderPanel({ topology: 'vca', blendTopology: 'diode', blendAmount: 0.5, scEqGain: 6 });
+
+        for (const paramKey of DETECTOR_CONTROLS) {
+            for (const element of CONTROL_LOCATORS[paramKey]!()) {
+                expect(element.getAttribute('aria-disabled'), `${paramKey} with a Diode stage two`).toBeNull();
+            }
+        }
+    });
+});
+
+/** The twelve controls the ten detector-routing names draw. */
+const DETECTOR_CONTROLS = [
+    'scHpfFreq',
+    'scLpfFreq',
+    'scEqFreq',
+    'scEqGain',
+    'scEqQ',
+    'scHpfEnabled',
+    'scLpfEnabled',
+    'scEqEnabled',
+    'extSidechain',
+    'thrust',
+] as const;
+
+describe('a control switched off by another control says so too', () => {
+    it('refuses Link under Dual mono', () => {
+        renderPanel({ topology: 'diode', stereoMode: 'dual-mono', scEqGain: 6 });
+
+        const link = knobFor('Link');
+        expect(link.getAttribute('aria-disabled')).toBe('true');
+        expect(link.getAttribute('title') ?? '').toContain('Choose Stereo, Mid or Side');
+    });
+
+    it('leaves Link live in an ordinary stereo mode', () => {
+        renderPanel({ topology: 'diode', stereoMode: 'stereo', scEqGain: 6 });
+
+        expect(knobFor('Link').getAttribute('aria-disabled')).toBeNull();
+    });
+
+    it('refuses Stage 2 on the Opto primary the defaults produce', () => {
+        // `blendTopology` defaults to Opto, so this is one click from a fresh
+        // device: the Stage-two chooser shows three chips with none of them
+        // active, above a knob that does nothing.
+        renderPanel({ topology: 'opto', scEqGain: 6 });
+
+        const stageTwo = knobFor('Stage 2');
+        expect(stageTwo.getAttribute('aria-disabled')).toBe('true');
+        expect(stageTwo.getAttribute('title') ?? '').toContain('both are Opto');
+    });
+
+    it('refuses the SC EQ frequency and width while the bell is flat', () => {
+        renderPanel({ topology: 'diode', scEqGain: 0 });
+
+        for (const label of ['SC EQ', 'EQ Q']) {
+            const knob = knobFor(label);
+            expect(knob.getAttribute('aria-disabled'), label).toBe('true');
+            expect(knob.getAttribute('title') ?? '', label).toContain('Set EQ Gain first');
+        }
+
+        // EQ Gain itself stays live — it is the way back.
+        expect(knobFor('EQ Gain').getAttribute('aria-disabled')).toBeNull();
+    });
+});
+
+describe('the Character card follows the DSP, not the selector', () => {
+    it('shows the Stage-two topology’s own controls, labelled', () => {
+        // A diode in stage two reads `recovery` — its only release control —
+        // and the card used to render only `patch.topology`, putting it off
+        // screen with no way to reach it.
+        renderPanel({ topology: 'vca', blendTopology: 'diode', blendAmount: 0.5 });
+
+        expect(chipFor('Recovery 3').getAttribute('aria-disabled')).toBeNull();
+        expect(screen.getByText('Primary — VCA')).toBeTruthy();
+        expect(screen.getByText('Stage two — Diode')).toBeTruthy();
+    });
+
+    it('shows one unlabelled block while a single stage is running', () => {
+        renderPanel({ topology: 'vca', blendAmount: 0 });
+
+        expect(screen.queryByText('Primary — VCA')).toBeNull();
+        expect(screen.queryByText('Recovery 3')).toBeNull();
+    });
+
+    it('drops the Stage-two block again when Stage 2 is turned down', () => {
+        renderPanel({ topology: 'vca', blendTopology: 'diode', blendAmount: 0 });
+
+        expect(screen.queryByText('Recovery 3')).toBeNull();
     });
 });

@@ -90,13 +90,34 @@ export const GLUTEN_TOPOLOGY_OWNED_CONTROLS: Record<GlutenTopology, readonly (ke
 export const GLUTEN_UNRENDERED_PARAMS: readonly string[] = ['peakReduction', 'limiterThreshold', 'bypass'];
 
 /**
- * A parameter one topology's `set_param` has no arm for.
+ * Which layer of the engine drops a write before the user hears it.
+ *
+ * Two different mechanisms, and a census derived from only one of them is blind
+ * to the other by construction — which is what the first revision of this file
+ * was.
+ *
+ * - `set-param` — the topology struct has no match arm for the name, so its own
+ *   `_ => {}` swallows it. Derivable by scanning the four structs' arms.
+ * - `detector-routing` — the name has an arm, at *engine* level, and configures
+ *   a stage whose output only one topology reads. `process_block` filters the
+ *   detector (SC HPF → SC LPF → SC EQ → Thrust, or the external sidechain) and
+ *   hands the result to `DiodeCompressor::process_sample_with_sc` alone; the
+ *   other three call `process_sample` and derive their own detector from the
+ *   audio path. No arm scan can see this: the arms are all present.
+ *
+ * `glutenTopologyGating.spec.ts` derives both populations out of the Rust and
+ * asserts the table against each, so neither half is a hand-maintained list.
+ */
+export type GlutenGapLayer = 'set-param' | 'detector-routing';
+
+/**
+ * A parameter one topology cannot hear.
  *
  * `structural` means the topology is modelled on hardware that has no such
  * control and there is nothing in the stage for the name to act on;
- * `unbuilt` means the value is a literal at the call site or the stage is
- * simply missing, so writing it closes the row and the control comes back with
- * no edit here.
+ * `unbuilt` means the value is a literal at the call site, or the stage — or
+ * the routing that would carry it — is simply missing, so writing it closes the
+ * row and the control comes back with no edit here.
  *
  * The distinction is *what would have to change*, not "never" versus "later" —
  * the same reading `#/utils/nativeDspEngineGaps` sets out for the Dutch Oven's
@@ -104,14 +125,55 @@ export const GLUTEN_UNRENDERED_PARAMS: readonly string[] = ['peakReduction', 'li
  * `glutenTopologyGating.spec.ts` reds on a structural row that does not.
  */
 export type GlutenTopologyGapParam =
-    | { readonly paramKey: keyof GlutenPatch; readonly kind: 'unbuilt' }
-    | { readonly paramKey: keyof GlutenPatch; readonly kind: 'structural'; readonly note: string };
+    | { readonly paramKey: keyof GlutenPatch; readonly kind: 'unbuilt'; readonly layer: GlutenGapLayer }
+    | {
+          readonly paramKey: keyof GlutenPatch;
+          readonly kind: 'structural';
+          readonly layer: GlutenGapLayer;
+          readonly note: string;
+      };
 
 export type GlutenTopologyGap = {
     readonly topology: GlutenTopology;
     readonly params: readonly GlutenTopologyGapParam[];
     readonly reason: string;
 };
+
+/**
+ * The ten names that configure the detector chain, and are therefore inert on
+ * every topology whose `process_topology` arm takes no sidechain.
+ *
+ * Twelve rendered controls: five knobs (SC HPF, SC LPF, SC EQ, EQ Gain, EQ Q),
+ * four toggles (HPF, LPF, SC EQ, Ext SC) and the three Thrust chips.
+ *
+ * `unbuilt` rather than structural, and gated rather than left live, for the
+ * reason the census file states about `unbuilt` generally: the row deletes
+ * itself the day the other three topologies get a sidechain-aware entry point,
+ * and the weld reds until it does. The routing fix itself is #1564 and is not
+ * in this PR; the gate is, because the two are independent — with Diode in
+ * Stage two all ten go live again on any primary, which is a panel decision the
+ * routing fix would not make for us.
+ */
+const DETECTOR_ROUTED_CONTROLS: readonly (keyof GlutenPatch)[] = [
+    'scHpfFreq',
+    'scHpfEnabled',
+    'scLpfFreq',
+    'scLpfEnabled',
+    'scEqFreq',
+    'scEqGain',
+    'scEqQ',
+    'scEqEnabled',
+    'thrust',
+    'extSidechain',
+];
+
+function detectorRoutingGaps(): GlutenTopologyGapParam[] {
+    return DETECTOR_ROUTED_CONTROLS.map((paramKey) => ({
+        paramKey,
+        kind: 'unbuilt' as const,
+        layer: 'detector-routing' as const,
+    }));
+}
 
 /**
  * Every shared control each topology's struct drops on the floor.
@@ -157,15 +219,15 @@ export type GlutenTopologyGap = {
 export const GLUTEN_TOPOLOGY_GAPS: readonly GlutenTopologyGap[] = [
     {
         topology: 'vca',
-        params: [{ paramKey: 'oversampling', kind: 'unbuilt' }],
+        params: [{ paramKey: 'oversampling', kind: 'unbuilt', layer: 'set-param' }, ...detectorRoutingGaps()],
         reason:
             '`VcaCompressor::set_param` (`vca.rs`) answers to threshold, ratio, attack, release, knee, range, ' +
             'auto_release, vca_character, vca_type and feed_forward — every shared timing and curve control the ' +
             'panel offers. Only `oversampling` is missing, and it is a stage to write rather than a category ' +
             'error: the VCA runs its own k2 waveshaper (`vca_distortion`), so there is aliasing for a higher ' +
             'internal rate to move, and `ConfigurableOversample` already sits in the same module serving the FET ' +
-            'and the diode bridge. VCA is the default topology, so this is the one row a user meets without ' +
-            'touching anything.',
+            'and the diode bridge. VCA is the default topology, so this row and the ten routing rows are what a ' +
+            'user meets without touching anything.',
     },
     {
         topology: 'opto',
@@ -173,34 +235,41 @@ export const GLUTEN_TOPOLOGY_GAPS: readonly GlutenTopologyGap[] = [
             {
                 paramKey: 'ratio',
                 kind: 'structural',
+                layer: 'set-param',
                 note: 'The modelled T4 cell sets its own ratio from how far the signal is over the threshold — about 3:1 rising toward 6:1, or a flat 10:1 in Limit. Compress / Limit in the Character section is the only ratio choice this topology has, the same way an LA-2A has no ratio control.',
             },
             {
                 paramKey: 'attack',
                 kind: 'structural',
+                layer: 'set-param',
                 note: "The attack is the electroluminescent panel's rise time, fixed at about 10 ms. An opto compressor exposes no attack control because there is no component whose speed a knob could set.",
             },
             {
                 paramKey: 'release',
                 kind: 'structural',
+                layer: 'set-param',
                 note: "Release here is the CdS cell's own charge memory — roughly 60 ms, stretching toward 5 s the longer the cell has been working. Programme material sets it, not a knob.",
             },
             {
                 paramKey: 'autoRelease',
                 kind: 'structural',
+                layer: 'set-param',
                 note: "This cell's release is already programme-dependent, so there is no fixed release time for an auto mode to take over.",
             },
             {
                 paramKey: 'knee',
                 kind: 'structural',
+                layer: 'set-param',
                 note: 'This topology has no static gain computer to put a knee on. Its curve comes from the ratio rising with excess, which is a soft knee that never stops widening.',
             },
-            { paramKey: 'range', kind: 'unbuilt' },
+            { paramKey: 'range', kind: 'unbuilt', layer: 'set-param' },
             {
                 paramKey: 'oversampling',
                 kind: 'structural',
+                layer: 'set-param',
                 note: 'The opto path applies its gain reduction as a plain multiply, with no waveshaper anywhere in it, so there is no aliasing for a higher internal rate to move.',
             },
+            ...detectorRoutingGaps(),
         ],
         reason:
             '`OptoCompressor::set_param` (`opto.rs`) answers to threshold, limit_mode and peak_reduction, and to ' +
@@ -209,21 +278,26 @@ export const GLUTEN_TOPOLOGY_GAPS: readonly GlutenTopologyGap[] = [
             'structural, and they are the same five an LA-2A leaves off its front panel: an opto compressor is ' +
             'defined by a cell that chooses its own ratio and its own timing. `range` is the exception — a ' +
             'max-reduction clamp is `apply_range`, which the VCA, FET and diode paths all call and this one does ' +
-            'not, so it is one line rather than a category error.',
+            'not, so it is one line rather than a category error. The other ten rows are the detector-routing ' +
+            'class, which no arm scan can see: this topology has every sidechain arm and reads none of their ' +
+            'output. Seventeen of the panel’s shared controls are inert here in total.',
     },
     {
         topology: 'fet',
         params: [
-            { paramKey: 'knee', kind: 'unbuilt' },
-            { paramKey: 'range', kind: 'unbuilt' },
-            { paramKey: 'autoRelease', kind: 'unbuilt' },
+            { paramKey: 'knee', kind: 'unbuilt', layer: 'set-param' },
+            { paramKey: 'range', kind: 'unbuilt', layer: 'set-param' },
+            { paramKey: 'autoRelease', kind: 'unbuilt', layer: 'set-param' },
+            ...detectorRoutingGaps(),
         ],
         reason:
             '`FetCompressor::set_param` (`fet.rs`) answers to threshold, ratio, attack, release, the five ' +
             'character controls and oversampling. All three gaps are `unbuilt`: `knee` and `range` are *literals* ' +
             'at the call site — `gain_computer(input_db, threshold, effective_ratio, 3.0)` and ' +
             '`apply_range(gc, 60.0)` — so each is one field away from working, and `auto_release` has a real ' +
-            'release time here for an auto mode to steer and simply has no such mode written.',
+            'release time here for an auto mode to steer and simply has no such mode written. The ten ' +
+            'detector-routing rows are the same set the VCA and the opto carry: this topology has every sidechain ' +
+            'arm and reads none of their output.',
     },
     {
         topology: 'diode',
@@ -231,29 +305,121 @@ export const GLUTEN_TOPOLOGY_GAPS: readonly GlutenTopologyGap[] = [
             {
                 paramKey: 'release',
                 kind: 'structural',
+                layer: 'set-param',
                 note: 'Recovery is this topology’s release control. `update_coeffs` recomputes the release coefficient from the Recovery position on every change and overwrites whatever Release last stored, so the five fixed times — 50, 100, 400, 800 and 1500 ms — are the whole range available. That is the 33609’s own five-position recovery switch.',
             },
             {
                 paramKey: 'autoRelease',
                 kind: 'structural',
+                layer: 'set-param',
                 note: 'Release is fixed by the Recovery position here, so there is no free release time for an auto mode to steer.',
             },
-            { paramKey: 'knee', kind: 'unbuilt' },
-            { paramKey: 'range', kind: 'unbuilt' },
+            { paramKey: 'knee', kind: 'unbuilt', layer: 'set-param' },
+            { paramKey: 'range', kind: 'unbuilt', layer: 'set-param' },
         ],
         reason:
             '`DiodeCompressor::set_param` (`diode.rs`) answers to threshold, ratio, attack, recovery, ' +
             'limiter_threshold and oversampling. `release` and `auto_release` are the pair this device was ' +
             'reported for and both are structural — Recovery owns the release time. `knee` and `range` are the ' +
-            'same literals-at-the-call-site shape as the FET, at 4.0 and 40.0.',
+            'same literals-at-the-call-site shape as the FET, at 4.0 and 40.0. No detector-routing rows: this is ' +
+            'the one topology `process_block` hands the filtered detector to, which is why it is also the escape ' +
+            'the other three get through Stage two.',
     },
 ];
+
+/**
+ * A control switched off by *another control's value* rather than by the
+ * topology.
+ *
+ * A third population, and one the arm census is blind to for a different reason
+ * than the routing rows: the name reaches its stage, the stage runs, and the
+ * stage is a no-op because of what some other field is set to. Nothing about
+ * the topology is involved, so these rows are not per-topology.
+ *
+ * ## Which no-ops get a gate, and which do not
+ *
+ * The rule this list follows: **gate a patch-state no-op when nothing else on
+ * the panel already discloses it.** Applied to every case measured:
+ *
+ * - **Link under Dual mono** — gated. The overriding control is a stereo-mode
+ *   chip in a different card, and the relationship (dual mono *is* an unlinked
+ *   detector) is a convention rather than something the labels say.
+ * - **Stage 2 with both stages on one topology** — gated, and the worst of the
+ *   three: `blendTopology` defaults to Opto, so selecting Opto as the primary
+ *   is enough to reach it, and the Stage-two chooser then shows three chips
+ *   with none active above a knob that does nothing.
+ * - **SC EQ frequency and EQ Q at 0 dB gain** — gated. There is no switch to
+ *   read; the disclosure is a number on a third knob, which is exactly why the
+ *   manual has to explain it in prose.
+ * - **The SC EQ / HPF / LPF knobs while their own toggle is off** — *not*
+ *   gated. The toggle sits beside them, is labelled, and already says it.
+ *   Greying a filter's controls when its own enable switch is off adds nothing
+ *   a user cannot see.
+ * - **Match while the device is not bypassed** — *not* gated, and it is the
+ *   one decision here rather than an application of the rule.
+ *   `gain_match_bypass` is read inside `if self.bypassed` and renders `0e0` on
+ *   all four topologies otherwise. Two reasons: the bypass state is not in
+ *   `GlutenPatch` at all — it lives on the Arrangement `Device` — so gating on
+ *   it would mean a panel reading foreign state to grey its own control; and
+ *   Match would then be greyed in the device's *resting* state and live only
+ *   while the user is already listening to bypassed audio, which reads as
+ *   broken rather than as informative. The manual states the behaviour instead.
+ */
+export type GlutenPatchStateGap = {
+    readonly paramKey: keyof GlutenPatch;
+    /** Whether this patch is in the state that makes the control a no-op. */
+    readonly appliesTo: (patch: GlutenPatch) => boolean;
+    /** Why, and what to change to get the control back. Shown to the user. */
+    readonly note: (patch: GlutenPatch) => string;
+};
+
+export const GLUTEN_PATCH_STATE_GAPS: readonly GlutenPatchStateGap[] = [
+    {
+        paramKey: 'stereoLink',
+        appliesTo: (patch) => patch.stereoMode === 'dual-mono',
+        note: () =>
+            'Dual mono is an unlinked detector by definition, so `apply_detector_settings` forces the link to 0 ' +
+            'while it is selected. Choose Stereo, Mid or Side to use Link.',
+    },
+    {
+        paramKey: 'blendAmount',
+        appliesTo: (patch) => patch.blendTopology === patch.topology,
+        note: (patch) =>
+            `Stage two only runs when its topology differs from the primary, and both are ${GLUTEN_TOPOLOGY_LABELS[patch.topology]}. ` +
+            'Pick a different topology in the Stage two section.',
+    },
+    {
+        paramKey: 'scEqFreq',
+        appliesTo: (patch) => patch.scEqGain === 0,
+        note: () =>
+            'The detector’s bell is flat until EQ Gain leaves 0 dB, so there is no bell for this to centre. Set ' +
+            'EQ Gain first.',
+    },
+    {
+        paramKey: 'scEqQ',
+        appliesTo: (patch) => patch.scEqGain === 0,
+        note: () =>
+            'The detector’s bell is flat until EQ Gain leaves 0 dB, so there is no bell for this to widen. Set ' +
+            'EQ Gain first.',
+    },
+];
+
+/**
+ * Why a control is refused, on the axis of *what would have to change*.
+ *
+ * `structural` — the engine's topology; `unbuilt` — DSP or routing somebody has
+ * to write; `overridden` — another control on this same panel, which the user
+ * can move right now. Only the third is something the user can act on, which is
+ * why it is a separate kind rather than folded into the other two, and why its
+ * sentence ends with the move that brings the control back.
+ */
+export type GlutenControlGateKind = 'structural' | 'unbuilt' | 'overridden';
 
 export type GlutenControlGate = {
     readonly isInert: boolean;
     /** `null` exactly when `isInert` is false. */
-    readonly kind: 'structural' | 'unbuilt' | null;
-    /** A full sentence naming the topology and the reason, or null when the control is live. */
+    readonly kind: GlutenControlGateKind | null;
+    /** A full sentence naming the reason, or null when the control is live. */
     readonly explanation: string | null;
 };
 
@@ -288,7 +454,7 @@ function findGap(topology: GlutenTopology, paramKey: keyof GlutenPatch): GlutenT
  * `patch.topology` alone — which is what the issue proposed — would grey out a
  * control the user can hear.
  */
-function blendStage(patch: GlutenPatch): GlutenTopology | null {
+export function glutenBlendStage(patch: GlutenPatch): GlutenTopology | null {
     if (patch.blendAmount > BLEND_ENGAGED_THRESHOLD && patch.blendTopology !== patch.topology) {
         return patch.blendTopology;
     }
@@ -327,10 +493,25 @@ function explain({
     blend: GlutenTopology | null;
 }): string {
     let where = `the ${GLUTEN_TOPOLOGY_LABELS[primary]} topology`;
+    let stages = `The ${GLUTEN_TOPOLOGY_LABELS[primary]} topology does not — it derives`;
     if (blend !== null) {
         where = `${where}, or to the ${GLUTEN_TOPOLOGY_LABELS[blend]} stage behind it`;
+        stages =
+            `Neither the ${GLUTEN_TOPOLOGY_LABELS[primary]} topology nor the ` +
+            `${GLUTEN_TOPOLOGY_LABELS[blend]} stage behind it does — each derives`;
     }
 
+    if (gap.layer === 'detector-routing') {
+        // Distinct wording from the other `unbuilt` rows on purpose: this
+        // control *is* built and does shape the detector — it is the topology
+        // that has no way to read the filtered detector yet. Telling a user
+        // "SC HPF is not implemented" would send them looking for the wrong
+        // thing, and the way back here is a move they can make now.
+        return (
+            `${controlLabel} shapes the detector, and only the Diode topology reads the filtered detector yet. ` +
+            `${stages} its own detector from the audio path. Select Diode, or run it in Stage two, to use this.`
+        );
+    }
     if (gap.kind === 'structural') {
         return `${controlLabel} does not apply to ${where}. ${gap.note}`;
     }
@@ -345,31 +526,44 @@ export type GlutenControlGateInput = {
 };
 
 /**
- * Resolve one panel control against the topology census.
+ * Resolve one panel control against all three censuses.
  *
  * A control is inert only when **no live stage** answers to it and nothing
  * outside the topologies reads it either. Anything short of that leaves the
  * control alone: the cost of a wrongly-greyed control is a user who cannot
  * reach a parameter that works, which is worse than the defect being fixed.
+ *
+ * Order matters where two reasons are true at once. The topology census is
+ * asked first because it is the deeper fact: on the VCA, EQ Q is inert whatever
+ * the EQ Gain is, and telling the user to set the gain would send them to a
+ * control that changes nothing either. On the Diode, where the detector chain
+ * is live, the same knob falls through to the patch-state reason, which is the
+ * one they can act on.
  */
 export function glutenControlGate({ patch, paramKey, controlLabel }: GlutenControlGateInput): GlutenControlGate {
     if (hasNonTopologyConsumer(patch, paramKey)) {
         return LIVE;
     }
 
+    const blend = glutenBlendStage(patch);
     const primaryGap = findGap(patch.topology, paramKey);
-    if (primaryGap === null) {
-        return LIVE;
+    const blendHearsIt = blend !== null && findGap(blend, paramKey) === null;
+    if (primaryGap !== null && !blendHearsIt) {
+        return {
+            isInert: true,
+            kind: primaryGap.kind,
+            explanation: explain({ gap: primaryGap, controlLabel, primary: patch.topology, blend }),
+        };
     }
 
-    const blend = blendStage(patch);
-    if (blend !== null && findGap(blend, paramKey) === null) {
-        return LIVE;
+    const patchStateGap = GLUTEN_PATCH_STATE_GAPS.find((gap) => gap.paramKey === paramKey);
+    if (patchStateGap !== undefined && patchStateGap.appliesTo(patch)) {
+        return {
+            isInert: true,
+            kind: 'overridden',
+            explanation: `${controlLabel} does nothing on this patch. ${patchStateGap.note(patch)}`,
+        };
     }
 
-    return {
-        isInert: true,
-        kind: primaryGap.kind,
-        explanation: explain({ gap: primaryGap, controlLabel, primary: patch.topology, blend }),
-    };
+    return LIVE;
 }
