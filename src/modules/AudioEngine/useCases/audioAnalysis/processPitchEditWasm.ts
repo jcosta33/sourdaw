@@ -3,6 +3,12 @@ import { commit_pitch_edit_wasm } from '../../wasm/daw_dsp.js';
 
 import type { PitchContour, PitchSegment } from './analyzePitchForClip';
 
+// `commit_pitch_edit_wasm` shares the same wasm-bindgen glue as
+// `analyze_pitch_wasm`. This function is synchronous, so it cannot await the
+// main-thread init itself; it relies on `analyzePitchForClip` having run first
+// in the same realm (analysis always precedes an edit) to have initialized the
+// glue singleton via `ensureMainThreadWasmInit`. Reordering the two so an edit
+// can precede analysis would need this call to become async and await that init.
 export function processPitchEditWasm(
     originalBuffer: AudioBuffer,
     segments: PitchSegment[],

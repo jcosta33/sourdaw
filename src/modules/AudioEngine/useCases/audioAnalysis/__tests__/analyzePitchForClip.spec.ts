@@ -22,7 +22,14 @@ vi.mock('../../../stores/audioBufferCache', () => ({
     },
 }));
 
+// The default export is the wasm-bindgen main-thread init (`__wbg_init`). It
+// MUST be invoked before `analyze_pitch_wasm` reads the glue — otherwise the
+// glue singleton is uninitialized and the call throws
+// `Cannot read properties of undefined (reading '__wbindgen_free')`.
+const { initModule } = vi.hoisted(() => ({ initModule: vi.fn().mockResolvedValue(undefined) }));
 vi.mock('#/modules/AudioEngine/wasm/daw_dsp.js', () => ({
+    __esmodule: true,
+    default: initModule,
     analyze_pitch_wasm: vi.fn(),
 }));
 
@@ -158,6 +165,11 @@ describe('analyzePitchForClip', () => {
         });
         expect(analyzeNativePitch).not.toHaveBeenCalled();
         expect(analyze_pitch_wasm).toHaveBeenCalled();
+        // Regression: the daw_dsp wasm-bindgen module must be initialized on
+        // the main thread before analyze_pitch_wasm reads its glue. Without it
+        // the call threw `Cannot read properties of undefined (reading
+        // '__wbindgen_free')` on every browser-side Knead analysis.
+        expect(initModule).toHaveBeenCalled();
         expect(result).toEqual({ status: 'analyzed', contour: mockContour });
         expect(onProgress).toHaveBeenNthCalledWith(1, 0.2);
         expect(onProgress).toHaveBeenNthCalledWith(2, 0.5);
