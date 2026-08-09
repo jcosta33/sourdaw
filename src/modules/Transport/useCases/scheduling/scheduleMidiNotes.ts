@@ -1,9 +1,5 @@
 import { trackStore } from '#/modules/Arrangement/stores';
-import {
-    getSynthParamsForTrack,
-    projectClipLoopExpansion,
-    resolveClipsWithComping,
-} from '#/modules/Arrangement/useCases';
+import { getSynthParamsForTrack, resolveClipsWithComping } from '#/modules/Arrangement/useCases';
 import {
     applyNoteExpression,
     ensureTrackStrip,
@@ -27,6 +23,7 @@ import {
 import { isFaustInstrumentModule } from '#/modules/PluginHost/useCases';
 import { scheduleDrumKitNote, scheduleKitNote, scheduleNote } from '#/modules/Synth/useCases';
 import { toasterStore } from '#/modules/Toaster/stores';
+import { projectClipLoopExpansion } from '#/utils/clipLoopProjection';
 import { resolveToasterPadIndex, TOASTER_NEUTRAL_MIDI_NOTE } from '#/utils/toasterNoteProjection';
 import { getToasterSwingOffsetBeats } from '#/utils/toasterSwingProjection';
 

@@ -1,7 +1,19 @@
-import { projectClipLoopExpansion } from '../../useCases/clipLoop/projectClipLoopExpansion';
+import { transportStore } from '#/modules/Transport/stores';
+import { projectClipLoopExpansion } from '#/utils/clipLoopProjection';
+
 import { getTrackStoreState } from '../../useCases/getTrackStoreState';
 
 export type ClipLoopLengthState = { present: boolean; value: number };
+
+// Read the transport through its store, not through `#/modules/Transport/useCases`. That barrel
+// pulls in `getTransportHandlers`, and a clip handler reaching it closes an
+// Arrangement -> Transport -> Collaboration -> CrdtDocument -> Yeast -> MIDI -> AudioEngine ->
+// Arrangement cycle (293 no-circular rows). `getTransportState()` is itself only
+// `transportStore.value`.
+export function transportIsBusy(): boolean {
+    const transport = transportStore.value;
+    return transport?.isPlaying === true || transport?.isRecording === true;
+}
 
 export function findClipForLoopLength(clipId: string) {
     return getTrackStoreState()

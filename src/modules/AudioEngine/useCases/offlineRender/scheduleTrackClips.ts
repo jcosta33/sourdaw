@@ -1,5 +1,4 @@
 import { takeLaneStore, type Track } from '#/modules/Arrangement/stores';
-import { projectClipLoopExpansion } from '#/modules/Arrangement/useCases';
 import { automationStore } from '#/modules/Automation/stores';
 import { type MidiStoreState } from '#/modules/MIDI/stores';
 import {
@@ -11,6 +10,7 @@ import {
 } from '#/modules/Synth/useCases';
 import { defaultTransportState, type TempoMapStoreState, transportStore } from '#/modules/Transport/stores';
 import { automationSlewTickSecondsForGrain } from '#/utils/automationSlew';
+import { projectClipLoopExpansion } from '#/utils/clipLoopProjection';
 import { resolveToasterPadIndex, TOASTER_NEUTRAL_MIDI_NOTE } from '#/utils/toasterNoteProjection';
 import { getToasterSwingOffsetBeats } from '#/utils/toasterSwingProjection';
 

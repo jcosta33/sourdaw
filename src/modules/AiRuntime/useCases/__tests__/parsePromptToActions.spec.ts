@@ -79,6 +79,14 @@ vi.mock('../../transformers/llmActionBridge', async () => {
     };
 });
 
+// 26 tests below call `vi.importActual` on the real bridge. Transforming that module graph takes
+// several seconds and the first caller pays all of it — which used to land inside a 5000 ms test
+// budget purely by execution order. Warm it once here, at module scope, where no test timeout
+// applies; the in-test calls then hit the transform cache.
+await vi.importActual<typeof import('../agentReference/bridgeGroundedLlmToolCalls')>(
+    '../agentReference/bridgeGroundedLlmToolCalls'
+);
+
 const baseContext: ProjectContext = {
     tempo: 120,
     timeSignature: [4, 4],
