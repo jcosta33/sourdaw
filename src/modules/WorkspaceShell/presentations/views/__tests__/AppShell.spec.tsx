@@ -49,11 +49,19 @@ vi.mock('../TransportBar', () => ({
     TransportBar: () => <div data-testid="transport-bar">TransportBar</div>,
 }));
 
-vi.mock('#/modules/ContentBrowser/presentations/views', () => ({
+// Every cross-module barrel mock below spreads `importOriginal` first and then
+// overrides only the views this shell test actually stubs. An exhaustive factory
+// (keys listed by hand, no spread) silently resolves any export added to the
+// barrel later to `undefined`, so the next view added to one of these modules
+// would red every render here — a failure in WorkspaceShell for a diff that
+// never touched it. See #1393.
+vi.mock('#/modules/ContentBrowser/presentations/views', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/ContentBrowser/presentations/views')>()),
     Sidebar: () => <div data-testid="sidebar">Sidebar</div>,
 }));
 
-vi.mock('#/modules/MixerConsole/presentations/views', () => ({
+vi.mock('#/modules/MixerConsole/presentations/views', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/MixerConsole/presentations/views')>()),
     MixerPanel: () => <div data-testid="mixer-panel">Mixer</div>,
 }));
 
@@ -64,32 +72,43 @@ vi.mock('#/modules/TimelineEditor/presentations/views', async (importOriginal) =
     InspectorPanel: () => <div data-testid="inspector-panel">Inspector</div>,
 }));
 
-vi.mock('#/modules/Preferences/presentations/views', () => ({
+vi.mock('#/modules/Preferences/presentations/views', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Preferences/presentations/views')>()),
     PreferencesDialog: () => <div data-testid="preferences-dialog">Preferences</div>,
 }));
 
-vi.mock('#/modules/ElasticAudio/presentations/views', () => ({
+vi.mock('#/modules/ElasticAudio/presentations/views', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/ElasticAudio/presentations/views')>()),
     ElasticEditorPanel: elasticEditorPanelMock,
 }));
 
-vi.mock('#/modules/Routing/presentations/views', () => ({
+vi.mock('#/modules/Routing/presentations/views', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Routing/presentations/views')>()),
     RoutingMatrix: () => <div data-testid="routing-matrix">Routing</div>,
 }));
 
-vi.mock('#/modules/SessionLauncher/presentations/views', () => ({
+vi.mock('#/modules/SessionLauncher/presentations/views', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/SessionLauncher/presentations/views')>()),
     LoopStationPanel: () => <div data-testid="loop-station-panel">LoopStation</div>,
     SessionView: () => <div data-testid="session-view">Session</div>,
 }));
 
-vi.mock('#/modules/Setlist/presentations/views', () => ({
+vi.mock('#/modules/Setlist/presentations/views', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Setlist/presentations/views')>()),
     SetlistPanel: () => <div data-testid="setlist-panel">Setlist</div>,
 }));
 
-vi.mock('#/modules/Metering/presentations/views', () => ({
+// Spread, like every other barrel in this file. `Metering` is reached twice over
+// through the spread-mocked `TimelineEditor` barrel — `MasterVisualizationsSection`
+// wants eight of its views and `MixerLevelReadout` wants `LevelMeter` — none of
+// which an exhaustive factory here would supply.
+vi.mock('#/modules/Metering/presentations/views', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Metering/presentations/views')>()),
     AnalysisPanel: () => <div data-testid="analysis-panel">Analysis</div>,
 }));
 
-vi.mock('#/modules/Automation/presentations/views', () => ({
+vi.mock('#/modules/Automation/presentations/views', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Automation/presentations/views')>()),
     ModulationMatrix: () => <div data-testid="modulation-matrix">Modulation</div>,
 }));
 
@@ -103,7 +122,8 @@ vi.mock('#/modules/Project/presentations/views', async (importOriginal) => ({
     RecentProjectsMenu: () => <div data-testid="recent-projects">Recent Projects</div>,
 }));
 
-vi.mock('#/modules/Collaboration/presentations/views', () => ({
+vi.mock('#/modules/Collaboration/presentations/views', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Collaboration/presentations/views')>()),
     CollaborationPanel: () => <div data-testid="collab-panel">Collaboration</div>,
     PresenceOverlay: () => <div data-testid="presence-overlay">PresenceOverlay</div>,
 }));
