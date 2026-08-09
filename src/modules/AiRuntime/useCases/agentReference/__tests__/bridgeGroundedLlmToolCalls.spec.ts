@@ -735,6 +735,25 @@ function createGlueClipContext(): ProjectContext {
     };
 }
 
+function createTwoGluePairContext(): ProjectContext {
+    const context = createGlueClipContext();
+    const track = context.tracks.find((candidate) => candidate.id === 'track-vocals')!;
+    const intro = track.clips.find((clip) => clip.id === 'clip-midi-intro')!;
+    const verse = track.clips.find((clip) => clip.id === 'clip-midi-verse')!;
+    const outro = track.clips.find((clip) => clip.id === 'clip-midi-outro')!;
+    const coda = { ...outro, id: 'clip-midi-coda', name: 'MIDI Coda', startBeat: 24, endBeat: 32 };
+    return {
+        ...context,
+        glueEligibleClipPairs: [
+            [intro.id, verse.id],
+            [outro.id, coda.id],
+        ],
+        tracks: context.tracks.map((candidate) =>
+            candidate.id === track.id ? { ...candidate, clipCount: 4, clips: [...track.clips, coda] } : candidate
+        ),
+    };
+}
+
 describe('bridgeGroundedLlmToolCalls', () => {
     it('grounds reversible clip-state commands and binds both fade values by name', () => {
         const context = createClipContext();
@@ -1026,6 +1045,29 @@ describe('bridgeGroundedLlmToolCalls', () => {
         expect(result.rejections).toEqual([]);
     });
 
+    it('grounds a quoted glue target named Actually Dont without treating its name as cancellation', () => {
+        const context = createGlueClipContext();
+        const namedTargetContext = {
+            ...context,
+            tracks: context.tracks.map((track) => ({
+                ...track,
+                clips: track.clips.map((clip) =>
+                    clip.id === 'clip-midi-intro' ? { ...clip, name: 'Actually Dont' } : clip
+                ),
+            })),
+        };
+        const result = bridge(
+            [{ name: 'glueClips', arguments: { clipIds: ['clip-midi-intro', 'clip-midi-verse'] } }],
+            'glue "Actually Dont" and MIDI Verse clips',
+            namedTargetContext
+        );
+
+        expect(result.actions).toEqual([
+            { type: 'glueClips', payload: { clipIds: ['clip-midi-intro', 'clip-midi-verse'] } },
+        ]);
+        expect(result.rejections).toEqual([]);
+    });
+
     it('grounds exactly two selected clips and rejects selected sets with the wrong cardinality', () => {
         const context = createGlueClipContext();
         const accepted = bridge(
@@ -1118,6 +1160,80 @@ describe('bridgeGroundedLlmToolCalls', () => {
         );
 
         expect(results.every((result) => result.actions.length === 0)).toBe(true);
+    });
+
+    it('binds pronoun cancellation only to the immediately preceding glue action', () => {
+        const context = createTwoGluePairContext();
+        const calls = [
+            { name: 'glueClips', arguments: { clipIds: ['clip-midi-intro', 'clip-midi-verse'] } },
+            { name: 'glueClips', arguments: { clipIds: ['clip-midi-outro', 'clip-midi-coda'] } },
+        ];
+        const firstCancelled = bridge(
+            calls,
+            "glue MIDI Intro and MIDI Verse clips, but don't glue them thanks, then glue MIDI Outro and MIDI Coda clips",
+            context
+        );
+        const secondCancelled = bridge(
+            calls,
+            'glue MIDI Intro and MIDI Verse clips, then glue MIDI Outro and MIDI Coda clips, but do not glue the clips after all',
+            context
+        );
+
+        expect(firstCancelled.actions).toEqual([
+            { type: 'glueClips', payload: { clipIds: ['clip-midi-outro', 'clip-midi-coda'] } },
+        ]);
+        expect(secondCancelled.actions).toEqual([
+            { type: 'glueClips', payload: { clipIds: ['clip-midi-intro', 'clip-midi-verse'] } },
+        ]);
+    });
+
+    it('requires an adjacent explicit cancellation pair to match that provider-grounded glue action', () => {
+        const context = createTwoGluePairContext();
+        const calls = [
+            { name: 'glueClips', arguments: { clipIds: ['clip-midi-intro', 'clip-midi-verse'] } },
+            { name: 'glueClips', arguments: { clipIds: ['clip-midi-outro', 'clip-midi-coda'] } },
+        ];
+        const matchingPair = bridge(
+            calls,
+            "glue MIDI Intro and MIDI Verse clips, but don't glue MIDI Intro and MIDI Verse thanks, then glue MIDI Outro and MIDI Coda clips",
+            context
+        );
+        const nonAdjacentPair = bridge(
+            calls,
+            "glue MIDI Intro and MIDI Verse clips, but don't glue MIDI Outro and MIDI Coda after all, then glue MIDI Outro and MIDI Coda clips",
+            context
+        );
+        const secondMatchingPair = bridge(
+            calls,
+            "glue MIDI Intro and MIDI Verse clips, then glue MIDI Outro and MIDI Coda clips, but don't glue MIDI Outro and MIDI Coda after all",
+            context
+        );
+
+        expect(matchingPair.actions).toEqual([
+            { type: 'glueClips', payload: { clipIds: ['clip-midi-outro', 'clip-midi-coda'] } },
+        ]);
+        expect(nonAdjacentPair.actions).toEqual([
+            { type: 'glueClips', payload: { clipIds: ['clip-midi-intro', 'clip-midi-verse'] } },
+            { type: 'glueClips', payload: { clipIds: ['clip-midi-outro', 'clip-midi-coda'] } },
+        ]);
+        expect(secondMatchingPair.actions).toEqual([
+            { type: 'glueClips', payload: { clipIds: ['clip-midi-intro', 'clip-midi-verse'] } },
+        ]);
+    });
+
+    it('keeps quoted rename values inert to glue-specific cancellation wording', () => {
+        const context = createClipContext();
+        const names = ['Keep Them Separate', 'Without Changes'];
+
+        for (const name of names) {
+            const result = bridge(
+                [{ name: 'renameClip', arguments: { clipId: 'clip-intro', name } }],
+                `rename Intro clip to "${name}"`,
+                context
+            );
+            expect.soft(result.actions).toEqual([{ type: 'renameClip', payload: { clipId: 'clip-intro', name } }]);
+            expect.soft(result.rejections).toEqual([]);
+        }
     });
 
     it('grounds an explicit clip stretch ratio without allowing provider invention or omission', () => {

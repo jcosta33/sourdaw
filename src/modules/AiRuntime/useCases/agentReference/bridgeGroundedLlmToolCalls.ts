@@ -42,7 +42,9 @@ type GroundToolCallInput = {
 };
 
 type PromptClause = {
+    end: number;
     masked: string;
+    start: number;
     text: string;
 };
 
@@ -427,11 +429,9 @@ type CancellationCue = {
 
 function getCancellationCues(text: string): CancellationCue[] {
     const patterns = [
-        /\b(?:never mind|on second thought|actually\s*,?\s+(?:no|don['’]?t|don t|dont))\b/gu,
-        /\b(?:abort|cancel|disregard|scratch)\s+(?:it\b|them\b|(?:that|this)\b(?!\s+\p{L})|(?:the|that|this)\s+(?:\p{L}+\s+){0,2}(?:change|command|request)\b)/gu,
-        /\bleave\s+(?:(?:it|them|that|this)\s+)?unchanged\b/gu,
-        /\bkeep\s+(?:(?:it|them|that|this)\s+)?separate\b/gu,
-        /\bwithout\s+(?:(?:making|applying)\s+(?:any\s+)?changes?|changing\s+(?:anything|it|them))\b/gu,
+        /\b(?:never mind|on second thought|actually\s*,?\s+no)\b/gu,
+        /\b(?:abort|cancel|disregard|scratch)\s+(?:it\b|(?:that|this)\b(?!\s+\p{L})|(?:the|that|this)\s+(?:\p{L}+\s+){0,2}(?:change|command|request)\b)/gu,
+        /\bleave\s+(?:(?:it|that|this)\s+)?unchanged\b/gu,
         /\b(?:do not|don['’]t|don t|dont|never|not)\b(?:\s+\p{L}+){0,3}\s+(?:apply|change|do|execute|make)\s+(?:it\b|(?:that|this)\b(?!\s+\p{L})|(?:the|that|this)\s+(?:\p{L}+\s+){0,2}(?:change|command|request)\b)/gu,
     ];
     return patterns.flatMap((pattern) =>
@@ -896,12 +896,17 @@ function getPromptClauses(prompt: string, maskedPrompt: string): PromptClause[] 
             continue;
         }
         if (prompt.slice(start, match.index).trim().length > 0) {
-            clauses.push({ text: prompt.slice(start, match.index), masked: maskedPrompt.slice(start, match.index) });
+            clauses.push({
+                end: match.index,
+                masked: maskedPrompt.slice(start, match.index),
+                start,
+                text: prompt.slice(start, match.index),
+            });
         }
         start = separatorEnd;
     }
     if (prompt.slice(start).trim().length > 0) {
-        clauses.push({ text: prompt.slice(start), masked: maskedPrompt.slice(start) });
+        clauses.push({ end: prompt.length, masked: maskedPrompt.slice(start), start, text: prompt.slice(start) });
     }
     return clauses;
 }
@@ -1236,9 +1241,11 @@ function resolveActionPromptScope({
     sameActionCallCount,
 }: ResolveActionPromptScopeInput): ActionPromptScope | null {
     const groundingRules = getExecutableAppActionGroundingRules(actionName);
+    const hasSharedCancellation =
+        actionName !== 'glueClips' && hasTrailingIntentCancellation(prompt, actionName, catalog, plannedActionNames);
     if (
         !groundingRules ||
-        hasTrailingIntentCancellation(prompt, actionName, catalog, plannedActionNames) ||
+        hasSharedCancellation ||
         (actionName === 'setClipFade' && hasInvalidNamedClipFadeField(prompt))
     ) {
         return null;
@@ -1247,7 +1254,7 @@ function resolveActionPromptScope({
         groundingRules.targetRules.length === 0 ? prompt : maskProjectReferences(prompt, context);
     let actionMaskedPrompt = projectMaskedPrompt;
     if (actionName === 'glueClips') {
-        actionMaskedPrompt = restoreLeadingGlueIntent({ maskedPrompt: projectMaskedPrompt, prompt });
+        actionMaskedPrompt = restoreLeadingGlueIntents({ maskedPrompt: projectMaskedPrompt, prompt });
     }
     let maskedPrompt = maskQuotedLabels(actionMaskedPrompt);
     if (actionName === 'glueClips') {
@@ -1381,21 +1388,49 @@ type PreserveLeadingGlueIntentInput = {
     prompt: string;
 };
 
-function stripPoliteGlueCommandCarrier(text: string): string {
-    let commandSource = text.trim();
-    commandSource = commandSource.replace(/^(?:please\s+)?(?:can|could|would)\s+you(?:\s+please)?\s+/iu, '');
-    return commandSource.replace(/^please\s+/iu, '');
+type GlueCommandSource = {
+    start: number;
+    text: string;
+};
+
+function getGlueCommandSource(text: string): GlueCommandSource {
+    const firstNonWhitespace = text.search(/\S/u);
+    if (firstNonWhitespace < 0) {
+        return { start: text.length, text: '' };
+    }
+    let start = firstNonWhitespace;
+    let commandSource = text.slice(start);
+    const questionCarrier = /^(?:please\s+)?(?:can|could|would)\s+you(?:\s+please)?\s+/iu.exec(commandSource);
+    if (questionCarrier) {
+        start += questionCarrier[0].length;
+        commandSource = commandSource.slice(questionCarrier[0].length);
+    }
+    const pleaseCarrier = /^please\s+/iu.exec(commandSource);
+    if (pleaseCarrier) {
+        start += pleaseCarrier[0].length;
+        commandSource = commandSource.slice(pleaseCarrier[0].length);
+    }
+    return { start, text: commandSource.trimEnd() };
 }
 
-function restoreLeadingGlueIntent({ maskedPrompt, prompt }: PreserveLeadingGlueIntentInput): string {
-    const commandSource = stripPoliteGlueCommandCarrier(prompt);
-    const intent = /^(?:glue|join)\b/iu.exec(commandSource);
-    if (!intent) {
-        return maskedPrompt;
+function stripPoliteGlueCommandCarrier(text: string): string {
+    return getGlueCommandSource(text).text;
+}
+
+function restoreLeadingGlueIntents({ maskedPrompt, prompt }: PreserveLeadingGlueIntentInput): string {
+    let restoredPrompt = maskedPrompt;
+    const clauseMaskedPrompt = maskGlueClipPairConjunction(maskedPrompt);
+    for (const clause of getPromptClauses(prompt, clauseMaskedPrompt)) {
+        const commandSource = getGlueCommandSource(clause.text);
+        const intent = /^(?:glue|join)\b/iu.exec(commandSource.text);
+        if (!intent) {
+            continue;
+        }
+        const intentStart = clause.start + commandSource.start;
+        const intentEnd = intentStart + intent[0].length;
+        restoredPrompt = `${restoredPrompt.slice(0, intentStart)}${intent[0]}${restoredPrompt.slice(intentEnd)}`;
     }
-    const intentStart = prompt.indexOf(commandSource);
-    const intentEnd = intentStart + intent[0].length;
-    return `${maskedPrompt.slice(0, intentStart)}${intent[0]}${maskedPrompt.slice(intentEnd)}`;
+    return restoredPrompt;
 }
 
 function getGlueClipPairTargetPattern(assertedClipIds: unknown, context: ProjectContext): string | null {
@@ -1457,36 +1492,88 @@ function getDirectGlueTargetPromptScope(actionScope: ActionPromptScope): string 
     return commandSource.replace(/^(?:glue|join)\b/iu, '').trim();
 }
 
-type HasTrailingGlueCancellationInput = {
+type HasGlueCancellationInput = {
     actionScope: ActionPromptScope;
     assertedClipIds: unknown;
     context: ProjectContext;
     prompt: string;
 };
 
-function hasTrailingGlueCancellation({
-    actionScope,
-    assertedClipIds,
-    context,
-    prompt,
-}: HasTrailingGlueCancellationInput): boolean {
-    const actionScopeStart = prompt.indexOf(actionScope.text);
-    if (actionScopeStart < 0) {
+function maskQuotedGlueCancellationText(text: string): string {
+    return text.replaceAll(/"[^"]*"|“[^”]*”|‘[^’]*’|(?<![\p{L}\p{N}])'[^']*'/gu, (label) => ' '.repeat(label.length));
+}
+
+function hasLeadingSharedCancellationCue(text: string): boolean {
+    const searchableText = text.toLocaleLowerCase();
+    return getCancellationCues(searchableText).some((cue) => {
+        const prefix = normalizePromptText(searchableText.slice(0, cue.index));
+        return prefix === '' || prefix === 'but' || prefix === 'please' || prefix === 'but please';
+    });
+}
+
+function isGlueCancellationClause(text: string, targetPattern: string): boolean {
+    if (/^["'“‘]/u.test(text.trimStart())) {
         return false;
     }
-    const trailingText = normalizePromptText(prompt.slice(actionScopeStart + actionScope.text.length));
-    if (trailingText.length === 0) {
-        return false;
+    const politeTail = '(?: (?:please|thanks|after all))*';
+    const normalizedText = normalizePromptText(text);
+    const explicitCancellation = new RegExp(
+        `^(?:but )?(?:actually )?(?:do not|don t|dont|never) (?:glue|join) (?:them|the clips|${targetPattern})${politeTail}$`,
+        'u'
+    );
+    if (explicitCancellation.test(normalizedText)) {
+        return true;
     }
+    const quoteMaskedText = maskQuotedGlueCancellationText(text);
+    if (hasLeadingSharedCancellationCue(quoteMaskedText)) {
+        return true;
+    }
+    const normalizedQuoteMaskedText = normalizePromptText(quoteMaskedText);
+    const glueSpecificCancellations = [
+        new RegExp(`^(?:but )?actually (?:do not|don t|dont)${politeTail}$`, 'u'),
+        new RegExp(`^(?:but )?keep (?:them|the clips) separate${politeTail}$`, 'u'),
+        new RegExp(`^(?:but )?leave (?:them|the clips) unchanged${politeTail}$`, 'u'),
+        new RegExp(
+            `^(?:but )?without (?:(?:making|applying) (?:any )?changes?|changing (?:anything|it|them)|changes?)${politeTail}$`,
+            'u'
+        ),
+        new RegExp(`^(?:but )?(?:abort|cancel|disregard|scratch) them${politeTail}$`, 'u'),
+    ];
+    return glueSpecificCancellations.some((pattern) => pattern.test(normalizedQuoteMaskedText));
+}
+
+function getInlineGlueCancellationText(actionScope: ActionPromptScope, targetPattern: string): string | null {
+    const commandText = normalizePromptText(stripPoliteGlueCommandCarrier(actionScope.text));
+    const match = new RegExp(`^(?:glue|join) ${targetPattern}(?: (.+))?$`, 'u').exec(commandText);
+    return match?.[1] ?? null;
+}
+
+function getImmediateTrailingGlueClause(
+    actionScope: ActionPromptScope,
+    prompt: string,
+    context: ProjectContext
+): string | null {
+    const trailingPrompt = prompt.slice(actionScope.end);
+    if (trailingPrompt.trim().length === 0) {
+        return null;
+    }
+    const projectMaskedPrompt = maskProjectReferences(trailingPrompt, context);
+    const quotedMaskedPrompt = maskQuotedLabels(projectMaskedPrompt);
+    const pairMaskedPrompt = maskGlueClipPairConjunction(quotedMaskedPrompt);
+    return getPromptClauses(trailingPrompt, pairMaskedPrompt)[0]?.text ?? null;
+}
+
+function hasGlueCancellation({ actionScope, assertedClipIds, context, prompt }: HasGlueCancellationInput): boolean {
     const targetPattern = getGlueClipPairTargetPattern(assertedClipIds, context);
     if (!targetPattern) {
         return false;
     }
-    const cancellationPattern = new RegExp(
-        `\\b(?:do not|don t|dont|never) (?:glue|join) (?:them|the clips|${targetPattern})$`,
-        'u'
-    );
-    return cancellationPattern.test(trailingText);
+    const inlineCancellation = getInlineGlueCancellationText(actionScope, targetPattern);
+    if (inlineCancellation && isGlueCancellationClause(inlineCancellation, targetPattern)) {
+        return true;
+    }
+    const trailingClause = getImmediateTrailingGlueClause(actionScope, prompt, context);
+    return trailingClause ? isGlueCancellationClause(trailingClause, targetPattern) : false;
 }
 
 function getAddClipPromptEvidence(actionScope: ActionPromptScope): AddClipPromptEvidence | null {
@@ -3055,7 +3142,7 @@ function groundToolCall({
     }
     if (call.name === 'glueClips') {
         if (
-            hasTrailingGlueCancellation({
+            hasGlueCancellation({
                 actionScope,
                 assertedClipIds: groundedArguments.clipIds,
                 context,
