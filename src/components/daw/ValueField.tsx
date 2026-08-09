@@ -146,6 +146,32 @@ export const ValueField = ({
 
     useLayoutEffect(() => {
         finalizeDragRef.current = finalizeDrag;
+
+        /**
+         * A drag already in flight when `readOnly` flips true has to be dropped,
+         * not merely stopped from starting. `handlePointerDown`, `handleKeyDown`
+         * and `handleDoubleClick` guard the *entry* points, and the move / up
+         * handlers work off refs, so without this a field that became read-only
+         * mid-gesture kept scrubbing and still committed on release — measured
+         * as `onChange(140)` from the lift with `aria-readonly="true"` already
+         * on the element.
+         *
+         * `readOnly` is reachable mid-drag in ordinary use: the playhead
+         * crossing into a tempo ramp during playback locks the tempo field under
+         * the user's finger.
+         *
+         * Routing through `finalizeDrag` rather than guarding `handlePointerUp`
+         * is the difference between aborting the gesture and silently dropping
+         * its result. Guarding the lift alone would leave the readout tracking a
+         * finger whose movement can no longer land anywhere, then swallow the
+         * commit with no feedback. The finalizer reverts the readout, hands the
+         * capture back, and clears the owner ref — the same treatment
+         * `pointercancel`, lost capture, blur and tab-hide already get, and what
+         * `RotaryKnob` does when `disabled` flips mid-drag.
+         */
+        if (readOnly && draggingRef.current) {
+            finalizeDrag();
+        }
     });
 
     // A drag interrupted by a window or tab switch never sees `pointerup`.

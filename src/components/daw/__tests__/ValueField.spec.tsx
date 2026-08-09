@@ -552,4 +552,133 @@ describe('ValueField', () => {
             expect(calls).toEqual(['set:52', 'set:53']);
         });
     });
+
+    /**
+     * `readOnly` turning true under a finger that is already dragging. Reachable
+     * in normal use: the playhead crossing into a tempo ramp during playback
+     * locks the tempo field mid-gesture.
+     *
+     * `handlePointerDown` refuses to *start* a drag on a read-only field, but
+     * before this the move and up handlers never re-read `readOnly`, so a drag
+     * already in flight kept scrubbing and still committed on release. These
+     * assert the abort — no write, readout reverted, capture handed back — not
+     * merely a dropped commit, which would leave the readout moving under a
+     * gesture that can no longer do anything.
+     */
+    describe('a drag interrupted by the field turning read-only', () => {
+        it('should discard the pending value rather than commit it on release', () => {
+            const onChange = vi.fn();
+            const { rerender } = render(
+                <ValueField value={0} onChange={onChange} commitMode="release" min={-100} max={100} step={1} />
+            );
+            const field = screen.getByRole('spinbutton');
+
+            fireEvent.pointerDown(field, { button: 0, pointerId: 61, clientY: 100 });
+            fireEvent.pointerMove(field, { pointerId: 61, clientY: 80 });
+            expect(field).toHaveAttribute('aria-valuetext', '10');
+
+            rerender(
+                <ValueField
+                    value={0}
+                    onChange={onChange}
+                    commitMode="release"
+                    min={-100}
+                    max={100}
+                    step={1}
+                    readOnly
+                />
+            );
+
+            // The readout snaps back to the real value: an aborted gesture must
+            // not leave the field showing a number nothing holds.
+            expect(field).toHaveAttribute('aria-valuetext', '0');
+
+            fireEvent.pointerMove(field, { pointerId: 61, clientY: 60 });
+            fireEvent.pointerUp(field, { pointerId: 61 });
+
+            expect(onChange).not.toHaveBeenCalled();
+            expect(field).toHaveAttribute('aria-valuetext', '0');
+        });
+
+        it('should stop reporting moves once the field is read-only', () => {
+            const onChange = vi.fn();
+            const { rerender } = render(
+                <ValueField value={0} onChange={onChange} min={-100} max={100} step={1} />
+            );
+            const field = screen.getByRole('spinbutton');
+
+            fireEvent.pointerDown(field, { button: 0, pointerId: 62, clientY: 100 });
+            fireEvent.pointerMove(field, { pointerId: 62, clientY: 80 });
+            expect(onChange).toHaveBeenCalledExactlyOnceWith(10);
+
+            rerender(<ValueField value={0} onChange={onChange} min={-100} max={100} step={1} readOnly />);
+            fireEvent.pointerMove(field, { pointerId: 62, clientY: 40 });
+
+            // Still exactly the one write from before the lock, at the value it
+            // reported then — the finger kept travelling and nothing followed it.
+            expect(onChange).toHaveBeenCalledExactlyOnceWith(10);
+        });
+
+        it('should accept a new drag once the field is writable again', () => {
+            // The abort itself has to clear `activePointerIdRef` — no lift on
+            // this element is fired here, because the abort released the
+            // capture and the lift can land anywhere. `handlePointerDown`
+            // refuses to seize a field that still records an owner, so an abort
+            // that only stops the scrub leaves the field permanently deaf to
+            // the pointer once it unlocks.
+            const onChange = vi.fn();
+            const { rerender } = render(<ValueField value={0} onChange={onChange} min={-100} max={100} step={1} />);
+            const field = screen.getByRole('spinbutton');
+
+            fireEvent.pointerDown(field, { button: 0, pointerId: 63, clientY: 100 });
+            rerender(<ValueField value={0} onChange={onChange} min={-100} max={100} step={1} readOnly />);
+            rerender(<ValueField value={0} onChange={onChange} min={-100} max={100} step={1} />);
+
+            fireEvent.pointerDown(field, { button: 0, pointerId: 64, clientY: 100 });
+            fireEvent.pointerMove(field, { pointerId: 64, clientY: 90 });
+
+            expect(onChange).toHaveBeenCalledExactlyOnceWith(5);
+        });
+
+        it('should hand back the pointer capture when the field locks mid-drag', () => {
+            const onChange = vi.fn();
+            const { rerender } = render(
+                <ValueField value={0} onChange={onChange} min={-100} max={100} step={1} />
+            );
+            const field = screen.getByRole('spinbutton');
+            const calls: string[] = [];
+            const activePointers = new Set<number>();
+            field.addEventListener('pointerdown', (event: Event): void => {
+                activePointers.add((event as globalThis.PointerEvent).pointerId);
+            });
+            Object.defineProperty(field, 'setPointerCapture', {
+                configurable: true,
+                value: (pointerId: number): void => {
+                    calls.push(`set:${pointerId}`);
+                },
+            });
+            Object.defineProperty(field, 'releasePointerCapture', {
+                configurable: true,
+                value: (pointerId: number): void => {
+                    if (!activePointers.has(pointerId)) {
+                        throw new DOMException(`No active pointer with id ${pointerId}`, 'NotFoundError');
+                    }
+                    calls.push(`release:${pointerId}`);
+                },
+            });
+
+            fireEvent.pointerDown(field, { button: 0, pointerId: 65, clientY: 100 });
+            expect(calls).toEqual(['set:65']);
+
+            rerender(<ValueField value={0} onChange={onChange} min={-100} max={100} step={1} readOnly />);
+
+            // Held capture retargets every later pointer event on the page to
+            // this field, so the abort has to give it back at the moment it
+            // aborts — not wait for a lift that may never arrive here.
+            expect(calls).toEqual(['set:65', 'release:65']);
+
+            fireEvent.pointerUp(field, { pointerId: 65 });
+            expect(calls).toEqual(['set:65', 'release:65']);
+        });
+    });
 });
