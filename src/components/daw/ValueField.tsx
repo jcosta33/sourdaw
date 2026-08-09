@@ -179,6 +179,18 @@ export const ValueField = ({
          * snapping back to where the gesture began. Only the moves after the lock
          * are dropped. That is the intended outcome, not a gap in the abort.
          *
+         * After the lock clears the pointer is usually still down, and the field
+         * stays inert until a fresh press. Considered and left that way: a
+         * cancelled gesture requiring a new press is the universal convention,
+         * and every DAW does it. The case is not quite the one the convention was
+         * formed around — the trigger here is an app-internal, transient
+         * condition the app knows has cleared, not the OS taking the gesture away
+         * — but resuming would mean re-seizing capture the browser no longer
+         * grants us, re-deriving `startY` from a pointer position we are no
+         * longer tracking, and deciding whether the resumed drag is anchored to
+         * the old value or the new one. Not worth the machinery for a control
+         * whose lock lasts as long as the playhead is inside a ramp.
+         *
          * This is why `@eslint-react/set-state-in-effect` now warns on
          * `finalizeDrag`'s two setters (warn-only; CI runs `lint --quiet`). The
          * extra synchronous render is the point in release mode: a layout effect

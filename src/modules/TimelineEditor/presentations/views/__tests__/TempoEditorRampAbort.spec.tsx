@@ -19,6 +19,14 @@ import type { TransportState } from '#/modules/Transport/stores';
  *
  * `TempoEditor.spec.tsx` mocks both the hook and `ValueField`, so it asserts the
  * view's wiring and deliberately sees none of this.
+ *
+ * What these pin that the component tests cannot: the abort *restores* nothing.
+ * It drops the pending value and lets the readout fall through to the live
+ * `value` prop, which is only the right answer because `TempoEditor` keeps
+ * feeding that prop from the playhead while a drag is in flight. A consumer that
+ * froze `value` for the duration of a gesture would make the identical abort
+ * display a stale number, and no assertion inside `ValueField.spec.tsx` would
+ * notice. The per-frame sequence below is that requirement written down.
  */
 
 const { mockTransportStore, mockTempoMapStore, mockPlayheadPositionRef } = vi.hoisted(() => ({
@@ -97,7 +105,8 @@ const RAMP: TempoChangeFixture[] = [
     { id: 'tc-end', beat: 20, tempo: 190, curve: 'instant' },
 ];
 
-let transportState: TransportState = baseTransportState;
+/** `null` reproduces `transportStore` before it has hydrated, which is its own lock reason. */
+let transportState: TransportState | null = baseTransportState;
 let tempoMapState: { changes: TempoChangeFixture[] } = { changes: RAMP };
 
 // Mirrors the real `useStore`: `getSnapshot() ?? defaultValue`. The hook's
@@ -200,8 +209,13 @@ describe('TempoEditor — a tempo drag aborted by the playhead entering a ramp',
         // The consumer's own `if (!tempoField.editable) { return; }` guard does
         // not cover this: by the time the finger lifts the playhead has left the
         // ramp and the field is editable again, so a stale pending value from a
-        // gesture aborted inside the ramp would pass straight through it and
-        // overwrite the event governing the *new* playhead position.
+        // gesture aborted inside the ramp passes straight through it and
+        // overwrites the event governing the *new* playhead position. Measured
+        // with the abort removed: `setTempo { bpm: 160, tempoChangeId: 'tc-end' }`
+        // — 160 written onto the 190 BPM event the drag never touched. The
+        // sibling test below lifts while the ramp still holds, where the guard
+        // does catch it; that one stays green without the abort, and this one
+        // does not.
         render(<TempoEditor />);
         const field = screen.getByRole('spinbutton');
 
