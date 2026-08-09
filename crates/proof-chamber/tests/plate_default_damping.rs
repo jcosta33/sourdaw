@@ -55,12 +55,21 @@ const MID_BAND: (f32, f32) = (400.0, 1_200.0);
 /// A parameter write applied before rendering.
 type Write = (&'static str, f32);
 
-/// Unit impulse into a fully wet plate. An impulse excites every band at once,
+/// The other algorithms `damping` reaches, by the wire value `set_param`
+/// takes. Reverse (6) is deliberately absent: `damping` is bit-dead on it
+/// across the whole declared range, which `nativeDspEngineGaps.ts` already
+/// records and the panel already gates, so a monotonicity claim there would be
+/// a claim about a control the user cannot reach.
+const FDN8: f32 = 1.0;
+const FDN16: f32 = 2.0;
+const SPRING: f32 = 3.0;
+
+/// Unit impulse into a fully wet engine. An impulse excites every band at once,
 /// so a single render answers the whole spectral question without a stimulus
 /// choice biasing one band over another.
-fn render(writes: &[Write]) -> Vec<f32> {
+fn render_on(algorithm: f32, writes: &[Write]) -> Vec<f32> {
     let mut instance = ProofChamberInstance::new(SAMPLE_RATE);
-    instance.set_param("algorithm", PLATE);
+    instance.set_param("algorithm", algorithm);
     instance.set_param("mix", 1.0);
     for &(name, value) in writes {
         instance.set_param(name, value);
@@ -87,6 +96,12 @@ fn render(writes: &[Write]) -> Vec<f32> {
         index += BLOCK;
     }
     output
+}
+
+/// The plate, which is the algorithm every project runs until something writes
+/// the selector, and the one whose constructor default #1546 moved.
+fn render(writes: &[Write]) -> Vec<f32> {
+    render_on(PLATE, writes)
 }
 
 /// The shipped instance: `damping` is never written, so the constructor
@@ -191,6 +206,22 @@ fn hf_loss_db(output: &[f32]) -> f64 {
     hf_over_mid_db(output, EARLY_TAIL) - hf_over_mid_db(output, LATE_TAIL)
 }
 
+/// The late window's HF-over-mid figure on its own. More negative is darker.
+///
+/// This is the measure the cross-algorithm guard uses, and the choice is not
+/// cosmetic. `hf_loss_db` — the early-to-late *difference* — is **not**
+/// monotone in `damping` on the FDN: measured on this stimulus, FDN 8 gives
+/// 20.39 → 27.41 → 36.04 dB across 0.0005 / 0.15 / 0.3 and then falls back to
+/// 33.67 dB at 0.5, because past a point the treble is already gone by the
+/// early window and there is less left to shed. A guard written on loss would
+/// have to carve out that reversal. The late-window tilt has no such turn: it
+/// is monotone on all three algorithms across the whole sweep, and it is also
+/// the number a listener would describe, since it says what the tail sounds
+/// like rather than how it got there.
+fn late_tilt_db(output: &[f32]) -> f64 {
+    hf_over_mid_db(output, LATE_TAIL)
+}
+
 // ---------------------------------------------------------------------------
 // The guards
 // ---------------------------------------------------------------------------
@@ -251,6 +282,11 @@ fn damping_monotonically_darkens_the_tail() {
     // they would also pass on an engine where `damping` no longer reached the
     // filter and something else happened to be dark. This walks the control
     // and requires the measurement to respond, at interior points.
+    //
+    // Kept on `hf_loss_db` for the plate specifically, because the plate is the
+    // algorithm whose default this change moves and loss is the quantity the
+    // 7.5 dB bar above is written in. The cross-algorithm walk below uses the
+    // late-window tilt instead, for the reason `late_tilt_db` documents.
     let mut previous = f64::NEG_INFINITY;
     for step in [0.0005_f32, 0.15, 0.3, 0.5] {
         let loss = hf_loss_db(&render(&[("damping", step)]));
@@ -260,6 +296,46 @@ fn damping_monotonically_darkens_the_tail() {
              against {previous:.2} dB at the step below"
         );
         previous = loss;
+    }
+}
+
+/// Every algorithm that can hear `damping` has to darken when it is turned up.
+///
+/// The gap this closes: before it, nothing in the crate could see `damping`
+/// break on anything but the plate. Every other test that writes the parameter
+/// — `algorithm_switch_parameter_retention.rs:98`'s `("damping", 0.41)` — puts
+/// the same write on *both* sides of its comparison, so an arm dropped from
+/// `FdnReverb::set_param` or `SpringReverb::set_param` drops on both sides and
+/// the row still passes. That is the same vacuity this file's header calls out
+/// for `render(&[])` versus `render(&[("damping", 0.3)])`, one level up.
+///
+/// Verified by mutation rather than assumed: with this test absent, deleting
+/// the spring's `damping` arm left the whole crate at `23 passed; 0 failed`,
+/// and so did deleting the FDN's. A refactor could silently kill the Damp knob
+/// on three of the five algorithms and no guard would move.
+///
+/// Interior points, not the extremes, and a per-step separation requirement, so
+/// a wire that reacts only at 0 and 1 still reds.
+#[test]
+fn damping_darkens_the_late_tail_on_every_algorithm_that_hears_it() {
+    for (algorithm, name) in [
+        (PLATE, "plate"),
+        (FDN8, "fdn-8"),
+        (FDN16, "fdn-16"),
+        (SPRING, "spring"),
+    ] {
+        let mut previous = f64::INFINITY;
+        for step in [0.0005_f32, 0.15, 0.3, 0.5] {
+            let tilt = late_tilt_db(&render_on(algorithm, &[("damping", step)]));
+            assert!(
+                tilt < previous - 0.5,
+                "on {name}, the late window's 6–12 kHz tilt should fall as damping \
+                 rises; at {step} it was {tilt:+.2} dB against {previous:+.2} dB at \
+                 the step below. A flat sequence means `damping` is not reaching \
+                 this algorithm's filter at all."
+            );
+            previous = tilt;
+        }
     }
 }
 
@@ -407,5 +483,51 @@ fn the_constructor_still_writes_the_bandwidth_literal_the_comment_cites() {
         "the tail's HF loss ({tail_loss:.2} dB) should dwarf the input filter's \
          entire authority ({attenuation:.4} dB); if it does not, the input \
          filter — not `damping` — is what shapes this reverb"
+    );
+}
+
+/// On the spring, 0.3 is not a new voicing — it is the engine's own.
+///
+/// `SpringReverb::new` seeds `damping: 0.3` (`spring.rs:102`), unchanged since
+/// the crate's first commit. The descriptor's old 0.0005 was *overwriting* that
+/// designed value on every instance, and the result was the same failure this
+/// file documents on the plate: measured on this stimulus, the spring's late
+/// window sat at **+7.36 dB** — treble above midrange — against **−17.72 dB**
+/// at its constructor value. Aligning the descriptor with 0.3 stops the
+/// overwrite, so the spring now renders what it was built to render.
+///
+/// This is asserted rather than narrated because it is the one algorithm where
+/// the descriptor value and the engine's own default coincide, and a future
+/// per-algorithm default table (the real fix for the FDN, see the descriptor
+/// comment) must not quietly move the spring off its own number.
+#[test]
+fn the_descriptor_default_restores_the_springs_own_designed_damping() {
+    let untouched_spring = render_on(SPRING, &[]);
+    let at_descriptor_default = render_on(SPRING, &[("damping", 0.3)]);
+
+    let delta = untouched_spring
+        .iter()
+        .zip(at_descriptor_default.iter())
+        .fold(0.0_f32, |acc, (a, b)| acc.max((a - b).abs()));
+    assert!(
+        delta == 0.0,
+        "writing the descriptor's 0.3 to the spring should reproduce its own \
+         constructor default bit for bit; peak difference {delta:e}"
+    );
+
+    // And what the old descriptor value did to it, so the claim above is not
+    // just "two numbers match".
+    let at_old_default = late_tilt_db(&render_on(SPRING, &[("damping", 0.0005)]));
+    let at_new_default = late_tilt_db(&at_descriptor_default);
+    assert!(
+        at_old_default > 0.0,
+        "the pre-#1546 descriptor value should leave the spring's late tail \
+         brighter than its own midrange, which is the defect; measured \
+         {at_old_default:+.2} dB"
+    );
+    assert!(
+        at_new_default < -10.0,
+        "the spring's own default should leave a clearly darkened late tail; \
+         measured {at_new_default:+.2} dB"
     );
 }

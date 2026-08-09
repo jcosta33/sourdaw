@@ -260,7 +260,31 @@ impl FdnReverb {
             early_reflections_r: EarlyReflections::new(sample_rate, 0.5),
             rt60: 2.0,
             rt60_hf: 0.8,
-            damping: 0.2, // yields the historical rt60_hf/rt60 ratio of 0.4
+            // 0.2 gives `rt60_hf/rt60 = (1 - 0.2) * 0.5 = 0.4`, the historical
+            // ratio — but **no shipping instance renders it**, and the comment
+            // that used to sit here implied one did. `addDevice` writes the
+            // Dutch Oven descriptor's `damping` into `Device.parameterValues`,
+            // and `set_param("algorithm", …)` replays the cached parameters
+            // into every engine it constructs (`lib.rs`, and
+            // `tests/algorithm_switch_parameter_retention.rs` pins the replay
+            // bit-exactly), so an FDN reached from the panel is built with 0.2
+            // and immediately overwritten with the descriptor value.
+            //
+            // Since #1546 that value is 0.3, which is `(1 - 0.3) * 0.5 = 0.35`.
+            // So this literal is the value an FDN renders only in a test that
+            // selects the algorithm and writes nothing else. It is kept at 0.2
+            // because moving it would change nothing a user hears while
+            // desynchronising this file from the ratio it documents.
+            //
+            // 0.35 is darker than the peer convention — zita-rev1's `HF Damping`
+            // default of 6000 Hz and Dragonfly Hall's shipped `high_mult` are
+            // both 0.50 — and the crossover here is hard-coded at 2 kHz against
+            // their 5.5–6 kHz, so it bites lower too. That is a real divergence
+            // and its fix is a per-algorithm default table rather than a
+            // different single number: 0.3 is correct on the plate, and is the
+            // spring's own constructor value. See the `damping` row in
+            // `NativeDspDescriptors.ts`.
+            damping: 0.2,
             size: 0.5,
             mix: 0.3,
             early_late_balance: 0.4,

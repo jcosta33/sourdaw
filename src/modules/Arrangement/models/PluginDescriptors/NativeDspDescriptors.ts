@@ -80,6 +80,32 @@ export const NATIVE_DSP_DESCRIPTORS: PluginDescriptor[] = [
                 // preset as a product default. The plate constructor,
                 // `DEFAULT_PARAMS.damping` and the knob's `defaultValue` now all read
                 // 0.3.
+                //
+                // One number, five algorithms — and 0.3 was chosen on the plate, which
+                // is the algorithm every project runs until something writes the
+                // selector. Where it lands elsewhere:
+                //
+                // - **Spring** — exactly its own constructor value
+                //   (`spring.rs:102`, unchanged since the crate's first commit). The
+                //   old 0.0005 was overwriting it and pushing its late tail to
+                //   +7.36 dB, treble above midrange, the same defect as the plate's.
+                //   This restores it.
+                // - **FDN 8/16** — `rt60_hf/rt60 = (1 - damping) * 0.5`, so 0.3 gives
+                //   0.35 where 0.0005 gave 0.4998. That old ratio matched the peer
+                //   convention almost exactly (zita-rev1's 6000 Hz `HF Damping` and
+                //   Dragonfly Hall's `high_mult` are both 0.50), so on the FDN this
+                //   change is a real darkening — 25.9 dB more HF loss in the late
+                //   window on an impulse — and its crossover is hard-coded at 2 kHz
+                //   against the peers' 5.5-6 kHz, so it bites lower too.
+                // - **Reverse** — `damping` is bit-dead across the whole range. Already
+                //   recorded in `nativeDspEngineGaps.ts` and gated in the panel, so
+                //   this value is inert there.
+                //
+                // The FDN divergence is not fixed here and is not hidden: the right
+                // fix is a per-algorithm default rather than a different single
+                // number, since 0.3 is correct on the two algorithms that have an
+                // opinion. Measured figures are in
+                // `crates/proof-chamber/tests/plate_default_damping.rs`.
                 value: 0.3,
                 defaultValue: 0.3,
                 minValue: 0,
