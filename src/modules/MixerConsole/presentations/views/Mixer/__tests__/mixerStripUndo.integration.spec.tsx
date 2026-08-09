@@ -370,6 +370,9 @@ describe('mixer strip writes reach the project through the recorded path', () =>
         expect(storedTrack()?.gain).toBeCloseTo(0.8, 5);
         expect(undoLabels()).toEqual([]);
         expect(within(strip()).getByText('-18.0 dB')).toBeTruthy();
+        // The fader itself, not only the readout beside it: `aria-valuenow` is
+        // what a screen reader is told the control is currently set to.
+        expect(Number(fader.getAttribute('aria-valuenow'))).toBeCloseTo(0.35, 5);
 
         fireEvent.pointerUp(fader, { pointerId: 3 });
 
