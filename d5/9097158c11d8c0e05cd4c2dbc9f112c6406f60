@@ -1,0 +1,125 @@
+src/modules/Transport/useCases/transportControls/setPunchEnabled.ts
+  s_bc88af7d3b054c::t_91cff1b1983ac1 1-30
+src/modules/Transport/useCases/transportControls/__tests__/togglePunchEnabled.spec.ts
+  s_bc88af7d3b054c::t_9ede0eb7e19a24 40-55
+src/modules/Command/useCases/__tests__/appActionExecutionPolicy.spec.ts
+  s_bc88af7d3b054c::t_9ede0eb7e19a24 21
+src/utils/handlerContract.ts
+  s_bc88af7d3b054c::t_91cff1b1983ac1 799-805
+  s_14f2bbc9f385dd::t_b382a7c1c754e7 798
+src/modules/Transport/useCases/index.ts
+  s_bc88af7d3b054c::t_91cff1b1983ac1 51
+src/modules/AiRuntime/transformers/promptParser/__tests__/parsingDeep.spec.ts
+  s_bc88af7d3b054c::t_4f9677743738a4 11
+src/modules/AiRuntime/useCases/agentReference/bridgeGroundedLlmToolCalls.ts
+  s_bc88af7d3b054c::t_ec16b17d73faca 3319-3320,3336-3350,3414,3425
+  s_bc88af7d3b054c::t_f0085e079bd3b1 3432
+src/modules/AiRuntime/models/Tools/Transport.ts
+  s_bc88af7d3b054c::t_7ed5fcbd169b6b 54-59
+src/modules/AiRuntime/transformers/__tests__/llmActionBridge.spec.ts
+  s_bc88af7d3b054c::t_4f9677743738a4 13
+  s_bc88af7d3b054c::t_f0085e079bd3b1 4114-4117
+  s_bc88af7d3b054c::t_86499257a935c2 3405
+  s_bc88af7d3b054c::t_e6773b728430e9 4092-4113,4118-4122
+src/modules/Transport/useCases/__tests__/getTransportHandlers.spec.ts
+  s_bc88af7d3b054c::t_09f4a52ccad44d 23
+src/modules/Command/useCases/__tests__/executableCommandRegistry.spec.ts
+  s_bc88af7d3b054c::t_a7bc35180af0f9 678-689,1671-1701
+  s_bc88af7d3b054c::t_67c4aead55c465 677
+  s_bc88af7d3b054c::t_2bf00ede76389f 1702
+src/modules/Transport/useCases/getTransportHandlers.ts
+  s_bc88af7d3b054c::t_91cff1b1983ac1 15,45,80
+src/modules/AiRuntime/models/PresetActions/Presets/__tests__/Transport.spec.ts
+  s_bc88af7d3b054c::t_17a5075ff21863 43
+  s_bc88af7d3b054c::t_9ede0eb7e19a24 44-45,47-48,50-53
+  s_bc88af7d3b054c::t_c0da3a7231716c 46,49
+src/modules/Transport/handlers/transport/handleTogglePunch.ts
+  s_bc88af7d3b054c::t_91cff1b1983ac1 4,7-25
+src/modules/AiRuntime/useCases/getProjectContext.ts
+  s_bc88af7d3b054c::t_4f9677743738a4 92
+src/modules/AiRuntime/useCases/describePlannedAction.ts
+  s_bc88af7d3b054c::t_7840bfae538e17 15-18
+src/modules/AiRuntime/models/__tests__/RuntimeAction.spec.ts
+  s_bc88af7d3b054c::t_17a5dadd071021 24
+  s_bc88af7d3b054c::t_86499257a935c2 55,79,105
+src/modules/WorkspaceShell/presentations/hooks/__tests__/usePromptExecution.spec.ts
+  s_bc88af7d3b054c::t_17a5075ff21863 362
+src/modules/Transport/handlers/transport/__tests__/punchUndoRedo.spec.ts
+  s_bc88af7d3b054c::t_5d3731777eab81 186-202
+  s_bc88af7d3b054c::t_7c431cb51f5572 177-185,203-268
+  s_bc88af7d3b054c::t_9ede0eb7e19a24 162-176
+src/modules/AiRuntime/useCases/__tests__/describePlannedAction.spec.ts
+  s_bc88af7d3b054c::t_e6773b728430e9 398-408
+  s_bc88af7d3b054c::t_4f9677743738a4 27
+src/modules/AiRuntime/models/ProjectContext.ts
+  s_bc88af7d3b054c::t_4f9677743738a4 5
+src/modules/Transport/useCases/transportControls/togglePunchEnabled.ts
+  s_bc88af7d3b054c::t_91cff1b1983ac1 3-5,8,10
+src/modules/AiRuntime/useCases/__tests__/getProjectContext.spec.ts
+  s_bc88af7d3b054c::t_74d6cae61e1ce9 217
+  s_bc88af7d3b054c::t_86499257a935c2 123,256
+src/modules/Transport/useCases/transportControls/__tests__/setPunchEnabled.spec.ts
+  s_bc88af7d3b054c::t_09f4a52ccad44d 1-63
+src/modules/AiRuntime/useCases/agentReference/__tests__/bridgeGroundedLlmToolCalls.spec.ts
+  s_bc88af7d3b054c::t_a18737b808483d 4436-4440,4454-4456,4469
+  s_bc88af7d3b054c::t_e6773b728430e9 4429-4435,4441-4448,4453,4457-4468,4470-4473
+  s_bc88af7d3b054c::t_f0085e079bd3b1 4449-4452
+  s_bc88af7d3b054c::t_4f9677743738a4 46
+src/modules/AiRuntime/useCases/__tests__/validateActionPayload.spec.ts
+  s_bc88af7d3b054c::t_86499257a935c2 574-575,582
+  s_bc88af7d3b054c::t_f0085e079bd3b1 576-581
+  s_bc88af7d3b054c::t_dd82473f4430c2 573
+src/modules/AiRuntime/models/RuntimeAction.ts
+  s_bc88af7d3b054c::t_7ed5fcbd169b6b 98,258,301
+src/modules/AiRuntime/useCases/validateActionPayload.ts
+  s_bc88af7d3b054c::t_7ed5fcbd169b6b 238-239
+src/modules/AiRuntime/transformers/llmActionBridge.ts
+  s_bc88af7d3b054c::t_7840bfae538e17 629-641,2030-2032,2438-2440
+  s_bc88af7d3b054c::t_f0085e079bd3b1 2444
+  s_bc88af7d3b054c::t_4f9677743738a4 2811
+src/modules/Command/useCases/__tests__/executableAppActionRegistry.spec.ts
+  s_bc88af7d3b054c::t_9ede0eb7e19a24 110-128
+src/modules/AiRuntime/useCases/__tests__/sendChatMessage.spec.ts
+  s_bc88af7d3b054c::t_74d6cae61e1ce9 157,200,272
+src/modules/AiRuntime/useCases/agentReference/__tests__/resolveAgentReference.spec.ts
+  s_bc88af7d3b054c::t_74d6cae61e1ce9 33
+src/modules/AiRuntime/models/Tools/__tests__/Transport.spec.ts
+  s_bc88af7d3b054c::t_f0085e079bd3b1 15-17
+  s_bc88af7d3b054c::t_9ede0eb7e19a24 18-21,24
+src/modules/AiRuntime/useCases/__tests__/parsePromptToActions.spec.ts
+  s_bc88af7d3b054c::t_f32512d0616c1b 296
+  s_bc88af7d3b054c::t_17a5dadd071021 352-357
+  s_bc88af7d3b054c::t_86499257a935c2 334-351,358-359
+  s_bc88af7d3b054c::t_4f9677743738a4 86
+src/modules/AiRuntime/transformers/promptParser/__tests__/parsing.spec.ts
+  s_bc88af7d3b054c::t_74d6cae61e1ce9 41,120,223
+src/modules/Transport/handlers/transport/handleSetPunchEnabled.ts
+  s_bc88af7d3b054c::t_91cff1b1983ac1 1-28
+src/modules/Command/useCases/executableAppActionRegistry.ts
+  s_bc88af7d3b054c::t_7ed5fcbd169b6b 1382-1424
+  s_14f2bbc9f385dd::t_58bf03c31bd70f 1381
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "d59097158c11d8c0e05cd4c2dbc9f112c6406f60",
+  "prompts": {},
+  "sessions": {
+    "s_14f2bbc9f385dd": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f9a61a1d-66b3-4146-938d-a04f45f4b060",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_bc88af7d3b054c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f9b4a-11a2-7f61-8dfb-76eed0eb2a9c",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
