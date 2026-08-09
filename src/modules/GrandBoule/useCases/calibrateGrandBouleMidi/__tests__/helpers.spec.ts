@@ -20,6 +20,11 @@ function createMockGrandBouleStore(): Store<GrandBouleState> {
         set(nextValue: GrandBouleState | null) {
             value = nextValue;
         },
+        trySet(nextValue: GrandBouleState | null) {
+            value = nextValue;
+            // An in-memory fake has no backing store that can refuse a write.
+            return true;
+        },
         update(updater: (current: GrandBouleState | null) => GrandBouleState | null) {
             value = updater(value);
         },

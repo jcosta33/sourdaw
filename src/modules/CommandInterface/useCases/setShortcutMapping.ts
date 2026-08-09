@@ -13,7 +13,11 @@ export function setShortcutMapping(definitionId: string, combo: string): void {
     if (!state) {
         return;
     }
-    shortcutStore.set({
+    // `trySet`, not `set`: a refused write threw out of the remap handler, so
+    // on a full quota the new binding did not take at all — worse than not
+    // persisting, because the shortcut the user just assigned did nothing.
+    // See #1557.
+    shortcutStore.trySet({
         definitions: state.definitions,
         customMappings: { ...state.customMappings, [definitionId]: [combo] },
     });

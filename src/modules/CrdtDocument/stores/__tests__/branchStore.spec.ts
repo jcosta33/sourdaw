@@ -236,7 +236,7 @@ describe('branchStore', () => {
             expectCanonicalSingleMainBranchState(state);
         });
 
-        it('should recover the durable pre-session branch state during module initialization', async () => {
+        it('should recover the durable pre-session branch state when the composition root asks for it', async () => {
             const remoteState = {
                 branches: [validMainBranch, validFeatureBranch],
                 activeBranchId: validFeatureBranch.branchId,
@@ -253,6 +253,11 @@ describe('branchStore', () => {
 
             const module = await import('../branchStore');
 
+            // The restore is no longer a module-evaluation side effect: importing
+            // the module leaves the persisted (host-projected) state in place.
+            expect(module.branchStore.value).toEqual(remoteState);
+
+            expect(module.restoreBranchStateFromSessionBackup()).toBe('restored');
             expect(module.branchStore.value).toEqual(localState);
             expect(window.localStorage.getItem(BRANCH_SESSION_BACKUP_STORAGE_KEY)).toBeNull();
             const persistedState = window.localStorage.getItem(BRANCH_STORAGE_KEY);

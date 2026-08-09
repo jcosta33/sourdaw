@@ -1,5 +1,5 @@
 import { alphaNoticeStore } from '../stores/alphaNoticeStore';
 
 export function dismissAlphaNotice(): void {
-    alphaNoticeStore.set(true);
+    alphaNoticeStore.trySet(true);
 }

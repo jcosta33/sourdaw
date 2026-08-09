@@ -109,7 +109,17 @@ async function recoverFailedTransition({
         logger.warn('[CrdtDocument] Failed to reload persistence after branch rollback:', recoveryError);
     }
 
-    branchStore.set(recoveredState);
+    // Past the point where a throw is useful: the documents above have already
+    // been rolled back, and `projectCrdtToStores()` below is what puts the
+    // stores back in step with them. Letting a refused `localStorage` write
+    // unwind from here would skip that projection and leave the rollback itself
+    // half-applied — a worse state than the failed transition it was undoing.
+    // The recovered state is live either way; only its durability is at stake.
+    const persisted = branchStore.trySet(recoveredState);
+    if (!persisted) {
+        logger.warn('[CrdtDocument] Rolled-back branch state could not be persisted; it applies to this session only.');
+    }
+
     projectCrdtToStores();
 }
 

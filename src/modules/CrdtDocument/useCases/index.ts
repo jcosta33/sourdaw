@@ -24,6 +24,7 @@ export { removeCrdtDoc } from './removeCrdtDoc';
 export { resetCrdtProjectAuthority } from './resetCrdtProjectAuthority';
 export { replaceCrdtDoc } from './replaceCrdtDoc';
 export { sanitizeIncomingCrdtDocument } from './sanitizeIncomingCrdtDocument';
+export { initBranchState } from './initBranchState';
 export { preserveBranchStateForSession } from './preserveBranchStateForSession';
 export { replaceBranchState } from './replaceBranchState';
 export { restoreBranchStateAfterSession } from './restoreBranchStateAfterSession';

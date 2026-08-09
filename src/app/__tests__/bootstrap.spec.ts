@@ -52,6 +52,8 @@ const {
     prepareTimelineMapStateRestoreMock,
     configureAudioDeviceRuntimeSinkMock,
     prepareOfflineLevainMock,
+    initBranchStateMock,
+    flushDeferredStorageNoticeMock,
 } = vi.hoisted(() => {
     const noop = vi.fn();
     const sentinelHandlers = (moduleId: string) => vi.fn<() => HandlerMapSentinel>(() => ({ moduleId }));
@@ -77,6 +79,8 @@ const {
         prepareTimelineMapStateRestoreMock: vi.fn(),
         configureAudioDeviceRuntimeSinkMock: vi.fn<(sink: RuntimeSinkUnderTest) => void>(),
         prepareOfflineLevainMock: vi.fn(() => Promise.resolve()),
+        initBranchStateMock: vi.fn(),
+        flushDeferredStorageNoticeMock: vi.fn(),
     };
 });
 
@@ -190,6 +194,7 @@ vi.mock('#/modules/ControlSurface/useCases', () => ({
 vi.mock('#/modules/CrdtDocument/stores', () => ({ actionHistoryStore: actionHistoryStoreMock }));
 
 vi.mock('#/modules/CrdtDocument/useCases', () => ({
+    initBranchState: initBranchStateMock,
     markActionHistoryEntryReverted: noop,
     recordActionHistoryEntry: noop,
     clearActionHistory: noop,
@@ -332,7 +337,16 @@ vi.mock('#/modules/Yeast/useCases', () => ({
 
 vi.mock('#/utils/capabilities', () => ({ logCapabilities: noop }));
 
-vi.mock('#/utils/Notification/notificationEventBus', () => ({ setNotificationEventBus: noop }));
+vi.mock('#/utils/Notification/notificationEventBus', () => ({
+    setNotificationEventBus: noop,
+    // `storageFullNotice` reaches this module through `notifyUser`, whose
+    // `inject` call needs the token at import time.
+    NotificationEventBus: class {},
+}));
+
+vi.mock('#/infra/store/storage/storageFullNotice', () => ({
+    flushDeferredStorageNotice: flushDeferredStorageNoticeMock,
+}));
 
 vi.mock('../registerDependencies', () => ({
     eventBus: eventBusMock,
@@ -475,6 +489,22 @@ describe('bootstrap', () => {
         // initBrowserAi() is fire-and-forget (`.catch(...)`, no await) — assert
         // it was invoked rather than that bootstrap awaits or returns it.
         expect(initBrowserAiMock).toHaveBeenCalledExactlyOnceWith();
+    });
+
+    it('flushes any storage notice held from before the notification bus existed', () => {
+        // Storage adapters cannot resolve `notifyUser` before the bus is
+        // registered: `inject` caches the closure it builds on first call, and
+        // an unregistered token resolves to the abstract class rather than
+        // throwing, so one pre-bootstrap call would break every `notifyUser`
+        // site for the life of the page. See #1557.
+        expect(flushDeferredStorageNoticeMock).toHaveBeenCalledExactlyOnceWith();
+    });
+
+    it('recovers the pre-session branch state as an explicit boot step', () => {
+        // It used to be a side effect of evaluating branchStore.ts, where a
+        // refused localStorage write threw during module evaluation and stopped
+        // the app booting with no catch anywhere able to reach it. See #1557.
+        expect(initBranchStateMock).toHaveBeenCalledExactlyOnceWith();
     });
 
     it('probes OPFS for RAVE model weights exactly once as a non-blocking boot step', () => {

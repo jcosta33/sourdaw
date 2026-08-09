@@ -17,7 +17,7 @@ vi.mock('../../stores/preferencesStore', () => ({
         get value() {
             return mocks.preferencesStoreValue.value;
         },
-        set: mocks.preferencesStoreSet,
+        trySet: mocks.preferencesStoreSet,
     },
 }));
 
@@ -34,7 +34,7 @@ describe('updatePreferences', () => {
     it('should merge the patch into preferencesStore', () => {
         updatePreferences({ patch: { theme: 'light' } });
 
-        expect(preferencesStore.set).toHaveBeenCalledWith({
+        expect(preferencesStore.trySet).toHaveBeenCalledWith({
             ...defaultPreferences,
             theme: 'light',
             soloMode: 'sip',
@@ -45,7 +45,7 @@ describe('updatePreferences', () => {
     it('should synchronize Workspace soloMode when the patch changes soloMode', () => {
         updatePreferences({ patch: { soloMode: 'pfl' } });
 
-        expect(preferencesStore.set).toHaveBeenCalledWith({
+        expect(preferencesStore.trySet).toHaveBeenCalledWith({
             ...defaultPreferences,
             theme: 'dark',
             soloMode: 'pfl',

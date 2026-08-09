@@ -13,7 +13,7 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock('../../stores/preferencesStore', () => ({
     preferencesStore: {
-        set: mocks.preferencesStoreSet,
+        trySet: mocks.preferencesStoreSet,
     },
 }));
 
@@ -29,7 +29,7 @@ describe('resetPreferences', () => {
     it('should reset preferencesStore to defaults and synchronize Workspace soloMode', () => {
         resetPreferences();
 
-        expect(preferencesStore.set).toHaveBeenCalledWith(defaultPreferences);
+        expect(preferencesStore.trySet).toHaveBeenCalledWith(defaultPreferences);
         expect(setSoloMode).toHaveBeenCalledWith(defaultPreferences.soloMode);
     });
 });

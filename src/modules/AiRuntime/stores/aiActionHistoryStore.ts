@@ -139,7 +139,7 @@ export function pushAiActionGroup(group: AiActionGroup): void {
         return;
     }
     const groups = [...state.groups, group].slice(-MAX_HISTORY);
-    aiActionHistoryStore.set({ ...state, groups, panelOpen: true });
+    aiActionHistoryStore.trySet({ ...state, groups, panelOpen: true });
 }
 
 export function markGroupReverted(groupId: string): void {
@@ -147,7 +147,7 @@ export function markGroupReverted(groupId: string): void {
     if (!state) {
         return;
     }
-    aiActionHistoryStore.set({
+    aiActionHistoryStore.trySet({
         ...state,
         groups: state.groups.map((group) => {
             if (group.groupId !== groupId || group.executionKind === 'runtime') {
@@ -158,12 +158,21 @@ export function markGroupReverted(groupId: string): void {
     });
 }
 
+/**
+ * `trySet` throughout this store, not `set`.
+ *
+ * `panelOpen` is a navigation control: a refused `localStorage` write used to
+ * throw out of the click handler, which made the AI history panel simply
+ * unopenable on a full quota — a persistence failure taking out a piece of
+ * navigation. Whether the open/closed state survives a reload is not worth the
+ * panel. See #1557.
+ */
 export function toggleAiHistoryPanel(): void {
     const state = aiActionHistoryStore.value;
     if (!state) {
         return;
     }
-    aiActionHistoryStore.set({ ...state, panelOpen: !state.panelOpen });
+    aiActionHistoryStore.trySet({ ...state, panelOpen: !state.panelOpen });
 }
 
 export function clearAiHistory(): void {
@@ -171,5 +180,5 @@ export function clearAiHistory(): void {
     if (!state) {
         return;
     }
-    aiActionHistoryStore.set({ ...state, groups: [] });
+    aiActionHistoryStore.trySet({ ...state, groups: [] });
 }

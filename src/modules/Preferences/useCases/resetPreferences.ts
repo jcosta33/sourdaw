@@ -4,6 +4,6 @@ import { defaultPreferences } from '../models/Preferences';
 import { preferencesStore } from '../stores/preferencesStore';
 
 export function resetPreferences(): void {
-    preferencesStore.set(defaultPreferences);
+    preferencesStore.trySet(defaultPreferences);
     setSoloMode(defaultPreferences.soloMode);
 }

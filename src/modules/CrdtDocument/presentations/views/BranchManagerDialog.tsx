@@ -28,17 +28,52 @@ export const BranchManagerDialog = ({ onClose }: BranchManagerDialogProps): Reac
     const state = useStore(branchStore, defaultState);
     const [newBranchName, setNewBranchName] = useState('');
     const [creating, setCreating] = useState(false);
+    // Every branch operation could fail — a rejected persistence write, a full
+    // `localStorage` quota — and until #1557 all four caught into `logger.warn`
+    // and rendered nothing. That made the whole dialog a silent no-op under a
+    // sealed origin: click Delete, the row stays, nothing is said. "The user can
+    // try again" only works if the user is told there is anything to retry.
+    //
+    // Carries a sequence number, not just the text. `setOperationError(null)`
+    // followed by `setOperationError(message)` in one handler batches into a
+    // single render, so retrying the same failing operation produced identical
+    // text, zero DOM mutations, and no re-announcement — the alert spoke once
+    // and then went quiet for every subsequent failure. The sequence keys the
+    // element, so each failure remounts it and is announced.
+    const [operationError, setOperationError] = useState<string | null>(null);
+    // Counted separately from the message, and never reset. Every handler calls
+    // `setOperationError(null)` before it starts, so a counter derived from the
+    // message state would see `null` and restart at 1 on every failure — which
+    // is the batching trap this exists to escape, one level down.
+    const [failureSeq, setFailureSeq] = useState(0);
+
+    const reportFailure = (verb: string, branchName: string, error: unknown): void => {
+        logger.warn(`Failed to ${verb} branch:`, error);
+        // Names the branch as well as the operation: with four operations over a
+        // list of rows, "Failed to delete branch" does not say which row, and it
+        // names an action so the message is not just a statement of loss.
+        setOperationError(
+            `Could not ${verb} branch "${branchName}" — try again, or free up storage space if the problem persists.`
+        );
+        setFailureSeq((current) => current + 1);
+    };
+
+    const findBranchName = (branchId: string): string => {
+        return state.branches.find((branch) => branch.branchId === branchId)?.name ?? branchId;
+    };
 
     const handleCreate = async () => {
-        if (!newBranchName.trim()) {
+        const requestedName = newBranchName.trim();
+        if (!requestedName) {
             return;
         }
         setCreating(true);
+        setOperationError(null);
         try {
-            await forkProjectBranch(newBranchName.trim());
+            await forkProjectBranch(requestedName);
             setNewBranchName('');
         } catch (error) {
-            logger.warn('Failed to create branch:', error);
+            reportFailure('create', requestedName, error);
         }
         setCreating(false);
     };
@@ -47,24 +82,27 @@ export const BranchManagerDialog = ({ onClose }: BranchManagerDialogProps): Reac
         if (branchId === state.activeBranchId) {
             return;
         }
+        setOperationError(null);
         switchBranch(branchId).catch((error) => {
-            logger.warn('Failed to switch branch:', error);
+            reportFailure('switch to', findBranchName(branchId), error);
         });
     };
 
     const handleMerge = async (sourceBranchId: string) => {
+        setOperationError(null);
         try {
             await mergeBranch(sourceBranchId);
         } catch (error) {
-            logger.warn('Failed to merge branch:', error);
+            reportFailure('merge', findBranchName(sourceBranchId), error);
         }
     };
 
     const handleDelete = (branchId: string) => {
+        setOperationError(null);
         try {
             deleteBranch(branchId);
         } catch (error) {
-            logger.warn('Failed to delete branch:', error);
+            reportFailure('delete', findBranchName(branchId), error);
         }
     };
 
@@ -94,6 +132,12 @@ export const BranchManagerDialog = ({ onClose }: BranchManagerDialogProps): Reac
                 />
 
                 <div className="space-y-4 px-4 py-4">
+                    {operationError === null ? null : (
+                        <p key={failureSeq} role="alert" className="text-[11px] text-[var(--color-state-danger)]">
+                            {operationError}
+                        </p>
+                    )}
+
                     <div className="flex max-h-60 flex-col gap-1 overflow-y-auto">
                         {state.branches.map((branch) => (
                             <BranchRow

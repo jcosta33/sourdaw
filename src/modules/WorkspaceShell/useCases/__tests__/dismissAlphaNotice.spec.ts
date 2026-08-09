@@ -9,7 +9,7 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock('../../stores/alphaNoticeStore', () => ({
     alphaNoticeStore: {
-        set: mocks.alphaNoticeStoreSet,
+        trySet: mocks.alphaNoticeStoreSet,
     },
 }));
 
@@ -21,6 +21,6 @@ describe('dismissAlphaNotice', () => {
     it('should persist dismissal in alphaNoticeStore', () => {
         dismissAlphaNotice();
 
-        expect(alphaNoticeStore.set).toHaveBeenCalledWith(true);
+        expect(alphaNoticeStore.trySet).toHaveBeenCalledWith(true);
     });
 });

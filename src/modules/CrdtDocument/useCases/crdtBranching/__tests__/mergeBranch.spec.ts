@@ -31,6 +31,10 @@ const mocks = vi.hoisted(() => ({
     merge: vi.fn(() => MERGED_DOC),
     clone: vi.fn((doc: unknown) => structuredClone(doc)),
     storeSet: vi.fn(),
+    // The rollback path writes with trySet: it runs after the documents have
+    // been restored, where a throw would skip the projection that puts the
+    // stores back in step with them. See #1557.
+    storeTrySet: vi.fn(() => true),
 }));
 
 vi.mock('@automerge/automerge', () => ({ merge: mocks.merge, clone: mocks.clone }));
@@ -49,7 +53,7 @@ vi.mock('../../../repositories/automergeRepository', () => ({
 }));
 vi.mock('../../../stores/branchStore', () => ({
     get branchStore() {
-        return { value: mocks.storeValue, set: mocks.storeSet };
+        return { value: mocks.storeValue, set: mocks.storeSet, trySet: mocks.storeTrySet };
     },
 }));
 vi.mock('../../compactProject', () => ({ compactProject: mocks.compactProject }));
@@ -113,7 +117,7 @@ describe('mergeBranch', () => {
 
         await expect(mergeBranch('src')).rejects.toBe(error);
         expect(mocks.loadCrdtProject).toHaveBeenCalledOnce();
-        expect(mocks.storeSet).toHaveBeenLastCalledWith(mocks.storeValue);
+        expect(mocks.storeTrySet).toHaveBeenLastCalledWith(mocks.storeValue);
         expect(docs.root).toEqual(TARGET_DOC);
         expect(docs.branch_feat).toEqual(ACTIVE_SNAPSHOT);
     });

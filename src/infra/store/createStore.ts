@@ -1,3 +1,5 @@
+import { logger as appLogger } from '#/infra/logger/appLogger';
+
 import { createMemoryStorage } from './storage/createMemoryStorage';
 import { type Store, type StoreOptions } from './types';
 
@@ -51,6 +53,58 @@ export const createStore = <TData>(options: StoreOptions<TData> = {}): Store<TDa
     const sanitize = options.sanitize;
 
     /**
+     * Write without letting a refused backing store unwind the caller.
+     *
+     * Every store declared at module scope runs its constructor during ES
+     * module evaluation, and the constructor writes: it seeds an empty backing
+     * store, and it repairs one holding content this build sanitized. A throw
+     * from either aborts the module graph before the composition root exists,
+     * so nothing in the app can catch it and the app does not boot — which a
+     * full origin quota, or Safari private mode's outright `SecurityError` from
+     * `setItem`, is enough to cause. See #1557.
+     *
+     * Returns whether the value is DURABLE — committed to a backing store that
+     * outlives the session — which is the question every caller of the boolean
+     * actually acts on.
+     *
+     * An adapter that does not implement `trySet` has made no durability claim,
+     * so this reports `false` rather than inventing one. A returning `set` is
+     * not evidence of durability and this used to treat it as if it were:
+     *
+     * - `createAutomergeStorage.set` only records a pending write that a
+     *   later `preparePendingWrite` can `abandon`, rolling the store back to
+     *   the last committed value. Nothing has reached the document at the
+     *   moment of the call, and it may never.
+     * - `createMemoryStorage` has no backing store to outlive anything.
+     * - `createVersionControlStorage` swallows its own write failures
+     *   internally, so it cannot report on them at all.
+     *
+     * `false` is accurate for all three. Adapters that can genuinely answer —
+     * `createLocalStorage`, `createPlainJsonLocalStorage` — opt in and report
+     * for themselves, naming the key they own.
+     *
+     * The fallback reports through the module logger, not `options.logger`.
+     * `options.logger` is optional and no production call site passes one, so
+     * gating the only signal a dropped write produces on it would mean the
+     * fallback drops writes silently everywhere it actually runs — and the test
+     * proving it reports would be proving a configuration that does not ship.
+     */
+    const writeDurableValue = (value: TData | null): boolean => {
+        const adapterTrySet = storage.trySet;
+        if (adapterTrySet) {
+            return adapterTrySet.call(storage, value);
+        }
+
+        try {
+            storage.set(value);
+        } catch (error) {
+            appLogger.error(new Error('Store write to backing storage failed', { cause: error }));
+        }
+
+        return false;
+    };
+
+    /**
      * Apply the sanitizer to a value arriving from backing storage.
      *
      * Sanitizing runs on inbound paths only — the initial seed and post-hydrate
@@ -97,7 +151,7 @@ export const createStore = <TData>(options: StoreOptions<TData> = {}): Store<TDa
             return true;
         }
 
-        storage.set(sanitized);
+        writeDurableValue(sanitized);
         return true;
     };
 
@@ -105,7 +159,7 @@ export const createStore = <TData>(options: StoreOptions<TData> = {}): Store<TDa
     const storedValue = storage.get();
     if (storedValue === null) {
         if (options.initialData !== undefined) {
-            storage.set(options.initialData);
+            writeDurableValue(options.initialData);
         }
     } else {
         sanitizeStorageValue(storedValue);
@@ -146,6 +200,26 @@ export const createStore = <TData>(options: StoreOptions<TData> = {}): Store<TDa
         set(value: TData | null): void {
             storage.set(value);
             queueStoreNotification(notify);
+        },
+
+        trySet(value: TData | null): boolean {
+            const persisted = writeDurableValue(value);
+            // Notify regardless: the visible value changed either way, and a
+            // caller that keeps rendering the pre-write snapshot because the
+            // write was not durable is a second failure on top of the first.
+            //
+            // Known consequence, recorded rather than guarded. A subscriber can
+            // carry a non-durable value further than this replica: during a
+            // collaboration session `startBranchSync` mutates the `__branches__`
+            // Automerge doc on every `branchStore` notification, so a rolled-back
+            // branch list that `localStorage` refused is still broadcast to peers
+            // and written into the persisted bundle. The throwing `set` would
+            // have thrown before notifying. It is bounded — the host is
+            // authoritative for that document and `stopBranchSync` removes it —
+            // and the alternative, withholding the notification, leaves every
+            // reader on a value the writer has already moved past. See #1557.
+            queueStoreNotification(notify);
+            return persisted;
         },
 
         update(updater: (current: TData | null) => TData | null): void {

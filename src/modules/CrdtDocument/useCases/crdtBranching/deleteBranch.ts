@@ -23,16 +23,30 @@ export function deleteBranch(branchId: string): void {
     }
 
     const branch = state.branches.find((b) => b.branchId === branchId);
+
+    // Record the removal first, and evict the document only once it landed.
+    //
+    // The reverse order made a refused `localStorage` write destructive: the
+    // document was already gone from the repository when the throw unwound, so
+    // the branch was left listed but unopenable, and the compaction below —
+    // the step that clears its bytes from IndexedDB — never ran.
+    //
+    // Deliberately the throwing `set` rather than `trySet`. Nothing is
+    // destroyed yet at this line, so a throw is the correct answer and not a
+    // half-applied delete: the adapter keeps the cached value when the write
+    // fails, so the branch stays listed, `handleDelete` in `BranchManagerDialog`
+    // catches it, and the user can try again. A branch whose removal cannot be
+    // persisted is a branch that was not deleted. See #1557.
+    branchStore.set({
+        ...state,
+        branches: state.branches.filter((b) => b.branchId !== branchId),
+    });
+
     let removedDoc = false;
     if (branch) {
         automergeRepository.removeDoc(branch.rootDocId);
         removedDoc = true;
     }
-
-    branchStore.set({
-        ...state,
-        branches: state.branches.filter((b) => b.branchId !== branchId),
-    });
 
     // Drop the branch's bytes from IndexedDB. `removeDoc` only evicts the
     // in-memory doc; without persisting, `branch_<uuid>` survives in IDB until

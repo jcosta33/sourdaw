@@ -1,6 +1,7 @@
 // registerDependencies owns app singleton construction; bootstrap wires those
 // instances into module-owned dependency ports before runtime subscribers start.
 import { setRuntimeLogger } from '#/infra/logger/runtimeLogger';
+import { flushDeferredStorageNotice } from '#/infra/store/storage/storageFullNotice';
 import { getGenerationHandlers, getAiMidiHandlers } from '#/modules/AiGeneration/useCases';
 import {
     beginMixAnalysis,
@@ -72,6 +73,7 @@ import { getControlRoomHandlers } from '#/modules/ControlRoom/useCases';
 import { getControlSurfaceHandlers, setMidiLearnDependencies } from '#/modules/ControlSurface/useCases';
 import { actionHistoryStore } from '#/modules/CrdtDocument/stores';
 import {
+    initBranchState,
     markActionHistoryEntryReverted,
     recordActionHistoryEntry,
     clearActionHistory as clearCrdtActionHistory,
@@ -157,6 +159,14 @@ import { registerGlobalErrorHandlers } from './registerGlobalErrorHandlers';
 
 logCapabilities();
 
+// First, and before anything can read a branch id. Recovering the pre-session
+// branch state used to be a side effect of evaluating `branchStore.ts`, where a
+// refused `localStorage` write threw during module evaluation and stopped the
+// app booting outright — no app-level catch runs that early. It is an explicit
+// step of the composition root now, so a failure is reported and survivable.
+// See #1557.
+initBranchState();
+
 registerCrdtStorageRuntime();
 setActionHistoryMetadataPort({
     record: recordActionHistoryEntry,
@@ -214,6 +224,13 @@ configureYeastRuntime({ panicOutputNotes: stopAllScheduled });
 const disposeWebMidiRealtimeProcessor = setWebMidiRealtimeProcessor({ processor: processRealtimeMidiInput });
 setWebMidiRuntimeEventBus({ eventBus });
 setNotificationEventBus(eventBus);
+// Storage adapters cannot resolve `notifyUser` before this line: `inject`
+// caches the closure it builds on first call, and an unregistered token
+// resolves to the abstract class rather than throwing — so one pre-bootstrap
+// call would cache a bus with no `emit` and break every `notifyUser` site for
+// the life of the page. A store's constructor seed is exactly such a caller on
+// a sealed origin. Anything they had to hold is delivered here. See #1557.
+flushDeferredStorageNotice();
 setTimeOperationDependencies({
     prepareAutomationTimeOperation,
     prepareAutomationTimeStateRestore,

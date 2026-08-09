@@ -44,6 +44,11 @@ const createReactiveStoreFixture = vi.hoisted(() => {
                 currentValue = value;
                 notify();
             },
+            trySet(value: TData | null): boolean {
+                store.set(value);
+                // An in-memory fake has no backing store that can refuse a write.
+                return true;
+            },
             update(updater: (current: TData | null) => TData | null): void {
                 store.set(updater(currentValue));
             },

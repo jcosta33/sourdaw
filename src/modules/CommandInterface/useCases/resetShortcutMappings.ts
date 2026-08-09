@@ -13,7 +13,7 @@ export function resetShortcutMappings(): void {
     if (!state) {
         return;
     }
-    shortcutStore.set({
+    shortcutStore.trySet({
         definitions: state.definitions,
         customMappings: {},
     });
