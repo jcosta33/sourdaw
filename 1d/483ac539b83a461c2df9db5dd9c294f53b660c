@@ -1,0 +1,19 @@
+tests/e2e/yeastMidiFxDeepTestId.spec.ts
+  s_880a4e585558eb::t_4a91862b644c3e 1-82
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "1d483ac539b83a461c2df9db5dd9c294f53b660c",
+  "prompts": {},
+  "sessions": {
+    "s_880a4e585558eb": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-aec7d594588440116",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
