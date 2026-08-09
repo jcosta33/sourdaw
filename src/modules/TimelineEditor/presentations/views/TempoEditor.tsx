@@ -11,6 +11,9 @@ import { cn } from '#/utils/Styles/cn';
 
 import { useTempoEditorState } from '../hooks/useTempoEditorState';
 
+/** Ties the visible lock badge to the field it explains, via `aria-describedby`. */
+const TEMPO_LOCK_REASON_ID = 'tempo-field-lock-reason';
+
 export const TempoEditor = (): ReactElement => {
     const time = useTempoEditorState();
 
@@ -30,19 +33,45 @@ export const TempoEditor = (): ReactElement => {
     // to the tooltip: the tooltip is hover-only, so touch and keyboard users
     // never see it, and it was carrying the entire explanation.
     let tempoLockBadge: string | null = null;
+    /**
+     * Announced while the lock holds, and only then. Deliberately not a third
+     * copy of `tempoFieldHint`: the hint is instructions, and a user who hears
+     * "edit its end points in the tempo map" arriving unprompted has not been
+     * told the thing that just happened. A status message names the control and
+     * the transition. Clearing it does not announce, which is what keeps this
+     * quiet on mount and on unlock.
+     */
+    let tempoFieldStatus = '';
     if (tempoField.lockReason === 'tempo-ramp') {
         tempoFieldLabel = 'Tempo BPM at playhead (tempo ramp, read-only)';
         tempoFieldHint = 'The playhead is inside a tempo ramp. Edit its end points in the tempo map.';
         tempoLockBadge = 'ramp';
+        tempoFieldStatus = 'Tempo field locked: the playhead is inside a tempo ramp.';
     }
     if (tempoField.lockReason === 'no-transport-state') {
         tempoFieldLabel = 'Tempo BPM (transport state loading, read-only)';
         tempoFieldHint = 'The transport state has not loaded yet.';
         tempoLockBadge = 'loading';
+        tempoFieldStatus = 'Tempo field locked: the transport state has not loaded yet.';
     }
 
     return (
         <div className="daw-readout-well relative flex h-8 items-center gap-2 rounded-sm px-2">
+            {/*
+             * The lock arriving is a status message, and it was not one. The badge
+             * below names the reason but is referenced by nothing, and
+             * `aria-readonly` flipping is not announced — so a screen-reader,
+             * magnifier or voice-control user got a field that silently stopped
+             * responding while its number silently changed. `aria-valuenow` is not
+             * the signal: it already moves every animation frame off the playhead,
+             * measured at 146/142/138/134/130/126 across six frames inside a ramp
+             * with no drag at all, so the abort's revert is indistinguishable from
+             * tracking. WCAG 4.1.3. Same `sr-only` status pattern as
+             * `TransportControls`, in the same transport bar.
+             */}
+            <span className="sr-only" aria-live="polite" role="status">
+                {tempoFieldStatus}
+            </span>
             <Tooltip>
                 <TooltipTrigger asChild>
                     <div data-testid="transport-tempo-bpm">
@@ -52,6 +81,10 @@ export const TempoEditor = (): ReactElement => {
                             onReset={time.resetTempoValue ?? undefined}
                             readOnly={!tempoField.editable}
                             ariaLabel={tempoFieldLabel}
+                            // The reason travels with the control rather than
+                            // sitting beside it, so anything that finds the field
+                            // finds why it is locked.
+                            ariaDescribedBy={tempoLockBadge === null ? undefined : TEMPO_LOCK_REASON_ID}
                             commitMode="release"
                             min={tempoField.minTempo}
                             max={tempoField.maxTempo}
@@ -66,6 +99,7 @@ export const TempoEditor = (): ReactElement => {
             </Tooltip>
             {tempoLockBadge === null ? null : (
                 <span
+                    id={TEMPO_LOCK_REASON_ID}
                     data-testid="tempo-lock-reason"
                     className="flex items-center gap-0.5 text-[9px] uppercase tracking-[0.12em] text-muted-foreground"
                 >

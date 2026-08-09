@@ -1,4 +1,13 @@
-export type ProofChamberAlgorithm = 'plate' | 'fdn-8' | 'fdn-16' | 'spring' | 'reverse';
+/**
+ * The algorithms the selector offers, in the order it draws them.
+ *
+ * A tuple rather than a bare union so the ids can be *iterated* as well as
+ * type-checked: `ALGORITHM_BY_WIRE_VALUE` inverts `ALGORITHM_MAP` over it
+ * without a cast, and the panel numbers its badge by position in it.
+ */
+export const PROOF_CHAMBER_ALGORITHMS = ['plate', 'fdn-8', 'fdn-16', 'spring', 'reverse'] as const;
+
+export type ProofChamberAlgorithm = (typeof PROOF_CHAMBER_ALGORITHMS)[number];
 
 export type SpaceType = 'hall' | 'room' | 'plate' | 'chamber' | 'cathedral' | 'shimmer' | 'infinite' | 'spring';
 
@@ -165,6 +174,60 @@ export const PARAM_MAP: Record<string, string> = {
     algorithm: 'algorithm',
     vintage: 'vintage',
 };
+
+/**
+ * The wire value each stored `algorithm` number means, inverted from
+ * `ALGORITHM_MAP` rather than written out, so the two cannot disagree.
+ *
+ * Used on project open: `Device.parameterValues` holds the number, and the
+ * panel needs the id back to draw the right selection — and, since #1519, to
+ * gate the right controls.
+ */
+export const ALGORITHM_BY_WIRE_VALUE: Readonly<Record<number, ProofChamberAlgorithm>> = (() => {
+    const inverted: Record<number, ProofChamberAlgorithm> = {};
+    for (const algorithm of PROOF_CHAMBER_ALGORITHMS) {
+        inverted[ALGORITHM_MAP[algorithm]] = algorithm;
+    }
+    return inverted;
+})();
+
+/**
+ * The engine-state fields that round-trip through `Device.parameterValues`,
+ * split by the type they carry back.
+ *
+ * Split rather than one list because the stored form is always a number: the
+ * three switches persist as 0 or 1 and have to come back as booleans. Declared
+ * as literal tuples so assignment stays type-checked, and asserted total
+ * against `PARAM_MAP` by `hydrateChamberStateFromProject.spec.ts` — a new
+ * parameter that never reaches one of these lists would silently stop
+ * surviving a reload.
+ */
+export const NUMERIC_ENGINE_FIELDS = [
+    'mix',
+    'decay',
+    'damping',
+    'predelay',
+    'size',
+    'modRate',
+    'modDepth',
+    'diffusion',
+    'highCut',
+    'lowCut',
+    'width',
+    'shimmerAmount',
+    'shimmerPitch',
+    'gravity',
+    'saturationType',
+    'earlyLateBalance',
+    'density',
+    'vintage',
+] as const satisfies readonly (keyof ProofChamberEngineState)[];
+
+export const BOOLEAN_ENGINE_FIELDS = [
+    'freeze',
+    'shimmer',
+    'saturation',
+] as const satisfies readonly (keyof ProofChamberEngineState)[];
 
 export type ProofChamberPluginState = {
     id: string;

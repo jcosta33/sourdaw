@@ -230,9 +230,20 @@ Automation lanes do not always use the label the panel prints. Where they differ
 | Voice switch chips | Channel |
 
 > [!WARNING]
-> **Not yet active.** Grinder changes are not recorded in the history panel and cannot be undone.
-> Turning a knob, loading a preset, and recalling a snapshot all apply immediately and permanently.
-> Duplicate the track before you experiment.
+> **Not yet active.** Grinder changes you make by hand are not recorded in the history panel and
+> cannot be undone. Turning a knob, loading a preset, and recalling a snapshot all apply immediately
+> and permanently. Duplicate the track before you experiment.
+>
+> Asking the assistant for the same parameter change is the exception, and it is the only route
+> Grinder has into history: that change is recorded and undo reverses it in the project and in the
+> sound.
+>
+> **The panel is not on that route at all.** Grinder's controls are drawn from state only its own
+> panel writes, and the assistant's change does not go through the panel — so you hear the change
+> while the knob still shows the value from before it, and when you undo you hear that reversed
+> while the knob still has not moved. Closing and reopening Grinder does not resync it; nothing
+> reads the project back into those controls. **This is a defect and is being fixed**, not how the
+> device is meant to work.
 
 ## See also
 

@@ -274,14 +274,23 @@ describe('offline device-param automation capability coverage', () => {
         // Fermenter's remaining parameters were bound (AC-4). The device-level
         // count is untouched, which is the point of counting the two classes
         // apart — parameter-level work must not move a device-level number.
-        expect(census.verdicts).toBe(107);
+        //
+        // 107 → 109 verdicts and 19 → 17 parameter-level exemptions, and those
+        // two must move together by the same amount: `verdicts` counts pairs
+        // that resolve a *binding*, so a parameter changing class from exempt to
+        // bound leaves this pair total up one and that exemption total down one.
+        // The two parameters are `portamentoMode` and `grainPanSpread`, both of
+        // which were exempt only because the engine discarded what they said —
+        // `Layer::portamento_time_for_note_on` and the generalised stereo
+        // restoration in `Voice::render` now read them.
+        expect(census.verdicts).toBe(109);
         // 185, was 182: `builtin-crumbs` declared `stackCount`, `detuneSpread`
         // and `stackSpread` as automatable parameters, and Crumbs is already
         // exempt at the *device* level, so the three new pairs land in that
         // class rather than in `uncovered`. A device-level number moving because
         // a device gained parameters is the one legitimate way it moves.
         expect(census.deviceLevelExemptions).toBe(185);
-        expect(census.parameterLevelExemptions).toBe(19);
+        expect(census.parameterLevelExemptions).toBe(17);
 
         // (v) `knead` is a factory entry and a canonical native device type with
         // no descriptor anywhere. It is not an exemption row: two of the three
@@ -296,27 +305,25 @@ describe('offline device-param automation capability coverage', () => {
 
         // The subject of SPEC-parameter-automation-coverage, stated as a number
         // the census can defend rather than a sentence in a header. Fermenter
-        // declares 105 automatable parameters. 102 now carry offline ordinals;
-        // the three that do not are absences of *engine behaviour* — see their
-        // rows in `offlineAutomationExemptions.ts` — rather than parameters that
-        // render frozen in a bounce while the monitor rides them.
-        expect(fermenter).toEqual({ covered: 102, exempt: 3, deviceLevel: false });
+        // declares 105 automatable parameters. 104 now carry offline ordinals;
+        // the one that does not is an absence of *engine behaviour* — see its
+        // row in `offlineAutomationExemptions.ts` — rather than a parameter that
+        // renders frozen in a bounce while the monitor rides it.
+        expect(fermenter).toEqual({ covered: 104, exempt: 1, deviceLevel: false });
         // Spot-checks on both sides of the move, so a regression that reverted
         // the binding en masse cannot satisfy the totals by shifting a count.
         // `oscWaveform` came across in an earlier PR; `additiveTilt` is the most
-        // expensive setter in the newly bound set and `masterGain` the last
+        // expensive setter in the newly bound set and `grainPanSpread` the last
         // ordinal, so a truncated table loses it first.
-        for (const paramId of ['oscWaveform', 'additiveTilt', 'masterGain']) {
+        for (const paramId of ['oscWaveform', 'additiveTilt', 'grainPanSpread']) {
             expect(census.coveredPairs).toContain(`fermenter:${paramId}`);
             expect(Object.hasOwn(PARAMETER_LEVEL_OFFLINE_AUTOMATION_EXEMPTIONS.fermenter ?? {}, paramId)).toBe(false);
         }
-        // And the two that stayed behind are exempt rather than silently
-        // dropped: a pair with neither a binding nor a row lands in `uncovered`
-        // above, so this pins which side of the split they are on.
+        // And the one that stayed behind is exempt rather than silently dropped:
+        // a pair with neither a binding nor a row lands in `uncovered` above, so
+        // this pins which side of the split it is on.
         expect(Object.keys(PARAMETER_LEVEL_OFFLINE_AUTOMATION_EXEMPTIONS.fermenter ?? {}).sort()).toEqual([
             'activeLayer',
-            'grainPanSpread',
-            'portamentoMode',
         ]);
     });
 

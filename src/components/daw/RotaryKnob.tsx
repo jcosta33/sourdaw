@@ -69,6 +69,26 @@ export type RotaryKnobProps = {
     label?: string;
     /** Explicit accessible name for contexts where the visible label is owned by surrounding markup. */
     'aria-label'?: string;
+    /**
+     * Refuse manual value entry while still showing the current value.
+     *
+     * Expressed as `aria-disabled` rather than by dropping the element from the
+     * tab order: a control is only disabled here when something about the
+     * device's current mode makes it inert, and the user has to be able to
+     * reach it to read the `title` that says so. Drag, keyboard and
+     * double-click-to-default all refuse; nothing else about the control
+     * changes, because the value it displays is still real and an automation
+     * lane may still be writing it.
+     */
+    disabled?: boolean;
+    /**
+     * Hover/description text on the control itself.
+     *
+     * On the root rather than on an owning wrapper so that a disabled control
+     * and the reason it is disabled are the same node: a caller cannot ship one
+     * without the other, and a test that finds the control finds the reason.
+     */
+    title?: string;
     /** Optional presentation state for an owning view to decorate the control. */
     isLearning?: boolean;
     isMapped?: boolean;
@@ -122,6 +142,8 @@ export const RotaryKnob = ({
     gestureOwner,
     gestureAuthority,
     'aria-label': ariaLabel,
+    disabled = false,
+    title,
 }: RotaryKnobProps): ReactElement => {
     // Derive sensible defaults from range when not explicitly provided
     const step = stepProp ?? Math.max(0.001, (max - min) / 200);
@@ -170,6 +192,19 @@ export const RotaryKnob = ({
     useLayoutEffect(() => {
         onChangeRef.current = onChange;
         gestureAuthorityRef.current = gestureAuthority;
+
+        // A drag that is already in flight when `disabled` flips true has to be
+        // dropped, not merely stopped from starting. `handlePointerDown` and
+        // `handleKeyDown` guard the *entry* points, and `handlePointerMove`
+        // holds its own refs, so without this a knob that became inert
+        // mid-gesture kept emitting transient writes and still committed on
+        // pointer-up — measured at one transient and one commit. Dropping the
+        // gesture here rather than finalizing it means the in-flight value is
+        // discarded, which is the same treatment an owner change already gets
+        // below.
+        if (disabled && draggingRef.current) {
+            clearDragState();
+        }
 
         if (draggingRef.current && !Object.is(gestureOwnerAtStartRef.current, gestureOwner)) {
             clearDragState();
@@ -238,14 +273,14 @@ export const RotaryKnob = ({
     };
 
     const resetToDefault = () => {
-        if (Object.is(value, defaultValue)) {
+        if (disabled || Object.is(value, defaultValue)) {
             return;
         }
         onChange(defaultValue, false);
     };
 
     const handlePointerDown = (event: PointerEvent<HTMLDivElement>) => {
-        if (activePointerIdRef.current !== null || event.button !== 0) {
+        if (disabled || activePointerIdRef.current !== null || event.button !== 0) {
             return;
         }
         if (event.altKey) {
@@ -306,7 +341,7 @@ export const RotaryKnob = ({
     };
 
     const handleKeyDown = (event: KeyboardEvent<HTMLDivElement>): void => {
-        if (draggingRef.current) {
+        if (disabled || draggingRef.current) {
             return;
         }
 
@@ -376,8 +411,11 @@ export const RotaryKnob = ({
             aria-valuemin={min}
             aria-valuemax={max}
             aria-valuenow={ariaValue}
+            aria-disabled={disabled || undefined}
+            title={title}
             className={cn(
-                'group/knob relative flex flex-col items-center select-none touch-none cursor-ns-resize',
+                'group/knob relative flex flex-col items-center select-none touch-none',
+                disabled ? 'cursor-not-allowed opacity-45' : 'cursor-ns-resize',
                 label && 'min-w-fit',
                 className
             )}

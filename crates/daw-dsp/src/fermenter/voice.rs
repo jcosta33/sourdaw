@@ -17,6 +17,22 @@ use super::sampler::SamplerEngine;
 use super::spectral::SpectralWarp;
 use super::stepseq::StepSequencer;
 
+/// Smallest `|osc_l| + |osc_r|` the stereo balance in `Voice::render` will
+/// divide by. Purely a division-safety invariant — see the comment at the use
+/// site for why it is unreachable in the current gate and why it is still here.
+const MIN_BALANCE_SUM: f32 = 1e-6;
+
+/// Equal-tempered frequency of a MIDI note, A4 = 440 Hz.
+///
+/// Shared so that the pitch a note glides *to* and the pitch a later note glides
+/// *from* are computed by one expression: `Layer` records a played note's
+/// frequency as the next glide's origin, and an origin that disagreed with the
+/// destination formula by even a rounding step would put an audible sub-cent
+/// ramp on a note that should have snapped.
+pub(super) fn note_frequency(note: u8) -> f32 {
+    440.0 * 2.0f32.powf((note as f32 - 69.0) / 12.0)
+}
+
 /// All per-block parameters passed from MasterSynth to Voice::render.
 pub struct VoiceParams<'a> {
     pub tables: &'a [Wavetable],
@@ -157,6 +173,9 @@ impl Voice {
             lorenz: LorenzMod::new(),
             perlin: PerlinMod::new(),
             engine: 0,
+            // Both are overwritten by `note_on` before the voice can render a
+            // sample — it is the only thing that sets `active` — so neither
+            // value is ever heard. They are not a starting pitch.
             target_freq: 440.0,
             current_freq: 440.0,
             glide_coeff: 1.0,
@@ -175,7 +194,28 @@ impl Voice {
         }
     }
 
-    pub fn note_on(&mut self, note: u8, channel: u8, velocity: f32, sample_rate: f32) {
+    /// Start a note.
+    ///
+    /// `glide_origin` is the pitch the note's glide starts from, and it is a
+    /// parameter rather than a separate setter so that **there is no way to
+    /// start a note without stating it**. It used to be its own
+    /// `set_glide_origin` call that `Layer::note_on_with_channel` made just
+    /// before this one, which left `current_freq`'s 440 Hz construction seed
+    /// reachable by any second call site that forgot the extra step — silently,
+    /// only under glide, and only in the polyphonic cases nobody catches by ear.
+    /// That is exactly how the original defect survived, so the shape that
+    /// allowed it is gone rather than merely unused.
+    pub fn note_on(
+        &mut self,
+        note: u8,
+        channel: u8,
+        velocity: f32,
+        glide_origin: f32,
+        sample_rate: f32,
+    ) {
+        // Before the snap check below, which overrides it when there is no
+        // glide to run.
+        self.current_freq = glide_origin;
         self.active = true;
         self.note = note;
         self.channel = channel;
@@ -186,7 +226,7 @@ impl Voice {
         self.expr_bend_semitones = 0.0;
         self.expr_pressure = 0.0;
         self.expr_slide = 0.0;
-        let new_freq = 440.0 * 2.0f32.powf((note as f32 - 69.0) / 12.0);
+        let new_freq = note_frequency(note);
         self.target_freq = new_freq;
         self.frequency = new_freq;
         // If no portamento (glide_coeff == 1.0), snap immediately
@@ -637,30 +677,57 @@ impl Voice {
                 freq_before_drift
             };
 
-            // Oscillator
-            let (mut osc_l, mut osc_r) = if self.engine == 3 {
+            // Oscillator.
+            //
+            // The third element is the branch's own statement of whether it
+            // produced a *stereo pair* — two channels carrying a pan — or two
+            // copies of one signal. The filter below sums to mono and the
+            // output stage restores the L/R balance only for the branches that
+            // say `true`, so this is what decides whether an engine's pan
+            // survives.
+            //
+            // It is the branch's word rather than a comparison of the two
+            // values because a comparison is wrong twice over. Two of these
+            // engines emit `(s, s)` and would never trip it however stereo they
+            // became; and `SpectralWarp::process` is stateful — its `Quantize`
+            // mode holds a sample-and-hold counter — and is called once per
+            // channel below, so on a *mono* engine with warp engaged the two
+            // channels diverge without either of them meaning a stereo
+            // position. Restoring a "balance" from that divergence would turn a
+            // bit-crusher into a random panner.
+            let (mut osc_l, mut osc_r, osc_is_stereo) = if self.engine == 3 {
+                // Karplus-Strong: one string, one signal.
                 let s = self.ks_engine.as_mut().map(|ks| ks.tick()).unwrap_or(0.0);
-                (s, s)
+                (s, s, false)
             } else if self.engine == 4 {
-                self.granular_engine
+                // Granular: `GranularEngine::tick` pans every grain across the
+                // pair by `grain_pan_spread`. This is the pan that used to be
+                // computed and then discarded here.
+                let (gl, gr) = self
+                    .granular_engine
                     .as_mut()
                     .map(|gr| gr.tick(freq, p.sample_rate, p.tables))
-                    .unwrap_or((0.0, 0.0))
+                    .unwrap_or((0.0, 0.0));
+                (gl, gr, true)
             } else if self.engine == 5 {
+                // Additive: `AdditiveEngine::tick` returns one f32.
                 let s = self
                     .additive
                     .as_mut()
                     .map(|ad| ad.tick(freq, p.sample_rate))
                     .unwrap_or(0.0);
-                (s, s)
+                (s, s, false)
             } else if self.engine == 6 {
+                // Sampler: `SamplerEngine::tick` returns one f32.
                 let s = self
                     .sampler
                     .as_mut()
                     .map(|sp| sp.tick(p.sample_rate))
                     .unwrap_or(0.0);
-                (s, s)
+                (s, s, false)
             } else if has_unison {
+                // Unison bank: `unison_spread` pans the detuned copies. The
+                // original — and until now the only — stereo source here.
                 let mut ul = 0.0f32;
                 let mut ur = 0.0f32;
                 self.unison_osc.process_sample_stereo(
@@ -670,14 +737,15 @@ impl Voice {
                     &mut ul,
                     &mut ur,
                 );
-                (ul, ur)
+                (ul, ur, true)
             } else {
+                // Wavetable / analog / FM, single oscillator.
                 let s = match self.engine {
                     1 => self.polyblep_osc.tick(freq, p.sample_rate),
                     2 => self.fm_engine.tick(freq, p.sample_rate),
                     _ => self.osc.tick(freq, p.sample_rate, p.tables),
                 };
-                (s, s)
+                (s, s, false)
             };
 
             // Time-domain warp — apply to oscillator output using current phase
@@ -790,10 +858,67 @@ impl Voice {
 
             let g = gain * self.steal_fade;
 
-            // Stereo output: preserve the L/R ratio from unison panning
-            if has_unison && (osc_l - osc_r).abs() > 0.0001 {
+            // Stereo output: preserve the L/R ratio the oscillator produced.
+            //
+            // The filter above runs on the mono sum — one filter instead of
+            // two, and no risk of the two filter states drifting apart — which
+            // throws the pan away, so it is reapplied here as a balance on the
+            // filtered signal. `osc_is_stereo` is why this asks the oscillator
+            // branch rather than just comparing the channels; see the comment
+            // on that tuple.
+            //
+            // The gate used to read `has_unison`. That made this the unison
+            // bank's path and discarded the granular engine's per-grain pan —
+            // but only at one unison voice. Above one the gate was already true,
+            // so a granular patch with a unison bank did pan, and that render is
+            // byte-identical across this change. What was silently mono was the
+            // *shipped default* of `unison_voices == 1`: there,
+            // `grain_pan_spread` driven 0 → 1 over 96 quanta moved the render by
+            // 6.7e-5 total absolute sample difference against an RMS of 6.4e-2 —
+            // float rounding, not audio.
+            //
+            // **What this restores is a balance, not the original pair.** The
+            // mid is exact — the two weights sum to 1, so `L + R` is the mono
+            // signal whatever the pan — but the side is
+            // `(l + r)·(|l| − |r|)/(|l| + |r|)`, which equals `l − r` only while
+            // a single source occupies the pair. For the unison bank that is
+            // never exactly true; for granular it holds while grains do not
+            // overlap and degrades as they do. Measured with the filter removed:
+            // 0.01% error at density 20 / 50 ms, 14.6% at 20 / 200 ms, 48.3% at
+            // 100 / 500 ms — and the device panel reaches all of those. It is
+            // still strictly better than the mono sum it replaces, which was
+            // 100% wrong at every density. A faithful pair would need the filter
+            // run twice.
+            //
+            // The mid, by contrast, **is** exact, and that is a property of the
+            // gate rather than of the arithmetic. The divisor used to be
+            // `.max(0.001)`, which is not a no-op: the condition above only
+            // establishes `sum >= |osc_l - osc_r| > 0.0001`, ten times *under*
+            // that floor, so a pair landing in the gap was divided by a number
+            // larger than itself and its two weights summed to less than 1 —
+            // silently attenuating the mono signal. It reads like a
+            // near-silence guard and is not one, because `filtered` is the
+            // **filter's** output, not the oscillator's: between grains the raw
+            // pair collapses while the filter is still ringing, so the
+            // attenuation lands on a ringing tail at a perfectly audible level.
+            // On the shipped Breadcrumb Glitch patch — 15 ms grains at density
+            // 80, i.e. a low duty cycle — the worst-hit samples sat at
+            // -23.5 dBFS and moved by up to 76% of the local mid, a mid residue
+            // 20.7x the bound this file's guard allows. It tracks grain duty
+            // cycle, not level, which is why a probe at the default 50 ms /
+            // density 20 never sees it.
+            //
+            // So the floor is gone and the sub-threshold case takes the centred
+            // branch instead. `sum > MIN_BALANCE_SUM` is a division-safety
+            // invariant rather than a behavioural branch: it is unreachable
+            // while the condition beside it holds, since `|a| + |b| >= |a - b|`
+            // puts `sum` above 0.0001 already. It is here so the division stays
+            // safe on its own terms if that condition is ever loosened, and it
+            // is deliberately far below the point where either weight would
+            // round oddly.
+            let sum = osc_l.abs() + osc_r.abs();
+            if osc_is_stereo && (osc_l - osc_r).abs() > 0.0001 && sum > MIN_BALANCE_SUM {
                 // Scale filtered output by original L/R balance
-                let sum = (osc_l.abs() + osc_r.abs()).max(0.001);
                 left[i] += filtered * (osc_l.abs() / sum) * 2.0 * g;
                 right[i] += filtered * (osc_r.abs() / sum) * 2.0 * g;
             } else {
@@ -811,12 +936,12 @@ impl Voice {
 
 #[cfg(test)]
 mod tests {
-    use super::Voice;
+    use super::{note_frequency, Voice};
 
     #[test]
     fn note_on_clears_expression_so_a_recycled_voice_starts_neutral() {
         let mut voice = Voice::new(48_000.0);
-        voice.note_on(69, 0, 0.8, 48_000.0);
+        voice.note_on(69, 0, 0.8, note_frequency(69), 48_000.0);
         voice.set_expression(12.0, 1.0, -1.0);
         assert_eq!(voice.expr_bend_semitones, 12.0);
         assert_eq!(voice.expr_pressure, 1.0);
@@ -824,7 +949,7 @@ mod tests {
 
         // Voice stealing hands the same struct to a different MIDI note, so a
         // stale bend would detune an unrelated note (audit MD-2).
-        voice.note_on(60, 0, 0.8, 48_000.0);
+        voice.note_on(60, 0, 0.8, note_frequency(60), 48_000.0);
         assert_eq!(voice.expr_bend_semitones, 0.0);
         assert_eq!(voice.expr_pressure, 0.0);
         assert_eq!(voice.expr_slide, 0.0);

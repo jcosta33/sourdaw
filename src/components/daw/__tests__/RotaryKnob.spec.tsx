@@ -112,6 +112,33 @@ describe('RotaryKnob', () => {
         expect(onChange).toHaveBeenCalled();
     });
 
+    it('drops an in-flight drag when the control becomes disabled mid-gesture', () => {
+        // The entry guards in `handlePointerDown` and `handleKeyDown` only stop
+        // a gesture from *starting*. A knob that goes inert while the pointer
+        // is already down — which is exactly what the Dutch Oven panel does
+        // when automation moves the algorithm under a user's hand — kept
+        // emitting transient writes and still committed on pointer-up.
+        const onChange = vi.fn();
+        const { container, rerender } = render(
+            <RotaryKnob value={50} onChange={onChange} min={0} max={100} disabled={false} />
+        );
+        const root = getRoot(container);
+
+        fireEvent.pointerDown(root, { button: 0, pointerId: 11, clientY: 100 });
+        fireEvent.pointerMove(root, { pointerId: 11, clientY: 80 });
+        expect(onChange).toHaveBeenCalled();
+
+        onChange.mockClear();
+        rerender(<RotaryKnob value={50} onChange={onChange} min={0} max={100} disabled />);
+
+        fireEvent.pointerMove(root, { pointerId: 11, clientY: 40 });
+        fireEvent.pointerUp(root, { pointerId: 11 });
+
+        // Neither a transient nor a commit: the in-flight value is discarded,
+        // the same treatment a gesture-owner change already gets.
+        expect(onChange).not.toHaveBeenCalled();
+    });
+
     it('does not commit a press and release with no value change', () => {
         const onChange = vi.fn();
         const { container } = render(<RotaryKnob value={50} onChange={onChange} min={0} max={100} />);

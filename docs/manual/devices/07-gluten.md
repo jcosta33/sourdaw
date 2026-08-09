@@ -144,7 +144,6 @@ ratio-crush mode.
 **Diode** — **Recovery 1** to **Recovery 5** (default 3) replaces Release on this topology. Each
 position is a fixed release time: 50 ms, 100 ms, 400 ms, 800 ms, and 1.5 s. Low positions let the
 level spring back between hits; high positions hold the reduction through the tail and pump more.
-The hint printed under the chips reads the other way round — go by the times above.
 
 ## Stage two
 
@@ -195,9 +194,21 @@ controls the name is the only way to tell which lane is which:
 | Quick moves · Stage two chooser | Style · Blend Topo |
 
 > [!WARNING]
-> **Not yet active.** Gluten changes are not recorded in the history panel and cannot be undone.
-> Moving a control, loading a preset, and pressing a Quick move all apply immediately and
-> permanently. Save a preset before you experiment.
+> **Not yet active.** Loading a preset and pressing a Quick move are not recorded in the history
+> panel and cannot be undone — they apply immediately and permanently. Individual control moves
+> *are* recorded: one drag is one step, however far it travelled, and undo restores the saved value
+> and the sound.
+>
+> **The panel does not follow it, and closing Gluten does not help.** The knob keeps drawing the
+> value you dragged to while you hear the value undo restored. Gluten's controls are drawn from
+> state its own panel writes and nothing else — nothing reads the project back into it — so
+> reopening the device redraws the same stale value. Once the face and the sound disagree they stay
+> that way for the rest of the session. **This is a defect and is being fixed**, not how the device
+> is meant to work.
+>
+> History entries for Gluten are labelled with the internal parameter name rather than the name on
+> the panel, so an undone HPF switch reads `Set scHpfEnabled` — neither the panel's HPF nor the
+> lane's SC HPF On. Save a preset before you load another one.
 
 ## See also
 

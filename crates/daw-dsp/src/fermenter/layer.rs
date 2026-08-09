@@ -6,7 +6,7 @@ use super::filter::FilterMode;
 use super::modulation::ModMatrix;
 use super::oscillator::Wavetable;
 use super::params::SmoothedParam;
-use super::voice::{Voice, VoiceParams};
+use super::voice::{note_frequency, Voice, VoiceParams};
 
 const MAX_VOICES_PER_LAYER: usize = 16;
 const MAX_SCRATCH_FRAMES: usize = 4096;
@@ -76,6 +76,10 @@ pub struct Layer {
     pub lfo_pitch_amount: f32,
     pub lfo_filter_amount: f32,
     pub portamento_time: f32,
+    /// Glide mode: 0 = always, 1 = legato only. Read at note-on by
+    /// [`Layer::portamento_time_for_note_on`], which is the only place it has
+    /// any effect — the per-block push in `advance_block_params` deliberately
+    /// does not consult it (see that function).
     pub portamento_mode: u8,
     pub pulse_width: f32,
     pub osc_coarse: f32,
@@ -222,14 +226,71 @@ impl Layer {
         }
     }
 
-    pub fn note_on(&mut self, note: u8, velocity: u8) {
-        self.note_on_with_channel(note, velocity, 0);
+    /// Glide time this note-on should start with, after the glide-mode switch.
+    ///
+    /// Mode 0 ("always") glides every note, which is what the engine did for
+    /// every value of `portamento_mode` before this existed. Mode 1 ("legato")
+    /// glides only when the player was **still holding a key** as the new note
+    /// arrived, and snaps otherwise — the standard legato/fingered-portamento
+    /// behaviour.
+    ///
+    /// `Voice::held` is the whole predicate, and it is the right one because it
+    /// is set at note-on and cleared by `Voice::note_off` while the voice stays
+    /// `active` through its release tail. So a note the player has let go of
+    /// does not make the next note legato even though it is still sounding —
+    /// legato is a statement about the keyboard, not about the decay. That
+    /// distinction is why this reads `held` rather than `is_active`.
+    ///
+    /// Returning a time of 0 rather than reaching into the voice is deliberate:
+    /// `Voice::set_portamento(0.0, _)` sets `glide_coeff` to 1.0, and
+    /// `Voice::note_on` snaps `current_freq` to the new pitch exactly when the
+    /// coefficient is at 1.0. The suppression therefore lands through the
+    /// existing "no portamento" path instead of a second one.
+    ///
+    /// This decides *whether* a note glides. Where a glide that does happen
+    /// starts from is `MasterSynth::last_played_freq` — a separate question
+    /// with a separate answer, and deliberately *not* layer state, because a
+    /// layer only hears the notes it was playable for. A released key stops
+    /// making the next note legato but remains the last note played.
+    fn portamento_time_for_note_on(&self) -> f32 {
+        if self.portamento_mode != 1 {
+            return self.portamento_time;
+        }
+        let a_key_is_still_down = self.voices.iter().any(|voice| voice.held);
+        if a_key_is_still_down {
+            return self.portamento_time;
+        }
+        0.0
+    }
+
+    pub fn note_on(&mut self, note: u8, velocity: u8, glide_origin: f32) {
+        self.note_on_with_channel(note, velocity, 0, glide_origin);
     }
 
     /// Note-on carrying the MPE member channel that owns the note. Channel 0
     /// is the non-MPE default and what `note_on` uses.
-    pub fn note_on_with_channel(&mut self, note: u8, velocity: u8, channel: u8) {
+    ///
+    /// `glide_origin` is the pitch this note's glide starts from, and it is a
+    /// parameter rather than layer state on purpose — see
+    /// `MasterSynth::last_played_freq`, a private field on the sibling module,
+    /// referenced in plain code span because an intra-doc link cannot resolve
+    /// it from here. A layer only hears the notes it was playable for, so a
+    /// layer that derived the origin itself would be answering "what was *this
+    /// layer* last audible for?" when the question is "what did the *player*
+    /// last play?".
+    pub fn note_on_with_channel(
+        &mut self,
+        note: u8,
+        velocity: u8,
+        channel: u8,
+        glide_origin: f32,
+    ) {
         let vel = velocity as f32 / 127.0;
+        // Read before any voice is touched: voice stealing below swaps the
+        // displaced voice out of `self.voices` into a steal tail, so asking
+        // after it would be asking a pool the new note has already altered.
+        let portamento_time = self.portamento_time_for_note_on();
+        let destination_freq = note_frequency(note);
 
         // Find a free voice, or steal the quietest
         let mut target = None;
@@ -274,7 +335,12 @@ impl Layer {
             // waveform can be set before it renders its first sample.
             voice.set_waveform(self.osc_waveform);
             voice.set_pulse_width(self.pulse_width);
-            voice.set_portamento(self.portamento_time, self.sample_rate);
+            // The glide-mode switch is resolved here and nowhere else — this is
+            // the only moment at which "was a key still down?" has an answer.
+            // Before `note_on`, which reads the coefficient set here to decide
+            // whether to snap over the glide origin it is handed or leave it for
+            // the render loop to ramp away from.
+            voice.set_portamento(portamento_time, self.sample_rate);
             voice.set_granular_params(
                 self.grain_density,
                 self.grain_size,
@@ -295,7 +361,7 @@ impl Layer {
             voice.set_additive_odd(self.additive_odd);
             voice.set_additive_inharm(self.additive_inharm);
             voice.set_sampler_params(self.sampler_mode, self.sampler_start, self.sampler_end);
-            voice.note_on(note, channel, vel, self.sample_rate);
+            voice.note_on(note, channel, vel, glide_origin, self.sample_rate);
             voice.set_envelopes(
                 self.amp_attack,
                 self.amp_decay,
@@ -308,8 +374,7 @@ impl Layer {
             );
             // Excite Karplus-Strong at note-on time (after note_on reset)
             if self.engine == 3 {
-                let freq = 440.0 * 2.0f32.powf((note as f32 - 69.0) / 12.0);
-                voice.excite_ks(freq, self.sample_rate, self.ks_brightness);
+                voice.excite_ks(destination_freq, self.sample_rate, self.ks_brightness);
             }
             // Trigger sampler at note-on time
             if self.engine == 6 {
@@ -481,6 +546,14 @@ impl Layer {
             voice.set_waveform(self.osc_waveform);
             voice.set_engine(self.engine, self.sample_rate);
             voice.set_pulse_width(self.pulse_width);
+            // Unconditionally the raw time, *not* `portamento_time_for_note_on`.
+            // A legato-suppressed note has already snapped `current_freq` onto
+            // `target_freq` inside `Voice::note_on`, and nothing moves the
+            // target again for the life of the note, so restoring the glide
+            // coefficient here cannot restart a glide that was suppressed. What
+            // it does preserve is the live-edit behaviour every other line in
+            // this loop has: turning the glide time up mid-note is heard on the
+            // next note, not swallowed.
             voice.set_portamento(self.portamento_time, self.sample_rate);
             voice.set_ks_damping(self.ks_damping);
             voice.set_granular_params(
@@ -740,7 +813,7 @@ impl Layer {
 
 #[cfg(test)]
 mod tests {
-    use super::Layer;
+    use super::{note_frequency, Layer};
 
     #[test]
     fn mapped_oscillator_and_filter_params_update_layer_state() {
@@ -823,9 +896,9 @@ mod tests {
         let mut layer = Layer::new(48_000.0);
         // Long release so the first voice is unambiguously still active.
         layer.set_param("release", 2.0);
-        layer.note_on(60, 100);
+        layer.note_on(60, 100, note_frequency(60));
         layer.note_off(60);
-        layer.note_on(60, 100);
+        layer.note_on(60, 100, note_frequency(60));
 
         let before = active_bends_at(&layer, 60);
         assert_eq!(
@@ -849,8 +922,8 @@ mod tests {
     fn expression_does_not_cross_mpe_member_channels_at_one_pitch() {
         let mut layer = Layer::new(48_000.0);
         // Two member channels holding the same pitch — ordinary MPE.
-        layer.note_on_with_channel(60, 100, 2);
-        layer.note_on_with_channel(60, 100, 3);
+        layer.note_on_with_channel(60, 100, 2, note_frequency(60));
+        layer.note_on_with_channel(60, 100, 3, note_frequency(60));
 
         layer.note_expression(60, 2, 12.0, 0.5, 0.25);
 
@@ -874,8 +947,8 @@ mod tests {
     #[test]
     fn note_off_can_be_narrowed_to_one_member_channel() {
         let mut layer = Layer::new(48_000.0);
-        layer.note_on_with_channel(60, 100, 2);
-        layer.note_on_with_channel(60, 100, 3);
+        layer.note_on_with_channel(60, 100, 2, note_frequency(60));
+        layer.note_on_with_channel(60, 100, 3, note_frequency(60));
 
         layer.note_off_matching(60, Some(2));
 
@@ -895,8 +968,8 @@ mod tests {
     #[test]
     fn channel_agnostic_note_off_still_releases_every_voice_at_the_pitch() {
         let mut layer = Layer::new(48_000.0);
-        layer.note_on_with_channel(60, 100, 2);
-        layer.note_on_with_channel(60, 100, 3);
+        layer.note_on_with_channel(60, 100, 2, note_frequency(60));
+        layer.note_on_with_channel(60, 100, 3, note_frequency(60));
 
         // What channel-unaware callers (scheduled playback, panic) get: no
         // voice can be left hanging by omitting the channel.

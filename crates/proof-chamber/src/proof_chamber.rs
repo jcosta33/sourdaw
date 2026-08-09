@@ -35,6 +35,18 @@ const RIGHT_DELAY_2: usize = 3163;
 // Modulation
 const EXCURSION: f32 = 16.0; // peak excursion in samples at ref rate
 
+/// How far `gravity` may tilt the tank allpass coefficient away from the
+/// Dattorro-linked value, per unit of gravity.
+///
+/// Sized by its two hard constraints rather than by taste. The coefficient it
+/// scales tops out at 0.50, so 0.30 puts the widest possible tank allpass gain
+/// at `0.50 * 1.45 = 0.725` — comfortably inside the range a Schroeder allpass
+/// is stable in, and in the same neighbourhood as the 0.70 the input diffusers
+/// already run at. Shrinking it would make the control inaudible at the
+/// extremes; growing it would push the tank towards unity gain, where it rings
+/// rather than decays.
+const GRAVITY_TILT_SPAN: f32 = 0.30;
+
 // Output taps (from the paper's Table 2)
 // Left output taps: (delay_line_id, tap_position, sign)
 // delay IDs: 0=left_delay1 (24→30), 1=left_ap (31→33), 2=left_delay2 (33→39)
@@ -537,10 +549,35 @@ impl ProofChamber {
         self.left_damp.coeff = damp;
         self.right_damp.coeff = damp;
 
-        // Linked decay_diffusion_2
+        // Linked decay_diffusion_2, tilted by gravity.
+        //
+        // `gravity` was accepted by `set_param`, clamped, stored — and never
+        // read. The knob moved on the *default* algorithm and the render was
+        // bit-identical across the whole declared range, which is the same
+        // defect class as `early_late`, `saturation_type` and `density` before
+        // them, and worse than all three because nothing had to be selected
+        // for a user to meet it.
+        //
+        // What it should do was already written down twice: the field is
+        // documented as "-1 to +1: negative = reverse swell, positive =
+        // normal", and the tank allpass below carried the comment "gravity
+        // adjusts coefficient distribution". Those agree. A larger allpass
+        // coefficient smears more of each pass into later ones — energy
+        // arrives late, which is the swell — and a smaller one lets the signal
+        // through sooner, which is an ordinary decay. So gravity tilts that
+        // coefficient, and nothing else.
+        //
+        // The tilt is exactly 1.0 at the shipped default of 0.5, so a project
+        // that never wrote `gravity` renders bit-identically to what it
+        // rendered before the parameter did anything — the same constraint
+        // `density` was built to (`-0.70 * d`, neutral at its own default of
+        // 1.0). `plate_parameter_surface.rs` asserts that identity rather than
+        // trusting this comment.
         let dd2 = (target_decay + 0.15).clamp(0.25, 0.50);
-        self.left_ap.gain = dd2;
-        self.right_ap.gain = dd2;
+        let gravity_tilt = 1.0 - (self.gravity - 0.5) * GRAVITY_TILT_SPAN;
+        let tank_ap_gain = (dd2 * gravity_tilt).clamp(0.15, 0.72);
+        self.left_ap.gain = tank_ap_gain;
+        self.right_ap.gain = tank_ap_gain;
 
         let mod_depth = if self.freeze { 0.0 } else { self.mod_depth };
 
@@ -614,7 +651,8 @@ impl ProofChamber {
                 decayed_l = soft_saturate(decayed_l, self.saturation_type);
             }
 
-            // Fixed allpass (gravity adjusts coefficient distribution)
+            // Tank allpass. Its coefficient is set once per block above, from
+            // the decay-linked `dd2` tilted by `gravity`.
             let ap_out_l = self.left_ap.process(decayed_l);
 
             // Shimmer: process the tank signal and feed back

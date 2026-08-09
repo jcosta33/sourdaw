@@ -301,6 +301,21 @@ export const useTempoEditorState = (): TempoEditorState => {
      * `seekPlayhead` to move the write onto an event the user never saw.
      */
     const setTempoValue = (bpm: number): void => {
+        /**
+         * Not redundant with `ValueField`'s own read-only handling, and not to be
+         * removed as such. It is redundant only for the drag path, and only
+         * because the field now aborts a gesture the lock catches mid-flight. It
+         * still carries every other caller: `setTempoValue` is a public field of
+         * the exported `TempoEditorState`, and `handleTapTempo` and
+         * `resetTempoValue` both reach it on paths gated by different mechanisms
+         * — a disabled button and a suppressed `onReset`, neither of which is the
+         * field's `readOnly`.
+         *
+         * Deleting it would also make the write path depend on the control, which
+         * is the inversion the abort exists to correct: a second consumer that
+         * renders the tempo through some other widget would inherit an ungated
+         * write.
+         */
         if (!tempoField.editable) {
             return;
         }

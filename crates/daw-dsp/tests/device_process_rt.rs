@@ -760,6 +760,11 @@ fn fermenter_voice_stealing_does_not_allocate() {
     instance.set_param("amp_sustain", 1.0);
     instance.set_param("amp_release", 2.0);
     instance.set_param("unison_voices", 8.0);
+    // Glide armed, so the guarded note-ons take the portamento branch. Left at
+    // the default 0 this test never entered it, and the glide path — which
+    // reads the synth-level last-played pitch and seeds each stolen voice from
+    // it — had never been under the allocation interceptor at all.
+    instance.set_param("portamento", 3.0);
 
     // Saturate the 16-slot pool outside the guard, so every guarded note-on is
     // a steal rather than a fill.

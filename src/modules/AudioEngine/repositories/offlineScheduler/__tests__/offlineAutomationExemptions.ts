@@ -36,19 +36,23 @@
 export const PARAMETER_LEVEL_OFFLINE_AUTOMATION_EXEMPTIONS: Readonly<Record<string, Readonly<Record<string, string>>>> =
     {
         fermenter: {
-            // All three survivors are absences of engine behaviour, not absences
-            // of wiring: no two values of any of them render differently, so an
-            // ordinal for them could not carry a guard that is able to fail
+            // The sole survivor is an absence of engine behaviour, not an
+            // absence of wiring: no two values of it render differently, so an
+            // ordinal for it could not carry a guard that is able to fail
             // (ADR 0015). The other 86 rows that stood here were bound by
             // SPEC-parameter-automation-coverage AC-4 and each one now carries a
             // per-parameter render-delta probe in
             // `wasm/__tests__/dawDspFermenterAutomationOrdinals.spec.ts`.
+            //
+            // Two more left this table once the engine started reading their
+            // fields. `portamentoMode`: `Layer::portamento_time_for_note_on`
+            // suppresses the glide in legato mode when no key is down.
+            // `grainPanSpread`: `Voice::render` restores the L/R balance for any
+            // oscillator branch that declares a stereo pair, not only the unison
+            // one, so the per-grain pan reaches the output. Both are pinned in
+            // `crates/daw-dsp/tests/` and both carry ordinal probes.
             activeLayer:
                 'class (b) structural: `active_layer` writes no DSP state — `MasterSynth::set_param` reads it only to route *subsequent* parameter writes to a layer, and `note_on_with_channel`/`render_layers` iterate `layers[..num_active_layers]` without consulting it. Binding it would also make the destination of every other scheduled lane depend on the order the schedules sit in `_paramAutomation`',
-            portamentoMode:
-                'dead control: `Layer::set_param` stores `portamento_mode` and nothing in `crates/daw-dsp` reads the field — `Layer::note_on` passes only `portamento_time` to `Voice::set_portamento`. The legato-only glide the descriptor offers is not implemented, so this is a DSP gap for a follow-up, not a binding gap',
-            grainPanSpread:
-                'dead control: `GranularEngine::tick` pans each grain into an L/R pair, but `Voice::render` sums the oscillator pair to mono before the filter and restores the L/R ratio only on the `has_unison` branch, so granular pan never reaches the output. Measured: driving it 0 → 1 across 96 quanta moves the render by 9.5e-5 total absolute sample difference against an RMS of 6.4e-2. A DSP gap for a follow-up',
         },
         toaster: {
             swing: 'unclassified: declared `float`, continuous in the engine — SPEC-parameter-automation-coverage AC-1 class (a) candidate, no offline ordinal wired',

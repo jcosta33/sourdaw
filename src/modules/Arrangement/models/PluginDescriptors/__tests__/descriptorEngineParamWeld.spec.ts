@@ -9,6 +9,7 @@ import {
     resolveNativeDspDeviceType,
     type NativeDspDeviceType,
 } from '#/utils/nativeDspDeviceTypes';
+import { DUTCH_OVEN_ENGINE_BY_WIRE_VALUE, NATIVE_DSP_ENGINE_GAPS } from '#/utils/nativeDspEngineGaps';
 
 import { BUILTIN_PLUGINS } from '../../DeviceParameter';
 
@@ -46,8 +47,8 @@ import { BUILTIN_PLUGINS } from '../../DeviceParameter';
  *
  * It is the wrong shape for a device that dispatches *exclusively*: one of
  * several alternatives is live, chosen at runtime, and only that one receives
- * the write. Dutch Oven is that device. `ProofChamberInstance::set_param`
- * (`crates/proof-chamber/src/lib.rs:151-165`) forwards to whichever
+ * the write. Dutch Oven is that device. `forward_to_engine`
+ * (`crates/proof-chamber/src/lib.rs:281-297`) forwards to whichever
  * `ReverbEngine` variant is currently constructed, and the seven variants have
  * seven different arm sets. Unioning them says "some algorithm handles this",
  * which is not the claim a user's knob makes.
@@ -298,7 +299,7 @@ const ENGINE_PARAM_ALIASES: readonly EngineAlias[] = [
         paramId: 'diffusion',
         handledAs: 'dispersion',
         reason:
-            'The dispatcher re-sends it: `lib.rs:154-159` calls `s.set_param(name, value)` and then, when the name is ' +
+            'The dispatcher re-sends it: `forward_to_engine` (`lib.rs:285-290`) calls `s.set_param(name, value)` and then, when the name is ' +
             '`diffusion`, calls `s.set_param("dispersion", value)`. A spring reverb disperses rather than diffuses, so ' +
             'the engine spells its arm `dispersion` and only this one algorithm needs the bridge. The literal is a ' +
             'call argument, not a match arm, so the arm scanner cannot see it and the shim has to be declared.',
@@ -308,103 +309,20 @@ const ENGINE_PARAM_ALIASES: readonly EngineAlias[] = [
 /**
  * Descriptor parameters a *non-default* engine drops on the floor.
  *
- * These are the same class of defect as `bandGain`: the panel renders every
- * control for every algorithm — `ProofChamberPanel` gates nothing on
- * `params.algorithm` except the decay readout's units — so on these algorithms
- * the knob turns, the automation lane records, and the DSP never hears it.
- * They are grouped by engine rather than listed one row per parameter because
- * the reason is per engine: it is one missing feature set, not forty-three
- * unrelated omissions.
+ * The table itself is `NATIVE_DSP_ENGINE_GAPS` in `#/utils/nativeDspEngineGaps`,
+ * because it is no longer only a test fixture: `ProofChamberPanel` gates its
+ * controls on the same rows, so that a gap closed in Rust re-enables the knob
+ * with no panel edit and no second list to drift. The assertions that keep it
+ * honest stay here — a listed parameter that gains an arm reds until the row is
+ * deleted, and an unlisted gap reds immediately — so moving it changed where it
+ * lives, not what it has to survive.
  *
- * Recorded rather than fixed because each row is a DSP feature to write, not a
- * wire to reconnect. Asserted in both directions: a listed parameter that gains
- * an arm reds until the row is deleted, and an unlisted gap reds immediately.
+ * Each row also carries a `kind` per parameter: `unbuilt` for a stage nobody has
+ * written yet, `structural` for a category error no DSP will ever close. Only
+ * the census's own reasons live in that file; the panel treatment lives in
+ * `src/modules/ProofChamber/models/ProofChamberAlgorithmGating.ts`.
  */
-type EngineGap = {
-    readonly deviceId: NativeDspDeviceType;
-    readonly engineId: string;
-    readonly paramIds: readonly string[];
-    readonly reason: string;
-};
-
-const KNOWN_ENGINE_GAPS: readonly EngineGap[] = [
-    {
-        deviceId: 'dutch-oven',
-        engineId: 'fdn',
-        paramIds: [
-            'mod_rate',
-            'diffusion',
-            'freeze',
-            'shimmer',
-            'shimmer_amount',
-            'shimmer_pitch',
-            'gravity',
-            'saturation_type',
-            'density',
-        ],
-        reason:
-            '`FdnReverb::set_param` (`fdn.rs`) answers to mix, rt60/decay, rt60_hf, damping, size, mod_depth, ' +
-            'early_late, predelay, matrix and saturation, forwards high_cut/low_cut/width to the shared ' +
-            '`OutputStage`, and drops the rest through `_ => {}`. The FDN has no shimmer pitch-shifter, no freeze ' +
-            'latch, no gravity and no saturation curve selector — the stages simply are not built, so these are ' +
-            'nine features to write rather than nine names to reconnect. `saturation` is accepted here, which is ' +
-            'why only the *curve* selector is listed.',
-    },
-    {
-        deviceId: 'dutch-oven',
-        engineId: 'spring',
-        paramIds: [
-            'predelay',
-            'mod_rate',
-            'freeze',
-            'shimmer',
-            'shimmer_amount',
-            'shimmer_pitch',
-            'gravity',
-            'saturation',
-            'saturation_type',
-            'early_late',
-            'density',
-        ],
-        reason:
-            '`SpringReverb::set_param` (`spring.rs`) answers to mix, decay, feedback, damping, size, dispersion ' +
-            'and mod_depth, and forwards high_cut/low_cut/width to the shared `OutputStage`. Its `param_names()` ' +
-            'advertises exactly what it answers to, so the engine is honest with a host that asks; the descriptor ' +
-            'is the layer that over-promises. `early_late` is on this list for the same reason it was on the plate ' +
-            'before #1481 — no early-reflection stage exists here to balance against.',
-    },
-    {
-        deviceId: 'dutch-oven',
-        engineId: 'reverse',
-        paramIds: [
-            'damping',
-            'predelay',
-            'mod_rate',
-            'mod_depth',
-            'diffusion',
-            'width',
-            'freeze',
-            'shimmer',
-            'shimmer_amount',
-            'shimmer_pitch',
-            'gravity',
-            'saturation',
-            'saturation_type',
-            'early_late',
-            'density',
-        ],
-        reason:
-            '`ReverseReverb::set_param` (`reverse.rs`) answers to mix, decay, size, its own `reverse_time` and the ' +
-            'shared `OutputStage`’s two tone filters, and nothing else. Fifteen of the twenty non-global ids the ' +
-            'descriptor advertises are still inert on this algorithm — the widest gap of the four, and the one most ' +
-            'likely to read as a broken device rather than a sparse one. `width` is the one row here that is ' +
-            'structural rather than unbuilt: this engine writes a single mono buffer and copies each output sample ' +
-            'to both channels, so a mid/side matrix has no side component to scale. Wiring it would accept the ' +
-            'value and provably not move a sample. `OutputStage::set_mono_param` refuses it, and ' +
-            '`crates/proof-chamber/tests/output_stage_parameter_surface.rs` pins the mono wet path so this row ' +
-            'becomes a defect the moment the reverse buffer goes stereo.',
-    },
-];
+const KNOWN_ENGINE_GAPS = NATIVE_DSP_ENGINE_GAPS;
 
 // ── Source reading ─────────────────────────────────────────────────────────
 
@@ -699,7 +617,7 @@ const TRANSLATORS = new Map<NativeDspDeviceType, (paramId: string) => string>(
  *
  * A device with no selector has exactly its default. Dutch Oven's convolution
  * and hybrid engines are built and render but no `algorithm` value constructs
- * them (`lib.rs:122-134`), so they are deliberately absent: a census that
+ * them (`lib.rs:338-357`), so they are deliberately absent: a census that
  * demanded descriptor coverage from an engine nothing can reach would be
  * inventing work.
  */
@@ -741,7 +659,10 @@ function isDeclared(deviceType: NativeDspDeviceType, paramId: string): boolean {
 
 function isDeclaredGap(deviceType: NativeDspDeviceType, engineId: string, paramId: string): boolean {
     return KNOWN_ENGINE_GAPS.some(
-        (row) => row.deviceId === deviceType && row.engineId === engineId && row.paramIds.includes(paramId)
+        (row) =>
+            row.deviceId === deviceType &&
+            row.engineId === engineId &&
+            row.params.some((param) => param.paramId === paramId)
     );
 }
 
@@ -926,7 +847,7 @@ describe('descriptor parameter ids are welded to engine set_param arms', () => {
                 stale.push(`${row.deviceId}.${row.engineId}: not a selectable engine`);
                 continue;
             }
-            for (const paramId of row.paramIds) {
+            for (const { paramId } of row.params) {
                 if (descriptor?.paramIds.includes(paramId) !== true) {
                     stale.push(`${row.deviceId}.${row.engineId}.${paramId}: not a descriptor parameter`);
                     continue;
@@ -978,6 +899,42 @@ describe('descriptor parameter ids are welded to engine set_param arms', () => {
         ).map((row) => `${row.deviceId}.${row.paramId}`);
 
         expect(wired).toEqual([]);
+    });
+
+    it('the wire value → engine map production reads is the dispatch Rust performs', () => {
+        // `ProofChamberPanel` gates its controls on the gap table, and to pick
+        // the row it needs to know which engine the selected algorithm runs.
+        // Production cannot read `lib.rs` — it ships to a browser — so it
+        // declares the mapping in `#/utils/nativeDspEngineGaps`. This is the
+        // weld for that declaration: the dispatch is scanned out of the Rust
+        // exactly as the arms are, and the two must agree in both directions.
+        // A new algorithm wired in Rust, or a renumbered one, reds here rather
+        // than silently pointing the panel at the wrong engine's gap row.
+        const fromRust = SELECTOR_WIRE_VALUES.get('dutch-oven')!;
+        const declared = new Map(
+            Object.entries(DUTCH_OVEN_ENGINE_BY_WIRE_VALUE).map(([wire, engineId]) => [Number(wire), engineId])
+        );
+
+        const asSortedPairs = (map: ReadonlyMap<number, string>): string[] =>
+            [...map].sort((a, b) => a[0] - b[0]).map(([wire, engineId]) => `${wire}=${engineId}`);
+
+        expect(asSortedPairs(declared)).toEqual(asSortedPairs(fromRust));
+        // Presence pin: an empty scan would make the two agree vacuously.
+        expect(asSortedPairs(fromRust)).toEqual(['0=plate', '1=fdn', '2=fdn', '3=spring', '6=reverse']);
+    });
+
+    it('every structural gap row says why no DSP will ever close it', () => {
+        // A `structural` row claims the parameter is a category error rather
+        // than a defect, which is the claim that stops someone filing DSP work
+        // for it — and it is the text the panel shows the user. An empty one
+        // would disable a control and explain nothing.
+        const unexplained = KNOWN_ENGINE_GAPS.flatMap((row) =>
+            row.params
+                .filter((param) => param.kind === 'structural' && param.note.trim().length === 0)
+                .map((param) => `${row.deviceId}.${row.engineId}.${param.paramId}`)
+        );
+
+        expect(unexplained).toEqual([]);
     });
 
     it('every declared row carries a reason', () => {
