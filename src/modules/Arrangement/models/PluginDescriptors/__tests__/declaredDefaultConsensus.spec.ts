@@ -9,17 +9,20 @@ import { NATIVE_DSP_DEVICE_TYPES, type NativeDspDeviceType } from '#/utils/nativ
 import { BUILTIN_PLUGINS } from '../../DeviceParameter';
 
 /**
- * A device's default for one parameter is written down in up to three places,
- * and nothing checked that they say the same number.
+ * A device's default for one parameter is written down in several places, and
+ * nothing checked that they say the same number.
  *
- * The three are not redundant copies — each is read by a different surface:
+ * They are not redundant copies — each is read by a different surface:
  *
  * - The **descriptor** (`BUILTIN_PLUGINS`) supplies `defaultValue` to the
  *   generic Inspector and to the automation lane, which draws its baseline at
  *   the declared default.
- * - The **module default patch** (`DEFAULT_PATCH` and friends under
- *   `src/modules/<Device>/models/`) is the state a freshly added device
- *   actually gets, and the state the param bridge pushes to the engine.
+ * - The **module default declarations** under `src/modules/<Device>/models/`
+ *   are the state a freshly added device gets and the state the param bridge
+ *   pushes to the engine. There are two shapes and a device can have both:
+ *   an object patch (`DEFAULT_PATCH`) and a parameter table
+ *   (`GRINDER_PARAMS`, `FERMENTER_PARAMS` — arrays of
+ *   `{ id, min, max, default }` rows).
  * - The **panel reset value** (`defaultValue` on a knob) is where a
  *   double-click puts the control.
  *
@@ -29,37 +32,59 @@ import { BUILTIN_PLUGINS } from '../../DeviceParameter';
  * hard-coded `0.05` coefficient and the close was a hard-coded `*= 0.999`), and
  * raised `DEFAULT_PATCH` from 0.5 ms / 50 ms to 2 ms / 120 ms to suit the new
  * shape. `2b080af5a` then authored the panel knobs with the same 2 / 120. The
- * parameter-metadata table and its inlined descriptor copy were never touched,
- * so for four months a fresh Grinder showed 2 ms / 120 ms on its own panel
- * while the Inspector and the automation lane called the default 0.5 ms / 50 ms
- * — the lane drawing its baseline four times and 2.4 times away from the value
- * the device was actually running.
+ * parameter table and its inlined descriptor copy were never touched, so for
+ * four months a fresh Grinder showed 2 ms / 120 ms on its own panel while the
+ * Inspector and the automation lane called the default 0.5 ms / 50 ms — the
+ * lane drawing its baseline four times and 2.4 times away from the value the
+ * device was actually running.
+ *
+ * ## Every source is compared to the descriptor, never merged
+ *
+ * An earlier revision merged a device's declarations into one map before
+ * comparing. That hides the defect it exists to catch: `GRINDER_PARAMS` and
+ * `DEFAULT_PATCH` both declare `gateAttack`, and a merge lets the later one
+ * answer for the earlier. Each source is now resolved and compared on its own,
+ * so two declarations that disagree with each other cannot both be reported as
+ * agreeing with the descriptor.
  *
  * ## Why the population is derived
  *
- * Two independent enumerations, so a device or a panel cannot join without
+ * Three independent enumerations, so nothing joins the codebase without
  * joining the census:
  *
  * - `DEFAULT_SOURCES` is a total `Record` over `NativeDspDeviceType`. Adding a
- *   native device fails to compile until someone says where its defaults live,
- *   the same way `NATIVE_DSP_DEVICE_TYPES` breaks the hydration table.
- * - The patch-source and panel legs are both *discovered* from the filesystem
- *   and compared against what is declared. A second default table appearing in
- *   a device module, or a panel binding its parameter ids where it previously
- *   did not, reds this file without anyone editing it.
+ *   native device fails to compile until someone says where its defaults live.
+ * - **Module declarations** are discovered from the filesystem in both shapes:
+ *   every exported object literal, *and* every exported table whose body
+ *   contains a numeric `default:` or `defaultValue:`. Matching only `= {`
+ *   is what let `GRINDER_PARAMS` — an array — sit beside `DEFAULT_PATCH`
+ *   disagreeing with it, unseen.
+ * - **Panel files** are discovered by walking each device module's whole
+ *   `presentations/` tree, not just `views/`. Scanning `views/` alone missed
+ *   Fermenter's entire control surface, which lives in
+ *   `presentations/components/`, and there is no `panel:` field to hand-write:
+ *   a device's panel leg is derived from its `moduleDir`, so a device cannot be
+ *   quietly excluded from it.
  *
- * ## What the third leg cannot see
+ * ## What the third leg can and cannot read
  *
  * The panel reset value is a literal JSX prop, not a derived value, so it is
- * only machine-readable where the same element also names its parameter id.
- * Two element shapes do that — `param="gateAttack"` (Grinder, Gluten) and
- * `onChange={(value) => setParam('damping', value)}` (Dutch Oven) — and both
- * are scanned. The remaining panels bind through a member expression on a
- * sub-object (`patch.mic1.positionX`), a table row (`param.defaultValue`), or a
- * setter whose parameter name is not a literal, and those knobs have **no**
- * third leg here: `PANELS_WITHOUT_PARAM_BINDING` names each one and why. That
- * is a real hole, and it is enumerated rather than papered over — a two-leg
- * census that is honest beats a three-leg one that guesses.
+ * only machine-readable where the same element also names its parameter. Three
+ * element shapes do, and all three are scanned:
+ *
+ * - `param="gateAttack"` — Grinder, Gluten
+ * - `paramId="oscLevel"` — Fermenter's sections
+ * - an `onChange` arrow whose call takes the id as its **first** argument,
+ *   `onChange={(value) => setParam('damping', value)}` — Dutch Oven, Crumbs
+ *
+ * First argument only, deliberately. Toaster writes
+ * `setToasterPadParam(deviceId, selectedPadIndex, 'decay', value)` and Proof
+ * writes `updateBand(i, 'threshold', value)`; a reader that took a quoted
+ * argument from any position would read a device id or a band index as a
+ * parameter name. Those knobs stay unread, and `PANEL_FILES` records for every
+ * discovered file how many reset literals it declares and how many of them this
+ * scanner can attribute — both numbers, not their difference, so a newly
+ * readable binding cannot be absorbed by an equal rise in the total.
  */
 
 const REPO_ROOT = resolve(fileURLToPath(import.meta.url), '../../../../../../../');
@@ -68,23 +93,14 @@ function readSource(relativePath: string): string {
     return readFileSync(join(REPO_ROOT, relativePath), 'utf8');
 }
 
-// ── Leg two: the module default patch ────────────────────────────────────────
+// ── Leg two: what the module declares ────────────────────────────────────────
 
-/**
- * The top-level scalar fields of one exported object literal.
- *
- * Only the top level: a nested object is a different scope (Grinder's `mic1`,
- * Proof's `eqBands`) whose keys are not device parameter ids, and folding them
- * in would let an unrelated `gain` vouch for the device-level one. Booleans
- * fold to 0/1 because that is the wire form every param bridge sends and the
- * form the descriptor declares them in (`type: 'int'`, min 0, max 1).
- */
-function readObjectScalars(relativePath: string, exportName: string): Map<string, number> {
-    const source = readSource(relativePath);
-    const anchor = new RegExp(`^export const ${exportName}\\b[^=]*=\\s*(?:Object\\.freeze\\()?\\{`, 'm');
+/** The balanced body of one exported const's object or array literal. */
+function readExportBody(source: string, exportName: string): string | null {
+    const anchor = new RegExp(`^export const ${exportName}\\b[^=]*=\\s*(?:Object\\.freeze\\()?[{[]`, 'm');
     const opening = anchor.exec(source);
     if (opening === null) {
-        return new Map();
+        return null;
     }
 
     let depth = 0;
@@ -103,23 +119,44 @@ function readObjectScalars(relativePath: string, exportName: string): Map<string
         }
     }
 
+    return source.slice(start + 1, index);
+}
+
+function toNumber(literal: string): number {
+    if (literal === 'true') {
+        return 1;
+    }
+    if (literal === 'false') {
+        return 0;
+    }
+    return Number(literal);
+}
+
+/**
+ * The top-level scalar fields of an exported object literal.
+ *
+ * Only the top level: a nested object is a different scope (Grinder's `mic1`,
+ * Proof's `eqBands`) whose keys are not device parameter ids, and folding them
+ * in would let an unrelated `gain` vouch for the device-level one. Booleans
+ * fold to 0/1 because that is the wire form every param bridge sends and the
+ * form the descriptor declares them in (`type: 'int'`, min 0, max 1).
+ */
+function readObjectScalars(relativePath: string, exportName: string): Map<string, number> {
+    const body = readExportBody(readSource(relativePath), exportName);
     const scalars = new Map<string, number>();
+    if (body === null) {
+        return scalars;
+    }
+
     let nesting = 0;
-    for (const rawLine of source.slice(start + 1, index).split('\n')) {
+    for (const rawLine of body.split('\n')) {
         const line = rawLine.trim();
         if (nesting === 0) {
             const pair = /^([A-Za-z_$][\w$]*)\s*:\s*(-?\d+(?:\.\d+)?(?:e-?\d+)?|true|false)\s*,?\s*(?:\/\/.*)?$/.exec(
                 line
             );
             if (pair !== null) {
-                const literal = pair[2]!;
-                if (literal === 'true') {
-                    scalars.set(pair[1]!, 1);
-                } else if (literal === 'false') {
-                    scalars.set(pair[1]!, 0);
-                } else {
-                    scalars.set(pair[1]!, Number(literal));
-                }
+                scalars.set(pair[1]!, toNumber(pair[2]!));
             }
         }
         nesting += (line.match(/[{[]/g) ?? []).length - (line.match(/[}\]]/g) ?? []).length;
@@ -128,17 +165,69 @@ function readObjectScalars(relativePath: string, exportName: string): Map<string
     return scalars;
 }
 
-/** Every exported SCREAMING_CASE const in a file whose initializer is an object literal. */
-function findObjectExports(relativePath: string): string[] {
+/**
+ * The `default` of every row in an exported parameter table.
+ *
+ * `{ id: 'gateAttack', label: 'Gate Atk', min: 0.1, max: 50, default: 2 }`.
+ * `key`/`defaultValue` are accepted alongside `id`/`default` because
+ * `PER_NOTE_PARAM_DESCRIPTORS` uses that spelling — a table this scanner must
+ * see in order to say anything true about whether it is a device-parameter
+ * declaration.
+ */
+function readTableDefaults(relativePath: string, exportName: string): Map<string, number> {
+    const body = readExportBody(readSource(relativePath), exportName);
+    const defaults = new Map<string, number>();
+    if (body === null) {
+        return defaults;
+    }
+
+    for (const row of body.matchAll(/\{[^{}]*\}/g)) {
+        const id = /\b(?:id|key):\s*'([\w$]+)'/.exec(row[0]);
+        const value = /\b(?:default|defaultValue):\s*(-?\d+(?:\.\d+)?(?:e-?\d+)?|true|false)/.exec(row[0]);
+        if (id !== null && value !== null) {
+            defaults.set(id[1]!, toNumber(value[1]!));
+        }
+    }
+
+    return defaults;
+}
+
+type DeclarationShape = 'object' | 'table';
+
+function readDeclaredDefaults(relativePath: string, exportName: string, shape: DeclarationShape): Map<string, number> {
+    if (shape === 'table') {
+        return readTableDefaults(relativePath, exportName);
+    }
+    return readObjectScalars(relativePath, exportName);
+}
+
+/**
+ * Every exported const in a file that could be declaring parameter defaults.
+ *
+ * Two ways to qualify, because there are two shapes and the earlier revision of
+ * this file only knew one. An object literal qualifies on sight — its top-level
+ * scalars are candidate parameter values. Anything else, array included,
+ * qualifies when its body contains a numeric `default:` or `defaultValue:`,
+ * which is what a parameter table looks like from the outside.
+ */
+function findDeclarationExports(relativePath: string): { name: string; shape: DeclarationShape }[] {
     const source = readSource(relativePath);
-    const pattern = /^export const ([A-Z][A-Z0-9_]*)\s*(?::[^=]+)?=\s*(?:Object\.freeze\()?\{/gm;
-    const names: string[] = [];
+    const pattern = /^export const ([A-Z][A-Z0-9_]*)\s*(?::[^=]+)?=\s*(?:Object\.freeze\()?([{[])/gm;
+    const found: { name: string; shape: DeclarationShape }[] = [];
+
     let match: RegExpExecArray | null = pattern.exec(source);
     while (match !== null) {
-        names.push(match[1]!);
+        const name = match[1]!;
+        const isObject = match[2] === '{';
+        const body = readExportBody(source, name) ?? '';
+        const declaresDefaults = /\b(?:default|defaultValue):\s*-?\d/.test(body);
+        if (isObject || declaresDefaults) {
+            found.push({ name, shape: declaresDefaults && !isObject ? 'table' : 'object' });
+        }
         match = pattern.exec(source);
     }
-    return names;
+
+    return found;
 }
 
 function listModelFiles(moduleDir: string): string[] {
@@ -155,17 +244,10 @@ function listModelFiles(moduleDir: string): string[] {
 
 // ── Leg three: the panel reset value ─────────────────────────────────────────
 
-/**
- * Knob elements that name both their parameter id and their reset literal.
- *
- * The element text cannot be matched with `[^>]*` — `onChange={(v) => …}` puts
- * a `>` inside the tag — so the scanner walks forward from the opening name
- * tracking brace depth and quotes, and stops at the first `>` outside both.
- */
-function readPanelResetValues(relativePath: string): Map<string, number> {
-    const source = readSource(relativePath);
+/** Every JSX opening tag in a file, brace- and quote-aware. */
+function readElements(source: string): string[] {
     const openings = /<[A-Z][\w.]*(?=[\s/>])/g;
-    const resets = new Map<string, number>();
+    const elements: string[] = [];
 
     let opening: RegExpExecArray | null = openings.exec(source);
     while (opening !== null) {
@@ -190,46 +272,70 @@ function readPanelResetValues(relativePath: string): Map<string, number> {
                 break;
             }
         }
-
-        const element = source.slice(opening.index, cursor + 1);
-        const paramId =
-            /\bparam="([\w$]+)"/.exec(element) ??
-            /\bonChange=\{\([\w, ]*\)\s*=>\s*set[A-Za-z]*\(\s*'([\w$]+)'\s*,/.exec(element);
-        const reset = /\bdefaultValue=\{(-?\d+(?:\.\d+)?)\}/.exec(element);
-        if (paramId !== null && reset !== null) {
-            resets.set(paramId[1] ?? paramId[2]!, Number(reset[1]!));
-        }
-
+        elements.push(source.slice(opening.index, cursor + 1));
         opening = openings.exec(source);
+    }
+
+    return elements;
+}
+
+/** Knob elements that name both their parameter and their reset literal. */
+function readPanelResetValues(relativePath: string): Map<string, number> {
+    const resets = new Map<string, number>();
+
+    for (const element of readElements(readSource(relativePath))) {
+        const reset = /\bdefaultValue=\{(-?\d+(?:\.\d+)?)\}/.exec(element);
+        if (reset === null) {
+            continue;
+        }
+        const paramId =
+            /\bparam(?:Id)?="([\w$]+)"/.exec(element)?.[1] ??
+            /\bonChange=\{\([\w, ]*\)\s*=>\s*[\w.]+\(\s*'([\w$]+)'\s*,/.exec(element)?.[1];
+        if (paramId !== undefined) {
+            resets.set(paramId, Number(reset[1]!));
+        }
     }
 
     return resets;
 }
 
-function listPanelFiles(): string[] {
-    const modules = readdirSync(join(REPO_ROOT, 'src/modules'), { withFileTypes: true })
-        .filter((entry) => entry.isDirectory())
-        .map((entry) => entry.name);
+function countResetLiterals(relativePath: string): number {
+    return (readSource(relativePath).match(/defaultValue=/g) ?? []).length;
+}
 
-    const panels: string[] = [];
-    for (const moduleName of modules) {
-        let entries: string[];
-        try {
-            entries = readdirSync(join(REPO_ROOT, 'src/modules', moduleName, 'presentations/views'));
-        } catch {
-            continue;
-        }
-        for (const entry of entries) {
-            if (!entry.endsWith('.tsx')) {
-                continue;
+/** Every `.tsx` under one directory tree that declares a reset literal. */
+function collectPanelFiles(dir: string, found: string[]): void {
+    let entries: import('node:fs').Dirent[];
+    try {
+        entries = readdirSync(join(REPO_ROOT, dir), { withFileTypes: true });
+    } catch {
+        return;
+    }
+
+    for (const entry of entries) {
+        const relativePath = `${dir}/${entry.name}`;
+        if (entry.isDirectory()) {
+            if (entry.name !== '__tests__') {
+                collectPanelFiles(relativePath, found);
             }
-            const relativePath = `src/modules/${moduleName}/presentations/views/${entry}`;
-            if (readSource(relativePath).includes('defaultValue=')) {
-                panels.push(relativePath);
-            }
+        } else if (entry.name.endsWith('.tsx') && readSource(relativePath).includes('defaultValue=')) {
+            found.push(relativePath);
         }
     }
-    return panels;
+}
+
+/** Every `.tsx` under a module's `presentations/` tree that declares a reset literal. */
+function listPanelFiles(moduleDir: string): string[] {
+    const found: string[] = [];
+    collectPanelFiles(`${moduleDir}/presentations`, found);
+    return found.sort();
+}
+
+function listAllModuleDirs(): string[] {
+    return readdirSync(join(REPO_ROOT, 'src/modules'), { withFileTypes: true })
+        .filter((entry) => entry.isDirectory())
+        .map((entry) => `src/modules/${entry.name}`)
+        .sort();
 }
 
 // ── Where each device writes its defaults down ───────────────────────────────
@@ -237,143 +343,192 @@ function listPanelFiles(): string[] {
 type PatchSource = {
     readonly file: string;
     readonly exportName: string;
+    readonly shape: DeclarationShape;
 };
 
 type DeviceDefaults = {
-    readonly moduleDir: string;
     /**
-     * The object literals whose top-level scalars are device parameter
-     * defaults. More than one when the device splits its defaults — Bacteria
-     * keeps the per-band controls in `DEFAULT_BAND` and the device-level ones
-     * in `DEFAULT_PATCH`, and the descriptor flattens both into one namespace.
-     * Empty means the device has no such object at all, and `noPatchReason`
-     * says why.
+     * The module that owns the device. Both the model scan and the panel scan
+     * are derived from this — there is no per-device file list to fall out of
+     * date, and no way to exclude a device's panels by omission.
      */
+    readonly moduleDir: string;
     readonly patchSources: readonly PatchSource[];
-    /** The panel whose knobs name their parameter ids, or null. */
-    readonly panel: string | null;
+    /** Why the device declares no defaults under `models/`. Empty when it does. */
     readonly noPatchReason: string;
+    /** Why no knob in the module's `presentations/` tree is readable. Empty when some are. */
+    readonly noPanelReason: string;
 };
 
 const DEFAULT_SOURCES: Record<NativeDspDeviceType, DeviceDefaults> = {
     fermenter: {
         moduleDir: 'src/modules/Fermenter',
-        patchSources: [{ file: 'src/modules/Fermenter/models/FermenterPatch.ts', exportName: 'DEFAULT_PATCH' }],
-        panel: null,
+        patchSources: [
+            { file: 'src/modules/Fermenter/models/FermenterPatch.ts', exportName: 'DEFAULT_PATCH', shape: 'object' },
+            // The 105-row parameter table, re-exported through
+            // `useCases/fermenterQueries/` and read by `MacroMatrixEditor`. A
+            // fourth declaration of every Fermenter default, invisible to this
+            // census until the scanner learned to read arrays.
+            {
+                file: 'src/modules/Fermenter/models/FermenterPatch.ts',
+                exportName: 'FERMENTER_PARAMS',
+                shape: 'table',
+            },
+        ],
         noPatchReason: '',
+        noPanelReason: '',
     },
     toaster: {
         moduleDir: 'src/modules/Toaster',
         patchSources: [],
-        panel: null,
         noPatchReason:
-            'Toaster has no device-level default object. Its four descriptor parameters (masterGain, reverbMix, ' +
-            'delayMix, swing) are kit-level and live in the store the kit loader seeds; `models/ToasterKit.ts` ' +
-            'exports only `DEFAULT_PAD_NAMES` and `DEFAULT_ENGINE_TYPES`, which are pad identity, not parameter ' +
-            'values. There is no second declaration to disagree with the descriptor, so the device has one leg.',
+            'Toaster has no device-level default declaration. Its four descriptor parameters (masterGain, ' +
+            'reverbMix, delayMix, swing) are kit-level and live in the store the kit loader seeds; ' +
+            '`models/ToasterKit.ts` exports pad identity (`DEFAULT_PAD_NAMES`, `DEFAULT_ENGINE_TYPES`, ' +
+            '`PAD_COLORS`) and no parameter values at all.',
+        noPanelReason:
+            '`ToasterPanel` declares thirteen reset literals and binds every one through ' +
+            "`setToasterPadParam(deviceId, selectedPadIndex, 'decay', value)`, where the id is the third " +
+            'argument. This scanner reads the first only; widening it would read `deviceId` and the pad index as ' +
+            'parameter names.',
     },
     levain: {
         moduleDir: 'src/modules/Levain',
         patchSources: [],
-        panel: null,
         noPatchReason:
             'Levain declares no default patch. `models/LevainPatch.ts` exports four sub-configs (expression, ' +
             'legato, humanize, release-trigger) whose keys are none of the six descriptor parameter ids; the ' +
-            'instrument manifest supplies the rest at load time. One leg.',
+            'instrument manifest supplies the rest at load time.',
+        noPanelReason:
+            "Levain's eighteen reset literals sit on knobs that write a *fragment* of a sub-config — " +
+            '`onChange={(v) => onChange({ amount: v })}` — so the id is an object key inside a lambda and names ' +
+            'a field of `DEFAULT_HUMANIZE_CONFIG` rather than a descriptor parameter.',
     },
     'builtin-crumbs': {
         moduleDir: 'src/modules/Crumbs',
         patchSources: [],
-        panel: null,
         noPatchReason:
             'Crumbs holds its per-pad envelope and filter values on the pad records the sampler builds when a ' +
             'sample is assigned, not in a default-patch object. `models/CrumbsTypes.ts` exports only scalar ' +
-            'constants (`DEFAULT_PAD_COLOR`, `DEFAULT_PAD_COUNT`). One leg.',
+            'constants (`DEFAULT_PAD_COLOR`, `DEFAULT_PAD_COUNT`).',
+        noPanelReason: '',
     },
     'grand-boule': {
         moduleDir: 'src/modules/GrandBoule',
         patchSources: [],
-        panel: null,
         noPatchReason:
-            'GrandBoule has no default object under `models/`; its three descriptor parameters are seeded into ' +
-            'the store by the engine bootstrap. `GrandBoulePanel` does declare reset literals that agree with the ' +
-            'descriptor (0.7 / 0.6 / 0.25) but binds them through a use-case lambda with no parameter-id literal, ' +
-            'so no leg here can read them — see `PANELS_WITHOUT_PARAM_BINDING`.',
+            'GrandBoule declares no defaults for its three descriptor parameters; they are seeded into the store ' +
+            'by the engine bootstrap. Its two `models/` tables that do declare defaults — ' +
+            '`MIDI_CALIBRATION_RANGES` and `PER_NOTE_PARAM_DESCRIPTORS` — describe MIDI response and per-note ' +
+            'offsets, and share no key with the descriptor.',
+        noPanelReason:
+            "GrandBoule's nineteen reset literals bind through a use-case call whose parameter identity is the " +
+            '*function chosen*, not an argument — `onChange={(value) => setGrandBouleMasterGain({ deviceId, ' +
+            'engine, store, gain: value })}`. Recovering the id needs a hand-written use-case→parameter map, ' +
+            'which would be one more declaration to drift. The literals do agree with the descriptor by ' +
+            'inspection (0.7 / 0.6 / 0.25); nothing here checks that.',
     },
     gluten: {
         moduleDir: 'src/modules/Gluten',
-        patchSources: [{ file: 'src/modules/Gluten/models/GlutenPatch.ts', exportName: 'DEFAULT_PATCH' }],
-        panel: 'src/modules/Gluten/presentations/views/GlutenPanel.tsx',
+        patchSources: [
+            { file: 'src/modules/Gluten/models/GlutenPatch.ts', exportName: 'DEFAULT_PATCH', shape: 'object' },
+        ],
         noPatchReason: '',
+        noPanelReason: '',
     },
     crust: {
         moduleDir: 'src/modules/Crust',
-        patchSources: [{ file: 'src/modules/Crust/models/CrustPatch.ts', exportName: 'DEFAULT_CRUST_PATCH' }],
-        panel: null,
+        patchSources: [
+            { file: 'src/modules/Crust/models/CrustPatch.ts', exportName: 'DEFAULT_CRUST_PATCH', shape: 'object' },
+        ],
         noPatchReason: '',
+        noPanelReason:
+            '`CrustControlZone` declares two reset literals and both forward a prop (`defaultValue={def}`) from a ' +
+            'shared knob wrapper, so neither is a literal at the call site this scanner reads.',
     },
     bacteria: {
         moduleDir: 'src/modules/Bacteria',
         patchSources: [
-            { file: 'src/modules/Bacteria/models/BacteriaPatch.ts', exportName: 'DEFAULT_PATCH' },
+            { file: 'src/modules/Bacteria/models/BacteriaPatch.ts', exportName: 'DEFAULT_PATCH', shape: 'object' },
             // The descriptor advertises the per-band controls at device level —
             // `drive`, `filterCutoff`, `grainSize` and the rest are one band's
             // fields — so the band defaults are the second half of this device's
             // declaration, not a nested detail.
-            { file: 'src/modules/Bacteria/models/BacteriaPatch.ts', exportName: 'DEFAULT_BAND' },
+            { file: 'src/modules/Bacteria/models/BacteriaPatch.ts', exportName: 'DEFAULT_BAND', shape: 'object' },
         ],
-        panel: null,
         noPatchReason: '',
+        noPanelReason: '',
     },
     grinder: {
         moduleDir: 'src/modules/Grinder',
-        patchSources: [{ file: 'src/modules/Grinder/models/GrinderPatch.ts', exportName: 'DEFAULT_PATCH' }],
-        panel: 'src/modules/Grinder/presentations/views/GrinderPanel.tsx',
+        patchSources: [
+            { file: 'src/modules/Grinder/models/GrinderPatch.ts', exportName: 'DEFAULT_PATCH', shape: 'object' },
+            // The table the Arrangement descriptor was copied out of. It is the
+            // source this PR's second fix corrects, and until the scanner read
+            // arrays it was the one declaration nothing here could see.
+            { file: 'src/modules/Grinder/models/GrinderPatch.ts', exportName: 'GRINDER_PARAMS', shape: 'table' },
+        ],
         noPatchReason: '',
+        noPanelReason: '',
     },
     proof: {
         moduleDir: 'src/modules/Proof',
-        patchSources: [{ file: 'src/modules/Proof/models/ProofPatch.ts', exportName: 'DEFAULT_PATCH' }],
-        panel: null,
+        patchSources: [
+            { file: 'src/modules/Proof/models/ProofPatch.ts', exportName: 'DEFAULT_PATCH', shape: 'object' },
+        ],
         noPatchReason: '',
+        noPanelReason:
+            "Proof's twenty-four reset literals bind either through " +
+            "`onPatchChange({ key: 'limCeiling', value })` — an object property, not a positional argument — " +
+            "or through `updateBand(i, 'threshold', value)`, where the id is second and the first argument is a " +
+            'band index. Only three of the twenty-four are descriptor parameters in any case; the rest are ' +
+            'per-band EQ and dynamics controls the descriptor does not advertise.',
     },
     'dutch-oven': {
         moduleDir: 'src/modules/ProofChamber',
-        patchSources: [{ file: 'src/modules/ProofChamber/models/ProofChamberState.ts', exportName: 'DEFAULT_PARAMS' }],
-        panel: 'src/modules/ProofChamber/presentations/views/ProofChamberPanel.tsx',
+        patchSources: [
+            {
+                file: 'src/modules/ProofChamber/models/ProofChamberState.ts',
+                exportName: 'DEFAULT_PARAMS',
+                shape: 'object',
+            },
+        ],
         noPatchReason: '',
+        noPanelReason: '',
     },
     'native-scoring': {
         moduleDir: 'src/modules/Tuner',
         patchSources: [],
-        panel: null,
         noPatchReason:
-            'The Tuner has no parameter-default object. `DEFAULT_TUNER_STATE` is measurement output — frequency, ' +
-            'cents, confidence, the detected note — and shares no key with the three descriptor parameters ' +
-            '(a4_hz, mute, tone). The reference pitch lives in `models/A4Reference.ts` as a bare scalar. One leg.',
+            'The Tuner has no parameter-default declaration. `DEFAULT_TUNER_STATE` is measurement output — ' +
+            'frequency, cents, confidence, the detected note — and shares no key with the three descriptor ' +
+            'parameters (a4_hz, mute, tone). The reference pitch lives in `models/A4Reference.ts` as a bare ' +
+            'scalar.',
+        noPanelReason:
+            "`TunerPanel`'s single reset literal forwards a prop from a shared knob wrapper, so there is no " +
+            'literal at a call site to attribute.',
     },
     knead: {
         moduleDir: 'src/modules/Knead',
         patchSources: [],
-        panel: null,
         noPatchReason:
             'Knead has no `models/` directory at all — the module is handlers, stores and use cases — and no ' +
-            'descriptor either, so there is nothing to compare. One leg, and it is empty.',
+            'descriptor either, so there is nothing to compare.',
+        noPanelReason: 'Knead has no `presentations/` directory; its controls live in the shared mixer strip.',
     },
 };
 
 /**
- * Object literals inside a censused device module that are *not* parameter
+ * Declarations inside a censused device module that are *not* device parameter
  * defaults.
  *
- * This is the reverse direction of the patch-source discovery: every
- * SCREAMING_CASE object export under a device module's `models/` must be either
- * a declared leg above or a row here. A second default table appearing beside
- * an existing one — the exact shape that produced the Grinder drift, where
- * `GRINDER_PARAMS` sat next to `DEFAULT_PATCH` disagreeing with it — cannot be
- * added without this file failing.
+ * The reverse direction of discovery: every candidate export under a device
+ * module's `models/` must be either a declared leg above or a row here. This is
+ * what a second parameter table cannot get past — the shape that produced the
+ * Grinder drift, where `GRINDER_PARAMS` sat beside `DEFAULT_PATCH` disagreeing
+ * with it for four months.
  */
-const NON_DEFAULT_MODEL_OBJECTS: readonly {
+const NON_DEFAULT_MODEL_DECLARATIONS: readonly {
     readonly file: string;
     readonly exportName: string;
     readonly reason: string;
@@ -396,7 +551,19 @@ const NON_DEFAULT_MODEL_OBJECTS: readonly {
     {
         file: 'src/modules/GrandBoule/models/GrandBouleMidiCalibration.ts',
         exportName: 'MIDI_CALIBRATION_RANGES',
-        reason: 'Velocity-curve calibration bounds for MIDI input. Not a device parameter, and not a default.',
+        reason:
+            'Velocity-curve and CC-smoothing calibration, keyed by its own names (velocityCurveExponent, ' +
+            'velocityFloor, …). It does declare five numeric defaults, which is why the scanner surfaces it, but ' +
+            "none of its keys is one of GrandBoule's three descriptor parameters.",
+    },
+    {
+        file: 'src/modules/GrandBoule/models/GrandBoulePerNoteParams.ts',
+        exportName: 'PER_NOTE_PARAM_DESCRIPTORS',
+        reason:
+            'Eight per-note *offsets* — hammer hardness, string stiffness and so on — each defaulting to 1.0 as ' +
+            'a multiplier against the model. A table in the same shape as `GRINDER_PARAMS` (keyed `key` with ' +
+            '`defaultValue`), which is why it is read and named here, but its ids are per-note trims and the ' +
+            'descriptor advertises none of them.',
     },
     {
         file: 'src/modules/Levain/models/LevainPatch.ts',
@@ -459,7 +626,7 @@ const NON_DEFAULT_MODEL_OBJECTS: readonly {
         reason:
             'Per-space preset overlays applied *on top of* `DEFAULT_PARAMS`, so they are presets rather than ' +
             'defaults. Worth noting for the `damping` row below: the `hall` overlay a fresh Dutch Oven runs ' +
-            '(`DEFAULT_PARAMS.space` is `hall`) also says `damping: 0.3`, so the descriptor’s 0.0005 is ' +
+            "(`DEFAULT_PARAMS.space` is `hall`) also says `damping: 0.3`, so the descriptor's 0.0005 is " +
             'outvoted a third time.',
     },
     {
@@ -472,7 +639,7 @@ const NON_DEFAULT_MODEL_OBJECTS: readonly {
         exportName: 'DEFAULT_TUNER_STATE',
         reason:
             'Measurement output — the detected pitch before anything has been measured. Shares no key with the ' +
-            'Tuner’s three descriptor parameters.',
+            "Tuner's three descriptor parameters.",
     },
 ];
 
@@ -546,117 +713,127 @@ const KNOWN_DEFAULT_DIVERGENCES: readonly DefaultDivergence[] = [
 ];
 
 /**
- * Panels that declare reset literals but do not name the parameter each one
- * belongs to, so the third leg cannot read them.
+ * Every `.tsx` under any module's `presentations/` tree that declares a reset
+ * literal, with how many it declares and how many this scanner can attribute.
  *
- * Both directions. The count is the number of `defaultValue=` literals the
- * panel declares that this file cannot attribute; if a panel starts binding its
- * parameter ids, its knobs join the census and the count here stops matching.
+ * **Both numbers, not their difference.** Pinning `declared − readable` let a
+ * newly readable knob raise both and keep the row matching, so a binding could
+ * be added to an uncensused panel and change nothing — which is exactly what a
+ * census of panel bindings must not allow.
+ *
+ * Count provenance: measured on `6db20efd3` by `defaultValue=` occurrences and
+ * by `readPanelResetValues().size` per file. Rows with `readable: 0` are the
+ * enumerated hole; the per-device `noPanelReason` says why for the devices, and
+ * the non-device modules are named individually below.
  */
-const PANELS_WITHOUT_PARAM_BINDING: readonly {
-    readonly file: string;
-    readonly unreadable: number;
-    readonly reason: string;
-}[] = [
+const PANEL_FILES: readonly { readonly file: string; readonly declared: number; readonly readable: number }[] = [
+    { file: 'src/modules/Bacteria/presentations/components/BandStrip.tsx', declared: 1, readable: 1 },
+    { file: 'src/modules/Bacteria/presentations/views/BacteriaPanel.tsx', declared: 1, readable: 0 },
+    { file: 'src/modules/Crumbs/presentations/components/CrumbsControls.tsx', declared: 14, readable: 10 },
+    { file: 'src/modules/Crust/presentations/components/CrustControlZone.tsx', declared: 2, readable: 0 },
+    { file: 'src/modules/Fermenter/presentations/components/AdditiveSection.tsx', declared: 4, readable: 4 },
+    { file: 'src/modules/Fermenter/presentations/components/CrumbsSection.tsx', declared: 2, readable: 2 },
+    { file: 'src/modules/Fermenter/presentations/components/EffectsSection.tsx', declared: 22, readable: 21 },
+    { file: 'src/modules/Fermenter/presentations/components/EnvelopeSection.tsx', declared: 1, readable: 0 },
+    { file: 'src/modules/Fermenter/presentations/components/FilterSection.tsx', declared: 5, readable: 5 },
+    { file: 'src/modules/Fermenter/presentations/components/FmSection.tsx', declared: 4, readable: 2 },
+    { file: 'src/modules/Fermenter/presentations/components/GranularSection.tsx', declared: 6, readable: 6 },
+    { file: 'src/modules/Fermenter/presentations/components/KarplusSection.tsx', declared: 2, readable: 0 },
+    { file: 'src/modules/Fermenter/presentations/components/LayerStack.tsx', declared: 2, readable: 0 },
+    { file: 'src/modules/Fermenter/presentations/components/LfoSection.tsx', declared: 3, readable: 3 },
+    { file: 'src/modules/Fermenter/presentations/components/MacroStrip.tsx', declared: 1, readable: 0 },
+    { file: 'src/modules/Fermenter/presentations/components/ModulationSection.tsx', declared: 3, readable: 3 },
+    { file: 'src/modules/Fermenter/presentations/components/OscillatorSection.tsx', declared: 5, readable: 5 },
+    { file: 'src/modules/Fermenter/presentations/components/UnisonSection.tsx', declared: 3, readable: 3 },
+    { file: 'src/modules/Fermenter/presentations/components/WarpSection.tsx', declared: 3, readable: 3 },
+    { file: 'src/modules/Gluten/presentations/views/GlutenPanel.tsx', declared: 25, readable: 24 },
+    { file: 'src/modules/GrandBoule/presentations/components/MidiCalibrationPanel.tsx', declared: 6, readable: 0 },
+    { file: 'src/modules/GrandBoule/presentations/components/MorphPanel.tsx', declared: 3, readable: 0 },
+    { file: 'src/modules/GrandBoule/presentations/components/PerNoteEditor.tsx', declared: 1, readable: 0 },
+    { file: 'src/modules/GrandBoule/presentations/views/GrandBoulePanel.tsx', declared: 9, readable: 0 },
+    { file: 'src/modules/Grinder/presentations/views/GrinderPanel.tsx', declared: 33, readable: 25 },
+    { file: 'src/modules/Levain/presentations/components/ExpressionPanel.tsx', declared: 5, readable: 0 },
+    { file: 'src/modules/Levain/presentations/components/HumanizePanel.tsx', declared: 5, readable: 0 },
+    { file: 'src/modules/Levain/presentations/components/LegatoTuning.tsx', declared: 3, readable: 0 },
+    { file: 'src/modules/Levain/presentations/components/LevainMacroStrip.tsx', declared: 1, readable: 0 },
+    { file: 'src/modules/Levain/presentations/components/MicBlendSlider.tsx', declared: 3, readable: 0 },
+    { file: 'src/modules/Levain/presentations/views/LevainPanel.tsx', declared: 1, readable: 0 },
+    { file: 'src/modules/MixerConsole/presentations/views/Mixer/ExpandedChannelStrip.tsx', declared: 2, readable: 0 },
+    { file: 'src/modules/MixerConsole/presentations/views/MixerPanel.tsx', declared: 1, readable: 0 },
+    { file: 'src/modules/Proof/presentations/components/ProofDynSection.tsx', declared: 5, readable: 0 },
+    { file: 'src/modules/Proof/presentations/components/ProofEqSection.tsx', declared: 3, readable: 0 },
+    { file: 'src/modules/Proof/presentations/components/ProofExciterSection.tsx', declared: 2, readable: 0 },
+    { file: 'src/modules/Proof/presentations/components/ProofImagerSection.tsx', declared: 2, readable: 0 },
+    { file: 'src/modules/Proof/presentations/components/ProofLimiterSection.tsx', declared: 3, readable: 0 },
+    { file: 'src/modules/Proof/presentations/views/ProofPanel.tsx', declared: 9, readable: 0 },
+    { file: 'src/modules/ProofChamber/presentations/views/ProofChamberPanel.tsx', declared: 18, readable: 17 },
+    { file: 'src/modules/Setlist/presentations/views/SetlistPanel.tsx', declared: 2, readable: 0 },
     {
-        file: 'src/modules/Bacteria/presentations/views/BacteriaPanel.tsx',
-        unreadable: 1,
-        reason: 'One shared knob wrapper forwarding `defaultValue={defaultValue}` — a prop, not a literal.',
+        file: 'src/modules/TimelineEditor/presentations/views/Inspector/DeviceParameterControl.tsx',
+        declared: 2,
+        readable: 0,
+    },
+    { file: 'src/modules/Toaster/presentations/views/ToasterPanel.tsx', declared: 13, readable: 0 },
+    { file: 'src/modules/Tuner/presentations/views/TunerPanel.tsx', declared: 1, readable: 0 },
+    { file: 'src/modules/Yeast/presentations/components/ProcessorParams.tsx', declared: 1, readable: 0 },
+    { file: 'src/modules/Yeast/presentations/views/YeastPanel.tsx', declared: 3, readable: 0 },
+];
+
+/**
+ * Modules that declare reset literals but own no native device, so no
+ * `noPanelReason` covers them.
+ */
+const NON_DEVICE_PANEL_MODULES: readonly { readonly moduleDir: string; readonly reason: string }[] = [
+    {
+        moduleDir: 'src/modules/MixerConsole',
+        reason: 'Channel-strip controls. The mixer is not a plugin and has no descriptor to agree with.',
     },
     {
-        file: 'src/modules/Gluten/presentations/views/GlutenPanel.tsx',
-        unreadable: 1,
+        moduleDir: 'src/modules/Setlist',
+        reason: 'Show control — set ordering and cue timings, not device parameters.',
+    },
+    {
+        moduleDir: 'src/modules/TimelineEditor',
         reason:
-            'The shared `Knob` wrapper (`defaultValue={defaultValue}`). Every one of its twenty-four call sites ' +
-            'passes `param="…"` and is censused.',
+            '`DeviceParameterControl` is the generic Inspector row. Its reset value is `param.defaultValue` read ' +
+            'from the descriptor at runtime, so it is the descriptor leg rendered, not a fourth declaration.',
     },
     {
-        file: 'src/modules/GrandBoule/presentations/views/GrandBoulePanel.tsx',
-        unreadable: 9,
+        moduleDir: 'src/modules/Yeast',
         reason:
-            'One wrapper plus eight knobs that bind through a use-case call with no parameter-id literal — ' +
-            '`onChange={(value) => setGrandBouleMasterGain({ deviceId, engine, store, gain: value })}`. The id is ' +
-            'the *function chosen*, not an argument, so no scanner can recover it without a hand-written map from ' +
-            'use case to parameter — which would be a fourth declaration to drift.',
-    },
-    {
-        file: 'src/modules/Grinder/presentations/views/GrinderPanel.tsx',
-        unreadable: 8,
-        reason:
-            'One shared `GrinderKnob` wrapper; six microphone knobs bound to `patch.mic1.positionX` and siblings, ' +
-            'which are sub-object fields and not descriptor parameters; and one pedal knob whose reset comes from ' +
-            'a table row (`defaultValue={param.defaultValue}`) rather than a literal. The other twenty-five are ' +
-            'censused.',
-    },
-    {
-        file: 'src/modules/Levain/presentations/views/LevainPanel.tsx',
-        unreadable: 1,
-        reason: 'A shared knob wrapper forwarding its prop.',
-    },
-    {
-        file: 'src/modules/MixerConsole/presentations/views/MixerPanel.tsx',
-        unreadable: 1,
-        reason: 'A channel-strip control, not a device parameter — the mixer is not a plugin with a descriptor.',
-    },
-    {
-        file: 'src/modules/Proof/presentations/views/ProofPanel.tsx',
-        unreadable: 9,
-        reason:
-            'Proof binds through `onPatchChange({ key: "limCeiling", value, isTransient })` — an object property ' +
-            'inside the lambda rather than the first positional argument the scanner reads. Only three of the ' +
-            'nine are descriptor parameters anyway; the rest are per-band EQ and dynamics controls the descriptor ' +
-            'does not advertise.',
-    },
-    {
-        file: 'src/modules/ProofChamber/presentations/views/ProofChamberPanel.tsx',
-        unreadable: 1,
-        reason: "The shared `Knob` wrapper. The other seventeen bind through `setParam('…', value)` and are censused.",
-    },
-    {
-        file: 'src/modules/Setlist/presentations/views/SetlistPanel.tsx',
-        unreadable: 2,
-        reason: 'Setlist is show control, not a device — no descriptor, nothing to agree with.',
-    },
-    {
-        file: 'src/modules/Toaster/presentations/views/ToasterPanel.tsx',
-        unreadable: 13,
-        reason:
-            "Every Toaster knob binds through `setToasterPadParam(deviceId, selectedPadIndex, 'decay', value)`, " +
-            'where the id is the *third* argument. The scanner reads only the first, deliberately: widening it to ' +
-            'any quoted argument would let a pad index or a device id be read as a parameter name.',
-    },
-    {
-        file: 'src/modules/Tuner/presentations/views/TunerPanel.tsx',
-        unreadable: 1,
-        reason: 'A shared knob wrapper forwarding its prop.',
-    },
-    {
-        file: 'src/modules/Yeast/presentations/views/YeastPanel.tsx',
-        unreadable: 3,
-        reason:
-            'Yeast is the MIDI FX rack: its three arpeggiator knobs bind through a rack-slot setter keyed by slot ' +
-            'index. It also has no native engine, so it is outside `DEFAULT_SOURCES` entirely.',
+            'Yeast is the MIDI FX rack: its arpeggiator knobs bind through a rack-slot setter keyed by slot ' +
+            'index. It has no native engine either, so it is outside `DEFAULT_SOURCES`.',
     },
 ];
 
 /**
- * How many (device, parameter) comparisons the census actually performs.
+ * How many comparisons the census performs.
  *
- * Count provenance: measured on `c2ec90b4d` + this change, by summing the
- * descriptor parameters each censused device resolves against a patch scalar.
- * descriptor-vs-patch 282 = fermenter 105 + bacteria 59 + grinder 40 + gluten
- * 38 + crust 16 + proof 3 + dutch-oven 21 (20 direct plus `early_late` through
- * its alias). descriptor-vs-panel 66 = grinder 25 + gluten 24 + dutch-oven 17.
+ * Count provenance: measured on `6db20efd3` + this change.
+ *
+ * Patch 428 = the sum over (device, declaration, descriptor parameter) of the
+ * parameters each declaration resolves: fermenter 105 (`DEFAULT_PATCH`) + 105
+ * (`FERMENTER_PARAMS`), grinder 40 + 41, bacteria 59, gluten 38, crust 16,
+ * proof 3, dutch-oven 21 (20 direct plus `early_late` through its alias). The
+ * two table declarations are the 146 this census could not see at all before.
+ *
+ * Grinder's two differ by one because `engineMode` is a label in
+ * `DEFAULT_PATCH` (`'circuit'`) and an integer in `GRINDER_PARAMS`
+ * (`default: 0`). The integer is compared; the label is not comparable without
+ * duplicating the bridge's label map into a test.
+ *
+ * Panel 134 = grinder 25 + gluten 24 + dutch-oven 17 + bacteria 1 + crumbs 10 +
+ * fermenter 57 across eleven section files. The fermenter and crumbs knobs were
+ * outside the scan entirely — `views/` only — and Fermenter's whole control
+ * surface lives in `presentations/components/`.
  *
  * Pinned because every leg here is a regex over source text, and a regex that
  * silently stops matching turns this file into a test that compares nothing and
- * passes. A rename that moves an export, a panel that restyles its knobs, a
- * prettier pass that wraps a literal onto its own line — each would drop rows
- * without dropping an assertion. The floor is what makes that visible. Raise it
- * when the census genuinely widens; a *drop* is the bug it exists to catch.
+ * passes. Raise it when the census genuinely widens; a *drop* is the bug it
+ * exists to catch.
  */
-const MIN_PATCH_COMPARISONS = 282;
-const MIN_PANEL_COMPARISONS = 66;
+const MIN_PATCH_COMPARISONS = 428;
+const MIN_PANEL_COMPARISONS = 134;
 
 // ── Resolution ───────────────────────────────────────────────────────────────
 
@@ -676,23 +853,26 @@ const DESCRIPTOR_DEFAULTS = new Map<string, Map<string, number>>(
     ])
 );
 
-/** deviceId → module patch key → declared default, unioned across that device's sources. */
-const PATCH_DEFAULTS = new Map<NativeDspDeviceType, Map<string, number>>(
-    NATIVE_DSP_DEVICE_TYPES.map((deviceType) => {
-        const merged = new Map<string, number>();
-        for (const source of DEFAULT_SOURCES[deviceType].patchSources) {
-            for (const [key, value] of readObjectScalars(source.file, source.exportName)) {
-                merged.set(key, value);
-            }
-        }
-        return [deviceType, merged];
-    })
+/** deviceId → one map per declaration, never merged. */
+const PATCH_DECLARATIONS = new Map<NativeDspDeviceType, { source: PatchSource; defaults: Map<string, number> }[]>(
+    NATIVE_DSP_DEVICE_TYPES.map((deviceType) => [
+        deviceType,
+        DEFAULT_SOURCES[deviceType].patchSources.map((source) => ({
+            source,
+            defaults: readDeclaredDefaults(source.file, source.exportName, source.shape),
+        })),
+    ])
 );
 
 const PANEL_RESETS = new Map<NativeDspDeviceType, Map<string, number>>(
     NATIVE_DSP_DEVICE_TYPES.map((deviceType) => {
-        const panel = DEFAULT_SOURCES[deviceType].panel;
-        return [deviceType, panel === null ? new Map<string, number>() : readPanelResetValues(panel)];
+        const merged = new Map<string, number>();
+        for (const file of listPanelFiles(DEFAULT_SOURCES[deviceType].moduleDir)) {
+            for (const [paramId, reset] of readPanelResetValues(file)) {
+                merged.set(paramId, reset);
+            }
+        }
+        return [deviceType, merged];
     })
 );
 
@@ -700,21 +880,27 @@ function isLabelUnion(deviceId: NativeDspDeviceType, paramId: string): boolean {
     return LABEL_UNION_PARAMS.some((row) => row.deviceId === deviceId && row.paramIds.includes(paramId));
 }
 
-/** The module key a descriptor id resolves to, or null when the module never declares it. */
-function patchKeyFor(deviceId: NativeDspDeviceType, paramId: string): string | null {
+/** The key one declaration uses for a descriptor id, or null when it declares none. */
+function declaredKeyFor(deviceId: NativeDspDeviceType, paramId: string, defaults: Map<string, number>): string | null {
     const alias = PARAM_KEY_ALIASES.find((row) => row.deviceId === deviceId && row.paramId === paramId);
-    if (alias !== undefined) {
+    if (alias !== undefined && defaults.has(alias.patchKey)) {
         return alias.patchKey;
     }
-    const scalars = PATCH_DEFAULTS.get(deviceId)!;
-    if (scalars.has(paramId)) {
+    if (defaults.has(paramId)) {
         return paramId;
     }
     const camel = toCamelCase(paramId);
-    if (scalars.has(camel)) {
+    if (defaults.has(camel)) {
         return camel;
     }
     return null;
+}
+
+/** The same, against everything the device declares anywhere. */
+function declaresAnywhere(deviceId: NativeDspDeviceType, paramId: string): boolean {
+    return PATCH_DECLARATIONS.get(deviceId)!.some(
+        (declaration) => declaredKeyFor(deviceId, paramId, declaration.defaults) !== null
+    );
 }
 
 /** The descriptor id a panel's parameter key belongs to, or null when unadvertised. */
@@ -738,14 +924,14 @@ function isDeclaredDivergence(deviceId: NativeDspDeviceType, paramId: string): b
 }
 
 describe('a device default is the same number wherever it is declared', () => {
-    it('reads the module default objects it claims to read', () => {
+    it('reads the module declarations it claims to read', () => {
         // The vacuity guard for leg two. An export that has been renamed or
         // reshaped yields an empty map, and every later comparison would then
         // pass by comparing nothing.
         const empty: string[] = [];
         for (const deviceType of NATIVE_DSP_DEVICE_TYPES) {
-            for (const source of DEFAULT_SOURCES[deviceType].patchSources) {
-                if (readObjectScalars(source.file, source.exportName).size === 0) {
+            for (const { source, defaults } of PATCH_DECLARATIONS.get(deviceType)!) {
+                if (defaults.size === 0) {
                     empty.push(`${deviceType}: ${source.file}#${source.exportName}`);
                 }
             }
@@ -754,43 +940,46 @@ describe('a device default is the same number wherever it is declared', () => {
         expect(empty).toEqual([]);
     });
 
-    it('reads the panel reset values it claims to read', () => {
-        // The same guard for leg three, plus the reverse direction on the
-        // holes: a panel that starts naming its parameter ids has to be
-        // recensused rather than left in the unreadable list.
-        const discovered = listPanelFiles().sort();
-        expect(discovered).toEqual(PANELS_WITHOUT_PARAM_BINDING.map((row) => row.file).sort());
+    it('reads every panel file, and pins how much of each one it can attribute', () => {
+        // The vacuity guard for leg three, and the reverse direction on the
+        // hole. `readable` is pinned per file rather than `declared − readable`
+        // so that adding a binding to an unread panel cannot be absorbed by an
+        // equal rise in the total.
+        const discovered = listAllModuleDirs().flatMap((moduleDir) => listPanelFiles(moduleDir));
+        expect(discovered.sort()).toEqual(PANEL_FILES.map((row) => row.file).sort());
 
         const wrong: string[] = [];
-        for (const row of PANELS_WITHOUT_PARAM_BINDING) {
-            const declared = (readSource(row.file).match(/defaultValue=/g) ?? []).length;
+        for (const row of PANEL_FILES) {
+            const declared = countResetLiterals(row.file);
             const readable = readPanelResetValues(row.file).size;
-            if (declared - readable !== row.unreadable) {
-                wrong.push(`${row.file}: declared ${declared}, readable ${readable}, row claims ${row.unreadable}`);
+            if (declared !== row.declared || readable !== row.readable) {
+                wrong.push(
+                    `${row.file}: declared ${declared} (pinned ${row.declared}), readable ${readable} (pinned ${row.readable})`
+                );
             }
         }
 
         expect(wrong).toEqual([]);
     });
 
-    it('every device module’s default objects are either a census leg or named as something else', () => {
-        // Population derivation, reverse direction. `GRINDER_PARAMS` sitting
-        // beside `DEFAULT_PATCH` and disagreeing with it is what this catches:
-        // a second table cannot appear in a device module without a decision
-        // recorded here.
+    it('every device module’s declarations are either a census leg or named as something else', () => {
+        // Population derivation, reverse direction, in both shapes. An object
+        // patch or a parameter *table* appearing beside an existing one cannot
+        // be added without a decision recorded here — which is the shape that
+        // produced this PR's defect.
         const unclaimed: string[] = [];
         for (const deviceType of NATIVE_DSP_DEVICE_TYPES) {
             const config = DEFAULT_SOURCES[deviceType];
             for (const file of listModelFiles(config.moduleDir)) {
-                for (const exportName of findObjectExports(file)) {
+                for (const { name } of findDeclarationExports(file)) {
                     const isLeg = config.patchSources.some(
-                        (source) => source.file === file && source.exportName === exportName
+                        (source) => source.file === file && source.exportName === name
                     );
-                    const isNamed = NON_DEFAULT_MODEL_OBJECTS.some(
-                        (row) => row.file === file && row.exportName === exportName
+                    const isNamed = NON_DEFAULT_MODEL_DECLARATIONS.some(
+                        (row) => row.file === file && row.exportName === name
                     );
                     if (!isLeg && !isNamed) {
-                        unclaimed.push(`${file}#${exportName}`);
+                        unclaimed.push(`${file}#${name}`);
                     }
                 }
             }
@@ -799,63 +988,81 @@ describe('a device default is the same number wherever it is declared', () => {
         expect(unclaimed).toEqual([]);
     });
 
-    it('every device without a default-patch object still has none, and says why', () => {
-        // The other half: a device declared leg-less must not have quietly
-        // grown a default table, and a device that has one must not be sitting
-        // behind a reason.
+    it('every device with no declaration and every device with no readable knob says why', () => {
+        // Both reasons asserted the same way and in both directions: a reason
+        // is required exactly when the thing it explains is absent, so a device
+        // cannot carry a stale excuse for a gap it no longer has, and cannot
+        // have a gap with no stated cause.
         const wrong: string[] = [];
         for (const deviceType of NATIVE_DSP_DEVICE_TYPES) {
             const config = DEFAULT_SOURCES[deviceType];
-            const hasSources = config.patchSources.length > 0;
-            if (hasSources && config.noPatchReason.length > 0) {
-                wrong.push(`${deviceType}: has patch sources and a reason for having none`);
-            }
-            if (!hasSources && config.noPatchReason.trim().length === 0) {
-                wrong.push(`${deviceType}: no patch sources and no reason`);
-            }
-            if (!hasSources) {
-                const stray = listModelFiles(config.moduleDir).flatMap((file) =>
-                    findObjectExports(file)
-                        .filter((exportName) =>
-                            NON_DEFAULT_MODEL_OBJECTS.every((row) => row.file !== file || row.exportName !== exportName)
-                        )
-                        .map((exportName) => `${file}#${exportName}`)
+
+            const hasDeclarations = config.patchSources.length > 0;
+            if (hasDeclarations === config.noPatchReason.trim().length > 0) {
+                wrong.push(
+                    `${deviceType}: patch sources ${hasDeclarations ? 'present' : 'absent'} with reason ${hasDeclarations ? 'present' : 'absent'}`
                 );
-                for (const entry of stray) {
-                    wrong.push(`${deviceType}: undeclared object export ${entry}`);
-                }
+            }
+
+            const readable = PANEL_RESETS.get(deviceType)!.size;
+            if (readable > 0 === config.noPanelReason.trim().length > 0) {
+                wrong.push(
+                    `${deviceType}: ${readable} readable knobs with reason ${config.noPanelReason.length > 0 ? 'present' : 'absent'}`
+                );
             }
         }
 
         expect(wrong).toEqual([]);
     });
 
-    it('the descriptor default is the module default', () => {
-        // The load-bearing comparison. Both sides are read out of the files
-        // production compiles, and they are different files maintained by
-        // different work — the descriptors were split out of the modules in
-        // `27d7ce794` and have been duplicates ever since.
+    it('every module that declares reset literals is a censused device or named as something else', () => {
+        const unclaimed = listAllModuleDirs()
+            .filter((moduleDir) => listPanelFiles(moduleDir).length > 0)
+            .filter(
+                (moduleDir) =>
+                    !NATIVE_DSP_DEVICE_TYPES.some(
+                        (deviceType) => DEFAULT_SOURCES[deviceType].moduleDir === moduleDir
+                    ) && !NON_DEVICE_PANEL_MODULES.some((row) => row.moduleDir === moduleDir)
+            );
+
+        expect(unclaimed).toEqual([]);
+    });
+
+    it('the descriptor default is what every module declaration says', () => {
+        // The load-bearing comparison, per declaration rather than per device.
+        // Both sides are read out of the files production compiles, and they
+        // are different files maintained by different work — the descriptors
+        // were split out of the modules in `27d7ce794` and have been duplicates
+        // ever since.
         const disagreements: string[] = [];
         let compared = 0;
 
         for (const deviceType of CENSUSED_DEVICE_IDS) {
             const descriptor = DESCRIPTOR_DEFAULTS.get(deviceType);
             expect(descriptor, `${deviceType} has no descriptor`).toBeDefined();
-            const scalars = PATCH_DEFAULTS.get(deviceType)!;
 
             for (const [paramId, declared] of descriptor!) {
-                if (isLabelUnion(deviceType, paramId)) {
+                if (!declaresAnywhere(deviceType, paramId)) {
+                    // Nothing numeric to compare. Either the module stores it
+                    // as a label — declared, excluded, and checked below — or
+                    // it genuinely declares no default and that is the finding.
+                    if (!isLabelUnion(deviceType, paramId)) {
+                        disagreements.push(`${deviceType}.${paramId}: the module declares no default for it`);
+                    }
                     continue;
                 }
-                const key = patchKeyFor(deviceType, paramId);
-                if (key === null) {
-                    disagreements.push(`${deviceType}.${paramId}: the module declares no default for it`);
-                    continue;
-                }
-                compared += 1;
-                const moduleValue = scalars.get(key)!;
-                if (moduleValue !== declared && !isDeclaredDivergence(deviceType, paramId)) {
-                    disagreements.push(`${deviceType}.${paramId}: descriptor ${declared}, module ${moduleValue}`);
+                for (const { source, defaults } of PATCH_DECLARATIONS.get(deviceType)!) {
+                    const key = declaredKeyFor(deviceType, paramId, defaults);
+                    if (key === null) {
+                        continue;
+                    }
+                    compared += 1;
+                    const moduleValue = defaults.get(key)!;
+                    if (moduleValue !== declared && !isDeclaredDivergence(deviceType, paramId)) {
+                        disagreements.push(
+                            `${deviceType}.${paramId}: descriptor ${declared}, ${source.exportName} ${moduleValue}`
+                        );
+                    }
                 }
             }
         }
@@ -871,9 +1078,15 @@ describe('a device default is the same number wherever it is declared', () => {
         const disagreements: string[] = [];
         let compared = 0;
 
-        for (const deviceType of CENSUSED_DEVICE_IDS) {
-            const descriptor = DESCRIPTOR_DEFAULTS.get(deviceType)!;
-            const scalars = PATCH_DEFAULTS.get(deviceType)!;
+        // Every device with a descriptor, not only those with a module
+        // declaration. Crumbs has ten readable knobs and no default-patch
+        // object, so restricting this loop to `CENSUSED_DEVICE_IDS` silently
+        // dropped the only leg it has.
+        for (const deviceType of NATIVE_DSP_DEVICE_TYPES) {
+            const descriptor = DESCRIPTOR_DEFAULTS.get(deviceType);
+            if (descriptor === undefined) {
+                continue;
+            }
 
             for (const [panelKey, reset] of PANEL_RESETS.get(deviceType)!) {
                 const paramId = descriptorIdForPanelKey(deviceType, panelKey);
@@ -887,9 +1100,13 @@ describe('a device default is the same number wherever it is declared', () => {
                 if (declared !== reset && !isDeclaredDivergence(deviceType, paramId)) {
                     disagreements.push(`${deviceType}.${paramId}: panel ${reset}, descriptor ${declared}`);
                 }
-                const key = patchKeyFor(deviceType, paramId);
-                if (key !== null && scalars.get(key) !== reset) {
-                    disagreements.push(`${deviceType}.${paramId}: panel ${reset}, module ${scalars.get(key)!}`);
+                for (const { source, defaults } of PATCH_DECLARATIONS.get(deviceType)!) {
+                    const key = declaredKeyFor(deviceType, paramId, defaults);
+                    if (key !== null && defaults.get(key) !== reset && !isDeclaredDivergence(deviceType, paramId)) {
+                        disagreements.push(
+                            `${deviceType}.${paramId}: panel ${reset}, ${source.exportName} ${defaults.get(key)!}`
+                        );
+                    }
                 }
             }
         }
@@ -904,21 +1121,27 @@ describe('a device default is the same number wherever it is declared', () => {
         // be deleted, so this cannot become a place drift goes to be forgotten.
         const stale: string[] = [];
         for (const row of KNOWN_DEFAULT_DIVERGENCES) {
-            const descriptor = DESCRIPTOR_DEFAULTS.get(row.deviceId);
-            const declared = descriptor?.get(row.paramId);
+            const declared = DESCRIPTOR_DEFAULTS.get(row.deviceId)?.get(row.paramId);
             if (declared === undefined) {
                 stale.push(`${row.deviceId}.${row.paramId}: not a descriptor parameter`);
                 continue;
             }
-            const key = patchKeyFor(row.deviceId, row.paramId);
-            const moduleValue = key === null ? undefined : PATCH_DEFAULTS.get(row.deviceId)!.get(key);
+
+            const moduleValues = PATCH_DECLARATIONS.get(row.deviceId)!
+                .map(({ defaults }) => {
+                    const key = declaredKeyFor(row.deviceId, row.paramId, defaults);
+                    return key === null ? undefined : defaults.get(key);
+                })
+                .filter((value) => value !== undefined);
+
             const panelResets = PANEL_RESETS.get(row.deviceId)!;
             const panelKey = [...panelResets.keys()].find(
                 (candidate) => descriptorIdForPanelKey(row.deviceId, candidate) === row.paramId
             );
             const panelValue = panelKey === undefined ? undefined : panelResets.get(panelKey);
+
             const agrees =
-                (moduleValue === undefined || moduleValue === declared) &&
+                moduleValues.every((value) => value === declared) &&
                 (panelValue === undefined || panelValue === declared);
             if (agrees) {
                 stale.push(`${row.deviceId}.${row.paramId}: the declarations agree now`);
@@ -929,18 +1152,24 @@ describe('a device default is the same number wherever it is declared', () => {
     });
 
     it('every label-union exclusion still names a parameter the module stores as a label', () => {
-        // Reverse direction on the exclusions. If a patch key becomes numeric
+        // Reverse direction on the exclusions. If a declaration becomes numeric
         // the row is a lie, and the parameter belongs in the census.
         const stale: string[] = [];
         for (const row of LABEL_UNION_PARAMS) {
-            const scalars = PATCH_DEFAULTS.get(row.deviceId)!;
             const descriptor = DESCRIPTOR_DEFAULTS.get(row.deviceId)!;
             for (const paramId of row.paramIds) {
                 if (!descriptor.has(paramId)) {
                     stale.push(`${row.deviceId}.${paramId}: not a descriptor parameter`);
                 }
-                if (scalars.has(paramId)) {
-                    stale.push(`${row.deviceId}.${paramId}: the module stores a number for it now`);
+                // The row earns its place while *some* declaration still stores
+                // a label. Grinder is why this is per declaration rather than
+                // per device: `DEFAULT_PATCH` holds `engineMode: 'circuit'`
+                // while `GRINDER_PARAMS` holds `default: 0`, so the exclusion is
+                // true of one and false of the other — and the numeric one is
+                // compared rather than waved through.
+                const declarations = PATCH_DECLARATIONS.get(row.deviceId)!;
+                if (declarations.every(({ defaults }) => defaults.has(paramId))) {
+                    stale.push(`${row.deviceId}.${paramId}: every declaration stores a number for it now`);
                 }
             }
         }
@@ -951,11 +1180,13 @@ describe('a device default is the same number wherever it is declared', () => {
     it('every alias still bridges a name the module uses and the descriptor does not', () => {
         const broken: string[] = [];
         for (const row of PARAM_KEY_ALIASES) {
-            const scalars = PATCH_DEFAULTS.get(row.deviceId)!;
-            if (!scalars.has(row.patchKey)) {
-                broken.push(`${row.deviceId}.${row.paramId}: no ${row.patchKey} in the module default`);
+            const declarations = PATCH_DECLARATIONS.get(row.deviceId)!;
+            if (!declarations.some(({ defaults }) => defaults.has(row.patchKey))) {
+                broken.push(`${row.deviceId}.${row.paramId}: no ${row.patchKey} in any declaration`);
             }
-            if (scalars.has(row.paramId) || scalars.has(toCamelCase(row.paramId))) {
+            if (
+                declarations.some(({ defaults }) => defaults.has(row.paramId) || defaults.has(toCamelCase(row.paramId)))
+            ) {
                 broken.push(`${row.deviceId}.${row.paramId}: resolves without the alias, so the alias is dead`);
             }
         }
@@ -967,8 +1198,11 @@ describe('a device default is the same number wherever it is declared', () => {
         const unreasoned = [
             ...KNOWN_DEFAULT_DIVERGENCES.map((row) => ({ id: `${row.deviceId}.${row.paramId}`, reason: row.reason })),
             ...PARAM_KEY_ALIASES.map((row) => ({ id: `${row.deviceId}.${row.paramId}`, reason: row.reason })),
-            ...NON_DEFAULT_MODEL_OBJECTS.map((row) => ({ id: `${row.file}#${row.exportName}`, reason: row.reason })),
-            ...PANELS_WITHOUT_PARAM_BINDING.map((row) => ({ id: row.file, reason: row.reason })),
+            ...NON_DEFAULT_MODEL_DECLARATIONS.map((row) => ({
+                id: `${row.file}#${row.exportName}`,
+                reason: row.reason,
+            })),
+            ...NON_DEVICE_PANEL_MODULES.map((row) => ({ id: row.moduleDir, reason: row.reason })),
         ]
             .filter((row) => row.reason.trim().length === 0)
             .map((row) => row.id);
