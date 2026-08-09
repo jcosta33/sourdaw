@@ -65,7 +65,11 @@ async function get_launch_overlay_state(page: Page): Promise<LaunchOverlayState>
 
 export async function wait_for_workspace_ready(page: Page): Promise<void> {
     // Launch loading text is transient; wait for the stable exited-overlay contract instead.
-    await expect.poll(async () => get_launch_overlay_state(page)).toBe('exited');
+    // The overlay-exit waits on WASM DSP boot + template instantiation. Under
+    // full-suite worker contention a heavy template (e.g. the full demo project)
+    // can take well past the 5s default poll bound; match the panel-open bound
+    // so a slow-but-healthy boot is not mistaken for a hang.
+    await expect.poll(async () => get_launch_overlay_state(page), { timeout: 30_000 }).toBe('exited');
     await expect(page.getByRole('group', { name: PLAYBACK_CONTROLS_NAME })).toBeVisible();
 }
 
