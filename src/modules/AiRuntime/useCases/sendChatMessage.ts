@@ -28,7 +28,7 @@ import { llmStatusStore } from '../stores/llmStatusStore';
 import { proposePendingActionConfirmation } from '../stores/pendingActionConfirmationStore';
 
 import { createThinkBlockParser } from './createThinkBlockParser';
-import { describePlannedAction } from './describePlannedAction';
+import { describePendingActionConfirmation } from './describePendingActionConfirmation';
 import { executePlannedActions } from './executePlannedActions';
 import { getProjectContext } from './getProjectContext';
 import { resolveBackend } from './llmOrchestration/backendResolution/helpers';
@@ -107,13 +107,20 @@ export async function sendChatMessage(userText: string): Promise<void> {
 
                 if (result.requiresConfirmation) {
                     const confirmationId = `prompt-confirmation-${crypto.randomUUID()}`;
-                    const actionLabels = result.actions.map((action) => describePlannedAction({ action, context }));
+                    const confirmationDescription = describePendingActionConfirmation({
+                        actions: result.actions,
+                        context,
+                        prompt: userText,
+                    });
                     proposePendingActionConfirmation({
                         id: confirmationId,
                         prompt: userText,
                         assistantMessageId: assistantMsgId,
                         actions: result.actions,
-                        actionLabels,
+                        actionLabels: confirmationDescription.actionLabels,
+                        affectedIds: confirmationDescription.affectedIds,
+                        protectedUnchanged: confirmationDescription.protectedUnchanged,
+                        risk: confirmationDescription.risk,
                         executionMode: result.executionMode,
                         projectRevision,
                     });
@@ -122,7 +129,7 @@ export async function sendChatMessage(userText: string): Promise<void> {
                         isStreaming: false,
                         pendingActionConfirmationId: confirmationId,
                         pendingActionConfirmationStatus: 'proposed',
-                        content: `This prompt requires confirmation before execution:\n\n${result.actions.map((action, index) => `- **${action.type}**: ${actionLabels[index] ?? action.type}`).join('\n')}`,
+                        content: confirmationDescription.content,
                     });
                     return;
                 }

@@ -157,7 +157,7 @@ test.describe('Crust limiter device', () => {
         await add_track(page, 'MIDI');
     });
 
-    test('Add-device menu lists Crust, but adding it reports not-implemented and adds no device', async ({ page }) => {
+    test('Add-device menu lists Crust and adding it inserts a Crust device card', async ({ page }) => {
         const inspector = page.getByRole('complementary', { name: 'Inspector panel' });
         await inspector.getByRole('button', { name: 'Add device' }).click();
 
@@ -168,12 +168,13 @@ test.describe('Crust limiter device', () => {
         const devices_before = await inspector.getByRole('button', { name: /^Bypass /i }).count();
 
         await crust_item.click();
+        await page.waitForTimeout(800);
 
-        // Crust is intentionally unimplemented → an error notification surfaces and no
-        // Crust device card is added to the chain.
-        await expect(page.getByText(/Crust is not fully implemented|PluginNotImplementedError/i)).toBeVisible({ timeout: 5000 });
+        // Crust now ships — a Crust device card is added to the chain.
+        const crust_bypass = inspector.getByRole('button', { name: /^Bypass Crust$/i });
+        await expect(crust_bypass).toBeVisible();
         const devices_after = await inspector.getByRole('button', { name: /^Bypass /i }).count();
-        expect(devices_after).toBe(devices_before);
+        expect(devices_after).toBe(devices_before + 1);
     });
 });
 

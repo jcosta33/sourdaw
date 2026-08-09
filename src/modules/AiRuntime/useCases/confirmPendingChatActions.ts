@@ -9,10 +9,12 @@ import { chatStore, setActiveAborter, setChatGenerating, updateChatMessage } fro
 import {
     getPendingActionConfirmation,
     recordPendingActionExecution,
+    type PendingActionExecution,
     type PendingAppActionConfirmation,
     updatePendingActionConfirmationStatus,
 } from '../stores/pendingActionConfirmationStore';
 
+import { getPlannedActionAffectedIds } from './getPlannedActionAffectedIds';
 import { notifyAiChange } from './notifyAiChange';
 
 type ConfirmPendingChatActionsInput = {
@@ -29,6 +31,65 @@ type ConfirmPendingChatActionsResult =
     | { status: 'failed'; reason: string };
 
 type ConfirmPendingChatActionsOutput = Promise<ConfirmPendingChatActionsResult>;
+
+function getProtectedAffectedIds(
+    actions: readonly PendingAppActionConfirmation['actions'][number][],
+    protectedTargets: readonly PendingAppActionConfirmation['protectedUnchanged'][number][]
+): string[] {
+    const protectedIds = new Set(protectedTargets.map((target) => target.id));
+    return [
+        ...new Set(
+            actions.flatMap((action) => getPlannedActionAffectedIds(action)).filter((id) => protectedIds.has(id))
+        ),
+    ];
+}
+
+function getApprovalPreflightFailure(confirmation: PendingAppActionConfirmation): string | null {
+    const approved = confirmation.approvalSnapshot;
+    const protectedAffectedIds = getProtectedAffectedIds(confirmation.actions, approved.protectedUnchanged);
+    if (protectedAffectedIds.length > 0) {
+        return `The executable action batch targets protected IDs: ${protectedAffectedIds.join(', ')}.`;
+    }
+
+    const currentApproval = JSON.stringify({
+        actions: confirmation.actions,
+        actionLabels: confirmation.actionLabels,
+        protectedUnchanged: confirmation.protectedUnchanged,
+    });
+    if (currentApproval !== JSON.stringify(approved)) {
+        return 'The executable action batch no longer matches the approved proposal.';
+    }
+
+    const approvedProtectedAffectedIds = getProtectedAffectedIds(approved.actions, approved.protectedUnchanged);
+    if (approvedProtectedAffectedIds.length > 0) {
+        return `The approved action batch targets protected IDs: ${approvedProtectedAffectedIds.join(', ')}.`;
+    }
+
+    return null;
+}
+
+function formatExecutionReceipt(
+    executions: readonly PendingActionExecution[],
+    confirmation: PendingAppActionConfirmation
+): string {
+    const executedActions = executions
+        .map((execution) => {
+            const affectedIds = execution.affectedIds.length > 0 ? execution.affectedIds.join(', ') : 'none';
+            return `- **${execution.actionType}**: ${execution.label}\n  - Affected IDs: ${affectedIds}\n  - Outcome: ${execution.outcome}`;
+        })
+        .join('\n');
+    const protectedAffectedIds = new Set(executions.flatMap((execution) => execution.affectedIds));
+    const approvedProtectedTargets = confirmation.approvalSnapshot.protectedUnchanged;
+    const preservedProtectedTargets = approvedProtectedTargets.every((target) => !protectedAffectedIds.has(target.id));
+    if (!preservedProtectedTargets) {
+        return executedActions;
+    }
+    const protectedUnchanged = approvedProtectedTargets.map((target) => `"${target.name}" (${target.id})`).join(', ');
+    if (!protectedUnchanged) {
+        return executedActions;
+    }
+    return `${executedActions}\n\nProtected unchanged: ${protectedUnchanged}`;
+}
 
 export async function confirmPendingChatActions(
     input: ConfirmPendingChatActionsInput
@@ -53,6 +114,11 @@ export async function confirmPendingChatActions(
         return { status: 'busy' };
     }
 
+    const approvalPreflightFailure = getApprovalPreflightFailure(confirmation);
+    if (approvalPreflightFailure) {
+        return failApprovalPreflight(confirmation, approvalPreflightFailure);
+    }
+
     updatePendingActionConfirmationStatus({ confirmationId: confirmation.id, status: 'accepted' });
     updateChatMessage(confirmation.assistantMessageId, {
         pendingActionConfirmationStatus: 'accepted',
@@ -65,7 +131,7 @@ export async function confirmPendingChatActions(
     setActiveAborter(aborter);
     let batchResult: Awaited<ReturnType<typeof executeAppActionBatch>>;
     try {
-        batchResult = await executeAppActionBatch(confirmation.actions, {
+        batchResult = await executeAppActionBatch(confirmation.approvalSnapshot.actions, {
             ...group,
             source: 'prompt',
             requireCompensation: confirmation.executionMode === 'atomic',
@@ -106,11 +172,14 @@ export async function confirmPendingChatActions(
         if (batchResult.status === 'executed' || batchResult.status === 'executed-with-warning') {
             executionKind = 'runtime';
         }
-        const executedLabels = batchResult.actions.map(({ action, label }) => ({
+        const executedLabels = batchResult.actions.map(({ action, label }, index) => ({
             actionType: action.type,
-            label,
+            label: confirmation.approvalSnapshot.actionLabels[index] ?? label,
             executionKind,
+            affectedIds: getPlannedActionAffectedIds(action),
+            outcome: batchResult.status,
         }));
+        const executionReceipt = formatExecutionReceipt(executedLabels, confirmation);
         let warning: string | undefined;
         if (batchResult.status === 'committed-with-warning' || batchResult.status === 'executed-with-warning') {
             warning = batchResult.warning;
@@ -138,12 +207,12 @@ export async function confirmPendingChatActions(
                 executedLabels.map((entry) => entry.actionType)
             );
             updatePendingActionConfirmationStatus({ confirmationId: confirmation.id, status: 'executed' });
-            let content = `Executed after confirmation:\n\n${executedLabels.map((entry) => `- **${entry.actionType}**: ${entry.label}`).join('\n')}`;
+            let content = `Executed after confirmation:\n\n${executionReceipt}`;
             if (batchResult.status === 'committed-with-warning') {
-                content = `Applied after confirmation:\n\n${executedLabels.map((entry) => `- **${entry.actionType}**: ${entry.label}`).join('\n')}\n\nThe project change committed with a follow-up warning: ${batchResult.warning}. Do not retry these confirmed actions.`;
+                content = `Applied after confirmation:\n\n${executionReceipt}\n\nThe project change committed with a follow-up warning: ${batchResult.warning}. Do not retry these confirmed actions.`;
             }
             if (batchResult.status === 'executed-with-warning') {
-                content = `Executed after confirmation:\n\n${executedLabels.map((entry) => `- **${entry.actionType}**: ${entry.label}`).join('\n')}\n\nThe runtime command executed with a follow-up warning: ${batchResult.warning}. Do not retry these confirmed actions.`;
+                content = `Executed after confirmation:\n\n${executionReceipt}\n\nThe runtime command executed with a follow-up warning: ${batchResult.warning}. Do not retry these confirmed actions.`;
             }
             updateChatMessage(confirmation.assistantMessageId, {
                 pendingActionConfirmationStatus: 'executed',
@@ -166,7 +235,7 @@ export async function confirmPendingChatActions(
                 updateChatMessage(confirmation.assistantMessageId, {
                     pendingActionConfirmationStatus: 'executed',
                     error: warning,
-                    content: `The confirmed ${executionDescription}, but reporting it failed: ${warning}. Do not retry these actions.`,
+                    content: `The confirmed ${executionDescription}, but reporting it failed: ${warning}. Do not retry these actions.\n\n${executionReceipt}`,
                 });
             } catch (reportingError) {
                 logger.error(
@@ -213,6 +282,23 @@ export async function confirmPendingChatActions(
         content: `Failed to execute confirmed actions atomically:\n\n${batchResult.reason}`,
     });
     return { status: 'failed', reason: batchResult.reason };
+}
+
+function failApprovalPreflight(
+    confirmation: PendingAppActionConfirmation,
+    reason: string
+): ConfirmPendingChatActionsResult {
+    updatePendingActionConfirmationStatus({
+        confirmationId: confirmation.id,
+        status: 'failed',
+        error: reason,
+    });
+    updateChatMessage(confirmation.assistantMessageId, {
+        pendingActionConfirmationStatus: 'failed',
+        error: reason,
+        content: `The confirmed command was rejected before execution: ${reason}`,
+    });
+    return { status: 'failed', reason };
 }
 
 function invalidatePendingConfirmation(confirmation: PendingAppActionConfirmation): ConfirmPendingChatActionsResult {

@@ -179,12 +179,12 @@ test.describe('Preferences deep interactions', () => {
         await page.keyboard.press('Escape');
     });
 
-    test('Navigating to Performance exposes buffer-size options', async ({ page }) => {
+    test('Navigating to Performance exposes the audio-processing-profile selector', async ({ page }) => {
         const dialog = page.getByRole('dialog').filter({ hasText: /Preferences/i });
         await dialog.getByRole('button', { name: 'Performance', exact: true }).click();
 
-        const buffer = dialog.getByRole('combobox', { name: /Buffer size/i });
-        await expect(buffer).toBeVisible();
-        expect(await buffer.locator('option').count()).toBeGreaterThan(1);
+        const profile = dialog.getByRole('combobox', { name: 'Audio processing profile' });
+        await expect(profile).toBeVisible();
+        expect(await profile.locator('option').count()).toBeGreaterThanOrEqual(2);
     });
 });

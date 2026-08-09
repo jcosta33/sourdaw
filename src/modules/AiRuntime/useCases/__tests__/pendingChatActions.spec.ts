@@ -136,7 +136,13 @@ describe('pending chat action confirmation', () => {
         );
         expect(getPendingActionConfirmation('confirm-1')?.status).toBe('executed');
         expect(getPendingActionConfirmation('confirm-1')?.executedActions).toEqual([
-            { actionType: 'removeTrack', label: 'Remove track', executionKind: 'project' },
+            {
+                actionType: 'removeTrack',
+                label: 'Remove track',
+                executionKind: 'project',
+                affectedIds: ['track-1'],
+                outcome: 'committed',
+            },
         ]);
     });
 
@@ -383,6 +389,7 @@ describe('pending chat action confirmation', () => {
             assistantMessageId: 'assistant-1',
             actions: [pendingAction],
             actionLabels: ['Remove track'],
+            protectedUnchanged: [{ id: 'track-parallel', name: 'Parallel Compression' }],
             projectRevision: 'revision-1',
         });
 
@@ -391,7 +398,13 @@ describe('pending chat action confirmation', () => {
         expect(result).toEqual({ status: 'executed' });
         expect(getPendingActionConfirmation('confirm-1')?.status).toBe('executed');
         expect(getPendingActionConfirmation('confirm-1')?.executedActions).toEqual([
-            { actionType: 'removeTrack', label: 'Remove track', executionKind: 'project' },
+            {
+                actionType: 'removeTrack',
+                label: 'Remove track',
+                executionKind: 'project',
+                affectedIds: ['track-1'],
+                outcome: 'committed-with-warning',
+            },
         ]);
         expect(mocks.pushAiActionGroup).toHaveBeenCalledWith(
             expect.objectContaining({
@@ -406,6 +419,52 @@ describe('pending chat action confirmation', () => {
                 content: expect.stringMatching(/applied.*committed with a follow-up warning.*do not retry/is),
             })
         );
+        expect(mocks.updateChatMessage).toHaveBeenLastCalledWith(
+            'assistant-1',
+            expect.objectContaining({ content: expect.stringContaining('Affected IDs: track-1') })
+        );
+        expect(mocks.updateChatMessage).toHaveBeenLastCalledWith(
+            'assistant-1',
+            expect.objectContaining({ content: expect.stringContaining('Outcome: committed-with-warning') })
+        );
+        expect(mocks.updateChatMessage).toHaveBeenLastCalledWith(
+            'assistant-1',
+            expect.objectContaining({
+                content: expect.stringContaining('Protected unchanged: "Parallel Compression" (track-parallel)'),
+            })
+        );
+    });
+
+    it('does not claim a protected target stayed unchanged when the committed effect reports its ID', async () => {
+        const protectedAction: RuntimeAction = {
+            type: 'removeTrack',
+            payload: { trackId: 'track-parallel' },
+        };
+        mocks.executeAppActionBatch.mockResolvedValueOnce({
+            status: 'committed',
+            actions: [{ action: protectedAction, label: 'Remove Parallel Compression' }],
+        });
+        proposePendingActionConfirmation({
+            id: 'confirm-1',
+            prompt: 'delete drums',
+            assistantMessageId: 'assistant-1',
+            actions: [pendingAction],
+            actionLabels: ['Remove track'],
+            protectedUnchanged: [{ id: 'track-parallel', name: 'Parallel Compression' }],
+            projectRevision: 'revision-1',
+        });
+
+        await expect(confirmPendingChatActions({ confirmationId: 'confirm-1' })).resolves.toEqual({
+            status: 'executed',
+        });
+
+        const terminalUpdate: unknown = mocks.updateChatMessage.mock.lastCall?.[1];
+        if (!terminalUpdate || typeof terminalUpdate !== 'object' || !('content' in terminalUpdate)) {
+            throw new Error('Expected a terminal chat update');
+        }
+        const terminalContent = terminalUpdate.content;
+        expect(terminalContent).toContain('Affected IDs: track-parallel');
+        expect(terminalContent).not.toContain('Protected unchanged:');
     });
 
     it('should record a confirmed runtime command as executed rather than failed', async () => {
@@ -430,7 +489,13 @@ describe('pending chat action confirmation', () => {
         expect(result).toEqual({ status: 'executed' });
         expect(getPendingActionConfirmation('confirm-1')?.status).toBe('executed');
         expect(getPendingActionConfirmation('confirm-1')?.executedActions).toEqual([
-            { actionType: 'setPlayback', label: 'Start playback', executionKind: 'runtime' },
+            {
+                actionType: 'setPlayback',
+                label: 'Start playback',
+                executionKind: 'runtime',
+                affectedIds: [],
+                outcome: 'executed-with-warning',
+            },
         ]);
         expect(mocks.pushAiActionGroup).toHaveBeenCalledWith(
             expect.objectContaining({
@@ -445,6 +510,14 @@ describe('pending chat action confirmation', () => {
                 pendingActionConfirmationStatus: 'executed',
                 content: expect.stringMatching(/runtime command executed.*do not retry/is),
             })
+        );
+        expect(mocks.updateChatMessage).toHaveBeenLastCalledWith(
+            'assistant-1',
+            expect.objectContaining({ content: expect.stringContaining('Affected IDs: none') })
+        );
+        expect(mocks.updateChatMessage).toHaveBeenLastCalledWith(
+            'assistant-1',
+            expect.objectContaining({ content: expect.stringContaining('Outcome: executed-with-warning') })
         );
     });
 
@@ -505,8 +578,7 @@ describe('pending chat action confirmation', () => {
             expect.objectContaining({
                 pendingActionConfirmationStatus: 'executed',
                 error: 'AI history unavailable',
-                content:
-                    'The confirmed runtime command executed, but reporting it failed: AI history unavailable. Do not retry these actions.',
+                content: expect.stringMatching(/runtime command executed.*do not retry.*outcome: executed/is),
             })
         );
     });
@@ -533,8 +605,20 @@ describe('pending chat action confirmation', () => {
 
         expect(result).toEqual({ status: 'executed' });
         expect(getPendingActionConfirmation('confirm-1')?.executedActions).toEqual([
-            { actionType: 'removeTrack', label: 'Remove track', executionKind: 'project' },
-            { actionType: 'removeClip', label: 'Remove clip', executionKind: 'project' },
+            {
+                actionType: 'removeTrack',
+                label: 'Remove track',
+                executionKind: 'project',
+                affectedIds: ['track-1'],
+                outcome: 'committed',
+            },
+            {
+                actionType: 'removeClip',
+                label: 'Remove clip',
+                executionKind: 'project',
+                affectedIds: ['clip-1'],
+                outcome: 'committed',
+            },
         ]);
         expect(mocks.executeAppActionBatch.mock.calls[0]?.[0]).toEqual([pendingAction, secondPendingAction]);
         expect(mocks.executeAppActionBatch.mock.calls[0]?.[1]).toMatchObject({
