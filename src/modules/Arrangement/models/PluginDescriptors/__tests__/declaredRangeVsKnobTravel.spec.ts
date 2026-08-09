@@ -1770,17 +1770,26 @@ describe('declared parameter range agrees with the knob that drives it', () => {
         // for an arm `opto.rs` does not have.
         //
         // Now the partition is an identity: alternatives ∪ shared must equal
-        // what is on disk. A new file must be classified before the census runs.
-        expect(Object.fromEntries(CENSUS.undeclaredEngineSources)).toStrictEqual(
-            Object.fromEntries([...CENSUS.undeclaredEngineSources.keys()].map((deviceId) => [deviceId, []]))
-        );
-
-        // And the other direction: a declared path that is no longer on disk.
-        // `git mv gluten/opto.rs optical.rs` used to kill the run at module load
-        // with a raw ENOENT and zero tests executed, so nothing named the stale
-        // entry. It is now a normal assertion that says which one to fix.
+        // what is on disk.
+        //
+        // **Stale entries are asserted first, on purpose.** A rename trips both
+        // halves — the old path goes missing and the new one is unclassified —
+        // and the actionable half is the one naming the entry to edit. Assert
+        // the other way round and `git mv opto.rs optical.rs` reports only
+        // "optical.rs is undeclared", which reads as "go add an entry" when the
+        // right fix is "update the one you already have".
+        //
+        // `git mv` used to kill the run at module load with a raw ENOENT and
+        // **zero tests executed**, so nothing named the stale entry at all.
         expect(Object.fromEntries(CENSUS.missingEngineSources)).toStrictEqual(
             Object.fromEntries([...CENSUS.missingEngineSources.keys()].map((deviceId) => [deviceId, []]))
+        );
+
+        // And the other direction: a file on disk that no entry claims. This is
+        // the half that catches the added-topology case, where there is no stale
+        // entry to report because none was ever written.
+        expect(Object.fromEntries(CENSUS.undeclaredEngineSources)).toStrictEqual(
+            Object.fromEntries([...CENSUS.undeclaredEngineSources.keys()].map((deviceId) => [deviceId, []]))
         );
 
         // A split's `root` duplicated `ENGINE_SOURCES` with nothing tying them
