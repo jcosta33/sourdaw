@@ -1,0 +1,48 @@
+src/modules/MixerConsole/presentations/hooks/useChannelStripActions.ts
+  s_14f2bbc9f385dd::t_ebda31e25246a9 72-100
+  s_14f2bbc9f385dd::t_d54deb87cc325e 21-27
+  s_14f2bbc9f385dd::t_64f7a87197b100 156-182,209-212
+  s_14f2bbc9f385dd::t_bee0d3205df7b9 223-226,230-233
+  s_14f2bbc9f385dd::t_4c9463386dfdc2 253
+  s_14f2bbc9f385dd::t_8f39f20fbe4fd7 155
+  s_9b06bb349cb103::t_fbdbdacc8db2e7 4
+src/modules/MixerConsole/presentations/hooks/__tests__/useChannelStripActions.spec.tsx
+  s_14f2bbc9f385dd::t_1dcac2ec3f65c3 112-116
+  s_14f2bbc9f385dd::t_c7fb8e6eb34e85 103,107,197,199,254-309
+  s_14f2bbc9f385dd::t_be07eb1ef7c543 2-4,99-102,104-106,108,132-135,144-147,155-158,198,200
+src/utils/handlerContract.ts
+  s_14f2bbc9f385dd::t_3f8f0a8d6e9414 1271-1278
+src/modules/MixerConsole/presentations/views/Mixer/__tests__/mixerStripUndo.integration.spec.tsx
+  s_14f2bbc9f385dd::t_88ce8c0d87322e 115-126
+  s_14f2bbc9f385dd::t_2e6492d2a4c85e 627-640,648-682,684
+  s_14f2bbc9f385dd::t_d2c2a35adbd60f 20,366-367
+docs/manual/02-concepts.md
+  s_14f2bbc9f385dd::t_755d6124167fef 98-115
+  s_14f2bbc9f385dd::t_1bd8100b3bc61d 160,163-166
+src/modules/MixerConsole/presentations/views/Mixer/__tests__/ExpandedChannelStrip.spec.tsx
+  s_14f2bbc9f385dd::t_783f09e2acb2a1 149-152,158-161,201-204
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "99e4d79485954b3a597cf4870f5062795535bef7",
+  "prompts": {},
+  "sessions": {
+    "s_14f2bbc9f385dd": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f9a61a1d-66b3-4146-938d-a04f45f4b060",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_9b06bb349cb103": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-a3455f17407f52702",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
