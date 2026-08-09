@@ -171,14 +171,17 @@ fn digest(output: &[f32]) -> u64 {
 /// `projectTrackToLiveStrip` replays every stored value on load, so a saved
 /// project keeps whatever it was added with.
 ///
-/// Moved a second time, by #1547, when `DelayLine::read` started counting its
-/// delay back from `write_pos - 1` instead of `write_pos`. The fix is aimed at
-/// Pre-Delay 0 ms, which used to render 503 ms of nothing; this row moves
-/// because the same expression serves every tank line, so all of them got one
-/// sample longer at the same time. Dattorro's Table 2 positions are literal
-/// sample delays — `delay_48_54[266]` is 266 samples — and the old expression
-/// delivered 265, so the taps now match the paper rather than sitting one
-/// sample inside it. 0x15ca_3842_cec5_5de2 → the value below.
+/// Moved a second time, by #1547, which corrected the same off-by-one in two
+/// places: `DelayLine::read` now counts back from `write_pos - 1` instead of
+/// `write_pos`, and `EarlyReflections::process` does the same. The fix is aimed
+/// at Pre-Delay 0 ms, which used to render 503 ms of nothing; this row moves
+/// because those two expressions serve every delay in the engine, so the input
+/// path got two samples longer and the tank lines one. Dattorro's Table 2
+/// positions are literal sample delays — `delay_48_54[266]` is 266 samples —
+/// and the old expression delivered 265, so the fourteen output taps and the
+/// six Schroeder allpasses now match the paper. Six reads still do not, by one
+/// sample each, and `proof_chamber.rs`'s `read` says which and why.
+/// 0x15ca_3842_cec5_5de2 → the value below.
 ///
 /// Unlike #1546 this is *not* a voicing change, and the difference between the
 /// two moves is the reason this comment is longer than the last one. A one-
@@ -187,18 +190,25 @@ fn digest(output: &[f32]) -> u64 {
 /// impulse, 3.0 s at 48 kHz, before against after:
 ///
 /// * peak 0.699514031 → 0.699514031, identical to every digit f32 carries
-/// * RMS -0.00071 dB (L), +0.00060 dB (R)
+/// * RMS -0.00013 dB (L), +0.00148 dB (R)
 /// * T60 from a 50 ms envelope 1.450 s → 1.450 s
 /// * seven octave bands from 20 Hz to 20 kHz, all within ±0.03 dB
 /// * the 50 ms RMS envelope, across its whole audible span, within
 ///   +0.61/-0.56 dB with a mean of -0.02 dB
 ///
-/// and sample-for-sample correlation of 0.61 at zero lag, which is what says
-/// the fine structure moved and is why this constant had to. An untouched
-/// project renders a different tail with the same level, the same decay time
-/// and the same spectrum — worth a release note for the Pre-Delay fix, not for
-/// this.
-const UNTOUCHED_PLATE_DIGEST: u64 = 0xf9b7_eb99_fb18_3905;
+/// What moved is the waveform. Excluding sample 0 — which is the dry impulse
+/// leaking through the 30 ms `mix` ramp and holds 54% of the buffer's energy,
+/// so including it flatters every correlation figure — the zero-lag correlation
+/// between the two renders is **0.029**. The best realigning lag in -12..+12 is
+/// +2 samples, the two the input path gained, and even there it only holds in
+/// the dense head: r = +0.60 over the first 50 ms (70% of the tail's energy),
+/// +0.23 over the next 200 ms, and 0.00 everywhere past 250 ms, because the
+/// tank's circulation period changed rather than its output being delayed.
+///
+/// That is what a fingerprint is for. An untouched project renders a different
+/// tail with the same level, the same decay time and the same spectrum — worth
+/// a release note for the Pre-Delay fix, not for this.
+const UNTOUCHED_PLATE_DIGEST: u64 = 0x245952ca_4c990c89;
 
 // ---------------------------------------------------------------------------
 // early_late

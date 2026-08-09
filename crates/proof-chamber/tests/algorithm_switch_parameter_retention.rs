@@ -421,18 +421,19 @@ fn the_replay_preserves_most_recent_write_order() {
 ///
 /// Moved a second time, by #1547, and for the same reason as its sibling in
 /// `plate_parameter_surface.rs` — the two fingerprint the same engine from two
-/// stimuli and always move together. `DelayLine::read` now counts back from
-/// `write_pos - 1`, so `read(0)` is the sample just written rather than the
-/// oldest one the line holds. That is what stops Pre-Delay 0 ms rendering
-/// 503 ms of silence, and it lengthens every tank delay by one sample on the
-/// way, which is why a stimulus that never writes `predelay` moves at all.
-/// 0xaf24_03b1_9139_eb46 → the value below.
+/// stimuli and always move together. `DelayLine::read` and
+/// `EarlyReflections::process` now count back from the most recently written
+/// sample rather than from the slot after it, so a request for zero delay is
+/// zero delay rather than a whole buffer. That is what stops Pre-Delay 0 ms
+/// rendering 503 ms of silence, and it lengthens every delay in the engine by
+/// one sample on the way, which is why a stimulus that never writes `predelay`
+/// moves at all. 0xaf24_03b1_9139_eb46 → the value below.
 ///
 /// The measured content of the move is written out beside the other constant
-/// and not repeated here: identical peak, RMS within 0.0007 dB, identical T60,
-/// every octave band within 0.03 dB. This row is a fingerprint and it moved;
-/// the sound did not.
-const UNTOLD_INSTANCE_DIGEST: u64 = 0x6fa7_67b6_55cc_4ba9;
+/// and not repeated here: identical peak, RMS within 0.0015 dB, identical T60,
+/// every octave band within 0.03 dB, and a waveform that decorrelates past the
+/// first 250 ms. This row is a fingerprint and it moved; the sound did not.
+const UNTOLD_INSTANCE_DIGEST: u64 = 0x331fcaf1_a4fc7535;
 
 #[test]
 fn an_instance_told_nothing_renders_exactly_what_it_always_has() {

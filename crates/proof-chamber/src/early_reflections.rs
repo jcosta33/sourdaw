@@ -85,7 +85,29 @@ impl EarlyReflections {
 
         let mut sum = 0.0_f32;
         for &(delay, gain) in &self.taps {
-            let pos = (self.write_pos + self.len - delay) % self.len;
+            // Second copy of #1547's expression, fixed with the first. The
+            // write above post-increments, so `write_pos - 1` holds the sample
+            // that just arrived and a delay of `delay` counts back from there.
+            // Counting from `write_pos` made every reflection arrive one sample
+            // early: tap 0 requested 156 samples and delivered its first
+            // non-zero at 155, which is where the plate's and the FDNs' shared
+            // "+155 samples" onset figure came from.
+            //
+            // One sample, not the plate's half-second, because `tap_delay`
+            // never returns 0 — `base_delay_ms * 0.1` puts the shortest
+            // reflection 0.5 ms out at Size 0 — so this copy never met the
+            // 0-aliases-to-`len` case that made the pre-delay render silence.
+            // It is fixed anyway. Leaving one copy of the defective expression
+            // in the crate that just fixed the other is an invitation to the
+            // next caller to copy it, and #1570 is what that looks like when
+            // the invitation is accepted.
+            //
+            // `.min(self.len - 1)` is new and load-bearing. Without it the
+            // subtraction underflows for any `delay >= len`, and this line was
+            // safe only because both writers of `taps` happen to route through
+            // `tap_delay`, which clamps. The clamp belongs where the read is,
+            // not in every producer of a tap position.
+            let pos = (self.write_pos + self.len - 1 - delay.min(self.len - 1)) % self.len;
             sum += self.buffer[pos] * gain;
         }
         sum

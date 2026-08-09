@@ -1,4 +1,4 @@
-// @wasm-bindgen-dts crate-source: sha256:1f663eb56d22d324286c766d2d09c7f9e2ae08a606577d03194af391d6932be4
+// @wasm-bindgen-dts crate-source: sha256:c9f179b3d46c3ccf1f6b09e126f3c566d69e9d2b7ef05dc2fc83959311dacb5c
 /* tslint:disable */
 /* eslint-disable */
 export const memory: WebAssembly.Memory;

@@ -60,10 +60,21 @@ const AUDIBILITY_FRACTION: f32 = 1e-3;
 ///
 /// Every engine puts something between the input and the first output sample:
 /// the plate and the FDN pair tap early reflections whose first arrival is
-/// `5 + size * 45` ms scaled by a tenth, which is 2.75 ms at the default Size
-/// and 5 ms at Size 1.0. Measured, the plate and both FDNs start `155` samples
-/// (3.23 ms) after their Pre-Delay expires at the default Size and `287`
-/// samples (6.0 ms) at Size 1.0; Spring starts immediately.
+/// `5 + size * 45` ms scaled by a tenth, so the pattern starts later as the
+/// room grows. Measured **on this test's own instrument** — the burst below, at
+/// the audibility floor above, which is the only figure that governs this
+/// bound — the plate, FDN-8 and FDN-16 all start
+///
+/// | Size | samples after Pre-Delay expires |
+/// | ---- | ------------------------------- |
+/// | 0.0  | 24 (0.5 ms)                     |
+/// | 0.75 | 222 (4.6 ms)                    |
+/// | 1.0  | 288 (6.0 ms)                    |
+///
+/// and Spring starts immediately at every Size. Quoting the instrument matters:
+/// a first-non-zero measurement on an impulse puts the same onsets 156 samples
+/// out at the default Size, and an earlier revision of this comment cited that
+/// number to justify a threshold this test cannot measure.
 ///
 /// 20 ms is a little over three times the largest of those and still
 /// twenty-five times smaller than the 503 ms #1547 rendered, so the bound has
@@ -110,6 +121,17 @@ const HOLE_FLOOR_DB: f32 = -120.0;
 /// by design — measured at 41 088 samples (856 ms) with the burst below — and a
 /// Pre-Delay bound applied to it would be asserting something else entirely.
 /// `reverse_engine_character.rs` owns that engine's onset.
+///
+/// **Spring's twelve rows here are floor-only and inert, and cannot fail.**
+/// The bound is one-sided — it asks whether an engine is *late*, which is the
+/// #1547 shape — and Spring starts at sample 0 for every Pre-Delay from 0 to
+/// 100 ms and every Size, because it never reads the control at all. Those rows
+/// would stay green if its Pre-Delay wiring were deleted outright. They are
+/// kept because a future Spring that acquires a pre-delay and wires it to the
+/// wrong end of a buffer would red here, and removing the rows would remove
+/// that. What they are not is evidence that Spring's Pre-Delay works.
+/// `spring_onset_tracks_the_predelay_it_was_given` below is that claim, and it
+/// is `#[ignore]`d because it does not.
 const PROMPT: [(f32, &str); 4] = [
     (0.0, "Plate"),
     (1.0, "FDN-8"),
@@ -121,15 +143,23 @@ const PROMPT: [(f32, &str); 4] = [
 ///
 /// Two absences, both measured rather than assumed.
 ///
-/// **Spring** does not have a continuous tail. On the stimulus below its 5 ms
-/// envelope peaks every 300 ms — 0.0, -8.2, -14.6, -21.2, -28.4, -39.1 dB at
-/// 0.0, 0.3, 0.6, 0.9, 1.2 and 1.5 s — and the space between those repeats
-/// falls to -102.9, -155.0, -207.1, -259.2 and -316.3 dB, with two 5 ms windows
-/// exactly zero. A spring tank does repeat, but with dispersive noise between
-/// the repeats rather than nothing, so this looks like the same class of defect
-/// on a different engine. It is not #1547's and it is not fixed here: it is
-/// filed separately, and this exclusion is where it should be deleted from when
-/// it is answered.
+/// **Spring** does not have a continuous tail. Measured on the left channel of
+/// the burst below — 5 ms RMS windows, hop equal to the window so they do not
+/// overlap, each expressed in dB relative to the loudest window of the same
+/// render — its envelope peaks every 300 ms at 0.0, -8.2, -14.6, -21.2, -28.4
+/// and -39.1 dB (0.0, 0.3, 0.6, 0.9, 1.2 and 1.5 s), and the space between
+/// those repeats falls to -102.9, -155.0, -207.1, -259.2 and -316.3 dB, with
+/// two windows exactly zero. The window convention is part of the claim and is
+/// stated because it moves the numbers: a longer or overlapping window smears
+/// each repeat into the gap beside it and lifts the between-repeat minima by
+/// something like 18 dB, which changes how bad it looks without changing what
+/// it is.
+///
+/// A spring tank does repeat, but with dispersive noise between the repeats
+/// rather than nothing, so this looks like the same class of defect on a
+/// different engine. It is not #1547's and it is not fixed here: it is filed
+/// separately, and this exclusion is where it should be deleted from when it is
+/// answered.
 ///
 /// **Reverse** sounds for 25 ms in total — it plays a reversed copy of the
 /// 512-sample burst — which is shorter than the dip this test looks for. There
@@ -273,6 +303,44 @@ fn no_engine_stays_silent_longer_than_the_predelay_it_was_given() {
             }
         }
     }
+}
+
+/// Spring's Pre-Delay is not wired, and this is the row that says so.
+///
+/// The sweep above cannot make this claim: it bounds lateness only, and Spring
+/// is never late. So the claim is stated separately and two-sided — the onset
+/// has to *track* the control — and it is `#[ignore]`d rather than deleted,
+/// because a test that names the defect and is skipped is a smaller lie than a
+/// green row that appears to cover an engine it cannot see.
+///
+/// Measured today: onset 0 at Pre-Delay 0, 5, 25 and 100 ms, at every Size.
+/// The three tank engines all move to `predelay + 222` at the default Size.
+/// Delete the attribute when Spring reads the control; this test is then the
+/// proof that it does.
+#[test]
+#[ignore = "Spring ignores predelay entirely — measured in this file's PROMPT \
+            doc, found alongside #1547 and filed out of PR #1569, not fixed there"]
+fn spring_onset_tracks_the_predelay_it_was_given() {
+    const SPRING: f32 = 3.0;
+    let prompt = render(SPRING, &[("predelay", 0.0)], 48_000);
+    let delayed = render(SPRING, &[("predelay", 100.0)], 48_000);
+
+    let prompt_onset =
+        onset(&prompt.left, prompt.floor()).expect("Spring sounds at Pre-Delay 0");
+    let delayed_onset =
+        onset(&delayed.left, delayed.floor()).expect("Spring sounds at Pre-Delay 100 ms");
+
+    let requested = (0.100 * SAMPLE_RATE) as usize;
+    let moved = delayed_onset.saturating_sub(prompt_onset);
+    let tolerance = (MAX_BUILD_UP_MS / 1000.0 * SAMPLE_RATE) as usize;
+    assert!(
+        moved.abs_diff(requested) <= tolerance,
+        "Spring's onset moved {moved} samples ({:.1} ms) when Pre-Delay moved \
+         from 0 to 100 ms — it should have moved {requested} ({:.1} ms). \
+         Onsets: {prompt_onset} and {delayed_onset}.",
+        ms(moved),
+        ms(requested)
+    );
 }
 
 /// And no hole once it has started — the shape #1547 was reported as.
