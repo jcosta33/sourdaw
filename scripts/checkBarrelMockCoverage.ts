@@ -1,0 +1,831 @@
+#!/usr/bin/env node
+/**
+ * `pnpm check:barrel-mocks` — proves that no spec mocks a contract barrel while
+ * omitting an export that spec's own module graph imports from it.
+ *
+ * Why this exists. A `vi.mock` of a contract barrel whose factory lists every
+ * export by hand — no `...(await importOriginal())` — resolves any export added
+ * to that barrel *later* to `undefined`. When the consumer renders it, every test
+ * in the mocking spec file throws. #1392 is the worked example: `MissingMediaPanel`
+ * was added to `Project/presentations/views` and mounted in `TransportBar`, and the
+ * red landed in `TransportBar.spec.tsx` — a WorkspaceShell failure for a diff that
+ * only touched Project. Focused specs on the changed files stay green, so nothing
+ * short of the full suite catches it, and the full suite is exactly what an author
+ * mid-change does not run.
+ *
+ * What it checks. For every `vi.mock('<contract barrel>', factory)` whose factory
+ * does not spread `importOriginal`, the mocked keys must cover every name the
+ * spec's transitive module graph imports from that barrel. Modules the spec also
+ * mocks are not traversed — their real imports never happen. A spread factory is
+ * additive by construction and is not checked.
+ *
+ * This is the static twin of what vitest raises at runtime ("No X export is defined
+ * on the ... mock"), moved to the moment the export is added rather than the moment
+ * some unrelated spec renders it, and it names both sides: the barrel that grew and
+ * the spec that did not follow.
+ *
+ * How it can fail (ADR 0015).
+ *
+ *  1. **Mutation.** Delete any key from an exhaustive barrel-mock factory whose
+ *     name the consumer imports — e.g. `MissingMediaPanel` in
+ *     `WorkspaceShell/presentations/views/__tests__/TransportBar.spec.tsx` — and
+ *     this reports it. Equivalently: add an export to a barrel, use it in a
+ *     consumer, and every exhaustive mock of that barrel in that consumer's specs
+ *     is reported.
+ *  2. **Population from a registry, not a list.** The population is every `vi.mock`
+ *     call parsed out of every spec under `src/`, and the required names come from
+ *     the real import statements. Neither side is hand-maintained here, so a spec
+ *     added tomorrow is covered without editing this file.
+ *  3. **Planted broken fixtures.** `scripts/__tests__/checkBarrelMockCoverage.spec.ts`
+ *     runs the analyzer against in-memory graphs that are deliberately wrong, so the
+ *     "no violations" verdict is never reached by an extraction that has gone blind.
+ *  4. **It cannot pass by deriving nothing.** Every way of producing an empty
+ *     analysis — a resolver that resolves nothing, a reader that returns nothing, a
+ *     parser whose tree is truncated, a glob that matches nothing — reports zero
+ *     violations, and zero violations is what "clean" looks like. `checkDerivation`
+ *     below fails the run when the counts behind the verdict are at the floor, and
+ *     the OK line prints what was analysed rather than what was globbed.
+ *
+ * Exit code 0 = every exhaustive contract-barrel mock covers what its graph uses,
+ * 1 = at least one does not, or the analysis derived too little to say.
+ */
+
+import { readdirSync, readFileSync, existsSync, statSync } from 'node:fs';
+import { dirname, join, relative, resolve, sep } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+import ts from 'typescript';
+
+const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
+const sourceRoot = join(repoRoot, 'src');
+
+/**
+ * The four contract-folder barrels (ADR 0006). A module's public surface is only
+ * ever one of these, so this list is the population definition, not a sample.
+ * `Common/` and `Supporting/` are the namespaced module groups.
+ */
+export const allBarrelKinds = ['useCases', 'stores', 'events', 'presentations/views'] as const;
+
+/**
+ * What the gate fails on, and why the line is here rather than around all four.
+ *
+ * Not because the other three fail differently. Simulated on a `useCases` barrel,
+ * vitest 4 raises the same named error it raises for a view — `No "…" export is
+ * defined on the "…" mock` — and a call at module scope takes the whole file just
+ * as a render does. The difference is blast radius, and even that is incidental.
+ *
+ * The line is here because `presentations/views` is at zero after this change and
+ * the other three are not: `--all` reports **109 unique (spec, barrel) pairs across
+ * 72 spec files** (2127 individual violations, since one pair is counted once per
+ * consuming module — the pair is the unit of repair, not the violation). Gating
+ * those would need a 109-row baseline whose only content is "pre-existing", which
+ * is a baseline wearing an exemption table's clothes. `--all` keeps the number
+ * measurable so the follow-up starts from a count in the right unit.
+ */
+const gatedBarrelKinds: ReadonlyArray<(typeof allBarrelKinds)[number]> = ['presentations/views'];
+
+function buildBarrelPattern(kinds: ReadonlyArray<string>): RegExp {
+    const kindAlternation = kinds.map((kind) => kind.replace('/', '\\/')).join('|');
+    return new RegExp(
+        `^#\\/modules\\/[A-Za-z0-9]+(?:\\/(?:Common|Supporting)\\/[A-Za-z0-9]+)?\\/(?:${kindAlternation})$`
+    );
+}
+
+const moduleExtensions = ['.ts', '.tsx', '.js', '.jsx'] as const;
+
+/**
+ * Exemptions. Each row must carry the spec, the barrel, and the reason the mock is
+ * deliberately narrower than the graph. Empty is the correct state; a row here is
+ * debt with a name on it, not a silenced check.
+ *
+ * This is a documented exit, not evasion, and the failure output and
+ * `docs/06-testing.md` §5 both name it — a knob nobody can find from the error is
+ * the same as no knob, and `AGENTS.md` rightly tells people that editing a checker
+ * is cheating. Adding a row with a real reason is not that; deleting the check, or
+ * adding a row because the gate was inconvenient, is.
+ */
+const exemptions: ReadonlyArray<{ spec: string; barrel: string; reason: string }> = [];
+
+export type MockedBarrel = {
+    /** Module specifier passed to `vi.mock` / `vi.doMock`. */
+    specifier: string;
+    /** 1-based line of the mock call, for the report. */
+    line: number;
+    /** Top-level keys of the object literal the factory returns. */
+    keys: string[];
+    /**
+     * True when the returned object literal spreads a value derived from the
+     * factory's own `importOriginal` parameter. A parameter merely *named*
+     * `importOriginal`, or the word in a comment, is not a spread: the missed case
+     * is `async (importOriginal) => ({ Alpha, Beta })`, which is the corrected
+     * signature minus the one line that does the work.
+     */
+    spreadsOriginal: boolean;
+};
+
+export type FileFacts = {
+    /** Resolved-path → names imported from it (`*` means a namespace import). */
+    imports: Map<string, Set<string>>;
+    /** `vi.mock` / `vi.doMock` calls found in this file (empty for non-spec modules). */
+    mocks: MockedBarrel[];
+    /**
+     * Mock calls the scanner saw, and mock calls the parser produced — including
+     * the argument-less `vi.mock('./x')` form, which carries no factory and so
+     * never reaches `mocks`. `ts.createSourceFile` never throws: a syntactically
+     * broken file yields a partial tree and therefore zero mocks, which reads
+     * identically to "this file has none". Two independently-sourced counts are
+     * what tells those apart (ADR 0015 rule 3).
+     */
+    scannedMockCalls: number;
+    parsedMockCalls: number;
+};
+
+export type Violation = {
+    spec: string;
+    line: number;
+    barrel: string;
+    missing: string[];
+    /** The module in the graph whose import would resolve to `undefined`. */
+    usedBy: string;
+};
+
+/**
+ * The verdict plus the derivation counts behind it. A check of this shape fails
+ * open in every direction that produces an empty analysis — a resolver that
+ * resolves nothing, a reader that returns nothing, a parser that parses nothing,
+ * a glob that matches nothing — and "no violations" looks identical in all four.
+ * These counts are what `main` and the guard spec assert a floor on.
+ */
+export type AnalysisResult = {
+    violations: Violation[];
+    /** Specs whose raw text contains a mock call the parser did not produce. */
+    extractionFailures: string[];
+    /** Mock calls the parser produced. */
+    parsedMockCount: number;
+    /** Mock calls whose specifier resolved to a file on disk. */
+    resolvedMockCount: number;
+    /** Specs that reached the graph walk (had at least one gated non-spread mock). */
+    analyzedSpecCount: number;
+    /** Total module-graph nodes walked, summed over analysed specs. */
+    graphNodeCount: number;
+};
+
+/**
+ * Reads and parses one file into the facts the analysis needs. Injected so the
+ * spec can plant in-memory graphs, including broken ones.
+ */
+export type ReadFacts = (absolutePath: string) => FileFacts | null;
+
+function findReturnedObjectLiteral(factory: ts.Node): ts.ObjectLiteralExpression | null {
+    let found: ts.ObjectLiteralExpression | null = null;
+    const walk = (node: ts.Node): void => {
+        if (found !== null) {
+            return;
+        }
+        if (ts.isObjectLiteralExpression(node)) {
+            found = node;
+            return;
+        }
+        node.forEachChild(walk);
+    };
+    walk(factory);
+    return found;
+}
+
+function parseObjectKeys(factory: ts.Node): string[] {
+    const objectLiteral = findReturnedObjectLiteral(factory);
+    if (!objectLiteral) {
+        return [];
+    }
+    return objectLiteral.properties
+        .map((property) => {
+            if (!property.name) {
+                return null;
+            }
+            if (ts.isIdentifier(property.name) || ts.isStringLiteral(property.name)) {
+                return property.name.text;
+            }
+            return null;
+        })
+        .filter((name): name is string => name !== null);
+}
+
+function collectIdentifiers(node: ts.Node, into: Set<string>): void {
+    if (ts.isIdentifier(node)) {
+        into.add(node.text);
+    }
+    node.forEachChild((child) => {
+        collectIdentifiers(child, into);
+    });
+}
+
+/**
+ * True when the factory's returned object literal spreads a value that traces back
+ * to the factory's first parameter — `...(await importOriginal())` directly, or
+ * `const actual = await importOriginal(); return { ...actual, … }` through a local.
+ * Textual detection was wrong: `factoryText.includes('importOriginal')` accepts a
+ * parameter that is declared and never used, and accepts the word in a comment.
+ */
+function detectOriginalSpread(factory: ts.Node): boolean {
+    if (!ts.isArrowFunction(factory) && !ts.isFunctionExpression(factory)) {
+        return false;
+    }
+    const parameter = factory.parameters[0];
+    if (!parameter || !ts.isIdentifier(parameter.name)) {
+        return false;
+    }
+
+    const objectLiteral = findReturnedObjectLiteral(factory);
+    if (!objectLiteral) {
+        return false;
+    }
+
+    // Names that carry the original module: the parameter, plus locals initialised
+    // from anything already in the set. Two passes settle the chains that occur in
+    // practice (`const actual = await importOriginal()` and one alias of it).
+    const originNames = new Set<string>([parameter.name.text]);
+    for (let pass = 0; pass < 2; pass += 1) {
+        const collectAliases = (node: ts.Node): void => {
+            if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name) && node.initializer) {
+                const referenced = new Set<string>();
+                collectIdentifiers(node.initializer, referenced);
+                for (const name of referenced) {
+                    if (originNames.has(name)) {
+                        originNames.add(node.name.text);
+                        break;
+                    }
+                }
+            }
+            node.forEachChild(collectAliases);
+        };
+        collectAliases(factory);
+    }
+
+    return objectLiteral.properties.some((property) => {
+        if (!ts.isSpreadAssignment(property)) {
+            return false;
+        }
+        const referenced = new Set<string>();
+        collectIdentifiers(property.expression, referenced);
+        return [...referenced].some((name) => originNames.has(name));
+    });
+}
+
+/**
+ * Counts `vi.mock(` / `vi.doMock(` with the *scanner* rather than the parser.
+ * Tokenising is a separate stage from parsing: a file whose syntax is broken still
+ * scans, so this stays accurate exactly where the parser silently returns a partial
+ * tree. It is also immune to the word appearing in a comment or a string, which a
+ * regex over the raw text is not — both are single tokens the state machine skips.
+ */
+function countScannedMockCalls(contents: string): number {
+    const scanner = ts.createScanner(ts.ScriptTarget.Latest, /* skipTrivia */ true, ts.LanguageVariant.JSX, contents);
+    let count = 0;
+    let stage = 0;
+    let token = scanner.scan();
+    while (token !== ts.SyntaxKind.EndOfFileToken) {
+        if (stage === 0 && token === ts.SyntaxKind.Identifier && scanner.getTokenText() === 'vi') {
+            stage = 1;
+        } else if (stage === 1 && token === ts.SyntaxKind.DotToken) {
+            stage = 2;
+        } else if (
+            stage === 2 &&
+            token === ts.SyntaxKind.Identifier &&
+            (scanner.getTokenText() === 'mock' || scanner.getTokenText() === 'doMock')
+        ) {
+            stage = 3;
+        } else if (stage === 3 && token === ts.SyntaxKind.OpenParenToken) {
+            count += 1;
+            stage = 0;
+        } else {
+            stage = token === ts.SyntaxKind.Identifier && scanner.getTokenText() === 'vi' ? 1 : 0;
+        }
+        token = scanner.scan();
+    }
+    return count;
+}
+
+/** `vi.mock(…)` and `vi.doMock(…)` — both replace the module for the graph. */
+function isMockCall(call: ts.CallExpression): boolean {
+    if (!ts.isPropertyAccessExpression(call.expression)) {
+        return false;
+    }
+    if (!ts.isIdentifier(call.expression.expression) || call.expression.expression.text !== 'vi') {
+        return false;
+    }
+    return call.expression.name.text === 'mock' || call.expression.name.text === 'doMock';
+}
+
+/**
+ * The mocked specifier, from either accepted form: a string literal, or the
+ * `vi.mock(import('…'), factory)` form — which is what vitest 4's own runtime error
+ * tells the developer to write, so a gate that cannot read it is blind to the shape
+ * the tool recommends.
+ */
+function readMockSpecifier(argument: ts.Expression): string | null {
+    if (ts.isStringLiteralLike(argument)) {
+        return argument.text;
+    }
+    const unwrapped = ts.isAwaitExpression(argument) ? argument.expression : argument;
+    if (
+        ts.isCallExpression(unwrapped) &&
+        unwrapped.expression.kind === ts.SyntaxKind.ImportKeyword &&
+        unwrapped.arguments[0] &&
+        ts.isStringLiteralLike(unwrapped.arguments[0])
+    ) {
+        return unwrapped.arguments[0].text;
+    }
+    return null;
+}
+
+function collectThenCallbackProperties(call: ts.CallExpression, names: Set<string>): void {
+    // `import('…').then((m) => ({ default: m.Foo }))` — the lazy-panel shape. The
+    // dynamic import is still subject to the mock, so `m.Foo` is a required name.
+    const parent = call.parent;
+    if (!parent || !ts.isPropertyAccessExpression(parent) || parent.name.text !== 'then') {
+        return;
+    }
+    const thenCall = parent.parent;
+    if (!thenCall || !ts.isCallExpression(thenCall)) {
+        return;
+    }
+    const callback = thenCall.arguments[0];
+    if (!callback) {
+        return;
+    }
+    if (!ts.isArrowFunction(callback) && !ts.isFunctionExpression(callback)) {
+        return;
+    }
+    const parameter = callback.parameters[0];
+    if (!parameter || !ts.isIdentifier(parameter.name)) {
+        return;
+    }
+    const parameterName = parameter.name.text;
+    const walk = (node: ts.Node): void => {
+        if (
+            ts.isPropertyAccessExpression(node) &&
+            ts.isIdentifier(node.expression) &&
+            node.expression.text === parameterName
+        ) {
+            names.add(node.name.text);
+        }
+        node.forEachChild(walk);
+    };
+    walk(callback.body);
+}
+
+/** Parses one source file. Exported so the analyzer and its spec share the parser. */
+export function readFileFacts(absolutePath: string, contents: string): FileFacts {
+    // Script kind must follow the extension. Parsing a `.ts` file as TSX makes
+    // `<T>value` casts and generic arrows parse as JSX, and the tree is silently
+    // truncated from there: `persistCrdtProject.spec.ts` yielded 3 of its 12 mock
+    // calls until the scanner cross-check below disagreed with the parser.
+    const scriptKind = absolutePath.endsWith('.tsx') ? ts.ScriptKind.TSX : ts.ScriptKind.TS;
+    const sourceFile = ts.createSourceFile(absolutePath, contents, ts.ScriptTarget.Latest, true, scriptKind);
+    const imports = new Map<string, Set<string>>();
+    const mocks: MockedBarrel[] = [];
+    let parsedMockCalls = 0;
+
+    const addImport = (specifier: string, names: Iterable<string>): void => {
+        const existing = imports.get(specifier);
+        if (existing) {
+            for (const name of names) {
+                existing.add(name);
+            }
+            return;
+        }
+        imports.set(specifier, new Set(names));
+    };
+
+    const visit = (node: ts.Node): void => {
+        if (ts.isImportDeclaration(node) && ts.isStringLiteral(node.moduleSpecifier)) {
+            const clause = node.importClause;
+            if (clause && !clause.isTypeOnly) {
+                const names: string[] = [];
+                if (clause.name) {
+                    names.push('default');
+                }
+                if (clause.namedBindings) {
+                    if (ts.isNamespaceImport(clause.namedBindings)) {
+                        names.push('*');
+                    } else {
+                        for (const element of clause.namedBindings.elements) {
+                            if (!element.isTypeOnly) {
+                                names.push((element.propertyName ?? element.name).text);
+                            }
+                        }
+                    }
+                }
+                addImport(node.moduleSpecifier.text, names);
+            } else if (!clause) {
+                addImport(node.moduleSpecifier.text, []);
+            }
+        }
+
+        if (ts.isExportDeclaration(node) && node.moduleSpecifier && ts.isStringLiteral(node.moduleSpecifier)) {
+            if (!node.isTypeOnly) {
+                if (node.exportClause && ts.isNamedExports(node.exportClause)) {
+                    const names = node.exportClause.elements
+                        .filter((element) => !element.isTypeOnly)
+                        .map((element) => (element.propertyName ?? element.name).text);
+                    addImport(node.moduleSpecifier.text, names);
+                } else {
+                    addImport(node.moduleSpecifier.text, ['*']);
+                }
+            }
+        }
+
+        if (ts.isCallExpression(node)) {
+            const firstArgument = node.arguments[0];
+            const isDynamicImport = node.expression.kind === ts.SyntaxKind.ImportKeyword;
+            if (isDynamicImport && firstArgument && ts.isStringLiteralLike(firstArgument)) {
+                const names = new Set<string>();
+                collectThenCallbackProperties(node, names);
+                addImport(firstArgument.text, names);
+            }
+
+            if (isMockCall(node)) {
+                parsedMockCalls += 1;
+                const factory = node.arguments[1];
+                const specifier = firstArgument ? readMockSpecifier(firstArgument) : null;
+                if (factory && specifier !== null) {
+                    mocks.push({
+                        specifier,
+                        line: sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile)).line + 1,
+                        keys: parseObjectKeys(factory),
+                        spreadsOriginal: detectOriginalSpread(factory),
+                    });
+                }
+            }
+        }
+
+        node.forEachChild(visit);
+    };
+
+    visit(sourceFile);
+    return { imports, mocks, scannedMockCalls: countScannedMockCalls(contents), parsedMockCalls };
+}
+
+/**
+ * Resolves a module specifier the way `vite.config.ts` does: `#/…` is `src/…`,
+ * relative paths are relative to the importer, everything else is a package and
+ * is not part of the graph.
+ */
+export function resolveSpecifier(
+    specifier: string,
+    importerDirectory: string,
+    fileExists: (path: string) => boolean
+): string | null {
+    let base: string;
+    if (specifier.startsWith('#/')) {
+        base = join(sourceRoot, specifier.slice(2));
+    } else if (specifier.startsWith('.')) {
+        base = resolve(importerDirectory, specifier);
+    } else {
+        return null;
+    }
+
+    if (fileExists(base)) {
+        return base;
+    }
+    for (const extension of moduleExtensions) {
+        if (fileExists(base + extension)) {
+            return base + extension;
+        }
+    }
+    for (const extension of moduleExtensions) {
+        const indexPath = join(base, `index${extension}`);
+        if (fileExists(indexPath)) {
+            return indexPath;
+        }
+    }
+    return null;
+}
+
+export type AnalyzeInput = {
+    specPaths: string[];
+    readFacts: ReadFacts;
+    fileExists: (path: string) => boolean;
+    /** Barrel kinds to check. Defaults to the gated set. */
+    barrelKinds?: ReadonlyArray<string>;
+};
+
+/**
+ * Walks each spec's module graph and reports every exhaustive contract-barrel mock
+ * that omits a name the graph imports from that barrel.
+ */
+export function analyzeSpecs({ specPaths, readFacts, fileExists, barrelKinds }: AnalyzeInput): AnalysisResult {
+    const contractBarrelPattern = buildBarrelPattern(barrelKinds ?? gatedBarrelKinds);
+    const violations: Violation[] = [];
+    const extractionFailures: string[] = [];
+    let parsedMockCount = 0;
+    let resolvedMockCount = 0;
+    let analyzedSpecCount = 0;
+    let graphNodeCount = 0;
+
+    for (const specPath of specPaths) {
+        const specFacts = readFacts(specPath);
+        if (!specFacts) {
+            continue;
+        }
+        if (specFacts.parsedMockCalls < specFacts.scannedMockCalls) {
+            extractionFailures.push(specPath);
+        }
+        if (specFacts.mocks.length === 0) {
+            continue;
+        }
+        parsedMockCount += specFacts.mocks.length;
+
+        const specDirectory = dirname(specPath);
+        const mockedPaths = new Set<string>();
+        const barrelsUnderTest = new Map<string, MockedBarrel>();
+
+        for (const mock of specFacts.mocks) {
+            const resolved = resolveSpecifier(mock.specifier, specDirectory, fileExists);
+            if (!resolved) {
+                continue;
+            }
+            resolvedMockCount += 1;
+
+            // Only a factory that does *not* spread `importOriginal` cuts the module
+            // out of the graph. A spread factory loads the real module, so its own
+            // imports do execute and can still hit another barrel this spec mocks
+            // exhaustively — which means applying the spread repair to one mock used
+            // to shrink the gate's coverage of every other barrel in the same file.
+            if (!mock.spreadsOriginal) {
+                mockedPaths.add(resolved);
+            }
+
+            if (mock.spreadsOriginal || !contractBarrelPattern.test(mock.specifier)) {
+                continue;
+            }
+            const exempt = exemptions.some(
+                (row) => relative(repoRoot, specPath).split(sep).join('/') === row.spec && row.barrel === mock.specifier
+            );
+            if (!exempt) {
+                barrelsUnderTest.set(resolved, mock);
+            }
+        }
+
+        if (barrelsUnderTest.size === 0) {
+            continue;
+        }
+        analyzedSpecCount += 1;
+
+        // The mock replaces the module for the whole graph, so every module the
+        // spec can reach counts — except the ones the spec mocks *without* a
+        // spread, whose real imports never run.
+        const visited = new Set<string>([specPath]);
+        const queue: string[] = [specPath];
+
+        while (queue.length > 0) {
+            const current = queue.pop();
+            if (current === undefined) {
+                break;
+            }
+            const facts = readFacts(current);
+            if (!facts) {
+                continue;
+            }
+            for (const [specifier, names] of facts.imports) {
+                const resolved = resolveSpecifier(specifier, dirname(current), fileExists);
+                if (!resolved) {
+                    continue;
+                }
+
+                const mock = barrelsUnderTest.get(resolved);
+                if (mock) {
+                    const missing = [...names].filter((name) => name !== '*' && !mock.keys.includes(name));
+                    if (names.has('*')) {
+                        missing.push('* (namespace import)');
+                    }
+                    if (missing.length > 0) {
+                        violations.push({
+                            spec: specPath,
+                            line: mock.line,
+                            barrel: mock.specifier,
+                            missing: [...new Set(missing)].sort(),
+                            usedBy: current,
+                        });
+                    }
+                }
+
+                if (mockedPaths.has(resolved) || visited.has(resolved)) {
+                    continue;
+                }
+                visited.add(resolved);
+                queue.push(resolved);
+            }
+        }
+
+        graphNodeCount += visited.size;
+    }
+
+    return {
+        violations,
+        extractionFailures,
+        parsedMockCount,
+        resolvedMockCount,
+        analyzedSpecCount,
+        graphNodeCount,
+    };
+}
+
+const specFilePattern = /\.spec\.tsx?$/;
+const skippedDirectories = new Set(['node_modules', 'dist', 'coverage', 'target']);
+
+function walkForSpecs(directory: string, found: string[]): void {
+    for (const entry of readdirSync(directory, { withFileTypes: true })) {
+        if (entry.isDirectory()) {
+            if (skippedDirectories.has(entry.name)) {
+                continue;
+            }
+            walkForSpecs(join(directory, entry.name), found);
+            continue;
+        }
+        if (entry.isFile() && specFilePattern.test(entry.name)) {
+            found.push(join(directory, entry.name));
+        }
+    }
+    found.sort();
+}
+
+/** Scans the real tree. Exported so the guard's spec runs the same scan the CLI does. */
+export function scanRepository(barrelKinds?: ReadonlyArray<string>): AnalysisResult & { specCount: number } {
+    const specPaths: string[] = [];
+    walkForSpecs(sourceRoot, specPaths);
+
+    const factsCache = new Map<string, FileFacts | null>();
+    const existsCache = new Map<string, boolean>();
+
+    const fileExists = (path: string): boolean => {
+        const cached = existsCache.get(path);
+        if (cached !== undefined) {
+            return cached;
+        }
+        let result = false;
+        if (existsSync(path)) {
+            result = statSync(path).isFile();
+        }
+        existsCache.set(path, result);
+        return result;
+    };
+
+    const readFacts: ReadFacts = (absolutePath) => {
+        const cached = factsCache.get(absolutePath);
+        if (cached !== undefined) {
+            return cached;
+        }
+        let facts: FileFacts | null;
+        try {
+            facts = readFileFacts(absolutePath, readFileSync(absolutePath, 'utf8'));
+        } catch {
+            facts = null;
+        }
+        factsCache.set(absolutePath, facts);
+        return facts;
+    };
+
+    return {
+        specCount: specPaths.length,
+        ...analyzeSpecs({ specPaths, readFacts, fileExists, barrelKinds }),
+    };
+}
+
+/**
+ * The floors below which the analysis is not measuring anything. They are lower
+ * than today's real numbers by a wide margin — they exist to separate "clean" from
+ * "derived nothing", not to pin the tree. Breaking `fileExists`, `readFacts`, the
+ * parser, or the glob puts one of these at zero, which is the whole point.
+ */
+const derivationFloors = {
+    analyzedSpecs: 5,
+    resolvedMocks: 50,
+    graphNodes: 500,
+} as const;
+
+function checkDerivation(result: AnalysisResult): string[] {
+    const failures: string[] = [];
+    if (result.extractionFailures.length > 0) {
+        const sample = result.extractionFailures
+            .slice(0, 5)
+            .map((path) => `      ${relative(repoRoot, path).split(sep).join('/')}`)
+            .join('\n');
+        failures.push(
+            `  ✗ ${String(result.extractionFailures.length)} spec(s) contain a vi.mock call the parser did not produce.\n` +
+                `    The file does not parse, so its mocks are invisible to this check:\n${sample}`
+        );
+    }
+    if (result.analyzedSpecCount < derivationFloors.analyzedSpecs) {
+        failures.push(
+            `  ✗ only ${String(result.analyzedSpecCount)} spec(s) reached the graph walk (floor ${String(derivationFloors.analyzedSpecs)}). ` +
+                'The analysis derived nothing; a clean verdict here would be vacuous.'
+        );
+    }
+    if (result.resolvedMockCount < derivationFloors.resolvedMocks) {
+        failures.push(
+            `  ✗ only ${String(result.resolvedMockCount)} mock specifier(s) resolved to a file (floor ${String(derivationFloors.resolvedMocks)}), ` +
+                `out of ${String(result.parsedMockCount)} parsed. Module resolution is broken.`
+        );
+    }
+    if (result.graphNodeCount < derivationFloors.graphNodes) {
+        failures.push(
+            `  ✗ only ${String(result.graphNodeCount)} module-graph node(s) were walked (floor ${String(derivationFloors.graphNodes)}). ` +
+                'The graph traversal is not reaching the modules that use the mocked barrels.'
+        );
+    }
+    return failures;
+}
+
+/**
+ * Human-readable report for one violation; shared by the CLI and the guard spec.
+ *
+ * Remedy order matters, and it used to be wrong. The violation is "this factory
+ * omits X", and adding a stub for X costs nothing; spreading the barrel loads the
+ * real module and everything behind it. Printing only the spread sent developers
+ * to the expensive fix with no hint that the cheap one exists — on
+ * `src/app/__tests__/App.spec.tsx`, whose exhaustive mock exists precisely so the
+ * composition root does not load the whole DAW, that trade is 573ms → 20.89s.
+ * Cheapest first, then the spread, then the exemption table, which is a real exit
+ * and must be findable from the failure rather than only from this source file.
+ */
+export function formatViolation(violation: Violation): string {
+    const spec = relative(repoRoot, violation.spec).split(sep).join('/');
+    const usedBy = relative(repoRoot, violation.usedBy).split(sep).join('/');
+    return [
+        `  ✗ ${spec}:${violation.line}`,
+        `    mocks ${violation.barrel} without spreading importOriginal,`,
+        `    and omits ${violation.missing.join(', ')} — imported by ${usedBy}.`,
+        '',
+        `    Cheapest fix — add the missing key(s) to the factory: ${violation.missing.join(', ')}.`,
+        '      Costs nothing: the factory keeps replacing the whole barrel.',
+        '    Or spread the barrel so later additions resolve for free:',
+        "      vi.mock(spec, async (importOriginal) => ({ ...(await importOriginal<typeof import('…')>()), …overrides }))",
+        '      Loads the real module and its graph — measure before choosing this for a heavy barrel.',
+        '    Or, if the mock is deliberately narrower than the graph, add a reasoned row to',
+        '      `exemptions` in scripts/checkBarrelMockCoverage.ts. That is a documented exit,',
+        '      not evasion: the row carries the spec, the barrel and the reason, and is reviewed.',
+    ].join('\n');
+}
+
+const usage = [
+    'pnpm test:barrel-mocks [--all] [--help]',
+    '',
+    '  (no flags)  Fail when a spec mocks a presentations/views contract barrel without',
+    '              spreading importOriginal and omits an export its own module graph',
+    '              imports from that barrel. This is the gate; it must stay at zero.',
+    '  --all       Report the same violation across all four contract barrels',
+    '              (useCases, stores, events, presentations/views). Not gated: those',
+    '              carry pre-existing debt this measures rather than blocks. Exits 1',
+    '              when it finds any, so it is a measurement command, not a check.',
+    '  --help      This text.',
+    '',
+    'Remedies, cheapest first: add the missing key to the factory; spread the barrel;',
+    'or add a reasoned row to `exemptions` in scripts/checkBarrelMockCoverage.ts.',
+    'Background: docs/06-testing.md §5.1, and PR #1572.',
+].join('\n');
+
+function main(): number {
+    if (process.argv.includes('--help') || process.argv.includes('-h')) {
+        console.log(usage);
+        return 0;
+    }
+
+    const scanAll = process.argv.includes('--all');
+    const kinds = scanAll ? allBarrelKinds : gatedBarrelKinds;
+    const result = scanRepository(kinds);
+
+    const derivationFailures = checkDerivation(result);
+    if (derivationFailures.length > 0) {
+        console.error('\nbarrel mock coverage: the analysis derived too little to have a verdict\n');
+        console.error(derivationFailures.join('\n\n'));
+        console.error('');
+        return 1;
+    }
+
+    if (result.violations.length > 0) {
+        const uniquePairs = new Set(result.violations.map((violation) => `${violation.spec} ${violation.barrel}`));
+        const uniqueSpecs = new Set(result.violations.map((violation) => violation.spec));
+        console.error(
+            `\nbarrel mock coverage (${kinds.join(', ')}): ${String(result.violations.length)} violation(s) — ` +
+                `${String(uniquePairs.size)} unique (spec, barrel) pair(s) across ${String(uniqueSpecs.size)} spec file(s)\n`
+        );
+        console.error(result.violations.map(formatViolation).join('\n\n'));
+        console.error('');
+        return 1;
+    }
+
+    // Say what was actually analysed, not what was globbed. "3370 spec files
+    // scanned" was true and misleading: 3370 is the glob, and it stays 3370 when
+    // resolution is broken and nothing at all is checked.
+    console.log(
+        `barrel mock coverage: OK — ${String(result.analyzedSpecCount)} of ${String(result.specCount)} spec files ` +
+            `mock a ${kinds.join('/')} barrel without a spread; ${String(result.resolvedMockCount)} mock specifier(s) ` +
+            `resolved, ${String(result.graphNodeCount)} module-graph node(s) walked`
+    );
+    return 0;
+}
+
+if (process.argv[1] === fileURLToPath(import.meta.url)) {
+    process.exit(main());
+}
