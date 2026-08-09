@@ -1,0 +1,19 @@
+src/modules/Gluten/presentations/views/__tests__/glutenDiodeRecoveryHint.spec.tsx
+  s_c5a878e725c221::t_b16fcca933282d 5-10,121,123,130,133-142,146-186,190,193-194,196-198,213-220,222-241,243-262,303-341,391-412
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "e63f90e5f25e6b12ea83a9a75fe7c23631c6efd2",
+  "prompts": {},
+  "sessions": {
+    "s_c5a878e725c221": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-a24b907ae59c531f4",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
