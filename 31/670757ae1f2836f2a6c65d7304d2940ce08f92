@@ -1,0 +1,146 @@
+src/modules/AiRuntime/useCases/__tests__/validateActions.spec.ts
+  s_bc88af7d3b054c::t_6d172173a5770b 87-104
+src/modules/Transport/useCases/scheduling/scheduleMidiNotes.ts
+  s_bc88af7d3b054c::t_a0c0b69c7a19d7 417-422,429,563-569
+  s_be0ccaddee84a6::t_547d270edfd094 2-6
+src/modules/Arrangement/handlers/clip/clipHandlers.ts
+  s_bc88af7d3b054c::t_edcd9fc53bb751 26,71
+src/modules/AiRuntime/models/Tools/__tests__/ClipAndDevice.spec.ts
+  s_bc88af7d3b054c::t_c1a15869daf33a 28
+src/modules/AiRuntime/useCases/__tests__/getProjectContext.spec.ts
+  s_bc88af7d3b054c::t_620c9951b6bd22 42,46-49
+  s_bc88af7d3b054c::t_08f5e1d9edac30 181,309
+  s_bc88af7d3b054c::t_744d9891b5ce9e 310
+src/modules/Transport/useCases/scheduling/__tests__/scheduleAudioClips.spec.ts
+  s_bc88af7d3b054c::t_f6ef1bd0f8239d 58-60
+  s_bc88af7d3b054c::t_68797bcdaa7e39 537,541
+  s_bc88af7d3b054c::t_5c698fe7c1c616 532-536,538-540,542-544
+  s_bc88af7d3b054c::t_5c8152f0f72a96 56-57,61-69
+  s_bc88af7d3b054c::t_5651f66db867a6 531
+src/modules/AiRuntime/useCases/__tests__/describePlannedAction.spec.ts
+  s_bc88af7d3b054c::t_663c1f159f8693 78-88
+src/modules/Arrangement/handlers/clip/__tests__/clipHandlers.spec.ts
+  s_bc88af7d3b054c::t_ab1dd2270d7f92 59
+src/modules/AiRuntime/transformers/promptParser/__tests__/parsing.spec.ts
+  s_bc88af7d3b054c::t_7ba30cb5d3e9e3 178
+src/modules/Arrangement/useCases/clipLoop/setClipLoopLength.ts
+  s_bc88af7d3b054c::t_edcd9fc53bb751 4
+src/modules/Arrangement/handlers/clip/clipLoopLengthState.ts
+  s_bc88af7d3b054c::t_5f0cd0c8009614 24-25,29
+  s_bc88af7d3b054c::t_edcd9fc53bb751 1-23,26-28,30-34
+  s_bc88af7d3b054c::t_517553f8b64058 35-37
+  s_be0ccaddee84a6::t_3c98029caca2ad 38-39
+src/modules/AiRuntime/useCases/getProjectContext.ts
+  s_bc88af7d3b054c::t_4be88e0cc8e0b6 169
+  s_bc88af7d3b054c::t_744d9891b5ce9e 2-8,170-174
+src/modules/AiRuntime/useCases/agentReference/__tests__/bridgeGroundedLlmToolCalls.spec.ts
+  s_bc88af7d3b054c::t_1f5319eb7a933c 1015-1049
+src/modules/AiRuntime/useCases/agentReference/bridgeGroundedLlmToolCalls.ts
+  s_bc88af7d3b054c::t_868e190437db94 2006-2018,3036-3041
+  s_14f2bbc9f385dd::t_f329290e25b961 3042
+src/modules/AiRuntime/useCases/validateActionPayload.ts
+  s_bc88af7d3b054c::t_4f3b0811dcef5e 30,523-528
+src/modules/AiRuntime/useCases/describePlannedAction.ts
+  s_bc88af7d3b054c::t_5cea3664b96a74 45-60
+src/modules/Arrangement/handlers/clip/__tests__/handleSetClipLoopLength.integration.spec.ts
+  s_bc88af7d3b054c::t_9b88e80f3f22da 1-34,40-80,82-92,94-98,100-104,106-110,112-120,122-124,127-128,144
+  s_bc88af7d3b054c::t_988165874da1d7 129-143
+  s_bc88af7d3b054c::t_86400ae7427912 93,105,111
+  s_bc88af7d3b054c::t_b44da8128b7b4c 35-39,81,99,126
+  s_bc88af7d3b054c::t_a9449861780174 121,125
+src/modules/Arrangement/handlers/clip/handleSetClipLoopLength.ts
+  s_bc88af7d3b054c::t_edcd9fc53bb751 1,7-13,15-56
+src/modules/AudioEngine/useCases/offlineRender/__tests__/scheduleTrackClipsAudio.spec.ts
+  s_bc88af7d3b054c::t_5c698fe7c1c616 440-443,445-451
+  s_bc88af7d3b054c::t_68797bcdaa7e39 444
+src/modules/AiRuntime/models/ProjectContext.ts
+  s_bc88af7d3b054c::t_744d9891b5ce9e 82
+  s_bc88af7d3b054c::t_5cea3664b96a74 81
+src/modules/Command/useCases/__tests__/executableCommandRegistry.spec.ts
+  s_bc88af7d3b054c::t_be906961dff3b9 267-280,1266-1285
+  s_14f2bbc9f385dd::t_e8715fcab7e40b 266,1286
+src/modules/AiRuntime/useCases/__tests__/validateActionPayload.spec.ts
+  s_bc88af7d3b054c::t_65625581f14b71 425-434
+  s_bc88af7d3b054c::t_6d172173a5770b 1173-1176
+  s_bc88af7d3b054c::t_05826f835b882d 424
+src/modules/AiRuntime/transformers/__tests__/llmActionBridge.spec.ts
+  s_bc88af7d3b054c::t_3f49028f1711c0 1456-1466,1468-1472,1477-1485,1487-1517
+  s_bc88af7d3b054c::t_65625581f14b71 1417-1419
+  s_bc88af7d3b054c::t_744d9891b5ce9e 1467
+  s_bc88af7d3b054c::t_5f0cd0c8009614 1473-1476,1486
+  s_14f2bbc9f385dd::t_ef891f81c8d3b1 1416
+src/modules/Arrangement/handlers/clip/handleRestoreClipLoopLength.ts
+  s_bc88af7d3b054c::t_ff5c6d38d8355b 21
+  s_bc88af7d3b054c::t_edcd9fc53bb751 1-20,22-41
+src/modules/Transport/useCases/scheduling/scheduleAudioClips.ts
+  s_bc88af7d3b054c::t_a0c0b69c7a19d7 2,146-152
+src/modules/Arrangement/handlers/clip/__tests__/clipMetadataUndo.spec.ts
+  s_bc88af7d3b054c::t_65625581f14b71 11,180-201
+  s_bc88af7d3b054c::t_d60f1c150d9627 202-203
+src/modules/AudioEngine/useCases/offlineRender/scheduleTrackClips.ts
+  s_bc88af7d3b054c::t_a0c0b69c7a19d7 2,577-582,589,658-664
+src/modules/Arrangement/handlers/clip/__tests__/handleSetClipLoopLength.spec.ts
+  s_bc88af7d3b054c::t_ab1dd2270d7f92 1,3-7,21-29,46-53
+  s_bc88af7d3b054c::t_577942cd53c2f1 54
+src/modules/Transport/useCases/scheduling/__tests__/scheduleMidiNotes.spec.ts
+  s_bc88af7d3b054c::t_f6ef1bd0f8239d 66-68
+  s_bc88af7d3b054c::t_8ebb2bbd98da34 64-65,69-77
+src/modules/Arrangement/useCases/clipLoop/restoreClipLoopLength.ts
+  s_bc88af7d3b054c::t_edcd9fc53bb751 1-13
+src/utils/handlerContract.ts
+  s_bc88af7d3b054c::t_edcd9fc53bb751 923-930
+  s_14f2bbc9f385dd::t_04094038494598 922
+src/modules/Arrangement/useCases/clipLoop/__tests__/projectClipLoopExpansion.spec.ts
+  s_bc88af7d3b054c::t_f6ef1bd0f8239d 34-40
+  s_bc88af7d3b054c::t_ab557d71d6df97 1-33,41-54
+src/modules/AiRuntime/transformers/llmActionBridge.ts
+  s_bc88af7d3b054c::t_5f0cd0c8009614 1542,1551-1552
+  s_bc88af7d3b054c::t_744d9891b5ce9e 1550,2914
+  s_bc88af7d3b054c::t_5cea3664b96a74 1540-1541,1543-1549,1553-1565,1952,2238-2244,2913
+src/modules/Arrangement/handlers/clip/__tests__/clipMetadataActionOutcomes.spec.ts
+  s_bc88af7d3b054c::t_ab1dd2270d7f92 3-7,95-98,123
+src/modules/Arrangement/useCases/index.ts
+  s_bc88af7d3b054c::t_4f3b0811dcef5e 76-80
+src/modules/Command/useCases/executableAppActionRegistry.ts
+  s_bc88af7d3b054c::t_5cea3664b96a74 616-649
+  s_bc88af7d3b054c::t_12ed0549de933a 615
+src/modules/AiRuntime/useCases/__tests__/parsePromptToActions.spec.ts
+  s_bc88af7d3b054c::t_a846ed59a83379 339
+  s_bc88af7d3b054c::t_7ba30cb5d3e9e3 320-338,340-342
+src/modules/Arrangement/useCases/clipLoop/projectClipLoopExpansion.ts
+  s_bc88af7d3b054c::t_a0c0b69c7a19d7 3-19,24-32,37-40
+  s_bc88af7d3b054c::t_f6ef1bd0f8239d 20-23
+  s_bc88af7d3b054c::t_4f3b0811dcef5e 1-2,33-36
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "31670757ae1f2836f2a6c65d7304d2940ce08f92",
+  "prompts": {},
+  "sessions": {
+    "s_14f2bbc9f385dd": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f9a61a1d-66b3-4146-938d-a04f45f4b060",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_bc88af7d3b054c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f9b4a-11a2-7f61-8dfb-76eed0eb2a9c",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_be0ccaddee84a6": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-a5a39c637b04463b0",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
