@@ -1,4 +1,4 @@
-// @wasm-bindgen-dts crate-source: sha256:7dcfb95e436a00c501d2b693282c5be5d6c5879dae92c9ad0398999516c7a60d
+// @wasm-bindgen-dts crate-source: sha256:bf24f1be933e388925e43029cafc82e664512c1700316401943b914382a22a6d
 /* tslint:disable */
 /* eslint-disable */
 export const memory: WebAssembly.Memory;
@@ -112,27 +112,6 @@ export const toasterinstance_set_pad_dry_routed: (a: number, b: number, c: numbe
 export const toasterinstance_set_pad_param: (a: number, b: number, c: number, d: number, e: number) => void;
 export const toasterinstance_set_param: (a: number, b: number, c: number, d: number) => void;
 export const toasterinstance_set_param_by_id: (a: number, b: number, c: number) => void;
-export const __wbg_grandbouleinstance_free: (a: number, b: number) => void;
-export const analyze_pitch_wasm: (a: number, b: number, c: number) => [number, number];
-export const commit_pitch_edit_wasm: (a: number, b: number, c: number, d: number, e: number, f: number, g: number) => [number, number];
-export const grandbouleinstance_all_notes_off: (a: number) => void;
-export const grandbouleinstance_get_nan_flush_count: (a: number) => number;
-export const grandbouleinstance_get_right_ptr: (a: number) => number;
-export const grandbouleinstance_lifecycle_state: (a: number) => number;
-export const grandbouleinstance_load_attack_clip: (a: number, b: number, c: number, d: number) => void;
-export const grandbouleinstance_new: (a: number, b: number) => number;
-export const grandbouleinstance_note_expression: (a: number, b: number, c: number, d: number, e: number, f: number) => void;
-export const grandbouleinstance_note_off: (a: number, b: number) => void;
-export const grandbouleinstance_note_off_on_channel: (a: number, b: number, c: number) => void;
-export const grandbouleinstance_note_on: (a: number, b: number, c: number) => void;
-export const grandbouleinstance_note_on_midi2: (a: number, b: number, c: number, d: number) => void;
-export const grandbouleinstance_note_on_with_channel: (a: number, b: number, c: number, d: number) => void;
-export const grandbouleinstance_process: (a: number, b: number) => number;
-export const grandbouleinstance_set_param: (a: number, b: number, c: number, d: number) => void;
-export const grandbouleinstance_set_sostenuto: (a: number, b: number) => void;
-export const grandbouleinstance_set_sustain: (a: number, b: number) => void;
-export const grandbouleinstance_set_temperament: (a: number, b: number) => void;
-export const grandbouleinstance_set_una_corda: (a: number, b: number) => void;
 export const __wbg_fermenterinstance_free: (a: number, b: number) => void;
 export const __wbg_grinderinstance_free: (a: number, b: number) => void;
 export const fermenterinstance_active_voices: (a: number) => number;
@@ -173,6 +152,27 @@ export const grinderinstance_new: (a: number) => number;
 export const grinderinstance_process: (a: number, b: number) => number;
 export const grinderinstance_process_automated: (a: number, b: number) => number;
 export const grinderinstance_set_param: (a: number, b: number, c: number, d: number) => void;
+export const __wbg_grandbouleinstance_free: (a: number, b: number) => void;
+export const analyze_pitch_wasm: (a: number, b: number, c: number) => [number, number];
+export const commit_pitch_edit_wasm: (a: number, b: number, c: number, d: number, e: number, f: number, g: number) => [number, number];
+export const grandbouleinstance_all_notes_off: (a: number) => void;
+export const grandbouleinstance_get_nan_flush_count: (a: number) => number;
+export const grandbouleinstance_get_right_ptr: (a: number) => number;
+export const grandbouleinstance_lifecycle_state: (a: number) => number;
+export const grandbouleinstance_load_attack_clip: (a: number, b: number, c: number, d: number) => void;
+export const grandbouleinstance_new: (a: number, b: number) => number;
+export const grandbouleinstance_note_expression: (a: number, b: number, c: number, d: number, e: number, f: number) => void;
+export const grandbouleinstance_note_off: (a: number, b: number) => void;
+export const grandbouleinstance_note_off_on_channel: (a: number, b: number, c: number) => void;
+export const grandbouleinstance_note_on: (a: number, b: number, c: number) => void;
+export const grandbouleinstance_note_on_midi2: (a: number, b: number, c: number, d: number) => void;
+export const grandbouleinstance_note_on_with_channel: (a: number, b: number, c: number, d: number) => void;
+export const grandbouleinstance_process: (a: number, b: number) => number;
+export const grandbouleinstance_set_param: (a: number, b: number, c: number, d: number) => void;
+export const grandbouleinstance_set_sostenuto: (a: number, b: number) => void;
+export const grandbouleinstance_set_sustain: (a: number, b: number) => void;
+export const grandbouleinstance_set_temperament: (a: number, b: number) => void;
+export const grandbouleinstance_set_una_corda: (a: number, b: number) => void;
 export const init_panic_hook: () => void;
 export const __wbg_gluteninstance_free: (a: number, b: number) => void;
 export const gluteninstance_get_crest: (a: number) => number;

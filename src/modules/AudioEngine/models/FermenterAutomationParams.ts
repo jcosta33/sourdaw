@@ -34,14 +34,14 @@
  * message was dropped before it reached the engine. A pure model both sides may
  * import is the only place that makes the count *derived* rather than restated.
  *
- * ## Why 103 and not 105
+ * ## Why 104 and not 105
  *
  * The Fermenter descriptor declares **105** automatable parameters. Every one is
- * here except two, and both exclusions are measurements rather than
- * preferences: **the engine renders no difference between any two values of
- * either of them**, so a per-parameter guard for them could not fail, and a
- * binding that cannot be guarded is a claim with nothing behind it. Both keep
- * reason-bearing rows in `offlineAutomationExemptions.ts`.
+ * here except one, and that exclusion is a measurement rather than a
+ * preference: **the engine renders no difference between any two values of
+ * it**, so a per-parameter guard for it could not fail, and a binding that
+ * cannot be guarded is a claim with nothing behind it. It keeps a
+ * reason-bearing row in `offlineAutomationExemptions.ts`.
  *
  *  - **`activeLayer`** writes no DSP state. `MasterSynth::set_param`
  *    (`crates/daw-dsp/src/fermenter/synth.rs`) reads it only to pick which layer
@@ -50,14 +50,6 @@
  *    consulting it. Binding it would additionally make every other lane's
  *    destination depend on the order the offline schedules happen to sit in
  *    `_paramAutomation`.
- *  - **`grainPanSpread`** is computed and then discarded. `GranularEngine::tick`
- *    pans each grain into an L/R pair, but `Voice::render` sums the oscillator
- *    pair to mono before the filter (`voice.rs`: "Filter — mono (sum L+R, filter
- *    once, then split back)") and restores the L/R ratio **only** on the
- *    `has_unison` branch. Granular pan therefore never reaches the output:
- *    driving it from 0 to 1 across 96 quanta moves the render by 9.5e-5 total
- *    absolute sample difference against an RMS of 6.4e-2 — float rounding, not
- *    audio. Also a DSP gap.
  *
  * ## Setter cost, measured rather than assumed
  *
@@ -189,4 +181,5 @@ export const FERMENTER_AUTOMATION_PARAM_IDS: Readonly<Record<string, number>> = 
     chaosSpeed: 100,
     masterGain: 101,
     portamentoMode: 102,
+    grainPanSpread: 103,
 };
