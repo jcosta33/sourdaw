@@ -63,10 +63,25 @@ export const createStore = <TData>(options: StoreOptions<TData> = {}): Store<TDa
      * full origin quota, or Safari private mode's outright `SecurityError` from
      * `setItem`, is enough to cause. See #1557.
      *
-     * Returns whether the value is durable. Adapters that can refuse a write
-     * implement `trySet` and report it themselves with the key they own;
-     * the fallback here covers adapters that cannot (memory) and any that
-     * throw for a reason no one anticipated.
+     * Returns whether the value is DURABLE — committed to a backing store that
+     * outlives the session — which is the question every caller of the boolean
+     * actually acts on.
+     *
+     * An adapter that does not implement `trySet` has made no durability claim,
+     * so this reports `false` rather than inventing one. A returning `set` is
+     * not evidence of durability and this used to treat it as if it were:
+     *
+     * - `createAutomergeStorage.set` only records a pending write that a
+     *   later `preparePendingWrite` can `abandon`, rolling the store back to
+     *   the last committed value. Nothing has reached the document at the
+     *   moment of the call, and it may never.
+     * - `createMemoryStorage` has no backing store to outlive anything.
+     * - `createVersionControlStorage` swallows its own write failures
+     *   internally, so it cannot report on them at all.
+     *
+     * `false` is accurate for all three. Adapters that can genuinely answer —
+     * `createLocalStorage`, `createPlainJsonLocalStorage` — opt in and report
+     * for themselves, naming the key they own.
      *
      * The fallback reports through the module logger, not `options.logger`.
      * `options.logger` is optional and no production call site passes one, so
@@ -82,11 +97,11 @@ export const createStore = <TData>(options: StoreOptions<TData> = {}): Store<TDa
 
         try {
             storage.set(value);
-            return true;
         } catch (error) {
             appLogger.error(new Error('Store write to backing storage failed', { cause: error }));
-            return false;
         }
+
+        return false;
     };
 
     /**

@@ -309,11 +309,13 @@ export function sanitize_midi_store_state(
     };
 }
 
-// `trySet` is omitted rather than forwarded. It exists for backing stores that
-// can refuse a write outright — a full `localStorage` quota — and this store is
-// Automerge-backed, where writes are queued and flushed rather than accepted or
-// rejected at the call. A boolean from here would not mean what it means
-// everywhere else. Add it if a caller ever has a use for the answer.
+// `trySet` is omitted rather than forwarded. Its boolean means "durable at the
+// moment of the call", and this store is Automerge-backed: `set` only records a
+// pending write that `preparePendingWrite` can later abandon, so the honest
+// answer here is always `false`. `createStore` already reports exactly that for
+// any adapter that did not opt in, which makes forwarding it a method that
+// cannot tell a caller anything. Add it if a caller ever has a use for the
+// answer. See #1557.
 type MidiStore = Omit<Store<MidiStoreState>, 'set' | 'update' | 'trySet'> & {
     set(value: MidiStoreStateInput | null): void;
     update(updater: (current: MidiStoreState | null) => MidiStoreStateInput | null): void;

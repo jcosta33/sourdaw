@@ -3,8 +3,9 @@ export type StorageAdapter<TData> = {
     set(value: TData | null): void;
     clear(): void;
     isSupported(): boolean;
-    /** Non-throwing `set`. Returns true when the value reached the backing
-     *  store, false when it was dropped.
+    /** Non-throwing `set`. Returns true only when the value is DURABLE —
+     *  committed, at the moment of the call, to a backing store that outlives
+     *  the session.
      *
      *  Implemented by adapters whose backing store can refuse a write for
      *  reasons the caller did not cause and cannot fix — a full origin quota, a
@@ -15,8 +16,14 @@ export type StorageAdapter<TData> = {
      *  throw aborts the ES module graph before any app-level catch exists.
      *
      *  A dropped write still changes the visible value — the caller is told it
-     *  is not durable, not that it did not happen. Adapters that cannot fail
-     *  durably omit this and callers fall back to `set`. */
+     *  is not durable, not that it did not happen.
+     *
+     *  Implementing this is an affirmative claim, so an adapter that cannot
+     *  make it omits it, and `createStore` reports `false` rather than reading
+     *  a returning `set` as success. A `set` that returns has not necessarily
+     *  persisted anything: `createAutomergeStorage` only records a pending
+     *  write that a later `preparePendingWrite` can `abandon`, and memory
+     *  storage has nothing to outlive the session at all. */
     trySet?(value: TData | null): boolean;
     /** Hydrate the cache from the backing store without triggering a write-back.
      *  Returns true if the cached value changed. */

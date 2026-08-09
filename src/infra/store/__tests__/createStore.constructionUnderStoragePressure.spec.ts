@@ -4,6 +4,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { logger } from '#/infra/logger/appLogger';
 
 import { createStore } from '../createStore';
+import {
+    configureAutomergeStoragePort,
+    createAutomergeStorage,
+    flushAutomergeStorageWrites,
+} from '../storage/createAutomergeStorage';
 import { createLocalStorage } from '../storage/createLocalStorage';
 import { type StorageAdapter } from '../storage/types';
 
@@ -29,9 +34,21 @@ function blockEveryDurableWrite(): void {
 describe('createStore construction when the backing store refuses writes', () => {
     beforeEach(() => {
         window.localStorage.clear();
+        vi.stubGlobal(
+            'requestAnimationFrame',
+            vi.fn(() => 1)
+        );
+        vi.stubGlobal(
+            'cancelAnimationFrame',
+            vi.fn(() => undefined)
+        );
+        configureAutomergeStoragePort(null);
     });
 
     afterEach(() => {
+        flushAutomergeStorageWrites();
+        configureAutomergeStoragePort(null);
+        vi.unstubAllGlobals();
         vi.restoreAllMocks();
         window.localStorage.clear();
     });
@@ -90,6 +107,69 @@ describe('createStore construction when the backing store refuses writes', () =>
         expect(store.trySet({ count: 3 })).toBe(false);
         expect(seen).toEqual([{ count: 2 }, { count: 3 }]);
         expect(store.value).toEqual({ count: 3 });
+    });
+
+    /**
+     * The boolean means durable, and only an adapter that implements `trySet`
+     * has claimed it can answer. This used to read a returning `set` as success
+     * and report `true` for every adapter that had not opted in — including the
+     * 20 Automerge-backed stores, whose `set` records a pending write that
+     * `preparePendingWrite` can later abandon.
+     */
+    describe('adapters that made no durability claim', () => {
+        it('reports false for an adapter whose set returns without persisting anything', () => {
+            const written: (Counter | null)[] = [];
+            const silentAdapter: StorageAdapter<Counter> = {
+                get: () => null,
+                set: (value: Counter | null) => {
+                    written.push(value);
+                },
+                clear: () => {},
+                isSupported: () => true,
+            };
+
+            const store = createStore<Counter>({ storage: silentAdapter });
+
+            // The write happened — the claim it is durable did not.
+            expect(store.trySet({ count: 5 })).toBe(false);
+            expect(written).toContainEqual({ count: 5 });
+        });
+
+        it('reports false for an Automerge-backed store, whose write is only queued', () => {
+            const doc: { [key: string]: unknown } = {};
+            configureAutomergeStoragePort({
+                getDoc: () => doc,
+                getDocHeads: () => ['head-0'],
+                getSemanticMessage: () => undefined,
+                hasDoc: () => true,
+                mutateDoc: ({ changeFn }) => {
+                    changeFn(doc);
+                },
+            });
+
+            const store = createStore<Counter>({
+                storage: createAutomergeStorage<Counter>('root', 'counter', {
+                    hydrateMissing: () => ({ count: 1 }),
+                }),
+            });
+
+            const reported = store.trySet({ count: 99 });
+
+            // Nothing has reached the document at the moment of the call, and
+            // `preparePendingWrite` may abandon it before anything does.
+            expect(reported).toBe(false);
+            expect(doc.counter).toBeUndefined();
+        });
+
+        it('still reports true for an adapter that does implement trySet', () => {
+            // The positive control. Without it the two assertions above would
+            // pass on a store that reports `false` unconditionally.
+            const store = createStore<Counter>({
+                storage: createLocalStorage<Counter>('sourdaw-preferences'),
+            });
+
+            expect(store.trySet({ count: 5 })).toBe(true);
+        });
     });
 
     it('falls back to a guarded set for an adapter that does not implement trySet', () => {
