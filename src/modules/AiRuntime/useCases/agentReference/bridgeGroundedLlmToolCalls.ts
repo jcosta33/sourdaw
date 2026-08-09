@@ -3394,6 +3394,7 @@ export function bridgeGroundedLlmToolCalls({
     const promptActionAnalysis = analyzePromptActionRequests(prompt, catalog);
     const promptActionRequests = promptActionAnalysis.requests;
     const activePromptActionRequests = promptActionRequests.filter((request) => !request.cancelled);
+    const totalPunchPromptRequests = promptActionRequests.filter((request) => isPunchActionType(request.actionType));
     const punchPromptRequests = activePromptActionRequests.filter((request) => isPunchActionType(request.actionType));
     const punchProviderCalls = effectiveCalls.filter(
         (call) => call.name === 'setPunchIn' || call.name === 'setPunchOut'
@@ -3402,6 +3403,7 @@ export function bridgeGroundedLlmToolCalls({
         const promptRequest = punchPromptRequests[0];
         const providerCall = punchProviderCalls[0];
         const isExactSingleton =
+            totalPunchPromptRequests.length === 1 &&
             punchPromptRequests.length === 1 &&
             punchProviderCalls.length === 1 &&
             effectiveCalls.length === 1 &&

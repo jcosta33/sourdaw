@@ -2608,6 +2608,24 @@ describe('bridgeGroundedLlmToolCalls', () => {
         expect(result.actions).toEqual([{ type: 'setTempo', payload: { bpm: 130 } }]);
     });
 
+    it('rejects active punch-in when the same prompt also cancels punch-out', () => {
+        const result = bridge(
+            [{ name: 'setPunchIn', arguments: { beat: 20 } }],
+            'set punch in at beat 20; set punch out at beat 28, cancel that'
+        );
+
+        expect(result.actions).toEqual([]);
+    });
+
+    it('rejects active punch-out when the same prompt also cancels punch-in', () => {
+        const result = bridge(
+            [{ name: 'setPunchOut', arguments: { beat: 28 } }],
+            'set punch in at beat 20, cancel that; set punch out at beat 28'
+        );
+
+        expect(result.actions).toEqual([]);
+    });
+
     it('grounds explicit changed master gain with percentage normalization', () => {
         const percentage = bridge(
             [{ name: 'setMasterGain', arguments: { gain: 0.65 } }],
