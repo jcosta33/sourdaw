@@ -905,6 +905,85 @@ function getPromptClauses(prompt: string, maskedPrompt: string): PromptClause[] 
     return clauses;
 }
 
+function resolveDirectNamedBusCreationScope(
+    prompt: string,
+    assertedArguments: Readonly<Record<string, unknown>>,
+    sameActionCallCount: number
+): ActionPromptScope | null {
+    if (sameActionCallCount !== 1 || typeof assertedArguments.name !== 'string') {
+        return null;
+    }
+    const normalizedName = normalizePromptText(assertedArguments.name);
+    if (!normalizedName.endsWith(' bus')) {
+        return null;
+    }
+    const expectedPhrases = [
+        `create ${normalizedName}`,
+        `create a ${normalizedName}`,
+        `create an ${normalizedName}`,
+        `add ${normalizedName}`,
+        `add a ${normalizedName}`,
+        `add an ${normalizedName}`,
+    ];
+    const clause = getPromptClauses(prompt, prompt).find((candidate) => {
+        const normalizedClause = ` ${normalizePromptText(candidate.text)} `;
+        return expectedPhrases.some((phrase) => normalizedClause.includes(` ${phrase} `));
+    });
+    if (!clause) {
+        return null;
+    }
+    return { ...clause, directional: false, matchedIntentPhrase: 'create bus' };
+}
+
+function resolveBulkTrackOutputScope(
+    prompt: string,
+    context: ProjectContext,
+    sameActionAssertedArguments: readonly Readonly<Record<string, unknown>>[],
+    sameActionCallCount: number
+): ActionPromptScope | null {
+    if (sameActionCallCount < 2 || sameActionAssertedArguments.length !== sameActionCallCount) {
+        return null;
+    }
+    const routeMatch = /\broute\b[\s\S]*?\b(?:into|to)\b[\s\S]*/iu.exec(prompt);
+    if (!routeMatch) {
+        return null;
+    }
+    const normalizedRoute = normalizePromptText(routeMatch[0]);
+    const sourceMatch = /^route\s+(.+?)\s+(?:into|to)\b/u.exec(normalizedRoute);
+    if (!sourceMatch) {
+        return null;
+    }
+    const sourceList = sourceMatch[1];
+    if (!sourceList) {
+        return null;
+    }
+    const sourceScope = ` ${sourceList} `;
+    const requestedSourceIds = context.tracks
+        .filter((track) => sourceScope.includes(` ${normalizePromptText(track.name)} `))
+        .map((track) => track.id);
+    const assertedSourceIds = sameActionAssertedArguments.flatMap((arguments_) =>
+        typeof arguments_.trackId === 'string' ? [arguments_.trackId] : []
+    );
+    const assertedOutputIds = sameActionAssertedArguments.flatMap((arguments_) =>
+        typeof arguments_.outputId === 'string' ? [arguments_.outputId] : []
+    );
+    if (
+        requestedSourceIds.length !== sameActionCallCount ||
+        assertedSourceIds.length !== sameActionCallCount ||
+        new Set(assertedSourceIds).size !== sameActionCallCount ||
+        new Set(assertedOutputIds).size !== 1 ||
+        !requestedSourceIds.every((trackId) => assertedSourceIds.includes(trackId))
+    ) {
+        return null;
+    }
+    return {
+        text: routeMatch[0],
+        masked: routeMatch[0],
+        directional: false,
+        matchedIntentPhrase: 'route',
+    };
+}
+
 function resolveDirectionalIntentPhrase(
     maskedText: string,
     directionalIntent: NonNullable<GroundingRules['directionalIntent']>
@@ -1275,6 +1354,27 @@ function resolveActionPromptScope({
         (actionName === 'setClipFade' && hasInvalidNamedClipFadeField(prompt))
     ) {
         return null;
+    }
+    if (actionName === 'createBus') {
+        const directBusCreationScope = resolveDirectNamedBusCreationScope(
+            prompt,
+            assertedArguments,
+            sameActionCallCount
+        );
+        if (directBusCreationScope) {
+            return directBusCreationScope;
+        }
+    }
+    if (actionName === 'setTrackOutput') {
+        const bulkTrackOutputScope = resolveBulkTrackOutputScope(
+            prompt,
+            context,
+            sameActionAssertedArguments,
+            sameActionCallCount
+        );
+        if (bulkTrackOutputScope) {
+            return bulkTrackOutputScope;
+        }
     }
     let projectMaskedPrompt = groundingRules.targetRules.length === 0 ? prompt : maskProjectReferences(prompt, context);
     if (actionName === 'glueClips') {
@@ -3200,13 +3300,23 @@ function groundToolCall({
             groundedArguments[targetRule.argument] = batchLocalReference.binding.busId;
             continue;
         }
+        const bulkSiblingTargetIds =
+            call.name === 'setTrackOutput' && targetRule.argument === 'trackId'
+                ? sameActionAssertedArguments.flatMap((arguments_) => {
+                      const trackId = arguments_.trackId;
+                      if (typeof trackId !== 'string' || trackId === assertedValue) {
+                          return [];
+                      }
+                      return [trackId];
+                  })
+                : [];
         const result = resolveAgentReference({
             prompt: targetPrompt,
             assertedId: assertedValue,
             capability: targetRule.capability,
             context,
             dependencyId: typeof dependencyValue === 'string' ? dependencyValue : undefined,
-            excludedIds: typeof distinctValue === 'string' ? [distinctValue] : [],
+            excludedIds: [...(typeof distinctValue === 'string' ? [distinctValue] : []), ...bulkSiblingTargetIds],
         });
         if (result.status === 'rejected') {
             if (result.reason === 'ambiguous-target') {

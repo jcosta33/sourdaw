@@ -7,6 +7,18 @@ export type PendingActionExecution = {
     actionType: string;
     label: string;
     executionKind: 'project' | 'runtime';
+    affectedIds: string[];
+    outcome: 'committed' | 'committed-with-warning' | 'executed' | 'executed-with-warning';
+};
+
+type PendingActionRisk = {
+    level: string;
+    reason: string | null;
+};
+
+type PendingActionProtectedObject = {
+    id: string;
+    name: string;
 };
 
 type PendingActionConfirmationBase = {
@@ -14,6 +26,9 @@ type PendingActionConfirmationBase = {
     prompt: string;
     assistantMessageId: string;
     actionLabels: string[];
+    affectedIds: string[];
+    protectedUnchanged: PendingActionProtectedObject[];
+    risk: PendingActionRisk | null;
     executedActions: PendingActionExecution[];
     status: ChatActionConfirmationStatus;
     error: string | null;
@@ -44,6 +59,9 @@ type ProposePendingActionConfirmationInput = {
     assistantMessageId: string;
     actions: ExecutableRuntimeAction[];
     actionLabels: string[];
+    affectedIds?: string[];
+    protectedUnchanged?: PendingActionProtectedObject[];
+    risk?: PendingActionRisk;
     executionMode?: 'atomic';
     projectRevision: string;
 };
@@ -64,6 +82,9 @@ export function proposePendingActionConfirmation(
         actions: [...input.actions],
         executionMode: input.executionMode,
         actionLabels: [...input.actionLabels],
+        affectedIds: [...(input.affectedIds ?? [])],
+        protectedUnchanged: (input.protectedUnchanged ?? []).map((target) => ({ ...target })),
+        risk: input.risk ? { ...input.risk } : null,
         executedActions: [],
         status: 'proposed',
         error: null,

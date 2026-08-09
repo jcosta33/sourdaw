@@ -136,7 +136,13 @@ describe('pending chat action confirmation', () => {
         );
         expect(getPendingActionConfirmation('confirm-1')?.status).toBe('executed');
         expect(getPendingActionConfirmation('confirm-1')?.executedActions).toEqual([
-            { actionType: 'removeTrack', label: 'Remove track', executionKind: 'project' },
+            {
+                actionType: 'removeTrack',
+                label: 'Remove track',
+                executionKind: 'project',
+                affectedIds: ['track-1'],
+                outcome: 'committed',
+            },
         ]);
     });
 
@@ -391,7 +397,13 @@ describe('pending chat action confirmation', () => {
         expect(result).toEqual({ status: 'executed' });
         expect(getPendingActionConfirmation('confirm-1')?.status).toBe('executed');
         expect(getPendingActionConfirmation('confirm-1')?.executedActions).toEqual([
-            { actionType: 'removeTrack', label: 'Remove track', executionKind: 'project' },
+            {
+                actionType: 'removeTrack',
+                label: 'Remove track',
+                executionKind: 'project',
+                affectedIds: ['track-1'],
+                outcome: 'committed-with-warning',
+            },
         ]);
         expect(mocks.pushAiActionGroup).toHaveBeenCalledWith(
             expect.objectContaining({
@@ -430,7 +442,13 @@ describe('pending chat action confirmation', () => {
         expect(result).toEqual({ status: 'executed' });
         expect(getPendingActionConfirmation('confirm-1')?.status).toBe('executed');
         expect(getPendingActionConfirmation('confirm-1')?.executedActions).toEqual([
-            { actionType: 'setPlayback', label: 'Start playback', executionKind: 'runtime' },
+            {
+                actionType: 'setPlayback',
+                label: 'Start playback',
+                executionKind: 'runtime',
+                affectedIds: [],
+                outcome: 'executed-with-warning',
+            },
         ]);
         expect(mocks.pushAiActionGroup).toHaveBeenCalledWith(
             expect.objectContaining({
@@ -533,8 +551,20 @@ describe('pending chat action confirmation', () => {
 
         expect(result).toEqual({ status: 'executed' });
         expect(getPendingActionConfirmation('confirm-1')?.executedActions).toEqual([
-            { actionType: 'removeTrack', label: 'Remove track', executionKind: 'project' },
-            { actionType: 'removeClip', label: 'Remove clip', executionKind: 'project' },
+            {
+                actionType: 'removeTrack',
+                label: 'Remove track',
+                executionKind: 'project',
+                affectedIds: ['track-1'],
+                outcome: 'committed',
+            },
+            {
+                actionType: 'removeClip',
+                label: 'Remove clip',
+                executionKind: 'project',
+                affectedIds: ['clip-1'],
+                outcome: 'committed',
+            },
         ]);
         expect(mocks.executeAppActionBatch.mock.calls[0]?.[0]).toEqual([pendingAction, secondPendingAction]);
         expect(mocks.executeAppActionBatch.mock.calls[0]?.[1]).toMatchObject({

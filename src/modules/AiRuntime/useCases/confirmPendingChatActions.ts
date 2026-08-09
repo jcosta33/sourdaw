@@ -13,6 +13,7 @@ import {
     updatePendingActionConfirmationStatus,
 } from '../stores/pendingActionConfirmationStore';
 
+import { getPlannedActionAffectedIds } from './getPlannedActionAffectedIds';
 import { notifyAiChange } from './notifyAiChange';
 
 type ConfirmPendingChatActionsInput = {
@@ -110,6 +111,8 @@ export async function confirmPendingChatActions(
             actionType: action.type,
             label,
             executionKind,
+            affectedIds: getPlannedActionAffectedIds(action),
+            outcome: batchResult.status,
         }));
         let warning: string | undefined;
         if (batchResult.status === 'committed-with-warning' || batchResult.status === 'executed-with-warning') {
