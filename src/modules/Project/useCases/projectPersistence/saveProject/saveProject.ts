@@ -4,6 +4,7 @@ import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { NAMED_PROJECT_KEY_PREFIX } from '../../../models/ProjectData';
 import { writeNamedProjectJsonByKey } from '../../../repositories/project/writeNamedProjectJsonByKey';
+import { projectLoadFailureStore } from '../../../stores/projectLoadFailureStore';
 import { projectStore } from '../../../stores/projectStore';
 import { addToRecentProjects } from '../../recentProjects/addToRecentProjects';
 import { buildProjectData } from '../fileIO/buildProjectData';
@@ -11,6 +12,23 @@ import { buildProjectData } from '../fileIO/buildProjectData';
 import { captureExternalPluginStates } from './captureExternalPluginStates';
 
 export async function saveProject(): Promise<boolean> {
+    // Everything below assumes `projectStore` identifies the project the other
+    // stores hold. That pairing only survives while a project is open. After a
+    // load replaced the CRDT authority and then failed, `projectStore` still
+    // carries the *previous* project's `name` and `createdAt` — the metadata
+    // write lives in the batch that never ran — while every other store holds
+    // its projection default. So `recentKey` resolves to the user's real
+    // project and `buildProjectData()` serialises the emptied stores into it.
+    //
+    // Guarded here rather than at the call sites because there are eight of
+    // them, and one needs no user at all: `dirty` is still true and
+    // `stopPlayback()` already ran, so `useAppInitialization`'s 30 s autosave
+    // interval fires on its own within half a minute of the failure. The menu
+    // Save and the project-name double-click are the same hazard.
+    if (projectLoadFailureStore.value !== null) {
+        return false;
+    }
+
     const project = projectStore.value;
     if (!project) {
         return true;

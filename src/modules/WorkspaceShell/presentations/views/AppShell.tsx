@@ -529,7 +529,11 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
 
     return (
         <MobileGate>
-            <div className="flex h-screen w-screen flex-col overflow-hidden bg-surface-app" data-testid="app-shell">
+            <div
+                className="flex h-screen w-screen flex-col overflow-hidden bg-surface-app"
+                data-testid="app-shell"
+                inert={projectLoadFailure !== null}
+            >
                 {/* Skip-link is removed from the DOM while a modal dialog is open:
                     a focused skip-link targeting #main-content would otherwise
                     scroll focus behind the modal, escaping its focus trap. */}
@@ -923,22 +927,30 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
                 {/* Launch screen overlay — shown for new users, fades out when project initializes */}
                 {showLaunch ? <LaunchScreen exiting={launchExiting} /> : null}
 
-                {/* Terminal open failure: the previous session is gone and no
-                    project replaced it. Rendered last and above both overlays,
-                    and gated on its own store rather than the transient flags —
-                    `launchReady` latches on the first open, so mid-session
-                    `{ initialized: false, loading: false }` shows neither the
-                    launch screen nor the loading overlay, only the editor. */}
-                {projectLoadFailure ? (
-                    <ProjectLoadFailureOverlay
-                        message={projectLoadFailure.message}
-                        projectName={projectLoadFailure.projectName}
-                        onReload={() => window.location.reload()}
-                    />
-                ) : null}
-
                 <OnboardingTour />
             </div>
+
+            {/* Terminal open failure: the previous session is gone and no
+                project replaced it. Gated on its own store rather than the
+                transient flags — `launchReady` latches on the first open, so
+                mid-session `{ initialized: false, loading: false }` shows
+                neither the launch screen nor the loading overlay, only the
+                editor.
+
+                Rendered as a *sibling* of the shell root, which goes `inert`
+                above. A focus trap bound to the dialog only holds while focus
+                is already inside it, and a round trip through browser chrome
+                re-enters at the first focusable node — app chrome behind the
+                modal. `inert` takes the whole shell out of the tab order and
+                out of the a11y tree, which is what `aria-modal="true"` has
+                been claiming all along. */}
+            {projectLoadFailure ? (
+                <ProjectLoadFailureOverlay
+                    message={projectLoadFailure.message}
+                    projectName={projectLoadFailure.projectName}
+                    onReload={() => window.location.reload()}
+                />
+            ) : null}
         </MobileGate>
     );
 };

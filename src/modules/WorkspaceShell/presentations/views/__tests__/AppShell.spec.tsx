@@ -645,6 +645,27 @@ describe('AppShell', () => {
             expect(screen.queryByText('Skip to content')).not.toBeInTheDocument();
         });
 
+        it('takes the whole shell out of the tab order and the a11y tree behind the failure surface', () => {
+            projectState = createProjectState({ initialized: false, loading: false });
+
+            const { rerender } = render(<AppShell>Content</AppShell>);
+            // Not inert with no dialog up — otherwise the assertion below is
+            // satisfied by an attribute that is simply always there.
+            expect(screen.getByTestId('app-shell')).not.toHaveAttribute('inert');
+
+            projectLoadFailureState = { message: 'gone', projectName: 'Half Finished Song' };
+            rerender(<AppShell>Content</AppShell>);
+
+            // The dialog's own keydown trap only holds while focus is already
+            // inside it; a round trip through browser chrome re-enters at the
+            // first focusable node behind the modal. `inert` is what makes
+            // `aria-modal="true"` true.
+            expect(screen.getByTestId('app-shell')).toHaveAttribute('inert');
+            // And the dialog itself must be outside that subtree, or it goes
+            // inert with everything else.
+            expect(screen.getByTestId('app-shell')).not.toContainElement(screen.getByRole('alertdialog'));
+        });
+
         it('shows no failure surface on an ordinary load', () => {
             projectState = createProjectState({ initialized: true, loading: false });
 
