@@ -1252,6 +1252,66 @@ describe('bridgeGroundedLlmToolCalls', () => {
         expect(result.rejections).toEqual([]);
     });
 
+    it('rejects an empty provider plan that omits an uncancelled glue scope', () => {
+        const context = createTwoGluePairContext();
+        const result = bridge(
+            [],
+            "glue MIDI Intro and MIDI Verse clips, then glue MIDI Outro and MIDI Coda clips, but don't glue MIDI Intro and MIDI Verse after all",
+            context
+        );
+
+        expect(result.actions).toEqual([]);
+        expect(result.rejections).toEqual([
+            {
+                index: 0,
+                name: '<batch>',
+                reason: 'Provider omitted an explicit glue command from the request',
+            },
+        ]);
+    });
+
+    it('rejects a mixed provider batch when its only glue call is cancelled and a live pair is omitted', () => {
+        const context = createTwoGluePairContext();
+        const result = bridge(
+            [
+                { name: 'glueClips', arguments: { clipIds: ['clip-midi-intro', 'clip-midi-verse'] } },
+                { name: 'setTempo', arguments: { bpm: 130 } },
+            ],
+            "glue MIDI Intro and MIDI Verse clips, then glue MIDI Outro and MIDI Coda clips, but don't glue MIDI Intro and MIDI Verse after all, then set tempo to 130",
+            context
+        );
+
+        expect(result.actions).toEqual([]);
+        expect(result.rejections).toEqual([
+            {
+                index: 0,
+                name: '<batch>',
+                reason: 'Provider omitted an explicit glue command from the request',
+            },
+        ]);
+    });
+
+    it('preserves later provider rejection indexes after omitting a cancelled glue call', () => {
+        const context = createTwoGluePairContext();
+        const result = bridge(
+            [
+                { name: 'glueClips', arguments: { clipIds: ['clip-midi-intro', 'clip-midi-verse'] } },
+                { name: 'renameClip', arguments: { clipId: 'clip-midi-outro', name: 'Opening' } },
+            ],
+            "glue MIDI Intro and MIDI Verse clips, but don't glue them, then rename MIDI Intro clip to Opening",
+            context
+        );
+
+        expect(result.actions).toEqual([]);
+        expect(result.rejections).toEqual([
+            {
+                index: 1,
+                name: 'renameClip',
+                reason: 'Provider target clipId does not match the uniquely grounded project reference',
+            },
+        ]);
+    });
+
     it('keeps quoted rename values inert to glue-specific cancellation wording', () => {
         const context = createClipContext();
         const names = ['Keep Them Separate', 'Without Changes'];

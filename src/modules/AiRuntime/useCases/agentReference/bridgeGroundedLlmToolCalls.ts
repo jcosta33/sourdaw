@@ -1578,6 +1578,11 @@ type GlueActionScopePlan = GlueScopeAssignment & {
     pairKey: string | null;
 };
 
+type GlueScopeAssignmentsResult = {
+    assignments: ReadonlyMap<number, GlueScopeAssignment>;
+    hasMissingUncancelledScope: boolean;
+};
+
 function getGluePairKey(clipIds: readonly string[]): string {
     return clipIds.toSorted().join('\u0000');
 }
@@ -1705,7 +1710,7 @@ function getGlueScopeAssignments({
     calls: readonly ToolCallResult[];
     context: ProjectContext;
     prompt: string;
-}): ReadonlyMap<number, GlueScopeAssignment> {
+}): GlueScopeAssignmentsResult {
     const plansByPair = new Map<string, GlueActionScopePlan[]>();
     for (const plan of getGlueActionScopePlans({ calls, context, prompt })) {
         if (!plan.pairKey) {
@@ -1729,9 +1734,13 @@ function getGlueScopeAssignments({
         callIndexesByPair.set(candidate.key, indexes);
     }
     const assignments = new Map<number, GlueScopeAssignment>();
-    for (const [pairKey, callIndexes] of callIndexesByPair) {
-        const allPlans = plansByPair.get(pairKey) ?? [];
+    let hasMissingUncancelledScope = false;
+    for (const [pairKey, allPlans] of plansByPair) {
+        const callIndexes = callIndexesByPair.get(pairKey) ?? [];
         const uncancelledPlans = allPlans.filter((plan) => !plan.cancelled);
+        if (callIndexes.length < uncancelledPlans.length) {
+            hasMissingUncancelledScope = true;
+        }
         let matchingPlans: readonly GlueActionScopePlan[] = [];
         if (callIndexes.length === uncancelledPlans.length) {
             matchingPlans = uncancelledPlans;
@@ -1745,7 +1754,7 @@ function getGlueScopeAssignments({
             }
         }
     }
-    return assignments;
+    return { assignments, hasMissingUncancelledScope };
 }
 
 function getAddClipPromptEvidence(actionScope: ActionPromptScope): AddClipPromptEvidence | null {
@@ -3446,7 +3455,13 @@ export function bridgeGroundedLlmToolCalls({
     const acceptedGroundedCalls: ToolCallResult[] = [];
     const visibleBindings = new Map<string, BatchLocalBusBinding>();
     const visiblePlannedTrackCreations: ToolCallResult[] = [];
-    const glueScopeAssignments = getGlueScopeAssignments({ calls, context, prompt });
+    const glueScopePlan = getGlueScopeAssignments({ calls, context, prompt });
+    if (glueScopePlan.hasMissingUncancelledScope) {
+        return {
+            actions: [],
+            rejections: [rejection(0, '<batch>', 'Provider omitted an explicit glue command from the request')],
+        };
+    }
     let prospectiveContext = context;
     for (const [index, providerCall] of calls.entries()) {
         const call = stripBatchLocalBinding(providerCall);
@@ -3460,7 +3475,7 @@ export function bridgeGroundedLlmToolCalls({
             catalog,
             context: prospectiveContext,
             declaredBatchLocalBusBindings: collectedBindings.bindingsByName,
-            glueScopeAssignment: glueScopeAssignments.get(index),
+            glueScopeAssignment: glueScopePlan.assignments.get(index),
             index,
             prompt,
             plannedActionNames: calls.map((candidate) => candidate.name),
