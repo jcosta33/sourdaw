@@ -1,0 +1,25 @@
+src/components/daw/ValueField.tsx
+  s_14f2bbc9f385dd::t_a259377f9174f8 182-193
+src/modules/TimelineEditor/presentations/hooks/useTempoEditorState.ts
+  s_14f2bbc9f385dd::t_71f8579485420e 304-318
+src/modules/TimelineEditor/presentations/views/__tests__/TempoEditorRampAbort.spec.tsx
+  s_14f2bbc9f385dd::t_af300bc582b296 108-109
+  s_14f2bbc9f385dd::t_c0c10790096b34 22-29
+  s_14f2bbc9f385dd::t_2903b0b43c3be3 212-218
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "0c8fe210c46ae79604ceeb2779d0be47dbd7aff6",
+  "prompts": {},
+  "sessions": {
+    "s_14f2bbc9f385dd": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f9a61a1d-66b3-4146-938d-a04f45f4b060",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
