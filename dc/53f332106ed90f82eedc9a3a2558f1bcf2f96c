@@ -1,0 +1,42 @@
+src/modules/AudioEngine/useCases/offlineRender/scheduleTrackClips.ts
+  s_14f2bbc9f385dd::t_41e9185f72adf5 13
+src/modules/AiRuntime/useCases/getProjectContext.ts
+  s_14f2bbc9f385dd::t_41cf782653dfac 8
+  s_14f2bbc9f385dd::t_a7c719a4f1af78 2
+src/modules/AiRuntime/useCases/validateActionPayload.ts
+  s_14f2bbc9f385dd::t_d6eb2d8872d191 30
+src/modules/Arrangement/handlers/clip/handleRestoreClipLoopLength.ts
+  s_14f2bbc9f385dd::t_c5926bb7c53b53 11
+src/modules/Transport/useCases/scheduling/scheduleAudioClips.ts
+  s_14f2bbc9f385dd::t_8224d4b1deff81 2
+  s_14f2bbc9f385dd::t_60fcf5df839aee 13
+src/modules/Transport/useCases/scheduling/scheduleMidiNotes.ts
+  s_14f2bbc9f385dd::t_16aa7270202969 2
+  s_14f2bbc9f385dd::t_4f79121548cac3 26
+src/modules/AiRuntime/useCases/__tests__/parsePromptToActions.spec.ts
+  s_14f2bbc9f385dd::t_eb36390604985c 82-89
+src/modules/Arrangement/handlers/clip/clipLoopLengthState.ts
+  s_14f2bbc9f385dd::t_29f4fd9d51e188 2
+  s_14f2bbc9f385dd::t_1bbc993a1b53c2 1,3,8-16
+  s_14f2bbc9f385dd::t_12cbdb9f4f29f8 17
+src/utils/__tests__/clipLoopProjection.spec.ts
+  s_14f2bbc9f385dd::t_774bb6ae55e50c 3
+src/modules/Arrangement/handlers/clip/handleSetClipLoopLength.ts
+  s_14f2bbc9f385dd::t_a54b297cc41eac 6-11
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "dc53f332106ed90f82eedc9a3a2558f1bcf2f96c",
+  "prompts": {},
+  "sessions": {
+    "s_14f2bbc9f385dd": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f9a61a1d-66b3-4146-938d-a04f45f4b060",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
