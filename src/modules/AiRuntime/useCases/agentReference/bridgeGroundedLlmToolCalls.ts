@@ -398,12 +398,6 @@ function normalizePromptText(value: string): string {
         .trim();
 }
 
-function stripPoliteCommandCarrier(text: string): string {
-    let commandSource = text.trim();
-    commandSource = commandSource.replace(/^(?:please\s+)?(?:can|could|would)\s+you(?:\s+please)?\s+/iu, '');
-    return commandSource.replace(/^please\s+/iu, '');
-}
-
 type ClauseActionIntent = {
     actionType: string;
     index: number;
@@ -438,7 +432,6 @@ function getCancellationCues(text: string): CancellationCue[] {
         /\bleave\s+(?:(?:it|them|that|this)\s+)?unchanged\b/gu,
         /\bkeep\s+(?:(?:it|them|that|this)\s+)?separate\b/gu,
         /\bwithout\s+(?:(?:making|applying)\s+(?:any\s+)?changes?|changing\s+(?:anything|it|them))\b/gu,
-        /\b(?:do not|don['’]?t|don t|dont|never|not(?!\s+only\b))\s+(?:\p{L}+\s+){0,3}(?:it|them)\b/gu,
         /\b(?:do not|don['’]t|don t|dont|never|not)\b(?:\s+\p{L}+){0,3}\s+(?:apply|change|do|execute|make)\s+(?:it\b|(?:that|this)\b(?!\s+\p{L})|(?:the|that|this)\s+(?:\p{L}+\s+){0,2}(?:change|command|request)\b)/gu,
     ];
     return patterns.flatMap((pattern) =>
@@ -598,7 +591,9 @@ function isExplicitClipDeletionScope({ context, text, clipId }: ExplicitClipDele
 }
 
 function isExplicitCommandClause(maskedText: string, catalog: GroundingCatalog): boolean {
-    const commandSource = stripPoliteCommandCarrier(maskedText);
+    let commandSource = maskedText.trim();
+    commandSource = commandSource.replace(/^(?:please\s+)?(?:can|could|would)\s+you(?:\s+please)?\s+/iu, '');
+    commandSource = commandSource.replace(/^please\s+/iu, '');
     if (/^["'“”‘’]/u.test(commandSource)) {
         return false;
     }
@@ -795,23 +790,11 @@ function getSemanticClipReferenceTexts(context: ProjectContext): string[] {
         .sort((left, right) => right.length - left.length);
 }
 
-type MaskProjectReferencesInput = {
-    context: ProjectContext;
-    intentPhrases: readonly string[];
-    prompt: string;
-};
-
-function maskProjectReferences({ context, intentPhrases, prompt }: MaskProjectReferencesInput): string {
+function maskProjectReferences(prompt: string, context: ProjectContext): string {
     let maskedPrompt = prompt;
-    const commandSource = stripPoliteCommandCarrier(prompt);
-    const commandStart = prompt.indexOf(commandSource);
-    const leadingIntentReferences = new Set(intentPhrases.map(normalizePromptText));
     for (const reference of getSemanticClipReferenceTexts(context)) {
         const pattern = new RegExp(`(?<![\\p{L}\\p{N}])${escapeRegExp(reference)}(?![\\p{L}\\p{N}])`, 'giu');
         maskedPrompt = maskedPrompt.replaceAll(pattern, (match, offset: number) => {
-            if (offset === commandStart && leadingIntentReferences.has(normalizePromptText(match))) {
-                return match;
-            }
             const explicitEntitySuffix = /^\s+(?:clip|track|device|bus|master|output|send|parameter)\b/iu.test(
                 maskedPrompt.slice(offset + match.length)
             );
@@ -823,12 +806,7 @@ function maskProjectReferences({ context, intentPhrases, prompt }: MaskProjectRe
     }
     for (const reference of getProjectReferenceTexts(context)) {
         const pattern = new RegExp(`(?<![\\p{L}\\p{N}])${escapeRegExp(reference)}(?![\\p{L}\\p{N}])`, 'giu');
-        maskedPrompt = maskedPrompt.replaceAll(pattern, (match, offset: number) => {
-            if (offset === commandStart && leadingIntentReferences.has(normalizePromptText(match))) {
-                return match;
-            }
-            return '□'.repeat(match.length);
-        });
+        maskedPrompt = maskedPrompt.replaceAll(pattern, (match) => '□'.repeat(match.length));
     }
     return maskedPrompt;
 }
@@ -991,7 +969,9 @@ function isExplicitDirectionalCommandClause(
     directionalIntent: NonNullable<GroundingRules['directionalIntent']>,
     targetReferences: DirectionalTargetReferences
 ): boolean {
-    const commandSource = stripPoliteCommandCarrier(text);
+    let commandSource = text.trim();
+    commandSource = commandSource.replace(/^(?:please\s+)?(?:can|could|would)\s+you(?:\s+please)?\s+/iu, '');
+    commandSource = commandSource.replace(/^please\s+/iu, '');
     if (/^["'“”‘’]/u.test(commandSource)) {
         return false;
     }
@@ -1263,10 +1243,8 @@ function resolveActionPromptScope({
     ) {
         return null;
     }
-    let projectMaskedPrompt = prompt;
-    if (groundingRules.targetRules.length > 0) {
-        projectMaskedPrompt = maskProjectReferences({ context, intentPhrases: groundingRules.intentPhrases, prompt });
-    }
+    const projectMaskedPrompt =
+        groundingRules.targetRules.length === 0 ? prompt : maskProjectReferences(prompt, context);
     let maskedPrompt = maskQuotedLabels(projectMaskedPrompt);
     if (actionName === 'glueClips') {
         maskedPrompt = maskGlueClipPairConjunction(maskedPrompt);
@@ -1388,9 +1366,8 @@ function maskQuotedLabels(text: string): string {
 }
 
 function maskGlueClipPairConjunction(text: string): string {
-    return text.replaceAll(
-        /["'“‘]?(?:clip□*|□+)["'”’]?(?:\s+clips?)?\s+and\s+(?=["'“‘]?(?:clip□*|□+))/giu,
-        (pairPrefix) => pairPrefix.replace(/\band\b/iu, '   ')
+    return text.replaceAll(/["'“‘]?(?:clip)?□+["'”’]?(?:\s+clips?)?\s+and\s+(?=["'“‘]?(?:clip)?□+)/giu, (pairPrefix) =>
+        pairPrefix.replace(/\band\b/iu, '   ')
     );
 }
 
@@ -1406,7 +1383,7 @@ function isDirectGlueClipPairScope(
     ) {
         return false;
     }
-    const normalizedScope = normalizePromptText(stripPoliteCommandCarrier(actionScope.text));
+    const normalizedScope = normalizePromptText(actionScope.text);
     if (/^(?:glue|join)(?: the)? selected clips$/u.test(normalizedScope)) {
         const selectedIds = new Set(context.selectedClipIds);
         return selectedIds.size === 2 && assertedClipIds.every((clipId) => selectedIds.has(clipId));
@@ -1435,12 +1412,6 @@ function isDirectGlueClipPairScope(
     const first = getReferencePattern(clips[0]!);
     const second = getReferencePattern(clips[1]!);
     return matchesOrder(first, second) || matchesOrder(second, first);
-}
-
-function getDirectGlueTargetPromptScope(actionScope: ActionPromptScope): string {
-    const commandSource = stripPoliteCommandCarrier(actionScope.text);
-    const intentPattern = new RegExp(`^${escapeRegExp(actionScope.matchedIntentPhrase)}(?=$|[^\\p{L}\\p{N}])`, 'iu');
-    return commandSource.replace(intentPattern, '').trim();
 }
 
 function getAddClipPromptEvidence(actionScope: ActionPromptScope): AddClipPromptEvidence | null {
@@ -1552,7 +1523,7 @@ function hasGroundedMoveBeatAssertions({
     plannedActionNames: readonly string[];
     prompt: string;
 }): boolean {
-    const maskedPrompt = maskProjectReferences({ context, intentPhrases: [], prompt });
+    const maskedPrompt = maskProjectReferences(prompt, context);
     let moveClauseCount = 0;
     for (const clause of getPromptClauses(prompt, maskedPrompt)) {
         const assertions = getMoveBeatAssertions(clause.text);
@@ -1587,7 +1558,7 @@ function hasGroundedSplitBeatAssertions({
     plannedActionNames: readonly string[];
     prompt: string;
 }): boolean {
-    const maskedPrompt = maskProjectReferences({ context, intentPhrases: [], prompt });
+    const maskedPrompt = maskProjectReferences(prompt, context);
     let splitClauseCount = 0;
     for (const clause of getPromptClauses(prompt, maskedPrompt)) {
         const assertions = getMoveBeatAssertions(clause.text);
@@ -1631,7 +1602,7 @@ function hasGroundedAddClipAssertions({
     plannedActionNames: readonly string[];
     prompt: string;
 }): boolean {
-    const maskedPrompt = maskQuotedLabels(maskProjectReferences({ context, intentPhrases: [], prompt }));
+    const maskedPrompt = maskQuotedLabels(maskProjectReferences(prompt, context));
     let addClipClauseCount = 0;
     for (const clause of getPromptClauses(prompt, maskedPrompt)) {
         const intent = resolveClauseActionIntent(clause.masked, catalog);
@@ -2896,10 +2867,7 @@ function groundToolCall({
     const groundedArguments = { ...call.arguments };
     for (const targetRule of groundingRules.targetRules) {
         const assertedValue = groundedArguments[targetRule.argument];
-        let targetPrompt = getTargetPromptScope(actionScope, targetRule.promptRole);
-        if (call.name === 'glueClips' && targetRule.argument === 'clipIds') {
-            targetPrompt = getDirectGlueTargetPromptScope(actionScope);
-        }
+        const targetPrompt = getTargetPromptScope(actionScope, targetRule.promptRole);
         if (targetRule.cardinality === 'many') {
             const result = resolveAgentReferenceArray({
                 assertedIds: assertedValue,
