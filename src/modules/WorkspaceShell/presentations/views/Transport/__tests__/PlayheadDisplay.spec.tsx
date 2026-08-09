@@ -6,7 +6,7 @@ import { TooltipProvider } from '#/components/ui/tooltip';
 import { PlayheadDisplay } from '../PlayheadDisplay';
 
 const playheadPosition = vi.hoisted(() => ({ current: 0 }));
-const transportState = vi.hoisted(() => ({ value: { isPlaying: false } }));
+const transportState = vi.hoisted(() => ({ value: { isPlaying: false, playheadPosition: 0 } }));
 const toggleTimeDisplayMode = vi.hoisted(() => vi.fn());
 
 vi.mock('#/infra/store/useStore', () => ({
@@ -26,7 +26,7 @@ vi.mock('#/modules/Transport/stores', () => ({
 }));
 
 vi.mock('#/modules/Transport/useCases', () => ({
-    defaultTransportState: { isPlaying: false },
+    defaultTransportState: { isPlaying: false, playheadPosition: 0 },
 }));
 
 vi.mock('#/modules/WorkspaceShell/useCases/togglePanel/panelToggles/toggleTimeDisplayMode', () => ({
@@ -40,7 +40,7 @@ const renderWithTooltip = (ui: React.ReactElement) => {
 describe('PlayheadDisplay', () => {
     beforeEach(() => {
         playheadPosition.current = 0;
-        transportState.value = { isPlaying: false };
+        transportState.value = { isPlaying: false, playheadPosition: 0 };
         vi.clearAllMocks();
     });
 
@@ -154,6 +154,37 @@ describe('PlayheadDisplay', () => {
             });
             expect(segment.textContent).toBe('240');
             expect(segment.firstChild).toBe(initialTextNode);
+        });
+    });
+
+    describe('stop while paused', () => {
+        it('repaints to 1.1.000 when the store resets playheadPosition while not playing', () => {
+            // Reproduces the stop-while-paused defect: the rAF loop is gated on
+            // isPlaying, so once paused it never repaints again. A later Stop
+            // sets the store's discrete playheadPosition to 0, and the component
+            // must react to that write and snap the readout back to 1.1.000 —
+            // not stay frozen at the paused beat.
+            playheadPosition.current = 3.25;
+            transportState.value = { isPlaying: false, playheadPosition: 3.25 };
+            const { rerender } = renderWithTooltip(
+                <PlayheadDisplay tempo={120} numerator={4} timeDisplayMode="musical" />
+            );
+
+            // Paused at 3.25: bar 1, beat 4, tick 120.
+            expect(screen.getByText('120')).toBeInTheDocument();
+
+            // Stop fires: ref and store both reset to 0.
+            playheadPosition.current = 0;
+            transportState.value = { isPlaying: false, playheadPosition: 0 };
+            rerender(
+                <TooltipProvider>
+                    <PlayheadDisplay tempo={120} numerator={4} timeDisplayMode="musical" />
+                </TooltipProvider>
+            );
+
+            // Readout snaps back to the start. tick 000 present, tick 120 gone.
+            expect(screen.getByText('000')).toBeInTheDocument();
+            expect(screen.queryByText('120')).not.toBeInTheDocument();
         });
     });
 });
