@@ -1,0 +1,28 @@
+crates/proof-chamber/src/fdn.rs
+  s_14f2bbc9f385dd::t_b7429b235e5a7b 263-287
+crates/proof-chamber/tests/plate_default_damping.rs
+  s_14f2bbc9f385dd::t_38dd61c40e318f 488-527
+  s_14f2bbc9f385dd::t_950c6a157c3325 285-289,302-333,337
+  s_14f2bbc9f385dd::t_19a6fb72a1aefc 209-224,335,528
+  s_14f2bbc9f385dd::t_37669ba3d787ed 101-106
+  s_14f2bbc9f385dd::t_58dd2f807a4e17 58-67,70,72
+  s_14f2bbc9f385dd::t_c9531f2e0b0bae 334,336,338-341,529-533
+src/modules/Arrangement/models/PluginDescriptors/NativeDspDescriptors.ts
+  s_14f2bbc9f385dd::t_135a983904bd10 83-108
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "c716f3d9760ac5312567babcacbb713748d9f843",
+  "prompts": {},
+  "sessions": {
+    "s_14f2bbc9f385dd": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f9a61a1d-66b3-4146-938d-a04f45f4b060",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
