@@ -33,7 +33,24 @@
 
 use proof_chamber::ProofChamberInstance;
 
-const SAMPLE_RATE: f32 = 48_000.0;
+/// Rates every sweep in this file runs at.
+///
+/// One rate is not enough to guard #1547, and that is not a hypothetical. The
+/// line the defect lived on is sized `sample_rate * 0.5`, and its length is the
+/// only thing that decided how long the silence was — so a regression that
+/// replaces that rate term with a literal `48_000.0` is invisible at 48 kHz by
+/// construction. It is also invisible at 44.1 kHz to a *single-rate* version of
+/// this file: the resulting 8.8 ms error hides inside `MAX_BUILD_UP_MS`'s 20 ms
+/// budget, and adding a 500 ms row does not help either, because `.min(len - 1)`
+/// clamps an over-long request back onto the buffer and the top of the control's
+/// range is self-correcting.
+///
+/// What does catch it is running the same rows at two rates and comparing the
+/// onset *in seconds*: a hard-coded buffer length makes the two disagree.
+/// 44 100 is the other rate the product actually ships at, and it is not a
+/// divisor or multiple of 48 000, so a length computed from the wrong one lands
+/// on a non-integer number of samples rather than coincidentally matching.
+const SAMPLE_RATES: [f32; 2] = [44_100.0, 48_000.0];
 const BLOCK: usize = 128;
 
 /// Length of the exciting burst, in samples.
@@ -169,6 +186,7 @@ const CONTINUOUS: [(f32, &str); 3] = [(0.0, "Plate"), (1.0, "FDN-8"), (2.0, "FDN
 struct Render {
     left: Vec<f32>,
     right: Vec<f32>,
+    sample_rate: f32,
 }
 
 impl Render {
@@ -184,11 +202,29 @@ impl Render {
     fn channels(&self) -> [(&'static str, &[f32]); 2] {
         [("left", &self.left), ("right", &self.right)]
     }
+
+    /// Seconds, so two rates can be compared against one another rather than
+    /// each against its own sample count.
+    fn seconds(&self, samples: usize) -> f32 {
+        samples as f32 / self.sample_rate
+    }
+
+    fn ms(&self, samples: usize) -> f32 {
+        self.seconds(samples) * 1000.0
+    }
+
+    fn samples_in_ms(&self, milliseconds: f32) -> usize {
+        (milliseconds / 1000.0 * self.sample_rate) as usize
+    }
+
+    fn envelope(&self, channel: &[f32]) -> Vec<f32> {
+        envelope_at(channel, self.sample_rate)
+    }
 }
 
 /// Render a burst through one algorithm at `mix = 1`, wet only.
-fn render(algorithm: f32, settings: &[(&str, f32)], frames: usize) -> Render {
-    let mut instance = ProofChamberInstance::new(SAMPLE_RATE);
+fn render(sample_rate: f32, algorithm: f32, settings: &[(&str, f32)], frames: usize) -> Render {
+    let mut instance = ProofChamberInstance::new(sample_rate);
     instance.set_param("algorithm", algorithm);
     instance.set_param("mix", 1.0);
     for (name, value) in settings {
@@ -217,7 +253,11 @@ fn render(algorithm: f32, settings: &[(&str, f32)], frames: usize) -> Render {
         index += BLOCK;
     }
 
-    Render { left, right }
+    Render {
+        left,
+        right,
+        sample_rate,
+    }
 }
 
 fn onset(channel: &[f32], floor: f32) -> Option<usize> {
@@ -231,8 +271,11 @@ fn last_sounding(channel: &[f32], floor: f32) -> Option<usize> {
 /// RMS in fixed-length windows. The envelope, not the waveform: a tail crosses
 /// zero on every cycle, so an instantaneous level says nothing about whether
 /// the reverb is still there.
-fn envelope(channel: &[f32]) -> Vec<f32> {
-    let window = (ENVELOPE_WINDOW_MS / 1000.0 * SAMPLE_RATE) as usize;
+///
+/// The window is a duration, so it holds the same span of time at every rate
+/// and the dB figures below mean one thing across the sweep.
+fn envelope_at(channel: &[f32], sample_rate: f32) -> Vec<f32> {
+    let window = (ENVELOPE_WINDOW_MS / 1000.0 * sample_rate) as usize;
     channel
         .chunks(window)
         .map(|chunk| (chunk.iter().map(|s| s * s).sum::<f32>() / chunk.len() as f32).sqrt())
@@ -246,60 +289,109 @@ fn db_below(value: f32, reference: f32) -> f32 {
     20.0 * (value / reference).log10()
 }
 
-fn ms(samples: usize) -> f32 {
-    samples as f32 * 1000.0 / SAMPLE_RATE
-}
-
 // ---------------------------------------------------------------------------
 
 /// The #1547 assertion. Pre-Delay is declared from 0 ms; asking for the
 /// minimum must not deliver the maximum.
 #[test]
 fn no_engine_stays_silent_longer_than_the_predelay_it_was_given() {
-    let budget = (MAX_BUILD_UP_MS / 1000.0 * SAMPLE_RATE) as usize;
+    for sample_rate in SAMPLE_RATES {
+        for (algorithm, name) in PROMPT {
+            for predelay_ms in [0.0_f32, 5.0, 25.0, 100.0] {
+                for size in [0.0_f32, 0.75, 1.0] {
+                    let render = render(
+                        sample_rate,
+                        algorithm,
+                        &[("predelay", predelay_ms), ("size", size)],
+                        sample_rate as usize,
+                    );
+                    let floor = render.floor();
+                    assert!(
+                        render.peak() > 1e-3,
+                        "{name} at {sample_rate} Hz, predelay {predelay_ms} ms, \
+                         size {size} rendered nothing at all (peak {:e}); the \
+                         onset measurement below would pass on silence",
+                        render.peak()
+                    );
 
+                    let budget = render.samples_in_ms(MAX_BUILD_UP_MS);
+                    let requested = render.samples_in_ms(predelay_ms);
+                    let limit = requested + budget;
+
+                    for (side, channel) in render.channels() {
+                        let started = onset(channel, floor).unwrap_or_else(|| {
+                            panic!(
+                                "{name} {side} never rose above {floor:e} in one \
+                                 second at {sample_rate} Hz, predelay \
+                                 {predelay_ms} ms, size {size}"
+                            )
+                        });
+                        assert!(
+                            started <= limit,
+                            "{name} {side} was silent for {started} samples \
+                             ({:.1} ms) at {sample_rate} Hz, Pre-Delay \
+                             {predelay_ms} ms, Size {size}. Pre-Delay asked for \
+                             {requested} samples ({predelay_ms:.1} ms) and the \
+                             build-up budget allows {budget} more \
+                             ({MAX_BUILD_UP_MS:.1} ms), so the output should \
+                             have started by sample {limit}. It arrived {:.1} ms \
+                             late. #1547: a delay line read at index 0 returning \
+                             its oldest sample instead of its newest looks \
+                             exactly like this.",
+                            render.ms(started),
+                            render.ms(started.saturating_sub(limit))
+                        );
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// The rate-independence claim itself, which the sweep above cannot make.
+///
+/// Every row above compares an onset against a budget derived from *its own*
+/// rate, so a length hard-coded to one rate shifts the measurement and the
+/// budget together at that rate and hides inside the budget at the other.
+/// Comparing the two rates against **each other**, in seconds, is what removes
+/// that freedom: a buffer whose length stopped following `sample_rate` puts the
+/// two onsets in different places on the clock.
+///
+/// The tolerance is one millisecond, which is four samples at 44.1 kHz — enough
+/// for the rounding in `scale_delay` and in the early-reflection tap table,
+/// which are integer sample counts derived from a rate ratio, and far below the
+/// 8.8 ms a 48 kHz-shaped pre-delay buffer would introduce at 44.1 kHz.
+#[test]
+fn onset_lands_at_the_same_time_on_the_clock_at_every_rate() {
     for (algorithm, name) in PROMPT {
         for predelay_ms in [0.0_f32, 5.0, 25.0, 100.0] {
-            for size in [0.0_f32, 0.75, 1.0] {
+            let mut measured: Vec<(f32, f32)> = Vec::new();
+            for sample_rate in SAMPLE_RATES {
                 let render = render(
+                    sample_rate,
                     algorithm,
-                    &[("predelay", predelay_ms), ("size", size)],
-                    48_000,
+                    &[("predelay", predelay_ms)],
+                    sample_rate as usize,
                 );
                 let floor = render.floor();
+                let started = onset(&render.left, floor).unwrap_or_else(|| {
+                    panic!("{name} never sounded at {sample_rate} Hz, predelay {predelay_ms} ms")
+                });
+                measured.push((sample_rate, render.seconds(started)));
+            }
+
+            let (first_rate, first) = measured[0];
+            for &(rate, seconds) in &measured[1..] {
                 assert!(
-                    render.peak() > 1e-3,
-                    "{name} at predelay {predelay_ms} ms, size {size} rendered \
-                     nothing at all (peak {:e}); the onset measurement below \
-                     would pass on silence",
-                    render.peak()
+                    (seconds - first).abs() < 0.001,
+                    "{name} starts {first:.5} s after the burst at {first_rate} Hz \
+                     but {seconds:.5} s at {rate} Hz, a difference of {:.2} ms, \
+                     at Pre-Delay {predelay_ms} ms. A delay whose length stopped \
+                     following the sample rate reads exactly like this — and the \
+                     lateness sweep cannot see it, because it scales its own \
+                     budget by the same rate.",
+                    (seconds - first).abs() * 1000.0
                 );
-
-                let requested = (predelay_ms / 1000.0 * SAMPLE_RATE) as usize;
-                let limit = requested + budget;
-
-                for (side, channel) in render.channels() {
-                    let started = onset(channel, floor).unwrap_or_else(|| {
-                        panic!(
-                            "{name} {side} never rose above {floor:e} in one \
-                             second at predelay {predelay_ms} ms, size {size}"
-                        )
-                    });
-                    assert!(
-                        started <= limit,
-                        "{name} {side} was silent for {started} samples \
-                         ({:.1} ms) at Pre-Delay {predelay_ms} ms, Size {size}. \
-                         Pre-Delay asked for {requested} samples ({predelay_ms:.1} \
-                         ms) and the build-up budget allows {budget} more \
-                         ({MAX_BUILD_UP_MS:.1} ms), so the output should have \
-                         started by sample {limit}. It arrived {:.1} ms late. \
-                         #1547: a delay line read at index 0 returning its \
-                         oldest sample instead of its newest looks exactly like \
-                         this.",
-                        ms(started),
-                        ms(started.saturating_sub(limit))
-                    );
-                }
             }
         }
     }
@@ -318,86 +410,107 @@ fn no_engine_stays_silent_longer_than_the_predelay_it_was_given() {
 /// Delete the attribute when Spring reads the control; this test is then the
 /// proof that it does.
 #[test]
-#[ignore = "Spring ignores predelay entirely — measured in this file's PROMPT \
-            doc, found alongside #1547 and filed out of PR #1569, not fixed there"]
+#[ignore = "Spring ignores predelay entirely. Found while fixing #1547 and NOT \
+            filed as an issue — this attribute and the CONTINUOUS doc are the \
+            only record it has. Un-ignore it if you wire Spring's predelay; \
+            open an issue if you do not."]
 fn spring_onset_tracks_the_predelay_it_was_given() {
     const SPRING: f32 = 3.0;
-    let prompt = render(SPRING, &[("predelay", 0.0)], 48_000);
-    let delayed = render(SPRING, &[("predelay", 100.0)], 48_000);
+    for sample_rate in SAMPLE_RATES {
+        let prompt = render(
+            sample_rate,
+            SPRING,
+            &[("predelay", 0.0)],
+            sample_rate as usize,
+        );
+        let delayed = render(
+            sample_rate,
+            SPRING,
+            &[("predelay", 100.0)],
+            sample_rate as usize,
+        );
 
-    let prompt_onset =
-        onset(&prompt.left, prompt.floor()).expect("Spring sounds at Pre-Delay 0");
-    let delayed_onset =
-        onset(&delayed.left, delayed.floor()).expect("Spring sounds at Pre-Delay 100 ms");
+        let prompt_onset =
+            onset(&prompt.left, prompt.floor()).expect("Spring sounds at Pre-Delay 0");
+        let delayed_onset =
+            onset(&delayed.left, delayed.floor()).expect("Spring sounds at Pre-Delay 100 ms");
 
-    let requested = (0.100 * SAMPLE_RATE) as usize;
-    let moved = delayed_onset.saturating_sub(prompt_onset);
-    let tolerance = (MAX_BUILD_UP_MS / 1000.0 * SAMPLE_RATE) as usize;
-    assert!(
-        moved.abs_diff(requested) <= tolerance,
-        "Spring's onset moved {moved} samples ({:.1} ms) when Pre-Delay moved \
-         from 0 to 100 ms — it should have moved {requested} ({:.1} ms). \
-         Onsets: {prompt_onset} and {delayed_onset}.",
-        ms(moved),
-        ms(requested)
-    );
+        let requested = delayed.samples_in_ms(100.0);
+        let moved = delayed_onset.saturating_sub(prompt_onset);
+        let tolerance = delayed.samples_in_ms(MAX_BUILD_UP_MS);
+        assert!(
+            moved.abs_diff(requested) <= tolerance,
+            "Spring's onset moved {moved} samples ({:.1} ms) at {sample_rate} Hz \
+             when Pre-Delay moved from 0 to 100 ms — it should have moved \
+             {requested} ({:.1} ms). Onsets: {prompt_onset} and {delayed_onset}.",
+            delayed.ms(moved),
+            delayed.ms(requested)
+        );
+    }
 }
 
 /// And no hole once it has started — the shape #1547 was reported as.
 #[test]
 fn no_engine_goes_silent_in_the_middle_of_its_own_tail() {
-    for (algorithm, name) in CONTINUOUS {
-        for predelay_ms in [0.0_f32, 25.0] {
-            let render = render(algorithm, &[("predelay", predelay_ms)], 240_000);
-            assert!(
-                render.peak() > 1e-3,
-                "{name} at predelay {predelay_ms} ms rendered nothing at all \
-                 (peak {:e})",
-                render.peak()
-            );
-
-            for (side, channel) in render.channels() {
-                let envelope = envelope(channel);
-                let envelope_peak = envelope.iter().fold(0.0_f32, |a, b| a.max(*b));
-                let sounding = envelope_peak * AUDIBILITY_FRACTION;
-
-                let Some(first) = envelope.iter().position(|w| *w > sounding) else {
-                    panic!("{name} {side} never rose above {sounding:e}");
-                };
-                let last = envelope
-                    .iter()
-                    .rposition(|w| *w > sounding)
-                    .expect("a tail with a first window has a last one");
+    for sample_rate in SAMPLE_RATES {
+        for (algorithm, name) in CONTINUOUS {
+            for predelay_ms in [0.0_f32, 25.0] {
+                let render = render(
+                    sample_rate,
+                    algorithm,
+                    &[("predelay", predelay_ms)],
+                    (sample_rate * 5.0) as usize,
+                );
                 assert!(
-                    last > first + 4,
-                    "{name} {side} sounds for only {} windows at predelay \
-                     {predelay_ms} ms — there is no interior for the dip below \
-                     to be found in, so this row cannot fail",
-                    last - first
+                    render.peak() > 1e-3,
+                    "{name} at {sample_rate} Hz, predelay {predelay_ms} ms rendered \
+                 nothing at all (peak {:e})",
+                    render.peak()
                 );
 
-                let (quietest, level) = envelope[first..=last]
-                    .iter()
-                    .enumerate()
-                    .fold((first, f32::MAX), |(qi, qv), (i, v)| {
-                        if *v < qv {
-                            (first + i, *v)
-                        } else {
-                            (qi, qv)
-                        }
-                    });
-                let dip = db_below(level, envelope_peak);
-                assert!(
-                    dip > HOLE_FLOOR_DB,
-                    "{name} {side} falls to {dip:.1} dB below its own peak at \
+                for (side, channel) in render.channels() {
+                    let envelope = render.envelope(channel);
+                    let envelope_peak = envelope.iter().fold(0.0_f32, |a, b| a.max(*b));
+                    let sounding = envelope_peak * AUDIBILITY_FRACTION;
+
+                    let Some(first) = envelope.iter().position(|w| *w > sounding) else {
+                        panic!("{name} {side} never rose above {sounding:e}");
+                    };
+                    let last = envelope
+                        .iter()
+                        .rposition(|w| *w > sounding)
+                        .expect("a tail with a first window has a last one");
+                    assert!(
+                        last > first + 4,
+                        "{name} {side} sounds for only {} windows at predelay \
+                     {predelay_ms} ms — there is no interior for the dip below \
+                     to be found in, so this row cannot fail",
+                        last - first
+                    );
+
+                    let (quietest, level) = envelope[first..=last].iter().enumerate().fold(
+                        (first, f32::MAX),
+                        |(qi, qv), (i, v)| {
+                            if *v < qv {
+                                (first + i, *v)
+                            } else {
+                                (qi, qv)
+                            }
+                        },
+                    );
+                    let dip = db_below(level, envelope_peak);
+                    assert!(
+                        dip > HOLE_FLOOR_DB,
+                        "{name} {side} falls to {dip:.1} dB below its own peak at \
                      {:.3} s, in the middle of a tail that is still sounding at \
                      {:.3} s. That is a hole, not a quiet moment: the floor is \
                      {HOLE_FLOOR_DB:.1} dB and the quietest window of an intact \
-                     render of this engine measures around -70 dB. Pre-Delay \
-                     {predelay_ms} ms.",
-                    quietest as f32 * ENVELOPE_WINDOW_MS / 1000.0,
-                    last as f32 * ENVELOPE_WINDOW_MS / 1000.0
-                );
+                     render of this engine measures around -70 dB. \
+                     {sample_rate} Hz, Pre-Delay {predelay_ms} ms.",
+                        quietest as f32 * ENVELOPE_WINDOW_MS / 1000.0,
+                        last as f32 * ENVELOPE_WINDOW_MS / 1000.0
+                    );
+                }
             }
         }
     }
@@ -410,16 +523,14 @@ fn the_measurements_report_a_hole_and_a_late_start_that_are_actually_there() {
     let intact: Vec<f32> = (0..48_000)
         .map(|i| (i as f32 * 0.31).sin() * (-(i as f32) / 12_000.0).exp())
         .collect();
-    let reference = envelope(&intact);
+    let reference = envelope_at(&intact, 48_000.0);
     let reference_peak = reference.iter().fold(0.0_f32, |a, b| a.max(*b));
     let sounding = reference_peak * AUDIBILITY_FRACTION;
     let last = reference
         .iter()
         .rposition(|w| *w > sounding)
         .expect("a decaying sinusoid sounds");
-    let intact_dip = reference[..=last]
-        .iter()
-        .fold(f32::MAX, |a, b| a.min(*b));
+    let intact_dip = reference[..=last].iter().fold(f32::MAX, |a, b| a.min(*b));
     assert!(
         db_below(intact_dip, reference_peak) > HOLE_FLOOR_DB,
         "a smoothly decaying sinusoid measured {:.1} dB down inside its own \
@@ -434,14 +545,14 @@ fn the_measurements_report_a_hole_and_a_late_start_that_are_actually_there() {
     for sample in punched.iter_mut().take(24_000).skip(12_000) {
         *sample = 1e-18;
     }
-    let holed = envelope(&punched);
+    let holed = envelope_at(&punched, 48_000.0);
     let holed_peak = holed.iter().fold(0.0_f32, |a, b| a.max(*b));
     let holed_last = holed
         .iter()
         .rposition(|w| *w > holed_peak * AUDIBILITY_FRACTION)
         .expect("the punched tail still sounds after the hole");
     assert!(
-        holed_last * (ENVELOPE_WINDOW_MS / 1000.0 * SAMPLE_RATE) as usize > 24_000,
+        holed_last * (ENVELOPE_WINDOW_MS / 1000.0 * 48_000.0) as usize > 24_000,
         "the punched tail stopped sounding before the hole ended, so the dip \
          below would not be inside the sounding span"
     );

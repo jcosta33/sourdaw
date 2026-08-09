@@ -119,6 +119,96 @@ fn early_rms(output: &[f32]) -> f32 {
     rms(&output[..EARLY_END.min(output.len())])
 }
 
+/// Three cheap scalars of a render, pinned beside the digest and asserted
+/// before it.
+///
+/// The digest is a good tripwire and a useless diagnosis. `digest 0x…` is three
+/// opaque integers, identical whether the render moved by one sample of fine
+/// structure, dropped 6 dB, went silent, or swapped its channels — and it is
+/// the *only* thing that fires for a whole class of change. Whoever moves this
+/// constant next has to work out which kind they caused, and the justification
+/// written above it cites T60 from a 50 ms envelope, seven octave bands and a
+/// lag-swept correlation, none of which any instrument in this repo produces.
+/// The number regenerates in one command; the reasoning does not regenerate at
+/// all.
+///
+/// So the scalars go next to it, and they are asserted first so their message
+/// is the one that appears. A change that reds the digest while these hold *is*
+/// the diagnosis — same level, same start, different fine structure, which is
+/// what a retune looks like. A change that reds one of these names itself.
+///
+/// What they do not catch, stated so nobody reads more into them: a channel
+/// swap (the stimulus is mono-summed and this render keeps the left channel
+/// only), and any redistribution of energy that preserves peak, total RMS and
+/// onset. The digest is still the thing that notices those.
+struct RenderShape {
+    peak: f32,
+    rms: f32,
+    onset: usize,
+}
+
+/// Index of the first sample above 1e-6.
+///
+/// Absolute rather than relative to the peak, so that a level change moves the
+/// RMS scalar and not this one and the two failures stay separable. See
+/// `UNTOUCHED_PLATE_SHAPE` for what this one can actually see on this stimulus,
+/// which is less than its name suggests.
+fn shape(output: &[f32]) -> RenderShape {
+    let peak = output.iter().fold(0.0_f32, |a, b| a.max(b.abs()));
+    let rms = (output.iter().map(|s| s * s).sum::<f32>() / output.len() as f32).sqrt();
+    let onset = output
+        .iter()
+        .position(|s| s.abs() > 1e-6)
+        .unwrap_or(output.len());
+    RenderShape { peak, rms, onset }
+}
+
+/// Level tolerance, in dB, for the two amplitude scalars.
+///
+/// Sized to pass the change that produced the current digests and to fail
+/// anything a listener would call a level change. #1547's one-to-two-sample
+/// retune moved peak by 0.00000 dB and RMS by 0.00013 dB on this render; 0.1 dB
+/// is nearly three orders of magnitude above that and an order of magnitude
+/// below the smallest level move anyone would ship deliberately.
+const SHAPE_LEVEL_TOLERANCE_DB: f32 = 0.1;
+
+/// Onset tolerance, in samples. A retune of the input path may move the first
+/// audible sample by a sample or two; a pre-delay or scheduling defect moves it
+/// by thousands.
+const SHAPE_ONSET_TOLERANCE: usize = 4;
+
+fn assert_shape(actual: &RenderShape, expected: &RenderShape, label: &str) {
+    let peak_db = 20.0 * (actual.peak / expected.peak).log10();
+    assert!(
+        peak_db.abs() < SHAPE_LEVEL_TOLERANCE_DB,
+        "{label}: peak moved {peak_db:+.4} dB ({:e} against the pinned {:e}). \
+         That is a level change, not a retune — the digest below would have \
+         told you only that something moved.",
+        actual.peak,
+        expected.peak
+    );
+
+    let rms_db = 20.0 * (actual.rms / expected.rms).log10();
+    assert!(
+        rms_db.abs() < SHAPE_LEVEL_TOLERANCE_DB,
+        "{label}: full-buffer RMS moved {rms_db:+.4} dB ({:e} against the pinned \
+         {:e}). The render is louder or quieter overall, or part of it has gone \
+         missing.",
+        actual.rms,
+        expected.rms
+    );
+
+    assert!(
+        actual.onset.abs_diff(expected.onset) <= SHAPE_ONSET_TOLERANCE,
+        "{label}: the first sample above 1e-6 moved from {} to {}, a shift of \
+         {} samples. The render starts somewhere else, or has stopped sounding \
+         altogether.",
+        expected.onset,
+        actual.onset,
+        actual.onset.abs_diff(expected.onset)
+    );
+}
+
 /// Peak absolute sample-by-sample difference between two renders.
 fn max_delta(a: &[f32], b: &[f32]) -> f32 {
     a.iter()
@@ -128,7 +218,10 @@ fn max_delta(a: &[f32], b: &[f32]) -> f32 {
 
 /// Whether two renders are the same buffer, sample for sample.
 fn identical(a: &[f32], b: &[f32]) -> bool {
-    a.len() == b.len() && a.iter().zip(b.iter()).all(|(x, y)| x.to_bits() == y.to_bits())
+    a.len() == b.len()
+        && a.iter()
+            .zip(b.iter())
+            .all(|(x, y)| x.to_bits() == y.to_bits())
 }
 
 /// FNV-1a over every sample's bit pattern, so any change anywhere in the
@@ -209,6 +302,28 @@ fn digest(output: &[f32]) -> u64 {
 /// tail with the same level, the same decay time and the same spectrum — worth
 /// a release note for the Pre-Delay fix, not for this.
 const UNTOUCHED_PLATE_DIGEST: u64 = 0x245952ca_4c990c89;
+
+/// The same render, described in three numbers a human can read.
+///
+/// Regenerate these together with the digest above and never separately: they
+/// are the same render, and a shape that disagrees with its digest means one of
+/// the two was copied from a different run. See `RenderShape` for what each one
+/// is for and what none of them can see.
+///
+/// `onset: 0` is measured, not a placeholder, and it is the weakest of the
+/// three. Both this render and the sibling's are at `mix = 1`, and both measure
+/// 0 anyway: `mix` is smoothed from its constructor 0.3 with a 30 ms one-pole,
+/// so the dry burst is still most of the opening samples and the first sample
+/// above 1e-6 is the first sample. Neither can therefore reproduce #1547's
+/// shape — the dry path was never silent — and nothing here should be read as
+/// covering it. What the scalar does catch is a render that stops sounding or
+/// starts wholesale late. `wet_onset_follows_predelay.rs` is the file that
+/// carries the #1547 shape, on a stimulus with the ramp pre-rolled away.
+const UNTOUCHED_PLATE_SHAPE: RenderShape = RenderShape {
+    peak: 8.290293e-1,
+    rms: 1.0719928e-1,
+    onset: 0,
+};
 
 // ---------------------------------------------------------------------------
 // early_late
@@ -314,8 +429,16 @@ fn saturation_curve_does_nothing_while_saturation_is_off() {
     // The curve is selected inside a branch the Saturation switch gates. A
     // wire that applied the curve unconditionally would change the sound of
     // every project that never turned saturation on.
-    let off_tanh = render(&[("saturation", 0.0), ("decay", 0.9), ("saturation_type", 0.0)]);
-    let off_clip = render(&[("saturation", 0.0), ("decay", 0.9), ("saturation_type", 2.0)]);
+    let off_tanh = render(&[
+        ("saturation", 0.0),
+        ("decay", 0.9),
+        ("saturation_type", 0.0),
+    ]);
+    let off_clip = render(&[
+        ("saturation", 0.0),
+        ("decay", 0.9),
+        ("saturation_type", 2.0),
+    ]);
     assert!(
         identical(&off_tanh, &off_clip),
         "saturation_type moved the output with saturation disabled; \
@@ -456,13 +579,27 @@ fn the_untouched_plate_still_renders_what_it_always_has() {
     // is exactly 1.0 at the shipped default, so wiring a parameter that was
     // inert does not move a single sample of any project that never wrote it.
     //
-    // This digest was taken from the plate *before* gravity read its field,
-    // and it has not changed since.
-    let digest_now = digest(&render(&[]));
+    // This digest was taken from the plate *before* gravity read its field.
+    let output = render(&[]);
+
+    // Scalars first, so that when both fire it is the readable one that
+    // reports. See `RenderShape`.
+    assert_shape(
+        &shape(&output),
+        &UNTOUCHED_PLATE_SHAPE,
+        "the untouched plate",
+    );
+
+    let digest_now = digest(&output);
     assert_eq!(
         digest_now, UNTOUCHED_PLATE_DIGEST,
         "the untouched plate changed: an existing project that never wrote a \
-         control now renders differently. digest {digest_now:#x}"
+         control now renders differently. digest {digest_now:#x}. The three \
+         scalars above held, so the level, the total energy and the start of \
+         this render are all where they were — what moved is fine structure, \
+         which is what a delay-length or coefficient retune looks like. If that \
+         was the intent, re-measure and move this constant with the reasoning; \
+         if it was not, the change is smaller than it looks and harder to see."
     );
 }
 

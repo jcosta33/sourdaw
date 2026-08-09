@@ -159,6 +159,76 @@ fn render_instance(instance: &mut ProofChamberInstance) -> Vec<f32> {
     output
 }
 
+/// Three cheap scalars of a render, pinned beside the digest and asserted
+/// before it.
+///
+/// Same instrument as `plate_parameter_surface.rs`'s, duplicated because Rust
+/// integration tests are separate crates and this is four lines of arithmetic;
+/// the reasoning for why a digest needs company at all is written out there and
+/// not repeated. The short version: `digest 0x…` is three opaque integers,
+/// identical whether the render moved one sample of fine structure or went
+/// silent, and it is the only thing that fires for a whole class of change.
+///
+/// `onset` is the weakest of the three and is documented as such rather than
+/// quietly relied on. Even at `mix = 1` the 30 ms smoothing ramp leaves the dry
+/// burst in the opening samples, so it measures 0 here and in the sibling, and
+/// neither can reproduce #1547's shape — the dry path was never silent. What it
+/// does catch is a render that stops sounding or starts wholesale late.
+/// `wet_onset_follows_predelay.rs` is the file that carries the #1547 shape, on
+/// a stimulus with the ramp pre-rolled away.
+struct RenderShape {
+    peak: f32,
+    rms: f32,
+    onset: usize,
+}
+
+fn shape(output: &[f32]) -> RenderShape {
+    let peak = output.iter().fold(0.0_f32, |a, b| a.max(b.abs()));
+    let rms = (output.iter().map(|s| s * s).sum::<f32>() / output.len() as f32).sqrt();
+    let onset = output
+        .iter()
+        .position(|s| s.abs() > 1e-6)
+        .unwrap_or(output.len());
+    RenderShape { peak, rms, onset }
+}
+
+/// See the sibling file for how these two are sized. In short: a hundred times
+/// looser than the retune that produced the current digests, ten times tighter
+/// than any level move worth shipping.
+const SHAPE_LEVEL_TOLERANCE_DB: f32 = 0.1;
+const SHAPE_ONSET_TOLERANCE: usize = 4;
+
+fn assert_shape(actual: &RenderShape, expected: &RenderShape, label: &str) {
+    let peak_db = 20.0 * (actual.peak / expected.peak).log10();
+    assert!(
+        peak_db.abs() < SHAPE_LEVEL_TOLERANCE_DB,
+        "{label}: peak moved {peak_db:+.4} dB ({:e} against the pinned {:e}). \
+         That is a level change, not a retune.",
+        actual.peak,
+        expected.peak
+    );
+
+    let rms_db = 20.0 * (actual.rms / expected.rms).log10();
+    assert!(
+        rms_db.abs() < SHAPE_LEVEL_TOLERANCE_DB,
+        "{label}: full-buffer RMS moved {rms_db:+.4} dB ({:e} against the pinned \
+         {:e}). The render is louder or quieter overall, or part of it has gone \
+         missing.",
+        actual.rms,
+        expected.rms
+    );
+
+    assert!(
+        actual.onset.abs_diff(expected.onset) <= SHAPE_ONSET_TOLERANCE,
+        "{label}: the first sample above 1e-6 moved from {} to {}, a shift of \
+         {} samples. The render starts somewhere else, or has stopped sounding \
+         altogether.",
+        expected.onset,
+        actual.onset,
+        actual.onset.abs_diff(expected.onset)
+    );
+}
+
 /// Peak absolute sample-by-sample difference between two renders.
 fn max_delta(a: &[f32], b: &[f32]) -> f32 {
     assert_eq!(a.len(), b.len(), "renders must be the same length");
@@ -216,7 +286,8 @@ fn a_plate_round_tripped_through_reverse_renders_what_it_did_before_the_switch()
 
     let delta = max_delta(&round_trip, &never_switched);
     assert_eq!(
-        delta, 0.0,
+        delta,
+        0.0,
         "plate -> reverse -> plate does not render what the plate rendered \
          before the switch: max_delta {delta:e}. Distance from a plate that \
          was told nothing: {:e}",
@@ -243,7 +314,8 @@ fn every_exposed_engine_survives_a_round_trip_through_another_one() {
 
         let delta = max_delta(&round_trip, &never_switched);
         assert_eq!(
-            delta, 0.0,
+            delta,
+            0.0,
             "{name} lost parameters across an algorithm round trip: max_delta \
              {delta:e}. Distance from a {name} that was told nothing: {:e}",
             max_delta(&round_trip, &untouched)
@@ -307,7 +379,8 @@ fn gravity_written_while_the_spring_is_selected_reaches_the_plate_that_reads_it(
     );
     let delta = max_delta(&carried, &direct);
     assert_eq!(
-        delta, 0.0,
+        delta,
+        0.0,
         "gravity written on the spring did not reach the plate: max_delta \
          {delta:e}. Distance from a plate with default gravity: {:e}",
         max_delta(&carried, &without_gravity)
@@ -334,7 +407,8 @@ fn matrix_written_while_the_plate_is_selected_reaches_the_fdn_that_reads_it() {
     );
     let delta = max_delta(&carried, &direct);
     assert_eq!(
-        delta, 0.0,
+        delta,
+        0.0,
         "matrix written on the plate did not reach the fdn8: max_delta \
          {delta:e}. Distance from an fdn8 with the default matrix: {:e}",
         max_delta(&carried, &without_matrix)
@@ -383,7 +457,8 @@ fn the_replay_preserves_most_recent_write_order() {
 
     let delta = max_delta(&round_trip, &never_switched);
     assert_eq!(
-        delta, 0.0,
+        delta,
+        0.0,
         "the replay reordered two order-sensitive writes: max_delta {delta:e}. \
          Distance from the wrong order: {:e}",
         max_delta(&round_trip, &wrong_order)
@@ -435,16 +510,40 @@ fn the_replay_preserves_most_recent_write_order() {
 /// first 250 ms. This row is a fingerprint and it moved; the sound did not.
 const UNTOLD_INSTANCE_DIGEST: u64 = 0x331fcaf1_a4fc7535;
 
+/// The same render in three readable numbers. Regenerate with the digest, never
+/// separately — a shape that disagrees with its digest means one of the two came
+/// from a different run.
+///
+/// `onset: 0` is measured, not a placeholder — see `RenderShape` for why it is
+/// 0 even at `mix = 1`, and for what it can and cannot see.
+const UNTOLD_INSTANCE_SHAPE: RenderShape = RenderShape {
+    peak: 8.290293e-1,
+    rms: 1.515884e-1,
+    onset: 0,
+};
+
 #[test]
 fn an_instance_told_nothing_renders_exactly_what_it_always_has() {
     // No `algorithm` write at all: the constructor's plate, straight from
     // `ProofChamberInstance::new`.
     let constructed = render(&[("mix", 1.0)]);
+
+    // Scalars first, so the readable failure is the one that reports.
+    assert_shape(
+        &shape(&constructed),
+        &UNTOLD_INSTANCE_SHAPE,
+        "an untold instance",
+    );
+
     let digest_now = digest(&constructed);
     assert_eq!(
         digest_now, UNTOLD_INSTANCE_DIGEST,
         "an untouched Dutch Oven changed what it renders: an existing project \
-         that never moved a control now sounds different. digest {digest_now:#x}"
+         that never moved a control now sounds different. digest {digest_now:#x}. \
+         The three scalars above held, so the level, the total energy and the \
+         moment the reverb starts are all where they were — what moved is fine \
+         structure. If that was intended, re-measure and move this constant with \
+         the reasoning beside it."
     );
 
     // The first `algorithm` write happens against an empty cache, so it must
@@ -467,10 +566,7 @@ fn an_instance_told_nothing_renders_exactly_what_it_always_has() {
 /// some parameters, it lands on factory-fresh.
 #[test]
 fn measurement_table() {
-    println!(
-        "{:<10} {:>12} {:>12}",
-        "engine", "vs settled", "vs untold"
-    );
+    println!("{:<10} {:>12} {:>12}", "engine", "vs settled", "vs untold");
     for (name, algorithm) in EXPOSED {
         let via = if algorithm == PLATE { SPRING } else { PLATE };
         let never_switched = render(&settled(algorithm, INTERIOR_WRITES));
@@ -515,7 +611,8 @@ fn every_engine_reached_after_a_detour_renders_what_it_does_when_reached_directl
 
         let delta = max_delta(&carried, &direct);
         assert_eq!(
-            delta, 0.0,
+            delta,
+            0.0,
             "{name} reached from another engine does not render what {name} \
              written directly renders: max_delta {delta:e}. Distance from a \
              {name} that was told nothing: {:e}",
@@ -633,7 +730,8 @@ fn a_full_cache_keeps_the_newest_write_and_drops_its_oldest() {
     );
     let delta = max_delta(&flooded_output, &direct);
     assert_eq!(
-        delta, 0.0,
+        delta,
+        0.0,
         "a cache filled past its limit dropped the writes that arrived after \
          it filled: max_delta {delta:e}. Distance from a plate with default \
          gravity: {:e}",

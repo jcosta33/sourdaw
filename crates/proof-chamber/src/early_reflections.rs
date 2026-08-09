@@ -120,3 +120,97 @@ impl EarlyReflections {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const SR: f32 = 1_000.0;
+
+    /// Drive one tap and silence the rest, so `process` returns exactly what
+    /// that tap read.
+    fn single_tap(reflections: &mut EarlyReflections, delay: usize) {
+        for tap in reflections.taps.iter_mut() {
+            *tap = (0, 0.0);
+        }
+        reflections.taps[0] = (delay, 1.0);
+    }
+
+    /// Feed `1.0, 2.0, …` and return the last sample out, so a returned value
+    /// names the write that produced it.
+    fn ramp_through(reflections: &mut EarlyReflections, writes: usize) -> f32 {
+        let mut out = 0.0;
+        for step in 1..=writes {
+            out = reflections.process(step as f32);
+        }
+        out
+    }
+
+    /// The tap positions mean sample delays, measured on the line rather than
+    /// read off `tap_delay`.
+    ///
+    /// #1547's second copy lived here: the read counted back from `write_pos`
+    /// after `process` had already advanced it, so every reflection arrived one
+    /// sample early. A test that asserted `tap_delay` returned the right number
+    /// would have been green throughout — the tap table was never wrong.
+    #[test]
+    fn a_tap_reads_the_sample_written_that_many_steps_ago() {
+        let mut reflections = EarlyReflections::new(SR, 0.5);
+        let len = reflections.len;
+
+        for delay in [0_usize, 1, 7, 40] {
+            let mut probe = EarlyReflections::new(SR, 0.5);
+            single_tap(&mut probe, delay);
+            let out = ramp_through(&mut probe, len);
+            assert_eq!(
+                out,
+                (len - delay) as f32,
+                "a tap at {delay} should read the sample written {delay} steps \
+                 before the newest one. Reading one early is #1547's second \
+                 copy: tap 0 asks for 156 samples and delivers at 155."
+            );
+        }
+
+        // And the shared instance is untouched by the probes above, so the
+        // constructor's own tap table is what the engine runs.
+        assert_eq!(reflections.taps.len(), TAP_COUNT);
+        assert!(reflections.process(1.0).is_finite());
+    }
+
+    /// The clamp in `process`, which is the only thing standing between a tap
+    /// at or past the buffer length and a subtraction that underflows.
+    ///
+    /// This guard exists because the line was previously safe *by accident*:
+    /// every writer of `taps` happens to route through `tap_delay`, which
+    /// clamps, so nothing here would have noticed the clamp going missing. A
+    /// future caller setting a tap directly — or a `tap_delay` that stops
+    /// clamping — turns that into a panic on the audio thread.
+    #[test]
+    fn a_tap_past_the_end_of_the_line_saturates_instead_of_underflowing() {
+        let mut probe = EarlyReflections::new(SR, 0.5);
+        let len = probe.len;
+
+        // Exactly at the length, one past it, and absurdly past it. Without
+        // `delay.min(self.len - 1)` the first of these already computes
+        // `write_pos + len - len`, and the other two underflow `usize`.
+        for delay in [len, len + 1, len * 10] {
+            let mut probe_at = EarlyReflections::new(SR, 0.5);
+            single_tap(&mut probe_at, delay);
+            let out = ramp_through(&mut probe_at, len);
+            assert_eq!(
+                out, 1.0,
+                "a tap at {delay} on a {len}-sample line should saturate on the \
+                 oldest sample the line holds — the first of {len} writes — \
+                 rather than underflow or wrap round to a short delay"
+            );
+        }
+
+        single_tap(&mut probe, len - 1);
+        let oldest = ramp_through(&mut probe, len);
+        assert_eq!(
+            oldest, 1.0,
+            "the largest in-range tap must already read the oldest sample, or \
+             the saturation above is landing somewhere else"
+        );
+    }
+}
