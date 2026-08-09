@@ -1,0 +1,50 @@
+src/modules/Arrangement/useCases/freezeBounce/cleanupUnusedFreezeFiles.ts
+  s_14f2bbc9f385dd::t_643cc329a45321 6
+  s_14f2bbc9f385dd::t_ca7126617eefaa 11-22
+src/modules/WorkspaceShell/presentations/components/ProjectLoadFailureOverlay.tsx
+  s_14f2bbc9f385dd::t_496b9c12bc1549 40
+  s_14f2bbc9f385dd::t_0eeac6b6878cb9 1
+  s_14f2bbc9f385dd::t_0e597b11b5dbbb 73
+  s_14f2bbc9f385dd::t_8ff6b54f627cf8 27-39,41-47,54
+src/modules/WorkspaceShell/presentations/views/AppShell.tsx
+  s_14f2bbc9f385dd::t_de4cdb6a839a3c 235-241
+src/modules/CrdtDocument/useCases/resetCrdtProjectAuthority.ts
+  s_14f2bbc9f385dd::t_1cb4948a9e0146 31-42
+src/modules/CommandInterface/presentations/views/keyboardShortcutsContract.ts
+  s_14f2bbc9f385dd::t_0c098087c1b4d4 3-4
+  s_14f2bbc9f385dd::t_fc51262d423601 14-30
+src/modules/Arrangement/useCases/freezeBounce/__tests__/cleanupUnusedFreezeFiles.spec.ts
+  s_14f2bbc9f385dd::t_8bec4247a5ffe6 3-4
+  s_14f2bbc9f385dd::t_868cc5c4e20421 37-55
+  s_14f2bbc9f385dd::t_d0ae03ee8471ca 26
+src/app/bootstrap.ts
+  s_14f2bbc9f385dd::t_ea18df9134e921 234-235
+src/modules/CrdtDocument/useCases/__tests__/resetCrdtProjectAuthority.spec.ts
+  s_14f2bbc9f385dd::t_47eb278ae21a5a 29,33-35
+  s_14f2bbc9f385dd::t_d5e2fb7e742ac5 59
+  s_14f2bbc9f385dd::t_0fe8dbd94dda22 155,157-158,161-163,165,172-186
+  s_14f2bbc9f385dd::t_0b8962b11f3474 36,187-189
+src/modules/WorkspaceShell/presentations/views/__tests__/AppShell.spec.tsx
+  s_14f2bbc9f385dd::t_80b8c5ea7b2adf 635-638,640-642,644-645
+  s_14f2bbc9f385dd::t_8a5f381d0517ee 613-634,639,643,646-647
+src/modules/CommandInterface/presentations/views/__tests__/keyboardShortcutsContract.spec.tsx
+  s_14f2bbc9f385dd::t_49b3651082b68f 4-5
+  s_14f2bbc9f385dd::t_fb168e8bc1277f 45
+  s_14f2bbc9f385dd::t_f3dde8e5dcf0f4 60-87
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "606348fa88c73c9b3a024ea437b8f34938dfc658",
+  "prompts": {},
+  "sessions": {
+    "s_14f2bbc9f385dd": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f9a61a1d-66b3-4146-938d-a04f45f4b060",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
