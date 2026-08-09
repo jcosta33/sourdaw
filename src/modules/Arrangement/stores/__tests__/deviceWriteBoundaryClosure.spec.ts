@@ -62,6 +62,16 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         // persistence path would silently rewrite stored project data for every
         // stepped parameter. The file is a pure model and reaches no sink.
         'src/modules/Arrangement/models/DeviceParameterLaw.ts': 1,
+        // Count provenance: new file entry, measured 1 — a single doc-comment
+        // mention of `updateDeviceParam`, and no write. Measured with `grep -o`
+        // over the four sink identifiers: updateDeviceParam 1, the other three
+        // 0. The Grinder descriptor's gate rows carry a note explaining that
+        // this table, not the module's `DEFAULT_PATCH`, is what a freshly added
+        // device sends to the engine — `addDevice` writes every `param.value`
+        // through `updateDeviceParam`, while `syncGrinderPatchToAudio` runs only
+        // on preset load and snapshot recall. Naming the sink is the point of
+        // the note; the file is a pure descriptor table and reaches no sink.
+        'src/modules/Arrangement/models/PluginDescriptors/GrinderDescriptor.ts': 1,
         'src/modules/Arrangement/stores/index.ts': 2,
         // Count provenance: measured 3, all three doc-comment mentions — this
         // file holds no write at all. `clampDeviceParamWrite` resolves a device
