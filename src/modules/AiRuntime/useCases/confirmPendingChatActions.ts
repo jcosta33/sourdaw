@@ -9,6 +9,7 @@ import { chatStore, setActiveAborter, setChatGenerating, updateChatMessage } fro
 import {
     getPendingActionConfirmation,
     recordPendingActionExecution,
+    type PendingActionExecution,
     type PendingAppActionConfirmation,
     updatePendingActionConfirmationStatus,
 } from '../stores/pendingActionConfirmationStore';
@@ -30,6 +31,25 @@ type ConfirmPendingChatActionsResult =
     | { status: 'failed'; reason: string };
 
 type ConfirmPendingChatActionsOutput = Promise<ConfirmPendingChatActionsResult>;
+
+function formatExecutionReceipt(
+    executions: readonly PendingActionExecution[],
+    confirmation: PendingAppActionConfirmation
+): string {
+    const executedActions = executions
+        .map((execution) => {
+            const affectedIds = execution.affectedIds.length > 0 ? execution.affectedIds.join(', ') : 'none';
+            return `- **${execution.actionType}**: ${execution.label}\n  - Affected IDs: ${affectedIds}\n  - Outcome: ${execution.outcome}`;
+        })
+        .join('\n');
+    const protectedUnchanged = confirmation.protectedUnchanged
+        .map((target) => `"${target.name}" (${target.id})`)
+        .join(', ');
+    if (!protectedUnchanged) {
+        return executedActions;
+    }
+    return `${executedActions}\n\nProtected unchanged: ${protectedUnchanged}`;
+}
 
 export async function confirmPendingChatActions(
     input: ConfirmPendingChatActionsInput
@@ -107,13 +127,14 @@ export async function confirmPendingChatActions(
         if (batchResult.status === 'executed' || batchResult.status === 'executed-with-warning') {
             executionKind = 'runtime';
         }
-        const executedLabels = batchResult.actions.map(({ action, label }) => ({
+        const executedLabels = batchResult.actions.map(({ action, label }, index) => ({
             actionType: action.type,
-            label,
+            label: confirmation.actionLabels[index] ?? label,
             executionKind,
             affectedIds: getPlannedActionAffectedIds(action),
             outcome: batchResult.status,
         }));
+        const executionReceipt = formatExecutionReceipt(executedLabels, confirmation);
         let warning: string | undefined;
         if (batchResult.status === 'committed-with-warning' || batchResult.status === 'executed-with-warning') {
             warning = batchResult.warning;
@@ -141,12 +162,12 @@ export async function confirmPendingChatActions(
                 executedLabels.map((entry) => entry.actionType)
             );
             updatePendingActionConfirmationStatus({ confirmationId: confirmation.id, status: 'executed' });
-            let content = `Executed after confirmation:\n\n${executedLabels.map((entry) => `- **${entry.actionType}**: ${entry.label}`).join('\n')}`;
+            let content = `Executed after confirmation:\n\n${executionReceipt}`;
             if (batchResult.status === 'committed-with-warning') {
-                content = `Applied after confirmation:\n\n${executedLabels.map((entry) => `- **${entry.actionType}**: ${entry.label}`).join('\n')}\n\nThe project change committed with a follow-up warning: ${batchResult.warning}. Do not retry these confirmed actions.`;
+                content = `Applied after confirmation:\n\n${executionReceipt}\n\nThe project change committed with a follow-up warning: ${batchResult.warning}. Do not retry these confirmed actions.`;
             }
             if (batchResult.status === 'executed-with-warning') {
-                content = `Executed after confirmation:\n\n${executedLabels.map((entry) => `- **${entry.actionType}**: ${entry.label}`).join('\n')}\n\nThe runtime command executed with a follow-up warning: ${batchResult.warning}. Do not retry these confirmed actions.`;
+                content = `Executed after confirmation:\n\n${executionReceipt}\n\nThe runtime command executed with a follow-up warning: ${batchResult.warning}. Do not retry these confirmed actions.`;
             }
             updateChatMessage(confirmation.assistantMessageId, {
                 pendingActionConfirmationStatus: 'executed',
@@ -169,7 +190,7 @@ export async function confirmPendingChatActions(
                 updateChatMessage(confirmation.assistantMessageId, {
                     pendingActionConfirmationStatus: 'executed',
                     error: warning,
-                    content: `The confirmed ${executionDescription}, but reporting it failed: ${warning}. Do not retry these actions.`,
+                    content: `The confirmed ${executionDescription}, but reporting it failed: ${warning}. Do not retry these actions.\n\n${executionReceipt}`,
                 });
             } catch (reportingError) {
                 logger.error(

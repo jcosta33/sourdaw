@@ -18,6 +18,8 @@ import {
     resetCrdtProjectAuthority,
 } from '#/modules/CrdtDocument/useCases';
 
+import { cloudSession } from '../../repositories/cloudLlm/cloudSession';
+import { generateWebLlmCompletion } from '../../repositories/webLlm/generateWebLlmCompletion';
 import { clearAiHistory } from '../../stores/aiActionHistoryStore';
 import { chatStore } from '../../stores/chatStore';
 import {
@@ -36,19 +38,32 @@ const providerPlan = [
     { name: 'setTrackOutput', arguments: { trackId: 'track-hats', outputId: '$drum-bus' } },
 ] as const;
 
-const runtimeMocks = vi.hoisted(() => ({
-    generateToolPlanningOutcome: vi.fn(),
-    getAllSidechainRoutes: vi.fn(() => []),
-    resolveToasterPadBinding: vi.fn(() => null),
-    setTrackOutput: vi.fn(),
-}));
+const runtimeMocks = vi.hoisted(() => {
+    const backend: { value: 'cloud' | 'webllm' } = { value: 'webllm' };
+    return {
+        backend,
+        fetch: vi.fn<typeof fetch>(),
+        generateWebLlmCompletion: vi.fn(),
+        getAllSidechainRoutes: vi.fn(() => []),
+        resolveToasterPadBinding: vi.fn(() => null),
+        setTrackOutput: vi.fn(),
+    };
+});
 
-vi.mock('../llmOrchestration/inference', () => ({
-    generateToolPlanningOutcome: runtimeMocks.generateToolPlanningOutcome,
+vi.mock('../llmOrchestration/backendResolution/getBackendChain', () => ({
+    getBackendChain: () => [runtimeMocks.backend.value],
 }));
 
 vi.mock('../llmOrchestration/backendResolution/helpers', () => ({
-    resolveBackend: () => 'webllm',
+    resolveBackend: () => runtimeMocks.backend.value,
+}));
+
+vi.mock('../../repositories/webLlm/generateWebLlmCompletion', () => ({
+    generateWebLlmCompletion: runtimeMocks.generateWebLlmCompletion,
+}));
+
+vi.mock('../../repositories/webLlm/isWebLlmLoaded', () => ({
+    isWebLlmLoaded: () => true,
 }));
 
 vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
@@ -113,12 +128,43 @@ function getTrack(id: string): Track {
     return track;
 }
 
+function getHostedRequestBody(): string {
+    const body = runtimeMocks.fetch.mock.calls[0]?.[1]?.body;
+    if (typeof body !== 'string') {
+        throw new TypeError('Expected one hosted provider request body');
+    }
+    return body;
+}
+
 describe('drum bus prompt workflow', () => {
     beforeEach(() => {
         vi.clearAllMocks();
-        runtimeMocks.generateToolPlanningOutcome.mockResolvedValue({
-            status: 'complete',
-            toolCalls: providerPlan.map((call) => ({ name: call.name, arguments: { ...call.arguments } })),
+        runtimeMocks.backend.value = 'webllm';
+        runtimeMocks.generateWebLlmCompletion.mockResolvedValue(JSON.stringify(providerPlan));
+        runtimeMocks.fetch.mockResolvedValue(
+            new Response(
+                JSON.stringify({
+                    choices: [
+                        {
+                            finish_reason: 'tool_calls',
+                            message: {
+                                tool_calls: providerPlan.map((call) => ({
+                                    function: { name: call.name, arguments: JSON.stringify(call.arguments) },
+                                })),
+                            },
+                        },
+                    ],
+                }),
+                { status: 200, headers: { 'Content-Type': 'application/json' } }
+            )
+        );
+        vi.stubGlobal('fetch', runtimeMocks.fetch);
+        cloudSession.clear();
+        cloudSession.replace_runtime({
+            provider: 'openai-compatible',
+            api_key: '',
+            model: 'fixture-model',
+            base_url: 'https://provider.example/v1',
         });
         configureAutomergeStoragePort(null);
         resetCrdtProjectAuthority('drum bus prompt workflow test');
@@ -158,13 +204,22 @@ describe('drum bus prompt workflow', () => {
         clearPendingActionConfirmations();
         trackStore.set({ tracks: [], selectedTrackId: null, ghostClips: [] });
         configureAutomergeStoragePort(null);
+        cloudSession.clear();
         removeCrdtDoc('root');
+        vi.unstubAllGlobals();
     });
 
     it('grounds, confirms, commits, receipts, undoes, and redoes the exact protected routing request', async () => {
         const unchangedBefore = structuredClone([getTrack('track-parallel'), getTrack('track-room')]);
 
         await sendChatMessage(PROMPT);
+
+        const providerRequest = vi.mocked(generateWebLlmCompletion).mock.calls[0]?.[1];
+        expect(providerRequest).toContain(PROMPT);
+        expect(providerRequest).toContain('track-kick');
+        expect(providerRequest).toContain('track-snare');
+        expect(providerRequest).toContain('track-hats');
+        expect(providerRequest).toContain('Parallel Compression');
 
         const confirmation = getPendingActionConfirmation(
             chatStore.value?.messages.find((message) => message.pendingActionConfirmationId)
@@ -207,6 +262,16 @@ describe('drum bus prompt workflow', () => {
         await expect(confirmPendingChatActions({ confirmationId: confirmation?.id ?? '' })).resolves.toEqual({
             status: 'executed',
         });
+
+        const receipt = chatStore.value?.messages.find(
+            (message) => message.pendingActionConfirmationId === confirmation?.id
+        );
+        expect(receipt?.content).toContain(`Route "Kick" (track-kick) from master to "Drum Bus" (${busId})`);
+        expect(receipt?.content).toContain(`Route "Snare" (track-snare) from master to "Drum Bus" (${busId})`);
+        expect(receipt?.content).toContain(`Route "Hats" (track-hats) from master to "Drum Bus" (${busId})`);
+        expect(receipt?.content).toContain(`Affected IDs: ${busId}, track-kick`);
+        expect(receipt?.content).toContain('Outcome: committed');
+        expect(receipt?.content).toContain('Protected unchanged: "Parallel Compression" (track-parallel)');
 
         expect(getTrack('track-kick').outputId).toBe(busId);
         expect(getTrack('track-snare').outputId).toBe(busId);
@@ -253,17 +318,70 @@ describe('drum bus prompt workflow', () => {
         expect([getTrack('track-parallel'), getTrack('track-room')]).toEqual(unchangedBefore);
     });
 
+    it('grounds the hosted-provider fixture to the same actions and terminal receipt', async () => {
+        runtimeMocks.backend.value = 'cloud';
+
+        await sendChatMessage(PROMPT);
+
+        const providerRequest = getHostedRequestBody();
+        expect(providerRequest).toContain(PROMPT);
+        expect(providerRequest).toContain('track-kick');
+        expect(providerRequest).toContain('track-snare');
+        expect(providerRequest).toContain('track-hats');
+        expect(providerRequest).toContain('Parallel Compression');
+        const confirmation = getPendingActionConfirmation(
+            chatStore.value?.messages.find((message) => message.pendingActionConfirmationId)
+                ?.pendingActionConfirmationId ?? ''
+        );
+        const busAction = confirmation?.actions[0];
+        if (busAction?.type !== 'createBus' || !busAction.payload.busId) {
+            throw new Error('Expected one app-owned hosted-provider Drum Bus identity');
+        }
+        const busId = busAction.payload.busId;
+        expect(confirmation?.actions).toEqual([
+            { type: 'createBus', payload: { name: 'Drum Bus', busId } },
+            {
+                type: 'setTrackOutput',
+                payload: { trackId: 'track-kick', outputId: busId, expectedOutputId: 'master' },
+            },
+            {
+                type: 'setTrackOutput',
+                payload: { trackId: 'track-snare', outputId: busId, expectedOutputId: 'master' },
+            },
+            {
+                type: 'setTrackOutput',
+                payload: { trackId: 'track-hats', outputId: busId, expectedOutputId: 'master' },
+            },
+        ]);
+
+        await expect(confirmPendingChatActions({ confirmationId: confirmation?.id ?? '' })).resolves.toEqual({
+            status: 'executed',
+        });
+
+        const receipt = chatStore.value?.messages.find(
+            (message) => message.pendingActionConfirmationId === confirmation?.id
+        );
+        expect(receipt?.content).toContain(`Route "Kick" (track-kick) from master to "Drum Bus" (${busId})`);
+        expect(receipt?.content).toContain(`Affected IDs: ${busId}, track-kick`);
+        expect(receipt?.content).toContain('Outcome: committed');
+        expect(receipt?.content).toContain('Protected unchanged: "Parallel Compression" (track-parallel)');
+        expect(['track-kick', 'track-snare', 'track-hats'].map((id) => getTrack(id).outputId)).toEqual([
+            busId,
+            busId,
+            busId,
+        ]);
+    });
+
     it('rejects provider enlargement that would route the protected Parallel Compression track', async () => {
-        runtimeMocks.generateToolPlanningOutcome.mockResolvedValue({
-            status: 'complete',
-            toolCalls: [
+        runtimeMocks.generateWebLlmCompletion.mockResolvedValue(
+            JSON.stringify([
                 ...providerPlan.map((call) => ({ name: call.name, arguments: { ...call.arguments } })),
                 {
                     name: 'setTrackOutput',
                     arguments: { trackId: 'track-parallel', outputId: '$drum-bus' },
                 },
-            ],
-        });
+            ])
+        );
         const before = structuredClone(trackStore.value?.tracks);
 
         await sendChatMessage(PROMPT);

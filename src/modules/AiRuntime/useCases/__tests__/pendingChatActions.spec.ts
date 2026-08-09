@@ -389,6 +389,7 @@ describe('pending chat action confirmation', () => {
             assistantMessageId: 'assistant-1',
             actions: [pendingAction],
             actionLabels: ['Remove track'],
+            protectedUnchanged: [{ id: 'track-parallel', name: 'Parallel Compression' }],
             projectRevision: 'revision-1',
         });
 
@@ -416,6 +417,20 @@ describe('pending chat action confirmation', () => {
             expect.objectContaining({
                 pendingActionConfirmationStatus: 'executed',
                 content: expect.stringMatching(/applied.*committed with a follow-up warning.*do not retry/is),
+            })
+        );
+        expect(mocks.updateChatMessage).toHaveBeenLastCalledWith(
+            'assistant-1',
+            expect.objectContaining({ content: expect.stringContaining('Affected IDs: track-1') })
+        );
+        expect(mocks.updateChatMessage).toHaveBeenLastCalledWith(
+            'assistant-1',
+            expect.objectContaining({ content: expect.stringContaining('Outcome: committed-with-warning') })
+        );
+        expect(mocks.updateChatMessage).toHaveBeenLastCalledWith(
+            'assistant-1',
+            expect.objectContaining({
+                content: expect.stringContaining('Protected unchanged: "Parallel Compression" (track-parallel)'),
             })
         );
     });
@@ -463,6 +478,14 @@ describe('pending chat action confirmation', () => {
                 pendingActionConfirmationStatus: 'executed',
                 content: expect.stringMatching(/runtime command executed.*do not retry/is),
             })
+        );
+        expect(mocks.updateChatMessage).toHaveBeenLastCalledWith(
+            'assistant-1',
+            expect.objectContaining({ content: expect.stringContaining('Affected IDs: none') })
+        );
+        expect(mocks.updateChatMessage).toHaveBeenLastCalledWith(
+            'assistant-1',
+            expect.objectContaining({ content: expect.stringContaining('Outcome: executed-with-warning') })
         );
     });
 
@@ -523,8 +546,7 @@ describe('pending chat action confirmation', () => {
             expect.objectContaining({
                 pendingActionConfirmationStatus: 'executed',
                 error: 'AI history unavailable',
-                content:
-                    'The confirmed runtime command executed, but reporting it failed: AI history unavailable. Do not retry these actions.',
+                content: expect.stringMatching(/runtime command executed.*do not retry.*outcome: executed/is),
             })
         );
     });
