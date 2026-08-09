@@ -236,8 +236,13 @@ Automation lanes do not always use the label the panel prints. Where they differ
 >
 > Asking the assistant for the same parameter change is the exception, and it is the only route
 > Grinder has into history: that change is recorded and undo reverses it in the project and in the
-> sound. The panel still does not follow — the control keeps drawing the assistant's value until you
-> close Grinder and open it again.
+> sound.
+>
+> **The panel is not on that route at all.** Grinder's controls are drawn from state only its own
+> panel writes, and the assistant's change does not go through the panel — so you hear the change
+> while the knob still shows the value from before it, and when you undo you hear that reversed
+> while the knob still has not moved. Closing and reopening Grinder does not resync it; nothing
+> reads the project back into those controls.
 
 ## See also
 

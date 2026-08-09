@@ -94,9 +94,11 @@ resize, split, or delete notes and clips, and each gesture goes on the stack as 
 many notes it touched.
 
 > [!WARNING]
-> **Not yet active.** Undo does not yet cover the mixer, and its coverage of devices is uneven.
-> Moving a fader or a pan control, and adding or removing a device by hand, apply immediately and
-> are not recorded — undo will skip straight past them to the last material edit.
+> **Not yet active.** Undo covers almost nothing on the mixer, and its coverage of devices is
+> uneven. Moving a fader or a pan control, and adding or removing a device by hand, apply
+> immediately and are not recorded — undo will skip straight past them to the last material edit.
+> Arming a track is the one mixer control that does record, so seeing "Arm track" in the history
+> panel is not a sign the rest of the strip is covered.
 >
 > Whether a device records anything is decided device by device, so the device page is the
 > authority where there is one. Gluten is the furthest along: a settled control move is one undo
@@ -105,8 +107,15 @@ many notes it touched.
 > space as one grouped step, so a single press of undo restores the whole space.
 >
 > What undo restores is the project and the sound, not the panel. Every device draws its controls
-> from its own session state, and undo does not write back into it — so after undoing a device
-> change the control keeps showing the value you set until you close the device and open it again.
+> from its own session state, and undo writes project truth and the audio engine without writing
+> back into that state — so after undoing a device change the control still shows the value you set
+> while you hear the value undo restored.
+>
+> Whether reopening the device clears that depends on the device, and for the two documented here
+> it does not. The reverb and the piano re-read the project when their panel opens, so closing and
+> reopening them resyncs the controls. Gluten and Grinder never read the project at all: their
+> session state is written only by their own panels, and it survives the panel being closed. Once
+> those two disagree, they disagree for the rest of the session.
 >
 > Save a preset or duplicate the track before you experiment with a device.
 

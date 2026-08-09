@@ -197,9 +197,17 @@ controls the name is the only way to tell which lane is which:
 > **Not yet active.** Loading a preset and pressing a Quick move are not recorded in the history
 > panel and cannot be undone — they apply immediately and permanently. Individual control moves
 > *are* recorded: one drag is one step, however far it travelled, and undo restores the saved value
-> and the sound. **The panel does not follow it.** The knob keeps drawing the value you dragged to
-> until you close Gluten and open it again, so after an undo the face of the device disagrees with
-> what you are hearing. Save a preset before you load another one.
+> and the sound.
+>
+> **The panel does not follow it, and closing Gluten does not help.** The knob keeps drawing the
+> value you dragged to while you hear the value undo restored. Gluten's controls are drawn from
+> state its own panel writes and nothing else — nothing reads the project back into it — so
+> reopening the device redraws the same stale value. Once the face and the sound disagree they stay
+> that way for the rest of the session.
+>
+> History entries for Gluten are labelled with the internal parameter name rather than the name on
+> the panel, so an undone HPF switch reads `scHpfEnabled` — neither the panel label nor the
+> automation-lane name in the table above. Save a preset before you load another one.
 
 ## See also
 
