@@ -32,7 +32,13 @@ vi.mock('#/infra/store/useStore', () => ({
     }),
 }));
 
-vi.mock('#/modules/Arrangement/presentations/views', () => ({
+// Spread `importOriginal` first, then override only the views this file stubs.
+// This mock had already drifted: it still supplied a `MINIMAP_HEIGHT` the barrel
+// no longer exports, and it omitted `TakeLanesView`, which the barrel gained. The
+// omission is only harmless while ArrangeView does not render that view — mount
+// it and every render in this file reds on `undefined` (#1393).
+vi.mock('#/modules/Arrangement/presentations/views', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Arrangement/presentations/views')>()),
     AdjustmentLayerStrip: () => <div data-testid="adjustment-layer-strip">Adjustment Layer Strip</div>,
     getAdjustmentLayerStripHeight: (layerCount: number) => (layerCount > 0 ? 28 + layerCount * 18 : 0),
     TimelineSurface: () => <div data-testid="timeline-surface">Timeline Surface</div>,
@@ -41,7 +47,6 @@ vi.mock('#/modules/Arrangement/presentations/views', () => ({
             Timeline Minimap
         </div>
     ),
-    MINIMAP_HEIGHT: 28,
     ArrangementBar: () => <div data-testid="arrangement-bar">Arrangement Bar</div>,
     ARRANGEMENT_BAR_HEIGHT: 22,
     MarkerLane: () => <div data-testid="marker-lane">Marker Lane</div>,

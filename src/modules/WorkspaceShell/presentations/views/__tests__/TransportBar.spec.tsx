@@ -87,13 +87,19 @@ vi.mock('#/modules/TimelineEditor/presentations/views', () => ({
     TempoEditor: () => <div data-testid="tempo-editor">Tempo</div>,
 }));
 
-vi.mock('#/modules/Project/presentations/views', () => ({
+// Spread `importOriginal` first: an exhaustive factory resolves any export added
+// to the barrel later to `undefined`, and the transport bar renders these, so the
+// whole file reds. That is exactly what #1392 did to this spec when Project
+// gained `MissingMediaPanel` — a WorkspaceShell red for a Project-only diff.
+vi.mock('#/modules/Project/presentations/views', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Project/presentations/views')>()),
     RecentProjectsMenu: () => <div data-testid="recent-projects" />,
     ArrangementSelector: () => <div data-testid="arrangement-selector" />,
     MissingMediaPanel: () => <div data-testid="missing-media-panel" />,
 }));
 
-vi.mock('#/modules/PunchRecording/presentations/views', () => ({
+vi.mock('#/modules/PunchRecording/presentations/views', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/PunchRecording/presentations/views')>()),
     PunchRecordingControls: () => <div data-testid="punch-recording" />,
 }));
 

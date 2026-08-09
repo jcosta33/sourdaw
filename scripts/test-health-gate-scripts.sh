@@ -95,6 +95,7 @@ printf '%s\n' \
     'pnpm typecheck:scripts' \
     'pnpm lint --quiet' \
     'pnpm test:collection-scope' \
+    'pnpm test:barrel-mocks' \
     'pnpm test:run --reporter=dot --silent=passed-only' \
     'pnpm build' \
     > "$temp_root/expected-web-success.log"

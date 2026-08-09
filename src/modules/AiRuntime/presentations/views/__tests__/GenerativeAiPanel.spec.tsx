@@ -87,7 +87,10 @@ vi.mock('../../components/GenerativeParamGrids', () => ({
     ),
 }));
 
-vi.mock('#/modules/AiGeneration/presentations/views', () => ({
+// Spread `importOriginal` so a view added to the AiGeneration barrel later does
+// not resolve to `undefined` here and red every render in this file (#1393).
+vi.mock('#/modules/AiGeneration/presentations/views', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/AiGeneration/presentations/views')>()),
     PatternBrowser: () => <div data-testid="pattern-browser">Pattern Browser</div>,
 }));
 

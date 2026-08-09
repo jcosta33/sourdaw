@@ -14,7 +14,12 @@ vi.mock('#/infra/store/useStore', () => ({
     useStore: mocks.useStore,
 }));
 
-vi.mock('#/modules/AudioEngine/presentations/views', () => ({
+// Spread `importOriginal`: this mock already omitted `MidiDevicePicker`, which
+// `MidiSection` (rendered from this dialog) imports from the same barrel. It only
+// stayed green because no test in this file opens that section — mount it, or add
+// another view to the barrel, and every render here reds on `undefined` (#1393).
+vi.mock('#/modules/AudioEngine/presentations/views', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/AudioEngine/presentations/views')>()),
     AudioDevicePicker: () => <div data-testid="audio-device-picker" />,
     PluginScanSettings: () => <div data-testid="plugin-scan-settings" />,
 }));

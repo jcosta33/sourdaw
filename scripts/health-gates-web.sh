@@ -41,5 +41,6 @@ pnpm typecheck:test
 pnpm typecheck:scripts
 run_lint_with_heartbeat
 pnpm test:collection-scope
+pnpm test:barrel-mocks
 pnpm test:run --reporter=dot --silent=passed-only
 pnpm build
