@@ -503,7 +503,7 @@ export type AppAction =
           payload: { trackId: string; alternativeId: string; fallbackAlternativeId?: string };
       }
     | { type: 'selectTrack'; payload: { trackId: string } }
-    | { type: 'muteTrack'; payload: { trackId: string; muted: boolean } }
+    | { type: 'muteTrack'; payload: { trackId: string; muted: boolean; expectedMuted: boolean } }
     | { type: 'soloTrack'; payload: { trackId: string; soloed: boolean } }
     | { type: 'toggleSoloSafe'; payload: { trackId: string } }
     | { type: 'setSoloSafe'; payload: { trackId: string; soloSafe: boolean } }
@@ -729,8 +729,8 @@ export type AppAction =
       }
     | { type: 'scaleAllVelocities'; payload: { clipId: string; factor: number } }
     | { type: 'setAllVelocities'; payload: { clipId: string; velocity: number } }
-    | { type: 'setTrackGain'; payload: { trackId: string; gain: number } }
-    | { type: 'setTrackPan'; payload: { trackId: string; pan: number } }
+    | { type: 'setTrackGain'; payload: { trackId: string; gain: number; expectedGain: number } }
+    | { type: 'setTrackPan'; payload: { trackId: string; pan: number; expectedPan: number } }
     | { type: 'setTrackColor'; payload: { trackId: string; color: string } }
     | { type: 'copyClip'; payload?: undefined }
     | { type: 'cutClip'; payload?: undefined }
@@ -1273,6 +1273,8 @@ export type HandlerExecutionResult = {
 export type ActionHandler<Action extends AppAction = AppAction> = {
     execute: (action: Action) => void | HandlerExecutionResult | Promise<void | HandlerExecutionResult>;
     describe: (action: Action) => HandlerDescribeResult;
+    /** Capture an owner-provided rollback for non-CRDT pre-commit state before dispatch begins. */
+    prepareAbort?: (action: Action) => HandlerAfterCommit;
     /** True when the canonical action is already reflected in project truth. */
     isNoop?: (action: Action) => boolean;
     /** False when transaction abort fully rolls back the write and no pre-commit external effect can run. */

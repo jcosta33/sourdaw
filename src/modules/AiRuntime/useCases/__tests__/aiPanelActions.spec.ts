@@ -1,4 +1,6 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+import { trackStore, type Track } from '#/modules/Arrangement/stores';
 
 import { runAppAction } from '../aiPanelActions/runAppAction';
 import { toggleChat } from '../aiPanelActions/toggleChat';
@@ -13,9 +15,51 @@ vi.mock('#/modules/WorkspaceShell/useCases', () => ({
     toggleChatPanel: vi.fn(),
 }));
 
+function createTrack(): Track {
+    return {
+        id: 't1',
+        name: 'Lead Vocal',
+        kind: 'audio',
+        muted: false,
+        soloed: false,
+        armed: false,
+        gain: 1,
+        pan: 0,
+        color: '#ffffff',
+        clips: [],
+        devices: [],
+        sends: [],
+        midiFx: [],
+        frozen: false,
+        freezeState: { status: 'unfrozen' },
+        parentId: null,
+        collapsed: false,
+        inputMonitoring: 'auto',
+        hidden: false,
+        disabled: false,
+        height: 72,
+        outputId: 'master',
+        automationMode: 'read',
+        groupId: null,
+        soloSafe: false,
+        notes: '',
+        inputId: null,
+        activeAlternativeId: '',
+        alternatives: [],
+        vcaGroupId: null,
+        midiOutputTrackId: null,
+        followChordTrack: false,
+    };
+}
+
 describe('aiPanelActions injectables', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        trackStore.set({ tracks: [createTrack()], selectedTrackId: null, ghostClips: [] });
+    });
+
+    afterEach(() => {
+        trackStore.set({ tracks: [], selectedTrackId: null, ghostClips: [] });
     });
 
     it('runAppAction forwards to executeAppAction', async () => {
@@ -24,7 +68,7 @@ describe('aiPanelActions injectables', () => {
 
         expect(executeAppAction).toHaveBeenCalledWith({
             type: 'muteTrack',
-            payload: { trackId: 't1', muted: true },
+            payload: { trackId: 't1', muted: true, expectedMuted: false },
         });
     });
 

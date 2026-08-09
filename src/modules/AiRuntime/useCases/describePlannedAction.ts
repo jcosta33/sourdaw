@@ -58,6 +58,24 @@ export function describePlannedAction({ action, context }: DescribePlannedAction
             return `Set clip "${clip.name}" (${clip.id}) on track "${track.name}" (${track.id}) loop length from ${previous} to ${String(action.payload.loopLength)} beats; ${loopState}; clip range remains beats ${String(clip.startBeat)}–${String(clip.endBeat)}`;
         }
     }
+    if (action.type === 'setTrackGain' || action.type === 'setTrackPan' || action.type === 'muteTrack') {
+        const track = context.tracks.find((candidate) => candidate.id === action.payload.trackId);
+        if (track) {
+            const target = `track "${track.name}" (${track.id})`;
+            if (action.type === 'setTrackGain') {
+                return `Set ${target} gain to ${String(action.payload.gain)}`;
+            }
+            if (action.type === 'setTrackPan') {
+                let pan = String(action.payload.pan);
+                if (action.payload.pan > 0) {
+                    pan = `+${pan}`;
+                }
+                return `Set ${target} pan to ${pan}`;
+            }
+            const verb = action.payload.muted ? 'Mute' : 'Unmute';
+            return `${verb} ${target} (muted=${String(action.payload.muted)})`;
+        }
+    }
     if (action.type === 'removeTrack') {
         const track = context.tracks.find((candidate) => candidate.id === action.payload.trackId);
         if (track) {

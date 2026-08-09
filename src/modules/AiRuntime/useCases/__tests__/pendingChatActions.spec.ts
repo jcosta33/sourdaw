@@ -1,6 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-import { type RuntimeAction } from '../../models/RuntimeAction';
 import {
     clearPendingActionConfirmations,
     getPendingActionConfirmation,
@@ -60,9 +59,9 @@ vi.mock('../notifyAiChange', () => ({
     notifyAiChange: mocks.notifyAiChange,
 }));
 
-const pendingAction: RuntimeAction = { type: 'removeTrack', payload: { trackId: 'track-1' } };
-const secondPendingAction: RuntimeAction = { type: 'removeClip', payload: { clipId: 'clip-1' } };
-const runtimeOnlyAction: RuntimeAction = { type: 'setPlayback', payload: { playing: true } };
+const pendingAction: AppAction = { type: 'removeTrack', payload: { trackId: 'track-1' } };
+const secondPendingAction: AppAction = { type: 'removeClip', payload: { clipId: 'clip-1' } };
+const runtimeOnlyAction: AppAction = { type: 'setPlayback', payload: { playing: true } };
 
 function proposePendingAppAction(id: string): void {
     proposePendingActionConfirmation({
@@ -436,7 +435,7 @@ describe('pending chat action confirmation', () => {
     });
 
     it('does not claim a protected target stayed unchanged when the committed effect reports its ID', async () => {
-        const protectedAction: RuntimeAction = {
+        const protectedAction: AppAction = {
             type: 'removeTrack',
             payload: { trackId: 'track-parallel' },
         };

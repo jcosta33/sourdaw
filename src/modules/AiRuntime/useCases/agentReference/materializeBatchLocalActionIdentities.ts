@@ -1,10 +1,10 @@
-import { type ExecutableRuntimeAction } from '../../models/ExecutableRuntimeAction';
+import { type MaterializableRuntimeAction } from '../../models/ExecutableRuntimeAction';
 import { type RuntimeAction } from '../../models/RuntimeAction';
 
 import { type BatchLocalActionIdentity } from './bridgeGroundedLlmToolCalls';
 
 type MaterializeBatchLocalActionIdentitiesResult =
-    { status: 'accepted'; actions: ExecutableRuntimeAction[] } | { status: 'rejected'; reason: string };
+    { status: 'accepted'; actions: MaterializableRuntimeAction[] } | { status: 'rejected'; reason: string };
 
 const GENERATED_BUS_ID_PATTERN = /^bus-ai-[\da-f]{8}-[\da-f]{4}-4[\da-f]{3}-[89ab][\da-f]{3}-[\da-f]{12}$/u;
 
@@ -30,7 +30,7 @@ export function materializeBatchLocalActionIdentities(
 
     let createBusOrdinal = 0;
     const consumedOrdinals = new Set<number>();
-    const executableActions = actions.map((action): ExecutableRuntimeAction => {
+    const executableActions = actions.map((action): MaterializableRuntimeAction => {
         if (action.type !== 'createBus') {
             return action;
         }

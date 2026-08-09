@@ -1,6 +1,8 @@
 import { type describeAction } from '#/modules/Command/useCases';
 
 import { PRESET_ACTIONS } from '../../models/PresetActions/Registry';
+import { getProjectContext } from '../getProjectContext';
+import { materializeActionStateGuards } from '../materializeActionStateGuards';
 
 type ResolvePresetActionsInput = {
     presetId: string;
@@ -25,5 +27,7 @@ export function resolvePresetActions({ presetId, context }: ResolvePresetActions
         return [];
     }
 
-    return Array.isArray(actionResult) ? actionResult : [actionResult];
+    const actions = Array.isArray(actionResult) ? actionResult : [actionResult];
+    const materialized = materializeActionStateGuards(actions, getProjectContext());
+    return materialized.status === 'accepted' ? materialized.actions : [];
 }

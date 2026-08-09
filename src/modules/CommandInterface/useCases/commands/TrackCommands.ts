@@ -180,8 +180,12 @@ export const trackCommands: CallableCommandEntry[] = [
         category: 'Track',
         action: () => {
             const id = getSelectedTrackId();
-            if (id) {
-                void executeAppAction({ type: 'muteTrack', payload: { trackId: id, muted: true } });
+            const track = trackStore.value?.tracks.find((candidate) => candidate.id === id);
+            if (track) {
+                void executeAppAction({
+                    type: 'muteTrack',
+                    payload: { trackId: track.id, muted: true, expectedMuted: track.muted },
+                });
             }
         },
     },

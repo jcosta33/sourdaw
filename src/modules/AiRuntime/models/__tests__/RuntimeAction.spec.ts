@@ -103,5 +103,8 @@ describe('RuntimeAction', () => {
         expectTypeOf<PayloadHasKey<'glueClips', 'expected'>>().toEqualTypeOf<false>();
         expectTypeOf<PayloadHasKey<'glueClips', 'replacement'>>().toEqualTypeOf<false>();
         expectTypeOf<PayloadHasKey<'setPunchEnabled', 'expectedEnabled'>>().toEqualTypeOf<false>();
+        expectTypeOf<PayloadHasKey<'muteTrack', 'expectedMuted'>>().toEqualTypeOf<false>();
+        expectTypeOf<PayloadHasKey<'setTrackGain', 'expectedGain'>>().toEqualTypeOf<false>();
+        expectTypeOf<PayloadHasKey<'setTrackPan', 'expectedPan'>>().toEqualTypeOf<false>();
     });
 });
