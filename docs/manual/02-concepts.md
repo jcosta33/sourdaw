@@ -99,10 +99,14 @@ many notes it touched.
 > are not recorded — undo will skip straight past them to the last material edit.
 >
 > Whether a device records anything is decided device by device, so the device page is the
-> authority. Gluten is the furthest along: a settled control move is one undo step, while loading a
-> preset or pressing a Quick move is not recorded at all. Grinder records nothing — knobs, presets,
-> and snapshot recalls alike. The reverb records a loaded space as one grouped step, so a single
-> press of undo puts the whole space back.
+> authority where there is one. Gluten is the furthest along: a settled control move is one undo
+> step, while loading a preset or pressing a Quick move is not recorded at all. Grinder records
+> nothing you do by hand — knobs, presets, and snapshot recalls alike. The reverb records a loaded
+> space as one grouped step, so a single press of undo restores the whole space.
+>
+> What undo restores is the project and the sound, not the panel. Every device draws its controls
+> from its own session state, and undo does not write back into it — so after undoing a device
+> change the control keeps showing the value you set until you close the device and open it again.
 >
 > Save a preset or duplicate the track before you experiment with a device.
 
@@ -123,7 +127,10 @@ Most operations are available three ways:
 
 The three are not yet equivalent, and the difference shows up in undo. Track gain, pan, and adding a
 device are recorded as undoable steps when the assistant performs them, but not when you perform them
-by hand. Until that evens out, ask the assistant for a change you may want to walk back.
+by hand. Device parameters split the same way on every device that does not record its own controls:
+ask the assistant to change a Grinder knob and the change is one undo step, where turning that knob
+yourself is not recorded at all. Until that evens out, ask the assistant for a change you may want to
+walk back.
 
 ## Where sound actually comes out
 

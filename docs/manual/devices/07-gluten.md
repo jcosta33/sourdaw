@@ -196,8 +196,10 @@ controls the name is the only way to tell which lane is which:
 > [!WARNING]
 > **Not yet active.** Loading a preset and pressing a Quick move are not recorded in the history
 > panel and cannot be undone — they apply immediately and permanently. Individual control moves
-> *are* undoable: release a knob, press undo, and it goes back where it was. One drag is one step,
-> however far it travelled. Save a preset before you load another one.
+> *are* recorded: one drag is one step, however far it travelled, and undo restores the saved value
+> and the sound. **The panel does not follow it.** The knob keeps drawing the value you dragged to
+> until you close Gluten and open it again, so after an undo the face of the device disagrees with
+> what you are hearing. Save a preset before you load another one.
 
 ## See also
 
