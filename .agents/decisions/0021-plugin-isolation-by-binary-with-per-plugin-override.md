@@ -39,7 +39,7 @@ qualitative and no vendor publishes numbers. If measured private RSS is under ~3
 no added scheduling jitter, per-instance isolation becomes simpler than group multiplexing and should
 win instead.
 
-## Sandboxing — default-deny with brokered capabilities (DG-003)
+## Sandboxing — capability vocabulary, platform mechanism gated (DG-003)
 
 Process isolation is standard among DAWs. **Kernel-enforced sandboxing of the plugin host is not** —
 only the platform vendor enforces it, and REAPER offers the opposite (an option to "Terminate REAPER
@@ -55,13 +55,20 @@ escape: with the `com.apple.security.temporary-exception.audio-unit-host` entitl
 will ask the user whether or not it is acceptable… If the user says yes, the system will suspend the
 process's sandbox."
 
-**Decision:** adopt Apple's capability taxonomy as the cross-OS vocabulary; default-deny on the
-helper; per-plugin unrestricted relaxation requires explicit user confirmation recorded against the
-plugin's code-signature identity. macOS: `sandbox_init` deny-default profile, helper separately
-signed carrying `disable-library-validation` and `allow-unsigned-executable-memory` — and the
-**application drops both**, which it cannot do today (`Entitlements.plist:5-11` applies them
-app-wide, and `:31-33` disables App Sandbox entirely). Windows: job object with a restricted token,
-AppContainer where tolerated. Linux: namespaces, Landlock for the filesystem grant, seccomp floor.
+**Decision:** adopt Apple's capability taxonomy as the cross-OS vocabulary; per-plugin unrestricted
+relaxation requires explicit user confirmation recorded against the plugin's code-signature
+identity. The concrete enforcement mechanism remains an implementation gate on each platform.
+
+On macOS, do not build this architecture on `sandbox_init` or `sandbox-exec`; the `sandbox.h` API is
+deprecated and no longer supported. Before implementation, prove that a separately signed App
+Sandbox helper can load the supported third-party plugin set while receiving only brokered file and
+resource grants. If it cannot, ship process isolation without claiming kernel sandboxing until a
+supported mechanism exists. The application must still drop `disable-library-validation` and
+`allow-unsigned-executable-memory`; today `Entitlements.plist:5-11` applies them app-wide and
+`:31-33` disables App Sandbox entirely.
+
+Windows and Linux require the same proof before their mechanisms are frozen: restricted token and
+job-object/AppContainer feasibility on Windows; namespaces, Landlock and a seccomp floor on Linux.
 Grant lifetime is one helper generation.
 
 **Scan in a disposable helper of the same shape.** Both platform vendors eliminated the need to

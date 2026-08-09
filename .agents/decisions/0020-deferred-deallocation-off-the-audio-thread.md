@@ -32,8 +32,9 @@ buffer back to a non-RT owner that performs the drop; `crumbs.rs:828` asserts th
 `rtrb` channel pattern appears in `audio_bridge.rs` and `midi/rt_contract.rs`, and `triple_buffer`
 carries RT-read snapshots in `midi/diagnostics.rs` and `daw-core/src/tuning.rs`.
 
-Both crates are already dependencies of `daw-core`, `daw-engine` and `src-tauri`. `basedrop` is not
-in the tree.
+`daw-engine` and `src-tauri` already depend on both crates. `daw-core` depends on `triple_buffer` but
+not `rtrb`; using an `rtrb` return channel there would be a new crate-local dependency even though it
+is already present in the workspace lockfile. `basedrop` is not in the tree.
 
 **And there is a live violation.** `crates/daw-engine/src/scheduler.rs:144-149` handles
 `RemoveEffect`/`RemovePlugin` with `self.effects.retain(|e| e.id != id)`. `ActiveEffect` owns

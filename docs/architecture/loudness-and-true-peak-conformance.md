@@ -19,7 +19,7 @@ A conforming -4 implementation is still conforming under -5 for channel-based au
 because the true-peak argument below is quoted from the -5 PDF and a document that pins -4 while
 quoting -5 makes every reader check whether the quotation still applies.
 
-## True peak — why 4× cannot conform
+## True peak — what 4× proves and what it does not
 
 **Choose the oversampling factor against the error budget, not against a target sample rate.**
 
@@ -40,31 +40,31 @@ under-read (dB) = 20 · log10( cos( π · f_norm / n ) )
 it is all-in — *"including any pass-band ripple in the upsampling filter and the 'under-read'
 described in ITU-R BS.1770."*
 
-A literal 4× implementation therefore spends 0.554 dB of a 0.4 dB budget on the under-read alone,
-before any filter ripple. **It cannot pass EBU Tech 3341 cases 15–23 at any sample rate.** Cases 15
-and 16 are a sine at fs/4 (`f_norm` = 0.5) at phases 0° and 45° — precisely the adversarial condition
-the table prices.
+A literal 4× implementation can exceed the −0.4 dB tolerance for an arbitrary sinusoid phase before
+filter ripple is counted. That worst-case bound does **not** predict the result of a specific Tech
+3341 vector. Cases 15 and 16 use fs/4 sines at 0° and 45°; a 4× sample grid includes their waveform
+peaks, so the 0.688 dB arbitrary-phase bound is not their measured under-read. Cases 15–23 must be
+run against the implementation before claiming either conformance or failure.
 
-`f_norm` is normalised, so the under-read is a function of `n` alone and is **identical at 44.1 kHz
-and 48 kHz**. An older "smallest power of two whose product with the source rate is ≥ 192 kHz" rule
-agrees with the budget by coincidence at 44.1 kHz (both give 8×) and disagrees at 48 kHz, where it
-gives 4× — which cannot pass. 192 kHz is a rate the recommendation's *illustration* reaches; it is
-not a requirement, and nothing in the standard ties accuracy to an absolute rate.
+`f_norm` is normalised, so the worst-case bound is a function of `n` alone and is **identical at
+44.1 kHz and 48 kHz**. An older "smallest power of two whose product with the source rate is ≥
+192 kHz" rule therefore changes the bound by source rate even though the equation does not. 192 kHz
+is a rate the recommendation's *illustration* reaches; it is not a requirement.
 
-**Minimum n = 8 at every supported rate**, allocating at most half the −0.4 dB allowance to the
-under-read (≤ 0.2 dB, leaving ≥ 0.2 dB for pass-band ripple). If the chosen upsampling filter's
-*measured* ripple exceeds 0.2 dB, move to 16× — the tolerance is fixed; only the implementation is
-free.
+Using 8× bounds phase-grid under-read below 0.2 dB at Nyquist and leaves budget for filter ripple, but
+that is a conservative design choice, not an EBU-mandated minimum. Choose the factor only after the
+actual filter and all official vectors are measured. If the combined result exceeds the tolerance,
+increase the factor or change the filter and rerun the same vectors.
 
 Score true-peak cases in **dBTP against +0.2 / −0.4**. The ±0.1 LU figure governs Tech 3341's
 *loudness* minimum-requirement cases and does not apply to true peak.
 
-### The current implementation does not meet this
+### The current implementation is unverified
 
-`true_peak.rs` declares `PHASES: usize = 4`, consumed by `TruePeakDetector` in `metering.rs`. Proof's
-true-peak reading is 4× oversampled at every rate and cannot conform. The `metering.rs` doc comment
-describing the detector as "per ITU-R BS.1770" is defensible against the recommendation's
-illustration and not against EBU conformance — two different bars, and only the second is testable.
+`true_peak.rs` declares `PHASES: usize = 4`, consumed by `TruePeakDetector` in `metering.rs`.
+`measureTruePeak.ts` independently uses four phases. Neither implementation runs Tech 3341 cases
+15–23, so neither has evidence for an EBU-conformance claim or a failure claim. Add the official
+vectors to both paths and score them in dBTP against the published tolerance.
 
 The same 4× filter is **shared with the limiter's gain computer by deliberate design** (*"the dBTP
 the meter shows and the dBTP the limiter enforces come from one filter"*), so raising the factor is a
