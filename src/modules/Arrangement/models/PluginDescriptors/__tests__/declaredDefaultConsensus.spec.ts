@@ -1288,6 +1288,16 @@ describe('a device default is the same number wherever it is declared', () => {
         // Reverse direction on the divergence table. A row that is fixed —
         // whether by correcting the descriptor or by moving the module — has to
         // be deleted, so this cannot become a place drift goes to be forgotten.
+        //
+        // With the table empty the walk below never executes and
+        // `expect(stale).toEqual([])` passes unconditionally — a test that
+        // cannot fail under any change while still reporting green. That is a
+        // dormant guard rather than a live one, and the line below is what says
+        // so out loud: it pins the emptiness that makes the walk dormant, so
+        // adding a row is the act that turns the walk back on, and this
+        // assertion goes with it.
+        expect(KNOWN_DEFAULT_DIVERGENCES).toHaveLength(0);
+
         const stale: string[] = [];
         for (const row of KNOWN_DEFAULT_DIVERGENCES) {
             const declared = DESCRIPTOR_DEFAULTS.get(row.deviceId)?.get(row.paramId);

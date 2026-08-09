@@ -361,33 +361,37 @@ fn one_pole_worst_case_attenuation_db(coefficient: f64) -> f64 {
     worst
 }
 
-/// A decision tripwire, not a defect guard.
+/// **Secondary.** The load-bearing check on the input filter is
+/// `proof_chamber::tests::the_input_bandwidth_filter_has_no_audible_authority_on_the_running_engine`,
+/// which reads `self.bandwidth_filter.coeff` off the engine after a render and
+/// after every advertised parameter has been driven across its range.
 ///
-/// #1546 asked whether `bandwidth_filter: OnePole::new(1.0 - 0.9995)` — the
-/// line directly above the damping seed, and numerically the same 0.0005 that
-/// was wrong there — was switched off by the same mistake. The decision was
-/// that it stays, and the reasoning is written beside the line in
-/// `proof_chamber.rs`. What makes that reasoning true is a magnitude: applied
-/// **once**, outside any feedback path, this filter's whole authority is a
-/// fraction of a decibel, so it is not a voicing choice at all.
+/// This row was the first revision of that guard, and on its own it was wrong
+/// in exactly the way this file documents elsewhere: it parses the *constructor
+/// literal* out of the source, and a constructor literal is not the engine.
+/// `left_damp: OnePole::new(0.3)` twenty lines below the parsed line is dead —
+/// `process()` overwrites `.coeff` every block — so a source parse would have
+/// vouched for a filter whose coefficient it never saw. A live `set_param` arm
+/// reaching `bandwidth_filter`, with the literal untouched, left this test
+/// green.
 ///
-/// That magnitude is measured here from the literal the constructor actually
-/// uses. If someone gives the input filter real authority, the decision above
-/// stops holding and this reds — which is the point: it forces the question to
-/// be re-taken rather than left standing on a comment nobody re-checked.
+/// It is kept, demoted, for the one thing it does see that the unit test does
+/// not: whether the literal the comment in `proof_chamber.rs` cites is still
+/// the literal in the file. A comment citing Dattorro's 0.9995 beside a
+/// constructor that has stopped writing 0.9995 is a documentation defect even
+/// when the engine is fine.
 #[test]
-fn the_input_bandwidth_filter_has_no_audible_authority_on_its_own() {
+fn the_constructor_still_writes_the_bandwidth_literal_the_comment_cites() {
     let coefficient = declared_bandwidth_coefficient();
     let attenuation = one_pole_worst_case_attenuation_db(coefficient);
 
     assert!(
         attenuation < 0.05,
-        "the input bandwidth filter now removes up to {attenuation:.4} dB \
-         (coefficient {coefficient:e}). It is applied once per sample with no \
-         feedback around it, and the comment beside it in proof_chamber.rs \
-         justifies leaving it alone on the grounds that a single pass at this \
-         coefficient is inaudible. At this magnitude that is no longer true, so \
-         the bandwidth value is a voicing decision and needs one."
+        "the constructor now seeds the input bandwidth filter at a coefficient \
+         worth {attenuation:.4} dB ({coefficient:e}), which is not the \
+         near-open filter the comment beside that line describes. Fix the \
+         comment or re-take the decision — and check the unit test in \
+         proof_chamber.rs, which measures the running engine."
     );
 
     // And the comparison the decision rests on: whatever the input filter does,
