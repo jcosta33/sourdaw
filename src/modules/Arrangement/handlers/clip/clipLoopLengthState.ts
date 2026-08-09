@@ -1,7 +1,22 @@
-import { projectClipLoopExpansion } from '../../useCases/clipLoop/projectClipLoopExpansion';
+import { transportStore } from '#/modules/Transport/stores';
+import { projectClipLoopExpansion } from '#/utils/clipLoopProjection';
+
 import { getTrackStoreState } from '../../useCases/getTrackStoreState';
 
 export type ClipLoopLengthState = { present: boolean; value: number };
+
+// Read the transport through its store, not through `#/modules/Transport/useCases`. A clip handler
+// reaching that barrel closes a five-hop cycle:
+//
+//   Transport/useCases/index -> ensureTrackStrips -> Arrangement/useCases/index
+//     -> getArrangementHandlers -> clipHandlers -> this handler -> Transport/useCases/index
+//
+// which on its own reds `deps:validate` with 27 no-circular rows. `getTransportState()` is itself
+// only `transportStore.value`, so nothing is lost by reading the store directly.
+export function transportIsBusy(): boolean {
+    const transport = transportStore.value;
+    return transport?.isPlaying === true || transport?.isRecording === true;
+}
 
 export function findClipForLoopLength(clipId: string) {
     return getTrackStoreState()

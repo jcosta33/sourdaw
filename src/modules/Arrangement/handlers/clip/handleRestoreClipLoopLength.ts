@@ -1,4 +1,3 @@
-import { getTransportState } from '#/modules/Transport/useCases';
 import { createHandler } from '#/utils/createHandler';
 
 import { restoreClipLoopLength } from '../../useCases/clipLoop/restoreClipLoopLength';
@@ -9,12 +8,8 @@ import {
     findClipForLoopLength,
     isSafeRequestedClipLoopLength,
     readClipLoopLengthState,
+    transportIsBusy,
 } from './clipLoopLengthState';
-
-function transportIsBusy(): boolean {
-    const transport = getTransportState();
-    return transport?.isPlaying === true || transport?.isRecording === true;
-}
 
 export const handleRestoreClipLoopLength = createHandler<'restoreClipLoopLength'>({
     batchExecution: 'singleton',

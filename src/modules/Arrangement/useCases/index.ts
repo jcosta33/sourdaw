@@ -73,11 +73,6 @@ export { getGlueEligibleClipPairs } from './clipEditing/getGlueEligibleClipPairs
 export { slipClipContent } from './clipEditing/slipClipContent';
 
 export { setClipLoop } from './clipLoop/setClipLoop';
-export {
-    MAX_CLIP_LOOP_ITERATIONS,
-    MIN_CLIP_LOOP_LENGTH_BEATS,
-    projectClipLoopExpansion,
-} from './clipLoop/projectClipLoopExpansion';
 
 // ── Clip Gain Envelope ────────────────────────────────────────────────────────
 

@@ -61,20 +61,6 @@ vi.mock('#/modules/Arrangement/useCases', () => ({
         }))
     ),
     getSynthParamsForTrack: vi.fn(() => ({})),
-    projectClipLoopExpansion: vi.fn(({ clipDurationBeats, configuredLoopLengthBeats, loopEnabled }) => {
-        if (!Number.isFinite(clipDurationBeats) || clipDurationBeats <= 0) {
-            return { iterationCount: 0, loopLengthBeats: 1 / 480 };
-        }
-        if (!loopEnabled) {
-            return { iterationCount: 1, loopLengthBeats: clipDurationBeats };
-        }
-        const requestedLength = configuredLoopLengthBeats ?? clipDurationBeats;
-        const loopLengthBeats = Math.max(1 / 480, clipDurationBeats / 4096, requestedLength);
-        return {
-            iterationCount: Math.min(4096, Math.max(1, Math.ceil(clipDurationBeats / loopLengthBeats))),
-            loopLengthBeats,
-        };
-    }),
 }));
 vi.mock('#/modules/AudioEngine/useCases', () => ({
     applyNoteExpression: vi.fn(),

@@ -398,6 +398,28 @@ describe('handleSetClipLoopLength atomic integration', () => {
         expect(undoStore.value?.past).toHaveLength(0);
     });
 
+    it('refuses to undo a committed length while playback is active, and keeps the entry undoable', async () => {
+        const committed = await executeAppActionBatch(
+            [{ type: 'setClipLoopLength', payload: { clipId: 'clip-1', loopLength: 2 } }],
+            { source: 'prompt', requireCompensation: true }
+        );
+        expect(committed.status).toBe('committed');
+        expect(currentClip()).toMatchObject({ loopLength: 2 });
+
+        transportStore.set({ ...defaultTransportState, isPlaying: true });
+        await undo();
+
+        expect.soft(currentClip()).toMatchObject({ loopLength: 2 });
+        expect.soft(undoStore.value?.past).toHaveLength(1);
+        expect.soft(undoStore.value?.future).toHaveLength(0);
+
+        transportStore.set({ ...defaultTransportState });
+        await undo();
+
+        expect(Object.hasOwn(currentClip(), 'loopLength')).toBe(false);
+        expect(undoStore.value?.past).toHaveLength(0);
+    });
+
     it('rejects a length that would exceed the shared loop-iteration bound at the action boundary', async () => {
         const clip = ClipDummy.create({ id: 'clip-1', startBeat: 0, endBeat: 100, loopEnabled: true });
         const track = TrackDummy.create({ id: 'track-1', clips: [clip] });

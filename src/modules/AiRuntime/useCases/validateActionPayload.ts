@@ -27,7 +27,7 @@
  * transient AI lifecycle events. The line is "would a malformed payload
  * cause data loss, persistent corruption, or an exploit".
  */
-import { MIN_CLIP_LOOP_LENGTH_BEATS } from '#/modules/Arrangement/useCases';
+import { MIN_CLIP_LOOP_LENGTH_BEATS } from '#/utils/clipLoopProjection';
 import { resolveMarkerColorName } from '#/utils/markerColorPalette';
 
 import { type RuntimeAction, type RuntimeActionType } from '../models/RuntimeAction';
