@@ -12,6 +12,7 @@ import { handleSetMetronomeEnabled } from '../handlers/transport/handleSetMetron
 import { handleSetMetronomeVolume } from '../handlers/transport/handleSetMetronomeVolume';
 import { handleSetPlayback } from '../handlers/transport/handleSetPlayback';
 import { handleSetPreRollBars } from '../handlers/transport/handleSetPreRollBars';
+import { handleSetPunchEnabled } from '../handlers/transport/handleSetPunchEnabled';
 import { handleSetPunchIn } from '../handlers/transport/handleSetPunchIn';
 import { handleSetPunchOut } from '../handlers/transport/handleSetPunchOut';
 import { handleSetTempo } from '../handlers/transport/handleSetTempo';
@@ -41,6 +42,7 @@ export type TransportHandlersMap = {
     setMetronomeEnabled: typeof handleSetMetronomeEnabled;
     setPreRollBars: typeof handleSetPreRollBars;
     setPunchIn: typeof handleSetPunchIn;
+    setPunchEnabled: typeof handleSetPunchEnabled;
     setPunchOut: typeof handleSetPunchOut;
     setTempo: typeof handleSetTempo;
     setTimeSignature: typeof handleSetTimeSignature;
@@ -75,6 +77,7 @@ export function getTransportHandlers(): TransportHandlersMap {
         setLoopRegion: handleSetLoopRegion,
         seekPlayhead: handleSeekPlayhead,
         setPunchIn: handleSetPunchIn,
+        setPunchEnabled: handleSetPunchEnabled,
         setPunchOut: handleSetPunchOut,
         togglePunch: handleTogglePunch,
         toggleCountIn: handleToggleCountIn,

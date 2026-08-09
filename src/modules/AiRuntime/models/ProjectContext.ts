@@ -2,6 +2,7 @@ export type ProjectContext = {
     tempo: number;
     timeSignature: [number, number];
     isPlaying: boolean;
+    isRecording: boolean;
     isLooping: boolean;
     loopStart: number;
     loopEnd: number;

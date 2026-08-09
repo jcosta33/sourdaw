@@ -675,6 +675,19 @@ const EXPECTED_COMMANDS = [
         true
     ),
     expectedCommand(
+        'setPunchEnabled',
+        'Enable or disable Transport Punch In/Out until changed without changing the punch region or background capture.',
+        {
+            enabled: {
+                type: 'boolean',
+                description: 'true=enable Transport Punch In/Out, false=disable; punch endpoints remain unchanged',
+            },
+        },
+        ['enabled'],
+        'authority-sensitive',
+        true
+    ),
+    expectedCommand(
         'setMetronomeEnabled',
         'Enable or disable the metronome.',
         { enabled: { type: 'boolean', description: 'true=enable, false=disable' } },
@@ -1653,6 +1666,33 @@ const EXPECTED_GROUNDING = [
         targetRules: [],
         valueRules: [
             { argument: 'beat', kind: 'number-if-present', requiredInPrompt: true, match: 'exact', connector: 'beat' },
+        ],
+    },
+    {
+        actionType: 'setPunchEnabled',
+        intentPhrases: [
+            'enable punch in/out',
+            'disable punch in/out',
+            'turn punch in/out on',
+            'turn punch in/out off',
+            'enable punch mode',
+            'disable punch mode',
+            'turn punch mode on',
+            'turn punch mode off',
+        ],
+        targetRules: [],
+        valueRules: [
+            {
+                argument: 'enabled',
+                kind: 'boolean-intent',
+                truePhrases: ['enable punch in/out', 'turn punch in/out on', 'enable punch mode', 'turn punch mode on'],
+                falsePhrases: [
+                    'disable punch in/out',
+                    'turn punch in/out off',
+                    'disable punch mode',
+                    'turn punch mode off',
+                ],
+            },
         ],
     },
     {

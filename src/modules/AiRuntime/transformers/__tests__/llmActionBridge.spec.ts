@@ -10,6 +10,7 @@ const projectContext: ProjectContext = {
     tempo: 120,
     timeSignature: [4, 4],
     isPlaying: false,
+    isRecording: false,
     isLooping: true,
     loopStart: 4,
     loopEnd: 12,
@@ -3401,6 +3402,7 @@ describe('bridgeLlmToolCalls', () => {
         expect(userMessage).toContain('"selectedTrackId":"track-vocals"');
         expect(userMessage).toContain('"selectedClipId":"clip-verse"');
         expect(userMessage).toContain('"isPlaying":false');
+        expect(userMessage).toContain('"isRecording":false');
         expect(userMessage).toContain('"isLooping":true');
         expect(userMessage).toContain('"loopStart":4');
         expect(userMessage).toContain('"loopEnd":12');
@@ -4086,5 +4088,36 @@ describe('bridgeLlmToolCalls', () => {
 
         expect(result.actions).toEqual([{ type: 'scaleAutomation', payload: { laneId: lane.id, factor: 1.5 } }]);
         expect(result.rejections[0]?.reason).toBe('Provider batch writes the same target field more than once');
+    });
+
+    it('bridges one explicit punch-enabled change only while transport is stopped', () => {
+        const enabled = bridge({ calls: [{ name: 'setPunchEnabled', arguments: { enabled: false } }] });
+        const noOp = bridge({ calls: [{ name: 'setPunchEnabled', arguments: { enabled: true } }] });
+        const malformed = bridge({
+            calls: [{ name: 'setPunchEnabled', arguments: { enabled: false, expectedEnabled: true } }],
+        });
+        const playing = bridge({
+            context: { ...projectContext, isPlaying: true },
+            calls: [{ name: 'setPunchEnabled', arguments: { enabled: false } }],
+        });
+        const recording = bridge({
+            context: { ...projectContext, isRecording: true },
+            calls: [{ name: 'setPunchEnabled', arguments: { enabled: false } }],
+        });
+        const compound = bridge({
+            calls: [
+                { name: 'setPunchEnabled', arguments: { enabled: false } },
+                { name: 'setTempo', arguments: { bpm: 100 } },
+            ],
+        });
+
+        expect(enabled).toEqual({
+            actions: [{ type: 'setPunchEnabled', payload: { enabled: false } }],
+            rejections: [],
+        });
+        for (const rejected of [noOp, malformed, playing, recording, compound]) {
+            expect(rejected.actions).toEqual([]);
+            expect(rejected.rejections).toHaveLength(1);
+        }
     });
 });

@@ -626,6 +626,19 @@ function bridgeToolCall({
         return { type: 'setPunchOut', payload: { beat } };
     }
 
+    if (call.name === 'setPunchEnabled') {
+        if (!hasExactKeys(args, ['enabled']) || typeof args.enabled !== 'boolean') {
+            return rejection(index, call.name, 'Expected only a boolean enabled value');
+        }
+        if (context.isPlaying || context.isRecording) {
+            return rejection(index, call.name, 'Transport Punch In/Out can change only while transport is stopped');
+        }
+        if (context.punchInEnabled === args.enabled) {
+            return rejection(index, call.name, 'Requested Transport Punch In/Out state already matches project state');
+        }
+        return { type: 'setPunchEnabled', payload: { enabled: args.enabled } };
+    }
+
     if (call.name === 'setMetronomeEnabled') {
         if (!hasExactKeys(args, ['enabled']) || typeof args.enabled !== 'boolean') {
             return rejection(index, call.name, 'Expected only a boolean enabled value');
@@ -2014,6 +2027,9 @@ function getMutationKeys(
     if (action.type === 'setPunchIn' || action.type === 'setPunchOut') {
         return ['punch:region'];
     }
+    if (action.type === 'setPunchEnabled') {
+        return ['punch:enabled'];
+    }
     if (action.type === 'setMetronomeEnabled') {
         return ['metronome:enabled'];
     }
@@ -2419,13 +2435,13 @@ export function bridgeLlmToolCalls({
         };
     }
 
-    const punchCalls = calls.filter((call) => call.name === 'setPunchIn' || call.name === 'setPunchOut');
+    const punchCalls = calls.filter(
+        (call) => call.name === 'setPunchIn' || call.name === 'setPunchOut' || call.name === 'setPunchEnabled'
+    );
     if (punchCalls.length > 0 && (punchCalls.length !== 1 || calls.length !== 1)) {
         return {
             actions: [],
-            rejections: [
-                rejection(0, '<batch>', 'Provider punch endpoint command must be the only action in its batch'),
-            ],
+            rejections: [rejection(0, '<batch>', 'Provider punch command must be the only action in its batch')],
         };
     }
 
@@ -2792,6 +2808,7 @@ export function buildLlmActionUserMessage({ prompt, context }: { prompt: string;
         tempo: context.tempo,
         timeSignature: context.timeSignature,
         isPlaying: context.isPlaying,
+        isRecording: context.isRecording,
         isLooping: context.isLooping,
         loopStart: context.loopStart,
         loopEnd: context.loopEnd,

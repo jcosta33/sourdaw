@@ -6,6 +6,7 @@ import { TooltipProvider } from '#/components/ui/tooltip';
 import { TransportControls } from '../TransportControls';
 
 const mocks = vi.hoisted(() => ({
+    executeAppAction: vi.fn().mockResolvedValue(undefined),
     togglePlayback: vi.fn(),
     stopPlayback: vi.fn(),
     toggleLoop: vi.fn(),
@@ -13,9 +14,12 @@ const mocks = vi.hoisted(() => ({
     toggleMetronome: vi.fn(),
     setMetronomeVolume: vi.fn(),
     toggleRecording: vi.fn(),
-    togglePunchEnabled: vi.fn(),
     toggleCountIn: vi.fn(),
     setCountInBars: vi.fn(),
+}));
+
+vi.mock('#/modules/Command/useCases', () => ({
+    executeAppAction: mocks.executeAppAction,
 }));
 
 vi.mock('#/modules/Transport/useCases', () => ({
@@ -26,7 +30,6 @@ vi.mock('#/modules/Transport/useCases', () => ({
     toggleMetronome: mocks.toggleMetronome,
     setMetronomeVolume: mocks.setMetronomeVolume,
     toggleRecording: mocks.toggleRecording,
-    togglePunchEnabled: mocks.togglePunchEnabled,
     toggleCountIn: mocks.toggleCountIn,
     setCountInBars: mocks.setCountInBars,
 }));
@@ -149,10 +152,23 @@ describe('TransportControls', () => {
             expect(mocks.toggleMetronome).toHaveBeenCalledTimes(1);
         });
 
-        it('routes punch to togglePunchEnabled', () => {
+        it('routes punch through an explicit undoable command', () => {
             renderWithTooltip(<TransportControls {...defaultProps} />);
             fireEvent.click(screen.getByLabelText('Punch in/out'));
-            expect(mocks.togglePunchEnabled).toHaveBeenCalledTimes(1);
+            expect(mocks.executeAppAction).toHaveBeenCalledWith({
+                type: 'setPunchEnabled',
+                payload: { enabled: true },
+            });
+        });
+
+        it('does not dispatch punch while transport is busy', () => {
+            renderWithTooltip(<TransportControls {...defaultProps} isPlaying={true} />);
+            const punch = screen.getByLabelText('Punch in/out');
+
+            expect(punch).toBeDisabled();
+            fireEvent.click(punch);
+
+            expect(mocks.executeAppAction).not.toHaveBeenCalled();
         });
 
         it('routes count-in toggle to toggleCountIn', () => {

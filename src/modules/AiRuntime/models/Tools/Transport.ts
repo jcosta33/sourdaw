@@ -51,7 +51,12 @@ export const transportTools: readonly ToolSchema[] = [
     ),
     tool('setPunchIn', 'Set the punch-in point for recording.', { beat: { type: 'number' } }, ['beat']),
     tool('setPunchOut', 'Set the punch-out point for recording.', { beat: { type: 'number' } }, ['beat']),
-    tool('togglePunch', 'Toggle punch recording mode.', {}),
+    tool(
+        'setPunchEnabled',
+        'Enable or disable Transport Punch In/Out until changed without changing punch endpoints.',
+        { enabled: { type: 'boolean' } },
+        ['enabled']
+    ),
     tool('toggleCountIn', 'Toggle count-in before recording.', {}),
     tool('setCountInBars', 'Set number of count-in bars.', { bars: { type: 'number' } }, ['bars']),
     tool(

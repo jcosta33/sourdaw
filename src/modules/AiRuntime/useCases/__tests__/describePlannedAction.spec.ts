@@ -24,6 +24,7 @@ const context: ProjectContext = {
     tempo: 120,
     timeSignature: [4, 4],
     isPlaying: false,
+    isRecording: false,
     isLooping: false,
     loopStart: 0,
     loopEnd: 0,
@@ -392,6 +393,25 @@ describe('describePlannedAction', () => {
             })
         ).toBe(
             'Set punch-out to beat 8; punch-in remains at beat 4; resulting region 4–8; punch recording remains enabled'
+        );
+    });
+
+    it('describes durable punch enablement with armed-track playback behavior and the exact region', () => {
+        expect(
+            describePlannedAction({
+                action: { type: 'setPunchEnabled', payload: { enabled: true } },
+                context,
+            })
+        ).toBe(
+            'Enable Transport Punch In/Out until changed; during playback with an armed track, recording starts at punch-in beat 4 and stops at punch-out beat 12; punch region remains beats 4–12; background capture is unchanged'
+        );
+        expect(
+            describePlannedAction({
+                action: { type: 'setPunchEnabled', payload: { enabled: false } },
+                context,
+            })
+        ).toBe(
+            'Disable Transport Punch In/Out until changed; armed-track playback will no longer start and stop recording at punch region beats 4–12; punch region remains beats 4–12; background capture is unchanged'
         );
     });
 });

@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { configureAutomergeStoragePort } from '#/infra/store/storage/createAutomergeStorage';
 import { clearHandlerRegistry, registerHandlerMap, undoStore } from '#/modules/Command/stores';
-import { clearUndoHistory, executeAppAction, redo, undo } from '#/modules/Command/useCases';
+import { clearUndoHistory, executeAppAction, executeAppActionBatch, redo, undo } from '#/modules/Command/useCases';
 import { type AppAction } from '#/utils/handlerContract';
 
 import { defaultTransportState, transportStore } from '../../../stores/transportStore';
@@ -156,6 +156,149 @@ describe('Transport punch action undo/redo', () => {
         await redo();
 
         expect(get_punch_region()).toEqual(after);
+        expect(undoStore.value?.past).toHaveLength(1);
+        expect(undoStore.value?.future).toHaveLength(0);
+    });
+
+    it('undoes and redoes the legacy manual punch toggle through explicit guarded state', async () => {
+        transportStore.set({ ...defaultTransportState, punchInEnabled: false });
+
+        await executeAppAction({ type: 'togglePunch', payload: undefined });
+        expect(transportStore.value?.punchInEnabled).toBe(true);
+
+        await undo();
+        expect(transportStore.value?.punchInEnabled).toBe(false);
+        expect(undoStore.value?.future).toHaveLength(1);
+
+        await redo();
+        expect(transportStore.value?.punchInEnabled).toBe(true);
+        expect(undoStore.value?.past).toHaveLength(1);
+    });
+
+    it('rejects a legacy toggle mixed with another punch-enabled action before either can write', async () => {
+        transportStore.set({ ...defaultTransportState, punchInEnabled: false });
+
+        const result = await executeAppActionBatch([
+            { type: 'setPunchEnabled', payload: { enabled: true } },
+            { type: 'togglePunch', payload: undefined },
+        ]);
+
+        expect(result).toEqual({
+            status: 'rejected',
+            reason: 'Action must execute as a singleton batch: togglePunch',
+            actions: [],
+        });
+        expect(transportStore.value?.punchInEnabled).toBe(false);
+        expect(undoStore.value?.past).toHaveLength(0);
+        expect(undoStore.value?.future).toHaveLength(0);
+    });
+
+    it('undoes and redoes a singleton legacy toggle batch from its exact preflight state', async () => {
+        transportStore.set({ ...defaultTransportState, punchInEnabled: false });
+
+        await expect(executeAppActionBatch([{ type: 'togglePunch', payload: undefined }])).resolves.toMatchObject({
+            status: 'committed',
+        });
+        expect(transportStore.value?.punchInEnabled).toBe(true);
+        expect(undoStore.value?.past).toHaveLength(1);
+
+        await undo();
+        expect(transportStore.value?.punchInEnabled).toBe(false);
+        expect(undoStore.value?.future).toHaveLength(1);
+
+        await redo();
+        expect(transportStore.value?.punchInEnabled).toBe(true);
+        expect(undoStore.value?.past).toHaveLength(1);
+    });
+
+    it('undoes and redoes explicit punch enablement without changing endpoints', async () => {
+        transportStore.set({
+            ...defaultTransportState,
+            punchInEnabled: false,
+            punchInBeat: 4,
+            punchOutBeat: 12,
+        });
+
+        expect(
+            getTransportHandlers().setPunchEnabled.describe({
+                type: 'setPunchEnabled',
+                payload: { enabled: true },
+            })
+        ).toEqual({
+            label: 'Enable Punch In/Out',
+            inverseAction: {
+                type: 'setPunchEnabled',
+                payload: { enabled: false, expectedEnabled: true },
+            },
+            redoAction: {
+                type: 'setPunchEnabled',
+                payload: { enabled: true, expectedEnabled: false },
+            },
+        });
+
+        await executeAppAction({ type: 'setPunchEnabled', payload: { enabled: true } });
+        expect(transportStore.value).toMatchObject({
+            punchInEnabled: true,
+            punchInBeat: 4,
+            punchOutBeat: 12,
+        });
+
+        await undo();
+        expect(transportStore.value).toMatchObject({
+            punchInEnabled: false,
+            punchInBeat: 4,
+            punchOutBeat: 12,
+        });
+
+        await redo();
+        expect(transportStore.value).toMatchObject({
+            punchInEnabled: true,
+            punchInBeat: 4,
+            punchOutBeat: 12,
+        });
+    });
+
+    it('retains undo and redo entries while transport is busy, then retries safely', async () => {
+        transportStore.set({ ...defaultTransportState, punchInEnabled: false });
+        await executeAppAction({ type: 'setPunchEnabled', payload: { enabled: true } });
+
+        transportStore.set({ ...transportStore.value!, isPlaying: true });
+        await undo();
+        expect(transportStore.value?.punchInEnabled).toBe(true);
+        expect(undoStore.value?.past).toHaveLength(1);
+        expect(undoStore.value?.future).toHaveLength(0);
+
+        transportStore.set({ ...transportStore.value!, isPlaying: false });
+        await undo();
+        expect(transportStore.value?.punchInEnabled).toBe(false);
+        expect(undoStore.value?.future).toHaveLength(1);
+
+        transportStore.set({ ...transportStore.value!, isRecording: true });
+        await redo();
+        expect(transportStore.value?.punchInEnabled).toBe(false);
+        expect(undoStore.value?.past).toHaveLength(0);
+        expect(undoStore.value?.future).toHaveLength(1);
+
+        transportStore.set({ ...transportStore.value!, isRecording: false });
+        await redo();
+        expect(transportStore.value?.punchInEnabled).toBe(true);
+        expect(undoStore.value?.past).toHaveLength(1);
+        expect(undoStore.value?.future).toHaveLength(0);
+    });
+
+    it('advances history when guarded undo and redo replacements are already achieved', async () => {
+        transportStore.set({ ...defaultTransportState, punchInEnabled: false });
+        await executeAppAction({ type: 'setPunchEnabled', payload: { enabled: true } });
+
+        transportStore.set({ ...transportStore.value!, punchInEnabled: false });
+        await undo();
+        expect(transportStore.value?.punchInEnabled).toBe(false);
+        expect(undoStore.value?.past).toHaveLength(0);
+        expect(undoStore.value?.future).toHaveLength(1);
+
+        transportStore.set({ ...transportStore.value!, punchInEnabled: true });
+        await redo();
+        expect(transportStore.value?.punchInEnabled).toBe(true);
         expect(undoStore.value?.past).toHaveLength(1);
         expect(undoStore.value?.future).toHaveLength(0);
     });

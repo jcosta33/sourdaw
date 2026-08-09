@@ -1245,7 +1245,7 @@ function resolveActionPromptScope({
         catalog,
         plannedActionNames
     );
-    if (isPunchActionType(actionName) || hasPunchEndpointReference(prompt)) {
+    if (isPunchActionType(actionName) || hasPunchFamilyReference(prompt)) {
         const promptActionAnalysis = analyzePromptActionRequests(prompt, catalog);
         const hasCancelledPunchRequest = promptActionAnalysis.requests.some(
             (request) => isPunchActionType(request.actionType) && request.cancelled
@@ -3316,12 +3316,12 @@ function analyzePromptActionRequests(prompt: string, catalog: GroundingCatalog):
     return { cancellationClauses, clauses, requests };
 }
 
-function isPunchActionType(actionType: string): actionType is 'setPunchIn' | 'setPunchOut' {
-    return actionType === 'setPunchIn' || actionType === 'setPunchOut';
+function isPunchActionType(actionType: string): actionType is 'setPunchIn' | 'setPunchOut' | 'setPunchEnabled' {
+    return actionType === 'setPunchIn' || actionType === 'setPunchOut' || actionType === 'setPunchEnabled';
 }
 
-function hasPunchEndpointReference(prompt: string): boolean {
-    return /\bpunch\s+(?:in|out)\b/u.test(normalizePromptText(maskQuotedLabels(prompt)));
+function hasPunchFamilyReference(prompt: string): boolean {
+    return /\bpunch\b/u.test(normalizePromptText(maskQuotedLabels(prompt)));
 }
 
 function isExactPunchCommandClause(clause: PromptClause): boolean {
@@ -3331,6 +3331,22 @@ function isExactPunchCommandClause(clause: PromptClause): boolean {
     return /^(?:set|move)\s+punch(?:\s+|-)\s*(?:in|out)\s+(?:(?:at|to)\s+)?beat\s+[+-]?(?:\d+(?:\.\d+)?|\.\d+)\s*[?!]?$/iu.test(
         commandSource
     );
+}
+
+function isExactPunchEnabledCommandClause(clause: PromptClause): boolean {
+    let commandSource = clause.masked.trim();
+    commandSource = commandSource.replace(/^(?:please\s+)?(?:can|could|would)\s+you(?:\s+please)?\s+/iu, '');
+    commandSource = commandSource.replace(/^please\s+/iu, '');
+    return /^(?:(?:enable|disable)\s+punch\s+(?:in\s*\/\s*out|mode)|turn\s+punch\s+(?:in\s*\/\s*out|mode)\s+(?:on|off))(?:\s+please)?\s*[?!.]?$/iu.test(
+        commandSource
+    );
+}
+
+function isExactPunchActionCommandClause(request: PromptActionRequest): boolean {
+    if (request.actionType === 'setPunchEnabled') {
+        return isExactPunchEnabledCommandClause(request.clause);
+    }
+    return isExactPunchCommandClause(request.clause);
 }
 
 function isPunchPromptFullyCovered(analysis: PromptActionAnalysis): boolean {
@@ -3396,9 +3412,7 @@ export function bridgeGroundedLlmToolCalls({
     const activePromptActionRequests = promptActionRequests.filter((request) => !request.cancelled);
     const totalPunchPromptRequests = promptActionRequests.filter((request) => isPunchActionType(request.actionType));
     const punchPromptRequests = activePromptActionRequests.filter((request) => isPunchActionType(request.actionType));
-    const punchProviderCalls = effectiveCalls.filter(
-        (call) => call.name === 'setPunchIn' || call.name === 'setPunchOut'
-    );
+    const punchProviderCalls = effectiveCalls.filter((call) => isPunchActionType(call.name));
     if (punchPromptRequests.length > 0 || punchProviderCalls.length > 0) {
         const promptRequest = punchPromptRequests[0];
         const providerCall = punchProviderCalls[0];
@@ -3409,16 +3423,14 @@ export function bridgeGroundedLlmToolCalls({
             effectiveCalls.length === 1 &&
             activePromptActionRequests.length === 1 &&
             promptRequest !== undefined &&
-            isExactPunchCommandClause(promptRequest.clause) &&
+            isExactPunchActionCommandClause(promptRequest) &&
             isPunchPromptFullyCovered(promptActionAnalysis) &&
             !hasMalformedPunchNumericContinuation(maskQuotedLabels(prompt)) &&
             providerCall?.name === promptRequest.actionType;
         if (!isExactSingleton) {
             return {
                 actions: [],
-                rejections: [
-                    rejection(0, '<batch>', 'Punch endpoint request must name exactly one direct endpoint command'),
-                ],
+                rejections: [rejection(0, '<batch>', 'Punch request must name exactly one direct command')],
             };
         }
     }

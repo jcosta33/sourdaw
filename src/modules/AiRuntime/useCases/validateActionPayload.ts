@@ -235,6 +235,8 @@ const validators = {
         isObj(param) && hasExactKeys(param, ['enabled']) && typeof param.enabled === 'boolean',
     setMetronomeEnabled: (param): param is PayloadOf<'setMetronomeEnabled'> =>
         isObj(param) && hasExactKeys(param, ['enabled']) && typeof param.enabled === 'boolean',
+    setPunchEnabled: (param): param is PayloadOf<'setPunchEnabled'> =>
+        isObj(param) && hasExactKeys(param, ['enabled']) && typeof param.enabled === 'boolean',
     setLoopRegion: (param): param is PayloadOf<'setLoopRegion'> =>
         isObj(param) &&
         hasExactKeys(param, ['startBeat', 'endBeat']) &&
@@ -381,7 +383,6 @@ const validators = {
     toggleRecording: 'unchecked',
     toggleLoop: 'unchecked',
     toggleMetronome: 'unchecked',
-    togglePunch: 'unchecked',
     toggleCountIn: 'unchecked',
     togglePreRoll: 'unchecked',
     setPunchIn: hasValidPunchInBeat,
