@@ -443,7 +443,7 @@ impl DecayRateEq {
 mod tests {
     use super::{
         band_index_for_name, loop_gain_from_rt60, DecayRateEq, DEFAULT_MULTIPLIER, MAX_MULTIPLIER,
-        MIN_MULTIPLIER, NUM_BANDS, PARAM_NAMES,
+        MIN_MULTIPLIER, NUM_BANDS, PARAM_NAMES, TAU,
     };
 
     #[test]
@@ -495,12 +495,64 @@ mod tests {
         }
     }
 
+    /// Steady-state magnitude of a fresh full-boost cascade at `freq`.
+    fn full_boost_cascade_gain_at(base_gain: f32, freq: f32) -> f32 {
+        let mut eq = DecayRateEq::new(48_000.0, base_gain);
+        for index in 0..NUM_BANDS {
+            eq.set_band_multiplier(index, MAX_MULTIPLIER);
+        }
+        gain_at(&mut eq, freq, 48_000.0)
+    }
+
     #[test]
-    fn all_six_bands_at_full_boost_stay_inside_the_loop_headroom() {
-        // The bound `MAX_TOTAL_BOOST` exists for. Feed an impulse into the
-        // cascade *inside* a loop running at the base gain and check the
-        // energy dies rather than growing.
-        let base_gain = 0.5_f32;
+    fn six_bands_at_full_boost_never_take_the_loop_past_unity_gain() {
+        // The invariant `MAX_TOTAL_BOOST` exists for, stated where it can be
+        // measured: the *compound* magnitude of six cascaded sections at the
+        // worst frequency, times the loop's own per-pass gain, must stay below
+        // 1. Each band alone is safe by construction — its resulting gain is
+        // `g^(1/m)` — but the sections multiply, and a frequency between two
+        // boosted bells collects both.
+        //
+        // Swept rather than probed at the band centres, because the worst point
+        // is between them: with the bound removed the peak lands at 8078 Hz for
+        // the shallower loops and 3524 Hz for the deep ones, and neither is a
+        // band centre. Measured across five base gains spanning what an engine
+        // can hand this stage, because the overshoot grows with the headroom —
+        // removing the bound gives a loop gain of 1.0044 at `g = 0.9` and 25.67
+        // at `g = 0.001`.
+        //
+        // A time-domain guard alone was **not** enough here, and the first
+        // version of this test was one: at a single mid base gain the removed
+        // bound produces a loop gain of about 1.03, which over any render short
+        // enough to run in a test still looks like a slow decay.
+        for base_gain in [0.9_f32, 0.5, 0.1, 0.01, 0.001] {
+            let mut worst = 0.0_f32;
+            let mut worst_hz = 0.0_f32;
+            let mut freq = 20.0_f32;
+            while freq < 20_000.0 {
+                let gain = full_boost_cascade_gain_at(base_gain, freq);
+                if gain > worst {
+                    worst = gain;
+                    worst_hz = freq;
+                }
+                freq *= 1.05;
+            }
+            let loop_gain = base_gain * worst;
+            assert!(
+                loop_gain < 0.98,
+                "six bands at {MAX_MULTIPLIER}x on a loop of per-pass gain {base_gain} reach a \
+                 loop gain of {loop_gain:.4} at {worst_hz:.0} Hz — at or above unity the tail \
+                 grows instead of decaying"
+            );
+        }
+    }
+
+    #[test]
+    fn a_loop_running_the_full_boost_still_falls_silent() {
+        // The same invariant as a time-domain fact, so a magnitude sweep that
+        // measured the wrong thing cannot carry the claim on its own. The base
+        // gain is the deep end of the range, where the overshoot is largest.
+        let base_gain = 0.1_f32;
         let mut eq = DecayRateEq::new(48_000.0, base_gain);
         for index in 0..NUM_BANDS {
             eq.set_band_multiplier(index, MAX_MULTIPLIER);
@@ -522,11 +574,21 @@ mod tests {
     }
 
     /// Steady-state gain of the cascade at `freq`, measured by driving it.
+    ///
+    /// The finiteness assertion is not decoration. `f32::max` *ignores* NaN, so
+    /// a running `peak.max(output.abs())` over a diverged filter comes back as
+    /// the initial `0.0` and reports a perfectly quiet stage — which is exactly
+    /// how the first version of the Nyquist guard below passed with the clamp
+    /// deleted, against a cascade whose poles had a radius of 2.95.
     fn gain_at(eq: &mut DecayRateEq, freq: f32, sample_rate: f32) -> f32 {
-        let step = std::f32::consts::TAU * freq / sample_rate;
+        let step = TAU * freq / sample_rate;
         let mut peak = 0.0_f32;
         for index in 0..40_000 {
             let output = eq.process((index as f32 * step).sin());
+            assert!(
+                output.is_finite(),
+                "the cascade produced {output} at sample {index} driving {freq} Hz at {sample_rate} Hz"
+            );
             if index > 20_000 {
                 peak = peak.max(output.abs());
             }
