@@ -217,6 +217,29 @@ function patchWithNoOverrides(topology: GlutenTopology): Partial<GlutenPatch> {
 }
 
 describe('every censused control is actually refused on the screen', () => {
+    it('sweeps every topology, and can locate every control it censuses', () => {
+        // Two vacuity guards for the sweep below, both of which it needs and
+        // neither of which it can provide for itself.
+        //
+        // `it.each` over an empty population registers *zero* tests and reports
+        // nothing missing — emptying `GLUTEN_TOPOLOGY_GAPS` took the suite from
+        // 24 to 20 passed with no diagnostic. So the population is pinned.
+        expect(GLUTEN_TOPOLOGY_GAPS.map((gap) => gap.topology).sort()).toEqual(['diode', 'fet', 'opto', 'vca']);
+
+        // And the sweep only checks rows it has a locator for, so a census row
+        // whose control is missing from `CONTROL_LOCATORS` is never checked to
+        // reach the DOM at all — deleting a line from that map left 24 passed.
+        // Every censused parameter must be locatable.
+        const locatable = new Set(Object.keys(CONTROL_LOCATORS));
+        const unlocatable = [
+            ...new Set(GLUTEN_TOPOLOGY_GAPS.flatMap((gap) => gap.params.map((param) => String(param.paramKey)))),
+        ]
+            .filter((paramKey) => !locatable.has(paramKey))
+            .sort();
+
+        expect(unlocatable).toEqual([]);
+    });
+
     it.each(GLUTEN_TOPOLOGY_GAPS)('$topology', (gap) => {
         renderPanel(patchWithNoOverrides(gap.topology));
 

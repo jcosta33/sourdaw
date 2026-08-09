@@ -5,29 +5,58 @@ import { glutenControlGate } from '../../models/GlutenTopologyGating';
 import { GLUTEN_PRESETS } from '../glutenPresets';
 
 /**
+ * The neutral — "not engaged" — value of every switch that is not a boolean.
+ *
+ * Two of them, and both had to be declared rather than inferred, because "off"
+ * is not zero for either: `oversampling`'s off is **1×**, meaning no
+ * oversampling at all, and `thrust`'s is 0.
+ *
+ * `oversampling` is the reason this file's population is now derived. The first
+ * version listed twelve names from memory and tested `value !== 0`, which
+ * excluded `oversampling` twice over — it was not in the list, and 1× would not
+ * have counted as neutral if it had been. `DEFAULT_PATCH.oversampling` was `2`
+ * on a `vca` default, so a freshly inserted device rendered the 2× chip lit and
+ * greyed, claiming an oversampled path that does not run, with the click back
+ * to 1× refused.
+ */
+const NON_BOOLEAN_NEUTRALS: Partial<Record<keyof GlutenPatch, number>> = {
+    thrust: 0,
+    oversampling: 1,
+};
+
+/**
+ * Every key of `DEFAULT_PATCH` that holds a boolean — a switch by construction,
+ * whose neutral is always `false`.
+ *
+ * Derived rather than listed so a switch added to the patch joins the
+ * population with no edit here, which is what a list from memory cannot do.
+ */
+function booleanPatchKeys(): (keyof GlutenPatch)[] {
+    return (Object.keys(DEFAULT_PATCH) as (keyof GlutenPatch)[]).filter(
+        (paramKey) => typeof DEFAULT_PATCH[paramKey] === 'boolean'
+    );
+}
+
+/**
  * Switches that a patch can ship *engaged* — the ones where shipping a value
  * the topology cannot hear leaves a control lit and, since the panel gates it,
  * unclearable.
  *
- * `thrust` is here as a three-position chip whose neutral is 0; the rest are
- * booleans whose neutral is false. A *frequency* on a filter whose stage is not
- * running is deliberately not policed: it is the preset's stated intent and
- * becomes correct the moment the topology can hear it, which is why the Master
- * presets keep `scHpfFreq` and lost `scHpfEnabled`.
+ * A *frequency* on a filter whose stage is not running is deliberately not
+ * policed: it is the preset's stated intent and becomes correct the moment the
+ * topology can hear it, which is why the Master presets keep `scHpfFreq` and
+ * lost `scHpfEnabled`.
+ *
+ * **Known gap, recorded rather than papered over:** `blendAmount` and
+ * `blendTopology` are a *pair* — Stage 2 above zero is only meaningful together
+ * with a topology that differs from the primary — and a per-key neutral cannot
+ * express a two-key invariant. The panel's `overridden` gate covers the user
+ * -facing half of it (`blendAmount` greys when both stages name one topology);
+ * nothing here would catch a preset that shipped the pair inconsistently.
  */
 const ENGAGEABLE: readonly (keyof GlutenPatch)[] = [
-    'scHpfEnabled',
-    'scLpfEnabled',
-    'scEqEnabled',
-    'extSidechain',
-    'thrust',
-    'autoRelease',
-    'autoMakeup',
-    'deltaListen',
-    'gainMatchBypass',
-    'allButtons',
-    'limitMode',
-    'feedForward',
+    ...booleanPatchKeys(),
+    ...(Object.keys(NON_BOOLEAN_NEUTRALS) as (keyof GlutenPatch)[]),
 ];
 
 function isEngaged(patch: GlutenPatch, paramKey: keyof GlutenPatch): boolean {
@@ -35,8 +64,29 @@ function isEngaged(patch: GlutenPatch, paramKey: keyof GlutenPatch): boolean {
     if (typeof value === 'boolean') {
         return value;
     }
-    return value !== 0;
+    return value !== NON_BOOLEAN_NEUTRALS[paramKey];
 }
+
+describe('the engaged-switch population', () => {
+    it('is derived from the patch rather than remembered', () => {
+        // The vacuity guard. Replacing `ENGAGEABLE` with `[]` left all fifteen
+        // rows below green, which is what let `oversampling` sit outside the
+        // population unnoticed.
+        expect(ENGAGEABLE.length).toBeGreaterThan(0);
+
+        const covered = new Set(ENGAGEABLE.map(String));
+        expect(booleanPatchKeys().filter((paramKey) => !covered.has(String(paramKey)))).toEqual([]);
+    });
+
+    it('declares a neutral only for switches that are not booleans', () => {
+        // A boolean listed here would get a numeric neutral it can never equal,
+        // making `isEngaged` always true for it.
+        const misfiled = (Object.keys(NON_BOOLEAN_NEUTRALS) as (keyof GlutenPatch)[]).filter(
+            (paramKey) => typeof DEFAULT_PATCH[paramKey] === 'boolean'
+        );
+        expect(misfiled).toEqual([]);
+    });
+});
 
 describe('a preset never ships a value its own topology cannot hear', () => {
     /**

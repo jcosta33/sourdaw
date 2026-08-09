@@ -65,7 +65,10 @@ const GLUTEN_PARAMS: readonly PluginParamDef[] = [
         label: 'OS',
         min: 1,
         max: 4,
-        default: 2,
+        // 1× by default: a fresh Gluten is a VCA, whose stage is not
+        // oversampled. Moves with `DEFAULT_PATCH.oversampling`, which carries
+        // the reasoning.
+        default: 1,
         unit: '',
         step: 1,
         legalSet: { values: [1, 2, 4], resolution: 'floor' },

@@ -80,6 +80,83 @@ function readSource(relativePath: string): string {
 }
 
 /**
+ * One `match` arm head, and every name it answers to.
+ *
+ * ## Why the head is captured whole and then split
+ *
+ * The first version of this parse read one literal per arm:
+ * `/^[ \t]*"([a-z0-9_]+)"\s*=>/gm`. Against an **or-pattern** —
+ * `"knee" | "range" => { … }` — it matches nothing at all: the first literal is
+ * followed by `|` rather than `=>`, and the second is not at line start. Both
+ * names would stay in the derived gap population, both census rows would
+ * survive, and nothing would red.
+ *
+ * That is not a hypothetical shape. `GLUTEN_TOPOLOGY_GAPS` says in its own
+ * reason text that the FET's `knee` and `range` are literals at the call site,
+ * one field away, and would close together — so an or-pattern is precisely how
+ * someone closes them, and the census would have gone on greying two controls
+ * that had started working. The file's own docstring says the weld exists so
+ * that "the fix for a dead control would become a permanently dead control"
+ * cannot happen; that was the exact hole.
+ *
+ * The Rust reach test is not a backstop for this. Its `audible_on` lists are
+ * hand-written and are edited in the same change that adds the arm, so it goes
+ * green with the implementation.
+ *
+ * `\s*` between the alternatives spans newlines, so the multi-line form
+ * (`"knee"\n| "range" => …`) is read too.
+ */
+const ARM_HEAD_PATTERN = /^[ \t]*("[a-z0-9_]+"(?:\s*\|\s*"[a-z0-9_]+")*)\s*=>/gm;
+
+type ArmHead = { readonly names: string[]; readonly start: number; readonly end: number };
+
+function readArmHeads(block: string): ArmHead[] {
+    return [...block.matchAll(ARM_HEAD_PATTERN)].map((match) => ({
+        names: [...match[1]!.matchAll(/"([a-z0-9_]+)"/g)].map((name) => name[1]!),
+        start: match.index,
+        end: match.index + match[0].length,
+    }));
+}
+
+/**
+ * Names that *look* like arm heads and were not captured — the fail-closed
+ * half.
+ *
+ * Capturing the or-pattern fixes the shape known today. This reds on the shape
+ * nobody has thought of yet: any line inside the `match` that begins with a
+ * quoted name or with `|` is an arm head or its continuation, so every literal
+ * on it must have been read. An arm written in a form this parse cannot see
+ * therefore fails the spec instead of silently narrowing the population it
+ * derives.
+ */
+function uncapturedArmNames(block: string, captured: ReadonlySet<string>): string[] {
+    const missed: string[] = [];
+    for (const line of block.split('\n')) {
+        const trimmed = line.trim();
+        if (!trimmed.startsWith('"') && !trimmed.startsWith('|')) {
+            continue;
+        }
+        for (const match of trimmed.matchAll(/"([a-z0-9_]+)"/g)) {
+            if (!captured.has(match[1]!)) {
+                missed.push(match[1]!);
+            }
+        }
+    }
+    return missed;
+}
+
+/** The `match name { … }` block of one `set_param`, bounded to that function. */
+function readSetParamBlock(relativePath: string): string {
+    const source = readSource(relativePath);
+    const start = source.indexOf('pub fn set_param');
+    expect(start, `${relativePath} must declare set_param`).toBeGreaterThan(-1);
+
+    const body = source.slice(start + 'pub fn set_param'.length);
+    const end = /\n {4}(?:pub )?fn /.exec(body)?.index ?? body.length;
+    return body.slice(0, end);
+}
+
+/**
  * The parameter names one `set_param` has a match arm for.
  *
  * Bounded to the function, because a whole file's string literals are not the
@@ -87,18 +164,19 @@ function readSource(relativePath: string): string {
  * `self.vca.set_param("threshold", …)`, and counting that would file
  * `threshold` as a name the engine handles itself — which would drop it out of
  * the forwarded set and quietly stop the census asking about it on any
- * topology. Arms are matched at line start followed by `=>`, which the nested
- * calls are not.
+ * topology. Arm heads are anchored at line start, which the nested calls are
+ * not.
  */
 function readSetParamArms(relativePath: string): Set<string> {
-    const source = readSource(relativePath);
-    const start = source.indexOf('pub fn set_param');
-    expect(start, `${relativePath} must declare set_param`).toBeGreaterThan(-1);
+    const block = readSetParamBlock(relativePath);
+    const captured = new Set(readArmHeads(block).flatMap((arm) => arm.names));
 
-    const body = source.slice(start + 'pub fn set_param'.length);
-    const end = /\n {4}(?:pub )?fn /.exec(body)?.index ?? body.length;
-    const arms = [...body.slice(0, end).matchAll(/^[ \t]*"([a-z0-9_]+)"\s*=>/gm)];
-    return new Set(arms.map((arm) => arm[1]!));
+    expect(
+        uncapturedArmNames(block, captured),
+        `${relativePath} has match arms this spec cannot read — the derived population would be too wide`
+    ).toEqual([]);
+
+    return captured;
 }
 
 /** The worklet's camelCase → snake_case map, read out of the file that performs it. */
@@ -136,20 +214,24 @@ function censusFor(topology: GlutenTopology, layer: GlutenGapLayer): string[] {
         .sort();
 }
 
-/** The whole `set_param` match block of `GlutenEngine`, arm by arm. */
+/**
+ * The whole `set_param` match block of `GlutenEngine`, arm by arm.
+ *
+ * Every name in an or-pattern maps to the same body, which is what the arm
+ * means. Shares `readArmHeads` with the arm scan above so the two cannot read
+ * the same file differently — the earlier duplicate of the one-literal regex
+ * lived here and carried the same hole.
+ */
 function readEngineArmBodies(): Map<string, string> {
-    const source = readSource(ENGINE_SOURCE);
-    const start = source.indexOf('pub fn set_param');
-    const body = source.slice(start + 'pub fn set_param'.length);
-    const end = /\n {4}(?:pub )?fn /.exec(body)?.index ?? body.length;
-    const block = body.slice(0, end);
+    const block = readSetParamBlock(ENGINE_SOURCE);
+    const arms = readArmHeads(block);
 
-    const arms = [...block.matchAll(/^[ \t]*"([a-z0-9_]+)"\s*=>/gm)];
     const bodies = new Map<string, string>();
     for (const [index, arm] of arms.entries()) {
-        const from = arm.index + arm[0].length;
-        const to = arms[index + 1]?.index ?? block.length;
-        bodies.set(arm[1]!, block.slice(from, to));
+        const armBody = block.slice(arm.end, arms[index + 1]?.start ?? block.length);
+        for (const name of arm.names) {
+            bodies.set(name, armBody);
+        }
     }
     return bodies;
 }
@@ -269,6 +351,13 @@ describe('Gluten topology gap census', () => {
     });
 
     it('accounts for every name the worklet can send', () => {
+        // Vacuity guard first: the assertion below is `unaccounted == []`,
+        // which an empty `WIRE_NAMES` satisfies for free. Breaking the
+        // `PARAM_MAP` read reds nine of this file's assertions and used to
+        // leave this one green, so it pins the map is non-empty and covers the
+        // whole patch surface the panel writes.
+        expect(WIRE_NAMES.size).toBeGreaterThanOrEqual(GLUTEN_SHARED_CONTROLS.length);
+
         const claimed = new Set<string>([
             ...GLUTEN_SHARED_CONTROLS.map(String),
             ...ALL_TOPOLOGIES.flatMap((topology) => GLUTEN_TOPOLOGY_OWNED_CONTROLS[topology].map(String)),
@@ -277,6 +366,26 @@ describe('Gluten topology gap census', () => {
         const unaccounted = [...WIRE_NAMES.keys()].filter((paramKey) => !claimed.has(paramKey)).sort();
 
         expect(unaccounted).toEqual([]);
+    });
+
+    it('leaves at least one topology able to hear every censused control', () => {
+        // `remedyFor` returns `null` when nothing hears the parameter, and that
+        // branch would drop the way-back clause off the end of an explanation
+        // with nothing to catch it. It is unreachable today; this is what makes
+        // that a fact rather than a comment, and it reds on the first row that
+        // is dead everywhere.
+        function isDeafTo(topology: GlutenTopology, paramKey: string): boolean {
+            return [...censusFor(topology, 'set-param'), ...censusFor(topology, 'detector-routing')].includes(paramKey);
+        }
+
+        const censused = new Set(
+            GLUTEN_TOPOLOGY_GAPS.flatMap((gap) => gap.params.map((param) => String(param.paramKey)))
+        );
+        const deadEverywhere = [...censused]
+            .filter((paramKey) => ALL_TOPOLOGIES.every((topology) => isDeafTo(topology, paramKey)))
+            .sort();
+
+        expect(deadEverywhere).toEqual([]);
     });
 
     it('gives every structural row a reason to show the user', () => {

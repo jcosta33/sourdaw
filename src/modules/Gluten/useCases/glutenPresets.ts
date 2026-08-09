@@ -75,6 +75,11 @@ export const GLUTEN_PRESETS: readonly GlutenPreset[] = [
     }),
 
     // ── Opto / Smooth ──
+    // The seven FET and Diode presets below state `oversampling: 2`, which they
+    // used to inherit from `DEFAULT_PATCH`. That default is now 1× — the VCA a
+    // fresh device runs has no oversampled stage — so stating it here is what
+    // keeps every one of them rendering exactly what it rendered before.
+    //
     // Every preset below this point states `autoRelease: false`, and none of
     // them would otherwise: `DEFAULT_PATCH.autoRelease` is `true`, so a preset
     // that says nothing inherits an Auto rel that only the VCA implements. That
@@ -111,6 +116,7 @@ export const GLUTEN_PRESETS: readonly GlutenPreset[] = [
         release: 250,
         inputGain: 6,
         autoRelease: false,
+        oversampling: 2,
     }),
     preset('fet-vocal', 'FET Vocal Bite', 'vocal', {
         topology: 'fet',
@@ -119,6 +125,7 @@ export const GLUTEN_PRESETS: readonly GlutenPreset[] = [
         attack: 0.8,
         release: 300,
         autoRelease: false,
+        oversampling: 2,
     }),
     preset('fet-all-buttons', 'All Buttons In', 'creative', {
         topology: 'fet',
@@ -128,6 +135,7 @@ export const GLUTEN_PRESETS: readonly GlutenPreset[] = [
         release: 100,
         inputGain: 12,
         autoRelease: false,
+        oversampling: 2,
     }),
     preset('fet-parallel', 'Parallel Smash', 'drums', {
         topology: 'fet',
@@ -138,6 +146,7 @@ export const GLUTEN_PRESETS: readonly GlutenPreset[] = [
         mix: 0.3,
         inputGain: 12,
         autoRelease: false,
+        oversampling: 2,
     }),
 
     // ── Diode Bridge ──
@@ -147,6 +156,7 @@ export const GLUTEN_PRESETS: readonly GlutenPreset[] = [
         ratio: 2,
         recovery: 3,
         autoRelease: false,
+        oversampling: 2,
     }),
     preset('diode-warm', 'Warm Diode Glue', 'bus', {
         topology: 'diode',
@@ -154,6 +164,7 @@ export const GLUTEN_PRESETS: readonly GlutenPreset[] = [
         ratio: 3,
         recovery: 4,
         autoRelease: false,
+        oversampling: 2,
     }),
 
     // ── Mastering ──
@@ -211,5 +222,6 @@ export const GLUTEN_PRESETS: readonly GlutenPreset[] = [
         mix: 0.35,
         inputGain: 10,
         autoRelease: false,
+        oversampling: 2,
     }),
 ];

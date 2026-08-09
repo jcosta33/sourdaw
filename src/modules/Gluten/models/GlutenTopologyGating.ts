@@ -566,6 +566,12 @@ function joinWithOr(labels: readonly string[]): string {
  */
 function remedyFor(paramKey: keyof GlutenPatch): string | null {
     const helpers = topologiesThatHear(paramKey).map((topology) => GLUTEN_TOPOLOGY_LABELS[topology]);
+    // Unreachable on today's census — every censused parameter is heard by at
+    // least one topology — and deliberately handled rather than asserted,
+    // because the alternative is a control whose explanation ends mid-sentence.
+    // `glutenTopologyGating.spec.ts` proves the unreachability rather than
+    // leaving it as a claim here, so a future row with no live topology reds in
+    // the spec instead of silently dropping the clause.
     if (helpers.length === 0) {
         return null;
     }
