@@ -114,6 +114,28 @@ Agent must-follow subset of [docs/07-conventions.md](./docs/07-conventions.md) a
 - **Conventional control flow over compressed expressions.** Use `if`, guard clauses, early returns, and named intermediate values when conditions express control flow or invariants. A ternary is acceptable only for a small, obvious, side-effect-free value choice that stays readable on one line. No nested, chained, multiline, or side-effecting ternaries; do not compress validation, mutation, overflow handling, or multi-condition logic into a ternary merely to save lines. Review for human readability, not cleverness or minimum line count.
 - **Empirical proof:** failing reproduction before behaviour fixes; paste real command output for tests/typecheck/deps claims. Three failed fix attempts on the same approach → stop, reread contracts, change strategy.
 
+## Pull requests and review
+
+**Title:** conventional commits — `type(scope): subject`, matching `git log`. `feat` `fix` `chore` `docs` `test` `refactor` `perf` `build` `ci`. Scope is the module or crate.
+
+Enforced by `.githooks/commit-msg` for every harness and every human. Enable once per clone: `git config core.hooksPath .githooks`. Deliberate exception: `git commit --no-verify`.
+
+**Body:** fill `.github/pull_request_template.md`. Read it before opening the PR. A few paragraphs — what changed, why, what a reviewer should watch. Hard ceiling 4000 bytes.
+
+Never in a body: mutation tables, per-config sweeps, stance labels, agent names, reviewer prose, repeated evidence, head diaries, recaps. Those go in the commit message, a linked issue, or nowhere. If a measurement is load-bearing, cite the one decisive line.
+
+**Review comments** go on the diff line they concern:
+
+```bash
+gh api repos/:owner/:repo/pulls/<n>/comments -f body='…' -f commit_id=<sha> -f path=<file> -F line=<n>
+```
+
+`gh pr comment` is for a cross-cutting defect with no line, and for nothing else. One terse paragraph per finding: defect, consequence, required outcome. Ceiling 2000 bytes. No greetings, praise, process narration, stance labels, or solution essays. Evidence only when the diff does not prove the claim.
+
+**Scale:** three review stances is the default, five the maximum. Past five, split the PR or ask. Finish the pool once — no quiet rotation, no ceremonial pass, no completion recap.
+
+**Cost:** review is a gate, not a research programme. Dispatching more than 10 subagents against one PR, or spending over an hour on one, needs explicit approval — report cumulative cost when asking.
+
 ## Safety (destructive actions)
 
 - Do not delete, rename, or move files unless the task or user names them. Prefer targeted edits over full-file rewrites.
