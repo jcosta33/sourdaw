@@ -1,0 +1,22 @@
+src/modules/AiRuntime/useCases/__tests__/mixPromptWorkflow.spec.ts
+  s_a40848e8f8cca9::t_d6fe8f0bc52d75 150-151,341-343
+  s_a40848e8f8cca9::t_7d5a390eaa6c50 1-149,152-340,344-423
+src/modules/AiRuntime/useCases/agentReference/bridgeGroundedLlmToolCalls.ts
+  s_a40848e8f8cca9::t_a0fa43b8394f93 987-1036,1429-1440
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "a01ad39b58784beba7f6f08f2099d22163445aee",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
