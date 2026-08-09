@@ -157,7 +157,20 @@ fn digest(output: &[f32]) -> u64 {
 /// So the reference is a constant rather than a second render. Changing this
 /// number is not a maintenance chore — it means an untouched project now
 /// sounds different, and that belongs in a release note.
-const UNTOUCHED_PLATE_DIGEST: u64 = 0x9107_053e_5140_7165;
+///
+/// Changed once, by #1546: the constructor's `damping` moved from 0.0005 —
+/// which is bypass, 0.0087 dB at Nyquist — to the 0.3 the panel knob had been
+/// claiming all along. 0x9107_053e_5140_7165 → the value below, re-measured on
+/// this file's stimulus in the same commit as the constructor edit. The
+/// audible content of that move is measured in
+/// `tests/plate_default_damping.rs`, not fingerprinted: 9.66 dB of 6-12 kHz
+/// shed across the tail against 4.88 dB before.
+///
+/// The reach is newly added devices, not existing projects: `addDevice` writes
+/// the descriptor's `damping` into `Device.parameterValues` and
+/// `projectTrackToLiveStrip` replays every stored value on load, so a saved
+/// project keeps whatever it was added with.
+const UNTOUCHED_PLATE_DIGEST: u64 = 0x15ca_3842_cec5_5de2;
 
 // ---------------------------------------------------------------------------
 // early_late

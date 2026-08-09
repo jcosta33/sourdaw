@@ -72,6 +72,16 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         // on preset load and snapshot recall. Naming the sink is the point of
         // the note; the file is a pure descriptor table and reaches no sink.
         'src/modules/Arrangement/models/PluginDescriptors/GrinderDescriptor.ts': 1,
+        // Count provenance: new file entry, measured 1 — a single doc-comment
+        // mention of `updateDeviceParam`, and no write. Measured with `grep -o`
+        // over the four sink identifiers: updateDeviceParam 1, the other three
+        // 0. The Dutch Oven's `damping` row carries a note recording why it
+        // ships at 0.3 rather than Dattorro's 0.0005 (#1546), and the reason the
+        // descriptor is the leg that had to move is precisely that `addDevice`
+        // pushes `param.value` through `updateDeviceParam` at add time. Naming
+        // the sink is the point of the note; the file is a pure descriptor
+        // table and reaches no sink.
+        'src/modules/Arrangement/models/PluginDescriptors/NativeDspDescriptors.ts': 1,
         'src/modules/Arrangement/stores/index.ts': 2,
         // Count provenance: measured 3, all three doc-comment mentions — this
         // file holds no write at all. `clampDeviceParamWrite` resolves a device

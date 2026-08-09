@@ -59,8 +59,17 @@ export const NATIVE_DSP_DESCRIPTORS: PluginDescriptor[] = [
                 deviceId: 'dutch-oven',
                 name: 'Damping',
                 type: 'float',
-                value: 0.0005,
-                defaultValue: 0.0005,
+                // 0.3, not Dattorro Table 1's 0.0005 (#1546). `addDevice` writes this
+                // number into `parameterValues` and pushes it through
+                // `updateDeviceParam`, so it is what a newly added Dutch Oven actually
+                // sounds like — and 0.0005 in the tank's `OnePole` is bypass rather
+                // than light damping: it takes 0.0087 dB off at Nyquist and leaves the
+                // 6-12 kHz band louder than 400-1200 Hz two seconds into the tail. It
+                // is also off the panel knob's `step={0.001}` grid, so a user who
+                // touched Damp could never return to it. The plate constructor,
+                // `DEFAULT_PARAMS.damping` and the knob's `defaultValue` all read 0.3.
+                value: 0.3,
+                defaultValue: 0.3,
                 minValue: 0,
                 maxValue: 0.999,
                 unit: '',

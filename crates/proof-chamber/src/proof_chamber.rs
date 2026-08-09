@@ -403,7 +403,21 @@ impl ProofChamber {
             sample_rate,
             mix: 0.3,
             decay: 0.5,
-            damping: 0.0005,
+            // Dattorro's Table 1 gives 0.0005 here, and 0.0005 is what this
+            // engine shipped — but the table annotates that same row "no
+            // damping = 0.0", so what was faithfully transcribed was the
+            // paper's bring-up preset with the damping filter switched out.
+            // In this file's `OnePole` that coefficient removes 0.0087 dB at
+            // Nyquist; measured on an impulse at mix 1, the 6-12 kHz band came
+            // out +0.21 dB *above* 400-1200 Hz 1.5-3.0 s into the tail. A
+            // plate that gets brighter as it decays is a ringing tank.
+            //
+            // 0.3 is the number the panel already claimed: the Damp knob reads
+            // 30%, resets to 0.3, and `DEFAULT_PARAMS.damping` is 0.3. It puts
+            // the corner at 10.6 kHz and the same measurement at -8.45 dB.
+            // #1546 has the peer survey and the EMT 140 TS target; the
+            // rendered figures are pinned in `tests/plate_default_damping.rs`.
+            damping: 0.3,
             predelay_ms: 15.0,
             size: 0.75,
             mod_rate: 1.0,
@@ -415,6 +429,34 @@ impl ProofChamber {
             saturation_enabled: false,
             early_late_balance: 0.4,
 
+            // Stays at Dattorro's `bandwidth = 0.9995`, and deliberately, even
+            // though the coefficient below is numerically the same 0.0005 the
+            // damping seed had before #1546 moved it. The two lines look like
+            // one mistake and are not:
+            //
+            // * **Topology.** `left_damp`/`right_damp` sit inside the tank's
+            //   recirculating path, so their coefficient compounds once per
+            //   circulation — hundreds of times across a three-second tail.
+            //   This filter sits on the input, ahead of the diffusers, with no
+            //   feedback around it, and is applied exactly once per sample.
+            //   Its entire authority is its response at Nyquist,
+            //   20*log10(0.9995/1.0005) = -0.0087 dB. The same number in the
+            //   two positions is not the same amount of filtering.
+            // * **The paper.** Table 1's damping row is annotated "no damping
+            //   = 0.0", so 0.0005 there is the off endpoint. The bandwidth row
+            //   is annotated "1 = all-pass", and 0.9995 is the value the table
+            //   *recommends*, not that endpoint. One literal is the paper's
+            //   choice; the other was the paper's bypass.
+            // * **No contradicted claim.** `damping` had a descriptor entry, a
+            //   `set_param` arm, a `DEFAULT_PARAMS` entry and a knob reading
+            //   30%, and disagreed with all of them. `bandwidth` has none of
+            //   those — nothing in the product says it is anything else, and
+            //   the user-facing treble control on this path is the output
+            //   stage's 12 kHz `high_cut`.
+            //
+            // `tests/plate_default_damping.rs` measures this filter's magnitude
+            // response from the literal below and reds if it ever acquires
+            // enough authority for that reasoning to stop holding.
             bandwidth_filter: OnePole::new(1.0 - 0.9995), // bandwidth=0.9995
             input_diffusers: [
                 Allpass::new(s(INPUT_DIFF_DELAYS[0]), 0.750),
@@ -434,14 +476,19 @@ impl ProofChamber {
             left_mod_ap: DelayLine::new(scaled_left_mod),
             left_mod_ap_gain: -0.70,
             left_delay_1: DelayLine::new(left_d1_len),
-            left_damp: OnePole::new(0.0005),
+            // Seeded to match `damping` above, though `process()` overwrites
+            // both tank damp coefficients from `self.damping` at the top of
+            // every block, so these two literals never survive the first
+            // render. They are kept in step so that reading the constructor
+            // does not suggest a different tank than the one that runs.
+            left_damp: OnePole::new(0.3),
             left_ap: Allpass::new(left_ap_len, 0.50),
             left_delay_2: DelayLine::new(left_d2_len),
 
             right_mod_ap: DelayLine::new(scaled_right_mod),
             right_mod_ap_gain: -0.70,
             right_delay_1: DelayLine::new(right_d1_len),
-            right_damp: OnePole::new(0.0005),
+            right_damp: OnePole::new(0.3),
             right_ap: Allpass::new(right_ap_len, 0.50),
             right_delay_2: DelayLine::new(right_d2_len),
 

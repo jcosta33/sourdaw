@@ -402,7 +402,23 @@ fn the_replay_preserves_most_recent_write_order() {
 /// which is the hole #1519's gravity digest was added to close.
 /// Taken on `main` at d36441d4f, before the parameter cache existed, and
 /// unchanged by it.
-const UNTOLD_INSTANCE_DIGEST: u64 = 0xdd93_83f3_187e_b942;
+///
+/// Moved once, by #1546, when the plate constructor's `damping` went from
+/// 0.0005 to 0.3. That is a deliberate voicing change and this row is the
+/// place it is supposed to show up: 0xdd93_83f3_187e_b942 → the value below,
+/// re-measured on this stimulus in the same commit as the constructor edit.
+/// What it means in the render is 9.66 dB of 6-12 kHz shed across the tail
+/// against 4.88 dB before, and a late window that sits 8.45 dB *below* the
+/// midrange instead of 0.21 dB above it — measured in
+/// `tests/plate_default_damping.rs`, which pins the behaviour this digest only
+/// fingerprints.
+///
+/// It does **not** mean existing projects sound different. `addDevice` writes
+/// the descriptor's `damping` into `Device.parameterValues` at add time and
+/// `projectTrackToLiveStrip` replays every stored value on load, so a saved
+/// project carrying 0.0005 still gets 0.0005 written over the constructor.
+/// Only a newly added Dutch Oven reaches this state.
+const UNTOLD_INSTANCE_DIGEST: u64 = 0xaf24_03b1_9139_eb46;
 
 #[test]
 fn an_instance_told_nothing_renders_exactly_what_it_always_has() {

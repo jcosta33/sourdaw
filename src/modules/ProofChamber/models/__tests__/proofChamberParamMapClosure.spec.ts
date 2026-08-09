@@ -149,12 +149,20 @@ describe('Dutch Oven PARAM_MAP closure', () => {
      *
      * Found by mutation M11 — moving `density` off 1.0 reddened nothing.
      *
-     * The three parameters this closure made writable are read out of the Rust
-     * constructor rather than restated, so a change on either side reds. The
-     * table is not extended to the whole parameter set here because it does not
-     * currently hold: `damping` ships as 0.3 in `DEFAULT_PARAMS` against the
-     * engine's and the descriptor's 0.0005. That is a real disagreement, it
-     * predates this file, and triaging it is not this closure's job.
+     * The parameters this closure covers are read out of the Rust constructor
+     * rather than restated, so a change on either side reds.
+     *
+     * `damping` is here because #1546 closed the disagreement an earlier
+     * revision of this comment recorded and declined to triage: the engine and
+     * the descriptor shipped Dattorro's 0.0005 while `DEFAULT_PARAMS` and the
+     * panel knob read 0.3, so a fresh device sounded nothing like what its own
+     * panel claimed. Both ends now read 0.3.
+     *
+     * This row compares two declared numbers, which on its own cannot tell
+     * anyone the tank is actually damped — that claim is measured from the
+     * rendered spectrum in `crates/proof-chamber/tests/plate_default_damping.rs`.
+     * What it adds is the direction that file cannot see: it reds if
+     * `DEFAULT_PARAMS` drifts away from an engine that is still correct.
      */
     describe('shipped defaults against the plate constructor', () => {
         const plateSource = readFileSync(PLATE_SOURCE, 'utf8');
@@ -173,6 +181,10 @@ describe('Dutch Oven PARAM_MAP closure', () => {
 
         it('matches the constructor on saturation_type', () => {
             expect(DEFAULT_PARAMS.saturationType).toBe(constructorValue('saturation_type'));
+        });
+
+        it('matches the constructor on damping', () => {
+            expect(DEFAULT_PARAMS.damping).toBe(constructorValue('damping'));
         });
 
         it('matches the allpass gain the constructor encodes as full density', () => {
