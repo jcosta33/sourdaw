@@ -277,6 +277,27 @@ describe('useChannelStripActions', () => {
         expect(result.current.displayGain).toBe(0.8);
     });
 
+    /**
+     * `AppActionCommittedError` — the write landed and a post-commit effect
+     * failed. Project truth is the *committed* value, while the `track` prop
+     * inside the dispatch closure is still the render from before it. Re-driving
+     * from the prop would put the engine on a value the project has already
+     * moved off.
+     */
+    it('re-drives the engine from the committed value when a commit fails after writing', async () => {
+        seedProjectTruth({ id: 'track-1', gain: 0.5 });
+        mocks.executeAppAction.mockRejectedValueOnce(new Error('post-commit effect failed'));
+        const { result } = renderHook(() => useChannelStripActions(makeTrack({ id: 'track-1', gain: 0.8 })));
+
+        await act(async () => {
+            result.current.setGain(0.35, true);
+            result.current.setGain(0.35, false);
+            await Promise.resolve();
+        });
+
+        expect(mocks.setTrackGain).toHaveBeenLastCalledWith('track-1', 0.5, true);
+    });
+
     it('re-drives the pan engine from project truth when the commit rejects', async () => {
         seedProjectTruth({ id: 'track-1', pan: 12 });
         mocks.executeAppAction.mockRejectedValueOnce(new Error('commit failed'));
