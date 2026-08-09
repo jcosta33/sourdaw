@@ -724,6 +724,10 @@ describe('parsePromptToActions', () => {
         "glue Intro and Verse clips, but don't glue them due to phase issues, then set tempo to 130",
         'glue Intro and Verse clips, never mind because the phase is wrong, then set tempo to 130',
         'glue Intro and Verse clips, then cancel it because the timing is wrong, then set tempo to 130',
+        'glue Intro and Verse clips, then cancel that command because the timing is wrong, then set tempo to 130',
+        'glue Intro and Verse clips, then cancel this command because the timing is wrong, then set tempo to 130',
+        'glue Intro and Verse clips, then cancel that request because the timing is wrong, then set tempo to 130',
+        'glue Intro and Verse clips, then cancel this request because the timing is wrong, then set tempo to 130',
     ])('omits a cancelled provider glue call and keeps an unrelated grounded action', async (prompt) => {
         const actualBridge = await vi.importActual<typeof import('../agentReference/bridgeGroundedLlmToolCalls')>(
             '../agentReference/bridgeGroundedLlmToolCalls'

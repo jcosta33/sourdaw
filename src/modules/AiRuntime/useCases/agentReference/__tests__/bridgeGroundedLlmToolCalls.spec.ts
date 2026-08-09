@@ -991,6 +991,8 @@ describe('bridgeGroundedLlmToolCalls', () => {
             "glue 'MIDI Intro' and 'MIDI Verse' clips",
             'please glue MIDI Intro and MIDI Verse clips',
             'could you join MIDI Intro with MIDI Verse please',
+            'glue MIDI Intro and MIDI Verse clips thanks',
+            'join MIDI Intro with MIDI Verse thank you',
         ];
 
         for (const prompt of prompts) {
@@ -1083,10 +1085,22 @@ describe('bridgeGroundedLlmToolCalls', () => {
             'glue the selected clips',
             { ...context, selectedClipIds: ['clip-midi-intro'] }
         );
+        const acceptedThanks = bridge(
+            [{ name: 'glueClips', arguments: { clipIds: ['clip-midi-intro', 'clip-midi-verse'] } }],
+            'glue the selected clips thanks',
+            context
+        );
+        const acceptedThankYou = bridge(
+            [{ name: 'glueClips', arguments: { clipIds: ['clip-midi-intro', 'clip-midi-verse'] } }],
+            'join selected clips thank you',
+            context
+        );
 
         expect(accepted.actions).toEqual([
             { type: 'glueClips', payload: { clipIds: ['clip-midi-intro', 'clip-midi-verse'] } },
         ]);
+        expect(acceptedThanks.actions).toEqual(accepted.actions);
+        expect(acceptedThankYou.actions).toEqual(accepted.actions);
         expect(rejected.actions).toEqual([]);
     });
 
@@ -1240,6 +1254,10 @@ describe('bridgeGroundedLlmToolCalls', () => {
             'glue MIDI Intro and MIDI Verse clips; without changes because this is a dry run; set tempo to 130',
             'glue MIDI Intro and MIDI Verse clips, never mind because the phase is wrong, then set tempo to 130',
             'glue MIDI Intro and MIDI Verse clips, then cancel it because the timing is wrong, then set tempo to 130',
+            'glue MIDI Intro and MIDI Verse clips, then cancel that command because the timing is wrong, then set tempo to 130',
+            'glue MIDI Intro and MIDI Verse clips, then cancel this command because the timing is wrong, then set tempo to 130',
+            'glue MIDI Intro and MIDI Verse clips, then cancel that request because the timing is wrong, then set tempo to 130',
+            'glue MIDI Intro and MIDI Verse clips, then cancel this request because the timing is wrong, then set tempo to 130',
         ];
 
         const results = prompts.map((prompt) => bridge([glue, tempo], prompt, context));
@@ -2601,19 +2619,22 @@ describe('bridgeGroundedLlmToolCalls', () => {
         ]);
     });
 
-    it('keeps a quoted Glue declaration inert before a VCA assignment', () => {
-        const glueVca = { id: 'vca-glue', name: 'Glue', gain: 1, muted: false, trackIds: [] };
-        const result = bridge(
-            [{ name: 'assignToVca', arguments: { trackId: guitar.id, vcaGroupId: glueVca.id } }],
-            '"Glue" is our VCA group; assign Guitar to Glue VCA',
-            { ...projectContext, vcaGroups: [...(projectContext.vcaGroups ?? []), glueVca] }
-        );
+    it.each(['"Glue" is our VCA group; assign Guitar to Glue VCA', 'Glue is our VCA group; assign Guitar to Glue VCA'])(
+        'keeps a Glue declaration inert before a VCA assignment',
+        (prompt) => {
+            const glueVca = { id: 'vca-glue', name: 'Glue', gain: 1, muted: false, trackIds: [] };
+            const result = bridge(
+                [{ name: 'assignToVca', arguments: { trackId: guitar.id, vcaGroupId: glueVca.id } }],
+                prompt,
+                { ...projectContext, vcaGroups: [...(projectContext.vcaGroups ?? []), glueVca] }
+            );
 
-        expect(result.actions).toEqual([
-            { type: 'assignToVca', payload: { trackId: guitar.id, vcaGroupId: glueVca.id } },
-        ]);
-        expect(result.rejections).toEqual([]);
-    });
+            expect(result.actions).toEqual([
+                { type: 'assignToVca', payload: { trackId: guitar.id, vcaGroupId: glueVca.id } },
+            ]);
+            expect(result.rejections).toEqual([]);
+        }
+    );
 
     it('preserves VCA array-target grounding for a member named Never Enough', () => {
         const neverEnough = createTrack({ id: 'track-never-enough', name: 'Never Enough' });

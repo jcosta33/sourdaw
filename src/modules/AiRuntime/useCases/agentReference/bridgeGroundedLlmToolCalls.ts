@@ -1393,7 +1393,7 @@ function stripPoliteGlueCommandCarrier(text: string): string {
     let commandSource = text.trim();
     commandSource = commandSource.replace(/^(?:please\s+)?(?:can|could|would|will)\s+you(?:\s+please)?\s+/iu, '');
     commandSource = commandSource.replace(/^please\s+/iu, '');
-    return commandSource.replace(/\s+please[.!?]*\s*$/iu, '');
+    return commandSource.replace(/\s+(?:please|thanks|thank you)[.!?]*\s*$/iu, '');
 }
 
 function restoreGlueCommandIntents(prompt: string, maskedPrompt: string): string {
@@ -1498,7 +1498,10 @@ function getGlueClipPairs(context: ProjectContext): Array<[string, string]> {
 }
 
 function isDeclarativeGlueClause(commandText: string): boolean {
-    return /^(?:glue|join)\b.*\b(?:is|are) (?:an? )?clips?$/u.test(commandText);
+    return (
+        /^(?:glue|join) (?:is|are)\b/u.test(commandText) ||
+        /^(?:glue|join)\b.*\b(?:is|are) (?:an? )?clips?$/u.test(commandText)
+    );
 }
 
 function isPotentialGlueCommand(commandText: string, context: ProjectContext): boolean {
@@ -1547,7 +1550,7 @@ function isGlueCancellationClause(clause: PromptClause, clipIds: [string, string
             `^(?:but )?(?:actually )?(?:do not|don t|dont|never) (?:glue|join) (?:them|the clips|the exact pair|${targetPattern})(?: |$)`,
             'u'
         ),
-        /^(?:but )?(?:cancel|abort|scratch) (?:it|them|the clips|the exact pair)(?: |$)/u,
+        /^(?:but )?(?:cancel|abort|scratch) (?:it|them|(?:that|this) (?:command|request)|the clips|the exact pair)(?: |$)/u,
         /^(?:but )?never mind(?: |$)/u,
         /^(?:but )?keep (?:them|the clips|the exact pair) separate(?: |$)/u,
         /^(?:but )?leave (?:(?:them|the clips|the exact pair) )?unchanged(?: |$)/u,
