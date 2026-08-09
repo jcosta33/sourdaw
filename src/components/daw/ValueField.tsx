@@ -25,6 +25,20 @@ type ValueFieldProps = {
      * a wrapper label leaves the control anonymous to assistive tech.
      */
     ariaLabel?: string;
+    /**
+     * Id of the element carrying the reason this field is in the state it is in
+     * — typically a lock reason the owner already renders visibly.
+     *
+     * Forwarded to the widget root, not to a wrapper, for the reason
+     * `RotaryKnob`'s `title` is: the control and the explanation for its state
+     * have to be the same node, or the explanation is visible only to sighted
+     * mouse users. A badge rendered beside the field and referenced by nothing
+     * is not announced, and `aria-readonly` is not announced on change either,
+     * so without this a locked field silently stops responding.
+     *
+     * The owner supplies the live region; this only points at the text.
+     */
+    ariaDescribedBy?: string;
     onReset?: () => void;
     className?: string;
     /**
@@ -73,6 +87,7 @@ export const ValueField = ({
     unit = '',
     label,
     ariaLabel,
+    ariaDescribedBy,
     onReset,
     className,
     readOnly = false,
@@ -325,10 +340,6 @@ export const ValueField = ({
 
     /** Arrow / Home / End adjustment — a `spinbutton` that only responds to a drag is not one. */
     const handleKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
-        if (readOnly || draggingRef.current) {
-            return;
-        }
-
         const isIncrement = event.key === 'ArrowUp' || event.key === 'ArrowRight';
         const isDecrement = event.key === 'ArrowDown' || event.key === 'ArrowLeft';
         const isHome = event.key === 'Home';
@@ -337,7 +348,30 @@ export const ValueField = ({
             return;
         }
 
+        /**
+         * Claim the key before deciding whether it does anything. A focused
+         * `spinbutton` owns its arrows whether or not it can act on them right
+         * now; a locked control that declines to act and *also* lets the key
+         * through gives a keyboard user an unannounced page scroll where they
+         * asked for a value change. Measured before this moved: `locked ArrowUp
+         * -> writes: 0 defaultPrevented: false`. The pointer path already aborts
+         * deliberately and hands the capture back rather than dropping the
+         * gesture on the floor; this is the same courtesy for the keyboard.
+         *
+         * There is a second reason not to let these escape, latent rather than
+         * live. `keyboardShortcutsContract.ts` classifies a target as an input by
+         * tag name, `contentEditable` or `[data-canvas-editor]`, and a
+         * `role="spinbutton"` div matches none of the three — so every key on
+         * this field reaches the global shortcut layer, and this `preventDefault`
+         * is the only barrier between an arrow here and whatever the app might
+         * later bind an arrow to. No arrow shortcut is registered today; the day
+         * one is, the classifier is where that gets fixed, not here.
+         */
         event.preventDefault();
+        if (readOnly || draggingRef.current) {
+            return;
+        }
+
         const currentStep = event.shiftKey ? fineStep : step;
         let nextValue: number;
         if (isHome) {
@@ -373,6 +407,7 @@ export const ValueField = ({
                 role="spinbutton"
                 tabIndex={0}
                 aria-label={ariaLabel ?? label}
+                aria-describedby={ariaDescribedBy}
                 aria-valuenow={roundedValue}
                 aria-valuemin={min}
                 aria-valuemax={max}

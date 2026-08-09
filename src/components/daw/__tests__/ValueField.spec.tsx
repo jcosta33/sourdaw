@@ -132,6 +132,65 @@ describe('ValueField', () => {
         expect(onChange).not.toHaveBeenCalled();
     });
 
+    it('should keep an adjustment key it owns even when read-only, rather than handing it to the page', () => {
+        // The `readOnly` guard used to return before `preventDefault`, so a
+        // locked field forfeited its own keys: a keyboard user stepping the
+        // tempo crossed into a ramp and the next arrow scrolled the workspace
+        // instead. Measured `locked ArrowUp -> writes: 0 defaultPrevented:
+        // false`. The pointer path aborts deliberately and hands capture back;
+        // the keyboard path was dropping the key three lines away.
+        const onChange = vi.fn();
+        render(<ValueField value={5} onChange={onChange} ariaLabel="Amount" min={0} max={10} step={1} readOnly />);
+        const field = screen.getByRole('spinbutton', { name: 'Amount' });
+
+        const arrowUp = fireEvent.keyDown(field, { key: 'ArrowUp', cancelable: true });
+
+        // `fireEvent` returns false once the event was cancelled.
+        expect(arrowUp).toBe(false);
+        expect(onChange).not.toHaveBeenCalled();
+    });
+
+    it('should keep an adjustment key it owns while a drag is in flight', () => {
+        const onChange = vi.fn();
+        render(<ValueField value={5} onChange={onChange} ariaLabel="Amount" min={0} max={10} step={1} />);
+        const field = screen.getByRole('spinbutton', { name: 'Amount' });
+        fireEvent.pointerDown(field, { button: 0, pointerId: 81, clientY: 100 });
+
+        const arrowUp = fireEvent.keyDown(field, { key: 'ArrowUp', cancelable: true });
+
+        expect(arrowUp).toBe(false);
+        expect(onChange).not.toHaveBeenCalled();
+    });
+
+    it('should describe the widget from the reason its owner renders, not leave it detached', () => {
+        // A lock reason rendered beside the control and referenced by nothing is
+        // invisible to assistive tech. `RotaryKnob` puts `title` on the root for
+        // the same reason: the control and the reason it is inert have to be the
+        // same node, so a caller cannot ship one without the other.
+        render(
+            <>
+                <span id="lock-reason-1">The playhead is inside a tempo ramp.</span>
+                <ValueField
+                    value={90}
+                    onChange={vi.fn()}
+                    ariaLabel="Tempo BPM"
+                    readOnly
+                    ariaDescribedBy="lock-reason-1"
+                />
+            </>
+        );
+
+        expect(screen.getByRole('spinbutton', { name: 'Tempo BPM' })).toHaveAccessibleDescription(
+            'The playhead is inside a tempo ramp.'
+        );
+    });
+
+    it('should leave the description off entirely when its owner has no reason to give', () => {
+        render(<ValueField value={90} onChange={vi.fn()} ariaLabel="Tempo BPM" />);
+
+        expect(screen.getByRole('spinbutton', { name: 'Tempo BPM' })).not.toHaveAttribute('aria-describedby');
+    });
+
     it('should leave unrelated keys to the page instead of swallowing them', () => {
         const onChange = vi.fn();
         render(<ValueField value={5} onChange={onChange} ariaLabel="Amount" min={0} max={10} step={1} />);
