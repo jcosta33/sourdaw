@@ -509,39 +509,6 @@ type IsCancellationForAssertedActionInput = {
     referencedAction: ReferencedCancellationAction;
 };
 
-type BooleanIntentOption = {
-    argument: string;
-    carrier: string;
-    phrase: string;
-    value: boolean;
-};
-
-function getBooleanIntentOptions(groundingRules: GroundingRules): BooleanIntentOption[] {
-    const options: BooleanIntentOption[] = [];
-    for (const valueRule of groundingRules.valueRules) {
-        if (valueRule.kind !== 'boolean-intent') {
-            continue;
-        }
-        for (const phrase of valueRule.truePhrases) {
-            options.push({
-                argument: valueRule.argument,
-                carrier: normalizePromptText(phrase).split(' ')[0] ?? '',
-                phrase,
-                value: true,
-            });
-        }
-        for (const phrase of valueRule.falsePhrases) {
-            options.push({
-                argument: valueRule.argument,
-                carrier: normalizePromptText(phrase).split(' ')[0] ?? '',
-                phrase,
-                value: false,
-            });
-        }
-    }
-    return options;
-}
-
 function isCancellationForAssertedAction({
     actionName,
     assertedArguments,
@@ -551,105 +518,24 @@ function isCancellationForAssertedAction({
         return false;
     }
     const groundingRules = getExecutableAppActionGroundingRules(actionName);
-    if (!groundingRules) {
-        return true;
-    }
     const normalizedPhrase = normalizePromptText(referencedAction.phrase);
-    for (const option of getBooleanIntentOptions(groundingRules)) {
-        if (normalizePromptText(option.phrase) !== normalizedPhrase) {
+    for (const valueRule of groundingRules?.valueRules ?? []) {
+        if (valueRule.kind !== 'boolean-intent') {
             continue;
         }
-        const assertedValue = assertedArguments[option.argument];
-        return typeof assertedValue !== 'boolean' || assertedValue === option.value;
+        let referencedValue: boolean | null = null;
+        if (valueRule.truePhrases.some((phrase) => normalizePromptText(phrase) === normalizedPhrase)) {
+            referencedValue = true;
+        } else if (valueRule.falsePhrases.some((phrase) => normalizePromptText(phrase) === normalizedPhrase)) {
+            referencedValue = false;
+        }
+        if (referencedValue === null) {
+            continue;
+        }
+        const assertedValue = assertedArguments[valueRule.argument];
+        return typeof assertedValue !== 'boolean' || assertedValue === referencedValue;
     }
     return true;
-}
-
-type PlannedPronounCancellation = { status: 'unmatched' } | { status: 'resolved'; cancels: boolean };
-
-function getNegativeCueWords(cue: CancellationCue): string[] | null {
-    const words = normalizePromptText(cue.text).split(' ').filter(Boolean);
-    if (words[0] === 'do' && words[1] === 'not') {
-        return words.slice(2);
-    }
-    if (words[0] === 'don' && words[1] === 't') {
-        return words.slice(2);
-    }
-    if (words[0] === 'dont' || words[0] === 'never' || words[0] === 'not') {
-        return words.slice(1);
-    }
-    return null;
-}
-
-function getNegativeCuePredicate(cue: CancellationCue): { carrier: string; object: string[] } | null {
-    const words = getNegativeCueWords(cue);
-    if (!words) {
-        return null;
-    }
-    if (words[0] === 'actually') {
-        words.shift();
-    }
-    const carrier = words.shift();
-    if (!carrier || words.length === 0) {
-        return null;
-    }
-    return { carrier, object: words };
-}
-
-function isPronounCancellationObject(words: readonly string[]): boolean {
-    return words.length === 1 && (words[0] === 'it' || words[0] === 'them');
-}
-
-function isGenericCancellationObject(words: readonly string[]): boolean {
-    if (words.length === 1) {
-        return words[0] === 'it' || words[0] === 'them' || words[0] === 'that' || words[0] === 'this';
-    }
-    return (
-        words.length === 2 &&
-        (words[0] === 'the' || words[0] === 'that' || words[0] === 'this') &&
-        (words[1] === 'change' || words[1] === 'command' || words[1] === 'request')
-    );
-}
-
-function resolvePlannedPronounCancellation({
-    actionName,
-    assertedArguments,
-    cue,
-}: {
-    actionName: string;
-    assertedArguments: Readonly<Record<string, unknown>>;
-    cue: CancellationCue;
-}): PlannedPronounCancellation {
-    const predicate = getNegativeCuePredicate(cue);
-    if (!predicate || !isPronounCancellationObject(predicate.object)) {
-        return { status: 'unmatched' };
-    }
-    const groundingRules = getExecutableAppActionGroundingRules(actionName);
-    if (!groundingRules) {
-        return { status: 'unmatched' };
-    }
-    const options = getBooleanIntentOptions(groundingRules).filter((option) => option.carrier === predicate.carrier);
-    const referencedValues = new Set(options.map((option) => option.value));
-    if (options.length === 0 || referencedValues.size !== 1) {
-        return { status: 'unmatched' };
-    }
-    const option = options[0]!;
-    const assertedValue = assertedArguments[option.argument];
-    return { status: 'resolved', cancels: typeof assertedValue !== 'boolean' || assertedValue === option.value };
-}
-
-function isGenericPlannedActionCancellation(cue: CancellationCue): boolean {
-    const predicate = getNegativeCuePredicate(cue);
-    if (!predicate || !isGenericCancellationObject(predicate.object)) {
-        return false;
-    }
-    return (
-        predicate.carrier === 'apply' ||
-        predicate.carrier === 'change' ||
-        predicate.carrier === 'do' ||
-        predicate.carrier === 'execute' ||
-        predicate.carrier === 'make'
-    );
 }
 
 function hasTrailingIntentCancellation({
@@ -661,23 +547,9 @@ function hasTrailingIntentCancellation({
 }: HasTrailingIntentCancellationInput): boolean {
     const searchableText = text.toLocaleLowerCase();
     return getCancellationCues(searchableText).some((cue) => {
-        const plannedPronounCancellation = resolvePlannedPronounCancellation({
-            actionName,
-            assertedArguments,
-            cue,
-        });
-        if (plannedPronounCancellation.status === 'resolved') {
-            return plannedPronounCancellation.cancels;
-        }
-        if (isGenericPlannedActionCancellation(cue)) {
-            return true;
-        }
         const referencedAction = getReferencedCancellationAction(cue, catalog);
         if (referencedAction) {
             return isCancellationForAssertedAction({ actionName, assertedArguments, referencedAction });
-        }
-        if (getNegativeCueWords(cue)) {
-            return false;
         }
         return getNearestIntentAction(searchableText, catalog, cue.index, plannedActionNames) === actionName;
     });
@@ -856,77 +728,6 @@ function resolveClauseActionIntent(
         return null;
     }
     return first;
-}
-
-type DirectActionWordTargetRule = {
-    entity: 'clip' | 'track';
-    targetArgument: 'clipId' | 'trackId';
-};
-
-const directActionWordTargetRules: Readonly<Record<string, DirectActionWordTargetRule>> = {
-    armTrack: { entity: 'track', targetArgument: 'trackId' },
-    lockClip: { entity: 'clip', targetArgument: 'clipId' },
-    muteClip: { entity: 'clip', targetArgument: 'clipId' },
-    muteTrack: { entity: 'track', targetArgument: 'trackId' },
-    soloTrack: { entity: 'track', targetArgument: 'trackId' },
-};
-
-type ResolveDirectActionWordTargetIntentInput = {
-    actionName: string;
-    assertedArguments: Readonly<Record<string, unknown>>;
-    context: ProjectContext;
-    groundingRules: GroundingRules;
-    text: string;
-};
-
-function resolveDirectActionWordTargetIntent({
-    actionName,
-    assertedArguments,
-    context,
-    groundingRules,
-    text,
-}: ResolveDirectActionWordTargetIntentInput): ClauseActionIntent | null {
-    const directRule = directActionWordTargetRules[actionName];
-    if (!directRule) {
-        return null;
-    }
-    const assertedTargetId = assertedArguments[directRule.targetArgument];
-    if (typeof assertedTargetId !== 'string') {
-        return null;
-    }
-    let target: { id: string; name: string } | undefined;
-    if (directRule.entity === 'track') {
-        target = context.tracks.find((track) => track.id === assertedTargetId);
-    } else {
-        target = context.tracks.flatMap((track) => track.clips).find((clip) => clip.id === assertedTargetId);
-    }
-    if (!target) {
-        return null;
-    }
-    const targetPattern = [target.id, target.name]
-        .map(normalizePromptText)
-        .filter(Boolean)
-        .toSorted((left, right) => right.length - left.length)
-        .map(escapeRegExp)
-        .join('|');
-    const commandSource = stripPoliteCommandCarrier(text);
-    if (/^["'“”‘’]/u.test(commandSource)) {
-        return null;
-    }
-    const commandText = normalizePromptText(commandSource);
-    for (const option of getBooleanIntentOptions(groundingRules)) {
-        if (assertedArguments[option.argument] !== option.value || option.carrier.length === 0) {
-            continue;
-        }
-        const directPattern = new RegExp(
-            `^${escapeRegExp(option.carrier)}(?: the)? (?:${targetPattern})(?: ${directRule.entity})?$`,
-            'u'
-        );
-        if (directPattern.test(commandText)) {
-            return { actionType: actionName, index: 0, phrase: option.phrase };
-        }
-    }
-    return null;
 }
 
 function escapeRegExp(value: string): string {
@@ -1528,14 +1329,7 @@ function resolveActionPromptScope({
             context,
             clause.text
         );
-        const intent =
-            resolveDirectActionWordTargetIntent({
-                actionName,
-                assertedArguments,
-                context,
-                groundingRules,
-                text: clause.text,
-            }) ?? resolveClauseActionIntent(clause.masked, catalog, actionName);
+        const intent = resolveClauseActionIntent(clause.masked, catalog, actionName);
         if (intent) {
             if (intent.actionType === actionName) {
                 if (hasUnsafeControlCue(clause.text, groundingRules.intentPhrases, controlTargetReferences)) {
