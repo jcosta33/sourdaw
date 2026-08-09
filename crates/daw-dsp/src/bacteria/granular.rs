@@ -164,12 +164,30 @@ impl GranularProcessor {
                 grain.pitch_ratio = pitch_ratio;
                 grain.window = self.window;
 
-                // Read position: write head minus offset
-                let start = if self.write_pos >= offset {
-                    self.write_pos - offset
-                } else {
-                    self.buffer_size - (offset - self.write_pos)
-                };
+                // Read position: `offset` samples back from the most recently
+                // written sample.
+                //
+                // `process_sample` writes and *then* advances `write_pos`, so
+                // by the time this runs `write_pos` addresses the slot the
+                // next sample will occupy and `write_pos - 1` holds the newest
+                // one. Counting back from `write_pos` itself — which this did
+                // until #1570 — makes `offset == 0` select the slot about to
+                // be overwritten: the *oldest* sample the buffer holds, a full
+                // `buffer_size - 1` behind. Position's declared minimum is
+                // 0 ms, so asking for live audio reproduced the input 95 999
+                // samples (2.000 s) later at 48 kHz, and every non-zero
+                // setting was one sample short. Same defect and same shape as
+                // #1569 on the Dutch Oven's `DelayLine::read`.
+                //
+                // The `.min` is load-bearing and is what the old branch was
+                // standing in for: `grainPosOffset` clamps to 2000 ms, which
+                // is exactly `sample_rate * 2.0` — the whole buffer — so
+                // without it the subtraction underflows at the control's
+                // declared maximum. Clamping there delivers `buffer_size - 1`,
+                // the oldest sample the ring can still name, which is also
+                // what Position 2000 ms delivered before this change.
+                let offset = offset.min(self.buffer_size - 1);
+                let start = (self.write_pos + self.buffer_size - 1 - offset) % self.buffer_size;
                 grain.read_pos = start as f32;
                 break;
             }
@@ -183,5 +201,139 @@ impl GranularProcessor {
             grain.active = false;
         }
         self.spawn_counter = 0.0;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const SR: f32 = 48_000.0;
+
+    /// A processor whose density is low enough that nothing spawns by itself
+    /// over the ramps below, so the only grain in play is the one the test
+    /// spawns and `grains[0]` is always it.
+    fn quiet_spawner() -> GranularProcessor {
+        let mut processor = GranularProcessor::new(SR);
+        processor.set_param("grainDensity", 0.1);
+        processor
+    }
+
+    /// Write `1.0, 2.0, … count` and hand back the last value written.
+    ///
+    /// A counting ramp is the only stimulus that can tell "the grain starts
+    /// `n` samples back" from "the grain starts `n + 1` samples back" — every
+    /// slot holds a different number, so the value that comes back names the
+    /// slot. Pinning `write_pos` or the index arithmetic instead would have
+    /// been green throughout #1570: the pointer was always correct and the
+    /// count back from it was not.
+    fn drive_ramp(processor: &mut GranularProcessor, count: usize) -> f32 {
+        for i in 1..=count {
+            processor.process_sample(i as f32);
+        }
+        count as f32
+    }
+
+    /// The buffer value the next grain to be spawned would start on.
+    fn spawned_grain_start_value(processor: &mut GranularProcessor) -> f32 {
+        processor.spawn_grain();
+        let grain = processor
+            .grains
+            .iter()
+            .find(|grain| grain.active)
+            .expect("spawn_grain must activate a grain");
+        processor.buffer[grain.read_pos as usize % processor.buffer_size]
+    }
+
+    #[test]
+    fn a_grain_starts_the_requested_number_of_samples_back_from_the_newest_one() {
+        let newest = 300.0_f32;
+
+        for (offset_ms, expected) in [
+            // Position 0 ms is *live audio* — the sample written by the call
+            // the grain was spawned from, not the one about to be overwritten.
+            (0.0_f32, newest),
+            (1.0, newest - 48.0),
+            (5.0, newest - 240.0),
+        ] {
+            let mut processor = quiet_spawner();
+            processor.set_param("grainPosOffset", offset_ms);
+            drive_ramp(&mut processor, newest as usize);
+
+            let started_on = spawned_grain_start_value(&mut processor);
+            assert_eq!(
+                started_on, expected,
+                "Position {offset_ms} ms must start the grain on the sample written \
+                 {} samples before the newest one. It started on {started_on}, which is \
+                 {} samples back — #1570.",
+                (offset_ms * 0.001 * SR) as usize,
+                newest - started_on
+            );
+        }
+    }
+
+    #[test]
+    fn a_grain_never_starts_past_the_oldest_sample_the_buffer_still_holds() {
+        // `grainPosOffset` clamps to 2000 ms, which at 48 kHz is exactly the
+        // buffer length, so the largest reachable request names a slot the
+        // ring cannot address. It has to saturate on the oldest sample rather
+        // than wrap forward onto a recent one.
+        let mut processor = quiet_spawner();
+        let buffer_size = processor.buffer_size;
+        processor.set_param("grainPosOffset", 2000.0);
+        drive_ramp(&mut processor, buffer_size);
+
+        let started_on = spawned_grain_start_value(&mut processor);
+        assert_eq!(
+            started_on, 1.0,
+            "Position 2000 ms must saturate on the oldest sample the buffer holds \
+             (1.0 of a {buffer_size}-sample ramp). It started on {started_on}."
+        );
+    }
+
+    #[test]
+    fn a_grain_still_finds_the_newest_sample_after_the_ring_has_wrapped() {
+        // The defect's signature is that Position 0 lands on `buffer[write_pos]`
+        // — indistinguishable from the newest sample while the ring is still
+        // being filled for the first time, because that slot is zero either
+        // way. Wrapping it first is what makes the two answers different
+        // numbers, and 137 is an arbitrary offset past the wrap so `write_pos`
+        // is nowhere near 0.
+        let mut processor = quiet_spawner();
+        let count = processor.buffer_size + 137;
+        processor.set_param("grainPosOffset", 0.0);
+        let newest = drive_ramp(&mut processor, count);
+
+        let started_on = spawned_grain_start_value(&mut processor);
+        assert_eq!(
+            started_on, newest,
+            "after {count} writes into a {}-sample ring, Position 0 ms must still start \
+             on the newest sample ({newest}). It started on {started_on}, which is the \
+             sample from {} writes ago.",
+            processor.buffer_size,
+            newest - started_on
+        );
+    }
+
+    #[test]
+    fn freezing_the_buffer_does_not_move_where_position_zero_reads() {
+        // Freeze stops the writes, so `write_pos` stands still and the newest
+        // sample stays newest. A count back from the wrong end of a frozen
+        // buffer is the same defect with no moving pointer to hide behind.
+        let mut processor = quiet_spawner();
+        processor.set_param("grainPosOffset", 0.0);
+        let newest = drive_ramp(&mut processor, 300);
+
+        processor.set_param("grainFreeze", 1.0);
+        for _ in 0..500 {
+            processor.process_sample(-1.0);
+        }
+
+        let started_on = spawned_grain_start_value(&mut processor);
+        assert_eq!(
+            started_on, newest,
+            "under freeze, Position 0 ms must still start on the last sample captured \
+             ({newest}); it started on {started_on}."
+        );
     }
 }
