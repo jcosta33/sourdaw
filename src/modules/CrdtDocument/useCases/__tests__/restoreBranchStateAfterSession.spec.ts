@@ -80,7 +80,7 @@ describe('restoreBranchStateAfterSession', () => {
         // Reports rather than throws (#1557): this runs inside collaboration
         // teardown's `try`/`finally` with no `catch`, and a throw from here
         // skipped the rest of teardown and left live WebRTC peers connected.
-        expect(restoreBranchStateAfterSession()).toBe(false);
+        expect(restoreBranchStateAfterSession()).toBe('state-not-persisted');
         // The session still gets the local branch list back...
         expect(branchStore.value).toEqual(localState);
         // ...and the backup stays, so a later attempt can still make it durable.

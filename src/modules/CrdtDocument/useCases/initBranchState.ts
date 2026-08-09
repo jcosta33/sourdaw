@@ -19,20 +19,30 @@ import { restoreBranchStateFromSessionBackup } from '../stores/branchStore';
  * degradation instead. See #1557.
  */
 export function initBranchState(): void {
-    const restored = restoreBranchStateFromSessionBackup();
-    if (restored) {
+    const outcome = restoreBranchStateFromSessionBackup();
+    if (outcome === 'restored') {
         return;
     }
 
     // Worth an error rather than the adapter's warn: this is once per boot, it
-    // is not user-provoked, and it means the branch the user left the session
-    // on is only as durable as this tab. The backup survives, so the next boot
-    // retries — saying nothing would make a permanent-looking loss out of a
-    // recoverable one.
+    // is not user-provoked, and both failures leave the branch list in a state
+    // that does not match what a reload would produce. Saying nothing would
+    // make a bounded, recoverable failure look like nothing happened at all.
+    if (outcome === 'state-not-persisted') {
+        logger.error(
+            new Error(
+                'Branch state recovered from the session backup could not be persisted; ' +
+                    'it is live for this session and the backup was kept for the next boot.'
+            )
+        );
+        return;
+    }
+
     logger.error(
         new Error(
-            'Branch state recovered from the session backup could not be persisted; ' +
-                'it is live for this session and the backup was kept for the next boot.'
+            'Branch state recovered from the session backup was persisted, but the backup itself ' +
+                'could not be cleared; it will be applied again at the next boot until a later ' +
+                'branch write lands and invalidates it.'
         )
     );
 }

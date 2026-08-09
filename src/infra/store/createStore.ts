@@ -1,3 +1,5 @@
+import { logger as appLogger } from '#/infra/logger/appLogger';
+
 import { createMemoryStorage } from './storage/createMemoryStorage';
 import { type Store, type StoreOptions } from './types';
 
@@ -65,6 +67,12 @@ export const createStore = <TData>(options: StoreOptions<TData> = {}): Store<TDa
      * implement `trySet` and report it themselves with the key they own;
      * the fallback here covers adapters that cannot (memory) and any that
      * throw for a reason no one anticipated.
+     *
+     * The fallback reports through the module logger, not `options.logger`.
+     * `options.logger` is optional and no production call site passes one, so
+     * gating the only signal a dropped write produces on it would mean the
+     * fallback drops writes silently everywhere it actually runs — and the test
+     * proving it reports would be proving a configuration that does not ship.
      */
     const writeDurableValue = (value: TData | null): boolean => {
         const adapterTrySet = storage.trySet;
@@ -76,9 +84,7 @@ export const createStore = <TData>(options: StoreOptions<TData> = {}): Store<TDa
             storage.set(value);
             return true;
         } catch (error) {
-            if (logger) {
-                logger.error(new Error('Store write to backing storage failed', { cause: error }));
-            }
+            appLogger.error(new Error('Store write to backing storage failed', { cause: error }));
             return false;
         }
     };
@@ -186,6 +192,17 @@ export const createStore = <TData>(options: StoreOptions<TData> = {}): Store<TDa
             // Notify regardless: the visible value changed either way, and a
             // caller that keeps rendering the pre-write snapshot because the
             // write was not durable is a second failure on top of the first.
+            //
+            // Known consequence, recorded rather than guarded. A subscriber can
+            // carry a non-durable value further than this replica: during a
+            // collaboration session `startBranchSync` mutates the `__branches__`
+            // Automerge doc on every `branchStore` notification, so a rolled-back
+            // branch list that `localStorage` refused is still broadcast to peers
+            // and written into the persisted bundle. The throwing `set` would
+            // have thrown before notifying. It is bounded — the host is
+            // authoritative for that document and `stopBranchSync` removes it —
+            // and the alternative, withholding the notification, leaves every
+            // reader on a value the writer has already moved past. See #1557.
             queueStoreNotification(notify);
             return persisted;
         },

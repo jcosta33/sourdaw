@@ -103,6 +103,21 @@ describe('collaboration teardown when localStorage refuses the write', () => {
         );
     });
 
+    it('distinguishes a retained backup from a refused state write', () => {
+        sessionRuntimePrimitives.state.peerManager = createClosablePeerManager().manager;
+        vi.spyOn(Storage.prototype, 'removeItem').mockImplementation(() => {
+            throw new DOMException('The operation is insecure.', 'SecurityError');
+        });
+
+        sessionRuntimePrimitives.cleanup();
+
+        // The branch list was saved. Telling the user it was not would be a
+        // different lie from telling them nothing.
+        expect(collaborationStore.value?.error).toBe(
+            'Left the session. A leftover session backup could not be cleared, so your branch list may revert when you reopen the project.'
+        );
+    });
+
     it('reports no error and consumes the backup when the write lands', () => {
         sessionRuntimePrimitives.state.peerManager = createClosablePeerManager().manager;
 

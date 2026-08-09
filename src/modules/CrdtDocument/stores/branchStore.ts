@@ -138,6 +138,90 @@ export function validateStoredBranchStoreState(value: unknown): BranchStoreState
 }
 
 /**
+ * What consuming the session backup actually achieved.
+ *
+ * Two independent steps can fail, and they have different consequences, so one
+ * boolean cannot carry the answer honestly:
+ *
+ * - `restored` — the pre-session state is durable and the backup is gone.
+ * - `state-not-persisted` — the write was refused. This session holds the
+ *   pre-session state, a reload would not.
+ * - `backup-not-cleared` — the state is durable, but the backup could not be
+ *   removed, so it will be applied again at the next boot and pin the branch
+ *   list to this snapshot until `invalidateStaleSessionBackup` clears it.
+ */
+export type BranchStateRestoreOutcome = 'restored' | 'state-not-persisted' | 'backup-not-cleared';
+
+/**
+ * The durable branch state as it stood when a restore failed to complete.
+ *
+ * `null` means nothing is pending. This cannot be read off the live adapter
+ * later: `trySet` advances that adapter's cache whether or not the write
+ * landed, so the cached value cannot answer "has a durable write happened
+ * since?" — which is the only question that makes a retained backup stale.
+ */
+let durableStateAtRestoreFailure: BranchStoreState | null | undefined = undefined;
+let disarmSessionBackupInvalidation: (() => void) | null = null;
+
+/**
+ * Read what `localStorage` actually holds, not what the live adapter is showing.
+ * A fresh adapter starts with an empty cache, so its first `get()` is a durable
+ * read by construction.
+ */
+function readDurableBranchState(): BranchStoreState | null {
+    const durable = createLocalStorage<BranchStoreState>('sourdaw-branches').get();
+    if (durable === null) {
+        return null;
+    }
+    return validateStoredBranchStoreState(durable);
+}
+
+function isSameBranchState(left: BranchStoreState | null, right: BranchStoreState | null): boolean {
+    return JSON.stringify(left) === JSON.stringify(right);
+}
+
+/**
+ * A retained backup is a retry only while durable state has not moved on.
+ *
+ * The moment a `branchStore` write lands durably — the restore's own write
+ * finally succeeding, or a branch the user creates afterwards — the backup
+ * stops describing anything worth restoring and becomes a rollback: the next
+ * boot would silently revert the branch list and orphan any `branch_<uuid>`
+ * document created since, with nothing left to list it. So the backup is
+ * dropped on the first durable write after the failure, and only then.
+ */
+function invalidateStaleSessionBackup(): void {
+    if (durableStateAtRestoreFailure === undefined) {
+        return;
+    }
+
+    if (isSameBranchState(readDurableBranchState(), durableStateAtRestoreFailure)) {
+        // Nothing has reached the backing store since the failure. `set` cannot
+        // advance the adapter cache without a durable write, so this is also the
+        // state where a refused write leaves the store — the backup is still a
+        // faithful retry and stays.
+        return;
+    }
+
+    if (!branchSessionBackupStorage.trySet(null)) {
+        // Still cannot remove it. Stay armed rather than claim it is gone.
+        return;
+    }
+
+    durableStateAtRestoreFailure = undefined;
+    disarmSessionBackupInvalidation?.();
+    disarmSessionBackupInvalidation = null;
+}
+
+function armSessionBackupInvalidation(durableAtFailure: BranchStoreState | null): void {
+    durableStateAtRestoreFailure = durableAtFailure;
+    if (disarmSessionBackupInvalidation) {
+        return;
+    }
+    disarmSessionBackupInvalidation = branchStore.subscribe(invalidateStaleSessionBackup);
+}
+
+/**
  * Put the durable pre-session branch state back, discarding whatever a
  * collaboration session projected over it.
  *
@@ -148,27 +232,34 @@ export function validateStoredBranchStoreState(value: unknown): BranchStoreState
  * because the failure happened before any app code ran. The composition root
  * calls this through `initBranchState` instead (see #1557).
  *
- * Returns whether the restored state is durable. When it is not, the backup is
- * deliberately left in place: the session already holds the restored value, and
- * keeping the backup is what lets a later boot — or a later `stopBranchSync` —
- * try again rather than lose the pre-session state to one refused write.
+ * Neither step throws, and neither is allowed to report success it did not
+ * achieve — see `BranchStateRestoreOutcome`.
  */
-export function restoreBranchStateFromSessionBackup(): boolean {
+export function restoreBranchStateFromSessionBackup(): BranchStateRestoreOutcome {
     const backup = branchSessionBackupStorage.get();
     if (backup === null) {
-        return true;
+        return 'restored';
     }
 
-    const persisted = branchStore.trySet(validateStoredBranchStoreState(backup));
-    if (!persisted) {
-        return false;
+    const durableBeforeRestore = readDurableBranchState();
+
+    if (!branchStore.trySet(validateStoredBranchStoreState(backup))) {
+        armSessionBackupInvalidation(durableBeforeRestore);
+        return 'state-not-persisted';
     }
 
     // Dropping the backup is a removal, which a full quota does not reject —
-    // but this now runs from the composition root, where any throw is still the
-    // whole boot, and the backup is already superseded by the state above.
-    branchSessionBackupStorage.trySet(null);
-    return true;
+    // but Safari private mode refuses every `localStorage` operation, and this
+    // runs from the composition root where a throw is still the whole boot. The
+    // result is not discardable: a backup that survives is applied again at the
+    // next boot, so reporting this as a clean restore would pin the branch list
+    // to the pre-session snapshot silently and permanently.
+    if (!branchSessionBackupStorage.trySet(null)) {
+        armSessionBackupInvalidation(durableBeforeRestore);
+        return 'backup-not-cleared';
+    }
+
+    return 'restored';
 }
 
 export const branchStore = createStore<BranchStoreState>({

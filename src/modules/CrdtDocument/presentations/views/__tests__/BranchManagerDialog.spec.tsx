@@ -5,11 +5,19 @@ import { BranchManagerDialog } from '../BranchManagerDialog';
 
 const mocks = vi.hoisted(() => ({
     useStore: vi.fn(),
+    deleteBranch: vi.fn(),
+    switchBranch: vi.fn(() => Promise.resolve()),
+    mergeBranch: vi.fn(() => Promise.resolve()),
+    forkProjectBranch: vi.fn(() => Promise.resolve()),
 }));
 
 vi.mock('#/infra/store/useStore', () => ({
     useStore: mocks.useStore,
 }));
+vi.mock('../../../useCases/crdtBranching/deleteBranch', () => ({ deleteBranch: mocks.deleteBranch }));
+vi.mock('../../../useCases/crdtBranching/switchBranch', () => ({ switchBranch: mocks.switchBranch }));
+vi.mock('../../../useCases/crdtBranching/mergeBranch', () => ({ mergeBranch: mocks.mergeBranch }));
+vi.mock('../../../useCases/crdtBranching/forkProjectBranch', () => ({ forkProjectBranch: mocks.forkProjectBranch }));
 
 const branchState = {
     activeBranchId: 'main',
@@ -75,5 +83,74 @@ describe('BranchManagerDialog', () => {
         expect(screen.getByRole('button', { name: 'Delete branch Feature X' })).toBeTruthy();
         expect(screen.getByRole('button', { name: 'Switch to branch Feature X' })).toBeTruthy();
         expect(screen.getByRole('button', { name: 'Close branch manager' })).toBeTruthy();
+    });
+
+    /**
+     * Every branch operation could fail silently before #1557: all four caught
+     * into `logger.warn` and the dialog rendered nothing, so under a sealed
+     * `localStorage` the whole surface was a no-op with no explanation. These
+     * assert the message reaches the DOM and clears, not that a `catch` exists.
+     */
+    describe('reporting a failed operation', () => {
+        it('shows nothing until an operation fails', () => {
+            render(<BranchManagerDialog onClose={vi.fn()} />);
+
+            expect(screen.queryByRole('alert')).toBeNull();
+        });
+
+        it('surfaces a failed delete instead of leaving the row silently unchanged', () => {
+            mocks.deleteBranch.mockImplementationOnce(() => {
+                throw new Error('Could not save the branch list');
+            });
+            render(<BranchManagerDialog onClose={vi.fn()} />);
+
+            fireEvent.click(screen.getByRole('button', { name: 'Delete branch Feature X' }));
+
+            expect(screen.getByRole('alert').textContent).toBe('Failed to delete branch');
+            // The row is still there — which is exactly why the message matters.
+            expect(screen.getByRole('button', { name: 'Switch to branch Feature X' })).toBeTruthy();
+        });
+
+        it('surfaces a failed merge', async () => {
+            mocks.mergeBranch.mockRejectedValueOnce(new Error('merge failed'));
+            render(<BranchManagerDialog onClose={vi.fn()} />);
+
+            fireEvent.click(screen.getByRole('button', { name: 'Merge branch Feature X into current branch' }));
+
+            expect((await screen.findByRole('alert')).textContent).toBe('Failed to merge branch');
+        });
+
+        it('surfaces a failed switch', async () => {
+            mocks.switchBranch.mockRejectedValueOnce(new Error('switch failed'));
+            render(<BranchManagerDialog onClose={vi.fn()} />);
+
+            fireEvent.click(screen.getByRole('button', { name: 'Switch to branch Feature X' }));
+
+            expect((await screen.findByRole('alert')).textContent).toBe('Failed to switch branch');
+        });
+
+        it('surfaces a failed fork', async () => {
+            mocks.forkProjectBranch.mockRejectedValueOnce(new Error('fork failed'));
+            render(<BranchManagerDialog onClose={vi.fn()} />);
+
+            fireEvent.change(screen.getByPlaceholderText('New branch name'), { target: { value: 'next' } });
+            fireEvent.click(screen.getByRole('button', { name: /Fork/ }));
+
+            expect((await screen.findByRole('alert')).textContent).toBe('Failed to create branch');
+        });
+
+        it('clears the message when the next operation succeeds', () => {
+            mocks.deleteBranch.mockImplementationOnce(() => {
+                throw new Error('Could not save the branch list');
+            });
+            render(<BranchManagerDialog onClose={vi.fn()} />);
+
+            fireEvent.click(screen.getByRole('button', { name: 'Delete branch Feature X' }));
+            expect(screen.getByRole('alert').textContent).toBe('Failed to delete branch');
+
+            fireEvent.click(screen.getByRole('button', { name: 'Delete branch Feature X' }));
+
+            expect(screen.queryByRole('alert')).toBeNull();
+        });
     });
 });

@@ -1,6 +1,8 @@
 import { stringify } from 'superjson';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { logger } from '#/infra/logger/appLogger';
+
 import { createStore } from '../createStore';
 import { createLocalStorage } from '../storage/createLocalStorage';
 import { type StorageAdapter } from '../storage/types';
@@ -91,6 +93,12 @@ describe('createStore construction when the backing store refuses writes', () =>
     });
 
     it('falls back to a guarded set for an adapter that does not implement trySet', () => {
+        // Reported through the module logger, not `options.logger`. No
+        // production call site passes a logger, so a report gated on one would
+        // be a report that never fires where the fallback actually runs — and a
+        // test proving it through an injected logger would be proving a
+        // configuration that does not ship.
+        const error = vi.spyOn(logger, 'error').mockImplementation(() => {});
         const failure = new Error('adapter refused');
         const bareAdapter: StorageAdapter<Counter> = {
             get: () => null,
@@ -100,23 +108,11 @@ describe('createStore construction when the backing store refuses writes', () =>
             clear: () => {},
             isSupported: () => true,
         };
-        const logged: Error[] = [];
 
-        const store = createStore<Counter>({
-            storage: bareAdapter,
-            logger: {
-                debug: () => {},
-                info: () => {},
-                warn: () => {},
-                error: (error: Error) => {
-                    logged.push(error);
-                },
-                setWriters: () => {},
-            },
-        });
+        const store = createStore<Counter>({ storage: bareAdapter });
 
         expect(store.trySet({ count: 5 })).toBe(false);
-        expect(logged.map((error) => error.message)).toEqual(['Store write to backing storage failed']);
-        expect(logged[0]?.cause).toBe(failure);
+        expect(error.mock.calls.map((call) => call[0].message)).toEqual(['Store write to backing storage failed']);
+        expect(error.mock.calls[0]?.[0]?.cause).toBe(failure);
     });
 });

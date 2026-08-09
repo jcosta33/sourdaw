@@ -108,4 +108,21 @@ describe('initBranchState', () => {
         expect(window.localStorage.getItem(BRANCH_SESSION_BACKUP_STORAGE_KEY)).toBe(stringify(backupState));
         expect(mockLogger.error.mock.calls[0]?.[0]?.message).toContain('could not be persisted');
     });
+
+    it('reports a retained backup separately from a refused state write', async () => {
+        window.localStorage.setItem(BRANCH_SESSION_BACKUP_STORAGE_KEY, stringify(backupState));
+
+        const { initBranchState, readBranchIds } = await loadInitBranchState();
+        vi.spyOn(Storage.prototype, 'removeItem').mockImplementation(() => {
+            throw new DOMException('The operation is insecure.', 'SecurityError');
+        });
+
+        initBranchState();
+
+        // The state is durable here — reporting it as "could not be persisted"
+        // would be wrong, and reporting nothing at all is what left the backup
+        // silently re-applying at every boot.
+        expect(readBranchIds()).toEqual([MAIN_BRANCH_ID, localOnlyBranch.branchId]);
+        expect(mockLogger.error.mock.calls[0]?.[0]?.message).toContain('could not be cleared');
+    });
 });

@@ -257,7 +257,7 @@ describe('branchStore', () => {
             // the module leaves the persisted (host-projected) state in place.
             expect(module.branchStore.value).toEqual(remoteState);
 
-            expect(module.restoreBranchStateFromSessionBackup()).toBe(true);
+            expect(module.restoreBranchStateFromSessionBackup()).toBe('restored');
             expect(module.branchStore.value).toEqual(localState);
             expect(window.localStorage.getItem(BRANCH_SESSION_BACKUP_STORAGE_KEY)).toBeNull();
             const persistedState = window.localStorage.getItem(BRANCH_STORAGE_KEY);

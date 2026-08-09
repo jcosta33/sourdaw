@@ -28,17 +28,29 @@ export const BranchManagerDialog = ({ onClose }: BranchManagerDialogProps): Reac
     const state = useStore(branchStore, defaultState);
     const [newBranchName, setNewBranchName] = useState('');
     const [creating, setCreating] = useState(false);
+    // Every branch operation could fail — a rejected persistence write, a full
+    // `localStorage` quota — and until #1557 all four caught into `logger.warn`
+    // and rendered nothing. That made the whole dialog a silent no-op under a
+    // sealed origin: click Delete, the row stays, nothing is said. "The user can
+    // try again" only works if the user is told there is anything to retry.
+    const [operationError, setOperationError] = useState<string | null>(null);
+
+    const reportFailure = (message: string, error: unknown): void => {
+        logger.warn(`${message}:`, error);
+        setOperationError(message);
+    };
 
     const handleCreate = async () => {
         if (!newBranchName.trim()) {
             return;
         }
         setCreating(true);
+        setOperationError(null);
         try {
             await forkProjectBranch(newBranchName.trim());
             setNewBranchName('');
         } catch (error) {
-            logger.warn('Failed to create branch:', error);
+            reportFailure('Failed to create branch', error);
         }
         setCreating(false);
     };
@@ -47,24 +59,27 @@ export const BranchManagerDialog = ({ onClose }: BranchManagerDialogProps): Reac
         if (branchId === state.activeBranchId) {
             return;
         }
+        setOperationError(null);
         switchBranch(branchId).catch((error) => {
-            logger.warn('Failed to switch branch:', error);
+            reportFailure('Failed to switch branch', error);
         });
     };
 
     const handleMerge = async (sourceBranchId: string) => {
+        setOperationError(null);
         try {
             await mergeBranch(sourceBranchId);
         } catch (error) {
-            logger.warn('Failed to merge branch:', error);
+            reportFailure('Failed to merge branch', error);
         }
     };
 
     const handleDelete = (branchId: string) => {
+        setOperationError(null);
         try {
             deleteBranch(branchId);
         } catch (error) {
-            logger.warn('Failed to delete branch:', error);
+            reportFailure('Failed to delete branch', error);
         }
     };
 
@@ -94,6 +109,12 @@ export const BranchManagerDialog = ({ onClose }: BranchManagerDialogProps): Reac
                 />
 
                 <div className="space-y-4 px-4 py-4">
+                    {operationError === null ? null : (
+                        <p role="alert" className="text-[11px] text-[var(--color-state-danger)]">
+                            {operationError}
+                        </p>
+                    )}
+
                     <div className="flex max-h-60 flex-col gap-1 overflow-y-auto">
                         {state.branches.map((branch) => (
                             <BranchRow

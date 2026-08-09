@@ -225,27 +225,30 @@ function stopBranchSync(): void {
 
     if (sessionState.hasBranchStateBackup) {
         sessionState.isProjectingBranches = true;
-        let restored: boolean;
+        let restoreOutcome: ReturnType<typeof restoreBranchStateAfterSession>;
         try {
             // Reports rather than throws on purpose. This `try` has no `catch`,
             // and everything left in teardown — stopping the sync, closing the
             // WebRTC peers — runs after it. A refused `localStorage` write used
             // to unwind from here and leave live peers connected to a session
             // the user had left. See #1557.
-            restored = restoreBranchStateAfterSession();
+            restoreOutcome = restoreBranchStateAfterSession();
             sessionState.hasBranchStateBackup = false;
         } finally {
             sessionState.isProjectingBranches = false;
         }
 
-        if (!restored) {
-            // The one dropped write in this change that reaches the user, and
-            // only because this path already owns a place to say it. Leaving a
-            // session is deliberate, bounded and rare — the opposite of the
-            // preference and shortcut writes that fire on every interaction —
-            // and the branch the user comes back to is not something to let
-            // them discover on the next reload.
+        // Leaving a session is deliberate, bounded and rare, and this path
+        // already owns a place to say something — so the two failures are
+        // reported here rather than left to the console. They are not the same
+        // failure and must not share a message: one loses the branch list on
+        // reload, the other keeps it now and reverts to it later.
+        if (restoreOutcome === 'state-not-persisted') {
             setCollaborationError('Left the session, but your local branch list could not be saved.');
+        } else if (restoreOutcome === 'backup-not-cleared') {
+            setCollaborationError(
+                'Left the session. A leftover session backup could not be cleared, so your branch list may revert when you reopen the project.'
+            );
         }
     }
     sessionState.lastProjectedBranchesJson = null;
