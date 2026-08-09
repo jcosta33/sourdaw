@@ -1,0 +1,44 @@
+src/modules/AudioEngine/stores/audioBufferCache.ts
+  s_bc88af7d3b054c::t_209a520e4545ef 1232,1244,1249-1251
+  s_bc88af7d3b054c::t_60e9df53083b29 174,468,554-558,731-734,744,753,1219-1222,1228-1231,1233-1242,1245-1246
+  s_bc88af7d3b054c::t_c6b24120513daf 541
+src/modules/AudioEngine/stores/__tests__/fakeAudioBufferIndexedDb.ts
+  s_bc88af7d3b054c::t_60e9df53083b29 42,44
+src/modules/Arrangement/useCases/freezeBounce/__tests__/freezeTrack.spec.ts
+  s_bc88af7d3b054c::t_b8d32cc4b86a15 202-205,207,210
+  s_bc88af7d3b054c::t_491516bc7ee562 168-201,206,208-209,211-218
+  s_bc88af7d3b054c::t_83148c9b2c4d2f 105,153-157
+src/modules/AudioEngine/useCases/cacheAudioBuffer.ts
+  s_bc88af7d3b054c::t_7887a72a0f4b30 11-14
+  s_bc88af7d3b054c::t_60e9df53083b29 6,9,15
+src/modules/AudioEngine/useCases/__tests__/cacheAudioBuffer.spec.ts
+  s_bc88af7d3b054c::t_7887a72a0f4b30 58,61
+src/modules/Arrangement/useCases/freezeBounce/freezeTrack.ts
+  s_bc88af7d3b054c::t_c6b24120513daf 1,39
+  s_bc88af7d3b054c::t_8656b1a5672f07 18-38,40-47,76-80,123-125,133-137,179-180,214-221
+src/modules/AudioEngine/stores/__tests__/audioBufferCacheWriteObservation.spec.ts
+  s_bc88af7d3b054c::t_7887a72a0f4b30 163-172,188-192
+src/modules/AudioEngine/stores/__tests__/audioBufferCacheMetadataStore.spec.ts
+  s_bc88af7d3b054c::t_7887a72a0f4b30 558,563
+  s_bc88af7d3b054c::t_491516bc7ee562 577,579-588,592,594,596-602
+src/modules/AudioEngine/stores/__tests__/audioBufferCacheLifecycle.spec.ts
+  s_bc88af7d3b054c::t_ad27e7833d330d 501-506
+src/modules/AudioEngine/stores/__tests__/audioBufferCacheWaveform.spec.ts
+  s_bc88af7d3b054c::t_d2fc80fbf5b040 440-445
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "d540b166a9f0a3f4cd9095576451cb0d83f90f3c",
+  "prompts": {},
+  "sessions": {
+    "s_bc88af7d3b054c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f9b4a-11a2-7f61-8dfb-76eed0eb2a9c",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
