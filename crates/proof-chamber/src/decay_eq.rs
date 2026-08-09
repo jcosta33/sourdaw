@@ -859,7 +859,7 @@ impl DecayRateEq {
 mod tests {
     use super::{
         band_index_for_name, loop_gain_from_rt60, DecayRateEq, DEFAULT_MULTIPLIER,
-        LIMIT_MARGIN_DB, MAX_MULTIPLIER, MIN_MULTIPLIER, NUM_BANDS, PARAM_NAMES, TAU,
+        MAX_MULTIPLIER, MIN_MULTIPLIER, NUM_BANDS, PARAM_NAMES, TAU,
     };
 
     #[test]
@@ -969,11 +969,19 @@ mod tests {
         // peak. The analytic sum was simultaneously too tight in the middle of
         // the range and too loose at the top of it.
         //
-        // The limit is absolute: `LIMIT_MARGIN_DB` below unity, everywhere,
-        // rather than a fraction of the headroom that shrinks to nothing as the
-        // headroom does. The one thing the stage is allowed to do is leave a
-        // loop where it already was — a frozen tank sits at unity on its own.
-        let limit = 10.0_f32.powf(-LIMIT_MARGIN_DB / 20.0);
+        // The limit is a **literal**, not `LIMIT_MARGIN_DB` read back out of
+        // the source. Deriving the expectation from the constant under test is
+        // the tautology this repo has been bitten by before: the assertion
+        // moves with the thing it is supposed to police, and setting the margin
+        // to zero — which is exactly the proportional-only shape #1580's review
+        // found measuring over unity — leaves it green.
+        //
+        // 0.998 is the guarantee the shipped 0.02 dB margin makes
+        // (`10^(-0.02/20) = 0.99770`), rounded away from it so the two are not
+        // the same number. The one thing the stage is allowed to do is leave a
+        // loop where it already was: a frozen tank sits at unity on its own and
+        // this stage is not what put it there.
+        let limit = 0.998_f32;
 
         for sample_rate in RATES {
             for base_gain in BASE_GAINS {
