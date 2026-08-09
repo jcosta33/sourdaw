@@ -1,0 +1,65 @@
+src/modules/Command/useCases/executableAppActionRegistry.ts
+  s_bc88af7d3b054c::t_0d536c22bb959a 1401
+  s_bc88af7d3b054c::t_eb2c485b7ec3a1 1385,1387-1390,1403-1404,1414
+src/modules/AiRuntime/useCases/agentReference/__tests__/bridgeGroundedLlmToolCalls.spec.ts
+  s_bc88af7d3b054c::t_bcfc6444232241 4431,4435,4438,4454,4474-4511,4513
+  s_bc88af7d3b054c::t_e37c84bea451b2 4444-4448,4451,4455,4457,4461
+  s_14f2bbc9f385dd::t_a85a28d2e87ac4 4512
+src/modules/AiRuntime/models/Tools/Transport.ts
+  s_bc88af7d3b054c::t_eb2c485b7ec3a1 56
+src/modules/AiRuntime/transformers/llmActionBridge.ts
+  s_bc88af7d3b054c::t_5cdd85ecfb2f7a 634,637
+src/modules/AiRuntime/useCases/agentReference/bridgeGroundedLlmToolCalls.ts
+  s_bc88af7d3b054c::t_eb2c485b7ec3a1 3323-3324,3339
+  s_bc88af7d3b054c::t_945f3e4210d1e1 1248
+src/modules/AiRuntime/models/PresetActions/Presets/__tests__/Transport.spec.ts
+  s_bc88af7d3b054c::t_bcfc6444232241 46-48,51-52
+src/modules/AiRuntime/transformers/promptParser/parsing.ts
+  s_bc88af7d3b054c::t_eb2c485b7ec3a1 92-93
+src/modules/Transport/handlers/transport/handleTogglePunch.ts
+  s_bc88af7d3b054c::t_5cdd85ecfb2f7a 12,16
+src/modules/AiRuntime/transformers/promptParser/__tests__/parsing.spec.ts
+  s_bc88af7d3b054c::t_bcfc6444232241 112-113
+src/modules/AiRuntime/useCases/describePlannedAction.ts
+  s_bc88af7d3b054c::t_eb2c485b7ec3a1 17
+src/modules/AiRuntime/useCases/__tests__/describePlannedAction.spec.ts
+  s_bc88af7d3b054c::t_5cdd85ecfb2f7a 399
+  s_bc88af7d3b054c::t_bcfc6444232241 406
+src/modules/Command/useCases/__tests__/executableCommandRegistry.spec.ts
+  s_bc88af7d3b054c::t_fc5e7597dde065 679,683,1674-1677,1690-1691
+  s_bc88af7d3b054c::t_0d536c22bb959a 1688
+src/modules/Transport/handlers/transport/handleSetPunchEnabled.ts
+  s_bc88af7d3b054c::t_5cdd85ecfb2f7a 11
+src/modules/AiRuntime/models/PresetActions/Presets/Transport.ts
+  s_bc88af7d3b054c::t_eb2c485b7ec3a1 39-52
+src/modules/Command/useCases/__tests__/executableAppActionRegistry.spec.ts
+  s_bc88af7d3b054c::t_fc5e7597dde065 124-127
+src/modules/AiRuntime/useCases/__tests__/parsePromptToActions.spec.ts
+  s_bc88af7d3b054c::t_fc5e7597dde065 343,356
+src/modules/Transport/handlers/transport/__tests__/punchUndoRedo.spec.ts
+  s_bc88af7d3b054c::t_5cdd85ecfb2f7a 192
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "b6378bb81360327c01373b91f421c6f6f51db72a",
+  "prompts": {},
+  "sessions": {
+    "s_14f2bbc9f385dd": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f9a61a1d-66b3-4146-938d-a04f45f4b060",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_bc88af7d3b054c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f9b4a-11a2-7f61-8dfb-76eed0eb2a9c",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
