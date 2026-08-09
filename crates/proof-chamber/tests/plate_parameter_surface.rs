@@ -131,6 +131,34 @@ fn identical(a: &[f32], b: &[f32]) -> bool {
     a.len() == b.len() && a.iter().zip(b.iter()).all(|(x, y)| x.to_bits() == y.to_bits())
 }
 
+/// FNV-1a over every sample's bit pattern, so any change anywhere in the
+/// buffer moves it.
+fn digest(output: &[f32]) -> u64 {
+    let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
+    for sample in output {
+        hash ^= u64::from(sample.to_bits());
+        hash = hash.wrapping_mul(0x0000_0100_0000_01b3);
+    }
+    hash
+}
+
+/// What the plate renders with nothing written to it but `algorithm` and
+/// `mix`, which is what every project that never touched a control hears.
+///
+/// A `render(&[])`-versus-`render(&[(name, default)])` comparison — the shape
+/// the three older rows in this file use — cannot pin this. Both sides of that
+/// comparison run the *same* mapping, so it catches a default that drifts away
+/// from the constructor and is blind to a mapping that is wrong at the default
+/// in the same way on both sides. That blindness is not hypothetical: a
+/// candidate `gravity` tilt neutral at 0 rather than at the shipped 0.5 passed
+/// every other assertion in this file while quietly changing what every
+/// existing project sounds like.
+///
+/// So the reference is a constant rather than a second render. Changing this
+/// number is not a maintenance chore — it means an untouched project now
+/// sounds different, and that belongs in a release note.
+const UNTOUCHED_PLATE_DIGEST: u64 = 0x9107_053e_5140_7165;
+
 // ---------------------------------------------------------------------------
 // early_late
 // ---------------------------------------------------------------------------
@@ -368,6 +396,22 @@ fn gravity_defaults_to_the_documented_value() {
     assert!(
         !identical(&untouched, &swell),
         "the shipped default renders identically to gravity=-1.0"
+    );
+}
+
+#[test]
+fn the_untouched_plate_still_renders_what_it_always_has() {
+    // The claim `gravity` had to satisfy to be implementable at all: the tilt
+    // is exactly 1.0 at the shipped default, so wiring a parameter that was
+    // inert does not move a single sample of any project that never wrote it.
+    //
+    // This digest was taken from the plate *before* gravity read its field,
+    // and it has not changed since.
+    let digest_now = digest(&render(&[]));
+    assert_eq!(
+        digest_now, UNTOUCHED_PLATE_DIGEST,
+        "the untouched plate changed: an existing project that never wrote a \
+         control now renders differently. digest {digest_now:#x}"
     );
 }
 
