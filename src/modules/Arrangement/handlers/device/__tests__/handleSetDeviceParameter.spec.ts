@@ -100,6 +100,12 @@ describe('handleSetDeviceParameter', () => {
         expect(isNoop).toBe(true);
     });
 
+    // `docs/manual/devices/07-gluten.md` prints this flag as a promise to the
+    // user — "individual control moves *are* recorded" — and Grinder's page
+    // relies on it for the assistant route. The manual carried the opposite
+    // claim for a year because whoever routed `setGlutenParamWithAudio` through
+    // `executeAppAction` had no way to know a page depended on the outcome.
+    // Flipping this to `false` makes both pages wrong.
     it('is undoable', () => {
         expect(handleSetDeviceParameter.undoable).toBe(true);
     });

@@ -94,11 +94,29 @@ resize, split, or delete notes and clips, and each gesture goes on the stack as 
 many notes it touched.
 
 > [!WARNING]
-> **Not yet active.** Undo does not yet cover the mixer or devices. Moving a fader or a pan control,
-> adding or removing a device, turning a device knob, and loading a device preset all apply
+> **Not yet active.** Undo covers almost nothing on the mixer, and its coverage of devices is
+> uneven. Moving a fader or a pan control, and adding or removing a device by hand, apply
 > immediately and are not recorded — undo will skip straight past them to the last material edit.
-> The one exception runs the other way: the reverb records every parameter of a loaded space as a
-> separate step, so undoing one takes many presses.
+> Arming a track is the one mixer control that does record, so seeing "Arm track" in the history
+> panel is not a sign the rest of the strip is covered.
+>
+> Whether a device records anything is decided device by device, so the device page is the
+> authority where there is one. Gluten is the furthest along: moving a control and releasing it is
+> one undo step, while loading a preset or pressing a Quick move is not recorded at all. Grinder
+> records nothing you do by hand — knobs, presets, and snapshot recalls alike. Dutch Oven records a
+> loaded space as one grouped step, so a single press of undo restores the whole space.
+>
+> What undo restores is the project and the sound, not the panel. Every device draws its controls
+> from its own session state, and undo writes project truth and the audio engine without writing
+> back into that state — so after undoing a device change the control still shows the value you set
+> while you hear the value undo restored. **This is a defect and is being fixed**, not a decision
+> about how devices should behave; do not build a habit around it.
+>
+> Whether reopening the device clears it depends on the device, and for the two documented here it
+> does not. Dutch Oven and Grand Boule re-read the project when their panel opens, so closing and
+> reopening them resyncs the controls. Gluten and Grinder never read the project at all: their
+> session state is written only by their own panels, and it survives the panel being closed. Once
+> those two disagree, they disagree for the rest of the session.
 >
 > Save a preset or duplicate the track before you experiment with a device.
 
@@ -117,9 +135,25 @@ Most operations are available three ways:
 3. **Natural language** — describing what you want to the assistant, from the prompt bar in the
    transport or the chat panel.
 
-The three are not yet equivalent, and the difference shows up in undo. Track gain, pan, and adding a
-device are recorded as undoable steps when the assistant performs them, but not when you perform them
-by hand. Until that evens out, ask the assistant for a change you may want to walk back.
+The three are not yet equivalent, and the difference shows up in undo. What decides whether a change
+is recorded is the surface you touched, not who asked for it. The command list and the assistant
+record most of what they do, and direct manipulation is the uneven one — but *most* is the honest
+word for all three. Some operations are not recorded from any route at all: importing a MIDI or
+audio file, converting audio to MIDI, detecting song structure, clearing MIDI mappings, and the
+assistant's automatic mix fix are unrecorded however you reach them.
+
+Recorded when you do it by hand today: editing clips and notes, arming a track, tempo and time
+signature, deleting a track from the timeline or the track list, adjustment layers, the chord track,
+and track alternatives. Not recorded: the mixer strip — gain, pan, mute, solo, rename, colour, and
+the strip's own delete — along with adding or removing a device, macros, and device parameters on
+the devices that do not record their own controls.
+
+**Every list on this page is what we know of, not the whole map** — including the claim that the
+command list and the assistant record. The split is decided one operation at a time, the same
+gesture can land on either side depending on where you performed it, and the lists move as
+operations are converted. Routing a change through the command list or the assistant improves the
+odds it is recorded; it does not guarantee it. When a change genuinely must be reversible, take a
+branch first — branches cover everything, including what undo cannot see.
 
 ## Where sound actually comes out
 
