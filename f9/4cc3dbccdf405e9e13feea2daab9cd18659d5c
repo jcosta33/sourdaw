@@ -1,0 +1,40 @@
+src/modules/Gluten/models/__tests__/glutenTopologyGating.spec.ts
+  s_14f2bbc9f385dd::t_0e4a60e23a1220 354-360
+  s_14f2bbc9f385dd::t_af643b5555e26d 83-158,167-168,171-172,174-179
+  s_14f2bbc9f385dd::t_eb7db56d2257cd 371-376,386-390
+  s_14f2bbc9f385dd::t_3399331ef8fc8a 377-385
+  s_14f2bbc9f385dd::t_144e9d1ab72dd5 82,217-224,226-227,231-234
+src/modules/Arrangement/models/PluginDescriptors/GlutenDescriptor.ts
+  s_14f2bbc9f385dd::t_0d8b70d029b464 68-71
+src/modules/Arrangement/models/PluginDescriptors/__tests__/glutenDescriptor.spec.ts
+  s_14f2bbc9f385dd::t_38057f0744a8d0 23-28
+src/modules/Gluten/models/GlutenPatch.ts
+  s_14f2bbc9f385dd::t_463f3a26853336 135-142
+src/modules/Gluten/useCases/glutenPresets.ts
+  s_14f2bbc9f385dd::t_490804042f8d29 119,128,225
+  s_14f2bbc9f385dd::t_698bd50a9d4dd6 138,149,159,167
+  s_14f2bbc9f385dd::t_375c8a50134118 78-82
+src/modules/Gluten/presentations/views/__tests__/glutenTopologyControlGating.spec.tsx
+  s_14f2bbc9f385dd::t_64f9b9506a84c6 220-242
+src/modules/Gluten/models/GlutenTopologyGating.ts
+  s_14f2bbc9f385dd::t_176ad507a7d664 569-574
+src/modules/Gluten/useCases/__tests__/glutenPresets.spec.ts
+  s_14f2bbc9f385dd::t_e752372c2f9c33 7-39,45-55,58-59,67,70-89
+  s_14f2bbc9f385dd::t_4507c33ee21960 90
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "f94cc3dbccdf405e9e13feea2daab9cd18659d5c",
+  "prompts": {},
+  "sessions": {
+    "s_14f2bbc9f385dd": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f9a61a1d-66b3-4146-938d-a04f45f4b060",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
