@@ -1,0 +1,29 @@
+crates/proof-chamber/src/decay_eq.rs
+  s_14f2bbc9f385dd::t_97cb524071de05 446
+  s_14f2bbc9f385dd::t_0cefc74360eae0 498-506,508-555
+  s_14f2bbc9f385dd::t_cddb5db763fded 577-582,584,588-591
+public/wasm/manifest.json
+  s_14f2bbc9f385dd::t_1cc205cf44c0d1 26,31-32,35
+public/wasm/proof-chamber/proof_chamber.d.ts
+  s_14f2bbc9f385dd::t_97db81a996ccb5 1
+public/wasm/proof-chamber/proof_chamber_bg.wasm.d.ts
+  s_14f2bbc9f385dd::t_137b69102ab108 1
+src/modules/AudioEngine/wasm/proof_chamber.d.ts
+  s_14f2bbc9f385dd::t_3899e48f5f5806 1
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "b5a5ec324c4c2665f7846a72d2fce6b4639a7b84",
+  "prompts": {},
+  "sessions": {
+    "s_14f2bbc9f385dd": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f9a61a1d-66b3-4146-938d-a04f45f4b060",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
