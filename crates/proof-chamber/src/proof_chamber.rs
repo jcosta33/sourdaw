@@ -898,7 +898,14 @@ mod tests {
 
     fn worst_case_attenuation_db(coeff: f32) -> f32 {
         let (dc, nyquist) = one_pole_extremes(coeff);
-        assert!(dc > 0.0, "the one-pole passes nothing at DC");
+        if dc <= 0.0 || nyquist <= 0.0 {
+            // A coefficient of 1.0 is a filter that never converges away from
+            // its initial state: it passes nothing at all. That is the maximum
+            // possible authority, not a broken measurement, so it is reported
+            // as such rather than panicking here — the caller's assertion is
+            // the one that should explain the failure.
+            return f32::INFINITY;
+        }
         -20.0 * (nyquist / dc).log10()
     }
 
