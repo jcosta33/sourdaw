@@ -1,0 +1,60 @@
+src/modules/AudioEngine/useCases/index.ts
+  s_bc88af7d3b054c::t_edb2e8293bb201 23
+src/modules/Arrangement/useCases/freezeBounce/freezeTrack.ts
+  s_bc88af7d3b054c::t_edb2e8293bb201 1-6,8,25-26,141-142,173
+src/modules/AudioEngine/stores/__tests__/audioBufferCacheLifecycle.spec.ts
+  s_bc88af7d3b054c::t_80ea0bb893e94f 501-502,510-511
+  s_bc88af7d3b054c::t_27ef59dbfda5d0 505-508
+src/modules/AudioEngine/useCases/garbageCollectFreezeAudioBuffers.ts
+  s_bc88af7d3b054c::t_27ef59dbfda5d0 14
+  s_bc88af7d3b054c::t_edb2e8293bb201 5,12
+src/modules/Arrangement/useCases/freezeBounce/__tests__/freezeTrack.spec.ts
+  s_bc88af7d3b054c::t_edb2e8293bb201 4
+  s_bc88af7d3b054c::t_c10f01353a10a9 101-105
+src/modules/AudioEngine/useCases/createFreezeAudioBufferId.ts
+  s_bc88af7d3b054c::t_edb2e8293bb201 1-7
+src/modules/AudioEngine/stores/__tests__/audioBufferCacheWriteObservation.spec.ts
+  s_bc88af7d3b054c::t_80ea0bb893e94f 160-161,169,177,182
+  s_bc88af7d3b054c::t_27ef59dbfda5d0 164-167,180
+src/modules/Arrangement/useCases/freezeBounce/__tests__/cleanupUnusedFreezeFiles.spec.ts
+  s_bc88af7d3b054c::t_edb2e8293bb201 3,27-31,76
+src/modules/AudioEngine/stores/__tests__/audioBufferCacheWaveform.spec.ts
+  s_bc88af7d3b054c::t_80ea0bb893e94f 433,440-441,447-448
+  s_bc88af7d3b054c::t_27ef59dbfda5d0 443-446
+src/modules/Arrangement/useCases/freezeBounce/cleanupUnusedFreezeFiles.ts
+  s_bc88af7d3b054c::t_edb2e8293bb201 6,23,25,37
+src/modules/AudioEngine/models/FreezeAudioBufferId.ts
+  s_bc88af7d3b054c::t_edb2e8293bb201 1-17,19-27
+  s_bc88af7d3b054c::t_93c9a11b239809 18
+src/modules/AudioEngine/stores/__tests__/audioBufferCacheMetadataStore.spec.ts
+  s_bc88af7d3b054c::t_27ef59dbfda5d0 566-569,587
+  s_bc88af7d3b054c::t_8d45829c4fc4e7 575-586,588-594
+  s_bc88af7d3b054c::t_80ea0bb893e94f 549-564,571-572
+  s_bc88af7d3b054c::t_a56151ecef7057 573-574
+src/modules/AudioEngine/stores/audioBufferCache.ts
+  s_bc88af7d3b054c::t_27ef59dbfda5d0 726-730,1214
+  s_bc88af7d3b054c::t_80ea0bb893e94f 1219,1245-1247
+  s_bc88af7d3b054c::t_edb2e8293bb201 3-4,1215-1218,1220-1221,1224,1250
+src/modules/AudioEngine/stores/__tests__/audioBufferCacheBase64Surface.spec.ts
+  s_bc88af7d3b054c::t_27ef59dbfda5d0 95-98
+  s_bc88af7d3b054c::t_80ea0bb893e94f 94
+src/modules/AudioEngine/useCases/__tests__/garbageCollectCachedAudioBuffers.spec.ts
+  s_bc88af7d3b054c::t_b1b467aa1aa399 9,33-36
+  s_bc88af7d3b054c::t_f6eb1c76f3c809 31
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "68336ec33d1456a0d3aebcb30606d777ed703b72",
+  "prompts": {},
+  "sessions": {
+    "s_bc88af7d3b054c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f9b4a-11a2-7f61-8dfb-76eed0eb2a9c",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
