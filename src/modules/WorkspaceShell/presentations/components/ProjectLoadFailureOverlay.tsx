@@ -1,4 +1,4 @@
-import { type ReactElement } from 'react';
+import { type KeyboardEvent as ReactKeyboardEvent, type ReactElement, useEffect, useRef } from 'react';
 
 import { SourdawLogo } from './SourdawLogo';
 
@@ -24,12 +24,34 @@ export const ProjectLoadFailureOverlay = ({
     projectName,
     onReload,
 }: ProjectLoadFailureOverlayProps): ReactElement => {
+    const reloadRef = useRef<HTMLButtonElement>(null);
+
+    // `aria-modal="true"` tells assistive tech to ignore everything outside this
+    // node. Without moving focus in, a screen-reader user is left parked in the
+    // content that instruction just suppressed, with no route to the only
+    // action on screen. `ConfirmDialog` sets the same precedent with `autoFocus`.
+    useEffect(() => {
+        reloadRef.current?.focus();
+    }, []);
+
+    // There is exactly one focusable element here, so the trap is Tab and
+    // Shift+Tab both landing back on it. Escape is deliberately not wired: the
+    // surface has nothing to return to.
+    const keepFocusInside = (event: ReactKeyboardEvent<HTMLDivElement>): void => {
+        if (event.key !== 'Tab') {
+            return;
+        }
+        event.preventDefault();
+        reloadRef.current?.focus();
+    };
+
     return (
         <div
             role="alertdialog"
             aria-modal="true"
             aria-labelledby="project-load-failure-title"
             aria-describedby="project-load-failure-message"
+            onKeyDown={keepFocusInside}
             className="fixed inset-0 z-[10000] flex flex-col items-center justify-center px-6 text-center"
             style={{ background: 'hsl(220,14%,8%)' }}
         >
@@ -48,6 +70,7 @@ export const ProjectLoadFailureOverlay = ({
             </p>
 
             <button
+                ref={reloadRef}
                 type="button"
                 onClick={onReload}
                 className="rounded-md px-4 py-2 text-sm font-medium text-white/90 ring-1 ring-white/20 hover:ring-white/40"

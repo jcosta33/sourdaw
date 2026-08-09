@@ -26,8 +26,13 @@ const mocks = vi.hoisted(() => {
         createProjectImplementation,
         createProject: vi.fn(createProjectImplementation),
         resetActionReplayAuthority: vi.fn(),
+        runCrdtPersistenceOperation: vi.fn(),
     };
 });
+
+vi.mock('../runCrdtPersistenceOperation', () => ({
+    runCrdtPersistenceOperation: mocks.runCrdtPersistenceOperation,
+}));
 
 vi.mock('../../stores/branchStore', () => ({
     branchStore: { set: mocks.branchStoreSet },
@@ -51,6 +56,7 @@ describe('resetCrdtProjectAuthority', () => {
         mocks.createProject.mockReset();
         mocks.createProject.mockImplementation(mocks.createProjectImplementation);
         mocks.resetActionReplayAuthority.mockReset();
+        mocks.runCrdtPersistenceOperation.mockReset();
         mocks.rootDocs.length = 0;
         mocks.docs.clear();
         const initialRoot = {};
@@ -146,17 +152,38 @@ describe('resetCrdtProjectAuthority', () => {
      * if there were hides the loss.
      */
     describe('point-of-no-return reporting', () => {
-        it('says nothing was replaced, and leaves undo alone, when the document swap itself throws', () => {
+        it('says nothing was replaced, and leaves undo alone, when it throws before the swap', () => {
             const onAuthorityReplaced = vi.fn();
+            mocks.runCrdtPersistenceOperation.mockImplementationOnce(() => {
+                throw new Error('persistence reset failed');
+            });
+
+            expect(() => resetCrdtProjectAuthority('New Project', onAuthorityReplaced)).toThrow(
+                'persistence reset failed'
+            );
+
+            expect(mocks.createProject).not.toHaveBeenCalled();
+            expect(onAuthorityReplaced).not.toHaveBeenCalled();
+            // The previous document is still the authority, so the inverse
+            // actions describing it must still be replayable.
+            expect(mocks.resetActionReplayAuthority).not.toHaveBeenCalled();
+        });
+
+        it('reports a replacement even when the swap throws partway, because it is not atomic', () => {
+            const onAuthorityReplaced = vi.fn();
+            // `createProject` clears the document map before installing the new
+            // root, so a throw inside it still leaves the repository emptied.
+            // Reporting "nothing happened" would send the caller down the
+            // recoverable path, restoring flags and restarting autosave into a
+            // compact against an empty document set.
             mocks.createProject.mockImplementation(() => {
                 throw new Error('createProject failed');
             });
 
             expect(() => resetCrdtProjectAuthority('New Project', onAuthorityReplaced)).toThrow('createProject failed');
 
-            expect(onAuthorityReplaced).not.toHaveBeenCalled();
-            // The previous document is still the authority, so the inverse
-            // actions describing it must still be replayable.
+            expect(onAuthorityReplaced).toHaveBeenCalledTimes(1);
+            // The swap did not complete, so nothing after it ran.
             expect(mocks.resetActionReplayAuthority).not.toHaveBeenCalled();
         });
 

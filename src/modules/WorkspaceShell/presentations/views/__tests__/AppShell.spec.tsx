@@ -610,6 +610,41 @@ describe('AppShell', () => {
             expect(screen.getByRole('alertdialog')).toBeInTheDocument();
         });
 
+        it('moves focus into the failure surface and keeps Tab inside it', () => {
+            projectState = createProjectState({ initialized: false, loading: false });
+            projectLoadFailureState = {
+                message: 'Your previous session was closed to open this project, and the project failed to open.',
+                projectName: 'Half Finished Song',
+            };
+
+            render(<AppShell>Content</AppShell>);
+
+            // `aria-modal` tells assistive tech to ignore everything outside
+            // this node, so focus has to be inside it or a screen-reader user is
+            // parked in suppressed content with no route to the only action.
+            const reload = screen.getByRole('button', { name: 'Reload' });
+            expect(reload).toHaveFocus();
+
+            fireEvent.keyDown(screen.getByRole('alertdialog'), { key: 'Tab' });
+            expect(reload).toHaveFocus();
+        });
+
+        it('drops the skip-link from the tab order while the failure surface is up', () => {
+            projectState = createProjectState({ initialized: false, loading: false });
+
+            const { rerender } = render(<AppShell>Content</AppShell>);
+            // Present with no dialog up — otherwise its absence below proves
+            // nothing.
+            expect(screen.getByText('Skip to content')).toBeInTheDocument();
+
+            projectLoadFailureState = { message: 'gone', projectName: 'Half Finished Song' };
+            rerender(<AppShell>Content</AppShell>);
+
+            // A focused skip-link targeting #main-content would move focus
+            // behind the modal, out of its trap.
+            expect(screen.queryByText('Skip to content')).not.toBeInTheDocument();
+        });
+
         it('shows no failure surface on an ordinary load', () => {
             projectState = createProjectState({ initialized: true, loading: false });
 

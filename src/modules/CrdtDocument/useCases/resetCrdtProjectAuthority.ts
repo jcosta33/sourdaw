@@ -28,7 +28,18 @@ export function resetCrdtProjectAuthority(name: string, onAuthorityReplaced?: ()
     // the new authority.
     flushAutomergeStorageWrites();
     void runCrdtPersistenceOperation('reset');
-    automergeRepository.createProject(name);
+    try {
+        automergeRepository.createProject(name);
+    } catch (error) {
+        // `createProject` is not atomic — it clears the document map before it
+        // installs the new root. A throw partway leaves the repository emptied,
+        // which is past the point of no return even though it did not finish, so
+        // the caller must not be told this was recoverable: it would restore the
+        // flags and restart autosave into `compactProject()` against an empty
+        // document set.
+        onAuthorityReplaced?.();
+        throw error;
+    }
     // Audit CC-2 — the outgoing project's projected caches must not survive the
     // authority switch. Left in place they are the stale-bleed source: the
     // first projection against the fresh document would carry the previous

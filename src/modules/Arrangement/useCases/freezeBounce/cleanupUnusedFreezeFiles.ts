@@ -3,10 +3,23 @@ import {
     garbageCollectCachedAudioBuffersBySize,
     garbageCollectFreezeAudioBuffers,
 } from '#/modules/AudioEngine/useCases';
+import { projectLoadFailureStore } from '#/modules/Project/stores';
 
 import { trackStore } from '../../stores/trackStore';
 
 export async function cleanupUnusedFreezeFiles(): Promise<void> {
+    // Everything below infers "no track references this buffer" ⇒ "this buffer
+    // is garbage", which is only sound while the track store speaks for the
+    // open project. After a load replaced the CRDT authority and then failed,
+    // it holds the projection default instead: an empty track list, which is
+    // truthy and sails straight past the `!state` guard below, so every
+    // `freeze-*` row would be collected. The failure surface's Reload button
+    // fires `beforeunload`, which is what calls this — one click away from
+    // deleting every frozen render of a project it says was not modified.
+    if (projectLoadFailureStore.value !== null) {
+        return;
+    }
+
     const state = trackStore.value;
     if (!state) {
         return;

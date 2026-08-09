@@ -1,5 +1,7 @@
 import { useEffect } from 'react';
 
+import { projectLoadFailureStore } from '#/modules/Project/stores';
+
 import { handleKeydown } from '../../useCases/keyboardShortcutActions/handleKeyboardShortcut/handleKeydown';
 import { handleKeyup } from '../../useCases/keyboardShortcutActions/handleKeyboardShortcut/handleKeyup';
 
@@ -9,6 +11,23 @@ import { handleKeyup } from '../../useCases/keyboardShortcutActions/handleKeyboa
 export const useGlobalKeyboardShortcuts = (): void => {
     useEffect(() => {
         const handler = (event: KeyboardEvent) => {
+            // A load that replaced the CRDT authority and then failed leaves the
+            // stores holding an empty project while `projectStore` still carries
+            // the *previous* project's `name`/`createdAt` — the metadata write
+            // lives in the batch that never ran. Every global shortcut is still
+            // reachable from the failure dialog, because its button is not an
+            // input and not a canvas editor, and the worst of them is a save:
+            // `saveProject` keys the recent entry off `project.createdAt`, so it
+            // would serialise the emptied stores straight over the user's real
+            // project. Nothing routes to the app until the session is replaced.
+            //
+            // Deliberately no `preventDefault` — the browser's own handling is
+            // harmless here, and swallowing the event would also take the reload
+            // that the failure surface tells the user to perform.
+            if (projectLoadFailureStore.value !== null) {
+                return;
+            }
+
             const target = event.target as HTMLElement;
             // A *focusable* canvas editor that owns its destructive keys marks
             // its focused surface with `data-canvas-editor`. When the focused

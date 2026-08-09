@@ -232,7 +232,13 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
     // neutralize the skip-link: a focused skip-link targeting #main-content
     // while a modal is up would scroll focus behind the modal (out of the focus
     // trap), so we drop it from the tab order and disable its target.
-    const anyDialogOpen = exportOpen || prefsOpen || showAlphaNotice || collaborationPanelOpen || branchManagerOpen;
+    const anyDialogOpen =
+        exportOpen ||
+        prefsOpen ||
+        showAlphaNotice ||
+        collaborationPanelOpen ||
+        branchManagerOpen ||
+        projectLoadFailure !== null;
 
     // One unified "active device panel" slot. The "only one panel open at a
     // time" invariant is enforced by the discriminated union in
