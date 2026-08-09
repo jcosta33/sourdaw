@@ -76,11 +76,13 @@ import { AlphaNoticeDialog } from '../components/AlphaNoticeDialog';
 import { ErrorBoundary } from '../components/ErrorBoundary';
 import { InstrumentBottomPanel } from '../components/InstrumentBottomPanel';
 import { MobileGate } from '../components/MobileGate';
+import { ProjectLoadFailureOverlay } from '../components/ProjectLoadFailureOverlay';
 import { ProjectLoadingOverlay } from '../components/ProjectLoadingOverlay';
 import { ShortcutCheatSheet } from '../components/ShortcutCheatSheet';
 import { useActiveDevicePanel } from '../hooks/useActiveDevicePanel';
 import { useAppEventHandlers } from '../hooks/useAppEventHandlers';
 import { useAppInitialization } from '../hooks/useAppInitialization';
+import { useProjectLoadFailure } from '../hooks/useProjectLoadFailure';
 import { useProjectState } from '../hooks/useProjectState';
 import { useWorkspaceState } from '../hooks/useWorkspaceState';
 
@@ -194,6 +196,7 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
     const selectedClipId = useStore(clipSelectionStore, defaultClipSelectionState).selectedClipId;
 
     const project = useProjectState();
+    const projectLoadFailure = useProjectLoadFailure();
     const prefs = useStore(preferencesStore, defaultPreferences);
     const tracksSnapshot = useStore(trackStore, { tracks: [], selectedTrackId: null });
     const isAudioClipSelected =
@@ -229,7 +232,13 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
     // neutralize the skip-link: a focused skip-link targeting #main-content
     // while a modal is up would scroll focus behind the modal (out of the focus
     // trap), so we drop it from the tab order and disable its target.
-    const anyDialogOpen = exportOpen || prefsOpen || showAlphaNotice || collaborationPanelOpen || branchManagerOpen;
+    const anyDialogOpen =
+        exportOpen ||
+        prefsOpen ||
+        showAlphaNotice ||
+        collaborationPanelOpen ||
+        branchManagerOpen ||
+        projectLoadFailure !== null;
 
     // One unified "active device panel" slot. The "only one panel open at a
     // time" invariant is enforced by the discriminated union in
@@ -520,7 +529,11 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
 
     return (
         <MobileGate>
-            <div className="flex h-screen w-screen flex-col overflow-hidden bg-surface-app" data-testid="app-shell">
+            <div
+                className="flex h-screen w-screen flex-col overflow-hidden bg-surface-app"
+                data-testid="app-shell"
+                inert={projectLoadFailure !== null}
+            >
                 {/* Skip-link is removed from the DOM while a modal dialog is open:
                     a focused skip-link targeting #main-content would otherwise
                     scroll focus behind the modal, escaping its focus trap. */}
@@ -890,9 +903,6 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
                 <CommandPalette />
                 <VoiceCommandOverlay />
                 <AiChangeToast />
-                <NotificationToast />
-                <ConfirmDialog />
-                <PromptDialog />
                 <AiActionHistoryPanel />
                 <MixAnalysisPanel />
                 <ExportDialog open={exportOpen} onClose={() => setExportOpen(false)} />
@@ -916,6 +926,45 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
 
                 <OnboardingTour />
             </div>
+
+            {/* Siblings of the shell root, not children, because the root goes
+                `inert` below. These are the app's only channels for telling the
+                user something and for asking them a question, and `inert`
+                removes a subtree from the accessibility tree as well as the tab
+                order — so inside it a `role="alert"` toast is neither announced
+                nor reachable, and a pending `confirmUser` becomes unclickable
+                with no way to answer it. Anything that must still speak to the
+                user while the shell is inert belongs out here. */}
+            <NotificationToast />
+            <ConfirmDialog />
+            <PromptDialog />
+
+            {/* Terminal open failure: the previous session is gone and no
+                project replaced it. Gated on its own store rather than the
+                transient flags — `launchReady` latches on the first open, so
+                mid-session `{ initialized: false, loading: false }` shows
+                neither the launch screen nor the loading overlay, only the
+                editor.
+
+                Rendered as a *sibling* of the shell root, which goes `inert`
+                above. A focus trap bound to the dialog only holds while focus
+                is already inside it, and a round trip through browser chrome
+                re-enters at the first focusable node — app chrome behind the
+                modal. `inert` takes the whole shell out of the tab order and
+                out of the a11y tree, which is what `aria-modal="true"` has
+                been claiming all along.
+
+                Except for portals: Radix renders into `document.body`, outside
+                this subtree, so a tooltip or popover already open when the
+                failure lands is not covered by `inert` and can sit in the a11y
+                tree beside the dialog. Not addressed here. */}
+            {projectLoadFailure ? (
+                <ProjectLoadFailureOverlay
+                    message={projectLoadFailure.message}
+                    projectName={projectLoadFailure.projectName}
+                    onReload={() => window.location.reload()}
+                />
+            ) : null}
         </MobileGate>
     );
 };

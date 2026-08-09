@@ -17,6 +17,7 @@ const {
     mockStopPlayback,
     mockNotifyUser,
     mockProjectStore,
+    mockProjectLoadFailureStore,
     mockAutoSaveHandle,
     mockStopActiveAutoSave,
     mockHydrateArrangement,
@@ -42,6 +43,10 @@ const {
     mockStopPlayback: vi.fn(() => Promise.resolve()),
     mockNotifyUser: vi.fn(),
     mockProjectStore: {
+        value: null as Record<string, unknown> | null,
+        set: vi.fn(),
+    },
+    mockProjectLoadFailureStore: {
         value: null as Record<string, unknown> | null,
         set: vi.fn(),
     },
@@ -75,6 +80,7 @@ vi.mock('#/modules/Transport/useCases', () => ({
 }));
 vi.mock('#/utils/Notification/notifyUser', () => ({ notifyUser: mockNotifyUser }));
 vi.mock('../../../../stores/projectStore', () => ({ projectStore: mockProjectStore }));
+vi.mock('../../../../stores/projectLoadFailureStore', () => ({ projectLoadFailureStore: mockProjectLoadFailureStore }));
 vi.mock('../autoSaveHandle', () => mockAutoSaveHandle);
 vi.mock('../stopActiveAutoSave', () => ({ stopActiveAutoSave: mockStopActiveAutoSave }));
 vi.mock('../hydrateArrangementStoreFromProjectData', () => ({
@@ -110,9 +116,10 @@ function makeTransaction(overrides: Partial<ProjectLoadTransaction> = {}): Proje
     return {
         prepare: () => Promise.resolve(true),
         activate: () => true,
+        canActivate: () => true,
         isCurrent: () => true,
         ...overrides,
-    } as ProjectLoadTransaction;
+    };
 }
 
 describe('replaceProjectData', () => {
@@ -178,7 +185,9 @@ describe('replaceProjectData', () => {
         }
         expect(mockStopPlayback).toHaveBeenCalled();
         expect(mockResetAudioGraph).toHaveBeenCalled();
-        expect(mockResetCrdtProjectAuthority).toHaveBeenCalledWith('Test Project');
+        // Second argument is the point-of-no-return callback the abort path
+        // uses to tell a recoverable failure from an unrecoverable one.
+        expect(mockResetCrdtProjectAuthority).toHaveBeenCalledWith('Test Project', expect.any(Function));
         expect(mockResetModuleStores).toHaveBeenCalled();
         expect(mockHydrateArrangement).toHaveBeenCalled();
         expect(mockClearUndoHistory).toHaveBeenCalled();

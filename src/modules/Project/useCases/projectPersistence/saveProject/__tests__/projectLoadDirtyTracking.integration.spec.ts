@@ -112,6 +112,7 @@ function alwaysCurrentTransaction() {
     return {
         prepare: () => Promise.resolve(true),
         activate: () => true,
+        canActivate: () => true,
         isCurrent: () => true,
         complete: () => {},
         abandon: () => {},

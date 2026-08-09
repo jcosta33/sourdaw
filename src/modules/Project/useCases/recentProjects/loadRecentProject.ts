@@ -55,5 +55,14 @@ export async function loadRecentProject(key: string): Promise<LoadRecentProjectO
         data,
         transaction,
     });
-    return result.status === 'committed' ? 'committed' : 'aborted';
+    if (result.status === 'committed') {
+        return 'committed';
+    }
+    // Not 'aborted': that tells the caller a successor owns the project now and
+    // it should do nothing. A failed replacement means the previous session is
+    // gone and no successor is coming.
+    if (result.status === 'failed') {
+        return 'failed';
+    }
+    return 'aborted';
 }

@@ -13,13 +13,15 @@ export function markDirty(): void {
     // stays true until the load's notifications have drained.
     //
     // Provenance / known edge: this makes dirty tracking depend on `loading`
-    // being cleared. Both load paths clear it (`replaceProjectData` via
-    // `finishProjectLoading`, `loadProject` after its batch), but the *abort*
-    // paths in `replaceProjectData` return without restoring it — a pre-existing
-    // gap, not one this guard introduced, and one that already left the app
-    // showing its loading overlay. If it is ever fixed by leaving `loading`
-    // true, edits after a failed load would stop marking dirty; the fix is to
-    // restore the flag on abort, not to weaken this guard.
+    // being cleared, so anything that can leave it set disables editing
+    // detection for the rest of the session. The load paths clear it
+    // (`replaceProjectData` via `finishProjectLoading` in a `finally`,
+    // `loadProject` after its batch) and `replaceProjectData`'s eight abort
+    // returns hand the previous session's value back, the way `newProject`'s
+    // `failNewProjectActivation` does. What is still open: both restore the
+    // value captured on *entry*, so a transition that begins while an earlier
+    // load already holds `loading: true` restores `loading: true` on abort.
+    // The fix for that is a better capture, not a weaker guard here.
     if (state.loading) {
         return;
     }

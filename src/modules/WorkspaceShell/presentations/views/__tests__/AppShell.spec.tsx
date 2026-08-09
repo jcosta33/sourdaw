@@ -13,6 +13,7 @@ import {
     type TrackStoreState,
 } from '#/modules/Arrangement/stores';
 import { setWebMidiRuntimeEventBus } from '#/modules/MIDI/useCases';
+import { projectLoadFailureStore, type ProjectLoadFailureState } from '#/modules/Project/stores';
 import { setNotificationEventBus } from '#/utils/Notification/notificationEventBus';
 
 import { defaultWorkspaceState, type WorkspaceState } from '../../../models/WorkspaceState';
@@ -121,6 +122,19 @@ vi.mock('../LaunchScreen', () => ({
 
 vi.mock('../../components/ProjectLoadingOverlay', () => ({
     ProjectLoadingOverlay: () => <div data-testid="project-loading-overlay">Project Loading</div>,
+}));
+
+// The real ones render null when idle, which cannot answer "where in the tree
+// are they mounted" — and that placement is the whole point once the shell root
+// can go `inert`.
+vi.mock('#/infra/dialogService/NotificationToast', () => ({
+    NotificationToast: () => <div data-testid="notification-toast">Toast</div>,
+}));
+vi.mock('#/infra/dialogService/ConfirmDialog', () => ({
+    ConfirmDialog: () => <div data-testid="confirm-dialog-host">Confirm</div>,
+}));
+vi.mock('#/infra/dialogService/PromptDialog', () => ({
+    PromptDialog: () => <div data-testid="prompt-dialog-host">Prompt</div>,
 }));
 
 vi.mock('../../components/AlphaNoticeDialog', () => ({
@@ -243,6 +257,7 @@ const createTrack = (clip: Clip): Track => ({
 });
 
 let projectState: ProjectState;
+let projectLoadFailureState: ProjectLoadFailureState | null;
 let alphaNoticeDismissed: boolean;
 let trackStoreState: TrackStoreState;
 let selectedClipIdState: string | null;
@@ -258,6 +273,7 @@ describe('AppShell', () => {
         workspaceStore.set({ ...defaultWorkspaceState });
         elasticEditorPanelMock.mockImplementation(() => <div data-testid="elastic-panel">Elastic</div>);
         projectState = createProjectState();
+        projectLoadFailureState = null;
         alphaNoticeDismissed = true;
         trackStoreState = { tracks: [], selectedTrackId: null, ghostClips: [] };
         selectedClipIdState = null;
@@ -275,6 +291,12 @@ describe('AppShell', () => {
             if (store === alphaNoticeStore) {
                 return alphaNoticeDismissed;
             }
+            if (store === projectLoadFailureStore) {
+                return projectLoadFailureState;
+            }
+            // NB: the fallback turns a `null` default truthy, so any store that
+            // legitimately reads null must be listed above rather than fall
+            // through here.
             return defaultValue || { past: [], future: [] };
         });
 
@@ -546,6 +568,129 @@ describe('AppShell', () => {
                 vi.advanceTimersByTime(1);
             });
             expect(screen.queryByTestId('launch-screen')).not.toBeInTheDocument();
+        });
+
+        /**
+         * The reason the terminal open failure has its own store rather than
+         * riding the transient flags. `launchReady` latches the first time a
+         * project opens and is never reset, so mid-session
+         * `{ initialized: false, loading: false }` reveals neither the launch
+         * screen nor the loading overlay — the user is left in the full editor
+         * over whatever the stores now hold.
+         */
+        it('renders the editor, not the launch screen, when a session ends mid-run', () => {
+            vi.useFakeTimers();
+            projectState = createProjectState({ initialized: false, loading: false });
+            const { rerender } = render(<AppShell>Content</AppShell>);
+
+            // Boot: launch screen, then a project opens and latches `launchReady`.
+            expect(screen.getByTestId('launch-screen')).toBeInTheDocument();
+            projectState = createProjectState({ initialized: true, loading: false });
+            rerender(<AppShell>Content</AppShell>);
+            act(() => {
+                vi.advanceTimersByTime(700);
+            });
+            expect(screen.queryByTestId('launch-screen')).not.toBeInTheDocument();
+
+            // Mid-session, back to the cold-start flag values.
+            projectState = createProjectState({ initialized: false, loading: false });
+            rerender(<AppShell>Content</AppShell>);
+
+            expect(screen.queryByTestId('launch-screen')).not.toBeInTheDocument();
+            expect(screen.queryByTestId('project-loading-overlay')).not.toBeInTheDocument();
+            // Nothing blocking: the editor chrome is what the user is left with.
+            expect(screen.getByTestId('transport-bar')).toBeInTheDocument();
+        });
+
+        it('blocks the editor with a failure surface naming the project when an open destroys the session', () => {
+            vi.useFakeTimers();
+            projectState = createProjectState({ initialized: false, loading: false });
+            projectLoadFailureState = {
+                message: 'Your previous session was closed to open this project, and the project failed to open.',
+                projectName: 'Half Finished Song',
+            };
+
+            render(<AppShell>Content</AppShell>);
+
+            const surface = screen.getByRole('alertdialog');
+            expect(surface).toHaveTextContent('Half Finished Song');
+            // The only recovery, and it is offered rather than described.
+            expect(screen.getByRole('button', { name: 'Reload' })).toBeInTheDocument();
+            // It must not auto-dismiss: still there long after a toast would be.
+            act(() => {
+                vi.advanceTimersByTime(30_000);
+            });
+            expect(screen.getByRole('alertdialog')).toBeInTheDocument();
+        });
+
+        it('moves focus into the failure surface and keeps Tab inside it', () => {
+            projectState = createProjectState({ initialized: false, loading: false });
+            projectLoadFailureState = {
+                message: 'Your previous session was closed to open this project, and the project failed to open.',
+                projectName: 'Half Finished Song',
+            };
+
+            render(<AppShell>Content</AppShell>);
+
+            // `aria-modal` tells assistive tech to ignore everything outside
+            // this node, so focus has to be inside it or a screen-reader user is
+            // parked in suppressed content with no route to the only action.
+            const reload = screen.getByRole('button', { name: 'Reload' });
+            expect(reload).toHaveFocus();
+
+            fireEvent.keyDown(screen.getByRole('alertdialog'), { key: 'Tab' });
+            expect(reload).toHaveFocus();
+        });
+
+        it('drops the skip-link from the tab order while the failure surface is up', () => {
+            projectState = createProjectState({ initialized: false, loading: false });
+
+            const { rerender } = render(<AppShell>Content</AppShell>);
+            // Present with no dialog up — otherwise its absence below proves
+            // nothing.
+            expect(screen.getByText('Skip to content')).toBeInTheDocument();
+
+            projectLoadFailureState = { message: 'gone', projectName: 'Half Finished Song' };
+            rerender(<AppShell>Content</AppShell>);
+
+            // A focused skip-link targeting #main-content would move focus
+            // behind the modal, out of its trap.
+            expect(screen.queryByText('Skip to content')).not.toBeInTheDocument();
+        });
+
+        it('takes the whole shell out of the tab order and the a11y tree behind the failure surface', () => {
+            projectState = createProjectState({ initialized: false, loading: false });
+
+            const { rerender } = render(<AppShell>Content</AppShell>);
+            // Not inert with no dialog up — otherwise the assertion below is
+            // satisfied by an attribute that is simply always there.
+            expect(screen.getByTestId('app-shell')).not.toHaveAttribute('inert');
+
+            projectLoadFailureState = { message: 'gone', projectName: 'Half Finished Song' };
+            rerender(<AppShell>Content</AppShell>);
+
+            // The dialog's own keydown trap only holds while focus is already
+            // inside it; a round trip through browser chrome re-enters at the
+            // first focusable node behind the modal. `inert` is what makes
+            // `aria-modal="true"` true.
+            expect(screen.getByTestId('app-shell')).toHaveAttribute('inert');
+            // And the dialog itself must be outside that subtree, or it goes
+            // inert with everything else.
+            expect(screen.getByTestId('app-shell')).not.toContainElement(screen.getByRole('alertdialog'));
+            // So must every channel that still has to reach the user while the
+            // shell is inert — `inert` removes a subtree from the accessibility
+            // tree, so a `role="alert"` toast inside it is never announced and a
+            // pending confirm can never be answered.
+            expect(screen.getByTestId('app-shell')).not.toContainElement(screen.getByTestId('notification-toast'));
+            expect(screen.getByTestId('app-shell')).not.toContainElement(screen.getByTestId('confirm-dialog-host'));
+        });
+
+        it('shows no failure surface on an ordinary load', () => {
+            projectState = createProjectState({ initialized: true, loading: false });
+
+            render(<AppShell>Content</AppShell>);
+
+            expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
         });
 
         it('keeps the launch overlay exiting when initialized briefly flips back to false', () => {

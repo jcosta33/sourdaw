@@ -1,5 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+import { projectLoadFailureStore } from '#/modules/Project/stores';
+
 import { trackStore } from '../../../stores/trackStore';
 import { cleanupUnusedFreezeFiles } from '../cleanupUnusedFreezeFiles';
 
@@ -21,11 +23,31 @@ describe('cleanupUnusedFreezeFiles', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         trackStore.set({ tracks: [], selectedTrackId: null });
+        projectLoadFailureStore.set(null);
     });
 
     it('should do nothing if store state is missing', async () => {
         trackStore.set(null);
         await cleanupUnusedFreezeFiles();
+        expect(mocks.garbageCollectFreezeAudioBuffers).not.toHaveBeenCalled();
+        expect(mocks.garbageCollectCachedAudioBuffersByAge).not.toHaveBeenCalled();
+        expect(mocks.garbageCollectCachedAudioBuffersBySize).not.toHaveBeenCalled();
+    });
+
+    /**
+     * An empty track list is truthy, so it sails past the `!state` guard and
+     * every frozen buffer reads as unreferenced. After a load replaced the CRDT
+     * authority and then failed, that is exactly what the store holds — and the
+     * failure surface's Reload button fires `beforeunload`, which calls this.
+     * One click would have deleted every frozen render of the project the
+     * dialog says was not modified.
+     */
+    it('collects nothing while the track store is not the open project', async () => {
+        projectLoadFailureStore.set({ message: 'session gone', projectName: 'Half Finished Song' });
+        trackStore.set({ tracks: [], selectedTrackId: null });
+
+        await cleanupUnusedFreezeFiles();
+
         expect(mocks.garbageCollectFreezeAudioBuffers).not.toHaveBeenCalled();
         expect(mocks.garbageCollectCachedAudioBuffersByAge).not.toHaveBeenCalled();
         expect(mocks.garbageCollectCachedAudioBuffersBySize).not.toHaveBeenCalled();
