@@ -1,0 +1,24 @@
+.github/pull_request_template.md
+  s_14f2bbc9f385dd::t_9ea22377748239 3,15-22
+.githooks/commit-msg
+  s_14f2bbc9f385dd::t_15dae154fef1cd 1-46
+AGENTS.md
+  s_14f2bbc9f385dd::t_6d160419287a4b 121-122
+  s_14f2bbc9f385dd::t_df5cdf83162d42 117-120,123-138
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "c8288766da6bc3a813f17cd7d13a99a934bd4fa5",
+  "prompts": {},
+  "sessions": {
+    "s_14f2bbc9f385dd": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f9a61a1d-66b3-4146-938d-a04f45f4b060",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
