@@ -651,6 +651,14 @@ const NON_DEFAULT_MODEL_DECLARATIONS: readonly {
         reason: 'The camelCase→snake_case name map the bridge uses to reach the Rust engine. String values.',
     },
     {
+        file: 'src/modules/ProofChamber/models/ProofChamberAlgorithmGating.ts',
+        exportName: 'ALGORITHM_LABELS',
+        reason:
+            'Display names for the algorithm selector. String values, keyed by algorithm rather than by ' +
+            'parameter. Arrived on main from the Dutch Oven panel-gating lane and was surfaced here by discovery ' +
+            'rather than by anyone remembering to declare it, which is the population rule doing its job.',
+    },
+    {
         file: 'src/modules/Tuner/models/TunerState.ts',
         exportName: 'DEFAULT_TUNER_STATE',
         reason:
