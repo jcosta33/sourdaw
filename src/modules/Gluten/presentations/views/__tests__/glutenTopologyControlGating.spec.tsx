@@ -128,7 +128,7 @@ describe('Gluten topology control gating', () => {
 
             const release = knobFor('Release');
             expect(release.getAttribute('aria-disabled')).toBe('true');
-            expect(release.getAttribute('title')).toContain('Recovery');
+            expect(release.getAttribute('title') ?? '').toContain('Recovery');
         });
 
         it('refuses the Auto rel chip and says why on the control itself', () => {
@@ -136,7 +136,7 @@ describe('Gluten topology control gating', () => {
 
             const autoRelease = chipFor('Auto rel');
             expect(autoRelease.getAttribute('aria-disabled')).toBe('true');
-            expect(autoRelease.getAttribute('title')).toContain('Diode');
+            expect(autoRelease.getAttribute('title') ?? '').toContain('Diode');
         });
 
         it('leaves Attack live, because the diode bridge does read it', () => {
