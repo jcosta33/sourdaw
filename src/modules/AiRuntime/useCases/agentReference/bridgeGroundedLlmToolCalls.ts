@@ -1388,6 +1388,18 @@ function maskQuotedLabels(text: string): string {
     });
 }
 
+function maskGlueQuotedLabels(text: string): string {
+    return text.replaceAll(/"[^"]*"|(?<![\p{L}\p{N}])'[^']*'(?![\p{L}\p{N}])|“[^”]*”|‘[^’]*’/gu, (label) => {
+        const innerLabel = label.slice(1, -1).trim();
+        const containsOnlyMaskedProjectReferences = /^(?:□+|clip□*)(?:\s+(?:□+|clip□*))*$/u.test(innerLabel);
+        if (innerLabel.length === 0 || containsOnlyMaskedProjectReferences) {
+            return label;
+        }
+        const closingQuote = label.at(-1)!;
+        return `${label[0]!}${' '.repeat(label.length - 2)}${closingQuote}`;
+    });
+}
+
 function maskGlueClipPairConjunction(text: string): string {
     return text.replaceAll(
         /["'“‘]?(?:clip□*|□+)["'”’]?(?:\s+clips?)?\s+and\s+(?=["'“‘]?(?:clip□*|□+))/giu,
@@ -1580,6 +1592,7 @@ type GlueActionScopePlan = GlueScopeAssignment & {
 
 type GlueScopeAssignmentsResult = {
     assignments: ReadonlyMap<number, GlueScopeAssignment>;
+    hasBlockingUnresolvedScope: boolean;
     hasMissingUncancelledScope: boolean;
 };
 
@@ -1631,25 +1644,26 @@ function getGlueActionScopePlan(
     if (!/^(?:glue|join)\b/u.test(commandText)) {
         return null;
     }
-    const matches = candidates.filter((candidate) => {
+    const matches = candidates.flatMap((candidate) => {
         if (isDirectGlueClipPairScope(actionScope, candidate.clipIds, context)) {
-            return true;
+            return [{ cancelled: false, candidate }];
         }
         const targetPattern = getGlueClipPairTargetPattern(candidate.clipIds, context);
         if (!targetPattern) {
-            return false;
+            return [];
         }
         const inlineCancellation = getInlineGlueCancellationText(actionScope, targetPattern);
-        return inlineCancellation !== null && isGlueCancellationClause(inlineCancellation, targetPattern);
+        if (inlineCancellation === null || !isGlueCancellationClause(inlineCancellation, targetPattern)) {
+            return [];
+        }
+        return [{ cancelled: true, candidate }];
     });
     if (matches.length !== 1) {
-        return { actionScope, cancelled: false, pairKey: null };
+        const hasUnambiguousLocalCancellation = matches.length > 0 && matches.every((match) => match.cancelled);
+        return { actionScope, cancelled: hasUnambiguousLocalCancellation, pairKey: null };
     }
     const match = matches[0]!;
-    const targetPattern = getGlueClipPairTargetPattern(match.clipIds, context)!;
-    const inlineCancellation = getInlineGlueCancellationText(actionScope, targetPattern);
-    const cancelled = inlineCancellation !== null && isGlueCancellationClause(inlineCancellation, targetPattern);
-    return { actionScope, cancelled, pairKey: match.key };
+    return { actionScope, cancelled: match.cancelled, pairKey: match.candidate.key };
 }
 
 function getGlueActionScopePlans({
@@ -1664,9 +1678,10 @@ function getGlueActionScopePlans({
     const candidates = getGluePairCandidates(calls, context);
     const projectMaskedPrompt = maskProjectReferences(prompt, context);
     const intentRestoredPrompt = restoreLeadingGlueIntents({ maskedPrompt: projectMaskedPrompt, prompt });
-    const maskedPrompt = maskGlueClipPairConjunction(maskQuotedLabels(intentRestoredPrompt));
+    const maskedPrompt = maskGlueClipPairConjunction(maskGlueQuotedLabels(intentRestoredPrompt));
+    const clauses = getPromptClauses(prompt, maskedPrompt);
     const plans: GlueActionScopePlan[] = [];
-    for (const clause of getPromptClauses(prompt, maskedPrompt)) {
+    for (const [clauseIndex, clause] of clauses.entries()) {
         const actionScope: ActionPromptScope = {
             ...clause,
             directional: false,
@@ -1694,7 +1709,15 @@ function getGlueActionScopePlans({
         }
         if (!matchedExplicitPair && isImplicitGlueCancellationClause(clause.text)) {
             const immediatelyPrecedingGluePlan = plans.at(-1);
-            if (immediatelyPrecedingGluePlan) {
+            const previousClause = clauses[clauseIndex - 1];
+            const hasLocalUnresolvedScope =
+                immediatelyPrecedingGluePlan?.pairKey === null &&
+                previousClause?.start === immediatelyPrecedingGluePlan.actionScope.start &&
+                previousClause.end === immediatelyPrecedingGluePlan.actionScope.end;
+            if (
+                immediatelyPrecedingGluePlan &&
+                (immediatelyPrecedingGluePlan.pairKey !== null || hasLocalUnresolvedScope)
+            ) {
                 immediatelyPrecedingGluePlan.cancelled = true;
             }
         }
@@ -1712,7 +1735,8 @@ function getGlueScopeAssignments({
     prompt: string;
 }): GlueScopeAssignmentsResult {
     const plansByPair = new Map<string, GlueActionScopePlan[]>();
-    for (const plan of getGlueActionScopePlans({ calls, context, prompt })) {
+    const plans = getGlueActionScopePlans({ calls, context, prompt });
+    for (const plan of plans) {
         if (!plan.pairKey) {
             continue;
         }
@@ -1754,7 +1778,8 @@ function getGlueScopeAssignments({
             }
         }
     }
-    return { assignments, hasMissingUncancelledScope };
+    const hasBlockingUnresolvedScope = plans.some((plan) => plan.pairKey === null && !plan.cancelled);
+    return { assignments, hasBlockingUnresolvedScope, hasMissingUncancelledScope };
 }
 
 function getAddClipPromptEvidence(actionScope: ActionPromptScope): AddClipPromptEvidence | null {
@@ -3456,6 +3481,12 @@ export function bridgeGroundedLlmToolCalls({
     const visibleBindings = new Map<string, BatchLocalBusBinding>();
     const visiblePlannedTrackCreations: ToolCallResult[] = [];
     const glueScopePlan = getGlueScopeAssignments({ calls, context, prompt });
+    if (glueScopePlan.hasBlockingUnresolvedScope) {
+        return {
+            actions: [],
+            rejections: [rejection(0, '<batch>', 'Glue request contains an ambiguous or incomplete clip pair')],
+        };
+    }
     if (glueScopePlan.hasMissingUncancelledScope) {
         return {
             actions: [],

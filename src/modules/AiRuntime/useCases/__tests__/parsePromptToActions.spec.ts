@@ -754,6 +754,29 @@ describe('parsePromptToActions', () => {
         expect(partialResult.rejectionReason).toBe(
             'Provider action rejected: <batch>: Provider omitted an explicit glue command from the request'
         );
+
+        const ambiguousContext: ProjectContext = {
+            ...providerContext,
+            tracks: providerContext.tracks.map((track) => ({
+                ...track,
+                clips: track.clips.map((clip) => ({
+                    ...clip,
+                    name: clip.id === 'clip-intro' || clip.id === 'clip-outro' ? 'Shared Start' : 'Shared End',
+                })),
+            })),
+        };
+        vi.mocked(generateToolCalls).mockResolvedValue(
+            completePlan([{ name: 'glueClips', arguments: { clipIds: ['clip-intro', 'clip-verse'] } }])
+        );
+        const ambiguousResult = await parsePromptToActions(
+            'glue clip-intro and clip-verse, then glue Shared Start and Shared End',
+            ambiguousContext
+        );
+
+        expect(ambiguousResult.actions).toEqual([]);
+        expect(ambiguousResult.rejectionReason).toBe(
+            'Provider action rejected: <batch>: Glue request contains an ambiguous or incomplete clip pair'
+        );
     });
 
     it('proposes a grounded whole-clip MIDI transform as one confirmable atomic action', async () => {
