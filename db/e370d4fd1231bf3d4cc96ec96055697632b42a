@@ -1,0 +1,73 @@
+crates/daw-dsp/tests/fermenter_grain_pan_spread_is_audible.rs
+  s_14f2bbc9f385dd::t_e88888ab81801e 527
+  s_14f2bbc9f385dd::t_e5fc2646faf0a0 293-299,301
+  s_14f2bbc9f385dd::t_342543304477d7 547
+  s_14f2bbc9f385dd::t_a02606c8a5b89f 125-138
+  s_14f2bbc9f385dd::t_8cce7304552e13 1-5,33-72,89-93,105-124,143-194,214,257-258,267-291,306-346,348-394,421-422,426,453-454,478-483,498-499,561-586
+  s_14f2bbc9f385dd::t_84b96cfd1f3110 233-240,242-250
+  s_14f2bbc9f385dd::t_7847935805b2f3 292,300,302-305
+  s_14f2bbc9f385dd::t_3128355944ef3f 216-220,231-232,241,252-256,259-264
+  s_14f2bbc9f385dd::t_ba0c4ba63eec4f 456-477,484-497,500-506,511-526,528-546,548-560
+  s_14f2bbc9f385dd::t_45211965689b3d 347
+  s_14f2bbc9f385dd::t_8352e4a56cea8c 73-85
+  s_14f2bbc9f385dd::t_635f8206aca1c4 251
+  s_14f2bbc9f385dd::t_777ec01ee16a08 6-16
+  s_14f2bbc9f385dd::t_ad8f1aecb01f10 455
+  s_14f2bbc9f385dd::t_2d22e8b5c03e70 395-398,423-425,427-429,431-452
+  s_14f2bbc9f385dd::t_3e9e90fa7e6b88 265-266
+  s_14f2bbc9f385dd::t_75a98ff985f781 195-213
+  s_14f2bbc9f385dd::t_91b2f36f3cafc3 139-142
+  s_14f2bbc9f385dd::t_94095d96ec64c9 17-32
+  s_14f2bbc9f385dd::t_3eff88d409496e 215
+  s_14f2bbc9f385dd::t_d14083b6c3b338 221-230
+  s_14f2bbc9f385dd::t_543e334b0a964b 399-420
+  s_14f2bbc9f385dd::t_507fac8559f775 86-88
+  s_14f2bbc9f385dd::t_236eb714780e8c 430
+  s_14f2bbc9f385dd::t_bbdbdbfbdf13c2 507-510
+  s_14f2bbc9f385dd::t_36cb6bbf8f7cb8 94-104
+src/modules/AudioEngine/models/FermenterAutomationParams.ts
+  s_14f2bbc9f385dd::t_91da76f4aa824b 37,40-44
+  s_14f2bbc9f385dd::t_0d182ee91e23da 184
+public/wasm/daw-dsp/daw_dsp_bg.wasm.d.ts
+  s_14f2bbc9f385dd::t_e2a3cb89f100c8 1,155-175
+public/wasm/manifest.json
+  s_14f2bbc9f385dd::t_697f217ea524f7 12,16-18,21
+src/modules/AudioEngine/wasm/__tests__/dawDspFermenterAutomationOrdinals.spec.ts
+  s_14f2bbc9f385dd::t_3e0cb15a922c53 268-278
+crates/daw-dsp/src/fermenter/voice.rs
+  s_14f2bbc9f385dd::t_17a6e42656bcc2 645-664,666,668-672,675-676,678,684,686,692,694-695,705,707,713
+  s_14f2bbc9f385dd::t_a9a60e2333f102 826-832
+  s_14f2bbc9f385dd::t_4cff0def22810f 20-24
+  s_14f2bbc9f385dd::t_c3ce5e824870f4 855-885
+  s_14f2bbc9f385dd::t_2d1853dd294543 833-854
+src/modules/AudioEngine/repositories/offlineScheduler/__tests__/offlineAutomationExemptions.ts
+  s_14f2bbc9f385dd::t_a908f5fb1653bd 39-41,47-53
+src/modules/AudioEngine/repositories/offlineScheduler/__tests__/offlineAutomationCoverage.spec.ts
+  s_14f2bbc9f385dd::t_5f1efe54015ea2 308-312,316,318,322-324
+  s_14f2bbc9f385dd::t_9c1940bfc2d08a 278-280,282-286
+  s_14f2bbc9f385dd::t_0734a92289ed76 293
+src/modules/AudioEngine/wasm/daw_dsp.d.ts
+  s_14f2bbc9f385dd::t_498d7d3e380599 1,947-967
+public/wasm/daw-dsp/daw_dsp.d.ts
+  s_14f2bbc9f385dd::t_6aa92b3d7fc208 1,947-967
+crates/daw-dsp/src/fermenter/mod.rs
+  s_14f2bbc9f385dd::t_50611f76bd0ec8 46-48
+  s_14f2bbc9f385dd::t_014da8d8b4de57 66
+  s_14f2bbc9f385dd::t_66f5ba1ec9aba3 170
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "dbe370d4fd1231bf3d4cc96ec96055697632b42a",
+  "prompts": {},
+  "sessions": {
+    "s_14f2bbc9f385dd": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f9a61a1d-66b3-4146-938d-a04f45f4b060",
+        "model": "claude-opus-5"
+      },
+      "human_author": null
+    }
+  }
+}
