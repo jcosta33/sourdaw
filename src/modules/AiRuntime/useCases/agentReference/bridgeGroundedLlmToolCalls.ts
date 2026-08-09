@@ -1239,9 +1239,14 @@ function resolveActionPromptScope({
 }: ResolveActionPromptScopeInput): ActionPromptScope | null {
     const groundingRules = getExecutableAppActionGroundingRules(actionName);
     const cancellationPrompt = actionName === 'glueClips' ? maskGlueQuotedLabels(prompt) : prompt;
+    const hasActionCancellation = isPunchActionType(actionName)
+        ? getPromptActionRequests(prompt, catalog).some(
+              (request) => request.actionType === actionName && request.cancelled
+          )
+        : hasTrailingIntentCancellation(cancellationPrompt, actionName, catalog, plannedActionNames);
     if (
         !groundingRules ||
-        hasTrailingIntentCancellation(cancellationPrompt, actionName, catalog, plannedActionNames) ||
+        hasActionCancellation ||
         (actionName === 'setClipFade' && hasInvalidNamedClipFadeField(prompt))
     ) {
         return null;
@@ -3256,6 +3261,59 @@ function hasExplicitPromptIntent(prompt: string, catalog: GroundingCatalog, acti
     );
 }
 
+type PromptActionRequest = {
+    actionType: string;
+    cancelled: boolean;
+    clause: PromptClause;
+};
+
+function getPromptActionRequests(prompt: string, catalog: GroundingCatalog): PromptActionRequest[] {
+    const maskedPrompt = maskQuotedLabels(prompt);
+    const requests: PromptActionRequest[] = [];
+    for (const clause of getPromptClauses(prompt, maskedPrompt)) {
+        const intent = resolveClauseActionIntent(clause.masked, catalog);
+        if (intent) {
+            requests.push({ actionType: intent.actionType, cancelled: false, clause });
+        }
+
+        for (const cue of getCancellationCues(clause.masked.toLocaleLowerCase())) {
+            const referencedAction = getReferencedCancellationAction(cue, catalog);
+            let requestIndex = -1;
+            for (let index = requests.length - 1; index >= 0; index -= 1) {
+                const request = requests[index];
+                if (request && !request.cancelled && (!referencedAction || request.actionType === referencedAction)) {
+                    requestIndex = index;
+                    break;
+                }
+            }
+            const cancelledRequest = requests[requestIndex];
+            if (cancelledRequest) {
+                requests[requestIndex] = { ...cancelledRequest, cancelled: true };
+            }
+        }
+    }
+    return requests;
+}
+
+function isPunchActionType(actionType: string): actionType is 'setPunchIn' | 'setPunchOut' {
+    return actionType === 'setPunchIn' || actionType === 'setPunchOut';
+}
+
+function isExactPunchCommandClause(clause: PromptClause): boolean {
+    let commandSource = clause.masked.trim();
+    commandSource = commandSource.replace(/^(?:please\s+)?(?:can|could|would)\s+you(?:\s+please)?\s+/iu, '');
+    commandSource = commandSource.replace(/^please\s+/iu, '');
+    return /^(?:set|move)\s+punch(?:\s+|-)\s*(?:in|out)\s+(?:(?:at|to)\s+)?beat\s+[+-]?(?:\d+(?:\.\d+)?|\.\d+)\s*[?!]?$/iu.test(
+        commandSource
+    );
+}
+
+function hasMalformedPunchNumericContinuation(maskedPrompt: string): boolean {
+    return /\b(?:set|move)\s+punch(?:\s+|-)\s*(?:in|out)\b[^;.\n]*?\bbeat\s+[+-]?(?:\d+(?:\.\d+)?|\.\d+)\s*,\s*\d/iu.test(
+        maskedPrompt
+    );
+}
+
 export function bridgeGroundedLlmToolCalls({
     calls,
     context,
@@ -3298,23 +3356,24 @@ export function bridgeGroundedLlmToolCalls({
         }
     }
     const catalog = getExecutableAppActionGroundingCatalog();
-    const punchPromptIntents = getPromptClauses(prompt, prompt)
-        .map((clause) => resolveClauseActionIntent(clause.masked, catalog)?.actionType)
-        .filter(
-            (actionType): actionType is 'setPunchIn' | 'setPunchOut' =>
-                actionType === 'setPunchIn' || actionType === 'setPunchOut'
-        );
+    const promptActionRequests = getPromptActionRequests(prompt, catalog);
+    const activePromptActionRequests = promptActionRequests.filter((request) => !request.cancelled);
+    const punchPromptRequests = activePromptActionRequests.filter((request) => isPunchActionType(request.actionType));
     const punchProviderCalls = effectiveCalls.filter(
         (call) => call.name === 'setPunchIn' || call.name === 'setPunchOut'
     );
-    if (punchPromptIntents.length > 0 || punchProviderCalls.length > 0) {
-        const promptIntent = punchPromptIntents[0];
+    if (punchPromptRequests.length > 0 || punchProviderCalls.length > 0) {
+        const promptRequest = punchPromptRequests[0];
         const providerCall = punchProviderCalls[0];
         const isExactSingleton =
-            punchPromptIntents.length === 1 &&
+            punchPromptRequests.length === 1 &&
             punchProviderCalls.length === 1 &&
             effectiveCalls.length === 1 &&
-            providerCall?.name === promptIntent;
+            activePromptActionRequests.length === 1 &&
+            promptRequest !== undefined &&
+            isExactPunchCommandClause(promptRequest.clause) &&
+            !hasMalformedPunchNumericContinuation(maskQuotedLabels(prompt)) &&
+            providerCall?.name === promptRequest.actionType;
         if (!isExactSingleton) {
             return {
                 actions: [],

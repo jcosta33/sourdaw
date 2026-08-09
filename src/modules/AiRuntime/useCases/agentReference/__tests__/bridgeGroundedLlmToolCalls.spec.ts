@@ -2523,6 +2523,57 @@ describe('bridgeGroundedLlmToolCalls', () => {
         expect(rejected.every((result) => result.actions.length === 0)).toBe(true);
     });
 
+    it('rejects commentary after an otherwise exact punch value', () => {
+        const result = bridge(
+            [{ name: 'setPunchIn', arguments: { beat: 20 } }],
+            'set punch in at beat 20 is a bad idea'
+        );
+
+        expect(result.actions).toEqual([]);
+    });
+
+    it('rejects malformed decimal punctuation instead of truncating the punch value', () => {
+        const result = bridge([{ name: 'setPunchIn', arguments: { beat: 20 } }], 'set punch in at beat 20,5');
+
+        expect(result.actions).toEqual([]);
+    });
+
+    it('allows an unrelated exact action after a provider-omitted punch request is canceled', () => {
+        const result = bridge(
+            [{ name: 'setTempo', arguments: { bpm: 130 } }],
+            'set punch in at beat 20, cancel that; set tempo to 130'
+        );
+
+        expect(result.actions).toEqual([{ type: 'setTempo', payload: { bpm: 130 } }]);
+    });
+
+    it('keeps punch cancellation quote-aware', () => {
+        const result = bridge(
+            [{ name: 'setPunchIn', arguments: { beat: 20 } }],
+            'set punch in at beat 20; "cancel that"'
+        );
+
+        expect(result.actions).toEqual([{ type: 'setPunchIn', payload: { beat: 20 } }]);
+    });
+
+    it('binds a cancellation to the nearest executable prompt clause', () => {
+        const result = bridge(
+            [{ name: 'setPunchIn', arguments: { beat: 20 } }],
+            'set punch in at beat 20; set tempo to 130; cancel that'
+        );
+
+        expect(result.actions).toEqual([{ type: 'setPunchIn', payload: { beat: 20 } }]);
+    });
+
+    it('rejects a punch-only provider plan when the prompt contains another executable action', () => {
+        const result = bridge(
+            [{ name: 'setPunchIn', arguments: { beat: 20 } }],
+            'set punch in at beat 20 and set tempo to 130'
+        );
+
+        expect(result.actions).toEqual([]);
+    });
+
     it('grounds explicit changed master gain with percentage normalization', () => {
         const percentage = bridge(
             [{ name: 'setMasterGain', arguments: { gain: 0.65 } }],
