@@ -111,5 +111,10 @@ export const handleArmTrack = createHandler<'armTrack'>({
         };
     },
     requiresAbortCompensation: false,
+    // `docs/manual/02-concepts.md` names arming as *the* mixer control that
+    // records, so that a user seeing "Arm track" in the history panel does not
+    // read it as evidence the rest of the strip is covered. That sentence is
+    // load-bearing in the other direction too: if arming ever stops recording,
+    // the page becomes wrong about the one exception it bothers to print.
     undoable: true,
 });

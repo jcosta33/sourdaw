@@ -58,6 +58,10 @@ describe('handleSetTrackGain', () => {
         });
     });
 
+    // `docs/manual/02-concepts.md` lists track gain among the operations that
+    // record from the assistant and the command list but not from the mixer
+    // strip, which reaches `setTrackGain` directly. That contrast is only true
+    // while this stays `true`.
     it('is undoable', () => {
         expect(handleSetTrackGain.undoable).toBe(true);
     });

@@ -203,11 +203,12 @@ controls the name is the only way to tell which lane is which:
 > value you dragged to while you hear the value undo restored. Gluten's controls are drawn from
 > state its own panel writes and nothing else — nothing reads the project back into it — so
 > reopening the device redraws the same stale value. Once the face and the sound disagree they stay
-> that way for the rest of the session.
+> that way for the rest of the session. **This is a defect and is being fixed**, not how the device
+> is meant to work.
 >
 > History entries for Gluten are labelled with the internal parameter name rather than the name on
-> the panel, so an undone HPF switch reads `scHpfEnabled` — neither the panel label nor the
-> automation-lane name in the table above. Save a preset before you load another one.
+> the panel, so an undone HPF switch reads `Set scHpfEnabled` — neither the panel's HPF nor the
+> lane's SC HPF On. Save a preset before you load another one.
 
 ## See also
 

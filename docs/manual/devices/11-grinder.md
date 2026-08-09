@@ -242,7 +242,8 @@ Automation lanes do not always use the label the panel prints. Where they differ
 > panel writes, and the assistant's change does not go through the panel — so you hear the change
 > while the knob still shows the value from before it, and when you undo you hear that reversed
 > while the knob still has not moved. Closing and reopening Grinder does not resync it; nothing
-> reads the project back into those controls.
+> reads the project back into those controls. **This is a defect and is being fixed**, not how the
+> device is meant to work.
 
 ## See also
 
