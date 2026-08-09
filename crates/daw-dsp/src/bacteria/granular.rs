@@ -179,13 +179,23 @@ impl GranularProcessor {
                 // setting was one sample short. Same defect and same shape as
                 // #1569 on the Dutch Oven's `DelayLine::read`.
                 //
-                // The `.min` is load-bearing and is what the old branch was
-                // standing in for: `grainPosOffset` clamps to 2000 ms, which
-                // is exactly `sample_rate * 2.0` — the whole buffer — so
-                // without it the subtraction underflows at the control's
-                // declared maximum. Clamping there delivers `buffer_size - 1`,
-                // the oldest sample the ring can still name, which is also
-                // what Position 2000 ms delivered before this change.
+                // The `.min` guards exactly one value, and it is worth being
+                // precise about which. `offset` is
+                // `(pos_offset_ms * 0.001 * sample_rate) as usize` with
+                // `pos_offset_ms` clamped to 2000.0, and `buffer_size` is
+                // `(sample_rate * 2.0) as usize` — the same product — so the
+                // largest offset the control can produce equals `buffer_size`
+                // exactly and can never exceed it. That one value is one past
+                // the newest sample's own slot, so without the clamp the
+                // subtraction goes a sample too far: it underflows outright
+                // when `write_pos == 0` and silently reads one further back
+                // otherwise. With the clamp it delivers `buffer_size - 1`, the
+                // oldest sample the ring can still name.
+                //
+                // It is therefore an underflow guard, not a behaviour change:
+                // at `offset == buffer_size` the old branch reduced to
+                // `write_pos` for every `write_pos`, and so does this
+                // expression. Position 2000 ms renders what it always did.
                 let offset = offset.min(self.buffer_size - 1);
                 let start = (self.write_pos + self.buffer_size - 1 - offset) % self.buffer_size;
                 grain.read_pos = start as f32;
@@ -274,10 +284,20 @@ mod tests {
 
     #[test]
     fn a_grain_never_starts_past_the_oldest_sample_the_buffer_still_holds() {
-        // `grainPosOffset` clamps to 2000 ms, which at 48 kHz is exactly the
-        // buffer length, so the largest reachable request names a slot the
-        // ring cannot address. It has to saturate on the oldest sample rather
-        // than wrap forward onto a recent one.
+        // `grainPosOffset` clamps to 2000 ms, which is exactly the buffer
+        // length at every rate the product runs at, so the largest reachable
+        // request names a slot the ring cannot address. It has to saturate on
+        // the oldest sample rather than wrap forward onto a recent one.
+        //
+        // What this row is an instrument for, stated because it is narrower
+        // than the name suggests: it fails when the clamp is removed, and it
+        // is *blind to the pointer order this file exists for*. At
+        // `offset == buffer_size` both the pre-#1570 branch and the current
+        // expression reduce to `write_pos` for every `write_pos` — not by
+        // coincidence and not because of what a particular slot happened to
+        // hold, but algebraically, so no choice of ramp or starting position
+        // can make this row separate them. The three rows around it are the
+        // ones that do.
         let mut processor = quiet_spawner();
         let buffer_size = processor.buffer_size;
         processor.set_param("grainPosOffset", 2000.0);
@@ -315,25 +335,91 @@ mod tests {
         );
     }
 
+    /// Grain length used by the frozen render below, in milliseconds and in
+    /// samples at [`SR`]. Small enough that the whole grain fits inside a ramp
+    /// a test can drive, large enough that the Hann window has real shape
+    /// across it.
+    const FROZEN_GRAIN_MS: f32 = 20.0;
+    const FROZEN_GRAIN_SAMPLES: usize = 960;
+
     #[test]
-    fn freezing_the_buffer_does_not_move_where_position_zero_reads() {
+    fn a_frozen_buffer_replays_the_samples_it_captured_across_the_whole_grain() {
         // Freeze stops the writes, so `write_pos` stands still and the newest
         // sample stays newest. A count back from the wrong end of a frozen
         // buffer is the same defect with no moving pointer to hide behind.
+        //
+        // This asserts the **rendered** grain over its full length rather than
+        // the one slot it starts on. An earlier revision read the start slot
+        // only, which named a single sample of a grain that is 960 long and
+        // said nothing about the 959 after it — a read head that started right
+        // and then drifted would have passed.
+        //
+        // Position is set to one whole grain length deliberately. Under freeze
+        // the write head does not move while the read head still advances, so
+        // a grain started fewer than `grain_size` samples back runs off the end
+        // of the captured audio partway through — which is a real defect, filed
+        // separately, and not the one this row is measuring. At Position ==
+        // grain length the grain replays exactly the last `grain_size` samples
+        // captured, ending on the newest one.
+        //
+        // The shipped `bac-frozen-texture` preset sits on this path, at
+        // Position 100 ms with 120 ms grains, and it is the only shipped patch
+        // that does.
         let mut processor = quiet_spawner();
-        processor.set_param("grainPosOffset", 0.0);
-        let newest = drive_ramp(&mut processor, 300);
-
+        processor.set_param("grainMix", 1.0);
+        processor.set_param("grainSize", FROZEN_GRAIN_MS);
+        processor.set_param("grainPosOffset", FROZEN_GRAIN_MS);
+        let newest = drive_ramp(&mut processor, 4_000);
         processor.set_param("grainFreeze", 1.0);
-        for _ in 0..500 {
-            processor.process_sample(-1.0);
-        }
 
-        let started_on = spawned_grain_start_value(&mut processor);
-        assert_eq!(
-            started_on, newest,
-            "under freeze, Position 0 ms must still start on the last sample captured \
-             ({newest}); it started on {started_on}."
+        processor.spawn_grain();
+        let rendered: Vec<f32> = (0..FROZEN_GRAIN_SAMPLES)
+            .map(|_| processor.process_sample(0.0))
+            .collect();
+
+        // The grain must replay ramp values `newest - 960 … newest - 1`, each
+        // scaled by the Hann window at its own progress. The window is written
+        // out here as its definition rather than borrowed from the code under
+        // test, so a change to the shape has to be argued for in both places.
+        let expected: Vec<f32> = (0..FROZEN_GRAIN_SAMPLES)
+            .map(|progress| {
+                let captured = newest - FROZEN_GRAIN_SAMPLES as f32 + progress as f32;
+                let phase = progress as f32 / FROZEN_GRAIN_SAMPLES as f32;
+                captured * 0.5 * (1.0 - (2.0 * PI * phase).cos())
+            })
+            .collect();
+
+        // A one-slot error moves each sample by up to a whole ramp step (1.0),
+        // so this tolerance separates "replayed the wrong samples" from float
+        // noise on values that reach 4000 without being fitted to either.
+        let tolerance = 1e-3_f32;
+        let worst = rendered
+            .iter()
+            .zip(&expected)
+            .enumerate()
+            .map(|(progress, (got, want))| (progress, (got - want).abs(), *got, *want))
+            .max_by(|a, b| a.1.total_cmp(&b.1))
+            .expect("the grain rendered no samples at all");
+        assert!(
+            worst.1 <= tolerance,
+            "under freeze the grain must replay the last {FROZEN_GRAIN_SAMPLES} samples \
+             captured. At progress {} it rendered {} where the frozen ramp says {} \
+             (off by {}).",
+            worst.0,
+            worst.2,
+            worst.3,
+            worst.1
+        );
+
+        // Anti-vacuity: a grain that rendered silence would satisfy nothing
+        // above if `expected` were also silent, and would satisfy the tolerance
+        // only by accident if it were not. Say so directly.
+        let energy: f32 = rendered.iter().map(|s| s.abs()).sum();
+        assert!(
+            energy > 1e5,
+            "the frozen grain rendered {energy} total magnitude across \
+             {FROZEN_GRAIN_SAMPLES} samples of a ramp that reaches {newest}; it is not \
+             replaying anything."
         );
     }
 }

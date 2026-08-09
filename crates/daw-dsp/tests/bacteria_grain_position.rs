@@ -177,10 +177,23 @@ fn onset(buf: &[f32], sample_rate: f32) -> Option<usize> {
         .map(|index| index * window)
 }
 
-/// Loudest sample inside `[from, to)`, saturating on the buffer end.
+/// Loudest sample inside `[from, to)`.
+///
+/// The range is asserted rather than clamped. An earlier revision saturated
+/// both ends on `buf.len()`, which turns an out-of-range window into an empty
+/// slice and an empty slice into `0.0` — so the anti-echo assertion below
+/// would have reported "no echo" from a measurement that was never taken, and
+/// passed. It is non-vacuous today only because the caller's `tail_ms` happens
+/// to render past the ring; that is a fact about one argument, not a property
+/// of the helper, so the helper now insists on it.
 fn peak_between(buf: &[f32], from: usize, to: usize) -> f32 {
-    let from = from.min(buf.len());
-    let to = to.min(buf.len());
+    assert!(
+        to <= buf.len(),
+        "peak_between({from}, {to}) asked for a window past the end of a {}-sample render; \
+         the render is too short for the measurement, which would otherwise read 0.0 and pass",
+        buf.len()
+    );
+    assert!(from < to, "peak_between({from}, {to}) is an empty window");
     buf[from..to].iter().fold(0.0_f32, |a, &s| a.max(s.abs()))
 }
 
@@ -227,6 +240,10 @@ fn position_zero_plays_live_audio_and_not_the_far_end_of_the_ring() {
     for cloud in &CLOUDS {
         let sample_rate = 48_000.0_f32;
         let ring = (sample_rate * 2.0) as usize;
+        // 2200 ms of tail, not a round number for its own sake: the anti-echo
+        // window below reaches `ring + 1200` = 97 200 samples past the burst,
+        // and `peak_between` now refuses to measure past the end of the render
+        // rather than folding an out-of-range window to 0.0 and passing.
         let rendered = render(sample_rate, 0.0, cloud, 2200.0);
         let after_burst = &rendered.left[rendered.burst_at..];
 
