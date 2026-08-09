@@ -28,8 +28,12 @@ export const handleSetClipLoopLength = createHandler<'setClipLoopLength'>({
         const clip = findClipForLoopLength(action.payload.clipId);
         const previous = clip ? readClipLoopLengthState(clip) : null;
         const next = { present: true, value: action.payload.loopLength };
+        let label = `Set clip loop length to ${String(action.payload.loopLength)} beats`;
+        if (clip && clip.loopEnabled !== true) {
+            label = `${label}; clip looping is disabled, so the stored length is dormant until enabled`;
+        }
         return {
-            label: `Set clip loop length to ${String(action.payload.loopLength)} beats`,
+            label,
             inverseAction: previous
                 ? {
                       type: 'restoreClipLoopLength',

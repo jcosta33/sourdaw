@@ -181,7 +181,7 @@ describe('clip metadata handler replay', () => {
         const action = { type: 'setClipLoopLength', payload: { clipId: clip.id, loopLength: 4 } } as const;
 
         expect(handleSetClipLoopLength.describe(action)).toEqual({
-            label: 'Set clip loop length to 4 beats',
+            label: 'Set clip loop length to 4 beats; clip looping is disabled, so the stored length is dormant until enabled',
             inverseAction: {
                 type: 'restoreClipLoopLength',
                 payload: {

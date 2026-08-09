@@ -43,7 +43,9 @@ describe('handleSetClipLoopLength', () => {
             type: 'setClipLoopLength',
             payload: { clipId: 'c1', loopLength: 4 },
         });
-        expect(desc.label).toBe('Set clip loop length to 4 beats');
+        expect(desc.label).toBe(
+            'Set clip loop length to 4 beats; clip looping is disabled, so the stored length is dormant until enabled'
+        );
         expect(desc.inverseAction).toEqual({
             type: 'restoreClipLoopLength',
             payload: {

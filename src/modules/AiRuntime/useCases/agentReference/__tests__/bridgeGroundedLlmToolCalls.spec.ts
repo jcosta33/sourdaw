@@ -1047,6 +1047,70 @@ describe('bridgeGroundedLlmToolCalls', () => {
         expect(rejectedPrompts.every((prompt) => bridge([call], prompt, context).actions.length === 0)).toBe(true);
     });
 
+    it('requires one complete singleton provider plan for an active clip loop-length request', () => {
+        const context = createClipContext();
+        const lengthCall = {
+            name: 'setClipLoopLength',
+            arguments: { clipId: 'clip-intro', loopLength: 4 },
+        };
+        const enableCall = { name: 'setClipLoop', arguments: { clipId: 'clip-intro', enabled: true } };
+        const tempoCall = { name: 'setTempo', arguments: { bpm: 130 } };
+
+        const omitted = bridge([], 'set the Intro clip loop length to 4 beats', context);
+        const mixed = bridge(
+            [lengthCall, tempoCall],
+            'set the Intro clip loop length to 4 beats; set tempo to 130',
+            context
+        );
+        const partialLength = bridge(
+            [lengthCall],
+            'enable looping on the Intro clip and set the Intro clip loop length to 4 beats',
+            context
+        );
+        const partialEnable = bridge(
+            [enableCall],
+            'enable looping on the Intro clip and set the Intro clip loop length to 4 beats',
+            context
+        );
+
+        for (const result of [omitted, mixed, partialLength, partialEnable]) {
+            expect.soft(result.actions).toEqual([]);
+            expect.soft(result.rejections[0]?.name).toBe('<batch>');
+        }
+    });
+
+    it('allows an omitted cancelled-only clip loop-length request without weakening another exact action', () => {
+        const context = createClipContext();
+        const result = bridge(
+            [{ name: 'setTempo', arguments: { bpm: 130 } }],
+            'set the Intro clip loop length to 4 beats, cancel that; set tempo to 130',
+            context
+        );
+
+        expect(result.actions).toEqual([{ type: 'setTempo', payload: { bpm: 130 } }]);
+        expect(result.rejections).toEqual([]);
+    });
+
+    it('accepts explicit natural named clip loop-length forms with exact binding', () => {
+        const context = createClipContext();
+        const call = {
+            name: 'setClipLoopLength',
+            arguments: { clipId: 'clip-intro', loopLength: 4 },
+        };
+
+        for (const prompt of [
+            'set the clip loop length of Intro to 4 beats',
+            'set the clip loop length for Intro to 4 beats',
+            "set Intro's clip loop length to 4 beats",
+        ]) {
+            const result = bridge([call], prompt, context);
+            expect
+                .soft(result.actions)
+                .toEqual([{ type: 'setClipLoopLength', payload: { clipId: 'clip-intro', loopLength: 4 } }]);
+            expect.soft(result.rejections).toEqual([]);
+        }
+    });
+
     it('grounds a direct pair when a clip target is named with the Glue action word', () => {
         const context = createGlueClipContext();
         const namedGlueContext = {
