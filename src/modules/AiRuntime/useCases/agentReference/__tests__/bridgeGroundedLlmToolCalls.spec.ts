@@ -1221,37 +1221,6 @@ describe('bridgeGroundedLlmToolCalls', () => {
         ]);
     });
 
-    it('matches a lone surviving provider glue call to its pair after an earlier pair is cancelled', () => {
-        const context = createTwoGluePairContext();
-        const result = bridge(
-            [{ name: 'glueClips', arguments: { clipIds: ['clip-midi-outro', 'clip-midi-coda'] } }],
-            "glue MIDI Intro and MIDI Verse clips, then glue MIDI Outro and MIDI Coda clips, but don't glue MIDI Intro and MIDI Verse after all",
-            context
-        );
-
-        expect(result.actions).toEqual([
-            { type: 'glueClips', payload: { clipIds: ['clip-midi-outro', 'clip-midi-coda'] } },
-        ]);
-        expect(result.rejections).toEqual([]);
-    });
-
-    it('silently omits a provider call for an earlier pair cancelled after a later glue clause', () => {
-        const context = createTwoGluePairContext();
-        const result = bridge(
-            [
-                { name: 'glueClips', arguments: { clipIds: ['clip-midi-intro', 'clip-midi-verse'] } },
-                { name: 'glueClips', arguments: { clipIds: ['clip-midi-outro', 'clip-midi-coda'] } },
-            ],
-            "glue MIDI Intro and MIDI Verse clips, then glue MIDI Outro and MIDI Coda clips, but don't glue MIDI Intro and MIDI Verse thanks",
-            context
-        );
-
-        expect(result.actions).toEqual([
-            { type: 'glueClips', payload: { clipIds: ['clip-midi-outro', 'clip-midi-coda'] } },
-        ]);
-        expect(result.rejections).toEqual([]);
-    });
-
     it('keeps quoted rename values inert to glue-specific cancellation wording', () => {
         const context = createClipContext();
         const names = ['Keep Them Separate', 'Without Changes'];

@@ -32,7 +32,6 @@ type GroundToolCallInput = {
     catalog: GroundingCatalog;
     context: ProjectContext;
     declaredBatchLocalBusBindings: ReadonlyMap<string, BatchLocalBusBinding>;
-    glueScopeAssignment?: GlueScopeAssignment;
     index: number;
     prompt: string;
     plannedActionNames: readonly string[];
@@ -89,17 +88,6 @@ type ActionPromptScope = PromptClause & {
     directional: boolean;
     matchedIntentPhrase: string;
 };
-
-type GlueScopeAssignment = {
-    actionScope: ActionPromptScope;
-    cancelled: boolean;
-};
-
-type OmittedGroundToolCall = {
-    status: 'omitted';
-};
-
-type GroundToolCallResult = ToolCallResult | LlmActionRejection | OmittedGroundToolCall;
 
 type ResolveActionPromptScopeInput = {
     actionName: string;
@@ -1504,6 +1492,13 @@ function getDirectGlueTargetPromptScope(actionScope: ActionPromptScope): string 
     return commandSource.replace(/^(?:glue|join)\b/iu, '').trim();
 }
 
+type HasGlueCancellationInput = {
+    actionScope: ActionPromptScope;
+    assertedClipIds: unknown;
+    context: ProjectContext;
+    prompt: string;
+};
+
 function maskQuotedGlueCancellationText(text: string): string {
     return text.replaceAll(/"[^"]*"|“[^”]*”|‘[^’]*’|(?<![\p{L}\p{N}])'[^']*'/gu, (label) => ' '.repeat(label.length));
 }
@@ -1516,29 +1511,17 @@ function hasLeadingSharedCancellationCue(text: string): boolean {
     });
 }
 
-function isExplicitGluePairCancellationClause(text: string, targetPattern: string): boolean {
+function isGlueCancellationClause(text: string, targetPattern: string): boolean {
     if (/^["'“‘]/u.test(text.trimStart())) {
         return false;
     }
     const politeTail = '(?: (?:please|thanks|after all))*';
     const normalizedText = normalizePromptText(text);
-    return new RegExp(
-        `^(?:but )?(?:actually )?(?:do not|don t|dont|never) (?:glue|join) ${targetPattern}${politeTail}$`,
-        'u'
-    ).test(normalizedText);
-}
-
-function isImplicitGlueCancellationClause(text: string): boolean {
-    if (/^["'“‘]/u.test(text.trimStart())) {
-        return false;
-    }
-    const politeTail = '(?: (?:please|thanks|after all))*';
-    const normalizedText = normalizePromptText(text);
-    const pronounCancellation = new RegExp(
-        `^(?:but )?(?:actually )?(?:do not|don t|dont|never) (?:glue|join) (?:them|the clips)${politeTail}$`,
+    const explicitCancellation = new RegExp(
+        `^(?:but )?(?:actually )?(?:do not|don t|dont|never) (?:glue|join) (?:them|the clips|${targetPattern})${politeTail}$`,
         'u'
     );
-    if (pronounCancellation.test(normalizedText)) {
+    if (explicitCancellation.test(normalizedText)) {
         return true;
     }
     const quoteMaskedText = maskQuotedGlueCancellationText(text);
@@ -1559,193 +1542,38 @@ function isImplicitGlueCancellationClause(text: string): boolean {
     return glueSpecificCancellations.some((pattern) => pattern.test(normalizedQuoteMaskedText));
 }
 
-function isGlueCancellationClause(text: string, targetPattern: string): boolean {
-    return isExplicitGluePairCancellationClause(text, targetPattern) || isImplicitGlueCancellationClause(text);
-}
-
 function getInlineGlueCancellationText(actionScope: ActionPromptScope, targetPattern: string): string | null {
     const commandText = normalizePromptText(stripPoliteGlueCommandCarrier(actionScope.text));
     const match = new RegExp(`^(?:glue|join) ${targetPattern}(?: (.+))?$`, 'u').exec(commandText);
     return match?.[1] ?? null;
 }
 
-type GluePairCandidate = {
-    clipIds: [string, string];
-    key: string;
-};
-
-type GlueActionScopePlan = GlueScopeAssignment & {
-    pairKey: string | null;
-};
-
-function getGluePairKey(clipIds: readonly string[]): string {
-    return clipIds.toSorted().join('\u0000');
-}
-
-function getGroundedGluePairCandidate(clipIds: unknown, context: ProjectContext): GluePairCandidate | null {
-    if (
-        !Array.isArray(clipIds) ||
-        clipIds.length !== 2 ||
-        !clipIds.every((clipId): clipId is string => typeof clipId === 'string') ||
-        clipIds[0] === clipIds[1]
-    ) {
-        return null;
-    }
-    const projectClipIds = new Set(context.tracks.flatMap((track) => track.clips.map((clip) => clip.id)));
-    if (!clipIds.every((clipId) => projectClipIds.has(clipId))) {
-        return null;
-    }
-    return { clipIds: [clipIds[0]!, clipIds[1]!], key: getGluePairKey(clipIds) };
-}
-
-function getGluePairCandidates(
-    calls: readonly ToolCallResult[],
-    context: ProjectContext
-): readonly GluePairCandidate[] {
-    const candidates = new Map<string, GluePairCandidate>();
-    const candidateValues: unknown[] = [
-        ...(context.glueEligibleClipPairs ?? []),
-        context.selectedClipIds,
-        ...calls.filter((call) => call.name === 'glueClips').map((call) => call.arguments.clipIds),
-    ];
-    for (const candidateValue of candidateValues) {
-        const candidate = getGroundedGluePairCandidate(candidateValue, context);
-        if (candidate) {
-            candidates.set(candidate.key, candidate);
-        }
-    }
-    return [...candidates.values()];
-}
-
-function getGlueActionScopePlan(
+function getImmediateTrailingGlueClause(
     actionScope: ActionPromptScope,
-    candidates: readonly GluePairCandidate[],
+    prompt: string,
     context: ProjectContext
-): GlueActionScopePlan | null {
-    const commandText = normalizePromptText(stripPoliteGlueCommandCarrier(actionScope.text));
-    if (!/^(?:glue|join)\b/u.test(commandText)) {
+): string | null {
+    const trailingPrompt = prompt.slice(actionScope.end);
+    if (trailingPrompt.trim().length === 0) {
         return null;
     }
-    const matches = candidates.filter((candidate) => {
-        if (isDirectGlueClipPairScope(actionScope, candidate.clipIds, context)) {
-            return true;
-        }
-        const targetPattern = getGlueClipPairTargetPattern(candidate.clipIds, context);
-        if (!targetPattern) {
-            return false;
-        }
-        const inlineCancellation = getInlineGlueCancellationText(actionScope, targetPattern);
-        return inlineCancellation !== null && isGlueCancellationClause(inlineCancellation, targetPattern);
-    });
-    if (matches.length !== 1) {
-        return { actionScope, cancelled: false, pairKey: null };
+    const projectMaskedPrompt = maskProjectReferences(trailingPrompt, context);
+    const quotedMaskedPrompt = maskQuotedLabels(projectMaskedPrompt);
+    const pairMaskedPrompt = maskGlueClipPairConjunction(quotedMaskedPrompt);
+    return getPromptClauses(trailingPrompt, pairMaskedPrompt)[0]?.text ?? null;
+}
+
+function hasGlueCancellation({ actionScope, assertedClipIds, context, prompt }: HasGlueCancellationInput): boolean {
+    const targetPattern = getGlueClipPairTargetPattern(assertedClipIds, context);
+    if (!targetPattern) {
+        return false;
     }
-    const match = matches[0]!;
-    const targetPattern = getGlueClipPairTargetPattern(match.clipIds, context)!;
     const inlineCancellation = getInlineGlueCancellationText(actionScope, targetPattern);
-    const cancelled = inlineCancellation !== null && isGlueCancellationClause(inlineCancellation, targetPattern);
-    return { actionScope, cancelled, pairKey: match.key };
-}
-
-function getGlueActionScopePlans({
-    calls,
-    context,
-    prompt,
-}: {
-    calls: readonly ToolCallResult[];
-    context: ProjectContext;
-    prompt: string;
-}): GlueActionScopePlan[] {
-    const candidates = getGluePairCandidates(calls, context);
-    const projectMaskedPrompt = maskProjectReferences(prompt, context);
-    const intentRestoredPrompt = restoreLeadingGlueIntents({ maskedPrompt: projectMaskedPrompt, prompt });
-    const maskedPrompt = maskGlueClipPairConjunction(maskQuotedLabels(intentRestoredPrompt));
-    const plans: GlueActionScopePlan[] = [];
-    for (const clause of getPromptClauses(prompt, maskedPrompt)) {
-        const actionScope: ActionPromptScope = {
-            ...clause,
-            directional: false,
-            matchedIntentPhrase: 'glue',
-        };
-        const actionPlan = getGlueActionScopePlan(actionScope, candidates, context);
-        if (actionPlan) {
-            plans.push(actionPlan);
-            continue;
-        }
-        let matchedExplicitPair = false;
-        for (let planIndex = plans.length - 1; planIndex >= 0; planIndex -= 1) {
-            const plan = plans[planIndex]!;
-            if (!plan.pairKey) {
-                continue;
-            }
-            const candidate = candidates.find(({ key }) => key === plan.pairKey)!;
-            const targetPattern = getGlueClipPairTargetPattern(candidate.clipIds, context)!;
-            if (!isExplicitGluePairCancellationClause(clause.text, targetPattern)) {
-                continue;
-            }
-            plan.cancelled = true;
-            matchedExplicitPair = true;
-            break;
-        }
-        if (!matchedExplicitPair && isImplicitGlueCancellationClause(clause.text)) {
-            const immediatelyPrecedingGluePlan = plans.at(-1);
-            if (immediatelyPrecedingGluePlan) {
-                immediatelyPrecedingGluePlan.cancelled = true;
-            }
-        }
+    if (inlineCancellation && isGlueCancellationClause(inlineCancellation, targetPattern)) {
+        return true;
     }
-    return plans;
-}
-
-function getGlueScopeAssignments({
-    calls,
-    context,
-    prompt,
-}: {
-    calls: readonly ToolCallResult[];
-    context: ProjectContext;
-    prompt: string;
-}): ReadonlyMap<number, GlueScopeAssignment> {
-    const plansByPair = new Map<string, GlueActionScopePlan[]>();
-    for (const plan of getGlueActionScopePlans({ calls, context, prompt })) {
-        if (!plan.pairKey) {
-            continue;
-        }
-        const pairPlans = plansByPair.get(plan.pairKey) ?? [];
-        pairPlans.push(plan);
-        plansByPair.set(plan.pairKey, pairPlans);
-    }
-    const callIndexesByPair = new Map<string, number[]>();
-    for (const [index, call] of calls.entries()) {
-        if (call.name !== 'glueClips') {
-            continue;
-        }
-        const candidate = getGroundedGluePairCandidate(call.arguments.clipIds, context);
-        if (!candidate) {
-            continue;
-        }
-        const indexes = callIndexesByPair.get(candidate.key) ?? [];
-        indexes.push(index);
-        callIndexesByPair.set(candidate.key, indexes);
-    }
-    const assignments = new Map<number, GlueScopeAssignment>();
-    for (const [pairKey, callIndexes] of callIndexesByPair) {
-        const allPlans = plansByPair.get(pairKey) ?? [];
-        const uncancelledPlans = allPlans.filter((plan) => !plan.cancelled);
-        let matchingPlans: readonly GlueActionScopePlan[] = [];
-        if (callIndexes.length === uncancelledPlans.length) {
-            matchingPlans = uncancelledPlans;
-        } else if (callIndexes.length === allPlans.length) {
-            matchingPlans = allPlans;
-        }
-        for (const [pairOrdinal, callIndex] of callIndexes.entries()) {
-            const plan = matchingPlans[pairOrdinal];
-            if (plan) {
-                assignments.set(callIndex, { actionScope: plan.actionScope, cancelled: plan.cancelled });
-            }
-        }
-    }
-    return assignments;
+    const trailingClause = getImmediateTrailingGlueClause(actionScope, prompt, context);
+    return trailingClause ? isGlueCancellationClause(trailingClause, targetPattern) : false;
 }
 
 function getAddClipPromptEvidence(actionScope: ActionPromptScope): AddClipPromptEvidence | null {
@@ -3130,7 +2958,6 @@ function groundToolCall({
     catalog,
     context,
     declaredBatchLocalBusBindings,
-    glueScopeAssignment,
     index,
     prompt,
     plannedActionNames,
@@ -3138,7 +2965,7 @@ function groundToolCall({
     sameActionCallCount,
     visibleGroundedCalls,
     visiblePlannedTrackCreations,
-}: GroundToolCallInput): GroundToolCallResult {
+}: GroundToolCallInput): ToolCallResult | LlmActionRejection {
     if (call.name === 'stopPlayback' && !isExplicitStopPlaybackPrompt(prompt)) {
         return rejection(index, call.name, 'Provider action is not grounded in an explicit transport-stop request');
     }
@@ -3146,25 +2973,17 @@ function groundToolCall({
     if (!groundingRules) {
         return call;
     }
-    let actionScope: ActionPromptScope | null;
-    if (call.name === 'glueClips') {
-        if (glueScopeAssignment?.cancelled) {
-            return { status: 'omitted' };
-        }
-        actionScope = glueScopeAssignment?.actionScope ?? null;
-    } else {
-        actionScope = resolveActionPromptScope({
-            actionName: call.name,
-            actionOrdinal,
-            assertedArguments: call.arguments,
-            catalog,
-            context,
-            prompt,
-            plannedActionNames,
-            sameActionAssertedArguments,
-            sameActionCallCount,
-        });
-    }
+    const actionScope = resolveActionPromptScope({
+        actionName: call.name,
+        actionOrdinal,
+        assertedArguments: call.arguments,
+        catalog,
+        context,
+        prompt,
+        plannedActionNames,
+        sameActionAssertedArguments,
+        sameActionCallCount,
+    });
     if (!actionScope) {
         return rejection(index, call.name, 'Provider action is not grounded in the user request');
     }
@@ -3322,7 +3141,15 @@ function groundToolCall({
         return rejection(index, call.name, 'Provider clip destination is not the direct object of the move request');
     }
     if (call.name === 'glueClips') {
-        if (!isDirectGlueClipPairScope(actionScope, groundedArguments.clipIds, context)) {
+        if (
+            hasGlueCancellation({
+                actionScope,
+                assertedClipIds: groundedArguments.clipIds,
+                context,
+                prompt,
+            }) ||
+            !isDirectGlueClipPairScope(actionScope, groundedArguments.clipIds, context)
+        ) {
             return rejection(index, call.name, 'Provider clips are not the direct objects of one glue request');
         }
     }
@@ -3442,11 +3269,9 @@ export function bridgeGroundedLlmToolCalls({
     }
     const groundingRejections = new Map<number, LlmActionRejection>();
     const groundedCalls: ToolCallResult[] = [];
-    const groundedCallOriginalIndexes: number[] = [];
     const acceptedGroundedCalls: ToolCallResult[] = [];
     const visibleBindings = new Map<string, BatchLocalBusBinding>();
     const visiblePlannedTrackCreations: ToolCallResult[] = [];
-    const glueScopeAssignments = getGlueScopeAssignments({ calls, context, prompt });
     let prospectiveContext = context;
     for (const [index, providerCall] of calls.entries()) {
         const call = stripBatchLocalBinding(providerCall);
@@ -3460,7 +3285,6 @@ export function bridgeGroundedLlmToolCalls({
             catalog,
             context: prospectiveContext,
             declaredBatchLocalBusBindings: collectedBindings.bindingsByName,
-            glueScopeAssignment: glueScopeAssignments.get(index),
             index,
             prompt,
             plannedActionNames: calls.map((candidate) => candidate.name),
@@ -3469,17 +3293,12 @@ export function bridgeGroundedLlmToolCalls({
             visibleGroundedCalls: acceptedGroundedCalls,
             visiblePlannedTrackCreations,
         });
-        if ('status' in grounded) {
-            continue;
-        }
         if ('reason' in grounded) {
             groundingRejections.set(index, grounded);
             groundedCalls.push({ name: '<rejected-target-reference>', arguments: {} });
-            groundedCallOriginalIndexes.push(index);
             continue;
         }
         groundedCalls.push(grounded);
-        groundedCallOriginalIndexes.push(index);
         acceptedGroundedCalls.push(grounded);
         if (grounded.name === 'createBus' || grounded.name === 'addTrack') {
             visiblePlannedTrackCreations.push(grounded);
@@ -3503,13 +3322,7 @@ export function bridgeGroundedLlmToolCalls({
         if (bridgeRejection.name === '<batch>') {
             return bridgeRejection;
         }
-        const originalIndex = groundedCallOriginalIndexes[bridgeRejection.index] ?? bridgeRejection.index;
-        return (
-            groundingRejections.get(originalIndex) ?? {
-                ...bridgeRejection,
-                index: originalIndex,
-            }
-        );
+        return groundingRejections.get(bridgeRejection.index) ?? bridgeRejection;
     });
     const usesBatchLocalReferences = calls.some((call) =>
         Object.values(call.arguments).some((value) => typeof value === 'string' && value.startsWith('$'))
