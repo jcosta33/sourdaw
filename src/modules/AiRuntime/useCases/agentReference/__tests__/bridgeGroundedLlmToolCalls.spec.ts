@@ -988,8 +988,6 @@ describe('bridgeGroundedLlmToolCalls', () => {
             'glue the MIDI Intro and MIDI Verse clips',
             'join MIDI Intro with MIDI Verse',
             'glue "MIDI Intro" and "MIDI Verse" clips',
-            'please glue MIDI Intro and MIDI Verse',
-            'could you join MIDI Intro with MIDI Verse',
         ];
 
         for (const prompt of prompts) {
@@ -1003,27 +1001,6 @@ describe('bridgeGroundedLlmToolCalls', () => {
                 .toEqual([{ type: 'glueClips', payload: { clipIds: ['clip-midi-intro', 'clip-midi-verse'] } }]);
             expect.soft(result.rejections).toEqual([]);
         }
-    });
-
-    it('grounds a direct glue command when one provider-grounded clip is named Glue', () => {
-        const context = createGlueClipContext();
-        const namedGlueContext = {
-            ...context,
-            tracks: context.tracks.map((track) => ({
-                ...track,
-                clips: track.clips.map((clip) => (clip.id === 'clip-midi-intro' ? { ...clip, name: 'Glue' } : clip)),
-            })),
-        };
-        const result = bridge(
-            [{ name: 'glueClips', arguments: { clipIds: ['clip-midi-intro', 'clip-midi-verse'] } }],
-            'glue Glue and MIDI Verse clips',
-            namedGlueContext
-        );
-
-        expect(result.actions).toEqual([
-            { type: 'glueClips', payload: { clipIds: ['clip-midi-intro', 'clip-midi-verse'] } },
-        ]);
-        expect(result.rejections).toEqual([]);
     });
 
     it('grounds exactly two selected clips and rejects selected sets with the wrong cardinality', () => {
@@ -1096,25 +1073,6 @@ describe('bridgeGroundedLlmToolCalls', () => {
 
         const results = cases.map((testCase) =>
             bridge([{ name: 'glueClips', arguments: testCase.arguments }], testCase.prompt, context)
-        );
-
-        expect(results.every((result) => result.actions.length === 0)).toBe(true);
-    });
-
-    it('rejects trailing negated glue restatements for the same provider-grounded clip pair', () => {
-        const context = createGlueClipContext();
-        const prompts = [
-            "glue MIDI Intro and MIDI Verse clips, but don't glue them",
-            'glue MIDI Intro and MIDI Verse clips, but do not glue the clips',
-            "glue MIDI Intro and MIDI Verse clips, but don't glue MIDI Intro and MIDI Verse",
-        ];
-
-        const results = prompts.map((prompt) =>
-            bridge(
-                [{ name: 'glueClips', arguments: { clipIds: ['clip-midi-intro', 'clip-midi-verse'] } }],
-                prompt,
-                context
-            )
         );
 
         expect(results.every((result) => result.actions.length === 0)).toBe(true);

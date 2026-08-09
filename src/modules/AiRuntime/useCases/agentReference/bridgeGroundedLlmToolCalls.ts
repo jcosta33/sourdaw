@@ -1245,11 +1245,7 @@ function resolveActionPromptScope({
     }
     const projectMaskedPrompt =
         groundingRules.targetRules.length === 0 ? prompt : maskProjectReferences(prompt, context);
-    let actionMaskedPrompt = projectMaskedPrompt;
-    if (actionName === 'glueClips') {
-        actionMaskedPrompt = restoreLeadingGlueIntent({ maskedPrompt: projectMaskedPrompt, prompt });
-    }
-    let maskedPrompt = maskQuotedLabels(actionMaskedPrompt);
+    let maskedPrompt = maskQuotedLabels(projectMaskedPrompt);
     if (actionName === 'glueClips') {
         maskedPrompt = maskGlueClipPairConjunction(maskedPrompt);
     }
@@ -1370,47 +1366,33 @@ function maskQuotedLabels(text: string): string {
 }
 
 function maskGlueClipPairConjunction(text: string): string {
-    return text.replaceAll(
-        /["'“‘]?(?:clip□*|□+)["'”’]?(?:\s+clips?)?\s+and\s+(?=["'“‘]?(?:clip□*|□+))/giu,
-        (pairPrefix) => pairPrefix.replace(/\band\b/iu, '   ')
+    return text.replaceAll(/["'“‘]?(?:clip)?□+["'”’]?(?:\s+clips?)?\s+and\s+(?=["'“‘]?(?:clip)?□+)/giu, (pairPrefix) =>
+        pairPrefix.replace(/\band\b/iu, '   ')
     );
 }
 
-type PreserveLeadingGlueIntentInput = {
-    maskedPrompt: string;
-    prompt: string;
-};
-
-function stripPoliteGlueCommandCarrier(text: string): string {
-    let commandSource = text.trim();
-    commandSource = commandSource.replace(/^(?:please\s+)?(?:can|could|would)\s+you(?:\s+please)?\s+/iu, '');
-    return commandSource.replace(/^please\s+/iu, '');
-}
-
-function restoreLeadingGlueIntent({ maskedPrompt, prompt }: PreserveLeadingGlueIntentInput): string {
-    const commandSource = stripPoliteGlueCommandCarrier(prompt);
-    const intent = /^(?:glue|join)\b/iu.exec(commandSource);
-    if (!intent) {
-        return maskedPrompt;
-    }
-    const intentStart = prompt.indexOf(commandSource);
-    const intentEnd = intentStart + intent[0].length;
-    return `${maskedPrompt.slice(0, intentStart)}${intent[0]}${maskedPrompt.slice(intentEnd)}`;
-}
-
-function getGlueClipPairTargetPattern(assertedClipIds: unknown, context: ProjectContext): string | null {
+function isDirectGlueClipPairScope(
+    actionScope: ActionPromptScope,
+    assertedClipIds: unknown,
+    context: ProjectContext
+): boolean {
     if (
         !Array.isArray(assertedClipIds) ||
         assertedClipIds.length !== 2 ||
         !assertedClipIds.every((clipId): clipId is string => typeof clipId === 'string')
     ) {
-        return null;
+        return false;
+    }
+    const normalizedScope = normalizePromptText(actionScope.text);
+    if (/^(?:glue|join)(?: the)? selected clips$/u.test(normalizedScope)) {
+        const selectedIds = new Set(context.selectedClipIds);
+        return selectedIds.size === 2 && assertedClipIds.every((clipId) => selectedIds.has(clipId));
     }
     const clips = assertedClipIds.map((clipId) =>
         context.tracks.flatMap((track) => track.clips).find((clip) => clip.id === clipId)
     );
     if (clips.some((clip) => !clip)) {
-        return null;
+        return false;
     }
     function getReferencePattern(clip: NonNullable<(typeof clips)[number]>): string {
         const references = [clip.id, clip.name]
@@ -1420,73 +1402,16 @@ function getGlueClipPairTargetPattern(assertedClipIds: unknown, context: Project
             .map(escapeRegExp);
         return `(?:${references.join('|')})`;
     }
-    function orderedPair(left: string, right: string): string {
-        return `(?:the )?${left}(?: clips?)? (?:and|with) (?:the )?${right}(?: clips?)?`;
+    function matchesOrder(left: string, right: string): boolean {
+        const pattern = new RegExp(
+            `^(?:glue|join)(?: the)? ${left}(?: clips?)? (?:and|with) (?:the )?${right}(?: clips?)?$`,
+            'u'
+        );
+        return pattern.test(normalizedScope);
     }
     const first = getReferencePattern(clips[0]!);
     const second = getReferencePattern(clips[1]!);
-    return `(?:${orderedPair(first, second)}|${orderedPair(second, first)})`;
-}
-
-function isDirectGlueClipPairScope(
-    actionScope: ActionPromptScope,
-    assertedClipIds: unknown,
-    context: ProjectContext
-): boolean {
-    const commandText = normalizePromptText(stripPoliteGlueCommandCarrier(actionScope.text));
-    if (/^(?:glue|join)(?: the)? selected clips$/u.test(commandText)) {
-        if (!Array.isArray(assertedClipIds) || !assertedClipIds.every((clipId) => typeof clipId === 'string')) {
-            return false;
-        }
-        const selectedIds = new Set(context.selectedClipIds);
-        return (
-            assertedClipIds.length === 2 &&
-            selectedIds.size === 2 &&
-            assertedClipIds.every((clipId) => selectedIds.has(clipId))
-        );
-    }
-    const targetPattern = getGlueClipPairTargetPattern(assertedClipIds, context);
-    if (!targetPattern) {
-        return false;
-    }
-    return new RegExp(`^(?:glue|join) ${targetPattern}$`, 'u').test(commandText);
-}
-
-function getDirectGlueTargetPromptScope(actionScope: ActionPromptScope): string {
-    const commandSource = stripPoliteGlueCommandCarrier(actionScope.text);
-    return commandSource.replace(/^(?:glue|join)\b/iu, '').trim();
-}
-
-type HasTrailingGlueCancellationInput = {
-    actionScope: ActionPromptScope;
-    assertedClipIds: unknown;
-    context: ProjectContext;
-    prompt: string;
-};
-
-function hasTrailingGlueCancellation({
-    actionScope,
-    assertedClipIds,
-    context,
-    prompt,
-}: HasTrailingGlueCancellationInput): boolean {
-    const actionScopeStart = prompt.indexOf(actionScope.text);
-    if (actionScopeStart < 0) {
-        return false;
-    }
-    const trailingText = normalizePromptText(prompt.slice(actionScopeStart + actionScope.text.length));
-    if (trailingText.length === 0) {
-        return false;
-    }
-    const targetPattern = getGlueClipPairTargetPattern(assertedClipIds, context);
-    if (!targetPattern) {
-        return false;
-    }
-    const cancellationPattern = new RegExp(
-        `\\b(?:do not|don t|dont|never) (?:glue|join) (?:them|the clips|${targetPattern})$`,
-        'u'
-    );
-    return cancellationPattern.test(trailingText);
+    return matchesOrder(first, second) || matchesOrder(second, first);
 }
 
 function getAddClipPromptEvidence(actionScope: ActionPromptScope): AddClipPromptEvidence | null {
@@ -2942,10 +2867,7 @@ function groundToolCall({
     const groundedArguments = { ...call.arguments };
     for (const targetRule of groundingRules.targetRules) {
         const assertedValue = groundedArguments[targetRule.argument];
-        let targetPrompt = getTargetPromptScope(actionScope, targetRule.promptRole);
-        if (call.name === 'glueClips' && targetRule.argument === 'clipIds') {
-            targetPrompt = getDirectGlueTargetPromptScope(actionScope);
-        }
+        const targetPrompt = getTargetPromptScope(actionScope, targetRule.promptRole);
         if (targetRule.cardinality === 'many') {
             const result = resolveAgentReferenceArray({
                 assertedIds: assertedValue,
@@ -3053,18 +2975,8 @@ function groundToolCall({
     if (call.name === 'moveClip' && !isDirectMoveClipDestination(actionScope, groundedArguments.trackId, context)) {
         return rejection(index, call.name, 'Provider clip destination is not the direct object of the move request');
     }
-    if (call.name === 'glueClips') {
-        if (
-            hasTrailingGlueCancellation({
-                actionScope,
-                assertedClipIds: groundedArguments.clipIds,
-                context,
-                prompt,
-            }) ||
-            !isDirectGlueClipPairScope(actionScope, groundedArguments.clipIds, context)
-        ) {
-            return rejection(index, call.name, 'Provider clips are not the direct objects of one glue request');
-        }
+    if (call.name === 'glueClips' && !isDirectGlueClipPairScope(actionScope, groundedArguments.clipIds, context)) {
+        return rejection(index, call.name, 'Provider clips are not the direct objects of one glue request');
     }
     if (call.name === 'splitClip' && !isDirectSplitClipScope(actionScope, groundedArguments.clipId, context)) {
         return rejection(index, call.name, 'Provider clip split is not scoped to the whole clip');
