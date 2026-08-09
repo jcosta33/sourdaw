@@ -138,16 +138,29 @@ function projectData({ name, trackId, trackName }: { name: string; trackId: stri
 const transactionControls = {
     prepare: (): Promise<boolean> => Promise.resolve(true),
     activate: (): boolean => true,
-    /** A newer load has claimed the store; this one no longer owns any of it. */
+    /** A newer transition has claimed the ordering slots. */
     superseded: false,
 };
 
+/**
+ * `canActivate()` and `isCurrent()` are two predicates and must stay two here.
+ * In `runProjectLoadTransaction` they are not interchangeable: `canActivate()`
+ * is a `>=` test on the ordering counters alone, while `isCurrent()` also
+ * requires that this transition actually won `activate()` and holds both slots
+ * exactly. Fusing them erases the window between entry and activation, where a
+ * transition may still claim the store but does not yet own it — which is where
+ * the entry write lives.
+ */
 function loadTransaction(): ProjectLoadTransaction {
+    let activated = false;
     return {
         prepare: () => transactionControls.prepare(),
-        activate: () => transactionControls.activate(),
+        activate: () => {
+            activated = !transactionControls.superseded && transactionControls.activate();
+            return activated;
+        },
         canActivate: () => !transactionControls.superseded,
-        isCurrent: () => !transactionControls.superseded,
+        isCurrent: () => activated && !transactionControls.superseded,
     };
 }
 
@@ -390,6 +403,43 @@ describe('interrupted project load dirty tracking', () => {
             editTheArrangement();
 
             expect(projectStore.value?.dirty).toBe(false);
+        });
+
+        it('claims nothing when it was already superseded before it was entered', async () => {
+            // Every caller allocates its transaction before a long await —
+            // `loadRecentProject` before the project JSON read,
+            // `pickAndImportProjectFile` before `file.text()`. Click a large
+            // recent project, click New Project while it reads, and the newer
+            // transition has prepared, activated and settled by the time this
+            // one finally runs. It never owned the store and must not touch it.
+            const settled = await openProject(OPEN_PROJECT_NAME, OPEN_TRACK_ID, OPEN_TRACK_NAME);
+            expect(settled.status).toBe('committed');
+
+            transactionControls.superseded = true;
+            // What the real transaction returns once a newer transition holds
+            // the prepared slot (`runProjectLoadTransaction.ts:91-93`).
+            transactionControls.prepare = () => Promise.resolve(false);
+
+            const aborted = await replaceProjectData({
+                context: 'loadRecentProject',
+                data: projectData({
+                    name: INCOMING_PROJECT_NAME,
+                    trackId: 'incoming-track',
+                    trackName: INCOMING_TRACK_NAME,
+                }),
+                transaction: loadTransaction(),
+            });
+
+            expect(aborted.status).toBe('aborted');
+            // Untouched: a load that cannot claim the flags must not set them,
+            // because the abort path will correctly refuse to give them back.
+            expect(projectStore.value?.name).toBe(OPEN_PROJECT_NAME);
+            expect(projectStore.value?.loading).toBe(false);
+            expect(projectStore.value?.initialized).toBe(true);
+
+            editTheArrangement();
+
+            expect(projectStore.value?.dirty).toBe(true);
         });
     });
 

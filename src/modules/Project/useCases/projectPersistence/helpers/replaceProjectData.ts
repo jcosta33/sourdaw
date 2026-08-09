@@ -77,7 +77,20 @@ export async function replaceProjectData({
     const previousTransientState = currentProject
         ? { initialized: currentProject.initialized, loading: currentProject.loading }
         : null;
-    if (currentProject) {
+    // Claiming and restoring are one decision and need the same predicate. Every
+    // caller allocates its transaction before a long await — `loadRecentProject`
+    // before the project JSON read, `pickAndImportProjectFile` before
+    // `file.text()` — so this can be entered already superseded. Writing the
+    // flags there and then (correctly) declining to give them back on abort
+    // lands in exactly the wedged state this guard exists to prevent.
+    //
+    // `canActivate()` is the whole test: `isCurrent()` is false here by
+    // construction, because nothing has called `activate()` yet. And a
+    // transaction that cannot activate can never commit — `prepare()` returns
+    // false once a newer transition claims the prepared slot, and `activate()`
+    // returns false once a newer one is active — so skipping the write never
+    // skips it for a load that goes on to publish.
+    if (currentProject && transaction.canActivate()) {
         projectStore.set({ ...currentProject, loading: true, initialized: false });
     }
 
