@@ -1,16 +1,11 @@
 import { clipSelectionStore, trackStore, vcaGroupStore } from '#/modules/Arrangement/stores';
-import {
-    MIN_CLIP_LOOP_LENGTH_BEATS,
-    getGlueEligibleClipPairs,
-    getPlatformPlugins,
-    getPluginById,
-    projectClipLoopExpansion,
-} from '#/modules/Arrangement/useCases';
+import { getGlueEligibleClipPairs, getPlatformPlugins, getPluginById } from '#/modules/Arrangement/useCases';
 import { automationStore } from '#/modules/Automation/stores';
 import { midiStore } from '#/modules/MIDI/stores';
 import { sidechainStore } from '#/modules/Routing/stores';
 import { transportStore } from '#/modules/Transport/stores';
 import { workspaceStore } from '#/modules/WorkspaceShell/stores';
+import { MIN_CLIP_LOOP_LENGTH_BEATS, projectClipLoopExpansion } from '#/utils/clipLoopProjection';
 
 import { type ProjectContext } from '../models/ProjectContext';
 

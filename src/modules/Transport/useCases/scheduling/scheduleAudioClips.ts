@@ -1,5 +1,5 @@
 import { trackStore } from '#/modules/Arrangement/stores';
-import { getGainAtBeat, projectClipLoopExpansion, resolveClipsWithComping } from '#/modules/Arrangement/useCases';
+import { getGainAtBeat, resolveClipsWithComping } from '#/modules/Arrangement/useCases';
 import {
     createBufferSource,
     ensureTrackStrip,
@@ -10,6 +10,7 @@ import {
 } from '#/modules/AudioEngine/useCases';
 import { collaborationStore } from '#/modules/Collaboration/stores';
 import { getAssetTransfer } from '#/modules/Collaboration/useCases';
+import { projectClipLoopExpansion } from '#/utils/clipLoopProjection';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { getTempoAtBeat } from '../../models/TempoMap';

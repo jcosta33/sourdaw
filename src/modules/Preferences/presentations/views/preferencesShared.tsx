@@ -44,6 +44,7 @@ export const ToggleRow = ({
             type="button"
             role="switch"
             aria-checked={value}
+            aria-label={label}
             className={`relative h-5 w-9 rounded-full transition-colors ${value ? 'bg-primary' : 'bg-muted/50'}`}
             onClick={() => onChange(!value)}
         >

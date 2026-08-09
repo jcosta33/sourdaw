@@ -1577,6 +1577,48 @@ describe('declared parameter range agrees with the knob that drives it', () => {
         expect(BUILTIN_PLUGINS.some((descriptor) => descriptor.id === 'builtin-synth')).toBe(true);
     });
 
+    it('the Decay EQ overlay’s own travel matches the range the descriptor declares', () => {
+        // Leg 2 by hand, for the six parameters the generic scanner cannot
+        // reach. `DecayEqOverlay` is a canvas: it has no `min={…}`/`max={…}`
+        // attributes, it clamps in `handlePointerMove` against two module
+        // constants, and those constants are the control's real travel. Without
+        // this the six sit in `noKnob` and the census says nothing about them —
+        // which is exactly the silent coverage hole the per-device pin above
+        // exists to make visible.
+        //
+        // Read out of the source for the same reason the Rust arms are: the
+        // component is not importable here without pulling in a canvas, and the
+        // constants are module-private by design.
+        const overlay = readFileSync(
+            join(REPO_ROOT, 'src/modules/ProofChamber/presentations/components/DecayEqOverlay.tsx'),
+            'utf8'
+        );
+        const travel = (name: string): number => {
+            const hit = new RegExp(String.raw`const ${name} = (${NUMBER});`).exec(overlay);
+            expect(hit, `${name} is no longer a numeric literal in DecayEqOverlay.tsx`).not.toBeNull();
+            return Number(hit![1]);
+        };
+
+        const chamber = BUILTIN_PLUGINS.find((descriptor) => descriptor.id === 'dutch-oven')!;
+        const bands = chamber.parameters.filter((param) => param.id.startsWith('decay_eq_'));
+        // Presence pin: an empty band list would make the comparison vacuous.
+        expect(bands.map((param) => param.id)).toStrictEqual([
+            'decay_eq_0',
+            'decay_eq_1',
+            'decay_eq_2',
+            'decay_eq_3',
+            'decay_eq_4',
+            'decay_eq_5',
+        ]);
+
+        for (const param of bands) {
+            expect([param.minValue, param.maxValue], `${param.id} declared range against the overlay`).toStrictEqual([
+                travel('MIN_MULT'),
+                travel('MAX_MULT'),
+            ]);
+        }
+    });
+
     it('every declared range that has a knob equals that knob’s travel', () => {
         const unexpected = CENSUS.disagree.filter(
             (row) =>
@@ -2000,9 +2042,30 @@ describe('declared parameter range agrees with the knob that drives it', () => {
             // — it is the device #1474's three defects were on, so the mutation
             // that re-creates one of them cannot slip through a coverage hole.
             'builtin-crumbs': [],
-            // The booleans and the `saturation_type` selector. Everything else on
-            // Dutch Oven resolves through the PARAM_MAP translation.
-            'dutch-oven': ['freeze', 'saturation', 'saturation_type', 'shimmer'],
+            // The booleans, the `saturation_type` selector and the six Decay EQ
+            // bands. Everything else on Dutch Oven resolves through the
+            // PARAM_MAP translation.
+            //
+            // The `decay_eq_*` six are the one entry here that *does* have
+            // travel — they are not booleans or selectors. Their control is a
+            // canvas (`DecayEqOverlay`), so there is no `min={…}`/`max={…}`
+            // literal on an element for leg 2 to read; the travel lives in the
+            // overlay's own `MIN_MULT`/`MAX_MULT` constants. Listing them here
+            // and stopping would be the silent coverage hole this file exists
+            // to prevent, so `the decay eq overlay's own travel matches the
+            // declared range` below closes the leg by hand.
+            'dutch-oven': [
+                'decay_eq_0',
+                'decay_eq_1',
+                'decay_eq_2',
+                'decay_eq_3',
+                'decay_eq_4',
+                'decay_eq_5',
+                'freeze',
+                'saturation',
+                'saturation_type',
+                'shimmer',
+            ],
             // The Tuner panel drives `a4_hz` through a numeric field rather than
             // a knob, and `mute`/`tone` are toggles.
             'native-scoring': ['a4_hz', 'mute', 'tone'],

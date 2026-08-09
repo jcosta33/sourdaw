@@ -688,6 +688,34 @@ const DELAY4_LEN: usize = 2656;
 const APF_COEFF: f32 = 0.7;
 const DECAY: f32 = 0.5;
 
+/// Ring buffer for the plate's allpasses and tank delays.
+///
+/// `read`/`write` are **not** an ordering-neutral pair, and every past bug in
+/// this shape came from assuming they were. `write` post-increments, so
+/// `write_pos` always sits one slot *past* the newest sample, and `read`
+/// counts back from that cursor rather than from the newest sample. The same
+/// `read(d)` therefore means two different things depending on when it runs:
+///
+/// - called **before** `write` in the same step it yields `x[n - d]` — a true
+///   `d`-sample delay, where `x[n]` is the sample about to be stored;
+/// - called **after** `write` it yields `x[n - d + 1]` — one sample short.
+///
+/// Issue #1574 was exactly that: four tank sites called `read` after `write`
+/// while the four allpasses called it before, so the tanks circulated on
+/// periods one sample shorter than the constants they were named for.
+/// Rather than document the hazard and leave it reachable, the two orderings
+/// callers actually need are sealed into `tick` and `allpass` below, both of
+/// which read before they write. Keep it that way: `read` and `write` have no
+/// production call sites outside this `impl` — only the test that pins the
+/// cursor semantics calls them directly — and a new one would be free to pick
+/// the wrong order again.
+///
+/// Note for anyone generalising from this: `bacteria/chorus.rs:12` declares a
+/// second struct also named `DelayLine`, with the same post-incrementing
+/// cursor, whose callers write *then* read. It is correct because its `read`
+/// carries the compensating `- 1.0` that this one must not have. Two
+/// same-named types wanting opposite orderings is exactly how this class of
+/// bug travels; check which one you are holding before copying either.
 struct DelayLine {
     buffer: Vec<f32>,
     write_pos: usize,
@@ -701,6 +729,7 @@ impl DelayLine {
         }
     }
 
+    /// Sample `delay` steps behind the write cursor. Read before `write`.
     #[inline]
     fn read(&self, delay: usize) -> f32 {
         let len = self.buffer.len();
@@ -712,6 +741,25 @@ impl DelayLine {
     fn write(&mut self, sample: f32) {
         self.buffer[self.write_pos] = sample;
         self.write_pos = (self.write_pos + 1) % self.buffer.len();
+    }
+
+    /// One step of a plain delay line: emit the sample stored `delay` steps
+    /// ago, then store `input`. Buffers are allocated at `delay + 1`, so the
+    /// slot being read is never the slot being written.
+    #[inline]
+    fn tick(&mut self, input: f32, delay: usize) -> f32 {
+        let delayed = self.read(delay);
+        self.write(input);
+        delayed
+    }
+
+    /// One step of a Schroeder allpass built on this line.
+    #[inline]
+    fn allpass(&mut self, input: f32, delay: usize, coeff: f32) -> f32 {
+        let delayed = self.read(delay);
+        let output = -coeff * input + delayed;
+        self.write(input + coeff * output);
+        output
     }
 }
 
@@ -800,46 +848,36 @@ impl PlateReverb {
         self.damping = damping.clamp(0.0, 0.99);
     }
 
-    #[inline]
-    fn allpass(dl: &mut DelayLine, input: f32, len: usize, coeff: f32) -> f32 {
-        let delayed = dl.read(len);
-        let output = -coeff * input + delayed;
-        dl.write(input + coeff * output);
-        output
-    }
-
     /// Process stereo input, return (left, right) with reverb mixed in.
     #[inline]
     pub fn process(&mut self, left: f32, right: f32) -> (f32, f32) {
         let input = (left + right) * 0.5;
 
         // Input diffusion
-        let d1 = Self::allpass(&mut self.apf1, input, self.apf1_len, APF_COEFF);
-        let d2 = Self::allpass(&mut self.apf2, d1, self.apf2_len, APF_COEFF);
+        let d1 = self.apf1.allpass(input, self.apf1_len, APF_COEFF);
+        let d2 = self.apf2.allpass(d1, self.apf2_len, APF_COEFF);
 
         // Tank left
         let in_l = d2 + self.tank_r * self.decay;
-        let t1 = Self::allpass(&mut self.apf3, in_l, self.apf3_len, -self.decay);
-        self.del1.write(t1);
-        let t2 = self.del1.read(self.del1_len);
+        let t1 = self.apf3.allpass(in_l, self.apf3_len, -self.decay);
+        let t2 = self.del1.tick(t1, self.del1_len);
         // Damping (one-pole lowpass)
         // DSP-2: the tank damping state decays toward zero once the tank empties.
         self.damp_state_l =
             flush_denormal(t2 * (1.0 - self.damping) + self.damp_state_l * self.damping);
-        self.del2.write(self.damp_state_l * self.decay);
-        self.tank_l = self.del2.read(self.del2_len);
+        let feedback_l = self.damp_state_l * self.decay;
+        self.tank_l = self.del2.tick(feedback_l, self.del2_len);
 
         // Tank right
         let in_r = d2 + self.tank_l * self.decay;
-        let t3 = Self::allpass(&mut self.apf4, in_r, self.apf4_len, -self.decay);
-        self.del3.write(t3);
-        let t4 = self.del3.read(self.del3_len);
+        let t3 = self.apf4.allpass(in_r, self.apf4_len, -self.decay);
+        let t4 = self.del3.tick(t3, self.del3_len);
         // Damping (one-pole lowpass)
         // DSP-2: the tank damping state decays toward zero once the tank empties.
         self.damp_state_r =
             flush_denormal(t4 * (1.0 - self.damping) + self.damp_state_r * self.damping);
-        self.del4.write(self.damp_state_r * self.decay);
-        self.tank_r = self.del4.read(self.del4_len);
+        let feedback_r = self.damp_state_r * self.decay;
+        self.tank_r = self.del4.tick(feedback_r, self.del4_len);
 
         // Mix dry/wet
         let wet_l = self.tank_l;
@@ -854,7 +892,7 @@ impl PlateReverb {
 
 #[cfg(test)]
 mod tests {
-    use super::{Compressor, StereoChorus, StereoPhaser};
+    use super::{Compressor, DelayLine, PlateReverb, StereoChorus, StereoPhaser};
 
     const SAMPLE_RATE: f32 = 48_000.0;
     const FRAMES: usize = 128;
@@ -1010,5 +1048,207 @@ mod tests {
 
         assert_blocks_close(&continuous_left, &sleeping_left, "compressor left");
         assert_blocks_close(&continuous_right, &sleeping_right, "compressor right");
+    }
+
+    // ── DelayLine (issue #1574) ────────────────────────────────────────────
+    // The plate's ring buffer had no test of its own, which is how four call
+    // sites read it a sample short for as long as they did. These pin the
+    // primitive's contract; `plate_wet_output_first_arrives_…` pins that the
+    // plate still spends it correctly.
+
+    #[test]
+    fn tick_emits_the_sample_stored_that_many_steps_earlier() {
+        let delay = 4;
+        let mut line = DelayLine::new(delay + 1);
+        let inputs: Vec<f32> = (1..=12).map(|step| step as f32).collect();
+
+        let emitted: Vec<f32> = inputs.iter().map(|x| line.tick(*x, delay)).collect();
+
+        // The line starts empty, so the first `delay` steps emit its zeros.
+        assert_eq!(&emitted[..delay], &[0.0, 0.0, 0.0, 0.0]);
+        for step in delay..inputs.len() {
+            assert_eq!(
+                emitted[step],
+                inputs[step - delay],
+                "step {step} emitted {} instead of input {}",
+                emitted[step],
+                step - delay
+            );
+        }
+    }
+
+    #[test]
+    fn tick_holds_its_delay_across_buffer_wraparound() {
+        let delay = 3;
+        let mut line = DelayLine::new(delay + 1);
+
+        // Forty steps over a four-slot buffer wraps ten times; the delay must
+        // not drift by a sample at any of the wraps.
+        let emitted: Vec<f32> = (0..40).map(|step| line.tick(step as f32, delay)).collect();
+
+        for step in delay..40 {
+            assert_eq!(
+                emitted[step],
+                (step - delay) as f32,
+                "delay drifted at step {step}"
+            );
+        }
+    }
+
+    #[test]
+    fn read_counts_back_from_the_write_cursor_not_from_the_newest_sample() {
+        let mut line = DelayLine::new(8);
+        for sample in [1.0, 2.0, 3.0, 4.0] {
+            line.write(sample);
+        }
+
+        // `write` post-increments, so the cursor sits one past 4.0 and the
+        // newest sample is `read(1)`, not `read(0)`.
+        assert_eq!(line.read(0), 0.0);
+        assert_eq!(line.read(1), 4.0);
+        assert_eq!(line.read(2), 3.0);
+        assert_eq!(line.read(4), 1.0);
+
+        // #1574: a caller that writes first and then asks for a 4-step delay is
+        // handed the 3-step-old sample instead. That is the whole defect, and it
+        // is why the plate goes through `tick`/`allpass` rather than this pair.
+        line.write(5.0);
+        assert_eq!(line.read(4), 2.0);
+    }
+
+    #[test]
+    fn a_delay_longer_than_the_line_is_silently_clamped_to_what_fits() {
+        let mut line = DelayLine::new(4);
+        for sample in [1.0, 2.0, 3.0, 4.0] {
+            line.write(sample);
+        }
+
+        // `read` clamps to `len - 1` rather than wrapping or panicking, so a
+        // short line asked for a long delay quietly returns the longest it
+        // holds. Lengthening a tap without resizing its buffer therefore does
+        // nothing at all, silently — in a plate whose buffers are sized from the
+        // same constants that name the taps, that is a live trap.
+        assert_eq!(line.read(3), 2.0);
+        assert_eq!(line.read(9), 2.0);
+    }
+
+    #[test]
+    fn allpass_delays_its_stored_term_by_the_full_length() {
+        let delay = 5;
+        let mut line = DelayLine::new(delay + 1);
+        let inputs: Vec<f32> = (1..=15).map(|step| step as f32).collect();
+
+        // A zero coefficient degenerates the Schroeder allpass to a plain
+        // `delay`-sample delay, which is where an ordering slip would show.
+        let emitted: Vec<f32> = inputs
+            .iter()
+            .map(|x| line.allpass(*x, delay, 0.0))
+            .collect();
+
+        for step in delay..inputs.len() {
+            assert_eq!(
+                emitted[step],
+                inputs[step - delay],
+                "step {step} emitted {} instead of input {}",
+                emitted[step],
+                step - delay
+            );
+        }
+    }
+
+    #[test]
+    fn plate_wet_output_first_arrives_at_the_sum_of_its_tank_lengths() {
+        let mut plate = PlateReverb::new(SAMPLE_RATE);
+        // Fully wet, so the output is the tank rather than the dry input, and a
+        // non-zero decay so the input allpasses pass their feed-forward term.
+        plate.set_params(0.5, 1.0, 0.5);
+        // Both input allpasses and the tank allpass are feed-forward at step 0,
+        // and the damping filter is instantaneous, so the only latency between
+        // the impulse and each tank output is that tank's two delay lines.
+        let left_arrival = plate.del1_len + plate.del2_len;
+        let right_arrival = plate.del3_len + plate.del4_len;
+        let frames = right_arrival + 1;
+
+        let mut left = Vec::with_capacity(frames);
+        let mut right = Vec::with_capacity(frames);
+        for frame in 0..frames {
+            let stimulus = if frame == 0 { 1.0 } else { 0.0 };
+            let (l, r) = plate.process(stimulus, stimulus);
+            left.push(l);
+            right.push(r);
+        }
+
+        // Exact zeros: nothing has reached the tank output yet, so this reds by
+        // the one sample per line that #1574 was losing. The audible descriptors
+        // do not move — see the PR — so timing is the only honest guard here.
+        assert!(
+            left[..left_arrival].iter().all(|s| *s == 0.0),
+            "left tank output before {left_arrival} was not silent"
+        );
+        assert_ne!(left[left_arrival], 0.0, "left tank output never arrived");
+        assert!(
+            right[..right_arrival].iter().all(|s| *s == 0.0),
+            "right tank output before {right_arrival} was not silent"
+        );
+        assert_ne!(right[right_arrival], 0.0, "right tank output never arrived");
+    }
+
+    #[test]
+    fn each_plate_allpass_puts_its_own_length_into_the_echo_train() {
+        let mut plate = PlateReverb::new(SAMPLE_RATE);
+        // Arrival latency cannot see the allpass lengths: an allpass passes its
+        // input through instantaneously at any non-zero coefficient, and at zero
+        // decay the tank stops circulating because its feed is scaled by decay.
+        // What does see them is where each allpass puts its *stored* term. Zero
+        // damping makes the one-pole a passthrough, so the early response is a
+        // sparse echo train rather than a smeared tail, and each allpass lands
+        // its own length past the first arrival.
+        plate.set_params(0.5, 1.0, 0.0);
+        let left_arrival = plate.del1_len + plate.del2_len;
+        let right_arrival = plate.del3_len + plate.del4_len;
+        let frames = right_arrival + plate.apf4_len + 1;
+
+        let mut left = Vec::with_capacity(frames);
+        let mut right = Vec::with_capacity(frames);
+        for frame in 0..frames {
+            let stimulus = if frame == 0 { 1.0 } else { 0.0 };
+            let (l, r) = plate.process(stimulus, stimulus);
+            left.push(l);
+            right.push(r);
+        }
+
+        // Sparse: the sample straight after the first arrival is silent, because
+        // the next echo cannot come sooner than the shortest allpass.
+        assert_eq!(left[left_arrival + 1], 0.0, "early response is not sparse");
+        for (label, length) in [
+            ("apf1", plate.apf1_len),
+            ("apf2", plate.apf2_len),
+            ("apf3", plate.apf3_len),
+        ] {
+            assert_ne!(
+                left[left_arrival + length],
+                0.0,
+                "{label}'s stored term is missing from {}",
+                left_arrival + length
+            );
+        }
+        assert_ne!(
+            right[right_arrival + plate.apf4_len],
+            0.0,
+            "apf4's stored term is missing from {}",
+            right_arrival + plate.apf4_len
+        );
+        // None of 229, 173, 447 or 611 is a sum of the others, so each echo
+        // position identifies one allpass and driving a line with a *shorter*
+        // length than its own empties that line's slot.
+        //
+        // Two things this deliberately does not catch, both measured rather than
+        // assumed. Driving a line with a length longer than its own buffer is a
+        // no-op, because `read` clamps — see
+        // `a_delay_longer_than_the_line_is_silently_clamped_to_what_fits`.
+        // And exchanging `APF1_LEN` with `APF2_LEN` coherently, buffer and tap
+        // together, leaves the whole crate green: the two input allpasses share
+        // a coefficient and sit in series with no feedback around them, so they
+        // are an LTI cascade and the exchange is the same filter.
     }
 }

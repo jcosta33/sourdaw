@@ -79,6 +79,15 @@ vi.mock('../../transformers/llmActionBridge', async () => {
     };
 });
 
+// 26 tests below run the real bridge. Transforming its module graph takes several seconds, and
+// awaiting it inside a test billed all of that to whichever test ran first — a 5000 ms budget that
+// only fit by accident of import order. Resolve it once here, at module scope, where no test
+// timeout applies. A static import cannot do this: `vi.mock` owns this specifier, so it would
+// resolve to the mock and never transform the real graph.
+const actualBridge = await vi.importActual<typeof import('../agentReference/bridgeGroundedLlmToolCalls')>(
+    '../agentReference/bridgeGroundedLlmToolCalls'
+);
+
 const baseContext: ProjectContext = {
     tempo: 120,
     timeSignature: [4, 4],
@@ -268,9 +277,6 @@ describe('parsePromptToActions', () => {
     });
 
     it('proposes an explicit provider time-signature command as one confirmable atomic action', async () => {
-        const actualBridge = await vi.importActual<typeof import('../agentReference/bridgeGroundedLlmToolCalls')>(
-            '../agentReference/bridgeGroundedLlmToolCalls'
-        );
         mockBridgeGroundedLlmToolCalls.mockImplementation(actualBridge.bridgeGroundedLlmToolCalls);
         vi.mocked(generateToolCalls).mockResolvedValue(
             completePlan([{ name: 'setTimeSignature', arguments: { numerator: 7, denominator: 8 } }])
@@ -284,9 +290,6 @@ describe('parsePromptToActions', () => {
     });
 
     it('proposes an explicit provider stop command even when visible playback is already stopped', async () => {
-        const actualBridge = await vi.importActual<typeof import('../agentReference/bridgeGroundedLlmToolCalls')>(
-            '../agentReference/bridgeGroundedLlmToolCalls'
-        );
         mockBridgeGroundedLlmToolCalls.mockImplementation(actualBridge.bridgeGroundedLlmToolCalls);
         vi.mocked(generateToolCalls).mockResolvedValue(completePlan([{ name: 'stopPlayback', arguments: {} }]));
 
@@ -302,9 +305,6 @@ describe('parsePromptToActions', () => {
     });
 
     it('proposes an explicit provider playhead seek as one confirmable atomic action', async () => {
-        const actualBridge = await vi.importActual<typeof import('../agentReference/bridgeGroundedLlmToolCalls')>(
-            '../agentReference/bridgeGroundedLlmToolCalls'
-        );
         mockBridgeGroundedLlmToolCalls.mockImplementation(actualBridge.bridgeGroundedLlmToolCalls);
         vi.mocked(generateToolCalls).mockResolvedValue(
             completePlan([{ name: 'seekPlayhead', arguments: { beat: 8.5 } }])
@@ -318,9 +318,6 @@ describe('parsePromptToActions', () => {
     });
 
     it('routes one explicit clip loop-length request through the provider-neutral grounded path', async () => {
-        const actualBridge = await vi.importActual<typeof import('../agentReference/bridgeGroundedLlmToolCalls')>(
-            '../agentReference/bridgeGroundedLlmToolCalls'
-        );
         mockBridgeGroundedLlmToolCalls.mockImplementation(actualBridge.bridgeGroundedLlmToolCalls);
         vi.mocked(generateToolCalls).mockResolvedValue(
             completePlan([{ name: 'setClipLoopLength', arguments: { clipId: 'clip-intro', loopLength: 4 } }])
@@ -341,9 +338,6 @@ describe('parsePromptToActions', () => {
     });
 
     it('routes one explicit punch endpoint through the provider-neutral grounded action path', async () => {
-        const actualBridge = await vi.importActual<typeof import('../agentReference/bridgeGroundedLlmToolCalls')>(
-            '../agentReference/bridgeGroundedLlmToolCalls'
-        );
         mockBridgeGroundedLlmToolCalls.mockImplementation(actualBridge.bridgeGroundedLlmToolCalls);
         vi.mocked(generateToolCalls).mockResolvedValue(completePlan([{ name: 'setPunchIn', arguments: { beat: 20 } }]));
 
@@ -355,9 +349,6 @@ describe('parsePromptToActions', () => {
     });
 
     it('routes explicit punch enablement through the provider-neutral grounded action path', async () => {
-        const actualBridge = await vi.importActual<typeof import('../agentReference/bridgeGroundedLlmToolCalls')>(
-            '../agentReference/bridgeGroundedLlmToolCalls'
-        );
         mockBridgeGroundedLlmToolCalls.mockImplementation(actualBridge.bridgeGroundedLlmToolCalls);
         vi.mocked(generateToolCalls).mockResolvedValue(
             completePlan([{ name: 'setPunchEnabled', arguments: { enabled: true } }])
@@ -381,9 +372,6 @@ describe('parsePromptToActions', () => {
     });
 
     it('proposes a grounded provider marker as one reversible atomic action', async () => {
-        const actualBridge = await vi.importActual<typeof import('../agentReference/bridgeGroundedLlmToolCalls')>(
-            '../agentReference/bridgeGroundedLlmToolCalls'
-        );
         mockBridgeGroundedLlmToolCalls.mockImplementation(actualBridge.bridgeGroundedLlmToolCalls);
         vi.mocked(generateToolCalls).mockResolvedValue(
             completePlan([{ name: 'addMarker', arguments: { beat: 16, name: 'Chorus' } }])
@@ -397,9 +385,6 @@ describe('parsePromptToActions', () => {
     });
 
     it('rejects a provider marker retry from local state without serializing markers to the provider', async () => {
-        const actualBridge = await vi.importActual<typeof import('../agentReference/bridgeGroundedLlmToolCalls')>(
-            '../agentReference/bridgeGroundedLlmToolCalls'
-        );
         mockBridgeGroundedLlmToolCalls.mockImplementation(actualBridge.bridgeGroundedLlmToolCalls);
         markerStoreValue.value = {
             markers: [{ id: 'marker-internal', beat: 16, name: 'Chorus', color: 'oklch(0.40 0.07 200)' }],
@@ -420,9 +405,6 @@ describe('parsePromptToActions', () => {
     });
 
     it('resolves a provider marker removal from local state without serializing marker identity', async () => {
-        const actualBridge = await vi.importActual<typeof import('../agentReference/bridgeGroundedLlmToolCalls')>(
-            '../agentReference/bridgeGroundedLlmToolCalls'
-        );
         mockBridgeGroundedLlmToolCalls.mockImplementation(actualBridge.bridgeGroundedLlmToolCalls);
         markerStoreValue.value = {
             markers: [{ id: 'marker-internal', beat: 16, name: 'Chorus', color: 'oklch(0.40 0.07 200)' }],
@@ -443,9 +425,6 @@ describe('parsePromptToActions', () => {
     });
 
     it('resolves a provider marker color from local state without serializing marker identity', async () => {
-        const actualBridge = await vi.importActual<typeof import('../agentReference/bridgeGroundedLlmToolCalls')>(
-            '../agentReference/bridgeGroundedLlmToolCalls'
-        );
         mockBridgeGroundedLlmToolCalls.mockImplementation(actualBridge.bridgeGroundedLlmToolCalls);
         markerStoreValue.value = {
             markers: [{ id: 'marker-internal', beat: 16, name: 'Chorus', color: 'oklch(0.40 0.07 200)' }],
@@ -469,9 +448,6 @@ describe('parsePromptToActions', () => {
     });
 
     it('resolves a provider section removal from local state without serializing section identity', async () => {
-        const actualBridge = await vi.importActual<typeof import('../agentReference/bridgeGroundedLlmToolCalls')>(
-            '../agentReference/bridgeGroundedLlmToolCalls'
-        );
         mockBridgeGroundedLlmToolCalls.mockImplementation(actualBridge.bridgeGroundedLlmToolCalls);
         markerStoreValue.value = {
             markers: [],
@@ -490,9 +466,6 @@ describe('parsePromptToActions', () => {
     });
 
     it('proposes grounded non-destructive clip normalization as one atomic action', async () => {
-        const actualBridge = await vi.importActual<typeof import('../agentReference/bridgeGroundedLlmToolCalls')>(
-            '../agentReference/bridgeGroundedLlmToolCalls'
-        );
         mockBridgeGroundedLlmToolCalls.mockImplementation(actualBridge.bridgeGroundedLlmToolCalls);
         vi.mocked(generateToolCalls).mockResolvedValue(
             completePlan([{ name: 'normalizeClip', arguments: { clipId: 'clip-intro', mode: 'lufs', targetDb: -14 } }])
@@ -545,9 +518,6 @@ describe('parsePromptToActions', () => {
     });
 
     it('proposes grounded non-destructive clip stretch controls as atomic actions', async () => {
-        const actualBridge = await vi.importActual<typeof import('../agentReference/bridgeGroundedLlmToolCalls')>(
-            '../agentReference/bridgeGroundedLlmToolCalls'
-        );
         mockBridgeGroundedLlmToolCalls.mockImplementation(actualBridge.bridgeGroundedLlmToolCalls);
         vi.mocked(generateToolCalls).mockResolvedValueOnce(
             completePlan([{ name: 'setClipStretchRatio', arguments: { clipId: 'clip-intro', ratio: 1.5 } }])
@@ -621,9 +591,6 @@ describe('parsePromptToActions', () => {
     });
 
     it('proposes a grounded cross-track clip move as one atomic action', async () => {
-        const actualBridge = await vi.importActual<typeof import('../agentReference/bridgeGroundedLlmToolCalls')>(
-            '../agentReference/bridgeGroundedLlmToolCalls'
-        );
         mockBridgeGroundedLlmToolCalls.mockImplementation(actualBridge.bridgeGroundedLlmToolCalls);
         vi.mocked(generateToolCalls).mockResolvedValueOnce(
             completePlan([
@@ -680,9 +647,6 @@ describe('parsePromptToActions', () => {
     });
 
     it('proposes a grounded two-clip crossfade as one confirmable atomic action', async () => {
-        const actualBridge = await vi.importActual<typeof import('../agentReference/bridgeGroundedLlmToolCalls')>(
-            '../agentReference/bridgeGroundedLlmToolCalls'
-        );
         mockBridgeGroundedLlmToolCalls.mockImplementation(actualBridge.bridgeGroundedLlmToolCalls);
         vi.mocked(generateToolCalls).mockResolvedValue(
             completePlan([{ name: 'crossfadeClips', arguments: { clipAId: 'clip-intro', clipBId: 'clip-chorus' } }])
@@ -734,9 +698,6 @@ describe('parsePromptToActions', () => {
     });
 
     it('proposes grounded MIDI clip glue as one destructive confirmable atomic action', async () => {
-        const actualBridge = await vi.importActual<typeof import('../agentReference/bridgeGroundedLlmToolCalls')>(
-            '../agentReference/bridgeGroundedLlmToolCalls'
-        );
         mockBridgeGroundedLlmToolCalls.mockImplementation(actualBridge.bridgeGroundedLlmToolCalls);
         vi.mocked(generateToolCalls).mockResolvedValue(
             completePlan([{ name: 'glueClips', arguments: { clipIds: ['clip-intro', 'clip-verse'] } }])
@@ -800,9 +761,6 @@ describe('parsePromptToActions', () => {
         'glue Intro and Verse clips, then cancel that request because the timing is wrong, then set tempo to 130',
         'glue Intro and Verse clips, then cancel this request because the timing is wrong, then set tempo to 130',
     ])('omits a cancelled provider glue call and keeps an unrelated grounded action', async (prompt) => {
-        const actualBridge = await vi.importActual<typeof import('../agentReference/bridgeGroundedLlmToolCalls')>(
-            '../agentReference/bridgeGroundedLlmToolCalls'
-        );
         mockBridgeGroundedLlmToolCalls.mockImplementation(actualBridge.bridgeGroundedLlmToolCalls);
         vi.mocked(generateToolCalls).mockResolvedValue(
             completePlan([
@@ -820,9 +778,6 @@ describe('parsePromptToActions', () => {
     });
 
     it('rejects the whole mixed provider plan when the prompt contains multiple glue commands', async () => {
-        const actualBridge = await vi.importActual<typeof import('../agentReference/bridgeGroundedLlmToolCalls')>(
-            '../agentReference/bridgeGroundedLlmToolCalls'
-        );
         mockBridgeGroundedLlmToolCalls.mockImplementation(actualBridge.bridgeGroundedLlmToolCalls);
         vi.mocked(generateToolCalls).mockResolvedValue(
             completePlan([
@@ -844,9 +799,6 @@ describe('parsePromptToActions', () => {
     });
 
     it('proposes a grounded whole-clip MIDI transform as one confirmable atomic action', async () => {
-        const actualBridge = await vi.importActual<typeof import('../agentReference/bridgeGroundedLlmToolCalls')>(
-            '../agentReference/bridgeGroundedLlmToolCalls'
-        );
         mockBridgeGroundedLlmToolCalls.mockImplementation(actualBridge.bridgeGroundedLlmToolCalls);
         const providerContext: ProjectContext = {
             ...baseContext,
@@ -900,9 +852,6 @@ describe('parsePromptToActions', () => {
     });
 
     it('rejects provider MIDI transforms for audio, locked, empty, or missing selected clips', async () => {
-        const actualBridge = await vi.importActual<typeof import('../agentReference/bridgeGroundedLlmToolCalls')>(
-            '../agentReference/bridgeGroundedLlmToolCalls'
-        );
         mockBridgeGroundedLlmToolCalls.mockImplementation(actualBridge.bridgeGroundedLlmToolCalls);
         vi.mocked(generateToolCalls).mockResolvedValue(
             completePlan([{ name: 'setAllVelocities', arguments: { clipId: 'clip-selected', velocity: 96 } }])
@@ -953,9 +902,6 @@ describe('parsePromptToActions', () => {
     });
 
     it('proposes a grounded provider arm command as one confirmable atomic action', async () => {
-        const actualBridge = await vi.importActual<typeof import('../agentReference/bridgeGroundedLlmToolCalls')>(
-            '../agentReference/bridgeGroundedLlmToolCalls'
-        );
         mockBridgeGroundedLlmToolCalls.mockImplementation(actualBridge.bridgeGroundedLlmToolCalls);
         const providerContext: ProjectContext = {
             ...baseContext,
@@ -993,9 +939,6 @@ describe('parsePromptToActions', () => {
     });
 
     it('proposes a provider bus creation as one bounded atomic action', async () => {
-        const actualBridge = await vi.importActual<typeof import('../agentReference/bridgeGroundedLlmToolCalls')>(
-            '../agentReference/bridgeGroundedLlmToolCalls'
-        );
         mockBridgeGroundedLlmToolCalls.mockImplementation(actualBridge.bridgeGroundedLlmToolCalls);
         vi.mocked(generateToolCalls).mockResolvedValue(
             completePlan([{ name: 'createBus', arguments: { name: 'Parallel Reverb' } }])
@@ -1009,9 +952,6 @@ describe('parsePromptToActions', () => {
     });
 
     it('materializes one stable bus identity across a dependent provider action batch', async () => {
-        const actualBridge = await vi.importActual<typeof import('../agentReference/bridgeGroundedLlmToolCalls')>(
-            '../agentReference/bridgeGroundedLlmToolCalls'
-        );
         mockBridgeGroundedLlmToolCalls.mockImplementation(actualBridge.bridgeGroundedLlmToolCalls);
         const vocals = {
             id: 'track-vocals',
@@ -1067,9 +1007,6 @@ describe('parsePromptToActions', () => {
     });
 
     it('proposes grounded provider track deletion as one confirmable atomic action', async () => {
-        const actualBridge = await vi.importActual<typeof import('../agentReference/bridgeGroundedLlmToolCalls')>(
-            '../agentReference/bridgeGroundedLlmToolCalls'
-        );
         mockBridgeGroundedLlmToolCalls.mockImplementation(actualBridge.bridgeGroundedLlmToolCalls);
         const providerContext: ProjectContext = {
             ...baseContext,
@@ -1107,9 +1044,6 @@ describe('parsePromptToActions', () => {
     });
 
     it('rejects a provider time signature that does not match the prompt', async () => {
-        const actualBridge = await vi.importActual<typeof import('../agentReference/bridgeGroundedLlmToolCalls')>(
-            '../agentReference/bridgeGroundedLlmToolCalls'
-        );
         mockBridgeGroundedLlmToolCalls.mockImplementation(actualBridge.bridgeGroundedLlmToolCalls);
         vi.mocked(generateToolCalls).mockResolvedValue(
             completePlan([{ name: 'setTimeSignature', arguments: { numerator: 4, denominator: 4 } }])
@@ -1122,9 +1056,6 @@ describe('parsePromptToActions', () => {
     });
 
     it('requires confirmation for a grounded multi-action provider plan', async () => {
-        const actualBridge = await vi.importActual<typeof import('../agentReference/bridgeGroundedLlmToolCalls')>(
-            '../agentReference/bridgeGroundedLlmToolCalls'
-        );
         mockBridgeGroundedLlmToolCalls.mockImplementation(actualBridge.bridgeGroundedLlmToolCalls);
         const providerContext: ProjectContext = {
             ...baseContext,

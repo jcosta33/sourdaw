@@ -39,14 +39,9 @@ vi.mock('#/modules/Arrangement/stores', () => ({
 }));
 
 vi.mock('#/modules/Arrangement/useCases', () => ({
-    MIN_CLIP_LOOP_LENGTH_BEATS: 1 / 480,
     getGlueEligibleClipPairs: mocks.getGlueEligibleClipPairs,
     getPluginById: mocks.getPluginById,
     getPlatformPlugins: mocks.getPlatformPlugins,
-    projectClipLoopExpansion: ({ clipDurationBeats }: { clipDurationBeats: number }) => ({
-        iterationCount: Math.min(4096, Math.ceil(clipDurationBeats / Math.max(1 / 480, clipDurationBeats / 4096))),
-        loopLengthBeats: Math.max(1 / 480, clipDurationBeats / 4096),
-    }),
 }));
 
 vi.mock('#/modules/Automation/stores', () => ({

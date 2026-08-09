@@ -50,23 +50,12 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     })),
     getCompensationDelay: vi.fn(() => 0),
 }));
+// `projectClipLoopExpansion` is deliberately not stubbed: it is a pure leaf in
+// `#/utils/clipLoopProjection` with its own spec, and these assertions are meant to run against the
+// real loop projection.
 vi.mock('#/modules/Arrangement/useCases', () => ({
     resolveClipsWithComping: vi.fn(() => []),
     getGainAtBeat: vi.fn(() => 0),
-    projectClipLoopExpansion: vi.fn(({ clipDurationBeats, configuredLoopLengthBeats, loopEnabled }) => {
-        if (!Number.isFinite(clipDurationBeats) || clipDurationBeats <= 0) {
-            return { iterationCount: 0, loopLengthBeats: 1 / 480 };
-        }
-        if (!loopEnabled) {
-            return { iterationCount: 1, loopLengthBeats: clipDurationBeats };
-        }
-        const requestedLength = configuredLoopLengthBeats ?? clipDurationBeats;
-        const loopLengthBeats = Math.max(1 / 480, clipDurationBeats / 4096, requestedLength);
-        return {
-            iterationCount: Math.min(4096, Math.max(1, Math.ceil(clipDurationBeats / loopLengthBeats))),
-            loopLengthBeats,
-        };
-    }),
 }));
 vi.mock('#/utils/Notification/notifyUser', () => ({
     notifyUser: vi.fn(),

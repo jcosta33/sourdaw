@@ -60,9 +60,51 @@ vi.mock('../../../useCases/proofChamber/updateChamberEngine', () => ({
 vi.mock('../../../useCases/proofChamber/hydrateChamberStateFromProject', () => ({
     hydrateChamberStateFromProject: vi.fn(),
 }));
+/**
+ * The Decay EQ overlay is a canvas, and a canvas has no addressable control for
+ * a role query to find — so it is replaced by six ordinary buttons, one per
+ * band, carrying whatever `disabled` the panel handed down.
+ *
+ * The stub deliberately does **not** refuse the callback when it is disabled.
+ * The real component does (`DecayEqOverlay.spec.tsx` covers that), and a stub
+ * that also refused would make the "refuses writes from dead controls"
+ * assertion below a statement about the stub. What is under test here is the
+ * panel: it has to gate the write itself, so a child that forgot to check
+ * cannot put a value the engine drops into project truth.
+ */
 vi.mock('../../components/DecayEqOverlay', () => ({
-    DecayEqOverlay: () => null,
+    DecayEqOverlay: ({
+        multipliers,
+        onChange,
+        disabled,
+    }: {
+        multipliers: number[];
+        onChange: (band: number, multiplier: number) => void;
+        disabled?: boolean;
+    }) => (
+        <div>
+            {multipliers.map((multiplier, band) => (
+                <button
+                    key={band}
+                    type="button"
+                    aria-label={DECAY_EQ_CONTROL_NAMES[band]}
+                    aria-disabled={disabled === true ? 'true' : undefined}
+                    onClick={() => onChange(band, multiplier + 1)}
+                />
+            ))}
+        </div>
+    ),
 }));
+
+/** The accessible names the stub above gives the six band nodes. */
+const DECAY_EQ_CONTROL_NAMES = [
+    'Decay EQ LF',
+    'Decay EQ LM',
+    'Decay EQ Mid',
+    'Decay EQ UM',
+    'Decay EQ HF',
+    'Decay EQ Air',
+];
 
 const DEVICE_ID = 'test-device';
 
@@ -103,6 +145,14 @@ const PANEL_CONTROLS: Readonly<Record<string, PanelControl>> = {
     saturation_type: { role: 'button', name: 'Cheby' },
     early_late: { role: 'slider', name: 'E/L' },
     density: { role: 'slider', name: 'Density' },
+    // The six Decay EQ bands, drawn by the overlay rather than by a knob — see
+    // the stub above for how they become addressable here.
+    decay_eq_0: { role: 'button', name: DECAY_EQ_CONTROL_NAMES[0]! },
+    decay_eq_1: { role: 'button', name: DECAY_EQ_CONTROL_NAMES[1]! },
+    decay_eq_2: { role: 'button', name: DECAY_EQ_CONTROL_NAMES[2]! },
+    decay_eq_3: { role: 'button', name: DECAY_EQ_CONTROL_NAMES[3]! },
+    decay_eq_4: { role: 'button', name: DECAY_EQ_CONTROL_NAMES[4]! },
+    decay_eq_5: { role: 'button', name: DECAY_EQ_CONTROL_NAMES[5]! },
     vintage: { role: 'slider', name: 'Vintage' },
 };
 
@@ -126,6 +176,11 @@ function renderPanel(algorithm: ProofChamberAlgorithm): void {
         instances: { [DEVICE_ID]: { id: DEVICE_ID, isBypassed: false, uiLevel: 1, engineState } },
     });
     render(<ProofChamberPanel deviceId={DEVICE_ID} />);
+    // The Decay EQ overlay is behind a view toggle that starts closed, and its
+    // six bands are part of the population below. The chip is a view control,
+    // not a parameter write, so opening it here changes nothing the assertions
+    // measure.
+    fireEvent.click(screen.getAllByRole('button', { name: 'Decay EQ' })[0]!);
 }
 
 /** Every node carrying this control, because the switches are rendered on both the rail and the deck. */
@@ -209,7 +264,7 @@ describe('the Dutch Oven panel offers only controls the live algorithm can hear'
             ])
         );
 
-        expect(perEngine).toEqual({ fdn: 9, spring: 11, reverse: 15 });
+        expect(perEngine).toEqual({ fdn: 9, spring: 11, reverse: 21 });
         expect(chamberEngineIdForAlgorithm('fdn-16')).toBe('fdn');
         expect(chamberEngineIdForAlgorithm('plate')).toBe('plate');
     });

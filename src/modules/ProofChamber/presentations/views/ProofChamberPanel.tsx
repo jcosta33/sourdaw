@@ -22,6 +22,7 @@ import { decayToRt60Seconds } from '#/utils/reverbDecayLaw';
 import {
     ALGORITHM_LABELS,
     chamberControlGate,
+    chamberDecayEqGate,
     type ChamberControlGate,
 } from '../../models/ProofChamberAlgorithmGating';
 import {
@@ -31,6 +32,7 @@ import {
     PARAM_MAP,
     type ProofChamberEngineState,
     PROOF_CHAMBER_ALGORITHMS,
+    PROOF_CHAMBER_DECAY_EQ_BANDS,
     expandSpacePreset,
     type SpaceType,
     usesRt60DecayLaw,
@@ -272,7 +274,6 @@ export const ProofChamberPanel = ({ deviceId }: { deviceId: string }): ReactElem
         // the wrong one.
         hydrateChamberStateFromProject(deviceId);
     }, [deviceId]);
-    const [decayEqMults, setDecayEqMults] = useState([1.0, 1.0, 1.0, 1.0, 1.0, 1.0]);
     const [showDecayEq, setShowDecayEq] = useState(false);
     const [showFlow, setShowFlow] = useState(false);
 
@@ -435,8 +436,30 @@ export const ProofChamberPanel = ({ deviceId }: { deviceId: string }): ReactElem
         });
     }
 
+    /**
+     * The Decay EQ's six bands are one control as far as gating is concerned:
+     * a loop either has per-pass loss for a multiplier to be relative to or it
+     * does not, so the six ids are always gated together.
+     *
+     * Three states make it inert and only one of them is about the algorithm.
+     * `chamberDecayEqGate` also answers for Freeze — which holds the tank at
+     * unity and is a chip sitting right beside the Decay EQ chip — and for the
+     * top of the Decay range, where the tail loses less per pass than the
+     * shaping would add. Both were previously silent: the nodes dragged, the
+     * writes persisted, and the render was bit-identical, which is the defect
+     * this whole PR exists to close, reappearing one layer up.
+     */
+    const decayEqGate = chamberDecayEqGate({
+        algorithm: params.algorithm,
+        freeze: params.freeze,
+        decay: params.decay,
+    });
+    const decayEqMultipliers = PROOF_CHAMBER_DECAY_EQ_BANDS.map((band) => params[band]);
+
     let tailViewLed = 'Live tail';
-    if (showDecayEq) {
+    if (decayEqGate.isInert && showDecayEq) {
+        tailViewLed = 'EQ no headroom';
+    } else if (showDecayEq) {
         tailViewLed = 'EQ overlay';
     } else if (showFlow) {
         tailViewLed = 'Flow open';
@@ -496,7 +519,20 @@ export const ProofChamberPanel = ({ deviceId }: { deviceId: string }): ReactElem
                         })}
                     </div>
                     <div className="flex flex-wrap gap-1.5">
-                        <ChamberChip active={showDecayEq} onClick={() => setShowDecayEq((value) => !value)}>
+                        {/*
+                         * The chip still opens the overlay on an algorithm that
+                         * cannot hear it — this is a *view* toggle, not a
+                         * parameter write, and hiding the curve would hide the
+                         * shape a project has saved. What the gate does is
+                         * carry the explanation and hand the overlay its
+                         * disabled state, so the nodes draw and refuse to move
+                         * rather than moving and doing nothing.
+                         */}
+                        <ChamberChip
+                            active={showDecayEq}
+                            title={decayEqGate.explanation ?? undefined}
+                            onClick={() => setShowDecayEq((value) => !value)}
+                        >
                             Decay EQ
                         </ChamberChip>
                         <ChamberChip active={showFlow} onClick={() => setShowFlow((value) => !value)}>
@@ -581,16 +617,35 @@ export const ProofChamberPanel = ({ deviceId }: { deviceId: string }): ReactElem
                                 <ReverbSpectrogram decay={params.decay} damping={params.damping} />
                                 {showDecayEq ? (
                                     <DecayEqOverlay
-                                        multipliers={decayEqMults}
-                                        onChange={(band, mult) => {
-                                            const next = [...decayEqMults];
-                                            next[band] = mult;
-                                            setDecayEqMults(next);
-                                            void executeAppAction({
-                                                type: 'setDeviceParameter',
-                                                payload: { deviceId, paramId: `decay_eq_${band}`, value: mult },
-                                            });
+                                        multipliers={decayEqMultipliers}
+                                        // The write goes through `setParam` like
+                                        // every other control, rather than
+                                        // straight to `executeAppAction` as it
+                                        // used to. That is what puts the curve
+                                        // into `chamberStore` — so the nodes
+                                        // draw where the project says they are
+                                        // after a reload instead of snapping
+                                        // back to 1.0x — and it is what routes
+                                        // the id through `PARAM_MAP`, which is
+                                        // the same hop the gate above reads.
+                                        onChange={(band, multiplier) => {
+                                            // Refused here as well as inside
+                                            // the overlay, on the same
+                                            // principle as `GatedChip`: the
+                                            // panel owns whether a write leaves
+                                            // it, so a gated parameter cannot
+                                            // reach project truth through a
+                                            // child that forgot to check.
+                                            if (decayEqGate.isInert) {
+                                                return;
+                                            }
+                                            const field = PROOF_CHAMBER_DECAY_EQ_BANDS[band];
+                                            if (field === undefined) {
+                                                return;
+                                            }
+                                            setParam(field, multiplier);
                                         }}
+                                        disabled={decayEqGate.isInert}
                                         width={600}
                                         height={120}
                                     />

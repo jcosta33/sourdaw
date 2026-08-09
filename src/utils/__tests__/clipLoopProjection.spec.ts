@@ -1,10 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import {
-    MAX_CLIP_LOOP_ITERATIONS,
-    MIN_CLIP_LOOP_LENGTH_BEATS,
-    projectClipLoopExpansion,
-} from '../projectClipLoopExpansion';
+import { MAX_CLIP_LOOP_ITERATIONS, MIN_CLIP_LOOP_LENGTH_BEATS, projectClipLoopExpansion } from '../clipLoopProjection';
 
 describe('projectClipLoopExpansion', () => {
     it('enforces the project-tick floor and the shared maximum iteration count', () => {

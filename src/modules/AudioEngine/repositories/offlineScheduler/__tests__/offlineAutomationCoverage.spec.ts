@@ -290,7 +290,14 @@ describe('offline device-param automation capability coverage', () => {
         // class rather than in `uncovered`. A device-level number moving because
         // a device gained parameters is the one legitimate way it moves.
         expect(census.deviceLevelExemptions).toBe(185);
-        expect(census.parameterLevelExemptions).toBe(17);
+        // 17 → 23: #1539's six `decay_eq_*` bands on `dutch-oven`. They land in
+        // this class rather than in `verdicts` because the Dutch Oven declares
+        // exactly two offline ordinals (`mix`, `decay`) and always has — the
+        // fifteen rows they join say the same thing — so a new automatable
+        // parameter on this device arrives exempt by default. A verdict total
+        // that had moved instead would mean someone wired ordinals, which is a
+        // change to a wire format the crate shares and is not what that PR did.
+        expect(census.parameterLevelExemptions).toBe(23);
 
         // (v) `knead` is a factory entry and a canonical native device type with
         // no descriptor anywhere. It is not an exemption row: two of the three

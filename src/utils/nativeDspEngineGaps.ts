@@ -173,18 +173,30 @@ export const NATIVE_DSP_ENGINE_GAPS: readonly NativeDspEngineGap[] = [
                 note: 'A reverse build-up has no early-reflection stage. The balance reverse engines do expose is build-up against forward tail, which is a different control under a different name.',
             },
             { paramId: 'density', kind: 'unbuilt' },
+            ...([0, 1, 2, 3, 4, 5] as const).map(
+                (band) =>
+                    ({
+                        paramId: `decay_eq_${band}`,
+                        kind: 'structural',
+                        note: 'A decay-rate multiplier is a per-pass gain in a recirculating loop. The reverse engine has no feedback path — `decay` scales a reversed grain once, on its way out — so there is no decay rate for a multiplier to be relative to.',
+                    }) as const
+            ),
         ],
         reason:
             '`ReverseReverb::set_param` (`reverse.rs`) answers to mix, decay, size, its own `reverse_time` and the ' +
-            'shared `OutputStage`’s two tone filters, and nothing else. Fifteen of the twenty non-global ids the ' +
-            'descriptor advertises are still inert on this algorithm — the widest gap of the four, and the one most ' +
-            'likely to read as a broken device rather than a sparse one. Five of the fifteen are structural: ' +
-            '`width` (the wet path is mono — `OutputStage::set_mono_param` refuses it, and ' +
+            'shared `OutputStage`’s two tone filters, and nothing else. Twenty-one of the twenty-six non-global ids ' +
+            'the descriptor advertises are still inert on this algorithm — the widest gap of the four, and the one ' +
+            'most likely to read as a broken device rather than a sparse one. Eleven of the twenty-one are ' +
+            'structural: `width` (the wet path is mono — `OutputStage::set_mono_param` refuses it, and ' +
             '`crates/proof-chamber/tests/output_stage_parameter_surface.rs` pins the mono wet path so the row ' +
             'becomes a defect the moment the reverse buffer goes stereo), the three `shimmer` ids (no feedback ' +
-            'path to put a pitch shifter in), and `early_late` (no early-reflection stage; the balance the field ' +
+            'path to put a pitch shifter in), `early_late` (no early-reflection stage; the balance the field ' +
             'exposes on a reverse engine is build-up-against-forward-tail, a different control needing a different ' +
-            'label — a product decision, not a DSP one). The remaining ten are stages nobody has written.',
+            'label — a product decision, not a DSP one), and the six `decay_eq_*` bands, which fail for the same ' +
+            'reason the shimmer ids do and are measured failing: ' +
+            '`crates/proof-chamber/tests/decay_eq_parameter_surface.rs`’s `reverse_ignores_every_band` renders this ' +
+            'engine bit-identically under all six writes at two sample rates, so the row is a measurement rather ' +
+            'than an opinion. The remaining ten are stages nobody has written.',
     },
 ];
 

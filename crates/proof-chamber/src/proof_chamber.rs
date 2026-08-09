@@ -8,6 +8,7 @@
 /// freeze, shimmer (granular pitch shifter in feedback), and pre-delay.
 use std::f32::consts::TAU;
 
+use crate::decay_eq::{one_pole_magnitude, DecayRateEq, NUM_PROBES};
 use crate::early_reflections::EarlyReflections;
 use crate::output_stage::OutputStage;
 
@@ -402,6 +403,32 @@ pub struct ProofChamber {
     right_ap: Allpass,
     right_delay_2: DelayLine,
 
+    /// Decay Rate EQ, one instance per tank half.
+    ///
+    /// Two rather than one because the halves are separate filter states on
+    /// separate signals; sharing an instance would cross-couple them through
+    /// the biquad memories and collapse the stereo tank into something closer
+    /// to mono.
+    ///
+    /// The base loop gain these are told is `decay * decay`, not `decay`. A
+    /// signal entering the left half is multiplied by `decay` once inside that
+    /// half and once more as it crosses into the right, so `decay^2` is the
+    /// gain per EQ application — which is the quantity Jot's formula wants,
+    /// since the stage is applied once per half-traversal. Getting this wrong
+    /// would not break the sign or the shape of the control, only its scale,
+    /// which is exactly the kind of error a render-delta guard passes.
+    decay_eq_left: DecayRateEq,
+    decay_eq_right: DecayRateEq,
+    /// The `(per-half-traversal scalar gain, tank damping coefficient)` the two
+    /// stages above were last designed for, so a per-block redesign only
+    /// happens when one of them actually moved.
+    ///
+    /// Both, not just the gain: the tank's damper is inside the same loop, so
+    /// the loop's per-pass loss is a function of frequency and `damping` moves
+    /// it as surely as `decay` does.
+    decay_eq_base_gain: f32,
+    decay_eq_damping: f32,
+
     // Tank state (cross-feedback)
     left_tank_output: f32,
     right_tank_output: f32,
@@ -598,6 +625,14 @@ impl ProofChamber {
             right_ap: Allpass::new(right_ap_len, 0.50),
             right_delay_2: DelayLine::new(right_d2_len),
 
+            // Seeded flat; `process` hands both stages the tank's real
+            // frequency-dependent per-pass magnitude before the first sample,
+            // and the sentinels below force that on the first block.
+            decay_eq_left: DecayRateEq::new(sample_rate, 1.0),
+            decay_eq_right: DecayRateEq::new(sample_rate, 1.0),
+            decay_eq_base_gain: f32::NAN,
+            decay_eq_damping: f32::NAN,
+
             left_tank_output: 0.0,
             right_tank_output: 0.0,
 
@@ -681,6 +716,21 @@ impl ProofChamber {
             "early_late" => self.early_late_balance = value.clamp(0.0, 1.0),
             "saturation" => self.saturation_enabled = value > 0.5,
             "saturation_type" => self.saturation_type = (value as u8).min(2),
+            // Decay Rate EQ. Applied to both tank halves, because a curve that
+            // shaped only one half would also be a stereo image control.
+            //
+            // The six literals are spelled out rather than matched by prefix
+            // because `descriptorEngineParamWeld.spec.ts` reads the arm names
+            // out of this file to decide which engines answer to which id, and
+            // a prefix match is invisible to it.
+            "decay_eq_0" | "decay_eq_1" | "decay_eq_2" | "decay_eq_3" | "decay_eq_4"
+            | "decay_eq_5" => {
+                let clamped = value.clamp(0.25, 4.0);
+                if let Some(band) = crate::decay_eq::band_index_for_name(name) {
+                    self.decay_eq_left.set_band_multiplier(band, clamped);
+                    self.decay_eq_right.set_band_multiplier(band, clamped);
+                }
+            }
             "density" => {
                 // Density controls inter-delay mixing (diffusion in the tank).
                 // Higher density = more cross-coupling between tank halves.
@@ -731,6 +781,37 @@ impl ProofChamber {
         let tank_ap_gain = (dd2 * gravity_tilt).clamp(0.15, 0.72);
         self.left_ap.gain = tank_ap_gain;
         self.right_ap.gain = tank_ap_gain;
+
+        // Re-tell the decay EQ what the tank is doing, once per block rather
+        // than once per sample: `decay` is smoothed over 30 ms and redesigning
+        // six biquads per sample would be an order of magnitude more work than
+        // the tank itself. Same cadence, and the same reason, as `tank_ap_gain`
+        // above.
+        //
+        // `target_decay` rather than `smooth_decay`, so a frozen tank
+        // (`target_decay = 1.0`) hands the stage a per-pass gain of 1.0 and
+        // every band designs at 0 dB. That is the correct answer rather than a
+        // dodge: with no per-pass loss there is no decay rate for a multiplier
+        // to be relative to, and a boost applied to a unity-gain loop is a
+        // resonator, not a longer tail.
+        let decay_eq_gain = target_decay * target_decay;
+        if decay_eq_gain != self.decay_eq_base_gain || damp != self.decay_eq_damping {
+            self.decay_eq_base_gain = decay_eq_gain;
+            self.decay_eq_damping = damp;
+
+            // The tank's per-pass loss is `decay^2` times the damper's own
+            // magnitude, and the damper is a lowpass — so the loss at 8 kHz is
+            // nothing like the loss at 100 Hz, and a stage told only the scalar
+            // under-corrects wherever the damper bites. The probe grid is the
+            // stage's own, so the two describe the same loop.
+            let probes = *self.decay_eq_left.probe_frequencies();
+            let mut gains = [0.0_f32; NUM_PROBES];
+            for (index, freq) in probes.iter().enumerate() {
+                gains[index] = decay_eq_gain * one_pole_magnitude(damp, *freq, self.sample_rate);
+            }
+            self.decay_eq_left.set_loop_gains(&gains);
+            self.decay_eq_right.set_loop_gains(&gains);
+        }
 
         let mod_depth = if self.freeze { 0.0 } else { self.mod_depth };
 
@@ -799,6 +880,12 @@ impl ProofChamber {
             let damped_l = self.left_damp.process(d1_out_l);
             let mut decayed_l = damped_l * decay;
 
+            // Per-band decay shaping, immediately after the per-pass gain it is
+            // expressed relative to and *before* the saturator, so the
+            // saturator stays the last nonlinearity in the loop and can still
+            // catch a boosted band.
+            decayed_l = self.decay_eq_left.process(decayed_l);
+
             // Soft saturation (before allpass, per Erbe-Verb design)
             if self.saturation_enabled {
                 decayed_l = soft_saturate(decayed_l, self.saturation_type);
@@ -830,6 +917,8 @@ impl ProofChamber {
 
             let damped_r = self.right_damp.process(d1_out_r);
             let mut decayed_r = damped_r * decay;
+
+            decayed_r = self.decay_eq_right.process(decayed_r);
 
             if self.saturation_enabled {
                 decayed_r = soft_saturate(decayed_r, self.saturation_type);
@@ -919,6 +1008,9 @@ impl ProofChamber {
             "density",
             "early_late",
         ]
+        .into_iter()
+        .chain(crate::decay_eq::PARAM_NAMES)
+        .collect()
     }
 }
 
@@ -951,6 +1043,51 @@ mod tests {
 
     const SR: f32 = 48_000.0;
     const BLOCK: usize = 128;
+
+    /// The Decay EQ is told the tank's gain **per half-traversal**, which is
+    /// `decay * decay` and not `decay`.
+    ///
+    /// Pinned as arithmetic rather than acoustically, and the distinction is
+    /// the point. Dropping the square is a *scale* error: every band still
+    /// lengthens when dragged up and shortens when dragged down, still moves
+    /// only its own part of the spectrum, and still tracks the Decay knob — so
+    /// every render-delta assertion in `decay_eq_parameter_surface.rs` stays
+    /// green while a declared 4.0x delivers about 1.6x. The only thing that can
+    /// catch it is the derivation, so the derivation is what is asserted.
+    ///
+    /// The count: a sample entering the left half is multiplied by `decay`
+    /// inside that half (`damped_l * decay`) and again as it crosses into the
+    /// right (`right_in = diffused + left_tank_output * decay`). One EQ
+    /// application per half, two per round trip, four `decay` multiplies per
+    /// round trip — so `decay^2` per application, which makes the round trip
+    /// `decay^(4/m)` and the RT60 exactly `m` times longer.
+    #[test]
+    fn the_decay_eq_is_told_the_tanks_gain_per_half_traversal() {
+        let mut left = [0.0_f32; BLOCK];
+        let mut right = [0.0_f32; BLOCK];
+
+        for decay in [0.2_f32, 0.5, 0.75, 0.9999] {
+            let mut plate = ProofChamber::new(SR);
+            plate.set_param("decay", decay);
+            plate.process(&mut left, &mut right);
+            assert!(
+                (plate.decay_eq_base_gain - decay * decay).abs() < 1e-6,
+                "decay {decay} should hand the stage {}, got {}",
+                decay * decay,
+                plate.decay_eq_base_gain
+            );
+        }
+
+        // Freeze holds the tank at unity, so the stage is handed 1.0 and every
+        // band designs at 0 dB: with no per-pass loss there is no decay rate
+        // for a multiplier to be relative to, and a boost on a unity-gain loop
+        // is a resonator rather than a longer tail.
+        let mut frozen = ProofChamber::new(SR);
+        frozen.set_param("decay", 0.5);
+        frozen.set_param("freeze", 1.0);
+        frozen.process(&mut left, &mut right);
+        assert_eq!(frozen.decay_eq_base_gain, 1.0);
+    }
 
     /// What `DelayLine::read` returns, pinned directly on the primitive.
     ///

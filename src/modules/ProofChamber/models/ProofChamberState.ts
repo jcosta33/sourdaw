@@ -36,8 +36,44 @@ export type ProofChamberEngineState = {
     earlyLateBalance: number;
     /** Cross-coupling between the plate's tank halves. 0=sparse, 1=dense. */
     density: number;
+    /**
+     * Decay Rate EQ — per-band decay-time multipliers, 0.25x…4.0x, in band
+     * order (100, 400, 1200, 3500, 8000, 12000 Hz).
+     *
+     * Six flat fields rather than one `number[]`, because everything that makes
+     * a Dutch Oven control persist, hydrate and gate is keyed on a single
+     * `keyof ProofChamberEngineState` → `PARAM_MAP` → wire-id hop: `setParam`,
+     * `NUMERIC_ENGINE_FIELDS`, `hydrateChamberStateFromProject` and
+     * `chamberControlGate` all take that shape. An array field would have
+     * needed a bespoke path through each of the four, and the overlay was
+     * bespoke enough already — it held its six values in panel-local
+     * `useState`, so nothing about the curve survived a reload even once the
+     * writes reached project truth.
+     */
+    decayEq0: number;
+    decayEq1: number;
+    decayEq2: number;
+    decayEq3: number;
+    decayEq4: number;
+    decayEq5: number;
     vintage: number; // 0=modern, 1=80s, 2=70s
 };
+
+/**
+ * The engine-state keys of the six Decay EQ bands, in band order.
+ *
+ * A tuple so the overlay can read and write the curve by index without either
+ * side spelling the field names, and so `PROOF_CHAMBER_DECAY_EQ_BANDS.length`
+ * is the one place the band count lives on this side of the wire.
+ */
+export const PROOF_CHAMBER_DECAY_EQ_BANDS = [
+    'decayEq0',
+    'decayEq1',
+    'decayEq2',
+    'decayEq3',
+    'decayEq4',
+    'decayEq5',
+] as const satisfies readonly (keyof ProofChamberEngineState)[];
 
 export const DEFAULT_PARAMS: ProofChamberEngineState = {
     algorithm: 'plate',
@@ -67,6 +103,16 @@ export const DEFAULT_PARAMS: ProofChamberEngineState = {
     // full -0.70 — i.e. density 1.0. A different default here would have moved
     // the shipped sound the moment the parameter became writable.
     density: 1.0,
+    // 1.0x is "this band decays at the base rate", and it is bit-exactly
+    // transparent in the engine rather than merely close to it — see
+    // `Biquad::design_peak` in `crates/proof-chamber/src/decay_eq.rs` and
+    // `writing_every_band_to_its_default_renders_bit_identically`.
+    decayEq0: 1.0,
+    decayEq1: 1.0,
+    decayEq2: 1.0,
+    decayEq3: 1.0,
+    decayEq4: 1.0,
+    decayEq5: 1.0,
     vintage: 0,
 };
 
@@ -171,6 +217,12 @@ export const PARAM_MAP: Record<string, string> = {
     saturationType: 'saturation_type',
     earlyLateBalance: 'early_late',
     density: 'density',
+    decayEq0: 'decay_eq_0',
+    decayEq1: 'decay_eq_1',
+    decayEq2: 'decay_eq_2',
+    decayEq3: 'decay_eq_3',
+    decayEq4: 'decay_eq_4',
+    decayEq5: 'decay_eq_5',
     algorithm: 'algorithm',
     vintage: 'vintage',
 };
@@ -220,6 +272,7 @@ export const NUMERIC_ENGINE_FIELDS = [
     'saturationType',
     'earlyLateBalance',
     'density',
+    ...PROOF_CHAMBER_DECAY_EQ_BANDS,
     'vintage',
 ] as const satisfies readonly (keyof ProofChamberEngineState)[];
 

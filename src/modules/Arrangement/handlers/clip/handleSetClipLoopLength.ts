@@ -1,15 +1,14 @@
-import { getTransportState } from '#/modules/Transport/useCases';
 import { createHandler } from '#/utils/createHandler';
 
 import { setClipLoopLength } from '../../useCases/clipLoop/setClipLoopLength';
 import { toHandlerExecutionResult } from '../toHandlerExecutionResult';
 
-import { findClipForLoopLength, isSafeRequestedClipLoopLength, readClipLoopLengthState } from './clipLoopLengthState';
-
-function transportIsBusy(): boolean {
-    const transport = getTransportState();
-    return transport?.isPlaying === true || transport?.isRecording === true;
-}
+import {
+    findClipForLoopLength,
+    isSafeRequestedClipLoopLength,
+    readClipLoopLengthState,
+    transportIsBusy,
+} from './clipLoopLengthState';
 
 export const handleSetClipLoopLength = createHandler<'setClipLoopLength'>({
     batchExecution: 'singleton',
