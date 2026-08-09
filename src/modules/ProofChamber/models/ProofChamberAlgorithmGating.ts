@@ -74,17 +74,20 @@ const LIVE: ChamberControlGate = { isInert: false, kind: null, explanation: null
  * promise with a weaker promise the engine also breaks would repeat the same
  * mistake in miniature.
  *
- * Both conditions for earning the claim back have since been met: the
- * `ProofChamberInstance` parameter cache landed, and
+ * The `ProofChamberInstance` parameter cache has since landed, and
  * `crates/proof-chamber/tests/algorithm_switch_parameter_retention.rs` proves
- * by render delta that values survive a switch on every exposed engine. The
- * explanations below still say nothing about what happens later, because
- * putting a promise back into fifteen tooltips is a copy decision with its own
- * cost — and because the engine has one measured exception (the plate latches
- * `shimmer` off inside `freeze`, and a value cache cannot re-fire a latch), so
- * "everything survives" would still not be literally true. The rule is no
- * longer forced by the engine; it is now a choice, and changing it is a
- * separate decision rather than a bug fix.
+ * by render delta that values survive a switch on every exposed engine. **The
+ * sentence is still not coming back.** It was dropped rather than softened
+ * exactly so that the next version of it has to be earned by something true,
+ * and "everything survives" is still not true: the plate latches `shimmer` off
+ * inside its `freeze` arm and a cache of values cannot re-fire a latch, which
+ * that test file pins as a measured exception. A promise with an asterisk in
+ * fifteen tooltips is the same mistake as the original, one size smaller.
+ *
+ * What could be said without an asterisk — *a value you set on one algorithm
+ * is there when you come back to it* — is a copy change on its own evidence,
+ * not a rider on an engine fix, and it waits until the plate's latch is
+ * settled one way or the other.
  *
  * What is true today and needs no promise in the UI: gating refuses manual
  * entry and nothing else. The descriptor's `automatable` flag, the automation
