@@ -1,0 +1,57 @@
+src/modules/ProofChamber/presentations/views/__tests__/proofChamberAlgorithmGating.spec.tsx
+  s_14f2bbc9f385dd::t_54fae8f344ca1e 378-380
+  s_14f2bbc9f385dd::t_6c82ef28dd57bd 45-48
+  s_14f2bbc9f385dd::t_514caf4156fdb6 9
+  s_14f2bbc9f385dd::t_cadcd8e4bdfb66 284-285,288-289
+  s_14f2bbc9f385dd::t_46ad68ef83fa38 5
+  s_14f2bbc9f385dd::t_414dfbd035795a 60-62
+  s_14f2bbc9f385dd::t_85bbb053a3b525 354-364
+  s_14f2bbc9f385dd::t_1b0638394d0510 317-330,332,337-338,342-353,365-377
+src/modules/ProofChamber/presentations/views/__tests__/ProofChamberPanel.spec.tsx
+  s_14f2bbc9f385dd::t_dac2d30ee15bc7 30-32
+  s_14f2bbc9f385dd::t_47a660f970cae0 110-124,130,140
+  s_14f2bbc9f385dd::t_d9e76fe5b81d25 5
+src/modules/ProofChamber/models/ProofChamberAlgorithmGating.ts
+  s_14f2bbc9f385dd::t_ce772fa4114c74 58,62-86
+  s_14f2bbc9f385dd::t_913be8893cd49a 115
+src/modules/ProofChamber/useCases/proofChamber/hydrateChamberStateFromProject.ts
+  s_14f2bbc9f385dd::t_50a04299e2ffd5 1-59,65-71,77-84,86-105
+  s_14f2bbc9f385dd::t_d988474e03d2b2 60-64,72-76
+  s_14f2bbc9f385dd::t_b268d3c1cf1961 85
+src/modules/ProofChamber/presentations/views/ProofChamberPanel.tsx
+  s_14f2bbc9f385dd::t_45dc66b942b45e 33
+  s_14f2bbc9f385dd::t_8b640ccd634008 40
+  s_14f2bbc9f385dd::t_d820c776b659a6 926
+  s_14f2bbc9f385dd::t_c71e8c752b6455 82-85
+  s_14f2bbc9f385dd::t_49fce6e71072ef 469
+  s_14f2bbc9f385dd::t_8620d806bbb738 368,371-373,375-400,402-412
+  s_14f2bbc9f385dd::t_58090f4cc189af 304-309
+  s_14f2bbc9f385dd::t_d4bb919f873665 103-138
+src/modules/ProofChamber/models/ProofChamberState.ts
+  s_14f2bbc9f385dd::t_b2578e6aaa784e 1-10
+  s_14f2bbc9f385dd::t_a252fd4ea05842 178-185,193-225,231
+  s_14f2bbc9f385dd::t_396f3a03360101 226-230
+  s_14f2bbc9f385dd::t_597a0ca13776b1 186-192
+src/modules/ProofChamber/useCases/proofChamber/__tests__/hydrateChamberStateFromProject.spec.ts
+  s_14f2bbc9f385dd::t_dfa241aec104db 30-46,48-65,69-73
+  s_14f2bbc9f385dd::t_cafca39b729212 66-68
+  s_14f2bbc9f385dd::t_7c165645e92da8 1-2,4-29,74-167
+  s_14f2bbc9f385dd::t_8e987ca93fbe2f 47
+  s_14f2bbc9f385dd::t_e099471d16eed0 3
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "cca394c547577d24332444727cb9967dd9160f20",
+  "prompts": {},
+  "sessions": {
+    "s_14f2bbc9f385dd": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f9a61a1d-66b3-4146-938d-a04f45f4b060",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
