@@ -10,7 +10,7 @@ use std::f32::consts::TAU;
 // followed by an amplifier's tone stack, and every spring emulation puts its
 // filters after the tank for the same reason. Shared with the plate and the
 // FDN so Hi Cut, Lo Cut and Width mean one thing across the Dutch Oven.
-use crate::decay_eq::DecayRateEq;
+use crate::decay_eq::{one_pole_magnitude, DecayRateEq, NUM_PROBES};
 use crate::output_stage::OutputStage;
 
 // ---------------------------------------------------------------------------
@@ -132,10 +132,15 @@ impl SpringReverb {
             "mix" => self.mix = value.clamp(0.0, 1.0),
             "decay" | "feedback" => {
                 self.feedback = value.clamp(0.0, 0.95);
-                // The shaping is relative to the loop gain, so it moves with it.
-                self.decay_eq.set_base_loop_gain(self.feedback);
+                self.update_decay_eq_loop();
             }
-            "damping" => self.damping = value.clamp(0.0, 0.99),
+            "damping" => {
+                self.damping = value.clamp(0.0, 0.99);
+                // The damper is inside the same loop as the stage, so it is
+                // part of the per-pass loss the shaping is relative to. This
+                // arm used not to reach the stage at all.
+                self.update_decay_eq_loop();
+            }
             "size" => {
                 // Map size to spring length (50ms - 300ms)
                 let ms = 50.0 + value * 250.0;
@@ -162,6 +167,21 @@ impl SpringReverb {
             }
             _ => {}
         }
+    }
+
+    /// Re-tell the Decay Rate EQ what the tank loses per circulation.
+    ///
+    /// `feedback` times the damper's own magnitude: the dispersive allpass
+    /// cascade is unity-gain by construction and the delay line has no loss, so
+    /// those two are the whole of it.
+    fn update_decay_eq_loop(&mut self) {
+        let probes = *self.decay_eq.probe_frequencies();
+        let mut gains = [0.0_f32; NUM_PROBES];
+        for (index, freq) in probes.iter().enumerate() {
+            gains[index] =
+                self.feedback * one_pole_magnitude(self.damping, *freq, self.sample_rate);
+        }
+        self.decay_eq.set_loop_gains(&gains);
     }
 
     pub fn process(&mut self, left: &mut [f32], right: &mut [f32]) {

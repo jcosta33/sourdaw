@@ -15,12 +15,17 @@
 //!   error #1569's review found in this crate and which every file here was
 //!   blind to because every file here declared `SAMPLE_RATE = 48_000.0`.
 //!
-//! So the measured quantity is a **band-limited late/early energy ratio**, at
-//! two sample rates, per band, per algorithm:
+//! So the measured quantity is a **band-limited T60**, fitted over the
+//! -5 dB … -35 dB region of the decay and extrapolated (ISO 3382's T30), at two
+//! sample rates, per band, per algorithm:
 //!
 //! * *band-limited*, so it says which part of the spectrum moved;
-//! * a *ratio* of two windows of the same decaying tail, so a static gain
-//!   change cancels out of it and only a change in decay *rate* survives;
+//! * a *decay time*, so a static gain change does not move it at all and only a
+//!   change in decay rate does;
+//! * *fitted*, so it carries no assumption about how long the tail should be —
+//!   which a pair of fixed measurement windows does, and which is why the first
+//!   version of this file had to be run at a `damping` the product does not
+//!   ship in order to keep its windows meaningful;
 //! * *per algorithm*, because the crate's existing guards select the plate and
 //!   four of five algorithms have nothing pinning what they render (#1578).
 //!
@@ -74,18 +79,28 @@ const BAND_PARAM_IDS: [&str; 6] = [
     "decay_eq_5",
 ];
 
-/// Writes applied to every render, so all six bands have a measurable tail to
-/// shape.
+/// Writes applied to every render.
 ///
-/// The shipped defaults would not: `damping` at 0.3 and `high_cut` at 12 kHz
-/// between them leave the 8 kHz and 12 kHz bands with almost nothing in the late
-/// window, and a ratio measured on numerical dust is a coin toss. None of these
-/// is an extreme — they are ordinary bright-reverb settings — and none of them
-/// touches the stage under test.
+/// **`damping` is the shipped default of 0.3, and that is not a detail.** An
+/// earlier version of this file measured at 0.05, on the reasoning that the
+/// tail needed to stay bright enough for the top two bands to be measurable —
+/// which was true, and which meant the whole per-band table described a device
+/// nobody runs. It also hid the defect that mattered most: the stage was told a
+/// single low-frequency loop gain while the FDN's absorption already takes
+/// roughly twice as much per pass above its 2 kHz crossover, so at `damping =
+/// 0.3` a requested 4.0x delivered **0.98x** on fdn8 — less than neutral. The
+/// direction assertions still passed there; only the magnitude collapsed.
+///
+/// `high_cut` and `low_cut` are opened up because they are a *wet-path output*
+/// stage, outside the loop the decay EQ sits in: they scale both measurement
+/// windows equally and cancel out of every ratio here, while the shipped 12 kHz
+/// corner would leave the 12 kHz band measuring mostly its own filter skirt.
+/// `early_late` is at 1.0 so the measurement is the tail rather than the
+/// early-reflection blend.
 const BASELINE: [(&str, f32); 6] = [
     ("mix", 1.0),
     ("decay", 0.6),
-    ("damping", 0.05),
+    ("damping", 0.3),
     ("high_cut", 20_000.0),
     ("low_cut", 20.0),
     ("early_late", 1.0),
@@ -157,13 +172,7 @@ fn render(sample_rate: f32, algorithm: f32, writes: &[Write]) -> Render {
 }
 
 /// A second-order constant-skirt bandpass (RBJ), applied offline to the
-/// rendered tail. `Q = 2` is wide enough to catch a band whose energy has moved
-/// a little in frequency and narrow enough that adjacent centres 1.7 octaves
-/// apart stay distinguishable.
-fn band_filter(samples: &[f32], freq: f32, sample_rate: f32) -> Vec<f32> {
-    filter_at(samples, freq, sample_rate, 2.0)
-}
-
+/// rendered tail at `MEASUREMENT_Q`.
 fn filter_at(samples: &[f32], freq: f32, sample_rate: f32, q: f32) -> Vec<f32> {
     let w0 = std::f32::consts::TAU * freq / sample_rate;
     let alpha = w0.sin() / (2.0 * q);
@@ -194,47 +203,164 @@ fn rms(values: &[f32]) -> f64 {
     (sum / values.len() as f64).sqrt()
 }
 
-/// How much of the band's energy is still there late in the tail, relative to
-/// early in it.
+/// Measurement `Q` for the band filter.
 ///
-/// **This is the whole measurement, and the ratio is the point.** A stage that
-/// merely made a band louder scales both windows by the same factor and leaves
-/// this number untouched; only a change in that band's decay *rate* moves it.
-/// The windows start well after the burst ends so neither contains the
-/// stimulus.
-fn band_decay_ratio(render: &Render, band: usize) -> f64 {
-    band_decay_ratio_over(render, band, LONG_WINDOWS)
+/// Twelve, not the four this started at, and the difference decides several
+/// claims. A `Q = 4` bandpass at 12 kHz is about 3 kHz wide, which overlaps the
+/// 8 kHz band heavily — and where the loop is already very lossy, as it is above
+/// the damper's corner at the shipped `damping = 0.3`, the band's own energy is
+/// gone long before its neighbour's, so what the fit measures at 12 kHz is the
+/// 8 kHz band leaking in. That reads as a locality failure and as a floor on
+/// every cut, and it is neither: it is the instrument.
+///
+/// The cost of narrowing is the measuring filter's own ringing, and it is
+/// negligible here: a resonator's decay time is about `Q / (pi * f)`, so 38 ms
+/// at 100 Hz and 0.3 ms at 12 kHz, against tails of a second and up.
+const MEASUREMENT_Q: f32 = 12.0;
+
+/// Envelope hop, in seconds. 20 ms is short against every decay measured here
+/// and long enough that the RMS in a hop is a level rather than a waveform.
+const ENVELOPE_HOP_SECONDS: f32 = 0.02;
+
+/// The band's own T60, in seconds, by least-squares fit of the log envelope
+/// over the −5 dB … −35 dB region of its decay.
+///
+/// **This replaced a pair of fixed measurement windows, and the replacement is
+/// the whole reason the per-band table can now be quoted at the shipped
+/// `damping = 0.3`.** A fixed late window has to be chosen against some
+/// expected decay time, and the moment the tail is much shorter than that guess
+/// — which is exactly what damping does to the bands above 2 kHz — what the
+/// window reads is the measuring filter's own skirt picking up the neighbours,
+/// not the band. That floor is why the earlier version of this file measured at
+/// `damping = 0.05` and therefore described a device nobody runs.
+///
+/// A T30 fit has no such guess in it: it finds the decay wherever the decay is.
+/// It is also the standard instrument for the quantity (ISO 3382's T30, fitted
+/// over 30 dB and extrapolated to 60), rather than a proxy invented here.
+///
+/// `None` when the band never falls 35 dB inside the render, or when the fit
+/// has too few points to mean anything — reported by the caller rather than
+/// silently returning a number.
+fn band_t60(render: &Render, band: usize) -> Option<f64> {
+    let filtered = filter_at(
+        &render.left,
+        BAND_FREQS[band],
+        render.sample_rate,
+        MEASUREMENT_Q,
+    );
+    let hop = (render.sample_rate * ENVELOPE_HOP_SECONDS) as usize;
+    if hop == 0 {
+        return None;
+    }
+
+    // Envelope in dB, one point per hop, starting once the stimulus has stopped
+    // and the measuring filter has settled.
+    let first = ((render.sample_rate * (burst_seconds() + 0.05)) as usize) / hop;
+    let mut points: Vec<(f64, f64)> = Vec::new();
+    let mut index = first * hop;
+    while index + hop <= filtered.len() {
+        let level = rms(&filtered[index..index + hop]);
+        if level > 0.0 {
+            let seconds = index as f64 / f64::from(render.sample_rate);
+            points.push((seconds, 20.0 * level.log10()));
+        }
+        index += hop;
+    }
+    if points.len() < 8 {
+        return None;
+    }
+
+    let peak_db = points
+        .iter()
+        .fold(f64::NEG_INFINITY, |acc, (_, db)| acc.max(*db));
+    let upper = peak_db - 5.0;
+    let lower = peak_db - 35.0;
+
+    // Take the first monotone run through the fit region. Stopping at the first
+    // point below `lower` keeps a noise floor that flattens out later in the
+    // render from dragging the slope towards zero.
+    let mut fit: Vec<(f64, f64)> = Vec::new();
+    let mut started = false;
+    for (seconds, db) in points {
+        if !started && db <= upper {
+            started = true;
+        }
+        if started {
+            if db < lower {
+                break;
+            }
+            fit.push((seconds, db));
+        }
+    }
+    if fit.len() < 6 {
+        return None;
+    }
+
+    let n = fit.len() as f64;
+    let mean_t = fit.iter().map(|(t, _)| t).sum::<f64>() / n;
+    let mean_db = fit.iter().map(|(_, db)| db).sum::<f64>() / n;
+    let mut covariance = 0.0;
+    let mut variance = 0.0;
+    for (t, db) in fit.iter() {
+        covariance += (t - mean_t) * (db - mean_db);
+        variance += (t - mean_t) * (t - mean_t);
+    }
+    if variance <= 0.0 {
+        return None;
+    }
+    let slope_db_per_second = covariance / variance;
+    if slope_db_per_second >= -1e-3 {
+        return None;
+    }
+    Some(-60.0 / slope_db_per_second)
 }
 
-/// The two windows, in seconds: `[early_start, early_end, late_start, late_end]`.
-type Windows = [f32; 4];
-
-/// Far apart, so the ratio has a long lever on the decay rate. Every claim that
-/// can use these does.
-const LONG_WINDOWS: Windows = [0.30, 0.60, 1.20, 2.40];
-
-/// Closer together, for the one claim that cannot use `LONG_WINDOWS`.
-///
-/// A band cut to 0.25x decays four times faster than the base rate and is
-/// finished well before 1.2 s; what a `Q = 2` bandpass still reads there is
-/// skirt leakage from its neighbours, so the long-window ratio floors out and
-/// stops ordering the bottom of the travel. It is a limit of the *measurement*
-/// and not of the control: the same five settings ordered strictly on every
-/// engine and every band once the late window moved back to where the cut band
-/// still has energy of its own. Stated here rather than worked around silently,
-/// because "monotonic" would otherwise be a claim about a floor.
-const NEAR_WINDOWS: Windows = [0.25, 0.45, 0.55, 0.95];
-
-fn band_decay_ratio_over(render: &Render, band: usize, windows: Windows) -> f64 {
-    let filtered = band_filter(&render.left, BAND_FREQS[band], render.sample_rate);
-    let at = |seconds: f32| ((render.sample_rate * seconds) as usize).min(filtered.len());
-
-    let early = rms(&filtered[at(windows[0])..at(windows[1])]);
-    let late = rms(&filtered[at(windows[2])..at(windows[3])]);
-    if early <= 0.0 {
-        return 0.0;
+fn band_t60_or_panic(render: &Render, band: usize, context: &str) -> f64 {
+    match band_t60(render, band) {
+        Some(t60) => t60,
+        None => panic!(
+            "{context}: band {band} ({} Hz) has no measurable decay, so nothing measured on it \
+             means anything",
+            BAND_FREQS[band]
+        ),
     }
-    late / early
+}
+
+/// The fraction of the loop's own per-pass loss the stage consumed at this
+/// band, derived from the delivered decay multiplier.
+///
+/// `1 - T60_neutral / T60_shaped` is the same `1 - 1/m` the designer works in,
+/// which makes it the one quantity that can be compared *across bands*: the
+/// delivered decay multiplier cannot, because it is exponentially sensitive to
+/// how lossy the loop already is at that frequency, so a band where damping
+/// eats 20 dB a pass shows a large multiplier for a small filter gain.
+fn consumed_share(neutral_t60: f64, shaped_t60: f64) -> f64 {
+    1.0 - neutral_t60 / shaped_t60
+}
+
+/// Band-limited level, in dB, one second after the stimulus stops.
+///
+/// The cut side needs this and the T30 fit cannot give it. A band cut hard
+/// enough is *gone*, and once it is gone the only thing left at its centre
+/// frequency is the skirt of its neighbours — which decays at the neutral rate,
+/// so the fit returns the neutral T60 and the direction claim floors out. That
+/// floor is not a defect in the stage: "this band ends sooner" is exactly what
+/// the user asked for, and the honest way to measure it is the energy still
+/// present late, not the slope of what is left.
+fn band_level_db_at(render: &Render, band: usize, seconds: f32) -> f64 {
+    let filtered = filter_at(
+        &render.left,
+        BAND_FREQS[band],
+        render.sample_rate,
+        MEASUREMENT_Q,
+    );
+    let hop = (render.sample_rate * ENVELOPE_HOP_SECONDS) as usize;
+    let start = ((render.sample_rate * seconds) as usize).min(filtered.len().saturating_sub(hop));
+    let level = rms(&filtered[start..(start + hop).min(filtered.len())]);
+    if level <= 0.0 {
+        return -300.0;
+    }
+    20.0 * level.log10()
 }
 
 fn band_write(band: usize, multiplier: f32) -> Vec<Write> {
@@ -255,32 +381,30 @@ fn each_band_lengthens_its_own_part_of_the_spectrum() {
         for (algorithm, engine) in SHAPING_ENGINES {
             let neutral = render(sample_rate, algorithm, &[]);
             for band in 0..6 {
-                let neutral_ratio = band_decay_ratio(&neutral, band);
-                assert!(
-                    neutral_ratio > 1e-6,
-                    "{engine} @{sample_rate}: band {band} ({} Hz) has no measurable tail at the \
-                     neutral setting, so nothing measured on it below means anything \
-                     (ratio {neutral_ratio:e})",
-                    BAND_FREQS[band]
-                );
+                let context = format!("{engine} @{sample_rate}");
+                let neutral_t60 = band_t60_or_panic(&neutral, band, &context);
 
                 let boosted = render(sample_rate, algorithm, &band_write(band, MAX_MULT));
-                let boosted_ratio = band_decay_ratio(&boosted, band);
+                let boosted_t60 = band_t60_or_panic(&boosted, band, &context);
                 assert!(
-                    boosted_ratio > neutral_ratio * 1.15,
-                    "{engine} @{sample_rate}: band {band} ({} Hz) at {MAX_MULT}x must hold more \
-                     of its energy into the late tail than at {NEUTRAL_MULT}x — \
-                     late/early was {boosted_ratio:.5} against {neutral_ratio:.5}",
+                    boosted_t60 > neutral_t60 * 1.15,
+                    "{context}: band {band} ({} Hz) at {MAX_MULT}x must decay slower than at \
+                     {NEUTRAL_MULT}x — T60 {boosted_t60:.3} s against {neutral_t60:.3} s",
                     BAND_FREQS[band]
                 );
 
+                // The cut side is measured as level rather than as slope, for
+                // the reason `band_level_db_at` gives: a band cut hard is gone,
+                // and the slope of what is left is its neighbours'.
                 let cut = render(sample_rate, algorithm, &band_write(band, MIN_MULT));
-                let cut_ratio = band_decay_ratio(&cut, band);
+                let late = burst_seconds() + 1.0;
+                let neutral_level = band_level_db_at(&neutral, band, late);
+                let cut_level = band_level_db_at(&cut, band, late);
                 assert!(
-                    cut_ratio < neutral_ratio * 0.87,
-                    "{engine} @{sample_rate}: band {band} ({} Hz) at {MIN_MULT}x must lose its \
-                     energy sooner than at {NEUTRAL_MULT}x — \
-                     late/early was {cut_ratio:.5} against {neutral_ratio:.5}",
+                    cut_level < neutral_level - 3.0,
+                    "{context}: band {band} ({} Hz) at {MIN_MULT}x must have less energy left a \
+                     second into the tail than at {NEUTRAL_MULT}x — {cut_level:.1} dB against \
+                     {neutral_level:.1} dB",
                     BAND_FREQS[band]
                 );
             }
@@ -291,32 +415,77 @@ fn each_band_lengthens_its_own_part_of_the_spectrum() {
 /// The half of the claim a bare delta cannot make: the band that moved is the
 /// band that was dragged.
 ///
-/// Compared against bands two or more positions away — 1.7 octaves per step, so
-/// two steps is 3.4 octaves and well outside a `Q = 1` bell's skirt. Adjacent
-/// bands are deliberately *not* asserted on: they overlap by design, a decay EQ
-/// whose bands did not overlap would have audible gaps between them, and
-/// pinning them apart would be pinning a defect.
+/// Scoped by **octaves**, not by index distance, and that correction is the
+/// whole of what this guard is worth. The six centres are not evenly spaced:
+/// 100 to 400 is two octaves and 8000 to 12000 is 0.58 of one, so "two indices
+/// apart" runs from 3.6 octaves down to 1.19. Asserting band-limitation between
+/// 3500 Hz and 12 kHz — 1.78 octaves, against a `Q = 1` bell about 1.4 octaves
+/// wide — is asserting that a filter has no skirt, which is not a property any
+/// EQ has or should have.
+///
+/// `MIN_ISOLATED_OCTAVES` is the separation at which a bell's contribution is
+/// genuinely small. Closer pairs overlap by design: a decay EQ whose bands did
+/// not overlap would have audible gaps between them, and pinning them apart
+/// would be pinning a defect.
+///
+/// **Compared in consumed share rather than in delivered decay multiplier**, and
+/// that is a correction rather than a convenience. The multiplier is
+/// exponentially sensitive to how lossy the loop already is at a frequency, so
+/// at the shipped `damping = 0.3` a *small* filter gain at 12 kHz — where the
+/// absorption is eating most of the pass — shows up as a large decay multiplier
+/// and reads like a locality failure that is really the damper's own curve.
+/// `1 - T60_neutral/T60_shaped` is the same `1 - 1/m` the designer works in and
+/// is free of that.
+///
+/// Separation at which one band's bell no longer meaningfully reaches another.
+///
+/// A `Q = 1` peaking section is about 1.4 octaves wide between its half-gain
+/// points, so 2.5 octaves is comfortably outside it while still leaving nine of
+/// the fifteen band pairs in the population.
+const MIN_ISOLATED_OCTAVES: f64 = 2.5;
+
+fn octaves_between(a: usize, b: usize) -> f64 {
+    (f64::from(BAND_FREQS[a]) / f64::from(BAND_FREQS[b])).log2().abs()
+}
+
+/// Measured from neutral, so the clamp is **not** engaged: one band at 4.0x is
+/// a total requested share of 0.75, under `ANALYTIC_SAFE_TOTAL_SHARE`, so the
+/// boosts are passed through at full scale and what is measured is the filter's
+/// own band-limitation and nothing else. The clamp's own non-locality is a
+/// separate, deliberate property and has its own guard below.
 #[test]
 fn a_band_does_not_drag_the_far_side_of_the_spectrum_with_it() {
     for sample_rate in SAMPLE_RATES {
         for (algorithm, engine) in SHAPING_ENGINES {
             let neutral = render(sample_rate, algorithm, &[]);
             for band in 0..6 {
-                let boosted = render(sample_rate, algorithm, &band_write(band, MAX_MULT));
-                let own_change =
-                    band_decay_ratio(&boosted, band) / band_decay_ratio(&neutral, band);
+                let dragged = render(sample_rate, algorithm, &band_write(band, MAX_MULT));
+                let context = format!("{engine} @{sample_rate}");
+
+                let own = consumed_share(
+                    band_t60_or_panic(&neutral, band, &context),
+                    band_t60_or_panic(&dragged, band, &context),
+                );
+                assert!(
+                    own > 0.1,
+                    "{context}: dragging band {band} ({} Hz) to {MAX_MULT}x consumed only \
+                     {own:.4} of its own headroom, so the comparison below says nothing",
+                    BAND_FREQS[band]
+                );
 
                 for other in 0_usize..6 {
-                    if other.abs_diff(band) < 2 {
+                    if octaves_between(band, other) < MIN_ISOLATED_OCTAVES {
                         continue;
                     }
-                    let other_change =
-                        band_decay_ratio(&boosted, other) / band_decay_ratio(&neutral, other);
+                    let elsewhere = consumed_share(
+                        band_t60_or_panic(&neutral, other, &context),
+                        band_t60_or_panic(&dragged, other, &context),
+                    );
                     assert!(
-                        other_change < own_change * 0.6,
-                        "{engine} @{sample_rate}: dragging band {band} ({} Hz) moved distant \
-                         band {other} ({} Hz) by {other_change:.4}x against its own \
-                         {own_change:.4}x — the curve is not band-limited",
+                        elsewhere.abs() < own * 0.5,
+                        "{context}: dragging band {band} ({} Hz) changed distant band {other} \
+                         ({} Hz) by {elsewhere:.4} of a share against its own {own:.4} — the \
+                         curve is not band-limited",
                         BAND_FREQS[band],
                         BAND_FREQS[other]
                     );
@@ -333,20 +502,22 @@ fn a_band_does_not_drag_the_far_side_of_the_spectrum_with_it() {
 fn the_curve_is_monotonic_across_its_declared_travel() {
     for (algorithm, engine) in SHAPING_ENGINES {
         for band in 0..6 {
-            let mut previous = 0.0_f64;
+            let mut previous = f64::NEG_INFINITY;
             for multiplier in [MIN_MULT, 0.5, NEUTRAL_MULT, 2.0, MAX_MULT] {
-                let ratio = band_decay_ratio_over(
-                    &render(48_000.0, algorithm, &band_write(band, multiplier)),
-                    band,
-                    NEAR_WINDOWS,
-                );
+                let rendered = render(48_000.0, algorithm, &band_write(band, multiplier));
+                // Level a second into the tail rather than the fitted T60: a
+                // band cut to 0.25x is gone by then and the slope of what is
+                // left belongs to its neighbours, so a T60 fit stops ordering
+                // the bottom of the travel while the level still does.
+                let level = band_level_db_at(&rendered, band, burst_seconds() + 1.0);
                 assert!(
-                    ratio > previous,
-                    "{engine}: band {band} ({} Hz) must hold its tail longer at {multiplier}x \
-                     than at the setting below it — late/early {ratio:.5} after {previous:.5}",
+                    level > previous + 0.5,
+                    "{engine}: band {band} ({} Hz) must have more left a second into the tail at \
+                     {multiplier}x than at the setting below it — {level:.1} dB after \
+                     {previous:.1} dB",
                     BAND_FREQS[band]
                 );
-                previous = ratio;
+                previous = level;
             }
         }
     }
@@ -481,13 +652,13 @@ fn the_band_curve_survives_a_round_trip_through_another_algorithm() {
                 left,
                 sample_rate: 48_000.0,
             };
-            let direct_ratio = band_decay_ratio(&direct, band);
-            let round_ratio = band_decay_ratio(&round_tripped, band);
+            let direct_t60 = band_t60_or_panic(&direct, band, engine);
+            let round_t60 = band_t60_or_panic(&round_tripped, band, engine);
             assert!(
-                (round_ratio - direct_ratio).abs() < direct_ratio * 0.02,
+                (round_t60 - direct_t60).abs() < direct_t60 * 0.02,
                 "{engine}: band {band} ({} Hz) came back from an algorithm round trip shaping \
-                 differently — late/early {round_ratio:.5} against {direct_ratio:.5}. The \
-                 parameter cache is not carrying this id.",
+                 differently — T60 {round_t60:.3} s against {direct_t60:.3} s. The parameter \
+                 cache is not carrying this id.",
                 BAND_FREQS[band]
             );
         }
@@ -526,94 +697,129 @@ fn reverse_advertises_none_of_them() {
 
 // ── The shaping is relative, and stays relative ────────────────────────────
 
-/// Measurement `Q` for the calibration claim below.
-///
-/// Eight rather than the two the direction claims use, and narrower for a
-/// reason: this measurement compares a band against *itself* under a different
-/// Decay setting, so what a wide skirt admits is unshaped neighbour energy that
-/// pulls every reading toward 1.0 and would flatter the invariance it is
-/// checking. Bells only (bands 1-3): a shelf reaches half its design gain at
-/// its own corner frequency, so its centre is the one place on the curve that
-/// does not report the shelf's size.
-const NARROW_Q: f32 = 8.0;
-
-fn narrow_band_decay_ratio(render: &Render, band: usize) -> f64 {
-    let filtered = filter_at(&render.left, BAND_FREQS[band], render.sample_rate, NARROW_Q);
-    let at = |seconds: f32| ((render.sample_rate * seconds) as usize).min(filtered.len());
-    let early = rms(&filtered[at(LONG_WINDOWS[0])..at(LONG_WINDOWS[1])]);
-    let late = rms(&filtered[at(LONG_WINDOWS[2])..at(LONG_WINDOWS[3])]);
-    if early <= 0.0 {
-        return 0.0;
-    }
-    late / early
-}
-
-/// How many times longer the shaped band takes to fall by the same amount.
-///
-/// Both windows are the same two instants, so for a decay of the form
-/// `e^(-t/tau)` the ratio is `e^(-dt/tau)` and `ln(neutral) / ln(shaped)` is
-/// `tau_shaped / tau_neutral` with the window length cancelling out.
-fn achieved_decay_multiplier(neutral_ratio: f64, shaped_ratio: f64) -> f64 {
-    neutral_ratio.ln() / shaped_ratio.ln()
-}
-
 /// A curve set at one Decay setting means the same thing at the next one.
 ///
-/// **This is the claim `head_room_db` exists for, and it is the one an
+/// **This is the claim the per-band headroom exists for, and it is the one an
 /// arbitrary fixed dB-per-multiplier would fail.** A decay multiplier is a
-/// ratio, so the filter gain that delivers it has to be proportional to how
-/// much the loop already loses per pass — which is a strong function of Decay:
-/// on the plate at 0.4 the tank loses about 8 dB per half-traversal and at 0.85
-/// about 1.4 dB. A stage that applied a constant boost would therefore deliver
-/// a wildly different decay multiplier at each end of the Decay knob, and every
+/// ratio, so the filter gain that delivers it has to be proportional to how much
+/// the loop already loses per pass — which is a strong function of Decay: on the
+/// plate at 0.4 the tank loses about 8 dB per half-traversal and at 0.85 about
+/// 1.4 dB. A stage that applied a constant boost would deliver a wildly
+/// different decay multiplier at each end of the Decay knob, and every
 /// direction-only guard in this file would still pass.
 ///
-/// The tolerance is on the *spread across Decay settings*, not on the absolute
-/// multiplier, and deliberately so. The absolute number is **not** asserted:
-/// the delivered multiplier at a band centre depends on the band's shape and on
-/// what else sits in that engine's loop — measured between 1.5x and 3.4x for a
-/// declared 4.0x, in a windowed RMS estimate of a modal tail that is not a
-/// single exponential — and pinning a figure like that would be pinning the
-/// estimator. What is stable, and what the design promises, is that the figure
-/// does not move when Decay does.
+/// What is asserted is a **band** the delivered multiplier stays inside across
+/// the whole Decay range, plus the *direction* of the residual variation. An
+/// exact figure is deliberately not pinned: the delivered multiplier at a band
+/// centre depends on the band's shape — a shelf reaches only half its design
+/// gain at its own corner — and on how much of the measuring filter's passband
+/// the neighbours still occupy, and pinning a figure like that would be pinning
+/// the estimator rather than the stage.
 #[test]
 fn the_shaping_a_band_delivers_does_not_depend_on_the_decay_setting() {
-    // `damping` at zero so the only per-pass loss in the loop is the one the
-    // stage is told about: the plate's `OnePole` and the spring's damper both
-    // become pass-throughs, and the FDN's absorptive filter puts its HF corner
-    // above the bands measured here.
+    // Bells only (bands 1-3): a shelf reaches half its design gain at its own
+    // corner frequency, so its centre is the one place on the curve that does
+    // not report the shelf's size.
     for (algorithm, engine) in SHAPING_ENGINES {
         for band in [1_usize, 2, 3] {
             let mut delivered = Vec::new();
             for decay in [0.4_f32, 0.55, 0.7, 0.85] {
-                let base: Vec<Write> = vec![("damping", 0.0), ("decay", decay)];
+                let base: Vec<Write> = vec![("decay", decay)];
                 let mut shaped = base.clone();
                 shaped.push((BAND_PARAM_IDS[band], MAX_MULT));
 
-                let neutral_ratio = narrow_band_decay_ratio(&render(48_000.0, algorithm, &base), band);
-                let shaped_ratio = narrow_band_decay_ratio(&render(48_000.0, algorithm, &shaped), band);
-                assert!(
-                    neutral_ratio > 1e-6 && shaped_ratio > 1e-6,
-                    "{engine}: band {band} has no measurable tail at decay {decay} \
-                     ({neutral_ratio:e} neutral, {shaped_ratio:e} shaped)"
-                );
-                delivered.push((decay, achieved_decay_multiplier(neutral_ratio, shaped_ratio)));
+                let context = format!("{engine} at decay {decay}");
+                let neutral_t60 =
+                    band_t60_or_panic(&render(48_000.0, algorithm, &base), band, &context);
+                let shaped_t60 =
+                    band_t60_or_panic(&render(48_000.0, algorithm, &shaped), band, &context);
+                delivered.push((decay, shaped_t60 / neutral_t60));
             }
 
-            let mean = delivered.iter().map(|(_, value)| value).sum::<f64>() / delivered.len() as f64;
-            // A boost that delivered nothing would have a mean near 1.0 and a
-            // tiny spread, which would pass the spread check on its own.
-            assert!(
-                mean > 1.4,
-                "{engine}: band {band} at {MAX_MULT}x delivered a mean decay multiplier of only \
-                 {mean:.2}, so the spread below says nothing"
-            );
             for (decay, value) in delivered.iter() {
                 assert!(
-                    (value - mean).abs() < mean * 0.15,
+                    (1.8..=4.5).contains(value),
+                    "{engine}: band {band} at a requested {MAX_MULT}x delivered {value:.2}x at \
+                     decay {decay} — outside the band the control is supposed to hold across \
+                     the Decay range"
+                );
+            }
+
+            // ...and it barely moves across the range, which is the actual
+            // claim.
+            //
+            // The plate and the spring measure under 4% of spread. The FDN
+            // carries most of the 20%, and for a reason worth naming rather
+            // than absorbing: its absorption is `rt60_hf = rt60 * (1 - damping)
+            // * 0.5`, so moving Decay changes the *shape* of the loop's
+            // magnitude curve around the 2 kHz crossover and not only its
+            // scale, and a band sitting in that transition is measured through
+            // a filter whose passband spans loop gains that no longer stand in
+            // the same relation to each other. The plate's `OnePole` and the
+            // spring's damper have no such term.
+            //
+            // 20% is therefore loose enough to survive the estimator on the one
+            // engine whose loop reshapes, and it is still an order of magnitude
+            // tighter than a fixed dB-per-multiplier stage could reach: such a
+            // stage would ask the same boost of a headroom running from about
+            // 8 dB to about 1.4 dB on the plate, over-delivering at one end and
+            // asking for more than the loop has at the other.
+            let mean = delivered.iter().map(|(_, value)| value).sum::<f64>()
+                / delivered.len() as f64;
+            for (decay, value) in delivered.iter() {
+                assert!(
+                    (value - mean).abs() < mean * 0.2,
                     "{engine}: band {band} at {MAX_MULT}x delivered {value:.2}x at decay {decay} \
                      against a mean of {mean:.2}x across the Decay range — the shaping is not \
                      relative to the loop's own per-pass loss"
+                );
+            }
+        }
+    }
+}
+
+/// The defect F5 named, pinned at the setting the product ships.
+///
+/// The stage used to be handed one scalar loop gain, taken from the FDN's
+/// low-frequency RT60. Its absorption already removes roughly twice as much per
+/// pass above the 2 kHz crossover, so above there the correction supplied about
+/// half the dB it needed — and a requested 4.0x came out at **0.98x**, below
+/// neutral, at the shipped `damping = 0.3`. Nothing in this file could see it:
+/// the direction assertions ran at `damping = 0.05`, where the gap is small.
+///
+/// Asserted as a floor on the delivered multiplier rather than as a target,
+/// because the target is what the estimator cannot carry. A floor of 2.0x on a
+/// requested 4.0x is far above the 0.98x the defect produced and far below what
+/// the fixed stage delivers, so it discriminates without pinning the instrument.
+#[test]
+fn a_boost_above_the_damping_crossover_still_lengthens_at_the_shipped_damping() {
+    for damping in [0.3_f32, 0.6] {
+        for (algorithm, engine) in SHAPING_ENGINES {
+            // Bands 3 and 4 sit above the FDN's 2 kHz absorption crossover,
+            // which is where the single-scalar version lost its correction.
+            // Band 5 is above it too and is deliberately absent: it is a
+            // *shelf*, and a shelf reaches half its design gain at its own
+            // corner frequency, so measuring it at 12 kHz caps the deliverable
+            // multiplier near 1.6x whatever the wiring does. That is the band's
+            // shape, not the defect this guard is for.
+            for band in [3_usize, 4] {
+                let base: Vec<Write> = vec![("damping", damping)];
+                let mut shaped = base.clone();
+                shaped.push((BAND_PARAM_IDS[band], MAX_MULT));
+
+                let context = format!("{engine} at damping {damping}");
+                let neutral_t60 =
+                    band_t60_or_panic(&render(48_000.0, algorithm, &base), band, &context);
+                let shaped_t60 =
+                    band_t60_or_panic(&render(48_000.0, algorithm, &shaped), band, &context);
+                let delivered = shaped_t60 / neutral_t60;
+
+                assert!(
+                    delivered > 2.0,
+                    "{context}: band {band} ({} Hz) at a requested {MAX_MULT}x delivered only \
+                     {delivered:.2}x — T60 {shaped_t60:.3} s against {neutral_t60:.3} s. The \
+                     stage is being told a loop gain that does not include the damper.",
+                    BAND_FREQS[band]
                 );
             }
         }

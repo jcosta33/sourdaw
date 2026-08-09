@@ -15,7 +15,7 @@ use crate::decay_curve::{decay_to_rt60_seconds, MAX_RT60_SECONDS, MIN_RT60_SECON
 // below: that stage gives the tail two decay rates either side of 2 kHz, this
 // one gives it six. They compose rather than compete — `damping` still sets the
 // broad HF tilt and the EQ shapes around it.
-use crate::decay_eq::{loop_gain_from_rt60, DecayRateEq};
+use crate::decay_eq::{DecayRateEq, NUM_PROBES};
 // `early_late` is a crate-wide contract too, and used to be honoured only
 // here. The tapped delay line moved out so the plate could blend the same
 // early signal against its own tank.
@@ -157,6 +157,34 @@ impl AbsorptiveFilter {
         let high = input - low;
         low * self.g_low + high * self.g_high
     }
+
+    /// `|H(f)|` of this filter, which **is** the line's per-pass loop gain:
+    /// the mixing matrix is orthonormal and nothing else in the loop has gain.
+    ///
+    /// `out = L*g_low + (1 - L)*g_high` where `L` is the one-pole lowpass, so
+    /// `H = g_high + L*(g_low - g_high)` — complex, because `L` is, and taking
+    /// the magnitude of the two bands separately would report a filter with no
+    /// crossover phase. This is what the Decay Rate EQ is told, and getting it
+    /// as a single low-frequency scalar is what made a requested 4.0x deliver
+    /// 0.98x above 2 kHz at the shipped damping.
+    fn magnitude_at(&self, freq: f32, sample_rate: f32) -> f32 {
+        let w = TAU * freq / sample_rate;
+        let real = 1.0 - self.coeff * w.cos();
+        let imag = self.coeff * w.sin();
+        let denominator = real * real + imag * imag;
+        if denominator <= 1e-30 {
+            return self.g_low.abs();
+        }
+        // L = (1 - c) / (1 - c e^-jw), rationalised.
+        let scale = (1.0 - self.coeff) / denominator;
+        let low_real = scale * real;
+        let low_imag = -scale * imag;
+
+        let delta = self.g_low - self.g_high;
+        let total_real = self.g_high + delta * low_real;
+        let total_imag = delta * low_imag;
+        (total_real * total_real + total_imag * total_imag).sqrt()
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -245,12 +273,12 @@ impl FdnReverb {
             .map(|&len| AbsorptiveFilter::new(len, sample_rate, 2.0, 0.8))
             .collect();
 
-        // Seeded from the same 2.0 s the absorptive filters are, so a line's
-        // decay EQ and its absorption agree about what "the base rate" is
-        // before the first `decay` write arrives.
+        // Seeded flat and immediately corrected: the constructor below calls
+        // `update_absorptive_filters`, which hands each stage the real
+        // frequency-dependent magnitude of the line it sits in.
         let decay_eqs: Vec<DecayRateEq> = delay_lengths
             .iter()
-            .map(|&len| DecayRateEq::new(sample_rate, loop_gain_from_rt60(len, sample_rate, 2.0)))
+            .map(|_| DecayRateEq::new(sample_rate, 1.0))
             .collect();
 
         // Incommensurate LFO frequencies (Costello-inspired)
@@ -425,19 +453,30 @@ impl FdnReverb {
             }
         }
 
-        // The decay EQ shapes *relative* to the base rate, so it has to be
-        // re-told the base rate whenever the base rate moves. Reached from
+        // The decay EQ shapes *relative* to the loop's own per-pass loss, so it
+        // has to be re-told that loss whenever it moves. Reached from
         // `decay`/`rt60`, from `damping`, and — the case a stage that stored
         // its delay length at construction would have got wrong — from `size`,
         // which rewrites every `delay_lengths[i]` before calling this.
+        //
+        // The magnitude comes from the absorptive filter that is actually in
+        // the line rather than from `loop_gain_from_rt60`, which reports only
+        // the low-frequency figure. Above the 2 kHz crossover the two differ by
+        // the whole of `damping`, and the difference is not a detail: told the
+        // low-frequency figure, this stage supplied about half the dB it needed
+        // up there and a requested 4.0x came out below neutral.
+        let sample_rate = self.sample_rate;
         for (i, eq) in self.decay_eqs.iter_mut().enumerate() {
-            if i < self.delay_lengths.len() {
-                eq.set_base_loop_gain(loop_gain_from_rt60(
-                    self.delay_lengths[i],
-                    self.sample_rate,
-                    self.rt60,
-                ));
+            if i >= self.absorptive_filters.len() {
+                continue;
             }
+            let filter = &self.absorptive_filters[i];
+            let probes = *eq.probe_frequencies();
+            let mut gains = [0.0_f32; NUM_PROBES];
+            for (index, freq) in probes.iter().enumerate() {
+                gains[index] = filter.magnitude_at(*freq, sample_rate);
+            }
+            eq.set_loop_gains(&gains);
         }
     }
 

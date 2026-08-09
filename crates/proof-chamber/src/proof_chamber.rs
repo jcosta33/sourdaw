@@ -8,7 +8,7 @@
 /// freeze, shimmer (granular pitch shifter in feedback), and pre-delay.
 use std::f32::consts::TAU;
 
-use crate::decay_eq::DecayRateEq;
+use crate::decay_eq::{one_pole_magnitude, DecayRateEq, NUM_PROBES};
 use crate::early_reflections::EarlyReflections;
 use crate::output_stage::OutputStage;
 
@@ -419,9 +419,15 @@ pub struct ProofChamber {
     /// which is exactly the kind of error a render-delta guard passes.
     decay_eq_left: DecayRateEq,
     decay_eq_right: DecayRateEq,
-    /// The base loop gain the two stages above were last designed for, so a
-    /// per-block redesign only happens when `decay` or `freeze` actually moved.
+    /// The `(per-half-traversal scalar gain, tank damping coefficient)` the two
+    /// stages above were last designed for, so a per-block redesign only
+    /// happens when one of them actually moved.
+    ///
+    /// Both, not just the gain: the tank's damper is inside the same loop, so
+    /// the loop's per-pass loss is a function of frequency and `damping` moves
+    /// it as surely as `decay` does.
     decay_eq_base_gain: f32,
+    decay_eq_damping: f32,
 
     // Tank state (cross-feedback)
     left_tank_output: f32,
@@ -619,11 +625,13 @@ impl ProofChamber {
             right_ap: Allpass::new(right_ap_len, 0.50),
             right_delay_2: DelayLine::new(right_d2_len),
 
-            // Seeded at the constructor's own `decay` of 0.5, so the stage
-            // agrees with the tank before the first block runs.
-            decay_eq_left: DecayRateEq::new(sample_rate, 0.5 * 0.5),
-            decay_eq_right: DecayRateEq::new(sample_rate, 0.5 * 0.5),
-            decay_eq_base_gain: 0.5 * 0.5,
+            // Seeded flat; `process` hands both stages the tank's real
+            // frequency-dependent per-pass magnitude before the first sample,
+            // and the sentinels below force that on the first block.
+            decay_eq_left: DecayRateEq::new(sample_rate, 1.0),
+            decay_eq_right: DecayRateEq::new(sample_rate, 1.0),
+            decay_eq_base_gain: f32::NAN,
+            decay_eq_damping: f32::NAN,
 
             left_tank_output: 0.0,
             right_tank_output: 0.0,
@@ -787,10 +795,22 @@ impl ProofChamber {
         // to be relative to, and a boost applied to a unity-gain loop is a
         // resonator, not a longer tail.
         let decay_eq_gain = target_decay * target_decay;
-        if decay_eq_gain != self.decay_eq_base_gain {
+        if decay_eq_gain != self.decay_eq_base_gain || damp != self.decay_eq_damping {
             self.decay_eq_base_gain = decay_eq_gain;
-            self.decay_eq_left.set_base_loop_gain(decay_eq_gain);
-            self.decay_eq_right.set_base_loop_gain(decay_eq_gain);
+            self.decay_eq_damping = damp;
+
+            // The tank's per-pass loss is `decay^2` times the damper's own
+            // magnitude, and the damper is a lowpass — so the loss at 8 kHz is
+            // nothing like the loss at 100 Hz, and a stage told only the scalar
+            // under-corrects wherever the damper bites. The probe grid is the
+            // stage's own, so the two describe the same loop.
+            let probes = *self.decay_eq_left.probe_frequencies();
+            let mut gains = [0.0_f32; NUM_PROBES];
+            for (index, freq) in probes.iter().enumerate() {
+                gains[index] = decay_eq_gain * one_pole_magnitude(damp, *freq, self.sample_rate);
+            }
+            self.decay_eq_left.set_loop_gains(&gains);
+            self.decay_eq_right.set_loop_gains(&gains);
         }
 
         let mod_depth = if self.freeze { 0.0 } else { self.mod_depth };

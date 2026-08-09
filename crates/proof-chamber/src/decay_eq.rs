@@ -137,6 +137,65 @@ impl Biquad {
         self.a2 = ((a + 1.0) - (a - 1.0) * cos_w0 - sqrt_a_alpha) / a0;
     }
 
+    /// Make this section a pass-through, leaving its state alone.
+    pub fn to_identity(&mut self) {
+        self.b0 = 1.0;
+        self.b1 = 0.0;
+        self.b2 = 0.0;
+        self.a1 = 0.0;
+        self.a2 = 0.0;
+    }
+
+    /// Whether both poles are strictly inside the unit circle.
+    ///
+    /// Jury's stability triangle for a second-order section: `|a2| < 1` and
+    /// `|a1| < 1 + a2`. Two comparisons, no roots taken.
+    ///
+    /// Checked rather than trusted because the designer's conditioning depends
+    /// on the *normalised* centre frequency, and a band centre that is fine at
+    /// 48 kHz is a very small angle at 192 kHz — where `a1 -> -2` and `a2 -> 1`
+    /// and an `f32` rounding of `a2` to 1.0 or above puts a pole on or outside
+    /// the circle. A section that has drifted out is reset to a pass-through:
+    /// losing one band of shaping is a defect, and a delay line whose feedback
+    /// filter has a pole outside the unit circle is a scream.
+    pub fn is_stable(&self) -> bool {
+        self.a2.abs() < 1.0 && self.a1.abs() < 1.0 + self.a2
+    }
+
+    /// `|H(e^jw)|^2`, from precomputed trig for `w`.
+    ///
+    /// Squared, because every caller compares against a squared budget and the
+    /// square root would be the most expensive operation in the loop.
+    ///
+    /// **In `f64`, and that is load-bearing rather than caution.** At a low
+    /// normalised frequency a second-order section has `a1 -> -2` and
+    /// `a2 -> 1`, so `1 + a1*cos w + a2*cos 2w` is three terms of size ~2
+    /// cancelling to something of size ~1e-5. In `f32` that leaves a percent of
+    /// relative error in a denominator the bound then divides by, and the first
+    /// version of this reported a *cut*-only curve raising a loop's gain by
+    /// 0.0027 dB at 196 Hz on a 176.4 kHz grid — an artefact of the probe, not
+    /// of the filter. This runs on a parameter write rather than per sample, so
+    /// the wider type costs nothing that matters.
+    #[inline]
+    pub fn magnitude_squared(&self, cos_w: f64, sin_w: f64, cos_2w: f64, sin_2w: f64) -> f64 {
+        let b0 = f64::from(self.b0);
+        let b1 = f64::from(self.b1);
+        let b2 = f64::from(self.b2);
+        let a1 = f64::from(self.a1);
+        let a2 = f64::from(self.a2);
+
+        let numerator_real = b0 + b1 * cos_w + b2 * cos_2w;
+        let numerator_imag = -(b1 * sin_w + b2 * sin_2w);
+        let denominator_real = 1.0 + a1 * cos_w + a2 * cos_2w;
+        let denominator_imag = -(a1 * sin_w + a2 * sin_2w);
+        let denominator =
+            denominator_real * denominator_real + denominator_imag * denominator_imag;
+        if denominator <= 1e-300 {
+            return f64::INFINITY;
+        }
+        (numerator_real * numerator_real + numerator_imag * numerator_imag) / denominator
+    }
+
     #[inline]
     pub fn process(&mut self, input: f32) -> f32 {
         let output = self.b0 * input + self.z1;
@@ -149,6 +208,24 @@ impl Biquad {
         self.z1 = 0.0;
         self.z2 = 0.0;
     }
+}
+
+/// Magnitude of the one-pole lowpass `y[n] = x[n]*(1-c) + y[n-1]*c` at `freq`.
+///
+/// Exported because all three engines that run this stage put one of these in
+/// the same loop — the plate's `OnePole`, the spring's damper and the FDN's
+/// absorption crossover are the same difference equation — and each has to
+/// report its own magnitude at this stage's probe frequencies. Deriving it here
+/// once is what stops three copies of the algebra drifting apart.
+pub fn one_pole_magnitude(coeff: f32, freq: f32, sample_rate: f32) -> f32 {
+    let c = coeff.clamp(0.0, 0.999_999);
+    if c <= 0.0 {
+        return 1.0;
+    }
+    let w = TAU * freq / sample_rate;
+    let real = 1.0 - c * w.cos();
+    let imag = c * w.sin();
+    (1.0 - c) / (real * real + imag * imag).sqrt()
 }
 
 // ---------------------------------------------------------------------------
@@ -194,54 +271,105 @@ pub fn band_index_for_name(name: &str) -> Option<usize> {
 /// `rt60_seconds` — Jot's `g = 10^(-3M / (fs * RT60))`.
 ///
 /// The FDN's own `AbsorptiveFilter` computes the identical expression for its
-/// low band; this exists so the decay EQ is told the *same* base gain the line
-/// is actually running at rather than a second approximation of it.
+/// low band. It is **not** what the decay EQ is told — `AbsorptiveFilter::
+/// magnitude_at` is, because the low-frequency figure alone is exactly the
+/// error that made the control weakest where the damper bites hardest — and it
+/// is kept because it is the readable statement of the Jot relation the whole
+/// stage is derived from, and `rt60_conversion_matches_the_jot_gain_the_fdn_
+/// lines_run_at` pins the two against each other.
 pub fn loop_gain_from_rt60(delay_samples: usize, sample_rate: f32, rt60_seconds: f32) -> f32 {
     if rt60_seconds <= 0.01 || sample_rate <= 0.0 {
-        return MIN_BASE_LOOP_GAIN;
+        return MIN_LOOP_GAIN;
     }
     let m = delay_samples as f32;
     10.0_f32.powf(-3.0 * m / (sample_rate * rt60_seconds))
 }
 
-/// Floor on the base loop gain, i.e. a ceiling of 60 dB on `head_room_db`.
+/// Floor on a loop gain, i.e. a ceiling of 60 dB on `head_room_db`.
 ///
 /// Without it a plate at `decay = 0` divides by `log10(0)` and every filter is
 /// designed at infinite gain. 60 dB is past any setting an engine reaches in
-/// practice — the FDN's shortest line at its shortest RT60 is about 36 dB — and
-/// a peaking section designed at the ceiling still has its poles comfortably
-/// inside the unit circle in `f32`.
-const MIN_BASE_LOOP_GAIN: f32 = 0.001;
+/// practice — the FDN's shortest line at its shortest RT60 is about 36 dB.
+const MIN_LOOP_GAIN: f32 = 0.001;
 
-/// How much of the loop's per-pass headroom the cascade may spend on boosts,
-/// summed across all six bands.
+/// How close to unity the loop is allowed to get once this stage is in it, as
+/// an **absolute** number of dB.
 ///
-/// **This is a stability bound, not a taste control, and it is the one thing
-/// the original `decay_eq.rs` was missing.** Each band on its own is stable by
-/// construction: the resulting per-pass gain in that band is `g^(1/m)`, which
-/// is below unity for every finite `m`. Six *cascaded* sections are not, because
-/// their magnitudes multiply — a frequency sitting between two boosted bells
-/// receives both boosts, and with several bands pushed to 4.0x the compound
-/// gain exceeds the loop's headroom and the reverb self-oscillates.
+/// Absolute rather than a fraction of the headroom, and that is the whole of
+/// the correction. A proportional-only margin — which is what
+/// `MAX_TOTAL_BOOST = 0.95` was — guarantees `loop <= 10^(-0.05 * head_room/20)`,
+/// so the guaranteed margin goes to zero exactly as the headroom does, while
+/// the `f32` coefficient error of six RBJ designs does not shrink with it. Past
+/// roughly 0.02 dB of headroom the error dominates and the bound stops
+/// bounding: measured `loop = 1.000994` at `decay = 0.9999` and `1.000076` at
+/// the descriptor's own maximum of 0.999.
 ///
-/// The bound is the conservative one, which is what makes it cheap enough to
-/// evaluate on a parameter write: a cascade's magnitude in dB is the sum of its
-/// sections', and a peaking or shelving section never exceeds its own design
-/// gain, so `|H| <= sum of the positive design gains`. Writing each design gain
-/// as `head_room_db * (1 - 1/m)` makes the whole bound scale-free — the
-/// `head_room_db` factors cancel — and stability reduces to
+/// 0.02 dB, not the 0.1 this first carried. The bound now measures the
+/// *realised* cascade — `|H|` computed in `f64` from the coefficients the
+/// designer actually produced — so the margin no longer has to absorb
+/// per-section rounding that the measurement can see directly. It covers only
+/// the gap between the loop the engine reports and the loop it runs. The
+/// difference is not cosmetic: an absolute margin is a growing *fraction* of
+/// the headroom as a loop gets longer, and at 0.1 dB it took 37% of the budget
+/// on an FDN at `decay = 0.85`, which showed up as a requested 4.0x delivering
+/// 1.42x.
+const LIMIT_MARGIN_DB: f32 = 0.02;
+
+/// Additional margin as a fraction of the band's own headroom, so a deep loop
+/// keeps proportional safety as well as the absolute floor above.
+const MARGIN_FRACTION: f32 = 0.02;
+
+/// Below this much shaping, a section is made an exact pass-through instead of
+/// being designed.
 ///
-/// ```text
-/// sum over boosted bands of (1 - 1/m) < 1
-/// ```
+/// Not a performance shortcut — a correctness one, and it is the second half of
+/// why the margin has to be absolute. At a low normalised frequency a
+/// second-order section has `a1 -> -2` and `a2 -> 1`, and `f32` stores those
+/// with an absolute error around 6e-8. Near the pole the magnitude goes as
+/// `1/(1 - r)^2`, which at 100 Hz on a 176.4 kHz grid is about 1e-5, so that
+/// rounding is worth roughly **0.01 dB of magnitude error per section** —
+/// bigger than the shaping being asked for whenever the loop is nearly
+/// lossless. Measured: six *cut*-only bands on a loop of per-pass gain 0.999
+/// took it to 1.000268 at 196 Hz. A cut raising a loop's gain is nonsense; it
+/// was six roundings of a filter that was supposed to be almost exactly 1.
 ///
-/// 0.95 leaves 5% of the headroom as margin. One band alone reaches
-/// `1 - 1/4 = 0.75` and is never scaled, so the common case and every per-band
-/// measurement in `decay_eq_parameter_surface.rs` are untouched by this; it
-/// engages only when two or more bands are boosted hard at once, and then it
-/// scales the boosts proportionally rather than refusing the write. Cuts are
-/// left alone: they can only shorten the tail.
-const MAX_TOTAL_BOOST: f32 = 0.95;
+/// 0.05 dB of decay-rate shaping is inaudible, so nothing is lost by refusing
+/// to design it, and an identity section is exactly 1.0 with no rounding at all.
+const MIN_DESIGNABLE_GAIN_DB: f32 = 0.05;
+
+/// Ceiling on a single section's design gain, in either direction.
+///
+/// The cut side is what needs it. `head_room_db * (1 - 1/0.25)` is three times
+/// the loop's own per-pass loss, and where the loop is already lossy — an FDN
+/// band above its absorption crossover at the shipped damping — that reaches
+/// 60 dB and beyond. A 60 dB notch does not mean "this band decays four times
+/// faster", it means "this band is gone", and it asks the `f32` designer for a
+/// filter whose coefficients span nine orders of magnitude for no audible gain
+/// over a 36 dB one. The boost side never reaches this in practice — a boost is
+/// bounded by three quarters of the headroom — but it is applied symmetrically
+/// so no direction can quietly exceed it.
+const MAX_DESIGN_GAIN_DB: f32 = 36.0;
+
+/// Bisection steps used to find the largest boost scale the loop can afford.
+///
+/// **Bisection rather than a fixed-point correction, and the difference is
+/// observable.** The cascade's dB response is close to but not exactly linear
+/// in the design gains, so a `scale *= affordable / asked` iteration lands
+/// somewhere near the budget rather than on it — and *where* it lands depends
+/// on how many passes it happened to take. That made the clamp's outcome depend
+/// on iteration dynamics rather than only on the curve: asking for a sixth
+/// boosted band could leave an untouched band delivering slightly *more* than
+/// it had with five, which is not a thing a user can be told.
+///
+/// The excess is monotone in the scale, so the feasible set is an interval
+/// `[0, s*]` and bisection converges on `s*` from a fixed number of steps.
+/// Ten gives a resolution of about one part in a thousand, which is far below
+/// audibility, and the count is fixed because this runs on the audio thread.
+const SCALE_BISECTION_STEPS: usize = 10;
+
+/// The last design gain handed to each section, in dB. Measurement surface for
+/// the guards, and the quantity the panel draws as the delivered curve.
+type DesignGains = [f32; NUM_BANDS];
 
 /// One band of the Decay Rate EQ.
 #[derive(Clone, Copy)]
@@ -301,29 +429,142 @@ pub fn default_bands() -> [DecayEqBand; NUM_BANDS] {
     ]
 }
 
+/// Frequencies the stability bound is evaluated at, and the frequencies an
+/// engine has to report its loop magnitude at.
+///
+/// Two DC/Nyquist ends, the six band centres, the five geometric midpoints
+/// between adjacent centres, and a twelve-point geometric sweep across the
+/// whole band. The ends are not decoration: a high-shelf boost reaches its
+/// maximum at Nyquist and a low-shelf boost at DC, so a sweep that stopped at
+/// 20 kHz would miss both peaks entirely. The midpoints are where a cascade
+/// peaks when two adjacent bells are boosted together, which is the shape the
+/// bound exists for.
+pub const NUM_PROBES: usize = 25;
+
+const PROBE_SWEEP_POINTS: usize = 12;
+
+/// Precomputed trig for the probe grid.
+///
+/// Depends only on the sample rate, so it is built once at construction and
+/// every redesign reads it. `magnitude_squared` needs `cos w`, `sin w`,
+/// `cos 2w` and `sin 2w`, and computing four transcendentals per probe per
+/// section per pass would put roughly 2400 of them on a parameter write.
+struct ProbeGrid {
+    freqs: [f32; NUM_PROBES],
+    cos_w: [f64; NUM_PROBES],
+    sin_w: [f64; NUM_PROBES],
+    cos_2w: [f64; NUM_PROBES],
+    sin_2w: [f64; NUM_PROBES],
+    /// Probe index carrying each band's own centre frequency.
+    band_probe: [usize; NUM_BANDS],
+}
+
+impl ProbeGrid {
+    fn new(sample_rate: f32) -> Self {
+        let nyquist = sample_rate * 0.5;
+        let mut freqs = [0.0_f32; NUM_PROBES];
+        let mut band_probe = [0_usize; NUM_BANDS];
+
+        freqs[0] = 0.0;
+        freqs[1] = nyquist;
+
+        let bands = default_bands();
+        for (index, band) in bands.iter().enumerate() {
+            let probe = 2 + index;
+            freqs[probe] = clamp_band_frequency(band.freq, sample_rate);
+            band_probe[index] = probe;
+        }
+        for index in 0..(NUM_BANDS - 1) {
+            let low = freqs[2 + index];
+            let high = freqs[3 + index];
+            freqs[8 + index] = (low * high).sqrt();
+        }
+
+        let start = 20.0_f32.min(nyquist * 0.5);
+        let end = nyquist * 0.98;
+        let ratio = (end / start).powf(1.0 / (PROBE_SWEEP_POINTS - 1) as f32);
+        let mut sweep = start;
+        for index in 0..PROBE_SWEEP_POINTS {
+            freqs[13 + index] = sweep;
+            sweep *= ratio;
+        }
+
+        let mut grid = Self {
+            freqs,
+            cos_w: [0.0; NUM_PROBES],
+            sin_w: [0.0; NUM_PROBES],
+            cos_2w: [0.0; NUM_PROBES],
+            sin_2w: [0.0; NUM_PROBES],
+            band_probe,
+        };
+        for index in 0..NUM_PROBES {
+            let w = std::f64::consts::TAU * f64::from(grid.freqs[index]) / f64::from(sample_rate);
+            grid.cos_w[index] = w.cos();
+            grid.sin_w[index] = w.sin();
+            grid.cos_2w[index] = (2.0 * w).cos();
+            grid.sin_2w[index] = (2.0 * w).sin();
+        }
+        grid
+    }
+}
+
+/// A band centre above Nyquist designs a filter at a wrapped angle, which is
+/// how a stage that measures correctly at 48 kHz renders something else at
+/// another rate. 0.45 keeps the top band below the fold at every rate.
+fn clamp_band_frequency(freq: f32, sample_rate: f32) -> f32 {
+    freq.min(sample_rate * 0.45)
+}
+
 /// Decay Rate EQ for **one** recirculating path.
 ///
 /// One instance per independent loop: two on the plate (one per tank half), one
 /// on the spring, and one per delay line on the FDN — where each line has its
-/// own length and therefore its own base loop gain.
+/// own length and therefore its own loop gain.
 pub struct DecayRateEq {
     biquads: [Biquad; NUM_BANDS],
     bands: [DecayEqBand; NUM_BANDS],
     sample_rate: f32,
-    /// Per-pass gain of the loop this stage sits in, before the EQ.
-    base_loop_gain: f32,
+    probes: ProbeGrid,
+    /// Per-pass magnitude of the loop this stage sits in, **excluding** this
+    /// stage, at each probe frequency.
+    ///
+    /// A vector rather than the single number this used to be, because the
+    /// number was wrong in a way that made the control weakest exactly where a
+    /// user would reach for it. Every engine that runs this stage also has a
+    /// damping filter in the same loop — the plate's `OnePole`, the spring's
+    /// damper, the FDN's absorption crossover — so the loop's per-pass loss is
+    /// a *function of frequency*, and the correction that turns a multiplier
+    /// into a filter gain is proportional to that loss. Told a single
+    /// low-frequency figure, the stage supplied roughly half the dB it needed
+    /// above the FDN's 2 kHz crossover: at the shipped `damping = 0.3` a
+    /// requested 4.0x delivered 0.98x on fdn8 — *less than neutral*.
+    loop_gains: [f32; NUM_PROBES],
+    design_gains: DesignGains,
 }
 
 impl DecayRateEq {
     pub fn new(sample_rate: f32, base_loop_gain: f32) -> Self {
+        let clamped = base_loop_gain.clamp(MIN_LOOP_GAIN, 1.0);
         let mut eq = Self {
             biquads: core::array::from_fn(|_| Biquad::new()),
             bands: default_bands(),
             sample_rate,
-            base_loop_gain: base_loop_gain.clamp(MIN_BASE_LOOP_GAIN, 1.0),
+            probes: ProbeGrid::new(sample_rate),
+            loop_gains: [clamped; NUM_PROBES],
+            design_gains: [0.0; NUM_BANDS],
         };
         eq.recompute_filters();
         eq
+    }
+
+    /// The frequencies an engine must report its loop magnitude at.
+    ///
+    /// The grid belongs to this stage rather than to the engines because the
+    /// stability bound is evaluated on it: an engine that sampled its damper
+    /// somewhere else would be describing a different loop than the one being
+    /// bounded.
+    pub fn probe_frequencies(&self) -> &[f32; NUM_PROBES] {
+        &self.probes.freqs
     }
 
     /// Set a band's decay multiplier.
@@ -350,18 +591,34 @@ impl DecayRateEq {
         self.bands[band_index].multiplier
     }
 
-    /// Tell the stage what the loop around it is doing.
+    /// Tell the stage what the loop around it is doing, at every probe.
     ///
     /// Called whenever the host engine's decay, damping or delay length moves —
-    /// the shaping is *relative* to the base decay, so a curve set at one Decay
-    /// setting has to keep meaning the same thing at the next one.
-    pub fn set_base_loop_gain(&mut self, gain: f32) {
-        let clamped = gain.clamp(MIN_BASE_LOOP_GAIN, 1.0);
-        if self.base_loop_gain == clamped {
-            return;
+    /// the shaping is *relative* to the loop's own per-pass loss, so a curve set
+    /// at one Decay setting has to keep meaning the same thing at the next one,
+    /// and a band sitting where the damper is eating 6 dB a pass needs a
+    /// different correction from one sitting where it is eating none.
+    pub fn set_loop_gains(&mut self, gains: &[f32; NUM_PROBES]) {
+        let mut changed = false;
+        for index in 0..NUM_PROBES {
+            let clamped = gains[index].clamp(MIN_LOOP_GAIN, 1.0);
+            if self.loop_gains[index] != clamped {
+                self.loop_gains[index] = clamped;
+                changed = true;
+            }
         }
-        self.base_loop_gain = clamped;
-        self.recompute_filters();
+        if changed {
+            self.recompute_filters();
+        }
+    }
+
+    /// The flat case: a loop whose per-pass loss is the same at every
+    /// frequency. No engine in this crate is actually flat — all three have a
+    /// damper in the loop — so this exists for tests and for a caller that has
+    /// nothing better to report.
+    pub fn set_base_loop_gain(&mut self, gain: f32) {
+        let clamped = gain.clamp(MIN_LOOP_GAIN, 1.0);
+        self.set_loop_gains(&[clamped; NUM_PROBES]);
     }
 
     /// True while every band sits at 1.0x, i.e. while the cascade is the
@@ -373,53 +630,212 @@ impl DecayRateEq {
             .all(|band| band.multiplier == DEFAULT_MULTIPLIER)
     }
 
+    /// How much dB each band may spend, from the loop's own loss *at that
+    /// band's centre*, less the margin.
+    ///
+    /// Subtracting an absolute margin here is what makes the stage go quietly
+    /// transparent as the loop approaches unity rather than fighting `f32`
+    /// rounding for the last hundredth of a dB. It is also the honest answer:
+    /// a loop that loses 0.017 dB a pass — the plate at the descriptor's
+    /// maximum `decay` of 0.999 — has nothing to redistribute, and a decay
+    /// multiplier relative to an effectively infinite decay is not a control,
+    /// it is a resonator.
+    fn band_budget_db(&self, band: usize) -> f32 {
+        let head_room_db = self.head_room_db(band);
+        let margin = LIMIT_MARGIN_DB.max(head_room_db * MARGIN_FRACTION);
+        (head_room_db - margin).max(0.0)
+    }
+
+    fn head_room_db(&self, band: usize) -> f32 {
+        -20.0 * self.loop_gains[self.probes.band_probe[band]].log10()
+    }
+
     fn recompute_filters(&mut self) {
-        // `-20 * log10(g)`, the per-pass loss the loop already has, which is
-        // both the scale of the shaping and the budget it has to stay inside.
-        let head_room_db = -20.0 * self.base_loop_gain.log10();
+        self.design_all(1.0);
 
-        let mut boost_total = 0.0_f32;
-        for band in self.bands.iter() {
-            boost_total += (1.0 - 1.0 / band.multiplier).max(0.0);
-        }
-        let mut boost_scale = 1.0_f32;
-        if boost_total > MAX_TOTAL_BOOST {
-            boost_scale = MAX_TOTAL_BOOST / boost_total;
+        // The budget is checked against the *realised* cascade every time, not
+        // against an analytic bound on the intended one. An earlier version
+        // skipped the check whenever the requested shares summed below 1.0, on
+        // the sound argument that a cascade's dB magnitude is at most the sum of
+        // its sections' peaks — but that bound is only ever conservative, and
+        // being conservative is what cost the control most of its range. It also
+        // forced the margin to absorb per-section rounding that the measurement
+        // can simply see. The check is one pass over the probe grid; the
+        // bisection below runs only when it says the curve does not fit.
+        if self.worst_excess_db().0 > 0.0 {
+            let mut low = 0.0_f32;
+            let mut high = 1.0_f32;
+            for _ in 0..SCALE_BISECTION_STEPS {
+                let mid = 0.5 * (low + high);
+                self.design_all(mid);
+                if self.worst_excess_db().0 > 0.0 {
+                    high = mid;
+                } else {
+                    low = mid;
+                }
+            }
+            // End on the largest scale known to be inside the budget rather
+            // than on whichever side the last probe happened to fall.
+            self.design_all(low);
         }
 
-        for index in 0..NUM_BANDS {
-            self.recompute_filter(index, head_room_db, boost_scale);
+        // The invariant is a guarantee, not a hope. If four passes have not
+        // brought the cascade inside the budget the boosts go to zero, and if
+        // even that is not enough — which needs the loop to be so close to
+        // lossless that the sections' own `f32` rounding is the whole of the
+        // excess — every section becomes an exact pass-through.
+        if self.worst_excess_db().0 > 0.0 {
+            self.design_all(0.0);
+        }
+        if self.worst_excess_db().0 > 0.0 {
+            for (index, biquad) in self.biquads.iter_mut().enumerate() {
+                biquad.to_identity();
+                self.design_gains[index] = 0.0;
+            }
+        }
+
+        self.enforce_section_stability();
+    }
+
+    /// How far past its budget the loop is, in dB, and how much of the figure
+    /// at that frequency is this stage's own doing.
+    ///
+    /// Monotone in the boost scale, which is what makes the bisection above a
+    /// search for a well-defined bound rather than a guess.
+    fn worst_excess_db(&self) -> (f32, f32) {
+        let mut worst_excess = f32::NEG_INFINITY;
+        let mut cascade_at_worst = 0.0_f32;
+
+        for probe in 0..NUM_PROBES {
+            let magnitude_squared = self.cascade_magnitude_squared(probe);
+            if !magnitude_squared.is_finite() {
+                return (f32::INFINITY, f32::INFINITY);
+            }
+
+            let cascade_db = (10.0 * magnitude_squared.max(1e-300).log10()) as f32;
+            let loop_db = 20.0 * self.loop_gains[probe].log10();
+            let margin = LIMIT_MARGIN_DB.max(-loop_db * MARGIN_FRACTION);
+            // The loop is allowed to stay where it already is — a frozen tank
+            // sits at unity on its own and this stage is not what put it there
+            // — but it may not be pushed past `-margin`.
+            let budget_db = (-margin).max(loop_db);
+            let excess = loop_db + cascade_db - budget_db;
+            if excess > worst_excess {
+                worst_excess = excess;
+                cascade_at_worst = cascade_db;
+            }
+        }
+
+        (worst_excess, cascade_at_worst)
+    }
+
+    fn cascade_magnitude_squared(&self, probe: usize) -> f64 {
+        let mut magnitude_squared = 1.0_f64;
+        for biquad in self.biquads.iter() {
+            magnitude_squared *= biquad.magnitude_squared(
+                self.probes.cos_w[probe],
+                self.probes.sin_w[probe],
+                self.probes.cos_2w[probe],
+                self.probes.sin_2w[probe],
+            );
+        }
+        magnitude_squared
+    }
+
+    /// Reset any section whose poles have left the unit circle.
+    ///
+    /// The last line of defence, and the only one that survives a designer
+    /// conditioning problem the magnitude probes cannot see: a pole outside the
+    /// circle still has a perfectly finite `|H(e^jw)|` at every probe, so the
+    /// bound above would report a stage that is inside its budget while the
+    /// time-domain response runs away.
+    fn enforce_section_stability(&mut self) {
+        for (index, biquad) in self.biquads.iter_mut().enumerate() {
+            if !biquad.is_stable() {
+                biquad.to_identity();
+                self.design_gains[index] = 0.0;
+            }
         }
     }
 
-    fn recompute_filter(&mut self, index: usize, head_room_db: f32, boost_scale: f32) {
+    fn design_all(&mut self, boost_scale: f32) {
+        for index in 0..NUM_BANDS {
+            self.design_band(index, boost_scale);
+        }
+    }
+
+    fn design_band(&mut self, index: usize, boost_scale: f32) {
         let band = self.bands[index];
 
         // `share > 0` lengthens this band's decay and spends headroom;
         // `share < 0` shortens it and cannot destabilise anything, so only the
-        // positive side is scaled. At the 1.0x default `share` is exactly 0.0
-        // and `gain_db` is exactly 0.0, which is the transparency the digests
-        // depend on.
+        // positive side is scaled or budgeted. At the 1.0x default `share` is
+        // exactly 0.0 and `gain_db` is exactly 0.0, which is the transparency
+        // the pinned digests depend on.
         let share = 1.0 - 1.0 / band.multiplier;
-        let mut scaled = share;
-        if share > 0.0 {
-            scaled = share * boost_scale;
-        }
-        let gain_db = head_room_db * scaled;
+        let requested_db = if share > 0.0 {
+            self.band_budget_db(index) * share * boost_scale
+        } else {
+            self.head_room_db(index) * share
+        };
+        let gain_db = requested_db.clamp(-MAX_DESIGN_GAIN_DB, MAX_DESIGN_GAIN_DB);
+        self.design_gains[index] = gain_db;
 
-        // A band centre above Nyquist designs a filter with an aliased centre
-        // frequency, which is how a stage that measures correctly at 48 kHz
-        // renders something else at another rate. 0.45 keeps the top shelf
-        // below the fold at every rate the engine is constructed with.
-        let freq = band.freq.min(self.sample_rate * 0.45);
+        if gain_db.abs() < MIN_DESIGNABLE_GAIN_DB {
+            self.design_gains[index] = 0.0;
+            self.biquads[index].to_identity();
+            return;
+        }
+
+        let freq = clamp_band_frequency(band.freq, self.sample_rate);
 
         match band.band_type {
-            BandType::LowShelf => self.biquads[index].design_low_shelf(freq, gain_db, self.sample_rate),
+            BandType::LowShelf => {
+                self.biquads[index].design_low_shelf(freq, gain_db, self.sample_rate)
+            }
             BandType::Bell => self.biquads[index].design_peak(freq, gain_db, band.q, self.sample_rate),
             BandType::HighShelf => {
                 self.biquads[index].design_high_shelf(freq, gain_db, self.sample_rate)
             }
         }
+    }
+
+    /// The worst per-pass loop gain the loop reaches with this stage in it, and
+    /// the frequency it happens at. Measurement surface for the guards.
+    pub fn worst_loop_gain(&self) -> (f32, f32) {
+        let mut worst = 0.0_f32;
+        let mut worst_hz = 0.0_f32;
+        for probe in 0..NUM_PROBES {
+            let magnitude = self.cascade_magnitude_squared(probe).max(0.0).sqrt();
+            let gain = (f64::from(self.loop_gains[probe]) * magnitude) as f32;
+            if gain > worst {
+                worst = gain;
+                worst_hz = self.probes.freqs[probe];
+            }
+        }
+        (worst, worst_hz)
+    }
+
+    /// The worst per-pass loop gain **without** this stage — what the loop does
+    /// on its own. A guard needs both to say whether the stage made it worse.
+    pub fn worst_loop_gain_without_stage(&self) -> f32 {
+        self.loop_gains.iter().fold(0.0_f32, |acc, g| acc.max(*g))
+    }
+
+    /// The dB each section was actually designed at, after budgeting and after
+    /// the clamp.
+    ///
+    /// The difference between what the user asked for and what the loop could
+    /// lend lives here, so this is both the guards' measurement surface and the
+    /// quantity a panel needs in order to draw the delivered curve rather than
+    /// only the requested one.
+    pub fn design_gains_db(&self) -> DesignGains {
+        self.design_gains
+    }
+
+    /// Whether every section's poles are inside the unit circle.
+    pub fn all_sections_stable(&self) -> bool {
+        self.biquads.iter().all(Biquad::is_stable)
     }
 
     /// Process one sample through all six bands.
@@ -442,8 +858,8 @@ impl DecayRateEq {
 #[cfg(test)]
 mod tests {
     use super::{
-        band_index_for_name, loop_gain_from_rt60, DecayRateEq, DEFAULT_MULTIPLIER, MAX_MULTIPLIER,
-        MIN_MULTIPLIER, NUM_BANDS, PARAM_NAMES, TAU,
+        band_index_for_name, loop_gain_from_rt60, DecayRateEq, DEFAULT_MULTIPLIER,
+        LIMIT_MARGIN_DB, MAX_MULTIPLIER, MIN_MULTIPLIER, NUM_BANDS, PARAM_NAMES, TAU,
     };
 
     #[test]
@@ -495,81 +911,205 @@ mod tests {
         }
     }
 
-    /// Steady-state magnitude of a fresh full-boost cascade at `freq`.
-    fn full_boost_cascade_gain_at(base_gain: f32, freq: f32) -> f32 {
-        let mut eq = DecayRateEq::new(48_000.0, base_gain);
-        for index in 0..NUM_BANDS {
-            eq.set_band_multiplier(index, MAX_MULTIPLIER);
+    /// Every curve shape the bound has to survive, named.
+    ///
+    /// `lo pair` and the two other adjacent pairs are here because a pair beats
+    /// all-six consistently — the clamp scales all boosts together, so asking
+    /// for six spreads the budget six ways while asking for two concentrates it
+    /// where the sections overlap most. A grid that only tried all-six would
+    /// miss the worst case it is supposed to bound. The mixed rows are here for
+    /// the same reason: a cut band is exempt from the boost budget, so a shape
+    /// with cuts in it reaches a higher boost scale than one without.
+    const SHAPES: [(&str, [f32; NUM_BANDS]); 12] = [
+        ("band 0 alone", [4.0, 1.0, 1.0, 1.0, 1.0, 1.0]),
+        ("band 1 alone", [1.0, 4.0, 1.0, 1.0, 1.0, 1.0]),
+        ("band 2 alone", [1.0, 1.0, 4.0, 1.0, 1.0, 1.0]),
+        ("band 3 alone", [1.0, 1.0, 1.0, 4.0, 1.0, 1.0]),
+        ("band 4 alone", [1.0, 1.0, 1.0, 1.0, 4.0, 1.0]),
+        ("band 5 alone", [1.0, 1.0, 1.0, 1.0, 1.0, 4.0]),
+        ("lo pair", [4.0, 4.0, 1.0, 1.0, 1.0, 1.0]),
+        ("mid pair", [1.0, 1.0, 4.0, 4.0, 1.0, 1.0]),
+        ("hi pair", [1.0, 1.0, 1.0, 1.0, 4.0, 4.0]),
+        ("all max", [4.0, 4.0, 4.0, 4.0, 4.0, 4.0]),
+        ("all min", [0.25, 0.25, 0.25, 0.25, 0.25, 0.25]),
+        ("alternating boost and cut", [4.0, 0.25, 4.0, 0.25, 4.0, 0.25]),
+    ];
+
+    /// Every base loop gain an engine can hand the stage.
+    ///
+    /// 0.999 and 0.99 are the top of the grid deliberately. The old
+    /// proportional-only bound guaranteed `loop <= 10^(-0.05 * head_room/20)`,
+    /// so its guaranteed margin vanished exactly where the loop had least room
+    /// — and it was measured *over* unity there, at 1.000076 for the plate at
+    /// the descriptor's own maximum `decay` of 0.999. A grid that stopped at 0.9
+    /// could not see it.
+    const BASE_GAINS: [f32; 7] = [0.999, 0.99, 0.9, 0.5, 0.1, 0.01, 0.001];
+
+    /// The rates to design at. 176.4 and 192 kHz are not rates this application
+    /// runs at, and are here because the stage claims to have no rate term of
+    /// its own — a claim that is only worth anything if it is tested where a
+    /// band centre becomes a very small normalised angle.
+    const RATES: [f32; 5] = [44_100.0, 48_000.0, 96_000.0, 176_400.0, 192_000.0];
+
+    fn configured(sample_rate: f32, base_gain: f32, shape: [f32; NUM_BANDS]) -> DecayRateEq {
+        let mut eq = DecayRateEq::new(sample_rate, base_gain);
+        for (index, multiplier) in shape.iter().enumerate() {
+            eq.set_band_multiplier(index, *multiplier);
         }
-        gain_at(&mut eq, freq, 48_000.0)
+        eq
     }
 
     #[test]
-    fn six_bands_at_full_boost_never_take_the_loop_past_unity_gain() {
-        // The invariant `MAX_TOTAL_BOOST` exists for, stated where it can be
-        // measured: the *compound* magnitude of six cascaded sections at the
-        // worst frequency, times the loop's own per-pass gain, must stay below
-        // 1. Each band alone is safe by construction — its resulting gain is
-        // `g^(1/m)` — but the sections multiply, and a frequency between two
-        // boosted bells collects both.
+    fn no_curve_on_any_loop_at_any_rate_is_allowed_past_its_budget() {
+        // The whole invariant, on the whole grid: 5 rates x 7 base gains x 12
+        // shapes. The measurement is the *realised* cascade — `|H|` evaluated
+        // from the coefficients the designer actually produced, against the
+        // loop's own magnitude at the same frequency — which is the reason the
+        // bound moved from an analytic sum of intended gains to a measured
+        // peak. The analytic sum was simultaneously too tight in the middle of
+        // the range and too loose at the top of it.
         //
-        // Swept rather than probed at the band centres, because the worst point
-        // is between them: with the bound removed the peak lands at 8078 Hz for
-        // the shallower loops and 3524 Hz for the deep ones, and neither is a
-        // band centre. Measured across five base gains spanning what an engine
-        // can hand this stage, because the overshoot grows with the headroom —
-        // removing the bound gives a loop gain of 1.0044 at `g = 0.9` and 25.67
-        // at `g = 0.001`.
-        //
-        // A time-domain guard alone was **not** enough here, and the first
-        // version of this test was one: at a single mid base gain the removed
-        // bound produces a loop gain of about 1.03, which over any render short
-        // enough to run in a test still looks like a slow decay.
-        for base_gain in [0.9_f32, 0.5, 0.1, 0.01, 0.001] {
-            let mut worst = 0.0_f32;
-            let mut worst_hz = 0.0_f32;
-            let mut freq = 20.0_f32;
-            while freq < 20_000.0 {
-                let gain = full_boost_cascade_gain_at(base_gain, freq);
-                if gain > worst {
-                    worst = gain;
-                    worst_hz = freq;
+        // The limit is absolute: `LIMIT_MARGIN_DB` below unity, everywhere,
+        // rather than a fraction of the headroom that shrinks to nothing as the
+        // headroom does. The one thing the stage is allowed to do is leave a
+        // loop where it already was — a frozen tank sits at unity on its own.
+        let limit = 10.0_f32.powf(-LIMIT_MARGIN_DB / 20.0);
+
+        for sample_rate in RATES {
+            for base_gain in BASE_GAINS {
+                for (label, shape) in SHAPES {
+                    let eq = configured(sample_rate, base_gain, shape);
+
+                    assert!(
+                        eq.all_sections_stable(),
+                        "{label} at {base_gain} on {sample_rate} Hz designed a section with a \
+                         pole outside the unit circle"
+                    );
+
+                    let (worst, worst_hz) = eq.worst_loop_gain();
+                    let allowed = limit.max(eq.worst_loop_gain_without_stage());
+                    assert!(
+                        worst <= allowed + 1e-4,
+                        "{label} at {base_gain} on {sample_rate} Hz takes the loop to \
+                         {worst:.6} at {worst_hz:.0} Hz, past its budget of {allowed:.6}"
+                    );
                 }
-                freq *= 1.05;
             }
-            let loop_gain = base_gain * worst;
-            assert!(
-                loop_gain < 0.98,
-                "six bands at {MAX_MULTIPLIER}x on a loop of per-pass gain {base_gain} reach a \
-                 loop gain of {loop_gain:.4} at {worst_hz:.0} Hz — at or above unity the tail \
-                 grows instead of decaying"
-            );
         }
     }
 
     #[test]
-    fn a_loop_running_the_full_boost_still_falls_silent() {
+    fn raising_one_band_never_raises_another_bands_delivered_gain() {
+        // The clamp is **global**: when the requested curve asks for more than
+        // the loop can lend, every boost is scaled by the same factor, so
+        // raising one band takes headroom back from the others. That is a real
+        // property of the control and the panel draws it — `design_gains_db` is
+        // what it draws — but it has a direction, and this is the direction.
+        //
+        // Measured on the design gains rather than through a render, because
+        // that is the layer the clamp lives at: a render puts a T30 fit and a
+        // measuring filter's skirt between the assertion and the thing it is
+        // about, and the earlier version of this guard did exactly that and
+        // reported a band gaining when its design gain had fallen.
+        //
+        // It is also the guard the *first* version of the locality test could
+        // not be: displacing one band from neutral keeps the requested share at
+        // 0.75, which fits every loop, so the clamp never engaged in anything it
+        // measured.
+        for sample_rate in RATES {
+            for base_gain in [0.9_f32, 0.5, 0.1] {
+                for raised in 0..NUM_BANDS {
+                    let mut before_shape = [MAX_MULTIPLIER; NUM_BANDS];
+                    before_shape[raised] = DEFAULT_MULTIPLIER;
+                    let before = configured(sample_rate, base_gain, before_shape);
+                    let after = configured(sample_rate, base_gain, [MAX_MULTIPLIER; NUM_BANDS]);
+
+                    let before_gains = before.design_gains_db();
+                    let after_gains = after.design_gains_db();
+
+                    assert!(
+                        after_gains[raised] > before_gains[raised],
+                        "raising band {raised} from {DEFAULT_MULTIPLIER}x to {MAX_MULTIPLIER}x at \
+                         base {base_gain} on {sample_rate} Hz left its own design gain at \
+                         {:.3} dB against {:.3} dB",
+                        after_gains[raised],
+                        before_gains[raised]
+                    );
+
+                    for other in 0..NUM_BANDS {
+                        if other == raised {
+                            continue;
+                        }
+                        assert!(
+                            after_gains[other] <= before_gains[other] + 1e-3,
+                            "raising band {raised} at base {base_gain} on {sample_rate} Hz also \
+                             raised untouched band {other}, from {:.3} dB to {:.3} dB — the \
+                             clamp is handing out headroom rather than only taking it back",
+                            before_gains[other],
+                            after_gains[other]
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+
+    #[test]
+    fn a_loop_running_a_bounded_curve_still_falls_silent() {
         // The same invariant as a time-domain fact, so a magnitude sweep that
-        // measured the wrong thing cannot carry the claim on its own. The base
-        // gain is the deep end of the range, where the overshoot is largest.
-        let base_gain = 0.1_f32;
-        let mut eq = DecayRateEq::new(48_000.0, base_gain);
+        // measured the wrong thing cannot carry the claim on its own. Two
+        // shapes, because `lo pair` reaches a higher boost scale than `all max`
+        // and is the harder of the two.
+        for (label, shape) in [SHAPES[6], SHAPES[9]] {
+            for base_gain in [0.9_f32, 0.5, 0.1] {
+                let mut eq = configured(48_000.0, base_gain, shape);
+                let mut state = 1.0_f32;
+                let mut peak_late = 0.0_f32;
+                for step in 0..400_000 {
+                    state = eq.process(state) * base_gain;
+                    assert!(
+                        state.is_finite(),
+                        "{label} at {base_gain} diverged to {state} at step {step}"
+                    );
+                    if step > 200_000 {
+                        peak_late = peak_late.max(state.abs());
+                    }
+                }
+                assert!(
+                    peak_late < 1e-3,
+                    "{label} at {base_gain} must still decay; late peak was {peak_late}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn a_loop_with_no_headroom_left_is_shaped_not_at_all() {
+        // The absolute margin's visible consequence, asserted rather than left
+        // as a side effect. A plate at the descriptor's maximum `decay` of
+        // 0.999 loses 0.017 dB per half-traversal; there is nothing there to
+        // redistribute, and the old bound's answer — spend 95% of 0.017 dB and
+        // hope — measured *over* unity. The honest answer is that the stage
+        // goes transparent, and it does so continuously rather than at a cliff.
+        let mut eq = DecayRateEq::new(48_000.0, 0.998_001);
         for index in 0..NUM_BANDS {
             eq.set_band_multiplier(index, MAX_MULTIPLIER);
         }
-
-        let mut state = 1.0_f32;
-        let mut peak_late = 0.0_f32;
-        for step in 0..400_000 {
-            state = eq.process(state) * base_gain;
-            assert!(state.is_finite(), "loop diverged to {state} at step {step}");
-            if step > 200_000 {
-                peak_late = peak_late.max(state.abs());
-            }
-        }
+        let (worst, _) = eq.worst_loop_gain();
         assert!(
-            peak_late < 1e-3,
-            "six bands at {MAX_MULTIPLIER}x must still decay; late peak was {peak_late}"
+            worst <= 0.998_001 + 1e-6,
+            "a loop with 0.017 dB of headroom must not be pushed at all, got {worst:.6}"
+        );
+
+        // ...and the shaping comes back as soon as there is headroom to spend,
+        // so this is a floor rather than a dead control.
+        let mut roomy = DecayRateEq::new(48_000.0, 0.6);
+        roomy.set_band_multiplier(2, MAX_MULTIPLIER);
+        let (roomy_worst, _) = roomy.worst_loop_gain();
+        assert!(
+            roomy_worst > 0.6 * 1.2,
+            "a loop with 4.4 dB of headroom must still be shaped, got {roomy_worst:.4}"
         );
     }
 
