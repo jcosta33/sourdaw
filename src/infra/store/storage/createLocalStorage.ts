@@ -28,6 +28,11 @@ export const createLocalStorage = <TData>(key: LocalStorageKey): StorageAdapter<
             return cachedValue;
         },
 
+        // Deliberately propagates a failed write, and only advances the cache
+        // once the value is durable — so `get()` never reports something that
+        // is not persisted, and a caller can retry. Pinned by "keeps the cached
+        // value when setItem fails and retries persistence" in this adapter's
+        // spec. Callers that cannot survive a throw must guard their own write.
         set(value: TData | null): void {
             if (value === null) {
                 window.localStorage.removeItem(key);

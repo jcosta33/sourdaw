@@ -75,20 +75,36 @@ export const GLUTEN_PRESETS: readonly GlutenPreset[] = [
     }),
 
     // ── Opto / Smooth ──
+    // The seven FET and Diode presets below state `oversampling: 2`, which they
+    // used to inherit from `DEFAULT_PATCH`. That default is now 1× — the VCA a
+    // fresh device runs has no oversampled stage — so stating it here is what
+    // keeps every one of them rendering exactly what it rendered before.
+    //
+    // Every preset below this point states `autoRelease: false`, and none of
+    // them would otherwise: `DEFAULT_PATCH.autoRelease` is `true`, so a preset
+    // that says nothing inherits an Auto rel that only the VCA implements. That
+    // left ten presets shipping the chip lit on a topology that cannot hear it
+    // — the same defect as `Loud Master`'s `thrust: 2`, one flag over, and
+    // found by the rule written to catch that one rather than by inspection.
+    // The default is left alone because it is correct for the VCA, which is
+    // what a fresh device runs.
     preset('opto-vocal', 'Opto Vocal', 'vocal', {
         topology: 'opto',
         threshold: -25,
         limitMode: false,
+        autoRelease: false,
     }),
     preset('opto-leveler', 'Opto Leveler', 'bus', {
         topology: 'opto',
         threshold: -20,
         limitMode: false,
+        autoRelease: false,
     }),
     preset('opto-limit', 'Opto Limiter', 'mastering', {
         topology: 'opto',
         threshold: -15,
         limitMode: true,
+        autoRelease: false,
     }),
 
     // ── FET / Punch ──
@@ -99,6 +115,8 @@ export const GLUTEN_PRESETS: readonly GlutenPreset[] = [
         attack: 0.2,
         release: 250,
         inputGain: 6,
+        autoRelease: false,
+        oversampling: 2,
     }),
     preset('fet-vocal', 'FET Vocal Bite', 'vocal', {
         topology: 'fet',
@@ -106,6 +124,8 @@ export const GLUTEN_PRESETS: readonly GlutenPreset[] = [
         ratio: 4,
         attack: 0.8,
         release: 300,
+        autoRelease: false,
+        oversampling: 2,
     }),
     preset('fet-all-buttons', 'All Buttons In', 'creative', {
         topology: 'fet',
@@ -114,6 +134,8 @@ export const GLUTEN_PRESETS: readonly GlutenPreset[] = [
         attack: 0.1,
         release: 100,
         inputGain: 12,
+        autoRelease: false,
+        oversampling: 2,
     }),
     preset('fet-parallel', 'Parallel Smash', 'drums', {
         topology: 'fet',
@@ -123,6 +145,8 @@ export const GLUTEN_PRESETS: readonly GlutenPreset[] = [
         release: 200,
         mix: 0.3,
         inputGain: 12,
+        autoRelease: false,
+        oversampling: 2,
     }),
 
     // ── Diode Bridge ──
@@ -131,12 +155,16 @@ export const GLUTEN_PRESETS: readonly GlutenPreset[] = [
         threshold: -16,
         ratio: 2,
         recovery: 3,
+        autoRelease: false,
+        oversampling: 2,
     }),
     preset('diode-warm', 'Warm Diode Glue', 'bus', {
         topology: 'diode',
         threshold: -18,
         ratio: 3,
         recovery: 4,
+        autoRelease: false,
+        oversampling: 2,
     }),
 
     // ── Mastering ──
@@ -148,8 +176,15 @@ export const GLUTEN_PRESETS: readonly GlutenPreset[] = [
         autoRelease: true,
         knee: 12,
         range: 6,
+        // `scHpfFreq` without `scHpfEnabled`. Both Master presets are VCA, and
+        // the detector filters only reach the diode — so shipping the filter
+        // *engaged* advertised a sidechain HPF that never ran, and once the
+        // panel started gating those controls it became a setting the user
+        // could not switch off either. The frequency is kept because it is the
+        // preset's intent and is correct the moment the topology can hear it;
+        // the switch is not, because a preset must not enable a stage its own
+        // topology cannot run.
         scHpfFreq: 120,
-        scHpfEnabled: true,
     }),
     preset('master-loud', 'Loud Master', 'mastering', {
         topology: 'vca',
@@ -159,9 +194,11 @@ export const GLUTEN_PRESETS: readonly GlutenPreset[] = [
         autoRelease: true,
         knee: 6,
         range: 10,
+        // Same as Transparent Master above, plus `thrust` — this preset shipped
+        // `thrust: 2` on a VCA, which is the worse case: with a diode Stage two
+        // engaged the detector would have run at Thrust *loud*, a setting the
+        // user never chose and, after gating, could not zero.
         scHpfFreq: 100,
-        scHpfEnabled: true,
-        thrust: 2,
     }),
 
     // ── Creative ──
@@ -184,5 +221,7 @@ export const GLUTEN_PRESETS: readonly GlutenPreset[] = [
         release: 150,
         mix: 0.35,
         inputGain: 10,
+        autoRelease: false,
+        oversampling: 2,
     }),
 ];

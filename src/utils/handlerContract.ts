@@ -1271,7 +1271,14 @@ export type ExecuteOptions = {
     /** Recheck transient authority after queued CRDT work completes and before dispatch begins. */
     shouldExecute?: () => boolean;
     source?: 'manual' | 'prompt' | 'voice' | 'ai';
-    /** When true, skip pushing an undo entry and action history entry during replay or migration. */
+    /**
+     * When true, skip pushing an undo entry and action history entry — during
+     * replay or migration, and for *performative* gestures that write project
+     * truth without being edits (a mixer mute or solo held during a pass). The
+     * action still runs inside its Automerge transaction and syncs normally;
+     * only the claim on `actionHistoryStore` — a slot of the shared root
+     * document, capped and evicting oldest — is declined.
+     */
     skipUndo?: boolean;
     /** Opaque owner for CRDT writes made synchronously by this action. */
     snapshotTransaction?: object;

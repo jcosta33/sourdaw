@@ -1,6 +1,7 @@
 import { logger } from '#/infra/logger/appLogger';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
+import { projectLoadFailureStore } from '../../../stores/projectLoadFailureStore';
 import { projectStore } from '../../../stores/projectStore';
 import { pickFiles } from '../../fileDialog';
 import { runProjectLoadTransaction } from '../helpers/runProjectLoadTransaction';
@@ -38,6 +39,16 @@ export async function pickAndImportProjectFile(): Promise<boolean> {
 
         const imported = await applyImportedProjectData({ data, transaction });
         if (!imported) {
+            // `applyImportedProjectData` returns false for "the file was not
+            // usable", for "a newer load superseded this one", and for "the
+            // open destroyed the previous session and then failed". Only the
+            // first is the file's fault, and only the first is worth retrying.
+            // The last one has already told the user what happened and put a
+            // failure surface on screen; blaming their file on top of that
+            // sends them back to the picker while their session is gone.
+            if (projectLoadFailureStore.value) {
+                return false;
+            }
             notifyUser('Invalid project file format', 'error');
             return false;
         }

@@ -309,7 +309,7 @@ describe('applyImportedProjectData round-trip hydration', () => {
         expect(call?.audioContext).toBe(audioContext);
         expect(call?.bufferIds).toEqual(['buf-frozen', 'buf-1', 'buf-2', 'buf-alt']);
         expect(call?.shouldContinue?.()).toBe(true);
-        expect(resetCrdtProjectAuthority).toHaveBeenCalledWith('Round Trip');
+        expect(resetCrdtProjectAuthority).toHaveBeenCalledWith('Round Trip', expect.any(Function));
         expect(trackStore.value?.tracks[0]?.clips[0]).toMatchObject({
             audioBufferId: 'buf-1',
             audioOffsetBeats: 1,
@@ -400,7 +400,11 @@ describe('applyImportedProjectData round-trip hydration', () => {
         expect(startCrdtAutoSave).toHaveBeenCalledOnce();
         expect(resetAudioGraph).toHaveBeenCalledOnce();
         expect(restoreOldAudioGraph).toHaveBeenCalledOnce();
-        expect(projectStore.value).toMatchObject({ loading: true, initialized: false });
+        // The previous session survives whole, transient flags included. This
+        // line used to pin `{ loading: true, initialized: false }` — the flags
+        // the aborted import had claimed on entry and never gave back, which
+        // left the loading overlay up and `markDirty` permanently short-circuited.
+        expect(projectStore.value).toMatchObject({ loading: false, initialized: true });
     });
 
     it('keeps the committed project live when post-commit embedded persistence fails', async () => {

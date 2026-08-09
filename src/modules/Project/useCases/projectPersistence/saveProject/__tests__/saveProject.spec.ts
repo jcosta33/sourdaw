@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { installFakeIndexedDb } from '../../../../__tests__/fakeIndexedDb';
+import { projectLoadFailureStore } from '../../../../stores/projectLoadFailureStore';
 import { saveProject } from '../saveProject';
 
 import type { ProjectStoreState } from '../../../../stores/projectStore';
@@ -64,10 +65,34 @@ describe('saveProject', () => {
         mocks.persistCrdtProject.mockResolvedValue(undefined);
         mocks.captureProjectRevision.mockReturnValue('saved-revision');
         mocks.buildProjectData.mockResolvedValue({ data: { version: 1, meta: { name: 'My Song' } } });
+        projectLoadFailureStore.set(null);
     });
 
     afterEach(() => {
         vi.unstubAllGlobals();
+    });
+
+    /**
+     * `projectStore` names the project; the other stores hold its data. After a
+     * load replaced the CRDT authority and then failed, those two disagree:
+     * `projectStore` still carries the previous project's `createdAt` (its
+     * metadata write was in the batch that never ran) while everything else
+     * holds the projection default. A save then keys the recent entry to the
+     * user's real project and writes the emptied stores into it.
+     *
+     * No user is needed to trigger it: `dirty` is still true and `stopPlayback`
+     * already ran, so the 30 s autosave interval in `useAppInitialization`
+     * fires on its own within half a minute of the failure surface appearing.
+     */
+    it('writes nothing while a failed load has left the stores unrelated to the project', async () => {
+        projectLoadFailureStore.set({ message: 'session gone', projectName: 'Song B' });
+
+        await expect(saveProject()).resolves.toBe(false);
+
+        expect(mocks.buildProjectData).not.toHaveBeenCalled();
+        expect(mocks.persistCrdtProject).not.toHaveBeenCalled();
+        expect(mocks.addToRecentProjects).not.toHaveBeenCalled();
+        expect(mocks.projectStoreSet).not.toHaveBeenCalled();
     });
 
     it('keys the recent-project entry by the stable project id, not the display name', async () => {

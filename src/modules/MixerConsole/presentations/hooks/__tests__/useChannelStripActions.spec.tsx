@@ -1,5 +1,7 @@
-import { renderHook, waitFor } from '@testing-library/react';
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { act, renderHook, waitFor } from '@testing-library/react';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+
+import { trackStore } from '#/modules/Arrangement/stores';
 
 import { useChannelStripActions } from '../useChannelStripActions';
 
@@ -23,7 +25,10 @@ const mocks = vi.hoisted(() => ({
     removeFromVca: vi.fn(),
     releaseTouchAutomation: vi.fn(),
     confirmUser: vi.fn(),
+    logger: { error: vi.fn(), warn: vi.fn(), info: vi.fn(), debug: vi.fn() },
 }));
+
+vi.mock('#/infra/logger/appLogger', () => ({ logger: mocks.logger }));
 
 vi.mock('#/modules/Arrangement/useCases', () => ({
     muteTrack: mocks.muteTrack,
@@ -91,9 +96,24 @@ const baseTrack: Track = {
 
 const makeTrack = (overrides: Partial<Track> = {}): Track => ({ ...baseTrack, ...overrides });
 
+/**
+ * Put a track into project truth. The strip's rejection path reads the store
+ * rather than its bound prop, because a commit can fail after it wrote.
+ * MixerConsole's `Track` is a structural mirror of Arrangement's, so the same
+ * literal serves both.
+ */
+const seedProjectTruth = (overrides: Partial<Track> = {}): void => {
+    trackStore.set({ tracks: [makeTrack(overrides)], selectedTrackId: null, ghostClips: [] });
+};
+
 describe('useChannelStripActions', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        trackStore.set({ tracks: [], selectedTrackId: null, ghostClips: [] });
+    });
+
+    afterEach(() => {
+        trackStore.set({ tracks: [], selectedTrackId: null, ghostClips: [] });
     });
 
     it('select dispatches selectTrack with the bound track id', () => {
@@ -104,20 +124,27 @@ describe('useChannelStripActions', () => {
         expect(mocks.selectTrack).toHaveBeenCalledWith('track-42');
     });
 
-    it('toggleMute mutes an unmuted track', () => {
+    it('toggleMute mutes an unmuted track through the canonical write path', () => {
         const { result } = renderHook(() => useChannelStripActions(makeTrack({ id: 'track-1', muted: false })));
 
         result.current.toggleMute();
 
-        expect(mocks.muteTrack).toHaveBeenCalledWith('track-1', true);
+        expect(mocks.executeAppAction).toHaveBeenCalledWith(
+            { type: 'muteTrack', payload: { trackId: 'track-1', muted: true } },
+            { skipUndo: true }
+        );
+        expect(mocks.muteTrack).not.toHaveBeenCalled();
     });
 
-    it('toggleMute unmutes a muted track', () => {
+    it('toggleMute unmutes a muted track through the canonical write path', () => {
         const { result } = renderHook(() => useChannelStripActions(makeTrack({ id: 'track-1', muted: true })));
 
         result.current.toggleMute();
 
-        expect(mocks.muteTrack).toHaveBeenCalledWith('track-1', false);
+        expect(mocks.executeAppAction).toHaveBeenCalledWith(
+            { type: 'muteTrack', payload: { trackId: 'track-1', muted: false } },
+            { skipUndo: true }
+        );
     });
 
     it('toggleSolo(additive) toggles solo state without exclusivity', () => {
@@ -125,17 +152,22 @@ describe('useChannelStripActions', () => {
 
         result.current.toggleSolo(true);
 
-        expect(mocks.soloTrack).toHaveBeenCalledWith('track-1', true);
+        expect(mocks.executeAppAction).toHaveBeenCalledWith(
+            { type: 'soloTrack', payload: { trackId: 'track-1', soloed: true } },
+            { skipUndo: true }
+        );
         expect(mocks.soloTrackExclusive).not.toHaveBeenCalled();
     });
 
+    // Exclusive solo has no `AppAction` to dispatch — see the comment on
+    // `toggleSolo`. Pinned so the gap is visible rather than assumed converted.
     it('toggleSolo(non-additive) solos exclusively instead of toggling', () => {
         const { result } = renderHook(() => useChannelStripActions(makeTrack({ id: 'track-1' })));
 
         result.current.toggleSolo(false);
 
         expect(mocks.soloTrackExclusive).toHaveBeenCalledWith('track-1');
-        expect(mocks.soloTrack).not.toHaveBeenCalled();
+        expect(mocks.executeAppAction).not.toHaveBeenCalled();
     });
 
     it('toggleArm routes the inverse armed flag through the canonical AppAction write path', () => {
@@ -162,39 +194,280 @@ describe('useChannelStripActions', () => {
 
         result.current.toggleSoloSafeFlag();
 
-        expect(mocks.toggleSoloSafe).toHaveBeenCalledWith('track-1');
+        expect(mocks.executeAppAction).toHaveBeenCalledWith(
+            { type: 'toggleSoloSafe', payload: { trackId: 'track-1' } },
+            { skipUndo: true }
+        );
+        expect(mocks.toggleSoloSafe).not.toHaveBeenCalled();
     });
 
-    it('setGain forwards the raw value to setTrackGain', () => {
+    it('setGain drives only the engine while the gesture is transient', () => {
         const { result } = renderHook(() => useChannelStripActions(makeTrack({ id: 'track-1' })));
 
-        result.current.setGain(0.42);
+        act(() => {
+            result.current.setGain(0.42, true);
+        });
 
-        expect(mocks.setTrackGain).toHaveBeenCalledWith('track-1', 0.42);
+        expect(mocks.setTrackGain).toHaveBeenCalledWith('track-1', 0.42, true);
+        expect(mocks.executeAppAction).not.toHaveBeenCalled();
+        // And the strip draws the gesture rather than the untouched project value.
+        expect(result.current.displayGain).toBe(0.42);
     });
 
-    it('setPan forwards the raw value to setTrackPan', () => {
+    it('setGain commits the settled value as one action and keeps drawing it until the write lands', async () => {
+        let settleCommit = (): void => undefined;
+        mocks.executeAppAction.mockReturnValueOnce(
+            new Promise<void>((resolve) => {
+                settleCommit = resolve;
+            })
+        );
+        const { result } = renderHook(() => useChannelStripActions(makeTrack({ id: 'track-1', gain: 0.8 })));
+
+        act(() => {
+            result.current.setGain(0.42, true);
+            result.current.setGain(0.31, false);
+        });
+
+        expect(mocks.executeAppAction).toHaveBeenCalledTimes(1);
+        expect(mocks.executeAppAction).toHaveBeenCalledWith({
+            type: 'setTrackGain',
+            payload: { trackId: 'track-1', gain: 0.31 },
+        });
+        // While the commit is in flight the strip still draws the settled value.
+        // Handing the display straight back to `track.gain` here showed the
+        // pre-gesture 0.8 for as long as the action took, so the fader snapped
+        // back to where the move started at the end of every gesture.
+        expect(result.current.displayGain).toBe(0.31);
+
+        await act(async () => {
+            settleCommit();
+            // Let the commit continuation's `finally` run before asserting.
+            await Promise.resolve();
+        });
+
+        // Only once the write has landed does the strip go back to project
+        // truth — which is also what makes it clamping-proof, since the stored
+        // value need not equal the value that was committed.
+        expect(result.current.displayGain).toBe(0.8);
+    });
+
+    /**
+     * The gesture drives the engine and nothing else, so a rejected commit that
+     * only restores the *display* leaves the engine on the abandoned value: the
+     * fader reads project truth, the project agrees, every peer hears project
+     * truth, and this user alone hears the value that never landed — silently,
+     * until the next write to that track.
+     */
+    it('re-drives the engine from project truth when the commit rejects', async () => {
+        seedProjectTruth({ id: 'track-1', gain: 0.8 });
+        mocks.executeAppAction.mockRejectedValueOnce(new Error('commit failed'));
+        const { result } = renderHook(() => useChannelStripActions(makeTrack({ id: 'track-1', gain: 0.8 })));
+
+        act(() => {
+            result.current.setGain(0.35, true);
+        });
+        expect(mocks.setTrackGain).toHaveBeenLastCalledWith('track-1', 0.35, true);
+
+        await act(async () => {
+            result.current.setGain(0.35, false);
+            await Promise.resolve();
+        });
+
+        expect(mocks.setTrackGain).toHaveBeenLastCalledWith('track-1', 0.8, true);
+        expect(result.current.displayGain).toBe(0.8);
+    });
+
+    /**
+     * `AppActionCommittedError` — the write landed and a post-commit effect
+     * failed. Project truth is the *committed* value, while the `track` prop
+     * inside the dispatch closure is still the render from before it. Re-driving
+     * from the prop would put the engine on a value the project has already
+     * moved off.
+     */
+    it('re-drives the engine from the committed value when a commit fails after writing', async () => {
+        seedProjectTruth({ id: 'track-1', gain: 0.5 });
+        mocks.executeAppAction.mockRejectedValueOnce(new Error('post-commit effect failed'));
+        const { result } = renderHook(() => useChannelStripActions(makeTrack({ id: 'track-1', gain: 0.8 })));
+
+        await act(async () => {
+            result.current.setGain(0.35, true);
+            result.current.setGain(0.35, false);
+            await Promise.resolve();
+        });
+
+        expect(mocks.setTrackGain).toHaveBeenLastCalledWith('track-1', 0.5, true);
+    });
+
+    it('re-drives the pan engine from project truth when the commit rejects', async () => {
+        seedProjectTruth({ id: 'track-1', pan: 12 });
+        mocks.executeAppAction.mockRejectedValueOnce(new Error('commit failed'));
+        const { result } = renderHook(() => useChannelStripActions(makeTrack({ id: 'track-1', pan: 12 })));
+
+        await act(async () => {
+            result.current.setPan(-30, true);
+            result.current.setPan(-30, false);
+            await Promise.resolve();
+        });
+
+        expect(mocks.setTrackPan).toHaveBeenLastCalledWith('track-1', 12, true);
+    });
+
+    it('does not re-drive the engine when the commit succeeds', async () => {
+        seedProjectTruth({ id: 'track-1', gain: 0.35 });
+        const { result } = renderHook(() => useChannelStripActions(makeTrack({ id: 'track-1', gain: 0.8 })));
+
+        await act(async () => {
+            result.current.setGain(0.35, true);
+            result.current.setGain(0.35, false);
+            await Promise.resolve();
+        });
+
+        // The committed write already put 0.35 on the engine; a corrective
+        // re-drive here would be a second, redundant engine write per gesture.
+        expect(mocks.setTrackGain).toHaveBeenCalledTimes(1);
+        expect(mocks.setTrackGain).toHaveBeenLastCalledWith('track-1', 0.35, true);
+    });
+
+    it('hands the display back to project truth even when the commit rejects', async () => {
+        mocks.executeAppAction.mockRejectedValueOnce(new Error('commit failed'));
+        const { result } = renderHook(() => useChannelStripActions(makeTrack({ id: 'track-1', gain: 0.8 })));
+
+        await act(async () => {
+            result.current.setGain(0.31, false);
+            await Promise.resolve();
+        });
+
+        expect(result.current.displayGain).toBe(0.8);
+    });
+
+    /**
+     * `void` on a rejecting promise is not a handler. Without a `catch` the
+     * `finally` still ran and every assertion above still passed, while the
+     * rejection escaped to the page — the suite reported it as an unhandled
+     * error beside 26 green tests, which is exactly the shape of failure a test
+     * count does not show.
+     */
+    it('logs a rejected commit instead of leaking it as an unhandled rejection', async () => {
+        const cause = new Error('commit failed');
+        mocks.executeAppAction.mockRejectedValueOnce(cause);
+        const { result } = renderHook(() => useChannelStripActions(makeTrack({ id: 'track-1', gain: 0.8 })));
+
+        await act(async () => {
+            result.current.setGain(0.31, false);
+            await Promise.resolve();
+        });
+
+        expect(mocks.logger.error).toHaveBeenCalledTimes(1);
+        const logged = mocks.logger.error.mock.calls[0]![0] as Error;
+        expect(logged.message).toBe('Channel strip commit failed for action: setTrackGain');
+        expect(logged.cause).toBe(cause);
+    });
+
+    it('setPan drives only the engine while the gesture is transient', () => {
         const { result } = renderHook(() => useChannelStripActions(makeTrack({ id: 'track-1' })));
 
-        result.current.setPan(-0.5);
+        act(() => {
+            result.current.setPan(-25, true);
+        });
 
-        expect(mocks.setTrackPan).toHaveBeenCalledWith('track-1', -0.5);
+        expect(mocks.setTrackPan).toHaveBeenCalledWith('track-1', -25, true);
+        expect(mocks.executeAppAction).not.toHaveBeenCalled();
+        expect(result.current.displayPan).toBe(-25);
     });
 
-    it('setColor forwards the raw color to setTrackColor', () => {
+    it('setPan commits the settled value as one action and keeps drawing it until the write lands', async () => {
+        let settleCommit = (): void => undefined;
+        mocks.executeAppAction.mockReturnValueOnce(
+            new Promise<void>((resolve) => {
+                settleCommit = resolve;
+            })
+        );
+        const { result } = renderHook(() => useChannelStripActions(makeTrack({ id: 'track-1', pan: 0 })));
+
+        act(() => {
+            result.current.setPan(-25, true);
+            result.current.setPan(-30, false);
+        });
+
+        expect(mocks.executeAppAction).toHaveBeenCalledTimes(1);
+        expect(mocks.executeAppAction).toHaveBeenCalledWith({
+            type: 'setTrackPan',
+            payload: { trackId: 'track-1', pan: -30 },
+        });
+        expect(result.current.displayPan).toBe(-30);
+
+        await act(async () => {
+            settleCommit();
+            // Let the commit continuation's `finally` run before asserting.
+            await Promise.resolve();
+        });
+
+        expect(result.current.displayPan).toBe(0);
+    });
+
+    it('releases touch automation after the commit rather than before it', async () => {
+        let settleCommit = (): void => undefined;
+        mocks.executeAppAction.mockReturnValueOnce(
+            new Promise<void>((resolve) => {
+                settleCommit = resolve;
+            })
+        );
+        const { result } = renderHook(() =>
+            useChannelStripActions(makeTrack({ id: 'track-1', automationMode: 'touch' }))
+        );
+
+        act(() => {
+            result.current.setGain(0.31, false);
+        });
+
+        // The write has not landed, so the lane must still be armed — releasing
+        // here would be re-armed by the commit's own automation write.
+        expect(mocks.releaseTouchAutomation).not.toHaveBeenCalled();
+
+        await act(async () => {
+            settleCommit();
+            // Let the commit continuation's `finally` run before asserting.
+            await Promise.resolve();
+        });
+
+        expect(mocks.releaseTouchAutomation).toHaveBeenCalledWith('track-1', 'gain');
+    });
+
+    it('does not release touch automation for a track that is not in touch mode', async () => {
+        const { result } = renderHook(() =>
+            useChannelStripActions(makeTrack({ id: 'track-1', automationMode: 'write' }))
+        );
+
+        await act(async () => {
+            result.current.setGain(0.31, false);
+            await Promise.resolve();
+        });
+
+        expect(mocks.releaseTouchAutomation).not.toHaveBeenCalled();
+    });
+
+    it('setColor dispatches setTrackColor through the canonical write path', () => {
         const { result } = renderHook(() => useChannelStripActions(makeTrack({ id: 'track-1' })));
 
         result.current.setColor('#00ff00');
 
-        expect(mocks.setTrackColor).toHaveBeenCalledWith('track-1', '#00ff00');
+        expect(mocks.executeAppAction).toHaveBeenCalledWith({
+            type: 'setTrackColor',
+            payload: { trackId: 'track-1', color: '#00ff00' },
+        });
+        expect(mocks.setTrackColor).not.toHaveBeenCalled();
     });
 
-    it('rename forwards the raw name to renameTrack', () => {
+    it('rename dispatches renameTrack through the canonical write path', () => {
         const { result } = renderHook(() => useChannelStripActions(makeTrack({ id: 'track-1' })));
 
         result.current.rename('New Name');
 
-        expect(mocks.renameTrack).toHaveBeenCalledWith('track-1', 'New Name');
+        expect(mocks.executeAppAction).toHaveBeenCalledWith({
+            type: 'renameTrack',
+            payload: { trackId: 'track-1', name: 'New Name' },
+        });
+        expect(mocks.renameTrack).not.toHaveBeenCalled();
     });
 
     it('toggleVca forwards the group id to toggleVcaMembership', () => {
@@ -261,7 +534,7 @@ describe('useChannelStripActions', () => {
         expect(mocks.releaseTouchAutomation).not.toHaveBeenCalled();
     });
 
-    it('removeWithConfirm prompts with the track name and removes the track once confirmed', async () => {
+    it('removeWithConfirm says what the delete costs rather than that it is permanent', async () => {
         mocks.confirmUser.mockResolvedValue(true);
         const { result } = renderHook(() => useChannelStripActions(makeTrack({ id: 'track-1', name: 'Lead Vocal' })));
 
@@ -269,13 +542,17 @@ describe('useChannelStripActions', () => {
 
         expect(mocks.confirmUser).toHaveBeenCalledWith({
             title: 'Delete "Lead Vocal"?',
-            message: 'This action cannot be undone.',
+            message: 'The track, its clips and its devices are removed. Undo restores them.',
             confirmLabel: 'Delete',
             variant: 'danger',
         });
         await waitFor(() => {
-            expect(mocks.removeTrack).toHaveBeenCalledWith('track-1');
+            expect(mocks.executeAppAction).toHaveBeenCalledWith({
+                type: 'removeTrack',
+                payload: { trackId: 'track-1' },
+            });
         });
+        expect(mocks.removeTrack).not.toHaveBeenCalled();
     });
 
     it('removeWithConfirm does not remove the track when the prompt is declined', async () => {
@@ -287,6 +564,7 @@ describe('useChannelStripActions', () => {
         await waitFor(() => {
             expect(mocks.confirmUser).toHaveBeenCalledTimes(1);
         });
+        expect(mocks.executeAppAction).not.toHaveBeenCalled();
         expect(mocks.removeTrack).not.toHaveBeenCalled();
     });
 });

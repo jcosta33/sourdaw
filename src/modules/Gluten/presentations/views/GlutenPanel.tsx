@@ -22,6 +22,15 @@ import {
     type GlutenStyle,
     type GlutenTopology,
 } from '../../models/GlutenPatch';
+import {
+    GLUTEN_TOPOLOGIES,
+    GLUTEN_TOPOLOGY_LABELS,
+    GLUTEN_TOPOLOGY_OWNED_CONTROLS,
+    glutenCardNotice,
+    glutenControlGate,
+    glutenStageTwoOptionGate,
+    type GlutenControlGate,
+} from '../../models/GlutenTopologyGating';
 import { glutenStore, getGlutenState, type GlutenState } from '../../stores/glutenStore';
 import { loadGlutenPatchWithAudio } from '../../useCases/glutenParamBridge/loadGlutenPatchWithAudio';
 import { setGlutenParamWithAudio } from '../../useCases/glutenParamBridge/setGlutenParamWithAudio';
@@ -42,28 +51,28 @@ const TOPOLOGY_META: Record<
     }
 > = {
     vca: {
-        label: 'VCA',
+        label: GLUTEN_TOPOLOGY_LABELS.vca,
         icon: Zap,
         color: 'var(--color-accent-lavender)',
         description: 'Clean glue and disciplined pull.',
         detail: 'Bus duty',
     },
     opto: {
-        label: 'Opto',
+        label: GLUTEN_TOPOLOGY_LABELS.opto,
         icon: Sun,
         color: 'var(--color-accent-mint)',
         description: 'Slow glow and easy leveling.',
         detail: 'Settle',
     },
     fet: {
-        label: 'FET',
+        label: GLUTEN_TOPOLOGY_LABELS.fet,
         icon: Flame,
         color: 'var(--color-state-danger)',
         description: 'Fast grab with extra bark.',
         detail: 'Snap',
     },
     diode: {
-        label: 'Diode',
+        label: GLUTEN_TOPOLOGY_LABELS.diode,
         icon: Radio,
         color: 'var(--color-accent-lavender)',
         description: 'Dense, thick, and a little stern.',
@@ -148,7 +157,30 @@ const STYLE_PATCHES: Record<GlutenStyle, Partial<GlutenPatch>> = {
     },
 };
 
-const TOPOLOGIES: GlutenTopology[] = ['vca', 'opto', 'fet', 'diode'];
+const TOPOLOGIES: readonly GlutenTopology[] = GLUTEN_TOPOLOGIES;
+
+/**
+ * The printed label of each Character-card control, so a card notice can name
+ * the ones it is reporting on.
+ *
+ * Keyed by the same patch keys `GLUTEN_TOPOLOGY_OWNED_CONTROLS` lists, and
+ * asserted total against it in `glutenTopologyControlGating.spec.tsx` — a
+ * control added to a Character block without a label here would drop silently
+ * out of the notice.
+ */
+const CHARACTER_CONTROL_LABELS: Partial<Record<keyof GlutenPatch, string>> = {
+    vcaCharacter: 'Color',
+    vcaType: 'VCA type',
+    feedForward: 'Feedback / Feed forward',
+    limitMode: 'Compress / Limit',
+    inputGain: 'Input',
+    outputGain: 'Output',
+    xfmrDrive: 'Xfmr',
+    jfetK3: 'Odd',
+    xfmrK2: 'Even',
+    allButtons: 'All buttons',
+    recovery: 'Recovery',
+};
 const STYLES: GlutenStyle[] = ['glue', 'punch', 'smooth', 'pump'];
 const CATEGORIES = ['all', ...new Set(GLUTEN_PRESETS.map((preset) => preset.category))];
 
@@ -255,23 +287,47 @@ const ControlCard = ({
     </DawPluginSectionCard>
 );
 
+/**
+ * A chip that refuses its write while no live stage can hear the parameter
+ * behind it.
+ *
+ * `aria-disabled` rather than the `disabled` attribute, following the Dutch
+ * Oven's `GatedChip`: a chip disabled here is always carrying a `title` that
+ * explains itself, and the HTML attribute would take it out of the tab order
+ * and out of a screen reader's reach — leaving a keyboard user with a control
+ * that is dead *and* silent about why. The click handler is guarded rather than
+ * removed so the refusal is this component's behaviour and cannot be lost by a
+ * caller spelling a prop differently.
+ *
+ * `gate` is required rather than optional so a new chip cannot be added without
+ * its author deciding what it does on each topology.
+ */
 const ToggleChip = ({
     label,
     active,
     accentColor,
     onClick,
+    gate,
 }: {
     label: string;
     active: boolean;
     accentColor: string;
     onClick: () => void;
+    gate: GlutenControlGate;
 }): ReactElement => (
     <DawPluginChip
         active={active}
         tone="neutral"
         size="sm"
         style={active ? { borderColor: accentColor, color: accentColor } : undefined}
-        onClick={onClick}
+        aria-disabled={gate.isInert || undefined}
+        title={gate.explanation ?? undefined}
+        onClick={() => {
+            if (gate.isInert) {
+                return;
+            }
+            onClick();
+        }}
     >
         {label}
     </DawPluginChip>
@@ -287,6 +343,7 @@ const Knob = ({
     step,
     defaultValue,
     unit,
+    gate,
 }: {
     deviceId: string;
     value: number;
@@ -297,6 +354,7 @@ const Knob = ({
     step: number;
     defaultValue: number;
     unit?: string;
+    gate: GlutenControlGate;
 }): ReactElement => (
     <div className="flex flex-col items-center gap-1">
         <RotaryKnob
@@ -310,6 +368,15 @@ const Knob = ({
             defaultValue={defaultValue}
             size="sm"
             tone="lavender"
+            // The visible label is drawn in the sibling below, so the knob
+            // carries none of its own — and `RotaryKnob` falls back to the
+            // shared "Parameter control" name when given nothing, which is what
+            // all eighteen knobs on this panel were called. Naming it here
+            // leaves the layout untouched and makes the disabled ones
+            // identifiable to anyone not reading the pixels.
+            aria-label={label}
+            disabled={gate.isInert}
+            title={gate.explanation ?? undefined}
         />
         <div className="text-center">
             <div className="text-[8px] uppercase tracking-[0.2em] text-muted-foreground/60">{label}</div>
@@ -343,7 +410,6 @@ export const GlutenPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
 
     const topologyMeta = TOPOLOGY_META[currentPatch.topology];
     const accentColor = topologyMeta.color;
-    const stageTwoOptions = TOPOLOGIES.filter((topology) => topology !== currentPatch.topology);
 
     let phaseCorrStr = phaseCorr.toFixed(2);
     if (phaseCorr > 0.99) {
@@ -358,6 +424,136 @@ export const GlutenPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
 
     function applyStyle(style: GlutenStyle): void {
         applyPreset(buildStylePatch(style, currentPatch));
+    }
+
+    /**
+     * Whether anything now processing audio can hear this parameter.
+     *
+     * Every gated control on the panel asks, and the answer comes from
+     * `GLUTEN_TOPOLOGY_GAPS` — one table, measured against the crate by
+     * `crates/daw-dsp/tests/gluten_topology_param_reach.rs` and welded to the
+     * Rust `set_param` arms by `glutenTopologyGating.spec.ts`. Nothing here
+     * enumerates which controls are dead: the day a gap is closed in Rust its
+     * row is deleted (the weld reds until it is) and the control comes back
+     * with no edit to this file.
+     */
+    function gateFor(paramKey: keyof GlutenPatch, controlLabel: string): GlutenControlGate {
+        return glutenControlGate({ patch: currentPatch, paramKey, controlLabel });
+    }
+
+    // The three OS chips are one control, so they share one gate rather than
+    // resolving the same row three times and risking three different sentences.
+    const oversamplingGate = gateFor('oversampling', 'Oversampling');
+    // Likewise the three Thrust chips.
+    const thrustGate = gateFor('thrust', 'Thrust');
+
+    /**
+     * Every topology whose Character controls are worth showing.
+     *
+     * The Character card used to render only `patch.topology`, which is a
+     * stricter rule than the DSP's: `GlutenEngine` owns all four topology
+     * structs and Stage two runs the second one on the first's output, so a
+     * diode in stage two reads `recovery` — its *only* release control — and a
+     * FET in stage two reads `input_gain`, measured at `4.18e-2` and `7.40e-1`
+     * in `a_stage_two_topology_hears_its_own_character_controls`. Both were off
+     * screen with no way to reach them, while the shared controls directly
+     * above resolved against both stages correctly.
+     *
+     * Keyed on the *named* Stage-two topology rather than on
+     * `glutenBlendStage`, which additionally requires `blendAmount > 0.001`.
+     * Keying it on engagement mounted and unmounted four controls and the
+     * card's scroll height as the user dragged the Stage 2 knob across the
+     * threshold — a layout shift caused by a gesture still in progress, which
+     * is the sharpest possible version of what disable-in-place exists to
+     * prevent. The block stays; its controls gate `overridden` while Stage 2 is
+     * at 0%.
+     */
+    const characterStages: GlutenTopology[] = [currentPatch.topology];
+    if (currentPatch.blendTopology !== currentPatch.topology) {
+        characterStages.push(currentPatch.blendTopology);
+    }
+
+    /**
+     * One visible line per card, naming that card's refused controls and how to
+     * get them back.
+     *
+     * `title` is the only channel a disabled control had, and it has no
+     * keyboard trigger and no touch trigger — so a sighted keyboard user could
+     * not read an explanation a screen-reader user hears in full. The gates are
+     * resolved twice, here and at the control, which is free: resolution is a
+     * pure table lookup.
+     */
+    function cardNotice(entries: readonly (readonly [keyof GlutenPatch, string])[]): string | null {
+        return glutenCardNotice({
+            labels: entries.map(([, label]) => label),
+            gates: entries.map(([paramKey, label]) => gateFor(paramKey, label)),
+        });
+    }
+
+    const clampNotice = cardNotice([
+        ['threshold', 'Threshold'],
+        ['ratio', 'Ratio'],
+        ['knee', 'Knee'],
+        ['attack', 'Attack'],
+        ['release', 'Release'],
+        ['amount', 'Amount'],
+    ]);
+    const finishNotice = cardNotice([
+        ['makeup', 'Makeup'],
+        ['mix', 'Mix'],
+        ['range', 'Range'],
+        ['stereoLink', 'Link'],
+        ['lookahead', 'Look'],
+        ['blendAmount', 'Stage 2'],
+        ['autoRelease', 'Auto rel'],
+        ['autoMakeup', 'Auto gain'],
+        ['deltaListen', 'Delta'],
+        ['gainMatchBypass', 'Match'],
+    ]);
+    const detectorNotice = cardNotice([
+        ['scHpfFreq', 'SC HPF'],
+        ['scLpfFreq', 'SC LPF'],
+        ['scEqFreq', 'SC EQ'],
+        ['scEqGain', 'EQ Gain'],
+        ['scEqQ', 'EQ Q'],
+        ['oversampling', 'OS'],
+        ['scHpfEnabled', 'HPF'],
+        ['scLpfEnabled', 'LPF'],
+        ['scEqEnabled', 'SC EQ toggle'],
+        ['extSidechain', 'Ext SC'],
+        ['thrust', 'Thrust'],
+    ]);
+    const characterNotice = cardNotice(
+        characterStages.flatMap((topology) =>
+            GLUTEN_TOPOLOGY_OWNED_CONTROLS[topology].map(
+                (paramKey) => [paramKey, CHARACTER_CONTROL_LABELS[paramKey] ?? String(paramKey)] as const
+            )
+        )
+    );
+    // The Stage-two chooser's refusal is per *option*, not per parameter, so its
+    // notice is built from the option gates rather than through `cardNotice`.
+    const stageTwoNotice = glutenCardNotice({
+        labels: TOPOLOGIES.map((topology) => TOPOLOGY_META[topology].label),
+        gates: TOPOLOGIES.map((option) => glutenStageTwoOptionGate({ patch: currentPatch, option })),
+    });
+
+    /**
+     * Which stage a Character block belongs to, shown only while two are live.
+     *
+     * With one stage the card's own title is unambiguous and a heading would be
+     * noise; with two, an unlabelled second set of controls appearing under the
+     * first is worse than not showing it at all.
+     */
+    function characterHeading(topology: GlutenTopology): ReactElement | null {
+        if (characterStages.length < 2) {
+            return null;
+        }
+        const role = topology === currentPatch.topology ? 'Primary' : 'Stage two';
+        return (
+            <div className="text-[8px] uppercase tracking-[0.26em] text-[var(--color-accent-lavender)]/68">
+                {`${role} — ${TOPOLOGY_META[topology].label}`}
+            </div>
+        );
     }
 
     return (
@@ -648,7 +844,10 @@ export const GlutenPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
                 </Stack>
 
                 <DawPluginRail>
-                    <ControlCard title="Clamp" detail="Threshold, ratio, and timing stay front and center.">
+                    <ControlCard
+                        title="Clamp"
+                        detail={clampNotice ?? 'Threshold, ratio, and timing stay front and center.'}
+                    >
                         <Grid cols={3} gapX={2} gapY={3}>
                             <Knob
                                 deviceId={deviceId}
@@ -660,6 +859,7 @@ export const GlutenPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
                                 step={0.5}
                                 defaultValue={-18}
                                 unit="dB"
+                                gate={gateFor('threshold', 'Threshold')}
                             />
                             <Knob
                                 deviceId={deviceId}
@@ -671,6 +871,7 @@ export const GlutenPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
                                 step={0.5}
                                 defaultValue={4}
                                 unit=":1"
+                                gate={gateFor('ratio', 'Ratio')}
                             />
                             <Knob
                                 deviceId={deviceId}
@@ -682,6 +883,7 @@ export const GlutenPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
                                 step={0.5}
                                 defaultValue={6}
                                 unit="dB"
+                                gate={gateFor('knee', 'Knee')}
                             />
                             <Knob
                                 deviceId={deviceId}
@@ -693,6 +895,7 @@ export const GlutenPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
                                 step={0.1}
                                 defaultValue={10}
                                 unit="ms"
+                                gate={gateFor('attack', 'Attack')}
                             />
                             <Knob
                                 deviceId={deviceId}
@@ -704,6 +907,7 @@ export const GlutenPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
                                 step={1}
                                 defaultValue={300}
                                 unit="ms"
+                                gate={gateFor('release', 'Release')}
                             />
                             <Knob
                                 deviceId={deviceId}
@@ -714,11 +918,15 @@ export const GlutenPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
                                 max={100}
                                 step={1}
                                 defaultValue={50}
+                                gate={gateFor('amount', 'Amount')}
                             />
                         </Grid>
                     </ControlCard>
 
-                    <ControlCard title="Finish" detail="Keep the lane honest while you blend and level.">
+                    <ControlCard
+                        title="Finish"
+                        detail={finishNotice ?? 'Keep the lane honest while you blend and level.'}
+                    >
                         <Grid cols={3} gapX={2} gapY={3}>
                             <Knob
                                 deviceId={deviceId}
@@ -730,6 +938,7 @@ export const GlutenPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
                                 step={0.5}
                                 defaultValue={0}
                                 unit="dB"
+                                gate={gateFor('makeup', 'Makeup')}
                             />
                             <Knob
                                 deviceId={deviceId}
@@ -741,6 +950,7 @@ export const GlutenPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
                                 step={0.01}
                                 defaultValue={1}
                                 unit="mix"
+                                gate={gateFor('mix', 'Mix')}
                             />
                             <Knob
                                 deviceId={deviceId}
@@ -752,6 +962,7 @@ export const GlutenPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
                                 step={1}
                                 defaultValue={15}
                                 unit="dB"
+                                gate={gateFor('range', 'Range')}
                             />
                             <Knob
                                 deviceId={deviceId}
@@ -763,6 +974,7 @@ export const GlutenPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
                                 step={0.01}
                                 defaultValue={1}
                                 unit="link"
+                                gate={gateFor('stereoLink', 'Link')}
                             />
                             <Knob
                                 deviceId={deviceId}
@@ -774,6 +986,7 @@ export const GlutenPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
                                 step={0.5}
                                 defaultValue={0}
                                 unit="ms"
+                                gate={gateFor('lookahead', 'Look')}
                             />
                             <Knob
                                 deviceId={deviceId}
@@ -785,6 +998,7 @@ export const GlutenPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
                                 step={0.01}
                                 defaultValue={0}
                                 unit="mix"
+                                gate={gateFor('blendAmount', 'Stage 2')}
                             />
                         </Grid>
                         <Row wrap gap={1.5}>
@@ -792,24 +1006,28 @@ export const GlutenPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
                                 label="Auto rel"
                                 active={patch.autoRelease}
                                 accentColor={accentColor}
+                                gate={gateFor('autoRelease', 'Auto rel')}
                                 onClick={() => setGlutenParamWithAudio(deviceId, 'autoRelease', !patch.autoRelease)}
                             />
                             <ToggleChip
                                 label="Auto gain"
                                 active={patch.autoMakeup}
                                 accentColor={accentColor}
+                                gate={gateFor('autoMakeup', 'Auto gain')}
                                 onClick={() => setGlutenParamWithAudio(deviceId, 'autoMakeup', !patch.autoMakeup)}
                             />
                             <ToggleChip
                                 label="Delta"
                                 active={patch.deltaListen}
                                 accentColor={accentColor}
+                                gate={gateFor('deltaListen', 'Delta')}
                                 onClick={() => setGlutenParamWithAudio(deviceId, 'deltaListen', !patch.deltaListen)}
                             />
                             <ToggleChip
                                 label="Match"
                                 active={patch.gainMatchBypass}
                                 accentColor={accentColor}
+                                gate={gateFor('gainMatchBypass', 'Match')}
                                 onClick={() =>
                                     setGlutenParamWithAudio(deviceId, 'gainMatchBypass', !patch.gainMatchBypass)
                                 }
@@ -819,7 +1037,10 @@ export const GlutenPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
 
                     <ControlCard
                         title="Detector"
-                        detail="Sidechain filters and listen modes live together instead of hiding in the header."
+                        detail={
+                            detectorNotice ??
+                            'Sidechain filters and listen modes live together instead of hiding in the header.'
+                        }
                     >
                         <Grid cols={3} gapX={2} gapY={3}>
                             <Knob
@@ -832,6 +1053,7 @@ export const GlutenPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
                                 step={1}
                                 defaultValue={80}
                                 unit="Hz"
+                                gate={gateFor('scHpfFreq', 'SC HPF')}
                             />
                             <Knob
                                 deviceId={deviceId}
@@ -843,6 +1065,7 @@ export const GlutenPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
                                 step={100}
                                 defaultValue={20000}
                                 unit="Hz"
+                                gate={gateFor('scLpfFreq', 'SC LPF')}
                             />
                             <Knob
                                 deviceId={deviceId}
@@ -854,6 +1077,7 @@ export const GlutenPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
                                 step={10}
                                 defaultValue={1000}
                                 unit="Hz"
+                                gate={gateFor('scEqFreq', 'SC EQ')}
                             />
                             <Knob
                                 deviceId={deviceId}
@@ -865,6 +1089,7 @@ export const GlutenPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
                                 step={0.5}
                                 defaultValue={0}
                                 unit="dB"
+                                gate={gateFor('scEqGain', 'EQ Gain')}
                             />
                             <Knob
                                 deviceId={deviceId}
@@ -875,6 +1100,7 @@ export const GlutenPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
                                 max={10}
                                 step={0.1}
                                 defaultValue={1}
+                                gate={gateFor('scEqQ', 'EQ Q')}
                             />
                             <Stack gap={1} className="items-center">
                                 <Row gap={1}>
@@ -886,9 +1112,14 @@ export const GlutenPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
                                                 active={active}
                                                 tone="lavender"
                                                 size="sm"
-                                                onClick={() =>
-                                                    setGlutenParamWithAudio(deviceId, 'oversampling', factor)
-                                                }
+                                                aria-disabled={oversamplingGate.isInert || undefined}
+                                                title={oversamplingGate.explanation ?? undefined}
+                                                onClick={() => {
+                                                    if (oversamplingGate.isInert) {
+                                                        return;
+                                                    }
+                                                    setGlutenParamWithAudio(deviceId, 'oversampling', factor);
+                                                }}
                                             >
                                                 {`${factor}×`}
                                             </DawPluginChip>
@@ -904,6 +1135,7 @@ export const GlutenPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
                                     label="HPF"
                                     active={patch.scHpfEnabled}
                                     accentColor={accentColor}
+                                    gate={gateFor('scHpfEnabled', 'HPF')}
                                     onClick={() =>
                                         setGlutenParamWithAudio(deviceId, 'scHpfEnabled', !patch.scHpfEnabled)
                                     }
@@ -912,6 +1144,7 @@ export const GlutenPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
                                     label="LPF"
                                     active={patch.scLpfEnabled}
                                     accentColor={accentColor}
+                                    gate={gateFor('scLpfEnabled', 'LPF')}
                                     onClick={() =>
                                         setGlutenParamWithAudio(deviceId, 'scLpfEnabled', !patch.scLpfEnabled)
                                     }
@@ -920,12 +1153,14 @@ export const GlutenPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
                                     label="SC EQ"
                                     active={patch.scEqEnabled}
                                     accentColor={accentColor}
+                                    gate={gateFor('scEqEnabled', 'SC EQ')}
                                     onClick={() => setGlutenParamWithAudio(deviceId, 'scEqEnabled', !patch.scEqEnabled)}
                                 />
                                 <ToggleChip
                                     label="Ext SC"
                                     active={patch.extSidechain}
                                     accentColor={accentColor}
+                                    gate={gateFor('extSidechain', 'Ext SC')}
                                     onClick={() =>
                                         setGlutenParamWithAudio(deviceId, 'extSidechain', !patch.extSidechain)
                                     }
@@ -971,7 +1206,14 @@ export const GlutenPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
                                             active={active}
                                             tone="lavender"
                                             size="sm"
-                                            onClick={() => setGlutenParamWithAudio(deviceId, 'thrust', thrust)}
+                                            aria-disabled={thrustGate.isInert || undefined}
+                                            title={thrustGate.explanation ?? undefined}
+                                            onClick={() => {
+                                                if (thrustGate.isInert) {
+                                                    return;
+                                                }
+                                                setGlutenParamWithAudio(deviceId, 'thrust', thrust);
+                                            }}
                                         >
                                             {labels[thrust]}
                                         </DawPluginChip>
@@ -981,9 +1223,13 @@ export const GlutenPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
                         </Stack>
                     </ControlCard>
 
-                    <ControlCard title="Character" detail="The last mile changes with the topology you picked.">
-                        {patch.topology === 'fet' ? (
+                    <ControlCard
+                        title="Character"
+                        detail={characterNotice ?? 'The last mile changes with the topology you picked.'}
+                    >
+                        {characterStages.includes('fet') ? (
                             <Stack gap={3}>
+                                {characterHeading('fet')}
                                 <Grid cols={3} gapX={2} gapY={3}>
                                     <Knob
                                         deviceId={deviceId}
@@ -995,6 +1241,7 @@ export const GlutenPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
                                         step={0.5}
                                         defaultValue={0}
                                         unit="dB"
+                                        gate={gateFor('inputGain', 'Input')}
                                     />
                                     <Knob
                                         deviceId={deviceId}
@@ -1006,6 +1253,7 @@ export const GlutenPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
                                         step={0.5}
                                         defaultValue={0}
                                         unit="dB"
+                                        gate={gateFor('outputGain', 'Output')}
                                     />
                                     <Knob
                                         deviceId={deviceId}
@@ -1016,6 +1264,7 @@ export const GlutenPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
                                         max={3}
                                         step={0.01}
                                         defaultValue={1.2}
+                                        gate={gateFor('xfmrDrive', 'Xfmr')}
                                     />
                                     <Knob
                                         deviceId={deviceId}
@@ -1026,6 +1275,7 @@ export const GlutenPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
                                         max={0.5}
                                         step={0.01}
                                         defaultValue={0.15}
+                                        gate={gateFor('jfetK3', 'Odd')}
                                     />
                                     <Knob
                                         deviceId={deviceId}
@@ -1036,19 +1286,22 @@ export const GlutenPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
                                         max={0.3}
                                         step={0.01}
                                         defaultValue={0}
+                                        gate={gateFor('xfmrK2', 'Even')}
                                     />
                                 </Grid>
                                 <ToggleChip
                                     label="All buttons"
                                     active={patch.allButtons}
                                     accentColor={accentColor}
+                                    gate={gateFor('allButtons', 'All buttons')}
                                     onClick={() => setGlutenParamWithAudio(deviceId, 'allButtons', !patch.allButtons)}
                                 />
                             </Stack>
                         ) : null}
 
-                        {patch.topology === 'opto' ? (
+                        {characterStages.includes('opto') ? (
                             <Stack gap={2}>
+                                {characterHeading('opto')}
                                 <Row wrap gap={1.5}>
                                     {[false, true].map((mode, index) => {
                                         const labels = ['Compress', 'Limit'];
@@ -1059,6 +1312,7 @@ export const GlutenPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
                                                 label={labels[index] ?? ''}
                                                 active={active}
                                                 accentColor={accentColor}
+                                                gate={gateFor('limitMode', labels[index] ?? '')}
                                                 onClick={() => setGlutenParamWithAudio(deviceId, 'limitMode', mode)}
                                             />
                                         );
@@ -1070,8 +1324,9 @@ export const GlutenPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
                             </Stack>
                         ) : null}
 
-                        {patch.topology === 'diode' ? (
+                        {characterStages.includes('diode') ? (
                             <Stack gap={2}>
+                                {characterHeading('diode')}
                                 <Row wrap gap={1.5}>
                                     {[1, 2, 3, 4, 5].map((value) => {
                                         const active = patch.recovery === value;
@@ -1081,6 +1336,7 @@ export const GlutenPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
                                                 label={`Recovery ${value}`}
                                                 active={active}
                                                 accentColor={accentColor}
+                                                gate={gateFor('recovery', `Recovery ${value}`)}
                                                 onClick={() => setGlutenParamWithAudio(deviceId, 'recovery', value)}
                                             />
                                         );
@@ -1093,8 +1349,9 @@ export const GlutenPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
                             </Stack>
                         ) : null}
 
-                        {patch.topology === 'vca' ? (
+                        {characterStages.includes('vca') ? (
                             <Stack gap={3}>
+                                {characterHeading('vca')}
                                 <Grid cols={2} gap={2}>
                                     <Knob
                                         deviceId={deviceId}
@@ -1105,6 +1362,7 @@ export const GlutenPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
                                         max={0.02}
                                         step={0.001}
                                         defaultValue={0.003}
+                                        gate={gateFor('vcaCharacter', 'Color')}
                                     />
                                     <Knob
                                         deviceId={deviceId}
@@ -1115,6 +1373,7 @@ export const GlutenPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
                                         max={2}
                                         step={1}
                                         defaultValue={1}
+                                        gate={gateFor('vcaType', 'VCA type')}
                                     />
                                 </Grid>
                                 <Row wrap gap={1.5}>
@@ -1127,6 +1386,7 @@ export const GlutenPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
                                                 label={labels[index] ?? ''}
                                                 active={active}
                                                 accentColor={accentColor}
+                                                gate={gateFor('feedForward', labels[index] ?? '')}
                                                 onClick={() => setGlutenParamWithAudio(deviceId, 'feedForward', mode)}
                                             />
                                         );
@@ -1136,9 +1396,12 @@ export const GlutenPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
                         ) : null}
                     </ControlCard>
 
-                    <ControlCard title="Stage two" detail="Blend a second topology in when the first one needs backup.">
+                    <ControlCard
+                        title="Stage two"
+                        detail={stageTwoNotice ?? 'Blend a second topology in when the first one needs backup.'}
+                    >
                         <Row wrap gap={1.5}>
-                            {stageTwoOptions.map((topology) => {
+                            {TOPOLOGIES.map((topology) => {
                                 const active = patch.blendTopology === topology;
                                 return (
                                     <ToggleChip
@@ -1146,6 +1409,7 @@ export const GlutenPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
                                         label={TOPOLOGY_META[topology].label}
                                         active={active}
                                         accentColor={accentColor}
+                                        gate={glutenStageTwoOptionGate({ patch: currentPatch, option: topology })}
                                         onClick={() => setGlutenParamWithAudio(deviceId, 'blendTopology', topology)}
                                     />
                                 );

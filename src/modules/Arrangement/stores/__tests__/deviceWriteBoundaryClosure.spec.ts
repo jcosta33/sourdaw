@@ -100,7 +100,17 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         'src/modules/Arrangement/useCases/preset/presetLoading.ts': 3,
         'src/modules/Arrangement/useCases/projectTrackToLiveStrip.ts': 2,
         'src/modules/Arrangement/useCases/setTrackGainPan/helpers.ts': 4,
-        'src/modules/Arrangement/useCases/setTrackGainPan/setTrackGain.ts': 2,
+        // Count provenance: was 2, measured 4 — the two unchanged mentions
+        // (import and the `{ updateDeviceParam, getAllTracks }` dependency
+        // literal handed to `syncToasterPadParam`) plus two new doc-comment
+        // mentions, and no new write. Measured with `grep -o` over the four sink
+        // identifiers: updateDeviceParam 3, persistDeviceParam 1, the other two
+        // 0. The header now explains why the Toaster pad mirror sits above the
+        // `isTransient` persistence guard rather than inside it: it names
+        // `updateDeviceParam` as the door the mirror reaches the DSP through and
+        // `persistDeviceParam` as the store-side twin it is *not*. The sink is
+        // still reached exactly once, through `syncToasterPadParam`.
+        'src/modules/Arrangement/useCases/setTrackGainPan/setTrackGain.ts': 4,
         'src/modules/Arrangement/useCases/setTrackGainPan/setTrackPan.ts': 2,
         'src/modules/AudioEngine/models/AudioEngineState.ts': 2,
         'src/modules/AudioEngine/repositories/createWebAudioEngine.ts': 2,

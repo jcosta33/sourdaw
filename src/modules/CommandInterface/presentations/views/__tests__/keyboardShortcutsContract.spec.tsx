@@ -1,6 +1,8 @@
 import { render } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
+import { projectLoadFailureStore } from '#/modules/Project/stores';
+
 import { useGlobalKeyboardShortcuts } from '../keyboardShortcutsContract';
 
 import type { KeyDescriptor } from '../../../useCases/keyboardShortcutActions/handleKeyboardShortcut/handleKeydown';
@@ -40,6 +42,7 @@ describe('useGlobalKeyboardShortcuts — data-canvas-editor delete gate (#21)', 
         mocks.handleKeydown.mockClear();
         mocks.handleKeyup.mockClear();
         cleanupNodes = [];
+        projectLoadFailureStore.set(null);
     });
 
     afterEach(() => {
@@ -53,6 +56,34 @@ describe('useGlobalKeyboardShortcuts — data-canvas-editor delete gate (#21)', 
         cleanupNodes.push(node);
         return node;
     }
+
+    /**
+     * A load that replaced the CRDT authority and then failed leaves the stores
+     * empty while `projectStore` still carries the previous project's
+     * `createdAt` — so `saveProject` keys the recent entry off the user's real
+     * project and serialises the emptied stores over it. The failure surface's
+     * button is not an input and not a canvas editor, so every global shortcut
+     * was still live behind it.
+     */
+    it('routes no shortcut to the app while a failed load is on screen', () => {
+        render(<Host />);
+        const button = mount(document.createElement('button'));
+        projectLoadFailureStore.set({ message: 'session gone', projectName: 'Half Finished Song' });
+
+        button.dispatchEvent(new KeyboardEvent('keydown', { key: 's', metaKey: true, bubbles: true }));
+
+        expect(mocks.handleKeydown).not.toHaveBeenCalled();
+    });
+
+    it('routes shortcuts normally once a project is open again', () => {
+        render(<Host />);
+        const button = mount(document.createElement('button'));
+        projectLoadFailureStore.set(null);
+
+        button.dispatchEvent(new KeyboardEvent('keydown', { key: 's', metaKey: true, bubbles: true }));
+
+        expect(mocks.handleKeydown).toHaveBeenCalledTimes(1);
+    });
 
     it('gates the global shortcut (isInput=true) when Delete fires inside a [data-canvas-editor]', () => {
         render(<Host />);

@@ -231,7 +231,8 @@ function disposeYeastRealtimeBridge(): void {
 
 function handleBeforeUnload(): void {
     disposeYeastRealtimeBridge();
-    // Attempt GC on window close
+    // Attempt GC on window close. `cleanupUnusedFreezeFiles` stands down on its
+    // own when the track store is not authoritative — see the guard there.
     cleanupUnusedFreezeFiles().catch(() => {});
 }
 

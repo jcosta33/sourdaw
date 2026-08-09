@@ -4,6 +4,7 @@ import { transportStore } from '#/modules/Transport/stores';
 
 import { type AutomationPoint } from '../../models/Automation';
 
+import { commitRecordedPass } from './commitRecordedPass';
 import { getAutomationRecordingDependencies } from './getAutomationRecordingDependencies';
 import { makeKey } from './makeKey';
 import { RECORDING_MODES, activeRecording, pendingPoints, touchActive } from './recordingSessionState';
@@ -56,6 +57,21 @@ export function recordAutomationValue(trackId: string, parameterId: string, valu
     const offsetBeats = (totalLatencySec * tempo) / 60;
 
     const compensatedBeat = Math.max(0, beat - offsetBeats);
+
+    // A loop wrap ends the pass. Every pass used to accumulate into one buffer,
+    // which made it non-monotonic in beat the moment the playhead jumped back:
+    // the RDP then ran over a polyline that doubles back on itself, and the
+    // overwrite clear ran once at stop across the union of every pass. Two laps
+    // that happened to sample the same beat grid still merged correctly, so the
+    // damage looked intermittent — off-grid, lap one's points survived
+    // interleaved with lap two's. Live, Logic, Pro Tools and REAPER all replace
+    // the previous pass on lap two; committing here does the same.
+    const previousRawBeat = session.lastRawBeat;
+    if (previousRawBeat !== undefined && previousRawBeat !== null && beat < previousRawBeat) {
+        commitRecordedPass(key, track.automationMode === 'write' || track.automationMode === 'latch');
+        session.startBeat = compensatedBeat;
+    }
+    session.lastRawBeat = beat;
 
     // The session may have been seeded above with the raw `beat`; the
     // latency-compensated beat is the real start, so anchor it on first value.

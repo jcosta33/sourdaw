@@ -121,12 +121,25 @@ export const DEFAULT_PATCH: GlutenPatch = {
     autoRelease: true,
     range: 15,
     scHpfFreq: 80,
-    scHpfEnabled: true,
+    // Off, because a fresh device is a VCA and the detector filters only reach
+    // the diode. Shipping the sidechain HPF *engaged* advertised a filter that
+    // never ran; once the panel started gating the detector controls off Diode,
+    // it also became the first thing a user is likely to click and the click
+    // was swallowed. A default must not enable a stage its own topology cannot
+    // run. `GlutenDescriptor`'s declared default moves with it.
+    scHpfEnabled: false,
     thrust: 0,
     detection: 'rms',
     stereoMode: 'stereo',
     stereoLink: 1,
-    oversampling: 2,
+    // 1×, because a fresh device is a VCA and only the FET and diode stages are
+    // oversampled. At 2× the panel drew the 2× chip lit and greyed — advertising
+    // an oversampled path that does not run, with the click back to 1× refused —
+    // and engaging a FET or Diode Stage two would have made a 2× nobody chose
+    // real. The seven FET and Diode presets state `oversampling: 2` themselves
+    // so none of them changes what it renders. `GlutenDescriptor`'s declared
+    // default moves with this.
+    oversampling: 1,
     lookahead: 0,
     scLpfFreq: 20000,
     scLpfEnabled: false,
