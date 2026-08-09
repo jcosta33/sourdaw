@@ -275,11 +275,17 @@ describe('mix prompt workflow', () => {
         ]);
         expect(confirmation).toMatchObject({
             executionMode: 'atomic',
+            risk: { level: 'bounded-reversible' },
             protectedUnchanged: [{ id: 'track-drum-bus', name: 'Drum Bus' }],
         });
         const proposal = chatStore.value?.messages.find(
             (message) => message.pendingActionConfirmationId === confirmation?.id
         );
+        expect(proposal?.content).toContain('Set track "Lead Vocal" (track-lead-vocal) gain to 0.7');
+        expect(proposal?.content).toContain('Set track "Guitar Left" (track-guitar-left) pan to -20');
+        expect(proposal?.content).toContain('Set track "Guitar Right" (track-guitar-right) pan to +20');
+        expect(proposal?.content).toContain('Mute track "Room Mic" (track-room-mic) (muted=true)');
+        expect(proposal?.content).toContain('Risk: bounded-reversible');
         expect(proposal?.content).toContain('Protected unchanged: "Drum Bus" (track-drum-bus)');
         const revisionBefore = captureProjectRevision();
 
@@ -294,6 +300,10 @@ describe('mix prompt workflow', () => {
         const receipt = chatStore.value?.messages.find(
             (message) => message.pendingActionConfirmationId === confirmation?.id
         );
+        expect(receipt?.content).toContain('Set track "Lead Vocal" (track-lead-vocal) gain to 0.7');
+        expect(receipt?.content).toContain('Set track "Guitar Left" (track-guitar-left) pan to -20');
+        expect(receipt?.content).toContain('Set track "Guitar Right" (track-guitar-right) pan to +20');
+        expect(receipt?.content).toContain('Mute track "Room Mic" (track-room-mic) (muted=true)');
         expect(receipt?.content).toContain('Outcome: committed');
         expect(receipt?.content).toContain('Protected unchanged: "Drum Bus" (track-drum-bus)');
         expect(getPendingActionConfirmation(confirmation?.id ?? '')?.executedActions).toHaveLength(4);
