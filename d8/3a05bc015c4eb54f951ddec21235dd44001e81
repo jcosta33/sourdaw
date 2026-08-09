@@ -1,0 +1,94 @@
+src/modules/AiRuntime/stores/aiActionHistoryStore.ts
+  s_14f2bbc9f385dd::t_74df9f26c4864c 161-169
+  s_5555d487dda566::t_315dc47970df58 142,150,175,183
+src/modules/Collaboration/useCases/collaboration/__tests__/sessionTeardownUnderStoragePressure.spec.ts
+  s_14f2bbc9f385dd::t_f7258fe1614c3d 8,11-12
+  s_14f2bbc9f385dd::t_204074fa6a9790 53-56
+  s_14f2bbc9f385dd::t_286966a7531cd8 115-138,141-145,147-158
+  s_14f2bbc9f385dd::t_74cc2bad47c6ae 13-15,57-58,63,103
+src/modules/CommandInterface/useCases/setShortcutMapping.ts
+  s_14f2bbc9f385dd::t_c1e14e2e46c793 16-19
+  s_14f2bbc9f385dd::t_fb1e8e1c871062 20
+src/modules/CrdtDocument/useCases/preserveBranchStateForSession.ts
+  s_14f2bbc9f385dd::t_9da300cf950d7d 2,5-13
+src/modules/CrdtDocument/stores/branchStore.ts
+  s_14f2bbc9f385dd::t_402176c41b6c6d 225-245
+  s_14f2bbc9f385dd::t_0019ff2b8c26ec 224
+src/modules/CrdtDocument/presentations/views/BranchManagerDialog.tsx
+  s_14f2bbc9f385dd::t_24c18034ecf6b9 136
+  s_14f2bbc9f385dd::t_8defd5ac3cd6d9 61-62,66-67,73,76,87,96,105
+  s_14f2bbc9f385dd::t_7fd9d116c72958 36-42,50-51
+  s_14f2bbc9f385dd::t_f6cbfc87a8b684 44-48,52-58
+  s_14f2bbc9f385dd::t_7245c15bb0bcea 59-60
+src/infra/store/storage/createLocalStorage.ts
+  s_14f2bbc9f385dd::t_149272295dfa9e 146
+  s_14f2bbc9f385dd::t_05a4e1e5bdefaf 5,9-49
+  s_14f2bbc9f385dd::t_93db9ab69a9319 50
+src/modules/Preferences/useCases/updatePreferences.ts
+  s_14f2bbc9f385dd::t_41c3feb5fcb7de 14-20
+  s_14f2bbc9f385dd::t_1304f45a87199c 21
+src/modules/Collaboration/useCases/collaboration/sessionManagement.ts
+  s_14f2bbc9f385dd::t_d6868bd8a4ed0b 242-252,254-257,259-261
+  s_14f2bbc9f385dd::t_aa9bf6192fdb62 21
+src/modules/CrdtDocument/presentations/views/__tests__/BranchManagerDialog.spec.tsx
+  s_14f2bbc9f385dd::t_9995a00dc00318 113,144,146-162,168-171,173-190,200
+  s_14f2bbc9f385dd::t_fcd9e0e6660981 163-167,172
+  s_14f2bbc9f385dd::t_81c2d517253a45 50-53,124,133,143,145
+src/modules/Preferences/useCases/__tests__/preferenceWritesUnderStoragePressure.spec.ts
+  s_14f2bbc9f385dd::t_ddb1fd4abe8628 1-2,6-7,29-57,62-69,71-72,76-86,90-92,94-97,100-102,104-105
+  s_14f2bbc9f385dd::t_f20a841dddb602 3-5
+  s_14f2bbc9f385dd::t_f94856bd08dffc 58-60,70
+  s_14f2bbc9f385dd::t_9ac8e38ae06b6f 8-10,16-28
+  s_14f2bbc9f385dd::t_1067041cf381ac 99,103
+  s_14f2bbc9f385dd::t_1e43c4689f16f6 11-15
+  s_14f2bbc9f385dd::t_5788f18da78334 61,73-75,87-89,98
+  s_14f2bbc9f385dd::t_fd96e6e5a73dc0 93,106-107
+src/modules/CrdtDocument/stores/__tests__/branchStoreBoot.spec.ts
+  s_14f2bbc9f385dd::t_85d32e80b7980e 202-250
+src/modules/CommandInterface/useCases/__tests__/resetShortcutMappings.spec.ts
+  s_14f2bbc9f385dd::t_22b970ae9664a0 6,20,24-25,34,38,43,47
+src/modules/CommandInterface/useCases/resetShortcutMappings.ts
+  s_14f2bbc9f385dd::t_cae8d848bb72af 16
+src/modules/Preferences/useCases/__tests__/resetPreferences.spec.ts
+  s_14f2bbc9f385dd::t_554bfcf5d3071f 16,32
+src/modules/Preferences/useCases/__tests__/setTimelineMinimapHeight.spec.ts
+  s_14f2bbc9f385dd::t_359f7eeaca695b 8,16,34-35,46
+src/modules/Preferences/useCases/__tests__/setTrackHeight.spec.ts
+  s_14f2bbc9f385dd::t_7147d8518576de 18
+src/modules/Preferences/useCases/__tests__/updatePreferences.spec.ts
+  s_14f2bbc9f385dd::t_b4df5c6c5fe1c9 20,37,48
+src/modules/Preferences/useCases/resetPreferences.ts
+  s_14f2bbc9f385dd::t_204b90be5996ee 7
+src/modules/Preferences/useCases/setTimelineMinimapHeight.ts
+  s_14f2bbc9f385dd::t_8d87a91c13bbe0 11
+src/modules/Preferences/useCases/setTrackHeight.ts
+  s_14f2bbc9f385dd::t_953fd5fd0eb6be 9
+src/modules/WorkspaceShell/useCases/__tests__/dismissAlphaNotice.spec.ts
+  s_14f2bbc9f385dd::t_d4247878b30229 12,24
+src/modules/WorkspaceShell/useCases/dismissAlphaNotice.ts
+  s_14f2bbc9f385dd::t_bcd29e75fd3f9d 4
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "d83a05bc015c4eb54f951ddec21235dd44001e81",
+  "prompts": {},
+  "sessions": {
+    "s_14f2bbc9f385dd": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f9a61a1d-66b3-4146-938d-a04f45f4b060",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_5555d487dda566": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-a60b12890d99fc141",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
