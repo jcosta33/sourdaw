@@ -110,3 +110,39 @@ jobs:
       # local run and the CI run cannot drift.
       - name: Server and Rust workspace health gates
         run: ./scripts/health-gates-server.sh
+
+  # E2E gate. Inert while this workflow is `workflow_dispatch`-only (Actions
+  # billing is suspended — see the header comment). To activate, restore the
+  # pull_request / push triggers named there; this job then runs the full
+  # Playwright suite via the playwright.config.ts `webServer` (auto-starts Vite
+  # on :5173), --workers=1 for determinism, and fails the build on any red spec.
+  # The suite must be deterministic and green before this gates merges — gating
+  # a flaky or red suite trains everyone to ignore it.
+  e2e:
+    name: End-to-end health gate
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22.17.0
+
+      - name: Enable Corepack
+        run: corepack enable
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Run Playwright E2E suite
+        run: npx playwright test --workers=1
+
+      - name: Upload Playwright report
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: playwright-report/
+          retention-days: 7
