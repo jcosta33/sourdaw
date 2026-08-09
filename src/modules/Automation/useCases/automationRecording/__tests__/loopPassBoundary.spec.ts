@@ -155,6 +155,39 @@ describe('automation recording across a loop boundary', () => {
         expect(points.some((point) => point.value === 0.15)).toBe(false);
     });
 
+    /**
+     * The wrap also re-anchors where the new pass starts. Arming mid-loop makes
+     * lap one's start later than lap two's, so a session that kept lap one's
+     * `startBeat` would clear only the tail of what lap two passed over and
+     * leave whatever was already on the lane in front of it — a curve lap two
+     * overwrote in the engine but not in the project.
+     */
+    it('overwrites the whole span the second pass covers, not just the first pass’s span', () => {
+        const lane = automationStore.value!.lanes[0]!;
+        automationStore.set({
+            lanes: [{ ...lane, points: [{ beat: 0.5, value: 0.95, curve: 'linear', tension: 0 }] }],
+        });
+
+        // Recording armed mid-loop: lap one starts at beat 3.
+        playPass([
+            [3, 0.6],
+            [3.5, 0.6],
+            [4, 0.6],
+        ]);
+        // Lap two runs the whole loop and passes straight over beat 0.5.
+        playPass([
+            [0, 0.2],
+            [1, 0.2],
+            [2, 0.2],
+            [3, 0.2],
+            [4, 0.2],
+        ]);
+        stopAutomationRecording();
+
+        expect(recordedPoints().some((point) => point.beat === 0.5)).toBe(false);
+        expect(recordedPoints().every((point) => point.value === 0.2)).toBe(true);
+    });
+
     it('keeps a single uninterrupted pass intact', () => {
         playPass([
             [0, 0.9],
