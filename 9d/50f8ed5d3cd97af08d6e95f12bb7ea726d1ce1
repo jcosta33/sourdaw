@@ -1,0 +1,18 @@
+src/modules/AudioEngine/useCases/audioAnalysis/__tests__/analyzePitchForClip.spec.ts
+  h_1228e573df1f42 25-29,31-32,168-172
+src/modules/AudioEngine/useCases/audioAnalysis/analyzePitchForClip.ts
+  h_1228e573df1f42 3,9-24,102-105
+src/modules/AudioEngine/useCases/audioAnalysis/processPitchEditWasm.ts
+  h_1228e573df1f42 6-11
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "9d50f8ed5d3cd97af08d6e95f12bb7ea726d1ce1",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
