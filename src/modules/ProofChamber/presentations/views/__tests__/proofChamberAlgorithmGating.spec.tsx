@@ -6,13 +6,13 @@ import { executeAppAction, executeAppActionBatch } from '#/modules/Command/useCa
 import { NATIVE_DSP_ENGINE_GAPS, findNativeDspEngineGapParam } from '#/utils/nativeDspEngineGaps';
 
 import { chamberEngineIdForAlgorithm } from '../../../models/ProofChamberAlgorithmGating';
-import { hydrateChamberStateFromProject } from '../../../useCases/proofChamber/hydrateChamberStateFromProject';
 import {
     DEFAULT_PARAMS,
     PARAM_MAP,
     type ProofChamberAlgorithm,
     type ProofChamberEngineState,
 } from '../../../models/ProofChamberState';
+import { hydrateChamberStateFromProject } from '../../../useCases/proofChamber/hydrateChamberStateFromProject';
 import { ProofChamberPanel } from '../ProofChamberPanel';
 
 /**
