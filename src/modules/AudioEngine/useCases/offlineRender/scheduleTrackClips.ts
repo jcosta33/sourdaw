@@ -10,6 +10,9 @@ import {
 } from '#/modules/Synth/useCases';
 import { defaultTransportState, type TempoMapStoreState, transportStore } from '#/modules/Transport/stores';
 import { automationSlewTickSecondsForGrain } from '#/utils/automationSlew';
+// Not `#/modules/Arrangement/useCases`. This file is the single edge that decides whether the
+// 43-module knot (Arrangement, Transport, Collaboration, CrdtDocument, Yeast, MIDI, AudioEngine, …)
+// is a cycle: importing that barrel here reds `deps:validate` with ~200 no-circular rows.
 import { projectClipLoopExpansion } from '#/utils/clipLoopProjection';
 import { resolveToasterPadIndex, TOASTER_NEUTRAL_MIDI_NOTE } from '#/utils/toasterNoteProjection';
 import { getToasterSwingOffsetBeats } from '#/utils/toasterSwingProjection';
