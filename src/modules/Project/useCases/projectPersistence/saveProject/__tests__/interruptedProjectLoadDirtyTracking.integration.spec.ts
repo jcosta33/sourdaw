@@ -570,6 +570,124 @@ describe('interrupted project load dirty tracking', () => {
         });
     });
 
+    /**
+     * A throw *after* the CRDT authority switch is not an abort: `createProject`
+     * has installed a fresh empty root and `resetAutomergeStorageProjections`
+     * has replaced every root-doc store's value with its `hydrateMissing()`
+     * default, so the previous project is already out of the stores. The seam
+     * below reproduces that — the stub empties the stores exactly as the real
+     * projection reset does (measured in
+     * `CrdtDocument/useCases/__tests__/resetCrdtProjectAuthority.spec.ts`:
+     * `trackProjection.get()` → `{ tracks: [] }`) — and then throws the way a
+     * full localStorage quota does out of the closing `branchStore.set`.
+     */
+    describe('a throw after the authority switch', () => {
+        function replaceAuthorityThenThrow(): void {
+            mockResetCrdtProjectAuthority.mockImplementation(
+                (_name: string, onAuthorityReplaced?: () => void): void => {
+                    onAuthorityReplaced?.();
+                    // What `resetAutomergeStorageProjections` does to every
+                    // root-doc projection: the user's project leaves the stores.
+                    trackStore.set(structuredClone(defaultTrackState));
+                    const project = projectStore.value;
+                    if (project) {
+                        projectStore.set({ ...project, name: 'Untitled Project' });
+                    }
+                    throw new DOMException('exceeded the quota', 'QuotaExceededError');
+                }
+            );
+        }
+
+        it('does not schedule the persist that would overwrite the project on disk', async () => {
+            const opened = await openProject(OPEN_PROJECT_NAME, OPEN_TRACK_ID, OPEN_TRACK_NAME);
+            expect(opened.status).toBe('committed');
+            mockStartCrdtAutoSave.mockClear();
+            mockSetAutoSaveHandle.mockClear();
+            mockCompactProject.mockClear();
+            replaceAuthorityThenThrow();
+
+            const result = await replaceProjectData({
+                context: 'applyImportedProjectData',
+                data: projectData({
+                    name: INCOMING_PROJECT_NAME,
+                    trackId: 'incoming-track',
+                    trackName: INCOMING_TRACK_NAME,
+                }),
+                transaction: loadTransaction(),
+            });
+
+            expect(result.status).toBe('failed');
+            // Restarting autosave ends in `scheduleDurabilityAttempt(0)` →
+            // `compactProject()` → `saveAllToIdb`, "replace all persisted
+            // documents". Against the empty root that overwrites the user's
+            // project. The load's `stopActiveAutoSave()` must stay in force.
+            expect(mockStartCrdtAutoSave).not.toHaveBeenCalled();
+            expect(mockSetAutoSaveHandle).not.toHaveBeenCalled();
+            expect(mockCompactProject).not.toHaveBeenCalled();
+        });
+
+        it('does not dress the empty project up as a working session', async () => {
+            await openProject(OPEN_PROJECT_NAME, OPEN_TRACK_ID, OPEN_TRACK_NAME);
+            mockEnsureTrackStrips.mockClear();
+            replaceAuthorityThenThrow();
+
+            const result = await replaceProjectData({
+                context: 'applyImportedProjectData',
+                data: projectData({
+                    name: INCOMING_PROJECT_NAME,
+                    trackId: 'incoming-track',
+                    trackName: INCOMING_TRACK_NAME,
+                }),
+                transaction: loadTransaction(),
+            });
+
+            expect(result.status).toBe('failed');
+            // No project is open, so the launch screen — not a restored session
+            // the user would keep working in, and not a wedged overlay either.
+            expect(projectStore.value?.initialized).toBe(false);
+            expect(projectStore.value?.loading).toBe(false);
+            expect(mockNotifyUser).toHaveBeenCalledWith(expect.stringContaining('could not be restored'), 'error');
+            // `ensureTrackStrips` reads `trackStore.value?.tracks`, which the
+            // authority switch just emptied — calling it would only look like a
+            // recovery.
+            expect(mockEnsureTrackStrips).not.toHaveBeenCalled();
+        });
+
+        it('still restores the previous session when the throw came before the switch', async () => {
+            await openProject(OPEN_PROJECT_NAME, OPEN_TRACK_ID, OPEN_TRACK_NAME);
+            mockStartCrdtAutoSave.mockClear();
+            mockEnsureTrackStrips.mockClear();
+            // Throws without ever reporting a replacement — `createProject`
+            // itself failing.
+            mockResetCrdtProjectAuthority.mockImplementation((): void => {
+                throw new Error('createProject failed');
+            });
+
+            const result = await replaceProjectData({
+                context: 'applyImportedProjectData',
+                data: projectData({
+                    name: INCOMING_PROJECT_NAME,
+                    trackId: 'incoming-track',
+                    trackName: INCOMING_TRACK_NAME,
+                }),
+                transaction: loadTransaction(),
+            });
+
+            expect(result.status).toBe('aborted');
+            // The previous session survived, so everything the recoverable path
+            // does is correct here.
+            expect(trackStore.value?.tracks.map((track) => track.name)).toContain(OPEN_TRACK_NAME);
+            expect(projectStore.value?.name).toBe(OPEN_PROJECT_NAME);
+            expect(projectStore.value?.initialized).toBe(true);
+            expect(mockStartCrdtAutoSave).toHaveBeenCalled();
+            expect(mockEnsureTrackStrips).toHaveBeenCalled();
+
+            editTheArrangement();
+
+            expect(projectStore.value?.dirty).toBe(true);
+        });
+    });
+
     describe('a committed open', () => {
         it('ends with loading cleared and the next edit tracked', async () => {
             const opened = await openProject(OPEN_PROJECT_NAME, OPEN_TRACK_ID, OPEN_TRACK_NAME);

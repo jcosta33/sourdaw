@@ -179,7 +179,9 @@ describe('replaceProjectData', () => {
         }
         expect(mockStopPlayback).toHaveBeenCalled();
         expect(mockResetAudioGraph).toHaveBeenCalled();
-        expect(mockResetCrdtProjectAuthority).toHaveBeenCalledWith('Test Project');
+        // Second argument is the point-of-no-return callback the abort path
+        // uses to tell a recoverable failure from an unrecoverable one.
+        expect(mockResetCrdtProjectAuthority).toHaveBeenCalledWith('Test Project', expect.any(Function));
         expect(mockResetModuleStores).toHaveBeenCalled();
         expect(mockHydrateArrangement).toHaveBeenCalled();
         expect(mockClearUndoHistory).toHaveBeenCalled();

@@ -44,7 +44,13 @@ type ReplaceProjectDataInput = {
     transaction: ProjectLoadTransaction;
 };
 
-type ProjectReplacementResult = { status: 'aborted' } | { status: 'committed'; degraded: boolean };
+type ProjectReplacementResult =
+    | { status: 'aborted' }
+    | { status: 'committed'; degraded: boolean }
+    /** The authority switch happened and then the load threw: the incoming
+     * project never arrived and the previous one is already gone. Distinct from
+     * `aborted`, which means the previous session is still there. */
+    | { status: 'failed' };
 
 function logPreparationFailure(context: ReplaceProjectDataInput['context'], error: unknown): void {
     logger.error(new Error(`[${context}] Project replacement preparation failed`, { cause: error }));
@@ -67,13 +73,18 @@ export async function replaceProjectData({
 }: ReplaceProjectDataInput): Promise<ProjectReplacementResult> {
     const currentProject = projectStore.value;
     // Captured before the load claims the flags, so an abort can hand the
-    // previous session back exactly as it was. Every abort below returns
-    // through `abortProjectReplacement`: none of them has published any of the
-    // incoming project (hydration happens only in the committed batch), and the
-    // two that tore the audio graph down rebuild the previous one via
-    // `restorePreviousAudioGraph`, so the entry values are the right values for
-    // all of them. Mirrors `newProject`'s `previousTransientState` /
-    // `failNewProjectActivation` pair.
+    // previous session back exactly as it was. Every abort returning through
+    // `abortProjectReplacement` has left the previous session intact: none has
+    // published any of the incoming project (hydration happens only in the
+    // committed batch), and the audio-graph teardown abort rebuilds the previous
+    // graph via `restorePreviousAudioGraph`. Mirrors `newProject`'s
+    // `previousTransientState` / `failNewProjectActivation` pair.
+    //
+    // The one exception is a throw *after* the CRDT authority switch, which is
+    // not an abort at all — the previous session no longer exists to restore,
+    // and `restorePreviousAudioGraph` is a no-op there because the projection
+    // reset has already emptied the track store. That path returns through
+    // `failProjectReplacement` instead.
     const previousTransientState = currentProject
         ? { initialized: currentProject.initialized, loading: currentProject.loading }
         : null;
@@ -119,6 +130,45 @@ export async function replaceProjectData({
             }
         }
         return { status: 'aborted' };
+    }
+
+    function failProjectReplacement(): ProjectReplacementResult {
+        // The authority switch already happened: `createProject` installed a
+        // fresh empty root and `resetAutomergeStorageProjections` replaced every
+        // root-doc store's value with its `hydrateMissing()` default. The user's
+        // project is out of the stores and cannot be put back from here.
+        //
+        // So this is not an abort, and every step the abort path takes would
+        // make things worse rather than better:
+        //   - `restorePreviousAudioGraph()` is a no-op here — `ensureTrackStrips`
+        //     reads `trackStore.value?.tracks`, which the projection reset just
+        //     emptied. Calling it would only look like a recovery.
+        //   - restarting autosave ends in `scheduleDurabilityAttempt(0)` →
+        //     `compactProject()` → `saveAllToIdb`, whose contract is "replace
+        //     all persisted documents". That would overwrite the user's project
+        //     on disk with the empty one, within milliseconds. The load's
+        //     `stopActiveAutoSave()` deliberately stays in force.
+        //   - restoring `{ loading: false, initialized: true }` would present
+        //     the empty project as a normally opened session and let the user
+        //     keep working in it while their real one is gone.
+        //
+        // What is left is the honest state: no project open, so the launch
+        // screen — not a wedged overlay, and not a fake session. Nothing
+        // compacted, so IndexedDB still holds the user's project and reopening
+        // it from that screen is a real recovery.
+        const project = projectStore.value;
+        if (project) {
+            projectStore.set({ ...project, loading: false, initialized: false });
+        }
+        try {
+            notifyUser(
+                'Opening the project failed and the previous session could not be restored. Your saved projects are intact — open one to continue.',
+                'error'
+            );
+        } catch (error) {
+            logger.error(new Error(`[${context}] Failed-load notification failed`, { cause: error }));
+        }
+        return { status: 'failed' };
     }
 
     try {
@@ -181,13 +231,19 @@ export async function replaceProjectData({
     }
 
     let previousPersistenceStopped = false;
+    let authorityReplaced = false;
     try {
         stopActiveAutoSave();
         previousPersistenceStopped = true;
-        resetCrdtProjectAuthority(data.meta.name);
+        resetCrdtProjectAuthority(data.meta.name, () => {
+            authorityReplaced = true;
+        });
         projectActionHistoryToStore();
     } catch (error) {
         logPreparationFailure(context, error);
+        if (authorityReplaced) {
+            return failProjectReplacement();
+        }
         restorePreviousAudioGraph(context);
         if (previousPersistenceStopped) {
             try {

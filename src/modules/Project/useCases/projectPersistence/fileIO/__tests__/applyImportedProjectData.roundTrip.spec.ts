@@ -309,7 +309,7 @@ describe('applyImportedProjectData round-trip hydration', () => {
         expect(call?.audioContext).toBe(audioContext);
         expect(call?.bufferIds).toEqual(['buf-frozen', 'buf-1', 'buf-2', 'buf-alt']);
         expect(call?.shouldContinue?.()).toBe(true);
-        expect(resetCrdtProjectAuthority).toHaveBeenCalledWith('Round Trip');
+        expect(resetCrdtProjectAuthority).toHaveBeenCalledWith('Round Trip', expect.any(Function));
         expect(trackStore.value?.tracks[0]?.clips[0]).toMatchObject({
             audioBufferId: 'buf-1',
             audioOffsetBeats: 1,
