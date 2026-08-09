@@ -1,0 +1,28 @@
+docs/06-testing.md
+  s_14f2bbc9f385dd::t_a6d061b141be27 125-153
+scripts/test-health-gate-scripts.sh
+  s_14f2bbc9f385dd::t_1bd5389228caac 31-33
+  s_14f2bbc9f385dd::t_4f8fea4d5d77be 129-152
+AGENTS.md
+  s_14f2bbc9f385dd::t_b6c94cc7a8600e 16
+scripts/__tests__/checkBarrelMockCoverage.spec.ts
+  s_14f2bbc9f385dd::t_0d12f1057f9ed7 37-43,327-347
+scripts/checkBarrelMockCoverage.ts
+  s_14f2bbc9f385dd::t_328c2bee1ec4f9 67,100-105,740-751,759-767,771-787,789-793
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "1fc38499b57a6b909046f38170ec8b7c6128c754",
+  "prompts": {},
+  "sessions": {
+    "s_14f2bbc9f385dd": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f9a61a1d-66b3-4146-938d-a04f45f4b060",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
