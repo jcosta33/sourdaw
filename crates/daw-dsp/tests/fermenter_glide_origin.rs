@@ -454,6 +454,86 @@ fn the_first_note_renders_exactly_as_if_glide_were_off() {
     );
 }
 
+/// A layer that was out of range while notes were played still glides its next
+/// note from what the **player** played, not from whatever it was last audible
+/// for itself.
+///
+/// This is the same defect one level up. `MasterSynth::note_on_with_channel`
+/// fans a note out only to layers that are unmuted, solo-eligible and inside
+/// `num_active_layers`, so a record kept *per layer* would mean "what was this
+/// layer last audible for" — and a layer switched out of range for part of a
+/// phrase would keep the pitch from before it left and glide from there. The
+/// record is therefore taken by the synth, above that filter.
+///
+/// `num_layers` is a declared, automatable patch parameter with an entry in
+/// `AUTOMATION_PARAM_NAMES`, so this state is reachable from a project rather
+/// than only from a test. `layer_mute` reproduces it identically.
+///
+/// The fixture silences layer 0 with `layer_level` so that only layer 1 is
+/// measured, and moves `num_layers` so that only layer 0 hears the middle note.
+/// The two candidate origins are the same two octaves apart the rest of this
+/// file uses, in opposite directions from the destination.
+#[test]
+fn a_layer_out_of_range_still_glides_from_what_the_player_played() {
+    let mut instance = FermenterInstance::new(SAMPLE_RATE, 16);
+
+    // Layer 0: configured and then silenced, so it never reaches the analysis
+    // while still being the layer that receives the middle note.
+    instance.set_param("active_layer", 0.0);
+    configure_bare_sine(&mut instance);
+    instance.set_param("layer_level", 0.0);
+
+    // Layer 1: the one that is measured.
+    instance.set_param("num_layers", 2.0);
+    instance.set_param("active_layer", 1.0);
+    configure_bare_sine(&mut instance);
+    instance.set_param("portamento", GLIDE_OFF);
+    instance.set_param("portamento_mode", ALWAYS_MODE);
+
+    // Heard by both layers.
+    instance.note_on(STALE_NOTE, VELOCITY);
+    render_discarded(&mut instance, RELEASE_BLOCKS);
+    instance.note_off(STALE_NOTE);
+    render_discarded(&mut instance, RELEASE_BLOCKS);
+
+    // Layer 1 is now out of range, so only layer 0 hears this one — but the
+    // player played it, and it is the pitch the next glide must start from.
+    instance.set_param("num_layers", 1.0);
+    instance.note_on(SOURCE_NOTE, VELOCITY);
+    render_discarded(&mut instance, RELEASE_BLOCKS);
+    instance.note_off(SOURCE_NOTE);
+    render_discarded(&mut instance, RELEASE_BLOCKS);
+
+    // Layer 1 back in range, and its glide armed.
+    instance.set_param("num_layers", 2.0);
+    instance.set_param("active_layer", 1.0);
+    instance.set_param("portamento", GLIDE_SECONDS);
+    instance.note_on(PROBE_NOTE, VELOCITY);
+
+    let mut samples = Vec::with_capacity(TOTAL_BLOCKS * BLOCK);
+    for _ in 0..TOTAL_BLOCKS {
+        render_block(&mut instance, &mut samples);
+    }
+
+    let opening = opening_frequency(&samples);
+    assert!(
+        (700.0..=SOURCE_HZ + 1.0).contains(&opening),
+        "layer 1 was out of range when {SOURCE_NOTE} was played, but the player \
+         played it — so its next glide must descend from {SOURCE_HZ:.2} Hz and \
+         the opening window should read between 700 Hz and {SOURCE_HZ:.2} Hz; \
+         measured {opening:.2} Hz. A reading near 83 Hz is the layer gliding up \
+         from the last note it was itself audible for, which is a record kept \
+         below the playability filter instead of above it."
+    );
+    let interior = interior_frequency(&samples);
+    assert!(
+        (PROBE_HZ + 20.0..opening - 20.0).contains(&interior),
+        "and it must still be partway down 512 ms in — below its opening \
+         {opening:.2} Hz and above its destination {PROBE_HZ:.2} Hz; measured \
+         {interior:.2} Hz"
+    );
+}
+
 /// The counterweight to the two snap tests above: they are satisfied by an
 /// engine that has simply stopped gliding, and this is not that. With a history
 /// to glide from, the render must differ from the same note with the glide off.

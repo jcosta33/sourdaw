@@ -173,6 +173,9 @@ impl Voice {
             lorenz: LorenzMod::new(),
             perlin: PerlinMod::new(),
             engine: 0,
+            // Both are overwritten by `note_on` before the voice can render a
+            // sample — it is the only thing that sets `active` — so neither
+            // value is ever heard. They are not a starting pitch.
             target_freq: 440.0,
             current_freq: 440.0,
             glide_coeff: 1.0,
@@ -191,7 +194,28 @@ impl Voice {
         }
     }
 
-    pub fn note_on(&mut self, note: u8, channel: u8, velocity: f32, sample_rate: f32) {
+    /// Start a note.
+    ///
+    /// `glide_origin` is the pitch the note's glide starts from, and it is a
+    /// parameter rather than a separate setter so that **there is no way to
+    /// start a note without stating it**. It used to be its own
+    /// `set_glide_origin` call that `Layer::note_on_with_channel` made just
+    /// before this one, which left `current_freq`'s 440 Hz construction seed
+    /// reachable by any second call site that forgot the extra step — silently,
+    /// only under glide, and only in the polyphonic cases nobody catches by ear.
+    /// That is exactly how the original defect survived, so the shape that
+    /// allowed it is gone rather than merely unused.
+    pub fn note_on(
+        &mut self,
+        note: u8,
+        channel: u8,
+        velocity: f32,
+        glide_origin: f32,
+        sample_rate: f32,
+    ) {
+        // Before the snap check below, which overrides it when there is no
+        // glide to run.
+        self.current_freq = glide_origin;
         self.active = true;
         self.note = note;
         self.channel = channel;
@@ -246,22 +270,6 @@ impl Voice {
         if let Some(sp) = &mut self.sampler {
             sp.trigger(pitch_ratio);
         }
-    }
-
-    /// Seed the pitch the next glide starts from.
-    ///
-    /// Must be called *before* `note_on`, and after `set_portamento` so the
-    /// glide coefficient is already the one this note will use. `note_on` snaps
-    /// `current_freq` onto the new pitch only when the coefficient says there is
-    /// no glide, so with a glide armed this value survives and the render loop
-    /// ramps away from it.
-    ///
-    /// The caller is `Layer::note_on_with_channel`, and it is the caller rather
-    /// than the voice because the origin is a property of what the *player* last
-    /// played, not of the slot the note was allocated to — see the note on
-    /// `Layer::last_played_freq`.
-    pub fn set_glide_origin(&mut self, freq: f32) {
-        self.current_freq = freq;
     }
 
     /// Set portamento time in seconds. 0 = no portamento.
@@ -928,12 +936,12 @@ impl Voice {
 
 #[cfg(test)]
 mod tests {
-    use super::Voice;
+    use super::{note_frequency, Voice};
 
     #[test]
     fn note_on_clears_expression_so_a_recycled_voice_starts_neutral() {
         let mut voice = Voice::new(48_000.0);
-        voice.note_on(69, 0, 0.8, 48_000.0);
+        voice.note_on(69, 0, 0.8, note_frequency(69), 48_000.0);
         voice.set_expression(12.0, 1.0, -1.0);
         assert_eq!(voice.expr_bend_semitones, 12.0);
         assert_eq!(voice.expr_pressure, 1.0);
@@ -941,7 +949,7 @@ mod tests {
 
         // Voice stealing hands the same struct to a different MIDI note, so a
         // stale bend would detune an unrelated note (audit MD-2).
-        voice.note_on(60, 0, 0.8, 48_000.0);
+        voice.note_on(60, 0, 0.8, note_frequency(60), 48_000.0);
         assert_eq!(voice.expr_bend_semitones, 0.0);
         assert_eq!(voice.expr_pressure, 0.0);
         assert_eq!(voice.expr_slide, 0.0);
