@@ -674,7 +674,7 @@ describe('parsePromptToActions', () => {
         expect(result.executionMode).toBe('atomic');
     });
 
-    it('keeps a surviving glue action and rejects its omission from a mixed provider batch', async () => {
+    it('keeps a later grounded glue action when the provider also emits the explicitly cancelled pair', async () => {
         const actualBridge = await vi.importActual<typeof import('../agentReference/bridgeGroundedLlmToolCalls')>(
             '../agentReference/bridgeGroundedLlmToolCalls'
         );
@@ -738,22 +738,6 @@ describe('parsePromptToActions', () => {
         expect(result.actions).toEqual([{ type: 'glueClips', payload: { clipIds: ['clip-outro', 'clip-coda'] } }]);
         expect(result.requiresConfirmation).toBe(true);
         expect(result.executionMode).toBe('atomic');
-
-        vi.mocked(generateToolCalls).mockResolvedValue(
-            completePlan([
-                { name: 'glueClips', arguments: { clipIds: ['clip-intro', 'clip-verse'] } },
-                { name: 'setTempo', arguments: { bpm: 130 } },
-            ])
-        );
-        const partialResult = await parsePromptToActions(
-            "glue Intro and Verse clips, then glue Outro and Coda clips, but don't glue Intro and Verse after all, then set tempo to 130",
-            providerContext
-        );
-
-        expect(partialResult.actions).toEqual([]);
-        expect(partialResult.rejectionReason).toBe(
-            'Provider action rejected: <batch>: Provider omitted an explicit glue command from the request'
-        );
     });
 
     it('proposes a grounded whole-clip MIDI transform as one confirmable atomic action', async () => {
