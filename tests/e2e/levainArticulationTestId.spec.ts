@@ -1,7 +1,7 @@
 import { test, expect } from '@playwright/test';
 import { launch_new_project, setupWorkspace } from './e2eUtils';
 
-async function openLevain(page: import('@playwright/test').Page): Promise<boolean> {
+async function openLevain(page: import('@playwright/test').Page): Promise<void> {
     const search = page.getByTestId('browser-search');
     if (!(await search.isVisible().catch(() => false))) {
         await page.getByTestId('toggle-browser').click();
@@ -9,13 +9,13 @@ async function openLevain(page: import('@playwright/test').Page): Promise<boolea
     }
     await search.fill('levain');
     await page.waitForTimeout(500);
+    // The Levain card must be reachable; if it is not, the panel-open contract
+    // is broken and the test must fail rather than silently skip.
     const card = page.getByRole('button', { name: /^Levain/i }).first();
-    if (await card.isVisible().catch(() => false)) {
-        await card.click();
-        await page.waitForTimeout(2000);
-        return true;
-    }
-    return false;
+    await expect(card).toBeVisible({ timeout: 10_000 });
+    await card.click();
+    // Panel-mounted contract: wait on the Close control instead of a fixed delay.
+    await expect(page.getByRole('button', { name: /Close Levain/i }).first()).toBeVisible({ timeout: 15_000 });
 }
 
 test.describe('Levain articulation & instrument panel', () => {
@@ -24,59 +24,25 @@ test.describe('Levain articulation & instrument panel', () => {
         await launch_new_project(page);
     });
 
-    test('Levain panel has articulation chips', async ({ page }) => {
-        const opened = await openLevain(page);
-        if (!opened) return;
-        const chips = page.getByRole('button').filter({ hasText: /arco|pizzicato|spiccato|tremolo|legato|staccato/i });
-        const hasChips = await chips.first().isVisible().catch(() => false);
-        if (hasChips) {
-            expect(await chips.count()).toBeGreaterThan(0);
-        }
-    });
-
-    test('Levain panel has parameter sliders', async ({ page }) => {
-        const opened = await openLevain(page);
-        if (!opened) return;
-        const sliders = page.getByRole('slider');
-        expect(await sliders.count()).toBeGreaterThan(0);
-    });
-
-    test('Levain close button works', async ({ page }) => {
-        const opened = await openLevain(page);
-        if (!opened) return;
+    test('Levain close button hides the panel', async ({ page }) => {
+        await openLevain(page);
         const close = page.getByRole('button', { name: /Close Levain/i }).first();
-        await expect(close).toBeVisible({ timeout: 5000 });
         await close.click();
-        await page.waitForTimeout(500);
-        await expect(close).not.toBeVisible();
+        // Closing unmounts the panel — the Close control is gone.
+        await expect(close).toHaveCount(0);
     });
 
-    test('Levain first articulation is active by default', async ({ page }) => {
-        const opened = await openLevain(page);
-        if (!opened) return;
-        const chips = page.getByRole('button').filter({ hasText: /arco|pizzicato|spiccato|tremolo|legato|staccato/i });
-        if (await chips.first().isVisible().catch(() => false)) {
-            const active = chips.filter({ hasText: /.*/ }).locator('[data-active="true"]').or(
-                chips.first()
-            );
-            const hasActive = await active.first().isVisible().catch(() => false);
-            expect(hasActive).toBe(true);
-        }
-    });
-
-    test('Levain knobs respond to keyboard', async ({ page }) => {
-        const opened = await openLevain(page);
-        if (!opened) return;
+    test('Levain knob responds to keyboard — aria-valuenow changes on ArrowUp', async ({ page }) => {
+        await openLevain(page);
         const firstSlider = page.getByRole('slider').first();
-        if (await firstSlider.isVisible().catch(() => false)) {
-            const before = await firstSlider.getAttribute('aria-valuenow');
-            await firstSlider.focus();
-            await page.keyboard.press('ArrowUp');
-            await page.waitForTimeout(200);
-            const after = await firstSlider.getAttribute('aria-valuenow');
-            if (Number(before) < 1) {
-                expect(after).not.toBe(before);
-            }
+        await expect(firstSlider).toBeVisible({ timeout: 5000 });
+        await firstSlider.focus();
+        const before = Number(await firstSlider.getAttribute('aria-valuenow'));
+        await page.keyboard.press('ArrowUp');
+        await page.waitForTimeout(200);
+        const after = Number(await firstSlider.getAttribute('aria-valuenow'));
+        if (before < 1) {
+            expect(after).toBeGreaterThan(before);
         }
     });
 });

@@ -2,119 +2,65 @@ import { test, expect } from '@playwright/test';
 
 import { launch_new_project, setupWorkspace } from './e2eUtils';
 
+async function ensureBrowserOpen(page: import('@playwright/test').Page): Promise<void> {
+    const search = page.getByTestId('browser-search');
+    if (!(await search.isVisible().catch(() => false))) {
+        await page.getByTestId('toggle-browser').click();
+    }
+    // The browser panel must be open; if it is not, the harness contract is
+    // broken and the test must fail rather than silently skip.
+    await expect(search).toBeVisible({ timeout: 10_000 });
+}
+
 test.describe('Browser instrument cards — test-id targeted', () => {
     test.beforeEach(async ({ page }) => {
         await setupWorkspace(page);
         await launch_new_project(page);
-    });
-
-    test('browser Instruments tab lists instrument cards', async ({ page }) => {
-        // The browser panel should already be open. Click the Instruments tab.
-        const browser = page.getByRole('complementary', { name: 'Browser panel' });
-        if (!(await browser.isVisible().catch(() => false))) {
-            await page.getByTestId('toggle-browser').click();
-            await page.waitForTimeout(500);
-        }
-
-        const instrumentsTab = page.getByRole('button', { name: 'Instruments', exact: true }).first();
-        if (await instrumentsTab.isVisible().catch(() => false)) {
-            await instrumentsTab.click();
-            await page.waitForTimeout(500);
-
-            // Instrument cards are buttons — find Fermenter or Toaster.
-            const fermenter = page.getByRole('button', { name: /^Fermenter/i }).first();
-            const hasFermenter = await fermenter.isVisible().catch(() => false);
-            if (hasFermenter) {
-                const text = (await fermenter.innerText()).trim();
-                expect(text).toContain('Fermenter');
-            }
-        }
-    });
-
-    test('browser search filters instrument list', async ({ page }) => {
-        const search = page.getByTestId('browser-search');
-        if (!(await search.isVisible().catch(() => false))) {
-            await page.getByTestId('toggle-browser').click();
-            await page.waitForTimeout(500);
-        }
-
-        const searchInput = page.getByTestId('browser-search');
-        await searchInput.fill('toaster');
-        await page.waitForTimeout(500);
-
-        // Toaster should be visible.
-        const toaster = page.getByRole('button', { name: /^Toaster/i }).first();
-        const hasToaster = await toaster.isVisible().catch(() => false);
-        if (hasToaster) {
-            const text = (await toaster.innerText()).trim();
-            expect(text).toContain('Toaster');
-        }
-
-        // Clear search.
-        await searchInput.fill('');
+        await ensureBrowserOpen(page);
     });
 
     test('clicking an instrument card opens its device panel', async ({ page }) => {
-        const search = page.getByTestId('browser-search');
-        if (!(await search.isVisible().catch(() => false))) {
-            await page.getByTestId('toggle-browser').click();
-            await page.waitForTimeout(500);
-        }
-
-        // Click Fermenter.
+        // The Instruments tab is the default; a Fermenter card is present.
         const fermenter = page.getByRole('button', { name: /^Fermenter/i }).first();
-        const hasFermenter = await fermenter.isVisible().catch(() => false);
-        if (hasFermenter) {
-            await fermenter.click();
-            await page.waitForTimeout(2000);
+        await expect(fermenter).toBeVisible({ timeout: 10_000 });
+        await fermenter.click();
 
-            // The device panel should appear with a Close button.
-            const closeBtn = page.getByRole('button', { name: /Close Fermenter/i });
-            const hasClose = await closeBtn.isVisible().catch(() => false);
-            expect(hasClose).toBe(true);
-        }
+        // The device panel mounts: its Close control appears. This is the
+        // panel-open contract (no fixed delay), and a real state change.
+        await expect(page.getByRole('button', { name: /Close Fermenter/i })).toBeVisible({ timeout: 15_000 });
     });
 
-    test('browser Effects tab shows effect categories', async ({ page }) => {
-        const browser = page.getByRole('complementary', { name: 'Browser panel' });
-        if (!(await browser.isVisible().catch(() => false))) {
-            await page.getByTestId('toggle-browser').click();
-            await page.waitForTimeout(500);
-        }
+    test('browser search narrows the instrument list', async ({ page }) => {
+        const search = page.getByTestId('browser-search');
+        // Before filtering, multiple instrument cards are present.
+        const allCards = page.getByRole('button', { name: /^(Fermenter|Levain|Grand Boule|Toaster|Crumbs)/i });
+        const beforeCount = await allCards.count();
 
-        const effectsTab = page.getByRole('button', { name: 'Effects', exact: true }).first();
-        if (await effectsTab.isVisible().catch(() => false)) {
-            await effectsTab.click();
-            await page.waitForTimeout(500);
+        await search.fill('toaster');
+        // Toaster is the match; Fermenter (a non-match) is filtered out.
+        await expect(page.getByRole('button', { name: /^Toaster/i }).first()).toBeVisible({ timeout: 5000 });
+        await expect(page.getByRole('button', { name: /^Fermenter/i })).toHaveCount(0);
 
-            // Should show effect cards.
-            const buttons = browser.getByRole('button');
-            const count = await buttons.count();
-            expect(count).toBeGreaterThan(0);
-        }
+        // Clearing the search restores the full list — a real round-trip.
+        await search.fill('');
+        await page.waitForTimeout(500);
+        const afterCount = await allCards.count();
+        expect(afterCount).toBe(beforeCount);
     });
 
     test('browser can switch between Instruments and Effects tabs', async ({ page }) => {
-        const browser = page.getByRole('complementary', { name: 'Browser panel' });
-        if (!(await browser.isVisible().catch(() => false))) {
-            await page.getByTestId('toggle-browser').click();
-            await page.waitForTimeout(500);
-        }
-
         const instrumentsTab = page.getByRole('button', { name: 'Instruments', exact: true }).first();
         const effectsTab = page.getByRole('button', { name: 'Effects', exact: true }).first();
+        await expect(instrumentsTab).toBeVisible();
+        await expect(effectsTab).toBeVisible();
 
-        if ((await instrumentsTab.isVisible().catch(() => false)) && (await effectsTab.isVisible().catch(() => false))) {
-            // Switch to Effects.
-            await effectsTab.click();
-            await page.waitForTimeout(300);
+        // The Instruments tab renders Fermenter; the Effects tab does not.
+        await expect(page.getByRole('button', { name: /^Fermenter/i }).first()).toBeVisible({ timeout: 5000 });
+        await effectsTab.click();
+        await expect(page.getByRole('button', { name: /^Fermenter/i })).toHaveCount(0);
 
-            // Switch back to Instruments.
-            await instrumentsTab.click();
-            await page.waitForTimeout(300);
-
-            // Should not crash.
-            await expect(instrumentsTab).toBeVisible();
-        }
+        // Switching back restores the Instruments content.
+        await instrumentsTab.click();
+        await expect(page.getByRole('button', { name: /^Fermenter/i }).first()).toBeVisible({ timeout: 5000 });
     });
 });
