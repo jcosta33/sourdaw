@@ -1239,11 +1239,23 @@ function resolveActionPromptScope({
 }: ResolveActionPromptScopeInput): ActionPromptScope | null {
     const groundingRules = getExecutableAppActionGroundingRules(actionName);
     const cancellationPrompt = actionName === 'glueClips' ? maskGlueQuotedLabels(prompt) : prompt;
-    const hasActionCancellation = isPunchActionType(actionName)
-        ? getPromptActionRequests(prompt, catalog).some(
-              (request) => request.actionType === actionName && request.cancelled
-          )
-        : hasTrailingIntentCancellation(cancellationPrompt, actionName, catalog, plannedActionNames);
+    let hasActionCancellation = hasTrailingIntentCancellation(
+        cancellationPrompt,
+        actionName,
+        catalog,
+        plannedActionNames
+    );
+    if (isPunchActionType(actionName) || hasPunchEndpointReference(prompt)) {
+        const promptActionAnalysis = analyzePromptActionRequests(prompt, catalog);
+        const hasCancelledPunchRequest = promptActionAnalysis.requests.some(
+            (request) => isPunchActionType(request.actionType) && request.cancelled
+        );
+        if (isPunchActionType(actionName) || hasCancelledPunchRequest) {
+            hasActionCancellation = promptActionAnalysis.requests.some(
+                (request) => request.actionType === actionName && request.cancelled
+            );
+        }
+    }
     if (
         !groundingRules ||
         hasActionCancellation ||
@@ -3267,10 +3279,18 @@ type PromptActionRequest = {
     clause: PromptClause;
 };
 
-function getPromptActionRequests(prompt: string, catalog: GroundingCatalog): PromptActionRequest[] {
+type PromptActionAnalysis = {
+    cancellationClauses: ReadonlySet<PromptClause>;
+    clauses: readonly PromptClause[];
+    requests: readonly PromptActionRequest[];
+};
+
+function analyzePromptActionRequests(prompt: string, catalog: GroundingCatalog): PromptActionAnalysis {
     const maskedPrompt = maskQuotedLabels(prompt);
+    const clauses = getPromptClauses(prompt, maskedPrompt);
+    const cancellationClauses = new Set<PromptClause>();
     const requests: PromptActionRequest[] = [];
-    for (const clause of getPromptClauses(prompt, maskedPrompt)) {
+    for (const clause of clauses) {
         const intent = resolveClauseActionIntent(clause.masked, catalog);
         if (intent) {
             requests.push({ actionType: intent.actionType, cancelled: false, clause });
@@ -3289,14 +3309,19 @@ function getPromptActionRequests(prompt: string, catalog: GroundingCatalog): Pro
             const cancelledRequest = requests[requestIndex];
             if (cancelledRequest) {
                 requests[requestIndex] = { ...cancelledRequest, cancelled: true };
+                cancellationClauses.add(clause);
             }
         }
     }
-    return requests;
+    return { cancellationClauses, clauses, requests };
 }
 
 function isPunchActionType(actionType: string): actionType is 'setPunchIn' | 'setPunchOut' {
     return actionType === 'setPunchIn' || actionType === 'setPunchOut';
+}
+
+function hasPunchEndpointReference(prompt: string): boolean {
+    return /\bpunch\s+(?:in|out)\b/u.test(normalizePromptText(maskQuotedLabels(prompt)));
 }
 
 function isExactPunchCommandClause(clause: PromptClause): boolean {
@@ -3308,8 +3333,18 @@ function isExactPunchCommandClause(clause: PromptClause): boolean {
     );
 }
 
+function isPunchPromptFullyCovered(analysis: PromptActionAnalysis): boolean {
+    const requestClauses = new Set(analysis.requests.map((request) => request.clause));
+    return analysis.clauses.every(
+        (clause) =>
+            requestClauses.has(clause) ||
+            analysis.cancellationClauses.has(clause) ||
+            normalizePromptText(clause.masked).length === 0
+    );
+}
+
 function hasMalformedPunchNumericContinuation(maskedPrompt: string): boolean {
-    return /\b(?:set|move)\s+punch(?:\s+|-)\s*(?:in|out)\b[^;.\n]*?\bbeat\s+[+-]?(?:\d+(?:\.\d+)?|\.\d+)\s*,\s*\d/iu.test(
+    return /\b(?:set|move)\s+punch(?:\s+|-)\s*(?:in|out)\b[^;.\n]*?\bbeat\s+[+-]?(?:\d+\.\d+|\d+(?!\.\d)|\.\d+)\s*(?:,\s*|\.\s*\.\s*)[+-]?(?:\d|\.\d)/iu.test(
         maskedPrompt
     );
 }
@@ -3356,7 +3391,8 @@ export function bridgeGroundedLlmToolCalls({
         }
     }
     const catalog = getExecutableAppActionGroundingCatalog();
-    const promptActionRequests = getPromptActionRequests(prompt, catalog);
+    const promptActionAnalysis = analyzePromptActionRequests(prompt, catalog);
+    const promptActionRequests = promptActionAnalysis.requests;
     const activePromptActionRequests = promptActionRequests.filter((request) => !request.cancelled);
     const punchPromptRequests = activePromptActionRequests.filter((request) => isPunchActionType(request.actionType));
     const punchProviderCalls = effectiveCalls.filter(
@@ -3372,6 +3408,7 @@ export function bridgeGroundedLlmToolCalls({
             activePromptActionRequests.length === 1 &&
             promptRequest !== undefined &&
             isExactPunchCommandClause(promptRequest.clause) &&
+            isPunchPromptFullyCovered(promptActionAnalysis) &&
             !hasMalformedPunchNumericContinuation(maskQuotedLabels(prompt)) &&
             providerCall?.name === promptRequest.actionType;
         if (!isExactSingleton) {

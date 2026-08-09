@@ -2574,6 +2574,40 @@ describe('bridgeGroundedLlmToolCalls', () => {
         expect(result.actions).toEqual([]);
     });
 
+    it('requires the punch command to occupy the whole active prompt while allowing bounded politeness', () => {
+        const prefixed = bridge(
+            [{ name: 'setPunchIn', arguments: { beat: 20 } }],
+            'after reviewing the takes, set punch in at beat 20'
+        );
+        const suffixed = bridge(
+            [{ name: 'setPunchIn', arguments: { beat: 20 } }],
+            'set punch in at beat 20; this is a bad idea'
+        );
+        const polite = bridge(
+            [{ name: 'setPunchIn', arguments: { beat: 20 } }],
+            'could you please set punch in at beat 20?'
+        );
+
+        expect(prefixed.actions).toEqual([]);
+        expect(suffixed.actions).toEqual([]);
+        expect(polite.actions).toEqual([{ type: 'setPunchIn', payload: { beat: 20 } }]);
+    });
+
+    it('rejects repeated punctuation beside a punch number instead of truncating it', () => {
+        const result = bridge([{ name: 'setPunchIn', arguments: { beat: 20 } }], 'set punch in at beat 20..5');
+
+        expect(result.actions).toEqual([]);
+    });
+
+    it('binds cancellation before filtering prompt requests to the provider plan', () => {
+        const result = bridge(
+            [{ name: 'setTempo', arguments: { bpm: 130 } }],
+            'set tempo to 130; set punch in at beat 20, cancel that'
+        );
+
+        expect(result.actions).toEqual([{ type: 'setTempo', payload: { bpm: 130 } }]);
+    });
+
     it('grounds explicit changed master gain with percentage normalization', () => {
         const percentage = bridge(
             [{ name: 'setMasterGain', arguments: { gain: 0.65 } }],
