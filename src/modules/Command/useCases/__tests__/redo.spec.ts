@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { AppActionCommittedError } from '../../errors/AppActionExecutionError';
+import { clearHandlerRegistry, registerHandlerMap } from '../../stores/handlerRegistry';
 import { redo } from '../redo';
 import { REDO_NOT_APPLIED } from '../redoResult';
 
@@ -80,6 +81,7 @@ describe('redo', () => {
         mocks.recordAction.mockReset();
         mocks.undoTreeMoveTo.mockReset();
         mocks.undoStoreValue.value = { past: [], future: [] };
+        clearHandlerRegistry();
     });
 
     it('replays the original action with normal macro-recording semantics and moves it back to past', async () => {
@@ -175,6 +177,42 @@ describe('redo', () => {
         expect(mocks.recordAction).not.toHaveBeenCalled();
         expect(mocks.undoStoreSet).toHaveBeenCalledWith({ past: [first, second, third], future: [] });
         expect(mocks.undoTreeMoveTo).toHaveBeenCalledWith('notes-entry');
+    });
+
+    it('de-groups legacy mixed singleton history before redoing only the first entry', async () => {
+        registerHandlerMap({
+            setEditingTool: {
+                batchExecution: 'singleton',
+                execute: () => ({ status: 'written' }),
+                describe: () => ({ label: 'Set editing tool', inverseAction: null }),
+                undoable: true,
+            },
+        });
+        const singleton = actionEntry({
+            id: 'singleton',
+            action: { type: 'setEditingTool', payload: { tool: 'marquee' } },
+            inverseAction: { type: 'setEditingTool', payload: { tool: 'select' } },
+            groupId: 'legacy-group',
+            groupLabel: 'Legacy group',
+        });
+        const companion = actionEntry({
+            id: 'companion',
+            action: { type: 'toggleLoop' },
+            inverseAction: { type: 'toggleLoop' },
+            groupId: 'legacy-group',
+            groupLabel: 'Legacy group',
+        });
+        mocks.undoStoreValue.value = { past: [], future: [singleton, companion] };
+
+        await redo();
+
+        expect(mocks.executeAppActionBatch).not.toHaveBeenCalled();
+        expect(mocks.executeAppAction).toHaveBeenCalledTimes(1);
+        expect(mocks.executeAppAction).toHaveBeenCalledWith(singleton.action);
+        expect(mocks.undoStoreSet).toHaveBeenLastCalledWith({
+            past: [expect.not.objectContaining({ groupId: 'legacy-group' })],
+            future: [expect.not.objectContaining({ groupId: 'legacy-group' })],
+        });
     });
 
     it('keeps an entire grouped redo pending when its atomic batch conflicts', async () => {

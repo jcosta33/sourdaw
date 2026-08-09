@@ -22,6 +22,7 @@ import { getHandler } from '../stores/handlerRegistry';
 import { actionHistoryMetadataPort } from './actionHistoryMetadataPort';
 import { commitUndoEntry } from './commitUndoEntry';
 import { createUndoEntry } from './createUndoEntry';
+import { findSingletonBatchAction } from './findSingletonBatchAction';
 import { recordAction } from './macro/recording/recordAction';
 import { traceAppAction } from './traceAppAction';
 
@@ -219,14 +220,16 @@ function recordCommittedBatch(
 
         const entryId = crypto.randomUUID();
         const inverseAction = description.inverseAction ?? null;
+        const historyGroupId = handler.batchExecution === 'singleton' ? undefined : options?.groupId;
+        const historyGroupLabel = historyGroupId ? options?.groupLabel : undefined;
         const metadata = {
             id: entryId,
             label,
             actionKind: action.type,
             source: options?.source ?? 'manual',
             timestamp,
-            groupId: options?.groupId,
-            groupLabel: options?.groupLabel,
+            groupId: historyGroupId,
+            groupLabel: historyGroupLabel,
             reverted: false,
         };
         const evictedEntryIds = actionHistoryMetadataPort.record(metadata);
@@ -248,9 +251,9 @@ function recordCommittedBatch(
             options?.source ?? 'manual',
             description.redoAction
         );
-        if (options?.groupId) {
-            undoEntry.groupId = options.groupId;
-            undoEntry.groupLabel = options.groupLabel;
+        if (historyGroupId) {
+            undoEntry.groupId = historyGroupId;
+            undoEntry.groupLabel = historyGroupLabel;
         }
         commitUndoEntry(undoEntry);
     }
@@ -320,11 +323,11 @@ export const executeAppActionBatch: ExecuteAppActionBatch = inject({ logger })(
                 return { status: 'no-op', actions: [] };
             }
 
-            const singletonAction = preparedActions.find((prepared) => prepared.handler.batchExecution === 'singleton');
-            if (singletonAction && preparedActions.length !== 1) {
+            const singletonAction = findSingletonBatchAction(preparedActions.map((prepared) => prepared.action));
+            if (singletonAction) {
                 return {
                     status: 'rejected',
-                    reason: `Action must execute as a singleton batch: ${singletonAction.action.type}`,
+                    reason: `Action must execute as a singleton batch: ${singletonAction.type}`,
                     actions: [],
                 };
             }

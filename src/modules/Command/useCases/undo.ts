@@ -3,6 +3,7 @@ import { type UndoEntry } from '../models/UndoEntry';
 import { undoStore } from '../stores/undoStore';
 
 import { executeAppAction } from './executeAppAction';
+import { normalizeSingletonUndoGroups } from './normalizeSingletonUndoGroups';
 import { runUndoRedoExclusive } from './undoRedo';
 import { undoTreeMoveTo } from './undoTree/undoTreeMoveTo';
 
@@ -68,9 +69,13 @@ async function executeUndo({ entry, runExecuteAppAction }: ExecuteUndoInput): Pr
 }
 
 async function undoImpl(): Promise<void> {
-    const initial = undoStore.value;
-    if (!initial || initial.past.length === 0) {
+    const stored = undoStore.value;
+    if (!stored || stored.past.length === 0) {
         return;
+    }
+    const initial = normalizeSingletonUndoGroups(stored);
+    if (initial !== stored) {
+        undoStore.set(initial);
     }
 
     let past = initial.past;

@@ -6,7 +6,10 @@ import { getArrangementHandlers } from '#/modules/Arrangement/useCases';
 import { clearHandlerRegistry, macroStore, registerHandlerMap, undoStore } from '#/modules/Command/stores';
 import {
     clearUndoHistory,
+    commitActionUndoEntry,
+    executeAppAction,
     executeAppActionBatch,
+    getMacroHandlers,
     redo,
     resetActionReplayAuthority,
     setActionHistoryMetadataPort,
@@ -25,6 +28,7 @@ import { TrackDummy } from '../../../__tests__/TrackDummy';
 import { trimClipEnd } from '../../../useCases/clipEditing/trimClipEnd';
 import { restoreClipLoopLength } from '../../../useCases/clipLoop/restoreClipLoopLength';
 import { setClipLoopLength } from '../../../useCases/clipLoop/setClipLoopLength';
+import { handleRestoreClipLoopLength } from '../handleRestoreClipLoopLength';
 
 const noActionHistoryMetadataPort = {
     record: () => [],
@@ -40,6 +44,12 @@ function currentClip() {
     return clip;
 }
 
+function seedClipFixture(): void {
+    const clip = ClipDummy.create({ id: 'clip-1', endBeat: 8, loopEnabled: false });
+    const track = TrackDummy.create({ id: 'track-1', clips: [clip] });
+    trackStore.set({ tracks: [track], selectedTrackId: track.id, ghostClips: [] });
+}
+
 describe('handleSetClipLoopLength atomic integration', () => {
     beforeEach(() => {
         configureAutomergeStoragePort(null);
@@ -49,14 +59,13 @@ describe('handleSetClipLoopLength atomic integration', () => {
         registerCrdtStorageRuntime();
         clearHandlerRegistry();
         registerHandlerMap(getArrangementHandlers());
+        registerHandlerMap(getMacroHandlers());
         clearUndoHistory();
         resetActionReplayAuthority();
         setActionHistoryMetadataPort(noActionHistoryMetadataPort);
         macroStore.set({ macros: [], recording: false, currentRecording: [] });
         transportStore.set({ ...defaultTransportState, isPlaying: false, isRecording: false });
-        const clip = ClipDummy.create({ id: 'clip-1', endBeat: 8, loopEnabled: false });
-        const track = TrackDummy.create({ id: 'track-1', clips: [clip] });
-        trackStore.set({ tracks: [track], selectedTrackId: track.id, ghostClips: [] });
+        seedClipFixture();
     });
 
     afterEach(() => {
@@ -155,6 +164,48 @@ describe('handleSetClipLoopLength atomic integration', () => {
         expect(undoStore.value?.future).toHaveLength(0);
     });
 
+    it('advances undo when an unsafe present replacement is already achieved without writing', async () => {
+        setClipLoopLength('clip-1', 1);
+        await executeAppActionBatch([{ type: 'setClipLoopLength', payload: { clipId: 'clip-1', loopLength: 2 } }]);
+        trimClipEnd('clip-1', 10_000);
+        setClipLoopLength('clip-1', 1);
+
+        await undo();
+
+        expect(currentClip()).toMatchObject({ endBeat: 10_000, loopLength: 1 });
+        expect(undoStore.value?.past).toHaveLength(0);
+        expect(undoStore.value?.future).toHaveLength(1);
+    });
+
+    it('reports no-write before safety validation when an unsafe replacement is already achieved', () => {
+        trimClipEnd('clip-1', 10_000);
+        setClipLoopLength('clip-1', 1);
+
+        expect(
+            handleRestoreClipLoopLength.execute({
+                type: 'restoreClipLoopLength',
+                payload: {
+                    clipId: 'clip-1',
+                    expected: { present: true, value: 2 },
+                    replacement: { present: true, value: 1 },
+                },
+            })
+        ).toEqual({ status: 'no-write' });
+    });
+
+    it('advances redo when an unsafe present replacement is already achieved without writing', async () => {
+        await executeAppActionBatch([{ type: 'setClipLoopLength', payload: { clipId: 'clip-1', loopLength: 2 } }]);
+        await undo();
+        trimClipEnd('clip-1', 10_000);
+        setClipLoopLength('clip-1', 2);
+
+        await redo();
+
+        expect(currentClip()).toMatchObject({ endBeat: 10_000, loopLength: 2 });
+        expect(undoStore.value?.past).toHaveLength(1);
+        expect(undoStore.value?.future).toHaveLength(0);
+    });
+
     it('rejects geometry, stretch, lifecycle, and loop companions in both batch orders before any write', async () => {
         type BatchAction = Parameters<typeof executeAppActionBatch>[0][number];
         const loopLengthAction = {
@@ -182,6 +233,120 @@ describe('handleSetClipLoopLength atomic integration', () => {
                 expect.soft(Object.hasOwn(currentClip(), 'loopLength')).toBe(false);
                 expect.soft(undoStore.value?.past).toHaveLength(0);
             }
+        }
+    });
+
+    it('rejects singleton loop-length macro companions in both orders before any action dispatches', async () => {
+        type BatchAction = Parameters<typeof executeAppActionBatch>[0][number];
+        const loopLengthAction = {
+            type: 'setClipLoopLength',
+            payload: { clipId: 'clip-1', loopLength: 2 },
+        } satisfies BatchAction;
+        const companions = [
+            { type: 'trimClipEnd', payload: { clipId: 'clip-1', newEndBeat: 6 } },
+            { type: 'setClipStretchRatio', payload: { clipId: 'clip-1', ratio: 2 } },
+            { type: 'removeClip', payload: { clipId: 'clip-1' } },
+            { type: 'setClipLoop', payload: { clipId: 'clip-1', enabled: true } },
+        ] satisfies BatchAction[];
+
+        for (const companion of companions) {
+            for (const actions of [
+                [loopLengthAction, companion],
+                [companion, loopLengthAction],
+            ]) {
+                seedClipFixture();
+                clearUndoHistory();
+                macroStore.set({
+                    macros: [{ id: 'macro-1', name: 'Unsafe pair', actions, createdAt: 0 }],
+                    recording: false,
+                    currentRecording: [],
+                });
+
+                await expect(executeAppAction({ type: 'playMacro', payload: { macroId: 'macro-1' } })).rejects.toThrow(
+                    'Action must execute as a singleton batch: setClipLoopLength'
+                );
+                expect.soft(currentClip()).toMatchObject({ startBeat: 0, endBeat: 8, loopEnabled: false });
+                expect.soft(Object.hasOwn(currentClip(), 'loopLength')).toBe(false);
+                expect.soft(undoStore.value?.past).toHaveLength(0);
+            }
+        }
+    });
+
+    it('does not attach singleton loop-length history to a caller-supplied group', async () => {
+        await executeAppAction(
+            { type: 'setClipLoopLength', payload: { clipId: 'clip-1', loopLength: 2 } },
+            { groupId: 'group-1', groupLabel: 'Unsafe group' }
+        );
+        await executeAppAction(
+            { type: 'trimClipEnd', payload: { clipId: 'clip-1', newEndBeat: 6 } },
+            { groupId: 'group-1', groupLabel: 'Unsafe group' }
+        );
+
+        await undo();
+
+        expect(undoStore.value?.past).toHaveLength(1);
+        expect(undoStore.value?.future).toHaveLength(1);
+        expect(currentClip()).toMatchObject({ endBeat: 8, loopLength: 2 });
+    });
+
+    it('de-groups legacy singleton history and replays both action orders without wedging', async () => {
+        type BatchAction = Parameters<typeof executeAppActionBatch>[0][number];
+        const loopLengthAction = {
+            type: 'setClipLoopLength' as const,
+            payload: { clipId: 'clip-1', loopLength: 2 },
+        };
+        const geometryAction = {
+            type: 'trimClipEnd' as const,
+            payload: { clipId: 'clip-1', newEndBeat: 6 },
+        };
+
+        for (const actions of [
+            [loopLengthAction, geometryAction],
+            [geometryAction, loopLengthAction],
+        ]) {
+            seedClipFixture();
+            clearUndoHistory();
+            for (const action of actions) {
+                await executeAppAction(action, { skipUndo: true });
+                let inverseAction: BatchAction;
+                if (action.type === 'setClipLoopLength') {
+                    inverseAction = {
+                        type: 'restoreClipLoopLength',
+                        payload: {
+                            clipId: 'clip-1',
+                            expected: { present: true, value: 2 },
+                            replacement: { present: false, value: 0 },
+                        },
+                    };
+                } else {
+                    inverseAction = {
+                        type: 'trimClipEnd',
+                        payload: { clipId: 'clip-1', newEndBeat: 8 },
+                    };
+                }
+                commitActionUndoEntry({
+                    action,
+                    inverseAction,
+                    label: action.type,
+                    groupId: 'legacy-mixed-singleton',
+                    groupLabel: 'Legacy mixed singleton',
+                });
+            }
+
+            await undo();
+            expect.soft(undoStore.value?.past).toHaveLength(1);
+            expect.soft(undoStore.value?.future).toHaveLength(1);
+            await undo();
+            expect.soft(currentClip()).toMatchObject({ startBeat: 0, endBeat: 8, loopEnabled: false });
+            expect.soft(Object.hasOwn(currentClip(), 'loopLength')).toBe(false);
+            expect.soft(undoStore.value?.past).toHaveLength(0);
+            expect.soft(undoStore.value?.future).toHaveLength(2);
+
+            await redo();
+            await redo();
+            expect.soft(currentClip()).toMatchObject({ startBeat: 0, endBeat: 6, loopLength: 2 });
+            expect.soft(undoStore.value?.past).toHaveLength(2);
+            expect.soft(undoStore.value?.future).toHaveLength(0);
         }
     });
 

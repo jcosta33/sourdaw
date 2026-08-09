@@ -23,14 +23,14 @@ export const handleRestoreClipLoopLength = createHandler<'restoreClipLoopLength'
             return { status: 'conflict' };
         }
         const replacement = action.payload.replacement;
-        if (replacement.present && !isSafeRequestedClipLoopLength(clip, replacement.value)) {
-            return { status: 'conflict' };
-        }
         const current = readClipLoopLengthState(clip);
         if (clipLoopLengthStatesMatch(current, replacement)) {
             return { status: 'no-write' };
         }
         if (!clipLoopLengthStatesMatch(current, action.payload.expected)) {
+            return { status: 'conflict' };
+        }
+        if (replacement.present && !isSafeRequestedClipLoopLength(clip, replacement.value)) {
             return { status: 'conflict' };
         }
         return toHandlerExecutionResult(

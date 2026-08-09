@@ -6,6 +6,7 @@ import { undoStore } from '../stores/undoStore';
 import { executeAppAction } from './executeAppAction';
 import { executeAppActionBatch } from './executeAppActionBatch';
 import { recordAction } from './macro/recording/recordAction';
+import { normalizeSingletonUndoGroups } from './normalizeSingletonUndoGroups';
 import { REDO_NOT_APPLIED } from './redoResult';
 import { runUndoRedoExclusive } from './undoRedo';
 import { undoTreeMoveTo } from './undoTree/undoTreeMoveTo';
@@ -105,9 +106,13 @@ async function executeRedo(entry: UndoEntry): Promise<RedoOutcome> {
 }
 
 async function redoImpl(): Promise<void> {
-    const state = undoStore.value;
-    if (!state || state.future.length === 0) {
+    const stored = undoStore.value;
+    if (!stored || stored.future.length === 0) {
         return;
+    }
+    const state = normalizeSingletonUndoGroups(stored);
+    if (state !== stored) {
+        undoStore.set(state);
     }
 
     let future = state.future;
