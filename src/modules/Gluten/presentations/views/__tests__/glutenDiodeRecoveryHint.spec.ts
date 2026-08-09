@@ -21,11 +21,17 @@ import { describe, expect, it } from 'vitest';
  *
  * Not the prose. A string assertion on caption copy breaks on every reword and
  * guards nothing about behaviour. What is asserted is the *ordering claim*: the
- * release times the hint prints, in the order it prints them, are the times the
- * Rust `match` maps positions 1 to 5 to. Both sides are read out of the files
- * that ship — the hint from the panel source, the map from the crate — so a
- * retune of the engine that leaves the caption behind reds here, and so does a
- * reword that drops or reorders the numbers.
+ * release times a restatement gives, in the order it gives them, are the times
+ * the Rust `match` maps positions 1 to 5 to.
+ *
+ * Three sources, all read out of the files that ship, none allowed to vouch for
+ * another: the crate's `match` arms, the panel caption, and the manual
+ * paragraph at `docs/manual/devices/07-gluten.md`. The manual is included
+ * because it restates the same five figures and nothing read it — `rg
+ * 'docs/manual' src/` returns only this file — so a retune would have reddened
+ * the panel and left the page silently wrong, which is this same defect one
+ * document over. A retune that leaves either restatement behind reds, and so
+ * does a reword that drops or reorders the numbers in either.
  *
  * The direction words themselves ("spring back", "hold through the tail") stay
  * unasserted. The numbers carry the direction: a reader given an ascending list
@@ -36,6 +42,7 @@ const REPO_ROOT = resolve(fileURLToPath(import.meta.url), '../../../../../../../
 
 const DIODE_SOURCE = 'crates/daw-dsp/src/gluten/diode.rs';
 const PANEL_SOURCE = 'src/modules/Gluten/presentations/views/GlutenPanel.tsx';
+const MANUAL_SOURCE = 'docs/manual/devices/07-gluten.md';
 
 function readSource(relativePath: string): string {
     return readFileSync(join(REPO_ROOT, relativePath), 'utf8');
@@ -56,40 +63,8 @@ function readEngineReleaseMap(): number[] {
         .map((arm) => arm.releaseMs);
 }
 
-/**
- * The release times a hint sentence states, normalised to milliseconds.
- *
- * Pure, and separated from the file read so the reword cases below can exercise
- * it directly. Three things it has to survive, because all three are edits a
- * copy editor could reasonably make while leaving the claim true:
- *
- * - **Figures outside the run.** "Recovery 1 to 5 select fixed release times: …"
- *   names two positions before it names a time. So the scrape is anchored: it
- *   starts at the word `release` and stops at the end of that sentence, and a
- *   sentence end is a period followed by space or end-of-string — not any
- *   period, or `1.5` would truncate it.
- * - **Mixed units.** `docs/manual/devices/07-gluten.md:145` writes the last
- *   figure as `1.5 s`. A guard that punished the panel for matching the
- *   manual's own convention would be a guard someone deletes rather than fixes,
- *   so an `s` figure is multiplied by 1000.
- * - **One trailing unit for the whole run.** The shipped caption writes
- *   "50, 100, 400, 800 and 1500 ms" — four bare figures and one unit. So the
- *   unit is optional per figure, and a bare figure inherits from the next
- *   figure that names one. That is why this is not simply
- *   `/(\d+(?:\.\d+)?)\s*(ms|s)\b/g`: requiring a unit on every figure would
- *   read the shipped caption as a single number.
- */
-function parseHintReleaseTimes(sentence: string): number[] {
-    const text = sentence.replaceAll(/\s+/g, ' ');
-    const start = text.search(/release/i);
-    if (start === -1) {
-        return [];
-    }
-
-    const fromRun = text.slice(start);
-    const sentenceEnd = fromRun.search(/\.(?=\s|$)/);
-    const run = sentenceEnd === -1 ? fromRun : fromRun.slice(0, sentenceEnd);
-
+/** The figures in one already-anchored run of text, normalised to milliseconds. */
+function readFigureRun(run: string): number[] {
     const figures = [...run.matchAll(/(\d+(?:\.\d+)?)\s*(ms|s)?\b/g)].map((figure) => ({
         value: Number(figure[1]!),
         unit: figure[2],
@@ -110,6 +85,52 @@ function parseHintReleaseTimes(sentence: string): number[] {
     return milliseconds;
 }
 
+/**
+ * The release times a passage of prose states, normalised to milliseconds.
+ *
+ * Pure, and separated from the file reads so the reword cases below can
+ * exercise it directly, and so the panel caption and the manual paragraph go
+ * through one parser rather than two that could drift.
+ *
+ * Four things it has to survive, because all four occur in prose that is true:
+ *
+ * - **Figures outside the run.** "Recovery 1 to 5 select fixed release times: …"
+ *   names two positions before it names a time. So within a sentence the scrape
+ *   starts at the word `release`.
+ * - **Sentences before the run.** The manual's paragraph opens "…**Recovery 5**
+ *   (default 3) replaces Release on this topology." — a sentence that mentions
+ *   release and states no time. So the passage is split into sentences and the
+ *   one with the most figures *after* anchoring wins, rather than the first that
+ *   says `release`. A sentence boundary is a period followed by whitespace or
+ *   end-of-string; not any period, or `1.5` splits mid-number.
+ * - **Mixed units.** The manual writes the last figure as `1.5 s`. A guard that
+ *   punished the panel for matching the manual's own convention would be a
+ *   guard someone deletes rather than fixes, so an `s` figure is × 1000.
+ * - **One trailing unit for the whole run.** The shipped caption writes
+ *   "50, 100, 400, 800 and 1500 ms" — four bare figures and one unit. So the
+ *   unit is optional per figure, and a bare figure inherits from the next
+ *   figure that names one. That is why this is not simply
+ *   `/(\d+(?:\.\d+)?)\s*(ms|s)\b/g`: requiring a unit on every figure would
+ *   read the shipped caption as the single number 1500.
+ */
+function parseHintReleaseTimes(prose: string): number[] {
+    const text = prose.replaceAll(/\s+/g, ' ');
+
+    let best: number[] = [];
+    for (const sentence of text.split(/\.(?=\s|$)/)) {
+        const start = sentence.search(/release/i);
+        if (start === -1) {
+            continue;
+        }
+        const figures = readFigureRun(sentence.slice(start));
+        if (figures.length > best.length) {
+            best = figures;
+        }
+    }
+
+    return best;
+}
+
 /** The release times the shipped Recovery hint states, in the order it states them. */
 function readHintReleaseTimes(): number[] {
     const source = readSource(PANEL_SOURCE);
@@ -124,6 +145,29 @@ function readHintReleaseTimes(): number[] {
     }
 
     return parseHintReleaseTimes(paragraph[1]!);
+}
+
+/**
+ * The release times the user manual states, in the order it states them.
+ *
+ * The third source. The manual restates the same five figures as prose, and
+ * until now nothing read it — `rg 'docs/manual' src/` returns only this file —
+ * so an engine retune would have reddened the panel and left the manual
+ * silently wrong. That is the same failure this PR exists to clean up after,
+ * one document over.
+ *
+ * The paragraph is found by the `**Recovery 1**` marker rather than by line
+ * number, so reflowing the prose or moving the section does not break the read.
+ */
+function readManualReleaseTimes(): number[] {
+    const paragraph = readSource(MANUAL_SOURCE)
+        .split(/\n\s*\n/)
+        .find((block) => block.includes('**Recovery 1**'));
+    if (paragraph === undefined) {
+        return [];
+    }
+
+    return parseHintReleaseTimes(paragraph);
 }
 
 describe('the Diode Recovery hint states the release map the engine runs', () => {
@@ -142,11 +186,26 @@ describe('the Diode Recovery hint states the release map the engine runs', () =>
         expect(readHintReleaseTimes().length).toBeGreaterThanOrEqual(5);
     });
 
+    it('reads the manual paragraph that restates the map', () => {
+        // And on the manual side. A moved section or a renamed heading yields
+        // an empty list, which would otherwise make the comparison below pass
+        // by comparing nothing to nothing.
+        expect(readManualReleaseTimes().length).toBeGreaterThanOrEqual(5);
+    });
+
     it('prints the same times, in the same order, the engine maps positions 1 to 5 to', () => {
         // The ordering claim itself. Position 1 is the *fastest* release, so an
         // ascending list is what makes the hint true; the old copy claimed the
         // reverse and this is the assertion that would have caught it.
         expect(readHintReleaseTimes()).toEqual(readEngineReleaseMap());
+    });
+
+    it('states the same times in the manual as the engine maps positions 1 to 5 to', () => {
+        // Third source, same claim. The manual is what a user reads when the
+        // panel caption is not in front of them, and it is the one restatement
+        // no code had a reason to open. An engine retune now reds here too
+        // instead of leaving the page quietly wrong.
+        expect(readManualReleaseTimes()).toEqual(readEngineReleaseMap());
     });
 
     it('survives rewordings that leave the claim true', () => {
@@ -155,6 +214,11 @@ describe('the Diode Recovery hint states the release map the engine runs', () =>
         // before the times put 1 and 5 in the list, and matching the manual's
         // own unit convention put 1.5 in it. Both are pinned here so the
         // tolerance cannot be lost again without a test saying so.
+        //
+        // These stay literals even though the manual is now read for real. They
+        // pin the *parser*, not the page: the second is a form the manual could
+        // move away from tomorrow, and the tolerance for it should outlive
+        // whatever the manual currently happens to say.
         const engineMap = readEngineReleaseMap();
 
         expect(
