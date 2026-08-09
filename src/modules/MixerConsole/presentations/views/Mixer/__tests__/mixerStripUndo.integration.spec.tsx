@@ -365,9 +365,11 @@ describe('mixer strip writes reach the project through the recorded path', () =>
         fireEvent.pointerMove(fader, { pointerId: 3, clientY: 80 });
 
         // Mid-gesture, before release: project truth is still where the gesture
-        // started, and nothing is on the stack yet.
+        // started, nothing is on the stack yet, and the strip's dB readout has
+        // nonetheless followed the thumb down to -18.0.
         expect(storedTrack()?.gain).toBeCloseTo(0.8, 5);
         expect(undoLabels()).toEqual([]);
+        expect(within(strip()).getByText('-18.0 dB')).toBeTruthy();
 
         fireEvent.pointerUp(fader, { pointerId: 3 });
 
@@ -408,6 +410,9 @@ describe('mixer strip writes reach the project through the recorded path', () =>
         // stale display as #1550, arrived at from the other side.
         expect(storedTrack()?.pan).toBe(0);
         expect(within(strip()).getByText('R20')).toBeTruthy();
+        // The knob itself, not only the label beneath it: `aria-valuenow` is
+        // what a screen reader is told the control is currently set to.
+        expect(knob.getAttribute('aria-valuenow')).toBe('20');
 
         fireEvent.pointerUp(knob, { pointerId: 4 });
 
