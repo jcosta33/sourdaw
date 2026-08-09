@@ -236,6 +236,40 @@ describe('handleSetClipLoopLength atomic integration', () => {
         }
     });
 
+    it('rejects internal loop-length restore with geometry in both batch orders before any write', async () => {
+        const restoreAction = {
+            type: 'restoreClipLoopLength' as const,
+            payload: {
+                clipId: 'clip-1',
+                expected: { present: true, value: 2 },
+                replacement: { present: false, value: 0 },
+            },
+        };
+        const geometryAction = {
+            type: 'trimClipEnd' as const,
+            payload: { clipId: 'clip-1', newEndBeat: 6 },
+        };
+
+        for (const actions of [
+            [restoreAction, geometryAction],
+            [geometryAction, restoreAction],
+        ]) {
+            seedClipFixture();
+            setClipLoopLength('clip-1', 2);
+            clearUndoHistory();
+
+            const result = await executeAppActionBatch(actions);
+
+            expect.soft(result).toMatchObject({
+                status: 'rejected',
+                reason: 'Action must execute as a singleton batch: restoreClipLoopLength',
+            });
+            expect.soft(currentClip()).toMatchObject({ startBeat: 0, endBeat: 8, loopLength: 2 });
+            expect.soft(undoStore.value?.past).toHaveLength(0);
+            expect.soft(undoStore.value?.future).toHaveLength(0);
+        }
+    });
+
     it('rejects singleton loop-length macro companions in both orders before any action dispatches', async () => {
         type BatchAction = Parameters<typeof executeAppActionBatch>[0][number];
         const loopLengthAction = {

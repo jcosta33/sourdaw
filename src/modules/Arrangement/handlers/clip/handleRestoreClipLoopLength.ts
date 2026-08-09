@@ -17,6 +17,7 @@ function transportIsBusy(): boolean {
 }
 
 export const handleRestoreClipLoopLength = createHandler<'restoreClipLoopLength'>({
+    batchExecution: 'singleton',
     execute: (action) => {
         const clip = findClipForLoopLength(action.payload.clipId);
         if (transportIsBusy() || !clip || clip.locked) {
