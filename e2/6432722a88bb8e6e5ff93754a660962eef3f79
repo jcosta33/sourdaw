@@ -1,0 +1,23 @@
+src/components/daw/ValueField.tsx
+  s_14f2bbc9f385dd::t_953eda20069873 171-178
+src/components/daw/__tests__/ValueField.spec.tsx
+  s_14f2bbc9f385dd::t_f65ab08d393eff 581
+  s_14f2bbc9f385dd::t_b029c3aea4b90d 597
+  s_14f2bbc9f385dd::t_6536d7eccd321d 635
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "e26432722a88bb8e6e5ff93754a660962eef3f79",
+  "prompts": {},
+  "sessions": {
+    "s_14f2bbc9f385dd": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f9a61a1d-66b3-4146-938d-a04f45f4b060",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
