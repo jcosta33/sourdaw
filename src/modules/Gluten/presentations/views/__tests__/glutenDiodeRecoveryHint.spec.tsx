@@ -2,7 +2,12 @@ import { readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { describe, expect, it } from 'vitest';
+import { render, screen } from '@testing-library/react';
+import { describe, expect, it, vi } from 'vitest';
+
+import { DEFAULT_PATCH, type GlutenTopology } from '../../../models/GlutenPatch';
+import { type GlutenState } from '../../../stores/glutenStore';
+import { GlutenPanel } from '../GlutenPanel';
 
 /**
  * The Diode topology's Recovery hint used to say the opposite of what the
@@ -113,38 +118,84 @@ function readFigureRun(run: string): number[] {
  *   `/(\d+(?:\.\d+)?)\s*(ms|s)\b/g`: requiring a unit on every figure would
  *   read the shipped caption as the single number 1500.
  */
-function parseHintReleaseTimes(prose: string): number[] {
+function readReleaseSentenceRuns(prose: string): number[][] {
     const text = prose.replaceAll(/\s+/g, ' ');
+    const runs: number[][] = [];
 
-    let best: number[] = [];
     for (const sentence of text.split(/\.(?=\s|$)/)) {
         const start = sentence.search(/release/i);
         if (start === -1) {
             continue;
         }
-        const figures = readFigureRun(sentence.slice(start));
-        if (figures.length > best.length) {
-            best = figures;
+        runs.push(readFigureRun(sentence.slice(start)));
+    }
+
+    return runs;
+}
+
+function parseHintReleaseTimes(prose: string): number[] {
+    let best: number[] = [];
+    for (const run of readReleaseSentenceRuns(prose)) {
+        if (run.length > best.length) {
+            best = run;
+        }
+    }
+    return best;
+}
+
+/**
+ * Release times a passage states out of the engine's order, sentence by
+ * sentence.
+ *
+ * Picking the highest-count sentence and comparing only that one is not enough,
+ * and the gap is not theoretical — this paragraph passed an exact comparison
+ * against the engine map:
+ *
+ * > …replaces Release on this topology. Position 1 holds the longest release,
+ * > 1500 ms, and position 5 snaps back fastest at 50 ms. The five fixed release
+ * > times are 50 ms, 100 ms, 400 ms, 800 ms, and 1.5 s.
+ *
+ * The five-figure sentence wins the count and matches; the two-figure sentence
+ * says position 1 is the *slowest*, which is the defect this file exists to
+ * remove, and it was thrown away unread.
+ *
+ * So every `release`-bearing sentence is checked, not just the winner. The
+ * claim is per sentence and weaker than equality on purpose: of the figures a
+ * sentence states that the engine also states, they must appear in the engine's
+ * own order. A sentence naming one time ("Recovery 3 is 400 ms") passes
+ * trivially; "position 1 … 1500 ms … position 5 … 50 ms" states 1500 before 50
+ * and fails; "position 1 … 50 ms … position 5 … 1500 ms" states the same
+ * pairing correctly and passes. Non-map figures — position numbers, defaults,
+ * counts — are ignored, so ordinary prose is not policed.
+ */
+function readMisorderedReleaseFigures(prose: string, engineMap: readonly number[]): number[][] {
+    const misordered: number[][] = [];
+
+    for (const run of readReleaseSentenceRuns(prose)) {
+        const stated = run.filter((figure) => engineMap.includes(figure));
+        const inEngineOrder = [...stated].sort((left, right) => engineMap.indexOf(left) - engineMap.indexOf(right));
+        if (stated.join() !== inEngineOrder.join()) {
+            misordered.push(stated);
         }
     }
 
-    return best;
+    return misordered;
+}
+
+/** The caption the panel prints under the Recovery chips, as source text. */
+function readHintProse(): string {
+    const source = readSource(PANEL_SOURCE);
+    const chips = source.indexOf('`Recovery ${value}`');
+    if (chips === -1) {
+        return '';
+    }
+
+    return /<p\b[^>]*>([\s\S]*?)<\/p>/.exec(source.slice(chips))?.[1] ?? '';
 }
 
 /** The release times the shipped Recovery hint states, in the order it states them. */
 function readHintReleaseTimes(): number[] {
-    const source = readSource(PANEL_SOURCE);
-    const chips = source.indexOf('`Recovery ${value}`');
-    if (chips === -1) {
-        return [];
-    }
-
-    const paragraph = /<p\b[^>]*>([\s\S]*?)<\/p>/.exec(source.slice(chips));
-    if (paragraph === null) {
-        return [];
-    }
-
-    return parseHintReleaseTimes(paragraph[1]!);
+    return parseHintReleaseTimes(readHintProse());
 }
 
 /**
@@ -159,15 +210,56 @@ function readHintReleaseTimes(): number[] {
  * The paragraph is found by the `**Recovery 1**` marker rather than by line
  * number, so reflowing the prose or moving the section does not break the read.
  */
-function readManualReleaseTimes(): number[] {
-    const paragraph = readSource(MANUAL_SOURCE)
-        .split(/\n\s*\n/)
-        .find((block) => block.includes('**Recovery 1**'));
-    if (paragraph === undefined) {
-        return [];
-    }
+function readManualProse(): string {
+    return (
+        readSource(MANUAL_SOURCE)
+            .split(/\n\s*\n/)
+            .find((block) => block.includes('**Recovery 1**')) ?? ''
+    );
+}
 
-    return parseHintReleaseTimes(paragraph);
+function readManualReleaseTimes(): number[] {
+    return parseHintReleaseTimes(readManualProse());
+}
+
+// ── The rendered surface ─────────────────────────────────────────────────────
+
+/**
+ * The caption is guarded above as *file text*. That is one edit away from being
+ * a lie: gate the Diode branch on something unreachable, or drop the caption
+ * out of the rendered tree, and every assertion above stays green while no user
+ * ever sees it. `GlutenPanel.spec.tsx` does not close this — it has four
+ * `it`s, none mentioning `diode`, `Recovery` or `topology`, and the default
+ * patch is `topology: 'vca'`, so the Diode branch executes in no spec at all.
+ *
+ * So: render it, on both sides of the gate.
+ */
+vi.mock('#/infra/store/useStore', () => ({
+    useStore: vi.fn(() => MOCKED_INSTANCES),
+}));
+
+const DEVICE_ID = 'gluten-recovery-hint-device';
+
+let MOCKED_INSTANCES: Record<string, GlutenState> = {};
+
+function renderPanelWithTopology(topology: GlutenTopology): void {
+    MOCKED_INSTANCES = {
+        [DEVICE_ID]: { patch: { ...DEFAULT_PATCH, topology }, uiLevel: 2 },
+    };
+    render(<GlutenPanel deviceId={DEVICE_ID} />);
+}
+
+/**
+ * The release runs the rendered page actually shows, one per paragraph.
+ *
+ * Read off the DOM rather than the source, and scoped to paragraphs so the
+ * Release *knob* — which is not topology-gated, and whose readout is a number
+ * beside the word "Release" — cannot be mistaken for a stated release map.
+ */
+function readRenderedReleaseRuns(): number[][] {
+    return [...document.querySelectorAll('p')]
+        .map((paragraph) => parseHintReleaseTimes(paragraph.textContent))
+        .filter((run) => run.length > 0);
 }
 
 describe('the Diode Recovery hint states the release map the engine runs', () => {
@@ -206,6 +298,45 @@ describe('the Diode Recovery hint states the release map the engine runs', () =>
         // no code had a reason to open. An engine retune now reds here too
         // instead of leaving the page quietly wrong.
         expect(readManualReleaseTimes()).toEqual(readEngineReleaseMap());
+    });
+
+    it('states no release time out of position in any sentence of either source', () => {
+        // The union, not the winner. Comparing only the sentence with the most
+        // figures throws away every other sentence — including one that pairs a
+        // position with a time — so a passage can state the map correctly in
+        // one breath and invert it in the next and still pass.
+        const engineMap = readEngineReleaseMap();
+
+        expect(readMisorderedReleaseFigures(readHintProse(), engineMap)).toEqual([]);
+        expect(readMisorderedReleaseFigures(readManualProse(), engineMap)).toEqual([]);
+    });
+
+    it('catches a passage whose losing sentence inverts the map', () => {
+        // The exact paragraph that passed the winner-only comparison 7/7. Its
+        // middle sentence says position 1 is the slowest, which is the defect
+        // this file exists to remove.
+        const engineMap = readEngineReleaseMap();
+        const inverted =
+            '**Diode** — **Recovery 1** to **Recovery 5** replaces Release on this topology. ' +
+            'Position 1 holds the longest release, 1500 ms, and position 5 snaps back fastest at 50 ms. ' +
+            'The five fixed release times are 50 ms, 100 ms, 400 ms, 800 ms, and 1.5 s.';
+
+        // Still passes the winner-only check — which is why that check alone
+        // was not enough.
+        expect(parseHintReleaseTimes(inverted)).toEqual(engineMap);
+        expect(readMisorderedReleaseFigures(inverted, engineMap)).toEqual([[1500, 50]]);
+    });
+
+    it('permits a sentence that pairs positions with times correctly', () => {
+        // The same shape stated truthfully has to pass, or the check is just a
+        // ban on mentioning two times in one sentence.
+        const engineMap = readEngineReleaseMap();
+        const correct =
+            'Position 1 snaps back fastest at 50 ms, and position 5 holds the longest release, 1500 ms. ' +
+            'The five fixed release times are 50 ms, 100 ms, 400 ms, 800 ms, and 1.5 s.';
+
+        expect(readMisorderedReleaseFigures(correct, engineMap)).toEqual([]);
+        expect(parseHintReleaseTimes(correct)).toEqual(engineMap);
     });
 
     it('survives rewordings that leave the claim true', () => {
@@ -256,5 +387,27 @@ describe('the Diode Recovery hint states the release map the engine runs', () =>
 
         // Right numbers, wrong unit — 50 s is not 50 ms.
         expect(parseHintReleaseTimes('Release times: 50, 100, 400, 800 and 1500 s.')).not.toEqual(engineMap);
+    });
+
+    it('renders the caption on Diode, carrying the engine’s times', () => {
+        // Present, and routed: not "a caption exists" but "the caption a user
+        // sees states the map the engine runs". The Recovery chips are the
+        // gate's other half — they and the caption stand or fall together.
+        renderPanelWithTopology('diode');
+
+        expect(screen.getByText('Recovery 1')).toBeTruthy();
+        expect(readRenderedReleaseRuns()).toEqual([readEngineReleaseMap()]);
+    });
+
+    it('renders neither the chips nor the caption on the default topology', () => {
+        // Absent. Without this the present-case would pass on a panel that
+        // rendered the caption unconditionally, which is a different bug and
+        // would make the Recovery copy visible under VCA, FET and Opto where it
+        // is false.
+        renderPanelWithTopology(DEFAULT_PATCH.topology);
+
+        expect(DEFAULT_PATCH.topology).not.toBe('diode');
+        expect(screen.queryByText('Recovery 1')).toBeNull();
+        expect(readRenderedReleaseRuns()).toEqual([]);
     });
 });
