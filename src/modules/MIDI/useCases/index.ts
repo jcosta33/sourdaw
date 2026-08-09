@@ -125,6 +125,7 @@ export { transposeNotes } from './midiNoteTransforms/transposeNotes';
 export { snapClipToScale } from './snapClipToScale';
 
 // ── Step Recording ────────────────────────────────────────────────────────────
+export { hasActiveStepRecordingDependency } from './stepRecording/hasActiveStepRecordingDependency';
 export { toggleStepRecording } from './stepRecording/toggleStepRecording';
 export { stepRecordNoteOn } from './stepRecording/stepRecordNoteOn';
 export { stepRecordNoteOff } from './stepRecording/stepRecordNoteOff';

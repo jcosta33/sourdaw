@@ -15,6 +15,7 @@ const mocks = vi.hoisted(() => ({
     getNextClipId: vi.fn(() => 'merged-clip'),
     prepareMidiClipGlueState: vi.fn<typeof originalPrepareMidiClipGlueState>(),
     restoreMidiClipGlueState: vi.fn(() => true),
+    hasActiveStepRecordingDependency: vi.fn(() => false),
     getAutomationLanes: vi.fn(() => []),
     warn: vi.fn(),
     resolveEligibleClipWriteTarget: vi.fn<(typeof resolverModule)['resolveEligibleClipWriteTarget']>(),
@@ -25,6 +26,7 @@ vi.mock('../../../repositories/track/setTrackState', () => ({ setTrackState: moc
 vi.mock('../../../repositories/clipIdCounter', () => ({ getNextClipId: mocks.getNextClipId }));
 vi.mock('#/infra/logger/appLogger', () => ({ logger: { warn: mocks.warn } }));
 vi.mock('#/modules/MIDI/useCases', () => ({
+    hasActiveStepRecordingDependency: mocks.hasActiveStepRecordingDependency,
     prepareMidiClipGlueState: mocks.prepareMidiClipGlueState,
     restoreMidiClipGlueState: mocks.restoreMidiClipGlueState,
 }));

@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { automationStore } from '#/modules/Automation/stores';
-import { midiStore } from '#/modules/MIDI/stores';
+import { defaultStepRecordState, midiStore, stepRecordStore } from '#/modules/MIDI/stores';
 
 import { ClipDummy } from '../../../__tests__/ClipDummy';
 import { TrackDummy } from '../../../__tests__/TrackDummy';
@@ -51,6 +51,7 @@ describe('glueClips MIDI state integration', () => {
         });
         automationStore.set({ lanes: [] });
         takeLaneStore.set({ lanes: [] });
+        stepRecordStore.set(null);
         __resetGainEnvelopesForTest();
     });
 
@@ -59,6 +60,7 @@ describe('glueClips MIDI state integration', () => {
         midiStore.set({ notesByClipId: {}, ccByClipId: {}, pitchBendByClipId: {} });
         automationStore.set({ lanes: [] });
         takeLaneStore.set({ lanes: [] });
+        stepRecordStore.set(null);
         __resetGainEnvelopesForTest();
     });
 
@@ -166,6 +168,38 @@ describe('glueClips MIDI state integration', () => {
             expect(trackStore.value).toEqual(originalState);
         }
     );
+
+    it('does not advertise or glue a source targeted by active step recording', () => {
+        stepRecordStore.set({
+            ...defaultStepRecordState,
+            active: true,
+            clipId: 'clip-a',
+            activeNotes: new Set<number>(),
+        });
+        const originalTracks = structuredClone(trackStore.value!.tracks);
+        const originalMidi = structuredClone(midiStore.value);
+
+        expect(getGlueEligibleClipPairs()).toEqual([]);
+        expect(glueClips(['clip-a', 'clip-b'])).toBe(false);
+        expect(trackStore.value!.tracks).toEqual(originalTracks);
+        expect(midiStore.value).toEqual(originalMidi);
+    });
+
+    it('does not glue into a generated target id used by active step recording', () => {
+        const targetClipId = 'clip-generated-target';
+        stepRecordStore.set({
+            ...defaultStepRecordState,
+            active: true,
+            clipId: targetClipId,
+            activeNotes: new Set<number>(),
+        });
+        const originalTracks = structuredClone(trackStore.value!.tracks);
+        const originalMidi = structuredClone(midiStore.value);
+
+        expect(glueClips(['clip-a', 'clip-b'], targetClipId)).toBe(false);
+        expect(trackStore.value!.tracks).toEqual(originalTracks);
+        expect(midiStore.value).toEqual(originalMidi);
+    });
 
     it('rebases every source MIDI event into the glued clip local timeline', () => {
         expect(glueClips(['clip-a', 'clip-b'])).toBe(true);
