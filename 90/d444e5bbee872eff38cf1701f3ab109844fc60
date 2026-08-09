@@ -1,0 +1,47 @@
+src/modules/Transport/handlers/transport/handleSetPunchOut.ts
+  s_bc88af7d3b054c::t_4d9b85c89a7b5f 26-52,54-55
+src/modules/Transport/handlers/transport/__tests__/createPunchRegionRestoreAction.spec.ts
+  s_bc88af7d3b054c::t_52068d688e1789 1,6-11,15
+src/modules/Transport/useCases/transportControls/__tests__/restorePunchRegion.spec.ts
+  s_bc88af7d3b054c::t_69fb0e90135350 3-4,8-11,19,23,34,36,41-74,86-97,99
+src/modules/Transport/handlers/transport/__tests__/punchUndoRedo.spec.ts
+  s_bc88af7d3b054c::t_0e738cdbfa5562 10-11,87-88,90-94,116-160
+src/modules/Transport/handlers/transport/__tests__/transportHandlers.spec.ts
+  s_bc88af7d3b054c::t_1f427fe64aae02 147-151,153,156-160,162-174
+  s_bc88af7d3b054c::t_52068d688e1789 178-181,183,185
+src/modules/Transport/useCases/transportControls/restorePunchRegion.ts
+  s_bc88af7d3b054c::t_2a37deee163324 1,4,9-42,45-46
+src/modules/Transport/useCases/transportControls/setPunchOut.ts
+  s_bc88af7d3b054c::t_f96ee8d6f209ed 6,9,14,18
+src/modules/Transport/useCases/transportControls/__tests__/punchRegionStateMachine.spec.ts
+  s_bc88af7d3b054c::t_52068d688e1789 178,191
+src/modules/Transport/handlers/transport/handleSetPunchIn.ts
+  s_bc88af7d3b054c::t_4d9b85c89a7b5f 26-52,54-55
+src/utils/handlerContract.ts
+  s_bc88af7d3b054c::t_f96ee8d6f209ed 799,801-804
+src/modules/Transport/handlers/transport/createPunchRegionRestoreAction.ts
+  s_bc88af7d3b054c::t_f96ee8d6f209ed 1,3,7-8
+  s_bc88af7d3b054c::t_983d1b1e613435 5
+src/modules/Transport/handlers/transport/handleRestorePunchRegion.ts
+  s_bc88af7d3b054c::t_f96ee8d6f209ed 6
+src/modules/AiRuntime/useCases/__tests__/validateActions.spec.ts
+  s_bc88af7d3b054c::t_52068d688e1789 72-78
+src/modules/Transport/useCases/transportControls/setPunchIn.ts
+  s_bc88af7d3b054c::t_f96ee8d6f209ed 6,9,14,18
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "90d444e5bbee872eff38cf1701f3ab109844fc60",
+  "prompts": {},
+  "sessions": {
+    "s_bc88af7d3b054c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f9b4a-11a2-7f61-8dfb-76eed0eb2a9c",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
