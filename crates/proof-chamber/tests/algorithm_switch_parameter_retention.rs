@@ -418,7 +418,21 @@ fn the_replay_preserves_most_recent_write_order() {
 /// `projectTrackToLiveStrip` replays every stored value on load, so a saved
 /// project carrying 0.0005 still gets 0.0005 written over the constructor.
 /// Only a newly added Dutch Oven reaches this state.
-const UNTOLD_INSTANCE_DIGEST: u64 = 0xaf24_03b1_9139_eb46;
+///
+/// Moved a second time, by #1547, and for the same reason as its sibling in
+/// `plate_parameter_surface.rs` — the two fingerprint the same engine from two
+/// stimuli and always move together. `DelayLine::read` now counts back from
+/// `write_pos - 1`, so `read(0)` is the sample just written rather than the
+/// oldest one the line holds. That is what stops Pre-Delay 0 ms rendering
+/// 503 ms of silence, and it lengthens every tank delay by one sample on the
+/// way, which is why a stimulus that never writes `predelay` moves at all.
+/// 0xaf24_03b1_9139_eb46 → the value below.
+///
+/// The measured content of the move is written out beside the other constant
+/// and not repeated here: identical peak, RMS within 0.0007 dB, identical T60,
+/// every octave band within 0.03 dB. This row is a fingerprint and it moved;
+/// the sound did not.
+const UNTOLD_INSTANCE_DIGEST: u64 = 0x6fa7_67b6_55cc_4ba9;
 
 #[test]
 fn an_instance_told_nothing_renders_exactly_what_it_always_has() {

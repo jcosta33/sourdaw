@@ -170,7 +170,35 @@ fn digest(output: &[f32]) -> u64 {
 /// the descriptor's `damping` into `Device.parameterValues` and
 /// `projectTrackToLiveStrip` replays every stored value on load, so a saved
 /// project keeps whatever it was added with.
-const UNTOUCHED_PLATE_DIGEST: u64 = 0x15ca_3842_cec5_5de2;
+///
+/// Moved a second time, by #1547, when `DelayLine::read` started counting its
+/// delay back from `write_pos - 1` instead of `write_pos`. The fix is aimed at
+/// Pre-Delay 0 ms, which used to render 503 ms of nothing; this row moves
+/// because the same expression serves every tank line, so all of them got one
+/// sample longer at the same time. Dattorro's Table 2 positions are literal
+/// sample delays — `delay_48_54[266]` is 266 samples — and the old expression
+/// delivered 265, so the taps now match the paper rather than sitting one
+/// sample inside it. 0x15ca_3842_cec5_5de2 → the value below.
+///
+/// Unlike #1546 this is *not* a voicing change, and the difference between the
+/// two moves is the reason this comment is longer than the last one. A one-
+/// sample retune of a recirculating tank scrambles the fine structure while
+/// leaving everything measurable where it was. On the default plate, mix 1,
+/// impulse, 3.0 s at 48 kHz, before against after:
+///
+/// * peak 0.699514031 → 0.699514031, identical to every digit f32 carries
+/// * RMS -0.00071 dB (L), +0.00060 dB (R)
+/// * T60 from a 50 ms envelope 1.450 s → 1.450 s
+/// * seven octave bands from 20 Hz to 20 kHz, all within ±0.03 dB
+/// * the 50 ms RMS envelope, across its whole audible span, within
+///   +0.61/-0.56 dB with a mean of -0.02 dB
+///
+/// and sample-for-sample correlation of 0.61 at zero lag, which is what says
+/// the fine structure moved and is why this constant had to. An untouched
+/// project renders a different tail with the same level, the same decay time
+/// and the same spectrum — worth a release note for the Pre-Delay fix, not for
+/// this.
+const UNTOUCHED_PLATE_DIGEST: u64 = 0xf9b7_eb99_fb18_3905;
 
 // ---------------------------------------------------------------------------
 // early_late

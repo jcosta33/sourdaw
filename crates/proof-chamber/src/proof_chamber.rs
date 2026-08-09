@@ -98,9 +98,41 @@ impl DelayLine {
         self.write_pos = (self.write_pos + 1) % self.len;
     }
 
+    /// Read the sample written `delay` samples ago. `read(0)` is the sample
+    /// written by the `write` call that preceded it.
     #[inline]
     fn read(&self, delay: usize) -> f32 {
-        let pos = (self.write_pos + self.len - delay.min(self.len - 1)) % self.len;
+        // The `- 1` is the whole of #1547. `write` post-increments, so by the
+        // time a caller reads, `write_pos` addresses the slot the *next* sample
+        // will occupy and `write_pos - 1` holds the one just written. A delay
+        // of `delay` samples therefore counts back from `write_pos - 1`.
+        //
+        // Counting back from `write_pos` instead — which is what this line did
+        // — made the argument mean `delay + 1` samples, and that cost two
+        // separate things:
+        //
+        // * Every tap arrived one sample early. Dattorro's Table 2 positions
+        //   are literal sample delays into the tank lines, so
+        //   `delay_48_54[266]` is 266 samples; this line delivered 265, on all
+        //   fourteen output taps and both fixed tank delays.
+        // * `read(0)` had no representation. `(write_pos + len - 0) % len` is
+        //   `write_pos`, the *oldest* slot — so a caller asking for the minimum
+        //   delay silently got the maximum, `len - 1` samples. That is not a
+        //   rounding error on a tank tap, where the argument is a compile-time
+        //   constant that is never zero. It is a half-second on the pre-delay,
+        //   whose line is `sample_rate * 0.5` long and whose argument is a user
+        //   control declared from 0 ms. Pre-Delay at its own minimum rendered
+        //   an engine that emitted nothing at all for 500 ms and then started.
+        //
+        // The FDN's inline pre-delay (`fdn.rs`, `pd_read`) reads *before* it
+        // advances its write position and has always been correct; this is the
+        // same expression evaluated at the same point in the cycle.
+        //
+        // `delay.min(self.len - 1)` still saturates rather than wrapping, so an
+        // over-long request reads the oldest sample the line holds instead of
+        // aliasing back to a short delay. The subtraction cannot underflow:
+        // the clamp bounds it by `len - 1`.
+        let pos = (self.write_pos + self.len - 1 - delay.min(self.len - 1)) % self.len;
         self.buffer[pos]
     }
 
