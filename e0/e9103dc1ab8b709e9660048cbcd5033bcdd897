@@ -1,0 +1,16 @@
+src/modules/TimelineEditor/presentations/views/ClipView.tsx
+  h_1228e573df1f42 148-156
+tests/e2e/clipDragMoveTestId.spec.ts
+  h_1228e573df1f42 1-132
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "e0e9103dc1ab8b709e9660048cbcd5033bcdd897",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
