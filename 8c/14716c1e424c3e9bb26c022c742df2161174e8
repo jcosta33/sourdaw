@@ -1,0 +1,68 @@
+src/modules/Gluten/useCases/glutenPresets.ts
+  s_14f2bbc9f385dd::t_76fa1d201bb91b 151-158,169-172
+docs/manual/devices/07-gluten.md
+  s_14f2bbc9f385dd::t_908a03c4c67407 164-168
+  s_14f2bbc9f385dd::t_2d4f5121d3088d 193-201
+  s_14f2bbc9f385dd::t_f43df4bb88b5ae 113-117
+  s_14f2bbc9f385dd::t_aa4e5b6f03dff7 43-59
+src/modules/Gluten/presentations/views/__tests__/glutenTopologyControlGating.spec.tsx
+  s_14f2bbc9f385dd::t_a779b4d0f420ab 389
+  s_14f2bbc9f385dd::t_7b4493bde85e4c 1
+  s_14f2bbc9f385dd::t_d4e5eccee94213 326-331,333-335,338-342,344-356,360-379,387-388,390-395
+  s_14f2bbc9f385dd::t_e6a4bf67c755d0 380-381,383-386
+  s_14f2bbc9f385dd::t_60dc489cba21e7 382
+src/modules/Gluten/models/GlutenTopologyGating.ts
+  s_14f2bbc9f385dd::t_71c183a20755b5 741
+  s_14f2bbc9f385dd::t_62d06ffde56387 531-545,547-575,596-598,604,607,611,613
+  s_14f2bbc9f385dd::t_d95f8722c53c23 456,458-470,473
+  s_14f2bbc9f385dd::t_eca2d679f96155 651,656-657,661-662,668,704-740,742
+  s_14f2bbc9f385dd::t_79f7febe3c60a5 655
+  s_14f2bbc9f385dd::t_1dfa0c7bc2aebb 18-20
+  s_14f2bbc9f385dd::t_60c630d4d2306f 669-703
+  s_14f2bbc9f385dd::t_ae0dfbf6ec7212 546
+  s_14f2bbc9f385dd::t_1777c124228e60 375,377-378,381-408,415-416,422-424,429-430,435-436,438
+src/components/daw/DawPluginChip.tsx
+  s_14f2bbc9f385dd::t_92ae20b2c81c28 51-69,80-109
+src/components/daw/__tests__/DawPluginChip.spec.tsx
+  s_14f2bbc9f385dd::t_0281c1aab2eefb 18-59
+src/modules/Gluten/models/GlutenPatch.ts
+  s_14f2bbc9f385dd::t_119804b6d08298 124-130
+src/modules/Arrangement/models/PluginDescriptors/GlutenDescriptor.ts
+  s_14f2bbc9f385dd::t_c1eea669ec14f9 43-46
+src/modules/Gluten/presentations/views/GlutenPanel.tsx
+  s_14f2bbc9f385dd::t_5b501e3cf6087d 461-469,475-490,493-532
+  s_14f2bbc9f385dd::t_026ed80d7e087a 926-929
+  s_14f2bbc9f385dd::t_fcb5992fc33568 160-183
+  s_14f2bbc9f385dd::t_6d470e0a551e3f 26,28-29,31
+  s_14f2bbc9f385dd::t_4e088bc8e1d94b 1226-1229
+  s_14f2bbc9f385dd::t_b174306d28acd6 1399-1402,1404,1412
+  s_14f2bbc9f385dd::t_9a6f9860a8a912 847-850
+  s_14f2bbc9f385dd::t_6c39e90ffde19c 533-538
+  s_14f2bbc9f385dd::t_788bf0fb2b2efd 1040-1043
+  s_14f2bbc9f385dd::t_981b2d74813b44 472-473
+  s_14f2bbc9f385dd::t_2e280d7393a25a 474,539
+src/modules/Gluten/models/__tests__/glutenTopologyGating.spec.ts
+  s_14f2bbc9f385dd::t_db82e0f8c336fa 482-537,541-543,550-571
+  s_14f2bbc9f385dd::t_d6b575ab590064 573-586
+  s_14f2bbc9f385dd::t_0eee7244a4d552 315
+  s_14f2bbc9f385dd::t_d689863290dcf0 544-549
+  s_14f2bbc9f385dd::t_118b93a48a78ee 538-540
+  s_14f2bbc9f385dd::t_4eb0f656f04b97 16,18
+  s_14f2bbc9f385dd::t_c779bc16b3e38c 572
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "8c14716c1e424c3e9bb26c022c742df2161174e8",
+  "prompts": {},
+  "sessions": {
+    "s_14f2bbc9f385dd": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f9a61a1d-66b3-4146-938d-a04f45f4b060",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
