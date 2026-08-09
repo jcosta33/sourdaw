@@ -37,6 +37,7 @@ ADR numbers 0001 and 0002 are reserved and must not be reused.
 | [0021](0021-plugin-isolation-by-binary-with-per-plugin-override.md) | One helper per plugin binary, with a per-plugin full-isolation override — **status: proposed** |
 | [0022](0022-no-comparative-realism-claims.md)     | Describe mechanisms, not resemblance: no comparative realism claims — **status: proposed** |
 | [0023](0023-allpass-fractional-delay-in-the-string-loop.md) | Allpass fractional delay in the Karplus-Strong loop, offset off zero — **status: proposed** |
+| [0024](0024-warp-modes-are-named-by-material.md)  | Warp modes are named by material, over three closed executors — **status: proposed** |
 
 Genuinely open decisions that are not yet ADRs live in the
 [open-decision docket](open-decision-docket.md).
