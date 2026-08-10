@@ -1,0 +1,52 @@
+src-tauri/src/commands/filesystem.rs
+  s_a40848e8f8cca9::t_23c39e28125763 7-8,61,79-82,176-180,191-199,307-327
+  s_a40848e8f8cca9::t_96691b01ac6ddc 328
+src-tauri/tests/provider_gateway_webview_boundary.rs
+  s_a40848e8f8cca9::t_f0e83e23828f0b 71,73-77,87-116
+src-tauri/gen/schemas/acl-manifests.json
+  s_a40848e8f8cca9::t_4b6e16d9e3d484 1
+src-tauri/tauri.conf.json
+  s_39ce8ae3e08728::t_4476ba6ea61b34 25
+src/modules/AiRuntime/repositories/nativeEngine/__tests__/lifecycle.spec.ts
+  s_39ce8ae3e08728::t_26475bbdb12051 3,9,16,23,27,55,154-184
+src/modules/AiRuntime/repositories/nativeEngine/initNativeEngine.ts
+  s_39ce8ae3e08728::t_8a5a2dd81a59f4 32-33,61-65
+src/modules/AiRuntime/repositories/voiceTauriAdapter/__tests__/onDictationResult.spec.ts
+  s_39ce8ae3e08728::t_beec92ef26f8c6 27-42
+src/modules/AiRuntime/repositories/voiceTauriAdapter/onDictationResult.ts
+  s_39ce8ae3e08728::t_4b655a870b42b0 8-10,17-20,24-46
+src/modules/MIDI/repositories/webMidi/lifecycle/__tests__/selectMidiInputTauri.spec.ts
+  s_39ce8ae3e08728::t_22f07c89ef0d18 74-77,176-186
+src/modules/MIDI/repositories/webMidi/lifecycle/selectMidiInputTauri.ts
+  s_39ce8ae3e08728::t_84ab29203ca939 25-27,29-31,57
+src/utils/__tests__/agentWebviewSecurity.spec.ts
+  s_39ce8ae3e08728::t_f9e40d38cea823 1-2,44-86,97,111-119,122-126,140,152-158,160
+src/utils/__tests__/tauriBridge.spec.ts
+  s_39ce8ae3e08728::t_2fde3ff0072e31 147-163,208-217
+src/utils/tauriBridge.ts
+  s_39ce8ae3e08728::t_c0364ee7c7d3a4 38,66,68,76,95,100,105,111,127-138,147-148,159,164,176-187
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "a28fb46fc86f544932a8cae39f2e5a69c4465d79",
+  "prompts": {},
+  "sessions": {
+    "s_39ce8ae3e08728": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fea50-788c-7bc2-a16c-7d264af09d13",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
