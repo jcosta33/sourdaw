@@ -1,0 +1,37 @@
+src/modules/AiRuntime/useCases/parsePromptToActions.ts
+  s_a40848e8f8cca9::t_bcc54a48c44c05 19,119-121,133
+src/modules/AiRuntime/useCases/__tests__/drumBusPromptWorkflow.spec.ts
+  s_a40848e8f8cca9::t_11e7f06e1f429e 593-606,608-614,620-638,644-649,651-652,654,658,662,666-668
+  s_a40848e8f8cca9::t_b53163b91c7e7d 510,607,639-643,672
+  s_a40848e8f8cca9::t_862afcaa7cbfaf 57
+  s_a40848e8f8cca9::t_7ce11b3e811596 619
+  s_a40848e8f8cca9::t_8a5b51f5dbe345 194-196,198-199,203-205,211-229,231,653
+  s_a40848e8f8cca9::t_e45d0a0595bbf4 650,655-657,659-661,663-665
+  s_a40848e8f8cca9::t_19ced1e1f50304 615-618
+  s_a40848e8f8cca9::t_0cf55d143a625f 163-193,197,200-202,206-210,230,232-271
+src/modules/AiRuntime/models/DrumRoutingCapability.ts
+  s_a40848e8f8cca9::t_25660a96f51565 1
+  s_a40848e8f8cca9::t_d93ff5a713a844 2-45
+src/modules/AiRuntime/useCases/agentReference/getDrumRoutingPromptScope.ts
+  s_a40848e8f8cca9::t_25660a96f51565 28-31,36-43
+  s_a40848e8f8cca9::t_f2cf62c072d97c 1-7,19,22-27,32-35,44-50,52-54,62-103,105-109,144-145,150-152,154-156,161,167-176,178,182-207,215
+  s_a40848e8f8cca9::t_a8c2261f0f1080 51
+src/modules/AiRuntime/transformers/llmActionBridge.ts
+  s_a40848e8f8cca9::t_bcc54a48c44c05 4,2995,3001,3006
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "c068bad3b1e3f9f90d82fe1b514f94ce8a9f8d91",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
