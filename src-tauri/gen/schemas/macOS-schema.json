@@ -387,10 +387,352 @@
       "description": "Permission identifier",
       "oneOf": [
         {
+          "description": "Enables the analyze_pitch command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-analyze-pitch",
+          "markdownDescription": "Enables the analyze_pitch command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the arm_recording command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-arm-recording",
+          "markdownDescription": "Enables the arm_recording command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the cancel_native_llm_generation command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-cancel-native-llm-generation",
+          "markdownDescription": "Enables the cancel_native_llm_generation command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the close_all_plugin_guis command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-close-all-plugin-guis",
+          "markdownDescription": "Enables the close_all_plugin_guis command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the close_midi_input command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-close-midi-input",
+          "markdownDescription": "Enables the close_midi_input command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the close_plugin_gui command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-close-plugin-gui",
+          "markdownDescription": "Enables the close_plugin_gui command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the collab_apply_change command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-collab-apply-change",
+          "markdownDescription": "Enables the collab_apply_change command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the collab_create_project command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-collab-create-project",
+          "markdownDescription": "Enables the collab_create_project command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the collab_get_document_state command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-collab-get-document-state",
+          "markdownDescription": "Enables the collab_get_document_state command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the collab_get_nearby_sessions command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-collab-get-nearby-sessions",
+          "markdownDescription": "Enables the collab_get_nearby_sessions command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the collab_load_bundle command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-collab-load-bundle",
+          "markdownDescription": "Enables the collab_load_bundle command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the collab_merge_bundle command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-collab-merge-bundle",
+          "markdownDescription": "Enables the collab_merge_bundle command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the collab_save_bundle command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-collab-save-bundle",
+          "markdownDescription": "Enables the collab_save_bundle command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the collab_start_advertising command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-collab-start-advertising",
+          "markdownDescription": "Enables the collab_start_advertising command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the collab_start_browsing command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-collab-start-browsing",
+          "markdownDescription": "Enables the collab_start_browsing command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the collab_stop_advertising command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-collab-stop-advertising",
+          "markdownDescription": "Enables the collab_stop_advertising command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the collab_stop_browsing command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-collab-stop-browsing",
+          "markdownDescription": "Enables the collab_stop_browsing command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the commit_pitch_edit command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-commit-pitch-edit",
+          "markdownDescription": "Enables the commit_pitch_edit command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the create_crumbs command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-create-crumbs",
+          "markdownDescription": "Enables the create_crumbs command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the crumbs_all_sound_off command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-crumbs-all-sound-off",
+          "markdownDescription": "Enables the crumbs_all_sound_off command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the crumbs_note_off command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-crumbs-note-off",
+          "markdownDescription": "Enables the crumbs_note_off command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the crumbs_note_on command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-crumbs-note-on",
+          "markdownDescription": "Enables the crumbs_note_on command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the denoise_audio command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-denoise-audio",
+          "markdownDescription": "Enables the denoise_audio command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the destroy_crumbs command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-destroy-crumbs",
+          "markdownDescription": "Enables the destroy_crumbs command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the detect_onsets command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-detect-onsets",
+          "markdownDescription": "Enables the detect_onsets command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the detect_sample_pitch command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-detect-sample-pitch",
+          "markdownDescription": "Enables the detect_sample_pitch command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the detect_smart_loop_points command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-detect-smart-loop-points",
+          "markdownDescription": "Enables the detect_smart_loop_points command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the disable_link command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-disable-link",
+          "markdownDescription": "Enables the disable_link command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the enable_link command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-enable-link",
+          "markdownDescription": "Enables the enable_link command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the ensure_whisper_ready command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-ensure-whisper-ready",
+          "markdownDescription": "Enables the ensure_whisper_ready command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the finalize_native_llm_initialization command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-finalize-native-llm-initialization",
+          "markdownDescription": "Enables the finalize_native_llm_initialization command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the generate_audio_clip command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-generate-audio-clip",
+          "markdownDescription": "Enables the generate_audio_clip command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the generate_native_completion command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-generate-native-completion",
+          "markdownDescription": "Enables the generate_native_completion command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the get_asr_status command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-get-asr-status",
+          "markdownDescription": "Enables the get_asr_status command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the get_crumbs_position command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-get-crumbs-position",
+          "markdownDescription": "Enables the get_crumbs_position command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the get_default_plugin_paths command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-get-default-plugin-paths",
+          "markdownDescription": "Enables the get_default_plugin_paths command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the get_link_status command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-get-link-status",
+          "markdownDescription": "Enables the get_link_status command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the get_model_dir command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-get-model-dir",
+          "markdownDescription": "Enables the get_model_dir command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the get_native_llm_status command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-get-native-llm-status",
+          "markdownDescription": "Enables the get_native_llm_status command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the get_plugin_parameters command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-get-plugin-parameters",
+          "markdownDescription": "Enables the get_plugin_parameters command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the get_plugin_state_bytes command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-get-plugin-state-bytes",
+          "markdownDescription": "Enables the get_plugin_state_bytes command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the get_waveform_peaks command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-get-waveform-peaks",
+          "markdownDescription": "Enables the get_waveform_peaks command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the hide_all_plugin_guis command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-hide-all-plugin-guis",
+          "markdownDescription": "Enables the hide_all_plugin_guis command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the init_native_llm command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-init-native-llm",
+          "markdownDescription": "Enables the init_native_llm command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the is_plugin_gui_supported command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-is-plugin-gui-supported",
+          "markdownDescription": "Enables the is_plugin_gui_supported command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the link_start_playing command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-link-start-playing",
+          "markdownDescription": "Enables the link_start_playing command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the link_stop_playing command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-link-stop-playing",
+          "markdownDescription": "Enables the link_stop_playing command without any pre-configured scope."
+        },
+        {
           "description": "Enables the list_directory command without any pre-configured scope.",
           "type": "string",
           "const": "allow-list-directory",
           "markdownDescription": "Enables the list_directory command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the list_midi_inputs command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-list-midi-inputs",
+          "markdownDescription": "Enables the list_midi_inputs command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the load_plugin command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-load-plugin",
+          "markdownDescription": "Enables the load_plugin command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the load_sample command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-load-sample",
+          "markdownDescription": "Enables the load_sample command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the load_whisper_model command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-load-whisper-model",
+          "markdownDescription": "Enables the load_whisper_model command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the native_tool_calling command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-native-tool-calling",
+          "markdownDescription": "Enables the native_tool_calling command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the open_midi_input command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-open-midi-input",
+          "markdownDescription": "Enables the open_midi_input command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the open_plugin_gui command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-open-plugin-gui",
+          "markdownDescription": "Enables the open_plugin_gui command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the parse_scl command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-parse-scl",
+          "markdownDescription": "Enables the parse_scl command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the post_process_audio command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-post-process-audio",
+          "markdownDescription": "Enables the post_process_audio command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the process_plugin_audio command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-process-plugin-audio",
+          "markdownDescription": "Enables the process_plugin_audio command without any pre-configured scope."
         },
         {
           "description": "Enables the read_audio_file command without any pre-configured scope.",
@@ -399,10 +741,436 @@
           "markdownDescription": "Enables the read_audio_file command without any pre-configured scope."
         },
         {
+          "description": "Enables the read_file_bytes command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-read-file-bytes",
+          "markdownDescription": "Enables the read_file_bytes command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the scan_plugins command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-scan-plugins",
+          "markdownDescription": "Enables the scan_plugins command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the schema_constrained_generation command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-schema-constrained-generation",
+          "markdownDescription": "Enables the schema_constrained_generation command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the send_plugin_midi command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-send-plugin-midi",
+          "markdownDescription": "Enables the send_plugin_midi command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the separate_stems command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-separate-stems",
+          "markdownDescription": "Enables the separate_stems command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the set_crumbs_mode command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-set-crumbs-mode",
+          "markdownDescription": "Enables the set_crumbs_mode command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the set_crumbs_param command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-set-crumbs-param",
+          "markdownDescription": "Enables the set_crumbs_param command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the set_link_tempo command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-set-link-tempo",
+          "markdownDescription": "Enables the set_link_tempo command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the set_plugin_parameter command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-set-plugin-parameter",
+          "markdownDescription": "Enables the set_plugin_parameter command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the set_plugin_state_bytes command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-set-plugin-state-bytes",
+          "markdownDescription": "Enables the set_plugin_state_bytes command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the show_all_plugin_guis command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-show-all-plugin-guis",
+          "markdownDescription": "Enables the show_all_plugin_guis command without any pre-configured scope."
+        },
+        {
+          "description": "Allows the bundled main webview to invoke Sourdaw's registered application commands.",
+          "type": "string",
+          "const": "allow-sourdaw-commands",
+          "markdownDescription": "Allows the bundled main webview to invoke Sourdaw's registered application commands."
+        },
+        {
+          "description": "Enables the start_audio_gen_sidecar command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-start-audio-gen-sidecar",
+          "markdownDescription": "Enables the start_audio_gen_sidecar command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the start_dictation command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-start-dictation",
+          "markdownDescription": "Enables the start_dictation command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the start_native_engine command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-start-native-engine",
+          "markdownDescription": "Enables the start_native_engine command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the stop_audio_gen_sidecar command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-stop-audio-gen-sidecar",
+          "markdownDescription": "Enables the stop_audio_gen_sidecar command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the stop_dictation command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-stop-dictation",
+          "markdownDescription": "Enables the stop_dictation command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the stop_recording command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-stop-recording",
+          "markdownDescription": "Enables the stop_recording command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the stream_native_completion command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-stream-native-completion",
+          "markdownDescription": "Enables the stream_native_completion command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the unload_native_llm command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-unload-native-llm",
+          "markdownDescription": "Enables the unload_native_llm command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the unload_native_llm_if_owned command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-unload-native-llm-if-owned",
+          "markdownDescription": "Enables the unload_native_llm_if_owned command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the unload_plugin command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-unload-plugin",
+          "markdownDescription": "Enables the unload_plugin command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the update_plugin_transport command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-update-plugin-transport",
+          "markdownDescription": "Enables the update_plugin_transport command without any pre-configured scope."
+        },
+        {
           "description": "Enables the write_audio_file command without any pre-configured scope.",
           "type": "string",
           "const": "allow-write-audio-file",
           "markdownDescription": "Enables the write_audio_file command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the write_file_bytes command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-write-file-bytes",
+          "markdownDescription": "Enables the write_file_bytes command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the analyze_pitch command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-analyze-pitch",
+          "markdownDescription": "Denies the analyze_pitch command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the arm_recording command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-arm-recording",
+          "markdownDescription": "Denies the arm_recording command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the cancel_native_llm_generation command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-cancel-native-llm-generation",
+          "markdownDescription": "Denies the cancel_native_llm_generation command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the close_all_plugin_guis command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-close-all-plugin-guis",
+          "markdownDescription": "Denies the close_all_plugin_guis command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the close_midi_input command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-close-midi-input",
+          "markdownDescription": "Denies the close_midi_input command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the close_plugin_gui command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-close-plugin-gui",
+          "markdownDescription": "Denies the close_plugin_gui command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the collab_apply_change command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-collab-apply-change",
+          "markdownDescription": "Denies the collab_apply_change command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the collab_create_project command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-collab-create-project",
+          "markdownDescription": "Denies the collab_create_project command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the collab_get_document_state command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-collab-get-document-state",
+          "markdownDescription": "Denies the collab_get_document_state command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the collab_get_nearby_sessions command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-collab-get-nearby-sessions",
+          "markdownDescription": "Denies the collab_get_nearby_sessions command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the collab_load_bundle command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-collab-load-bundle",
+          "markdownDescription": "Denies the collab_load_bundle command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the collab_merge_bundle command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-collab-merge-bundle",
+          "markdownDescription": "Denies the collab_merge_bundle command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the collab_save_bundle command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-collab-save-bundle",
+          "markdownDescription": "Denies the collab_save_bundle command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the collab_start_advertising command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-collab-start-advertising",
+          "markdownDescription": "Denies the collab_start_advertising command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the collab_start_browsing command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-collab-start-browsing",
+          "markdownDescription": "Denies the collab_start_browsing command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the collab_stop_advertising command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-collab-stop-advertising",
+          "markdownDescription": "Denies the collab_stop_advertising command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the collab_stop_browsing command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-collab-stop-browsing",
+          "markdownDescription": "Denies the collab_stop_browsing command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the commit_pitch_edit command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-commit-pitch-edit",
+          "markdownDescription": "Denies the commit_pitch_edit command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the create_crumbs command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-create-crumbs",
+          "markdownDescription": "Denies the create_crumbs command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the crumbs_all_sound_off command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-crumbs-all-sound-off",
+          "markdownDescription": "Denies the crumbs_all_sound_off command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the crumbs_note_off command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-crumbs-note-off",
+          "markdownDescription": "Denies the crumbs_note_off command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the crumbs_note_on command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-crumbs-note-on",
+          "markdownDescription": "Denies the crumbs_note_on command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the denoise_audio command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-denoise-audio",
+          "markdownDescription": "Denies the denoise_audio command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the destroy_crumbs command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-destroy-crumbs",
+          "markdownDescription": "Denies the destroy_crumbs command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the detect_onsets command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-detect-onsets",
+          "markdownDescription": "Denies the detect_onsets command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the detect_sample_pitch command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-detect-sample-pitch",
+          "markdownDescription": "Denies the detect_sample_pitch command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the detect_smart_loop_points command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-detect-smart-loop-points",
+          "markdownDescription": "Denies the detect_smart_loop_points command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the disable_link command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-disable-link",
+          "markdownDescription": "Denies the disable_link command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the enable_link command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-enable-link",
+          "markdownDescription": "Denies the enable_link command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the ensure_whisper_ready command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-ensure-whisper-ready",
+          "markdownDescription": "Denies the ensure_whisper_ready command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the finalize_native_llm_initialization command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-finalize-native-llm-initialization",
+          "markdownDescription": "Denies the finalize_native_llm_initialization command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the generate_audio_clip command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-generate-audio-clip",
+          "markdownDescription": "Denies the generate_audio_clip command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the generate_native_completion command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-generate-native-completion",
+          "markdownDescription": "Denies the generate_native_completion command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the get_asr_status command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-get-asr-status",
+          "markdownDescription": "Denies the get_asr_status command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the get_crumbs_position command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-get-crumbs-position",
+          "markdownDescription": "Denies the get_crumbs_position command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the get_default_plugin_paths command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-get-default-plugin-paths",
+          "markdownDescription": "Denies the get_default_plugin_paths command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the get_link_status command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-get-link-status",
+          "markdownDescription": "Denies the get_link_status command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the get_model_dir command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-get-model-dir",
+          "markdownDescription": "Denies the get_model_dir command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the get_native_llm_status command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-get-native-llm-status",
+          "markdownDescription": "Denies the get_native_llm_status command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the get_plugin_parameters command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-get-plugin-parameters",
+          "markdownDescription": "Denies the get_plugin_parameters command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the get_plugin_state_bytes command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-get-plugin-state-bytes",
+          "markdownDescription": "Denies the get_plugin_state_bytes command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the get_waveform_peaks command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-get-waveform-peaks",
+          "markdownDescription": "Denies the get_waveform_peaks command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the hide_all_plugin_guis command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-hide-all-plugin-guis",
+          "markdownDescription": "Denies the hide_all_plugin_guis command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the init_native_llm command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-init-native-llm",
+          "markdownDescription": "Denies the init_native_llm command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the is_plugin_gui_supported command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-is-plugin-gui-supported",
+          "markdownDescription": "Denies the is_plugin_gui_supported command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the link_start_playing command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-link-start-playing",
+          "markdownDescription": "Denies the link_start_playing command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the link_stop_playing command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-link-stop-playing",
+          "markdownDescription": "Denies the link_stop_playing command without any pre-configured scope."
         },
         {
           "description": "Denies the list_directory command without any pre-configured scope.",
@@ -411,16 +1179,214 @@
           "markdownDescription": "Denies the list_directory command without any pre-configured scope."
         },
         {
+          "description": "Denies the list_midi_inputs command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-list-midi-inputs",
+          "markdownDescription": "Denies the list_midi_inputs command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the load_plugin command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-load-plugin",
+          "markdownDescription": "Denies the load_plugin command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the load_sample command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-load-sample",
+          "markdownDescription": "Denies the load_sample command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the load_whisper_model command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-load-whisper-model",
+          "markdownDescription": "Denies the load_whisper_model command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the native_tool_calling command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-native-tool-calling",
+          "markdownDescription": "Denies the native_tool_calling command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the open_midi_input command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-open-midi-input",
+          "markdownDescription": "Denies the open_midi_input command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the open_plugin_gui command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-open-plugin-gui",
+          "markdownDescription": "Denies the open_plugin_gui command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the parse_scl command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-parse-scl",
+          "markdownDescription": "Denies the parse_scl command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the post_process_audio command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-post-process-audio",
+          "markdownDescription": "Denies the post_process_audio command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the process_plugin_audio command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-process-plugin-audio",
+          "markdownDescription": "Denies the process_plugin_audio command without any pre-configured scope."
+        },
+        {
           "description": "Denies the read_audio_file command without any pre-configured scope.",
           "type": "string",
           "const": "deny-read-audio-file",
           "markdownDescription": "Denies the read_audio_file command without any pre-configured scope."
         },
         {
+          "description": "Denies the read_file_bytes command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-read-file-bytes",
+          "markdownDescription": "Denies the read_file_bytes command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the scan_plugins command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-scan-plugins",
+          "markdownDescription": "Denies the scan_plugins command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the schema_constrained_generation command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-schema-constrained-generation",
+          "markdownDescription": "Denies the schema_constrained_generation command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the send_plugin_midi command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-send-plugin-midi",
+          "markdownDescription": "Denies the send_plugin_midi command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the separate_stems command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-separate-stems",
+          "markdownDescription": "Denies the separate_stems command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the set_crumbs_mode command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-set-crumbs-mode",
+          "markdownDescription": "Denies the set_crumbs_mode command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the set_crumbs_param command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-set-crumbs-param",
+          "markdownDescription": "Denies the set_crumbs_param command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the set_link_tempo command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-set-link-tempo",
+          "markdownDescription": "Denies the set_link_tempo command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the set_plugin_parameter command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-set-plugin-parameter",
+          "markdownDescription": "Denies the set_plugin_parameter command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the set_plugin_state_bytes command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-set-plugin-state-bytes",
+          "markdownDescription": "Denies the set_plugin_state_bytes command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the show_all_plugin_guis command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-show-all-plugin-guis",
+          "markdownDescription": "Denies the show_all_plugin_guis command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the start_audio_gen_sidecar command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-start-audio-gen-sidecar",
+          "markdownDescription": "Denies the start_audio_gen_sidecar command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the start_dictation command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-start-dictation",
+          "markdownDescription": "Denies the start_dictation command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the start_native_engine command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-start-native-engine",
+          "markdownDescription": "Denies the start_native_engine command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the stop_audio_gen_sidecar command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-stop-audio-gen-sidecar",
+          "markdownDescription": "Denies the stop_audio_gen_sidecar command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the stop_dictation command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-stop-dictation",
+          "markdownDescription": "Denies the stop_dictation command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the stop_recording command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-stop-recording",
+          "markdownDescription": "Denies the stop_recording command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the stream_native_completion command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-stream-native-completion",
+          "markdownDescription": "Denies the stream_native_completion command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the unload_native_llm command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-unload-native-llm",
+          "markdownDescription": "Denies the unload_native_llm command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the unload_native_llm_if_owned command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-unload-native-llm-if-owned",
+          "markdownDescription": "Denies the unload_native_llm_if_owned command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the unload_plugin command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-unload-plugin",
+          "markdownDescription": "Denies the unload_plugin command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the update_plugin_transport command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-update-plugin-transport",
+          "markdownDescription": "Denies the update_plugin_transport command without any pre-configured scope."
+        },
+        {
           "description": "Denies the write_audio_file command without any pre-configured scope.",
           "type": "string",
           "const": "deny-write-audio-file",
           "markdownDescription": "Denies the write_audio_file command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the write_file_bytes command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-write-file-bytes",
+          "markdownDescription": "Denies the write_file_bytes command without any pre-configured scope."
         },
         {
           "description": "Default core plugins set.\n#### This default permission set includes:\n\n- `core:path:default`\n- `core:event:default`\n- `core:window:default`\n- `core:webview:default`\n- `core:app:default`\n- `core:image:default`\n- `core:resources:default`\n- `core:menu:default`\n- `core:tray:default`",
