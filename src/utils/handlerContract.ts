@@ -33,6 +33,10 @@ export type DeviceSnapshot = {
     readonly deviceState?: DeviceStateChunkSnapshot;
 };
 export type TrackSnapshot = { readonly id: string };
+export type BatchRestoreTrackSnapshot = {
+    readonly trackId: string;
+    readonly trackIndex: number;
+};
 export type TrackSendSnapshot = {
     readonly busId: string;
     readonly level: number;
@@ -438,7 +442,18 @@ type GeneratedMidiReplayOperation =
 
 export type AppAction =
     | { type: 'addTrack'; payload: { id?: string; name: string; kind: TrackKind; select?: boolean } }
-    | { type: 'removeTrack'; payload: { trackId: string } }
+    | {
+          type: 'removeTrack';
+          payload: {
+              trackId: string;
+              expectedKind?: 'audio' | 'midi' | 'bus' | 'master' | 'folder';
+              expectedMuted?: boolean;
+              expectedClipIds?: readonly string[];
+              expectedAlternativeClipIds?: readonly string[];
+              expectedVcaGroupId?: string | null;
+              expectedVcaMembershipGroupIds?: readonly string[];
+          };
+      }
     | {
           type: 'discardCreatedTrack';
           payload: { trackId: string; generatedMidiStateGuard?: GeneratedMidiStateGuard };
@@ -456,6 +471,8 @@ export type AppAction =
               trackGain: number;
               trackParentId: string | null;
               trackIndex: number;
+              /** Internal context compiled only for sibling restores captured by one atomic batch. */
+              batchRestoreTracks?: readonly BatchRestoreTrackSnapshot[];
               wasSelected: boolean;
               routingPatches: readonly TrackRoutingPatchSnapshot[];
               automationLaneSnapshots: readonly AutomationLaneSnapshot[];
@@ -630,15 +647,46 @@ export type AppAction =
       }
     | { type: 'trimClipStart'; payload: { clipId: string; newStartBeat: number } }
     | { type: 'trimClipEnd'; payload: { clipId: string; newEndBeat: number } }
-    | { type: 'addDevice'; payload: { trackId: string; deviceType: string; deviceId?: string } }
+    | {
+          type: 'addDevice';
+          payload: {
+              trackId: string;
+              deviceType: string;
+              afterDeviceId?: string;
+              deviceId?: string;
+              expectedDeviceIds?: readonly string[];
+              /** Internal AI replay guard. Provider payloads cannot set this field. */
+              expectedFrozen?: boolean;
+          };
+      }
     | { type: 'bypassDevice'; payload: { deviceId: string; bypassed: boolean } }
-    | { type: 'removeDevice'; payload: { deviceId: string } }
+    | {
+          type: 'removeDevice';
+          payload: { deviceId: string; expectedTrackId?: string; expectedDeviceIds?: readonly string[] };
+      }
     | {
           /** Inverse of `removeDevice`; emitted only from the device handler's pre-execute snapshot. */
           type: 'restoreDevice';
-          payload: { trackId: string; deviceSnapshot: DeviceSnapshot; deviceIndex: number };
+          payload: {
+              trackId: string;
+              deviceSnapshot: DeviceSnapshot;
+              deviceIndex: number;
+              expectedDeviceIds?: readonly string[];
+          };
       }
-    | { type: 'setDeviceParameter'; payload: { deviceId: string; paramId: string; value: number } }
+    | {
+          type: 'setDeviceParameter';
+          payload: {
+              deviceId: string;
+              paramId: string;
+              value: number;
+              expectedTrackId?: string;
+              expectedDeviceType?: string;
+              expectedDeviceIds?: readonly string[];
+              expectedValue?: number;
+              expectedTrackFrozen?: boolean;
+          };
+      }
     | { type: 'setExternalPluginState'; payload: { deviceId: string; stateChunk: string } }
     | { type: 'setDeviceState'; payload: { deviceId: string; state: DeviceStateChunkSnapshot } }
     | { type: 'createBus'; payload: { name: string; /** Internal replay identity. */ busId?: string } }
@@ -692,6 +740,45 @@ export type AppAction =
               endBeat?: number;
               expectedSends?: Array<{ trackId: string; level: number; preFader: boolean }>;
               expectedSection?: { name: string; startBeat: number; endBeat: number };
+          };
+      }
+    | {
+          type: 'automateTrackGainRange';
+          payload: {
+              trackIds: string[];
+              sectionName: string;
+              gainDb: number;
+              sectionId?: string;
+              startBeat?: number;
+              endBeat?: number;
+              expectedTracks?: Array<{
+                  trackId: string;
+                  trackName: string;
+                  gain: number;
+                  automationMode: 'read' | 'write' | 'touch' | 'latch' | 'off';
+                  frozen: boolean;
+              }>;
+              expectedSection?: { name: string; startBeat: number; endBeat: number };
+          };
+      }
+    | {
+          /** Internal guarded inverse for `automateTrackGainRange`. */
+          type: 'removeTrackGainAutomationRange';
+          payload: {
+              trackIds: string[];
+              sectionName: string;
+              gainDb: number;
+              sectionId: string;
+              startBeat: number;
+              endBeat: number;
+              expectedTracks: Array<{
+                  trackId: string;
+                  trackName: string;
+                  gain: number;
+                  automationMode: 'read' | 'write' | 'touch' | 'latch' | 'off';
+                  frozen: boolean;
+              }>;
+              expectedSection: { name: string; startBeat: number; endBeat: number };
           };
       }
     | {
@@ -1059,7 +1146,7 @@ export type AppAction =
           payload: {
               sourceTrackId: string;
               targetTrackId: string;
-              /** Command-owned replay identity and route snapshot fields. AiRuntime exposes only endpoints. */
+              /** Command-owned replay identity and route snapshot fields. AiRuntime may select an app-scoped device. */
               routeId?: string;
               targetDeviceId?: string;
               targetParameterId?: string;

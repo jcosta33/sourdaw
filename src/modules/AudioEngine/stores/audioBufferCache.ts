@@ -941,6 +941,10 @@ export const audioBufferCache = {
         return prepareBuffersFromIdb({ context, ids, shouldContinue });
     },
 
+    clearRuntime(): void {
+        clearRuntimeCacheState();
+    },
+
     clear(): void {
         cancelAllImportCandidates();
         clearRuntimeCacheState();

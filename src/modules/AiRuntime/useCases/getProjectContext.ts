@@ -152,12 +152,14 @@ export function getProjectContext(): ProjectContext {
             soloed: time.soloed,
             soloSafe: time.soloSafe,
             armed: time.armed,
+            frozen: time.frozen,
             gain: time.gain,
             pan: time.pan,
             automationMode: time.automationMode,
             vcaGroupId: time.vcaGroupId ?? null,
             outputId: time.outputId,
             clipCount: time.clips.length,
+            alternativeClipIds: time.alternatives.flatMap((alternative) => alternative.clips.map((clip) => clip.id)),
             deviceCount: time.devices.length,
             clips: time.clips.map((context) => ({
                 id: context.id,
@@ -208,6 +210,7 @@ export function getProjectContext(): ProjectContext {
                 });
                 return {
                     id: data.id,
+                    name: data.name,
                     type: data.type,
                     bypassed: data.bypassed,
                     parameters,

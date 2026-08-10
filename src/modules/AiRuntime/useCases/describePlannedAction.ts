@@ -90,6 +90,19 @@ export function describePlannedAction({ action, context }: DescribePlannedAction
                 : `${action.payload.sectionName} beats ${String(action.payload.startBeat)}–${String(action.payload.endBeat)}`;
         return `Lower sends to "${busName}" (${action.payload.busId}) by ${String(action.payload.reductionDb)} dB only in ${range}: ${targetDescriptions.join(', ')}`;
     }
+    if (action.type === 'addDevice') {
+        const track = context.tracks.find((candidate) => candidate.id === action.payload.trackId);
+        const deviceType = context.availableDeviceTypes?.find(
+            (candidate) => candidate.id === action.payload.deviceType
+        );
+        const anchor = track?.devices.find((candidate) => candidate.id === action.payload.afterDeviceId);
+        if (track && deviceType && action.payload.deviceId) {
+            const anchorDescription = anchor
+                ? ` after "${anchor.name ?? anchor.type}" (${anchor.id})`
+                : ' at the end of the chain';
+            return `Insert "${deviceType.name}" (${action.payload.deviceId}) on track "${track.name}" (${track.id})${anchorDescription}`;
+        }
+    }
     if (action.type === 'removeTrack') {
         const track = context.tracks.find((candidate) => candidate.id === action.payload.trackId);
         if (track) {
@@ -244,6 +257,10 @@ export function describePlannedAction({ action, context }: DescribePlannedAction
         const target = context.tracks.find((track) => track.id === action.payload.targetTrackId);
         if (source && target) {
             const operation = action.type === 'addSidechainRoute' ? 'Add' : 'Remove';
+            const targetDevice = target.devices.find((device) => device.id === action.payload.targetDeviceId);
+            if (targetDevice) {
+                return `${operation} sidechain route: "${source.name}" (${source.id}) → "${target.name}" (${target.id}) device "${targetDevice.name ?? targetDevice.type}" (${targetDevice.id}, ${targetDevice.type})`;
+            }
             return `${operation} sidechain route: "${source.name}" (${source.id}) → "${target.name}" (${target.id})`;
         }
     }

@@ -16,6 +16,12 @@ import { MAX_LLM_ACTIONS_PER_BATCH } from '../../transformers/llmActionLimits';
 import { type ToolCallResult } from '../../transformers/toolCallParser';
 import { normalizeSafeProjectName } from '../../validators/normalizeSafeProjectName';
 
+import { getBulkDeviceInsertionTrackScope } from './getBulkDeviceInsertionTrackScope';
+import { getDeviceParameterPromptScope } from './getDeviceParameterPromptScope';
+import { getDrumRoutingPromptScope } from './getDrumRoutingPromptScope';
+import { getMutedEmptyTrackDeletionScope } from './getMutedEmptyTrackDeletionScope';
+import { getSidechainRoutingPromptScope } from './getSidechainRoutingPromptScope';
+import { getWholeProjectVibeMixScope } from './getWholeProjectVibeMixScope';
 import { resolveAgentReference } from './resolveAgentReference';
 
 type BridgeGroundedLlmToolCallsInput = {
@@ -984,6 +990,54 @@ function resolveBulkTrackOutputScope(
     };
 }
 
+function resolveBulkDeviceInsertionScope(
+    prompt: string,
+    context: ProjectContext,
+    sameActionAssertedArguments: readonly Readonly<Record<string, unknown>>[],
+    sameActionCallCount: number
+): ActionPromptScope | null {
+    const expectedTrackIds = getBulkDeviceInsertionTrackScope(prompt, context)?.targetIds;
+    if (!expectedTrackIds || sameActionAssertedArguments.length !== sameActionCallCount) {
+        return null;
+    }
+    const assertedTrackIds = sameActionAssertedArguments.flatMap((arguments_) =>
+        typeof arguments_.trackId === 'string' ? [arguments_.trackId] : []
+    );
+    if (
+        expectedTrackIds.length !== sameActionCallCount ||
+        assertedTrackIds.length !== sameActionCallCount ||
+        new Set(assertedTrackIds).size !== sameActionCallCount ||
+        !expectedTrackIds.every((trackId) => assertedTrackIds.includes(trackId))
+    ) {
+        return null;
+    }
+    return { text: prompt, masked: prompt, directional: false, matchedIntentPhrase: 'insert device' };
+}
+
+function resolveBulkMutedEmptyTrackDeletionScope(
+    prompt: string,
+    context: ProjectContext,
+    sameActionAssertedArguments: readonly Readonly<Record<string, unknown>>[],
+    sameActionCallCount: number
+): ActionPromptScope | null {
+    const expectedTrackIds = getMutedEmptyTrackDeletionScope(prompt, context)?.targetIds;
+    if (!expectedTrackIds || sameActionAssertedArguments.length !== sameActionCallCount) {
+        return null;
+    }
+    const assertedTrackIds = sameActionAssertedArguments.flatMap((arguments_) =>
+        typeof arguments_.trackId === 'string' ? [arguments_.trackId] : []
+    );
+    if (
+        expectedTrackIds.length !== sameActionCallCount ||
+        assertedTrackIds.length !== sameActionCallCount ||
+        new Set(assertedTrackIds).size !== sameActionCallCount ||
+        !expectedTrackIds.every((trackId) => assertedTrackIds.includes(trackId))
+    ) {
+        return null;
+    }
+    return { text: prompt, masked: prompt, directional: false, matchedIntentPhrase: 'delete track' };
+}
+
 function resolveRepeatedTrackPanScope({
     actionOrdinal,
     prompt,
@@ -1032,6 +1086,49 @@ function resolveRepeatedTrackPanScope({
         return null;
     }
     return { ...selectedScope.clause, directional: false, matchedIntentPhrase: 'pan' };
+}
+
+function resolveDeviceParameterPromptScope({
+    actionOrdinal,
+    prompt,
+    context,
+    sameActionAssertedArguments,
+    sameActionCallCount,
+}: Pick<
+    ResolveActionPromptScopeInput,
+    'actionOrdinal' | 'prompt' | 'context' | 'sameActionAssertedArguments' | 'sameActionCallCount'
+>): ActionPromptScope | null {
+    const scope = getDeviceParameterPromptScope(prompt, context);
+    if (!scope || scope.assignments.length !== sameActionCallCount) {
+        return null;
+    }
+    const unmatchedAssignments = [...scope.assignments];
+    const matchedAssignments = sameActionAssertedArguments.map((arguments_) => {
+        const matchIndex = unmatchedAssignments.findIndex(
+            ({ parameter, value }) =>
+                arguments_.deviceId === scope.device.id &&
+                arguments_.paramId === parameter.id &&
+                arguments_.value === value
+        );
+        if (matchIndex < 0) {
+            return null;
+        }
+        return unmatchedAssignments.splice(matchIndex, 1)[0] ?? null;
+    });
+    if (unmatchedAssignments.length > 0 || matchedAssignments.some((assignment) => assignment === null)) {
+        return null;
+    }
+    const assignment = matchedAssignments[actionOrdinal];
+    if (!assignment) {
+        return null;
+    }
+    let displayedValue = `${String(assignment.value)} ${assignment.parameter.unit}`;
+    if (assignment.parameter.unit === ':1') {
+        displayedValue = `${String(assignment.value)}:1`;
+    }
+    const deviceName = scope.device.name ?? scope.device.type;
+    const text = `Set ${deviceName} ${assignment.parameter.name} on ${scope.track.name} to ${displayedValue}`;
+    return { text, masked: text, directional: false, matchedIntentPhrase: 'set' };
 }
 
 function resolveDirectionalIntentPhrase(
@@ -1398,11 +1495,57 @@ function resolveActionPromptScope({
             );
         }
     }
-    if (
-        !groundingRules ||
-        hasActionCancellation ||
-        (actionName === 'setClipFade' && hasInvalidNamedClipFadeField(prompt))
-    ) {
+    if (!groundingRules) {
+        return null;
+    }
+    if (actionName === 'setTrackOutput') {
+        const drumRoutingScope = getDrumRoutingPromptScope(prompt, context);
+        if (
+            drumRoutingScope.status === 'request' &&
+            sameActionCallCount === drumRoutingScope.targetIds.length &&
+            sameActionAssertedArguments.every(
+                (arguments_) =>
+                    typeof arguments_.trackId === 'string' &&
+                    drumRoutingScope.targetIds.includes(arguments_.trackId) &&
+                    arguments_.outputId === drumRoutingScope.busId
+            )
+        ) {
+            return { text: prompt, masked: prompt, directional: false, matchedIntentPhrase: 'route' };
+        }
+    }
+    if (actionName === 'addSidechainRoute') {
+        const sidechainRoutingScope = getSidechainRoutingPromptScope(prompt, context);
+        if (
+            sidechainRoutingScope.status === 'request' &&
+            sameActionCallCount === sidechainRoutingScope.routes.length &&
+            sameActionAssertedArguments.every((arguments_) =>
+                sidechainRoutingScope.routes.some(
+                    (route) =>
+                        route.sourceTrackId === arguments_.sourceTrackId &&
+                        route.targetTrackId === arguments_.targetTrackId &&
+                        route.targetDeviceId === arguments_.targetDeviceId
+                )
+            )
+        ) {
+            return { text: prompt, masked: prompt, directional: false, matchedIntentPhrase: 'create sidechain' };
+        }
+    }
+    if (hasActionCancellation) {
+        return null;
+    }
+    if (actionName === 'setDeviceParameter') {
+        const deviceParameterScope = resolveDeviceParameterPromptScope({
+            actionOrdinal,
+            prompt,
+            context,
+            sameActionAssertedArguments,
+            sameActionCallCount,
+        });
+        if (deviceParameterScope) {
+            return deviceParameterScope;
+        }
+    }
+    if (actionName === 'setClipFade' && hasInvalidNamedClipFadeField(prompt)) {
         return null;
     }
     if (actionName === 'createBus') {
@@ -1424,6 +1567,28 @@ function resolveActionPromptScope({
         );
         if (bulkTrackOutputScope) {
             return bulkTrackOutputScope;
+        }
+    }
+    if (actionName === 'addDevice') {
+        const bulkDeviceInsertionScope = resolveBulkDeviceInsertionScope(
+            prompt,
+            context,
+            sameActionAssertedArguments,
+            sameActionCallCount
+        );
+        if (bulkDeviceInsertionScope) {
+            return bulkDeviceInsertionScope;
+        }
+    }
+    if (actionName === 'removeTrack') {
+        const bulkMutedEmptyTrackDeletionScope = resolveBulkMutedEmptyTrackDeletionScope(
+            prompt,
+            context,
+            sameActionAssertedArguments,
+            sameActionCallCount
+        );
+        if (bulkMutedEmptyTrackDeletionScope) {
+            return bulkMutedEmptyTrackDeletionScope;
         }
     }
     if (actionName === 'setTrackPan') {
@@ -3309,9 +3474,59 @@ function groundToolCall({
         return rejection(index, call.name, 'Provider action is not grounded in an explicit playback request');
     }
     const groundedArguments = { ...call.arguments };
+    const bulkDeviceInsertionTargetIds =
+        call.name === 'addDevice' ? (getBulkDeviceInsertionTrackScope(prompt, context)?.targetIds ?? null) : null;
+    const bulkMutedEmptyTrackDeletionTargetIds =
+        call.name === 'removeTrack' ? (getMutedEmptyTrackDeletionScope(prompt, context)?.targetIds ?? null) : null;
+    const drumRoutingScope = call.name === 'setTrackOutput' ? getDrumRoutingPromptScope(prompt, context) : null;
+    const sidechainRoutingScope =
+        call.name === 'addSidechainRoute' ? getSidechainRoutingPromptScope(prompt, context) : null;
     for (const targetRule of groundingRules.targetRules) {
         const assertedValue = groundedArguments[targetRule.argument];
+        if (targetRule.optional && assertedValue === undefined) {
+            continue;
+        }
         const targetPrompt = getTargetPromptScope(actionScope, targetRule.promptRole);
+        if (
+            sidechainRoutingScope?.status === 'request' &&
+            call.name === 'addSidechainRoute' &&
+            (targetRule.argument === 'sourceTrackId' || targetRule.argument === 'targetTrackId') &&
+            sidechainRoutingScope.routes.some(
+                (route) =>
+                    route.sourceTrackId === groundedArguments.sourceTrackId &&
+                    route.targetTrackId === groundedArguments.targetTrackId &&
+                    route.targetDeviceId === groundedArguments.targetDeviceId
+            )
+        ) {
+            continue;
+        }
+        if (
+            drumRoutingScope?.status === 'request' &&
+            call.name === 'setTrackOutput' &&
+            targetRule.argument === 'trackId' &&
+            typeof assertedValue === 'string' &&
+            drumRoutingScope.targetIds.includes(assertedValue)
+        ) {
+            continue;
+        }
+        if (
+            bulkDeviceInsertionTargetIds &&
+            call.name === 'addDevice' &&
+            targetRule.argument === 'trackId' &&
+            typeof assertedValue === 'string' &&
+            bulkDeviceInsertionTargetIds.includes(assertedValue)
+        ) {
+            continue;
+        }
+        if (
+            bulkMutedEmptyTrackDeletionTargetIds &&
+            call.name === 'removeTrack' &&
+            targetRule.argument === 'trackId' &&
+            typeof assertedValue === 'string' &&
+            bulkMutedEmptyTrackDeletionTargetIds.includes(assertedValue)
+        ) {
+            continue;
+        }
         if (targetRule.cardinality === 'many') {
             const dependencyValue = targetRule.dependsOn ? groundedArguments[targetRule.dependsOn] : undefined;
             const result = resolveAgentReferenceArray({
@@ -3462,6 +3677,7 @@ function groundToolCall({
     }
     if (
         call.name === 'removeTrack' &&
+        !bulkMutedEmptyTrackDeletionTargetIds?.includes(String(groundedArguments.trackId)) &&
         !isExplicitTrackDeletionScope({
             context,
             text: actionScope.text,
@@ -3641,6 +3857,151 @@ export function bridgeGroundedLlmToolCalls({
             sectionSignatures,
         });
     }
+    let effectiveCalls = calls;
+    let sidechainRouteDeviceAdmissions: ReadonlyArray<{
+        sourceTrackId: string;
+        targetDeviceId: string;
+        targetTrackId: string;
+    }> = [];
+    const drumRoutingScope = getDrumRoutingPromptScope(prompt, context);
+    if (drumRoutingScope.status === 'invalid') {
+        return { actions: [], rejections: [rejection(0, '<batch>', drumRoutingScope.reason)] };
+    }
+    if (drumRoutingScope.status === 'request') {
+        const providerRoutes = calls.filter((call) => call.name === 'setTrackOutput');
+        const providerTrackIds = providerRoutes.flatMap((call) =>
+            typeof call.arguments.trackId === 'string' ? [call.arguments.trackId] : []
+        );
+        const providerTrackIdSet = new Set(providerTrackIds);
+        const targetIdSet = new Set(drumRoutingScope.targetIds);
+        const providerPlanMatches =
+            providerRoutes.length === calls.length &&
+            providerTrackIds.length === calls.length &&
+            providerTrackIdSet.size === providerTrackIds.length &&
+            providerTrackIds.length === drumRoutingScope.targetIds.length &&
+            drumRoutingScope.targetIds.every((trackId) => providerTrackIdSet.has(trackId)) &&
+            providerRoutes.every((call) => call.arguments.outputId === drumRoutingScope.busId);
+        if (!providerPlanMatches) {
+            return {
+                actions: [],
+                rejections: [rejection(0, '<batch>', 'Provider plan does not match the complete MF-01 drum route set')],
+            };
+        }
+        effectiveCalls = drumRoutingScope.targetIds.flatMap((trackId) => {
+            const route = providerRoutes.find((call) => call.arguments.trackId === trackId);
+            return route ? [route] : [];
+        });
+        if (targetIdSet.has(drumRoutingScope.protectedReturnId)) {
+            return {
+                actions: [],
+                rejections: [rejection(0, '<batch>', 'MF-01 protected return cannot enter the route target set')],
+            };
+        }
+    }
+    const sidechainRoutingScope = getSidechainRoutingPromptScope(prompt, context);
+    if (sidechainRoutingScope.status === 'invalid') {
+        return { actions: [], rejections: [rejection(0, '<batch>', sidechainRoutingScope.reason)] };
+    }
+    if (sidechainRoutingScope.status === 'request') {
+        sidechainRouteDeviceAdmissions = sidechainRoutingScope.routes;
+        const providerRoutes = calls.filter((call) => call.name === 'addSidechainRoute');
+        const providerRouteKeys = providerRoutes.flatMap((call) => {
+            const { sourceTrackId, targetTrackId, targetDeviceId } = call.arguments;
+            return typeof sourceTrackId === 'string' &&
+                typeof targetTrackId === 'string' &&
+                typeof targetDeviceId === 'string'
+                ? [`${sourceTrackId}\u0000${targetTrackId}\u0000${targetDeviceId}`]
+                : [];
+        });
+        const exactRouteKeys = sidechainRoutingScope.routes.map(
+            (route) => `${route.sourceTrackId}\u0000${route.targetTrackId}\u0000${route.targetDeviceId}`
+        );
+        const providerRouteKeySet = new Set(providerRouteKeys);
+        const providerPlanMatches =
+            providerRoutes.length === calls.length &&
+            providerRouteKeys.length === calls.length &&
+            providerRouteKeySet.size === providerRouteKeys.length &&
+            providerRouteKeys.length === exactRouteKeys.length &&
+            exactRouteKeys.every((key) => providerRouteKeySet.has(key));
+        if (!providerPlanMatches) {
+            return {
+                actions: [],
+                rejections: [
+                    rejection(0, '<batch>', 'Provider plan does not match the complete MF-06 sidechain route set'),
+                ],
+            };
+        }
+        effectiveCalls = sidechainRoutingScope.routes.flatMap((route) => {
+            const providerRoute = providerRoutes.find(
+                (call) =>
+                    call.arguments.sourceTrackId === route.sourceTrackId &&
+                    call.arguments.targetTrackId === route.targetTrackId &&
+                    call.arguments.targetDeviceId === route.targetDeviceId
+            );
+            return providerRoute ? [providerRoute] : [];
+        });
+    }
+    const wholeProjectVibeMixScope = getWholeProjectVibeMixScope(prompt, context);
+    const providerVibeMixCalls = calls.filter((call) => call.name === 'automateTrackGainRange');
+    if (wholeProjectVibeMixScope || providerVibeMixCalls.length > 0) {
+        const providerCall = providerVibeMixCalls[0];
+        const assertedTrackIds = providerCall?.arguments.trackIds;
+        const providerTargetSet = Array.isArray(assertedTrackIds) ? new Set(assertedTrackIds) : new Set<unknown>();
+        const scopeTargetSet = new Set(wholeProjectVibeMixScope?.targetIds ?? []);
+        if (!wholeProjectVibeMixScope || !providerCall) {
+            return {
+                actions: [],
+                rejections: [
+                    rejection(0, '<batch>', 'Provider plan does not match the bounded whole-project vibe-mix scope'),
+                ],
+            };
+        }
+        const matchesScope =
+            calls.length === 1 &&
+            providerVibeMixCalls.length === 1 &&
+            providerTargetSet.size === scopeTargetSet.size &&
+            [...scopeTargetSet].every((trackId) => providerTargetSet.has(trackId)) &&
+            providerCall.arguments.sectionName === wholeProjectVibeMixScope.section.name &&
+            providerCall.arguments.gainDb === wholeProjectVibeMixScope.plan.dynamicTrajectory.gainDb;
+        if (!matchesScope) {
+            return {
+                actions: [],
+                rejections: [
+                    rejection(0, '<batch>', 'Provider plan does not match the bounded whole-project vibe-mix scope'),
+                ],
+            };
+        }
+        effectiveCalls = [
+            {
+                ...providerCall,
+                arguments: {
+                    trackIds: wholeProjectVibeMixScope.targetIds,
+                    sectionName: wholeProjectVibeMixScope.section.name,
+                    gainDb: wholeProjectVibeMixScope.plan.dynamicTrajectory.gainDb,
+                },
+            },
+        ];
+    }
+    const mutedEmptyDeletionScope = getMutedEmptyTrackDeletionScope(prompt, context);
+    if (mutedEmptyDeletionScope) {
+        const providerTrackIds = calls.flatMap((call) =>
+            call.name === 'removeTrack' && typeof call.arguments.trackId === 'string' ? [call.arguments.trackId] : []
+        );
+        const providerTrackIdSet = new Set(providerTrackIds);
+        const providerPlanMatches =
+            providerTrackIds.length === calls.length &&
+            providerTrackIdSet.size === providerTrackIds.length &&
+            providerTrackIds.length === mutedEmptyDeletionScope.targetIds.length &&
+            mutedEmptyDeletionScope.targetIds.every((trackId) => providerTrackIdSet.has(trackId));
+        if (!providerPlanMatches) {
+            return {
+                actions: [],
+                rejections: [
+                    rejection(0, '<batch>', 'Provider plan does not match the complete muted empty track set'),
+                ],
+            };
+        }
+    }
     const glueAnalysis = analyzeGluePrompt(prompt, context);
     const providerGlueCalls = calls.filter((call) => call.name === 'glueClips');
     if (glueAnalysis.status === 'invalid') {
@@ -3649,7 +4010,6 @@ export function bridgeGroundedLlmToolCalls({
     if (glueAnalysis.status === 'none' && providerGlueCalls.length > 0) {
         return { actions: [], rejections: [rejection(0, '<batch>', mismatchedGluePlanReason)] };
     }
-    let effectiveCalls = calls;
     if (glueAnalysis.status === 'request') {
         const providerGlueCall = providerGlueCalls[0];
         const hasMatchingProviderCall =
@@ -3793,13 +4153,44 @@ export function bridgeGroundedLlmToolCalls({
             };
         }
     }
-    const bridged = bridgeLlmToolCalls({
+    let bridged = bridgeLlmToolCalls({
         calls: groundedCalls,
         context: prospectiveContext,
         markerSignatures,
         projectPunchRegion: createPunchRegionPatch,
         sectionSignatures,
+        sidechainRouteDeviceAdmissions,
     });
+    if (mutedEmptyDeletionScope) {
+        const targetIds = new Set(mutedEmptyDeletionScope.targetIds);
+        bridged = {
+            ...bridged,
+            actions: bridged.actions.map((action) => {
+                if (action.type !== 'removeTrack' || !targetIds.has(action.payload.trackId)) {
+                    return action;
+                }
+                const target = context.tracks.find((track) => track.id === action.payload.trackId);
+                if (!target || (target.kind !== 'audio' && target.kind !== 'midi')) {
+                    return action;
+                }
+                return {
+                    ...action,
+                    payload: {
+                        ...action.payload,
+                        expectedKind: target.kind,
+                        expectedMuted: target.muted,
+                        expectedClipIds: target.clips.map((clip) => clip.id),
+                        expectedAlternativeClipIds: target.alternativeClipIds,
+                        expectedVcaGroupId: target.vcaGroupId ?? null,
+                        expectedVcaMembershipGroupIds: (context.vcaGroups ?? [])
+                            .filter((group) => group.trackIds.includes(target.id))
+                            .map((group) => group.id)
+                            .sort(),
+                    },
+                };
+            }),
+        };
+    }
     const rejections = bridged.rejections.map((bridgeRejection) => {
         if (bridgeRejection.name === '<batch>') {
             return bridgeRejection;

@@ -162,6 +162,10 @@ export const deviceTools: readonly ToolSchema[] = [
                 enum: DEVICE_TYPES,
                 description: 'The type of effect to add',
             },
+            afterDeviceId: {
+                type: 'string',
+                description: 'Existing device ID after which to insert; omit to append',
+            },
         },
         ['trackId', 'deviceType']
     ),

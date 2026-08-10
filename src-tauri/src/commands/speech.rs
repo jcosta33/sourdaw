@@ -42,6 +42,24 @@ pub struct DictationResult {
     pub duration_ms: u64,
 }
 
+const MAX_DICTATION_TEXT_UTF16_UNITS: usize = 32_768;
+
+fn build_dictation_result(text: String, duration_ms: u64) -> Option<DictationResult> {
+    if text.is_empty() {
+        return None;
+    }
+
+    let text_units = text
+        .encode_utf16()
+        .take(MAX_DICTATION_TEXT_UTF16_UNITS + 1)
+        .count();
+    if text_units > MAX_DICTATION_TEXT_UTF16_UNITS {
+        return None;
+    }
+
+    Some(DictationResult { text, duration_ms })
+}
+
 // ── Commands ────────────────────────────────────────────────────────────
 
 /// Load a Whisper GGML model from disk. Call once on startup or
@@ -171,9 +189,8 @@ pub async fn start_dictation(
                 match transcribe(&ctx, &audio_16k) {
                     Ok(text) => {
                         let duration_ms = start.elapsed().as_millis() as u64;
-                        if !text.is_empty() {
-                            let _ =
-                                app.emit("dictation-result", DictationResult { text, duration_ms });
+                        if let Some(result) = build_dictation_result(text, duration_ms) {
+                            let _ = app.emit("dictation-result", result);
                         }
                     }
                     Err(e) => eprintln!("[Dictation] Transcription error: {e}"),
@@ -326,4 +343,22 @@ fn transcribe(ctx: &WhisperContext, audio: &[f32]) -> Result<String, String> {
         .join(" ");
 
     Ok(text.trim().to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn dictation_event_source_boundary_admits_only_bounded_final_text() {
+        let result = build_dictation_result("hello world".to_string(), 1500).unwrap();
+        assert_eq!(result.text, "hello world");
+        assert_eq!(result.duration_ms, 1500);
+
+        let exact_unicode_limit = "😀".repeat(16_384);
+        assert!(build_dictation_result(exact_unicode_limit, 1501).is_some());
+        assert!(build_dictation_result("x".repeat(32_769), 1502).is_none());
+        assert!(build_dictation_result(format!("{}x", "😀".repeat(16_384)), 1503).is_none());
+        assert!(build_dictation_result(String::new(), 1504).is_none());
+    }
 }

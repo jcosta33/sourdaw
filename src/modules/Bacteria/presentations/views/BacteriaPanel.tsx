@@ -239,6 +239,7 @@ const K = (props: KProps): ReactElement => {
                 defaultValue={def}
                 size="sm"
                 tone="mint"
+                aria-label={label}
             />
             <span className="text-[8px] leading-none text-muted-foreground">{label}</span>
             {unit ? (

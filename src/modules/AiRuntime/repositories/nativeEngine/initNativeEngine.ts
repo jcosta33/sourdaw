@@ -29,6 +29,8 @@ type InitNativeEngineOptions = {
     signal?: AbortSignal;
 };
 
+const MAX_PROGRESS_TEXT_LENGTH = 512;
+
 export const initNativeEngine = inject({ logger })(
     ({ logger }) =>
         async function initNativeEngine(options: InitNativeEngineOptions = {}): Promise<void> {
@@ -56,7 +58,11 @@ export const initNativeEngine = inject({ logger })(
                             'progress' in payload &&
                             'text' in payload &&
                             typeof payload.progress === 'number' &&
-                            typeof payload.text === 'string'
+                            Number.isFinite(payload.progress) &&
+                            payload.progress >= 0 &&
+                            payload.progress <= 1 &&
+                            typeof payload.text === 'string' &&
+                            payload.text.length <= MAX_PROGRESS_TEXT_LENGTH
                         ) {
                             llmStatusStore.set({
                                 state: 'loading',

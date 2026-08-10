@@ -533,12 +533,22 @@ const guardedPayloadContractCases = [
     }),
     guardedPayloadCase({
         actionType: 'setDeviceParameter',
-        validPayload: { deviceId: 'device-1', paramId: 'gain', value: 0.75 },
+        validPayload: {
+            deviceId: 'device-1',
+            paramId: 'gain',
+            value: 0.75,
+            expectedTrackFrozen: false,
+        },
         invalidPayloads: [
             { trackId: 'track-1', deviceId: 'device-1', paramId: 'gain' },
             { deviceId: 'device-1', paramId: 'gain' },
+            { deviceId: '', paramId: 'gain', value: 0.75 },
+            { deviceId: 'device-1', paramId: '', value: 0.75 },
             { deviceId: 'device-1', paramId: 1, value: 0.75 },
             { deviceId: 'device-1', paramId: 'gain', value: Number.NaN },
+            { deviceId: 'device-1', paramId: 'gain', value: Number.POSITIVE_INFINITY },
+            { deviceId: 'device-1', paramId: 'gain', value: 0.75, expectedTrackFrozen: 'false' },
+            { deviceId: 'device-1', paramId: 'gain', value: 0.75, providerOwnedGuard: 0.5 },
         ],
     }),
     guardedPayloadCase({
@@ -724,7 +734,7 @@ const guardedPayloadContractCases = [
             { sourceTrackId: '', targetTrackId: 'track-bass' },
             { sourceTrackId: 'track-kick', targetTrackId: 'track-kick' },
             { sourceTrackId: 'track-kick', targetTrackId: 'track-bass', routeId: 'provider-owned' },
-            { sourceTrackId: 'track-kick', targetTrackId: 'track-bass', targetDeviceId: 'device-sidechain' },
+            { sourceTrackId: 'track-kick', targetTrackId: 'track-bass', targetParameterId: 'threshold' },
         ],
     }),
     guardedPayloadCase({
@@ -903,6 +913,17 @@ describe('validateActionPayload / PAYLOAD_VALIDATORS', () => {
                 return;
             }
             expect(guard({ trackId: 'track-1' })).toBe(true);
+            expect(
+                guard({
+                    trackId: 'track-1',
+                    expectedKind: 'audio',
+                    expectedMuted: true,
+                    expectedClipIds: [],
+                    expectedAlternativeClipIds: ['clip-hidden'],
+                    expectedVcaGroupId: null,
+                    expectedVcaMembershipGroupIds: [],
+                })
+            ).toBe(true);
         });
 
         it('should reject invalid payloads', () => {
@@ -916,6 +937,9 @@ describe('validateActionPayload / PAYLOAD_VALIDATORS', () => {
             expect(guard(null)).toBe(false);
             expect(guard({ trackId: '' })).toBe(false);
             expect(guard({ trackId: 'track-1', extra: true })).toBe(false);
+            expect(guard({ trackId: 'track-1', expectedAlternativeClipIds: [1] })).toBe(false);
+            expect(guard({ trackId: 'track-1', expectedVcaGroupId: '' })).toBe(false);
+            expect(guard({ trackId: 'track-1', expectedVcaMembershipGroupIds: [1] })).toBe(false);
         });
     });
 

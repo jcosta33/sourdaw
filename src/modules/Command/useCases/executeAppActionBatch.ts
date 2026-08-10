@@ -166,6 +166,7 @@ async function executePreparedBatch(
         attemptedActions.push(prepared);
         const result: HandlerExecutionResult | void = await scope(() => prepared.handler.execute(prepared.action));
         if (result?.status === 'no-write' || result?.status === 'conflict') {
+            attemptedActions.pop();
             throw new AppActionConflictError(prepared.action.type);
         }
         prepared.afterCommit = result?.afterCommit ?? null;
@@ -245,6 +246,34 @@ function recordCommittedBatch(
     options: ExecuteOptions | undefined
 ): void {
     const timestamp = Date.now();
+    const historyActions = preparedActions.filter(
+        ({ description, handler }) => !options?.skipUndo && handler.undoable && description !== null
+    );
+    const historyGroupIds = historyActions.map(({ handler }) =>
+        handler.batchExecution === 'singleton' ? undefined : options?.groupId
+    );
+    const firstHistoryGroupId = historyGroupIds[0];
+    let stableHistoryGroupId: string | undefined;
+    if (
+        historyActions.length > 1 &&
+        firstHistoryGroupId !== undefined &&
+        historyGroupIds.every((groupId) => groupId === firstHistoryGroupId)
+    ) {
+        stableHistoryGroupId = firstHistoryGroupId;
+    }
+    const batchRestoreTracks: Array<{ trackId: string; trackIndex: number }> = [];
+    for (const prepared of stableHistoryGroupId ? historyActions : []) {
+        const inverseAction = prepared.description?.inverseAction;
+        if (
+            inverseAction?.type === 'restoreTrack' &&
+            !batchRestoreTracks.some((candidate) => candidate.trackId === inverseAction.payload.trackId)
+        ) {
+            batchRestoreTracks.push({
+                trackId: inverseAction.payload.trackId,
+                trackIndex: inverseAction.payload.trackIndex,
+            });
+        }
+    }
     for (const prepared of preparedActions) {
         const { action, description, handler, label } = prepared;
         if (!options?.skipMacroRecording) {
@@ -255,8 +284,21 @@ function recordCommittedBatch(
         }
 
         const entryId = crypto.randomUUID();
-        const inverseAction = description.inverseAction ?? null;
         const historyGroupId = handler.batchExecution === 'singleton' ? undefined : options?.groupId;
+        let inverseAction = description.inverseAction ?? null;
+        if (
+            inverseAction?.type === 'restoreTrack' &&
+            historyGroupId === stableHistoryGroupId &&
+            batchRestoreTracks.length > 1
+        ) {
+            inverseAction = {
+                ...inverseAction,
+                payload: {
+                    ...inverseAction.payload,
+                    batchRestoreTracks,
+                },
+            };
+        }
         const historyGroupLabel = historyGroupId ? options?.groupLabel : undefined;
         const metadata = {
             id: entryId,
@@ -422,7 +464,7 @@ export const executeAppActionBatch: ExecuteAppActionBatch = inject({ logger })(
                 if (error instanceof AppActionBatchCancelledError && !compensationFailure && !rollbackFailure) {
                     return { status: 'cancelled', reason: error.message, actions: [] };
                 }
-                if (error instanceof AppActionConflictError) {
+                if (error instanceof AppActionConflictError && !compensationFailure && !rollbackFailure) {
                     return { status: 'conflicted', reason, actions: [] };
                 }
                 return { status: 'failed', reason, actions: [] };

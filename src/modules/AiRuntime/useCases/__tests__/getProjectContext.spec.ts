@@ -185,6 +185,11 @@ describe('getProjectContext', () => {
                             loopLength: 2,
                         },
                     ],
+                    activeAlternativeId: 'alt-active',
+                    alternatives: [
+                        { id: 'alt-active', name: 'Active', clips: [{ id: 'c1' }] },
+                        { id: 'alt-hidden', name: 'Hidden take', clips: [{ id: 'c-hidden' }] },
+                    ],
                     devices: [
                         {
                             id: 'd1',
@@ -206,6 +211,7 @@ describe('getProjectContext', () => {
                     pan: 0,
                     outputId: 'bus-1',
                     clips: [{ id: 'c2', name: 'Chords', type: 'midi', startBeat: 4, endBeat: 8 }],
+                    alternatives: [],
                     devices: [],
                     sends: [],
                 },
@@ -295,6 +301,7 @@ describe('getProjectContext', () => {
             outputId: 'master',
             vcaGroupId: 'vca-drums',
             clipCount: 1,
+            alternativeClipIds: ['c1', 'c-hidden'],
             deviceCount: 1,
         });
         expect(context.tracks[0]?.clips[0]).toEqual({

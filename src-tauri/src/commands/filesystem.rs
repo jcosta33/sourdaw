@@ -4,6 +4,8 @@ use std::path::{Component, Path, PathBuf};
 
 const APP_DIR_NAME: &str = "com.sourdaw.app";
 const IPC_TEMP_DIR_NAME: &str = "sourdaw_ipc";
+const MAX_FILE_IPC_BYTES: u64 = 1024 * 1024 * 1024;
+const MAX_RENDERER_PATH_BYTES: usize = 4096;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct AudioFileInfo {
@@ -56,6 +58,7 @@ const FILE_PATH_HEADER: &str = "x-sourdaw-path";
 pub async fn write_file_bytes(request: tauri::ipc::Request<'_>) -> Result<(), String> {
     let path = read_percent_encoded_header(&request, FILE_PATH_HEADER)?;
     let data = raw_body_bytes(&request, "write_file_bytes")?;
+    ensure_file_ipc_size(data.len() as u64, "write_file_bytes")?;
 
     let file_path = resolve_writable_file_path(&path)?;
     if let Some(parent) = file_path.parent() {
@@ -73,6 +76,10 @@ pub async fn write_file_bytes(request: tauri::ipc::Request<'_>) -> Result<(), St
 #[tauri::command]
 pub async fn read_file_bytes(path: String) -> Result<tauri::ipc::Response, String> {
     let file_path = resolve_existing_file_path(&path)?;
+    let file_size = std::fs::metadata(&file_path)
+        .map_err(|e| format!("Failed to read file metadata: {}", e))?
+        .len();
+    ensure_file_ipc_size(file_size, "read_file_bytes")?;
     let bytes = std::fs::read(&file_path).map_err(|e| format!("Failed to read file: {}", e))?;
     Ok(tauri::ipc::Response::new(bytes))
 }
@@ -166,6 +173,11 @@ fn resolve_renderer_path(path: &str) -> Result<PathBuf, String> {
     if trimmed.is_empty() {
         return Err("Renderer path must not be empty".to_string());
     }
+    if trimmed.len() > MAX_RENDERER_PATH_BYTES {
+        return Err(format!(
+            "Native file path exceeds {MAX_RENDERER_PATH_BYTES}-byte IPC limit"
+        ));
+    }
 
     let input = Path::new(trimmed);
     if input.is_absolute() {
@@ -174,6 +186,15 @@ fn resolve_renderer_path(path: &str) -> Result<PathBuf, String> {
 
     reject_relative_parent_segments(input)?;
     Ok(ipc_temp_dir().join(input))
+}
+
+fn ensure_file_ipc_size(size: u64, command: &str) -> Result<(), String> {
+    if size > MAX_FILE_IPC_BYTES {
+        return Err(format!(
+            "{command} payload exceeds {MAX_FILE_IPC_BYTES}-byte IPC limit"
+        ));
+    }
+    Ok(())
 }
 
 fn ipc_temp_dir() -> PathBuf {
@@ -280,6 +301,28 @@ mod tests {
         assert_eq!(
             result.unwrap_err(),
             "Renderer path must not contain parent-directory traversal"
+        );
+    }
+
+    #[test]
+    fn webview_boundary_rejects_renderer_paths_over_ipc_limit() {
+        let path = format!("/{}", "x".repeat(4096));
+
+        let result = resolve_renderer_path(&path);
+
+        assert_eq!(
+            result.unwrap_err(),
+            "Native file path exceeds 4096-byte IPC limit"
+        );
+    }
+
+    #[test]
+    fn webview_boundary_rejects_file_payloads_over_ipc_limit() {
+        let result = ensure_file_ipc_size(1_073_741_825, "read_file_bytes");
+
+        assert_eq!(
+            result.unwrap_err(),
+            "read_file_bytes payload exceeds 1073741824-byte IPC limit"
         );
     }
 

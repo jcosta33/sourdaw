@@ -16,6 +16,9 @@ import {
 } from '../transformers/promptParser/parsing';
 
 import { bridgeGroundedLlmToolCalls } from './agentReference/bridgeGroundedLlmToolCalls';
+import { getDrumRoutingPromptScope } from './agentReference/getDrumRoutingPromptScope';
+import { getSidechainRoutingPromptScope } from './agentReference/getSidechainRoutingPromptScope';
+import { getWholeProjectVibeMixScope } from './agentReference/getWholeProjectVibeMixScope';
 import { materializeBatchLocalActionIdentities } from './agentReference/materializeBatchLocalActionIdentities';
 import { type ProjectContext } from './getProjectContext';
 import { generateToolPlanningOutcome } from './llmOrchestration/inference';
@@ -73,7 +76,8 @@ export const parsePromptToActions = inject({ logger })(
         async function parsePromptToActions(
             prompt: string,
             context: ProjectContext,
-            signal?: AbortSignal
+            signal?: AbortSignal,
+            projectRevision?: string
         ): Promise<IntentResult> {
             const normalized = prompt.toLowerCase().trim();
 
@@ -113,9 +117,27 @@ export const parsePromptToActions = inject({ logger })(
             // 5. Provider-neutral LLM path. This only proposes typed actions;
             // sendChatMessage remains responsible for confirmation and execution.
             try {
+                const drumRoutingScope = getDrumRoutingPromptScope(prompt, context, projectRevision);
+                const drumRoutingCapability =
+                    drumRoutingScope.status === 'request' ? drumRoutingScope.capability : undefined;
+                const sidechainRoutingScope = getSidechainRoutingPromptScope(prompt, context, projectRevision);
+                const sidechainRoutingCapability =
+                    sidechainRoutingScope.status === 'request' ? sidechainRoutingScope.capability : undefined;
+                const wholeProjectVibeMixCapability = getWholeProjectVibeMixScope(
+                    prompt,
+                    context,
+                    projectRevision
+                )?.capability;
                 const planningOutcome = await generateToolPlanningOutcome(
                     buildLlmActionSystemPrompt(),
-                    buildLlmActionUserMessage({ prompt, context }),
+                    buildLlmActionUserMessage({
+                        prompt,
+                        context,
+                        projectRevision,
+                        drumRoutingCapability,
+                        sidechainRoutingCapability,
+                        wholeProjectVibeMixCapability,
+                    }),
                     getExecutableAppActionToolSchemas(),
                     signal,
                     prompt

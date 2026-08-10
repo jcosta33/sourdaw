@@ -142,3 +142,16 @@ describe('CrumbsControls — voice stack', () => {
         expect(screen.getByText('50%')).toBeInTheDocument();
     });
 });
+
+describe('CrumbsControls — knob accessible names', () => {
+    it('exposes each parameter knob under its visible label as an accessible name', () => {
+        // The local Knob wrapper renders the label as a sibling text node; the
+        // knob itself must carry the name too (not fall back to the generic
+        // "Parameter control"), so each is addressable by role+name.
+        render(<CrumbsControls {...defaultProps()} />);
+        // A representative envelope + filter + output knob:
+        expect(screen.getByRole('slider', { name: 'Atk' })).toBeInTheDocument();
+        expect(screen.getByRole('slider', { name: 'Cutoff' })).toBeInTheDocument();
+        expect(screen.getByRole('slider', { name: 'Gain' })).toBeInTheDocument();
+    });
+});

@@ -18,10 +18,10 @@ describe('RuntimeAction', () => {
             }
         }
 
-        expect(RUNTIME_ACTION_TYPES).toHaveLength(240);
+        expect(RUNTIME_ACTION_TYPES).toHaveLength(241);
         expect(new Set(RUNTIME_ACTION_TYPES).size).toBe(RUNTIME_ACTION_TYPES.length);
         expect(RUNTIME_ACTION_TYPES).not.toContain('replayGeneratedMidi');
-        expect(digest >>> 0).toBe(2_034_406_248);
+        expect(digest >>> 0).toBe(2_716_626_761);
     });
 
     it('derives initiating payloads without exposing command-owned replay fields', () => {
@@ -53,6 +53,10 @@ describe('RuntimeAction', () => {
             { type: 'setClipLoop', payload: { clipId: 'clip-1', enabled: true } },
             { type: 'glueClips', payload: { clipIds: ['clip-1', 'clip-2'] } },
             { type: 'setPunchEnabled', payload: { enabled: true } },
+            {
+                type: 'automateTrackGainRange',
+                payload: { trackIds: ['bus-drums', 'bus-bass'], sectionName: 'Chorus Two', gainDb: 1.5 },
+            },
         ];
 
         expect(actions.map((action) => action.type)).toEqual([
@@ -77,6 +81,7 @@ describe('RuntimeAction', () => {
             'setClipLoop',
             'glueClips',
             'setPunchEnabled',
+            'automateTrackGainRange',
         ]);
         expectTypeOf<PayloadHasKey<'duplicateClip', 'targetClipId'>>().toEqualTypeOf<false>();
         expectTypeOf<PayloadHasKey<'addAutomationLane', 'laneId'>>().toEqualTypeOf<false>();
@@ -84,7 +89,7 @@ describe('RuntimeAction', () => {
         expectTypeOf<PayloadHasKey<'removeAutomationPoint', 'pointId'>>().toEqualTypeOf<false>();
         expectTypeOf<PayloadHasKey<'setAutomationMode', 'expectedMode'>>().toEqualTypeOf<false>();
         expectTypeOf<PayloadHasKey<'addSidechainRoute', 'routeId'>>().toEqualTypeOf<false>();
-        expectTypeOf<PayloadHasKey<'addSidechainRoute', 'targetDeviceId'>>().toEqualTypeOf<false>();
+        expectTypeOf<PayloadHasKey<'addSidechainRoute', 'targetDeviceId'>>().toEqualTypeOf<true>();
         expectTypeOf<PayloadHasKey<'removeSidechainRoute', 'routeId'>>().toEqualTypeOf<false>();
         expectTypeOf<PayloadHasKey<'removeSidechainRoute', 'gain'>>().toEqualTypeOf<false>();
         expectTypeOf<PayloadHasKey<'quantizeNotes', 'strength'>>().toEqualTypeOf<false>();
@@ -106,5 +111,7 @@ describe('RuntimeAction', () => {
         expectTypeOf<PayloadHasKey<'muteTrack', 'expectedMuted'>>().toEqualTypeOf<false>();
         expectTypeOf<PayloadHasKey<'setTrackGain', 'expectedGain'>>().toEqualTypeOf<false>();
         expectTypeOf<PayloadHasKey<'setTrackPan', 'expectedPan'>>().toEqualTypeOf<false>();
+        expectTypeOf<PayloadHasKey<'automateTrackGainRange', 'sectionId'>>().toEqualTypeOf<false>();
+        expectTypeOf<PayloadHasKey<'automateTrackGainRange', 'expectedTracks'>>().toEqualTypeOf<false>();
     });
 });

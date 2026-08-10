@@ -19,11 +19,11 @@ type DeferredRemoveDeviceUnload = {
 export function removeDevice(deviceId: string): RemoveDeviceOutcome;
 export function removeDevice(
     deviceId: string,
-    options: { deferExternalUnload: true }
+    options: { deferRuntimeEffects: true }
 ): RemoveDeviceOutcome | DeferredRemoveDeviceUnload;
 export function removeDevice(
     deviceId: string,
-    options: { deferExternalUnload?: boolean } = {}
+    options: { deferRuntimeEffects?: boolean } = {}
 ): RemoveDeviceOutcome | DeferredRemoveDeviceUnload {
     const state = getTrackState();
     if (!state) {
@@ -85,42 +85,36 @@ export function removeDevice(
         return { ...candidate, devices: candidate.devices.filter((item) => item.id !== deviceId) };
     });
 
-    try {
-        removeDeviceFromStrip(track.id, deviceId);
-    } catch (error) {
-        logger.warn(`Failed to remove device ${deviceId} from track strip ${track.id}: ${String(error)}`);
-    }
-
-    // Drop reported-latency entries (PH-4) so the registry keeps no phantom
-    // compensation: getDeviceLatencyMs reads it unconditionally and getTrackLatency
-    // sums it, so a surviving entry inflates the whole track's delay forever.
-    //
-    // Two reasons an entry must go: the removed device leaves the chain even when
-    // its instance stays loaded, and every sibling whose instance this removal
-    // unloads stops processing audio. One set, so an entry that qualifies on both
-    // counts is still cleared exactly once.
     const latencyDeviceIdsToClear = new Set<string>(unloadedExternalDevices.keys());
     if (device.type === 'external-plugin') {
         latencyDeviceIdsToClear.add(deviceId);
     }
-    for (const clearedDeviceId of latencyDeviceIdsToClear) {
-        clearReportedLatency(clearedDeviceId);
-    }
 
-    if (deactivatesStrip) {
+    function finalizeRuntimeRemovalBestEffort(): void {
         try {
-            removeTrackStrip(track.id);
+            removeDeviceFromStrip(track.id, deviceId);
         } catch (error) {
-            logger.warn(`Failed to remove track strip ${track.id}: ${String(error)}`);
+            logger.warn(`Failed to remove device ${deviceId} from track strip ${track.id}: ${String(error)}`);
+        }
+
+        // Drop reported-latency entries (PH-4) only when the graph removal becomes
+        // durable. A transaction abort leaves both the live node and its latency
+        // projection untouched.
+        for (const clearedDeviceId of latencyDeviceIdsToClear) {
+            clearReportedLatency(clearedDeviceId);
+        }
+
+        if (deactivatesStrip) {
+            try {
+                removeTrackStrip(track.id);
+            } catch (error) {
+                logger.warn(`Failed to remove track strip ${track.id}: ${String(error)}`);
+            }
         }
     }
 
-    let unloadPromise: Promise<void> | null = null;
-    function finalizeExternalUnloads(): Promise<void> {
-        if (unloadPromise) {
-            return unloadPromise;
-        }
-        unloadPromise = Promise.all(
+    function finalizeExternalUnloadsBestEffort(): Promise<void> {
+        return Promise.all(
             [...externalInstanceIds].map(async (instanceId) => {
                 try {
                     await unloadPlugin(instanceId);
@@ -129,27 +123,102 @@ export function removeDevice(
                 }
             })
         ).then(() => undefined);
-        return unloadPromise;
     }
-    async function reconcileExternalUnloads(): Promise<void> {
+
+    if (!options.deferRuntimeEffects) {
+        finalizeRuntimeRemovalBestEffort();
+        void finalizeExternalUnloadsBestEffort();
+        return 'written';
+    }
+
+    function manualRepairFailure(effect: string, error: unknown): Error {
+        return new Error(`${effect}: ${String(error)}; manual repair is required`, { cause: error });
+    }
+
+    let deviceRemovalFinalized = false;
+    const finalizedLatencyDeviceIds = new Set<string>();
+    let stripRemovalFinalized = !deactivatesStrip;
+    const finalizedExternalInstanceIds = new Set<string>();
+
+    function finalizeRuntimeRemovalStrict(): void {
+        if (!deviceRemovalFinalized) {
+            try {
+                removeDeviceFromStrip(track.id, deviceId);
+                deviceRemovalFinalized = true;
+            } catch (error) {
+                throw manualRepairFailure(
+                    `Runtime graph removal failed for device ${deviceId} on track ${track.id}`,
+                    error
+                );
+            }
+        }
+
+        for (const clearedDeviceId of latencyDeviceIdsToClear) {
+            if (finalizedLatencyDeviceIds.has(clearedDeviceId)) {
+                continue;
+            }
+            try {
+                clearReportedLatency(clearedDeviceId);
+                finalizedLatencyDeviceIds.add(clearedDeviceId);
+            } catch (error) {
+                throw manualRepairFailure(`Latency cleanup failed for device ${clearedDeviceId}`, error);
+            }
+        }
+
+        if (!stripRemovalFinalized) {
+            try {
+                removeTrackStrip(track.id);
+                stripRemovalFinalized = true;
+            } catch (error) {
+                throw manualRepairFailure(`Runtime strip removal failed for track ${track.id}`, error);
+            }
+        }
+    }
+
+    async function finalizeExternalUnloadsStrict(): Promise<void> {
+        for (const instanceId of externalInstanceIds) {
+            if (finalizedExternalInstanceIds.has(instanceId)) {
+                continue;
+            }
+            try {
+                await unloadPlugin(instanceId);
+                finalizedExternalInstanceIds.add(instanceId);
+            } catch (error) {
+                throw manualRepairFailure(`Plugin host teardown failed for instance ${instanceId}`, error);
+            }
+        }
+    }
+
+    async function finalizeRuntimeEffectsStrict(): Promise<void> {
+        finalizeRuntimeRemovalStrict();
+        await finalizeExternalUnloadsStrict();
+    }
+
+    async function reconcileRuntimeEffects(): Promise<void> {
         const currentOwners = (getTrackState()?.tracks ?? []).filter((candidate) =>
             candidate.devices.some((candidateDevice) => candidateDevice.id === deviceId)
         );
         if (currentOwners.length === 0) {
-            await finalizeExternalUnloads();
+            await finalizeRuntimeEffectsStrict();
             return;
         }
         if (currentOwners.length === 1) {
-            projectTrackToLiveStrip({ trackId: currentOwners[0]!.id, activateDormantExternalPlugins: true });
+            try {
+                projectTrackToLiveStrip({ trackId: currentOwners[0]!.id, activateDormantExternalPlugins: true });
+            } catch (error) {
+                throw manualRepairFailure(`Runtime projection failed for restored device ${deviceId}`, error);
+            }
+            return;
         }
+
+        throw new Error(
+            `Runtime reconciliation found multiple owners for device ${deviceId}; manual repair is required`
+        );
     }
-    if (options.deferExternalUnload) {
-        return {
-            outcome: 'written',
-            afterCommit: finalizeExternalUnloads,
-            afterAmbiguousCommit: reconcileExternalUnloads,
-        };
-    }
-    void finalizeExternalUnloads();
-    return 'written';
+
+    return {
+        outcome: 'written',
+        afterCommit: finalizeRuntimeEffectsStrict,
+        afterAmbiguousCommit: reconcileRuntimeEffects,
+    };
 }

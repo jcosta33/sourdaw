@@ -168,7 +168,40 @@ const validators = {
     // Track lifecycle
     addTrack: (param): param is PayloadOf<'addTrack'> => isObj(param) && isString(param.name) && isString(param.kind),
     removeTrack: (param): param is PayloadOf<'removeTrack'> =>
-        isObj(param) && hasExactKeys(param, ['trackId']) && isNonEmptyString(param.trackId),
+        isObj(param) &&
+        hasOnlyKeys(param, [
+            'trackId',
+            'expectedKind',
+            'expectedMuted',
+            'expectedClipIds',
+            'expectedAlternativeClipIds',
+            'expectedVcaGroupId',
+            'expectedVcaMembershipGroupIds',
+        ]) &&
+        Object.hasOwn(param, 'trackId') &&
+        isNonEmptyString(param.trackId) &&
+        isOptional(
+            param.expectedKind,
+            (value): value is NonNullable<PayloadOf<'removeTrack'>['expectedKind']> =>
+                value === 'audio' || value === 'midi' || value === 'bus' || value === 'master' || value === 'folder'
+        ) &&
+        isOptional(param.expectedMuted, (value): value is boolean => typeof value === 'boolean') &&
+        isOptional(
+            param.expectedClipIds,
+            (value): value is readonly string[] => Array.isArray(value) && value.every(isNonEmptyString)
+        ) &&
+        isOptional(
+            param.expectedAlternativeClipIds,
+            (value): value is readonly string[] => Array.isArray(value) && value.every(isNonEmptyString)
+        ) &&
+        isOptional(
+            param.expectedVcaGroupId,
+            (value): value is string | null => value === null || isNonEmptyString(value)
+        ) &&
+        isOptional(
+            param.expectedVcaMembershipGroupIds,
+            (value): value is readonly string[] => Array.isArray(value) && value.every(isNonEmptyString)
+        ),
     renameTrack: (param): param is PayloadOf<'renameTrack'> =>
         isObj(param) && isString(param.trackId) && isString(param.name),
     duplicateTrack: hasTrackId,
@@ -207,13 +240,32 @@ const validators = {
     // Device lifecycle
     addDevice: (param): param is PayloadOf<'addDevice'> =>
         isObj(param) &&
-        hasExactKeys(param, ['trackId', 'deviceType']) &&
+        hasOnlyKeys(param, ['trackId', 'deviceType', 'afterDeviceId']) &&
         isNonEmptyString(param.trackId) &&
-        isNonEmptyString(param.deviceType),
+        isNonEmptyString(param.deviceType) &&
+        isOptional(param.afterDeviceId, isNonEmptyString),
     removeDevice: (param): param is PayloadOf<'removeDevice'> =>
         isObj(param) && hasExactKeys(param, ['deviceId']) && isNonEmptyString(param.deviceId),
     setDeviceParameter: (param): param is PayloadOf<'setDeviceParameter'> =>
-        isObj(param) && isString(param.deviceId) && isString(param.paramId) && isNumber(param.value),
+        isObj(param) &&
+        hasOnlyKeys(param, [
+            'deviceId',
+            'paramId',
+            'value',
+            'expectedTrackId',
+            'expectedDeviceType',
+            'expectedDeviceIds',
+            'expectedValue',
+            'expectedTrackFrozen',
+        ]) &&
+        isNonEmptyString(param.deviceId) &&
+        isNonEmptyString(param.paramId) &&
+        isNumber(param.value) &&
+        isOptional(param.expectedTrackId, isNonEmptyString) &&
+        isOptional(param.expectedDeviceType, isNonEmptyString) &&
+        isOptional(param.expectedDeviceIds, isUniqueNonEmptyStringArray) &&
+        isOptional(param.expectedValue, isNumber) &&
+        isOptional(param.expectedTrackFrozen, (value): value is boolean => typeof value === 'boolean'),
     loadExternalPlugin: (param): param is PayloadOf<'loadExternalPlugin'> => isObj(param) && isString(param.pluginPath),
 
     // Transport (pre-existing range checks from §91)
@@ -270,6 +322,15 @@ const validators = {
         isNonEmptyString(param.busId) &&
         isNonEmptyString(param.sectionName) &&
         isInRange(param.reductionDb, Number.MIN_VALUE, 60),
+    automateTrackGainRange: (param): param is PayloadOf<'automateTrackGainRange'> =>
+        isObj(param) &&
+        hasExactKeys(param, ['trackIds', 'sectionName', 'gainDb']) &&
+        Array.isArray(param.trackIds) &&
+        param.trackIds.length > 0 &&
+        param.trackIds.every(isNonEmptyString) &&
+        new Set(param.trackIds).size === param.trackIds.length &&
+        isNonEmptyString(param.sectionName) &&
+        isInRange(param.gainDb, Number.MIN_VALUE, 6),
     addAutomationPoint: (param): param is PayloadOf<'addAutomationPoint'> =>
         isObj(param) &&
         hasOnlyKeys(param, ['laneId', 'beat', 'value', 'curve', 'tension', 'stairSteps', 'cp1', 'cp2']) &&
@@ -299,9 +360,11 @@ const validators = {
     // Sidechain routing
     addSidechainRoute: (param): param is PayloadOf<'addSidechainRoute'> =>
         isObj(param) &&
-        hasExactKeys(param, ['sourceTrackId', 'targetTrackId']) &&
+        (hasExactKeys(param, ['sourceTrackId', 'targetTrackId']) ||
+            hasExactKeys(param, ['sourceTrackId', 'targetTrackId', 'targetDeviceId'])) &&
         isNonEmptyString(param.sourceTrackId) &&
         isNonEmptyString(param.targetTrackId) &&
+        isOptional(param.targetDeviceId, isNonEmptyString) &&
         param.sourceTrackId !== param.targetTrackId,
     removeSidechainRoute: (param): param is PayloadOf<'removeSidechainRoute'> =>
         isObj(param) &&

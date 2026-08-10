@@ -5,9 +5,8 @@ import { wouldCreateRoutingCycle } from '#/utils/routingCycle';
 import { sidechainRoutesMatch, type SidechainRoute } from '../../models/SidechainRoute';
 import { sidechainStore } from '../../stores/sidechainStore';
 
+import { getSidechainTargetCapability } from './getSidechainTargetCapability';
 import { reconcileSidechainRouteRuntime } from './reconcileSidechainRouteRuntime';
-
-const SUPPORTED_SIDECHAIN_DEVICE_TYPE = 'builtin-sidechain-compressor';
 
 export function addSidechainRouteSnapshot(route: SidechainRoute): HandlerExecutionResult {
     if (route.sourceTrackId === route.targetTrackId) {
@@ -31,10 +30,11 @@ export function addSidechainRouteSnapshot(route: SidechainRoute): HandlerExecuti
     }
 
     const targetDevice = targetTrack.devices.find((device) => device.id === route.targetDeviceId);
+    const capability = targetDevice ? getSidechainTargetCapability(targetDevice.type) : null;
     if (
-        targetDevice?.type !== SUPPORTED_SIDECHAIN_DEVICE_TYPE ||
+        !capability ||
+        route.targetParameterId !== capability.targetParameterId ||
         !route.id ||
-        !route.targetParameterId ||
         !Number.isFinite(route.gain)
     ) {
         return { status: 'conflict' };

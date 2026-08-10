@@ -4,11 +4,8 @@
     "windows": ["main"],
     "permissions": [
         "core:event:allow-listen",
-        "core:event:allow-emit",
         "core:path:allow-join",
         "core:path:allow-resolve-directory",
-        "allow-read-audio-file",
-        "allow-write-audio-file",
-        "allow-list-directory"
+        "allow-sourdaw-commands"
     ]
 }

@@ -26,6 +26,7 @@ export const handleRestoreTrack = createHandler<'restoreTrack'>({
             trackGain,
             trackParentId,
             trackIndex,
+            batchRestoreTracks = [],
             wasSelected,
             routingPatches,
             automationLaneSnapshots,
@@ -42,7 +43,11 @@ export const handleRestoreTrack = createHandler<'restoreTrack'>({
         if (!state || state.tracks.some((track) => track.id === alpha.payload.trackId)) {
             return { status: 'conflict' };
         }
+        const batchRestoreTrackIds = new Set(batchRestoreTracks.map((track) => track.trackId));
         for (const patch of routingPatches) {
+            if (batchRestoreTrackIds.has(patch.trackId)) {
+                continue;
+            }
             const current = state.tracks.find((track) => track.id === patch.trackId);
             if (!current || !hasExpectedRoutingState(current, patch.expected)) {
                 return { status: 'conflict' };
@@ -51,7 +56,7 @@ export const handleRestoreTrack = createHandler<'restoreTrack'>({
         const routingPatchById = new Map(routingPatches.map((patch) => [patch.trackId, patch]));
         const tracks = state.tracks.map((track) => {
             const patch = routingPatchById.get(track.id);
-            if (!patch) {
+            if (!patch || batchRestoreTrackIds.has(track.id)) {
                 return track;
             }
             return {
@@ -60,7 +65,13 @@ export const handleRestoreTrack = createHandler<'restoreTrack'>({
                 sends: patch.replacement.sends.map((send) => ({ ...send })),
             };
         });
-        const insertionIndex = Math.min(Math.max(trackIndex, 0), tracks.length);
+        const missingEarlierSiblingCount = batchRestoreTracks.filter(
+            (candidate) =>
+                candidate.trackId !== alpha.payload.trackId &&
+                candidate.trackIndex < trackIndex &&
+                !state.tracks.some((track) => track.id === candidate.trackId)
+        ).length;
+        const insertionIndex = Math.min(Math.max(trackIndex - missingEarlierSiblingCount, 0), tracks.length);
         tracks.splice(insertionIndex, 0, trackSnapshot as never);
         let selectedTrackId = state.selectedTrackId;
         if (wasSelected && selectedTrackId === null) {

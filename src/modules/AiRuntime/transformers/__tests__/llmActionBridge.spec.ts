@@ -2591,7 +2591,16 @@ describe('bridgeLlmToolCalls', () => {
         expect(result.actions).toEqual([
             {
                 type: 'setDeviceParameter',
-                payload: { deviceId: 'device-eq', paramId: 'oversampling', value: 8 },
+                payload: {
+                    deviceId: 'device-eq',
+                    paramId: 'oversampling',
+                    value: 8,
+                    expectedTrackId: 'track-vocals',
+                    expectedDeviceType: 'EQ',
+                    expectedDeviceIds: ['device-eq'],
+                    expectedValue: 4,
+                    expectedTrackFrozen: false,
+                },
             },
         ]);
         expect(result.rejections.map((rejection) => rejection.name)).toEqual(['setDeviceParameter']);
@@ -2626,7 +2635,16 @@ describe('bridgeLlmToolCalls', () => {
         expect(result.actions).toEqual([
             {
                 type: 'setDeviceParameter',
-                payload: { deviceId: 'device-fermenter', paramId: 'oscFine', value: 12.5 },
+                payload: {
+                    deviceId: 'device-fermenter',
+                    paramId: 'oscFine',
+                    value: 12.5,
+                    expectedTrackId: 'track-vocals',
+                    expectedDeviceType: 'fermenter',
+                    expectedDeviceIds: ['device-fermenter'],
+                    expectedValue: 0,
+                    expectedTrackFrozen: false,
+                },
             },
         ]);
         expect(result.rejections.map((rejection) => rejection.name)).toEqual(['setDeviceParameter']);
@@ -2652,7 +2670,16 @@ describe('bridgeLlmToolCalls', () => {
             actions: [
                 {
                     type: 'setDeviceParameter',
-                    payload: { deviceId: 'device-eq', paramId: 'frequency', value: 2400 },
+                    payload: {
+                        deviceId: 'device-eq',
+                        paramId: 'frequency',
+                        value: 2400,
+                        expectedTrackId: 'track-vocals',
+                        expectedDeviceType: 'EQ',
+                        expectedDeviceIds: ['device-eq'],
+                        expectedValue: 1200,
+                        expectedTrackFrozen: false,
+                    },
                 },
                 { type: 'bypassDevice', payload: { deviceId: 'device-eq', bypassed: true } },
                 {
@@ -3917,7 +3944,7 @@ describe('bridgeLlmToolCalls', () => {
                     ...addCall,
                     arguments: {
                         ...addCall.arguments,
-                        targetDeviceId: 'device-sidechain',
+                        gain: 1,
                     },
                 },
             ],
@@ -4121,7 +4148,7 @@ describe('bridgeLlmToolCalls', () => {
             { type: 'removeDevice', payload: { deviceId: 'device-sidechain' } },
         ]);
         expect(afterDeviceRemoval.rejections[0]?.reason).toBe(
-            'Expected exactly one supported sidechain compressor on the target track'
+            'Expected one exact supported sidechain compressor on the target track'
         );
         expect(afterTrackRemoval.actions).toEqual([{ type: 'removeTrack', payload: { trackId: 'track-bass' } }]);
         expect(afterTrackRemoval.rejections[0]?.reason).toBe('Expected two distinct routable source and target tracks');

@@ -13,6 +13,8 @@
 //! validation chain — present, ASCII, well-formed escapes, valid UTF-8 — so no
 //! command can drift into accepting something the others reject.
 
+const MAX_PERCENT_ENCODED_HEADER_BYTES: usize = 4096 * 3;
+
 /// Decode a percent-encoded (`encodeURIComponent`) header value back to UTF-8.
 ///
 /// Decoding is done here rather than pulling in a dependency: the grammar is
@@ -48,11 +50,20 @@ pub(crate) fn decode_percent_encoded(value: &str) -> Result<String, String> {
         .map_err(|_| "Malformed percent-encoded path: not valid UTF-8".to_string())
 }
 
+fn decode_bounded_percent_encoded_header(value: &str, header_name: &str) -> Result<String, String> {
+    if value.len() > MAX_PERCENT_ENCODED_HEADER_BYTES {
+        return Err(format!(
+            "Header '{header_name}' exceeds {MAX_PERCENT_ENCODED_HEADER_BYTES}-byte encoded limit"
+        ));
+    }
+
+    decode_percent_encoded(value)
+}
+
 /// Read a required percent-encoded header off a raw-body invoke request.
 ///
-/// The header must be present and printable ASCII before it is decoded, so a
-/// missing or non-ASCII header is rejected rather than silently treated as
-/// empty.
+/// The header must be present, printable ASCII, and bounded before it is
+/// decoded, so malformed input cannot force an unbounded decode allocation.
 pub(crate) fn read_percent_encoded_header(
     request: &tauri::ipc::Request<'_>,
     header_name: &str,
@@ -64,7 +75,7 @@ pub(crate) fn read_percent_encoded_header(
         .to_str()
         .map_err(|_| format!("Header '{}' is not valid ASCII", header_name))?;
 
-    decode_percent_encoded(encoded)
+    decode_bounded_percent_encoded_header(encoded, header_name)
 }
 
 /// Borrow the raw bytes of an invoke request whose whole message is the payload.
@@ -147,5 +158,26 @@ mod tests {
         let decoded = decode_percent_encoded("inst%20%C3%A9%2F1").unwrap();
 
         assert_eq!(decoded, "inst é/1");
+    }
+
+    #[test]
+    fn percent_encoded_header_boundary_rejects_oversize_before_decode() {
+        let encoded = "A".repeat(12_289);
+
+        let result = decode_bounded_percent_encoded_header(&encoded, "x-sourdaw-path");
+
+        assert_eq!(
+            result.unwrap_err(),
+            "Header 'x-sourdaw-path' exceeds 12288-byte encoded limit"
+        );
+    }
+
+    #[test]
+    fn percent_encoded_header_boundary_accepts_a_valid_unicode_path() {
+        let encoded = "%2FUsers%2Fjos%C3%A9%2FM%C3%BAsica%2Fkick.wav";
+
+        let decoded = decode_bounded_percent_encoded_header(encoded, "x-sourdaw-path").unwrap();
+
+        assert_eq!(decoded, "/Users/josé/Música/kick.wav");
     }
 }

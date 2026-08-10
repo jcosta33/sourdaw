@@ -775,10 +775,11 @@ const EXPECTED_COMMANDS = [
     ),
     expectedCommand(
         'addDevice',
-        'Insert a platform-available built-in device at the end of a track device chain.',
+        'Insert a platform-available built-in device into a track device chain.',
         {
             trackId: { type: 'string', description: 'Existing track ID that accepts devices' },
             deviceType: { type: 'string', description: 'Available built-in device ID or unique display name' },
+            afterDeviceId: { type: 'string', description: 'Existing device ID after which to insert' },
         },
         ['trackId', 'deviceType'],
         'bounded-reversible',
@@ -853,10 +854,11 @@ const EXPECTED_COMMANDS = [
     ),
     expectedCommand(
         'addSidechainRoute',
-        'Route one source track into the single supported sidechain compressor on a distinct target track.',
+        'Route one source track into a supported sidechain compressor on a distinct target track; use targetDeviceId when an app-owned capability enumerates an exact device.',
         {
             sourceTrackId: { type: 'string', description: 'Existing routable trigger track ID' },
             targetTrackId: { type: 'string', description: 'Distinct routable destination track ID' },
+            targetDeviceId: { type: 'string', description: 'Exact app-scoped sidechain-capable device ID' },
         },
         ['sourceTrackId', 'targetTrackId'],
         'authority-sensitive',
@@ -894,6 +896,29 @@ const EXPECTED_COMMANDS = [
             },
         },
         ['trackIds', 'busId', 'sectionName', 'reductionDb'],
+        'authority-sensitive',
+        true
+    ),
+    expectedCommand(
+        'automateTrackGainRange',
+        'Lift an app-grounded set of impact buses by a bounded relative dB amount inside one arrangement section.',
+        {
+            trackIds: {
+                type: 'array',
+                items: { type: 'string' },
+                minItems: 1,
+                uniqueItems: true,
+                description: 'Exact app-grounded impact-bus IDs',
+            },
+            sectionName: { type: 'string', description: 'Existing target chorus name' },
+            gainDb: {
+                type: 'number',
+                exclusiveMinimum: 0,
+                maximum: 6,
+                description: 'Bounded decibel lift selected by the planning policy',
+            },
+        },
+        ['trackIds', 'sectionName', 'gainDb'],
         'authority-sensitive',
         true
     ),
@@ -1840,7 +1865,10 @@ const EXPECTED_GROUNDING = [
     {
         actionType: 'addDevice',
         intentPhrases: ['add device', 'insert device', 'add plugin', 'insert plugin', 'add'],
-        targetRules: [{ argument: 'trackId', capability: 'device-host-track' }],
+        targetRules: [
+            { argument: 'trackId', capability: 'device-host-track' },
+            { argument: 'afterDeviceId', capability: 'device', dependsOn: 'trackId', optional: true },
+        ],
         valueRules: [{ argument: 'deviceType', kind: 'string-literal' }],
     },
     {
@@ -1932,6 +1960,12 @@ const EXPECTED_GROUNDING = [
             { argument: 'sectionName', kind: 'section-reference' },
             { argument: 'reductionDb', kind: 'number-if-present', requiredInPrompt: true },
         ],
+    },
+    {
+        actionType: 'automateTrackGainRange',
+        intentPhrases: ['make the second chorus hit harder', 'second chorus hit harder'],
+        targetRules: [],
+        valueRules: [],
     },
     {
         actionType: 'addAutomationLane',

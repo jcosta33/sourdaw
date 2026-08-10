@@ -3710,7 +3710,19 @@ describe('bridgeGroundedLlmToolCalls', () => {
         expect(crossCallCueCollision.rejections).toEqual([expect.objectContaining({ index: 0, name: 'bypassDevice' })]);
         expect(parameter.rejections).toEqual([]);
         expect(parameter.actions).toEqual([
-            { type: 'setDeviceParameter', payload: { deviceId: 'device-reverb', paramId: 'mix', value: 0.25 } },
+            {
+                type: 'setDeviceParameter',
+                payload: {
+                    deviceId: 'device-reverb',
+                    paramId: 'mix',
+                    value: 0.25,
+                    expectedTrackId: 'track-vocals',
+                    expectedDeviceType: 'Reverb',
+                    expectedDeviceIds: ['device-reverb'],
+                    expectedTrackFrozen: false,
+                    expectedValue: 0.25,
+                },
+            },
         ]);
     });
 
@@ -3807,14 +3819,50 @@ describe('bridgeGroundedLlmToolCalls', () => {
 
         expect(bypass.actions).toEqual([{ type: 'bypassDevice', payload: { deviceId: 'device-eq', bypassed: true } }]);
         expect(parameter.actions).toEqual([
-            { type: 'setDeviceParameter', payload: { deviceId: 'device-eq', paramId: 'frequency', value: 2400 } },
+            {
+                type: 'setDeviceParameter',
+                payload: {
+                    deviceId: 'device-eq',
+                    paramId: 'frequency',
+                    value: 2400,
+                    expectedTrackId: 'track-vocals',
+                    expectedDeviceType: 'EQ',
+                    expectedDeviceIds: ['device-eq'],
+                    expectedTrackFrozen: false,
+                    expectedValue: 1200,
+                },
+            },
         ]);
         expect(wrongParameterDirection.actions).toEqual([]);
         expect(validParameterDirection.actions).toEqual([
-            { type: 'setDeviceParameter', payload: { deviceId: 'device-eq', paramId: 'frequency', value: 2400 } },
+            {
+                type: 'setDeviceParameter',
+                payload: {
+                    deviceId: 'device-eq',
+                    paramId: 'frequency',
+                    value: 2400,
+                    expectedTrackId: 'track-vocals',
+                    expectedDeviceType: 'EQ',
+                    expectedDeviceIds: ['device-eq'],
+                    expectedTrackFrozen: false,
+                    expectedValue: 1200,
+                },
+            },
         ]);
         expect(ownerCollision.actions).toEqual([
-            { type: 'setDeviceParameter', payload: { deviceId: 'device-eq', paramId: 'mix', value: 0.5 } },
+            {
+                type: 'setDeviceParameter',
+                payload: {
+                    deviceId: 'device-eq',
+                    paramId: 'mix',
+                    value: 0.5,
+                    expectedTrackId: 'track-vocals',
+                    expectedDeviceType: 'EQ',
+                    expectedDeviceIds: ['device-eq'],
+                    expectedTrackFrozen: false,
+                    expectedValue: 0.5,
+                },
+            },
         ]);
         expect(wrongOwner.actions).toEqual([]);
     });
@@ -4247,6 +4295,45 @@ describe('bridgeGroundedLlmToolCalls', () => {
         ]);
         expect(reversed.actions).toEqual([]);
         expect(reversed.rejections[0]?.reason).toContain('targetTrackId');
+    });
+
+    it('rejects provider device selection outside the exact MF-06 capability', () => {
+        const kick = createTrack({ id: 'track-kick', name: 'Kick' });
+        const bass = createTrack({
+            id: 'track-bass',
+            name: 'Bass',
+            devices: [
+                {
+                    id: 'device-sidechain-a',
+                    type: 'builtin-sidechain-compressor',
+                    bypassed: false,
+                    parameters: [],
+                },
+                {
+                    id: 'device-sidechain-b',
+                    type: 'builtin-sidechain-compressor',
+                    bypassed: false,
+                    parameters: [],
+                },
+            ],
+        });
+        const result = bridge(
+            [
+                {
+                    name: 'addSidechainRoute',
+                    arguments: {
+                        sourceTrackId: kick.id,
+                        targetTrackId: bass.id,
+                        targetDeviceId: 'device-sidechain-a',
+                    },
+                },
+            ],
+            'add sidechain from Kick to Bass',
+            { ...projectContext, tracks: [kick, bass, master], sidechainRoutes: [] }
+        );
+
+        expect(result.actions).toEqual([]);
+        expect(result.rejections[0]?.reason).toContain('MF-06 capability');
     });
 
     it('grounds gain and pan lane creation only when the requested parameter is explicit', () => {

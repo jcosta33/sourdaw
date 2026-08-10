@@ -1,1 +1,1 @@
-{"default":{"identifier":"default","description":"Default capability for the main window","local":true,"windows":["main"],"permissions":["core:event:allow-listen","core:event:allow-emit","core:path:allow-join","core:path:allow-resolve-directory","allow-read-audio-file","allow-write-audio-file","allow-list-directory"]}}
+{"default":{"identifier":"default","description":"Default capability for the main window","local":true,"windows":["main"],"permissions":["core:event:allow-listen","core:path:allow-join","core:path:allow-resolve-directory","allow-sourdaw-commands"]}}

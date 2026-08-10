@@ -31,6 +31,7 @@ export type ExecutableAppActionTargetRule = {
     dependsOn?: string;
     distinctFrom?: string;
     promptRole?: 'source' | 'destination' | 'container' | 'members';
+    optional?: boolean;
 };
 
 export type ExecutableAppActionValueRule =
@@ -1593,14 +1594,18 @@ export const executableAppActionDescriptors = [
     {
         actionType: 'addDevice',
         risk: 'bounded-reversible',
-        description: 'Insert a platform-available built-in device at the end of a track device chain.',
+        description: 'Insert a platform-available built-in device into a track device chain.',
         intentPhrases: ['add device', 'insert device', 'add plugin', 'insert plugin', 'add'],
-        targetRules: [{ argument: 'trackId', capability: 'device-host-track' }],
+        targetRules: [
+            { argument: 'trackId', capability: 'device-host-track' },
+            { argument: 'afterDeviceId', capability: 'device', dependsOn: 'trackId', optional: true },
+        ],
         valueRules: [{ argument: 'deviceType', kind: 'string-literal' }],
         parameters: {
             properties: {
                 trackId: { type: 'string', description: 'Existing track ID that accepts devices' },
                 deviceType: { type: 'string', description: 'Available built-in device ID or unique display name' },
+                afterDeviceId: { type: 'string', description: 'Existing device ID after which to insert' },
             },
             required: ['trackId', 'deviceType'],
         },
@@ -1742,13 +1747,14 @@ export const executableAppActionDescriptors = [
         actionType: 'addSidechainRoute',
         risk: 'authority-sensitive',
         description:
-            'Route one source track into the single supported sidechain compressor on a distinct target track.',
+            'Route one source track into a supported sidechain compressor on a distinct target track; use targetDeviceId when an app-owned capability enumerates an exact device.',
         intentPhrases: ['add sidechain', 'create sidechain', 'route sidechain', 'sidechain'],
         targetRules: sidechainTargetRules,
         parameters: {
             properties: {
                 sourceTrackId: { type: 'string', description: 'Existing routable trigger track ID' },
                 targetTrackId: { type: 'string', description: 'Distinct routable destination track ID' },
+                targetDeviceId: { type: 'string', description: 'Exact app-scoped sidechain-capable device ID' },
             },
             required: ['sourceTrackId', 'targetTrackId'],
         },
@@ -1809,6 +1815,34 @@ export const executableAppActionDescriptors = [
                 },
             },
             required: ['trackIds', 'busId', 'sectionName', 'reductionDb'],
+        },
+    },
+    {
+        actionType: 'automateTrackGainRange',
+        risk: 'authority-sensitive',
+        description:
+            'Lift an app-grounded set of impact buses by a bounded relative dB amount inside one arrangement section.',
+        intentPhrases: ['make the second chorus hit harder', 'second chorus hit harder'],
+        targetRules: [],
+        valueRules: [],
+        parameters: {
+            properties: {
+                trackIds: {
+                    type: 'array',
+                    items: { type: 'string' },
+                    minItems: 1,
+                    uniqueItems: true,
+                    description: 'Exact app-grounded impact-bus IDs',
+                },
+                sectionName: { type: 'string', description: 'Existing target chorus name' },
+                gainDb: {
+                    type: 'number',
+                    exclusiveMinimum: 0,
+                    maximum: 6,
+                    description: 'Bounded decibel lift selected by the planning policy',
+                },
+            },
+            required: ['trackIds', 'sectionName', 'gainDb'],
         },
     },
     {

@@ -32,7 +32,7 @@ describe('handleRemoveDevice', () => {
             payload: { deviceId: 'd1' },
         });
 
-        expect(mocks.removeDevice).toHaveBeenCalledWith('d1', { deferExternalUnload: true });
+        expect(mocks.removeDevice).toHaveBeenCalledWith('d1', { deferRuntimeEffects: true });
         expect(result).toEqual(expected);
     });
 
@@ -73,11 +73,17 @@ describe('handleRemoveDevice', () => {
 
         expect(desc.inverseAction).toEqual({
             type: 'restoreDevice',
-            payload: { trackId: 't1', deviceSnapshot: device, deviceIndex: 1 },
+            payload: {
+                trackId: 't1',
+                deviceSnapshot: device,
+                deviceIndex: 1,
+                expectedDeviceIds: ['before', 'after'],
+            },
         });
     });
 
     it('is undoable', () => {
         expect(handleRemoveDevice.undoable).toBe(true);
+        expect(handleRemoveDevice.requiresAbortCompensation).toBe(false);
     });
 });

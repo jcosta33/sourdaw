@@ -10,6 +10,7 @@ export { removeSidechainRouteSnapshot } from './sidechain/removeSidechainRouteSn
 export { restoreSidechainRoutes } from './sidechain/restoreSidechainRoutes';
 export { getSidechainRoutesForTrack } from './sidechain/getSidechainRoutesForTrack';
 export { getAllSidechainRoutes } from './sidechain/getAllSidechainRoutes';
+export { getSidechainTargetCapability } from './sidechain/getSidechainTargetCapability';
 export { setSidechainRoutes } from './sidechain/setSidechainRoutes';
 export { wireSidechainRoutes } from './sidechain/wireSidechainRoutes';
 export { getNodeViewHandlers } from './getNodeViewHandlers';

@@ -243,7 +243,9 @@ function getReferenceCandidates(input: ResolveAgentReferenceInput): ReferenceCan
 
     if (input.capability === 'device') {
         let tracks = input.context.tracks;
-        if (hasExplicitTrackSelection(input.prompt)) {
+        if (input.dependencyId) {
+            tracks = tracks.filter((track) => track.id === input.dependencyId);
+        } else if (hasExplicitTrackSelection(input.prompt)) {
             if (input.context.selectedTrackId === null) {
                 return [];
             }
@@ -257,7 +259,15 @@ function getReferenceCandidates(input: ResolveAgentReferenceInput): ReferenceCan
                 tracks = tracks.filter((track) => track.id === ownerReference.id);
             }
         }
-        return tracks.flatMap((track) => track.devices.map((device) => ({ id: device.id, name: device.type })));
+        const canonicalNamesByType = new Map(
+            (input.context.availableDeviceTypes ?? []).map((deviceType) => [deviceType.id, deviceType.name])
+        );
+        return tracks.flatMap((track) =>
+            track.devices.map((device) => ({
+                id: device.id,
+                name: canonicalNamesByType.get(device.type) ?? device.type,
+            }))
+        );
     }
 
     if (input.capability === 'device-parameter' && input.dependencyId) {
