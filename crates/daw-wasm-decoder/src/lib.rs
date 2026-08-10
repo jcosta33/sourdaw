@@ -42,6 +42,8 @@ pub struct DecodedAudioWasm {
     sample_rate: u32,
     channels: u32,
     total_frames: u32,
+    decode_warning_count: u32,
+    decode_warning_summary: String,
     /// Interleaved samples: [L0, R0, L1, R1, …] (or mono: [S0, S1, …]).
     interleaved: Vec<f32>,
 }
@@ -61,6 +63,16 @@ impl DecodedAudioWasm {
     #[wasm_bindgen(getter)]
     pub fn total_frames(&self) -> u32 {
         self.total_frames
+    }
+
+    #[wasm_bindgen(getter)]
+    pub fn decode_warning_count(&self) -> u32 {
+        self.decode_warning_count
+    }
+
+    #[wasm_bindgen(getter)]
+    pub fn decode_warning_summary(&self) -> String {
+        self.decode_warning_summary.clone()
     }
 
     /// Take the interleaved PCM samples, consuming this instance.
@@ -86,9 +98,15 @@ impl DecodedAudioWasm {
 pub fn decode_audio_bytes(bytes: &[u8]) -> Result<DecodedAudioWasm, JsError> {
     let decoded = daw_io::decode_audio_file_bytes(bytes.to_vec()).map_err(|e| JsError::new(&e))?;
 
+    Ok(decoded_audio_to_wasm(decoded))
+}
+
+fn decoded_audio_to_wasm(decoded: daw_io::DecodedAudio) -> DecodedAudioWasm {
     // daw-io returns per-channel Vec<Vec<f32>>; interleave for Web Audio consumption.
     let channels = decoded.channels as usize;
     let total_frames = decoded.samples.first().map(|c| c.len()).unwrap_or(0);
+    let decode_warning_count = u32::try_from(decoded.decode_warning_count).unwrap_or(u32::MAX);
+    let decode_warning_summary = decoded.decode_warnings.join("; ");
 
     let mut interleaved = Vec::with_capacity(total_frames * channels);
     for frame in 0..total_frames {
@@ -103,17 +121,19 @@ pub fn decode_audio_bytes(bytes: &[u8]) -> Result<DecodedAudioWasm, JsError> {
         }
     }
 
-    Ok(DecodedAudioWasm {
+    DecodedAudioWasm {
         sample_rate: decoded.sample_rate,
         channels: decoded.channels,
         total_frames: total_frames as u32,
+        decode_warning_count,
+        decode_warning_summary,
         interleaved,
-    })
+    }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::DecodedAudioWasm;
+    use super::{decoded_audio_to_wasm, DecodedAudioWasm};
 
     /// DSP-8 red→green at the decoder boundary: a malformed decode can leave
     /// non-finite PCM in the interleaved buffer, and `take_samples` — the wasm
@@ -125,6 +145,8 @@ mod tests {
             sample_rate: 48_000,
             channels: 2,
             total_frames: 3,
+            decode_warning_count: 0,
+            decode_warning_summary: String::new(),
             interleaved: vec![0.5, f32::NAN, f32::INFINITY, -0.25, f32::NEG_INFINITY, 0.75],
         };
 
@@ -142,5 +164,26 @@ mod tests {
             "every non-finite sample must be scrubbed"
         );
         assert_eq!(out, vec![0.5, 0.0, 0.0, -0.25, 0.0, 0.75]);
+    }
+
+    #[test]
+    fn exposes_partial_decode_diagnostics_to_javascript() {
+        let decoded = daw_io::DecodedAudio {
+            sample_rate: 48_000,
+            channels: 1,
+            samples: vec![vec![0.25]],
+            duration_seconds: 1.0 / 48_000.0,
+            codec: "test".to_string(),
+            decode_warning_count: 2,
+            decode_warnings: vec!["corrupt frame".to_string(), "truncated frame".to_string()],
+        };
+
+        let wasm = decoded_audio_to_wasm(decoded);
+
+        assert_eq!(wasm.decode_warning_count, 2);
+        assert_eq!(
+            wasm.decode_warning_summary,
+            "corrupt frame; truncated frame"
+        );
     }
 }

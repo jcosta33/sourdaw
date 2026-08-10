@@ -51,11 +51,11 @@
     },
     "daw-wasm-decoder": {
       "crate": "crates/daw-wasm-decoder",
-      "crateSourceHash": "sha256:db9e197e1279e192125dbdc9e4fcebb6d566c5604ba28d677139f95a91011233",
+      "crateSourceHash": "sha256:f7a26aca5d1725a1ab7724dad314f53f68d0aad94d6e0f7b8dfcdce886cb8e73",
       "schemaHash": "344f42d3211c4765",
       "artifacts": {
-        "public/wasm/daw-wasm-decoder/daw_wasm_decoder.js": "sha256:e0b1de35143c032a33452f5bac665e4ffc1a5a4e7d4eb95589c29bff0e8f28d0",
-        "public/wasm/daw-wasm-decoder/daw_wasm_decoder_bg.wasm": "sha256:fa7e16bcb48dd902ae05c717167b9c1b2c185b58eb5107b996ff215157b35c67",
+        "public/wasm/daw-wasm-decoder/daw_wasm_decoder.js": "sha256:b0ca1ec67f9d9c4b0ce81b8d4395160ded6aeb21ae7f5bddde6b8e609fdfd1a2",
+        "public/wasm/daw-wasm-decoder/daw_wasm_decoder_bg.wasm": "sha256:d81e14a8620f4b3a9aa63bf112244f2ba14fda89def9d13fe35be2872162e5d5",
         "public/wasm/daw-wasm-decoder/package.json": "sha256:2acac618c43f403e04faea3c67e7620916384a355bcf71ed2808ec045287b2a6"
       }
     }

@@ -70,6 +70,8 @@ export type CrumbsLoadResult = {
     detectedRoot: number | null;
     detectedBpm: number | null;
     category: string;
+    decodeWarningCount: number;
+    decodeWarnings: string[];
 };
 
 export type OnsetDetectionResult = {

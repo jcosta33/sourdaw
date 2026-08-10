@@ -5,6 +5,8 @@ const mocks = vi.hoisted(() => {
         sample_rate: 44100,
         channels: 2,
         total_frames: 100,
+        decode_warning_count: 0,
+        decode_warning_summary: '',
         take_samples: vi.fn().mockReturnValue(new Float32Array(200)),
         free: vi.fn(),
     };
@@ -13,8 +15,13 @@ const mocks = vi.hoisted(() => {
         decode_audio_bytes: vi.fn(),
     };
     const loadWasmDecoderModule = vi.fn();
-    return { decoded, wasmModule, loadWasmDecoderModule };
+    const warn = vi.fn();
+    return { decoded, wasmModule, loadWasmDecoderModule, warn };
 });
+
+vi.mock('#/infra/logger/appLogger', () => ({
+    logger: { warn: mocks.warn },
+}));
 
 vi.mock('../loadWasmDecoderModule', () => ({
     loadWasmDecoderModule: mocks.loadWasmDecoderModule,
@@ -32,6 +39,8 @@ describe('decodeAudioBytesWasm', () => {
         mocks.decoded.sample_rate = 44100;
         mocks.decoded.channels = 2;
         mocks.decoded.total_frames = 100;
+        mocks.decoded.decode_warning_count = 0;
+        mocks.decoded.decode_warning_summary = '';
         mocks.decoded.take_samples.mockReturnValue(new Float32Array(200));
         mocks.wasmModule.default.mockResolvedValue(undefined);
         mocks.wasmModule.decode_audio_bytes.mockReturnValue(mocks.decoded);
@@ -119,5 +128,18 @@ describe('decodeAudioBytesWasm', () => {
 
         expect(mocks.wasmModule.default).toHaveBeenCalledTimes(1);
         expect(mocks.wasmModule.decode_audio_bytes).toHaveBeenCalledTimes(2);
+    });
+
+    it('should report partial decode corruption before consuming the WASM result', async () => {
+        const decodeAudioBytesWasm = await loadSubject();
+        mocks.decoded.decode_warning_count = 2;
+        mocks.decoded.decode_warning_summary = 'malformed stream: corrupt frame; truncated frame';
+
+        await decodeAudioBytesWasm(new ArrayBuffer(10));
+
+        expect(mocks.warn).toHaveBeenCalledWith(
+            '[wasmDecoding] skipped 2 corrupt audio packets:',
+            'malformed stream: corrupt frame; truncated frame'
+        );
     });
 });
