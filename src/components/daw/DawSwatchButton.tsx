@@ -18,6 +18,7 @@ export const DawSwatchButton = ({
 }: DawSwatchButtonProps): ReactElement => (
     <button
         type={type}
+        aria-pressed={active}
         className={cn(
             'rounded-full border border-white/14 transition-all hover:ring-1 hover:ring-foreground/30',
             size === 'sm' ? 'size-3.5' : 'size-4.5',
