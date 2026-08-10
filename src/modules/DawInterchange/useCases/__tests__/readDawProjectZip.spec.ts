@@ -29,18 +29,16 @@ describe('readDawProjectZip — project.xml extraction', () => {
         expect(result.projectXml).toBe('<Project/>');
     });
 
-    it('matches project.xml with a leading slash (/project.xml)', () => {
+    it('rejects project.xml with an absolute leading slash', () => {
         const zip = makeZip({ '/project.xml': utf8('<Project/>') });
-        const result = readDawProjectZip(zip);
-        expect(result.projectXml).toBe('<Project/>');
+        expect(() => readDawProjectZip(zip)).toThrow(/unsafe archive path/i);
     });
 });
 
 describe('readDawProjectZip — missing project.xml', () => {
-    it('throws with available entry list when project.xml is missing', () => {
+    it('throws when project.xml is missing', () => {
         const zip = makeZip({ 'readme.txt': utf8('hello') });
         expect(() => readDawProjectZip(zip)).toThrow(/missing project\.xml/);
-        expect(() => readDawProjectZip(zip)).toThrow(/readme\.txt/);
     });
 
     it('throws with <empty> when the archive has no entries', () => {
@@ -109,6 +107,25 @@ describe('readDawProjectZip — audio assets', () => {
         });
         const result = readDawProjectZip(zip);
         expect(result.audioAssets.size).toBe(3);
+    });
+
+    it('rejects traversal paths before exposing archive contents', () => {
+        const zip = makeZip({
+            'project.xml': utf8('<Project/>'),
+            'audio/../outside.wav': utf8('RIFF....'),
+        });
+
+        expect(() => readDawProjectZip(zip)).toThrow(/unsafe archive path/i);
+    });
+
+    it('rejects nested archives before exposing archive contents', () => {
+        const nested = zipSync({ 'payload.txt': utf8('nested') });
+        const zip = makeZip({
+            'project.xml': utf8('<Project/>'),
+            'audio/payload.zip': nested,
+        });
+
+        expect(() => readDawProjectZip(zip)).toThrow(/nested archive/i);
     });
 });
 

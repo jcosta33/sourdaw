@@ -9,8 +9,7 @@
  * - LRU eviction when the 2 GB cache limit is exceeded
  */
 
-import { unzip } from 'fflate';
-
+import { extractGuardedZip, ZipArchiveError } from '#/infra/archive/extractGuardedZip';
 import { inject } from '#/infra/di/inject';
 import { logger } from '#/infra/logger/appLogger';
 
@@ -116,9 +115,11 @@ export const downloadModel = inject({ logger })(
             }
 
             let lastError: unknown;
+            let attemptsCompleted = 0;
 
             try {
                 for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
+                    attemptsCompleted = attempt + 1;
                     if (signal?.aborted) {
                         throw new DOMException('Aborted', 'AbortError');
                     }
@@ -250,14 +251,10 @@ export const downloadModel = inject({ logger })(
                                 progress: 0.97,
                                 stage: 'extracting',
                             });
-                            const files = await new Promise<Record<string, Uint8Array>>((resolve, reject) => {
-                                unzip(fullData, (err, result) => {
-                                    if (err) {
-                                        reject(err);
-                                    } else {
-                                        resolve(result);
-                                    }
-                                });
+                            const files = await extractGuardedZip({
+                                bytes: fullData,
+                                include: (path) => path.toLowerCase().endsWith('.onnx'),
+                                signal,
                             });
                             const onnxEntry = Object.keys(files).find((name) => name.endsWith('.onnx'));
                             const onnxBytes = onnxEntry ? files[onnxEntry] : undefined;
@@ -314,6 +311,9 @@ export const downloadModel = inject({ logger })(
                         logger.warn(
                             `[ModelDownload] Attempt ${String(attempt + 1)} failed for ${modelId}: ${String(error)}`
                         );
+                        if (error instanceof ZipArchiveError) {
+                            break;
+                        }
                         if (attempt < MAX_RETRIES - 1) {
                             try {
                                 await abortableSleep(1000 * 2 ** attempt, signal);
@@ -339,7 +339,7 @@ export const downloadModel = inject({ logger })(
                     error: String(lastError),
                 });
                 throw new Error(
-                    `Failed to download ${modelId} after ${String(MAX_RETRIES)} attempts: ${String(lastError)}`
+                    `Failed to download ${modelId} after ${String(attemptsCompleted)} attempt(s): ${String(lastError)}`
                 );
             } finally {
                 channel?.close();
