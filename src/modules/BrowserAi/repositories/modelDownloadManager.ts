@@ -17,6 +17,7 @@ import { logger } from '#/infra/logger/appLogger';
 import { type ModelDownloadProgressPayload } from '../models/ModelDownloadProgress';
 import { updateModelStatus } from '../stores/modelRegistryStore';
 
+import { abortWritable } from './abortWritable';
 import { createModelWritable } from './createModelWritable';
 import { deleteModel } from './deleteModel';
 import { getStorageStatus } from './getStorageStatus';
@@ -161,6 +162,12 @@ export const downloadModel = inject({ logger })(
                         const mustBuffer = isContainer || Boolean(sha256);
 
                         let writable: FileSystemWritableFileStream | null = null;
+                        let streamedAbortPromise: Promise<void> | undefined;
+                        function abortStreamedWritable(): void {
+                            if (writable) {
+                                streamedAbortPromise ??= abortWritable(writable);
+                            }
+                        }
                         const chunks: Uint8Array[] = [];
                         let bytesDownloaded = 0;
 
@@ -173,6 +180,8 @@ export const downloadModel = inject({ logger })(
                             }
                             if (!mustBuffer) {
                                 writable = await createModelWritable({ family, modelId });
+                                signal?.addEventListener('abort', abortStreamedWritable, { once: true });
+                                throwIfAborted(signal);
                             }
 
                             for (;;) {
@@ -208,36 +217,44 @@ export const downloadModel = inject({ logger })(
                         } catch (error) {
                             // Abandon the partial writable before bubbling up so a retry
                             // re-creates a clean file.
-                            await writable?.abort().catch(() => undefined);
+                            if (writable) {
+                                await (streamedAbortPromise ?? abortWritable(writable));
+                            }
+                            signal?.removeEventListener('abort', abortStreamedWritable);
                             throw error;
                         }
 
                         if (writable) {
-                            // Streamed path: bytes already on disk, nothing to verify or extract.
-                            throwIfAborted(signal);
-                            await writable.close();
-                            throwIfAborted(signal);
+                            try {
+                                // Streamed path: bytes already on disk, nothing to verify or extract.
+                                throwIfAborted(signal);
+                                await writable.close();
+                                throwIfAborted(signal);
 
-                            // Check storage quota (parity with the buffered path).
-                            const streamedStatus = await getStorageStatus();
-                            throwIfAborted(signal);
-                            if (streamedStatus.usedBytes > streamedStatus.limitBytes) {
-                                logger.warn('[ModelDownload] Storage limit exceeded — LRU eviction needed');
-                                // Eviction is handled by the removeModel use case
+                                // Check storage quota (parity with the buffered path).
+                                const streamedStatus = await getStorageStatus();
+                                throwIfAborted(signal);
+                                if (streamedStatus.usedBytes > streamedStatus.limitBytes) {
+                                    logger.warn('[ModelDownload] Storage limit exceeded — LRU eviction needed');
+                                    // Eviction is handled by the removeModel use case
+                                }
+
+                                updateModelStatus(modelId, { status: 'ready', downloadProgress: 1 });
+                                broadcast({
+                                    modelId,
+                                    bytesDownloaded: sizeBytes,
+                                    totalBytes: sizeBytes,
+                                    progress: 1,
+                                    stage: 'complete',
+                                });
+                                logger.info(`[ModelDownload] Completed: ${modelId}`);
+                                return;
+                            } finally {
+                                signal?.removeEventListener('abort', abortStreamedWritable);
                             }
-
-                            updateModelStatus(modelId, { status: 'ready', downloadProgress: 1 });
-                            broadcast({
-                                modelId,
-                                bytesDownloaded: sizeBytes,
-                                totalBytes: sizeBytes,
-                                progress: 1,
-                                stage: 'complete',
-                            });
-                            logger.info(`[ModelDownload] Completed: ${modelId}`);
-                            return;
                         }
 
+                        throwIfAborted(signal);
                         // Buffered path: concatenate chunks once.
                         const totalLength = chunks.reduce((acc, context) => acc + context.byteLength, 0);
                         const fullData = new Uint8Array(totalLength);

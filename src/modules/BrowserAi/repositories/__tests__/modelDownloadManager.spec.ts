@@ -25,7 +25,7 @@ import { downloadModel } from '../modelDownloadManager';
 
 type WriteCall = number; // byteLength of each streamed chunk
 let lastWritable: { writes: WriteCall[]; closed: boolean; aborted: boolean } | null = null;
-let pendingWrite: { promise: Promise<void>; resolve: () => void } | null = null;
+let pendingWrite: { promise: Promise<void>; resolve: () => void; reject: (error: unknown) => void } | null = null;
 let pendingStorageEstimate: { promise: Promise<StorageEstimate>; resolve: () => void } | null = null;
 let removedEntries = 0;
 
@@ -44,6 +44,7 @@ function installStorage(): void {
             },
             abort(): Promise<void> {
                 state.aborted = true;
+                pendingWrite?.reject(new DOMException('Aborted', 'AbortError'));
                 return Promise.resolve();
             },
         } as unknown as FileSystemWritableFileStream;
@@ -343,11 +344,14 @@ describe('downloadModel — cancellation', () => {
 
     it('aborts a pending final OPFS write without publishing the model', async () => {
         let resolveWrite: (() => void) | undefined;
+        let rejectWrite: ((error: unknown) => void) | undefined;
         pendingWrite = {
-            promise: new Promise<void>((resolve) => {
+            promise: new Promise<void>((resolve, reject) => {
                 resolveWrite = resolve;
+                rejectWrite = reject;
             }),
             resolve: () => resolveWrite?.(),
+            reject: (error) => rejectWrite?.(error),
         };
         const controller = new AbortController();
         const zipped = zipSync({ 'model/weights.onnx': new Uint8Array([10, 20, 30, 40]) });
@@ -364,12 +368,37 @@ describe('downloadModel — cancellation', () => {
 
         await vi.waitFor(() => expect(lastWritable?.writes).toEqual([4]));
         controller.abort();
-        pendingWrite.resolve();
 
         await expect(promise).rejects.toMatchObject({ name: 'AbortError' });
         expect(lastWritable?.aborted).toBe(true);
         expect(lastWritable?.closed).toBe(false);
         expect(stages).not.toContain('complete');
+    });
+
+    it('aborts a pending streamed write when cancellation arrives', async () => {
+        let resolveWrite: (() => void) | undefined;
+        let rejectWrite: ((error: unknown) => void) | undefined;
+        pendingWrite = {
+            promise: new Promise<void>((resolve, reject) => {
+                resolveWrite = resolve;
+                rejectWrite = reject;
+            }),
+            resolve: () => resolveWrite?.(),
+            reject: (error) => rejectWrite?.(error),
+        };
+        const controller = new AbortController();
+        vi.stubGlobal(
+            'fetch',
+            vi.fn(() => Promise.resolve(streamingResponse([new Uint8Array(30)], 30)))
+        );
+
+        const promise = downloadModel({ spec: baseSpec, signal: controller.signal });
+        await vi.waitFor(() => expect(lastWritable?.writes).toEqual([30]));
+        controller.abort();
+
+        await vi.waitFor(() => expect(lastWritable?.aborted).toBe(true));
+        await expect(promise).rejects.toMatchObject({ name: 'AbortError' });
+        expect(lastWritable?.closed).toBe(false);
     });
 
     it('removes a committed model when cancellation arrives during the final storage check', async () => {
@@ -404,6 +433,32 @@ describe('downloadModel — cancellation', () => {
 });
 
 describe('downloadModel — buffered path (sha256 verification + ZIP extraction)', () => {
+    it('stops before concatenation and verification when the final download progress callback cancels', async () => {
+        const controller = new AbortController();
+        const zipped = zipSync({ 'model/weights.onnx': new Uint8Array([10, 20, 30, 40]) });
+        vi.stubGlobal(
+            'fetch',
+            vi.fn(() => Promise.resolve(streamingResponse([zipped], zipped.length)))
+        );
+        const stages: string[] = [];
+
+        const promise = downloadModel({
+            spec: { ...baseSpec, url: 'https://cdn.example/violin-1.zip', sizeBytes: zipped.length },
+            signal: controller.signal,
+            onProgress: (payload) => {
+                stages.push(payload.stage);
+                if (payload.stage === 'downloading') {
+                    controller.abort();
+                }
+            },
+        });
+
+        await expect(promise).rejects.toMatchObject({ name: 'AbortError' });
+        expect(stages).not.toContain('verifying');
+        expect(stages).not.toContain('extracting');
+        expect(FakeGuardedZipWorker.instances).toEqual([]);
+    });
+
     it('verifies a matching sha256 and writes the fully-buffered data via writeModel', async () => {
         const bytes = new Uint8Array([1, 2, 3, 4, 5]);
         const sha256 = createHash('sha256').update(bytes).digest('hex');
