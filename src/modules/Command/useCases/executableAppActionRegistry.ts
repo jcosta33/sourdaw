@@ -1768,6 +1768,50 @@ export const executableAppActionDescriptors = [
         },
     },
     {
+        actionType: 'automateSendRange',
+        risk: 'authority-sensitive',
+        description: 'Lower an exact set of existing sends by a relative dB amount inside one named section.',
+        intentPhrases: ['lower every vocal send', 'lower vocal sends', 'lower send', 'automate send'],
+        targetRules: [
+            {
+                argument: 'trackIds',
+                capability: 'routable-source',
+                cardinality: 'many',
+                dependsOn: 'busId',
+                promptRole: 'source',
+            },
+            { argument: 'busId', capability: 'bus', promptRole: 'destination' },
+        ],
+        valueRules: [
+            { argument: 'sectionName', kind: 'section-reference' },
+            {
+                argument: 'reductionDb',
+                kind: 'number-if-present',
+                requiredInPrompt: true,
+            },
+        ],
+        parameters: {
+            properties: {
+                trackIds: {
+                    type: 'array',
+                    items: { type: 'string' },
+                    minItems: 1,
+                    uniqueItems: true,
+                    description: 'Every exact existing source track named by the request',
+                },
+                busId: { type: 'string', description: 'Existing destination bus ID' },
+                sectionName: { type: 'string', description: 'Existing arrangement section name' },
+                reductionDb: {
+                    type: 'number',
+                    exclusiveMinimum: 0,
+                    maximum: 60,
+                    description: 'Positive number of decibels to lower the sends inside the section',
+                },
+            },
+            required: ['trackIds', 'busId', 'sectionName', 'reductionDb'],
+        },
+    },
+    {
         actionType: 'addAutomationLane',
         risk: 'bounded-reversible',
         description: 'Create a gain or pan automation lane on an existing track.',

@@ -177,6 +177,7 @@ export type ScheduleTrackClipsInput = {
     trackInputNode: GainNode;
     trackGainNode: GainNode;
     trackPanNode: StereoPannerNode;
+    sendAutomationParams?: ReadonlyMap<string, AudioParam>;
     destination: AudioNode;
     durationSeconds: number;
     defaultTempo: number;
@@ -226,6 +227,7 @@ export async function scheduleTrackClips({
     trackInputNode,
     trackGainNode,
     trackPanNode,
+    sendAutomationParams,
     destination,
     durationSeconds,
     defaultTempo,
@@ -338,6 +340,7 @@ export async function scheduleTrackClips({
             trackId: track.id,
             trackGainNode,
             trackPanNode,
+            sendAutomationParams,
             deviceEntries,
             durationSeconds,
             defaultTempo,

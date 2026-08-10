@@ -1215,6 +1215,13 @@ class AudioEngineImpl implements AudioEngine {
         this.sendNodes.set(key, { sourceTrackId, busId, gainNode: sendGain, sourceNode: tap, preFader });
     }
 
+    public scheduleSendAutomation(sourceTrackId: string, busId: string, level: number, time: number): void {
+        if (this.fallbackMode) {
+            return;
+        }
+        this.trackNodes.get(sourceTrackId)?.scheduleSendAutomation(busId, level, time);
+    }
+
     /**
      * Switch a live send between the pre- and post-fader tap without a gap of
      * silence on the bus. A hard `disconnect()` then `connect()` left the bus with

@@ -76,6 +76,20 @@ export function describePlannedAction({ action, context }: DescribePlannedAction
             return `${verb} ${target} (muted=${String(action.payload.muted)})`;
         }
     }
+    if (action.type === 'automateSendRange') {
+        const targetDescriptions = (action.payload.expectedSends ?? []).map((send) => {
+            const track = context.tracks.find((candidate) => candidate.id === send.trackId);
+            const lowered = send.level * 10 ** (-action.payload.reductionDb / 20);
+            const target = track ? `"${track.name}" (${track.id})` : send.trackId;
+            return `${target} ${String(send.level)}→${String(lowered)}`;
+        });
+        const busName = action.payload.busName ?? action.payload.busId;
+        const range =
+            action.payload.startBeat === undefined || action.payload.endBeat === undefined
+                ? action.payload.sectionName
+                : `${action.payload.sectionName} beats ${String(action.payload.startBeat)}–${String(action.payload.endBeat)}`;
+        return `Lower sends to "${busName}" (${action.payload.busId}) by ${String(action.payload.reductionDb)} dB only in ${range}: ${targetDescriptions.join(', ')}`;
+    }
     if (action.type === 'removeTrack') {
         const track = context.tracks.find((candidate) => candidate.id === action.payload.trackId);
         if (track) {

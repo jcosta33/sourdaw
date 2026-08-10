@@ -57,7 +57,10 @@ const emptyMidi: NonNullable<MidiStoreState> = {
     pitchBendByClipId: {},
 };
 
-type ScheduleTrackClipsInput = { track: Track };
+type ScheduleTrackClipsInput = {
+    track: Track;
+    sendAutomationParams?: ReadonlyMap<string, AudioParam>;
+};
 
 const mocks = vi.hoisted(() => ({
     sidechainStore: { value: { routes: [] as Array<Record<string, unknown>> } },
@@ -532,6 +535,11 @@ describe('renderOffline — graph construction and lifecycle', () => {
         expect(postFaderSendGain.gain.value).toBe(0.4);
         expect(senderStrip.outputNode.connect).toHaveBeenCalledWith(postFaderSendGain);
         expect(postFaderSendGain.connect).toHaveBeenCalledWith(stripsByTrack.get('ordinary-bus')!.inputNode);
+
+        const senderSchedule = mocks.scheduleTrackClips.mock.calls.find(([input]) => input.track.id === sender.id)?.[0];
+        expect(senderSchedule?.sendAutomationParams?.get('send:device-bus')).toBe(preFaderSendGain.gain);
+        expect(senderSchedule?.sendAutomationParams?.get('send:ordinary-bus')).toBe(postFaderSendGain.gain);
+        expect(senderSchedule?.sendAutomationParams?.has('send:missing-bus')).toBe(false);
     });
 
     it('builds strips for muted tracks to keep routing alive but never schedules their clips', async () => {

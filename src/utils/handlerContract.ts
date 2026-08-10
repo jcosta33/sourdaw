@@ -680,6 +680,37 @@ export type AppAction =
           payload: { trackId: string; parameterId: string; parameterName: string; laneId?: string };
       }
     | {
+          type: 'automateSendRange';
+          payload: {
+              trackIds: string[];
+              busId: string;
+              sectionName: string;
+              reductionDb: number;
+              busName?: string;
+              sectionId?: string;
+              startBeat?: number;
+              endBeat?: number;
+              expectedSends?: Array<{ trackId: string; level: number; preFader: boolean }>;
+              expectedSection?: { name: string; startBeat: number; endBeat: number };
+          };
+      }
+    | {
+          /** Internal guarded inverse for `automateSendRange`. */
+          type: 'removeSendAutomationRange';
+          payload: {
+              trackIds: string[];
+              busId: string;
+              sectionName: string;
+              reductionDb: number;
+              busName: string;
+              sectionId: string;
+              startBeat: number;
+              endBeat: number;
+              expectedSends: Array<{ trackId: string; level: number; preFader: boolean }>;
+              expectedSection: { name: string; startBeat: number; endBeat: number };
+          };
+      }
+    | {
           /** Inverse of `addAutomationLane`, keyed by the exact id allocated before execute. */
           type: 'removeAutomationLane';
           payload: { laneId: string };
