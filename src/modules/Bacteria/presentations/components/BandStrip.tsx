@@ -92,6 +92,7 @@ export const BandStrip = ({ index, band, isActive, onSelect, onParamChange }: Ba
                 defaultValue={0}
                 size="sm"
                 tone="mint"
+                aria-label={`Band ${index + 1} gain`}
             />
             <span className="text-[6px] text-muted-foreground/40 font-mono">
                 {band.gain > 0 ? '+' : ''}
