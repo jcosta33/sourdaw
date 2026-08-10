@@ -346,7 +346,13 @@ export type BuiltinDeviceNode = {
     /** Controls for the Levain suite (MIDI + CC + param updates via MessagePort) */
     levainControls?: {
         ready: boolean;
-        noteOn: (note: number, velocity: number, sampleFrame?: number, channel?: number) => void;
+        noteOn: (
+            note: number,
+            velocity: number,
+            sampleFrame?: number,
+            channel?: number,
+            articulationId?: number
+        ) => void;
         noteOff: (note: number, sampleFrame?: number, channel?: number) => void;
         /** MPE per-note expression in engine units — see `fermenterControls.noteExpression`. */
         noteExpression: (

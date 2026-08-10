@@ -100,7 +100,18 @@ function createTrack(
             createClip(`${clipPrefix}-chorus-one`, trackId, `${name} Chorus One`, 0, 16),
             createClip(`${clipPrefix}-chorus-two`, trackId, `${name} Chorus Two`, 16, 32),
         ],
-        devices: [],
+        devices:
+            kind === 'midi'
+                ? [
+                      {
+                          id: `${trackId}-levain`,
+                          name: 'Levain',
+                          type: 'levain',
+                          bypassed: false,
+                          parameterValues: {},
+                      },
+                  ]
+                : [],
         sends: [],
         midiFx: [],
         frozen: false,
@@ -284,7 +295,7 @@ describe('MF-03 articulation transfer prompt workflow', () => {
                 'clip-chorus-one': [
                     Object.assign(
                         { id: 'source-high', pitch: 67, startBeat: 0, duration: 1, velocity: 96 },
-                        { articulation: 'accent' }
+                        { articulation: 'marcato' }
                     ),
                     Object.assign(
                         { id: 'source-low', pitch: 60, startBeat: 0, duration: 1, velocity: 110 },
@@ -298,7 +309,7 @@ describe('MF-03 articulation transfer prompt workflow', () => {
                     ),
                     Object.assign(
                         { id: 'target-high', pitch: 69, startBeat: 0, duration: 1, velocity: 84 },
-                        { articulation: 'tenuto' }
+                        { articulation: 'sustain' }
                     ),
                 ],
             },
@@ -338,7 +349,7 @@ describe('MF-03 articulation transfer prompt workflow', () => {
             }),
         ]);
         const exactSemanticDiff =
-            'Track "Strings" (track-strings): "Strings Chorus One" (clip-chorus-one) → "Strings Chorus Two" (clip-chorus-two); target note target-low from source-low articulation legato → staccato; target note target-high from source-high articulation tenuto → accent; preserve target pitches, velocities, timing, and expression';
+            'Track "Strings" (track-strings): "Strings Chorus One" (clip-chorus-one) → "Strings Chorus Two" (clip-chorus-two); target note target-low from source-low articulation legato → staccato; target note target-high from source-high articulation sustain → marcato; preserve target pitches, velocities, timing, and expression';
         expect(confirmation?.actionLabels).toEqual([exactSemanticDiff]);
         expect(confirmation?.approvalSnapshot.actionLabels).toEqual([exactSemanticDiff]);
         expect(confirmation?.affectedIds).toEqual([
@@ -370,7 +381,7 @@ describe('MF-03 articulation transfer prompt workflow', () => {
                 startBeat: 0,
                 duration: 1,
                 velocity: 84,
-                articulation: 'accent',
+                articulation: 'marcato',
             },
         ]);
         expect(getPendingActionConfirmation(confirmationId)).toMatchObject({
@@ -397,12 +408,12 @@ describe('MF-03 articulation transfer prompt workflow', () => {
         await undo();
         expect(midiStore.value?.notesByClipId['clip-chorus-two']?.map((note) => note.articulation)).toEqual([
             'legato',
-            'tenuto',
+            'sustain',
         ]);
         await redo();
         expect(midiStore.value?.notesByClipId['clip-chorus-two']?.map((note) => note.articulation)).toEqual([
             'staccato',
-            'accent',
+            'marcato',
         ]);
     });
 
@@ -502,7 +513,7 @@ describe('MF-03 articulation transfer prompt workflow', () => {
         expect(getConfirmationId()).toBe('');
         expect(midiStore.value?.notesByClipId['clip-chorus-two']?.map((note) => note.articulation)).toEqual([
             'legato',
-            'tenuto',
+            'sustain',
         ]);
     });
 
@@ -599,7 +610,7 @@ describe('MF-03 articulation transfer prompt workflow', () => {
             notesByClipId: {
                 ...state.notesByClipId,
                 'clip-chorus-one': state.notesByClipId['clip-chorus-one']!.map((note, index) =>
-                    index === 0 ? { ...note, articulation: 'tenuto' } : note
+                    index === 0 ? { ...note, articulation: 'sustain' } : note
                 ),
             },
         });
@@ -612,7 +623,47 @@ describe('MF-03 articulation transfer prompt workflow', () => {
         });
         expect(midiStore.value?.notesByClipId['clip-chorus-two']?.map((note) => note.articulation)).toEqual([
             'legato',
-            'tenuto',
+            'sustain',
+        ]);
+    });
+
+    it('fails closed before confirmation when the target track has no per-note articulation instrument', async () => {
+        const state = trackStore.value!;
+        trackStore.set({
+            ...state,
+            tracks: state.tracks.map((track) => ({
+                ...track,
+                devices: track.devices.map((device) => ({ ...device, type: 'fermenter', name: 'Fermenter' })),
+            })),
+        });
+
+        await sendChatMessage(PROMPT);
+
+        expect(getConfirmationId()).toBe('');
+        expect(midiStore.value?.notesByClipId['clip-chorus-two']?.map((note) => note.articulation)).toEqual([
+            'legato',
+            'sustain',
+        ]);
+    });
+
+    it('fails closed before confirmation when a source articulation has no canonical runtime mapping', async () => {
+        const state = midiStore.value!;
+        midiStore.set({
+            ...state,
+            notesByClipId: {
+                ...state.notesByClipId,
+                'clip-chorus-one': state.notesByClipId['clip-chorus-one']!.map((note, index) =>
+                    index === 0 ? { ...note, articulation: 'accent' } : note
+                ),
+            },
+        });
+
+        await sendChatMessage(PROMPT);
+
+        expect(getConfirmationId()).toBe('');
+        expect(midiStore.value?.notesByClipId['clip-chorus-two']?.map((note) => note.articulation)).toEqual([
+            'legato',
+            'sustain',
         ]);
     });
 
@@ -638,7 +689,7 @@ describe('MF-03 articulation transfer prompt workflow', () => {
 
         expect(midiStore.value?.notesByClipId['clip-chorus-two']?.map((note) => note.articulation)).toEqual([
             'legato',
-            'tenuto',
+            'sustain',
         ]);
         expect(midiStore.value?.notesByClipId['brass-chorus-two']?.map((note) => note.articulation)).toEqual([
             'legato',
@@ -659,7 +710,7 @@ describe('MF-03 articulation transfer prompt workflow', () => {
         await redo();
         expect(midiStore.value?.notesByClipId['clip-chorus-two']?.map((note) => note.articulation)).toEqual([
             'staccato',
-            'accent',
+            'marcato',
         ]);
         expect(midiStore.value?.notesByClipId['brass-chorus-two']?.map((note) => note.articulation)).toEqual([
             'marcato',
@@ -721,7 +772,7 @@ describe('MF-03 articulation transfer prompt workflow', () => {
 
         expect(midiStore.value?.notesByClipId['clip-chorus-two']?.map((note) => note.articulation)).toEqual([
             'staccato',
-            'accent',
+            'marcato',
         ]);
         expect(midiStore.value?.notesByClipId['brass-chorus-two']?.map((note) => note.articulation)).toEqual([
             'marcato',
@@ -732,7 +783,7 @@ describe('MF-03 articulation transfer prompt workflow', () => {
         await undo();
         expect(midiStore.value?.notesByClipId['clip-chorus-two']?.map((note) => note.articulation)).toEqual([
             'legato',
-            'tenuto',
+            'sustain',
         ]);
         expect(midiStore.value?.notesByClipId['brass-chorus-two']?.map((note) => note.articulation)).toEqual([
             'legato',
@@ -761,7 +812,7 @@ describe('MF-03 articulation transfer prompt workflow', () => {
         await undo();
         expect(midiStore.value?.notesByClipId['clip-chorus-two']?.map((note) => note.articulation)).toEqual([
             'legato',
-            'tenuto',
+            'sustain',
         ]);
         await redo();
         expect(midiStore.value?.notesByClipId['clip-chorus-two']?.map((note) => note.articulation)).toEqual([
@@ -790,7 +841,7 @@ describe('MF-03 articulation transfer prompt workflow', () => {
 
         expect(midiStore.value?.notesByClipId['clip-chorus-two']?.map((note) => note.articulation)).toEqual([
             'legato',
-            'tenuto',
+            'sustain',
         ]);
         expect(midiStore.value?.notesByClipId['brass-chorus-two']?.map((note) => note.articulation)).toEqual([
             'legato',

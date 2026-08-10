@@ -1,4 +1,4 @@
-import { getNotesForClip } from '#/modules/MIDI/useCases';
+import { getNotesForClip, resolveMidiNoteArticulationId } from '#/modules/MIDI/useCases';
 
 import {
     type ArticulationTransferCapability,
@@ -81,12 +81,35 @@ export function getArticulationTransferPromptScope(
         if (track.frozen === true || sourceClip.locked === true || targetClip.locked === true) {
             return { status: 'invalid', reason: `MF-03 chorus pair is frozen or locked on track ${track.id}` };
         }
+        const articulationDevices = track.devices.filter((device) => !device.bypassed && device.type === 'levain');
+        if (track.devices.length !== 1 || articulationDevices.length !== 1) {
+            return {
+                status: 'invalid',
+                reason: `MF-03 per-note articulation is unsupported on track ${track.id}`,
+            };
+        }
+        const articulationDevice = articulationDevices[0]!;
         const notePairs = projectMidiArticulationTransfer({
             sourceNotes: getNotesForClip(sourceClip.id),
             targetNotes: getNotesForClip(targetClip.id),
         });
         if (!notePairs) {
             return { status: 'invalid', reason: `MF-03 note pairing is incomplete or ambiguous on track ${track.id}` };
+        }
+        if (
+            notePairs.some(
+                (pair) =>
+                    pair.sourceArticulation !== null &&
+                    resolveMidiNoteArticulationId({
+                        deviceType: articulationDevice.type,
+                        articulation: pair.sourceArticulation,
+                    }) === null
+            )
+        ) {
+            return {
+                status: 'invalid',
+                reason: `MF-03 source articulation is unsupported on track ${track.id}`,
+            };
         }
         if (notePairs.every((pair) => pair.sourceArticulation === pair.currentTargetArticulation)) {
             continue;

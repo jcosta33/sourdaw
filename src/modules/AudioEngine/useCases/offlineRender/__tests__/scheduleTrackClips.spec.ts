@@ -80,6 +80,9 @@ const mocks = vi.hoisted(() => {
                 pitch + targetBeat - referenceBeat
         ),
         evaluateAutomationValue: vi.fn<(laneId: string, beat: number) => number | null>(() => null),
+        resolveArticulationId: vi.fn(({ articulation }: { articulation: string | undefined }) =>
+            articulation === 'staccato' ? 8 : null
+        ),
         shouldPlayMidiEvent: vi.fn<OfflineMidiProbabilitySelector>(({ probabilityPercent }) => probabilityPercent > 0),
         projection,
     };
@@ -391,6 +394,7 @@ async function runSchedule({
             selectMidiEventProbability: mocks.shouldPlayMidiEvent,
             projectChordPitch: mocks.projectChordPitch,
             evaluateAutomationValue: mocks.evaluateAutomationValue,
+            resolveArticulationId: mocks.resolveArticulationId,
         },
         pendingWorkletEvents,
         allTracks: [track],
@@ -412,6 +416,54 @@ describe('scheduleTrackClips — MIDI plugin-delay compensation', () => {
         mocks.projection.yeastTranspose = 0;
         mocks.evaluateAutomationValue.mockReturnValue(null);
         mocks.shouldPlayMidiEvent.mockImplementation(({ probabilityPercent }) => probabilityPercent > 0);
+    });
+
+    it('projects the same canonical Levain articulation into full-mix worklet events without changing note clocks', async () => {
+        const offlineCtx = makeOfflineCtx();
+        const track = makeMidiTrack();
+        track.devices[0] = { id: 'inst-1', name: 'Levain', type: 'levain', bypassed: false, parameterValues: {} };
+        const midi = makeMidi();
+        midi.notesByClipId['clip-1']![0] = {
+            id: 'note-1',
+            pitch: 60,
+            startBeat: 1,
+            duration: 1,
+            velocity: 100,
+            articulation: 'staccato',
+        };
+        const entry = makeInstrumentEntry();
+        entry.deviceType = 'levain';
+        const pendingWorkletEvents: PendingWorkletEvent[] = [];
+
+        await scheduleTrackClips({
+            offlineCtx,
+            track,
+            midi,
+            trackInputNode: {} as GainNode,
+            trackGainNode: {} as GainNode,
+            trackPanNode: {} as StereoPannerNode,
+            destination: {} as AudioNode,
+            durationSeconds: 60,
+            defaultTempo: 120,
+            changes: [],
+            projections: {
+                projectMidiEvents,
+                projectPpqEndpoints,
+                processYeastMidi,
+                selectMidiEventProbability: mocks.shouldPlayMidiEvent,
+                projectChordPitch: mocks.projectChordPitch,
+                evaluateAutomationValue: mocks.evaluateAutomationValue,
+                resolveArticulationId: mocks.resolveArticulationId,
+            },
+            pendingWorkletEvents,
+            allTracks: [track],
+            deviceEntriesByTrack: new Map([[track.id, [entry]]]),
+        });
+
+        expect(pendingWorkletEvents).toEqual([
+            expect.objectContaining({ type: 'on', pitch: 60, velocity: 100, time: 0.5, articulationId: 8 }),
+            expect.objectContaining({ type: 'off', pitch: 60, velocity: 0, time: 1 }),
+        ]);
     });
 
     it('threads a nonzero render-region offset into automation scheduling', async () => {

@@ -16,7 +16,7 @@ const DEFAULT_WASM_URL = '/wasm/daw-dsp/daw_dsp_bg.wasm';
 
 export type LevainNodeResult = {
     workletNode: AudioWorkletNode;
-    noteOn: (note: number, velocity: number, sampleFrame?: number, channel?: number) => void;
+    noteOn: (note: number, velocity: number, sampleFrame?: number, channel?: number, articulationId?: number) => void;
     noteOff: (note: number, sampleFrame?: number, channel?: number) => void;
     noteExpression: (
         note: number,
@@ -118,9 +118,15 @@ export async function createLevainNode(
     // instrument here — doing so races the patch-driven load and wastes bandwidth
     // on samples the user did not ask for.
 
-    const noteOn = (note: number, velocity: number, sampleFrame?: number, channel?: number): void => {
+    const noteOn = (
+        note: number,
+        velocity: number,
+        sampleFrame?: number,
+        channel?: number,
+        articulationId?: number
+    ): void => {
         if (!bypassed) {
-            node.port.postMessage({ type: 'noteOn', note, velocity, sampleFrame, channel });
+            node.port.postMessage({ type: 'noteOn', note, velocity, sampleFrame, channel, articulationId });
         }
     };
 

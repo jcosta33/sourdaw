@@ -59,6 +59,11 @@ type MelodicNoteNode = {
     noteOff: (note: number, sampleFrame?: number) => void;
 };
 
+type ArticulatedMelodicNoteNode = {
+    noteOn: (note: number, velocity: number, sampleFrame?: number, channel?: number, articulationId?: number) => void;
+    noteOff: (note: number, sampleFrame?: number) => void;
+};
+
 /** Toaster is pad-addressed: `(pad, velocity, midiNote?, sampleFrame?)`. */
 type PadNoteNode = {
     noteOn: (pad: number, velocity: number, midiNote?: number, sampleFrame?: number) => void;
@@ -70,6 +75,15 @@ function bindMelodicNotes<TNode extends MelodicNoteNode>(node: TNode): NoteBound
         ...node,
         noteOn: ({ noteOrPad, velocity, sampleFrame, channel }) =>
             node.noteOn(noteOrPad, velocity, sampleFrame, channel),
+        noteOff: ({ noteOrPad, sampleFrame }) => node.noteOff(noteOrPad, sampleFrame),
+    };
+}
+
+function bindArticulatedMelodicNotes<TNode extends ArticulatedMelodicNoteNode>(node: TNode): NoteBoundNode<TNode> {
+    return {
+        ...node,
+        noteOn: ({ noteOrPad, velocity, sampleFrame, channel, articulationId }) =>
+            node.noteOn(noteOrPad, velocity, sampleFrame, channel, articulationId),
         noteOff: ({ noteOrPad, sampleFrame }) => node.noteOff(noteOrPad, sampleFrame),
     };
 }
@@ -115,7 +129,7 @@ async function createFermenterOfflineNode(ctx: BaseAudioContext): Promise<Native
 async function createLevainOfflineNode(ctx: BaseAudioContext): Promise<NativeDspNode> {
     const runtimeFailure = createRuntimeFailureChannel();
     const node = await createLevainNode(ctx, undefined, runtimeFailure.report);
-    return { ...bindMelodicNotes(node), runtimeFailure: runtimeFailure.promise };
+    return { ...bindArticulatedMelodicNotes(node), runtimeFailure: runtimeFailure.promise };
 }
 
 async function createCrumbsOfflineNode(ctx: BaseAudioContext): Promise<NativeDspNode> {

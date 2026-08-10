@@ -50,7 +50,16 @@ export function schedulePendingSuspends(
                     sampleFrame,
                 });
             } else {
-                evt.instrumentControls.noteOn({ noteOrPad: evt.pitch, velocity: evt.velocity, sampleFrame });
+                if (evt.articulationId !== undefined) {
+                    evt.instrumentControls.noteOn({
+                        noteOrPad: evt.pitch,
+                        velocity: evt.velocity,
+                        sampleFrame,
+                        articulationId: evt.articulationId,
+                    });
+                } else {
+                    evt.instrumentControls.noteOn({ noteOrPad: evt.pitch, velocity: evt.velocity, sampleFrame });
+                }
             }
         } else {
             if (evt.isToaster) {

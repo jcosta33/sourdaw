@@ -151,6 +151,7 @@ export const exportStems: ExportStemsFn = async function exportStems(
             processYeastMidi,
             projectChordPitch,
             evaluateAutomationValue,
+            resolveArticulationId,
         } = resolveRenderContext({
             durationBeats,
             startBeat,
@@ -344,6 +345,7 @@ export const exportStems: ExportStemsFn = async function exportStems(
                             selectMidiEventProbability,
                             projectChordPitch,
                             evaluateAutomationValue,
+                            resolveArticulationId,
                         },
                         onWarning,
                         pendingWorkletEvents,
@@ -379,6 +381,7 @@ export const exportStems: ExportStemsFn = async function exportStems(
                             selectMidiEventProbability,
                             projectChordPitch,
                             evaluateAutomationValue,
+                            resolveArticulationId,
                         },
                         onWarning,
                         pendingWorkletEvents,

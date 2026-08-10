@@ -24,6 +24,7 @@ export type LiveYeastNote = {
     /** Semitone range `pitchBend` was performed against; absent means ±48 (audit MD-8). */
     pitchBendRangeSemitones?: number;
     channel?: number;
+    articulation?: string;
     sourceEventId?: string;
     noteInstanceId?: string;
 };
