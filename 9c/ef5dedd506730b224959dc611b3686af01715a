@@ -1,0 +1,16 @@
+src/modules/TimelineEditor/presentations/views/Inspector/TrackHeaderSection.tsx
+  h_1228e573df1f42 193-194
+src/modules/TimelineEditor/presentations/views/Inspector/__tests__/TrackHeaderSection.spec.tsx
+  h_1228e573df1f42 193-200
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "9cef5dedd506730b224959dc611b3686af01715a",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
