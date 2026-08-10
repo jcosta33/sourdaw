@@ -1,0 +1,122 @@
+src/modules/AiRuntime/useCases/agentReference/getArticulationTransferPromptScope.ts
+  s_a40848e8f8cca9::t_ca148a5d2fd053 102
+  s_a40848e8f8cca9::t_8ca7c2a770da4d 1,84-91,99-101,103-113
+src/modules/Transport/useCases/scheduling/processLiveYeastTrackBlock.ts
+  s_a40848e8f8cca9::t_1452d6681e0a2f 27
+src/modules/AudioEngine/useCases/offlineRender/__tests__/schedulePendingSuspends.spec.ts
+  s_a40848e8f8cca9::t_e9703cc4416459 39-62
+src/modules/AudioEngine/engine/LevainNode.ts
+  s_a40848e8f8cca9::t_2db294c677f494 19,121-127,129
+crates/daw-dsp/src/levain/mod.rs
+  s_a40848e8f8cca9::t_dbca723bff2556 77-88
+src/modules/MIDI/useCases/__tests__/resolveMidiNoteArticulationId.spec.ts
+  s_a40848e8f8cca9::t_cd5e68e9982fc6 1-17
+crates/daw-dsp/src/levain/engine.rs
+  s_a40848e8f8cca9::t_dbca723bff2556 313-324
+  s_a40848e8f8cca9::t_7bf11a0473094b 988-1003
+  s_a40848e8f8cca9::t_e913f10affbef4 987
+src/modules/Transport/useCases/scheduling/scheduleMidiNotes.ts
+  s_a40848e8f8cca9::t_2959ea84e6c880 20,823-825,827-839
+  s_a40848e8f8cca9::t_1452d6681e0a2f 826
+src/modules/AudioEngine/useCases/configureOfflineMidiEventProjection.ts
+  s_a40848e8f8cca9::t_dea4af6762ab97 10,17
+src/modules/AudioEngine/repositories/offlineScheduler/setOfflineMidiEventProjector.ts
+  s_a40848e8f8cca9::t_dea4af6762ab97 6,15,23,29
+src/modules/AudioEngine/repositories/deviceStrategy/__tests__/nativeDspNoteBinding.spec.ts
+  s_a40848e8f8cca9::t_e89a84ce3b53c2 38-40,109-115
+  s_a40848e8f8cca9::t_d9bbd580a8d19b 116
+src/modules/AudioEngine/useCases/renderOffline.ts
+  s_a40848e8f8cca9::t_dea4af6762ab97 83,299
+src/modules/AudioEngine/models/AudioEngineState.ts
+  s_a40848e8f8cca9::t_1af8f98dfaa6e4 349-355
+src/modules/AudioEngine/repositories/deviceStrategy/AudioDeviceStrategy.ts
+  s_a40848e8f8cca9::t_2db294c677f494 66-67
+src/modules/AudioEngine/useCases/exportStems.ts
+  s_a40848e8f8cca9::t_dea4af6762ab97 154,348,384
+src/app/__tests__/bootstrap.spec.ts
+  s_a40848e8f8cca9::t_7976109e123e68 247
+src/modules/AiRuntime/useCases/__tests__/articulationTransferPromptWorkflow.spec.ts
+  s_a40848e8f8cca9::t_4d2b65e521a11b 627-628,630-666
+  s_a40848e8f8cca9::t_8ca7c2a770da4d 103-114,298,312
+  s_a40848e8f8cca9::t_73a1b84d668a0e 352,384,411,416,516,613,626,692,713,775,786,815,844
+  s_a40848e8f8cca9::t_b496588572d138 629
+src/modules/AudioEngine/useCases/offlineRender/resolveRenderContext.ts
+  s_a40848e8f8cca9::t_1af8f98dfaa6e4 46
+  s_a40848e8f8cca9::t_dea4af6762ab97 15,103
+src/app/bootstrap.ts
+  s_a40848e8f8cca9::t_dea4af6762ab97 106,192
+src/modules/AudioEngine/useCases/offlineRender/renderTrackSubgraphOffline.ts
+  s_a40848e8f8cca9::t_dea4af6762ab97 297
+src/modules/AudioEngine/repositories/deviceStrategy/nativeDspDeviceFactories.ts
+  s_a40848e8f8cca9::t_2db294c677f494 62,64-66,82-90,132
+  s_a40848e8f8cca9::t_8f56e6c25cff14 63
+src/modules/AudioEngine/useCases/offlineRender/scheduleTrackClips.ts
+  s_a40848e8f8cca9::t_dea4af6762ab97 24,172,255,469
+  s_a40848e8f8cca9::t_b3c879797dbabc 425,434,530
+  s_a40848e8f8cca9::t_1af8f98dfaa6e4 465,743
+  s_a40848e8f8cca9::t_0bf09a48a71272 466-468,470-471,862,870-874
+src/modules/AudioEngine/engine/__tests__/LevainNode.spec.ts
+  s_a40848e8f8cca9::t_e89a84ce3b53c2 197-213
+src/modules/AudioEngine/useCases/offlineRender/__tests__/scheduleTrackClips.spec.ts
+  s_a40848e8f8cca9::t_acd06a9e20023d 456
+  s_a40848e8f8cca9::t_50e80f1cc298a1 83-85,397
+  s_a40848e8f8cca9::t_466aebe52071ee 421-455,457-468
+src/modules/AudioEngine/useCases/offlineRender/types.ts
+  s_a40848e8f8cca9::t_2db294c677f494 17-18
+src/modules/MIDI/useCases/resolveMidiNoteArticulationId.ts
+  s_a40848e8f8cca9::t_523beee2dfe7c1 2-29,31-44,46
+  s_a40848e8f8cca9::t_8f56e6c25cff14 1,30,45
+src/modules/AudioEngine/useCases/offlineRender/schedulePendingSuspends.ts
+  s_a40848e8f8cca9::t_d9c09e22d9382f 54-61
+  s_a40848e8f8cca9::t_e9703cc4416459 53,62
+src/modules/Transport/useCases/scheduling/__tests__/scheduleMidiNotes.spec.ts
+  s_a40848e8f8cca9::t_7afa9a5dd82676 1397
+  s_a40848e8f8cca9::t_b3c879797dbabc 95-96
+  s_a40848e8f8cca9::t_466aebe52071ee 1355-1396,1398-1399
+src/modules/AudioEngine/services/levainProcessor.ts
+  s_a40848e8f8cca9::t_2db294c677f494 82-89,112-119,433-442
+src/modules/AudioEngine/repositories/offlineScheduler/offlineMidiEventProjectorState.ts
+  s_a40848e8f8cca9::t_dea4af6762ab97 56-60,66,72
+src/modules/AudioEngine/services/__tests__/levainProcessor.spec.ts
+  s_a40848e8f8cca9::t_e89a84ce3b53c2 45-50,55,218-226
+  s_a40848e8f8cca9::t_8f56e6c25cff14 51-54
+  s_a40848e8f8cca9::t_54e57861f9cd6c 227-228
+src/modules/MIDI/useCases/index.ts
+  s_a40848e8f8cca9::t_523beee2dfe7c1 89
+public/wasm/daw-dsp/daw_dsp.d.ts
+  s_2019160a40cae7::t_2565b032da2928 1,648-651,839-916,971
+public/wasm/daw-dsp/daw_dsp.js
+  s_2019160a40cae7::t_66f75593e56ff6 1480-1489
+public/wasm/daw-dsp/daw_dsp_bg.wasm.d.ts
+  s_2019160a40cae7::t_afddd0ab89c8b7 1,43-120,175
+public/wasm/manifest.json
+  s_2019160a40cae7::t_7e7c30a2c0286a 12,15-18,20-21
+src/modules/AudioEngine/wasm/daw_dsp.d.ts
+  s_2019160a40cae7::t_e50177be8efcf9 1,648-651,839-916,971
+src/modules/AudioEngine/wasm/daw_dsp.js
+  s_2019160a40cae7::t_25a5f5b0323575 1657-1666
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "a05f8c95d122ce5e9e983d2f9239f28ecba2deae",
+  "prompts": {},
+  "sessions": {
+    "s_2019160a40cae7": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fea8c-a731-72d1-b4a2-3cc4b388e6f8",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
