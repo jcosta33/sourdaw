@@ -238,7 +238,6 @@ mod tests {
     use super::*;
     use std::path::PathBuf;
 
-    #[cfg(unix)]
     fn unique_temp_scan_root(test_name: &str) -> PathBuf {
         let unique_suffix = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
