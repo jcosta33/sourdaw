@@ -54,6 +54,7 @@ fn remove_engine_plugin_record_after_scheduler_removal<EnginePluginRecord>(
 
 const MAX_SCAN_CANDIDATES: usize = 256;
 const MAX_SCAN_DURATION: Duration = Duration::from_secs(30);
+static PLUGIN_SCAN_PERMIT: tokio::sync::Semaphore = tokio::sync::Semaphore::const_new(1);
 
 fn scan_candidates(
     mut candidates: Vec<PathBuf>,
@@ -140,6 +141,9 @@ pub async fn scan_plugins(
     paths: Vec<String>,
     state: tauri::State<'_, AppState>,
 ) -> Result<ScanResult, String> {
+    let _permit = PLUGIN_SCAN_PERMIT
+        .try_acquire()
+        .map_err(|_| "Plugin scan already in progress".to_string())?;
     let start = std::time::Instant::now();
     let scan_policy = PluginScanPolicy::platform_defaults();
     let mut authorized_paths = Vec::new();

@@ -194,7 +194,6 @@ fn terminate_process_tree(child: &mut Child) {
     let _ = child.kill();
     let _ = child.wait();
 }
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -228,7 +227,6 @@ unsafe extern "C" fn init(_: *const c_char)->bool{
         assert!(status.success());
         (root, plugin_path)
     }
-
     #[test]
     fn hostile_fixture_child() {
         let Some(path) = std::env::var_os("SOURDAW_TEST_PLUGIN_PATH") else {
@@ -237,7 +235,6 @@ unsafe extern "C" fn init(_: *const c_char)->bool{
         let _ = extract_clap_metadata(Path::new(&path));
         panic!("hostile CLAP fixture should not return");
     }
-
     fn hostile_command(plugin_path: &Path) -> Command {
         let mut command =
             Command::new(std::env::current_exe().expect("test executable should exist"));
@@ -250,7 +247,6 @@ unsafe extern "C" fn init(_: *const c_char)->bool{
             .stderr(Stdio::null());
         command
     }
-
     #[test]
     fn crashed_helper_does_not_take_down_the_supervisor() {
         let (fixture_root, plugin_path) = build_hostile_clap("crash");
@@ -260,7 +256,6 @@ unsafe extern "C" fn init(_: *const c_char)->bool{
         let _ = fs::remove_dir_all(fixture_root);
         assert!(!status.success());
     }
-
     #[test]
     fn hung_helper_is_killed_at_the_deadline() {
         let (fixture_root, plugin_path) = build_hostile_clap("hang");
@@ -271,7 +266,6 @@ unsafe extern "C" fn init(_: *const c_char)->bool{
         let _ = fs::remove_dir_all(fixture_root);
         assert_eq!(error, "Plugin scan helper timed out");
     }
-
     #[cfg(unix)]
     #[test]
     fn timeout_kills_the_helper_process_group() {
@@ -291,7 +285,6 @@ unsafe extern "C" fn init(_: *const c_char)->bool{
             .unwrap()
             .success());
     }
-
     #[test]
     fn unrelated_process_arguments_do_not_enter_worker_mode() {
         let args = [OsString::from("sourdaw"), OsString::from("--unrelated")];

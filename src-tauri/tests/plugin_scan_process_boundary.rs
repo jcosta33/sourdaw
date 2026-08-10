@@ -14,6 +14,7 @@ fn scan_command_does_not_load_plugin_code_in_the_application_process() {
     assert!(command_source.contains("plugin_scan_worker::scan_clap_metadata"));
     assert!(command_source.contains("MAX_SCAN_CANDIDATES"));
     assert!(command_source.contains("MAX_SCAN_DURATION"));
+    assert!(command_source.contains(".try_acquire()"));
     assert!(application_entry.contains("plugin_scan_worker::run_from_process_args"));
 }
 #[test]
