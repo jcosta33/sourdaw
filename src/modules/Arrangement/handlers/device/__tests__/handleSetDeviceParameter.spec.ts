@@ -8,7 +8,16 @@ const mocks = vi.hoisted(() => ({
     setDeviceParameter: vi.fn(),
     getTrackStoreState: vi.fn<
         () => {
-            tracks: { id: string; devices: { id: string; type?: string; parameterValues: Record<string, number> }[] }[];
+            tracks: {
+                id: string;
+                name?: string;
+                devices: {
+                    id: string;
+                    name?: string;
+                    type?: string;
+                    parameterValues: Record<string, number>;
+                }[];
+            }[];
         } | null
     >(),
 }));
@@ -58,6 +67,38 @@ describe('handleSetDeviceParameter', () => {
         });
         expect(desc.label).toBe('Set gain');
         expect(desc.inverseAction).toBeNull();
+    });
+
+    it('describes the exact committed compressor parameter outcome', () => {
+        mocks.getTrackStoreState.mockReturnValue({
+            tracks: [
+                {
+                    id: 'track-bass-di',
+                    name: 'Bass DI',
+                    devices: [
+                        {
+                            id: 'device-bass-di-compressor',
+                            name: 'Compressor',
+                            type: 'builtin-compressor',
+                            parameterValues: { 'comp-threshold': -24 },
+                        },
+                    ],
+                },
+            ],
+        });
+
+        const desc = handleSetDeviceParameter.describe({
+            type: 'setDeviceParameter',
+            payload: {
+                deviceId: 'device-bass-di-compressor',
+                paramId: 'comp-threshold',
+                value: -18,
+            },
+        });
+
+        expect(desc.label).toBe(
+            'Set "Bass DI" (track-bass-di) device "Compressor" (device-bass-di-compressor, builtin-compressor) parameter "Threshold" (comp-threshold) from -24 dB to -18 dB'
+        );
     });
 
     it('describes an inverse restoring the previous parameter value', () => {

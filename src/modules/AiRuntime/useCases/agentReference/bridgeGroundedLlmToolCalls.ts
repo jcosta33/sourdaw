@@ -1495,6 +1495,9 @@ function resolveActionPromptScope({
     if (!groundingRules) {
         return null;
     }
+    if (hasActionCancellation) {
+        return null;
+    }
     if (actionName === 'setDeviceParameter') {
         const deviceParameterScope = resolveDeviceParameterPromptScope({
             actionOrdinal,
@@ -1507,7 +1510,7 @@ function resolveActionPromptScope({
             return deviceParameterScope;
         }
     }
-    if (hasActionCancellation || (actionName === 'setClipFade' && hasInvalidNamedClipFadeField(prompt))) {
+    if (actionName === 'setClipFade' && hasInvalidNamedClipFadeField(prompt)) {
         return null;
     }
     if (actionName === 'createBus') {

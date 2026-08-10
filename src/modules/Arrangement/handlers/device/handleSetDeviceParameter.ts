@@ -1,5 +1,6 @@
 import { createHandler } from '#/utils/createHandler';
 
+import { getPluginById } from '../../models/DeviceParameter';
 import { clampDeviceParameterValue } from '../../models/DeviceParameterLaw';
 import { setDeviceParameter } from '../../useCases/device/setDeviceParameter/setDeviceParameter';
 import { getTrackStoreState } from '../../useCases/getTrackStoreState';
@@ -62,6 +63,38 @@ function handleGuardedSetDeviceParameter(action: { payload: { deviceId: string; 
     );
 }
 
+function formatParameterValue(value: number, unit: string): string {
+    if (unit === ':1') {
+        return `${String(value)}:1`;
+    }
+    if (unit) {
+        return `${String(value)} ${unit}`;
+    }
+    return String(value);
+}
+
+function describeParameterOutcome(input: { deviceId: string; paramId: string; value: number }): string | null {
+    const owners = (getTrackStoreState()?.tracks ?? []).filter((track) =>
+        track.devices.some((device) => device.id === input.deviceId)
+    );
+    const owner = owners.length === 1 ? owners[0] : undefined;
+    const device = owner?.devices.find((candidate) => candidate.id === input.deviceId);
+    const previousValue = device?.parameterValues[input.paramId];
+    if (!owner || !device || previousValue === undefined) {
+        return null;
+    }
+    const parameter = getPluginById(device.type)?.parameters.find((candidate) => candidate.id === input.paramId);
+    if (!parameter) {
+        return null;
+    }
+    const committedValue = clampDeviceParameterValue({
+        deviceType: device.type,
+        paramId: input.paramId,
+        value: input.value,
+    });
+    return `Set "${owner.name}" (${owner.id}) device "${device.name}" (${device.id}, ${device.type}) parameter "${parameter.name}" (${parameter.id}) from ${formatParameterValue(previousValue, parameter.unit)} to ${formatParameterValue(committedValue, parameter.unit)}`;
+}
+
 export const handleSetDeviceParameter = createHandler<'setDeviceParameter'>({
     execute: (alpha) => handleGuardedSetDeviceParameter(alpha),
     isNoop: (action) => {
@@ -82,8 +115,9 @@ export const handleSetDeviceParameter = createHandler<'setDeviceParameter'>({
         );
         const prev = owner?.devices.find((device) => device.id === alpha.payload.deviceId);
         const previousValue = prev?.parameterValues[alpha.payload.paramId];
+        const exactLabel = describeParameterOutcome(alpha.payload);
         return {
-            label: `Set ${alpha.payload.paramId}`,
+            label: exactLabel ?? `Set ${alpha.payload.paramId}`,
             // A param absent from the store cannot be restored to "absent" —
             // only snapshot real previous values.
             inverseAction:

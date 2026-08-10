@@ -4,6 +4,9 @@ import { type AppAction } from '#/utils/handlerContract';
 export function getPlannedActionAffectedIds(action: AppAction): string[] {
     const affectedIds = new Set<string>();
     const payload: Readonly<Record<string, unknown>> = action.payload ?? {};
+    if (action.type === 'setDeviceParameter' && action.payload.expectedTrackId) {
+        affectedIds.add(action.payload.expectedTrackId);
+    }
     const groundingRules = getExecutableAppActionGroundingRules(action.type);
     for (const targetRule of groundingRules?.targetRules ?? []) {
         const value = payload[targetRule.argument];

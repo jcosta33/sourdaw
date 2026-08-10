@@ -34,6 +34,7 @@ import { sendChatMessage } from '../sendChatMessage';
 
 const PROMPT =
     'Set the Bass DI compressor threshold to -18 dB and ratio to 4:1, leaving attack, release, and makeup gain unchanged.';
+const CANCELLED_PROMPT = `${PROMPT} Actually, cancel that command.`;
 const COMPRESSOR_ID = 'device-bass-di-compressor';
 const DEVICE_IDS = ['device-bass-di-eq', COMPRESSOR_ID, 'device-bass-di-saturator'];
 const INITIAL_PARAMETERS = {
@@ -349,6 +350,27 @@ describe('Bass DI compressor parameter prompt workflow', () => {
                 name: 'Bass DI Compressor Makeup = 3 dB',
             },
         ]);
+        expect(confirmation?.actionLabels).toEqual([
+            'Set "Bass DI" (track-bass-di) device "Compressor" (device-bass-di-compressor, builtin-compressor) parameter "Threshold" (comp-threshold) from -24 dB to -18 dB',
+            'Set "Bass DI" (track-bass-di) device "Compressor" (device-bass-di-compressor, builtin-compressor) parameter "Ratio" (comp-ratio) from 2:1 to 4:1',
+        ]);
+        expect(confirmation?.approvalSnapshot.actionLabels).toEqual(confirmation?.actionLabels);
+        expect(confirmation?.approvalSnapshot.protectedUnchanged).toEqual(confirmation?.protectedUnchanged);
+        expect(confirmation?.affectedIds).toEqual(['track-bass-di', COMPRESSOR_ID, 'comp-threshold', 'comp-ratio']);
+        expect(confirmation?.risk).toEqual({
+            level: 'bounded-reversible',
+            reason: null,
+        });
+        const proposal = chatStore.value?.messages.find(
+            (message) => message.pendingActionConfirmationId === confirmation?.id
+        );
+        expect(proposal?.content).toContain(
+            '**setDeviceParameter**: Set "Bass DI" (track-bass-di) device "Compressor" (device-bass-di-compressor, builtin-compressor) parameter "Threshold" (comp-threshold) from -24 dB to -18 dB'
+        );
+        expect(proposal?.content).toContain(
+            '**setDeviceParameter**: Set "Bass DI" (track-bass-di) device "Compressor" (device-bass-di-compressor, builtin-compressor) parameter "Ratio" (comp-ratio) from 2:1 to 4:1'
+        );
+        expect(proposal?.content).toContain('Risk: bounded-reversible');
         expect(undoStore.value?.past).toEqual([]);
 
         await expect(confirmPendingChatActions({ confirmationId: confirmation?.id ?? '' })).resolves.toEqual({
@@ -379,8 +401,14 @@ describe('Bass DI compressor parameter prompt workflow', () => {
             (message) => message.pendingActionConfirmationId === confirmation?.id
         );
         expect(receipt?.content).toContain('Outcome: committed');
-        expect(receipt?.content).toContain(`Affected IDs: ${COMPRESSOR_ID}, comp-threshold`);
-        expect(receipt?.content).toContain(`Affected IDs: ${COMPRESSOR_ID}, comp-ratio`);
+        expect(receipt?.content).toContain(
+            `**setDeviceParameter**: Set "Bass DI" (track-bass-di) device "Compressor" (${COMPRESSOR_ID}, builtin-compressor) parameter "Threshold" (comp-threshold) from -24 dB to -18 dB`
+        );
+        expect(receipt?.content).toContain(
+            `**setDeviceParameter**: Set "Bass DI" (track-bass-di) device "Compressor" (${COMPRESSOR_ID}, builtin-compressor) parameter "Ratio" (comp-ratio) from 2:1 to 4:1`
+        );
+        expect(receipt?.content).toContain(`Affected IDs: track-bass-di, ${COMPRESSOR_ID}, comp-threshold`);
+        expect(receipt?.content).toContain(`Affected IDs: track-bass-di, ${COMPRESSOR_ID}, comp-ratio`);
         expect(receipt?.content).toContain('Protected unchanged: "Bass DI Compressor Attack = 12 ms"');
         expect(receipt?.content).toContain('"Bass DI Compressor Release = 180 ms"');
         expect(receipt?.content).toContain('"Bass DI Compressor Makeup = 3 dB"');
@@ -404,6 +432,20 @@ describe('Bass DI compressor parameter prompt workflow', () => {
         expect(getTrack('track-bass-amp')).toEqual(bassAmpBefore);
     });
 
+    it('preserves cancellation for the exact parameter prompt before confirmation or writes', async () => {
+        const before = structuredClone(trackStore.value);
+
+        await sendChatMessage(CANCELLED_PROMPT);
+
+        expect(getConfirmation()).toBeNull();
+        expect(trackStore.value).toEqual(before);
+        expect(runtimeMocks.updateDeviceParam).not.toHaveBeenCalled();
+        expect(undoStore.value?.past).toEqual([]);
+        const cancellationMessage = chatStore.value?.messages.at(-1);
+        expect(cancellationMessage?.role).toBe('assistant');
+        expect(cancellationMessage?.content).toContain('Command not executed:');
+    });
+
     it('normalizes the hosted provider to the same guarded parameter batch and exact receipt', async () => {
         runtimeMocks.backend.value = 'cloud';
 
@@ -422,8 +464,8 @@ describe('Bass DI compressor parameter prompt workflow', () => {
         const receipt = chatStore.value?.messages.find(
             (message) => message.pendingActionConfirmationId === confirmation?.id
         );
-        expect(receipt?.content).toContain('Affected IDs: device-bass-di-compressor, comp-threshold');
-        expect(receipt?.content).toContain('Affected IDs: device-bass-di-compressor, comp-ratio');
+        expect(receipt?.content).toContain('Affected IDs: track-bass-di, device-bass-di-compressor, comp-threshold');
+        expect(receipt?.content).toContain('Affected IDs: track-bass-di, device-bass-di-compressor, comp-ratio');
         expect(receipt?.content).toContain('Bass DI Compressor Makeup = 3 dB');
     });
 
