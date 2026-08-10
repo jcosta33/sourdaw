@@ -52,7 +52,7 @@ test.describe('Grand Boule (physical-modeling piano panel)', () => {
 
         // Default velocity curve is 1.0 (linear), reflected on the Touch knob.
         const touchSection = touch_section(page);
-        await expect(touchSection.getByRole('slider', { name: 'Parameter control' })).toHaveAttribute(
+        await expect(touchSection.getByRole('slider', { name: 'Curve', exact: true })).toHaveAttribute(
             'aria-valuenow',
             '1'
         );
@@ -77,7 +77,7 @@ test.describe('Grand Boule (physical-modeling piano panel)', () => {
         await open_grand_boule_panel(page);
 
         const touchSection = touch_section(page);
-        const curveKnob = touchSection.getByRole('slider', { name: 'Parameter control' });
+        const curveKnob = touchSection.getByRole('slider', { name: 'Curve', exact: true });
         await expect(curveKnob).toHaveAttribute('aria-valuenow', '1');
 
         // Two ArrowUp presses (step 0.05) cross the >1.05 "hard" threshold.
