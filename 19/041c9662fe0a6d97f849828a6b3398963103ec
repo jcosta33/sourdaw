@@ -1,0 +1,47 @@
+src/modules/AiRuntime/models/ProjectContext.ts
+  s_a40848e8f8cca9::t_55b051e8163765 145
+src/modules/AiRuntime/useCases/agentReference/getMutedEmptyTrackDeletionScope.ts
+  s_a40848e8f8cca9::t_55b051e8163765 24-30,36-40,59-67
+src/modules/AiRuntime/useCases/__tests__/validateActionPayload.spec.ts
+  s_a40848e8f8cca9::t_4c2bbaf78f4241 906-914,928
+src/utils/handlerContract.ts
+  s_a40848e8f8cca9::t_55b051e8163765 448
+src/modules/AiRuntime/useCases/agentReference/bridgeGroundedLlmToolCalls.ts
+  s_a40848e8f8cca9::t_55b051e8163765 3940
+src/modules/AiRuntime/useCases/validateActionPayload.ts
+  s_a40848e8f8cca9::t_55b051e8163765 172-178,190-192
+  s_a40848e8f8cca9::t_0ce2310551b972 193
+src/modules/Arrangement/handlers/track/handleRemoveTrack.ts
+  s_a40848e8f8cca9::t_55b051e8163765 41-54
+src/modules/AiRuntime/useCases/__tests__/deleteMutedEmptyTracksPromptWorkflow.spec.ts
+  s_a40848e8f8cca9::t_ea34196fd1bec7 609-618
+  s_a40848e8f8cca9::t_085ec4a29b347a 288,298,423,433
+  s_a40848e8f8cca9::t_a6274b084e0da5 349-353
+  s_a40848e8f8cca9::t_870ffad40780b6 321-348,354-363,513-545,549,597,619
+  s_a40848e8f8cca9::t_bef0d85db05c49 546-548
+  s_a40848e8f8cca9::t_35b450bc71ff5a 550-551
+  s_a40848e8f8cca9::t_dea9a5aca5cd6f 620
+src/modules/AiRuntime/useCases/getProjectContext.ts
+  s_a40848e8f8cca9::t_ae789333aa186d 162
+src/modules/Arrangement/handlers/track/__tests__/handleRemoveTrack.spec.ts
+  s_a40848e8f8cca9::t_4c2bbaf78f4241 125-143
+src/modules/AiRuntime/useCases/__tests__/getProjectContext.spec.ts
+  s_a40848e8f8cca9::t_a5edd4b6b1069f 188-192,304
+  s_a40848e8f8cca9::t_ae789333aa186d 214
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "19041c9662fe0a6d97f849828a6b3398963103ec",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
