@@ -47,7 +47,7 @@ describe('getPlatformCapabilities', () => {
 
 describe('DISABLED_REASONS', () => {
     it('should define tooltip strings for gated features', () => {
-        expect(DISABLED_REASONS.nativePlugins.length).toBeGreaterThan(10);
+        expect(DISABLED_REASONS.nativePlugins).toBe('CLAP plugins require the desktop app');
         expect(DISABLED_REASONS.midiInput).toContain('MIDI');
     });
 });
