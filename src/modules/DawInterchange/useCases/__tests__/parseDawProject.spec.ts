@@ -87,6 +87,20 @@ function buildDawProjectZip(): ArrayBuffer {
     return normalized.buffer;
 }
 
+function buildMalformedProjectWithCorruptAudio(): ArrayBuffer {
+    const zipped = zipSync(
+        {
+            'audio/broken.wav': asRealmUint8([0x52, 0x49, 0x46, 0x46]),
+            'project.xml': asRealmUint8(strToU8('<Project>')),
+        },
+        { level: 0 }
+    );
+    const view = new DataView(zipped.buffer, zipped.byteOffset, zipped.byteLength);
+    const dataOffset = 30 + view.getUint16(26, true) + view.getUint16(28, true);
+    zipped[dataOffset] = (zipped[dataOffset] ?? 0) ^ 0xff;
+    return asRealmUint8(zipped).buffer;
+}
+
 describe('parseDawProject', () => {
     it('reads metadata, transport, tracks and clips from a synthetic fixture', () => {
         const result = parseDawProject(buildDawProjectZip());
@@ -136,5 +150,9 @@ describe('parseDawProject', () => {
         const copy = new Uint8Array(zipped.byteLength);
         copy.set(zipped);
         expect(() => parseDawProject(copy.buffer)).toThrow(/missing project\.xml/);
+    });
+
+    it('rejects malformed project XML before inflating audio assets', () => {
+        expect(() => parseDawProject(buildMalformedProjectWithCorruptAudio())).toThrow(/invalid XML/i);
     });
 });

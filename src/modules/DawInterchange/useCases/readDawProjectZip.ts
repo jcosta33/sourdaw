@@ -3,7 +3,7 @@ import { extractGuardedZip } from '#/infra/archive/extractGuardedZip';
 export type DawProjectZipContents = {
     projectXml: string;
     metadataXml: string | null;
-    audioAssets: Map<string, Uint8Array>;
+    readAudioAssets: () => Map<string, Uint8Array>;
 };
 
 const textDecoder = new TextDecoder('utf-8');
@@ -29,23 +29,22 @@ export function readDawProjectZip(buffer: ArrayBuffer): DawProjectZipContents {
     const metadataPath = Object.keys(headerEntries).find((path) => metadataXmlPath.test(path));
     const metadataEntry = metadataPath ? headerEntries[metadataPath] : null;
 
-    const audioEntries = extractGuardedZip({
-        bytes,
-        include: (path) => path.startsWith('audio/'),
-    });
-
-    const audioAssets = new Map<string, Uint8Array>();
-    for (const [path, data] of Object.entries(audioEntries)) {
-        if (path.endsWith('/')) {
-            continue;
-        }
-        audioAssets.set(path, data);
-    }
-
     return {
         projectXml: decodeUtf8(projectEntry),
         metadataXml: metadataEntry ? decodeUtf8(metadataEntry) : null,
-        audioAssets,
+        readAudioAssets: () => {
+            const audioEntries = extractGuardedZip({
+                bytes,
+                include: (path) => path.startsWith('audio/'),
+            });
+            const audioAssets = new Map<string, Uint8Array>();
+            for (const [path, data] of Object.entries(audioEntries)) {
+                if (!path.endsWith('/')) {
+                    audioAssets.set(path, data);
+                }
+            }
+            return audioAssets;
+        },
     };
 }
 

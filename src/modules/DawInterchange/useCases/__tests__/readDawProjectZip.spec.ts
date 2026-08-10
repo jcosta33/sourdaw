@@ -125,8 +125,9 @@ describe('readDawProjectZip — audio assets', () => {
             'audio/kick.wav': audioData,
         });
         const result = readDawProjectZip(zip);
-        expect(result.audioAssets.has('audio/kick.wav')).toBe(true);
-        const extracted = result.audioAssets.get('audio/kick.wav')!;
+        const audioAssets = result.readAudioAssets();
+        expect(audioAssets.has('audio/kick.wav')).toBe(true);
+        const extracted = audioAssets.get('audio/kick.wav')!;
         expect(extracted.length).toBe(audioData.length);
         expect(Array.from(extracted)).toEqual(Array.from(audioData));
     });
@@ -138,8 +139,9 @@ describe('readDawProjectZip — audio assets', () => {
             'audio/snare.wav': utf8('RIFF....'),
         });
         const result = readDawProjectZip(zip);
-        expect(result.audioAssets.size).toBe(1);
-        expect(result.audioAssets.has('readme.txt')).toBe(false);
+        const audioAssets = result.readAudioAssets();
+        expect(audioAssets.size).toBe(1);
+        expect(audioAssets.has('readme.txt')).toBe(false);
     });
 
     it('extracts multiple audio assets', () => {
@@ -150,7 +152,7 @@ describe('readDawProjectZip — audio assets', () => {
             'audio/hat.wav': utf8('hat'),
         });
         const result = readDawProjectZip(zip);
-        expect(result.audioAssets.size).toBe(3);
+        expect(result.readAudioAssets().size).toBe(3);
     });
 });
 
