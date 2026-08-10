@@ -190,7 +190,8 @@ export const TrackHeaderSection = ({ track }: TrackHeaderSectionProps): ReactEle
                                     outlineOffset: '1px',
                                 }}
                                 onClick={() => setTrackColor(track.id, context)}
-                                aria-label={`Set color`}
+                                aria-pressed={context === track.color}
+                                aria-label={`Set color ${context}`}
                             />
                         ))}
                     </div>

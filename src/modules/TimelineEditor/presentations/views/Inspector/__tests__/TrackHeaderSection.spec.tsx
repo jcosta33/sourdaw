@@ -190,4 +190,12 @@ describe('TrackHeaderSection', () => {
         fireEvent.click(secondColorButton);
         expect(mockSetTrackColor).toHaveBeenCalledWith('track-1', '#00ff00');
     });
+
+    it('marks the active color preset aria-pressed true and others false', () => {
+        render(<TrackHeaderSection track={mockTrack} />);
+        // mockTrack.color is '#ff0000' — the first preset.
+        const colorButtons = screen.getAllByLabelText(/Set color/i);
+        expect(colorButtons[0]).toHaveAttribute('aria-pressed', 'true');
+        expect(colorButtons[1]).toHaveAttribute('aria-pressed', 'false');
+    });
 });
