@@ -758,6 +758,20 @@ type AudioBufferCacheClearRuntimeOptions = {
     retainedIds?: Iterable<string>;
 };
 
+export function clearRuntimeAudioBufferCache({ retainedIds }: AudioBufferCacheClearRuntimeOptions = {}): void {
+    if (!retainedIds) {
+        clearRuntimeCacheState();
+        return;
+    }
+    const retainedIdSet = new Set(retainedIds);
+    for (const id of cache.keys()) {
+        if (!retainedIdSet.has(id)) {
+            evictCachedBuffer(id);
+        }
+    }
+    pinnedBufferIds.clear();
+}
+
 export const audioBufferCache = {
     get(id: string): AudioBuffer | undefined {
         const buf = audioCacheGet(id);
@@ -925,20 +939,6 @@ export const audioBufferCache = {
         shouldContinue?: () => boolean;
     }): Promise<PreparedAudioBuffers | null> {
         return prepareBuffersFromIdb({ context, ids, shouldContinue });
-    },
-
-    clearRuntime({ retainedIds }: AudioBufferCacheClearRuntimeOptions = {}): void {
-        if (!retainedIds) {
-            clearRuntimeCacheState();
-            return;
-        }
-        const retainedIdSet = new Set(retainedIds);
-        for (const id of cache.keys()) {
-            if (!retainedIdSet.has(id)) {
-                evictCachedBuffer(id);
-            }
-        }
-        pinnedBufferIds.clear();
     },
 
     clear(): void {

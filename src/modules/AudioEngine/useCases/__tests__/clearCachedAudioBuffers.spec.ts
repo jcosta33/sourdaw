@@ -5,13 +5,13 @@ import { clearRuntimeCachedAudioBuffers } from '../clearRuntimeCachedAudioBuffer
 
 const mocks = vi.hoisted(() => ({
     audioBufferCacheClear: vi.fn(),
-    audioBufferCacheClearRuntime: vi.fn(),
+    clearRuntimeAudioBufferCache: vi.fn(),
 }));
 
 vi.mock('../../stores/audioBufferCache', () => ({
+    clearRuntimeAudioBufferCache: mocks.clearRuntimeAudioBufferCache,
     audioBufferCache: {
         clear: mocks.audioBufferCacheClear,
-        clearRuntime: mocks.audioBufferCacheClearRuntime,
     },
 }));
 
@@ -29,7 +29,7 @@ describe('clearCachedAudioBuffers', () => {
     it('clears only the runtime cache for project transitions', () => {
         clearRuntimeCachedAudioBuffers();
 
-        expect(mocks.audioBufferCacheClearRuntime).toHaveBeenCalledTimes(1);
+        expect(mocks.clearRuntimeAudioBufferCache).toHaveBeenCalledTimes(1);
         expect(mocks.audioBufferCacheClear).not.toHaveBeenCalled();
     });
 });

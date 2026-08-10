@@ -1,9 +1,9 @@
-import { audioBufferCache } from '../stores/audioBufferCache';
+import { clearRuntimeAudioBufferCache } from '../stores/audioBufferCache';
 
 type ClearRuntimeCachedAudioBuffersInput = {
     retainedIds?: Iterable<string>;
 };
 
 export function clearRuntimeCachedAudioBuffers(input: ClearRuntimeCachedAudioBuffersInput = {}): void {
-    audioBufferCache.clearRuntime(input);
+    clearRuntimeAudioBufferCache(input);
 }
