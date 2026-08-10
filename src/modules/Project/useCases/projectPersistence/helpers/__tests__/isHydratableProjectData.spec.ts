@@ -375,6 +375,14 @@ describe('isHydratableProjectData', () => {
 
     it('rejects embedded freeze ownership that disagrees with the project envelope', () => {
         const project = buildValidProjectData();
+        project.arrangement = {
+            tracks: [
+                {
+                    ...validTrack,
+                    freezeState: { status: 'frozen', frozenBufferId: 'freeze-track-1' },
+                },
+            ],
+        };
         const audioBuffer = {
             sampleRate: 44_100,
             numberOfChannels: 1,
@@ -398,6 +406,66 @@ describe('isHydratableProjectData', () => {
                     'freeze-track-1': {
                         ...audioBuffer,
                         freezeProjectId: project.meta.createdAt + 1,
+                    },
+                },
+            })
+        ).toBe(false);
+    });
+
+    it('rejects freeze ownership on a buffer referenced only by an ordinary clip', () => {
+        const project = buildValidProjectData();
+        const bufferId = 'ordinary-buffer';
+
+        expect(
+            isHydratableProjectData({
+                ...project,
+                arrangement: {
+                    tracks: [{ ...validTrack, clips: [{ ...validClip, bufferId }] }],
+                },
+                audioBuffers: {
+                    [bufferId]: {
+                        sampleRate: 44_100,
+                        numberOfChannels: 1,
+                        channelData: ['audio'],
+                        freezeProjectId: project.meta.createdAt,
+                    },
+                },
+            })
+        ).toBe(false);
+    });
+
+    it('rejects freeze ownership when saved arrangements also reference the buffer as ordinary PCM', () => {
+        const project = buildValidProjectData();
+        const bufferId = 'mixed-buffer';
+
+        expect(
+            isHydratableProjectData({
+                ...project,
+                arrangement: {
+                    tracks: [
+                        {
+                            ...validTrack,
+                            clips: [],
+                            freezeState: { status: 'frozen', frozenBufferId: bufferId },
+                        },
+                    ],
+                },
+                arrangements: [
+                    {
+                        id: 'saved-arrangement',
+                        name: 'Saved arrangement',
+                        tracks: {
+                            tracks: [{ ...validTrack, clips: [{ ...validClip, bufferId }] }],
+                            selectedTrackId: null,
+                        },
+                    },
+                ],
+                audioBuffers: {
+                    [bufferId]: {
+                        sampleRate: 44_100,
+                        numberOfChannels: 1,
+                        channelData: ['audio'],
+                        freezeProjectId: project.meta.createdAt,
                     },
                 },
             })

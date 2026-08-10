@@ -112,7 +112,7 @@ describe('buildProjectData', () => {
         });
     });
 
-    it('binds newly exported freeze buffers to the project envelope', async () => {
+    it('binds only freeze-exclusive exports to the project envelope', async () => {
         arrangementStoreMock.value = sanitize_arrangement_store_state({
             arrangements: [
                 {
@@ -124,6 +124,27 @@ describe('buildProjectData', () => {
                                 id: 'track-1',
                                 freezeState: { status: 'frozen', frozenBufferId: 'freeze-track-1' },
                             },
+                            {
+                                id: 'track-2',
+                                freezeState: { status: 'frozen', frozenBufferId: 'mixed-buffer' },
+                                clips: [
+                                    {
+                                        id: 'clip-2',
+                                        trackId: 'track-2',
+                                        name: 'Shared source',
+                                        startBeat: 0,
+                                        endBeat: 4,
+                                        type: 'audio',
+                                        audioBufferId: 'mixed-buffer',
+                                        fadeInBeats: 0,
+                                        fadeOutBeats: 0,
+                                        gain: 1,
+                                        color: '#fff',
+                                        locked: false,
+                                        muted: false,
+                                    },
+                                ],
+                            },
                         ],
                         selectedTrackId: null,
                     },
@@ -134,12 +155,13 @@ describe('buildProjectData', () => {
             activeArrangementId: 'arrangement-1',
         });
         const buffer = { sampleRate: 48_000, numberOfChannels: 1, channelData: ['QUJD'] };
-        exportCachedAudioBuffersMock.mockResolvedValue({ 'freeze-track-1': buffer });
+        exportCachedAudioBuffersMock.mockResolvedValue({ 'freeze-track-1': buffer, 'mixed-buffer': buffer });
 
         const built = await buildProjectData({ includeAudioBuffers: true });
 
         expect(built?.data.audioBuffers).toEqual({
             'freeze-track-1': { ...buffer, freezeProjectId: 1 },
+            'mixed-buffer': buffer,
         });
     });
 

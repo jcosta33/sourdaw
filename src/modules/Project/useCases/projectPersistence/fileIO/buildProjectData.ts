@@ -68,6 +68,18 @@ function collectFrozenBufferIds(trackState: TrackStoreState | null | undefined):
     return ids;
 }
 
+function collectOrdinaryBufferIds(trackState: TrackStoreState | null | undefined): Set<string> {
+    const ids = new Set<string>();
+    for (const track of trackState?.tracks ?? []) {
+        for (const clip of [...track.clips, ...track.alternatives.flatMap((alternative) => alternative.clips)]) {
+            if (clip.audioBufferId) {
+                ids.add(clip.audioBufferId);
+            }
+        }
+    }
+    return ids;
+}
+
 /** Result of serializing the live project: the `ProjectData` snapshot plus the
  * count of referenced audio buffers that could not be embedded (so the export
  * UX can warn the user; the in-app save snapshot ignores it). */
@@ -124,11 +136,15 @@ export async function buildProjectData({
     // and every arrangement, including non-active ones).
     const allBufferIds = new Set<string>();
     const frozenBufferIds = new Set<string>();
+    const ordinaryBufferIds = new Set<string>();
     for (const id of collectBufferIds(tracks)) {
         allBufferIds.add(id);
     }
     for (const id of collectFrozenBufferIds(tracks)) {
         frozenBufferIds.add(id);
+    }
+    for (const id of collectOrdinaryBufferIds(tracks)) {
+        ordinaryBufferIds.add(id);
     }
     for (const arr of arrState.arrangements) {
         for (const id of collectBufferIds(arr.tracks)) {
@@ -137,13 +153,16 @@ export async function buildProjectData({
         for (const id of collectFrozenBufferIds(arr.tracks)) {
             frozenBufferIds.add(id);
         }
+        for (const id of collectOrdinaryBufferIds(arr.tracks)) {
+            ordinaryBufferIds.add(id);
+        }
     }
     const audioBuffers: Record<string, ProjectExportedAudioBuffer> = includeAudioBuffers
         ? await exportCachedAudioBuffers({ bufferIds: [...allBufferIds] })
         : {};
     for (const id of frozenBufferIds) {
         const buffer = audioBuffers[id];
-        if (buffer) {
+        if (buffer && !ordinaryBufferIds.has(id)) {
             audioBuffers[id] = { ...buffer, freezeProjectId: project.createdAt };
         }
     }
