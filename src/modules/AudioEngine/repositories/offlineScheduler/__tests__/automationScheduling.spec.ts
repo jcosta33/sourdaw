@@ -413,6 +413,41 @@ describe('scheduleTrackAutomation', () => {
         expect(gain.setValueAtTime).not.toHaveBeenCalled();
     });
 
+    it('schedules a persisted Verse Two send reduction and restoration on the offline send gain', () => {
+        const gain = makeParam();
+        const pan = makeParam();
+        const hallSend = makeParam();
+        const originalLevel = 0.5;
+        const reducedLevel = originalLevel * 10 ** (-3 / 20);
+
+        scheduleTrackAutomationFixture({
+            lanes: [
+                makeLane({
+                    parameterId: 'send:bus-hall',
+                    points: [
+                        { beat: 0, value: originalLevel, curve: 'step', tension: 0 },
+                        { beat: 16, value: reducedLevel, curve: 'step', tension: 0 },
+                        { beat: 32, value: originalLevel, curve: 'step', tension: 0 },
+                    ],
+                }),
+            ],
+            trackId: 'track-1',
+            trackGainNode: { gain } as unknown as GainNode,
+            trackPanNode: { pan } as unknown as StereoPannerNode,
+            sendAutomationParams: new Map([['send:bus-hall', hallSend as unknown as AudioParam]]),
+            deviceEntries: [],
+            durationSeconds: 20,
+            defaultTempo: 120,
+            changes: [],
+        });
+
+        expect(hallSend.setValueAtTime).toHaveBeenCalledWith(reducedLevel, 8);
+        expect(hallSend.setValueAtTime).toHaveBeenCalledWith(originalLevel, 16);
+        expect(hallSend.linearRampToValueAtTime).not.toHaveBeenCalled();
+        expect(gain.setValueAtTime).not.toHaveBeenCalled();
+        expect(pan.setValueAtTime).not.toHaveBeenCalled();
+    });
+
     it('ignores lanes belonging to a different track', () => {
         const gain = makeParam();
         const pan = makeParam();

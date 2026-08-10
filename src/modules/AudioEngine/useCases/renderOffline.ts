@@ -160,6 +160,7 @@ export const renderOffline: RenderOfflineFn = async function renderOffline(
         // are applied before the bus output reaches master.
         const trackStripsById = new Map<string, OfflineTrackStrip>();
         const busStripsById = new Map<string, OfflineBusStrip>();
+        const sendAutomationParamsByTrack = new Map<string, Map<string, AudioParam>>();
 
         // FX-8 — a muted track is silenced by its own `postFaderGain`, which sits
         // downstream of the pre-fader send tap. Live, that leaves its pre-fader
@@ -255,6 +256,12 @@ export const renderOffline: RenderOfflineFn = async function renderOffline(
                 const tapNode = send.preFader ? strip.preFaderTap : strip.outputNode;
                 tapNode.connect(sendGain);
                 sendGain.connect(busStrip.gainNode);
+                let sendAutomationParams = sendAutomationParamsByTrack.get(track.id);
+                if (!sendAutomationParams) {
+                    sendAutomationParams = new Map<string, AudioParam>();
+                    sendAutomationParamsByTrack.set(track.id, sendAutomationParams);
+                }
+                sendAutomationParams.set(`send:${send.busId}`, sendGain.gain);
             }
         }
 
@@ -276,6 +283,7 @@ export const renderOffline: RenderOfflineFn = async function renderOffline(
                 trackInputNode: strip.inputNode,
                 trackGainNode: strip.faderNode,
                 trackPanNode: strip.panNode,
+                sendAutomationParams: sendAutomationParamsByTrack.get(track.id),
                 destination: masterGain,
                 durationSeconds,
                 defaultTempo,
