@@ -514,15 +514,20 @@ describe('audioBufferCache metadata store', () => {
         it('roll back together, so size accounting cannot drift from the records', async () => {
             const audioBufferCache = await importCache();
             controls.abortWritesTo(BUFFER_STORE);
+            const id = 'freeze-pending-owner';
 
-            audioBufferCache.set('pcm', stereoSecond());
+            audioBufferCache.set(id, stereoSecond(), { freezeProjectId: 200 });
             await flushIndexedDbTasks();
 
-            expect(controls.committed.has('pcm')).toBe(false);
-            expect(controls.committedMeta.has('pcm')).toBe(false);
+            expect(controls.committed.has(id)).toBe(false);
+            expect(controls.committedMeta.has(id)).toBe(false);
+            expect((await audioBufferCache.exportBuffers([id]))[id]?.freezeProjectId).toBe(200);
+            controls.allowWrites();
+            await audioBufferCache.garbageCollectFreezeFiles({ activeIds: new Set(), projectId: 200 });
+            expect(audioBufferCache.has(id)).toBe(false);
             expect(mocks.loggerWarn).toHaveBeenCalledWith(
                 '[audioBufferCache] Audio buffer persistence failed',
-                expect.objectContaining({ id: 'pcm' })
+                expect.objectContaining({ id })
             );
         });
 
@@ -548,10 +553,10 @@ describe('audioBufferCache metadata store', () => {
             const audioBufferCache = await importCache();
             controls.committed.set('freeze-stale', legacyRecord({ frames: 3, channels: 1, lastAccessed: 1_000 }));
             controls.committed.set('freeze-live', legacyRecord({ frames: 3, channels: 1, lastAccessed: 1_000 }));
-            controls.committedMeta.set('freeze-stale', { lastAccessed: 1_000, sizeInBytes: 12 });
-            controls.committedMeta.set('freeze-live', { lastAccessed: 1_000, sizeInBytes: 12 });
+            controls.committedMeta.set('freeze-stale', { freezeProjectId: 200, lastAccessed: 1_000, sizeInBytes: 12 });
+            controls.committedMeta.set('freeze-live', { freezeProjectId: 200, lastAccessed: 1_000, sizeInBytes: 12 });
 
-            await audioBufferCache.garbageCollectFreezeFiles(new Set(['freeze-live']));
+            await audioBufferCache.garbageCollectFreezeFiles({ activeIds: new Set(['freeze-live']), projectId: 200 });
 
             expect([...controls.committed.keys()]).toEqual(['freeze-live']);
             expect([...controls.committedMeta.keys()]).toEqual(['freeze-live']);

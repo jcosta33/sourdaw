@@ -1,11 +1,17 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-import { projectLoadFailureStore } from '#/modules/Project/stores';
+import { arrangementStore, projectLoadFailureStore, projectStore } from '#/modules/Project/stores';
 
 import { trackStore } from '../../../stores/trackStore';
 import { cleanupUnusedFreezeFiles } from '../cleanupUnusedFreezeFiles';
 
 import type { Track } from '../../../models/Track';
+
+type SavedTrack = NonNullable<typeof arrangementStore.value>['arrangements'][number]['tracks']['tracks'][number];
+
+function frozenTrack(id: string, frozenBufferId: string) {
+    return { id, freezeState: { status: 'frozen' as const, frozenBufferId } };
+}
 
 const mocks = vi.hoisted(() => ({
     garbageCollectFreezeAudioBuffers: vi.fn<() => Promise<void>>().mockResolvedValue(),
@@ -23,7 +29,13 @@ describe('cleanupUnusedFreezeFiles', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         trackStore.set({ tracks: [], selectedTrackId: null });
+        arrangementStore.set({ arrangements: [], activeArrangementId: 'active-arrangement' });
         projectLoadFailureStore.set(null);
+        const project = projectStore.value;
+        if (!project) {
+            throw new Error('Expected project fixture');
+        }
+        projectStore.set({ ...project, createdAt: 200 });
     });
 
     it('should do nothing if store state is missing', async () => {
@@ -68,6 +80,7 @@ describe('cleanupUnusedFreezeFiles', () => {
 
         expect(mocks.garbageCollectFreezeAudioBuffers).toHaveBeenCalledWith({
             activeBufferIds: new Set(['buf-1', 'buf-2']),
+            projectId: 200,
         });
         expect(mocks.garbageCollectCachedAudioBuffersByAge).toHaveBeenCalledWith({ maxAgeDays: 30 });
         expect(mocks.garbageCollectCachedAudioBuffersBySize).toHaveBeenCalledWith({
@@ -79,5 +92,32 @@ describe('cleanupUnusedFreezeFiles', () => {
         expect(mocks.garbageCollectCachedAudioBuffersByAge.mock.invocationCallOrder[0]).toBeLessThan(
             mocks.garbageCollectCachedAudioBuffersBySize.mock.invocationCallOrder[0]!
         );
+    });
+
+    it('retains freezes referenced by inactive saved arrangements after a switch', async () => {
+        trackStore.set({
+            tracks: [frozenTrack('active-track', 'active-freeze')] as Track[],
+            selectedTrackId: null,
+        });
+        arrangementStore.set({
+            arrangements: [
+                {
+                    id: 'inactive-arrangement',
+                    name: 'Inactive arrangement',
+                    tracks: {
+                        tracks: [frozenTrack('inactive-track', 'inactive-freeze')] as unknown as SavedTrack[],
+                        selectedTrackId: null,
+                    },
+                    automation: { lanes: [] },
+                    midi: { notesByClipId: {}, ccByClipId: {}, pitchBendByClipId: {} },
+                },
+            ],
+            activeArrangementId: 'active-arrangement',
+        });
+        await cleanupUnusedFreezeFiles();
+        expect(mocks.garbageCollectFreezeAudioBuffers).toHaveBeenCalledWith({
+            activeBufferIds: new Set(['active-freeze', 'inactive-freeze']),
+            projectId: 200,
+        });
     });
 });

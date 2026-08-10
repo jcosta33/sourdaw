@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { cacheAudioBuffer, getCompensationDelay } from '#/modules/AudioEngine/useCases';
+import { projectStore } from '#/modules/Project/stores';
 import { FREEZE_BAKE_VERSION } from '#/utils/frozenBufferTail';
 
 import { createTrack } from '../../../models/Track';
@@ -97,6 +98,10 @@ describe('freezeTrack', () => {
             length: 44100,
             numberOfChannels: 2,
         };
+        const project = projectStore.value;
+        if (!project) {
+            throw new Error('Expected project fixture');
+        }
         const expectedBufferId = 'freeze-t1-1234567890';
 
         vi.mocked(renderTrackOffline).mockResolvedValue(renderedBuffer);
@@ -145,7 +150,11 @@ describe('freezeTrack', () => {
             renderedAt: 1234567890,
         });
 
-        expect(cacheAudioBuffer).toHaveBeenCalledWith({ buffer: renderedBuffer, bufferId: expectedBufferId });
+        expect(cacheAudioBuffer).toHaveBeenCalledWith({
+            buffer: renderedBuffer,
+            bufferId: expectedBufferId,
+            freezeProjectId: project.createdAt,
+        });
         // The region is the clip bounds; the tail travels as seconds beside it.
         expect(renderTrackOffline).toHaveBeenCalledWith(
             expect.any(Object),
@@ -154,6 +163,57 @@ describe('freezeTrack', () => {
             expect.objectContaining({ tailSeconds: 0, targetMixer: 'keepLive' })
         );
         expect(didWrite).toBe(true);
+    });
+
+    it('does not publish a completed render after another project becomes active', async () => {
+        const projectA = projectStore.value;
+        if (!projectA) {
+            throw new Error('Expected project fixture');
+        }
+        projectStore.set({ ...projectA, createdAt: 100 });
+        trackStore.set({
+            tracks: [
+                {
+                    id: 'shared-track',
+                    kind: 'audio',
+                    clips: [{ startBeat: 0, endBeat: 4 }],
+                    devices: [],
+                    freezeState: { status: 'unfrozen' },
+                } as any,
+            ],
+            selectedTrackId: null,
+        });
+
+        let resolveRender: ((buffer: AudioBuffer) => void) | undefined;
+        vi.mocked(renderTrackOffline).mockReturnValue(
+            new Promise((resolve) => {
+                resolveRender = resolve;
+            })
+        );
+        const pendingFreeze = freezeTrack('shared-track');
+        await vi.waitFor(() => {
+            expect(renderTrackOffline).toHaveBeenCalledTimes(1);
+        });
+
+        const projectBTrack = createTrack({ id: 'shared-track', kind: 'audio', name: 'Project B track' });
+        projectStore.set({ ...projectA, createdAt: 200 });
+        trackStore.set({ tracks: [projectBTrack], selectedTrackId: 'shared-track' });
+        const writesBeforeProjectSwitch = vi.mocked(updateTrack).mock.calls.length;
+        const renderedBuffer: AudioBuffer = {
+            copyFromChannel: vi.fn(),
+            copyToChannel: vi.fn(),
+            duration: 1 / 44_100,
+            getChannelData: () => new Float32Array([0.5]),
+            length: 1,
+            sampleRate: 44_100,
+            numberOfChannels: 1,
+        };
+        resolveRender?.(renderedBuffer);
+
+        await expect(pendingFreeze).resolves.toBe(false);
+        expect(cacheAudioBuffer).not.toHaveBeenCalled();
+        expect(updateTrack).toHaveBeenCalledTimes(writesBeforeProjectSwitch);
+        expect(trackStore.value).toEqual({ tracks: [projectBTrack], selectedTrackId: 'shared-track' });
     });
 
     it('pins the freeze-time delay compensation onto the freeze state', async () => {

@@ -55,9 +55,9 @@ describe('cacheAudioBuffer', () => {
             sampleRate: 48_000,
         };
 
-        const bufferId = cacheAudioBuffer({ buffer, bufferId: 'clip-1-vocals' });
+        const bufferId = cacheAudioBuffer({ buffer, bufferId: 'clip-1-vocals', freezeProjectId: 200 });
 
         expect(bufferId).toBe('clip-1-vocals');
-        expect(mocks.audioBufferCacheSet).toHaveBeenCalledWith('clip-1-vocals', buffer);
+        expect(mocks.audioBufferCacheSet).toHaveBeenCalledWith('clip-1-vocals', buffer, { freezeProjectId: 200 });
     });
 });

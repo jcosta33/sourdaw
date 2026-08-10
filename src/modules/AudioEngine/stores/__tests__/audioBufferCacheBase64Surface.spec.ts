@@ -91,7 +91,11 @@ function buildInvocations(): Record<string, () => unknown> {
             candidate?.publish();
             return candidate?.persist();
         },
-        garbageCollectFreezeFiles: () => audioBufferCache.garbageCollectFreezeFiles(new Set(['freeze-keep'])),
+        garbageCollectFreezeFiles: () =>
+            audioBufferCache.garbageCollectFreezeFiles({
+                activeIds: new Set(['freeze-project-200-track-keep-1']),
+                projectId: 200,
+            }),
         garbageCollectByAge: () => audioBufferCache.garbageCollectByAge(30),
         garbageCollectBySize: () => audioBufferCache.garbageCollectBySize(2 ** 31),
     };
@@ -162,5 +166,36 @@ describe('audioBufferCache base64 surface (AC-5)', () => {
         expect(btoaSpy.mock.calls.length).toBeGreaterThan(0);
         expect(exported.pcm?.numberOfChannels).toBe(1);
         expect(Array.from(decodeFloat32(exported.pcm!.channelData[0]!))).toEqual([0.25, -0.5, 0.75]);
+    });
+
+    it('round-trips explicit freeze ownership while preserving unowned legacy freezes', async () => {
+        const ownedId = 'freeze-current-project-1';
+        const foreignId = 'freeze-foreign-project-2';
+        const legacyId = 'freeze-project-200-legacy-track-2';
+        const buffer = makeAudioBuffer([PCM]);
+        audioBufferCache.set(ownedId, buffer, { freezeProjectId: 200 });
+        audioBufferCache.set(foreignId, buffer, { freezeProjectId: 100 });
+        audioBufferCache.set(legacyId, buffer);
+        await flushIndexedDbTasks(4);
+
+        const exported = await audioBufferCache.exportBuffers([ownedId, foreignId, legacyId]);
+
+        expect(exported[ownedId]?.freezeProjectId).toBe(200);
+        expect(exported[legacyId]?.freezeProjectId).toBeUndefined();
+
+        audioBufferCache.remove(ownedId);
+        audioBufferCache.remove(foreignId);
+        audioBufferCache.remove(legacyId);
+        await flushIndexedDbTasks(4);
+        const candidate = audioBufferCache.importBuffers({ buffers: exported, context: makeContext() });
+        expect(candidate?.publish()).toBe(3);
+        expect((await audioBufferCache.exportBuffers([ownedId]))[ownedId]?.freezeProjectId).toBe(200);
+        await expect(candidate?.persist()).resolves.toBe(true);
+
+        await audioBufferCache.garbageCollectFreezeFiles({ activeIds: new Set(), projectId: 200 });
+
+        expect(audioBufferCache.has(ownedId)).toBe(false);
+        expect(audioBufferCache.has(foreignId)).toBe(true);
+        expect(audioBufferCache.has(legacyId)).toBe(true);
     });
 });

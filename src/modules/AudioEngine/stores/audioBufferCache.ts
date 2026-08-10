@@ -12,6 +12,7 @@ export type ExportedAudioBuffer = {
     numberOfChannels: number;
     /** One base64-encoded Float32Array string per channel, in channel order. */
     channelData: string[];
+    freezeProjectId?: number;
 };
 
 /** Base64-encode one channel of PCM for the `.sourdaw` export. The only caller
@@ -46,7 +47,9 @@ function isValidExportedAudioBuffer(data: ExportedAudioBuffer): boolean {
         data.sampleRate <= 0 ||
         !Number.isInteger(data.numberOfChannels) ||
         data.numberOfChannels <= 0 ||
-        data.channelData.length !== data.numberOfChannels
+        data.channelData.length !== data.numberOfChannels ||
+        (data.freezeProjectId !== undefined &&
+            (!Number.isSafeInteger(data.freezeProjectId) || data.freezeProjectId < 0))
     ) {
         return false;
     }
@@ -73,8 +76,9 @@ function isValidExportedAudioBuffer(data: ExportedAudioBuffer): boolean {
 const MAX_AUDIO_BUFFER_ENTRIES = 64;
 const cache = new Map<string, AudioBuffer>();
 const pinnedBufferIds = new Set<string>();
+const residentFreezeProjectIdById = new Map<string, number | undefined>();
 
-function audioCacheSet(id: string, buffer: AudioBuffer): void {
+function audioCacheSet(id: string, buffer: AudioBuffer, freezeProjectId?: number, ownershipKnown = false): void {
     // Promote existing entry to MRU position
     if (cache.has(id)) {
         cache.delete(id);
@@ -94,6 +98,11 @@ function audioCacheSet(id: string, buffer: AudioBuffer): void {
         }
     }
     cache.set(id, buffer);
+    if (ownershipKnown) {
+        residentFreezeProjectIdById.set(id, freezeProjectId);
+    } else {
+        residentFreezeProjectIdById.delete(id);
+    }
 }
 
 function replacePinnedBufferIds(ids: readonly string[]): void {
@@ -171,6 +180,7 @@ const STORE_NAME = 'buffers';
 const META_STORE_NAME = 'bufferMeta';
 
 type BufferMeta = {
+    freezeProjectId?: number;
     lastAccessed: number;
     sizeInBytes: number;
 };
@@ -464,7 +474,7 @@ async function updateAccessTimeInIdb(id: string): Promise<void> {
     const metaStore = tx.objectStore(META_STORE_NAME);
     const meta = await awaitRequest(metaStore.get(id) as IDBRequest<BufferMeta | undefined>);
     if (meta) {
-        metaStore.put({ lastAccessed: Date.now(), sizeInBytes: meta.sizeInBytes } satisfies BufferMeta, id);
+        metaStore.put({ ...meta, lastAccessed: Date.now() } satisfies BufferMeta, id);
     } else {
         const record = await awaitRequest(
             tx.objectStore(STORE_NAME).get(id) as IDBRequest<SerializedBuffer | undefined>
@@ -537,7 +547,7 @@ function refreshAccessTime(id: string): void {
     });
 }
 
-async function persistSerializedToIdb(id: string, data: SerializedBuffer): Promise<boolean> {
+async function persistSerializedToIdb(id: string, data: SerializedBuffer, freezeProjectId?: number): Promise<boolean> {
     const generation = claimPersistenceGeneration(id);
     try {
         const db = await openDb();
@@ -550,10 +560,11 @@ async function persistSerializedToIdb(id: string, data: SerializedBuffer): Promi
         // collector evicting the wrong things or nothing at all.
         const tx = db.transaction([STORE_NAME, META_STORE_NAME], 'readwrite');
         tx.objectStore(STORE_NAME).put(data, id);
-        tx.objectStore(META_STORE_NAME).put(
-            { lastAccessed: data.lastAccessed, sizeInBytes: data.sizeInBytes } satisfies BufferMeta,
-            id
-        );
+        const metadata: BufferMeta = { lastAccessed: data.lastAccessed, sizeInBytes: data.sizeInBytes };
+        if (freezeProjectId !== undefined) {
+            metadata.freezeProjectId = freezeProjectId;
+        }
+        tx.objectStore(META_STORE_NAME).put(metadata, id);
         await awaitTransaction(tx);
         return true;
     } catch (error) {
@@ -615,6 +626,7 @@ function clearWaveformCachesForId(id: string) {
  * via `clearWaveformCachesForId`. */
 function evictCachedBuffer(id: string): void {
     cache.delete(id);
+    residentFreezeProjectIdById.delete(id);
     clearWaveformCachesForId(id);
     accessRefreshStampById.delete(id);
 }
@@ -721,6 +733,15 @@ async function prepareBuffersFromIdb({
     };
 }
 
+type GarbageCollectFreezeFilesInput = {
+    activeIds: Set<string>;
+    projectId: number;
+};
+
+type AudioBufferCacheSetOptions = {
+    freezeProjectId?: number;
+};
+
 export const audioBufferCache = {
     get(id: string): AudioBuffer | undefined {
         const buf = audioCacheGet(id);
@@ -730,8 +751,8 @@ export const audioBufferCache = {
         return buf;
     },
 
-    set(id: string, buffer: AudioBuffer): void {
-        audioCacheSet(id, buffer);
+    set(id: string, buffer: AudioBuffer, { freezeProjectId }: AudioBufferCacheSetOptions = {}): void {
+        audioCacheSet(id, buffer, freezeProjectId, true);
         clearWaveformCachesForId(id);
         const data = serializeBuffer(buffer);
         // Seed the coalescing stamp from the record being written (audit M-045).
@@ -739,7 +760,7 @@ export const audioBufferCache = {
         // this the first read after every persist spends a whole readwrite
         // get+put transaction rewriting a timestamp that is already current.
         accessRefreshStampById.set(id, data.lastAccessed);
-        void persistSerializedToIdb(id, data);
+        void persistSerializedToIdb(id, data, freezeProjectId);
     },
 
     remove(id: string): void {
@@ -893,6 +914,7 @@ export const audioBufferCache = {
     clear(): void {
         cancelAllImportCandidates();
         cache.clear();
+        residentFreezeProjectIdById.clear();
         pinnedBufferIds.clear();
         waveformCache.clear();
         // The level-1 mipmap is keyed by id alone and is not bounded. Leaving it
@@ -944,6 +966,23 @@ export const audioBufferCache = {
      * omitted from the result. */
     async exportBuffers(ids: string[]): Promise<Record<string, ExportedAudioBuffer>> {
         const result: Record<string, ExportedAudioBuffer> = {};
+        const metadataById = new Map<string, BufferMeta>();
+        try {
+            const db = await openDb();
+            const tx = db.transaction(META_STORE_NAME, 'readonly');
+            const metaStore = tx.objectStore(META_STORE_NAME);
+            const metadataRows = await Promise.all(
+                ids.map((id) => awaitRequest(metaStore.get(id) as IDBRequest<BufferMeta | undefined>))
+            );
+            for (let index = 0; index < ids.length; index++) {
+                const metadata = metadataRows[index];
+                if (metadata) {
+                    metadataById.set(ids[index]!, metadata);
+                }
+            }
+        } catch (error) {
+            logger.warn('[audioBufferCache] Export could not read buffer metadata from IndexedDB', { ids, error });
+        }
 
         // Pass 1: serialize buffers already in the in-memory cache
         for (const id of ids) {
@@ -952,7 +991,7 @@ export const audioBufferCache = {
                 continue;
             }
             refreshAccessTime(id);
-            result[id] = {
+            const exported: ExportedAudioBuffer = {
                 sampleRate: buf.sampleRate,
                 numberOfChannels: buf.numberOfChannels,
                 channelData: await Promise.all(
@@ -961,6 +1000,14 @@ export const audioBufferCache = {
                     )
                 ),
             };
+            let freezeProjectId = metadataById.get(id)?.freezeProjectId;
+            if (residentFreezeProjectIdById.has(id)) {
+                freezeProjectId = residentFreezeProjectIdById.get(id);
+            }
+            if (freezeProjectId !== undefined) {
+                exported.freezeProjectId = freezeProjectId;
+            }
+            result[id] = exported;
         }
 
         // Pass 2: for IDs evicted from the LRU cache, read SerializedBuffer
@@ -982,11 +1029,16 @@ export const audioBufferCache = {
                         continue;
                     }
                     refreshAccessTime(id);
-                    result[id] = {
+                    const exported: ExportedAudioBuffer = {
                         sampleRate: data.sampleRate,
                         numberOfChannels: data.numberOfChannels,
                         channelData: await Promise.all(data.channelData.map(float32ToBase64)),
                     };
+                    const freezeProjectId = metadataById.get(id)?.freezeProjectId;
+                    if (freezeProjectId !== undefined) {
+                        exported.freezeProjectId = freezeProjectId;
+                    }
+                    result[id] = exported;
                 }
             } catch (error) {
                 // IDB unreachable, so every id the LRU had evicted is absent
@@ -1039,6 +1091,7 @@ export const audioBufferCache = {
             id: string;
             sampleRate: number;
             numberOfChannels: number;
+            freezeProjectId?: number;
             resident: AudioBuffer | null;
             readChannels: () => Float32Array[];
         };
@@ -1055,6 +1108,7 @@ export const audioBufferCache = {
                 id,
                 sampleRate: data.sampleRate,
                 numberOfChannels: data.numberOfChannels,
+                freezeProjectId: data.freezeProjectId,
                 resident: null,
                 readChannels: () => data.channelData.map(base64ToFloat32),
             });
@@ -1099,6 +1153,7 @@ export const audioBufferCache = {
             }
             staged.push({ id: entry.id, buffer });
         }
+        const importedOwners = new Map(entries.map(({ id, freezeProjectId }) => [id, freezeProjectId]));
 
         let persisted = false;
         let published = false;
@@ -1164,7 +1219,11 @@ export const audioBufferCache = {
                         // Same transaction as the record, so an aborted import
                         // — which `abortImportPersistenceExcept` does routinely
                         // when a later candidate wins — leaves neither behind.
-                        metaStore.put({ lastAccessed, sizeInBytes } satisfies BufferMeta, entry.id);
+                        const metadata: BufferMeta = { lastAccessed, sizeInBytes };
+                        if (entry.freezeProjectId !== undefined) {
+                            metadata.freezeProjectId = entry.freezeProjectId;
+                        }
+                        metaStore.put(metadata, entry.id);
                     }
                     await awaitTransaction(activeTransaction);
                     if (candidateId !== activeImportCandidateId || candidateId !== committedImportCandidateId) {
@@ -1197,46 +1256,54 @@ export const audioBufferCache = {
                 }
                 for (const { id, buffer } of staged) {
                     clearWaveformCachesForId(id);
-                    audioCacheSet(id, buffer);
+                    audioCacheSet(id, buffer, importedOwners.get(id), true);
                 }
                 return staged.length;
             },
         };
     },
 
-    async garbageCollectFreezeFiles(activeIds: Set<string>): Promise<void> {
-        // Remove from memory cache
-        for (const key of cache.keys()) {
-            if (key.startsWith('freeze-') && !activeIds.has(key)) {
-                evictCachedBuffer(key);
-            }
-        }
-
-        // Remove from IndexedDB. The deletes are issued and the transaction is
-        // awaited, so this resolves only once they have actually committed.
+    async garbageCollectFreezeFiles({ activeIds, projectId }: GarbageCollectFreezeFilesInput): Promise<void> {
         try {
             const db = await openDb();
             const tx = db.transaction([STORE_NAME, META_STORE_NAME], 'readwrite');
             const store = tx.objectStore(STORE_NAME);
             const metaStore = tx.objectStore(META_STORE_NAME);
-            // `getAllKeys` already reads keys rather than records, so this
-            // collector never materialised PCM. What changes is that it deletes
-            // both rows, under the one transaction.
-            //
-            // It also collects on *reference*, not on a stamp, so a record with
-            // no metadata row is still collectable here — the "absence means do
-            // not collect" rule belongs to the two stamp-driven collectors
-            // below, where absence means "not yet migrated" and a wrong guess
-            // deletes audio. Here absence means nothing: an unreferenced freeze
-            // file is garbage whether or not it has been migrated.
-            const keys = await awaitRequest(store.getAllKeys());
-            for (const key of keys) {
-                if (typeof key === 'string' && key.startsWith('freeze-') && !activeIds.has(key)) {
-                    store.delete(key);
-                    metaStore.delete(key);
+            const [metadataRows, metadataKeys] = await Promise.all([
+                awaitRequest(metaStore.getAll() as IDBRequest<BufferMeta[]>),
+                awaitRequest(metaStore.getAllKeys()),
+            ]);
+            const collectedKeys = new Set<string>();
+            for (let index = 0; index < metadataKeys.length; index++) {
+                const key = metadataKeys[index];
+                const metadata = metadataRows[index];
+                let freezeProjectId = metadata?.freezeProjectId;
+                if (typeof key === 'string' && residentFreezeProjectIdById.has(key)) {
+                    freezeProjectId = residentFreezeProjectIdById.get(key);
+                }
+                if (
+                    typeof key !== 'string' ||
+                    !key.startsWith('freeze-') ||
+                    activeIds.has(key) ||
+                    freezeProjectId !== projectId
+                ) {
+                    continue;
+                }
+                collectedKeys.add(key);
+            }
+            for (const [key, freezeProjectId] of residentFreezeProjectIdById) {
+                if (key.startsWith('freeze-') && !activeIds.has(key) && freezeProjectId === projectId) {
+                    collectedKeys.add(key);
                 }
             }
+            for (const key of collectedKeys) {
+                store.delete(key);
+                metaStore.delete(key);
+            }
             await awaitTransaction(tx);
+            for (const key of collectedKeys) {
+                evictCachedBuffer(key);
+            }
         } catch (error) {
             logger.warn('[audioBufferCache] Freeze-file collection failed', { error });
         }
