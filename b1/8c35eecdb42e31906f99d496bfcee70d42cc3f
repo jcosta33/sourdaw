@@ -1,0 +1,22 @@
+src-tauri/src/commands/binary_ipc.rs
+  s_a40848e8f8cca9::t_3d3d09e1bd5365 162-182
+  s_a40848e8f8cca9::t_3bc55e95bf9cfc 16-17,53-60,78
+  s_a40848e8f8cca9::t_26aed4dfc993f0 65-66
+  s_a40848e8f8cca9::t_caaf74d7f40a67 61-62
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "b18c35eecdb42e31906f99d496bfcee70d42cc3f",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
