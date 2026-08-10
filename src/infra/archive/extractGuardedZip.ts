@@ -29,6 +29,7 @@ type ZipExtractionLimits = { -readonly [Key in keyof typeof DEFAULT_LIMITS]: num
 type ExtractGuardedZipInput = {
     bytes: Uint8Array;
     include?: (path: string) => boolean;
+    validateInventory?: (paths: readonly string[]) => void;
     /** Callers and tests may lower, but never raise, the production ceilings. */
     restrictLimits?: Partial<ZipExtractionLimits>;
 };
@@ -44,10 +45,11 @@ export class ZipArchiveError extends Error {
 }
 
 export function extractGuardedZip(input: ExtractGuardedZipInput): Record<string, Uint8Array> {
-    const { bytes, include = () => true, restrictLimits } = input;
+    const { bytes, include = () => true, restrictLimits, validateInventory } = input;
     try {
         const limits = resolveLimits(restrictLimits);
         const inventory = inspectInventory(bytes, limits);
+        validateInventory?.(inventory.map((entry) => entry.path));
         const expected = new Map(inventory.map((entry) => [entry.path, entry]));
         const included = new Set(inventory.filter((entry) => include(entry.path)).map((entry) => entry.path));
         const extraction = createStreamingExtraction(expected, included, limits);
