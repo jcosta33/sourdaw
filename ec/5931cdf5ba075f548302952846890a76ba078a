@@ -1,0 +1,27 @@
+src/modules/TimelineEditor/presentations/views/Inspector/TrackDevicesSection.tsx
+  s_bc88af7d3b054c::t_dd1e25de5636b8 60-68,218,258,269,273-274,282,287
+  s_bc88af7d3b054c::t_437403a1e2c181 260
+  s_bc88af7d3b054c::t_9faa9c6970f99d 261
+  s_bc88af7d3b054c::t_54d255655ec0cc 59,268,270-272,285-286
+  s_bc88af7d3b054c::t_1035c9a1574a30 256-257
+  s_bc88af7d3b054c::t_f96a72ba3488ab 259
+src/modules/TimelineEditor/presentations/views/Inspector/__tests__/TrackDevicesSection.spec.tsx
+  s_bc88af7d3b054c::t_b61253ba8019dc 119,124,127,298-322
+  s_bc88af7d3b054c::t_bdf7c8d1a7522b 323-324
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "ec5931cdf5ba075f548302952846890a76ba078a",
+  "prompts": {},
+  "sessions": {
+    "s_bc88af7d3b054c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f9b4a-11a2-7f61-8dfb-76eed0eb2a9c",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": null
+    }
+  }
+}
