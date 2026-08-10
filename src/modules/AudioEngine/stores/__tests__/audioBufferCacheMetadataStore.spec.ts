@@ -576,5 +576,26 @@ describe('audioBufferCache metadata store', () => {
             expect(controls.committed.size).toBe(0);
             expect(controls.committedMeta.size).toBe(0);
         });
+
+        it('clears resident project audio without deleting either project from IndexedDB', async () => {
+            const audioBufferCache = await importCache();
+            const projectAId = 'freeze-project-100-track-a';
+            const projectBId = 'freeze-project-200-track-b';
+            audioBufferCache.set(projectAId, makeAudioBuffer([new Float32Array([0.1])]), {
+                freezeProjectId: 100,
+            });
+            audioBufferCache.set(projectBId, makeAudioBuffer([new Float32Array([0.2])]), {
+                freezeProjectId: 200,
+            });
+            await flushIndexedDbTasks();
+
+            audioBufferCache.clearRuntime();
+
+            expect(audioBufferCache.has(projectAId)).toBe(false);
+            expect(audioBufferCache.has(projectBId)).toBe(false);
+            expect([...controls.committed.keys()].sort()).toEqual([projectAId, projectBId]);
+            expect(controls.committedMeta.get(projectAId)?.freezeProjectId).toBe(100);
+            expect(controls.committedMeta.get(projectBId)?.freezeProjectId).toBe(200);
+        });
     });
 });

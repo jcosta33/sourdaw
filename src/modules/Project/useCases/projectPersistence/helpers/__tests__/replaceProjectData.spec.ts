@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const {
     mockLogger,
     mockBatchStoreUpdates,
+    mockClearRuntimeCachedAudioBuffers,
     mockGetAudioContext,
     mockImportCachedAudioBuffers,
     mockPrepareCachedAudioBuffersFromIdb,
@@ -27,6 +28,7 @@ const {
 } = vi.hoisted(() => ({
     mockLogger: { error: vi.fn(), warn: vi.fn() },
     mockBatchStoreUpdates: vi.fn((fn: () => void) => fn()),
+    mockClearRuntimeCachedAudioBuffers: vi.fn(),
     mockGetAudioContext: vi.fn(() => ({ sampleRate: 44100 })),
     mockImportCachedAudioBuffers: vi.fn(() =>
         Promise.resolve({ publish: vi.fn(), persist: () => Promise.resolve(true) })
@@ -61,6 +63,7 @@ const {
 vi.mock('#/infra/logger/appLogger', () => ({ logger: mockLogger }));
 vi.mock('#/infra/store/createStore', () => ({ batchStoreUpdates: mockBatchStoreUpdates }));
 vi.mock('#/modules/AudioEngine/useCases', () => ({
+    clearRuntimeCachedAudioBuffers: mockClearRuntimeCachedAudioBuffers,
     getAudioContext: mockGetAudioContext,
     importCachedAudioBuffers: mockImportCachedAudioBuffers,
     prepareCachedAudioBuffersFromIdb: mockPrepareCachedAudioBuffersFromIdb,
@@ -140,6 +143,7 @@ describe('replaceProjectData', () => {
             transaction: makeTransaction({ prepare: () => Promise.resolve(false) }),
         });
         expect(result.status).toBe('aborted');
+        expect(mockClearRuntimeCachedAudioBuffers).not.toHaveBeenCalled();
     });
 
     it('aborts when transaction.activate returns false', async () => {
@@ -174,6 +178,14 @@ describe('replaceProjectData', () => {
     });
 
     it('commits successfully when all steps pass', async () => {
+        const storedPublish = vi.fn();
+        const embeddedPublish = vi.fn();
+        mockPrepareCachedAudioBuffersFromIdb.mockResolvedValue({ publish: storedPublish });
+        mockImportCachedAudioBuffers.mockResolvedValue({
+            publish: embeddedPublish,
+            persist: () => Promise.resolve(true),
+        });
+
         const result = await replaceProjectData({
             context: 'loadRecentProject',
             data: makeData(),
@@ -191,6 +203,13 @@ describe('replaceProjectData', () => {
         expect(mockResetModuleStores).toHaveBeenCalled();
         expect(mockHydrateArrangement).toHaveBeenCalled();
         expect(mockClearUndoHistory).toHaveBeenCalled();
+        expect(mockClearRuntimeCachedAudioBuffers).toHaveBeenCalledOnce();
+        expect(mockClearRuntimeCachedAudioBuffers.mock.invocationCallOrder[0]).toBeLessThan(
+            storedPublish.mock.invocationCallOrder[0]!
+        );
+        expect(mockClearRuntimeCachedAudioBuffers.mock.invocationCallOrder[0]).toBeLessThan(
+            embeddedPublish.mock.invocationCallOrder[0]!
+        );
     });
 
     it('returns degraded=true when a committed step fails', async () => {

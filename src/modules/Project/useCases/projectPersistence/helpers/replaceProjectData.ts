@@ -1,6 +1,7 @@
 import { logger } from '#/infra/logger/appLogger';
 import { batchStoreUpdates } from '#/infra/store/createStore';
 import {
+    clearRuntimeCachedAudioBuffers,
     getAudioContext,
     importCachedAudioBuffers,
     prepareCachedAudioBuffersFromIdb,
@@ -285,6 +286,7 @@ export async function replaceProjectData({
         // Notification coalescing only: each write remains independently fallible
         // and is guarded so one owner failure cannot prevent later owner steps.
         batchStoreUpdates(() => {
+            runCommittedStep('runtime audio buffer reset', clearRuntimeCachedAudioBuffers);
             runCommittedStep('stored audio buffer publication', preparedStoredBuffers.publish);
             runCommittedStep('embedded audio buffer publication', preparedEmbeddedBuffers.publish);
             runCommittedStep('module store reset', resetModuleStoresToDefault);
