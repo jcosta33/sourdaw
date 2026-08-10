@@ -2,7 +2,7 @@ import { type AppActionType } from '#/utils/handlerContract';
 import { getMarkerColorNames } from '#/utils/markerColorPalette';
 
 export type ExecutableAppActionRisk =
-    'bounded-reversible' | 'broad-reversible' | 'destructive-reversible' | 'authority-sensitive';
+    'bounded-reversible' | 'broad-reversible' | 'destructive-reversible' | 'authority-sensitive' | 'external-effect';
 
 export type ExecutableAppActionTargetCapability =
     | 'track'
@@ -1722,6 +1722,7 @@ export const executableAppActionDescriptors = [
                 trackId: { type: 'string' },
                 busId: { type: 'string' },
                 level: { type: 'number', description: 'Send level 0.0–1.0' },
+                preFader: { type: 'boolean', description: 'False for a post-fader send; true for pre-fader' },
             },
             required: ['trackId', 'busId', 'level'],
         },
@@ -1870,6 +1871,57 @@ export const executableAppActionDescriptors = [
                 },
             },
             required: ['trackIds', 'sectionName', 'gainDb'],
+        },
+    },
+    {
+        actionType: 'automateSendRanges',
+        risk: 'authority-sensitive',
+        description:
+            'Ramp an exact set of sends to one bounded absolute dB level across the tail of exact arrangement sections.',
+        intentPhrases: ['automate them to', 'final four bars of every chorus'],
+        targetRules: [],
+        valueRules: [],
+        parameters: {
+            properties: {
+                trackIds: {
+                    type: 'array',
+                    items: { type: 'string' },
+                    minItems: 1,
+                    uniqueItems: true,
+                    description: 'Exact app-grounded source track IDs',
+                },
+                busId: { type: 'string', description: 'Earlier batch-local destination bus binding' },
+                sectionIds: {
+                    type: 'array',
+                    items: { type: 'string' },
+                    minItems: 1,
+                    uniqueItems: true,
+                    description: 'Every exact app-grounded chorus section ID',
+                },
+                tailBars: { type: 'number', minimum: 1, maximum: 16 },
+                targetLevelDb: { type: 'number', minimum: -60, maximum: 0 },
+            },
+            required: ['trackIds', 'busId', 'sectionIds', 'tailBars', 'targetLevelDb'],
+        },
+    },
+    {
+        actionType: 'renderProjectSections',
+        risk: 'external-effect',
+        description: 'Render exact arrangement sections to owner-local audio objects after project commit.',
+        intentPhrases: ['render each chorus', 'render chorus', 'render section'],
+        targetRules: [],
+        valueRules: [],
+        parameters: {
+            properties: {
+                sectionIds: {
+                    type: 'array',
+                    items: { type: 'string' },
+                    minItems: 1,
+                    uniqueItems: true,
+                    description: 'Every exact app-grounded arrangement section ID to render',
+                },
+            },
+            required: ['sectionIds'],
         },
     },
     {

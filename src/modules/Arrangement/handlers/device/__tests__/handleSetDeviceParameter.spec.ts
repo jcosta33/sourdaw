@@ -5,7 +5,9 @@ import { type AppAction } from '#/utils/handlerContract';
 import { handleSetDeviceParameter } from '../handleSetDeviceParameter';
 
 const mocks = vi.hoisted(() => ({
+    captureAutomationRecordingRollback: vi.fn<() => () => void>(),
     setDeviceParameter: vi.fn(),
+    updateDeviceParam: vi.fn(),
     getTrackStoreState: vi.fn<
         () => {
             tracks: {
@@ -23,6 +25,14 @@ const mocks = vi.hoisted(() => ({
     >(),
 }));
 
+vi.mock('#/modules/AudioEngine/useCases', () => ({
+    updateDeviceParam: mocks.updateDeviceParam,
+}));
+
+vi.mock('#/modules/Automation/useCases', () => ({
+    captureAutomationRecordingRollback: mocks.captureAutomationRecordingRollback,
+}));
+
 vi.mock('../../../useCases/device/setDeviceParameter/setDeviceParameter', () => ({
     setDeviceParameter: mocks.setDeviceParameter,
 }));
@@ -34,6 +44,7 @@ vi.mock('../../../useCases/getTrackStoreState', () => ({
 describe('handleSetDeviceParameter', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        mocks.captureAutomationRecordingRollback.mockReturnValue(vi.fn());
         mocks.getTrackStoreState.mockReturnValue(null);
     });
 
@@ -206,6 +217,45 @@ describe('handleSetDeviceParameter', () => {
         });
 
         expect(isNoop).toBe(true);
+    });
+
+    it('restores runtime and automation-recording state through the abort owner', async () => {
+        const rollbackAutomationRecording = vi.fn();
+        mocks.captureAutomationRecordingRollback.mockReturnValue(rollbackAutomationRecording);
+        mocks.getTrackStoreState.mockReturnValue({
+            tracks: [{ id: 't1', devices: [{ id: 'd1', type: 'compressor', parameterValues: { gain: 0.8 } }] }],
+        });
+        const action: Extract<AppAction, { type: 'setDeviceParameter' }> = {
+            type: 'setDeviceParameter',
+            payload: { deviceId: 'd1', paramId: 'gain', value: 0.5 },
+        };
+
+        await handleSetDeviceParameter.prepareAbort?.(action)();
+
+        expect(mocks.updateDeviceParam).toHaveBeenCalledWith('t1', 'd1', 'gain', 0.8);
+        expect(rollbackAutomationRecording).toHaveBeenCalledOnce();
+        expect(handleSetDeviceParameter.requiresAbortCompensation).toBe(false);
+    });
+
+    it('still restores automation-recording state when runtime rollback fails', () => {
+        const rollbackAutomationRecording = vi.fn();
+        mocks.captureAutomationRecordingRollback.mockReturnValue(rollbackAutomationRecording);
+        mocks.updateDeviceParam.mockImplementation(() => {
+            throw new Error('runtime unavailable');
+        });
+        mocks.getTrackStoreState.mockReturnValue({
+            tracks: [{ id: 't1', devices: [{ id: 'd1', type: 'compressor', parameterValues: { gain: 0.8 } }] }],
+        });
+        const action: Extract<AppAction, { type: 'setDeviceParameter' }> = {
+            type: 'setDeviceParameter',
+            payload: { deviceId: 'd1', paramId: 'gain', value: 0.5 },
+        };
+
+        const rollback = handleSetDeviceParameter.prepareAbort?.(action);
+
+        expect(rollback).toBeTypeOf('function');
+        expect(() => rollback?.()).toThrow('manual repair is required: runtime unavailable');
+        expect(rollbackAutomationRecording).toHaveBeenCalledOnce();
     });
 
     // `docs/manual/devices/07-gluten.md` prints this flag as a promise to the

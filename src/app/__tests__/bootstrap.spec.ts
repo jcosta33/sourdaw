@@ -147,6 +147,10 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     stopAllScheduled: noop,
 }));
 
+vi.mock('#/modules/AudioRendering/useCases', () => ({
+    getAudioRenderingHandlers: sentinelHandlers('AudioRendering'),
+}));
+
 vi.mock('#/modules/Automation/useCases', () => ({
     getAutomationHandlers: sentinelHandlers('Automation'),
     getAutomationValueAtBeat: () => null,
@@ -377,6 +381,7 @@ describe('bootstrap', () => {
         'PunchRecording',
         'Workspace',
         'Automation',
+        'AudioRendering',
         'AiGeneration',
         'AudioAnalysis',
         'Collaboration',
