@@ -1,0 +1,23 @@
+src/modules/BrowserAi/repositories/modelDownloadManager.ts
+  s_bc88af7d3b054c::t_fe955fd6c9538c 378-380
+src/modules/BrowserAi/repositories/__tests__/modelDownloadManager.spec.ts
+  s_bc88af7d3b054c::t_fe955fd6c9538c 19,585
+  s_bc88af7d3b054c::t_4b49a3abdc1891 581,583
+  s_bc88af7d3b054c::t_f42534275b7f82 586-589
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "e7ada6898667afa51396b6b70e3df57321b77cab",
+  "prompts": {},
+  "sessions": {
+    "s_bc88af7d3b054c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f9b4a-11a2-7f61-8dfb-76eed0eb2a9c",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
