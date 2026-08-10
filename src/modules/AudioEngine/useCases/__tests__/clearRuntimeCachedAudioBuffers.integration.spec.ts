@@ -55,4 +55,17 @@ describe('clearRuntimeCachedAudioBuffers', () => {
         expect(controls.committedMeta.get(projectAId)?.freezeProjectId).toBe(100);
         expect(controls.committedMeta.get(projectBId)?.freezeProjectId).toBe(200);
     });
+
+    it('retains incoming resident buffers while dropping unrelated runtime state', async () => {
+        const { audioBufferCache } = await import('../../stores/audioBufferCache');
+        const { clearRuntimeCachedAudioBuffers } = await import('../clearRuntimeCachedAudioBuffers');
+        audioBufferCache.set('shared-buffer', makeAudioBuffer(0.1));
+        audioBufferCache.set('old-project-only', makeAudioBuffer(0.2));
+        await flushIndexedDbTasks();
+
+        clearRuntimeCachedAudioBuffers({ retainedIds: ['shared-buffer'] });
+
+        expect(audioBufferCache.has('shared-buffer')).toBe(true);
+        expect(audioBufferCache.has('old-project-only')).toBe(false);
+    });
 });
