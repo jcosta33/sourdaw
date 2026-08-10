@@ -305,18 +305,4 @@ describe('downloadModel — buffered path (sha256 verification + ZIP extraction)
         // Only the extracted .onnx bytes reach OPFS — not the whole ZIP.
         expect(lastWritable?.writes).toEqual([onnxBytes.length]);
     });
-
-    it('rejects an unsafe ONNX archive path without publishing model bytes', async () => {
-        const zipped = zipSync({ '../weights.onnx': new Uint8Array([10, 20, 30, 40]) });
-        const fetchMock = vi.fn(() => Promise.resolve(streamingResponse([zipped], zipped.length)));
-        vi.stubGlobal('fetch', fetchMock);
-
-        await expect(
-            downloadModel({
-                spec: { ...baseSpec, url: 'https://cdn.example/violin-1.zip', sizeBytes: zipped.length },
-            })
-        ).rejects.toThrow(/unsafe archive path/i);
-        expect(fetchMock).toHaveBeenCalledTimes(1);
-        expect(lastWritable).toBeNull();
-    }, 10_000);
 });

@@ -1,4 +1,4 @@
-import { unzip, unzipSync, type UnzipFileInfo } from 'fflate';
+import { strFromU8, Unzip, UnzipInflate, type UnzipFile } from 'fflate';
 
 const DEFAULT_LIMITS = {
     maxEntries: 10_000,
@@ -10,30 +10,23 @@ const DEFAULT_LIMITS = {
 
 const END_SIGNATURE = 0x06054b50;
 const CENTRAL_ENTRY_SIGNATURE = 0x02014b50;
+const LOCAL_ENTRY_SIGNATURE = 0x04034b50;
 const END_BYTES = 22;
 const CENTRAL_ENTRY_BYTES = 46;
+const LOCAL_ENTRY_BYTES = 30;
 const UNIX_CREATOR = 3;
 const UNIX_FILE_TYPE_MASK = 0xf000;
 const UNIX_SYMLINK_TYPE = 0xa000;
 const nestedArchiveExtension = /\.(?:7z|bz2|dawproject|gz|oudep|rar|tar|tgz|xz|zip)$/i;
-const zipMagicSignatures = new Set([0x04034b50, 0x06054b50, 0x08074b50]);
+const STREAM_CHUNK_BYTES = 4096;
 
 type ZipExtractionLimits = { -readonly [Key in keyof typeof DEFAULT_LIMITS]: number };
 
-type ExtractGuardedZipBaseInput = {
+type ExtractGuardedZipInput = {
     bytes: Uint8Array;
     include?: (path: string) => boolean;
     /** Callers and tests may lower, but never raise, the production ceilings. */
     restrictLimits?: Partial<ZipExtractionLimits>;
-};
-
-type ExtractGuardedZipAsyncInput = ExtractGuardedZipBaseInput & {
-    signal?: AbortSignal;
-    synchronous?: false;
-};
-
-type ExtractGuardedZipSyncInput = ExtractGuardedZipBaseInput & {
-    synchronous: true;
 };
 
 type ZipInventoryEntry = {
@@ -47,134 +40,51 @@ export class ZipArchiveError extends Error {
     override readonly name = 'ZipArchiveError';
 }
 
-export function extractGuardedZip(input: ExtractGuardedZipSyncInput): Record<string, Uint8Array>;
-export function extractGuardedZip(input: ExtractGuardedZipAsyncInput): Promise<Record<string, Uint8Array>>;
-export function extractGuardedZip(
-    input: ExtractGuardedZipSyncInput | ExtractGuardedZipAsyncInput
-): Record<string, Uint8Array> | Promise<Record<string, Uint8Array>> {
+export function extractGuardedZip(input: ExtractGuardedZipInput): Record<string, Uint8Array> {
     const { bytes, include = () => true, restrictLimits } = input;
-    const signal = input.synchronous ? undefined : input.signal;
-    let inventory: ZipInventoryEntry[];
     try {
-        throwIfAborted(signal);
         const limits = resolveLimits(restrictLimits);
-        rejectSymbolicLinks(bytes);
-        inventory = inspectInventory(bytes, limits);
+        const inventory = inspectInventory(bytes, limits);
+        const expected = new Map(inventory.map((entry) => [entry.path, entry]));
+        const included = new Set(inventory.filter((entry) => include(entry.path)).map((entry) => entry.path));
+        const extraction = createStreamingExtraction(expected, included, limits);
+        for (let offset = 0; offset < bytes.byteLength && !extraction.failed(); offset += STREAM_CHUNK_BYTES) {
+            const end = Math.min(offset + STREAM_CHUNK_BYTES, bytes.byteLength);
+            extraction.push(bytes.subarray(offset, end), end === bytes.byteLength);
+        }
+        return extraction.finish();
     } catch (error) {
-        const failure = isAbortError(error) ? error : toZipArchiveError(error);
-        if (input.synchronous) {
-            throw failure;
-        }
-        return Promise.reject(failure);
+        throw toZipArchiveError(error);
     }
-
-    const expected = new Map(inventory.map((entry) => [entry.path, entry]));
-    const includedPaths = new Set(inventory.filter((entry) => include(entry.path)).map((entry) => entry.path));
-
-    if (input.synchronous) {
-        try {
-            const result = unzipSync(bytes, {
-                filter: (entry) => includedPaths.has(assertExpectedEntry(entry, expected).path),
-            });
-            verifyResult(result, expected, includedPaths);
-            return result;
-        } catch (error) {
-            throw toZipArchiveError(error);
-        }
-    }
-
-    return new Promise<Record<string, Uint8Array>>((resolve, reject) => {
-        let settled = false;
-        let terminate = (): void => undefined;
-
-        function finish(error?: unknown, result?: Record<string, Uint8Array>): void {
-            if (settled) {
-                return;
-            }
-            settled = true;
-            signal?.removeEventListener('abort', onAbort);
-            if (error) {
-                terminate();
-                reject(isAbortError(error) ? error : toZipArchiveError(error));
-                return;
-            }
-            resolve(result ?? {});
-        }
-
-        function onAbort(): void {
-            finish(createAbortError());
-        }
-
-        signal?.addEventListener('abort', onAbort, { once: true });
-        try {
-            terminate = unzip(
-                bytes,
-                {
-                    filter: (entry) => {
-                        const planned = assertExpectedEntry(entry, expected);
-                        return includedPaths.has(planned.path);
-                    },
-                },
-                (error, result) => {
-                    if (error) {
-                        finish(error);
-                        return;
-                    }
-                    if (signal?.aborted) {
-                        finish(createAbortError());
-                        return;
-                    }
-                    try {
-                        verifyResult(result, expected, includedPaths);
-                        finish(undefined, result);
-                    } catch (verificationError) {
-                        finish(verificationError);
-                    }
-                }
-            );
-        } catch (error) {
-            finish(error);
-        }
-    });
 }
 
 function inspectInventory(bytes: Uint8Array, limits: ZipExtractionLimits): ZipInventoryEntry[] {
-    const inventory: ZipInventoryEntry[] = [];
+    const inventory = readCentralDirectory(bytes);
     const paths = new Set<string>();
     let compressedBytes = 0;
     let uncompressedBytes = 0;
 
-    unzipSync(bytes, {
-        filter: (entry) => {
-            if (inventory.length >= limits.maxEntries) {
-                throw new Error(`ZIP entry count exceeds ${String(limits.maxEntries)}`);
-            }
-            validatePath(entry.name, limits.maxPathBytes);
-            if (paths.has(entry.name)) {
-                throw new Error(`Duplicate ZIP entry path: ${entry.name}`);
-            }
-            paths.add(entry.name);
-            if (!entry.name.endsWith('/') && nestedArchiveExtension.test(entry.name)) {
-                throw new Error(`Nested archive entries are not allowed: ${entry.name}`);
-            }
-            if (entry.originalSize > limits.maxEntryUncompressedBytes) {
-                throw new Error(`ZIP entry exceeds the uncompressed byte limit: ${entry.name}`);
-            }
-
-            compressedBytes += entry.size;
-            uncompressedBytes += entry.originalSize;
-            if (uncompressedBytes > limits.maxTotalUncompressedBytes) {
-                throw new Error('ZIP total uncompressed bytes exceed the archive limit');
-            }
-            inventory.push({
-                path: entry.name,
-                compressedSize: entry.size,
-                uncompressedSize: entry.originalSize,
-                compression: entry.compression,
-            });
-            return false;
-        },
-    });
+    if (inventory.length > limits.maxEntries) {
+        throw new Error(`ZIP entry count exceeds ${String(limits.maxEntries)}`);
+    }
+    for (const entry of inventory) {
+        validatePath(entry.path, limits.maxPathBytes);
+        if (paths.has(entry.path)) {
+            throw new Error(`Duplicate ZIP entry path: ${entry.path}`);
+        }
+        paths.add(entry.path);
+        if (!entry.path.endsWith('/') && nestedArchiveExtension.test(entry.path)) {
+            throw new Error(`Nested archive entries are not allowed: ${entry.path}`);
+        }
+        if (entry.uncompressedSize > limits.maxEntryUncompressedBytes) {
+            throw new Error(`ZIP entry exceeds the uncompressed byte limit: ${entry.path}`);
+        }
+        compressedBytes += entry.compressedSize;
+        uncompressedBytes += entry.uncompressedSize;
+        if (uncompressedBytes > limits.maxTotalUncompressedBytes) {
+            throw new Error('ZIP total uncompressed bytes exceed the archive limit');
+        }
+    }
 
     let ratio = 0;
     if (compressedBytes === 0 && uncompressedBytes > 0) {
@@ -188,14 +98,24 @@ function inspectInventory(bytes: Uint8Array, limits: ZipExtractionLimits): ZipIn
     return inventory;
 }
 
-function rejectSymbolicLinks(bytes: Uint8Array): void {
+function readCentralDirectory(bytes: Uint8Array): ZipInventoryEntry[] {
     const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
     const end = findEndRecord(view);
+    const entriesOnDisk = view.getUint16(end + 8, true);
     const entries = view.getUint16(end + 10, true);
+    const centralBytes = view.getUint32(end + 12, true);
     let offset = view.getUint32(end + 16, true);
+    const centralEnd = offset + centralBytes;
+    const inventory: ZipInventoryEntry[] = [];
 
-    if (entries === 0xffff || offset === 0xffffffff) {
+    if (view.getUint16(end + 4, true) !== 0 || view.getUint16(end + 6, true) !== 0 || entriesOnDisk !== entries) {
+        throw new Error('ZIP entry counts or disk fields are inconsistent');
+    }
+    if (entries === 0xffff || centralBytes === 0xffffffff || offset === 0xffffffff) {
         throw new Error('ZIP64 archives are not supported');
+    }
+    if (centralEnd !== end) {
+        throw new Error('ZIP central directory bounds are inconsistent');
     }
     for (let index = 0; index < entries; index += 1) {
         requireAvailable(bytes, offset, CENTRAL_ENTRY_BYTES);
@@ -207,12 +127,53 @@ function rejectSymbolicLinks(bytes: Uint8Array): void {
         if (creator === UNIX_CREATOR && (unixMode & UNIX_FILE_TYPE_MASK) === UNIX_SYMLINK_TYPE) {
             throw new Error('ZIP symbolic links are not allowed');
         }
+        const flags = view.getUint16(offset + 8, true);
+        if ((flags & 1) !== 0) {
+            throw new Error('ZIP encrypted entries are not allowed');
+        }
         const nameBytes = view.getUint16(offset + 28, true);
         const extraBytes = view.getUint16(offset + 30, true);
         const commentBytes = view.getUint16(offset + 32, true);
         const entryBytes = CENTRAL_ENTRY_BYTES + nameBytes + extraBytes + commentBytes;
         requireAvailable(bytes, offset, entryBytes);
+        const nameData = bytes.subarray(offset + CENTRAL_ENTRY_BYTES, offset + CENTRAL_ENTRY_BYTES + nameBytes);
+        const path = strFromU8(nameData, (flags & 0x800) === 0);
+        const localOffset = view.getUint32(offset + 42, true);
+        validateLocalHeader(bytes, view, localOffset, flags, view.getUint16(offset + 10, true), nameData);
+        inventory.push({
+            path,
+            compressedSize: view.getUint32(offset + 20, true),
+            uncompressedSize: view.getUint32(offset + 24, true),
+            compression: view.getUint16(offset + 10, true),
+        });
         offset += entryBytes;
+    }
+    if (offset !== centralEnd) {
+        throw new Error('ZIP central directory entry count is inconsistent');
+    }
+    return inventory;
+}
+
+function validateLocalHeader(
+    bytes: Uint8Array,
+    view: DataView,
+    offset: number,
+    flags: number,
+    compression: number,
+    centralName: Uint8Array
+): void {
+    requireAvailable(bytes, offset, LOCAL_ENTRY_BYTES);
+    if (view.getUint32(offset, true) !== LOCAL_ENTRY_SIGNATURE) {
+        throw new Error('ZIP local entry signature is invalid');
+    }
+    if (view.getUint16(offset + 6, true) !== flags || view.getUint16(offset + 8, true) !== compression) {
+        throw new Error('ZIP local and central entry metadata disagree');
+    }
+    const nameBytes = view.getUint16(offset + 26, true);
+    requireAvailable(bytes, offset + LOCAL_ENTRY_BYTES, nameBytes + view.getUint16(offset + 28, true));
+    const localName = bytes.subarray(offset + LOCAL_ENTRY_BYTES, offset + LOCAL_ENTRY_BYTES + nameBytes);
+    if (nameBytes !== centralName.byteLength || localName.some((byte, index) => byte !== centralName[index])) {
+        throw new Error('ZIP local and central entry names disagree');
     }
 }
 
@@ -251,15 +212,12 @@ function validatePath(path: string, maxPathBytes: number): void {
     }
 }
 
-function assertExpectedEntry(
-    entry: UnzipFileInfo,
-    expected: ReadonlyMap<string, ZipInventoryEntry>
-): ZipInventoryEntry {
+function assertExpectedEntry(entry: UnzipFile, expected: ReadonlyMap<string, ZipInventoryEntry>): ZipInventoryEntry {
     const planned = expected.get(entry.name);
     if (
         !planned ||
-        entry.size !== planned.compressedSize ||
-        entry.originalSize !== planned.uncompressedSize ||
+        (entry.size !== undefined && entry.size !== planned.compressedSize) ||
+        (entry.originalSize !== undefined && entry.originalSize !== planned.uncompressedSize) ||
         entry.compression !== planned.compression
     ) {
         throw new Error(`ZIP extraction metadata does not match the inventory: ${entry.name}`);
@@ -267,23 +225,107 @@ function assertExpectedEntry(
     return planned;
 }
 
-function verifyResult(
-    result: Record<string, Uint8Array>,
+function createStreamingExtraction(
     expected: ReadonlyMap<string, ZipInventoryEntry>,
-    includedPaths: ReadonlySet<string>
-): void {
-    for (const [path, data] of Object.entries(result)) {
-        const planned = expected.get(path);
-        if (!planned || !includedPaths.has(path) || data.byteLength !== planned.uncompressedSize) {
-            throw new Error(`ZIP extractor returned an unplanned entry: ${path}`);
-        }
-        if (data.byteLength >= 4) {
-            const signature = new DataView(data.buffer, data.byteOffset, data.byteLength).getUint32(0, true);
-            if (zipMagicSignatures.has(signature)) {
-                throw new Error(`Nested archive content is not allowed: ${path}`);
+    includedPaths: ReadonlySet<string>,
+    limits: ZipExtractionLimits
+) {
+    const result: Record<string, Uint8Array> = {};
+    let completed = 0;
+    let expandedBytes = 0;
+    let failure: unknown;
+    const unzipper = new Unzip((file) => {
+        try {
+            const planned = assertExpectedEntry(file, expected);
+            if (!includedPaths.has(planned.path)) {
+                return;
             }
+            const output = new Uint8Array(planned.uncompressedSize);
+            let written = 0;
+            file.ondata = (error, data, final) => {
+                if (failure) {
+                    return;
+                }
+                if (error) {
+                    failure = error;
+                    return;
+                }
+                if (written + data.byteLength > output.byteLength) {
+                    failure = new Error(`ZIP entry exceeds its declared size: ${planned.path}`);
+                    return;
+                }
+                expandedBytes += data.byteLength;
+                if (expandedBytes > limits.maxTotalUncompressedBytes) {
+                    failure = new Error('ZIP total expanded bytes exceed the archive limit');
+                    return;
+                }
+                output.set(data, written);
+                written += data.byteLength;
+                if (!final) {
+                    return;
+                }
+                if (written !== output.byteLength) {
+                    failure = new Error(`ZIP entry does not match its declared size: ${planned.path}`);
+                    return;
+                }
+                if (hasNestedArchiveMagic(output)) {
+                    failure = new Error(`Nested archive content is not allowed: ${planned.path}`);
+                    return;
+                }
+                result[planned.path] = output;
+                completed += 1;
+            };
+            file.start();
+        } catch (error) {
+            failure = error;
+        }
+    });
+    unzipper.register(UnzipInflate);
+    return {
+        failed: () => failure !== undefined,
+        push: (chunk: Uint8Array, final: boolean) => {
+            if (!failure) {
+                try {
+                    unzipper.push(chunk, final);
+                } catch (error) {
+                    failure = error;
+                }
+            }
+        },
+        finish: () => {
+            if (!failure && completed !== includedPaths.size) {
+                failure = new Error('ZIP extraction did not produce every selected entry');
+            }
+            if (failure) {
+                throw toZipArchiveError(failure);
+            }
+            return result;
+        },
+    };
+}
+
+function hasNestedArchiveMagic(data: Uint8Array): boolean {
+    if (
+        startsWith(data, [0x1f, 0x8b]) ||
+        startsWith(data, [0x42, 0x5a, 0x68]) ||
+        startsWith(data, [0x37, 0x7a, 0xbc, 0xaf, 0x27, 0x1c]) ||
+        startsWith(data, [0x52, 0x61, 0x72, 0x21, 0x1a, 0x07]) ||
+        startsWith(data, [0xfd, 0x37, 0x7a, 0x58, 0x5a, 0x00]) ||
+        startsWith(data.subarray(257), [0x75, 0x73, 0x74, 0x61, 0x72])
+    ) {
+        return true;
+    }
+    const limit = Math.min(data.byteLength - 3, 4096);
+    for (let offset = 0; offset < limit; offset += 1) {
+        if (startsWith(data.subarray(offset), [0x50, 0x4b, 0x03, 0x04])) {
+            return true;
         }
     }
+    return false;
+}
+
+function startsWith(data: Uint8Array, signature: readonly number[]): boolean {
+    return signature.every((byte, index) => data[index] === byte);
 }
 
 function resolveLimits(restrictions?: Partial<ZipExtractionLimits>): ZipExtractionLimits {
@@ -299,20 +341,6 @@ function resolveLimits(restrictions?: Partial<ZipExtractionLimits>): ZipExtracti
         result[key] = Math.min(result[key], requested);
     }
     return result;
-}
-
-function throwIfAborted(signal?: AbortSignal): void {
-    if (signal?.aborted) {
-        throw createAbortError();
-    }
-}
-
-function createAbortError(): DOMException {
-    return new DOMException('Aborted', 'AbortError');
-}
-
-function isAbortError(error: unknown): error is DOMException {
-    return error instanceof DOMException && error.name === 'AbortError';
 }
 
 function toZipArchiveError(error: unknown): ZipArchiveError {

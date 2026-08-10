@@ -1,6 +1,4 @@
-import { strFromU8 } from 'fflate';
-
-import { extractGuardedZip } from '#/infra/archive/extractGuardedZip';
+import { unzipSync, strFromU8 } from 'fflate';
 
 export type DawProjectZipContents = {
     projectXml: string;
@@ -12,11 +10,7 @@ const textDecoder = new TextDecoder('utf-8');
 
 export function readDawProjectZip(buffer: ArrayBuffer): DawProjectZipContents {
     const bytes = new Uint8Array(buffer);
-    const entries = extractGuardedZip({
-        bytes,
-        include: (path) => /^\/?(?:project|metadata)\.xml$/i.test(path) || path.startsWith('audio/'),
-        synchronous: true,
-    });
+    const entries = unzipSync(bytes);
 
     const entryKey = Object.keys(entries).find((name) => /^\/?project\.xml$/i.test(name));
     const projectEntry = entryKey ? entries[entryKey] : undefined;
