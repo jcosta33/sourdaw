@@ -1,0 +1,29 @@
+src/modules/AiRuntime/useCases/agentReference/getDrumRoutingPromptScope.ts
+  s_a40848e8f8cca9::t_7b04d21a37bf4e 1-27,30-100
+  s_a40848e8f8cca9::t_8bb572ec702f49 28-29
+src/modules/AiRuntime/useCases/__tests__/drumBusPromptWorkflow.spec.ts
+  s_a40848e8f8cca9::t_56b867d761028c 698,715,717-720,722-728,732
+  s_a40848e8f8cca9::t_0f5ddc600f2bd9 36,45-51,97,101,142-154,399-697,699-701,707-714,716,721,729-731,733-763
+  s_a40848e8f8cca9::t_46673e793cd231 702-706
+  s_a40848e8f8cca9::t_90786942845133 764
+src/modules/AiRuntime/useCases/agentReference/bridgeGroundedLlmToolCalls.ts
+  s_a40848e8f8cca9::t_23dcec6fd97f4d 21,1500-1514,3463,3470-3478,3828-3862
+src/modules/AiRuntime/useCases/describePendingActionConfirmation.ts
+  s_a40848e8f8cca9::t_db019cf8e2efa2 9,101-105,110
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "c171434eac5230ff6dfbb98dc3eb5cd939704e85",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
