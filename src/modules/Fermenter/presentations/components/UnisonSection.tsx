@@ -31,6 +31,7 @@ export const UnisonSection = ({
                 <div className="flex flex-col items-center gap-1">
                     <Knob
                         paramId="unisonVoices"
+                        aria-label="Voices"
                         value={voices}
                         onChange={onVoicesChange}
                         min={1}
@@ -46,6 +47,7 @@ export const UnisonSection = ({
                 <div className="flex flex-col items-center gap-1">
                     <Knob
                         paramId="unisonDetune"
+                        aria-label="Detune"
                         value={detune}
                         onChange={onDetuneChange}
                         min={0}
@@ -61,6 +63,7 @@ export const UnisonSection = ({
                 <div className="flex flex-col items-center gap-1">
                     <Knob
                         paramId="unisonSpread"
+                        aria-label="Spread"
                         value={spread}
                         onChange={onSpreadChange}
                         min={0}
