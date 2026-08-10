@@ -57,7 +57,11 @@ pub struct ClapDescriptorMetadata {
 pub fn category_from_clap_features(features: &[String]) -> String {
     let has = |needle: &str| features.iter().any(|feature| feature == needle);
 
-    if has("instrument") || has("synthesizer") || has("sampler") || has("drum") || has("drum-machine")
+    if has("instrument")
+        || has("synthesizer")
+        || has("sampler")
+        || has("drum")
+        || has("drum-machine")
     {
         return "instrument".to_string();
     }
@@ -174,23 +178,13 @@ pub fn scan_directory(dir: &Path, plugins: &mut Vec<ScannedPlugin>, errors: &mut
         let is_dir = entry_metadata.is_dir();
 
         if let Some(format) = detect_format(&entry_path, is_dir) {
+            if format != "clap" {
+                continue;
+            }
+
             let name = plugin_name_from_path(&entry_path);
-
-            // Only CLAP exposes a descriptor without instantiating the plugin.
-            // VST3 and AU would each need their own bundle reader; until then
-            // they keep the filename-derived name and an empty vendor rather
-            // than inventing values.
-            let descriptor = if format == "clap" {
-                extract_clap_metadata(&entry_path)
-            } else {
-                ClapDescriptorMetadata::default()
-            };
-
-            let category = if format == "clap" {
-                category_from_clap_features(&descriptor.features)
-            } else {
-                "effect".to_string()
-            };
+            let descriptor = extract_clap_metadata(&entry_path);
+            let category = category_from_clap_features(&descriptor.features);
 
             plugins.push(ScannedPlugin {
                 id: stable_id(&entry_path),
@@ -201,14 +195,12 @@ pub fn scan_directory(dir: &Path, plugins: &mut Vec<ScannedPlugin>, errors: &mut
                 path: entry_path.to_string_lossy().into_owned(),
                 version: descriptor.version,
                 clap_id: descriptor.id,
-                // Port and parameter counts are per-instance in CLAP: reading
-                // them means creating the plugin, which scanning must not do.
-                // They stay at these placeholders, and nothing should present
-                // them as measured facts.
-                num_inputs: 2,
-                num_outputs: 2,
+                // Runtime capabilities require a format-specific metadata
+                // reader or a live instance. Discovery must not invent them.
+                num_inputs: 0,
+                num_outputs: 0,
                 num_parameters: 0,
-                has_custom_ui: true,
+                has_custom_ui: false,
             });
         } else if is_dir {
             scan_directory(&entry_path, plugins, errors);
@@ -325,6 +317,35 @@ mod tests {
         );
     }
 
+    #[cfg(unix)]
+    #[test]
+    fn scan_directory_does_not_advertise_unsupported_native_bundles() {
+        let temp_root = std::env::current_dir()
+            .expect("current directory should resolve")
+            .join("target")
+            .join(
+                unique_temp_scan_root("scanner-vst3-capabilities")
+                    .file_name()
+                    .expect("temp path should have a final component"),
+            );
+        let plugin_bundle = temp_root.join("Unmeasured.vst3");
+        let audio_unit_bundle = temp_root.join("Unmeasured.component");
+        std::fs::create_dir_all(&plugin_bundle).expect("VST3 placeholder should be created");
+        std::fs::create_dir_all(&audio_unit_bundle)
+            .expect("Audio Unit placeholder should be created");
+
+        let mut plugins = Vec::new();
+        let mut errors = Vec::new();
+        scan_directory(&temp_root, &mut plugins, &mut errors);
+        let _ = std::fs::remove_dir_all(&temp_root);
+
+        assert!(errors.is_empty(), "unexpected scan errors: {errors:?}");
+        assert!(
+            plugins.is_empty(),
+            "unsupported VST3 and Audio Unit bundles must not appear loadable: {plugins:?}"
+        );
+    }
+
     // ── Category derived from CLAP features ─────────────────────────────
     //
     // Every scanned plugin used to be reported as an "effect". The plugin
@@ -348,21 +369,36 @@ mod tests {
     fn a_synthesizer_or_sampler_without_the_instrument_feature_still_reads_as_one() {
         // The spec lists `instrument` as the primary category, but plugins in
         // the wild ship the sub-feature alone. Routing on it is still correct.
-        assert_eq!(category_from_clap_features(&features(&["synthesizer"])), "instrument");
-        assert_eq!(category_from_clap_features(&features(&["sampler", "stereo"])), "instrument");
-        assert_eq!(category_from_clap_features(&features(&["drum-machine"])), "instrument");
+        assert_eq!(
+            category_from_clap_features(&features(&["synthesizer"])),
+            "instrument"
+        );
+        assert_eq!(
+            category_from_clap_features(&features(&["sampler", "stereo"])),
+            "instrument"
+        );
+        assert_eq!(
+            category_from_clap_features(&features(&["drum-machine"])),
+            "instrument"
+        );
     }
 
     #[test]
     fn a_note_effect_is_not_an_audio_effect() {
         // An arpeggiator takes notes and emits notes; sending it down an audio
         // chain is the wrong routing decision.
-        assert_eq!(category_from_clap_features(&features(&["note-effect"])), "note-effect");
+        assert_eq!(
+            category_from_clap_features(&features(&["note-effect"])),
+            "note-effect"
+        );
     }
 
     #[test]
     fn an_analyzer_is_reported_as_an_analyzer() {
-        assert_eq!(category_from_clap_features(&features(&["analyzer", "stereo"])), "analyzer");
+        assert_eq!(
+            category_from_clap_features(&features(&["analyzer", "stereo"])),
+            "analyzer"
+        );
     }
 
     #[test]
