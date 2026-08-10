@@ -209,6 +209,7 @@ pub async fn commit_pitch_edit(request: PitchCommitRequest) -> Result<(), String
         let cfg = PsolaConfig {
             sample_rate,
             max_semitones_transparent: 4.0,
+            grain_rate: 1.0,
         };
 
         let mut out_samples = vec![0.0_f32; samples.len()];
