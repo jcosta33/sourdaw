@@ -1,5 +1,6 @@
 import { createHandler } from '#/utils/createHandler';
 
+import { abortAddedDeviceRuntime } from '../../useCases/device/abortAddedDeviceRuntime';
 import { addDevice } from '../../useCases/device/addDevice';
 import { getTrackStoreState } from '../../useCases/getTrackStoreState';
 import { toHandlerExecutionResult } from '../toHandlerExecutionResult';
@@ -18,9 +19,16 @@ function ensureDeviceId(action: AddDeviceAction): string {
 export const handleAddDevice = createHandler<'addDevice'>({
     execute: (action) => {
         let deviceIndex: number | undefined;
-        if (action.payload.expectedDeviceIds || action.payload.afterDeviceId) {
+        if (
+            action.payload.expectedDeviceIds ||
+            action.payload.afterDeviceId ||
+            action.payload.expectedFrozen !== undefined
+        ) {
             const track = getTrackStoreState()?.tracks.find((candidate) => candidate.id === action.payload.trackId);
             if (!track) {
+                return { status: 'conflict' };
+            }
+            if (action.payload.expectedFrozen !== undefined && track.frozen !== action.payload.expectedFrozen) {
                 return { status: 'conflict' };
             }
             const currentDeviceIds = track.devices.map((device) => device.id);
@@ -78,6 +86,12 @@ export const handleAddDevice = createHandler<'addDevice'>({
         return {
             label: `Add ${action.payload.deviceType}`,
             inverseAction: { type: 'removeDevice', payload: inversePayload },
+        };
+    },
+    prepareAbort: (action) => {
+        const deviceId = ensureDeviceId(action);
+        return () => {
+            abortAddedDeviceRuntime({ trackId: action.payload.trackId, deviceId });
         };
     },
     requiresAbortCompensation: true,

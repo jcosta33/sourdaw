@@ -638,6 +638,8 @@ export type AppAction =
               afterDeviceId?: string;
               deviceId?: string;
               expectedDeviceIds?: readonly string[];
+              /** Internal AI replay guard. Provider payloads cannot set this field. */
+              expectedFrozen?: boolean;
           };
       }
     | { type: 'bypassDevice'; payload: { deviceId: string; bypassed: boolean } }

@@ -3,7 +3,12 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { handleAddDevice } from '../handleAddDevice';
 
 const mocks = vi.hoisted(() => ({
+    abortAddedDeviceRuntime: vi.fn(),
     addDevice: vi.fn(),
+}));
+
+vi.mock('../../../useCases/device/abortAddedDeviceRuntime', () => ({
+    abortAddedDeviceRuntime: mocks.abortAddedDeviceRuntime,
 }));
 
 vi.mock('../../../useCases/device/addDevice', () => ({
@@ -57,5 +62,17 @@ describe('handleAddDevice', () => {
 
     it('is undoable', () => {
         expect(handleAddDevice.undoable).toBe(true);
+    });
+
+    it('captures exact runtime cleanup separately from guarded semantic compensation', async () => {
+        const action = {
+            type: 'addDevice',
+            payload: { trackId: 't1', deviceType: 'builtin-compressor', deviceId: 'device-1' },
+        } as const;
+
+        await handleAddDevice.prepareAbort?.(action)();
+
+        expect(mocks.abortAddedDeviceRuntime).toHaveBeenCalledWith({ trackId: 't1', deviceId: 'device-1' });
+        expect(handleAddDevice.requiresAbortCompensation).toBe(true);
     });
 });

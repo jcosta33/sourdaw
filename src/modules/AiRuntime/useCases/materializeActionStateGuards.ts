@@ -12,6 +12,7 @@ export function materializeActionStateGuards(
     context: ProjectContext
 ): MaterializeActionStateGuardsResult {
     const tracksById = new Map(context.tracks.map((track) => [track.id, track]));
+    const frozenByTrack = new Map(context.tracks.map((track) => [track.id, track.frozen] as const));
     const reservedDeviceIds = new Set(context.tracks.flatMap((track) => track.devices.map((device) => device.id)));
     const deviceIdsByTrack = new Map(
         context.tracks.map((track) => [track.id, track.devices.map((device) => device.id)] as const)
@@ -53,6 +54,13 @@ export function materializeActionStateGuards(
             continue;
         }
         if (action.type === 'addDevice') {
+            const expectedFrozen = frozenByTrack.get(action.payload.trackId);
+            if (expectedFrozen === undefined) {
+                return { status: 'rejected', reason: `Track is unavailable: ${action.payload.trackId}` };
+            }
+            if (expectedFrozen) {
+                return { status: 'rejected', reason: `Track is frozen: ${action.payload.trackId}` };
+            }
             const expectedDeviceIds = deviceIdsByTrack.get(action.payload.trackId);
             if (!expectedDeviceIds) {
                 return { status: 'rejected', reason: `Track is unavailable: ${action.payload.trackId}` };
@@ -85,12 +93,14 @@ export function materializeActionStateGuards(
                     ...action.payload,
                     deviceId,
                     expectedDeviceIds,
+                    expectedFrozen,
                 },
             });
             continue;
         }
         if (action.type === 'createBus' && action.payload.busId) {
             deviceIdsByTrack.set(action.payload.busId, []);
+            frozenByTrack.set(action.payload.busId, false);
         }
         if (action.type === 'automateSendRange') {
             const bus = tracksById.get(action.payload.busId);
