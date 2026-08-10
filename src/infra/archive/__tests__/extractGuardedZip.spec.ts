@@ -37,8 +37,8 @@ function mutateHeaders(archive: Uint8Array, mutate: (view: DataView, offset: num
     return result;
 }
 
-function prefixZip(archive: Uint8Array): Uint8Array {
-    const prefix = bytes(32, 0x41);
+function prefixZip(archive: Uint8Array, prefixLength = 32): Uint8Array {
+    const prefix = bytes(prefixLength, 0x41);
     const result = new Uint8Array(prefix.byteLength + archive.byteLength);
     result.set(prefix);
     result.set(archive, prefix.byteLength);
@@ -107,6 +107,13 @@ describe('extractGuardedZip', () => {
         expect(() => extractGuardedZip({ bytes: archive })).toThrow(/encrypted/i);
     });
 
+    it('rejects data-descriptor entries before extraction', () => {
+        const archive = mutateHeaders(zip({ 'streamed.bin': bytes(4) }), (view, offset, central) => {
+            view.setUint16(offset + (central ? 8 : 6), view.getUint16(offset + (central ? 8 : 6), true) | 8, true);
+        });
+        expect(() => extractGuardedZip({ bytes: archive })).toThrow(/data-descriptor/i);
+    });
+
     it('rejects output that exceeds its declared size', () => {
         const archive = mutateHeaders(zip({ 'forged.bin': bytes(1024 * 1024, 0) }), (view, offset, central) => {
             view.setUint32(offset + (central ? 24 : 22), 1, true);
@@ -125,7 +132,8 @@ describe('extractGuardedZip', () => {
 
     it.each([
         ['gzip', gzipSync(bytes(8))],
-        ['prefixed ZIP', prefixZip(zip({ 'payload.bin': bytes(1) }))],
+        ['empty ZIP', zip({})],
+        ['long-prefixed ZIP', prefixZip(zip({ 'payload.bin': bytes(1) }), 8192)],
     ])('rejects disguised nested %s content', (_name, nested) => {
         expect(() => extractGuardedZip({ bytes: zip({ 'nested.bin': nested }) })).toThrow(/nested archive content/i);
     });

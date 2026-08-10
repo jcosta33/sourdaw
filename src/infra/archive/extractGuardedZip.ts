@@ -169,6 +169,9 @@ function validateLocalHeader(
     if (view.getUint16(offset + 6, true) !== flags || view.getUint16(offset + 8, true) !== compression) {
         throw new Error('ZIP local and central entry metadata disagree');
     }
+    if ((flags & 8) !== 0) {
+        throw new Error('ZIP data-descriptor entries are not supported');
+    }
     const nameBytes = view.getUint16(offset + 26, true);
     requireAvailable(bytes, offset + LOCAL_ENTRY_BYTES, nameBytes + view.getUint16(offset + 28, true));
     const localName = bytes.subarray(offset + LOCAL_ENTRY_BYTES, offset + LOCAL_ENTRY_BYTES + nameBytes);
@@ -305,6 +308,12 @@ function createStreamingExtraction(
 }
 
 function hasNestedArchiveMagic(data: Uint8Array): boolean {
+    try {
+        readCentralDirectory(data);
+        return true;
+    } catch {
+        // Continue with non-ZIP archive signatures.
+    }
     if (
         startsWith(data, [0x1f, 0x8b]) ||
         startsWith(data, [0x42, 0x5a, 0x68]) ||
@@ -314,12 +323,6 @@ function hasNestedArchiveMagic(data: Uint8Array): boolean {
         startsWith(data.subarray(257), [0x75, 0x73, 0x74, 0x61, 0x72])
     ) {
         return true;
-    }
-    const limit = Math.min(data.byteLength - 3, 4096);
-    for (let offset = 0; offset < limit; offset += 1) {
-        if (startsWith(data.subarray(offset), [0x50, 0x4b, 0x03, 0x04])) {
-            return true;
-        }
     }
     return false;
 }
