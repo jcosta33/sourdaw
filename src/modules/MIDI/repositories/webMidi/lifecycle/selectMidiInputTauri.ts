@@ -22,8 +22,13 @@ function isNumberArray(value: unknown): value is number[] {
     if (!Array.isArray(value)) {
         return false;
     }
+    if (value.length < 2 || value.length > 3) {
+        return false;
+    }
 
-    return value.every((entry): entry is number => typeof entry === 'number');
+    return value.every(
+        (entry): entry is number => typeof entry === 'number' && Number.isInteger(entry) && entry >= 0 && entry <= 255
+    );
 }
 
 function isTauriMidiMessageEvent(event: unknown): event is TauriMidiMessageEvent {
@@ -49,7 +54,7 @@ function isTauriMidiMessageEvent(event: unknown): event is TauriMidiMessageEvent
 
 function readNativeTimestampMicros(event: TauriMidiMessageEvent): number | undefined {
     const { timestamp } = event.payload;
-    if (typeof timestamp !== 'number') {
+    if (typeof timestamp !== 'number' || !Number.isFinite(timestamp) || timestamp < 0) {
         return undefined;
     }
 
@@ -83,10 +88,6 @@ export async function selectMidiInputTauri({ portIndex, onMidiMessage }: SelectM
         }
 
         const bytes = event.payload.data;
-        if (bytes.length < 2) {
-            return;
-        }
-
         const uint8 = new Uint8Array(bytes);
         const timeStamp = mapNativeMidiTimestamp({
             timestampMicros: readNativeTimestampMicros(event),

@@ -71,6 +71,10 @@ describe('selectMidiInputTauri', () => {
         listener({ payload: {} });
         listener({ payload: { data: '144,64,127' } });
         listener({ payload: { data: [144] } });
+        listener({ payload: { data: [144, 64, 127, 1] } });
+        listener({ payload: { data: [144, -1] } });
+        listener({ payload: { data: [144, 256] } });
+        listener({ payload: { data: [144, 64.5] } });
 
         expect(onMidiMessageMock).not.toHaveBeenCalled();
     });
@@ -167,6 +171,17 @@ describe('selectMidiInputTauri', () => {
         await selectMidiInputTauri({ portIndex: 1, onMidiMessage: onMidiMessageMock });
         tauriListenMock.mock.calls[0]![1]({ payload: { data: [144, 60, 127] } });
 
+        expect(onMidiMessageMock.mock.calls[0]![0].timeStamp).toBeUndefined();
+    });
+
+    it('forwards valid bytes without an untrusted native timestamp', async () => {
+        const onMidiMessageMock = vi.fn<(event: MIDIMessageEvent) => void>();
+
+        await selectMidiInputTauri({ portIndex: 1, onMidiMessage: onMidiMessageMock });
+        const listener = tauriListenMock.mock.calls[0]![1];
+        listener({ payload: { data: [144, 60, 127], timestamp: Number.POSITIVE_INFINITY } });
+
+        expect(onMidiMessageMock).toHaveBeenCalledTimes(1);
         expect(onMidiMessageMock.mock.calls[0]![0].timeStamp).toBeUndefined();
     });
 });

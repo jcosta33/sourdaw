@@ -67,9 +67,14 @@ fn provider_gateway_webview_boundary() {
 
     assert!(!production_csp.contains("'unsafe-eval'"));
     assert!(!production_csp.contains("script-src 'self' 'unsafe-inline'"));
-    assert!(!production_csp.contains("http://localhost"));
     assert!(!production_csp.contains("ws://localhost"));
+    assert!(!production_csp.contains(" connect-src 'self' ipc: http://ipc.localhost http: "));
     assert!(production_csp.contains("script-src 'self' 'wasm-unsafe-eval'"));
+    assert!(production_csp.contains(
+        "connect-src 'self' ipc: http://ipc.localhost http://localhost:* http://127.0.0.1:* http://[::1]:* https:"
+    ));
+    assert!(production_csp.contains("worker-src 'self';"));
+    assert!(!production_csp.contains("worker-src 'self' blob:"));
     assert!(development_csp.contains("http://localhost:*"));
     assert!(development_csp.contains("ws://localhost:*"));
 
@@ -79,7 +84,36 @@ fn provider_gateway_webview_boundary() {
 
     let permission_commands =
         permission_command_names(&read(&root.join("permissions/sourdaw-commands.toml")));
-    assert_eq!(permission_commands, handler_commands);
+    let denied_commands = BTreeSet::from([
+        "close_all_plugin_guis".to_owned(),
+        "collab_get_nearby_sessions".to_owned(),
+        "collab_start_advertising".to_owned(),
+        "collab_start_browsing".to_owned(),
+        "collab_stop_advertising".to_owned(),
+        "collab_stop_browsing".to_owned(),
+        "detect_sample_pitch".to_owned(),
+        "get_asr_status".to_owned(),
+        "get_model_dir".to_owned(),
+        "get_native_llm_status".to_owned(),
+        "hide_all_plugin_guis".to_owned(),
+        "load_whisper_model".to_owned(),
+        "post_process_audio".to_owned(),
+        "read_audio_file".to_owned(),
+        "send_plugin_midi".to_owned(),
+        "show_all_plugin_guis".to_owned(),
+        "start_audio_gen_sidecar".to_owned(),
+        "start_native_engine".to_owned(),
+        "stop_audio_gen_sidecar".to_owned(),
+        "update_plugin_transport".to_owned(),
+        "write_audio_file".to_owned(),
+    ]);
+    assert_eq!(
+        handler_commands
+            .difference(&permission_commands)
+            .cloned()
+            .collect::<BTreeSet<_>>(),
+        denied_commands
+    );
 
     let capability: Value = serde_json::from_str(&read(&root.join("capabilities/default.json")))
         .expect("main capability must be valid JSON");
