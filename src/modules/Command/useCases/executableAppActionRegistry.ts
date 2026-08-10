@@ -1817,6 +1817,34 @@ export const executableAppActionDescriptors = [
         },
     },
     {
+        actionType: 'automateTrackGainRange',
+        risk: 'authority-sensitive',
+        description:
+            'Lift an app-grounded set of impact buses by a bounded relative dB amount inside one arrangement section.',
+        intentPhrases: ['make the second chorus hit harder', 'second chorus hit harder'],
+        targetRules: [],
+        valueRules: [],
+        parameters: {
+            properties: {
+                trackIds: {
+                    type: 'array',
+                    items: { type: 'string' },
+                    minItems: 1,
+                    uniqueItems: true,
+                    description: 'Exact app-grounded impact-bus IDs',
+                },
+                sectionName: { type: 'string', description: 'Existing target chorus name' },
+                gainDb: {
+                    type: 'number',
+                    exclusiveMinimum: 0,
+                    maximum: 6,
+                    description: 'Bounded decibel lift selected by the planning policy',
+                },
+            },
+            required: ['trackIds', 'sectionName', 'gainDb'],
+        },
+    },
+    {
         actionType: 'addAutomationLane',
         risk: 'bounded-reversible',
         description: 'Create a gain or pan automation lane on an existing track.',

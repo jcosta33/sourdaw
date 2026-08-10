@@ -16,6 +16,7 @@ import {
 } from '../transformers/promptParser/parsing';
 
 import { bridgeGroundedLlmToolCalls } from './agentReference/bridgeGroundedLlmToolCalls';
+import { getWholeProjectVibeMixScope } from './agentReference/getWholeProjectVibeMixScope';
 import { materializeBatchLocalActionIdentities } from './agentReference/materializeBatchLocalActionIdentities';
 import { type ProjectContext } from './getProjectContext';
 import { generateToolPlanningOutcome } from './llmOrchestration/inference';
@@ -73,7 +74,8 @@ export const parsePromptToActions = inject({ logger })(
         async function parsePromptToActions(
             prompt: string,
             context: ProjectContext,
-            signal?: AbortSignal
+            signal?: AbortSignal,
+            projectRevision?: string
         ): Promise<IntentResult> {
             const normalized = prompt.toLowerCase().trim();
 
@@ -113,9 +115,19 @@ export const parsePromptToActions = inject({ logger })(
             // 5. Provider-neutral LLM path. This only proposes typed actions;
             // sendChatMessage remains responsible for confirmation and execution.
             try {
+                const wholeProjectVibeMixCapability = getWholeProjectVibeMixScope(
+                    prompt,
+                    context,
+                    projectRevision
+                )?.capability;
                 const planningOutcome = await generateToolPlanningOutcome(
                     buildLlmActionSystemPrompt(),
-                    buildLlmActionUserMessage({ prompt, context }),
+                    buildLlmActionUserMessage({
+                        prompt,
+                        context,
+                        projectRevision,
+                        wholeProjectVibeMixCapability,
+                    }),
                     getExecutableAppActionToolSchemas(),
                     signal,
                     prompt

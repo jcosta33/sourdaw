@@ -143,6 +143,58 @@ export function materializeActionStateGuards(
             });
             continue;
         }
+        if (action.type === 'automateTrackGainRange') {
+            const section = (context.sections ?? []).find(
+                (candidate) => candidate.name.toLocaleLowerCase() === action.payload.sectionName.toLocaleLowerCase()
+            );
+            if (!section) {
+                return { status: 'rejected', reason: `Section is unavailable: ${action.payload.sectionName}` };
+            }
+            const expectedTracks = [];
+            for (const trackId of action.payload.trackIds) {
+                const track = tracksById.get(trackId);
+                if (!track || track.kind !== 'bus') {
+                    return { status: 'rejected', reason: `Impact bus is unavailable: ${trackId}` };
+                }
+                if (
+                    track.frozen === true ||
+                    track.automationMode === 'off' ||
+                    !Number.isFinite(track.gain) ||
+                    track.gain <= 0 ||
+                    track.gain * 10 ** (action.payload.gainDb / 20) > 1 ||
+                    (context.automationLanes ?? []).some(
+                        (lane) =>
+                            lane.id === `auto-gain-${encodeURIComponent(trackId)}` ||
+                            (!lane.clipId && lane.trackId === trackId && lane.parameterId === 'gain')
+                    )
+                ) {
+                    return { status: 'rejected', reason: `Impact bus cannot accept gain automation: ${trackId}` };
+                }
+                expectedTracks.push({
+                    trackId,
+                    trackName: track.name,
+                    gain: track.gain,
+                    automationMode: track.automationMode,
+                    frozen: track.frozen ?? false,
+                });
+            }
+            materialized.push({
+                type: 'automateTrackGainRange',
+                payload: {
+                    ...action.payload,
+                    sectionId: section.id,
+                    startBeat: section.startBeat,
+                    endBeat: section.endBeat,
+                    expectedTracks,
+                    expectedSection: {
+                        name: section.name,
+                        startBeat: section.startBeat,
+                        endBeat: section.endBeat,
+                    },
+                },
+            });
+            continue;
+        }
         materialized.push(action);
     }
 

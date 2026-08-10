@@ -743,6 +743,45 @@ export type AppAction =
           };
       }
     | {
+          type: 'automateTrackGainRange';
+          payload: {
+              trackIds: string[];
+              sectionName: string;
+              gainDb: number;
+              sectionId?: string;
+              startBeat?: number;
+              endBeat?: number;
+              expectedTracks?: Array<{
+                  trackId: string;
+                  trackName: string;
+                  gain: number;
+                  automationMode: 'read' | 'write' | 'touch' | 'latch' | 'off';
+                  frozen: boolean;
+              }>;
+              expectedSection?: { name: string; startBeat: number; endBeat: number };
+          };
+      }
+    | {
+          /** Internal guarded inverse for `automateTrackGainRange`. */
+          type: 'removeTrackGainAutomationRange';
+          payload: {
+              trackIds: string[];
+              sectionName: string;
+              gainDb: number;
+              sectionId: string;
+              startBeat: number;
+              endBeat: number;
+              expectedTracks: Array<{
+                  trackId: string;
+                  trackName: string;
+                  gain: number;
+                  automationMode: 'read' | 'write' | 'touch' | 'latch' | 'off';
+                  frozen: boolean;
+              }>;
+              expectedSection: { name: string; startBeat: number; endBeat: number };
+          };
+      }
+    | {
           /** Internal guarded inverse for `automateSendRange`. */
           type: 'removeSendAutomationRange';
           payload: {

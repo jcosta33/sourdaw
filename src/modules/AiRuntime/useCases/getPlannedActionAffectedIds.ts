@@ -31,5 +31,11 @@ export function getPlannedActionAffectedIds(action: AppAction): string[] {
     if (action.type === 'automateSendRange' && action.payload.sectionId) {
         affectedIds.add(action.payload.sectionId);
     }
+    if (action.type === 'automateTrackGainRange' && action.payload.sectionId) {
+        for (const trackId of action.payload.trackIds) {
+            affectedIds.add(trackId);
+        }
+        affectedIds.add(action.payload.sectionId);
+    }
     return [...affectedIds];
 }
