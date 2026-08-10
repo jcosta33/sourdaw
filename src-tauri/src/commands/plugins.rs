@@ -3,6 +3,7 @@
 use crate::commands::binary_ipc::{raw_body_bytes, read_percent_encoded_header};
 use crate::host::native_bridge::{ClapPluginSlot, SharedClapPlugin};
 use crate::host::plugin_scan_policy::PluginScanPolicy;
+use crate::host::plugin_scan_worker;
 use crate::state::{AppState, PluginInstanceData, PluginRegistryEntry};
 use cpal::traits::{DeviceTrait, HostTrait};
 use daw_engine::audio_bridge::create_audio_bridge;
@@ -12,8 +13,9 @@ use daw_plugin_host::scanner::{self, ScanResult, ScannedPlugin};
 use daw_plugin_host::{AudioPlugin, ClapWrapper};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 use tauri::Manager;
 
 // Re-export PluginParameter from daw-plugin-host for TypeScript binding generation
@@ -49,6 +51,10 @@ fn remove_engine_plugin_record_after_scheduler_removal<EnginePluginRecord>(
 }
 
 // ── Scanning commands ───────────────────────────────────────────────────
+
+const MAX_SCAN_CANDIDATES: usize = 256;
+const MAX_SCAN_DURATION: Duration = Duration::from_secs(30);
+static PLUGIN_SCAN_PERMIT: tokio::sync::Semaphore = tokio::sync::Semaphore::const_new(1);
 
 /// Build the lookup table `load_plugin` resolves against.
 ///
@@ -105,9 +111,12 @@ pub async fn scan_plugins(
     paths: Vec<String>,
     state: tauri::State<'_, AppState>,
 ) -> Result<ScanResult, String> {
+    let permit = PLUGIN_SCAN_PERMIT
+        .try_acquire()
+        .map_err(|_| "Plugin scan already in progress".to_string())?;
     let start = std::time::Instant::now();
     let scan_policy = PluginScanPolicy::platform_defaults();
-    let mut plugins = Vec::new();
+    let mut authorized_paths = Vec::new();
     let mut errors = Vec::new();
 
     for scan_path in &paths {
@@ -121,14 +130,73 @@ pub async fn scan_plugins(
             errors.push(format!("Not a directory: {}", scan_path));
             continue;
         }
-        scanner::scan_directory(&path, &mut plugins, &mut errors);
+        authorized_paths.push(path);
     }
+
+    let scan_roots = authorized_paths.clone();
+    let deadline = start + MAX_SCAN_DURATION;
+    let (plugins, scan_errors, scanned_paths, scan_complete) =
+        tokio::task::spawn_blocking(move || {
+            let _permit = permit;
+            let mut candidates = Vec::new();
+            let mut scan_errors = Vec::new();
+            let mut scan_complete = true;
+            for path in scan_roots {
+                if !scanner::scan_directory_bounded(
+                    &path,
+                    &mut candidates,
+                    &mut scan_errors,
+                    (MAX_SCAN_CANDIDATES, deadline),
+                ) {
+                    let message = if candidates.len() >= MAX_SCAN_CANDIDATES {
+                        "Plugin scan candidate limit exceeded"
+                    } else {
+                        "Plugin scan time limit exceeded"
+                    };
+                    scan_errors.push(message.to_string());
+                    scan_complete = false;
+                    break;
+                }
+            }
+            candidates.sort();
+            candidates.dedup();
+            let mut plugins = Vec::new();
+            let mut scanned_paths = Vec::new();
+            for candidate in candidates {
+                let remaining = deadline.saturating_duration_since(Instant::now());
+                if remaining.is_zero() {
+                    scan_errors.push("Plugin scan time limit exceeded".to_string());
+                    scan_complete = false;
+                    break;
+                }
+                scanned_paths.push(candidate.clone());
+                match plugin_scan_worker::scan_clap_metadata(&candidate, remaining) {
+                    Ok(metadata) => plugins.push(scanner::scanned_plugin(&candidate, metadata)),
+                    Err(error) => scan_errors.push(format!("{}: {error}", candidate.display())),
+                }
+            }
+            (plugins, scan_errors, scanned_paths, scan_complete)
+        })
+        .await
+        .map_err(|error| format!("Plugin scan task failed: {error}"))?;
+    errors.extend(scan_errors);
 
     // Populate the plugin registry so load_plugin can find them. The scanner
     // already read every CLAP descriptor; this used to re-`dlopen` each one to
     // recover the id it had thrown away.
     if let Ok(mut registry) = state.plugin_registry.lock() {
+        registry.retain(|_, entry| {
+            let path = Path::new(&entry.path);
+            if scan_complete {
+                return !authorized_paths.iter().any(|root| path.starts_with(root));
+            }
+            !scanned_paths.iter().any(|scanned| scanned == path)
+        });
         registry.extend(index_scanned_plugins(&plugins));
+    }
+
+    if !scan_complete {
+        return Err("Plugin scan did not complete within safety limits".to_string());
     }
 
     Ok(ScanResult {
