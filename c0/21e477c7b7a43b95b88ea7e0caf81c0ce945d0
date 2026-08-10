@@ -1,0 +1,96 @@
+src/modules/AiRuntime/useCases/agentReference/bridgeGroundedLlmToolCalls.ts
+  s_a40848e8f8cca9::t_68f7623336ac57 22,3801-3808,3817-3823,3825-3827,3829-3842
+  s_a40848e8f8cca9::t_099ba064e320e1 3813,3828
+  s_a40848e8f8cca9::t_5e4af8dda09ef9 3809-3812,3814-3816,3824
+src/modules/AiRuntime/useCases/__tests__/wholeProjectVibeMixPlan.spec.ts
+  s_a40848e8f8cca9::t_3e8ac377462e80 536-544
+  s_a40848e8f8cca9::t_099ba064e320e1 264-269
+  s_a40848e8f8cca9::t_b0f58feecfebfb 2,24,35-38,69,80,82-90,92-94,115-117,161-165,253-254,465,467,470,530-531,587,599,630,634,639-640
+  s_a40848e8f8cca9::t_d41093650f2999 212-227,301,328,352
+  s_a40848e8f8cca9::t_3ee095c1d03a60 332-333
+  s_a40848e8f8cca9::t_cc55c033c65bda 291-294,296-300,302-308,310-327,329-331,344-351,353-355,389
+  s_a40848e8f8cca9::t_efe57da16c2d45 1,3-23,25-34,39-68,70-79,81,91,95-114,118-160,166-211,228-252,255-263,270-290,295,309,334-343,357-386,388,390-395,397-413,415-464,466,468-469,471-529,532-535,545-586,588-598,600-629,631-633,635-638
+  s_a40848e8f8cca9::t_ff3497d973379e 356,387,396,414
+src/modules/Command/useCases/executableAppActionRegistry.ts
+  s_a40848e8f8cca9::t_dcbcbc21cbdb07 1820-1846
+  s_a40848e8f8cca9::t_fce184a0147952 1819
+src/modules/AiRuntime/models/RuntimeAction.ts
+  s_a40848e8f8cca9::t_8029e15797abfa 73,278,326
+src/modules/AiRuntime/useCases/materializeActionStateGuards.ts
+  s_a40848e8f8cca9::t_e0b2a825bc563e 162-163,166-168
+  s_a40848e8f8cca9::t_1994fa4b8037a3 146-161,164-165,169-197
+src/modules/Automation/handlers/automation/handleAutomateTrackGainRange.ts
+  s_a40848e8f8cca9::t_c10a499ec3fa4d 1-62,66-68,72-92,98-107
+  s_a40848e8f8cca9::t_5e4af8dda09ef9 93-94,96-97
+  s_a40848e8f8cca9::t_099ba064e320e1 95
+  s_a40848e8f8cca9::t_e0b2a825bc563e 63-65,69-71
+src/modules/Automation/services/buildTrackGainAutomationRangeLane.ts
+  s_a40848e8f8cca9::t_962e0481a902df 12
+  s_a40848e8f8cca9::t_c10a499ec3fa4d 1-11,13-35
+src/modules/Automation/handlers/automation/handleRemoveTrackGainAutomationRange.ts
+  s_a40848e8f8cca9::t_099ba064e320e1 104
+  s_a40848e8f8cca9::t_962e0481a902df 8
+  s_a40848e8f8cca9::t_660e40d968aeb8 1-7,9-103,105-112
+src/modules/AiRuntime/useCases/planPromptActions.ts
+  s_a40848e8f8cca9::t_1a34f2fe65323a 17
+  s_a40848e8f8cca9::t_6fdb33f17abe30 5,18-26
+src/modules/Automation/useCases/automation/removeTrackGainAutomationRange.ts
+  s_a40848e8f8cca9::t_c10a499ec3fa4d 1-15
+src/modules/Automation/useCases/automation/applyTrackGainAutomationRange.ts
+  s_a40848e8f8cca9::t_c10a499ec3fa4d 1-28
+src/modules/AiRuntime/transformers/llmActionBridge.ts
+  s_a40848e8f8cca9::t_4249ad6379388e 819,832-834,850,870
+  s_a40848e8f8cca9::t_1a34f2fe65323a 2988-2996,2998
+  s_a40848e8f8cca9::t_810535709cfb90 816-818,820-831,835-849,851,855-869,871-874
+  s_a40848e8f8cca9::t_e0b2a825bc563e 852-854
+src/modules/AiRuntime/useCases/parsePromptToActions.ts
+  s_a40848e8f8cca9::t_1a34f2fe65323a 76-77,119
+src/modules/AiRuntime/useCases/agentReference/getWholeProjectVibeMixScope.ts
+  s_a40848e8f8cca9::t_974a9e15b64fdf 1-36,41-61,64-80,86-94,97-98,102-110,112-126,130-167,169-178
+  s_a40848e8f8cca9::t_962e0481a902df 37-40
+  s_a40848e8f8cca9::t_d41093650f2999 81-85,111,168
+  s_a40848e8f8cca9::t_e0b2a825bc563e 95-96,99-101,127-129
+  s_a40848e8f8cca9::t_099ba064e320e1 62-63
+src/modules/AiRuntime/models/IntentResult.ts
+  s_a40848e8f8cca9::t_974a9e15b64fdf 2,12-13
+src/modules/AiRuntime/useCases/sendChatMessage.ts
+  s_a40848e8f8cca9::t_33528b7daff0b1 114
+src/modules/AiRuntime/useCases/getPlannedActionAffectedIds.ts
+  s_a40848e8f8cca9::t_33528b7daff0b1 34-39
+src/modules/AiRuntime/useCases/__tests__/sendChatMessage.spec.ts
+  s_a40848e8f8cca9::t_a93eb8ffcd6427 370-371
+src/modules/AiRuntime/models/WholeProjectVibeMixPlan.ts
+  s_a40848e8f8cca9::t_974a9e15b64fdf 1-33
+src/modules/Automation/useCases/getAutomationHandlers.ts
+  s_a40848e8f8cca9::t_660e40d968aeb8 6,12,26,28,52,54
+src/modules/AiRuntime/models/__tests__/RuntimeAction.spec.ts
+  s_a40848e8f8cca9::t_5186155057eb7e 21
+  s_a40848e8f8cca9::t_ec654740bede2a 24,56-59,84,114-115
+src/modules/AiRuntime/useCases/describePendingActionConfirmation.ts
+  s_a40848e8f8cca9::t_688ac095d3e5f5 5,17,68-72,99,105-116,118-119,145-153,161,183,191-195
+  s_a40848e8f8cca9::t_962e0481a902df 100-104,117
+src/utils/handlerContract.ts
+  s_a40848e8f8cca9::t_8029e15797abfa 744-782
+src/modules/AiRuntime/useCases/validateActionPayload.ts
+  s_a40848e8f8cca9::t_8029e15797abfa 325-333
+src/modules/Command/useCases/__tests__/executableCommandRegistry.spec.ts
+  s_a40848e8f8cca9::t_88c64af31ee54f 902-923,1963-1967
+  s_a40848e8f8cca9::t_2860601f72659f 901
+  s_a40848e8f8cca9::t_85d7b1da842a07 1968
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "c021e477c7b7a43b95b88ea7e0caf81c0ce945d0",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
