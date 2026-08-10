@@ -6688,16 +6688,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b39cdef0fa800fc44525c84ccb54a029961a8215f9619753635a9c0d2538d46d"
 
 [[package]]
-name = "rusty_link"
-version = "0.4.9"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4169045a50ee3c874ee11128b8f06a46947776b23e3ee5f4bca293b6f3bb6f07"
-dependencies = [
- "bindgen",
- "cmake",
-]
-
-[[package]]
 name = "ryu"
 version = "1.0.23"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -7470,7 +7460,6 @@ dependencies = [
  "reqwest 0.13.4",
  "rtrb",
  "rubato 4.0.0",
- "rusty_link",
  "serde",
  "serde_bytes",
  "serde_json",

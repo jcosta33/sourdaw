@@ -33,7 +33,17 @@ describe('linkBridge repository', () => {
     describe('getLinkStatus', () => {
         it('should return status from Tauri', async () => {
             setTauriAvailable();
-            const mockStatus = { enabled: true, tempo: 120 };
+            const mockStatus = {
+                supported: false,
+                implementation: 'unsupported',
+                enabled: false,
+                tempo: 120,
+                quantum: 4,
+                beat: 0,
+                phase: 0,
+                num_peers: 0,
+                message: 'Ableton Link is unavailable',
+            };
             mockInvoke.mockResolvedValue(mockStatus);
 
             const status = await getLinkStatus();

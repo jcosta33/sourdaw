@@ -1,12 +1,15 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 type LinkStatus = {
+    supported: boolean;
+    implementation: string;
     enabled: boolean;
     tempo: number;
     quantum: number;
     beat: number;
     phase: number;
     num_peers: number;
+    message: string | null;
 };
 
 const linkBridgeMocks = vi.hoisted(() => ({
@@ -26,12 +29,15 @@ describe('enableLink', () => {
 
     it('delegates to the Link bridge and returns its status', async () => {
         const status: LinkStatus = {
+            supported: true,
+            implementation: 'native',
             enabled: true,
             tempo: 128,
             quantum: 4,
             beat: 16,
             phase: 0.25,
             num_peers: 2,
+            message: null,
         };
         linkBridgeMocks.enableLink.mockResolvedValue(status);
 
