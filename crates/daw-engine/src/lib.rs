@@ -16,12 +16,11 @@ use mts_esp::MtsEspMaster;
 use plugin_slot::NativePlugin;
 use rtrb::{Producer, RingBuffer};
 use scheduler::GraphCommand;
-use std::sync::{Arc, Mutex};
 use triple_buffer::Output;
 
 pub struct EngineHandle {
     command_tx: Producer<GraphCommand>,
-    _audio_thread: Arc<Mutex<AudioThreadHandle>>,
+    _audio_thread: AudioThreadHandle,
     next_plugin_id: usize,
     mts_esp_master: Option<MtsEspMaster>,
     midi_rt_diagnostics: ActiveMidiRtDiagnosticsReader,
@@ -36,7 +35,7 @@ impl EngineHandle {
 
         Ok(Self {
             command_tx: tx,
-            _audio_thread: Arc::new(Mutex::new(thread_handle)),
+            _audio_thread: thread_handle,
             next_plugin_id: 1000, // Start high to avoid collision with effect IDs
             mts_esp_master: None,
             midi_rt_diagnostics: diagnostics_reader,
