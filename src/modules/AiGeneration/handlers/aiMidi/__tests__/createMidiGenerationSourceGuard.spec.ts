@@ -107,6 +107,16 @@ describe('createMidiGenerationSourceGuard — valid guard', () => {
         expect(guard!.isCurrent()).toBe(false);
     });
 
+    it('isCurrent returns false when a note articulation changed', () => {
+        const clip = { id: 'c1', name: 'Lead', startBeat: 0, endBeat: 4, type: 'midi' };
+        mockedGetNotes.mockReturnValue([makeNote({ articulation: 'staccato' })] as never);
+        setTrackAndClip('t1', clip);
+        const guard = createMidiGenerationSourceGuard('c1');
+        setTrackAndClip('t1', clip);
+        mockedGetNotes.mockReturnValue([makeNote({ articulation: 'legato' })] as never);
+        expect(guard!.isCurrent()).toBe(false);
+    });
+
     it('isCurrent returns false when clip deleted', () => {
         const clip = { id: 'c1', name: 'Lead', startBeat: 0, endBeat: 4, type: 'midi' };
         mockedGetNotes.mockReturnValue([makeNote()] as never);

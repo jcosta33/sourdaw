@@ -357,6 +357,17 @@ const EXPECTED_COMMANDS = [
         true
     ),
     expectedCommand(
+        'copyMidiArticulations',
+        'Copy only per-note articulation between one exact pair of structurally matched MIDI clips.',
+        {
+            sourceClipId: { type: 'string', description: 'Application-admitted source MIDI clip ID' },
+            targetClipId: { type: 'string', description: 'Application-admitted target MIDI clip ID' },
+        },
+        ['sourceClipId', 'targetClipId'],
+        'broad-reversible',
+        true
+    ),
+    expectedCommand(
         'transposeNotes',
         'Transpose every note in one MIDI clip by an explicit semitone delta.',
         {
@@ -1428,6 +1439,20 @@ const EXPECTED_GROUNDING = [
         intentPhrases: ['quantize notes', 'quantize midi', 'snap midi notes'],
         targetRules: [{ argument: 'clipId', capability: 'editable-midi-clip' }],
         valueRules: [{ argument: 'gridSize', kind: 'number-if-present', requiredInPrompt: true, match: 'exact' }],
+    },
+    {
+        actionType: 'copyMidiArticulations',
+        intentPhrases: ['copy articulation', 'copy midi articulation', 'transfer articulation'],
+        targetRules: [
+            { argument: 'sourceClipId', capability: 'editable-midi-clip', promptRole: 'source' },
+            {
+                argument: 'targetClipId',
+                capability: 'editable-midi-clip',
+                distinctFrom: 'sourceClipId',
+                promptRole: 'destination',
+            },
+        ],
+        valueRules: [],
     },
     {
         actionType: 'transposeNotes',

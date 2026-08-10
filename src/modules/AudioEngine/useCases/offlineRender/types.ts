@@ -14,6 +14,8 @@ export type PendingWorkletEvent = {
     isToaster: boolean;
     /** For Toaster child tracks: fixed pad index (0-15). -1 means derive from pitch. */
     toasterPadIndex: number;
+    /** Levain-only per-note voice articulation, resolved from MIDI project truth. */
+    articulationId?: number;
 };
 
 /**

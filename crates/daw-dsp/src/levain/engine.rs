@@ -310,7 +310,18 @@ impl LevainEngine {
             return; // consumed as keyswitch
         }
 
-        let art = self.articulation.current;
+        self.note_on_with_channel_and_articulation(note, velocity, channel, self.articulation.current);
+    }
+
+    /// Note-on with an immutable per-note articulation selected by project truth.
+    pub fn note_on_with_channel_and_articulation(
+        &mut self,
+        note: u8,
+        velocity: u8,
+        channel: u8,
+        articulation: u16,
+    ) {
+        let art = articulation;
 
         // Realism layer transient (bow scrape onset, etc).
         self.realism.note_on(note);
@@ -971,6 +982,23 @@ mod tests {
         render(&mut engine, 8);
         engine.note_off(ENVELOPE_NOTE);
         render(&mut engine, 400)
+    }
+
+    #[test]
+    fn per_note_articulation_overrides_mutable_device_selection_at_voice_allocation() {
+        let mut engine = engine_with_sawtooth_zone();
+        engine.set_param("current_articulation", 8.0);
+
+        engine.note_on_with_channel_and_articulation(60, 100, 3, 0);
+
+        let voice = engine
+            .voice_pool
+            .voices
+            .iter()
+            .find(|voice| voice.active)
+            .expect("the explicitly supported articulation should allocate a voice");
+        assert_eq!(voice.articulation, 0);
+        assert_eq!(voice.channel, 3);
     }
 
     #[test]

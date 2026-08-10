@@ -28,7 +28,8 @@ function areMidiNotesEqual(alpha: MidiNote, beta: MidiNote): boolean {
         alpha.slide === beta.slide &&
         alpha.pitchBend === beta.pitchBend &&
         alpha.pitchBendRangeSemitones === beta.pitchBendRangeSemitones &&
-        alpha.channel === beta.channel
+        alpha.channel === beta.channel &&
+        alpha.articulation === beta.articulation
     );
 }
 

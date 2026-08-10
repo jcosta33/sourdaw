@@ -86,6 +86,7 @@ export { removePitchBend } from './midiEvent/removePitchBend';
 export { setNotePressure } from './midiEvent/setNotePressure';
 export { setNoteSlide } from './midiEvent/setNoteSlide';
 export { setNotePitchBend } from './midiEvent/setNotePitchBend';
+export { resolveMidiNoteArticulationId } from './resolveMidiNoteArticulationId';
 
 // ── MIDI Note CRUD ────────────────────────────────────────────────────────────
 export { addMidiNote } from './midiNoteCrud/addMidiNote';

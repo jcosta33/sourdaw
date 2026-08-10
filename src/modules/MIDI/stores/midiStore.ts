@@ -2,7 +2,7 @@ import { createStore } from '#/infra/store/createStore';
 import { createAutomergeStorage } from '#/infra/store/storage/createAutomergeStorage';
 import { type Store } from '#/infra/store/types';
 
-import { type MidiNote, type MidiCC, type MidiPitchBend } from '../models/MidiNote';
+import { isValidMidiArticulation, type MidiNote, type MidiCC, type MidiPitchBend } from '../models/MidiNote';
 
 const DOC_PREFIX_ROOT = 'root';
 
@@ -40,6 +40,7 @@ const MIDI_NOTE_OPTIONAL_KEYS = [
     'pitchBend',
     'pitchBendRangeSemitones',
     'channel',
+    'articulation',
 ] as const;
 const MIDI_CC_KEYS = ['id', 'controller', 'value', 'beat', 'channel'] as const;
 const MIDI_PITCH_BEND_KEYS = ['id', 'value', 'beat', 'channel'] as const;
@@ -94,7 +95,8 @@ function has_valid_midi_note_optionals(value: MidiNote): boolean {
         (!('pitchBendRangeSemitones' in value) ||
             value.pitchBendRangeSemitones === undefined ||
             is_finite_number(value.pitchBendRangeSemitones)) &&
-        (!('channel' in value) || value.channel === undefined || is_finite_number(value.channel))
+        (!('channel' in value) || value.channel === undefined || is_finite_number(value.channel)) &&
+        (!('articulation' in value) || value.articulation === undefined || isValidMidiArticulation(value.articulation))
     );
 }
 
@@ -136,6 +138,9 @@ function normalize_midi_note(note: MidiNote): MidiNote {
     }
     if (is_finite_number(note.channel)) {
         normalized_note.channel = note.channel;
+    }
+    if (isValidMidiArticulation(note.articulation)) {
+        normalized_note.articulation = note.articulation;
     }
 
     return normalized_note;

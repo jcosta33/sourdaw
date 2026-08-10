@@ -194,6 +194,23 @@ describe('createLevainNode bypass and allNotesOff surfaces', () => {
         expect(postMessage).not.toHaveBeenCalled();
     });
 
+    it('posts the immutable per-note articulation without changing note timing or channel', async () => {
+        const ctx = { currentTime: 0, state: 'running' } as unknown as BaseAudioContext;
+        const result = await createLevainNode(ctx);
+        postMessage.mockClear();
+
+        result.noteOn(62, 96, 6000, 4, 8);
+
+        expect(postMessage).toHaveBeenCalledWith({
+            type: 'noteOn',
+            note: 62,
+            velocity: 96,
+            sampleFrame: 6000,
+            channel: 4,
+            articulationId: 8,
+        });
+    });
+
     it('noteOff always forwards regardless of bypass state', async () => {
         const ctx = { currentTime: 0, state: 'running' } as unknown as BaseAudioContext;
         const result = await createLevainNode(ctx);

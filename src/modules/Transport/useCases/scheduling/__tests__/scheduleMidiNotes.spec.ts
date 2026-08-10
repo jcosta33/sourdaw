@@ -92,6 +92,8 @@ vi.mock('#/modules/MIDI/useCases', () => ({
     getChordAtBeat: vi.fn(),
     projectClipMidiEvents: vi.fn(),
     projectCommittedGroove: vi.fn(({ events }: { events: readonly unknown[] }) => events),
+    resolveMidiNoteArticulationId: ({ deviceType, articulation }: { deviceType: string; articulation?: string }) =>
+        deviceType === 'levain' && articulation === 'staccato' ? 8 : null,
     transposeForChordTrack: vi.fn((param: unknown) => param),
     shouldPlayMidiEvent: shouldPlayProbability,
 }));
@@ -1349,6 +1351,51 @@ describe('scheduleMidiNotes', () => {
                 expect(faustCalls + fallbackCalls).toBe(1);
             }
         );
+
+        it('passes a Levain note its canonical per-note articulation without changing pitch, velocity, or frame', async () => {
+            const noteOn = vi.fn();
+            const noteOff = vi.fn();
+            vi.mocked(ensureTrackStrip).mockImplementation(
+                () =>
+                    ({
+                        gainNode: {},
+                        preFaderTap: { connect: vi.fn() },
+                        deviceNodes: [
+                            {
+                                type: 'levain',
+                                deviceId: 'levain-1',
+                                levainControls: { noteOn, noteOff, noteExpression: vi.fn() },
+                            },
+                        ],
+                    }) as never
+            );
+            const track = midiTrack({
+                clips: [midiClip()],
+                devices: [{ id: 'levain-1', type: 'levain' }],
+            });
+            (trackStore as { value: unknown }).value = { tracks: [track] };
+            (midiStore as { value: unknown }).value = {
+                notesByClipId: {
+                    'clip-1': [
+                        {
+                            id: 'n1',
+                            pitch: 62,
+                            startBeat: 0.25,
+                            duration: 0.5,
+                            velocity: 96,
+                            channel: 4,
+                            articulation: 'staccato',
+                        },
+                    ],
+                },
+            };
+
+            await scheduleMidiNotes(0, 4, 0, -1, new Set<string>(), [], defaultTransportState, 120);
+
+            expect(noteOn).toHaveBeenCalledOnce();
+            expect(noteOn).toHaveBeenCalledWith(62, 96, 6_000, 4, 8);
+            expect(noteOff).toHaveBeenCalledWith(62, 18_000, 4);
+        });
 
         it('routes a grand-boule worklet synth and normalises velocity by /127', async () => {
             const noteOn = vi.fn();

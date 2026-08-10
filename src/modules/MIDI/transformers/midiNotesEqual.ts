@@ -12,7 +12,8 @@ function midiNoteEqual(left: MidiNote, right: MidiNote): boolean {
         left.slide === right.slide &&
         left.pitchBend === right.pitchBend &&
         left.pitchBendRangeSemitones === right.pitchBendRangeSemitones &&
-        left.channel === right.channel
+        left.channel === right.channel &&
+        left.articulation === right.articulation
     );
 }
 

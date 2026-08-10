@@ -86,6 +86,78 @@ describe('describePlannedAction', () => {
         );
     });
 
+    it('describes the immutable note-level articulation diff without exposing protected fields as mutations', () => {
+        const articulationContext: ProjectContext = {
+            ...context,
+            tracks: [
+                {
+                    ...context.tracks[0]!,
+                    id: 'track-strings',
+                    name: 'Strings',
+                    kind: 'midi',
+                    clips: [
+                        {
+                            id: 'clip-chorus-one',
+                            name: 'Strings Chorus One',
+                            type: 'midi',
+                            startBeat: 0,
+                            endBeat: 16,
+                            noteCount: 1,
+                        },
+                        {
+                            id: 'clip-chorus-two',
+                            name: 'Strings Chorus Two',
+                            type: 'midi',
+                            startBeat: 16,
+                            endBeat: 32,
+                            noteCount: 1,
+                        },
+                    ],
+                },
+            ],
+        };
+
+        expect(
+            describePlannedAction({
+                action: {
+                    type: 'copyMidiArticulations',
+                    payload: {
+                        trackId: 'track-strings',
+                        sourceClipId: 'clip-chorus-one',
+                        targetClipId: 'clip-chorus-two',
+                        notePairs: [{ sourceNoteId: 'source-note', targetNoteId: 'target-note' }],
+                        expectedSourceNotes: [
+                            {
+                                id: 'source-note',
+                                pitch: 60,
+                                startBeat: 0,
+                                duration: 1,
+                                velocity: 90,
+                                articulation: 'staccato',
+                            },
+                        ],
+                        expectedTargetNotes: [
+                            {
+                                id: 'target-note',
+                                pitch: 64,
+                                startBeat: 0,
+                                duration: 1,
+                                velocity: 70,
+                                articulation: 'legato',
+                            },
+                        ],
+                        expectedTrackFrozen: false,
+                        expectedSourceClipLocked: false,
+                        expectedTargetClipLocked: false,
+                    },
+                },
+                context: articulationContext,
+            })
+        ).toBe(
+            'Track "Strings" (track-strings): "Strings Chorus One" (clip-chorus-one) → "Strings Chorus Two" (clip-chorus-two); target note target-note from source-note articulation legato → staccato; preserve target pitches, velocities, timing, and expression'
+        );
+    });
+
     it('names a resolved removal target and falls back when the target is unavailable', () => {
         expect(
             describePlannedAction({

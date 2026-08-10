@@ -1,9 +1,14 @@
 import { getExecutableAppActionGroundingRules } from '#/modules/Command/useCases';
 import { type AppAction } from '#/utils/handlerContract';
 
+import { getMidiArticulationSemanticChanges } from '../transformers/getMidiArticulationSemanticChanges';
+
 export function getPlannedActionAffectedIds(action: AppAction): string[] {
     const affectedIds = new Set<string>();
     const payload: Readonly<Record<string, unknown>> = action.payload ?? {};
+    if (action.type === 'copyMidiArticulations') {
+        affectedIds.add(action.payload.trackId);
+    }
     if (action.type === 'setDeviceParameter' && action.payload.expectedTrackId) {
         affectedIds.add(action.payload.expectedTrackId);
     }
@@ -39,6 +44,16 @@ export function getPlannedActionAffectedIds(action: AppAction): string[] {
             affectedIds.add(trackId);
         }
         affectedIds.add(action.payload.sectionId);
+    }
+    if (action.type === 'copyMidiArticulations') {
+        const changes = getMidiArticulationSemanticChanges({
+            notePairs: action.payload.notePairs,
+            sourceNotes: action.payload.expectedSourceNotes,
+            targetNotes: action.payload.expectedTargetNotes,
+        });
+        for (const change of changes ?? []) {
+            affectedIds.add(change.targetNoteId);
+        }
     }
     return [...affectedIds];
 }

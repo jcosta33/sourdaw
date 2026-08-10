@@ -86,6 +86,7 @@ const executionPolicies = {
     applyGroove: boundedPolicy,
     arpeggiate: boundedPolicy,
     closeMixer: boundedPolicy,
+    copyMidiArticulations: broadPolicy,
     createFolder: boundedPolicy,
     disableMpe: boundedPolicy,
     disableTrack: boundedPolicy,

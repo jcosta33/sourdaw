@@ -103,6 +103,7 @@ import {
     prepareMidiTimeStateRestore,
     createChordPitchProjector,
     createGrooveMidiEventProjector,
+    resolveMidiNoteArticulationId,
     shouldPlayMidiEvent,
     setWebMidiRealtimeProcessor,
     setWebMidiRuntimeEventBus,
@@ -188,6 +189,7 @@ configureOfflineMidiEventProjection({
     selectProbability: shouldPlayMidiEvent,
     createChordPitchProjector,
     evaluateAutomationValue: getAutomationValueAtBeat,
+    resolveArticulationId: resolveMidiNoteArticulationId,
 });
 // The offline render enforces the same device-parameter law the live apply path
 // does; only the composition root sees both Arrangement and the audio engine.

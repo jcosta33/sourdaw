@@ -79,7 +79,14 @@ type NoteExpressionMsg = {
 };
 type LevainMsg =
     | { type: 'init' }
-    | { type: 'noteOn'; note: number; velocity: number; sampleFrame?: number; channel?: number }
+    | {
+          type: 'noteOn';
+          note: number;
+          velocity: number;
+          sampleFrame?: number;
+          channel?: number;
+          articulationId?: number;
+      }
     | { type: 'noteOff'; note: number; sampleFrame?: number; channel?: number }
     | NoteExpressionMsg
     | { type: 'allNotesOff' }
@@ -102,7 +109,14 @@ type LevainMsg =
     | { type: 'dispose' };
 
 type LevainQueued =
-    | { type: 'noteOn'; note: number; velocity: number; sampleFrame: number; channel?: number }
+    | {
+          type: 'noteOn';
+          note: number;
+          velocity: number;
+          sampleFrame: number;
+          channel?: number;
+          articulationId?: number;
+      }
     | { type: 'noteOff'; note: number; sampleFrame: number; channel?: number }
     | (NoteExpressionMsg & { sampleFrame: number });
 
@@ -416,7 +430,16 @@ class LevainProcessor extends AudioWorkletProcessor {
             case 'init':
                 break;
             case 'noteOn':
-                inst.note_on_with_channel(msg.note, msg.velocity, msg.channel ?? 0);
+                if (msg.articulationId === undefined) {
+                    inst.note_on_with_channel(msg.note, msg.velocity, msg.channel ?? 0);
+                } else {
+                    inst.note_on_with_channel_and_articulation(
+                        msg.note,
+                        msg.velocity,
+                        msg.channel ?? 0,
+                        msg.articulationId
+                    );
+                }
                 break;
             case 'noteOff':
                 // Without a channel every voice at the pitch is released —

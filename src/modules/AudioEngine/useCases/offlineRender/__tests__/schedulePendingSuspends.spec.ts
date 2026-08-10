@@ -36,6 +36,30 @@ describe('schedulePendingSuspends', () => {
         expect(noteOff).not.toHaveBeenCalled();
     });
 
+    it('delivers a Levain articulation on the same sample-accurate note-on request', () => {
+        const noteOn = vi.fn();
+        const instrumentControls = { noteOn, noteOff: vi.fn() };
+        const evt: PendingWorkletEvent = {
+            time: 0.25,
+            type: 'on',
+            pitch: 62,
+            velocity: 96,
+            articulationId: 8,
+            instrumentControls,
+            isToaster: false,
+            toasterPadIndex: -1,
+        };
+
+        schedulePendingSuspends({ sampleRate: 48_000 } as OfflineAudioContext, [evt], 10);
+
+        expect(noteOn).toHaveBeenCalledWith({
+            noteOrPad: 62,
+            velocity: 96,
+            sampleFrame: 12_000,
+            articulationId: 8,
+        });
+    });
+
     it('should use pad + midi note + sampleFrame for Toaster note-on when pad index is set', () => {
         const noteOn = vi.fn();
         const noteOff = vi.fn();

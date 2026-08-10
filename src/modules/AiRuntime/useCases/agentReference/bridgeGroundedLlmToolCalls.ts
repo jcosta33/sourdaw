@@ -16,6 +16,7 @@ import { MAX_LLM_ACTIONS_PER_BATCH } from '../../transformers/llmActionLimits';
 import { type ToolCallResult } from '../../transformers/toolCallParser';
 import { normalizeSafeProjectName } from '../../validators/normalizeSafeProjectName';
 
+import { getArticulationTransferPromptScope } from './getArticulationTransferPromptScope';
 import { getBulkDeviceInsertionTrackScope } from './getBulkDeviceInsertionTrackScope';
 import { getDeviceParameterPromptScope } from './getDeviceParameterPromptScope';
 import { getDrumRoutingPromptScope } from './getDrumRoutingPromptScope';
@@ -1511,6 +1512,21 @@ function resolveActionPromptScope({
             )
         ) {
             return { text: prompt, masked: prompt, directional: false, matchedIntentPhrase: 'route' };
+        }
+    }
+    if (actionName === 'copyMidiArticulations') {
+        const articulationScope = getArticulationTransferPromptScope(prompt, context);
+        if (
+            articulationScope.status === 'request' &&
+            sameActionCallCount === articulationScope.clipPairs.length &&
+            sameActionAssertedArguments.every((arguments_) =>
+                articulationScope.clipPairs.some(
+                    (pair) =>
+                        pair.sourceClipId === arguments_.sourceClipId && pair.targetClipId === arguments_.targetClipId
+                )
+            )
+        ) {
+            return { text: prompt, masked: prompt, directional: false, matchedIntentPhrase: 'copy articulation' };
         }
     }
     if (actionName === 'addSidechainRoute') {
@@ -3479,6 +3495,8 @@ function groundToolCall({
     const bulkMutedEmptyTrackDeletionTargetIds =
         call.name === 'removeTrack' ? (getMutedEmptyTrackDeletionScope(prompt, context)?.targetIds ?? null) : null;
     const drumRoutingScope = call.name === 'setTrackOutput' ? getDrumRoutingPromptScope(prompt, context) : null;
+    const articulationTransferScope =
+        call.name === 'copyMidiArticulations' ? getArticulationTransferPromptScope(prompt, context) : null;
     const sidechainRoutingScope =
         call.name === 'addSidechainRoute' ? getSidechainRoutingPromptScope(prompt, context) : null;
     for (const targetRule of groundingRules.targetRules) {
@@ -3487,6 +3505,18 @@ function groundToolCall({
             continue;
         }
         const targetPrompt = getTargetPromptScope(actionScope, targetRule.promptRole);
+        if (
+            articulationTransferScope?.status === 'request' &&
+            call.name === 'copyMidiArticulations' &&
+            articulationTransferScope.clipPairs.some(
+                (pair) =>
+                    pair.sourceClipId === groundedArguments.sourceClipId &&
+                    pair.targetClipId === groundedArguments.targetClipId
+            ) &&
+            (targetRule.argument === 'sourceClipId' || targetRule.argument === 'targetClipId')
+        ) {
+            continue;
+        }
         if (
             sidechainRoutingScope?.status === 'request' &&
             call.name === 'addSidechainRoute' &&
@@ -3863,6 +3893,49 @@ export function bridgeGroundedLlmToolCalls({
         targetDeviceId: string;
         targetTrackId: string;
     }> = [];
+    const articulationTransferScope = getArticulationTransferPromptScope(prompt, context);
+    if (articulationTransferScope.status === 'invalid') {
+        return { actions: [], rejections: [rejection(0, '<batch>', articulationTransferScope.reason)] };
+    }
+    if (articulationTransferScope.status === 'request') {
+        const providerTransfers = calls.filter((call) => call.name === 'copyMidiArticulations');
+        const providerKeys = providerTransfers.flatMap((call) => {
+            const { sourceClipId, targetClipId } = call.arguments;
+            return typeof sourceClipId === 'string' && typeof targetClipId === 'string'
+                ? [`${sourceClipId}\u0000${targetClipId}`]
+                : [];
+        });
+        const exactKeys = articulationTransferScope.clipPairs.map(
+            (pair) => `${pair.sourceClipId}\u0000${pair.targetClipId}`
+        );
+        const providerKeySet = new Set(providerKeys);
+        const providerPlanMatches =
+            providerTransfers.length === calls.length &&
+            providerKeys.length === calls.length &&
+            providerKeySet.size === providerKeys.length &&
+            providerKeys.length === exactKeys.length &&
+            exactKeys.every((key) => providerKeySet.has(key));
+        if (!providerPlanMatches) {
+            return {
+                actions: [],
+                rejections: [
+                    rejection(
+                        0,
+                        '<batch>',
+                        'Provider plan does not match the complete MF-03 articulation clip-pair set'
+                    ),
+                ],
+            };
+        }
+        effectiveCalls = articulationTransferScope.clipPairs.flatMap((pair) => {
+            const providerTransfer = providerTransfers.find(
+                (call) =>
+                    call.arguments.sourceClipId === pair.sourceClipId &&
+                    call.arguments.targetClipId === pair.targetClipId
+            );
+            return providerTransfer ? [providerTransfer] : [];
+        });
+    }
     const drumRoutingScope = getDrumRoutingPromptScope(prompt, context);
     if (drumRoutingScope.status === 'invalid') {
         return { actions: [], rejections: [rejection(0, '<batch>', drumRoutingScope.reason)] };

@@ -813,6 +813,33 @@ export const executableAppActionDescriptors = [
         },
     },
     {
+        actionType: 'copyMidiArticulations',
+        risk: 'broad-reversible',
+        description: 'Copy only per-note articulation between one exact pair of structurally matched MIDI clips.',
+        intentPhrases: ['copy articulation', 'copy midi articulation', 'transfer articulation'],
+        targetRules: [
+            {
+                argument: 'sourceClipId',
+                capability: 'editable-midi-clip',
+                promptRole: 'source',
+            },
+            {
+                argument: 'targetClipId',
+                capability: 'editable-midi-clip',
+                promptRole: 'destination',
+                distinctFrom: 'sourceClipId',
+            },
+        ],
+        valueRules: [],
+        parameters: {
+            properties: {
+                sourceClipId: { type: 'string', description: 'Application-admitted source MIDI clip ID' },
+                targetClipId: { type: 'string', description: 'Application-admitted target MIDI clip ID' },
+            },
+            required: ['sourceClipId', 'targetClipId'],
+        },
+    },
+    {
         actionType: 'transposeNotes',
         risk: 'broad-reversible',
         description: 'Transpose every note in one MIDI clip by an explicit semitone delta.',

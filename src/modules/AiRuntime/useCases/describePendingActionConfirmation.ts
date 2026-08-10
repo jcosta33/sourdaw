@@ -4,6 +4,7 @@ import { type AppAction } from '#/utils/handlerContract';
 import { type ProjectContext } from '../models/ProjectContext';
 import { type WholeProjectVibeMixPlan } from '../models/WholeProjectVibeMixPlan';
 
+import { getArticulationTransferPromptScope } from './agentReference/getArticulationTransferPromptScope';
 import { getBulkDeviceInsertionTrackScope } from './agentReference/getBulkDeviceInsertionTrackScope';
 import { getDeviceParameterPromptScope } from './agentReference/getDeviceParameterPromptScope';
 import { getDrumRoutingPromptScope } from './agentReference/getDrumRoutingPromptScope';
@@ -109,12 +110,29 @@ function getProtectedUnchangedTracks(
         sidechainRoutingScope.status === 'request'
             ? sidechainRoutingScope.protectedTargets.map(({ id, name }) => ({ id, name }))
             : [];
+    const articulationTransferScope = getArticulationTransferPromptScope(prompt, context);
+    const articulationProtections =
+        articulationTransferScope.status === 'request'
+            ? [
+                  ...articulationTransferScope.protectedClipIds.map((clipId) => ({
+                      id: clipId,
+                      name:
+                          context.tracks.flatMap((track) => track.clips).find((clip) => clip.id === clipId)?.name ??
+                          clipId,
+                  })),
+                  ...articulationTransferScope.clipPairs.map((pair) => ({
+                      id: `${pair.targetClipId}:non-articulation`,
+                      name: `${pair.targetClipName} pitches, velocities, timing, and expression`,
+                  })),
+              ]
+            : [];
     const protections = [
         ...protectedTracks.map(({ id, name }) => ({ id, name })),
         ...protectedParameters,
         ...planProtections,
         ...drumRoutingProtections,
         ...sidechainRoutingProtections,
+        ...articulationProtections,
     ];
     return [...new Map(protections.map((protection) => [protection.id, protection])).values()];
 }

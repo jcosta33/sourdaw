@@ -74,6 +74,18 @@ impl LevainInstance {
         self.engine.note_on_with_channel(note, velocity, channel);
     }
 
+    /// Process a MIDI note on with an immutable per-note articulation id.
+    pub fn note_on_with_channel_and_articulation(
+        &mut self,
+        note: u8,
+        velocity: u8,
+        channel: u8,
+        articulation: u16,
+    ) {
+        self.engine
+            .note_on_with_channel_and_articulation(note, velocity, channel, articulation);
+    }
+
     /// Note-off narrowed to one MPE member channel, so releasing a note on one
     /// member channel cannot silence a different note sounding the same pitch
     /// on another (audit MD-2).
