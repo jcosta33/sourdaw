@@ -1,0 +1,38 @@
+src/modules/AiRuntime/models/__tests__/RuntimeAction.spec.ts
+  s_a40848e8f8cca9::t_8312ec92c8a382 106-108
+src/utils/handlerContract.ts
+  s_a40848e8f8cca9::t_dca1899cbe7c64 832-834,846-854
+src/modules/MIDI/useCases/midiNoteTransforms/restoreMidiClipNotes.ts
+  s_a40848e8f8cca9::t_dca1899cbe7c64 12-19,22-25,27-43,49,55
+  s_a40848e8f8cca9::t_2be24b272c483b 1,26
+  s_a40848e8f8cca9::t_7a5397d0cf7658 56-57
+src/modules/AiRuntime/useCases/materializeActionStateGuards.ts
+  s_a40848e8f8cca9::t_d8425a839d7903 65-67
+src/modules/MIDI/handlers/noteTransform/__tests__/handleCopyMidiArticulations.spec.ts
+  s_a40848e8f8cca9::t_8312ec92c8a382 1-88
+src/modules/MIDI/handlers/noteTransform/handleCopyMidiArticulations.ts
+  s_a40848e8f8cca9::t_dca1899cbe7c64 17-24,33,42
+src/modules/AiRuntime/useCases/__tests__/articulationTransferPromptWorkflow.spec.ts
+  s_a40848e8f8cca9::t_bd468ae9845821 619-771
+  s_a40848e8f8cca9::t_86586718bd5832 772
+src/modules/AiRuntime/useCases/__tests__/describePlannedAction.spec.ts
+  s_a40848e8f8cca9::t_dca1899cbe7c64 149-151
+src/modules/MIDI/handlers/noteTransform/handleRestoreMidiClipNotes.ts
+  s_a40848e8f8cca9::t_129fd83d86c702 8
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "1d30c3e6db9be8b290dc260115297fcd3eda8701",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
