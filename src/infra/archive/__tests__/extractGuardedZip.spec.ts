@@ -49,6 +49,21 @@ describe('extractGuardedZip', () => {
         expect(Object.keys(result)).toEqual(['model/weights.onnx']);
         expect(Array.from(result['model/weights.onnx'] ?? [])).toEqual([1, 1, 1, 1]);
     });
+    it('runs caller inventory validation before inflating selected entries', () => {
+        const archive = zipSync({ 'stored.bin': [bytes(4), { level: 0 }] });
+        const view = new DataView(archive.buffer, archive.byteOffset, archive.byteLength);
+        const dataOffset = 30 + view.getUint16(26, true) + view.getUint16(28, true);
+        archive[dataOffset] = (archive[dataOffset] ?? 0) ^ 0xff;
+        expect(() =>
+            extractGuardedZip({
+                bytes: archive,
+                validateInventory: (paths) => {
+                    expect(paths).toEqual(['stored.bin']);
+                    throw new Error('Caller rejected the ZIP inventory');
+                },
+            })
+        ).toThrow(/caller rejected/i);
+    });
     it.each([
         ['entry count', zip({ 'one.bin': bytes(1), 'two.bin': bytes(1) }), { maxEntries: 1 }, /entry count/i],
         ['entry size', zip({ 'large.bin': bytes(4) }), { maxEntryUncompressedBytes: 3 }, /entry exceeds/i],

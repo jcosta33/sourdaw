@@ -49,7 +49,7 @@ describe('readDawProjectZip — project.xml extraction', () => {
     });
 
     it('rejects case-folded duplicate project roots', () => {
-        const zip = makeZip({
+        const zip = makeCorruptStoredZip({
             'project.xml': utf8('<Project name="first"/>'),
             'Project.xml': utf8('<Project name="second"/>'),
         });
@@ -63,9 +63,9 @@ describe('readDawProjectZip — missing project.xml', () => {
         expect(() => readDawProjectZip(zip)).toThrow(/missing project\.xml/);
     });
 
-    it('throws with <empty> when the archive has no entries', () => {
+    it('throws when the archive has no entries', () => {
         const zip = makeZip({});
-        expect(() => readDawProjectZip(zip)).toThrow(/<empty>/);
+        expect(() => readDawProjectZip(zip)).toThrow(/missing project\.xml/i);
     });
 
     it('rejects a missing project before inflating selected audio', () => {
@@ -100,7 +100,7 @@ describe('readDawProjectZip — metadata.xml', () => {
     });
 
     it('rejects case-folded duplicate metadata roots', () => {
-        const zip = makeZip({
+        const zip = makeCorruptStoredZip({
             'project.xml': utf8('<Project/>'),
             'metadata.xml': utf8('<Meta name="first"/>'),
             'Metadata.xml': utf8('<Meta name="second"/>'),

@@ -15,29 +15,18 @@ export function readDawProjectZip(buffer: ArrayBuffer): DawProjectZipContents {
     const headerEntries = extractGuardedZip({
         bytes,
         include: (path) => projectXmlPath.test(path) || metadataXmlPath.test(path),
+        validateInventory: validateDawProjectRootInventory,
     });
-    const projectPaths = Object.keys(headerEntries).filter((path) => projectXmlPath.test(path));
-    if (projectPaths.length === 0) {
-        const selectedEntries = Object.keys(headerEntries).join(', ') || '<empty>';
-        throw new Error(`DAWproject archive is missing project.xml at its root. Selected entries: ${selectedEntries}`);
-    }
-    if (projectPaths.length > 1) {
-        throw new Error('DAWproject archive contains duplicate project.xml roots');
-    }
-    const projectPath = projectPaths[0];
+    const projectPath = Object.keys(headerEntries).find((path) => projectXmlPath.test(path));
     if (!projectPath) {
-        throw new Error('DAWproject archive is missing project.xml at its root');
+        throw new Error('DAWproject archive did not extract project.xml');
     }
     const projectEntry = headerEntries[projectPath];
     if (!projectEntry) {
         throw new Error('DAWproject archive did not extract project.xml');
     }
 
-    const metadataPaths = Object.keys(headerEntries).filter((path) => metadataXmlPath.test(path));
-    if (metadataPaths.length > 1) {
-        throw new Error('DAWproject archive contains duplicate metadata.xml roots');
-    }
-    const metadataPath = metadataPaths[0];
+    const metadataPath = Object.keys(headerEntries).find((path) => metadataXmlPath.test(path));
     const metadataEntry = metadataPath ? headerEntries[metadataPath] : null;
 
     const audioEntries = extractGuardedZip({
@@ -65,4 +54,18 @@ function decodeUtf8(data: Uint8Array): string {
         return textDecoder.decode(data.subarray(3));
     }
     return textDecoder.decode(data);
+}
+
+function validateDawProjectRootInventory(paths: readonly string[]): void {
+    const projectRoots = paths.filter((path) => projectXmlPath.test(path));
+    if (projectRoots.length === 0) {
+        throw new Error('DAWproject archive is missing project.xml at its root');
+    }
+    if (projectRoots.length > 1) {
+        throw new Error('DAWproject archive contains duplicate project.xml roots');
+    }
+    const metadataRoots = paths.filter((path) => metadataXmlPath.test(path));
+    if (metadataRoots.length > 1) {
+        throw new Error('DAWproject archive contains duplicate metadata.xml roots');
+    }
 }
