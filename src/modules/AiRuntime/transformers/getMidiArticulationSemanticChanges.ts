@@ -28,12 +28,7 @@ export function getMidiArticulationSemanticChanges(
     for (const pair of input.notePairs) {
         const source = sourceById.get(pair.sourceNoteId);
         const target = targetById.get(pair.targetNoteId);
-        if (
-            !source ||
-            !target ||
-            seenSourceIds.has(pair.sourceNoteId) ||
-            seenTargetIds.has(pair.targetNoteId)
-        ) {
+        if (!source || !target || seenSourceIds.has(pair.sourceNoteId) || seenTargetIds.has(pair.targetNoteId)) {
             return null;
         }
         seenSourceIds.add(pair.sourceNoteId);
