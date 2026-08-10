@@ -219,17 +219,39 @@ pub fn save_sdaw_bundle(bundle: &HashMap<DocId, Vec<u8>>, path: &Path) -> Result
 
 /// Load a document bundle from an .sdaw file on disk.
 pub fn load_sdaw_bundle(path: &Path) -> Result<HashMap<DocId, Vec<u8>>, String> {
-    let file_len = std::fs::metadata(path)
+    let file = std::fs::File::open(path).map_err(|e| format!("Failed to open .sdaw file: {e}"))?;
+    let file_len = file
+        .metadata()
         .map_err(|e| format!("Failed to inspect .sdaw file: {e}"))?
         .len();
-    if file_len > SDAW_DECODE_LIMITS.container_bytes as u64 {
+    let bytes = read_sdaw_bytes_with_limits(file, file_len, SDAW_DECODE_LIMITS)?;
+    decode_sdaw(&bytes)
+}
+
+fn read_sdaw_bytes_with_limits<R: Read>(
+    reader: R,
+    file_len: u64,
+    limits: SdawDecodeLimits,
+) -> Result<Vec<u8>, String> {
+    if file_len > limits.container_bytes as u64 {
         return Err(format!(
             "Invalid .sdaw container: {file_len} bytes exceeds the {} byte container byte budget",
-            SDAW_DECODE_LIMITS.container_bytes
+            limits.container_bytes
         ));
     }
-    let bytes = std::fs::read(path).map_err(|e| format!("Failed to read .sdaw file: {}", e))?;
-    decode_sdaw(&bytes)
+
+    let mut bytes = Vec::with_capacity(file_len as usize);
+    reader
+        .take((limits.container_bytes + 1) as u64)
+        .read_to_end(&mut bytes)
+        .map_err(|e| format!("Failed to read .sdaw file: {e}"))?;
+    if bytes.len() > limits.container_bytes {
+        return Err(format!(
+            "Invalid .sdaw container: file grew beyond the {} byte container byte budget while reading",
+            limits.container_bytes
+        ));
+    }
+    Ok(bytes)
 }
 
 #[cfg(test)]
@@ -257,6 +279,15 @@ mod tests {
         let bytes = vec![0; TEST_LIMITS.container_bytes + 1];
         let error = decode_sdaw_with_limits(&bytes, TEST_LIMITS)
             .expect_err("container budget must be checked before parsing");
+
+        assert!(error.contains("container byte budget"));
+    }
+
+    #[test]
+    fn file_read_rejects_growth_beyond_the_reported_size_and_container_budget() {
+        let bytes = vec![0; TEST_LIMITS.container_bytes + 1];
+        let error = read_sdaw_bytes_with_limits(Cursor::new(bytes), 0, TEST_LIMITS)
+            .expect_err("a file that grows after metadata inspection must remain bounded");
 
         assert!(error.contains("container byte budget"));
     }
