@@ -6,23 +6,33 @@ use crate::midi::diagnostics::{
 use crate::scheduler::{AudioScheduler, GraphCommand};
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use rtrb::Consumer;
-use std::sync::mpsc::{self, Sender};
-use std::thread::{self, JoinHandle};
+use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender};
+use std::thread;
+use std::time::Duration;
 use triple_buffer::Input;
 
 const MAX_CALLBACK_FRAMES: usize = 4096;
+const AUDIO_STREAM_SHUTDOWN_TIMEOUT: Duration = Duration::from_millis(100);
 
 pub struct AudioThreadHandle {
     shutdown_tx: Sender<()>,
-    owner_thread: Option<JoinHandle<()>>,
+    shutdown_complete_rx: Receiver<()>,
 }
 
 impl Drop for AudioThreadHandle {
     fn drop(&mut self) {
-        let _ = self.shutdown_tx.send(());
+        if self.shutdown_tx.send(()).is_err() {
+            return;
+        }
 
-        if let Some(owner_thread) = self.owner_thread.take() {
-            let _ = owner_thread.join();
+        match self
+            .shutdown_complete_rx
+            .recv_timeout(AUDIO_STREAM_SHUTDOWN_TIMEOUT)
+        {
+            Ok(()) | Err(RecvTimeoutError::Disconnected) => {}
+            Err(RecvTimeoutError::Timeout) => {
+                eprintln!("[Engine] Timed out waiting for audio stream shutdown");
+            }
         }
     }
 }
@@ -34,7 +44,8 @@ where
 {
     let (ready_tx, ready_rx) = mpsc::sync_channel(1);
     let (shutdown_tx, shutdown_rx) = mpsc::channel();
-    let owner_thread = thread::Builder::new()
+    let (shutdown_complete_tx, shutdown_complete_rx) = mpsc::channel();
+    let _owner_thread = thread::Builder::new()
         .name("sourdaw-audio-owner".to_string())
         .spawn(move || match factory() {
             Ok(stream) => {
@@ -42,6 +53,7 @@ where
                     let _ = shutdown_rx.recv();
                 }
                 drop(stream);
+                let _ = shutdown_complete_tx.send(());
             }
             Err(error) => {
                 let _ = ready_tx.send(Err(error));
@@ -52,16 +64,10 @@ where
     match ready_rx.recv() {
         Ok(Ok(())) => Ok(AudioThreadHandle {
             shutdown_tx,
-            owner_thread: Some(owner_thread),
+            shutdown_complete_rx,
         }),
-        Ok(Err(error)) => {
-            let _ = owner_thread.join();
-            Err(error)
-        }
-        Err(error) => {
-            let _ = owner_thread.join();
-            Err(format!("Audio owner thread exited during startup: {error}"))
-        }
+        Ok(Err(error)) => Err(error),
+        Err(error) => Err(format!("Audio owner thread exited during startup: {error}")),
     }
 }
 
@@ -166,6 +172,7 @@ mod tests {
     use std::rc::Rc;
     use std::sync::mpsc;
     use std::thread;
+    use std::time::{Duration, Instant};
 
     struct ThreadBoundResource {
         created_on: thread::ThreadId,
@@ -181,17 +188,30 @@ mod tests {
         }
     }
 
+    struct BlockingDropResource {
+        release_rx: mpsc::Receiver<()>,
+        dropped_tx: mpsc::Sender<()>,
+        _not_send: Rc<()>,
+    }
+
+    impl Drop for BlockingDropResource {
+        fn drop(&mut self) {
+            let _ = self.release_rx.recv();
+            let _ = self.dropped_tx.send(());
+        }
+    }
+
     #[test]
     fn audio_thread_handle_uses_only_derived_thread_traits() {
         let source = include_str!("audio_thread.rs");
         let unsafe_send = ["unsafe impl ", "Send for AudioThreadHandle"].concat();
         let unsafe_sync = ["unsafe impl ", "Sync for AudioThreadHandle"].concat();
 
-        fn assert_send_sync<T: Send + Sync>() {}
+        fn assert_send<T: Send>() {}
 
         assert!(!source.contains(&unsafe_send));
         assert!(!source.contains(&unsafe_sync));
-        assert_send_sync::<AudioThreadHandle>();
+        assert_send::<AudioThreadHandle>();
     }
 
     #[test]
@@ -229,5 +249,35 @@ mod tests {
         };
 
         assert_eq!(error, "audio device unavailable");
+    }
+
+    #[test]
+    fn stalled_stream_teardown_cannot_block_handle_drop_indefinitely() {
+        let (release_tx, release_rx) = mpsc::channel();
+        let (dropped_tx, dropped_rx) = mpsc::channel();
+        let handle = spawn_owned_audio_stream(move || {
+            Ok(BlockingDropResource {
+                release_rx,
+                dropped_tx,
+                _not_send: Rc::new(()),
+            })
+        })
+        .expect("owner thread should start");
+        let release_thread = thread::spawn(move || {
+            thread::sleep(Duration::from_millis(400));
+            release_tx
+                .send(())
+                .expect("owner thread should still be waiting");
+        });
+
+        let started_at = Instant::now();
+        drop(handle);
+        let drop_duration = started_at.elapsed();
+
+        assert!(drop_duration < Duration::from_millis(250));
+        release_thread.join().expect("release thread should finish");
+        dropped_rx
+            .recv_timeout(Duration::from_secs(1))
+            .expect("detached owner should finish after teardown unblocks");
     }
 }
