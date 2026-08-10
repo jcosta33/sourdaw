@@ -9,8 +9,7 @@
  * - LRU eviction when the 2 GB cache limit is exceeded
  */
 
-import { unzip } from 'fflate';
-
+import { extractSingleGuardedZipEntry } from '#/infra/archive/extractSingleGuardedZipEntry';
 import { inject } from '#/infra/di/inject';
 import { logger } from '#/infra/logger/appLogger';
 
@@ -239,8 +238,7 @@ export const downloadModel = inject({ logger })(
                             }
                         }
 
-                        // Extract ONNX from ZIP/oudep container if needed.
-                        // Uses async unzip (fflate) to avoid blocking the main thread.
+                        // Extract ONNX from ZIP/oudep container in a cancellable worker.
                         let onnxData: ArrayBuffer = fullData.buffer;
                         if (isContainer) {
                             broadcast({
@@ -250,24 +248,13 @@ export const downloadModel = inject({ logger })(
                                 progress: 0.97,
                                 stage: 'extracting',
                             });
-                            const files = await new Promise<Record<string, Uint8Array>>((resolve, reject) => {
-                                unzip(fullData, (err, result) => {
-                                    if (err) {
-                                        reject(err);
-                                    } else {
-                                        resolve(result);
-                                    }
-                                });
+                            const extracted = await extractSingleGuardedZipEntry({
+                                bytes: fullData,
+                                suffix: '.onnx',
+                                signal,
                             });
-                            const onnxEntry = Object.keys(files).find((name) => name.endsWith('.onnx'));
-                            const onnxBytes = onnxEntry ? files[onnxEntry] : undefined;
-                            if (!onnxEntry || !onnxBytes) {
-                                throw new Error(`No .onnx file found inside ZIP package for ${modelId}`);
-                            }
-                            // .slice() copies just the ONNX bytes — fflate returns views into a
-                            // shared backing buffer, so .buffer alone would include adjacent ZIP entries.
-                            onnxData = onnxBytes.slice(0).buffer;
-                            logger.info(`[ModelDownload] Extracted ${onnxEntry} from ZIP for ${modelId}`);
+                            onnxData = extracted.data.buffer;
+                            logger.info(`[ModelDownload] Extracted ${extracted.path} from ZIP for ${modelId}`);
                         }
 
                         if (signal?.aborted) {

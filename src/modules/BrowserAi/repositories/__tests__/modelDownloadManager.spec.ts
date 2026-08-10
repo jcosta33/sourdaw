@@ -16,6 +16,8 @@ import { createHash } from 'node:crypto';
 import { zipSync } from 'fflate';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { extractGuardedZip } from '#/infra/archive/extractGuardedZip';
+
 import { type ModelDownloadProgressPayload } from '../../models/ModelDownloadProgress';
 import { downloadModel } from '../modelDownloadManager';
 
@@ -85,6 +87,64 @@ class FakeBroadcastChannel {
     }
 }
 
+// --- guarded ZIP worker ----------------------------------------------------
+
+type GuardedZipWorkerRequest = { bytes: ArrayBuffer; suffix: string };
+type GuardedZipWorkerResponse =
+    | { type: 'success'; path: string; data: ArrayBuffer }
+    | {
+          type: 'error';
+          message: string;
+      };
+
+class FakeGuardedZipWorker {
+    static instances: FakeGuardedZipWorker[] = [];
+    static holdResponses = false;
+    onmessage: ((event: MessageEvent<GuardedZipWorkerResponse>) => void) | null = null;
+    onerror: ((event: ErrorEvent) => void) | null = null;
+    onmessageerror: ((event: MessageEvent) => void) | null = null;
+    postMessage = vi.fn((request: GuardedZipWorkerRequest) => {
+        if (FakeGuardedZipWorker.holdResponses) {
+            return;
+        }
+        queueMicrotask(() => {
+            try {
+                let selectedPath: string | undefined;
+                const extracted = extractGuardedZip({
+                    bytes: new Uint8Array(request.bytes),
+                    validateInventory: (paths) => {
+                        const matches = paths.filter((path) => path.endsWith(request.suffix));
+                        if (matches.length !== 1) {
+                            throw new Error(`Expected exactly one ${request.suffix} entry`);
+                        }
+                        selectedPath = matches[0];
+                    },
+                    include: (path) => path === selectedPath,
+                });
+                if (!selectedPath) {
+                    throw new Error('Missing selected ZIP entry');
+                }
+                const data = extracted[selectedPath];
+                if (!data) {
+                    throw new Error('Missing extracted ZIP entry');
+                }
+                this.onmessage?.({
+                    data: { type: 'success', path: selectedPath, data: data.slice().buffer },
+                } as MessageEvent<GuardedZipWorkerResponse>);
+            } catch (error) {
+                this.onmessage?.({
+                    data: { type: 'error', message: error instanceof Error ? error.message : String(error) },
+                } as MessageEvent<GuardedZipWorkerResponse>);
+            }
+        });
+    });
+    terminate = vi.fn();
+
+    constructor() {
+        FakeGuardedZipWorker.instances.push(this);
+    }
+}
+
 // --- fetch helpers ----------------------------------------------------------
 
 function streamingResponse(chunks: Uint8Array[], totalBytes: number): Response {
@@ -115,7 +175,10 @@ beforeEach(() => {
     channelConstructions = 0;
     openChannels = 0;
     lastWritable = null;
+    FakeGuardedZipWorker.instances = [];
+    FakeGuardedZipWorker.holdResponses = false;
     vi.stubGlobal('BroadcastChannel', FakeBroadcastChannel);
+    vi.stubGlobal('Worker', FakeGuardedZipWorker);
     installStorage();
 });
 
@@ -237,6 +300,31 @@ describe('downloadModel — cancellation', () => {
         const init = fetchMock.mock.calls[0]?.[1];
         expect(init?.signal).toBe(controller.signal);
     });
+
+    it('terminates in-flight archive extraction and publishes no model after abort', async () => {
+        FakeGuardedZipWorker.holdResponses = true;
+        const controller = new AbortController();
+        const zipped = zipSync({ 'model/weights.onnx': new Uint8Array([10, 20, 30, 40]) });
+        vi.stubGlobal(
+            'fetch',
+            vi.fn(() => Promise.resolve(streamingResponse([zipped], zipped.length)))
+        );
+
+        const stages: string[] = [];
+        const promise = downloadModel({
+            spec: { ...baseSpec, url: 'https://cdn.example/violin-1.zip', sizeBytes: zipped.length },
+            signal: controller.signal,
+            onProgress: (payload) => stages.push(payload.stage),
+        });
+
+        await vi.waitFor(() => expect(FakeGuardedZipWorker.instances).toHaveLength(1));
+        controller.abort();
+
+        await expect(promise).rejects.toMatchObject({ name: 'AbortError' });
+        expect(FakeGuardedZipWorker.instances[0]?.terminate).toHaveBeenCalledOnce();
+        expect(lastWritable).toBeNull();
+        expect(stages).not.toContain('complete');
+    });
 });
 
 describe('downloadModel — buffered path (sha256 verification + ZIP extraction)', () => {
@@ -304,5 +392,35 @@ describe('downloadModel — buffered path (sha256 verification + ZIP extraction)
         expect(stages).toContain('complete');
         // Only the extracted .onnx bytes reach OPFS — not the whole ZIP.
         expect(lastWritable?.writes).toEqual([onnxBytes.length]);
+        expect(FakeGuardedZipWorker.instances).toHaveLength(1);
+        expect(FakeGuardedZipWorker.instances[0]?.terminate).toHaveBeenCalledOnce();
+    });
+
+    it('rejects an unsafe model archive without publishing an OPFS artifact', async () => {
+        vi.useFakeTimers();
+        const zipped = zipSync({ '../weights.onnx': new Uint8Array([10, 20, 30, 40]) });
+        vi.stubGlobal(
+            'fetch',
+            vi.fn(() => Promise.resolve(streamingResponse([zipped], zipped.length)))
+        );
+        const stages: string[] = [];
+
+        try {
+            const promise = downloadModel({
+                spec: { ...baseSpec, url: 'https://cdn.example/unsafe.zip', sizeBytes: zipped.length },
+                onProgress: (payload) => stages.push(payload.stage),
+            });
+            const rejection = expect(promise).rejects.toThrow(/Unsafe archive path/);
+
+            await vi.runAllTimersAsync();
+            await rejection;
+
+            expect(FakeGuardedZipWorker.instances).toHaveLength(3);
+            expect(lastWritable).toBeNull();
+            expect(stages).not.toContain('storing');
+            expect(stages).not.toContain('complete');
+        } finally {
+            vi.useRealTimers();
+        }
     });
 });
