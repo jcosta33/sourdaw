@@ -1,6 +1,8 @@
+import { getNotesForClip } from '#/modules/MIDI/useCases';
 import { type AppAction } from '#/utils/handlerContract';
 
 import { type MaterializableRuntimeAction } from '../models/ExecutableRuntimeAction';
+import { projectMidiArticulationTransfer } from '../transformers/projectMidiArticulationTransfer';
 
 import { type ProjectContext } from './getProjectContext';
 
@@ -20,6 +22,49 @@ export function materializeActionStateGuards(
     const materialized: AppAction[] = [];
 
     for (const action of actions) {
+        if (action.type === 'copyMidiArticulations') {
+            const sourceTarget = context.tracks.flatMap((track) =>
+                track.clips.filter((clip) => clip.id === action.payload.sourceClipId).map((clip) => ({ clip, track }))
+            )[0];
+            const targetTarget = context.tracks.flatMap((track) =>
+                track.clips.filter((clip) => clip.id === action.payload.targetClipId).map((clip) => ({ clip, track }))
+            )[0];
+            if (
+                !sourceTarget ||
+                !targetTarget ||
+                sourceTarget.track.id !== targetTarget.track.id ||
+                sourceTarget.track.frozen === true ||
+                sourceTarget.clip.type !== 'midi' ||
+                targetTarget.clip.type !== 'midi' ||
+                sourceTarget.clip.locked === true ||
+                targetTarget.clip.locked === true
+            ) {
+                return { status: 'rejected', reason: 'MF-03 clip pair is unavailable or protected' };
+            }
+            const expectedSourceNotes = getNotesForClip(action.payload.sourceClipId).map((note) => ({ ...note }));
+            const expectedTargetNotes = getNotesForClip(action.payload.targetClipId).map((note) => ({ ...note }));
+            const projectedPairs = projectMidiArticulationTransfer({
+                sourceNotes: expectedSourceNotes,
+                targetNotes: expectedTargetNotes,
+            });
+            if (!projectedPairs) {
+                return { status: 'rejected', reason: 'MF-03 note topology is incomplete or ambiguous' };
+            }
+            materialized.push({
+                type: 'copyMidiArticulations',
+                payload: {
+                    sourceClipId: action.payload.sourceClipId,
+                    targetClipId: action.payload.targetClipId,
+                    notePairs: projectedPairs.map((pair) => ({
+                        sourceNoteId: pair.sourceNoteId,
+                        targetNoteId: pair.targetNoteId,
+                    })),
+                    expectedSourceNotes,
+                    expectedTargetNotes,
+                },
+            });
+            continue;
+        }
         if (action.type === 'setTrackGain') {
             const track = tracksById.get(action.payload.trackId);
             if (!track) {

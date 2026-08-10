@@ -2,6 +2,7 @@ import { getSidechainTargetCapability } from '#/utils/getSidechainTargetCapabili
 import { resolveMarkerColorValue } from '#/utils/markerColorPalette';
 import { wouldCreateRoutingCycle } from '#/utils/routingCycle';
 
+import { type ArticulationTransferCapability } from '../models/ArticulationTransferCapability';
 import { type DrumRoutingCapability } from '../models/DrumRoutingCapability';
 import { type ProjectContext } from '../models/ProjectContext';
 import { type RuntimeAction } from '../models/RuntimeAction';
@@ -1285,6 +1286,24 @@ function bridgeToolCall({
             );
         }
         return { type: 'quantizeNotes', payload: { clipId: target.clip.id, gridSize: args.gridSize } };
+    }
+
+    if (call.name === 'copyMidiArticulations') {
+        const source = findEditableMidiClip(context, args.sourceClipId);
+        const target = findEditableMidiClip(context, args.targetClipId);
+        if (
+            !hasExactKeys(args, ['sourceClipId', 'targetClipId']) ||
+            !source ||
+            !target ||
+            source.clip.id === target.clip.id ||
+            source.track.id !== target.track.id
+        ) {
+            return rejection(index, call.name, 'Expected one exact same-track pair of distinct editable MIDI clips');
+        }
+        return {
+            type: 'copyMidiArticulations',
+            payload: { sourceClipId: source.clip.id, targetClipId: target.clip.id },
+        };
     }
 
     if (call.name === 'transposeNotes') {
@@ -3030,6 +3049,7 @@ export function buildLlmActionUserMessage({
     prompt,
     context,
     projectRevision,
+    articulationTransferCapability,
     drumRoutingCapability,
     sidechainRoutingCapability,
     wholeProjectVibeMixCapability,
@@ -3037,12 +3057,14 @@ export function buildLlmActionUserMessage({
     prompt: string;
     context: ProjectContext;
     projectRevision?: string;
+    articulationTransferCapability?: ArticulationTransferCapability;
     drumRoutingCapability?: DrumRoutingCapability;
     sidechainRoutingCapability?: SidechainRoutingCapability;
     wholeProjectVibeMixCapability?: WholeProjectVibeMixCapability;
 }): string {
     const commandContext = {
         ...(projectRevision ? { projectRevision } : {}),
+        ...(articulationTransferCapability ? { articulationTransferCapability } : {}),
         ...(drumRoutingCapability ? { drumRoutingCapability } : {}),
         ...(sidechainRoutingCapability ? { sidechainRoutingCapability } : {}),
         ...(wholeProjectVibeMixCapability ? { wholeProjectVibeMixCapability } : {}),

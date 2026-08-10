@@ -18,10 +18,10 @@ describe('RuntimeAction', () => {
             }
         }
 
-        expect(RUNTIME_ACTION_TYPES).toHaveLength(241);
+        expect(RUNTIME_ACTION_TYPES).toHaveLength(242);
         expect(new Set(RUNTIME_ACTION_TYPES).size).toBe(RUNTIME_ACTION_TYPES.length);
         expect(RUNTIME_ACTION_TYPES).not.toContain('replayGeneratedMidi');
-        expect(digest >>> 0).toBe(2_716_626_761);
+        expect(digest >>> 0).toBe(3_048_932_721);
     });
 
     it('derives initiating payloads without exposing command-owned replay fields', () => {
@@ -41,6 +41,10 @@ describe('RuntimeAction', () => {
             { type: 'addSidechainRoute', payload: { sourceTrackId: 'track-1', targetTrackId: 'track-2' } },
             { type: 'removeSidechainRoute', payload: { sourceTrackId: 'track-1', targetTrackId: 'track-2' } },
             { type: 'quantizeNotes', payload: { clipId: 'clip-1', gridSize: 0.25 } },
+            {
+                type: 'copyMidiArticulations',
+                payload: { sourceClipId: 'clip-1', targetClipId: 'clip-2' },
+            },
             { type: 'transposeNotes', payload: { clipId: 'clip-1', semitones: 7 } },
             { type: 'scaleAutomation', payload: { laneId: 'lane-1', factor: 1.5 } },
             { type: 'stretchAutomation', payload: { laneId: 'lane-1', factor: 2 } },
@@ -69,6 +73,7 @@ describe('RuntimeAction', () => {
             'addSidechainRoute',
             'removeSidechainRoute',
             'quantizeNotes',
+            'copyMidiArticulations',
             'transposeNotes',
             'scaleAutomation',
             'stretchAutomation',
@@ -94,6 +99,9 @@ describe('RuntimeAction', () => {
         expectTypeOf<PayloadHasKey<'removeSidechainRoute', 'gain'>>().toEqualTypeOf<false>();
         expectTypeOf<PayloadHasKey<'quantizeNotes', 'strength'>>().toEqualTypeOf<false>();
         expectTypeOf<PayloadHasKey<'quantizeNotes', 'swing'>>().toEqualTypeOf<false>();
+        expectTypeOf<PayloadHasKey<'copyMidiArticulations', 'notePairs'>>().toEqualTypeOf<false>();
+        expectTypeOf<PayloadHasKey<'copyMidiArticulations', 'expectedSourceNotes'>>().toEqualTypeOf<false>();
+        expectTypeOf<PayloadHasKey<'copyMidiArticulations', 'expectedTargetNotes'>>().toEqualTypeOf<false>();
         expectTypeOf<PayloadHasKey<'scaleAutomation', 'anchor'>>().toEqualTypeOf<false>();
         expectTypeOf<PayloadHasKey<'stretchAutomation', 'anchorBeat'>>().toEqualTypeOf<false>();
         expectTypeOf<PayloadHasKey<'createVcaGroup', 'vcaGroupId'>>().toEqualTypeOf<false>();

@@ -1,6 +1,7 @@
 import { type ActionHandler, type AppAction } from '#/utils/handlerContract';
 
 import { handleAddNotes } from '../handlers/noteCrud/handleAddNotes';
+import { handleCopyMidiArticulations } from '../handlers/noteTransform/handleCopyMidiArticulations';
 import { handleHumanizeNotes } from '../handlers/noteTransform/handleHumanizeNotes';
 import { handleInvertNotes } from '../handlers/noteTransform/handleInvertNotes';
 import { handleQuantizeNoteLengths } from '../handlers/noteTransform/handleQuantizeNoteLengths';
@@ -14,6 +15,7 @@ import { handleTransposeNotes } from '../handlers/noteTransform/handleTransposeN
 
 type MidiNoteTransformAppAction =
     | Extract<AppAction, { type: 'addNotes' }>
+    | Extract<AppAction, { type: 'copyMidiArticulations' }>
     | Extract<AppAction, { type: 'humanizeNotes' }>
     | Extract<AppAction, { type: 'invertNotes' }>
     | Extract<AppAction, { type: 'quantizeNoteLengths' }>
@@ -35,6 +37,7 @@ export type MidiNoteTransformHandlersMap = {
 export function getMidiNoteTransformHandlers(): MidiNoteTransformHandlersMap {
     return {
         addNotes: handleAddNotes,
+        copyMidiArticulations: handleCopyMidiArticulations,
         humanizeNotes: handleHumanizeNotes,
         invertNotes: handleInvertNotes,
         quantizeNoteLengths: handleQuantizeNoteLengths,

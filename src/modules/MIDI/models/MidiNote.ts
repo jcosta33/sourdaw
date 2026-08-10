@@ -22,6 +22,8 @@ export type MidiNote = {
      */
     pitchBendRangeSemitones?: number;
     channel?: number;
+    /** Per-note performance articulation (for example staccato, accent, or legato). */
+    articulation?: string;
 };
 
 export type MidiCC = {
@@ -38,6 +40,19 @@ export type MidiPitchBend = {
     beat: number;
     channel: number;
 };
+
+export function isValidMidiArticulation(value: unknown): value is string {
+    if (typeof value !== 'string' || value.length === 0 || value.length > 128 || value !== value.trim()) {
+        return false;
+    }
+    for (const character of value) {
+        const codePoint = character.codePointAt(0);
+        if (codePoint !== undefined && (codePoint <= 31 || codePoint === 127)) {
+            return false;
+        }
+    }
+    return true;
+}
 
 export function createMidiNote(
     pitch: number,

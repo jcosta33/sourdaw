@@ -16,6 +16,7 @@ function note(overrides: Partial<MidiNote> = {}): MidiNote {
         pitchBend: 0,
         pitchBendRangeSemitones: 48,
         channel: 0,
+        articulation: 'staccato',
         ...overrides,
     };
 }
@@ -48,6 +49,7 @@ describe('midiNotesEqual', () => {
             { ...base, pitchBend: (base.pitchBend ?? 0) + 1 },
             { ...base, pitchBendRangeSemitones: (base.pitchBendRangeSemitones ?? 0) + 1 },
             { ...base, channel: (base.channel ?? 0) + 1 },
+            { ...base, articulation: 'accent' },
         ];
         for (const right of mutated) {
             expect(midiNotesEqual([base], [right])).toBe(false);

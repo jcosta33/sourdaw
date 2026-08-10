@@ -16,6 +16,7 @@ import {
 } from '../transformers/promptParser/parsing';
 
 import { bridgeGroundedLlmToolCalls } from './agentReference/bridgeGroundedLlmToolCalls';
+import { getArticulationTransferPromptScope } from './agentReference/getArticulationTransferPromptScope';
 import { getDrumRoutingPromptScope } from './agentReference/getDrumRoutingPromptScope';
 import { getSidechainRoutingPromptScope } from './agentReference/getSidechainRoutingPromptScope';
 import { getWholeProjectVibeMixScope } from './agentReference/getWholeProjectVibeMixScope';
@@ -118,6 +119,9 @@ export const parsePromptToActions = inject({ logger })(
             // sendChatMessage remains responsible for confirmation and execution.
             try {
                 const drumRoutingScope = getDrumRoutingPromptScope(prompt, context, projectRevision);
+                const articulationTransferScope = getArticulationTransferPromptScope(prompt, context, projectRevision);
+                const articulationTransferCapability =
+                    articulationTransferScope.status === 'request' ? articulationTransferScope.capability : undefined;
                 const drumRoutingCapability =
                     drumRoutingScope.status === 'request' ? drumRoutingScope.capability : undefined;
                 const sidechainRoutingScope = getSidechainRoutingPromptScope(prompt, context, projectRevision);
@@ -134,6 +138,7 @@ export const parsePromptToActions = inject({ logger })(
                         prompt,
                         context,
                         projectRevision,
+                        articulationTransferCapability,
                         drumRoutingCapability,
                         sidechainRoutingCapability,
                         wholeProjectVibeMixCapability,

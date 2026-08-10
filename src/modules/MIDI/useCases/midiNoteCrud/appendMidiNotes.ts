@@ -1,3 +1,4 @@
+import { isValidMidiArticulation } from '../../models/MidiNote';
 import { midiStore } from '../../stores/midiStore';
 
 type AppendMidiNoteInput = {
@@ -10,6 +11,7 @@ type AppendMidiNoteInput = {
     slide?: number;
     pitchBend?: number;
     channel?: number;
+    articulation?: string;
 };
 
 type AppendMidiNotesInput = {
@@ -18,7 +20,7 @@ type AppendMidiNotesInput = {
 };
 
 const REQUIRED_APPEND_NOTE_KEYS = ['pitch', 'startBeat', 'duration', 'velocity'] as const;
-const OPTIONAL_APPEND_NOTE_KEYS = ['probability', 'pressure', 'slide', 'pitchBend', 'channel'] as const;
+const OPTIONAL_APPEND_NOTE_KEYS = ['probability', 'pressure', 'slide', 'pitchBend', 'channel', 'articulation'] as const;
 const ALLOWED_APPEND_NOTE_KEYS = new Set<string>([...REQUIRED_APPEND_NOTE_KEYS, ...OPTIONAL_APPEND_NOTE_KEYS]);
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
@@ -50,7 +52,8 @@ function isExactAppendNote(value: unknown): value is AppendMidiNoteInput {
         (!Object.hasOwn(value, 'pressure') || isFiniteNumber(value.pressure)) &&
         (!Object.hasOwn(value, 'slide') || isFiniteNumber(value.slide)) &&
         (!Object.hasOwn(value, 'pitchBend') || isFiniteNumber(value.pitchBend)) &&
-        (!Object.hasOwn(value, 'channel') || isFiniteNumber(value.channel))
+        (!Object.hasOwn(value, 'channel') || isFiniteNumber(value.channel)) &&
+        (!Object.hasOwn(value, 'articulation') || isValidMidiArticulation(value.articulation))
     );
 }
 

@@ -196,6 +196,7 @@ export type MidiClipNoteSnapshot = {
     readonly pitchBend?: number;
     readonly pitchBendRangeSemitones?: number;
     readonly channel?: number;
+    readonly articulation?: string;
 };
 export type MidiCcSnapshot = readonly { readonly id: string }[];
 export type MidiPitchBendSnapshot = readonly { readonly id: string }[];
@@ -819,6 +820,16 @@ export type AppAction =
           };
       }
     | { type: 'quantizeNotes'; payload: { clipId: string; gridSize: number; strength?: number; swing?: number } }
+    | {
+          type: 'copyMidiArticulations';
+          payload: {
+              sourceClipId: string;
+              targetClipId: string;
+              notePairs: readonly { readonly sourceNoteId: string; readonly targetNoteId: string }[];
+              expectedSourceNotes: readonly MidiClipNoteSnapshot[];
+              expectedTargetNotes: readonly MidiClipNoteSnapshot[];
+          };
+      }
     | {
           /** Internal inverse for whole-clip MIDI note transforms. Provider payloads never carry snapshots. */
           type: 'restoreMidiClipNotes';

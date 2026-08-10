@@ -251,6 +251,14 @@ export function describePlannedAction({ action, context }: DescribePlannedAction
             return `Set note velocities in "${clip.name}" (${clip.id}) to ${String(action.payload.velocity)}`;
         }
     }
+    if (action.type === 'copyMidiArticulations') {
+        const clips = context.tracks.flatMap((track) => track.clips);
+        const source = clips.find((clip) => clip.id === action.payload.sourceClipId);
+        const target = clips.find((clip) => clip.id === action.payload.targetClipId);
+        if (source && target) {
+            return `Copy only articulation from "${source.name}" (${source.id}) to "${target.name}" (${target.id}); preserve target pitches, velocities, timing, and expression`;
+        }
+    }
 
     if (action.type === 'addSidechainRoute' || action.type === 'removeSidechainRoute') {
         const source = context.tracks.find((track) => track.id === action.payload.sourceTrackId);
