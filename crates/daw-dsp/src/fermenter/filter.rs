@@ -290,8 +290,12 @@ impl FormantFilter {
     }
 }
 
-/// Korg MS-20 style dual Sallen-Key filter.
-/// HP → LP topology with diode clipping in feedback for gritty self-oscillation.
+/// Korg MS-20 style HP → LP filter.
+///
+/// Both two-pole sections use topology-preserving trapezoidal integrators. This
+/// keeps their state transition inside the stable region as cutoff approaches
+/// Nyquist; an explicit-Euler update here previously amplified even a 1e-12
+/// impulse to infinity.
 #[derive(Clone)]
 pub struct Ms20Filter {
     hp_s1: f32,
@@ -325,8 +329,10 @@ impl Ms20Filter {
 
     #[inline]
     pub fn process(&mut self, input: f32, cutoff: f32, resonance: f32, sample_rate: f32) -> f32 {
-        let g = (core::f32::consts::PI * cutoff.clamp(20.0, 20000.0) / sample_rate).tan();
-        let k = resonance.clamp(0.0, 2.0);
+        let sample_rate = sample_rate.max(1.0);
+        let max_cutoff = (sample_rate * 0.45).clamp(20.0, 20_000.0);
+        let g = (core::f32::consts::PI * cutoff.clamp(20.0, max_cutoff) / sample_rate).tan();
+        let damping = 1.0 / resonance.clamp(0.5, 20.0);
 
         let driven = if self.drive > 0.001 {
             fast_tanh(input * (1.0 + self.drive))
@@ -334,27 +340,31 @@ impl Ms20Filter {
             input
         };
 
-        // High-pass Sallen-Key
-        let fb_hp = fast_tanh(self.hp_s2 * k);
-        let hp =
-            (driven - fb_hp - self.hp_s1 * (2.0 + k) - self.hp_s2) / (1.0 + (2.0 + k) * g + g * g);
-        let v1_hp = hp * g;
-        let v2_hp = (v1_hp + self.hp_s1 - self.hp_s2) * g;
-        self.hp_s1 = flush_denormal(self.hp_s1 + 2.0 * v1_hp);
-        self.hp_s2 = flush_denormal(self.hp_s2 + 2.0 * v2_hp);
+        let (_, hp) = Self::process_section(driven, g, damping, &mut self.hp_s1, &mut self.hp_s2);
+        let (lp, _) = Self::process_section(hp, g, damping, &mut self.lp_s1, &mut self.lp_s2);
+        lp
+    }
 
-        // Low-pass Sallen-Key on HP output
-        let fb_lp = fast_tanh(self.lp_s2 * k);
-        let v1_lp = (hp - fb_lp - self.lp_s1 * g) / (1.0 + g + g * g + g * k);
-        let y1_lp = v1_lp + self.lp_s1;
-        let v2_lp = (y1_lp - self.lp_s2) * g;
-        let y2_lp = v2_lp + self.lp_s2;
-        self.lp_s1 = flush_denormal(
-            self.lp_s1 + 2.0 * g * (hp - fb_lp - self.lp_s1) / (1.0 + 2.0 * g + g * g),
-        );
-        self.lp_s2 = flush_denormal(self.lp_s2 + 2.0 * g * (y1_lp - self.lp_s2));
+    #[inline]
+    fn process_section(
+        input: f32,
+        g: f32,
+        damping: f32,
+        state_1: &mut f32,
+        state_2: &mut f32,
+    ) -> (f32, f32) {
+        let a1 = 1.0 / (1.0 + g * (g + damping));
+        let a2 = g * a1;
+        let a3 = g * a2;
+        let v3 = input - *state_2;
+        let bandpass = a1 * *state_1 + a2 * v3;
+        let lowpass = *state_2 + a2 * *state_1 + a3 * v3;
 
-        y2_lp
+        *state_1 = flush_denormal(2.0 * bandpass - *state_1);
+        *state_2 = flush_denormal(2.0 * lowpass - *state_2);
+
+        let highpass = input - damping * bandpass - lowpass;
+        (lowpass, highpass)
     }
 }
 
@@ -426,5 +436,31 @@ impl SemFilter {
             let t = (m - 0.5) * 2.0;
             notch * (1.0 - t) + hp * t
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Ms20Filter;
+
+    #[test]
+    fn ms20_state_remains_finite_after_near_zero_excitation() {
+        let mut filter = Ms20Filter::new();
+        let mut peak = 0.0_f32;
+
+        for frame in 0..48_000 {
+            let input = if frame == 0 { 1e-12 } else { 0.0 };
+            let output = filter.process(input, 20_000.0, 1.0, 48_000.0);
+            assert!(
+                output.is_finite(),
+                "MS-20 state diverged at frame {frame}: {output}"
+            );
+            peak = peak.max(output.abs());
+        }
+
+        assert!(
+            peak < 1e-6,
+            "near-zero excitation grew to {peak}; the filter state is unstable"
+        );
     }
 }

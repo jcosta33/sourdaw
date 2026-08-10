@@ -650,8 +650,10 @@ fn fermenter_process_does_not_allocate_with_voices_sounding() {
     use daw_dsp::fermenter::FermenterInstance;
 
     let mut instance = FermenterInstance::new(SAMPLE_RATE, 8);
-    instance.set_param("cutoff", 4_000.0);
-    instance.set_param("resonance", 0.4);
+    instance.set_param("filter_model", 4.0);
+    instance.set_param("cutoff", 1_500.0);
+    instance.set_param("resonance", 4.0);
+    instance.set_param("filter_drive", 2.0);
     instance.set_param("unison_spread", 0.3);
     instance.set_param("noise_level", 0.1);
     for note in [48_u8, 55, 60, 64] {
