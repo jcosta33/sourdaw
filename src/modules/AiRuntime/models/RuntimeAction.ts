@@ -262,7 +262,7 @@ export const RUNTIME_ACTION_OVERRIDE_PAYLOAD_KEYS = {
     setPunchEnabled: ['enabled'],
     addClip: ['trackId', 'startBeat', 'endBeat', 'name', 'type', 'audioBufferId'],
     addNotes: ['clipId', 'notes'],
-    addDevice: ['trackId', 'deviceType'],
+    addDevice: ['trackId', 'deviceType', 'afterDeviceId'],
     createBus: ['name'],
     createTrackAlternative: ['trackId', 'name', 'duplicateActive'],
     deleteTrackAlternative: ['trackId', 'alternativeId'],

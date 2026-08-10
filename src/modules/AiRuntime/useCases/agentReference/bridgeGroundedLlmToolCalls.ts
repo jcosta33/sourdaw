@@ -16,6 +16,7 @@ import { MAX_LLM_ACTIONS_PER_BATCH } from '../../transformers/llmActionLimits';
 import { type ToolCallResult } from '../../transformers/toolCallParser';
 import { normalizeSafeProjectName } from '../../validators/normalizeSafeProjectName';
 
+import { getBulkDeviceInsertionTrackScope } from './getBulkDeviceInsertionTrackScope';
 import { resolveAgentReference } from './resolveAgentReference';
 
 type BridgeGroundedLlmToolCallsInput = {
@@ -984,6 +985,30 @@ function resolveBulkTrackOutputScope(
     };
 }
 
+function resolveBulkDeviceInsertionScope(
+    prompt: string,
+    context: ProjectContext,
+    sameActionAssertedArguments: readonly Readonly<Record<string, unknown>>[],
+    sameActionCallCount: number
+): ActionPromptScope | null {
+    const expectedTrackIds = getBulkDeviceInsertionTrackScope(prompt, context)?.targetIds;
+    if (!expectedTrackIds || sameActionAssertedArguments.length !== sameActionCallCount) {
+        return null;
+    }
+    const assertedTrackIds = sameActionAssertedArguments.flatMap((arguments_) =>
+        typeof arguments_.trackId === 'string' ? [arguments_.trackId] : []
+    );
+    if (
+        expectedTrackIds.length !== sameActionCallCount ||
+        assertedTrackIds.length !== sameActionCallCount ||
+        new Set(assertedTrackIds).size !== sameActionCallCount ||
+        !expectedTrackIds.every((trackId) => assertedTrackIds.includes(trackId))
+    ) {
+        return null;
+    }
+    return { text: prompt, masked: prompt, directional: false, matchedIntentPhrase: 'insert device' };
+}
+
 function resolveRepeatedTrackPanScope({
     actionOrdinal,
     prompt,
@@ -1424,6 +1449,17 @@ function resolveActionPromptScope({
         );
         if (bulkTrackOutputScope) {
             return bulkTrackOutputScope;
+        }
+    }
+    if (actionName === 'addDevice') {
+        const bulkDeviceInsertionScope = resolveBulkDeviceInsertionScope(
+            prompt,
+            context,
+            sameActionAssertedArguments,
+            sameActionCallCount
+        );
+        if (bulkDeviceInsertionScope) {
+            return bulkDeviceInsertionScope;
         }
     }
     if (actionName === 'setTrackPan') {
@@ -3309,9 +3345,23 @@ function groundToolCall({
         return rejection(index, call.name, 'Provider action is not grounded in an explicit playback request');
     }
     const groundedArguments = { ...call.arguments };
+    const bulkDeviceInsertionTargetIds =
+        call.name === 'addDevice' ? (getBulkDeviceInsertionTrackScope(prompt, context)?.targetIds ?? null) : null;
     for (const targetRule of groundingRules.targetRules) {
         const assertedValue = groundedArguments[targetRule.argument];
+        if (targetRule.optional && assertedValue === undefined) {
+            continue;
+        }
         const targetPrompt = getTargetPromptScope(actionScope, targetRule.promptRole);
+        if (
+            bulkDeviceInsertionTargetIds &&
+            call.name === 'addDevice' &&
+            targetRule.argument === 'trackId' &&
+            typeof assertedValue === 'string' &&
+            bulkDeviceInsertionTargetIds.includes(assertedValue)
+        ) {
+            continue;
+        }
         if (targetRule.cardinality === 'many') {
             const dependencyValue = targetRule.dependsOn ? groundedArguments[targetRule.dependsOn] : undefined;
             const result = resolveAgentReferenceArray({

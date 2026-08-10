@@ -775,10 +775,11 @@ const EXPECTED_COMMANDS = [
     ),
     expectedCommand(
         'addDevice',
-        'Insert a platform-available built-in device at the end of a track device chain.',
+        'Insert a platform-available built-in device into a track device chain.',
         {
             trackId: { type: 'string', description: 'Existing track ID that accepts devices' },
             deviceType: { type: 'string', description: 'Available built-in device ID or unique display name' },
+            afterDeviceId: { type: 'string', description: 'Existing device ID after which to insert' },
         },
         ['trackId', 'deviceType'],
         'bounded-reversible',
@@ -1840,7 +1841,10 @@ const EXPECTED_GROUNDING = [
     {
         actionType: 'addDevice',
         intentPhrases: ['add device', 'insert device', 'add plugin', 'insert plugin', 'add'],
-        targetRules: [{ argument: 'trackId', capability: 'device-host-track' }],
+        targetRules: [
+            { argument: 'trackId', capability: 'device-host-track' },
+            { argument: 'afterDeviceId', capability: 'device', dependsOn: 'trackId', optional: true },
+        ],
         valueRules: [{ argument: 'deviceType', kind: 'string-literal' }],
     },
     {

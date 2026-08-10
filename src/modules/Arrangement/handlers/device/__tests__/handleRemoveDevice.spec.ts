@@ -73,7 +73,12 @@ describe('handleRemoveDevice', () => {
 
         expect(desc.inverseAction).toEqual({
             type: 'restoreDevice',
-            payload: { trackId: 't1', deviceSnapshot: device, deviceIndex: 1 },
+            payload: {
+                trackId: 't1',
+                deviceSnapshot: device,
+                deviceIndex: 1,
+                expectedDeviceIds: ['before', 'after'],
+            },
         });
     });
 

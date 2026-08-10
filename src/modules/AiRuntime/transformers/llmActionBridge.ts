@@ -1782,14 +1782,35 @@ function bridgeToolCall({
     if (call.name === 'addDevice') {
         const track = findTrack(context, args.trackId);
         const deviceType = findAvailableDeviceType(context, args.deviceType);
-        if (!hasExactKeys(args, ['trackId', 'deviceType']) || !track || track.kind === 'vca' || !deviceType) {
+        const hasSupportedKeys =
+            hasExactKeys(args, ['trackId', 'deviceType']) ||
+            hasExactKeys(args, ['trackId', 'deviceType', 'afterDeviceId']);
+        let afterDevice;
+        if (typeof args.afterDeviceId === 'string') {
+            afterDevice = track?.devices.find((device) => device.id === args.afterDeviceId);
+        }
+        if (
+            !hasSupportedKeys ||
+            !track ||
+            track.kind === 'vca' ||
+            track.frozen === true ||
+            !deviceType ||
+            (args.afterDeviceId !== undefined && !afterDevice)
+        ) {
             return rejection(
                 index,
                 call.name,
-                'Expected a device-capable track and one platform-available built-in device type'
+                'Expected a non-frozen device-capable track, one platform-available built-in device type, and an optional anchor device on that track'
             );
         }
-        return { type: 'addDevice', payload: { trackId: track.id, deviceType: deviceType.id } };
+        return {
+            type: 'addDevice',
+            payload: {
+                trackId: track.id,
+                deviceType: deviceType.id,
+                ...(afterDevice ? { afterDeviceId: afterDevice.id } : {}),
+            },
+        };
     }
 
     if (call.name === 'removeDevice') {
@@ -2950,6 +2971,7 @@ export function buildLlmActionUserMessage({ prompt, context }: { prompt: string;
             soloed: track.soloed,
             soloSafe: track.soloSafe,
             armed: track.armed,
+            frozen: track.frozen ?? false,
             gain: track.gain,
             pan: track.pan,
             automationMode: track.automationMode,

@@ -12,6 +12,11 @@ export function materializeActionStateGuards(
     context: ProjectContext
 ): MaterializeActionStateGuardsResult {
     const tracksById = new Map(context.tracks.map((track) => [track.id, track]));
+    const frozenByTrack = new Map(context.tracks.map((track) => [track.id, track.frozen] as const));
+    const reservedDeviceIds = new Set(context.tracks.flatMap((track) => track.devices.map((device) => device.id)));
+    const deviceIdsByTrack = new Map(
+        context.tracks.map((track) => [track.id, track.devices.map((device) => device.id)] as const)
+    );
     const materialized: AppAction[] = [];
 
     for (const action of actions) {
@@ -47,6 +52,55 @@ export function materializeActionStateGuards(
                 payload: { ...action.payload, expectedMuted: track.muted },
             });
             continue;
+        }
+        if (action.type === 'addDevice') {
+            const expectedFrozen = frozenByTrack.get(action.payload.trackId);
+            if (expectedFrozen === undefined) {
+                return { status: 'rejected', reason: `Track is unavailable: ${action.payload.trackId}` };
+            }
+            if (expectedFrozen) {
+                return { status: 'rejected', reason: `Track is frozen: ${action.payload.trackId}` };
+            }
+            const expectedDeviceIds = deviceIdsByTrack.get(action.payload.trackId);
+            if (!expectedDeviceIds) {
+                return { status: 'rejected', reason: `Track is unavailable: ${action.payload.trackId}` };
+            }
+            const baseDeviceId = `device-ai-${action.payload.trackId}-${action.payload.deviceType}`;
+            let deviceId = baseDeviceId;
+            let suffix = 2;
+            while (reservedDeviceIds.has(deviceId)) {
+                deviceId = `${baseDeviceId}-${String(suffix)}`;
+                suffix += 1;
+            }
+            reservedDeviceIds.add(deviceId);
+            const nextDeviceIds = [...expectedDeviceIds];
+            let insertionIndex = nextDeviceIds.length;
+            if (action.payload.afterDeviceId) {
+                const anchorIndex = nextDeviceIds.indexOf(action.payload.afterDeviceId);
+                if (anchorIndex < 0) {
+                    return {
+                        status: 'rejected',
+                        reason: `Device is unavailable: ${action.payload.afterDeviceId}`,
+                    };
+                }
+                insertionIndex = anchorIndex + 1;
+            }
+            nextDeviceIds.splice(insertionIndex, 0, deviceId);
+            deviceIdsByTrack.set(action.payload.trackId, nextDeviceIds);
+            materialized.push({
+                type: 'addDevice',
+                payload: {
+                    ...action.payload,
+                    deviceId,
+                    expectedDeviceIds,
+                    expectedFrozen,
+                },
+            });
+            continue;
+        }
+        if (action.type === 'createBus' && action.payload.busId) {
+            deviceIdsByTrack.set(action.payload.busId, []);
+            frozenByTrack.set(action.payload.busId, false);
         }
         if (action.type === 'automateSendRange') {
             const bus = tracksById.get(action.payload.busId);

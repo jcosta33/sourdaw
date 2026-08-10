@@ -3,6 +3,7 @@ import { type AppAction } from '#/utils/handlerContract';
 
 import { type ProjectContext } from '../models/ProjectContext';
 
+import { getBulkDeviceInsertionTrackScope } from './agentReference/getBulkDeviceInsertionTrackScope';
 import { describePlannedAction } from './describePlannedAction';
 import { getPlannedActionAffectedIds } from './getPlannedActionAffectedIds';
 
@@ -33,9 +34,15 @@ function getProtectedUnchangedTracks(prompt: string, context: ProjectContext): A
     const protectedScopes = [
         ...prompt.matchAll(/\b(?:leave|leaving|keep|keeping|preserve|preserving)\s+(.+?)\s+unchanged\b/giu),
     ].flatMap((match) => (match[1] ? [normalizeText(match[1])] : []));
+    const excludedFrozenTrackIds = new Set(
+        getBulkDeviceInsertionTrackScope(prompt, context)?.excludedFrozenTrackIds ?? []
+    );
     const protectedTracks = context.tracks.filter((track) => {
         const normalizedName = normalizeText(track.name);
-        return protectedScopes.some((scope) => ` ${scope} `.includes(` ${normalizedName} `));
+        return (
+            excludedFrozenTrackIds.has(track.id) ||
+            protectedScopes.some((scope) => ` ${scope} `.includes(` ${normalizedName} `))
+        );
     });
     return protectedTracks.map(({ id, name }) => ({ id, name }));
 }
@@ -71,7 +78,20 @@ export function describePendingActionConfirmation({
     const riskPolicy = policies.reduce((highest, policy) =>
         riskRank[policy.risk] > riskRank[highest.risk] ? policy : highest
     );
-    const risk = { level: riskPolicy.risk, reason: riskPolicy.reason };
+    let risk = {
+        level: riskPolicy.risk,
+        reason: riskPolicy.reason,
+    };
+    if (
+        actions.length > 1 &&
+        actions.every((action) => action.type === 'addDevice') &&
+        riskPolicy.risk === 'bounded-reversible'
+    ) {
+        risk = {
+            level: 'broad-reversible',
+            reason: 'This applies the same change to multiple project targets.',
+        };
+    }
     const protectedUnchanged = getProtectedUnchangedTracks(prompt, context);
     const intendedChanges = actions
         .map((action, index) => `- **${action.type}**: ${actionLabels[index] ?? action.type}`)
