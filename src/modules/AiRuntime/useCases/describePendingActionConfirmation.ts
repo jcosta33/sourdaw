@@ -8,6 +8,7 @@ import { getBulkDeviceInsertionTrackScope } from './agentReference/getBulkDevice
 import { getDeviceParameterPromptScope } from './agentReference/getDeviceParameterPromptScope';
 import { getDrumRoutingPromptScope } from './agentReference/getDrumRoutingPromptScope';
 import { getMutedEmptyTrackDeletionScope } from './agentReference/getMutedEmptyTrackDeletionScope';
+import { getSidechainRoutingPromptScope } from './agentReference/getSidechainRoutingPromptScope';
 import { describePlannedAction } from './describePlannedAction';
 import { getPlannedActionAffectedIds } from './getPlannedActionAffectedIds';
 
@@ -103,11 +104,17 @@ function getProtectedUnchangedTracks(
         drumRoutingScope.status === 'request'
             ? [{ id: drumRoutingScope.protectedReturnId, name: drumRoutingScope.protectedReturnName }]
             : [];
+    const sidechainRoutingScope = getSidechainRoutingPromptScope(prompt, context);
+    const sidechainRoutingProtections =
+        sidechainRoutingScope.status === 'request'
+            ? sidechainRoutingScope.protectedTargets.map(({ id, name }) => ({ id, name }))
+            : [];
     const protections = [
         ...protectedTracks.map(({ id, name }) => ({ id, name })),
         ...protectedParameters,
         ...planProtections,
         ...drumRoutingProtections,
+        ...sidechainRoutingProtections,
     ];
     return [...new Map(protections.map((protection) => [protection.id, protection])).values()];
 }

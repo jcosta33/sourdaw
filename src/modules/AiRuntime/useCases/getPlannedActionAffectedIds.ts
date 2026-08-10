@@ -28,6 +28,9 @@ export function getPlannedActionAffectedIds(action: AppAction): string[] {
     if (action.type === 'addDevice' && action.payload.deviceId) {
         affectedIds.add(action.payload.deviceId);
     }
+    if (action.type === 'addSidechainRoute' && action.payload.targetDeviceId) {
+        affectedIds.add(action.payload.targetDeviceId);
+    }
     if (action.type === 'automateSendRange' && action.payload.sectionId) {
         affectedIds.add(action.payload.sectionId);
     }

@@ -278,7 +278,7 @@ export const RUNTIME_ACTION_OVERRIDE_PAYLOAD_KEYS = {
     automateTrackGainRange: ['trackIds', 'sectionName', 'gainDb'],
     addAutomationPoint: ['laneId', 'beat', 'value', 'curve', 'tension', 'stairSteps', 'cp1', 'cp2'],
     removeAutomationPoint: ['laneId', 'pointIndex'],
-    addSidechainRoute: ['sourceTrackId', 'targetTrackId'],
+    addSidechainRoute: ['sourceTrackId', 'targetTrackId', 'targetDeviceId'],
     removeSidechainRoute: ['sourceTrackId', 'targetTrackId'],
     quantizeNotes: ['clipId', 'gridSize'],
     transposeNotes: ['clipId', 'semitones'],

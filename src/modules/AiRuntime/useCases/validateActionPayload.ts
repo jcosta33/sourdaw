@@ -360,9 +360,11 @@ const validators = {
     // Sidechain routing
     addSidechainRoute: (param): param is PayloadOf<'addSidechainRoute'> =>
         isObj(param) &&
-        hasExactKeys(param, ['sourceTrackId', 'targetTrackId']) &&
+        (hasExactKeys(param, ['sourceTrackId', 'targetTrackId']) ||
+            hasExactKeys(param, ['sourceTrackId', 'targetTrackId', 'targetDeviceId'])) &&
         isNonEmptyString(param.sourceTrackId) &&
         isNonEmptyString(param.targetTrackId) &&
+        isOptional(param.targetDeviceId, isNonEmptyString) &&
         param.sourceTrackId !== param.targetTrackId,
     removeSidechainRoute: (param): param is PayloadOf<'removeSidechainRoute'> =>
         isObj(param) &&

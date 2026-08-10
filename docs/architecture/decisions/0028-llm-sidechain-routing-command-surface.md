@@ -2,6 +2,8 @@
 
 **Status:** Accepted
 
+**Narrow exception:** ADR 0032 supersedes only this decision's endpoint-only and exactly-one-supported-device clauses for the revision-bound, capability-scoped MF-06 workflow. Every other constraint below remains accepted.
+
 ## Context
 
 Sourdaw already defines `addSidechainRoute` and `removeSidechainRoute`, but their canonical endpoint-only payloads disagree with stale runtime validators, are absent from provider-neutral project context and executable grounding, and select the first matching route or device. Their inverses lose route identity and configuration, and add currently wires the live audio graph before the Automerge transaction commits.

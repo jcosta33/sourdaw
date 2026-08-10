@@ -89,7 +89,7 @@ describe('RuntimeAction', () => {
         expectTypeOf<PayloadHasKey<'removeAutomationPoint', 'pointId'>>().toEqualTypeOf<false>();
         expectTypeOf<PayloadHasKey<'setAutomationMode', 'expectedMode'>>().toEqualTypeOf<false>();
         expectTypeOf<PayloadHasKey<'addSidechainRoute', 'routeId'>>().toEqualTypeOf<false>();
-        expectTypeOf<PayloadHasKey<'addSidechainRoute', 'targetDeviceId'>>().toEqualTypeOf<false>();
+        expectTypeOf<PayloadHasKey<'addSidechainRoute', 'targetDeviceId'>>().toEqualTypeOf<true>();
         expectTypeOf<PayloadHasKey<'removeSidechainRoute', 'routeId'>>().toEqualTypeOf<false>();
         expectTypeOf<PayloadHasKey<'removeSidechainRoute', 'gain'>>().toEqualTypeOf<false>();
         expectTypeOf<PayloadHasKey<'quantizeNotes', 'strength'>>().toEqualTypeOf<false>();

@@ -20,6 +20,7 @@ import { getBulkDeviceInsertionTrackScope } from './getBulkDeviceInsertionTrackS
 import { getDeviceParameterPromptScope } from './getDeviceParameterPromptScope';
 import { getDrumRoutingPromptScope } from './getDrumRoutingPromptScope';
 import { getMutedEmptyTrackDeletionScope } from './getMutedEmptyTrackDeletionScope';
+import { getSidechainRoutingPromptScope } from './getSidechainRoutingPromptScope';
 import { getWholeProjectVibeMixScope } from './getWholeProjectVibeMixScope';
 import { resolveAgentReference } from './resolveAgentReference';
 
@@ -1510,6 +1511,23 @@ function resolveActionPromptScope({
             )
         ) {
             return { text: prompt, masked: prompt, directional: false, matchedIntentPhrase: 'route' };
+        }
+    }
+    if (actionName === 'addSidechainRoute') {
+        const sidechainRoutingScope = getSidechainRoutingPromptScope(prompt, context);
+        if (
+            sidechainRoutingScope.status === 'request' &&
+            sameActionCallCount === sidechainRoutingScope.routes.length &&
+            sameActionAssertedArguments.every((arguments_) =>
+                sidechainRoutingScope.routes.some(
+                    (route) =>
+                        route.sourceTrackId === arguments_.sourceTrackId &&
+                        route.targetTrackId === arguments_.targetTrackId &&
+                        route.targetDeviceId === arguments_.targetDeviceId
+                )
+            )
+        ) {
+            return { text: prompt, masked: prompt, directional: false, matchedIntentPhrase: 'create sidechain' };
         }
     }
     if (hasActionCancellation) {
@@ -3461,12 +3479,27 @@ function groundToolCall({
     const bulkMutedEmptyTrackDeletionTargetIds =
         call.name === 'removeTrack' ? (getMutedEmptyTrackDeletionScope(prompt, context)?.targetIds ?? null) : null;
     const drumRoutingScope = call.name === 'setTrackOutput' ? getDrumRoutingPromptScope(prompt, context) : null;
+    const sidechainRoutingScope =
+        call.name === 'addSidechainRoute' ? getSidechainRoutingPromptScope(prompt, context) : null;
     for (const targetRule of groundingRules.targetRules) {
         const assertedValue = groundedArguments[targetRule.argument];
         if (targetRule.optional && assertedValue === undefined) {
             continue;
         }
         const targetPrompt = getTargetPromptScope(actionScope, targetRule.promptRole);
+        if (
+            sidechainRoutingScope?.status === 'request' &&
+            call.name === 'addSidechainRoute' &&
+            (targetRule.argument === 'sourceTrackId' || targetRule.argument === 'targetTrackId') &&
+            sidechainRoutingScope.routes.some(
+                (route) =>
+                    route.sourceTrackId === groundedArguments.sourceTrackId &&
+                    route.targetTrackId === groundedArguments.targetTrackId &&
+                    route.targetDeviceId === groundedArguments.targetDeviceId
+            )
+        ) {
+            continue;
+        }
         if (
             drumRoutingScope?.status === 'request' &&
             call.name === 'setTrackOutput' &&
@@ -3825,6 +3858,11 @@ export function bridgeGroundedLlmToolCalls({
         });
     }
     let effectiveCalls = calls;
+    let sidechainRouteDeviceAdmissions: ReadonlyArray<{
+        sourceTrackId: string;
+        targetDeviceId: string;
+        targetTrackId: string;
+    }> = [];
     const drumRoutingScope = getDrumRoutingPromptScope(prompt, context);
     if (drumRoutingScope.status === 'invalid') {
         return { actions: [], rejections: [rejection(0, '<batch>', drumRoutingScope.reason)] };
@@ -3859,6 +3897,49 @@ export function bridgeGroundedLlmToolCalls({
                 rejections: [rejection(0, '<batch>', 'MF-01 protected return cannot enter the route target set')],
             };
         }
+    }
+    const sidechainRoutingScope = getSidechainRoutingPromptScope(prompt, context);
+    if (sidechainRoutingScope.status === 'invalid') {
+        return { actions: [], rejections: [rejection(0, '<batch>', sidechainRoutingScope.reason)] };
+    }
+    if (sidechainRoutingScope.status === 'request') {
+        sidechainRouteDeviceAdmissions = sidechainRoutingScope.routes;
+        const providerRoutes = calls.filter((call) => call.name === 'addSidechainRoute');
+        const providerRouteKeys = providerRoutes.flatMap((call) => {
+            const { sourceTrackId, targetTrackId, targetDeviceId } = call.arguments;
+            return typeof sourceTrackId === 'string' &&
+                typeof targetTrackId === 'string' &&
+                typeof targetDeviceId === 'string'
+                ? [`${sourceTrackId}\u0000${targetTrackId}\u0000${targetDeviceId}`]
+                : [];
+        });
+        const exactRouteKeys = sidechainRoutingScope.routes.map(
+            (route) => `${route.sourceTrackId}\u0000${route.targetTrackId}\u0000${route.targetDeviceId}`
+        );
+        const providerRouteKeySet = new Set(providerRouteKeys);
+        const providerPlanMatches =
+            providerRoutes.length === calls.length &&
+            providerRouteKeys.length === calls.length &&
+            providerRouteKeySet.size === providerRouteKeys.length &&
+            providerRouteKeys.length === exactRouteKeys.length &&
+            exactRouteKeys.every((key) => providerRouteKeySet.has(key));
+        if (!providerPlanMatches) {
+            return {
+                actions: [],
+                rejections: [
+                    rejection(0, '<batch>', 'Provider plan does not match the complete MF-06 sidechain route set'),
+                ],
+            };
+        }
+        effectiveCalls = sidechainRoutingScope.routes.flatMap((route) => {
+            const providerRoute = providerRoutes.find(
+                (call) =>
+                    call.arguments.sourceTrackId === route.sourceTrackId &&
+                    call.arguments.targetTrackId === route.targetTrackId &&
+                    call.arguments.targetDeviceId === route.targetDeviceId
+            );
+            return providerRoute ? [providerRoute] : [];
+        });
     }
     const wholeProjectVibeMixScope = getWholeProjectVibeMixScope(prompt, context);
     const providerVibeMixCalls = calls.filter((call) => call.name === 'automateTrackGainRange');
@@ -4078,6 +4159,7 @@ export function bridgeGroundedLlmToolCalls({
         markerSignatures,
         projectPunchRegion: createPunchRegionPatch,
         sectionSignatures,
+        sidechainRouteDeviceAdmissions,
     });
     if (mutedEmptyDeletionScope) {
         const targetIds = new Set(mutedEmptyDeletionScope.targetIds);
