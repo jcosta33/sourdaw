@@ -247,7 +247,25 @@ const validators = {
     removeDevice: (param): param is PayloadOf<'removeDevice'> =>
         isObj(param) && hasExactKeys(param, ['deviceId']) && isNonEmptyString(param.deviceId),
     setDeviceParameter: (param): param is PayloadOf<'setDeviceParameter'> =>
-        isObj(param) && isString(param.deviceId) && isString(param.paramId) && isNumber(param.value),
+        isObj(param) &&
+        hasOnlyKeys(param, [
+            'deviceId',
+            'paramId',
+            'value',
+            'expectedTrackId',
+            'expectedDeviceType',
+            'expectedDeviceIds',
+            'expectedValue',
+            'expectedTrackFrozen',
+        ]) &&
+        isNonEmptyString(param.deviceId) &&
+        isNonEmptyString(param.paramId) &&
+        isNumber(param.value) &&
+        isOptional(param.expectedTrackId, isNonEmptyString) &&
+        isOptional(param.expectedDeviceType, isNonEmptyString) &&
+        isOptional(param.expectedDeviceIds, isUniqueNonEmptyStringArray) &&
+        isOptional(param.expectedValue, isNumber) &&
+        isOptional(param.expectedTrackFrozen, (value): value is boolean => typeof value === 'boolean'),
     loadExternalPlugin: (param): param is PayloadOf<'loadExternalPlugin'> => isObj(param) && isString(param.pluginPath),
 
     // Transport (pre-existing range checks from §91)

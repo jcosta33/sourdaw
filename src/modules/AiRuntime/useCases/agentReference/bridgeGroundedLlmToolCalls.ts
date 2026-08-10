@@ -17,6 +17,7 @@ import { type ToolCallResult } from '../../transformers/toolCallParser';
 import { normalizeSafeProjectName } from '../../validators/normalizeSafeProjectName';
 
 import { getBulkDeviceInsertionTrackScope } from './getBulkDeviceInsertionTrackScope';
+import { getDeviceParameterPromptScope } from './getDeviceParameterPromptScope';
 import { getMutedEmptyTrackDeletionScope } from './getMutedEmptyTrackDeletionScope';
 import { resolveAgentReference } from './resolveAgentReference';
 
@@ -1084,6 +1085,49 @@ function resolveRepeatedTrackPanScope({
     return { ...selectedScope.clause, directional: false, matchedIntentPhrase: 'pan' };
 }
 
+function resolveDeviceParameterPromptScope({
+    actionOrdinal,
+    prompt,
+    context,
+    sameActionAssertedArguments,
+    sameActionCallCount,
+}: Pick<
+    ResolveActionPromptScopeInput,
+    'actionOrdinal' | 'prompt' | 'context' | 'sameActionAssertedArguments' | 'sameActionCallCount'
+>): ActionPromptScope | null {
+    const scope = getDeviceParameterPromptScope(prompt, context);
+    if (!scope || scope.assignments.length !== sameActionCallCount) {
+        return null;
+    }
+    const unmatchedAssignments = [...scope.assignments];
+    const matchedAssignments = sameActionAssertedArguments.map((arguments_) => {
+        const matchIndex = unmatchedAssignments.findIndex(
+            ({ parameter, value }) =>
+                arguments_.deviceId === scope.device.id &&
+                arguments_.paramId === parameter.id &&
+                arguments_.value === value
+        );
+        if (matchIndex < 0) {
+            return null;
+        }
+        return unmatchedAssignments.splice(matchIndex, 1)[0] ?? null;
+    });
+    if (unmatchedAssignments.length > 0 || matchedAssignments.some((assignment) => assignment === null)) {
+        return null;
+    }
+    const assignment = matchedAssignments[actionOrdinal];
+    if (!assignment) {
+        return null;
+    }
+    let displayedValue = `${String(assignment.value)} ${assignment.parameter.unit}`;
+    if (assignment.parameter.unit === ':1') {
+        displayedValue = `${String(assignment.value)}:1`;
+    }
+    const deviceName = scope.device.name ?? scope.device.type;
+    const text = `Set ${deviceName} ${assignment.parameter.name} on ${scope.track.name} to ${displayedValue}`;
+    return { text, masked: text, directional: false, matchedIntentPhrase: 'set' };
+}
+
 function resolveDirectionalIntentPhrase(
     maskedText: string,
     directionalIntent: NonNullable<GroundingRules['directionalIntent']>
@@ -1448,11 +1492,25 @@ function resolveActionPromptScope({
             );
         }
     }
-    if (
-        !groundingRules ||
-        hasActionCancellation ||
-        (actionName === 'setClipFade' && hasInvalidNamedClipFadeField(prompt))
-    ) {
+    if (!groundingRules) {
+        return null;
+    }
+    if (hasActionCancellation) {
+        return null;
+    }
+    if (actionName === 'setDeviceParameter') {
+        const deviceParameterScope = resolveDeviceParameterPromptScope({
+            actionOrdinal,
+            prompt,
+            context,
+            sameActionAssertedArguments,
+            sameActionCallCount,
+        });
+        if (deviceParameterScope) {
+            return deviceParameterScope;
+        }
+    }
+    if (actionName === 'setClipFade' && hasInvalidNamedClipFadeField(prompt)) {
         return null;
     }
     if (actionName === 'createBus') {

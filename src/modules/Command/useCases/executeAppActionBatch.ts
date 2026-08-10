@@ -464,7 +464,7 @@ export const executeAppActionBatch: ExecuteAppActionBatch = inject({ logger })(
                 if (error instanceof AppActionBatchCancelledError && !compensationFailure && !rollbackFailure) {
                     return { status: 'cancelled', reason: error.message, actions: [] };
                 }
-                if (error instanceof AppActionConflictError) {
+                if (error instanceof AppActionConflictError && !compensationFailure && !rollbackFailure) {
                     return { status: 'conflicted', reason, actions: [] };
                 }
                 return { status: 'failed', reason, actions: [] };

@@ -1,12 +1,24 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+import { type AppAction } from '#/utils/handlerContract';
+
 import { handleSetDeviceParameter } from '../handleSetDeviceParameter';
 
 const mocks = vi.hoisted(() => ({
     setDeviceParameter: vi.fn(),
     getTrackStoreState: vi.fn<
         () => {
-            tracks: { id: string; devices: { id: string; parameterValues: Record<string, number> }[] }[];
+            tracks: {
+                id: string;
+                name?: string;
+                frozen?: boolean;
+                devices: {
+                    id: string;
+                    name?: string;
+                    type?: string;
+                    parameterValues: Record<string, number>;
+                }[];
+            }[];
         } | null
     >(),
 }));
@@ -58,9 +70,41 @@ describe('handleSetDeviceParameter', () => {
         expect(desc.inverseAction).toBeNull();
     });
 
+    it('describes the exact committed compressor parameter outcome', () => {
+        mocks.getTrackStoreState.mockReturnValue({
+            tracks: [
+                {
+                    id: 'track-bass-di',
+                    name: 'Bass DI',
+                    devices: [
+                        {
+                            id: 'device-bass-di-compressor',
+                            name: 'Compressor',
+                            type: 'builtin-compressor',
+                            parameterValues: { 'comp-threshold': -24 },
+                        },
+                    ],
+                },
+            ],
+        });
+
+        const desc = handleSetDeviceParameter.describe({
+            type: 'setDeviceParameter',
+            payload: {
+                deviceId: 'device-bass-di-compressor',
+                paramId: 'comp-threshold',
+                value: -18,
+            },
+        });
+
+        expect(desc.label).toBe(
+            'Set "Bass DI" (track-bass-di) device "Compressor" (device-bass-di-compressor, builtin-compressor) parameter "Threshold" (comp-threshold) from -24 dB to -18 dB'
+        );
+    });
+
     it('describes an inverse restoring the previous parameter value', () => {
         mocks.getTrackStoreState.mockReturnValue({
-            tracks: [{ id: 't1', devices: [{ id: 'd1', parameterValues: { gain: 0.8 } }] }],
+            tracks: [{ id: 't1', devices: [{ id: 'd1', type: 'compressor', parameterValues: { gain: 0.8 } }] }],
         });
 
         const desc = handleSetDeviceParameter.describe({
@@ -70,8 +114,72 @@ describe('handleSetDeviceParameter', () => {
 
         expect(desc.inverseAction).toEqual({
             type: 'setDeviceParameter',
-            payload: { deviceId: 'd1', paramId: 'gain', value: 0.8 },
+            payload: {
+                deviceId: 'd1',
+                paramId: 'gain',
+                value: 0.8,
+                expectedTrackId: 't1',
+                expectedDeviceType: 'compressor',
+                expectedDeviceIds: ['d1'],
+                expectedValue: 0.5,
+            },
         });
+    });
+
+    it.each([
+        ['track owner', { expectedTrackId: 'other-track' }],
+        ['device type', { expectedDeviceType: 'eq' }],
+        ['device chain', { expectedDeviceIds: ['other-device'] }],
+        ['current value', { expectedValue: 0.7 }],
+    ] as const)('rejects a stale app-owned %s guard before mutation', (_label, staleGuard) => {
+        mocks.getTrackStoreState.mockReturnValue({
+            tracks: [{ id: 't1', devices: [{ id: 'd1', type: 'compressor', parameterValues: { gain: 0.8 } }] }],
+        });
+        const action: Extract<AppAction, { type: 'setDeviceParameter' }> = {
+            type: 'setDeviceParameter',
+            payload: {
+                deviceId: 'd1',
+                paramId: 'gain',
+                value: 0.5,
+                expectedTrackId: 't1',
+                expectedDeviceType: 'compressor',
+                expectedDeviceIds: ['d1'],
+                expectedValue: 0.8,
+                ...staleGuard,
+            },
+        };
+
+        expect(handleSetDeviceParameter.execute(action)).toEqual({ status: 'conflict' });
+        expect(mocks.setDeviceParameter).not.toHaveBeenCalled();
+    });
+
+    it('rejects a stale app-owned frozen eligibility guard before mutation', () => {
+        mocks.getTrackStoreState.mockReturnValue({
+            tracks: [
+                {
+                    id: 't1',
+                    frozen: true,
+                    devices: [{ id: 'd1', type: 'compressor', parameterValues: { gain: 0.8 } }],
+                },
+            ],
+        });
+
+        const result = handleSetDeviceParameter.execute({
+            type: 'setDeviceParameter',
+            payload: {
+                deviceId: 'd1',
+                paramId: 'gain',
+                value: 0.5,
+                expectedTrackId: 't1',
+                expectedDeviceType: 'compressor',
+                expectedDeviceIds: ['d1'],
+                expectedValue: 0.8,
+                expectedTrackFrozen: false,
+            },
+        });
+
+        expect(result).toEqual({ status: 'conflict' });
+        expect(mocks.setDeviceParameter).not.toHaveBeenCalled();
     });
 
     it('describes a null inverse when the parameter has no stored value to restore', () => {

@@ -4,6 +4,7 @@ import { type AppAction } from '#/utils/handlerContract';
 import { type ProjectContext } from '../models/ProjectContext';
 
 import { getBulkDeviceInsertionTrackScope } from './agentReference/getBulkDeviceInsertionTrackScope';
+import { getDeviceParameterPromptScope } from './agentReference/getDeviceParameterPromptScope';
 import { getMutedEmptyTrackDeletionScope } from './agentReference/getMutedEmptyTrackDeletionScope';
 import { describePlannedAction } from './describePlannedAction';
 import { getPlannedActionAffectedIds } from './getPlannedActionAffectedIds';
@@ -31,6 +32,37 @@ function normalizeText(value: string): string {
         .trim();
 }
 
+function formatParameterValue(value: number, unit: string): string {
+    if (unit === ':1') {
+        return `${String(value)}:1`;
+    }
+    if (unit) {
+        return `${String(value)} ${unit}`;
+    }
+    return String(value);
+}
+
+function describeDeviceParameterAction(
+    action: Extract<AppAction, { type: 'setDeviceParameter' }>,
+    context: ProjectContext
+): string | null {
+    const matchingTracks = context.tracks.filter((track) =>
+        track.devices.some((device) => device.id === action.payload.deviceId)
+    );
+    let owner = matchingTracks.length === 1 ? matchingTracks[0] : undefined;
+    if (action.payload.expectedTrackId !== undefined) {
+        owner = matchingTracks.find((candidate) => candidate.id === action.payload.expectedTrackId);
+    }
+    const device = owner?.devices.find((candidate) => candidate.id === action.payload.deviceId);
+    const parameter = device?.parameters?.find((candidate) => candidate.id === action.payload.paramId);
+    const previousValue = action.payload.expectedValue ?? parameter?.value;
+    if (!owner || !device || !parameter || previousValue === undefined) {
+        return null;
+    }
+    const deviceName = device.name ?? device.type;
+    return `Set "${owner.name}" (${owner.id}) device "${deviceName}" (${device.id}, ${device.type}) parameter "${parameter.name}" (${parameter.id}) from ${formatParameterValue(previousValue, parameter.unit)} to ${formatParameterValue(action.payload.value, parameter.unit)}`;
+}
+
 function getProtectedUnchangedTracks(prompt: string, context: ProjectContext): Array<{ id: string; name: string }> {
     const protectedScopes = [
         ...prompt.matchAll(/\b(?:leave|leaving|keep|keeping|preserve|preserving)\s+(.+?)\s+unchanged\b/giu),
@@ -49,7 +81,16 @@ function getProtectedUnchangedTracks(prompt: string, context: ProjectContext): A
             protectedScopes.some((scope) => ` ${scope} `.includes(` ${normalizedName} `))
         );
     });
-    return protectedTracks.map(({ id, name }) => ({ id, name }));
+    const deviceParameterScope = getDeviceParameterPromptScope(prompt, context);
+    let protectedParameters: Array<{ id: string; name: string }> = [];
+    if (deviceParameterScope) {
+        const deviceName = deviceParameterScope.device.name ?? deviceParameterScope.device.type;
+        protectedParameters = deviceParameterScope.protectedParameters.map((parameter) => ({
+            id: `${deviceParameterScope.device.id}:${parameter.id}`,
+            name: `${deviceParameterScope.track.name} ${deviceName} ${parameter.name} = ${String(parameter.value)}${parameter.unit === ':1' ? ':1' : ` ${parameter.unit}`}`,
+        }));
+    }
+    return [...protectedTracks.map(({ id, name }) => ({ id, name })), ...protectedParameters];
 }
 
 function describeExactAction(action: AppAction, actions: readonly AppAction[], context: ProjectContext): string {
@@ -67,6 +108,12 @@ function describeExactAction(action: AppAction, actions: readonly AppAction[], c
         if (source && targetName) {
             const previousOutput = action.payload.expectedOutputId ?? source.outputId ?? 'master';
             return `Route "${source.name}" (${source.id}) from ${previousOutput} to "${targetName}" (${action.payload.outputId})`;
+        }
+    }
+    if (action.type === 'setDeviceParameter') {
+        const description = describeDeviceParameterAction(action, context);
+        if (description) {
+            return description;
         }
     }
     return describePlannedAction({ action, context });

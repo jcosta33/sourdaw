@@ -515,6 +515,44 @@ describe('executeAppActionBatch', () => {
         expect(runtimeEffects.editingTool).toBe('marquee');
     });
 
+    it('reports failed rather than conflicted when stale-state compensation does not restore runtime', async () => {
+        const runtimeEffects = { editingTool: 'select' };
+        registerHandlerMap({
+            setEditingTool: createHandler<SetEditingToolAction>({
+                execute: (action) => {
+                    if (action.payload.tool === 'select') {
+                        return { status: 'no-write' };
+                    }
+                    runtimeEffects.editingTool = action.payload.tool;
+                    return undefined;
+                },
+                describe: () => ({
+                    label: 'Set editing tool',
+                    inverseAction: { type: 'setEditingTool', payload: { tool: 'select' } },
+                }),
+            }),
+            setSnapValue: createHandler<SetSnapValueAction>({
+                execute: () => ({ status: 'conflict' }),
+                describe: () => ({
+                    label: 'Set snap value',
+                    inverseAction: { type: 'setSnapValue', payload: { value: 1 } },
+                }),
+            }),
+        });
+
+        const result = await executeAppActionBatch([
+            { type: 'setEditingTool', payload: { tool: 'marquee' } },
+            { type: 'setSnapValue', payload: { value: 0.5 } },
+        ]);
+
+        expect(result).toEqual({
+            status: 'failed',
+            reason: 'Action conflicts with current project state: setSnapValue; runtime compensation failed: Runtime compensation did not apply for setEditingTool',
+            actions: [],
+        });
+        expect(runtimeEffects.editingTool).toBe('marquee');
+    });
+
     it('reports an ambiguous terminal without history when one document commits before another fails', async () => {
         const documents: Record<string, Record<string, unknown>> = {
             first: { editingTool: { tool: 'select' } },
