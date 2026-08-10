@@ -1,0 +1,34 @@
+src/modules/AiRuntime/useCases/parsePromptToActions.ts
+  s_a40848e8f8cca9::t_45735b3f67802c 19,118-122,125-130
+src/modules/AiRuntime/models/WholeProjectVibeMixPlan.ts
+  s_a40848e8f8cca9::t_4e429993debcf6 21
+  s_a40848e8f8cca9::t_fe5a3ebc2766da 3-20,22-29,36-38
+src/modules/AiRuntime/transformers/llmActionBridge.ts
+  s_a40848e8f8cca9::t_99badb9a6f8d0a 6,2984,2994,2999,3003
+src/modules/AiRuntime/useCases/__tests__/wholeProjectVibeMixPlan.spec.ts
+  s_a40848e8f8cca9::t_ed0224f8c71753 443-444
+  s_a40848e8f8cca9::t_017d89b3a65545 81-137,240-241,243-265
+  s_a40848e8f8cca9::t_3a705660d178b6 417-436,439,445,449-452,456-458
+  s_a40848e8f8cca9::t_8d229ea5c357c6 563-564
+  s_a40848e8f8cca9::t_1947f5428c6f89 190-197,437
+  s_a40848e8f8cca9::t_211f5c8abaf6cc 198-205,438,440-442,446-448,453-455
+src/modules/AiRuntime/useCases/agentReference/getWholeProjectVibeMixScope.ts
+  s_a40848e8f8cca9::t_1d800d224c9948 2
+  s_a40848e8f8cca9::t_2bff0fa3642aa3 7,36-40,71,127-149,206
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "5eda1a07ca78a8dc0d99ec66b6e9271c351e8f60",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
