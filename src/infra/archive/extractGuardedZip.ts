@@ -308,11 +308,15 @@ function createStreamingExtraction(
 }
 
 function hasNestedArchiveMagic(data: Uint8Array): boolean {
-    try {
-        readCentralDirectory(data);
-        return true;
-    } catch {
-        // Continue with non-ZIP archive signatures.
+    if (data.byteLength >= END_BYTES) {
+        try {
+            readCentralDirectory(data);
+            return true;
+        } catch (error) {
+            if (error instanceof Error && error.message !== 'Input is not a supported ZIP archive') {
+                return true;
+            }
+        }
     }
     if (
         startsWith(data, [0x1f, 0x8b]) ||

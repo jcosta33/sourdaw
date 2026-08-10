@@ -133,6 +133,7 @@ describe('extractGuardedZip', () => {
     it.each([
         ['gzip', gzipSync(bytes(8))],
         ['empty ZIP', zip({})],
+        ['symlink ZIP', markFirstEntryAsSymlink(zip({ link: bytes(1) }))],
         ['long-prefixed ZIP', prefixZip(zip({ 'payload.bin': bytes(1) }), 8192)],
     ])('rejects disguised nested %s content', (_name, nested) => {
         expect(() => extractGuardedZip({ bytes: zip({ 'nested.bin': nested }) })).toThrow(/nested archive content/i);
