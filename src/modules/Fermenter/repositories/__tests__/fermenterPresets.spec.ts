@@ -64,13 +64,30 @@ describe('FERMENTER_PRESETS', () => {
         const crackerClav = FERMENTER_PRESETS.find((preset) => preset.id === 'fermenter-clavinet');
 
         expect(crustyScream?.devices[0]?.parameterValues).toMatchObject({
+            oscEngine: 1,
+            oscWaveform: 1,
             filterModel: 4,
+            filterCutoff: 1500,
             filterResonance: 7,
             filterDrive: 3,
+            ampSustain: 0.7,
+            filterEnvAmount: 0.8,
+            portamentoTime: 0.05,
+            distMix: 0.15,
+            distDrive: 2,
         });
         expect(crackerClav?.devices[0]?.parameterValues).toMatchObject({
+            oscEngine: 1,
+            oscWaveform: 2,
             filterModel: 4,
+            filterCutoff: 3000,
             filterResonance: 4,
+            ampAttack: 0.002,
+            ampDecay: 0.3,
+            ampSustain: 0.1,
+            ampRelease: 0.1,
+            filterDecay: 0.15,
+            filterEnvAmount: 0.8,
         });
     });
 
