@@ -1,9 +1,10 @@
 import { type ProjectContext, type ProjectContextSection, type ProjectContextTrack } from '../../models/ProjectContext';
-import { type WholeProjectVibeMixPlan } from '../../models/WholeProjectVibeMixPlan';
+import { type WholeProjectVibeMixCapability, type WholeProjectVibeMixPlan } from '../../models/WholeProjectVibeMixPlan';
 
 const IMPACT_GAIN_DB = 1.5;
 
 type WholeProjectVibeMixScope = {
+    capability: WholeProjectVibeMixCapability;
     plan: WholeProjectVibeMixPlan;
     protectedObjects: Array<{ id: string; name: string }>;
     section: ProjectContextSection;
@@ -30,6 +31,11 @@ function isExactSecondChorusImpactRequest(prompt: string): boolean {
 function hasRoleWords(track: ProjectContextTrack, words: readonly string[]): boolean {
     const normalizedName = ` ${normalizeText(track.name)} `;
     return words.every((word) => normalizedName.includes(` ${word} `));
+}
+
+function isChorusSection(section: ProjectContextSection): boolean {
+    const normalized = normalizeText(section.name);
+    return /^chorus(?:\s+(?:\d+|[ivx]+|one|two|three|four|five|six|seven|eight|nine|ten))?$/u.test(normalized);
 }
 
 function findUniqueImpactBus(context: ProjectContext, role: 'drum' | 'bass'): ProjectContextTrack | null {
@@ -62,7 +68,7 @@ export function getWholeProjectVibeMixScope(
         (left, right) =>
             left.startBeat - right.startBeat || left.endBeat - right.endBeat || left.id.localeCompare(right.id)
     );
-    const choruses = orderedSections.filter((section) => normalizeText(section.name).includes('chorus'));
+    const choruses = orderedSections.filter(isChorusSection);
     const section = choruses[1];
     if (!section || section.endBeat <= section.startBeat) {
         return null;
@@ -118,6 +124,29 @@ export function getWholeProjectVibeMixScope(
             payload: { trackIds: targetIds, sectionName: section.name, gainDb: IMPACT_GAIN_DB },
         },
     ];
+    const capability: WholeProjectVibeMixCapability = {
+        schemaVersion: 1,
+        baseRevision,
+        actionType: 'automateTrackGainRange',
+        targetSection: toSectionSummary(section),
+        neighboringSections: {
+            previous: previousSection ? toSectionSummary(previousSection) : null,
+            next: nextSection ? toSectionSummary(nextSection) : null,
+        },
+        candidateImpactBuses: impactBuses.map((track) => ({
+            id: track.id,
+            name: track.name,
+            currentGain: track.gain,
+        })),
+        exactTargetIds: targetIds,
+        allowedRelativeGainDbValues: [IMPACT_GAIN_DB],
+        protectedObjectIds: protectedObjects.map((object) => object.id),
+        constraints: {
+            preserveRouting: true,
+            preserveDevices: true,
+            requireFreshConfirmation: true,
+        },
+    };
     const plan: WholeProjectVibeMixPlan = {
         schemaVersion: 1,
         baseRevision,
@@ -174,5 +203,5 @@ export function getWholeProjectVibeMixScope(
         commandBatch,
     };
 
-    return { plan, protectedObjects, section, targetIds };
+    return { capability, plan, protectedObjects, section, targetIds };
 }

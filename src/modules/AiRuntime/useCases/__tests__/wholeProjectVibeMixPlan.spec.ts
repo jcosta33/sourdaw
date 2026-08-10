@@ -78,6 +78,63 @@ const noActionHistoryMetadataPort = {
     clear: () => undefined,
 };
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+    return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function createProviderPlanFromUserMessage(userMessage: string) {
+    const match = /<project_context>\n(?<contextJson>.+)\n<\/project_context>/u.exec(userMessage);
+    const contextJson = match?.groups?.contextJson;
+    if (!contextJson) {
+        throw new TypeError('Expected serialized project context in provider request');
+    }
+    const context: unknown = JSON.parse(contextJson);
+    if (!isRecord(context)) {
+        throw new TypeError('Expected object-shaped project context');
+    }
+    const capability = context.wholeProjectVibeMixCapability;
+    if (!isRecord(capability) || capability.actionType !== 'automateTrackGainRange') {
+        throw new TypeError('Expected app-owned whole-project vibe-mix capability');
+    }
+    const targetSection = capability.targetSection;
+    const exactTargetIds = capability.exactTargetIds;
+    const allowedRelativeGainDbValues = capability.allowedRelativeGainDbValues;
+    if (
+        !isRecord(targetSection) ||
+        typeof targetSection.name !== 'string' ||
+        !Array.isArray(exactTargetIds) ||
+        !exactTargetIds.every((trackId) => typeof trackId === 'string') ||
+        !Array.isArray(allowedRelativeGainDbValues) ||
+        allowedRelativeGainDbValues.length !== 1 ||
+        typeof allowedRelativeGainDbValues[0] !== 'number'
+    ) {
+        throw new TypeError('Expected exact target and bounded gain candidates');
+    }
+    return [
+        {
+            name: capability.actionType,
+            arguments: {
+                trackIds: exactTargetIds,
+                sectionName: targetSection.name,
+                gainDb: allowedRelativeGainDbValues[0],
+            },
+        },
+    ];
+}
+
+function getHostedUserMessage(requestBody: string): string {
+    const request: unknown = JSON.parse(requestBody);
+    if (!isRecord(request) || !Array.isArray(request.messages)) {
+        throw new TypeError('Expected hosted provider messages');
+    }
+    for (const message of request.messages) {
+        if (isRecord(message) && message.role === 'user' && typeof message.content === 'string') {
+            return message.content;
+        }
+    }
+    throw new TypeError('Expected one hosted provider user message');
+}
+
 function createTrack(id: string, name: string, kind: Track['kind']): Track {
     return {
         id,
@@ -130,6 +187,22 @@ function getHostedRequestBody(): string {
     return body;
 }
 
+function getWebLlmUserMessage(): string {
+    const userMessage: unknown = runtimeMocks.generateWebLlmCompletion.mock.calls[0]?.[1];
+    if (typeof userMessage !== 'string') {
+        throw new TypeError('Expected one WebLLM user message');
+    }
+    return userMessage;
+}
+
+function getWebLlmSystemPrompt(): string {
+    const systemPrompt: unknown = runtimeMocks.generateWebLlmCompletion.mock.calls[0]?.[0];
+    if (typeof systemPrompt !== 'string') {
+        throw new TypeError('Expected one WebLLM system prompt');
+    }
+    return systemPrompt;
+}
+
 function getGainLanes() {
     return automationStore.value?.lanes.filter((lane) => lane.parameterId === 'gain') ?? [];
 }
@@ -164,24 +237,32 @@ describe('whole-project vibe-mix planning', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         runtimeMocks.backend.value = 'webllm';
-        runtimeMocks.generateWebLlmCompletion.mockResolvedValue(JSON.stringify(providerPlan));
-        runtimeMocks.fetch.mockResolvedValue(
-            new Response(
-                JSON.stringify({
-                    choices: [
-                        {
-                            finish_reason: 'tool_calls',
-                            message: {
-                                tool_calls: providerPlan.map((call) => ({
-                                    function: { name: call.name, arguments: JSON.stringify(call.arguments) },
-                                })),
-                            },
-                        },
-                    ],
-                }),
-                { status: 200, headers: { 'Content-Type': 'application/json' } }
-            )
+        runtimeMocks.generateWebLlmCompletion.mockImplementation((_systemPrompt: string, userMessage: string) =>
+            Promise.resolve(JSON.stringify(createProviderPlanFromUserMessage(userMessage)))
         );
+        runtimeMocks.fetch.mockImplementation((_input, init) => {
+            if (typeof init?.body !== 'string') {
+                throw new TypeError('Expected hosted provider request body');
+            }
+            const derivedPlan = createProviderPlanFromUserMessage(getHostedUserMessage(init.body));
+            return Promise.resolve(
+                new Response(
+                    JSON.stringify({
+                        choices: [
+                            {
+                                finish_reason: 'tool_calls',
+                                message: {
+                                    tool_calls: derivedPlan.map((call) => ({
+                                        function: { name: call.name, arguments: JSON.stringify(call.arguments) },
+                                    })),
+                                },
+                            },
+                        ],
+                    }),
+                    { status: 200, headers: { 'Content-Type': 'application/json' } }
+                )
+            );
+        });
         vi.stubGlobal('fetch', runtimeMocks.fetch);
         cloudSession.clear();
         cloudSession.replace_runtime({
@@ -333,6 +414,48 @@ describe('whole-project vibe-mix planning', () => {
         expect(runtimeMocks.generateWebLlmCompletion.mock.calls[0]?.[1]).toContain('documentIdentityEpoch');
     });
 
+    it('selects the actual second chorus without counting a pre-chorus substring impostor', async () => {
+        markerStore.set({
+            ...markerStore.value!,
+            sections: [
+                ...markerStore.value!.sections,
+                { id: 'section-pre-chorus', name: 'Pre-Chorus', startBeat: 28, endBeat: 32, color: '#ffffff' },
+            ],
+        });
+
+        const { result } = await planPromptActions({ prompt: PROMPT });
+
+        expect(result.wholeProjectVibeMixPlan?.sectionMap).toEqual({
+            target: { id: 'section-chorus-two', name: 'Chorus Two', startBeat: 56, endBeat: 72 },
+            previous: { id: 'section-bridge', name: 'Bridge', startBeat: 48, endBeat: 56 },
+            next: { id: 'section-outro', name: 'Outro', startBeat: 72, endBeat: 80 },
+        });
+    });
+
+    it('sends the provider the revision-bound app-owned candidate scope and bounded relative-gain capability', async () => {
+        const { projectRevision } = await planPromptActions({ prompt: PROMPT });
+        const userMessage = getWebLlmUserMessage();
+        const systemPrompt = getWebLlmSystemPrompt();
+
+        expect(systemPrompt).toContain(
+            'Each target ID must correspond to a target the user actually referenced by literal ID, unique exact name, or explicit selection.'
+        );
+        expect(userMessage).toContain('"projectRevision"');
+        expect(userMessage).toContain(projectRevision.replaceAll('"', '\\"'));
+        expect(userMessage).toContain('"wholeProjectVibeMixCapability"');
+        expect(userMessage).toContain(
+            '"targetSection":{"id":"section-chorus-two","name":"Chorus Two","startBeat":56,"endBeat":72}'
+        );
+        expect(userMessage).toContain('"exactTargetIds":["bus-drums","bus-bass"]');
+        expect(userMessage).toContain('"allowedRelativeGainDbValues":[1.5]');
+        expect(userMessage).toContain(
+            '"protectedObjectIds":["track-lead-vocal","clip-locked-lead-vocal","track-master","project:tempo-map"]'
+        );
+        expect(userMessage).toContain(
+            '"constraints":{"preserveRouting":true,"preserveDevices":true,"requireFreshConfirmation":true}'
+        );
+    });
+
     it('confirms, atomically commits, receipts, and whole-group undoes and redoes only the section gain trajectory', async () => {
         const tracksBefore = structuredClone(trackStore.value?.tracks);
         const sectionsBefore = structuredClone(markerStore.value?.sections);
@@ -437,6 +560,8 @@ describe('whole-project vibe-mix planning', () => {
         expect(providerRequest).toContain('bus-drums');
         expect(providerRequest).toContain('section-chorus-two');
         expect(providerRequest).toContain('projectRevision');
+        expect(providerRequest).toContain('wholeProjectVibeMixCapability');
+        expect(providerRequest).toContain('allowedRelativeGainDbValues');
         const confirmation = getPendingActionConfirmation(getConfirmationId());
         expect(confirmation?.actions[0]).toMatchObject({
             type: 'automateTrackGainRange',

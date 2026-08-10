@@ -1,14 +1,41 @@
 import { type ExecutableRuntimeAction } from './ExecutableRuntimeAction';
 
+type WholeProjectVibeMixSectionSummary = {
+    id: string;
+    name: string;
+    startBeat: number;
+    endBeat: number;
+};
+
+export type WholeProjectVibeMixCapability = {
+    schemaVersion: 1;
+    baseRevision: string;
+    actionType: 'automateTrackGainRange';
+    targetSection: WholeProjectVibeMixSectionSummary;
+    neighboringSections: {
+        previous: WholeProjectVibeMixSectionSummary | null;
+        next: WholeProjectVibeMixSectionSummary | null;
+    };
+    candidateImpactBuses: Array<{ id: string; name: string; currentGain: number }>;
+    exactTargetIds: string[];
+    allowedRelativeGainDbValues: [number];
+    protectedObjectIds: string[];
+    constraints: {
+        preserveRouting: true;
+        preserveDevices: true;
+        requireFreshConfirmation: true;
+    };
+};
+
 export type WholeProjectVibeMixPlan = {
     schemaVersion: 1;
     baseRevision: string;
     productionVision: string;
     globalConstraints: Array<{ id: string; name: string; reason: string }>;
     sectionMap: {
-        target: { id: string; name: string; startBeat: number; endBeat: number };
-        previous: { id: string; name: string; startBeat: number; endBeat: number } | null;
-        next: { id: string; name: string; startBeat: number; endBeat: number } | null;
+        target: WholeProjectVibeMixSectionSummary;
+        previous: WholeProjectVibeMixSectionSummary | null;
+        next: WholeProjectVibeMixSectionSummary | null;
     };
     trackRoles: Array<{
         trackId: string;
