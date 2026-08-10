@@ -1,0 +1,22 @@
+src/modules/TimelineEditor/presentations/views/Inspector/TrackDevicesSection.tsx
+  s_bc88af7d3b054c::t_5299ca051226d5 40,60-62
+src/modules/TimelineEditor/presentations/views/Inspector/__tests__/TrackDevicesSection.spec.tsx
+  s_bc88af7d3b054c::t_6e99d502f4ff69 19,325-356
+  s_bc88af7d3b054c::t_00653283c8975c 357-358
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "5766d6398c21383536a3aa3b675f2d7cf9606b56",
+  "prompts": {},
+  "sessions": {
+    "s_bc88af7d3b054c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f9b4a-11a2-7f61-8dfb-76eed0eb2a9c",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
