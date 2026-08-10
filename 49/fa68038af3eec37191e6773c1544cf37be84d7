@@ -1,0 +1,14 @@
+tests/e2e/importErrorPathsTestId.spec.ts
+  h_1228e573df1f42 1-60
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "49fa68038af3eec37191e6773c1544cf37be84d7",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
