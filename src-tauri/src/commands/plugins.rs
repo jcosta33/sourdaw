@@ -111,7 +111,7 @@ pub async fn scan_plugins(
     paths: Vec<String>,
     state: tauri::State<'_, AppState>,
 ) -> Result<ScanResult, String> {
-    let _permit = PLUGIN_SCAN_PERMIT
+    let permit = PLUGIN_SCAN_PERMIT
         .try_acquire()
         .map_err(|_| "Plugin scan already in progress".to_string())?;
     let start = std::time::Instant::now();
@@ -135,43 +135,50 @@ pub async fn scan_plugins(
 
     let scan_roots = authorized_paths.clone();
     let deadline = start + MAX_SCAN_DURATION;
-    let (plugins, scan_errors) = tokio::task::spawn_blocking(move || {
-        let mut candidates = Vec::new();
-        let mut scan_errors = Vec::new();
-        for path in scan_roots {
-            if !scanner::scan_directory_bounded(
-                &path,
-                &mut candidates,
-                &mut scan_errors,
-                (MAX_SCAN_CANDIDATES, deadline),
-            ) {
-                let message = if candidates.len() >= MAX_SCAN_CANDIDATES {
-                    "Plugin scan candidate limit exceeded"
-                } else {
-                    "Plugin scan time limit exceeded"
-                };
-                scan_errors.push(message.to_string());
-                break;
+    let (plugins, scan_errors, scanned_paths, scan_complete) =
+        tokio::task::spawn_blocking(move || {
+            let _permit = permit;
+            let mut candidates = Vec::new();
+            let mut scan_errors = Vec::new();
+            let mut scan_complete = true;
+            for path in scan_roots {
+                if !scanner::scan_directory_bounded(
+                    &path,
+                    &mut candidates,
+                    &mut scan_errors,
+                    (MAX_SCAN_CANDIDATES, deadline),
+                ) {
+                    let message = if candidates.len() >= MAX_SCAN_CANDIDATES {
+                        "Plugin scan candidate limit exceeded"
+                    } else {
+                        "Plugin scan time limit exceeded"
+                    };
+                    scan_errors.push(message.to_string());
+                    scan_complete = false;
+                    break;
+                }
             }
-        }
-        candidates.sort();
-        candidates.dedup();
-        let mut plugins = Vec::new();
-        for candidate in candidates {
-            let remaining = deadline.saturating_duration_since(Instant::now());
-            if remaining.is_zero() {
-                scan_errors.push("Plugin scan time limit exceeded".to_string());
-                break;
+            candidates.sort();
+            candidates.dedup();
+            let mut plugins = Vec::new();
+            let mut scanned_paths = Vec::new();
+            for candidate in candidates {
+                let remaining = deadline.saturating_duration_since(Instant::now());
+                if remaining.is_zero() {
+                    scan_errors.push("Plugin scan time limit exceeded".to_string());
+                    scan_complete = false;
+                    break;
+                }
+                scanned_paths.push(candidate.clone());
+                match plugin_scan_worker::scan_clap_metadata(&candidate, remaining) {
+                    Ok(metadata) => plugins.push(scanner::scanned_plugin(&candidate, metadata)),
+                    Err(error) => scan_errors.push(format!("{}: {error}", candidate.display())),
+                }
             }
-            match plugin_scan_worker::scan_clap_metadata(&candidate, remaining) {
-                Ok(metadata) => plugins.push(scanner::scanned_plugin(&candidate, metadata)),
-                Err(error) => scan_errors.push(format!("{}: {error}", candidate.display())),
-            }
-        }
-        (plugins, scan_errors)
-    })
-    .await
-    .map_err(|error| format!("Plugin scan task failed: {error}"))?;
+            (plugins, scan_errors, scanned_paths, scan_complete)
+        })
+        .await
+        .map_err(|error| format!("Plugin scan task failed: {error}"))?;
     errors.extend(scan_errors);
 
     // Populate the plugin registry so load_plugin can find them. The scanner
@@ -179,11 +186,17 @@ pub async fn scan_plugins(
     // recover the id it had thrown away.
     if let Ok(mut registry) = state.plugin_registry.lock() {
         registry.retain(|_, entry| {
-            !authorized_paths
-                .iter()
-                .any(|root| Path::new(&entry.path).starts_with(root))
+            let path = Path::new(&entry.path);
+            if scan_complete {
+                return !authorized_paths.iter().any(|root| path.starts_with(root));
+            }
+            !scanned_paths.iter().any(|scanned| scanned == path)
         });
         registry.extend(index_scanned_plugins(&plugins));
+    }
+
+    if !scan_complete {
+        return Err("Plugin scan did not complete within safety limits".to_string());
     }
 
     Ok(ScanResult {

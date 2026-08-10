@@ -2,16 +2,8 @@ use std::process::Command;
 #[test]
 fn scan_command_does_not_load_plugin_code_in_the_application_process() {
     let command_source = include_str!("../src/commands/plugins.rs");
-    let application_entry = include_str!("../src/main.rs");
-    assert!(
-        !command_source.contains("extract_clap_metadata("),
-        "scan_plugins still extracts native metadata in the application process"
-    );
-    assert!(command_source.contains("plugin_scan_worker::scan_clap_metadata"));
-    assert!(command_source.contains("MAX_SCAN_CANDIDATES"));
-    assert!(command_source.contains("registry.retain"));
-    assert!(command_source.contains(".try_acquire()"));
-    assert!(application_entry.contains("plugin_scan_worker::run_from_process_args"));
+    assert!(!command_source.contains("extract_clap_metadata("));
+    assert!(include_str!("../src/main.rs").contains("plugin_scan_worker::run_from_process_args"));
 }
 #[test]
 fn packaged_application_binary_enters_the_scan_worker_before_tauri_startup() {

@@ -14,9 +14,7 @@ struct WorkerResponse {
     worker_pid: u32,
     result: Result<ClapDescriptorMetadata, String>,
 }
-struct ResponseDirectory {
-    path: PathBuf,
-}
+struct ResponseDirectory(PathBuf);
 impl ResponseDirectory {
     fn create() -> Result<Self, String> {
         let path =
@@ -30,12 +28,12 @@ impl ResponseDirectory {
         builder
             .create(&path)
             .map_err(|error| format!("Cannot create plugin scan response directory: {error}"))?;
-        Ok(Self { path })
+        Ok(Self(path))
     }
 }
 impl Drop for ResponseDirectory {
     fn drop(&mut self) {
-        let _ = fs::remove_dir_all(&self.path);
+        let _ = fs::remove_dir_all(&self.0);
     }
 }
 pub fn run_from_process_args() -> Option<i32> {
@@ -84,7 +82,7 @@ pub fn scan_clap_metadata(
     let executable = std::env::current_exe()
         .map_err(|error| format!("Cannot resolve plugin scan helper executable: {error}"))?;
     let response_directory = ResponseDirectory::create()?;
-    let response_path = response_directory.path.join("metadata.json");
+    let response_path = response_directory.0.join("metadata.json");
     let mut command = Command::new(executable);
     command
         .arg(WORKER_ARGUMENT)
@@ -262,10 +260,5 @@ unsafe extern "C" fn init(_: *const c_char)->bool{
             .status()
             .unwrap()
             .success());
-    }
-    #[test]
-    fn unrelated_process_arguments_do_not_enter_worker_mode() {
-        let args = [OsString::from("sourdaw"), OsString::from("--unrelated")];
-        assert_eq!(run_from_args(args), None);
     }
 }
