@@ -51,7 +51,7 @@
     },
     "daw-wasm-decoder": {
       "crate": "crates/daw-wasm-decoder",
-      "crateSourceHash": "sha256:f7a26aca5d1725a1ab7724dad314f53f68d0aad94d6e0f7b8dfcdce886cb8e73",
+      "crateSourceHash": "sha256:b362c9a45b6f2c73cb4801749011ddf6062af039bb9dbe868079556efd993a81",
       "schemaHash": "344f42d3211c4765",
       "artifacts": {
         "public/wasm/daw-wasm-decoder/daw_wasm_decoder.js": "sha256:b0ca1ec67f9d9c4b0ce81b8d4395160ded6aeb21ae7f5bddde6b8e609fdfd1a2",
