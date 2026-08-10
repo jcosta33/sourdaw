@@ -910,6 +910,8 @@ describe('validateActionPayload / PAYLOAD_VALIDATORS', () => {
                     expectedMuted: true,
                     expectedClipIds: [],
                     expectedAlternativeClipIds: ['clip-hidden'],
+                    expectedVcaGroupId: null,
+                    expectedVcaMembershipGroupIds: [],
                 })
             ).toBe(true);
         });
@@ -926,6 +928,8 @@ describe('validateActionPayload / PAYLOAD_VALIDATORS', () => {
             expect(guard({ trackId: '' })).toBe(false);
             expect(guard({ trackId: 'track-1', extra: true })).toBe(false);
             expect(guard({ trackId: 'track-1', expectedAlternativeClipIds: [1] })).toBe(false);
+            expect(guard({ trackId: 'track-1', expectedVcaGroupId: '' })).toBe(false);
+            expect(guard({ trackId: 'track-1', expectedVcaMembershipGroupIds: [1] })).toBe(false);
         });
     });
 

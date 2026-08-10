@@ -3938,6 +3938,11 @@ export function bridgeGroundedLlmToolCalls({
                         expectedMuted: target.muted,
                         expectedClipIds: target.clips.map((clip) => clip.id),
                         expectedAlternativeClipIds: target.alternativeClipIds,
+                        expectedVcaGroupId: target.vcaGroupId ?? null,
+                        expectedVcaMembershipGroupIds: (context.vcaGroups ?? [])
+                            .filter((group) => group.trackIds.includes(target.id))
+                            .map((group) => group.id)
+                            .sort(),
                     },
                 };
             }),

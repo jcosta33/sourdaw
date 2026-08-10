@@ -7,6 +7,7 @@ import { runAllAsyncEffects } from '#/utils/runEffects';
 import { collectTrackClipIds } from '../../services/collectTrackClipIds';
 import { reconcileRoutingAfterRemoval } from '../../services/reconcileRoutingAfterRemoval';
 import { takeLaneStore } from '../../stores/takeLaneStore';
+import { getVcaGroupsState } from '../../stores/vcaGroupStore';
 import { getTrackStoreState } from '../../useCases/getTrackStoreState';
 import { projectTrackToLiveStrip } from '../../useCases/projectTrackToLiveStrip';
 import { publishTrackRemoved } from '../../useCases/publishTrackRemoved';
@@ -48,6 +49,25 @@ export const handleRemoveTrack = createHandler<'removeTrack'>({
                 currentAlternativeClipIds.some(
                     (clipId, index) => clipId !== action.payload.expectedAlternativeClipIds?.[index]
                 )
+            ) {
+                return { status: 'conflict' };
+            }
+        }
+        if (
+            action.payload.expectedVcaGroupId !== undefined &&
+            (currentTrack?.vcaGroupId ?? null) !== action.payload.expectedVcaGroupId
+        ) {
+            return { status: 'conflict' };
+        }
+        if (action.payload.expectedVcaMembershipGroupIds !== undefined) {
+            const currentVcaMembershipGroupIds = getVcaGroupsState()
+                .filter((group) => group.trackIds.includes(action.payload.trackId))
+                .map((group) => group.id)
+                .sort();
+            const expectedVcaMembershipGroupIds = [...action.payload.expectedVcaMembershipGroupIds].sort();
+            if (
+                currentVcaMembershipGroupIds.length !== expectedVcaMembershipGroupIds.length ||
+                currentVcaMembershipGroupIds.some((groupId, index) => groupId !== expectedVcaMembershipGroupIds[index])
             ) {
                 return { status: 'conflict' };
             }

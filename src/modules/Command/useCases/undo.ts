@@ -1,8 +1,9 @@
 import { AppActionCommittedError, AppActionConflictError } from '../errors/AppActionExecutionError';
-import { type UndoEntry } from '../models/UndoEntry';
+import { isActionEntry, type UndoEntry } from '../models/UndoEntry';
 import { undoStore } from '../stores/undoStore';
 
 import { executeAppAction } from './executeAppAction';
+import { executeAppActionBatch } from './executeAppActionBatch';
 import { normalizeSingletonUndoGroups } from './normalizeSingletonUndoGroups';
 import { runUndoRedoExclusive } from './undoRedo';
 import { undoTreeMoveTo } from './undoTree/undoTreeMoveTo';
@@ -34,6 +35,38 @@ type UndoOutcome =
     | { readonly status: 'conflict' }
     /** The write landed but its bookkeeping failed; the stack must advance. */
     | { readonly status: 'committed'; readonly error: AppActionCommittedError };
+
+async function executeActionGroupUndo(entries: readonly UndoEntry[]): Promise<UndoOutcome> {
+    if (!entries.every(isActionEntry) || entries.some((entry) => entry.inverseAction === null)) {
+        return { status: 'inert' };
+    }
+
+    const actions = [...entries].reverse().map((entry) => entry.inverseAction!);
+    const result = await executeAppActionBatch(actions, {
+        skipUndo: true,
+        skipMacroRecording: true,
+        source: entries[0]?.source,
+    });
+    if (result.status === 'conflicted' || result.status === 'cancelled') {
+        return { status: 'conflict' };
+    }
+    if (result.status === 'rejected' || result.status === 'failed') {
+        throw new Error(`Grouped undo failed: ${result.reason}`);
+    }
+    if (result.status === 'ambiguous') {
+        return {
+            status: 'committed',
+            error: new AppActionCommittedError('appActionBatch', new Error(result.reason)),
+        };
+    }
+    if (result.status === 'committed-with-warning') {
+        return {
+            status: 'committed',
+            error: new AppActionCommittedError('appActionBatch', new Error(result.warning)),
+        };
+    }
+    return { status: 'undone' };
+}
 
 /**
  * Performs the undo side-effect for one entry and reports what happened.
@@ -95,6 +128,25 @@ async function undoImpl(): Promise<void> {
                 index--;
             }
             past = past.slice(0, index + 1);
+
+            const isAtomicActionGroup =
+                groupEntries.every(isActionEntry) && groupEntries.every((entry) => entry.inverseAction !== null);
+            if (isAtomicActionGroup) {
+                const outcome = await executeActionGroupUndo(groupEntries);
+                if (outcome.status === 'conflict') {
+                    return;
+                }
+
+                undoStore.set({
+                    past,
+                    future: [...groupEntries, ...future],
+                });
+                undoTreeMoveTo(currentEntryId(past));
+                if (outcome.status === 'committed') {
+                    throw outcome.error;
+                }
+                return;
+            }
 
             const undoneEntries: UndoEntry[] = [];
             let retainedEntries: UndoEntry[] = [];

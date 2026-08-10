@@ -446,6 +446,8 @@ export type AppAction =
               expectedMuted?: boolean;
               expectedClipIds?: readonly string[];
               expectedAlternativeClipIds?: readonly string[];
+              expectedVcaGroupId?: string | null;
+              expectedVcaMembershipGroupIds?: readonly string[];
           };
       }
     | {

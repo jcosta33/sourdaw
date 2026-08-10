@@ -29,6 +29,7 @@ const mocks = vi.hoisted(() => ({
     },
     undoStoreSet: vi.fn<(state: import('../../stores/undoStore').UndoStoreState) => void>(),
     executeAppAction: vi.fn<typeof import('../executeAppAction').executeAppAction>(),
+    executeAppActionBatch: vi.fn<typeof import('../executeAppActionBatch').executeAppActionBatch>(),
     undoTreeMoveTo: vi.fn<(currentEntryId: string | null) => void>(),
 }));
 
@@ -43,6 +44,10 @@ vi.mock('../../stores/undoStore', () => ({
 
 vi.mock('../executeAppAction', () => ({
     executeAppAction: mocks.executeAppAction,
+}));
+
+vi.mock('../executeAppActionBatch', () => ({
+    executeAppActionBatch: mocks.executeAppActionBatch,
 }));
 
 vi.mock('../undoTree/undoTreeMoveTo', () => ({
@@ -67,6 +72,7 @@ describe('undo/redo replay conflict handling (audit CC-6)', () => {
         vi.clearAllMocks();
         mocks.undoStoreValue.value = { past: [], future: [] };
         mocks.executeAppAction.mockResolvedValue(undefined);
+        mocks.executeAppActionBatch.mockResolvedValue({ status: 'executed', actions: [] });
     });
 
     describe('undo', () => {
@@ -97,20 +103,25 @@ describe('undo/redo replay conflict handling (audit CC-6)', () => {
             expect(mocks.undoStoreSet).not.toHaveBeenCalled();
         });
 
-        it('keeps the already-undone half of a group out of past when a later entry conflicts', async () => {
+        it('keeps an entire action group unchanged when any inverse conflicts', async () => {
             const first = actionEntry({ id: 'g-first', groupId: 'group-1' });
             const second = actionEntry({ id: 'g-second', groupId: 'group-1' });
             mocks.undoStoreValue.value = { past: [first, second], future: [] };
-            // A group is undone newest-first: `second` succeeds, `first` conflicts.
-            mocks.executeAppAction
-                .mockResolvedValueOnce(undefined)
-                .mockRejectedValueOnce(new AppActionConflictError('toggleRecording'));
+            mocks.executeAppActionBatch.mockResolvedValue({
+                status: 'conflicted',
+                reason: 'Action conflicts with current project state: toggleRecording',
+                actions: [],
+            });
 
             await expect(undo()).resolves.toBeUndefined();
 
-            // `second` was really undone and must not be replayed; `first` was
-            // not, so it stays undoable.
-            expect(mocks.undoStoreSet).toHaveBeenCalledWith({ past: [first], future: [second] });
+            expect(mocks.executeAppAction).not.toHaveBeenCalled();
+            expect(mocks.executeAppActionBatch).toHaveBeenCalledWith([second.inverseAction, first.inverseAction], {
+                skipUndo: true,
+                skipMacroRecording: true,
+                source: 'manual',
+            });
+            expect(mocks.undoStoreSet).not.toHaveBeenCalled();
         });
     });
 

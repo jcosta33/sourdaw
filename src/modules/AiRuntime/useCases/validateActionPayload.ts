@@ -175,6 +175,8 @@ const validators = {
             'expectedMuted',
             'expectedClipIds',
             'expectedAlternativeClipIds',
+            'expectedVcaGroupId',
+            'expectedVcaMembershipGroupIds',
         ]) &&
         Object.hasOwn(param, 'trackId') &&
         isNonEmptyString(param.trackId) &&
@@ -190,6 +192,14 @@ const validators = {
         ) &&
         isOptional(
             param.expectedAlternativeClipIds,
+            (value): value is readonly string[] => Array.isArray(value) && value.every(isNonEmptyString)
+        ) &&
+        isOptional(
+            param.expectedVcaGroupId,
+            (value): value is string | null => value === null || isNonEmptyString(value)
+        ) &&
+        isOptional(
+            param.expectedVcaMembershipGroupIds,
             (value): value is readonly string[] => Array.isArray(value) && value.every(isNonEmptyString)
         ),
     renameTrack: (param): param is PayloadOf<'renameTrack'> =>

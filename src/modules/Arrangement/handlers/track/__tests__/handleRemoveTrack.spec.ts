@@ -45,6 +45,7 @@ const mocks = vi.hoisted(() => ({
     projectTrackToLiveStrip: vi.fn(),
     wireSidechainRoutes: vi.fn(),
     removeTrackModulationReferences: vi.fn(),
+    getVcaGroupsState: vi.fn(),
     automationStoreValue: { value: null } as any,
     modulationStoreValue: { value: null } as any,
     getAllSidechainRoutes: vi.fn(),
@@ -103,6 +104,10 @@ vi.mock('../../../stores/takeLaneStore', () => ({
     },
 }));
 
+vi.mock('../../../stores/vcaGroupStore', () => ({
+    getVcaGroupsState: mocks.getVcaGroupsState,
+}));
+
 describe('handleRemoveTrack', () => {
     beforeEach(() => {
         vi.clearAllMocks();
@@ -111,6 +116,7 @@ describe('handleRemoveTrack', () => {
         mocks.midiStoreValue.value = null;
         mocks.takeLaneStoreValue.value = null;
         mocks.getAllSidechainRoutes.mockReturnValue([]);
+        mocks.getVcaGroupsState.mockReturnValue([]);
         mocks.removeTrack.mockReturnValue({
             removed: true,
             finalizeRuntimeRemoval: mocks.finalizeRuntimeRemoval,
@@ -136,6 +142,33 @@ describe('handleRemoveTrack', () => {
             });
 
             expect(result).toEqual({ status: 'conflict' });
+            expect(mocks.removeTrack).not.toHaveBeenCalled();
+            expect(mocks.removeTrackModulationReferences).not.toHaveBeenCalled();
+            expect(mocks.finalizeRuntimeRemoval).not.toHaveBeenCalled();
+        });
+
+        it('rejects either VCA membership guard mismatch before project or runtime removal', async () => {
+            const track = TrackDummy.create({ id: 't1', vcaGroupId: 'vca-linked' });
+            mocks.getTrackStoreState.mockReturnValue({ tracks: [track], selectedTrackId: null });
+            mocks.getVcaGroupsState.mockReturnValue([
+                { id: 'vca-authoritative', name: 'VCA', gain: 1, muted: false, trackIds: ['t1'] },
+            ]);
+
+            const trackGuardResult = await handleRemoveTrack.execute({
+                type: 'removeTrack',
+                payload: { trackId: 't1', expectedVcaGroupId: null },
+            });
+            const groupGuardResult = await handleRemoveTrack.execute({
+                type: 'removeTrack',
+                payload: {
+                    trackId: 't1',
+                    expectedVcaGroupId: 'vca-linked',
+                    expectedVcaMembershipGroupIds: [],
+                },
+            });
+
+            expect(trackGuardResult).toEqual({ status: 'conflict' });
+            expect(groupGuardResult).toEqual({ status: 'conflict' });
             expect(mocks.removeTrack).not.toHaveBeenCalled();
             expect(mocks.removeTrackModulationReferences).not.toHaveBeenCalled();
             expect(mocks.finalizeRuntimeRemoval).not.toHaveBeenCalled();

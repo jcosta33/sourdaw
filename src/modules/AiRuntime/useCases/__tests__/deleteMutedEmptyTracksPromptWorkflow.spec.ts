@@ -286,6 +286,8 @@ describe('delete muted empty tracks prompt workflow', () => {
                     expectedMuted: true,
                     expectedClipIds: [],
                     expectedAlternativeClipIds: [],
+                    expectedVcaGroupId: null,
+                    expectedVcaMembershipGroupIds: [],
                 },
             },
             {
@@ -296,6 +298,8 @@ describe('delete muted empty tracks prompt workflow', () => {
                     expectedMuted: true,
                     expectedClipIds: [],
                     expectedAlternativeClipIds: [],
+                    expectedVcaGroupId: null,
+                    expectedVcaMembershipGroupIds: [],
                 },
             },
         ]);
@@ -421,6 +425,8 @@ describe('delete muted empty tracks prompt workflow', () => {
                     expectedMuted: true,
                     expectedClipIds: [],
                     expectedAlternativeClipIds: [],
+                    expectedVcaGroupId: null,
+                    expectedVcaMembershipGroupIds: [],
                 },
             },
             {
@@ -431,6 +437,8 @@ describe('delete muted empty tracks prompt workflow', () => {
                     expectedMuted: true,
                     expectedClipIds: [],
                     expectedAlternativeClipIds: [],
+                    expectedVcaGroupId: null,
+                    expectedVcaMembershipGroupIds: [],
                 },
             },
         ]);
@@ -549,6 +557,25 @@ describe('delete muted empty tracks prompt workflow', () => {
         expect(undoStore.value?.past).toEqual([]);
     });
 
+    it('aborts before deletion when authoritative VCA membership is added after confirmation', async () => {
+        await sendChatMessage(PROMPT);
+        const confirmation = getConfirmation();
+        vcaGroupStore.set({
+            groups: [{ id: 'vca-1', name: 'Band', gain: 1, muted: false, trackIds: ['track-muted-midi'] }],
+        });
+        const beforeConfirm = structuredClone(trackStore.value?.tracks);
+        const vcaBeforeConfirm = structuredClone(vcaGroupStore.value);
+
+        await expect(confirmPendingChatActions({ confirmationId: confirmation?.id ?? '' })).resolves.toMatchObject({
+            status: 'failed',
+        });
+
+        expect(trackStore.value?.tracks).toEqual(beforeConfirm);
+        expect(vcaGroupStore.value).toEqual(vcaBeforeConfirm);
+        expect(runtimeMocks.removeTrackStrip).not.toHaveBeenCalled();
+        expect(undoStore.value?.past).toEqual([]);
+    });
+
     it('reconciles a transient later runtime-removal failure without partial graph residue', async () => {
         runtimeMocks.removeTrackStrip
             .mockImplementationOnce(() => undefined)
@@ -631,6 +658,36 @@ describe('delete muted empty tracks prompt workflow', () => {
         expect(undoStore.value?.past).toEqual([]);
     });
 
+    it('keeps grouped redo atomic when a collaborator assigns one restored target to a VCA', async () => {
+        await sendChatMessage(PROMPT);
+        await confirmPendingChatActions({ confirmationId: getConfirmation()?.id ?? '' });
+        await undo();
+        runtimeMocks.removeTrackStrip.mockClear();
+        const state = trackStore.value;
+        if (!state) {
+            throw new Error('Expected restored track state');
+        }
+        trackStore.set({
+            ...state,
+            tracks: state.tracks.map((track) =>
+                track.id === 'track-muted-midi' ? { ...track, vcaGroupId: 'vca-1' } : track
+            ),
+        });
+        vcaGroupStore.set({
+            groups: [{ id: 'vca-1', name: 'Band', gain: 1, muted: false, trackIds: ['track-muted-midi'] }],
+        });
+        const beforeRedo = structuredClone(trackStore.value?.tracks);
+        const vcaBeforeRedo = structuredClone(vcaGroupStore.value);
+        const historyBeforeRedo = structuredClone(undoStore.value);
+
+        await redo();
+
+        expect(trackStore.value?.tracks).toEqual(beforeRedo);
+        expect(vcaGroupStore.value).toEqual(vcaBeforeRedo);
+        expect(runtimeMocks.removeTrackStrip).not.toHaveBeenCalled();
+        expect(undoStore.value).toEqual(historyBeforeRedo);
+    });
+
     it('refuses grouped undo when a collaborator occupies one deleted identity', async () => {
         await sendChatMessage(PROMPT);
         await confirmPendingChatActions({ confirmationId: getConfirmation()?.id ?? '' });
@@ -645,16 +702,16 @@ describe('delete muted empty tracks prompt workflow', () => {
         });
         trackStore.set({ ...state, tracks: [...state.tracks, collaboratorTrack] });
         const beforeUndo = structuredClone(trackStore.value?.tracks);
+        const historyBeforeUndo = structuredClone(undoStore.value);
         runtimeMocks.ensureTrackStrip.mockClear();
 
         await undo();
 
         expect(getTrack('track-muted-audio')).toEqual(collaboratorTrack);
-        expect(getTrack('track-muted-midi').muted).toBe(true);
-        expect(trackStore.value?.tracks).not.toEqual(beforeUndo);
-        expect(runtimeMocks.ensureTrackStrip).toHaveBeenCalledWith('track-muted-midi');
+        expect(trackStore.value?.tracks.some((track) => track.id === 'track-muted-midi')).toBe(false);
+        expect(trackStore.value?.tracks).toEqual(beforeUndo);
+        expect(runtimeMocks.ensureTrackStrip).not.toHaveBeenCalled();
         expect(runtimeMocks.ensureTrackStrip).not.toHaveBeenCalledWith('track-muted-audio');
-        expect(undoStore.value?.past).toHaveLength(1);
-        expect(undoStore.value?.future).toHaveLength(1);
+        expect(undoStore.value).toEqual(historyBeforeUndo);
     });
 });
