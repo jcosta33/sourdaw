@@ -829,6 +829,9 @@ export type AppAction =
               notePairs: readonly { readonly sourceNoteId: string; readonly targetNoteId: string }[];
               expectedSourceNotes: readonly MidiClipNoteSnapshot[];
               expectedTargetNotes: readonly MidiClipNoteSnapshot[];
+              expectedTrackFrozen: boolean;
+              expectedSourceClipLocked: boolean;
+              expectedTargetClipLocked: boolean;
           };
       }
     | {
@@ -840,6 +843,15 @@ export type AppAction =
               expectedNotes: readonly MidiClipNoteSnapshot[];
               /** Internal redo allowance for a newly recreated clip whose MIDI bucket does not exist yet. */
               allowMissingExpectedEmpty?: boolean;
+              /** MF-03 replay eligibility captured from the approved source and clip topology. */
+              articulationReplayGuard?: {
+                  trackId: string;
+                  sourceClipId: string;
+                  expectedSourceNotes: readonly MidiClipNoteSnapshot[];
+                  expectedTrackFrozen: boolean;
+                  expectedSourceClipLocked: boolean;
+                  expectedTargetClipLocked: boolean;
+              };
           };
       }
     | { type: 'quantizeNoteLengths'; payload: { clipId: string; gridSize: number } }

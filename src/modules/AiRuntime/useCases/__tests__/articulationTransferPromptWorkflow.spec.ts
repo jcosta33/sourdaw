@@ -616,6 +616,160 @@ describe('MF-03 articulation transfer prompt workflow', () => {
         ]);
     });
 
+    it('keeps a grouped redo retryable when a collaborator changes a source articulation after undo', async () => {
+        addSecondMidiAndAudioTracks();
+        await sendChatMessage(PROMPT);
+        await confirmPendingChatActions({ confirmationId: getConfirmationId() });
+        await undo();
+        const historyBeforeConflict = structuredClone(undoStore.value);
+        const state = midiStore.value!;
+        midiStore.set({
+            ...state,
+            notesByClipId: {
+                ...state.notesByClipId,
+                'brass-chorus-one': state.notesByClipId['brass-chorus-one']!.map((note) => ({
+                    ...note,
+                    articulation: 'sforzando',
+                })),
+            },
+        });
+
+        await redo();
+
+        expect(midiStore.value?.notesByClipId['clip-chorus-two']?.map((note) => note.articulation)).toEqual([
+            'legato',
+            'tenuto',
+        ]);
+        expect(midiStore.value?.notesByClipId['brass-chorus-two']?.map((note) => note.articulation)).toEqual([
+            'legato',
+        ]);
+        expect(undoStore.value).toEqual(historyBeforeConflict);
+
+        const conflictedState = midiStore.value!;
+        midiStore.set({
+            ...conflictedState,
+            notesByClipId: {
+                ...conflictedState.notesByClipId,
+                'brass-chorus-one': conflictedState.notesByClipId['brass-chorus-one']!.map((note) => ({
+                    ...note,
+                    articulation: 'marcato',
+                })),
+            },
+        });
+        await redo();
+        expect(midiStore.value?.notesByClipId['clip-chorus-two']?.map((note) => note.articulation)).toEqual([
+            'staccato',
+            'accent',
+        ]);
+        expect(midiStore.value?.notesByClipId['brass-chorus-two']?.map((note) => note.articulation)).toEqual([
+            'marcato',
+        ]);
+    });
+
+    it.each([
+        [
+            'track freeze',
+            () => {
+                const state = trackStore.value!;
+                trackStore.set({
+                    ...state,
+                    tracks: state.tracks.map((track) =>
+                        track.id === 'track-strings' ? { ...track, frozen: true } : track
+                    ),
+                });
+            },
+        ],
+        [
+            'source clip lock',
+            () => {
+                const state = trackStore.value!;
+                trackStore.set({
+                    ...state,
+                    tracks: state.tracks.map((track) => ({
+                        ...track,
+                        clips: track.clips.map((clip) =>
+                            clip.id === 'clip-chorus-one' ? { ...clip, locked: true } : clip
+                        ),
+                    })),
+                });
+            },
+        ],
+        [
+            'target clip lock',
+            () => {
+                const state = trackStore.value!;
+                trackStore.set({
+                    ...state,
+                    tracks: state.tracks.map((track) => ({
+                        ...track,
+                        clips: track.clips.map((clip) =>
+                            clip.id === 'clip-chorus-two' ? { ...clip, locked: true } : clip
+                        ),
+                    })),
+                });
+            },
+        ],
+    ])('keeps grouped undo retryable when replay eligibility changes through %s', async (_label, mutateGuard) => {
+        addSecondMidiAndAudioTracks();
+        await sendChatMessage(PROMPT);
+        await confirmPendingChatActions({ confirmationId: getConfirmationId() });
+        const eligibleTrackState = structuredClone(trackStore.value!);
+        mutateGuard();
+        const historyBeforeConflict = structuredClone(undoStore.value);
+
+        await undo();
+
+        expect(midiStore.value?.notesByClipId['clip-chorus-two']?.map((note) => note.articulation)).toEqual([
+            'staccato',
+            'accent',
+        ]);
+        expect(midiStore.value?.notesByClipId['brass-chorus-two']?.map((note) => note.articulation)).toEqual([
+            'marcato',
+        ]);
+        expect(undoStore.value).toEqual(historyBeforeConflict);
+
+        trackStore.set(eligibleTrackState);
+        await undo();
+        expect(midiStore.value?.notesByClipId['clip-chorus-two']?.map((note) => note.articulation)).toEqual([
+            'legato',
+            'tenuto',
+        ]);
+        expect(midiStore.value?.notesByClipId['brass-chorus-two']?.map((note) => note.articulation)).toEqual([
+            'legato',
+        ]);
+    });
+
+    it('keeps articulation-less legacy source notes compatible with guarded undo and redo', async () => {
+        const state = midiStore.value!;
+        midiStore.set({
+            ...state,
+            notesByClipId: {
+                ...state.notesByClipId,
+                'clip-chorus-one': state.notesByClipId['clip-chorus-one']!.map((note) => {
+                    const { articulation: _articulation, ...legacyNote } = note;
+                    return legacyNote;
+                }),
+            },
+        });
+
+        await sendChatMessage(PROMPT);
+        await confirmPendingChatActions({ confirmationId: getConfirmationId() });
+        expect(midiStore.value?.notesByClipId['clip-chorus-two']?.map((note) => note.articulation)).toEqual([
+            undefined,
+            undefined,
+        ]);
+        await undo();
+        expect(midiStore.value?.notesByClipId['clip-chorus-two']?.map((note) => note.articulation)).toEqual([
+            'legato',
+            'tenuto',
+        ]);
+        await redo();
+        expect(midiStore.value?.notesByClipId['clip-chorus-two']?.map((note) => note.articulation)).toEqual([
+            undefined,
+            undefined,
+        ]);
+    });
+
     it('rolls back the whole group without receipt or history residue when a later pair conflicts', async () => {
         addSecondMidiAndAudioTracks();
         await sendChatMessage(PROMPT);

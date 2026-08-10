@@ -62,6 +62,9 @@ export function materializeActionStateGuards(
                     })),
                     expectedSourceNotes,
                     expectedTargetNotes,
+                    expectedTrackFrozen: sourceTarget.track.frozen ?? false,
+                    expectedSourceClipLocked: sourceTarget.clip.locked ?? false,
+                    expectedTargetClipLocked: targetTarget.clip.locked ?? false,
                 },
             });
             continue;

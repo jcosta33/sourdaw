@@ -14,6 +14,14 @@ function describeCopy(action: Extract<AppAction, { type: 'copyMidiArticulations'
     if (!nextTargetNotes) {
         return { label: 'Copy MIDI articulations' };
     }
+    const articulationReplayGuard = {
+        trackId: action.payload.trackId,
+        sourceClipId: action.payload.sourceClipId,
+        expectedSourceNotes: action.payload.expectedSourceNotes,
+        expectedTrackFrozen: action.payload.expectedTrackFrozen,
+        expectedSourceClipLocked: action.payload.expectedSourceClipLocked,
+        expectedTargetClipLocked: action.payload.expectedTargetClipLocked,
+    };
     return {
         label: `Copy MIDI articulations: ${action.payload.sourceClipId} → ${action.payload.targetClipId}`,
         inverseAction: {
@@ -22,6 +30,7 @@ function describeCopy(action: Extract<AppAction, { type: 'copyMidiArticulations'
                 clipId: action.payload.targetClipId,
                 notes: action.payload.expectedTargetNotes,
                 expectedNotes: nextTargetNotes,
+                articulationReplayGuard,
             },
         },
         redoAction: {
@@ -30,6 +39,7 @@ function describeCopy(action: Extract<AppAction, { type: 'copyMidiArticulations'
                 clipId: action.payload.targetClipId,
                 notes: nextTargetNotes,
                 expectedNotes: action.payload.expectedTargetNotes,
+                articulationReplayGuard,
             },
         },
     };

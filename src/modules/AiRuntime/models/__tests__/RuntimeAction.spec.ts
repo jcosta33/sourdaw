@@ -103,6 +103,9 @@ describe('RuntimeAction', () => {
         expectTypeOf<PayloadHasKey<'copyMidiArticulations', 'trackId'>>().toEqualTypeOf<false>();
         expectTypeOf<PayloadHasKey<'copyMidiArticulations', 'expectedSourceNotes'>>().toEqualTypeOf<false>();
         expectTypeOf<PayloadHasKey<'copyMidiArticulations', 'expectedTargetNotes'>>().toEqualTypeOf<false>();
+        expectTypeOf<PayloadHasKey<'copyMidiArticulations', 'expectedTrackFrozen'>>().toEqualTypeOf<false>();
+        expectTypeOf<PayloadHasKey<'copyMidiArticulations', 'expectedSourceClipLocked'>>().toEqualTypeOf<false>();
+        expectTypeOf<PayloadHasKey<'copyMidiArticulations', 'expectedTargetClipLocked'>>().toEqualTypeOf<false>();
         expectTypeOf<PayloadHasKey<'scaleAutomation', 'anchor'>>().toEqualTypeOf<false>();
         expectTypeOf<PayloadHasKey<'stretchAutomation', 'anchorBeat'>>().toEqualTypeOf<false>();
         expectTypeOf<PayloadHasKey<'createVcaGroup', 'vcaGroupId'>>().toEqualTypeOf<false>();
