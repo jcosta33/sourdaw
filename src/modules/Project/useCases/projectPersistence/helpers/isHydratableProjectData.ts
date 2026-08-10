@@ -765,6 +765,17 @@ type AudioBufferReferenceCensus = {
     ordinaryIds: Set<string>;
 };
 
+const PROJECT_SCOPED_FREEZE_ID = /^freeze-project-(\d+)-/;
+
+function hasForeignEncodedFreezeProjectId(bufferId: string, projectId: number): boolean {
+    const match = PROJECT_SCOPED_FREEZE_ID.exec(bufferId);
+    if (!match) {
+        return false;
+    }
+    const encodedProjectId = Number(match[1]);
+    return !Number.isSafeInteger(encodedProjectId) || encodedProjectId !== projectId;
+}
+
 function addTrackBufferReferences(census: AudioBufferReferenceCensus, tracks: readonly HydratableProjectTrack[]): void {
     for (const track of tracks) {
         const frozenBufferId = track.freezeState?.frozenBufferId ?? track.frozenBufferId;
@@ -820,7 +831,8 @@ function isAudioBuffers(
                 (buffer.freezeProjectId === undefined ||
                     (buffer.freezeProjectId === projectId &&
                         references.frozenIds.has(bufferId) &&
-                        !references.ordinaryIds.has(bufferId)))
+                        !references.ordinaryIds.has(bufferId) &&
+                        !hasForeignEncodedFreezeProjectId(bufferId, projectId)))
         )
     );
 }
