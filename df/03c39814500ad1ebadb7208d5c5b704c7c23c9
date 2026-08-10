@@ -1,0 +1,40 @@
+src/infra/archive/__tests__/extractSingleGuardedZipEntry.spec.ts
+  s_bc88af7d3b054c::t_3f2ca22b8a6c85 59
+src/modules/BrowserAi/repositories/__tests__/writeModel.spec.ts
+  s_bc88af7d3b054c::t_27f1df368a52be 28-55
+src/infra/archive/extractSingleGuardedZipEntry.ts
+  s_bc88af7d3b054c::t_3f2ca22b8a6c85 1,46
+src/infra/archive/__tests__/extractGuardedZip.spec.ts
+  s_bc88af7d3b054c::t_919bd94bd88c83 76-82
+src/modules/BrowserAi/repositories/modelDownloadManager.ts
+  s_bc88af7d3b054c::t_3f2ca22b8a6c85 12,72-81,153,164-169,183-188,295,327-329
+src/infra/archive/extractGuardedZip.worker.ts
+  s_bc88af7d3b054c::t_3f2ca22b8a6c85 18
+src/modules/BrowserAi/repositories/__tests__/modelDownloadManager.spec.ts
+  s_bc88af7d3b054c::t_3f2ca22b8a6c85 98,138-142,472
+  s_bc88af7d3b054c::t_27f1df368a52be 28,37,156,166,185,336-366,438-471,473-474
+  s_bc88af7d3b054c::t_0bbecae80a7efe 494
+src/infra/archive/extractGuardedZip.ts
+  s_bc88af7d3b054c::t_3f2ca22b8a6c85 3-4,6,54-56
+src/infra/archive/runGuardedZipWorkerRequest.ts
+  s_bc88af7d3b054c::t_3f2ca22b8a6c85 12,44-48
+src/modules/BrowserAi/repositories/writeModel.ts
+  s_bc88af7d3b054c::t_4d4a5e51aaa69b 36
+  s_bc88af7d3b054c::t_3f2ca22b8a6c85 7,12,17-21,23-27,29-33,37-39,41-45
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "df03c39814500ad1ebadb7208d5c5b704c7c23c9",
+  "prompts": {},
+  "sessions": {
+    "s_bc88af7d3b054c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f9b4a-11a2-7f61-8dfb-76eed0eb2a9c",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
