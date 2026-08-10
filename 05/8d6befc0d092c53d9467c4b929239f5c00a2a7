@@ -1,0 +1,19 @@
+tests/e2e/busTrackDeviceAddTestId.spec.ts
+  s_bc88af7d3b054c::t_a3faed9b819db5 1-53
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "058d6befc0d092c53d9467c4b929239f5c00a2a7",
+  "prompts": {},
+  "sessions": {
+    "s_bc88af7d3b054c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f9b4a-11a2-7f61-8dfb-76eed0eb2a9c",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
