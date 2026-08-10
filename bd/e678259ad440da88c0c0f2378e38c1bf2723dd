@@ -1,0 +1,36 @@
+crates/daw-plugin-host/src/scanner.rs
+  s_bc88af7d3b054c::t_8df20ddb6aa97f 181-183,185-187
+  s_bc88af7d3b054c::t_13e9164c86acd6 323-330
+  s_bc88af7d3b054c::t_05e194e62db6e3 198-201,203
+  s_bc88af7d3b054c::t_4af0f54d7b168e 322,332,334-335,345
+  s_bc88af7d3b054c::t_e79d42853e9cbb 60-64,372-383,390-393,398-401
+  s_bc88af7d3b054c::t_83aa5c9025791a 320-321,331,333,336-342,347-348
+  s_bc88af7d3b054c::t_321675a60b0394 343-344,346
+src-tauri/src/host/native_bridge.rs
+  s_bc88af7d3b054c::t_05e194e62db6e3 3
+crates/daw-plugin-host/Cargo.toml
+  s_bc88af7d3b054c::t_05e194e62db6e3 5
+src-tauri/AGENTS.md
+  s_bc88af7d3b054c::t_ba53f017928d3e 7
+src-tauri/src/commands/plugins.rs
+  s_bc88af7d3b054c::t_83aa5c9025791a 890-922
+  s_bc88af7d3b054c::t_4acb5c0be136dd 15,785
+  s_bc88af7d3b054c::t_e79d42853e9cbb 296
+  s_bc88af7d3b054c::t_05e194e62db6e3 12
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "bde678259ad440da88c0c0f2378e38c1bf2723dd",
+  "prompts": {},
+  "sessions": {
+    "s_bc88af7d3b054c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f9b4a-11a2-7f61-8dfb-76eed0eb2a9c",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
