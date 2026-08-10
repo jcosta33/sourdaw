@@ -7,7 +7,6 @@ const DEFAULT_LIMITS = {
     maxTotalUncompressedBytes: 2 * 1024 * 1024 * 1024,
     maxCompressionRatio: 100,
 } as const;
-
 const END_SIGNATURE = 0x06054b50;
 const CENTRAL_ENTRY_SIGNATURE = 0x02014b50;
 const LOCAL_ENTRY_SIGNATURE = 0x04034b50;
@@ -19,23 +18,27 @@ const UNIX_FILE_TYPE_MASK = 0xf000;
 const UNIX_SYMLINK_TYPE = 0xa000;
 const nestedArchiveExtension = /\.(?:7z|bz2|dawproject|gz|oudep|rar|tar|tgz|xz|zip)$/i;
 const STREAM_CHUNK_BYTES = 4096;
-
+const CRC32_TABLE = Uint32Array.from({ length: 256 }, (_, index) => {
+    let value = index;
+    for (let bit = 0; bit < 8; bit += 1) {
+        value = (value >>> 1) ^ (value & 1 ? 0xedb88320 : 0);
+    }
+    return value >>> 0;
+});
 type ZipExtractionLimits = { -readonly [Key in keyof typeof DEFAULT_LIMITS]: number };
-
 type ExtractGuardedZipInput = {
     bytes: Uint8Array;
     include?: (path: string) => boolean;
     /** Callers and tests may lower, but never raise, the production ceilings. */
     restrictLimits?: Partial<ZipExtractionLimits>;
 };
-
 type ZipInventoryEntry = {
     path: string;
     compressedSize: number;
     uncompressedSize: number;
     compression: number;
+    crc32: number;
 };
-
 export class ZipArchiveError extends Error {
     override readonly name = 'ZipArchiveError';
 }
@@ -63,7 +66,6 @@ function inspectInventory(bytes: Uint8Array, limits: ZipExtractionLimits): ZipIn
     const paths = new Set<string>();
     let compressedBytes = 0;
     let uncompressedBytes = 0;
-
     if (inventory.length > limits.maxEntries) {
         throw new Error(`ZIP entry count exceeds ${String(limits.maxEntries)}`);
     }
@@ -85,7 +87,6 @@ function inspectInventory(bytes: Uint8Array, limits: ZipExtractionLimits): ZipIn
             throw new Error('ZIP total uncompressed bytes exceed the archive limit');
         }
     }
-
     let ratio = 0;
     if (compressedBytes === 0 && uncompressedBytes > 0) {
         ratio = Infinity;
@@ -107,7 +108,6 @@ function readCentralDirectory(bytes: Uint8Array): ZipInventoryEntry[] {
     let offset = view.getUint32(end + 16, true);
     const centralEnd = offset + centralBytes;
     const inventory: ZipInventoryEntry[] = [];
-
     if (view.getUint16(end + 4, true) !== 0 || view.getUint16(end + 6, true) !== 0 || entriesOnDisk !== entries) {
         throw new Error('ZIP entry counts or disk fields are inconsistent');
     }
@@ -138,13 +138,15 @@ function readCentralDirectory(bytes: Uint8Array): ZipInventoryEntry[] {
         requireAvailable(bytes, offset, entryBytes);
         const nameData = bytes.subarray(offset + CENTRAL_ENTRY_BYTES, offset + CENTRAL_ENTRY_BYTES + nameBytes);
         const path = strFromU8(nameData, (flags & 0x800) === 0);
-        const localOffset = view.getUint32(offset + 42, true);
-        validateLocalHeader(bytes, view, localOffset, flags, view.getUint16(offset + 10, true), nameData);
+        const compression = view.getUint16(offset + 10, true);
+        const crc32 = view.getUint32(offset + 16, true);
+        validateLocalHeader(bytes, view, view.getUint32(offset + 42, true), flags, compression, crc32, nameData);
         inventory.push({
             path,
             compressedSize: view.getUint32(offset + 20, true),
             uncompressedSize: view.getUint32(offset + 24, true),
-            compression: view.getUint16(offset + 10, true),
+            compression,
+            crc32,
         });
         offset += entryBytes;
     }
@@ -160,13 +162,18 @@ function validateLocalHeader(
     offset: number,
     flags: number,
     compression: number,
+    crc32: number,
     centralName: Uint8Array
 ): void {
     requireAvailable(bytes, offset, LOCAL_ENTRY_BYTES);
     if (view.getUint32(offset, true) !== LOCAL_ENTRY_SIGNATURE) {
         throw new Error('ZIP local entry signature is invalid');
     }
-    if (view.getUint16(offset + 6, true) !== flags || view.getUint16(offset + 8, true) !== compression) {
+    if (
+        view.getUint16(offset + 6, true) !== flags ||
+        view.getUint16(offset + 8, true) !== compression ||
+        view.getUint32(offset + 14, true) !== crc32
+    ) {
         throw new Error('ZIP local and central entry metadata disagree');
     }
     if ((flags & 8) !== 0) {
@@ -233,7 +240,7 @@ function createStreamingExtraction(
     includedPaths: ReadonlySet<string>,
     limits: ZipExtractionLimits
 ) {
-    const result: Record<string, Uint8Array> = {};
+    const result = new Map<string, Uint8Array>();
     let completed = 0;
     let expandedBytes = 0;
     let failure: unknown;
@@ -245,6 +252,7 @@ function createStreamingExtraction(
             }
             const output = new Uint8Array(planned.uncompressedSize);
             let written = 0;
+            let crc32 = 0xffffffff;
             file.ondata = (error, data, final) => {
                 if (failure) {
                     return;
@@ -264,6 +272,9 @@ function createStreamingExtraction(
                 }
                 output.set(data, written);
                 written += data.byteLength;
+                for (const byte of data) {
+                    crc32 = (CRC32_TABLE[(crc32 ^ byte) & 0xff] ?? 0) ^ (crc32 >>> 8);
+                }
                 if (!final) {
                     return;
                 }
@@ -271,11 +282,15 @@ function createStreamingExtraction(
                     failure = new Error(`ZIP entry does not match its declared size: ${planned.path}`);
                     return;
                 }
+                if ((crc32 ^ 0xffffffff) >>> 0 !== planned.crc32) {
+                    failure = new Error(`ZIP entry CRC does not match its output: ${planned.path}`);
+                    return;
+                }
                 if (hasNestedArchiveMagic(output)) {
                     failure = new Error(`Nested archive content is not allowed: ${planned.path}`);
                     return;
                 }
-                result[planned.path] = output;
+                result.set(planned.path, output);
                 completed += 1;
             };
             file.start();
@@ -302,7 +317,7 @@ function createStreamingExtraction(
             if (failure) {
                 throw toZipArchiveError(failure);
             }
-            return result;
+            return Object.fromEntries(result);
         },
     };
 }
