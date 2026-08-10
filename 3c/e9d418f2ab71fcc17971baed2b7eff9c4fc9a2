@@ -1,0 +1,16 @@
+src/modules/Toaster/presentations/views/ToasterPanel.tsx
+  h_1228e573df1f42 101
+tests/e2e/toasterPerPadParamsTestId.spec.ts
+  h_1228e573df1f42 1-57
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "3ce9d418f2ab71fcc17971baed2b7eff9c4fc9a2",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
