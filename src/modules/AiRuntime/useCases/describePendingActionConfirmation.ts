@@ -2,6 +2,7 @@ import { getAppActionExecutionPolicy } from '#/modules/Command/useCases';
 import { type AppAction } from '#/utils/handlerContract';
 
 import { type ProjectContext } from '../models/ProjectContext';
+import { type WholeProjectVibeMixPlan } from '../models/WholeProjectVibeMixPlan';
 
 import { getBulkDeviceInsertionTrackScope } from './agentReference/getBulkDeviceInsertionTrackScope';
 import { getDeviceParameterPromptScope } from './agentReference/getDeviceParameterPromptScope';
@@ -13,6 +14,7 @@ type DescribePendingActionConfirmationInput = {
     actions: readonly AppAction[];
     context: ProjectContext;
     prompt: string;
+    wholeProjectVibeMixPlan?: WholeProjectVibeMixPlan;
 };
 
 const riskRank = {
@@ -63,7 +65,11 @@ function describeDeviceParameterAction(
     return `Set "${owner.name}" (${owner.id}) device "${deviceName}" (${device.id}, ${device.type}) parameter "${parameter.name}" (${parameter.id}) from ${formatParameterValue(previousValue, parameter.unit)} to ${formatParameterValue(action.payload.value, parameter.unit)}`;
 }
 
-function getProtectedUnchangedTracks(prompt: string, context: ProjectContext): Array<{ id: string; name: string }> {
+function getProtectedUnchangedTracks(
+    prompt: string,
+    context: ProjectContext,
+    wholeProjectVibeMixPlan?: WholeProjectVibeMixPlan
+): Array<{ id: string; name: string }> {
     const protectedScopes = [
         ...prompt.matchAll(/\b(?:leave|leaving|keep|keeping|preserve|preserving)\s+(.+?)\s+unchanged\b/giu),
     ].flatMap((match) => (match[1] ? [normalizeText(match[1])] : []));
@@ -90,7 +96,27 @@ function getProtectedUnchangedTracks(prompt: string, context: ProjectContext): A
             name: `${deviceParameterScope.track.name} ${deviceName} ${parameter.name} = ${String(parameter.value)}${parameter.unit === ':1' ? ':1' : ` ${parameter.unit}`}`,
         }));
     }
-    return [...protectedTracks.map(({ id, name }) => ({ id, name })), ...protectedParameters];
+    const planProtections = wholeProjectVibeMixPlan?.globalConstraints.map(({ id, name }) => ({ id, name })) ?? [];
+    const protections = [
+        ...protectedTracks.map(({ id, name }) => ({ id, name })),
+        ...protectedParameters,
+        ...planProtections,
+    ];
+    return [...new Map(protections.map((protection) => [protection.id, protection])).values()];
+}
+
+function describeWholeProjectVibeMixPlan(plan: WholeProjectVibeMixPlan): string {
+    let previous = 'none';
+    if (plan.sectionMap.previous) {
+        previous = `"${plan.sectionMap.previous.name}" (${plan.sectionMap.previous.id})`;
+    }
+    let next = 'none';
+    if (plan.sectionMap.next) {
+        next = `"${plan.sectionMap.next.name}" (${plan.sectionMap.next.id})`;
+    }
+    const roles = plan.trackRoles.map((track) => `- ${track.role}: "${track.trackName}" (${track.trackId})`).join('\n');
+    const decisions = plan.acceptedDecisions.map((decision) => `- ${decision}`).join('\n');
+    return `Whole-project plan (schema ${String(plan.schemaVersion)}, revision ${plan.baseRevision}):\n\nProduction vision: ${plan.productionVision}\n\nSection map: target "${plan.sectionMap.target.name}" (${plan.sectionMap.target.id}) beats ${String(plan.sectionMap.target.startBeat)}–${String(plan.sectionMap.target.endBeat)}; previous ${previous}; next ${next}.\n\nTrack roles:\n${roles}\n\nDynamic trajectory: preserve before beat ${String(plan.dynamicTrajectory.startBeat)}, lift impact buses by ${String(plan.dynamicTrajectory.gainDb)} dB through beat ${String(plan.dynamicTrajectory.endBeat)}, then restore current gain.\n\nMix strategy: routing ${plan.strategy.routing}; devices ${plan.strategy.devices}; automation ${plan.strategy.automation}\n\nAccepted decisions:\n${decisions}`;
 }
 
 function describeExactAction(action: AppAction, actions: readonly AppAction[], context: ProjectContext): string {
@@ -116,6 +142,15 @@ function describeExactAction(action: AppAction, actions: readonly AppAction[], c
             return description;
         }
     }
+    if (action.type === 'automateTrackGainRange' && action.payload.expectedTracks) {
+        const targets = action.payload.expectedTracks
+            .map(
+                (track) =>
+                    `"${track.trackName}" (${track.trackId}) ${String(track.gain)}→${String(track.gain * 10 ** (action.payload.gainDb / 20))}`
+            )
+            .join(', ');
+        return `Lift ${targets} by ${String(action.payload.gainDb)} dB only in ${action.payload.sectionName} beats ${String(action.payload.startBeat)}–${String(action.payload.endBeat)}`;
+    }
     return describePlannedAction({ action, context });
 }
 
@@ -123,6 +158,7 @@ export function describePendingActionConfirmation({
     actions,
     context,
     prompt,
+    wholeProjectVibeMixPlan,
 }: DescribePendingActionConfirmationInput) {
     const actionLabels = actions.map((action) => describeExactAction(action, actions, context));
     const affectedIds = [...new Set(actions.flatMap((action) => getPlannedActionAffectedIds(action)))];
@@ -144,7 +180,7 @@ export function describePendingActionConfirmation({
             reason: 'This applies the same change to multiple project targets.',
         };
     }
-    const protectedUnchanged = getProtectedUnchangedTracks(prompt, context);
+    const protectedUnchanged = getProtectedUnchangedTracks(prompt, context, wholeProjectVibeMixPlan);
     const intendedChanges = actions
         .map((action, index) => `- **${action.type}**: ${actionLabels[index] ?? action.type}`)
         .join('\n');
@@ -152,6 +188,10 @@ export function describePendingActionConfirmation({
     const affectedSummary = affectedIds.join(', ');
     const riskReason = risk.reason ? ` — ${risk.reason}` : '';
     const protectedLine = protectedSummary ? `\n\nProtected unchanged: ${protectedSummary}` : '';
-    const content = `This prompt requires confirmation before execution.\n\nRisk: ${risk.level}${riskReason}\n\nIntended changes:\n${intendedChanges}\n\nAffected IDs: ${affectedSummary}${protectedLine}`;
+    let planSummary = '';
+    if (wholeProjectVibeMixPlan) {
+        planSummary = `${describeWholeProjectVibeMixPlan(wholeProjectVibeMixPlan)}\n\n`;
+    }
+    const content = `${planSummary}This prompt requires confirmation before execution.\n\nRisk: ${risk.level}${riskReason}\n\nIntended changes:\n${intendedChanges}\n\nAffected IDs: ${affectedSummary}${protectedLine}`;
     return { actionLabels, affectedIds, risk, protectedUnchanged, content };
 }

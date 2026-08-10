@@ -19,6 +19,7 @@ import { normalizeSafeProjectName } from '../../validators/normalizeSafeProjectN
 import { getBulkDeviceInsertionTrackScope } from './getBulkDeviceInsertionTrackScope';
 import { getDeviceParameterPromptScope } from './getDeviceParameterPromptScope';
 import { getMutedEmptyTrackDeletionScope } from './getMutedEmptyTrackDeletionScope';
+import { getWholeProjectVibeMixScope } from './getWholeProjectVibeMixScope';
 import { resolveAgentReference } from './resolveAgentReference';
 
 type BridgeGroundedLlmToolCallsInput = {
@@ -3797,6 +3798,48 @@ export function bridgeGroundedLlmToolCalls({
             sectionSignatures,
         });
     }
+    let effectiveCalls = calls;
+    const wholeProjectVibeMixScope = getWholeProjectVibeMixScope(prompt, context);
+    const providerVibeMixCalls = calls.filter((call) => call.name === 'automateTrackGainRange');
+    if (wholeProjectVibeMixScope || providerVibeMixCalls.length > 0) {
+        const providerCall = providerVibeMixCalls[0];
+        const assertedTrackIds = providerCall?.arguments.trackIds;
+        const providerTargetSet = Array.isArray(assertedTrackIds) ? new Set(assertedTrackIds) : new Set<unknown>();
+        const scopeTargetSet = new Set(wholeProjectVibeMixScope?.targetIds ?? []);
+        if (!wholeProjectVibeMixScope || !providerCall) {
+            return {
+                actions: [],
+                rejections: [
+                    rejection(0, '<batch>', 'Provider plan does not match the bounded whole-project vibe-mix scope'),
+                ],
+            };
+        }
+        const matchesScope =
+            calls.length === 1 &&
+            providerVibeMixCalls.length === 1 &&
+            providerTargetSet.size === scopeTargetSet.size &&
+            [...scopeTargetSet].every((trackId) => providerTargetSet.has(trackId)) &&
+            providerCall.arguments.sectionName === wholeProjectVibeMixScope.section.name &&
+            providerCall.arguments.gainDb === wholeProjectVibeMixScope.plan.dynamicTrajectory.gainDb;
+        if (!matchesScope) {
+            return {
+                actions: [],
+                rejections: [
+                    rejection(0, '<batch>', 'Provider plan does not match the bounded whole-project vibe-mix scope'),
+                ],
+            };
+        }
+        effectiveCalls = [
+            {
+                ...providerCall,
+                arguments: {
+                    trackIds: wholeProjectVibeMixScope.targetIds,
+                    sectionName: wholeProjectVibeMixScope.section.name,
+                    gainDb: wholeProjectVibeMixScope.plan.dynamicTrajectory.gainDb,
+                },
+            },
+        ];
+    }
     const mutedEmptyDeletionScope = getMutedEmptyTrackDeletionScope(prompt, context);
     if (mutedEmptyDeletionScope) {
         const providerTrackIds = calls.flatMap((call) =>
@@ -3825,7 +3868,6 @@ export function bridgeGroundedLlmToolCalls({
     if (glueAnalysis.status === 'none' && providerGlueCalls.length > 0) {
         return { actions: [], rejections: [rejection(0, '<batch>', mismatchedGluePlanReason)] };
     }
-    let effectiveCalls = calls;
     if (glueAnalysis.status === 'request') {
         const providerGlueCall = providerGlueCalls[0];
         const hasMatchingProviderCall =

@@ -899,6 +899,29 @@ const EXPECTED_COMMANDS = [
         true
     ),
     expectedCommand(
+        'automateTrackGainRange',
+        'Lift an app-grounded set of impact buses by a bounded relative dB amount inside one arrangement section.',
+        {
+            trackIds: {
+                type: 'array',
+                items: { type: 'string' },
+                minItems: 1,
+                uniqueItems: true,
+                description: 'Exact app-grounded impact-bus IDs',
+            },
+            sectionName: { type: 'string', description: 'Existing target chorus name' },
+            gainDb: {
+                type: 'number',
+                exclusiveMinimum: 0,
+                maximum: 6,
+                description: 'Bounded decibel lift selected by the planning policy',
+            },
+        },
+        ['trackIds', 'sectionName', 'gainDb'],
+        'authority-sensitive',
+        true
+    ),
+    expectedCommand(
         'addAutomationLane',
         'Create a gain or pan automation lane on an existing track.',
         {
@@ -1936,6 +1959,12 @@ const EXPECTED_GROUNDING = [
             { argument: 'sectionName', kind: 'section-reference' },
             { argument: 'reductionDb', kind: 'number-if-present', requiredInPrompt: true },
         ],
+    },
+    {
+        actionType: 'automateTrackGainRange',
+        intentPhrases: ['make the second chorus hit harder', 'second chorus hit harder'],
+        targetRules: [],
+        valueRules: [],
     },
     {
         actionType: 'addAutomationLane',

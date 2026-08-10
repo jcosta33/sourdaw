@@ -367,7 +367,8 @@ describe('sendChatMessage injectables', () => {
         expect(mocks.parsePromptToActions).toHaveBeenCalledWith(
             'mute the vocals',
             expect.any(Object),
-            expect.any(AbortSignal)
+            expect.any(AbortSignal),
+            'revision-1'
         );
     });
 

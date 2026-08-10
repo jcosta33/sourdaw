@@ -322,6 +322,15 @@ const validators = {
         isNonEmptyString(param.busId) &&
         isNonEmptyString(param.sectionName) &&
         isInRange(param.reductionDb, Number.MIN_VALUE, 60),
+    automateTrackGainRange: (param): param is PayloadOf<'automateTrackGainRange'> =>
+        isObj(param) &&
+        hasExactKeys(param, ['trackIds', 'sectionName', 'gainDb']) &&
+        Array.isArray(param.trackIds) &&
+        param.trackIds.length > 0 &&
+        param.trackIds.every(isNonEmptyString) &&
+        new Set(param.trackIds).size === param.trackIds.length &&
+        isNonEmptyString(param.sectionName) &&
+        isInRange(param.gainDb, Number.MIN_VALUE, 6),
     addAutomationPoint: (param): param is PayloadOf<'addAutomationPoint'> =>
         isObj(param) &&
         hasOnlyKeys(param, ['laneId', 'beat', 'value', 'curve', 'tension', 'stairSteps', 'cp1', 'cp2']) &&

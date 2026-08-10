@@ -111,6 +111,7 @@ export async function sendChatMessage(userText: string): Promise<void> {
                         actions: result.actions,
                         context,
                         prompt: userText,
+                        wholeProjectVibeMixPlan: result.wholeProjectVibeMixPlan,
                     });
                     proposePendingActionConfirmation({
                         id: confirmationId,

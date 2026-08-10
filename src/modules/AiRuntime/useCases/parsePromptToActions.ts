@@ -73,7 +73,8 @@ export const parsePromptToActions = inject({ logger })(
         async function parsePromptToActions(
             prompt: string,
             context: ProjectContext,
-            signal?: AbortSignal
+            signal?: AbortSignal,
+            projectRevision?: string
         ): Promise<IntentResult> {
             const normalized = prompt.toLowerCase().trim();
 
@@ -115,7 +116,7 @@ export const parsePromptToActions = inject({ logger })(
             try {
                 const planningOutcome = await generateToolPlanningOutcome(
                     buildLlmActionSystemPrompt(),
-                    buildLlmActionUserMessage({ prompt, context }),
+                    buildLlmActionUserMessage({ prompt, context, projectRevision }),
                     getExecutableAppActionToolSchemas(),
                     signal,
                     prompt
