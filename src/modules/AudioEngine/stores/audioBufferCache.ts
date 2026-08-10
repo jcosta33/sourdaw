@@ -12,7 +12,6 @@ export type ExportedAudioBuffer = {
     numberOfChannels: number;
     /** One base64-encoded Float32Array string per channel, in channel order. */
     channelData: string[];
-    /** Explicit freeze ownership survives a `.sourdaw` round-trip. Legacy files omit it. */
     freezeProjectId?: number;
 };
 
@@ -77,8 +76,9 @@ function isValidExportedAudioBuffer(data: ExportedAudioBuffer): boolean {
 const MAX_AUDIO_BUFFER_ENTRIES = 64;
 const cache = new Map<string, AudioBuffer>();
 const pinnedBufferIds = new Set<string>();
+const residentFreezeProjectIdById = new Map<string, number | undefined>();
 
-function audioCacheSet(id: string, buffer: AudioBuffer): void {
+function audioCacheSet(id: string, buffer: AudioBuffer, freezeProjectId?: number, ownershipKnown = false): void {
     // Promote existing entry to MRU position
     if (cache.has(id)) {
         cache.delete(id);
@@ -98,6 +98,11 @@ function audioCacheSet(id: string, buffer: AudioBuffer): void {
         }
     }
     cache.set(id, buffer);
+    if (ownershipKnown) {
+        residentFreezeProjectIdById.set(id, freezeProjectId);
+    } else {
+        residentFreezeProjectIdById.delete(id);
+    }
 }
 
 function replacePinnedBufferIds(ids: readonly string[]): void {
@@ -621,6 +626,7 @@ function clearWaveformCachesForId(id: string) {
  * via `clearWaveformCachesForId`. */
 function evictCachedBuffer(id: string): void {
     cache.delete(id);
+    residentFreezeProjectIdById.delete(id);
     clearWaveformCachesForId(id);
     accessRefreshStampById.delete(id);
 }
@@ -746,7 +752,7 @@ export const audioBufferCache = {
     },
 
     set(id: string, buffer: AudioBuffer, { freezeProjectId }: AudioBufferCacheSetOptions = {}): void {
-        audioCacheSet(id, buffer);
+        audioCacheSet(id, buffer, freezeProjectId, true);
         clearWaveformCachesForId(id);
         const data = serializeBuffer(buffer);
         // Seed the coalescing stamp from the record being written (audit M-045).
@@ -908,6 +914,7 @@ export const audioBufferCache = {
     clear(): void {
         cancelAllImportCandidates();
         cache.clear();
+        residentFreezeProjectIdById.clear();
         pinnedBufferIds.clear();
         waveformCache.clear();
         // The level-1 mipmap is keyed by id alone and is not bounded. Leaving it
@@ -993,7 +1000,10 @@ export const audioBufferCache = {
                     )
                 ),
             };
-            const freezeProjectId = metadataById.get(id)?.freezeProjectId;
+            let freezeProjectId = metadataById.get(id)?.freezeProjectId;
+            if (residentFreezeProjectIdById.has(id)) {
+                freezeProjectId = residentFreezeProjectIdById.get(id);
+            }
             if (freezeProjectId !== undefined) {
                 exported.freezeProjectId = freezeProjectId;
             }
@@ -1143,6 +1153,7 @@ export const audioBufferCache = {
             }
             staged.push({ id: entry.id, buffer });
         }
+        const importedOwners = new Map(entries.map(({ id, freezeProjectId }) => [id, freezeProjectId]));
 
         let persisted = false;
         let published = false;
@@ -1245,7 +1256,7 @@ export const audioBufferCache = {
                 }
                 for (const { id, buffer } of staged) {
                     clearWaveformCachesForId(id);
-                    audioCacheSet(id, buffer);
+                    audioCacheSet(id, buffer, importedOwners.get(id), true);
                 }
                 return staged.length;
             },
@@ -1253,10 +1264,6 @@ export const audioBufferCache = {
     },
 
     async garbageCollectFreezeFiles({ activeIds, projectId }: GarbageCollectFreezeFilesInput): Promise<void> {
-        // Ownership is persisted beside the record, not inferred from its key:
-        // legacy track ids are arbitrary and can resemble any later key syntax.
-        // Rows without explicit ownership stay available to their project and
-        // remain eligible for the global age and size collectors.
         try {
             const db = await openDb();
             const tx = db.transaction([STORE_NAME, META_STORE_NAME], 'readwrite');
@@ -1266,19 +1273,30 @@ export const audioBufferCache = {
                 awaitRequest(metaStore.getAll() as IDBRequest<BufferMeta[]>),
                 awaitRequest(metaStore.getAllKeys()),
             ]);
-            const collectedKeys: string[] = [];
+            const collectedKeys = new Set<string>();
             for (let index = 0; index < metadataKeys.length; index++) {
                 const key = metadataKeys[index];
                 const metadata = metadataRows[index];
+                let freezeProjectId = metadata?.freezeProjectId;
+                if (typeof key === 'string' && residentFreezeProjectIdById.has(key)) {
+                    freezeProjectId = residentFreezeProjectIdById.get(key);
+                }
                 if (
                     typeof key !== 'string' ||
                     !key.startsWith('freeze-') ||
                     activeIds.has(key) ||
-                    metadata?.freezeProjectId !== projectId
+                    freezeProjectId !== projectId
                 ) {
                     continue;
                 }
-                collectedKeys.push(key);
+                collectedKeys.add(key);
+            }
+            for (const [key, freezeProjectId] of residentFreezeProjectIdById) {
+                if (key.startsWith('freeze-') && !activeIds.has(key) && freezeProjectId === projectId) {
+                    collectedKeys.add(key);
+                }
+            }
+            for (const key of collectedKeys) {
                 store.delete(key);
                 metaStore.delete(key);
             }

@@ -114,6 +114,7 @@ export type FakeAudioIndexedDbControls = {
      * atomicity guard passes on an implementation that has none.
      */
     abortWritesTo: (storeName: string) => void;
+    allowWrites: () => void;
     /** Number of readwrite transactions opened against the database. */
     writeTransactionCount: () => number;
     /** Number of `indexedDB.open` calls issued against the fake. */
@@ -508,6 +509,10 @@ export function installFakeAudioIndexedDb(input: InstallFakeAudioIndexedDbInput 
         },
         abortWritesTo: (storeName: string) => {
             abortWritesToStore = storeName;
+        },
+        allowWrites: () => {
+            abortWrites = false;
+            abortWritesToStore = null;
         },
         writeTransactionCount: () => writeTransactionCount,
         openRequestCount: () => openRequestCount,
