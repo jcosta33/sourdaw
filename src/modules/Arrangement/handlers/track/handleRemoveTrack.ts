@@ -7,6 +7,7 @@ import { runAllAsyncEffects } from '#/utils/runEffects';
 import { collectTrackClipIds } from '../../services/collectTrackClipIds';
 import { reconcileRoutingAfterRemoval } from '../../services/reconcileRoutingAfterRemoval';
 import { takeLaneStore } from '../../stores/takeLaneStore';
+import { getVcaGroupsState } from '../../stores/vcaGroupStore';
 import { getTrackStoreState } from '../../useCases/getTrackStoreState';
 import { projectTrackToLiveStrip } from '../../useCases/projectTrackToLiveStrip';
 import { publishTrackRemoved } from '../../useCases/publishTrackRemoved';
@@ -21,6 +22,56 @@ type MidiPitchBendEntry = { readonly id: string };
 
 export const handleRemoveTrack = createHandler<'removeTrack'>({
     execute: (action) => {
+        const currentTrack = getTrackStoreState()?.tracks.find((candidate) => candidate.id === action.payload.trackId);
+        if (action.payload.expectedKind !== undefined && currentTrack?.kind !== action.payload.expectedKind) {
+            return { status: 'conflict' };
+        }
+        if (action.payload.expectedMuted !== undefined && currentTrack?.muted !== action.payload.expectedMuted) {
+            return { status: 'conflict' };
+        }
+        if (action.payload.expectedClipIds !== undefined) {
+            const currentClipIds = currentTrack?.clips.map((clip) => clip.id);
+            if (
+                !currentClipIds ||
+                currentClipIds.length !== action.payload.expectedClipIds.length ||
+                currentClipIds.some((clipId, index) => clipId !== action.payload.expectedClipIds?.[index])
+            ) {
+                return { status: 'conflict' };
+            }
+        }
+        if (action.payload.expectedAlternativeClipIds !== undefined) {
+            const currentAlternativeClipIds = currentTrack?.alternatives.flatMap((alternative) =>
+                alternative.clips.map((clip) => clip.id)
+            );
+            if (
+                !currentAlternativeClipIds ||
+                currentAlternativeClipIds.length !== action.payload.expectedAlternativeClipIds.length ||
+                currentAlternativeClipIds.some(
+                    (clipId, index) => clipId !== action.payload.expectedAlternativeClipIds?.[index]
+                )
+            ) {
+                return { status: 'conflict' };
+            }
+        }
+        if (
+            action.payload.expectedVcaGroupId !== undefined &&
+            (currentTrack?.vcaGroupId ?? null) !== action.payload.expectedVcaGroupId
+        ) {
+            return { status: 'conflict' };
+        }
+        if (action.payload.expectedVcaMembershipGroupIds !== undefined) {
+            const currentVcaMembershipGroupIds = getVcaGroupsState()
+                .filter((group) => group.trackIds.includes(action.payload.trackId))
+                .map((group) => group.id)
+                .sort();
+            const expectedVcaMembershipGroupIds = [...action.payload.expectedVcaMembershipGroupIds].sort();
+            if (
+                currentVcaMembershipGroupIds.length !== expectedVcaMembershipGroupIds.length ||
+                currentVcaMembershipGroupIds.some((groupId, index) => groupId !== expectedVcaMembershipGroupIds[index])
+            ) {
+                return { status: 'conflict' };
+            }
+        }
         const result = removeTrack(action.payload.trackId, {
             deferRuntimeEffects: true,
             suppressRemovedEvent: true,
@@ -40,7 +91,7 @@ export const handleRemoveTrack = createHandler<'removeTrack'>({
                     finalizeModulationRemoval.afterCommit,
                     () => publishTrackRemoved({ trackId: action.payload.trackId }),
                 ]),
-            afterAmbiguousCommit: () => {
+            afterAmbiguousCommit: async () => {
                 const committedTrack = getTrackStoreState()?.tracks.find(
                     (candidate) => candidate.id === action.payload.trackId
                 );
@@ -60,7 +111,14 @@ export const handleRemoveTrack = createHandler<'removeTrack'>({
                         publishTrackRemoved({ trackId: action.payload.trackId })
                     );
                 }
-                return runAllAsyncEffects(effects);
+                try {
+                    await runAllAsyncEffects(effects);
+                } catch (error) {
+                    const reason = error instanceof Error ? error.message : String(error);
+                    throw new Error(`Track runtime reconciliation failed; manual repair required: ${reason}`, {
+                        cause: error,
+                    });
+                }
             },
         };
     },

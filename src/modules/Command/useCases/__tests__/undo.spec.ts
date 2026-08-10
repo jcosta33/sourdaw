@@ -14,6 +14,7 @@ const mocks = vi.hoisted(() => ({
     },
     undoStoreSet: vi.fn<(state: import('../../stores/undoStore').UndoStoreState) => void>(),
     executeAppAction: vi.fn<typeof import('../executeAppAction').executeAppAction>(),
+    executeAppActionBatch: vi.fn<typeof import('../executeAppActionBatch').executeAppActionBatch>(),
     undoTreeMoveTo: vi.fn<(currentEntryId: string | null) => void>(),
 }));
 
@@ -28,6 +29,10 @@ vi.mock('../../stores/undoStore', () => ({
 
 vi.mock('../executeAppAction', () => ({
     executeAppAction: mocks.executeAppAction,
+}));
+
+vi.mock('../executeAppActionBatch', () => ({
+    executeAppActionBatch: mocks.executeAppActionBatch,
 }));
 
 vi.mock('../undoTree/undoTreeMoveTo', () => ({
@@ -64,6 +69,8 @@ describe('undo', () => {
     beforeEach(() => {
         mocks.undoStoreSet.mockReset();
         mocks.executeAppAction.mockReset();
+        mocks.executeAppActionBatch.mockReset();
+        mocks.executeAppActionBatch.mockResolvedValue({ status: 'executed', actions: [] });
         mocks.undoTreeMoveTo.mockReset();
         mocks.undoStoreValue.value = { past: [], future: [] };
         clearHandlerRegistry();
@@ -122,15 +129,10 @@ describe('undo', () => {
 
         await undo();
 
-        expect(mocks.executeAppAction).toHaveBeenNthCalledWith(
-            1,
-            { type: 'stopPlayback' },
-            { skipUndo: true, skipMacroRecording: true }
-        );
-        expect(mocks.executeAppAction).toHaveBeenNthCalledWith(
-            2,
-            { type: 'toggleRecording' },
-            { skipUndo: true, skipMacroRecording: true }
+        expect(mocks.executeAppAction).not.toHaveBeenCalled();
+        expect(mocks.executeAppActionBatch).toHaveBeenCalledWith(
+            [{ type: 'stopPlayback' }, { type: 'toggleRecording' }],
+            { skipUndo: true, skipMacroRecording: true, source: 'manual' }
         );
         expect(mocks.undoStoreSet).toHaveBeenCalledWith({
             past: [previous],

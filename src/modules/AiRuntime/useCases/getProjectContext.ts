@@ -159,6 +159,7 @@ export function getProjectContext(): ProjectContext {
             vcaGroupId: time.vcaGroupId ?? null,
             outputId: time.outputId,
             clipCount: time.clips.length,
+            alternativeClipIds: time.alternatives.flatMap((alternative) => alternative.clips.map((clip) => clip.id)),
             deviceCount: time.devices.length,
             clips: time.clips.map((context) => ({
                 id: context.id,

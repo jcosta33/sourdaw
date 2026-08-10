@@ -328,6 +328,40 @@ describe('handleRestoreTrack', () => {
         );
     });
 
+    it('defers sibling routing patches to their snapshots and offsets a still-missing earlier sibling', () => {
+        const survivor = TrackDummy.create({ id: 'survivor' });
+        const restored = TrackDummy.create({ id: 'track-b', outputId: 'master' });
+        const state: TrackStoreState = {
+            tracks: [survivor],
+            selectedTrackId: null,
+            ghostClips: [],
+        };
+        mocks.getTrackStoreState.mockReturnValue(state);
+        const action = createRestoreTrackAction({
+            trackId: restored.id,
+            trackSnapshot: restored,
+            trackName: restored.name,
+            trackIndex: 1,
+            batchRestoreTracks: [
+                { trackId: 'track-a', trackIndex: 0 },
+                { trackId: restored.id, trackIndex: 1 },
+            ],
+            routingPatches: [
+                {
+                    trackId: 'track-a',
+                    expected: { outputId: 'master', sends: [] },
+                    replacement: { outputId: restored.id, sends: [] },
+                },
+            ],
+        });
+
+        expect(handleRestoreTrack.execute(action)).toMatchObject({ status: 'written' });
+        expect(mocks.setTrackState).toHaveBeenCalledWith({
+            ...state,
+            tracks: [restored, survivor],
+        });
+    });
+
     it('attempts sidechain wiring and publication when live strip projection fails', async () => {
         const failure = new Error('projection failed');
         mocks.getTrackStoreState.mockReturnValue({ tracks: [], selectedTrackId: null, ghostClips: [] });

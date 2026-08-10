@@ -33,6 +33,10 @@ export type DeviceSnapshot = {
     readonly deviceState?: DeviceStateChunkSnapshot;
 };
 export type TrackSnapshot = { readonly id: string };
+export type BatchRestoreTrackSnapshot = {
+    readonly trackId: string;
+    readonly trackIndex: number;
+};
 export type TrackSendSnapshot = {
     readonly busId: string;
     readonly level: number;
@@ -438,7 +442,18 @@ type GeneratedMidiReplayOperation =
 
 export type AppAction =
     | { type: 'addTrack'; payload: { id?: string; name: string; kind: TrackKind; select?: boolean } }
-    | { type: 'removeTrack'; payload: { trackId: string } }
+    | {
+          type: 'removeTrack';
+          payload: {
+              trackId: string;
+              expectedKind?: 'audio' | 'midi' | 'bus' | 'master' | 'folder';
+              expectedMuted?: boolean;
+              expectedClipIds?: readonly string[];
+              expectedAlternativeClipIds?: readonly string[];
+              expectedVcaGroupId?: string | null;
+              expectedVcaMembershipGroupIds?: readonly string[];
+          };
+      }
     | {
           type: 'discardCreatedTrack';
           payload: { trackId: string; generatedMidiStateGuard?: GeneratedMidiStateGuard };
@@ -456,6 +471,8 @@ export type AppAction =
               trackGain: number;
               trackParentId: string | null;
               trackIndex: number;
+              /** Internal context compiled only for sibling restores captured by one atomic batch. */
+              batchRestoreTracks?: readonly BatchRestoreTrackSnapshot[];
               wasSelected: boolean;
               routingPatches: readonly TrackRoutingPatchSnapshot[];
               automationLaneSnapshots: readonly AutomationLaneSnapshot[];

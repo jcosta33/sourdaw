@@ -17,6 +17,7 @@ import { type ToolCallResult } from '../../transformers/toolCallParser';
 import { normalizeSafeProjectName } from '../../validators/normalizeSafeProjectName';
 
 import { getBulkDeviceInsertionTrackScope } from './getBulkDeviceInsertionTrackScope';
+import { getMutedEmptyTrackDeletionScope } from './getMutedEmptyTrackDeletionScope';
 import { resolveAgentReference } from './resolveAgentReference';
 
 type BridgeGroundedLlmToolCallsInput = {
@@ -1009,6 +1010,30 @@ function resolveBulkDeviceInsertionScope(
     return { text: prompt, masked: prompt, directional: false, matchedIntentPhrase: 'insert device' };
 }
 
+function resolveBulkMutedEmptyTrackDeletionScope(
+    prompt: string,
+    context: ProjectContext,
+    sameActionAssertedArguments: readonly Readonly<Record<string, unknown>>[],
+    sameActionCallCount: number
+): ActionPromptScope | null {
+    const expectedTrackIds = getMutedEmptyTrackDeletionScope(prompt, context)?.targetIds;
+    if (!expectedTrackIds || sameActionAssertedArguments.length !== sameActionCallCount) {
+        return null;
+    }
+    const assertedTrackIds = sameActionAssertedArguments.flatMap((arguments_) =>
+        typeof arguments_.trackId === 'string' ? [arguments_.trackId] : []
+    );
+    if (
+        expectedTrackIds.length !== sameActionCallCount ||
+        assertedTrackIds.length !== sameActionCallCount ||
+        new Set(assertedTrackIds).size !== sameActionCallCount ||
+        !expectedTrackIds.every((trackId) => assertedTrackIds.includes(trackId))
+    ) {
+        return null;
+    }
+    return { text: prompt, masked: prompt, directional: false, matchedIntentPhrase: 'delete track' };
+}
+
 function resolveRepeatedTrackPanScope({
     actionOrdinal,
     prompt,
@@ -1460,6 +1485,17 @@ function resolveActionPromptScope({
         );
         if (bulkDeviceInsertionScope) {
             return bulkDeviceInsertionScope;
+        }
+    }
+    if (actionName === 'removeTrack') {
+        const bulkMutedEmptyTrackDeletionScope = resolveBulkMutedEmptyTrackDeletionScope(
+            prompt,
+            context,
+            sameActionAssertedArguments,
+            sameActionCallCount
+        );
+        if (bulkMutedEmptyTrackDeletionScope) {
+            return bulkMutedEmptyTrackDeletionScope;
         }
     }
     if (actionName === 'setTrackPan') {
@@ -3347,6 +3383,8 @@ function groundToolCall({
     const groundedArguments = { ...call.arguments };
     const bulkDeviceInsertionTargetIds =
         call.name === 'addDevice' ? (getBulkDeviceInsertionTrackScope(prompt, context)?.targetIds ?? null) : null;
+    const bulkMutedEmptyTrackDeletionTargetIds =
+        call.name === 'removeTrack' ? (getMutedEmptyTrackDeletionScope(prompt, context)?.targetIds ?? null) : null;
     for (const targetRule of groundingRules.targetRules) {
         const assertedValue = groundedArguments[targetRule.argument];
         if (targetRule.optional && assertedValue === undefined) {
@@ -3359,6 +3397,15 @@ function groundToolCall({
             targetRule.argument === 'trackId' &&
             typeof assertedValue === 'string' &&
             bulkDeviceInsertionTargetIds.includes(assertedValue)
+        ) {
+            continue;
+        }
+        if (
+            bulkMutedEmptyTrackDeletionTargetIds &&
+            call.name === 'removeTrack' &&
+            targetRule.argument === 'trackId' &&
+            typeof assertedValue === 'string' &&
+            bulkMutedEmptyTrackDeletionTargetIds.includes(assertedValue)
         ) {
             continue;
         }
@@ -3512,6 +3559,7 @@ function groundToolCall({
     }
     if (
         call.name === 'removeTrack' &&
+        !bulkMutedEmptyTrackDeletionTargetIds?.includes(String(groundedArguments.trackId)) &&
         !isExplicitTrackDeletionScope({
             context,
             text: actionScope.text,
@@ -3691,6 +3739,26 @@ export function bridgeGroundedLlmToolCalls({
             sectionSignatures,
         });
     }
+    const mutedEmptyDeletionScope = getMutedEmptyTrackDeletionScope(prompt, context);
+    if (mutedEmptyDeletionScope) {
+        const providerTrackIds = calls.flatMap((call) =>
+            call.name === 'removeTrack' && typeof call.arguments.trackId === 'string' ? [call.arguments.trackId] : []
+        );
+        const providerTrackIdSet = new Set(providerTrackIds);
+        const providerPlanMatches =
+            providerTrackIds.length === calls.length &&
+            providerTrackIdSet.size === providerTrackIds.length &&
+            providerTrackIds.length === mutedEmptyDeletionScope.targetIds.length &&
+            mutedEmptyDeletionScope.targetIds.every((trackId) => providerTrackIdSet.has(trackId));
+        if (!providerPlanMatches) {
+            return {
+                actions: [],
+                rejections: [
+                    rejection(0, '<batch>', 'Provider plan does not match the complete muted empty track set'),
+                ],
+            };
+        }
+    }
     const glueAnalysis = analyzeGluePrompt(prompt, context);
     const providerGlueCalls = calls.filter((call) => call.name === 'glueClips');
     if (glueAnalysis.status === 'invalid') {
@@ -3843,13 +3911,43 @@ export function bridgeGroundedLlmToolCalls({
             };
         }
     }
-    const bridged = bridgeLlmToolCalls({
+    let bridged = bridgeLlmToolCalls({
         calls: groundedCalls,
         context: prospectiveContext,
         markerSignatures,
         projectPunchRegion: createPunchRegionPatch,
         sectionSignatures,
     });
+    if (mutedEmptyDeletionScope) {
+        const targetIds = new Set(mutedEmptyDeletionScope.targetIds);
+        bridged = {
+            ...bridged,
+            actions: bridged.actions.map((action) => {
+                if (action.type !== 'removeTrack' || !targetIds.has(action.payload.trackId)) {
+                    return action;
+                }
+                const target = context.tracks.find((track) => track.id === action.payload.trackId);
+                if (!target || (target.kind !== 'audio' && target.kind !== 'midi')) {
+                    return action;
+                }
+                return {
+                    ...action,
+                    payload: {
+                        ...action.payload,
+                        expectedKind: target.kind,
+                        expectedMuted: target.muted,
+                        expectedClipIds: target.clips.map((clip) => clip.id),
+                        expectedAlternativeClipIds: target.alternativeClipIds,
+                        expectedVcaGroupId: target.vcaGroupId ?? null,
+                        expectedVcaMembershipGroupIds: (context.vcaGroups ?? [])
+                            .filter((group) => group.trackIds.includes(target.id))
+                            .map((group) => group.id)
+                            .sort(),
+                    },
+                };
+            }),
+        };
+    }
     const rejections = bridged.rejections.map((bridgeRejection) => {
         if (bridgeRejection.name === '<batch>') {
             return bridgeRejection;
