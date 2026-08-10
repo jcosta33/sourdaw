@@ -54,7 +54,7 @@ const runtimeMocks = vi.hoisted(() => {
     return {
         backend,
         fetch: vi.fn<typeof fetch>(),
-        generateWebLlmCompletion: vi.fn(),
+        generateWebLlmCompletion: vi.fn<(systemPrompt: string, userMessage: string) => Promise<string>>(),
         getAllSidechainRoutes: vi.fn(() => []),
         resolveToasterPadBinding: vi.fn(() => null),
         setTrackOutput: vi.fn(),
@@ -158,6 +158,115 @@ function getHostedRequestBody(): string {
         throw new TypeError('Expected one hosted provider request body');
     }
     return body;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+    return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function getHostedUserMessage(requestBody: string): string {
+    const request: unknown = JSON.parse(requestBody);
+    if (!isRecord(request) || !Array.isArray(request.messages)) {
+        throw new TypeError('Expected hosted provider messages');
+    }
+    for (const message of request.messages) {
+        if (isRecord(message) && message.role === 'user' && typeof message.content === 'string') {
+            return message.content;
+        }
+    }
+    throw new TypeError('Expected one hosted provider user message');
+}
+
+function createMf01ProviderPlanFromUserMessage(userMessage: string) {
+    const match = /<project_context>\n(?<contextJson>.+)\n<\/project_context>/u.exec(userMessage);
+    const contextJson = match?.groups?.contextJson;
+    if (!contextJson) {
+        throw new TypeError('Expected serialized project context in provider request');
+    }
+    const context: unknown = JSON.parse(contextJson);
+    if (!isRecord(context)) {
+        throw new TypeError('Expected object-shaped project context');
+    }
+    const capability = context.drumRoutingCapability;
+    if (!isRecord(capability) || capability.actionType !== 'setTrackOutput') {
+        throw new TypeError('Expected app-owned MF-01 capability');
+    }
+    if (typeof context.projectRevision !== 'string' || capability.baseRevision !== context.projectRevision) {
+        throw new TypeError('Expected revision-bound MF-01 capability');
+    }
+    const allowedAction = capability.allowedAction;
+    const bus = capability.bus;
+    const candidateDrums = capability.candidateDrums;
+    if (
+        !isRecord(allowedAction) ||
+        allowedAction.type !== 'setTrackOutput' ||
+        !isRecord(bus) ||
+        typeof bus.id !== 'string' ||
+        !Array.isArray(candidateDrums) ||
+        !Array.isArray(allowedAction.exactTargetIds) ||
+        !allowedAction.exactTargetIds.every((trackId) => typeof trackId === 'string') ||
+        typeof allowedAction.outputId !== 'string'
+    ) {
+        throw new TypeError('Expected exact MF-01 target and output capability');
+    }
+    const derivedTargetIds = candidateDrums.flatMap((candidate) => {
+        if (
+            !isRecord(candidate) ||
+            typeof candidate.id !== 'string' ||
+            typeof candidate.role !== 'string' ||
+            typeof candidate.currentOutputId !== 'string' ||
+            typeof candidate.locked !== 'boolean' ||
+            typeof candidate.frozen !== 'boolean'
+        ) {
+            throw new TypeError('Expected role-evidenced MF-01 drum candidates');
+        }
+        return candidate.currentOutputId === bus.id ? [] : [candidate.id];
+    });
+    if (
+        allowedAction.outputId !== bus.id ||
+        JSON.stringify(allowedAction.exactTargetIds) !== JSON.stringify(derivedTargetIds)
+    ) {
+        throw new TypeError('Expected MF-01 allowed action to match projected drum candidates');
+    }
+    return derivedTargetIds.map((trackId) => ({
+        name: allowedAction.type,
+        arguments: { trackId, outputId: allowedAction.outputId },
+    }));
+}
+
+function useMf01WebLlmFixture(): void {
+    runtimeMocks.generateWebLlmCompletion.mockImplementation((_systemPrompt, userMessage) =>
+        Promise.resolve(JSON.stringify(createMf01ProviderPlanFromUserMessage(userMessage)))
+    );
+}
+
+function useMf01HostedFixture({ reverse = false }: { reverse?: boolean } = {}): void {
+    runtimeMocks.fetch.mockImplementation((_input, init) => {
+        if (typeof init?.body !== 'string') {
+            throw new TypeError('Expected hosted provider request body');
+        }
+        const plan = createMf01ProviderPlanFromUserMessage(getHostedUserMessage(init.body));
+        if (reverse) {
+            plan.reverse();
+        }
+        return Promise.resolve(
+            new Response(
+                JSON.stringify({
+                    choices: [
+                        {
+                            finish_reason: 'tool_calls',
+                            message: {
+                                tool_calls: plan.map((call) => ({
+                                    function: { name: call.name, arguments: JSON.stringify(call.arguments) },
+                                })),
+                            },
+                        },
+                    ],
+                }),
+                { status: 200, headers: { 'Content-Type': 'application/json' } }
+            )
+        );
+    });
 }
 
 describe('drum bus prompt workflow', () => {
@@ -398,7 +507,7 @@ describe('drum bus prompt workflow', () => {
 
     it('grounds the complete dynamic drum scope into an existing Drum Bus for MF-01', async () => {
         setMf01Project();
-        runtimeMocks.generateWebLlmCompletion.mockResolvedValue(JSON.stringify(mf01ProviderPlan));
+        useMf01WebLlmFixture();
         const unchangedBefore = structuredClone([getTrack('track-parallel'), getTrack('track-bass')]);
 
         await sendChatMessage(MF01_PROMPT);
@@ -481,27 +590,86 @@ describe('drum bus prompt workflow', () => {
         expect([getTrack('track-parallel'), getTrack('track-bass')]).toEqual(unchangedBefore);
     });
 
+    it('projects standard Bass Drum, BD, and OH roles without routing bass instruments or arbitrary name matches', async () => {
+        trackStore.set({
+            tracks: [
+                createTrack('track-bass-drum', 'Bass Drum'),
+                createTrack('track-bd', 'BD'),
+                createTrack('track-oh', 'OH'),
+                createTrack('track-bass', 'Bass DI'),
+                createTrack('track-hat-trick', 'Hat Trick'),
+                createTrack('track-parallel', 'Parallel Compression Return'),
+                createTrack('bus-drums', 'Drum Bus', 'bus'),
+            ],
+            selectedTrackId: null,
+            ghostClips: [],
+        });
+        useMf01WebLlmFixture();
+
+        await sendChatMessage(MF01_PROMPT);
+
+        const confirmation = getPendingActionConfirmation(
+            chatStore.value?.messages.find((message) => message.pendingActionConfirmationId)
+                ?.pendingActionConfirmationId ?? ''
+        );
+        expect(
+            confirmation?.actions.flatMap((action) =>
+                action.type === 'setTrackOutput' ? [action.payload.trackId] : []
+            )
+        ).toEqual(['track-bass-drum', 'track-bd', 'track-oh']);
+        expect(confirmation?.affectedIds).not.toContain('track-bass');
+        expect(confirmation?.affectedIds).not.toContain('track-hat-trick');
+    });
+
+    it('fails closed when an editable audio track has no application-owned role evidence', async () => {
+        setMf01Project({ 'track-room': (track) => ({ ...track, name: 'Audio 1' }) });
+        runtimeMocks.generateWebLlmCompletion.mockResolvedValue(JSON.stringify(mf01ProviderPlan.slice(0, 3)));
+
+        await sendChatMessage(MF01_PROMPT);
+
+        expect(chatStore.value?.messages.some((message) => message.pendingActionConfirmationId)).toBe(false);
+        expect(chatStore.value?.messages.at(-1)?.content).toContain('MF-01 track role is ambiguous: track-room');
+    });
+
+    it.each(['webllm', 'cloud'] as const)(
+        'sends %s the revision-bound app-owned MF-01 capability scope',
+        async (backend) => {
+            setMf01Project();
+            runtimeMocks.backend.value = backend;
+            if (backend === 'webllm') {
+                useMf01WebLlmFixture();
+            } else {
+                useMf01HostedFixture();
+            }
+
+            await sendChatMessage(MF01_PROMPT);
+
+            const providerMessage =
+                backend === 'webllm'
+                    ? runtimeMocks.generateWebLlmCompletion.mock.calls[0]?.[1]
+                    : getHostedUserMessage(getHostedRequestBody());
+            expect(providerMessage).toContain('"drumRoutingCapability"');
+            expect(providerMessage).toContain('"projectRevision"');
+            expect(providerMessage).toContain('"baseRevision"');
+            expect(providerMessage).toContain('"bus":{"id":"bus-drums","name":"Drum Bus"');
+            expect(providerMessage).toContain(
+                '"candidateDrums":[{"id":"track-kick","name":"Kick","kind":"audio","role":"kick","roleEvidence":"canonical-name:kick","currentOutputId":"master","frozen":false,"locked":false}'
+            );
+            expect(providerMessage).toContain('"protectedReturn":{"id":"track-parallel"');
+            expect(providerMessage).toContain(
+                '"protectedNonDrums":[{"id":"track-bass","name":"Bass DI","kind":"audio","role":"bass-instrument"'
+            );
+            expect(providerMessage).toContain('"actionType":"setTrackOutput"');
+            expect(providerMessage).toContain(
+                '"exactTargetIds":["track-kick","track-snare","track-hats","track-room"]'
+            );
+        }
+    );
+
     it('normalizes a reordered hosted MF-01 plan to the same exact action order and receipt', async () => {
         setMf01Project();
         runtimeMocks.backend.value = 'cloud';
-        const hostedPlan = [...mf01ProviderPlan].reverse();
-        runtimeMocks.fetch.mockResolvedValue(
-            new Response(
-                JSON.stringify({
-                    choices: [
-                        {
-                            finish_reason: 'tool_calls',
-                            message: {
-                                tool_calls: hostedPlan.map((call) => ({
-                                    function: { name: call.name, arguments: JSON.stringify(call.arguments) },
-                                })),
-                            },
-                        },
-                    ],
-                }),
-                { status: 200, headers: { 'Content-Type': 'application/json' } }
-            )
-        );
+        useMf01HostedFixture({ reverse: true });
 
         await sendChatMessage(MF01_PROMPT);
 
