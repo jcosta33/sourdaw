@@ -42,6 +42,8 @@ function makeLoadResult(overrides: Partial<CrumbsLoadResult> = {}): CrumbsLoadRe
         detectedRoot: 60,
         detectedBpm: 120,
         category: 'percussive',
+        decodeWarningCount: 0,
+        decodeWarnings: [],
         ...overrides,
     };
 }
@@ -68,6 +70,23 @@ describe('loadSampleFromPath', () => {
         );
         expect(mocks.setWaveformPeaks).toHaveBeenCalledWith('inst1', [0.1, 0.5, 0.2]);
         expect(mocks.setLoading).toHaveBeenLastCalledWith('inst1', false);
+    });
+
+    it('reports partial corruption returned by the native decoder', async () => {
+        mocks.loadSample.mockResolvedValue(
+            makeLoadResult({
+                decodeWarningCount: 2,
+                decodeWarnings: ['malformed stream: corrupt frame', 'truncated frame'],
+            })
+        );
+        mocks.getWaveformPeaks.mockResolvedValue([]);
+
+        await loadSampleFromPath('inst1', '/path/to/damaged.wav');
+
+        expect(mocks.warn).toHaveBeenCalledWith('Sample imported after skipping 2 corrupt audio packets:', [
+            'malformed stream: corrupt frame',
+            'truncated frame',
+        ]);
     });
 
     it('stores sample metadata names from native Windows paths', async () => {

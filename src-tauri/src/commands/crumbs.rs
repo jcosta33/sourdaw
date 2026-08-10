@@ -120,6 +120,7 @@ impl Default for CrumbsState {
 // ── IPC Types ──────────────────────────────────────────────────────────
 
 #[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct SampleLoadResult {
     pub sample_id: u32,
     pub sample_rate: u32,
@@ -129,6 +130,8 @@ pub struct SampleLoadResult {
     pub detected_root: Option<u8>,
     pub detected_bpm: Option<f32>,
     pub category: String,
+    pub decode_warning_count: u64,
+    pub decode_warnings: Vec<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -288,6 +291,8 @@ pub async fn load_sample(
 
     let sample_rate = decoded.sample_rate;
     let channels = decoded.channels;
+    let decode_warning_count = decoded.decode_warning_count;
+    let decode_warnings = decoded.decode_warnings;
     let samples_vec = decoded.samples;
 
     // Build SampleData from decoded channels.
@@ -353,6 +358,8 @@ pub async fn load_sample(
         detected_root: pitch_result.midi_note,
         detected_bpm: bpm_result.bpm,
         category,
+        decode_warning_count,
+        decode_warnings,
     })
 }
 
@@ -784,6 +791,32 @@ mod tests {
             pending_mirror: Vec::new(),
         };
         (instance, commit_tx, recycle_rx, cmd_rx)
+    }
+
+    #[test]
+    fn sample_load_result_serializes_decode_warnings_for_the_typescript_boundary() {
+        let result = SampleLoadResult {
+            sample_id: 1,
+            sample_rate: 48_000,
+            channels: 2,
+            frame_count: 128,
+            duration_secs: 128.0 / 48_000.0,
+            detected_root: None,
+            detected_bpm: None,
+            category: "percussive".to_string(),
+            decode_warning_count: 2,
+            decode_warnings: vec!["corrupt frame".to_string(), "truncated frame".to_string()],
+        };
+
+        let json = serde_json::to_value(result).expect("serialize SampleLoadResult");
+
+        assert_eq!(json["decodeWarningCount"], 2);
+        assert_eq!(
+            json["decodeWarnings"],
+            serde_json::json!(["corrupt frame", "truncated frame"])
+        );
+        assert_eq!(json["sampleRate"], 48_000);
+        assert!(json.get("decode_warning_count").is_none());
     }
 
     /// The drain completes a handed-off take off the RT thread: SampleData

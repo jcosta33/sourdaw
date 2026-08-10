@@ -3,6 +3,8 @@ export type WasmDecoded = {
     readonly sample_rate: number;
     readonly channels: number;
     readonly total_frames: number;
+    readonly decode_warning_count: number;
+    readonly decode_warning_summary: string;
     /** Consumes the instance — do not call `.free()` or access getters after. */
     take_samples: () => Float32Array;
     free: () => void;

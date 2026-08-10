@@ -10,6 +10,10 @@ const SDAW_MAGIC: &[u8; 4] = b"SDAW";
 /// Current format version.
 const FORMAT_VERSION: u16 = 1;
 
+/// Each record contains two four-byte length fields, even when both payloads are empty.
+const RECORD_FRAMING_BYTES: usize = 8;
+const DATA_LENGTH_BYTES: usize = 4;
+
 fn remaining_bytes(cursor: &Cursor<&[u8]>) -> usize {
     cursor
         .get_ref()
@@ -78,10 +82,20 @@ pub fn decode_sdaw(bytes: &[u8]) -> Result<HashMap<DocId, Vec<u8>>, String> {
         .read_exact(&mut count_bytes)
         .map_err(|_| "File too short: missing document count".to_string())?;
     let count = u16::from_le_bytes(count_bytes) as usize;
+    let remaining = remaining_bytes(&cursor);
+    let max_records = remaining / RECORD_FRAMING_BYTES;
+    if count > max_records {
+        return Err(format!(
+            "Invalid document count: declared {count}, but at most {max_records} records fit in {remaining} remaining bytes"
+        ));
+    }
 
     let mut bundle = HashMap::with_capacity(count);
 
     for i in 0..count {
+        let later_record_count = count - i - 1;
+        let later_record_framing = later_record_count * RECORD_FRAMING_BYTES;
+
         // Read DocId
         let mut id_len_bytes = [0u8; 4];
         cursor
@@ -89,9 +103,15 @@ pub fn decode_sdaw(bytes: &[u8]) -> Result<HashMap<DocId, Vec<u8>>, String> {
             .map_err(|_| format!("Truncated at document {} DocId length", i))?;
         let id_len = u32::from_le_bytes(id_len_bytes) as usize;
         let remaining = remaining_bytes(&cursor);
-        if id_len > remaining {
+        let required_framing = DATA_LENGTH_BYTES + later_record_framing;
+        let available = remaining.checked_sub(required_framing).ok_or_else(|| {
+            format!(
+                "Truncated at document {i}: {remaining} bytes remain, but {required_framing} framing bytes are required"
+            )
+        })?;
+        if id_len > available {
             return Err(format!(
-                "Invalid document {i} DocId length: declared {id_len} bytes, only {remaining} remain"
+                "Invalid document {i} DocId length: declared {id_len} bytes, only {available} available after reserving {required_framing} framing bytes"
             ));
         }
 
@@ -109,9 +129,14 @@ pub fn decode_sdaw(bytes: &[u8]) -> Result<HashMap<DocId, Vec<u8>>, String> {
             .map_err(|_| format!("Truncated at document {} data length", i))?;
         let data_len = u32::from_le_bytes(data_len_bytes) as usize;
         let remaining = remaining_bytes(&cursor);
-        if data_len > remaining {
+        let available = remaining.checked_sub(later_record_framing).ok_or_else(|| {
+            format!(
+                "Truncated at document {i}: {remaining} bytes remain, but {later_record_framing} later-record framing bytes are required"
+            )
+        })?;
+        if data_len > available {
             return Err(format!(
-                "Invalid document {i} data length: declared {data_len} bytes, only {remaining} remain"
+                "Invalid document {i} data length: declared {data_len} bytes, only {available} available after reserving {later_record_framing} framing bytes"
             ));
         }
 
@@ -188,18 +213,34 @@ mod tests {
     }
 
     #[test]
+    fn decode_rejects_document_count_that_cannot_fit_before_preallocating() {
+        let mut buf = Vec::new();
+        buf.extend_from_slice(SDAW_MAGIC);
+        buf.extend_from_slice(&FORMAT_VERSION.to_le_bytes());
+        buf.extend_from_slice(&u16::MAX.to_le_bytes());
+
+        let error = decode_sdaw(&buf).expect_err("impossible document count must be rejected");
+
+        assert_eq!(
+            error,
+            "Invalid document count: declared 65535, but at most 0 records fit in 0 remaining bytes"
+        );
+    }
+
+    #[test]
     fn decode_rejects_doc_id_length_larger_than_remaining_input_before_allocating() {
         let mut buf = Vec::new();
         buf.extend_from_slice(SDAW_MAGIC);
         buf.extend_from_slice(&FORMAT_VERSION.to_le_bytes());
         buf.extend_from_slice(&1u16.to_le_bytes());
         buf.extend_from_slice(&u32::MAX.to_le_bytes());
+        buf.extend_from_slice(&0u32.to_le_bytes());
 
         let error = decode_sdaw(&buf).expect_err("oversized DocId length must be rejected");
 
         assert_eq!(
             error,
-            "Invalid document 0 DocId length: declared 4294967295 bytes, only 0 remain"
+            "Invalid document 0 DocId length: declared 4294967295 bytes, only 0 available after reserving 4 framing bytes"
         );
     }
 
@@ -217,7 +258,42 @@ mod tests {
 
         assert_eq!(
             error,
-            "Invalid document 0 data length: declared 4294967295 bytes, only 0 remain"
+            "Invalid document 0 data length: declared 4294967295 bytes, only 0 available after reserving 0 framing bytes"
+        );
+    }
+
+    #[test]
+    fn decode_reserves_current_data_length_and_later_record_framing_before_doc_id() {
+        let mut buf = Vec::new();
+        buf.extend_from_slice(SDAW_MAGIC);
+        buf.extend_from_slice(&FORMAT_VERSION.to_le_bytes());
+        buf.extend_from_slice(&2u16.to_le_bytes());
+        buf.extend_from_slice(&5u32.to_le_bytes());
+        buf.extend_from_slice(&[0u8; 12]);
+
+        let error = decode_sdaw(&buf).expect_err("DocId must leave all record framing intact");
+
+        assert_eq!(
+            error,
+            "Invalid document 0 DocId length: declared 5 bytes, only 0 available after reserving 12 framing bytes"
+        );
+    }
+
+    #[test]
+    fn decode_reserves_later_record_framing_before_document_data() {
+        let mut buf = Vec::new();
+        buf.extend_from_slice(SDAW_MAGIC);
+        buf.extend_from_slice(&FORMAT_VERSION.to_le_bytes());
+        buf.extend_from_slice(&2u16.to_le_bytes());
+        buf.extend_from_slice(&0u32.to_le_bytes());
+        buf.extend_from_slice(&5u32.to_le_bytes());
+        buf.extend_from_slice(&[0u8; 8]);
+
+        let error = decode_sdaw(&buf).expect_err("data must leave later record framing intact");
+
+        assert_eq!(
+            error,
+            "Invalid document 0 data length: declared 5 bytes, only 0 available after reserving 8 framing bytes"
         );
     }
 

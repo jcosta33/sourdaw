@@ -79,6 +79,13 @@ export async function loadSampleFromPath(
 
     try {
         const result = await loadSample(instanceId, filePath);
+        if (result.decodeWarningCount > 0) {
+            const packetLabel = result.decodeWarningCount === 1 ? 'packet' : 'packets';
+            logger.warn(
+                `Sample imported after skipping ${String(result.decodeWarningCount)} corrupt audio ${packetLabel}:`,
+                result.decodeWarnings
+            );
+        }
 
         const fileName = basename_from_path(filePath);
         const meta: SampleMeta = {

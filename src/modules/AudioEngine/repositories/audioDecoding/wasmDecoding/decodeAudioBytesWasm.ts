@@ -54,9 +54,18 @@ export async function decodeAudioBytesWasm(bytes: ArrayBuffer): Promise<WasmDeco
         const sampleRate = decoded.sample_rate;
         const channels = decoded.channels;
         const totalFrames = decoded.total_frames;
+        const decodeWarningCount = decoded.decode_warning_count;
+        const decodeWarningSummary = decoded.decode_warning_summary;
         if (totalFrames === 0 || channels === 0 || sampleRate === 0) {
             decoded.free();
             return null;
+        }
+        if (decodeWarningCount > 0) {
+            const packetLabel = decodeWarningCount === 1 ? 'packet' : 'packets';
+            logger.warn(
+                `[wasmDecoding] skipped ${String(decodeWarningCount)} corrupt audio ${packetLabel}:`,
+                decodeWarningSummary
+            );
         }
         const interleaved = decoded.take_samples();
         // take_samples consumed the instance — do NOT call .free() in finally.
