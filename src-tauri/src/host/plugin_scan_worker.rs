@@ -1,0 +1,285 @@
+use daw_plugin_host::scanner::{extract_clap_metadata, ClapDescriptorMetadata};
+use serde::{Deserialize, Serialize};
+use std::ffi::OsString;
+use std::fs::{self, OpenOptions};
+use std::io::Write;
+use std::path::{Path, PathBuf};
+use std::process::{Child, Command, ExitStatus, Stdio};
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+
+pub const WORKER_ARGUMENT: &str = "--sourdaw-plugin-scan-worker";
+const WORKER_TIMEOUT: Duration = Duration::from_secs(3);
+const MAX_RESPONSE_BYTES: u64 = 256 * 1024;
+static NEXT_RESPONSE_ID: AtomicU64 = AtomicU64::new(0);
+#[derive(Serialize, Deserialize)]
+struct WorkerResponse {
+    worker_pid: u32,
+    result: Result<ClapDescriptorMetadata, String>,
+}
+
+struct ResponseDirectory {
+    path: PathBuf,
+}
+impl ResponseDirectory {
+    fn create() -> Result<Self, String> {
+        let timestamp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map_err(|error| format!("Cannot create plugin scan response path: {error}"))?
+            .as_nanos();
+
+        for _ in 0..8 {
+            let sequence = NEXT_RESPONSE_ID.fetch_add(1, Ordering::Relaxed);
+            let path = std::env::temp_dir().join(format!(
+                "sourdaw-plugin-scan-{}-{timestamp}-{sequence}",
+                std::process::id()
+            ));
+            let mut builder = fs::DirBuilder::new();
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::DirBuilderExt;
+                builder.mode(0o700);
+            }
+            match builder.create(&path) {
+                Ok(()) => return Ok(Self { path }),
+                Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => continue,
+                Err(error) => {
+                    return Err(format!(
+                        "Cannot create plugin scan response directory: {error}"
+                    ));
+                }
+            }
+        }
+
+        Err("Cannot allocate a unique plugin scan response directory".to_string())
+    }
+
+    fn response_path(&self) -> PathBuf {
+        self.path.join("metadata.json")
+    }
+}
+impl Drop for ResponseDirectory {
+    fn drop(&mut self) {
+        let _ = fs::remove_dir_all(&self.path);
+    }
+}
+
+pub fn run_from_process_args() -> Option<i32> {
+    run_from_args(std::env::args_os())
+}
+
+fn run_from_args(args: impl IntoIterator<Item = OsString>) -> Option<i32> {
+    let mut args = args.into_iter();
+    let _executable = args.next();
+    if args.next().as_deref() != Some(std::ffi::OsStr::new(WORKER_ARGUMENT)) {
+        return None;
+    }
+
+    let Some(plugin_path) = args.next() else {
+        return Some(2);
+    };
+    let Some(response_path) = args.next() else {
+        return Some(2);
+    };
+    if args.next().is_some() {
+        return Some(2);
+    }
+
+    let response = WorkerResponse {
+        worker_pid: std::process::id(),
+        result: extract_clap_metadata(Path::new(&plugin_path)),
+    };
+    let result = write_response(Path::new(&response_path), &response);
+    Some(if result.is_ok() { 0 } else { 2 })
+}
+
+fn write_response(path: &Path, response: &WorkerResponse) -> Result<(), String> {
+    let bytes = serde_json::to_vec(response)
+        .map_err(|error| format!("Cannot serialize plugin scan response: {error}"))?;
+    if bytes.len() as u64 > MAX_RESPONSE_BYTES {
+        return Err("Plugin scan response exceeded its byte limit".to_string());
+    }
+
+    let mut file = OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(path)
+        .map_err(|error| format!("Cannot create plugin scan response: {error}"))?;
+    file.write_all(&bytes)
+        .map_err(|error| format!("Cannot write plugin scan response: {error}"))
+}
+
+pub fn scan_clap_metadata(path: &Path) -> Result<ClapDescriptorMetadata, String> {
+    let executable = std::env::current_exe()
+        .map_err(|error| format!("Cannot resolve plugin scan helper executable: {error}"))?;
+    let response_directory = ResponseDirectory::create()?;
+    let response_path = response_directory.response_path();
+
+    let mut command = Command::new(executable);
+    command
+        .arg(WORKER_ARGUMENT)
+        .arg(path)
+        .arg(&response_path)
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null());
+    let status = run_bounded(&mut command, WORKER_TIMEOUT)?;
+    if !status.success() {
+        return Err(format!(
+            "Plugin scan helper exited unsuccessfully for {}",
+            path.display()
+        ));
+    }
+
+    let metadata = fs::metadata(&response_path)
+        .map_err(|error| format!("Plugin scan helper returned no metadata: {error}"))?;
+    if metadata.len() > MAX_RESPONSE_BYTES {
+        return Err("Plugin scan helper response exceeded its byte limit".to_string());
+    }
+    let bytes = fs::read(&response_path)
+        .map_err(|error| format!("Cannot read plugin scan helper response: {error}"))?;
+    let response: WorkerResponse = serde_json::from_slice(&bytes)
+        .map_err(|error| format!("Plugin scan helper returned invalid metadata: {error}"))?;
+    if response.worker_pid == std::process::id() {
+        return Err("Plugin metadata extraction did not cross a process boundary".to_string());
+    }
+    response.result
+}
+
+fn run_bounded(command: &mut Command, timeout: Duration) -> Result<ExitStatus, String> {
+    let mut child = command
+        .spawn()
+        .map_err(|error| format!("Cannot start plugin scan helper: {error}"))?;
+    wait_bounded(&mut child, timeout)
+}
+
+fn wait_bounded(child: &mut Child, timeout: Duration) -> Result<ExitStatus, String> {
+    let deadline = Instant::now() + timeout;
+    loop {
+        match child.try_wait() {
+            Ok(Some(status)) => return Ok(status),
+            Ok(None) if Instant::now() < deadline => {
+                std::thread::sleep(Duration::from_millis(10));
+            }
+            Ok(None) => {
+                let _ = child.kill();
+                let _ = child.wait();
+                return Err("Plugin scan helper timed out".to_string());
+            }
+            Err(error) => return Err(format!("Cannot observe plugin scan helper: {error}")),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn build_hostile_clap(test_name: &str) -> (PathBuf, PathBuf) {
+        let root = std::env::temp_dir().join(format!(
+            "sourdaw-hostile-clap-{test_name}-{}",
+            std::process::id()
+        ));
+        fs::create_dir_all(&root).expect("hostile CLAP fixture directory should be created");
+        let source_path = root.join("hostile_clap.rs");
+        let plugin_path = root.join("hostile.clap");
+        fs::write(
+            &source_path,
+            r#"
+use std::ffi::{c_char, c_void};
+
+#[repr(C)]
+struct Version { major: u32, minor: u32, revision: u32 }
+
+#[repr(C)]
+struct Entry {
+    version: Version,
+    init: Option<unsafe extern "C" fn(*const c_char) -> bool>,
+    deinit: Option<unsafe extern "C" fn()>,
+    get_factory: Option<unsafe extern "C" fn(*const c_char) -> *const c_void>,
+}
+
+unsafe extern "C" fn init(_: *const c_char) -> bool {
+    if std::env::var_os("SOURDAW_TEST_PLUGIN_HANG").is_some() {
+        loop { std::thread::sleep(std::time::Duration::from_secs(1)); }
+    }
+    std::process::abort();
+}
+
+#[no_mangle]
+static clap_entry: Entry = Entry {
+    version: Version { major: 1, minor: 2, revision: 0 },
+    init: Some(init),
+    deinit: None,
+    get_factory: None,
+};
+"#,
+        )
+        .expect("hostile CLAP fixture source should be written");
+        let status = Command::new(std::env::var_os("RUSTC").unwrap_or_else(|| "rustc".into()))
+            .args(["--crate-type", "cdylib", "--edition", "2021"])
+            .arg(&source_path)
+            .arg("-o")
+            .arg(&plugin_path)
+            .status()
+            .expect("rustc should compile the hostile CLAP fixture");
+        assert!(status.success());
+        (root, plugin_path)
+    }
+    #[test]
+    fn crashed_helper_does_not_take_down_the_supervisor() {
+        if let Some(path) = std::env::var_os("SOURDAW_TEST_PLUGIN_PATH") {
+            let _ = extract_clap_metadata(Path::new(&path));
+            panic!("hostile CLAP fixture should abort during initialization");
+        }
+
+        let (fixture_root, plugin_path) = build_hostile_clap("crash");
+        let mut command =
+            Command::new(std::env::current_exe().expect("test executable should exist"));
+        command
+            .arg("--exact")
+            .arg(
+                "host::plugin_scan_worker::tests::crashed_helper_does_not_take_down_the_supervisor",
+            )
+            .env("SOURDAW_TEST_PLUGIN_PATH", &plugin_path)
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null());
+
+        let status = run_bounded(&mut command, Duration::from_secs(1))
+            .expect("the crashed child should still be observable");
+        let _ = fs::remove_dir_all(fixture_root);
+        assert!(!status.success());
+    }
+
+    #[test]
+    fn hung_helper_is_killed_at_the_deadline() {
+        if let Some(path) = std::env::var_os("SOURDAW_TEST_PLUGIN_PATH") {
+            let _ = extract_clap_metadata(Path::new(&path));
+            panic!("hostile CLAP fixture should hang during initialization");
+        }
+
+        let (fixture_root, plugin_path) = build_hostile_clap("hang");
+        let mut command =
+            Command::new(std::env::current_exe().expect("test executable should exist"));
+        command
+            .arg("--exact")
+            .arg("host::plugin_scan_worker::tests::hung_helper_is_killed_at_the_deadline")
+            .env("SOURDAW_TEST_PLUGIN_PATH", &plugin_path)
+            .env("SOURDAW_TEST_PLUGIN_HANG", "1")
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null());
+
+        let error = run_bounded(&mut command, Duration::from_millis(50))
+            .expect_err("the hung child should exceed the deadline");
+        let _ = fs::remove_dir_all(fixture_root);
+        assert_eq!(error, "Plugin scan helper timed out");
+    }
+
+    #[test]
+    fn unrelated_process_arguments_do_not_enter_worker_mode() {
+        let args = [OsString::from("sourdaw"), OsString::from("--unrelated")];
+        assert_eq!(run_from_args(args), None);
+    }
+}

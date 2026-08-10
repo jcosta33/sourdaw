@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use clap_sys::entry::clap_plugin_entry;
 use clap_sys::factory::plugin_factory::{clap_plugin_factory, CLAP_PLUGIN_FACTORY_ID};
@@ -34,7 +34,7 @@ pub struct ScannedPlugin {
 /// descriptor is already in hand — which is the point: it used to be read,
 /// partly used, and thrown away, and then read a second time by the caller that
 /// wanted the id.
-#[derive(Debug, Clone, Default, PartialEq)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct ClapDescriptorMetadata {
     pub vendor: String,
     pub id: String,
@@ -115,7 +115,11 @@ fn plugin_name_from_path(path: &Path) -> String {
 
 // ── Directory scanning ──────────────────────────────────────────────────
 
-pub fn scan_directory(dir: &Path, plugins: &mut Vec<ScannedPlugin>, errors: &mut Vec<String>) {
+pub fn discover_clap_candidates(
+    dir: &Path,
+    candidates: &mut Vec<PathBuf>,
+    errors: &mut Vec<String>,
+) {
     match path_has_symlink_component(dir) {
         Ok(true) => {
             errors.push(format!("Skipping symlinked plugin path: {}", dir.display()));
@@ -182,29 +186,31 @@ pub fn scan_directory(dir: &Path, plugins: &mut Vec<ScannedPlugin>, errors: &mut
                 continue;
             }
 
-            let name = plugin_name_from_path(&entry_path);
-            let descriptor = extract_clap_metadata(&entry_path);
-            let category = category_from_clap_features(&descriptor.features);
-
-            plugins.push(ScannedPlugin {
-                id: stable_id(&entry_path),
-                name,
-                vendor: descriptor.vendor,
-                format: format.to_string(),
-                category,
-                path: entry_path.to_string_lossy().into_owned(),
-                version: descriptor.version,
-                clap_id: descriptor.id,
-                // Runtime capabilities require a format-specific metadata
-                // reader or a live instance. Discovery must not invent them.
-                num_inputs: 0,
-                num_outputs: 0,
-                num_parameters: 0,
-                has_custom_ui: false,
-            });
+            candidates.push(entry_path);
         } else if is_dir {
-            scan_directory(&entry_path, plugins, errors);
+            discover_clap_candidates(&entry_path, candidates, errors);
         }
+    }
+}
+
+pub fn scanned_plugin(path: &Path, descriptor: ClapDescriptorMetadata) -> ScannedPlugin {
+    let category = category_from_clap_features(&descriptor.features);
+
+    ScannedPlugin {
+        id: stable_id(path),
+        name: plugin_name_from_path(path),
+        vendor: descriptor.vendor,
+        format: "clap".to_string(),
+        category,
+        path: path.to_string_lossy().into_owned(),
+        version: descriptor.version,
+        clap_id: descriptor.id,
+        // Runtime capabilities require a live instance. Discovery must not
+        // invent them.
+        num_inputs: 0,
+        num_outputs: 0,
+        num_parameters: 0,
+        has_custom_ui: false,
     }
 }
 
@@ -264,14 +270,14 @@ mod tests {
         std::os::unix::fs::symlink(&outside_plugin, &symlinked_plugin)
             .expect("symlink should be created");
 
-        let mut plugins = Vec::new();
+        let mut candidates = Vec::new();
         let mut errors = Vec::new();
-        scan_directory(&scan_root, &mut plugins, &mut errors);
+        discover_clap_candidates(&scan_root, &mut candidates, &mut errors);
         let _ = std::fs::remove_dir_all(&temp_root);
 
         assert!(
-            plugins.is_empty(),
-            "scanner must not register symlinked plugin paths: {plugins:?}"
+            candidates.is_empty(),
+            "scanner must not register symlinked plugin paths: {candidates:?}"
         );
         assert!(
             errors
@@ -295,18 +301,18 @@ mod tests {
         std::os::unix::fs::symlink(&outside_root, &symlinked_scan_root)
             .expect("scan root symlink should be created");
 
-        let mut plugins = Vec::new();
+        let mut candidates = Vec::new();
         let mut errors = Vec::new();
-        scan_directory(
+        discover_clap_candidates(
             &symlinked_scan_root.join("Vendor"),
-            &mut plugins,
+            &mut candidates,
             &mut errors,
         );
         let _ = std::fs::remove_dir_all(&temp_root);
 
         assert!(
-            plugins.is_empty(),
-            "scanner must not register plugins below symlinked scan roots: {plugins:?}"
+            candidates.is_empty(),
+            "scanner must not register plugins below symlinked scan roots: {candidates:?}"
         );
         assert!(
             errors
@@ -332,15 +338,15 @@ mod tests {
         std::fs::create_dir_all(&audio_unit_bundle)
             .expect("Audio Unit placeholder should be created");
 
-        let mut plugins = Vec::new();
+        let mut candidates = Vec::new();
         let mut errors = Vec::new();
-        scan_directory(&temp_root, &mut plugins, &mut errors);
+        discover_clap_candidates(&temp_root, &mut candidates, &mut errors);
         let _ = std::fs::remove_dir_all(&temp_root);
 
         assert!(errors.is_empty(), "unexpected scan errors: {errors:?}");
         assert!(
-            plugins.is_empty(),
-            "unsupported VST3 and Audio Unit bundles must not appear loadable: {plugins:?}"
+            candidates.is_empty(),
+            "unsupported VST3 and Audio Unit bundles must not appear loadable: {candidates:?}"
         );
     }
 
@@ -432,33 +438,30 @@ mod tests {
 ///
 /// # Safety
 /// Calls into native CLAP plugin entry points.
-pub fn extract_clap_metadata(path: &Path) -> ClapDescriptorMetadata {
+pub fn extract_clap_metadata(path: &Path) -> Result<ClapDescriptorMetadata, String> {
     unsafe {
-        let lib = match Library::new(path) {
-            Ok(l) => l,
-            Err(_) => return ClapDescriptorMetadata::default(),
-        };
+        let lib =
+            Library::new(path).map_err(|error| format!("Cannot load CLAP candidate: {error}"))?;
 
-        let entry: libloading::Symbol<*const clap_plugin_entry> = match lib.get(b"clap_entry\0") {
-            Ok(s) => s,
-            Err(_) => return ClapDescriptorMetadata::default(),
-        };
+        let entry: libloading::Symbol<*const clap_plugin_entry> = lib
+            .get(b"clap_entry\0")
+            .map_err(|error| format!("CLAP candidate has no clap_entry: {error}"))?;
 
         let entry_ptr = *entry;
         if entry_ptr.is_null() {
-            return ClapDescriptorMetadata::default();
+            return Err("CLAP candidate returned a null clap_entry".to_string());
         }
 
         let entry_ref = &*entry_ptr;
 
         let path_c = match CString::new(path.to_string_lossy().as_bytes()) {
             Ok(c) => c,
-            Err(_) => return ClapDescriptorMetadata::default(),
+            Err(_) => return Err("CLAP candidate path contains a null byte".to_string()),
         };
 
         if let Some(init_fn) = entry_ref.init {
             if !init_fn(path_c.as_ptr()) {
-                return ClapDescriptorMetadata::default();
+                return Err("CLAP candidate initialization failed".to_string());
             }
         }
 
@@ -504,43 +507,49 @@ unsafe fn owned_feature_list(features: *const *const i8) -> Vec<String> {
 
 /// Read the descriptor of the factory's first plugin. Called with the entry
 /// already init'd — the caller is responsible for deinit.
-unsafe fn extract_from_factory(entry_ref: &clap_plugin_entry) -> ClapDescriptorMetadata {
+unsafe fn extract_from_factory(
+    entry_ref: &clap_plugin_entry,
+) -> Result<ClapDescriptorMetadata, String> {
     let factory_id = CLAP_PLUGIN_FACTORY_ID.as_ptr() as *const i8;
     let factory_ptr = match entry_ref.get_factory {
         Some(f) => f(factory_id),
-        None => return ClapDescriptorMetadata::default(),
+        None => return Err("CLAP entry has no factory lookup".to_string()),
     };
 
     if factory_ptr.is_null() {
-        return ClapDescriptorMetadata::default();
+        return Err("CLAP entry returned no plugin factory".to_string());
     }
 
     let factory = &*(factory_ptr as *const clap_plugin_factory);
 
     let count = match factory.get_plugin_count {
         Some(f) => f(factory),
-        None => return ClapDescriptorMetadata::default(),
+        None => return Err("CLAP factory has no plugin count".to_string()),
     };
 
     if count == 0 {
-        return ClapDescriptorMetadata::default();
+        return Err("CLAP factory contains no plugins".to_string());
     }
 
     let get_desc = match factory.get_plugin_descriptor {
         Some(f) => f,
-        None => return ClapDescriptorMetadata::default(),
+        None => return Err("CLAP factory has no descriptor lookup".to_string()),
     };
 
     let desc = get_desc(factory, 0);
     if desc.is_null() {
-        return ClapDescriptorMetadata::default();
+        return Err("CLAP factory returned a null descriptor".to_string());
     }
 
     let desc_ref = &*desc;
-    ClapDescriptorMetadata {
+    let metadata = ClapDescriptorMetadata {
         vendor: owned_c_string(desc_ref.vendor),
         id: owned_c_string(desc_ref.id),
         version: owned_c_string(desc_ref.version),
         features: owned_feature_list(desc_ref.features),
+    };
+    if metadata.id.is_empty() {
+        return Err("CLAP descriptor has no stable plugin id".to_string());
     }
+    Ok(metadata)
 }

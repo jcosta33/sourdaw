@@ -3,6 +3,7 @@
 use crate::commands::binary_ipc::{raw_body_bytes, read_percent_encoded_header};
 use crate::host::native_bridge::{ClapPluginSlot, SharedClapPlugin};
 use crate::host::plugin_scan_policy::PluginScanPolicy;
+use crate::host::plugin_scan_worker;
 use crate::state::{AppState, PluginInstanceData, PluginRegistryEntry};
 use cpal::traits::{DeviceTrait, HostTrait};
 use daw_engine::audio_bridge::create_audio_bridge;
@@ -107,7 +108,7 @@ pub async fn scan_plugins(
 ) -> Result<ScanResult, String> {
     let start = std::time::Instant::now();
     let scan_policy = PluginScanPolicy::platform_defaults();
-    let mut plugins = Vec::new();
+    let mut authorized_paths = Vec::new();
     let mut errors = Vec::new();
 
     for scan_path in &paths {
@@ -121,8 +122,30 @@ pub async fn scan_plugins(
             errors.push(format!("Not a directory: {}", scan_path));
             continue;
         }
-        scanner::scan_directory(&path, &mut plugins, &mut errors);
+        authorized_paths.push(path);
     }
+
+    let (plugins, scan_errors) = tokio::task::spawn_blocking(move || {
+        let mut candidates = Vec::new();
+        let mut scan_errors = Vec::new();
+        for path in authorized_paths {
+            scanner::discover_clap_candidates(&path, &mut candidates, &mut scan_errors);
+        }
+        candidates.sort();
+        candidates.dedup();
+
+        let mut plugins = Vec::new();
+        for candidate in candidates {
+            match plugin_scan_worker::scan_clap_metadata(&candidate) {
+                Ok(metadata) => plugins.push(scanner::scanned_plugin(&candidate, metadata)),
+                Err(error) => scan_errors.push(format!("{}: {error}", candidate.display())),
+            }
+        }
+        (plugins, scan_errors)
+    })
+    .await
+    .map_err(|error| format!("Plugin scan task failed: {error}"))?;
+    errors.extend(scan_errors);
 
     // Populate the plugin registry so load_plugin can find them. The scanner
     // already read every CLAP descriptor; this used to re-`dlopen` each one to
