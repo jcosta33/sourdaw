@@ -11,6 +11,7 @@ const mocks = vi.hoisted(() => ({
             tracks: {
                 id: string;
                 name?: string;
+                frozen?: boolean;
                 devices: {
                     id: string;
                     name?: string;
@@ -149,6 +150,35 @@ describe('handleSetDeviceParameter', () => {
         };
 
         expect(handleSetDeviceParameter.execute(action)).toEqual({ status: 'conflict' });
+        expect(mocks.setDeviceParameter).not.toHaveBeenCalled();
+    });
+
+    it('rejects a stale app-owned frozen eligibility guard before mutation', () => {
+        mocks.getTrackStoreState.mockReturnValue({
+            tracks: [
+                {
+                    id: 't1',
+                    frozen: true,
+                    devices: [{ id: 'd1', type: 'compressor', parameterValues: { gain: 0.8 } }],
+                },
+            ],
+        });
+
+        const result = handleSetDeviceParameter.execute({
+            type: 'setDeviceParameter',
+            payload: {
+                deviceId: 'd1',
+                paramId: 'gain',
+                value: 0.5,
+                expectedTrackId: 't1',
+                expectedDeviceType: 'compressor',
+                expectedDeviceIds: ['d1'],
+                expectedValue: 0.8,
+                expectedTrackFrozen: false,
+            },
+        });
+
+        expect(result).toEqual({ status: 'conflict' });
         expect(mocks.setDeviceParameter).not.toHaveBeenCalled();
     });
 

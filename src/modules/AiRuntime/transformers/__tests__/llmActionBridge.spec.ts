@@ -2599,6 +2599,7 @@ describe('bridgeLlmToolCalls', () => {
                     expectedDeviceType: 'EQ',
                     expectedDeviceIds: ['device-eq'],
                     expectedValue: 4,
+                    expectedTrackFrozen: false,
                 },
             },
         ]);
@@ -2642,6 +2643,7 @@ describe('bridgeLlmToolCalls', () => {
                     expectedDeviceType: 'fermenter',
                     expectedDeviceIds: ['device-fermenter'],
                     expectedValue: 0,
+                    expectedTrackFrozen: false,
                 },
             },
         ]);
@@ -2676,6 +2678,7 @@ describe('bridgeLlmToolCalls', () => {
                         expectedDeviceType: 'EQ',
                         expectedDeviceIds: ['device-eq'],
                         expectedValue: 1200,
+                        expectedTrackFrozen: false,
                     },
                 },
                 { type: 'bypassDevice', payload: { deviceId: 'device-eq', bypassed: true } },

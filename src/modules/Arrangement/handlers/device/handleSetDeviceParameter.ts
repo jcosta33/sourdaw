@@ -12,13 +12,15 @@ function hasExecutionGuards(action: {
         expectedDeviceType?: string;
         expectedDeviceIds?: readonly string[];
         expectedValue?: number;
+        expectedTrackFrozen?: boolean;
     };
 }): boolean {
     return (
         action.payload.expectedTrackId !== undefined ||
         action.payload.expectedDeviceType !== undefined ||
         action.payload.expectedDeviceIds !== undefined ||
-        action.payload.expectedValue !== undefined
+        action.payload.expectedValue !== undefined ||
+        action.payload.expectedTrackFrozen !== undefined
     );
 }
 
@@ -30,6 +32,7 @@ function executionGuardsMatch(action: {
         expectedDeviceType?: string;
         expectedDeviceIds?: readonly string[];
         expectedValue?: number;
+        expectedTrackFrozen?: boolean;
     };
 }): boolean {
     if (!hasExecutionGuards(action)) {
@@ -50,7 +53,8 @@ function executionGuardsMatch(action: {
             (action.payload.expectedDeviceIds.length === currentDeviceIds?.length &&
                 action.payload.expectedDeviceIds.every((deviceId, index) => currentDeviceIds[index] === deviceId))) &&
         (action.payload.expectedValue === undefined ||
-            device.parameterValues[action.payload.paramId] === action.payload.expectedValue)
+            device.parameterValues[action.payload.paramId] === action.payload.expectedValue) &&
+        (action.payload.expectedTrackFrozen === undefined || owner.frozen === action.payload.expectedTrackFrozen)
     );
 }
 
@@ -136,6 +140,7 @@ export const handleSetDeviceParameter = createHandler<'setDeviceParameter'>({
                                   paramId: alpha.payload.paramId,
                                   value: alpha.payload.value,
                               }),
+                              expectedTrackFrozen: owner?.frozen,
                           },
                       }
                     : null,

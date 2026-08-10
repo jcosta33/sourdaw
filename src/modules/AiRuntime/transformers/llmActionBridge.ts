@@ -1845,6 +1845,7 @@ function bridgeToolCall({
                 expectedDeviceType: target.device.type,
                 expectedDeviceIds: target.track.devices.map((device) => device.id),
                 expectedValue: parameter.value,
+                expectedTrackFrozen: false,
             },
         };
     }

@@ -256,6 +256,7 @@ const validators = {
             'expectedDeviceType',
             'expectedDeviceIds',
             'expectedValue',
+            'expectedTrackFrozen',
         ]) &&
         isNonEmptyString(param.deviceId) &&
         isNonEmptyString(param.paramId) &&
@@ -263,7 +264,8 @@ const validators = {
         isOptional(param.expectedTrackId, isNonEmptyString) &&
         isOptional(param.expectedDeviceType, isNonEmptyString) &&
         isOptional(param.expectedDeviceIds, isUniqueNonEmptyStringArray) &&
-        isOptional(param.expectedValue, isNumber),
+        isOptional(param.expectedValue, isNumber) &&
+        isOptional(param.expectedTrackFrozen, (value): value is boolean => typeof value === 'boolean'),
     loadExternalPlugin: (param): param is PayloadOf<'loadExternalPlugin'> => isObj(param) && isString(param.pluginPath),
 
     // Transport (pre-existing range checks from §91)

@@ -684,6 +684,7 @@ export type AppAction =
               expectedDeviceType?: string;
               expectedDeviceIds?: readonly string[];
               expectedValue?: number;
+              expectedTrackFrozen?: boolean;
           };
       }
     | { type: 'setExternalPluginState'; payload: { deviceId: string; stateChunk: string } }

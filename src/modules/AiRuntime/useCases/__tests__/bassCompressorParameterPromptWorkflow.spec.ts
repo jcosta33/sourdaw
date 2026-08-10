@@ -21,7 +21,7 @@ import {
 
 import { cloudSession } from '../../repositories/cloudLlm/cloudSession';
 import { generateWebLlmCompletion } from '../../repositories/webLlm/generateWebLlmCompletion';
-import { clearAiHistory } from '../../stores/aiActionHistoryStore';
+import { aiActionHistoryStore, clearAiHistory } from '../../stores/aiActionHistoryStore';
 import { chatStore } from '../../stores/chatStore';
 import {
     clearPendingActionConfirmations,
@@ -168,6 +168,19 @@ function getCompressor(): Track['devices'][number] {
     return device;
 }
 
+function simulateCollaboratorFreeze(frozen: boolean): void {
+    const track = getTrack('track-bass-di');
+    track.frozen = frozen;
+    track.freezeState = frozen
+        ? {
+              status: 'frozen',
+              freezeId: 'freeze-collaborator',
+              frozenBufferId: 'buffer-collaborator',
+              sourceContentHash: 'hash-collaborator',
+          }
+        : { status: 'unfrozen' };
+}
+
 function getConfirmation() {
     return getPendingActionConfirmation(
         chatStore.value?.messages.find((message) => message.pendingActionConfirmationId)?.pendingActionConfirmationId ??
@@ -187,6 +200,7 @@ function createGuardedActions(ratioExpectedValue = 2) {
                 expectedDeviceType: 'builtin-compressor',
                 expectedDeviceIds: DEVICE_IDS,
                 expectedValue: -24,
+                expectedTrackFrozen: false,
             },
         },
         {
@@ -199,6 +213,7 @@ function createGuardedActions(ratioExpectedValue = 2) {
                 expectedDeviceType: 'builtin-compressor',
                 expectedDeviceIds: DEVICE_IDS,
                 expectedValue: ratioExpectedValue,
+                expectedTrackFrozen: false,
             },
         },
     ];
@@ -321,6 +336,7 @@ describe('Bass DI compressor parameter prompt workflow', () => {
                     expectedDeviceType: 'builtin-compressor',
                     expectedDeviceIds: DEVICE_IDS,
                     expectedValue: -24,
+                    expectedTrackFrozen: false,
                 },
             },
             {
@@ -333,6 +349,7 @@ describe('Bass DI compressor parameter prompt workflow', () => {
                     expectedDeviceType: 'builtin-compressor',
                     expectedDeviceIds: DEVICE_IDS,
                     expectedValue: 2,
+                    expectedTrackFrozen: false,
                 },
             },
         ]);
@@ -584,6 +601,55 @@ describe('Bass DI compressor parameter prompt workflow', () => {
 
         expect(runtimeMocks.runtimeParameterValues.get('comp-threshold')).toBe(-24);
         expect(getCompressor().parameterValues).toEqual(INITIAL_PARAMETERS);
+    });
+
+    it('conflicts a confirmed batch after Bass DI freezes without any project, runtime, receipt, or history write', async () => {
+        await sendChatMessage(PROMPT);
+        const confirmation = getConfirmation();
+        simulateCollaboratorFreeze(true);
+        runtimeMocks.updateDeviceParam.mockClear();
+
+        const result = await confirmPendingChatActions({ confirmationId: confirmation?.id ?? '' });
+
+        expect(result).toMatchObject({ status: 'failed' });
+        expect(getCompressor().parameterValues).toEqual(INITIAL_PARAMETERS);
+        expect(runtimeMocks.updateDeviceParam).not.toHaveBeenCalled();
+        expect(undoStore.value?.past).toEqual([]);
+        expect(aiActionHistoryStore.value?.groups).toEqual([]);
+        const terminalMessage = chatStore.value?.messages.find(
+            (message) => message.pendingActionConfirmationId === confirmation?.id
+        );
+        expect(terminalMessage?.pendingActionConfirmationStatus).toBe('failed');
+        expect(terminalMessage?.content).not.toContain('Outcome: committed');
+        expect(terminalMessage?.content).not.toContain('Executed after confirmation');
+    });
+
+    it('keeps grouped redo whole and retryable when a collaborator freezes Bass DI', async () => {
+        await sendChatMessage(PROMPT);
+        const confirmation = getConfirmation();
+        await expect(confirmPendingChatActions({ confirmationId: confirmation?.id ?? '' })).resolves.toEqual({
+            status: 'executed',
+        });
+        await undo();
+        expect(getCompressor().parameterValues).toEqual(INITIAL_PARAMETERS);
+        expect(undoStore.value?.future).toHaveLength(2);
+
+        simulateCollaboratorFreeze(true);
+        runtimeMocks.updateDeviceParam.mockClear();
+        await redo();
+
+        expect(getCompressor().parameterValues).toEqual(INITIAL_PARAMETERS);
+        expect(runtimeMocks.updateDeviceParam).not.toHaveBeenCalled();
+        expect(undoStore.value?.future).toHaveLength(2);
+
+        simulateCollaboratorFreeze(false);
+        await redo();
+        expect(getCompressor().parameterValues).toEqual({
+            ...INITIAL_PARAMETERS,
+            'comp-threshold': -18,
+            'comp-ratio': 4,
+        });
+        expect(undoStore.value?.future).toEqual([]);
     });
 
     it('keeps grouped undo and redo atomic across collaborator conflicts', async () => {
