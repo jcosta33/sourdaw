@@ -56,7 +56,7 @@ describe('extractSingleGuardedZipEntry', () => {
         const promise = extractSingleGuardedZipEntry({ bytes: new Uint8Array([1]), suffix: '.onnx' });
         const worker = ControlledWorker.instances[0];
 
-        worker?.respond({ type: 'error', message: 'Unsafe archive path' });
+        worker?.respond({ type: 'error', code: 'invalid-archive', message: 'Unsafe archive path' });
 
         await expect(promise).rejects.toThrow('Unsafe archive path');
         expect(worker?.terminate).toHaveBeenCalledOnce();

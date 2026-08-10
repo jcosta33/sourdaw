@@ -25,6 +25,7 @@ import { downloadModel } from '../modelDownloadManager';
 
 type WriteCall = number; // byteLength of each streamed chunk
 let lastWritable: { writes: WriteCall[]; closed: boolean; aborted: boolean } | null = null;
+let pendingWrite: { promise: Promise<void>; resolve: () => void } | null = null;
 
 function installStorage(): void {
     function makeWritable(): FileSystemWritableFileStream {
@@ -33,7 +34,7 @@ function installStorage(): void {
         return {
             write(chunk: ArrayBufferView | ArrayBuffer): Promise<void> {
                 state.writes.push('byteLength' in chunk ? chunk.byteLength : (chunk as ArrayBuffer).byteLength);
-                return Promise.resolve();
+                return pendingWrite?.promise ?? Promise.resolve();
             },
             close(): Promise<void> {
                 state.closed = true;
@@ -94,6 +95,7 @@ type GuardedZipWorkerResponse =
     | { type: 'success'; path: string; data: ArrayBuffer }
     | {
           type: 'error';
+          code: 'invalid-archive';
           message: string;
       };
 
@@ -133,7 +135,11 @@ class FakeGuardedZipWorker {
                 } as MessageEvent<GuardedZipWorkerResponse>);
             } catch (error) {
                 this.onmessage?.({
-                    data: { type: 'error', message: error instanceof Error ? error.message : String(error) },
+                    data: {
+                        type: 'error',
+                        code: 'invalid-archive',
+                        message: error instanceof Error ? error.message : String(error),
+                    },
                 } as MessageEvent<GuardedZipWorkerResponse>);
             }
         });
@@ -147,7 +153,7 @@ class FakeGuardedZipWorker {
 
 // --- fetch helpers ----------------------------------------------------------
 
-function streamingResponse(chunks: Uint8Array[], totalBytes: number): Response {
+function streamingResponse(chunks: Uint8Array[], totalBytes: number, cancel = vi.fn()): Response {
     let i = 0;
     return {
         ok: true,
@@ -157,6 +163,7 @@ function streamingResponse(chunks: Uint8Array[], totalBytes: number): Response {
         body: {
             getReader() {
                 return {
+                    cancel,
                     read(): Promise<{ done: boolean; value?: Uint8Array }> {
                         if (i < chunks.length) {
                             return Promise.resolve({ done: false, value: chunks[i++] });
@@ -175,6 +182,7 @@ beforeEach(() => {
     channelConstructions = 0;
     openChannels = 0;
     lastWritable = null;
+    pendingWrite = null;
     FakeGuardedZipWorker.instances = [];
     FakeGuardedZipWorker.holdResponses = false;
     vi.stubGlobal('BroadcastChannel', FakeBroadcastChannel);
@@ -325,6 +333,37 @@ describe('downloadModel — cancellation', () => {
         expect(lastWritable).toBeNull();
         expect(stages).not.toContain('complete');
     });
+
+    it('aborts a pending final OPFS write without publishing the model', async () => {
+        let resolveWrite: (() => void) | undefined;
+        pendingWrite = {
+            promise: new Promise<void>((resolve) => {
+                resolveWrite = resolve;
+            }),
+            resolve: () => resolveWrite?.(),
+        };
+        const controller = new AbortController();
+        const zipped = zipSync({ 'model/weights.onnx': new Uint8Array([10, 20, 30, 40]) });
+        vi.stubGlobal(
+            'fetch',
+            vi.fn(() => Promise.resolve(streamingResponse([zipped], zipped.length)))
+        );
+        const stages: string[] = [];
+        const promise = downloadModel({
+            spec: { ...baseSpec, url: 'https://cdn.example/violin-1.zip', sizeBytes: zipped.length },
+            signal: controller.signal,
+            onProgress: (payload) => stages.push(payload.stage),
+        });
+
+        await vi.waitFor(() => expect(lastWritable?.writes).toEqual([4]));
+        controller.abort();
+        pendingWrite.resolve();
+
+        await expect(promise).rejects.toMatchObject({ name: 'AbortError' });
+        expect(lastWritable?.aborted).toBe(true);
+        expect(lastWritable?.closed).toBe(false);
+        expect(stages).not.toContain('complete');
+    });
 });
 
 describe('downloadModel — buffered path (sha256 verification + ZIP extraction)', () => {
@@ -396,6 +435,43 @@ describe('downloadModel — buffered path (sha256 verification + ZIP extraction)
         expect(FakeGuardedZipWorker.instances[0]?.terminate).toHaveBeenCalledOnce();
     });
 
+    it('recognizes container pathnames regardless of URL query, fragment, or extension case', async () => {
+        const onnxBytes = new Uint8Array([10, 20, 30, 40]);
+        const zipped = zipSync({ 'model/weights.onnx': onnxBytes });
+        vi.stubGlobal(
+            'fetch',
+            vi.fn(() => Promise.resolve(streamingResponse([zipped], zipped.length)))
+        );
+
+        await downloadModel({
+            spec: {
+                ...baseSpec,
+                url: 'https://cdn.example/violin-1.ZIP?download=1#model',
+                sizeBytes: zipped.length,
+            },
+        });
+
+        expect(FakeGuardedZipWorker.instances).toHaveLength(1);
+        expect(lastWritable?.writes).toEqual([onnxBytes.length]);
+    });
+
+    it('cancels the reader before buffering a declared oversized archive', async () => {
+        const cancel = vi.fn(() => Promise.resolve());
+        vi.stubGlobal(
+            'fetch',
+            vi.fn(() => Promise.resolve(streamingResponse([new Uint8Array([1])], 2 * 1024 * 1024 * 1024 + 1, cancel)))
+        );
+
+        await expect(
+            downloadModel({
+                spec: { ...baseSpec, url: 'https://cdn.example/oversized.zip', sizeBytes: 1 },
+            })
+        ).rejects.toThrow(/archive byte limit/);
+        expect(cancel).toHaveBeenCalledOnce();
+        expect(FakeGuardedZipWorker.instances).toEqual([]);
+        expect(lastWritable).toBeNull();
+    });
+
     it('rejects an unsafe model archive without publishing an OPFS artifact', async () => {
         vi.useFakeTimers();
         const zipped = zipSync({ '../weights.onnx': new Uint8Array([10, 20, 30, 40]) });
@@ -415,7 +491,7 @@ describe('downloadModel — buffered path (sha256 verification + ZIP extraction)
             await vi.runAllTimersAsync();
             await rejection;
 
-            expect(FakeGuardedZipWorker.instances).toHaveLength(3);
+            expect(FakeGuardedZipWorker.instances).toHaveLength(1);
             expect(lastWritable).toBeNull();
             expect(stages).not.toContain('storing');
             expect(stages).not.toContain('complete');

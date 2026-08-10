@@ -9,6 +9,7 @@ export type GuardedZipWorkerResponse =
     | { type: 'success'; path: string; data: ArrayBuffer }
     | {
           type: 'error';
+          code: 'invalid-archive';
           message: string;
       };
 
@@ -40,7 +41,9 @@ export function runGuardedZipWorkerRequest(request: GuardedZipWorkerRequest): Ru
     if (!data) {
         throw new Error(`Archive extraction did not produce ${selectedPath}`);
     }
-    const transferableData = new Uint8Array(new ArrayBuffer(data.byteLength));
-    transferableData.set(data);
-    return { path: selectedPath, data: transferableData };
+    const buffer = data.buffer;
+    if (!(buffer instanceof ArrayBuffer) || data.byteOffset !== 0 || data.byteLength !== buffer.byteLength) {
+        throw new Error(`Archive extraction produced a non-transferable view for ${selectedPath}`);
+    }
+    return { path: selectedPath, data: new Uint8Array(buffer) };
 }

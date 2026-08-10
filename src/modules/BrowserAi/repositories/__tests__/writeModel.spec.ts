@@ -25,4 +25,32 @@ describe('writeModel', () => {
         );
         expect(writable.abort).toHaveBeenCalledOnce();
     });
+
+    it('aborts a pending write when its signal is cancelled', async () => {
+        let resolveWrite: (() => void) | undefined;
+        const writePromise = new Promise<void>((resolve) => {
+            resolveWrite = resolve;
+        });
+        const writable = {
+            write: vi.fn(() => writePromise),
+            close: vi.fn(() => Promise.resolve()),
+            abort: vi.fn(() => Promise.resolve()),
+        } as unknown as FileSystemWritableFileStream;
+        vi.mocked(createModelWritable).mockResolvedValue(writable);
+        const controller = new AbortController();
+
+        const promise = writeModel({
+            family: 'ddsp',
+            modelId: 'violin',
+            data: new ArrayBuffer(4),
+            signal: controller.signal,
+        });
+        await vi.waitFor(() => expect(writable.write).toHaveBeenCalledOnce());
+        controller.abort();
+        resolveWrite?.();
+
+        await expect(promise).rejects.toMatchObject({ name: 'AbortError' });
+        expect(writable.abort).toHaveBeenCalledOnce();
+        expect(writable.close).not.toHaveBeenCalled();
+    });
 });

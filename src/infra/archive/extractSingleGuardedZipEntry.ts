@@ -1,3 +1,4 @@
+import { ZipArchiveError } from './extractGuardedZip';
 import { type GuardedZipWorkerRequest, type GuardedZipWorkerResponse } from './runGuardedZipWorkerRequest';
 
 type ExtractSingleGuardedZipEntryInput = {
@@ -42,7 +43,7 @@ export function extractSingleGuardedZipEntry({
         worker.onmessage = (event: MessageEvent<GuardedZipWorkerResponse>) => {
             const response = event.data;
             if (response.type === 'error') {
-                finish(() => reject(new Error(response.message)));
+                finish(() => reject(new ZipArchiveError(response.message)));
                 return;
             }
             finish(() => resolve({ path: response.path, data: new Uint8Array(response.data) }));

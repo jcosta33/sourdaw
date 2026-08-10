@@ -9,6 +9,7 @@
  * - LRU eviction when the 2 GB cache limit is exceeded
  */
 
+import { MAX_GUARDED_ZIP_BYTES, ZipArchiveError } from '#/infra/archive/extractGuardedZip';
 import { extractSingleGuardedZipEntry } from '#/infra/archive/extractSingleGuardedZipEntry';
 import { inject } from '#/infra/di/inject';
 import { logger } from '#/infra/logger/appLogger';
@@ -66,6 +67,16 @@ function abortableSleep(ms: number, signal?: AbortSignal): Promise<void> {
         }
         signal?.addEventListener('abort', onAbort, { once: true });
     });
+}
+
+function isModelArchiveUrl(url: string): boolean {
+    try {
+        const pathname = new URL(url, 'https://sourdaw.invalid').pathname.toLowerCase();
+        return pathname.endsWith('.oudep') || pathname.endsWith('.zip');
+    } catch {
+        const pathname = url.split(/[?#]/u, 1)[0]?.toLowerCase() ?? '';
+        return pathname.endsWith('.oudep') || pathname.endsWith('.zip');
+    }
 }
 
 /**
@@ -139,7 +150,7 @@ export const downloadModel = inject({ logger })(
                             throw new Error('Response body not readable');
                         }
 
-                        const isContainer = url.endsWith('.oudep') || url.endsWith('.zip');
+                        const isContainer = isModelArchiveUrl(url);
                         // We must buffer the bytes in memory only when we have to inspect the
                         // whole payload — SHA256 verification (no streaming digest in WebCrypto)
                         // or ZIP/oudep extraction. Otherwise we stream chunks straight to OPFS.
@@ -150,6 +161,12 @@ export const downloadModel = inject({ logger })(
                         let bytesDownloaded = 0;
 
                         try {
+                            if (isContainer && totalBytes > MAX_GUARDED_ZIP_BYTES) {
+                                await reader.cancel();
+                                throw new ZipArchiveError(
+                                    `Model archive byte limit exceeds ${String(MAX_GUARDED_ZIP_BYTES)}`
+                                );
+                            }
                             if (!mustBuffer) {
                                 writable = await createModelWritable({ family, modelId });
                             }
@@ -163,6 +180,12 @@ export const downloadModel = inject({ logger })(
                                     throw new DOMException('Aborted', 'AbortError');
                                 }
                                 bytesDownloaded += value.byteLength;
+                                if (isContainer && bytesDownloaded > MAX_GUARDED_ZIP_BYTES) {
+                                    await reader.cancel();
+                                    throw new ZipArchiveError(
+                                        `Model archive byte limit exceeds ${String(MAX_GUARDED_ZIP_BYTES)}`
+                                    );
+                                }
 
                                 if (writable) {
                                     // Stream directly to OPFS — no per-chunk accumulation.
@@ -269,7 +292,7 @@ export const downloadModel = inject({ logger })(
                             progress: 0.98,
                             stage: 'storing',
                         });
-                        await writeModel({ family, modelId, data: onnxData });
+                        await writeModel({ family, modelId, data: onnxData, signal });
 
                         // Check storage quota
                         const storageStatus = await getStorageStatus();
@@ -301,6 +324,9 @@ export const downloadModel = inject({ logger })(
                         logger.warn(
                             `[ModelDownload] Attempt ${String(attempt + 1)} failed for ${modelId}: ${String(error)}`
                         );
+                        if (error instanceof ZipArchiveError) {
+                            break;
+                        }
                         if (attempt < MAX_RETRIES - 1) {
                             try {
                                 await abortableSleep(1000 * 2 ** attempt, signal);

@@ -1,6 +1,9 @@
 import { strFromU8, Unzip, UnzipInflate, type UnzipFile } from 'fflate';
 
+export const MAX_GUARDED_ZIP_BYTES = 2 * 1024 * 1024 * 1024;
+
 const DEFAULT_LIMITS = {
+    maxArchiveBytes: MAX_GUARDED_ZIP_BYTES,
     maxEntries: 10_000,
     maxPathBytes: 255,
     maxEntryUncompressedBytes: 512 * 1024 * 1024,
@@ -48,6 +51,9 @@ export function extractGuardedZip(input: ExtractGuardedZipInput): Record<string,
     const { bytes, include = () => true, restrictLimits, validateInventory } = input;
     try {
         const limits = resolveLimits(restrictLimits);
+        if (bytes.byteLength > limits.maxArchiveBytes) {
+            throw new Error(`ZIP archive byte limit exceeds ${String(limits.maxArchiveBytes)}`);
+        }
         const inventory = inspectInventory(bytes, limits);
         validateInventory?.(inventory.map((entry) => entry.path));
         const expected = new Map(inventory.map((entry) => [entry.path, entry]));

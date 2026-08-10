@@ -73,6 +73,13 @@ describe('extractGuardedZip', () => {
     ])('rejects %s limits before extraction', (_name, archive, restrictLimits, message) => {
         expect(() => extractGuardedZip({ bytes: archive, restrictLimits })).toThrow(message);
     });
+    it('rejects archives above the input-byte ceiling before inventory parsing', () => {
+        const archive = zip({ 'model.bin': bytes(4) });
+
+        expect(() =>
+            extractGuardedZip({ bytes: archive, restrictLimits: { maxArchiveBytes: archive.byteLength - 1 } })
+        ).toThrow(/archive byte limit/i);
+    });
     it.each(['../escape.bin', 'dir/../escape.bin', '/absolute.bin', 'C:/absolute.bin', 'dir\\escape.bin'])(
         'rejects unsafe path %s',
         (path) => {

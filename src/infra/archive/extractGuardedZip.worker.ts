@@ -15,6 +15,7 @@ self.onmessage = (event: MessageEvent<GuardedZipWorkerRequest>) => {
     } catch (error) {
         const response: GuardedZipWorkerResponse = {
             type: 'error',
+            code: 'invalid-archive',
             message: error instanceof Error ? error.message : String(error),
         };
         self.postMessage(response);
