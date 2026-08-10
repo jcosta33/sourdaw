@@ -13,7 +13,7 @@ use daw_plugin_host::scanner::{self, ScanResult, ScannedPlugin};
 use daw_plugin_host::{AudioPlugin, ClapWrapper};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tauri::Manager;
@@ -55,36 +55,6 @@ fn remove_engine_plugin_record_after_scheduler_removal<EnginePluginRecord>(
 const MAX_SCAN_CANDIDATES: usize = 256;
 const MAX_SCAN_DURATION: Duration = Duration::from_secs(30);
 static PLUGIN_SCAN_PERMIT: tokio::sync::Semaphore = tokio::sync::Semaphore::const_new(1);
-
-fn scan_candidates(
-    mut candidates: Vec<PathBuf>,
-    mut errors: Vec<String>,
-    timeout: Duration,
-) -> (Vec<ScannedPlugin>, Vec<String>) {
-    candidates.sort();
-    candidates.dedup();
-    if candidates.len() > MAX_SCAN_CANDIDATES {
-        errors.push(format!(
-            "Plugin scan candidate limit exceeded; scanning the first {MAX_SCAN_CANDIDATES}"
-        ));
-        candidates.truncate(MAX_SCAN_CANDIDATES);
-    }
-
-    let deadline = Instant::now() + timeout;
-    let mut plugins = Vec::new();
-    for candidate in candidates {
-        let remaining = deadline.saturating_duration_since(Instant::now());
-        if remaining.is_zero() {
-            errors.push("Plugin scan time limit exceeded".to_string());
-            break;
-        }
-        match plugin_scan_worker::scan_clap_metadata(&candidate, remaining) {
-            Ok(metadata) => plugins.push(scanner::scanned_plugin(&candidate, metadata)),
-            Err(error) => errors.push(format!("{}: {error}", candidate.display())),
-        }
-    }
-    (plugins, errors)
-}
 
 /// Build the lookup table `load_plugin` resolves against.
 ///
@@ -163,13 +133,42 @@ pub async fn scan_plugins(
         authorized_paths.push(path);
     }
 
+    let scan_roots = authorized_paths.clone();
+    let deadline = start + MAX_SCAN_DURATION;
     let (plugins, scan_errors) = tokio::task::spawn_blocking(move || {
         let mut candidates = Vec::new();
         let mut scan_errors = Vec::new();
-        for path in authorized_paths {
-            scanner::scan_directory(&path, &mut candidates, &mut scan_errors);
+        for path in scan_roots {
+            if !scanner::scan_directory_bounded(
+                &path,
+                &mut candidates,
+                &mut scan_errors,
+                (MAX_SCAN_CANDIDATES, deadline),
+            ) {
+                let message = if candidates.len() >= MAX_SCAN_CANDIDATES {
+                    "Plugin scan candidate limit exceeded"
+                } else {
+                    "Plugin scan time limit exceeded"
+                };
+                scan_errors.push(message.to_string());
+                break;
+            }
         }
-        scan_candidates(candidates, scan_errors, MAX_SCAN_DURATION)
+        candidates.sort();
+        candidates.dedup();
+        let mut plugins = Vec::new();
+        for candidate in candidates {
+            let remaining = deadline.saturating_duration_since(Instant::now());
+            if remaining.is_zero() {
+                scan_errors.push("Plugin scan time limit exceeded".to_string());
+                break;
+            }
+            match plugin_scan_worker::scan_clap_metadata(&candidate, remaining) {
+                Ok(metadata) => plugins.push(scanner::scanned_plugin(&candidate, metadata)),
+                Err(error) => scan_errors.push(format!("{}: {error}", candidate.display())),
+            }
+        }
+        (plugins, scan_errors)
     })
     .await
     .map_err(|error| format!("Plugin scan task failed: {error}"))?;
@@ -179,6 +178,11 @@ pub async fn scan_plugins(
     // already read every CLAP descriptor; this used to re-`dlopen` each one to
     // recover the id it had thrown away.
     if let Ok(mut registry) = state.plugin_registry.lock() {
+        registry.retain(|_, entry| {
+            !authorized_paths
+                .iter()
+                .any(|root| Path::new(&entry.path).starts_with(root))
+        });
         registry.extend(index_scanned_plugins(&plugins));
     }
 

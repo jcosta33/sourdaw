@@ -5,12 +5,10 @@ use std::fs::{self, OpenOptions};
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, ExitStatus, Stdio};
-use std::sync::atomic::{AtomicU64, Ordering};
-use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant};
 pub const WORKER_ARGUMENT: &str = "--sourdaw-plugin-scan-worker";
 const WORKER_TIMEOUT: Duration = Duration::from_secs(3);
 const MAX_RESPONSE_BYTES: u64 = 256 * 1024;
-static NEXT_RESPONSE_ID: AtomicU64 = AtomicU64::new(0);
 #[derive(Serialize, Deserialize)]
 struct WorkerResponse {
     worker_pid: u32,
@@ -21,37 +19,18 @@ struct ResponseDirectory {
 }
 impl ResponseDirectory {
     fn create() -> Result<Self, String> {
-        let timestamp = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .map_err(|error| format!("Cannot create plugin scan response path: {error}"))?
-            .as_nanos();
-
-        for _ in 0..8 {
-            let sequence = NEXT_RESPONSE_ID.fetch_add(1, Ordering::Relaxed);
-            let path = std::env::temp_dir().join(format!(
-                "sourdaw-plugin-scan-{}-{timestamp}-{sequence}",
-                std::process::id()
-            ));
-            let mut builder = fs::DirBuilder::new();
-            #[cfg(unix)]
-            {
-                use std::os::unix::fs::DirBuilderExt;
-                builder.mode(0o700);
-            }
-            match builder.create(&path) {
-                Ok(()) => return Ok(Self { path }),
-                Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => continue,
-                Err(error) => {
-                    return Err(format!(
-                        "Cannot create plugin scan response directory: {error}"
-                    ));
-                }
-            }
+        let path =
+            std::env::temp_dir().join(format!("sourdaw-plugin-scan-{}", uuid::Uuid::new_v4()));
+        let mut builder = fs::DirBuilder::new();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::DirBuilderExt;
+            builder.mode(0o700);
         }
-        Err("Cannot allocate a unique plugin scan response directory".to_string())
-    }
-    fn response_path(&self) -> PathBuf {
-        self.path.join("metadata.json")
+        builder
+            .create(&path)
+            .map_err(|error| format!("Cannot create plugin scan response directory: {error}"))?;
+        Ok(Self { path })
     }
 }
 impl Drop for ResponseDirectory {
@@ -105,7 +84,7 @@ pub fn scan_clap_metadata(
     let executable = std::env::current_exe()
         .map_err(|error| format!("Cannot resolve plugin scan helper executable: {error}"))?;
     let response_directory = ResponseDirectory::create()?;
-    let response_path = response_directory.response_path();
+    let response_path = response_directory.path.join("metadata.json");
     let mut command = Command::new(executable);
     command
         .arg(WORKER_ARGUMENT)
@@ -169,7 +148,6 @@ fn wait_bounded(child: &mut Child, timeout: Duration) -> Result<ExitStatus, Stri
         }
     }
 }
-
 #[cfg(unix)]
 fn terminate_process_tree(child: &mut Child) {
     unsafe extern "C" {

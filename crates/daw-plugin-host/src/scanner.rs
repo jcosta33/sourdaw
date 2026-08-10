@@ -2,6 +2,7 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::time::Instant;
 
 use clap_sys::entry::clap_plugin_entry;
 use clap_sys::factory::plugin_factory::{clap_plugin_factory, CLAP_PLUGIN_FACTORY_ID};
@@ -115,20 +116,30 @@ fn plugin_name_from_path(path: &Path) -> String {
 
 // ── Directory scanning ──────────────────────────────────────────────────
 
-pub fn scan_directory(
+#[cfg(test)]
+fn scan_directory(dir: &Path, candidates: &mut Vec<PathBuf>, errors: &mut Vec<String>) {
+    let deadline = Instant::now() + std::time::Duration::from_secs(5);
+    let _ = scan_directory_bounded(dir, candidates, errors, (usize::MAX, deadline));
+}
+
+pub fn scan_directory_bounded(
     dir: &Path,
     candidates: &mut Vec<PathBuf>,
     errors: &mut Vec<String>,
-) {
+    budget: (usize, Instant),
+) -> bool {
+    if candidates.len() >= budget.0 || Instant::now() >= budget.1 {
+        return false;
+    }
     match path_has_symlink_component(dir) {
         Ok(true) => {
             errors.push(format!("Skipping symlinked plugin path: {}", dir.display()));
-            return;
+            return true;
         }
         Ok(false) => {}
         Err(error) => {
             errors.push(error);
-            return;
+            return true;
         }
     }
 
@@ -136,24 +147,27 @@ pub fn scan_directory(
         Ok(metadata) => metadata,
         Err(e) => {
             errors.push(format!("Cannot inspect {}: {}", dir.display(), e));
-            return;
+            return true;
         }
     };
 
     if dir_metadata.file_type().is_symlink() {
         errors.push(format!("Skipping symlinked plugin path: {}", dir.display()));
-        return;
+        return true;
     }
 
     let entries = match fs::read_dir(dir) {
         Ok(entries) => entries,
         Err(e) => {
             errors.push(format!("Cannot read {}: {}", dir.display(), e));
-            return;
+            return true;
         }
     };
 
     for entry in entries {
+        if candidates.len() >= budget.0 || Instant::now() >= budget.1 {
+            return false;
+        }
         let entry = match entry {
             Ok(e) => e,
             Err(e) => {
@@ -188,9 +202,12 @@ pub fn scan_directory(
 
             candidates.push(entry_path);
         } else if is_dir {
-            scan_directory(&entry_path, candidates, errors);
+            if !scan_directory_bounded(&entry_path, candidates, errors, budget) {
+                return false;
+            }
         }
     }
+    true
 }
 
 pub fn scanned_plugin(path: &Path, descriptor: ClapDescriptorMetadata) -> ScannedPlugin {
