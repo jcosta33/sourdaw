@@ -1,0 +1,43 @@
+src/modules/AiRuntime/useCases/__tests__/bassCompressorPromptWorkflow.spec.ts
+  s_a40848e8f8cca9::t_2694d5855045c1 806-822,824,826-827
+  s_a40848e8f8cca9::t_1b660936184cc8 801-802
+  s_a40848e8f8cca9::t_c073c180c44db5 791,804-805,825
+  s_a40848e8f8cca9::t_c3c3b2ba0876ca 788-790,795,800,803
+src/modules/Arrangement/handlers/device/handleRemoveDevice.ts
+  s_a40848e8f8cca9::t_d1e2126e5b547b 24,68
+src/modules/Command/useCases/__tests__/executeAppActionBatch.spec.ts
+  s_a40848e8f8cca9::t_33842d8674bbd2 18,68-92,151-190
+  s_a40848e8f8cca9::t_e34c0c4e47396e 191-192
+src/modules/Arrangement/handlers/device/__tests__/handleRemoveDevice.spec.ts
+  s_a40848e8f8cca9::t_d1e2126e5b547b 35,87
+src/modules/Command/useCases/executeAppActionBatch.ts
+  s_a40848e8f8cca9::t_b43d374beb8a9a 249-261,272-281
+src/utils/handlerContract.ts
+  s_a40848e8f8cca9::t_b43d374beb8a9a 36-39,474-475
+src/modules/Arrangement/useCases/device/removeDevice.ts
+  s_a40848e8f8cca9::t_d1e2126e5b547b 22,26,93-97,99,101,103-118,137-140,146,153,156,160
+src/modules/Arrangement/useCases/device/__tests__/removeDevice.spec.ts
+  s_a40848e8f8cca9::t_d1e2126e5b547b 110,122,128-129,131-132,144
+src/modules/AiRuntime/useCases/__tests__/deleteMutedEmptyTracksPromptWorkflow.spec.ts
+  s_a40848e8f8cca9::t_9f0645fb49b0bf 412-437
+src/modules/Arrangement/handlers/restore/__tests__/handleRestoreTrack.spec.ts
+  s_a40848e8f8cca9::t_33842d8674bbd2 331-364
+src/modules/Arrangement/handlers/restore/handleRestoreTrack.ts
+  s_a40848e8f8cca9::t_b43d374beb8a9a 29,46,48-50,59,68-74
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "bce758d2b562f0a319b8dfe497a28d3f9d1f925e",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
