@@ -1,0 +1,57 @@
+src/modules/PluginHost/useCases/pluginScan/findSupportedPlugin.ts
+  s_bc88af7d3b054c::t_aed2b9c152bd45 1-15
+src/modules/PluginHost/useCases/index.ts
+  s_bc88af7d3b054c::t_aed2b9c152bd45 25
+src/modules/PluginHost/useCases/pluginScan/__tests__/findSupportedPlugin.spec.ts
+  s_bc88af7d3b054c::t_42f28150a1cbdf 1-43
+src/modules/Arrangement/useCases/device/addExternalDevice.ts
+  s_bc88af7d3b054c::t_aed2b9c152bd45 2,14-17
+src/modules/PluginHost/stores/externalPluginActivationStore.ts
+  s_bc88af7d3b054c::t_cdfeb21c61fcbc 1-18
+src/modules/PluginHost/useCases/pluginLifecycle/__tests__/activateExternalPlugin.spec.ts
+  s_bc88af7d3b054c::t_8d94e164b62b83 3-6
+src/modules/PluginHost/useCases/pluginLifecycle/unloadPlugin.ts
+  s_bc88af7d3b054c::t_22f196343795d2 2-5,15-16,18
+  s_bc88af7d3b054c::t_8e81a948850548 14,17,19
+src/modules/Arrangement/useCases/device/__tests__/addExternalDevice.spec.ts
+  s_bc88af7d3b054c::t_cfe018c32b0b98 11,40,47,148-152
+  s_bc88af7d3b054c::t_d0990a82a66009 153-155
+  s_bc88af7d3b054c::t_03e54d540a8249 156
+src/modules/Arrangement/handlers/device/handleLoadExternalPlugin.ts
+  s_bc88af7d3b054c::t_aed2b9c152bd45 1,12-15,20,22,32
+src/modules/TimelineEditor/presentations/views/Inspector/TrackDevicesSection.tsx
+  s_bc88af7d3b054c::t_0b0f31ec5c7fc1 3,19,21-26,55,75-79,287,299-320
+src/modules/Arrangement/handlers/device/__tests__/handleLoadExternalPlugin.spec.ts
+  s_bc88af7d3b054c::t_941f95c2bcc8fd 27,80
+  s_bc88af7d3b054c::t_cfe018c32b0b98 8,12,93-94,96,101-103
+  s_bc88af7d3b054c::t_725a4fe8140b24 13
+src/modules/TimelineEditor/presentations/views/Inspector/__tests__/TrackDevicesSection.spec.tsx
+  s_bc88af7d3b054c::t_29c7820fda7872 22-25,80-81,84,86,93,95-96,134,140,142-148,224
+  s_bc88af7d3b054c::t_95bace0b7cb7a8 32-33,56-57,343-345,351,383-413
+  s_bc88af7d3b054c::t_26f49af7faeaca 58
+  s_bc88af7d3b054c::t_70a021b6f4dba2 225
+  s_bc88af7d3b054c::t_1bbe8c2d5674d2 414-416
+  s_bc88af7d3b054c::t_eb7cb4c46fab66 302,322
+src/modules/PluginHost/useCases/pluginLifecycle/activateExternalPlugin.ts
+  s_bc88af7d3b054c::t_8e81a948850548 7,31-35
+  s_bc88af7d3b054c::t_22f196343795d2 3-6,36-43
+  s_bc88af7d3b054c::t_117c6285ef116a 69,82,93
+src/modules/PluginHost/stores/index.ts
+  s_bc88af7d3b054c::t_cdfeb21c61fcbc 6-7
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "b0f442a4b5e7889854047f415053fcb8853261d9",
+  "prompts": {},
+  "sessions": {
+    "s_bc88af7d3b054c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f9b4a-11a2-7f61-8dfb-76eed0eb2a9c",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
