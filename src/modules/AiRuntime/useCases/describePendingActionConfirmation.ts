@@ -3,6 +3,7 @@ import { type AppAction } from '#/utils/handlerContract';
 
 import { type ProjectContext } from '../models/ProjectContext';
 
+import { getBulkDeviceInsertionTrackScope } from './agentReference/getBulkDeviceInsertionTrackScope';
 import { describePlannedAction } from './describePlannedAction';
 import { getPlannedActionAffectedIds } from './getPlannedActionAffectedIds';
 
@@ -33,11 +34,13 @@ function getProtectedUnchangedTracks(prompt: string, context: ProjectContext): A
     const protectedScopes = [
         ...prompt.matchAll(/\b(?:leave|leaving|keep|keeping|preserve|preserving)\s+(.+?)\s+unchanged\b/giu),
     ].flatMap((match) => (match[1] ? [normalizeText(match[1])] : []));
-    const excludesFrozenTracks = /\bexcluding frozen tracks?\b/iu.test(normalizeText(prompt));
+    const excludedFrozenTrackIds = new Set(
+        getBulkDeviceInsertionTrackScope(prompt, context)?.excludedFrozenTrackIds ?? []
+    );
     const protectedTracks = context.tracks.filter((track) => {
         const normalizedName = normalizeText(track.name);
         return (
-            (excludesFrozenTracks && track.frozen === true) ||
+            excludedFrozenTrackIds.has(track.id) ||
             protectedScopes.some((scope) => ` ${scope} `.includes(` ${normalizedName} `))
         );
     });

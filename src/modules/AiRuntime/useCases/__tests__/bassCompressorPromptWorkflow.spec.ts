@@ -463,6 +463,99 @@ describe('bass compressor prompt workflow', () => {
         expect(runtimeMocks.addDeviceToStrip).not.toHaveBeenCalled();
     });
 
+    it('grounds a renamed device from its canonical EQ descriptor', async () => {
+        const state = trackStore.value;
+        if (!state) {
+            throw new Error('Expected track state');
+        }
+        trackStore.set({
+            ...state,
+            tracks: state.tracks.map((track) => {
+                if (track.id !== 'track-bass-di') {
+                    return track;
+                }
+                return {
+                    ...track,
+                    devices: track.devices.map((device) =>
+                        device.id === 'device-bass-di-eq' ? { ...device, name: 'Low Cut' } : device
+                    ),
+                };
+            }),
+        });
+
+        await sendChatMessage(PROMPT);
+
+        expect(getConfirmation()?.actions[0]).toMatchObject({
+            type: 'addDevice',
+            payload: { afterDeviceId: 'device-bass-di-eq' },
+        });
+    });
+
+    it('rejects a non-EQ device whose display name is EQ', async () => {
+        const state = trackStore.value;
+        if (!state) {
+            throw new Error('Expected track state');
+        }
+        trackStore.set({
+            ...state,
+            tracks: state.tracks.map((track) => {
+                if (track.id !== 'track-bass-di') {
+                    return track;
+                }
+                return {
+                    ...track,
+                    devices: track.devices.map((device) => {
+                        if (device.id === 'device-bass-di-eq') {
+                            return { ...device, name: 'Low Cut' };
+                        }
+                        if (device.id === 'device-bass-di-saturator') {
+                            return { ...device, name: 'EQ' };
+                        }
+                        return device;
+                    }),
+                };
+            }),
+        });
+        runtimeMocks.generateWebLlmCompletion.mockResolvedValue(
+            JSON.stringify([
+                {
+                    name: 'addDevice',
+                    arguments: {
+                        trackId: 'track-bass-di',
+                        deviceType: 'Compressor',
+                        afterDeviceId: 'device-bass-di-saturator',
+                    },
+                },
+                providerPlan[1],
+            ])
+        );
+
+        await sendChatMessage(PROMPT);
+
+        expect(getConfirmation()).toBeNull();
+        expect(runtimeMocks.addDeviceToStrip).not.toHaveBeenCalled();
+    });
+
+    it('protects only frozen tracks in the semantic bass target set', async () => {
+        const state = trackStore.value;
+        if (!state) {
+            throw new Error('Expected track state');
+        }
+        trackStore.set({
+            ...state,
+            tracks: state.tracks.map((track) => {
+                if (track.id !== 'track-guitar') {
+                    return track;
+                }
+                return { ...track, frozen: true, freezeState: { status: 'frozen' } };
+            }),
+        });
+
+        await sendChatMessage(PROMPT);
+
+        expect(getConfirmation()?.protectedUnchanged).toEqual([{ id: 'track-bass-frozen', name: 'Bass Frozen' }]);
+    });
+
     it('compensates the first runtime insertion when the later target chain conflicts', async () => {
         await sendChatMessage(PROMPT);
         const confirmation = getConfirmation();

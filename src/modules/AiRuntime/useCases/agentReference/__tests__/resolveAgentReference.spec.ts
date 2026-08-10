@@ -142,6 +142,41 @@ function resolveAutomationLane(prompt: string, assertedId: string, project = cre
 }
 
 describe('resolveAgentReference', () => {
+    it('grounds devices from canonical descriptors instead of mutable display names', () => {
+        const project = createProjectState();
+        const bass = project.tracks.find((track) => track.id === 'track-bass');
+        if (!bass) {
+            throw new Error('Expected Bass track fixture');
+        }
+        bass.devices = [
+            { id: 'device-eq', name: 'Low Cut', type: 'builtin-eq', bypassed: false },
+            { id: 'device-saturator', name: 'EQ', type: 'builtin-saturator', bypassed: false },
+        ];
+        project.availableDeviceTypes = [
+            { id: 'builtin-eq', name: 'EQ' },
+            { id: 'builtin-saturator', name: 'Saturator' },
+        ];
+
+        expect(
+            resolveAgentReference({
+                prompt: 'insert Compressor after EQ',
+                assertedId: 'device-eq',
+                capability: 'device',
+                context: project,
+                dependencyId: bass.id,
+            })
+        ).toEqual({ status: 'resolved', id: 'device-eq', evidence: 'exact-name' });
+        expect(
+            resolveAgentReference({
+                prompt: 'insert Compressor after EQ',
+                assertedId: 'device-saturator',
+                capability: 'device',
+                context: project,
+                dependencyId: bass.id,
+            })
+        ).toEqual({ status: 'rejected', reason: 'asserted-target-mismatch' });
+    });
+
     it('resolves unique exact names and explicit selection language', () => {
         expect(resolveTrack('mute Vocals', 'track-vocals')).toEqual({
             status: 'resolved',

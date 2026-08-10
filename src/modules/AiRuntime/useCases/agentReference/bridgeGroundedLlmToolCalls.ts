@@ -16,6 +16,7 @@ import { MAX_LLM_ACTIONS_PER_BATCH } from '../../transformers/llmActionLimits';
 import { type ToolCallResult } from '../../transformers/toolCallParser';
 import { normalizeSafeProjectName } from '../../validators/normalizeSafeProjectName';
 
+import { getBulkDeviceInsertionTrackScope } from './getBulkDeviceInsertionTrackScope';
 import { resolveAgentReference } from './resolveAgentReference';
 
 type BridgeGroundedLlmToolCallsInput = {
@@ -984,35 +985,13 @@ function resolveBulkTrackOutputScope(
     };
 }
 
-function getBulkDeviceInsertionTargetIds(prompt: string, context: ProjectContext): string[] | null {
-    const normalized = normalizePromptText(prompt);
-    const match = /\b(?:every|all) ([\p{L}\p{N}]+) tracks?\b/iu.exec(normalized);
-    const family = match?.[1];
-    if (
-        !family ||
-        !/\b(?:insert|add)\b/u.test(normalized) ||
-        !/\bafter\b/u.test(normalized) ||
-        !/\bexcluding frozen tracks?\b/u.test(normalized)
-    ) {
-        return null;
-    }
-    const familyPattern = new RegExp(`\\b${family.replaceAll(/[.*+?^${}()|[\]\\]/gu, '\\$&')}\\b`, 'u');
-    const ids = context.tracks
-        .filter(
-            (track) =>
-                track.kind !== 'vca' && track.frozen !== true && familyPattern.test(normalizePromptText(track.name))
-        )
-        .map((track) => track.id);
-    return ids.length > 0 ? ids : null;
-}
-
 function resolveBulkDeviceInsertionScope(
     prompt: string,
     context: ProjectContext,
     sameActionAssertedArguments: readonly Readonly<Record<string, unknown>>[],
     sameActionCallCount: number
 ): ActionPromptScope | null {
-    const expectedTrackIds = getBulkDeviceInsertionTargetIds(prompt, context);
+    const expectedTrackIds = getBulkDeviceInsertionTrackScope(prompt, context)?.targetIds;
     if (!expectedTrackIds || sameActionAssertedArguments.length !== sameActionCallCount) {
         return null;
     }
@@ -3367,7 +3346,7 @@ function groundToolCall({
     }
     const groundedArguments = { ...call.arguments };
     const bulkDeviceInsertionTargetIds =
-        call.name === 'addDevice' ? getBulkDeviceInsertionTargetIds(prompt, context) : null;
+        call.name === 'addDevice' ? (getBulkDeviceInsertionTrackScope(prompt, context)?.targetIds ?? null) : null;
     for (const targetRule of groundingRules.targetRules) {
         const assertedValue = groundedArguments[targetRule.argument];
         if (targetRule.optional && assertedValue === undefined) {

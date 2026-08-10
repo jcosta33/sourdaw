@@ -259,8 +259,14 @@ function getReferenceCandidates(input: ResolveAgentReferenceInput): ReferenceCan
                 tracks = tracks.filter((track) => track.id === ownerReference.id);
             }
         }
+        const canonicalNamesByType = new Map(
+            (input.context.availableDeviceTypes ?? []).map((deviceType) => [deviceType.id, deviceType.name])
+        );
         return tracks.flatMap((track) =>
-            track.devices.map((device) => ({ id: device.id, name: device.name ?? device.type }))
+            track.devices.map((device) => ({
+                id: device.id,
+                name: canonicalNamesByType.get(device.type) ?? device.type,
+            }))
         );
     }
 
