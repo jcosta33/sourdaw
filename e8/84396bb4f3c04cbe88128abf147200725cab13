@@ -1,0 +1,26 @@
+crates/daw-collab/src/persistence.rs
+  s_bc88af7d3b054c::t_5a52906d4ab086 124-127,156-159
+  s_bc88af7d3b054c::t_202fdc9a3adeb2 17-33,72-76,78,129,239-302
+  s_bc88af7d3b054c::t_9936c7b11cff06 77,79-86,128,133,160-161,187-201,222-230
+  s_bc88af7d3b054c::t_961b284275dce6 303
+crates/daw-io/src/audio_decode.rs
+  s_bc88af7d3b054c::t_98917c0f534546 178-182
+  s_bc88af7d3b054c::t_120cca81329d71 12,290-316
+  s_bc88af7d3b054c::t_b71758b2d72687 317-318
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "e884396bb4f3c04cbe88128abf147200725cab13",
+  "prompts": {},
+  "sessions": {
+    "s_bc88af7d3b054c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f9b4a-11a2-7f61-8dfb-76eed0eb2a9c",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
