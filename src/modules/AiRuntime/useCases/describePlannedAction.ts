@@ -257,6 +257,10 @@ export function describePlannedAction({ action, context }: DescribePlannedAction
         const target = context.tracks.find((track) => track.id === action.payload.targetTrackId);
         if (source && target) {
             const operation = action.type === 'addSidechainRoute' ? 'Add' : 'Remove';
+            const targetDevice = target.devices.find((device) => device.id === action.payload.targetDeviceId);
+            if (targetDevice) {
+                return `${operation} sidechain route: "${source.name}" (${source.id}) → "${target.name}" (${target.id}) device "${targetDevice.name ?? targetDevice.type}" (${targetDevice.id}, ${targetDevice.type})`;
+            }
             return `${operation} sidechain route: "${source.name}" (${source.id}) → "${target.name}" (${target.id})`;
         }
     }

@@ -3944,7 +3944,7 @@ describe('bridgeLlmToolCalls', () => {
                     ...addCall,
                     arguments: {
                         ...addCall.arguments,
-                        targetDeviceId: 'device-sidechain',
+                        gain: 1,
                     },
                 },
             ],
@@ -4148,7 +4148,7 @@ describe('bridgeLlmToolCalls', () => {
             { type: 'removeDevice', payload: { deviceId: 'device-sidechain' } },
         ]);
         expect(afterDeviceRemoval.rejections[0]?.reason).toBe(
-            'Expected exactly one supported sidechain compressor on the target track'
+            'Expected one exact supported sidechain compressor on the target track'
         );
         expect(afterTrackRemoval.actions).toEqual([{ type: 'removeTrack', payload: { trackId: 'track-bass' } }]);
         expect(afterTrackRemoval.rejections[0]?.reason).toBe('Expected two distinct routable source and target tracks');

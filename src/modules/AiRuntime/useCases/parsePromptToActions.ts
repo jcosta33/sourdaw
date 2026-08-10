@@ -17,6 +17,7 @@ import {
 
 import { bridgeGroundedLlmToolCalls } from './agentReference/bridgeGroundedLlmToolCalls';
 import { getDrumRoutingPromptScope } from './agentReference/getDrumRoutingPromptScope';
+import { getSidechainRoutingPromptScope } from './agentReference/getSidechainRoutingPromptScope';
 import { getWholeProjectVibeMixScope } from './agentReference/getWholeProjectVibeMixScope';
 import { materializeBatchLocalActionIdentities } from './agentReference/materializeBatchLocalActionIdentities';
 import { type ProjectContext } from './getProjectContext';
@@ -119,6 +120,9 @@ export const parsePromptToActions = inject({ logger })(
                 const drumRoutingScope = getDrumRoutingPromptScope(prompt, context, projectRevision);
                 const drumRoutingCapability =
                     drumRoutingScope.status === 'request' ? drumRoutingScope.capability : undefined;
+                const sidechainRoutingScope = getSidechainRoutingPromptScope(prompt, context, projectRevision);
+                const sidechainRoutingCapability =
+                    sidechainRoutingScope.status === 'request' ? sidechainRoutingScope.capability : undefined;
                 const wholeProjectVibeMixCapability = getWholeProjectVibeMixScope(
                     prompt,
                     context,
@@ -131,6 +135,7 @@ export const parsePromptToActions = inject({ logger })(
                         context,
                         projectRevision,
                         drumRoutingCapability,
+                        sidechainRoutingCapability,
                         wholeProjectVibeMixCapability,
                     }),
                     getExecutableAppActionToolSchemas(),

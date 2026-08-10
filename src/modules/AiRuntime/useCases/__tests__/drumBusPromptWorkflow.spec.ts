@@ -18,6 +18,7 @@ import {
     removeCrdtDoc,
     resetCrdtProjectAuthority,
 } from '#/modules/CrdtDocument/useCases';
+import { sidechainStore } from '#/modules/Routing/stores';
 
 import { cloudSession } from '../../repositories/cloudLlm/cloudSession';
 import { generateWebLlmCompletion } from '../../repositories/webLlm/generateWebLlmCompletion';
@@ -34,6 +35,7 @@ import { sendChatMessage } from '../sendChatMessage';
 
 const PROMPT = 'Create a Drum Bus and route Kick, Snare, and Hats into it, leaving Parallel Compression unchanged.';
 const MF01_PROMPT = 'Route every drum track except the parallel-compression return into the Drum Bus.';
+const MF06_PROMPT = 'Create a sidechain from the kick to every bass compressor that supports sidechain input.';
 
 const providerPlan = [
     { name: 'createBus', arguments: { name: 'Drum Bus', binding: 'drum-bus' } },
@@ -58,6 +60,8 @@ const runtimeMocks = vi.hoisted(() => {
         getAllSidechainRoutes: vi.fn(() => []),
         resolveToasterPadBinding: vi.fn(() => null),
         setTrackOutput: vi.fn(),
+        unwireSidechainRoute: vi.fn(),
+        wireSidechainRoute: vi.fn(),
     };
 });
 
@@ -81,6 +85,8 @@ vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/AudioEngine/useCases')>()),
     resolveToasterPadBinding: runtimeMocks.resolveToasterPadBinding,
     setTrackOutput: runtimeMocks.setTrackOutput,
+    unwireSidechainRoute: runtimeMocks.unwireSidechainRoute,
+    wireSidechainRoute: runtimeMocks.wireSidechainRoute,
 }));
 
 vi.mock('#/modules/Routing/useCases', async (importOriginal) => ({
@@ -269,6 +275,133 @@ function useMf01HostedFixture({ reverse = false }: { reverse?: boolean } = {}): 
     });
 }
 
+function setMf06Project(): void {
+    const kick = createTrack('track-kick', 'Kick');
+    const bassSynth = createTrack('track-bass-synth', 'Bass Synth');
+    bassSynth.devices = [
+        {
+            id: 'device-bass-comp-a',
+            name: 'Bass Compressor A',
+            type: 'builtin-sidechain-compressor',
+            bypassed: false,
+            parameterValues: {},
+        },
+        {
+            id: 'device-bass-comp-b',
+            name: 'Bass Compressor B',
+            type: 'builtin-sidechain-compressor',
+            bypassed: false,
+            parameterValues: {},
+        },
+        {
+            id: 'device-bass-eq',
+            name: 'Bass EQ',
+            type: 'builtin-eq',
+            bypassed: false,
+            parameterValues: {},
+        },
+    ];
+    const bassDi = createTrack('track-bass-di', 'Bass DI');
+    bassDi.devices = [
+        {
+            id: 'device-bass-di-comp',
+            name: 'Bass DI Compressor',
+            type: 'builtin-sidechain-compressor',
+            bypassed: false,
+            parameterValues: {},
+        },
+    ];
+    const guitar = createTrack('track-guitar', 'Guitar');
+    guitar.devices = [
+        {
+            id: 'device-guitar-comp',
+            name: 'Guitar Compressor',
+            type: 'builtin-sidechain-compressor',
+            bypassed: false,
+            parameterValues: {},
+        },
+    ];
+    trackStore.set({ tracks: [kick, bassSynth, bassDi, guitar], selectedTrackId: null, ghostClips: [] });
+}
+
+function createMf06ProviderPlanFromUserMessage(userMessage: string) {
+    const match = /<project_context>\n(?<contextJson>.+)\n<\/project_context>/u.exec(userMessage);
+    const contextJson = match?.groups?.contextJson;
+    if (!contextJson) {
+        throw new TypeError('Expected serialized project context in provider request');
+    }
+    const context: unknown = JSON.parse(contextJson);
+    if (!isRecord(context)) {
+        throw new TypeError('Expected object-shaped project context');
+    }
+    const capability = context.sidechainRoutingCapability;
+    if (!isRecord(capability) || capability.actionType !== 'addSidechainRoute') {
+        throw new TypeError('Expected app-owned MF-06 capability');
+    }
+    if (typeof context.projectRevision !== 'string' || capability.baseRevision !== context.projectRevision) {
+        throw new TypeError('Expected revision-bound MF-06 capability');
+    }
+    const allowedAction = capability.allowedAction;
+    const targets = capability.targets;
+    if (!isRecord(allowedAction) || !Array.isArray(allowedAction.exactRoutes) || !Array.isArray(targets)) {
+        throw new TypeError('Expected exact MF-06 route capability');
+    }
+    const targetDeviceIds = new Set(
+        targets.flatMap((target) => (isRecord(target) && typeof target.deviceId === 'string' ? [target.deviceId] : []))
+    );
+    return allowedAction.exactRoutes.map((route) => {
+        if (
+            !isRecord(route) ||
+            typeof route.sourceTrackId !== 'string' ||
+            typeof route.targetTrackId !== 'string' ||
+            typeof route.targetDeviceId !== 'string' ||
+            !targetDeviceIds.has(route.targetDeviceId)
+        ) {
+            throw new TypeError('Expected MF-06 routes to match capability-filtered target devices');
+        }
+        return { name: 'addSidechainRoute', arguments: { ...route } };
+    });
+}
+
+function useMf06WebLlmFixture(
+    transform: (plan: ReturnType<typeof createMf06ProviderPlanFromUserMessage>) => void = () => undefined
+): void {
+    runtimeMocks.generateWebLlmCompletion.mockImplementation((_systemPrompt, userMessage) => {
+        const plan = createMf06ProviderPlanFromUserMessage(userMessage);
+        transform(plan);
+        return Promise.resolve(JSON.stringify(plan));
+    });
+}
+
+function useMf06HostedFixture({ reverse = false }: { reverse?: boolean } = {}): void {
+    runtimeMocks.fetch.mockImplementation((_input, init) => {
+        if (typeof init?.body !== 'string') {
+            throw new TypeError('Expected hosted provider request body');
+        }
+        const plan = createMf06ProviderPlanFromUserMessage(getHostedUserMessage(init.body));
+        if (reverse) {
+            plan.reverse();
+        }
+        return Promise.resolve(
+            new Response(
+                JSON.stringify({
+                    choices: [
+                        {
+                            finish_reason: 'tool_calls',
+                            message: {
+                                tool_calls: plan.map((call) => ({
+                                    function: { name: call.name, arguments: JSON.stringify(call.arguments) },
+                                })),
+                            },
+                        },
+                    ],
+                }),
+                { status: 200, headers: { 'Content-Type': 'application/json' } }
+            )
+        );
+    });
+}
+
 describe('drum bus prompt workflow', () => {
     beforeEach(() => {
         vi.clearAllMocks();
@@ -313,6 +446,7 @@ describe('drum bus prompt workflow', () => {
         clearPendingActionConfirmations();
         setArrangementEventBus({ emit: () => Promise.resolve() });
         macroStore.set({ macros: [], recording: false, currentRecording: [] });
+        sidechainStore.set({ routes: [] });
         const tracks = [
             createTrack('track-kick', 'Kick'),
             createTrack('track-snare', 'Snare'),
@@ -336,6 +470,7 @@ describe('drum bus prompt workflow', () => {
         clearAiHistory();
         clearPendingActionConfirmations();
         trackStore.set({ tracks: [], selectedTrackId: null, ghostClips: [] });
+        sidechainStore.set({ routes: [] });
         configureAutomergeStoragePort(null);
         cloudSession.clear();
         removeCrdtDoc('root');
@@ -1037,5 +1172,358 @@ describe('drum bus prompt workflow', () => {
         expect(runtimeMocks.setTrackOutput).not.toHaveBeenCalled();
         expect(getPendingActionConfirmation(confirmation.id)?.executedActions).toEqual([]);
         expect(undoStore.value?.past).toEqual([]);
+    });
+
+    it('grounds the exact complete per-device MF-06 sidechain plan before confirmation', async () => {
+        setMf06Project();
+        useMf06WebLlmFixture();
+
+        await sendChatMessage(MF06_PROMPT);
+
+        const confirmation = getPendingActionConfirmation(
+            chatStore.value?.messages.find((message) => message.pendingActionConfirmationId)
+                ?.pendingActionConfirmationId ?? ''
+        );
+        expect(confirmation?.actions).toEqual([
+            {
+                type: 'addSidechainRoute',
+                payload: {
+                    sourceTrackId: 'track-kick',
+                    targetTrackId: 'track-bass-synth',
+                    targetDeviceId: 'device-bass-comp-a',
+                },
+            },
+            {
+                type: 'addSidechainRoute',
+                payload: {
+                    sourceTrackId: 'track-kick',
+                    targetTrackId: 'track-bass-synth',
+                    targetDeviceId: 'device-bass-comp-b',
+                },
+            },
+            {
+                type: 'addSidechainRoute',
+                payload: {
+                    sourceTrackId: 'track-kick',
+                    targetTrackId: 'track-bass-di',
+                    targetDeviceId: 'device-bass-di-comp',
+                },
+            },
+        ]);
+        expect(confirmation?.affectedIds).not.toContain('device-guitar-comp');
+        expect(confirmation?.affectedIds).not.toContain('device-bass-eq');
+        expect(confirmation?.affectedIds).toEqual([
+            'track-bass-synth',
+            'track-kick',
+            'device-bass-comp-a',
+            'device-bass-comp-b',
+            'track-bass-di',
+            'device-bass-di-comp',
+        ]);
+        expect(confirmation?.protectedUnchanged).toEqual([
+            { id: 'device-bass-eq', name: 'Bass Synth Bass EQ' },
+            { id: 'track-guitar', name: 'Guitar' },
+        ]);
+        const proposal = chatStore.value?.messages.find(
+            (message) => message.pendingActionConfirmationId === confirmation?.id
+        );
+        expect(proposal?.content).toContain(
+            '"Kick" (track-kick) → "Bass Synth" (track-bass-synth) device "Bass Compressor A" (device-bass-comp-a, builtin-sidechain-compressor)'
+        );
+        expect(proposal?.content).toContain('Risk: authority-sensitive');
+
+        await expect(confirmPendingChatActions({ confirmationId: confirmation?.id ?? '' })).resolves.toEqual({
+            status: 'executed',
+        });
+        expect(sidechainStore.value?.routes).toEqual([
+            expect.objectContaining({
+                sourceTrackId: 'track-kick',
+                targetTrackId: 'track-bass-synth',
+                targetDeviceId: 'device-bass-comp-a',
+                targetParameterId: 'threshold',
+                gain: 1,
+            }),
+            expect.objectContaining({
+                sourceTrackId: 'track-kick',
+                targetTrackId: 'track-bass-synth',
+                targetDeviceId: 'device-bass-comp-b',
+                targetParameterId: 'threshold',
+                gain: 1,
+            }),
+            expect.objectContaining({
+                sourceTrackId: 'track-kick',
+                targetTrackId: 'track-bass-di',
+                targetDeviceId: 'device-bass-di-comp',
+                targetParameterId: 'threshold',
+                gain: 1,
+            }),
+        ]);
+        expect(runtimeMocks.wireSidechainRoute.mock.calls).toEqual([
+            ['track-kick', 'track-bass-synth', 'device-bass-comp-a'],
+            ['track-kick', 'track-bass-synth', 'device-bass-comp-b'],
+            ['track-kick', 'track-bass-di', 'device-bass-di-comp'],
+        ]);
+        const receipt = chatStore.value?.messages.find(
+            (message) => message.pendingActionConfirmationId === confirmation?.id
+        );
+        expect(receipt?.content).toContain('Outcome: committed');
+        expect(receipt?.content).toContain('Affected IDs: track-bass-synth, track-kick, device-bass-comp-a');
+        expect(undoStore.value?.past).toHaveLength(3);
+
+        await undo();
+        expect(sidechainStore.value?.routes).toEqual([]);
+        expect(undoStore.value?.future).toHaveLength(3);
+
+        await redo();
+        expect(sidechainStore.value?.routes).toHaveLength(3);
+        expect(undoStore.value?.past).toHaveLength(3);
+    });
+
+    it('normalizes a reversed hosted MF-06 plan to the app-owned WebLLM action order', async () => {
+        setMf06Project();
+        runtimeMocks.backend.value = 'cloud';
+        useMf06HostedFixture({ reverse: true });
+
+        await sendChatMessage(MF06_PROMPT);
+
+        const confirmation = getPendingActionConfirmation(
+            chatStore.value?.messages.find((message) => message.pendingActionConfirmationId)
+                ?.pendingActionConfirmationId ?? ''
+        );
+        expect(getHostedUserMessage(getHostedRequestBody())).toContain('"sidechainRoutingCapability"');
+        expect(
+            confirmation?.actions.flatMap((action) =>
+                action.type === 'addSidechainRoute' ? [action.payload.targetDeviceId] : []
+            )
+        ).toEqual(['device-bass-comp-a', 'device-bass-comp-b', 'device-bass-di-comp']);
+    });
+
+    it.each(['omission', 'duplicate', 'enlargement'] as const)(
+        'rejects MF-06 provider %s without project, runtime, receipt, or history residue',
+        async (scenario) => {
+            setMf06Project();
+            useMf06WebLlmFixture((plan) => {
+                if (scenario === 'omission') {
+                    plan.pop();
+                } else if (scenario === 'duplicate') {
+                    plan[2] = plan[0]!;
+                } else {
+                    plan.push({
+                        name: 'addSidechainRoute',
+                        arguments: {
+                            sourceTrackId: 'track-kick',
+                            targetTrackId: 'track-guitar',
+                            targetDeviceId: 'device-guitar-comp',
+                        },
+                    });
+                }
+            });
+
+            await sendChatMessage(MF06_PROMPT);
+
+            expect(chatStore.value?.messages.every((message) => !message.pendingActionConfirmationId)).toBe(true);
+            expect(sidechainStore.value?.routes).toEqual([]);
+            expect(runtimeMocks.wireSidechainRoute).not.toHaveBeenCalled();
+            expect(undoStore.value?.past).toEqual([]);
+        }
+    );
+
+    it.each(['ambiguous-kick', 'ambiguous-bass'] as const)(
+        'fails closed for an MF-06 %s role before confirmation',
+        async (scenario) => {
+            setMf06Project();
+            const extra =
+                scenario === 'ambiguous-kick'
+                    ? createTrack('track-kick-two', 'BD')
+                    : createTrack('track-bass-room', 'Bass Room');
+            trackStore.set({ ...trackStore.value!, tracks: [...trackStore.value!.tracks, extra] });
+            runtimeMocks.generateWebLlmCompletion.mockResolvedValue('[]');
+
+            await sendChatMessage(MF06_PROMPT);
+
+            expect(chatStore.value?.messages.every((message) => !message.pendingActionConfirmationId)).toBe(true);
+            expect(sidechainStore.value?.routes).toEqual([]);
+        }
+    );
+
+    it('excludes frozen and locked bass tracks and exposes them as protected', async () => {
+        setMf06Project();
+        const bassDi = getTrack('track-bass-di');
+        const bassSynth = getTrack('track-bass-synth');
+        const bassGuitar = createTrack('track-bass-guitar', 'Bass Guitar');
+        bassGuitar.devices = [
+            {
+                id: 'device-bass-guitar-comp',
+                name: 'Bass Guitar Compressor',
+                type: 'builtin-sidechain-compressor',
+                bypassed: false,
+                parameterValues: {},
+            },
+        ];
+        trackStore.set({
+            ...trackStore.value!,
+            tracks: [
+                ...trackStore.value!.tracks.map((track) => {
+                    if (track.id === bassDi.id) {
+                        return { ...track, frozen: true };
+                    }
+                    if (track.id === bassSynth.id) {
+                        return {
+                            ...track,
+                            clips: [
+                                {
+                                    id: 'clip-bass',
+                                    trackId: track.id,
+                                    name: 'Bass clip',
+                                    startBeat: 0,
+                                    endBeat: 4,
+                                    type: 'audio' as const,
+                                    fadeInBeats: 0,
+                                    fadeOutBeats: 0,
+                                    gain: 1,
+                                    color: '#ffffff',
+                                    locked: true,
+                                    muted: false,
+                                },
+                            ],
+                        };
+                    }
+                    return track;
+                }),
+                bassGuitar,
+            ],
+        });
+        useMf06WebLlmFixture();
+
+        await sendChatMessage(MF06_PROMPT);
+
+        const confirmation = getPendingActionConfirmation(
+            chatStore.value?.messages.find((message) => message.pendingActionConfirmationId)
+                ?.pendingActionConfirmationId ?? ''
+        );
+        expect(confirmation?.actions).toEqual([
+            {
+                type: 'addSidechainRoute',
+                payload: {
+                    sourceTrackId: 'track-kick',
+                    targetTrackId: 'track-bass-guitar',
+                    targetDeviceId: 'device-bass-guitar-comp',
+                },
+            },
+        ]);
+        expect(confirmation?.protectedUnchanged).toEqual(
+            expect.arrayContaining([
+                { id: 'track-bass-synth', name: 'Bass Synth' },
+                { id: 'track-bass-di', name: 'Bass DI' },
+            ])
+        );
+    });
+
+    it('excludes an already-satisfied exact device route while planning every remaining target', async () => {
+        setMf06Project();
+        sidechainStore.set({
+            routes: [
+                {
+                    id: 'route-existing',
+                    sourceTrackId: 'track-kick',
+                    targetTrackId: 'track-bass-synth',
+                    targetDeviceId: 'device-bass-comp-a',
+                    targetParameterId: 'threshold',
+                    gain: 1,
+                },
+            ],
+        });
+        useMf06WebLlmFixture();
+
+        await sendChatMessage(MF06_PROMPT);
+
+        const confirmation = getPendingActionConfirmation(
+            chatStore.value?.messages.find((message) => message.pendingActionConfirmationId)
+                ?.pendingActionConfirmationId ?? ''
+        );
+        expect(
+            confirmation?.actions.flatMap((action) =>
+                action.type === 'addSidechainRoute' ? [action.payload.targetDeviceId] : []
+            )
+        ).toEqual(['device-bass-comp-b', 'device-bass-di-comp']);
+        expect(confirmation?.protectedUnchanged).toContainEqual({
+            id: 'device-bass-comp-a',
+            name: 'Bass Synth Bass Compressor A',
+        });
+    });
+
+    it('aborts the whole MF-06 batch before runtime when one device route becomes stale', async () => {
+        setMf06Project();
+        useMf06WebLlmFixture();
+        await sendChatMessage(MF06_PROMPT);
+        const confirmation = getPendingActionConfirmation(
+            chatStore.value?.messages.find((message) => message.pendingActionConfirmationId)
+                ?.pendingActionConfirmationId ?? ''
+        );
+        const collaboratorRoute = {
+            id: 'route-collaborator',
+            sourceTrackId: 'track-kick',
+            targetTrackId: 'track-bass-synth',
+            targetDeviceId: 'device-bass-comp-b',
+            targetParameterId: 'threshold',
+            gain: 0.5,
+        };
+        sidechainStore.set({ routes: [collaboratorRoute] });
+
+        const result = await confirmPendingChatActions({ confirmationId: confirmation?.id ?? '' });
+
+        expect(result.status).toBe('failed');
+        expect(sidechainStore.value?.routes).toEqual([collaboratorRoute]);
+        expect(runtimeMocks.wireSidechainRoute).not.toHaveBeenCalled();
+        expect(undoStore.value?.past).toEqual([]);
+    });
+
+    it('reconciles a transient MF-06 runtime failure from committed durable routes', async () => {
+        setMf06Project();
+        useMf06WebLlmFixture();
+        runtimeMocks.wireSidechainRoute
+            .mockImplementationOnce(() => {
+                throw new Error('injected sidechain wire failure');
+            })
+            .mockImplementation(() => undefined);
+        await sendChatMessage(MF06_PROMPT);
+        const confirmation = getPendingActionConfirmation(
+            chatStore.value?.messages.find((message) => message.pendingActionConfirmationId)
+                ?.pendingActionConfirmationId ?? ''
+        );
+
+        const result = await confirmPendingChatActions({ confirmationId: confirmation?.id ?? '' });
+
+        expect(result).toEqual({ status: 'executed' });
+        expect(sidechainStore.value?.routes).toHaveLength(3);
+        expect(
+            runtimeMocks.wireSidechainRoute.mock.calls.filter(
+                ([sourceTrackId, _targetTrackId, targetDeviceId]) =>
+                    sourceTrackId === 'track-kick' && targetDeviceId === 'device-bass-comp-a'
+            )
+        ).toHaveLength(2);
+        expect(undoStore.value?.past).toHaveLength(3);
+    });
+
+    it('preserves collaborator-modified sidechain truth and keeps grouped undo retryable', async () => {
+        setMf06Project();
+        useMf06WebLlmFixture();
+        await sendChatMessage(MF06_PROMPT);
+        const confirmation = getPendingActionConfirmation(
+            chatStore.value?.messages.find((message) => message.pendingActionConfirmationId)
+                ?.pendingActionConfirmationId ?? ''
+        );
+        await confirmPendingChatActions({ confirmationId: confirmation?.id ?? '' });
+        const routes = sidechainStore.value?.routes ?? [];
+        const collaboratorRoutes = routes.map((route, index) => (index === 1 ? { ...route, gain: 0.5 } : route));
+        sidechainStore.set({ routes: collaboratorRoutes });
+        runtimeMocks.unwireSidechainRoute.mockClear();
+
+        await undo();
+
+        expect(sidechainStore.value?.routes).toEqual(collaboratorRoutes);
+        expect(runtimeMocks.unwireSidechainRoute).not.toHaveBeenCalled();
+        expect(undoStore.value?.past).toHaveLength(3);
+        expect(undoStore.value?.future).toEqual([]);
     });
 });

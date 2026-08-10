@@ -854,10 +854,11 @@ const EXPECTED_COMMANDS = [
     ),
     expectedCommand(
         'addSidechainRoute',
-        'Route one source track into the single supported sidechain compressor on a distinct target track.',
+        'Route one source track into a supported sidechain compressor on a distinct target track; use targetDeviceId when an app-owned capability enumerates an exact device.',
         {
             sourceTrackId: { type: 'string', description: 'Existing routable trigger track ID' },
             targetTrackId: { type: 'string', description: 'Distinct routable destination track ID' },
+            targetDeviceId: { type: 'string', description: 'Exact app-scoped sidechain-capable device ID' },
         },
         ['sourceTrackId', 'targetTrackId'],
         'authority-sensitive',

@@ -734,7 +734,7 @@ const guardedPayloadContractCases = [
             { sourceTrackId: '', targetTrackId: 'track-bass' },
             { sourceTrackId: 'track-kick', targetTrackId: 'track-kick' },
             { sourceTrackId: 'track-kick', targetTrackId: 'track-bass', routeId: 'provider-owned' },
-            { sourceTrackId: 'track-kick', targetTrackId: 'track-bass', targetDeviceId: 'device-sidechain' },
+            { sourceTrackId: 'track-kick', targetTrackId: 'track-bass', targetParameterId: 'threshold' },
         ],
     }),
     guardedPayloadCase({

@@ -1,28 +1,38 @@
-import { addSidechainRouteSnapshot } from '#/modules/Routing/useCases';
+import { addSidechainRouteSnapshot, getSidechainTargetCapability } from '#/modules/Routing/useCases';
 import { createHandler } from '#/utils/createHandler';
 import { type AppAction, type SidechainRouteSnapshot } from '#/utils/handlerContract';
 
 import { getTrackStoreState } from '../../useCases/getTrackStoreState';
-
-const SUPPORTED_SIDECHAIN_DEVICE_TYPE = 'builtin-sidechain-compressor';
 
 type AddSidechainRouteAction = Extract<AppAction, { type: 'addSidechainRoute' }>;
 type RouteResolution =
     { status: 'resolved'; route: SidechainRouteSnapshot } | { status: 'absent' } | { status: 'conflict' };
 
 function resolveRoute(action: AddSidechainRouteAction): RouteResolution {
-    const targetTrack = getTrackStoreState()?.tracks.find((track) => track.id === action.payload.targetTrackId);
+    const tracks = getTrackStoreState()?.tracks;
+    const sourceTrack = tracks?.find((track) => track.id === action.payload.sourceTrackId);
+    const targetTrack = tracks?.find((track) => track.id === action.payload.targetTrackId);
     if (!targetTrack) {
         return { status: 'absent' };
     }
+    const sourceLocked = sourceTrack?.clips.some((clip) => clip.locked) === true;
+    const targetLocked = targetTrack.clips.some((clip) => clip.locked);
+    if (sourceTrack?.frozen === true || targetTrack.frozen || sourceLocked || targetLocked) {
+        return { status: 'conflict' };
+    }
 
-    const supportedDevices = targetTrack.devices.filter((device) => device.type === SUPPORTED_SIDECHAIN_DEVICE_TYPE);
+    const supportedDevices = targetTrack.devices.flatMap((device) => {
+        const capability = getSidechainTargetCapability(device.type);
+        return capability ? [{ device, capability }] : [];
+    });
     let targetDeviceId = action.payload.targetDeviceId;
+    let targetParameterId: string;
     if (targetDeviceId) {
-        const ownsSupportedDevice = supportedDevices.some((device) => device.id === targetDeviceId);
-        if (!ownsSupportedDevice) {
+        const target = supportedDevices.find(({ device }) => device.id === targetDeviceId);
+        if (!target) {
             return { status: 'conflict' };
         }
+        targetParameterId = target.capability.targetParameterId;
     } else {
         if (supportedDevices.length === 0) {
             return { status: 'absent' };
@@ -30,11 +40,15 @@ function resolveRoute(action: AddSidechainRouteAction): RouteResolution {
         if (supportedDevices.length !== 1) {
             return { status: 'conflict' };
         }
-        targetDeviceId = supportedDevices[0]!.id;
+        const target = supportedDevices[0]!;
+        targetDeviceId = target.device.id;
+        targetParameterId = target.capability.targetParameterId;
     }
 
     const routeId = action.payload.routeId ?? `sidechain-${crypto.randomUUID()}`;
-    const targetParameterId = action.payload.targetParameterId ?? 'threshold';
+    if (action.payload.targetParameterId !== undefined && action.payload.targetParameterId !== targetParameterId) {
+        return { status: 'conflict' };
+    }
     const gain = action.payload.gain ?? 1;
     action.payload.routeId = routeId;
     action.payload.targetDeviceId = targetDeviceId;

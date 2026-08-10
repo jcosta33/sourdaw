@@ -1146,7 +1146,7 @@ export type AppAction =
           payload: {
               sourceTrackId: string;
               targetTrackId: string;
-              /** Command-owned replay identity and route snapshot fields. AiRuntime exposes only endpoints. */
+              /** Command-owned replay identity and route snapshot fields. AiRuntime may select an app-scoped device. */
               routeId?: string;
               targetDeviceId?: string;
               targetParameterId?: string;

@@ -11,6 +11,8 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock('#/modules/Routing/useCases', () => ({
     addSidechainRouteSnapshot: mocks.addSidechainRouteSnapshot,
+    getSidechainTargetCapability: (deviceType: string) =>
+        deviceType === 'builtin-sidechain-compressor' ? { targetParameterId: 'threshold' } : null,
 }));
 
 vi.mock('../../../useCases/getTrackStoreState', () => ({
@@ -26,7 +28,7 @@ describe('handleAddSidechainRoute', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         mocks.getTrackStoreState.mockReturnValue({
-            tracks: [{ id: 'target', devices: [supportedDevice] }],
+            tracks: [{ id: 'target', devices: [supportedDevice], clips: [] }],
         });
     });
 
@@ -57,7 +59,7 @@ describe('handleAddSidechainRoute', () => {
 
     it('accepts only the exact supported device type', () => {
         mocks.getTrackStoreState.mockReturnValue({
-            tracks: [{ id: 'target', devices: [{ id: 'lookalike', type: 'my-sidechain-helper' }] }],
+            tracks: [{ id: 'target', devices: [{ id: 'lookalike', type: 'my-sidechain-helper' }], clips: [] }],
         });
 
         const result = handleAddSidechainRoute.execute({
@@ -75,6 +77,7 @@ describe('handleAddSidechainRoute', () => {
                 {
                     id: 'target',
                     devices: [supportedDevice, { id: 'second-sidechain-device', type: 'builtin-sidechain-compressor' }],
+                    clips: [],
                 },
             ],
         });

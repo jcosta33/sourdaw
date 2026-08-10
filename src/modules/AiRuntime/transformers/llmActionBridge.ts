@@ -1,9 +1,11 @@
+import { getSidechainTargetCapability } from '#/utils/getSidechainTargetCapability';
 import { resolveMarkerColorValue } from '#/utils/markerColorPalette';
 import { wouldCreateRoutingCycle } from '#/utils/routingCycle';
 
 import { type DrumRoutingCapability } from '../models/DrumRoutingCapability';
 import { type ProjectContext } from '../models/ProjectContext';
 import { type RuntimeAction } from '../models/RuntimeAction';
+import { type SidechainRoutingCapability } from '../models/SidechainRoutingCapability';
 import { type WholeProjectVibeMixCapability } from '../models/WholeProjectVibeMixPlan';
 import { normalizeSafeProjectName } from '../validators/normalizeSafeProjectName';
 
@@ -13,7 +15,6 @@ import { type ToolCallResult } from './toolCallParser';
 type ExecutableTrackKind = 'audio' | 'midi' | 'folder';
 type NormalizationMode = 'peak' | 'rms' | 'lufs';
 const executableTrackKinds: ReadonlySet<string> = new Set(['audio', 'midi', 'folder']);
-const SUPPORTED_SIDECHAIN_DEVICE_TYPE = 'builtin-sidechain-compressor';
 
 export type LlmActionRejection = {
     index: number;
@@ -177,7 +178,7 @@ function findSidechainRoutes(context: ProjectContext, sourceTrackId: string, tar
 }
 
 function findSupportedSidechainDevices(target: ProjectContext['tracks'][number]) {
-    return target.devices.filter((device) => device.type === SUPPORTED_SIDECHAIN_DEVICE_TYPE);
+    return target.devices.filter((device) => getSidechainTargetCapability(device.type) !== null);
 }
 
 function findDeviceTarget(context: ProjectContext, deviceId: unknown) {
@@ -2017,8 +2018,11 @@ function bridgeToolCall({
     if (call.name === 'addSidechainRoute') {
         const source = findTrack(context, args.sourceTrackId);
         const target = findTrack(context, args.targetTrackId);
+        const hasSupportedKeys =
+            hasExactKeys(args, ['sourceTrackId', 'targetTrackId']) ||
+            hasExactKeys(args, ['sourceTrackId', 'targetTrackId', 'targetDeviceId']);
         if (
-            !hasExactKeys(args, ['sourceTrackId', 'targetTrackId']) ||
+            !hasSupportedKeys ||
             !isProviderRoutableSource(source) ||
             !isProviderRoutableSource(target) ||
             source.id === target.id
@@ -2026,14 +2030,13 @@ function bridgeToolCall({
             return rejection(index, call.name, 'Expected two distinct routable source and target tracks');
         }
         const supportedDevices = findSupportedSidechainDevices(target);
-        if (supportedDevices.length !== 1) {
-            return rejection(
-                index,
-                call.name,
-                'Expected exactly one supported sidechain compressor on the target track'
-            );
+        let targetDevice = supportedDevices.find((device) => device.id === args.targetDeviceId);
+        if (args.targetDeviceId === undefined && supportedDevices.length === 1) {
+            targetDevice = supportedDevices[0];
         }
-        const targetDevice = supportedDevices[0]!;
+        if (!targetDevice) {
+            return rejection(index, call.name, 'Expected one exact supported sidechain compressor on the target track');
+        }
         const duplicate = (context.sidechainRoutes ?? []).some(
             (route) => route.sourceTrackId === source.id && route.targetDeviceId === targetDevice.id
         );
@@ -2048,7 +2051,11 @@ function bridgeToolCall({
         }
         return {
             type: 'addSidechainRoute',
-            payload: { sourceTrackId: source.id, targetTrackId: target.id },
+            payload: {
+                sourceTrackId: source.id,
+                targetTrackId: target.id,
+                ...(args.targetDeviceId === undefined ? {} : { targetDeviceId: targetDevice.id }),
+            },
         };
     }
 
@@ -2274,7 +2281,11 @@ function getMutationKeys(
     if (action.type === 'setTrackOutput') {
         return [`output:${action.payload.trackId}`];
     }
-    if (action.type === 'addSidechainRoute' || action.type === 'removeSidechainRoute') {
+    if (action.type === 'addSidechainRoute') {
+        const targetDeviceId = action.payload.targetDeviceId ?? action.payload.targetTrackId;
+        return [`sidechain:${action.payload.sourceTrackId}:${targetDeviceId}`];
+    }
+    if (action.type === 'removeSidechainRoute') {
         return [`sidechain:${action.payload.sourceTrackId}:${action.payload.targetTrackId}`];
     }
     if (action.type === 'removeTrack') {
@@ -2449,7 +2460,11 @@ function isAddSidechainRuntimeAction(action: RuntimeAction): action is AddSidech
 function applyAcceptedRoutingAction(context: ProjectContext, action: RuntimeAction): ProjectContext {
     if (action.type === 'addSidechainRoute') {
         const target = findTrack(context, action.payload.targetTrackId);
-        const targetDevice = target ? findSupportedSidechainDevices(target)[0] : undefined;
+        const targetDevice = target
+            ? findSupportedSidechainDevices(target).find(
+                  (device) => action.payload.targetDeviceId === undefined || device.id === action.payload.targetDeviceId
+              )
+            : undefined;
         if (!targetDevice) {
             return context;
         }
@@ -2458,7 +2473,7 @@ function applyAcceptedRoutingAction(context: ProjectContext, action: RuntimeActi
             sidechainRoutes: [
                 ...(context.sidechainRoutes ?? []),
                 {
-                    id: `provider-batch:${action.payload.sourceTrackId}:${action.payload.targetTrackId}`,
+                    id: `provider-batch:${action.payload.sourceTrackId}:${targetDevice.id}`,
                     sourceTrackId: action.payload.sourceTrackId,
                     targetTrackId: action.payload.targetTrackId,
                     targetDeviceId: targetDevice.id,
@@ -2569,7 +2584,7 @@ function hasInvalidatingSidechainLifecycleMutation(
         }
         if (
             action.type === 'addDevice' &&
-            action.payload.deviceType === SUPPORTED_SIDECHAIN_DEVICE_TYPE &&
+            getSidechainTargetCapability(action.payload.deviceType) !== null &&
             allSidechainAdds.some((sidechainAction) => sidechainAction.payload.targetTrackId === action.payload.trackId)
         ) {
             return true;
@@ -2587,7 +2602,8 @@ function hasInvalidatingSidechainLifecycleMutation(
         if (action.type === 'removeDevice') {
             const target = findDeviceTarget(context, action.payload.deviceId);
             if (
-                target?.device.type === SUPPORTED_SIDECHAIN_DEVICE_TYPE &&
+                target !== undefined &&
+                getSidechainTargetCapability(target.device.type) !== null &&
                 plannedSidechainAdds.some(
                     (sidechainAction) => sidechainAction.payload.targetTrackId === target.track.id
                 )
@@ -2993,17 +3009,20 @@ export function buildLlmActionUserMessage({
     context,
     projectRevision,
     drumRoutingCapability,
+    sidechainRoutingCapability,
     wholeProjectVibeMixCapability,
 }: {
     prompt: string;
     context: ProjectContext;
     projectRevision?: string;
     drumRoutingCapability?: DrumRoutingCapability;
+    sidechainRoutingCapability?: SidechainRoutingCapability;
     wholeProjectVibeMixCapability?: WholeProjectVibeMixCapability;
 }): string {
     const commandContext = {
         ...(projectRevision ? { projectRevision } : {}),
         ...(drumRoutingCapability ? { drumRoutingCapability } : {}),
+        ...(sidechainRoutingCapability ? { sidechainRoutingCapability } : {}),
         ...(wholeProjectVibeMixCapability ? { wholeProjectVibeMixCapability } : {}),
         tempo: context.tempo,
         timeSignature: context.timeSignature,

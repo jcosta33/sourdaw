@@ -1,6 +1,6 @@
 # ADR 0028: LLM sidechain routing command surface
 
-**Status:** Accepted
+**Status:** Superseded by ADR 0032
 
 ## Context
 
