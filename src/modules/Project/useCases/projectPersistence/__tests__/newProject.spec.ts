@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { Container } from '#/infra/di/Container';
 import { addTrack } from '#/modules/Arrangement/useCases';
-import { clearCachedAudioBuffers, resetAudioGraph } from '#/modules/AudioEngine/useCases';
+import { clearRuntimeCachedAudioBuffers, resetAudioGraph } from '#/modules/AudioEngine/useCases';
 import { clearUndoHistory } from '#/modules/Command/useCases';
 import {
     compactProject,
@@ -40,7 +40,7 @@ vi.mock('#/modules/Transport/useCases', async (importOriginal) => ({
 }));
 
 vi.mock('#/modules/AudioEngine/useCases', () => ({
-    clearCachedAudioBuffers: vi.fn(),
+    clearRuntimeCachedAudioBuffers: vi.fn(),
     resetAudioGraph: vi.fn(),
 }));
 
@@ -105,19 +105,19 @@ describe('newProject injectable', () => {
         expect(projectActionHistoryToStore).toHaveBeenCalledTimes(1);
         expect(addTrack).toHaveBeenCalledWith({ name: 'Master', kind: 'master', select: false });
         expect(removeProjectJson).toHaveBeenCalledTimes(1);
-        expect(clearCachedAudioBuffers).toHaveBeenCalledTimes(1);
+        expect(clearRuntimeCachedAudioBuffers).toHaveBeenCalledTimes(1);
         expect(clearUndoHistory).toHaveBeenCalledTimes(1);
         expect(startCrdtAutoSave).toHaveBeenCalledTimes(1);
 
         const remove_project_json_order = vi.mocked(removeProjectJson).mock.invocationCallOrder[0];
-        const clear_audio_buffers_order = vi.mocked(clearCachedAudioBuffers).mock.invocationCallOrder[0];
+        const clear_audio_buffers_order = vi.mocked(clearRuntimeCachedAudioBuffers).mock.invocationCallOrder[0];
         const clear_undo_history_order = vi.mocked(clearUndoHistory).mock.invocationCallOrder[0];
         if (
             remove_project_json_order === undefined ||
             clear_audio_buffers_order === undefined ||
             clear_undo_history_order === undefined
         ) {
-            throw new Error('expected removeProjectJson, clearCachedAudioBuffers, and clearUndoHistory calls');
+            throw new Error('expected removeProjectJson, clearRuntimeCachedAudioBuffers, and clearUndoHistory calls');
         }
 
         expect(clear_audio_buffers_order).toBeGreaterThan(remove_project_json_order);
@@ -137,6 +137,7 @@ describe('newProject injectable', () => {
             loading: false,
             initialized: true,
         });
+        expect(clearRuntimeCachedAudioBuffers).not.toHaveBeenCalled();
         expect(ensureTrackStrips).toHaveBeenCalledOnce();
         expect(startCrdtAutoSave).toHaveBeenCalledOnce();
     });

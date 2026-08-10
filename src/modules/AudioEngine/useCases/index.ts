@@ -22,6 +22,7 @@ export { playAuditionNote } from './audition';
 export { cacheAudioBuffer } from './cacheAudioBuffer';
 export { cancelPendingAudioBufferImport } from './cancelPendingAudioBufferImport';
 export { clearCachedAudioBuffers } from './clearCachedAudioBuffers';
+export { clearRuntimeCachedAudioBuffers } from './clearRuntimeCachedAudioBuffers';
 export { exportCachedAudioBuffers } from './exportCachedAudioBuffers';
 export { garbageCollectCachedAudioBuffersByAge } from './garbageCollectCachedAudioBuffersByAge';
 export { garbageCollectCachedAudioBuffersBySize } from './garbageCollectCachedAudioBuffersBySize';

@@ -631,6 +631,18 @@ function evictCachedBuffer(id: string): void {
     accessRefreshStampById.delete(id);
 }
 
+function clearRuntimeCacheState(): void {
+    cache.clear();
+    residentFreezeProjectIdById.clear();
+    pinnedBufferIds.clear();
+    waveformCache.clear();
+    // The level-1 mipmap is keyed by id alone and is not bounded. Keeping it
+    // across a project transition leaks memory and can draw the previous
+    // project's peaks when the incoming project reuses an id.
+    mipmapLevel1Cache.clear();
+    accessRefreshStampById.clear();
+}
+
 type PreparedAudioBuffers = {
     publish: () => number;
 };
@@ -911,21 +923,14 @@ export const audioBufferCache = {
         return prepareBuffersFromIdb({ context, ids, shouldContinue });
     },
 
+    clearRuntime(): void {
+        clearRuntimeCacheState();
+    },
+
     clear(): void {
         cancelAllImportCandidates();
-        cache.clear();
-        residentFreezeProjectIdById.clear();
-        pinnedBufferIds.clear();
-        waveformCache.clear();
-        // The level-1 mipmap is keyed by id alone and is not bounded. Leaving it
-        // behind is both a leak across every project switch (~PCM/256 per
-        // buffer) and wrong: `restoreFromIdb`'s publish path calls
-        // `audioCacheSet` without clearing waveform state, so a different
-        // buffer arriving under a reused id would draw the previous project's
-        // peaks at any zoom that reads the mipmap.
-        mipmapLevel1Cache.clear();
+        clearRuntimeCacheState();
         persistenceGenerationById.clear();
-        accessRefreshStampById.clear();
         // Deliberately keeps the memoized connection (audit M-045). Clearing the
         // object store does not invalidate the connection, so dropping the memo
         // here would abandon the handle the clear is still running on: the clear

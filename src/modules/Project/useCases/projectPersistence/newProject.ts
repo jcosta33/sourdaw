@@ -1,6 +1,6 @@
 import { logger } from '#/infra/logger/appLogger';
 import { addTrack } from '#/modules/Arrangement/useCases';
-import { clearCachedAudioBuffers, resetAudioGraph } from '#/modules/AudioEngine/useCases';
+import { clearRuntimeCachedAudioBuffers, resetAudioGraph } from '#/modules/AudioEngine/useCases';
 import { clearUndoHistory } from '#/modules/Command/useCases';
 import {
     compactProject,
@@ -111,7 +111,7 @@ async function activateNewProject({
         });
     });
     runCommittedStep('project cache removal', removeProjectJson);
-    runCommittedStep('audio buffer reset', clearCachedAudioBuffers);
+    runCommittedStep('runtime audio buffer reset', clearRuntimeCachedAudioBuffers);
     runCommittedStep('undo history reset', clearUndoHistory);
     runCommittedStep('autosave start', () => setAutoSaveHandle(startCrdtAutoSave()));
 
