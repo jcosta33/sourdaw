@@ -647,6 +647,7 @@ export type ProjectExportedAudioBuffer = {
     sampleRate: number;
     numberOfChannels: number;
     channelData: string[];
+    freezeProjectId?: number;
 };
 
 export type ProjectTake = {

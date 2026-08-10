@@ -373,6 +373,137 @@ describe('isHydratableProjectData', () => {
         ).toBe(false);
     });
 
+    it('rejects embedded freeze ownership that disagrees with the project envelope', () => {
+        const project = buildValidProjectData();
+        project.arrangement = {
+            tracks: [
+                {
+                    ...validTrack,
+                    freezeState: { status: 'frozen', frozenBufferId: 'freeze-track-1' },
+                },
+            ],
+        };
+        const audioBuffer = {
+            sampleRate: 44_100,
+            numberOfChannels: 1,
+            channelData: ['audio'],
+        };
+
+        expect(
+            isHydratableProjectData({
+                ...project,
+                audioBuffers: {
+                    'freeze-track-1': { ...audioBuffer, freezeProjectId: project.meta.createdAt },
+                    'legacy-track-1': audioBuffer,
+                },
+            })
+        ).toBe(true);
+
+        expect(
+            isHydratableProjectData({
+                ...project,
+                audioBuffers: {
+                    'freeze-track-1': {
+                        ...audioBuffer,
+                        freezeProjectId: project.meta.createdAt + 1,
+                    },
+                },
+            })
+        ).toBe(false);
+    });
+
+    it('rejects freeze ownership on a buffer referenced only by an ordinary clip', () => {
+        const project = buildValidProjectData();
+        const bufferId = 'ordinary-buffer';
+
+        expect(
+            isHydratableProjectData({
+                ...project,
+                arrangement: {
+                    tracks: [{ ...validTrack, clips: [{ ...validClip, bufferId }] }],
+                },
+                audioBuffers: {
+                    [bufferId]: {
+                        sampleRate: 44_100,
+                        numberOfChannels: 1,
+                        channelData: ['audio'],
+                        freezeProjectId: project.meta.createdAt,
+                    },
+                },
+            })
+        ).toBe(false);
+    });
+
+    it('rejects freeze ownership when saved arrangements also reference the buffer as ordinary PCM', () => {
+        const project = buildValidProjectData();
+        const bufferId = 'mixed-buffer';
+
+        expect(
+            isHydratableProjectData({
+                ...project,
+                arrangement: {
+                    tracks: [
+                        {
+                            ...validTrack,
+                            clips: [],
+                            freezeState: { status: 'frozen', frozenBufferId: bufferId },
+                        },
+                    ],
+                },
+                arrangements: [
+                    {
+                        id: 'saved-arrangement',
+                        name: 'Saved arrangement',
+                        tracks: {
+                            tracks: [{ ...validTrack, clips: [{ ...validClip, bufferId }] }],
+                            selectedTrackId: null,
+                        },
+                    },
+                ],
+                audioBuffers: {
+                    [bufferId]: {
+                        sampleRate: 44_100,
+                        numberOfChannels: 1,
+                        channelData: ['audio'],
+                        freezeProjectId: project.meta.createdAt,
+                    },
+                },
+            })
+        ).toBe(false);
+    });
+
+    it('rejects owned freeze keys that encode a different project while preserving legacy ownership absence', () => {
+        const project = buildValidProjectData();
+        const bufferId = `freeze-project-${String(project.meta.createdAt + 1)}-track-1-123`;
+        project.arrangement = {
+            tracks: [
+                {
+                    ...validTrack,
+                    clips: [],
+                    freezeState: { status: 'frozen', frozenBufferId: bufferId },
+                },
+            ],
+        };
+        const audioBuffer = { sampleRate: 44_100, numberOfChannels: 1, channelData: ['audio'] };
+
+        expect(
+            isHydratableProjectData({
+                ...project,
+                audioBuffers: { [bufferId]: { ...audioBuffer, freezeProjectId: project.meta.createdAt } },
+            })
+        ).toBe(false);
+        expect(isHydratableProjectData({ ...project, audioBuffers: { [bufferId]: audioBuffer } })).toBe(true);
+
+        const matchingId = `freeze-project-${String(project.meta.createdAt)}-track-1-123`;
+        project.arrangement.tracks[0]!.freezeState = { status: 'frozen', frozenBufferId: matchingId };
+        expect(
+            isHydratableProjectData({
+                ...project,
+                audioBuffers: { [matchingId]: { ...audioBuffer, freezeProjectId: project.meta.createdAt } },
+            })
+        ).toBe(true);
+    });
+
     it('rejects an arrangement snapshot with a malformed selectedTrackId', () => {
         expect(
             isHydratableProjectData({
