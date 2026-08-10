@@ -402,6 +402,7 @@ function GrinderKnob({
                 step={step}
                 defaultValue={defaultValue}
                 size="sm"
+                aria-label={label}
             />
             <span className="text-[10px] uppercase tracking-[0.24em] text-[var(--color-accent-amber)]">{label}</span>
             <span className="font-mono text-[10px] text-white/55">{formatValue(value, unit)}</span>
