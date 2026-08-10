@@ -494,6 +494,8 @@ export type AudioEngine = {
     removeBusStrip(busId: string): void;
     setBusGain(busId: string, gain: number): void;
     setSend(sourceTrackId: string, busId: string, level: number, preFader?: boolean): void;
+    /** PDC-aligned send automation write. `time` is absolute context time. */
+    scheduleSendAutomation(sourceTrackId: string, busId: string, level: number, time: number): void;
     removeSend(sourceTrackId: string, busId: string): void;
     setTrackOutput(
         trackId: string,

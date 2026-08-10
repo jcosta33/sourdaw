@@ -24,6 +24,7 @@ const engineMocks = vi.hoisted(() => {
             findToasterControls: vi.fn(),
             setMasterGain: vi.fn(),
             setSend: vi.fn(),
+            scheduleSendAutomation: vi.fn(),
             removeSend: vi.fn(),
             removeTrackStrip: vi.fn(),
             removeBusStrip: vi.fn(),
@@ -54,6 +55,7 @@ import { removeBusStrip } from '../engineAccess/removeBusStrip';
 import { removeSend } from '../engineAccess/removeSend';
 import { removeTrackStrip } from '../engineAccess/removeTrackStrip';
 import { resumeEngine } from '../engineAccess/resumeEngine';
+import { scheduleSendAutomation } from '../engineAccess/scheduleSendAutomation';
 import { setMasterGainValue } from '../engineAccess/setMasterGainValue';
 import { setSend } from '../engineAccess/setSend';
 import { unwireSidechainRoute } from '../engineAccess/unwireSidechainRoute';
@@ -136,6 +138,11 @@ describe('engineAccess', () => {
 
         removeSend('t1', 'bus-1');
         expect(engineMocks.engine.removeSend).toHaveBeenCalledWith('t1', 'bus-1');
+    });
+
+    it('scheduleSendAutomation passes the exact absolute landing time through', () => {
+        scheduleSendAutomation('t1', 'bus-1', 0.3, 12.55);
+        expect(engineMocks.engine.scheduleSendAutomation).toHaveBeenCalledWith('t1', 'bus-1', 0.3, 12.55);
     });
 
     it('wire/unwireSidechainRoute pass their route endpoints through', () => {

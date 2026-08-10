@@ -7,6 +7,7 @@ import {
 import {
     getCompensationDelay,
     getCurrentTime,
+    scheduleSendAutomation,
     scheduleTrackPan,
     updateDeviceParam,
     updateMidiFxParam,
@@ -19,7 +20,6 @@ import {
     resolveAutoMatchValue,
 } from '#/modules/Automation/useCases';
 import { applyFermenterRuntimeParam } from '#/modules/Fermenter/useCases';
-import { setSend as setRuntimeSend } from '#/modules/Routing/useCases';
 import {
     getDeviceAutomationParameterId,
     resolveDeviceAutomationTargetIndex,
@@ -236,9 +236,9 @@ export function applyAutomation(currentBeat: number): Set<string> {
         // above will restore this lane's manual base on the tick it stops.
         automationState.drivingLanes.set(lane.id, lane);
 
-        // RT-5 param-family split. `gain` and `pan` are the only automation
-        // targets backed by a real native AudioParam (fader GainNode.gain /
-        // StereoPannerNode.pan), so they adopt sample-accurate, PDC-aligned
+        // RT-5 param-family split. `gain`, `pan`, and an existing send are backed
+        // by native AudioParams (fader GainNode.gain / StereoPannerNode.pan /
+        // send GainNode.gain), so they adopt sample-accurate, PDC-aligned
         // scheduling: the value lands at `getCurrentTime() +
         // getCompensationDelay(track)` — the same delayed clock scheduleAudioClips
         // places the compensated audio on — and ramps a-rate instead of stepping
@@ -266,7 +266,7 @@ export function applyAutomation(currentBeat: number): Set<string> {
             if (sendBusId !== null) {
                 const send = track.sends.find((candidate) => candidate.busId === sendBusId);
                 if (send) {
-                    setRuntimeSend(lane.trackId, sendBusId, value, send.preFader);
+                    scheduleSendAutomation(lane.trackId, sendBusId, value, now + compensationFor(lane.trackId));
                 }
                 continue;
             }

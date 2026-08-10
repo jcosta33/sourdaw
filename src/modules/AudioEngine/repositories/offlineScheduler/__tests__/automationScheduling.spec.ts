@@ -439,10 +439,11 @@ describe('scheduleTrackAutomation', () => {
             durationSeconds: 20,
             defaultTempo: 120,
             changes: [],
+            compensationDelaySec: 0.05,
         });
 
-        expect(hallSend.setValueAtTime).toHaveBeenCalledWith(reducedLevel, 8);
-        expect(hallSend.setValueAtTime).toHaveBeenCalledWith(originalLevel, 16);
+        expect(hallSend.setValueAtTime).toHaveBeenCalledWith(reducedLevel, 8.05);
+        expect(hallSend.setValueAtTime).toHaveBeenCalledWith(originalLevel, 16.05);
         expect(hallSend.linearRampToValueAtTime).not.toHaveBeenCalled();
         expect(gain.setValueAtTime).not.toHaveBeenCalled();
         expect(pan.setValueAtTime).not.toHaveBeenCalled();

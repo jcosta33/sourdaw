@@ -4,6 +4,7 @@ import { deriveVcaMultiplier, resolveEligibleDeviceWriteTarget, trackStore } fro
 import {
     getCompensationDelay,
     getCurrentTime,
+    scheduleSendAutomation,
     scheduleTrackGain,
     scheduleTrackPan,
     updateDeviceParam,
@@ -12,7 +13,6 @@ import {
 import { automationStore } from '#/modules/Automation/stores';
 import { getAutomationValueAtBeat, isRecordingAutomation, resolveAutoMatchValue } from '#/modules/Automation/useCases';
 import { applyFermenterRuntimeParam, setFermenterMappedParam } from '#/modules/Fermenter/useCases';
-import { setSend } from '#/modules/Routing/useCases';
 import { AUTOMATION_SLEW_ALPHA, slewStep } from '#/utils/automationSlew';
 
 import { applyAutomation } from '../applyAutomation';
@@ -68,6 +68,7 @@ vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => {
     const mod = await importOriginal<typeof import('#/modules/AudioEngine/useCases')>();
     return {
         ...mod,
+        scheduleSendAutomation: vi.fn(),
         scheduleTrackGain: vi.fn(),
         scheduleTrackPan: vi.fn(),
         getCurrentTime: vi.fn(() => 5),
@@ -84,11 +85,6 @@ vi.mock('#/modules/Fermenter/useCases', async (importOriginal) => {
         setFermenterMappedParam: vi.fn(),
     };
 });
-vi.mock('#/modules/Routing/useCases', async (importOriginal) => ({
-    ...(await importOriginal<typeof import('#/modules/Routing/useCases')>()),
-    setSend: vi.fn(),
-}));
-
 type MutableTrackStore = { value: { tracks: unknown[] } };
 type MutableAutomationStore = { value: { lanes: unknown[] } };
 
@@ -166,17 +162,18 @@ describe('applyAutomation', () => {
         expect(scheduleTrackPan).toHaveBeenCalledWith('track-1', expectedPan, 5);
     });
 
-    it('applies a send lane to the existing live send without changing its tap', () => {
+    it('schedules a send lane on the compensated live clock without changing its tap', () => {
         seedDeviceLane({ devices: [], laneParameterId: 'send:bus-hall' });
         const track = mutableTrackStore.value.tracks[0] as {
             sends: Array<{ busId: string; level: number; preFader: boolean }>;
         };
         track.sends = [{ busId: 'bus-hall', level: 0.5, preFader: true }];
         vi.mocked(getAutomationValueAtBeat).mockReturnValue(0.5 * 10 ** (-3 / 20));
+        vi.mocked(getCompensationDelay).mockReturnValue(0.05);
 
         applyAutomation(16);
 
-        expect(setSend).toHaveBeenCalledWith('track-1', 'bus-hall', 0.5 * 10 ** (-3 / 20), true);
+        expect(scheduleSendAutomation).toHaveBeenCalledWith('track-1', 'bus-hall', 0.5 * 10 ** (-3 / 20), 5.05);
         expect(scheduleTrackGain).not.toHaveBeenCalled();
         expect(scheduleTrackPan).not.toHaveBeenCalled();
     });
@@ -827,13 +824,14 @@ describe('applyAutomation', () => {
             };
             vi.mocked(getAutomationValueAtBeat).mockReset();
             vi.mocked(getAutomationValueAtBeat).mockReturnValue(0.25);
+            vi.mocked(getCompensationDelay).mockReturnValue(0.05);
             applyAutomation(16);
-            expect(setSend).toHaveBeenLastCalledWith('track-1', 'bus-hall', 0.25, true);
+            expect(scheduleSendAutomation).toHaveBeenLastCalledWith('track-1', 'bus-hall', 0.25, 5.05);
 
             mutableAutomationStore.value = { lanes: [] };
             applyAutomation(16);
 
-            expect(setSend).toHaveBeenLastCalledWith('track-1', 'bus-hall', 0.5, true);
+            expect(scheduleSendAutomation).toHaveBeenLastCalledWith('track-1', 'bus-hall', 0.5, 5.05);
         });
     });
 

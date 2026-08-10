@@ -1,8 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-import { updateDeviceParam, updateMidiFxParam } from '#/modules/AudioEngine/useCases';
+import { scheduleSendAutomation, updateDeviceParam, updateMidiFxParam } from '#/modules/AudioEngine/useCases';
 import { applyFermenterRuntimeParam } from '#/modules/Fermenter/useCases';
-import { setSend } from '#/modules/Routing/useCases';
 
 import { restoreAutomationBaseValue } from '../restoreAutomationBaseValue';
 
@@ -21,6 +20,7 @@ vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => {
     const mod = await importOriginal<typeof import('#/modules/AudioEngine/useCases')>();
     return {
         ...mod,
+        scheduleSendAutomation: vi.fn(),
         scheduleTrackGain: vi.fn(),
         scheduleTrackPan: vi.fn(),
         updateDeviceParam: vi.fn(),
@@ -34,14 +34,6 @@ vi.mock('#/modules/Fermenter/useCases', async (importOriginal) => {
         applyFermenterRuntimeParam: vi.fn(),
     };
 });
-vi.mock('#/modules/Routing/useCases', async (importOriginal) => {
-    const mod = await importOriginal<typeof import('#/modules/Routing/useCases')>();
-    return {
-        ...mod,
-        setSend: vi.fn(),
-    };
-});
-
 type RestorableTrack = Parameters<typeof restoreAutomationBaseValue>[0]['track'];
 
 function trackWithDeviceParam(paramId: string, baseValue: number): RestorableTrack {
@@ -83,7 +75,7 @@ describe('restoreAutomationBaseValue', () => {
         expect(updateDeviceParam).toHaveBeenCalledWith('track-1', 'ov-1', 'mix', 0.42);
     });
 
-    it('restores the persisted send level and tap after its lane stops driving', () => {
+    it('restores the persisted send level on the compensated clock after its lane stops driving', () => {
         restoreAutomationBaseValue({
             lane: { trackId: 'track-1', parameterId: 'send:bus-hall' },
             track: {
@@ -96,7 +88,7 @@ describe('restoreAutomationBaseValue', () => {
             landTime: 7,
         });
 
-        expect(setSend).toHaveBeenCalledWith('track-1', 'bus-hall', 0.5, true);
+        expect(scheduleSendAutomation).toHaveBeenCalledWith('track-1', 'bus-hall', 0.5, 7);
     });
 
     it('restores a Fermenter base through the runtime-only mapped path', () => {

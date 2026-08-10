@@ -73,6 +73,7 @@ vi.mock('../../engine/TrackNode', () => ({
                 updateParam: vi.fn<(...args: unknown[]) => void>(),
                 updatePatch: vi.fn<(...args: unknown[]) => void>(),
                 scheduleParam: vi.fn<(...args: unknown[]) => void>(),
+                scheduleSendAutomation: vi.fn<(...args: unknown[]) => void>(),
                 scheduleDeviceKeyOn: vi.fn<(...args: unknown[]) => void>(),
                 scheduleDeviceKeyOff: vi.fn<(...args: unknown[]) => void>(),
                 updateBypass: vi.fn<(...args: unknown[]) => void>(),
@@ -122,6 +123,9 @@ vi.mock('../../engine/TrackNode', () => ({
         }
         scheduleParam(...args: unknown[]) {
             this.mocks.scheduleParam!(...args);
+        }
+        scheduleSendAutomation(...args: unknown[]) {
+            this.mocks.scheduleSendAutomation!(...args);
         }
         scheduleDeviceKeyOn(...args: unknown[]) {
             this.mocks.scheduleDeviceKeyOn!(...args);
@@ -555,6 +559,14 @@ describe('AudioEngine — public API delegation and lifecycle', () => {
         expect(trackMocks('t1').setGain).toHaveBeenCalledWith(0.7);
         expect(trackMocks('t1').setPan).toHaveBeenCalledWith(-25);
         expect(engine.getTrackPeakLevel('t1')).toBe(0.5);
+    });
+
+    it('forwards send automation to the existing source strip at the exact absolute time', () => {
+        engine.ensureTrackStrip('vocal-1');
+
+        engine.scheduleSendAutomation('vocal-1', 'hall-bus', 0.35, 5.05);
+
+        expect(trackMocks('vocal-1').scheduleSendAutomation).toHaveBeenCalledWith('hall-bus', 0.35, 5.05);
     });
 
     it('setTrackMute creates the strip on demand before muting it', () => {
