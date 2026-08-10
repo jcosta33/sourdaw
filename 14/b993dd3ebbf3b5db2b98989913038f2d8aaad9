@@ -1,0 +1,16 @@
+src/modules/Fermenter/presentations/components/UnisonSection.tsx
+  h_1228e573df1f42 34,50,66
+tests/e2e/fermenterUnisonKnobsTestId.spec.ts
+  h_1228e573df1f42 1-55
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "14b993dd3ebbf3b5db2b98989913038f2d8aaad9",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
