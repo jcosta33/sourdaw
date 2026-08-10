@@ -35,8 +35,9 @@ function makeRecordingNode() {
     return {
         workletNode: {} as AudioWorkletNode,
         ready: Promise.resolve({}),
-        noteOn: (a: number, b: number, c?: number, d?: number) => {
-            recorded.push({ method: 'noteOn', args: [a, b, c, d] });
+        noteOn: (a: number, b: number, c?: number, d?: number, e?: number) => {
+            const args = e === undefined ? [a, b, c, d] : [a, b, c, d, e];
+            recorded.push({ method: 'noteOn', args });
         },
         noteOff: (a: number, b?: number, c?: number, d?: number) => {
             recorded.push({ method: 'noteOff', args: [a, b, c, d] });
@@ -104,6 +105,14 @@ describe('native DSP note bindings map the named request onto each device own no
             ]);
         }
     );
+
+    it('levain receives per-note articulation in slot 5', async () => {
+        const node = await buildNode('levain');
+
+        node.noteOn?.({ noteOrPad: 62, velocity: 96, sampleFrame: 6000, channel: 4, articulationId: 8 });
+
+        expect(recorded).toEqual([{ method: 'noteOn', args: [62, 96, 6000, 4, 8] }]);
+    });
 
     // A melodic device must not be handed a pad request's `midiNote`: there is
     // no slot for it, and putting it in slot 3 is the original defect inverted.

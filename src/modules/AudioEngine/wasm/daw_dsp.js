@@ -1655,6 +1655,16 @@ export class LevainInstance {
         wasm.levaininstance_note_on_with_channel(this.__wbg_ptr, note, velocity, channel);
     }
     /**
+     * Process a MIDI note on with an immutable per-note articulation id.
+     * @param {number} note
+     * @param {number} velocity
+     * @param {number} channel
+     * @param {number} articulation
+     */
+    note_on_with_channel_and_articulation(note, velocity, channel, articulation) {
+        wasm.levaininstance_note_on_with_channel_and_articulation(this.__wbg_ptr, note, velocity, channel, articulation);
+    }
+    /**
      * Process a block of audio. Returns pointer to left channel.
      * Caller reads left + right from WASM memory.
      * @param {number} block_size

@@ -5,5 +5,6 @@ import { restoreMidiClipNotes } from '../../useCases/midiNoteTransforms/restoreM
 export const handleRestoreMidiClipNotes = createHandler<'restoreMidiClipNotes'>({
     execute: (action) => ({ status: restoreMidiClipNotes(action.payload) }),
     describe: () => ({ label: 'Restore MIDI clip notes' }),
+    requiresAbortCompensation: false,
     undoable: false,
 });

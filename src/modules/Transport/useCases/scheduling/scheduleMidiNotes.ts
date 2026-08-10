@@ -17,6 +17,7 @@ import {
     getChordAtBeat,
     projectClipMidiEvents,
     projectCommittedGroove,
+    resolveMidiNoteArticulationId,
     shouldPlayMidiEvent,
     transposeForChordTrack,
 } from '#/modules/MIDI/useCases';
@@ -819,7 +820,23 @@ export async function scheduleMidiNotes(
                                 ? workletSynthEntry.velocityTransform(rawVel)
                                 : rawVel;
                             const noteChannel = note.channel ?? 0;
-                            workletSynthControls.noteOn(pitch, vel, sampleFrame, noteChannel);
+                            const articulationId = workletSynthDevice
+                                ? resolveMidiNoteArticulationId({
+                                      deviceType: workletSynthDevice.type,
+                                      articulation: projectedNote.articulation,
+                                  })
+                                : null;
+                            if (workletSynthDevice?.type === 'levain' && workletSynthNode?.levainControls) {
+                                workletSynthNode.levainControls.noteOn(
+                                    pitch,
+                                    vel,
+                                    sampleFrame,
+                                    noteChannel,
+                                    articulationId ?? undefined
+                                );
+                            } else {
+                                workletSynthControls.noteOn(pitch, vel, sampleFrame, noteChannel);
+                            }
                             // The depth the bend was recorded at, and only when
                             // there is a bend. Absent on notes captured before
                             // RPN 0 was decoded, which resolves to the MPE

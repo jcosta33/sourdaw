@@ -37,6 +37,7 @@ export const ACTION_LABELS: Record<string, string> = {
     trimClipStart: 'Trim start',
     trimClipEnd: 'Trim end',
     quantizeNotes: 'Quantize',
+    copyMidiArticulations: 'Copy MIDI articulations',
     transposeNotes: 'Transpose',
     humanizeNotes: 'Humanize',
     invertNotes: 'Invert notes',

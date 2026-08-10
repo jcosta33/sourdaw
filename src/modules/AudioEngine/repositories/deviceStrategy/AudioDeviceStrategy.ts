@@ -63,6 +63,8 @@ export type DeviceNoteOnRequest = {
     readonly midiNote?: number;
     /** MPE member channel. Omitted means the base channel. */
     readonly channel?: number;
+    /** Device-owned per-note articulation id; only supplied to an explicitly capable instrument. */
+    readonly articulationId?: number;
 };
 
 export type DeviceNoteOffRequest = {

@@ -86,6 +86,18 @@ describe('hasDurableMidiGenerationResult — exact match', () => {
         mockedGetNotes.mockReturnValue([makeNote({ pitch: 64 })] as never);
         expect(hasDurableMidiGenerationResult({ ...baseInput, noteMatch: 'exact' })).toBe(false);
     });
+
+    it('returns false when a note articulation differs', () => {
+        setTrack(baseClip);
+        mockedGetNotes.mockReturnValue([makeNote({ articulation: 'legato' })] as never);
+        expect(
+            hasDurableMidiGenerationResult({
+                ...baseInput,
+                notes: [makeNote({ articulation: 'staccato' })],
+                noteMatch: 'exact',
+            })
+        ).toBe(false);
+    });
 });
 
 describe('hasDurableMidiGenerationResult — contains match', () => {

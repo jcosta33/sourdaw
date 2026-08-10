@@ -35,6 +35,7 @@ type TestAppendNote = {
     slide?: number;
     pitchBend?: number;
     channel?: number;
+    articulation?: string;
 };
 
 type TestStoredMidiNote = TestAppendNote & {
@@ -108,6 +109,7 @@ describe('appendMidiNotes', () => {
             slide: -0.5,
             pitchBend: 1024,
             channel: 13,
+            articulation: 'staccato',
         });
         const secondPasted = createAppendNote({
             pitch: 55,
@@ -211,6 +213,10 @@ describe('appendMidiNotes', () => {
         ['a source id', { ...createAppendNote(), id: 'clipboard-id' }],
         ['a numeric-string required field', { ...createAppendNote(), pitch: '64' }],
         ['a null optional field', { ...createAppendNote(), pressure: null }],
+        ['a whitespace-padded articulation', { ...createAppendNote(), articulation: ' accent ' }],
+        ['an empty articulation', { ...createAppendNote(), articulation: '' }],
+        ['an oversized articulation', { ...createAppendNote(), articulation: 'a'.repeat(129) }],
+        ['a control-character articulation', { ...createAppendNote(), articulation: 'accent\n' }],
     ])('rejects a batch with %s before UUID or state mutation', (_case, invalidNote) => {
         const stateBefore = midiStore.value;
         const randomUuid = vi.spyOn(crypto, 'randomUUID');

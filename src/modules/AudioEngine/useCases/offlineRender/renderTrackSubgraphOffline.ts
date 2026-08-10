@@ -294,6 +294,7 @@ export async function renderTrackSubgraphOffline({
                     selectMidiEventProbability,
                     projectChordPitch,
                     evaluateAutomationValue: projections.evaluateAutomationValue,
+                    resolveArticulationId: projections.resolveArticulationId,
                 },
                 onWarning,
                 pendingWorkletEvents,

@@ -380,6 +380,12 @@ const validators = {
         isNonEmptyString(param.clipId) &&
         isPositiveNumber(param.gridSize) &&
         param.gridSize <= 64,
+    copyMidiArticulations: (param): param is PayloadOf<'copyMidiArticulations'> =>
+        isObj(param) &&
+        hasExactKeys(param, ['sourceClipId', 'targetClipId']) &&
+        isNonEmptyString(param.sourceClipId) &&
+        isNonEmptyString(param.targetClipId) &&
+        param.sourceClipId !== param.targetClipId,
     transposeNotes: (param): param is PayloadOf<'transposeNotes'> =>
         isObj(param) &&
         hasExactKeys(param, ['clipId', 'semitones']) &&

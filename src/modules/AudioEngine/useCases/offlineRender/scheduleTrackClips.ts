@@ -21,6 +21,7 @@ import { scheduleTrackAutomation } from '../../repositories/offlineScheduler/aut
 import { offlineDeviceParameterLawState } from '../../repositories/offlineScheduler/offlineDeviceParameterLawState';
 import {
     type OfflineMidiEventProjector,
+    type OfflineMidiArticulationResolver,
     type OfflineAutomationValueEvaluator,
     type OfflineChordPitchProjector,
     type OfflineMidiProbabilitySelector,
@@ -168,6 +169,7 @@ type OfflineProjectionDependencies = {
     selectMidiEventProbability: OfflineMidiProbabilitySelector;
     projectChordPitch: OfflineChordPitchProjector;
     evaluateAutomationValue: OfflineAutomationValueEvaluator | null;
+    resolveArticulationId?: OfflineMidiArticulationResolver | null;
 };
 
 export type ScheduleTrackClipsInput = {
@@ -250,6 +252,7 @@ export async function scheduleTrackClips({
         projectMidiEvents,
         projectPpqEndpoints,
         processYeastMidi,
+        resolveArticulationId,
         selectMidiEventProbability,
     } = projections;
     function projectBeatToSeconds(beat: number): number {
@@ -419,6 +422,7 @@ export async function scheduleTrackClips({
         startSamples: number;
         endSamples: number;
         toasterPadIndex: number;
+        articulationId?: number;
     };
     type WorkletMidiEvent = {
         time: number;
@@ -427,6 +431,7 @@ export async function scheduleTrackClips({
         velocity: number;
         duration: number;
         toasterPadIndex: number;
+        articulationId?: number;
     };
 
     const drumKit = resolveDrumKit(track.devices);
@@ -456,6 +461,13 @@ export async function scheduleTrackClips({
     const isToasterChild = !instrumentControls && parentTrack?.devices.some((device) => device.type === 'toaster');
     const workletEvents: WorkletMidiEvent[] = [];
     let noteCount = 0;
+
+    function getScheduledArticulationId(articulation: string | undefined): number | undefined {
+        if (!instrumentEntry) {
+            return undefined;
+        }
+        return resolveArticulationId?.({ deviceType: instrumentEntry.deviceType, articulation }) ?? undefined;
+    }
 
     function projectNoteEndpoints(startBeat: number, endBeat: number, toasterPadIndex: number) {
         const swingOffsetBeats =
@@ -515,6 +527,7 @@ export async function scheduleTrackClips({
                     velocity: note.velocity,
                     duration,
                     toasterPadIndex,
+                    articulationId: note.articulationId,
                 });
                 if (!isToaster) {
                     workletEvents.push({
@@ -727,6 +740,7 @@ export async function scheduleTrackClips({
                         startSamples: endpoints.startSamples,
                         endSamples: endpoints.endSamples,
                         toasterPadIndex,
+                        articulationId: getScheduledArticulationId(note.articulation),
                     };
                 });
                 await scheduleMidiNoteBatch(scheduledNotes);
@@ -845,7 +859,7 @@ export async function scheduleTrackClips({
 
     if (instrumentControls && workletEvents.length > 0 && pendingWorkletEvents) {
         for (const event of workletEvents) {
-            pendingWorkletEvents.push({
+            const pendingEvent: PendingWorkletEvent = {
                 time: event.time,
                 type: event.type,
                 pitch: event.pitch,
@@ -853,7 +867,11 @@ export async function scheduleTrackClips({
                 instrumentControls,
                 isToaster,
                 toasterPadIndex: event.toasterPadIndex,
-            });
+            };
+            if (event.articulationId !== undefined) {
+                pendingEvent.articulationId = event.articulationId;
+            }
+            pendingWorkletEvents.push(pendingEvent);
         }
     }
 }

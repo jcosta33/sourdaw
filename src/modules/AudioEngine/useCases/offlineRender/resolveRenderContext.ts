@@ -12,6 +12,7 @@ import {
     type OfflineChordPitchProjector,
     type OfflineAutomationValueEvaluator,
     type OfflineMidiEventProjector,
+    type OfflineMidiArticulationResolver,
     type OfflineMidiProbabilitySelector,
 } from '../../repositories/offlineScheduler/offlineMidiEventProjectorState';
 import {
@@ -42,6 +43,7 @@ export type OfflineRenderContext = {
     projectPpqEndpoints: OfflinePpqEndpointProjector | null;
     processYeastMidi: OfflineYeastMidiProcessor | null;
     evaluateAutomationValue: OfflineAutomationValueEvaluator | null;
+    resolveArticulationId?: OfflineMidiArticulationResolver | null;
 };
 
 export type ResolveRenderContextInput = {
@@ -98,5 +100,6 @@ export function resolveRenderContext(input: ResolveRenderContextInput | number):
         projectPpqEndpoints,
         processYeastMidi: offlineYeastMidiProcessorState.createProcessor?.() ?? null,
         evaluateAutomationValue: offlineMidiEventProjectorState.evaluateAutomationValue,
+        resolveArticulationId: offlineMidiEventProjectorState.resolveArticulationId,
     };
 }

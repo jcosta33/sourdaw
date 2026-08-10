@@ -42,6 +42,17 @@ class LevainInstanceMock {
     note_on_with_channel(note: number, velocity: number, _channel: number): void {
         calls.push({ method: 'note_on', args: [note, velocity] });
     }
+    note_on_with_channel_and_articulation(
+        note: number,
+        velocity: number,
+        channel: number,
+        articulationId: number
+    ): void {
+        calls.push({
+            method: 'note_on_with_channel_and_articulation',
+            args: [note, velocity, channel, articulationId],
+        });
+    }
     note_off(note: number): void {
         calls.push({ method: 'note_off', args: [note] });
     }
@@ -202,6 +213,17 @@ describe('LevainProcessor message handling', () => {
 
         expect(calls.map((c) => c.method)).toEqual(['note_on', 'note_off', 'all_notes_off']);
         expect(method('note_on')!.args).toEqual([64, 80]);
+    });
+
+    it('allocates an articulated note with the immutable note articulation', async () => {
+        const proc = await loadProcessor();
+        send(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });
+        calls.length = 0;
+
+        send(proc, { type: 'noteOn', note: 62, velocity: 96, channel: 4, articulationId: 8 });
+
+        expect(method('note_on_with_channel_and_articulation')!.args).toEqual([62, 96, 4, 8]);
+        expect(method('note_on')).toBeUndefined();
     });
 
     it('maps known params through PARAM_MAP and falls back to the raw name', async () => {
