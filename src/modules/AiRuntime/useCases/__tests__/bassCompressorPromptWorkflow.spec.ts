@@ -698,6 +698,45 @@ describe('bass compressor prompt workflow', () => {
         expect(undoStore.value?.past).toEqual([]);
     });
 
+    it('uses one strict runtime cleanup owner so a partial graph-removal failure stays observable', async () => {
+        await sendChatMessage(PROMPT);
+        const confirmation = getConfirmation();
+        runtimeMocks.addDeviceToStrip.mockImplementationOnce(() => {
+            const state = trackStore.value;
+            if (!state) {
+                throw new Error('Expected track state during runtime insertion');
+            }
+            trackStore.set({
+                ...state,
+                tracks: state.tracks.map((track) => {
+                    if (track.id !== 'track-bass-amp') {
+                        return track;
+                    }
+                    return {
+                        ...track,
+                        devices: [...track.devices, createDevice('device-remote-amp', 'Gain', 'builtin-gain')],
+                    };
+                }),
+            });
+        });
+        runtimeMocks.removeDeviceFromStrip
+            .mockImplementationOnce(() => {
+                throw new Error('partial TrackNode removal failed');
+            })
+            .mockImplementationOnce(() => undefined);
+
+        const result = await confirmPendingChatActions({ confirmationId: confirmation?.id ?? '' });
+
+        expect(result).toMatchObject({ status: 'failed' });
+        if (result.status !== 'failed') {
+            throw new Error('Expected failed cleanup result');
+        }
+        expect(result.reason).toContain('partial TrackNode removal failed');
+        expect(result.reason.toLowerCase()).toContain('manual repair');
+        expect(runtimeMocks.removeDeviceFromStrip).toHaveBeenCalledTimes(1);
+        expect(undoStore.value?.past).toEqual([]);
+    });
+
     it('keeps grouped redo retryable when a collaborator freezes an eligible bass track after undo', async () => {
         await sendChatMessage(PROMPT);
         const confirmation = getConfirmation();

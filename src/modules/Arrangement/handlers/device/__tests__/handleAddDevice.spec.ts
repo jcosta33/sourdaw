@@ -64,7 +64,7 @@ describe('handleAddDevice', () => {
         expect(handleAddDevice.undoable).toBe(true);
     });
 
-    it('captures exact runtime cleanup separately from guarded semantic compensation', async () => {
+    it('makes captured exact runtime cleanup the sole abort owner', async () => {
         const action = {
             type: 'addDevice',
             payload: { trackId: 't1', deviceType: 'builtin-compressor', deviceId: 'device-1' },
@@ -73,6 +73,6 @@ describe('handleAddDevice', () => {
         await handleAddDevice.prepareAbort?.(action)();
 
         expect(mocks.abortAddedDeviceRuntime).toHaveBeenCalledWith({ trackId: 't1', deviceId: 'device-1' });
-        expect(handleAddDevice.requiresAbortCompensation).toBe(true);
+        expect(handleAddDevice.requiresAbortCompensation).toBe(false);
     });
 });

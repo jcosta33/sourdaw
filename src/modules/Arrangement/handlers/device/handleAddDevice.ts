@@ -94,6 +94,6 @@ export const handleAddDevice = createHandler<'addDevice'>({
             abortAddedDeviceRuntime({ trackId: action.payload.trackId, deviceId });
         };
     },
-    requiresAbortCompensation: true,
+    requiresAbortCompensation: false,
     undoable: true,
 });
