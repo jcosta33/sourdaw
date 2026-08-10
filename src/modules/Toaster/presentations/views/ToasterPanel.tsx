@@ -299,6 +299,8 @@ export const ToasterPanel = ({ deviceId }: { deviceId: string }): ReactElement =
                                     <button
                                         key={preset.id}
                                         type="button"
+                                        aria-pressed={active}
+                                        aria-label={`Load kit ${preset.name}`}
                                         className={`toaster-window flex flex-col items-start gap-1 px-3 py-2 text-left transition-all ${
                                             active
                                                 ? 'border-white/18 bg-white/[0.03]'
