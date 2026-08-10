@@ -15,6 +15,10 @@ type TestPluginDescriptor = {
     hasCustomUI?: boolean;
 } | null;
 
+type TestPluginScanViewState = {
+    scannedPlugins: Array<{ id: string; name: string; format: string }>;
+};
+
 // Mock external dependencies
 const mockBypassDevice = vi.fn<(deviceId: string, bypassed: boolean) => void>();
 const mockRemoveDevice = vi.fn<(deviceId: string) => void>();
@@ -23,6 +27,7 @@ const mockAddExternalDevice = vi.fn<(trackId: string, pluginId: string, pluginNa
 const mockReorderDevices = vi.fn<(trackId: string, fromIndex: number, toIndex: number) => void>();
 const mockGetPlatformPlugins = vi.fn<() => TestPlatformPlugin[]>(() => []);
 const mockGetPluginById = vi.fn<(id: string) => TestPluginDescriptor>(() => null);
+const mockGetPlatformCapabilities = vi.fn(() => ({ hasNativePlugins: false }));
 vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => {
     const actual = await importOriginal<typeof import('#/modules/Arrangement/useCases')>();
     return {
@@ -63,7 +68,9 @@ vi.mock('#/modules/WorkspaceShell/useCases', () => ({
     },
 }));
 
-const mockUseStore = vi.fn((_store: unknown, _defaultState: unknown) => ({ scannedPlugins: [] }));
+const mockUseStore = vi.fn((_store: unknown, _defaultState: unknown): TestPluginScanViewState => ({
+    scannedPlugins: [],
+}));
 vi.mock('#/infra/store/useStore', () => ({
     useStore: (store: unknown, defaultState: unknown) => mockUseStore(store, defaultState),
 }));
@@ -78,7 +85,7 @@ vi.mock('#/modules/PluginHost/stores', async (importOriginal) => {
 });
 
 vi.mock('#/utils/platformCapabilities', () => ({
-    getPlatformCapabilities: () => ({ hasNativePlugins: false }),
+    getPlatformCapabilities: () => mockGetPlatformCapabilities(),
     DISABLED_REASONS: { nativePlugins: 'Desktop app required' },
 }));
 
@@ -190,6 +197,7 @@ describe('TrackDevicesSection', () => {
         vi.clearAllMocks();
         mockGetPlatformPlugins.mockReturnValue([]);
         mockGetPluginById.mockReturnValue(null);
+        mockGetPlatformCapabilities.mockReturnValue({ hasNativePlugins: false });
         mockUseStore.mockReturnValue({ scannedPlugins: [] });
     });
 
@@ -263,6 +271,26 @@ describe('TrackDevicesSection', () => {
         // *or* id, and three catalog names are carried by two plugins each.
         expect(mockAddDevice).toHaveBeenCalledWith('track-1', 'chorus');
         expect(screen.queryByRole('menuitem', { name: 'Chorus' })).not.toBeInTheDocument();
+    });
+
+    it('offers only supported CLAP plugins from stale scan state', () => {
+        mockGetPlatformCapabilities.mockReturnValue({ hasNativePlugins: true });
+        mockUseStore.mockReturnValue({
+            scannedPlugins: [
+                { id: 'vst-1', name: 'Stale VST', format: 'vst3' },
+                { id: 'clap-1', name: 'Working CLAP', format: 'clap' },
+                { id: 'au-1', name: 'Stale AU', format: 'au' },
+            ],
+        });
+
+        render(<TrackDevicesSection track={mockTrack} onSelectDevice={mockOnSelectDevice} />);
+        fireEvent.click(screen.getByLabelText('Add device'));
+
+        expect(screen.queryByRole('menuitem', { name: /Stale VST/ })).not.toBeInTheDocument();
+        expect(screen.queryByRole('menuitem', { name: /Stale AU/ })).not.toBeInTheDocument();
+
+        fireEvent.click(screen.getByRole('menuitem', { name: /Working CLAP/ }));
+        expect(mockAddExternalDevice).toHaveBeenCalledWith('track-1', 'clap-1', 'Working CLAP');
     });
 
     it('should apply opacity to bypassed devices', () => {

@@ -53,6 +53,9 @@ export const TrackDevicesSection = ({ track, onSelectDevice }: TrackDevicesSecti
     const utilityPlugins = platformPlugins.filter((param) => param.category === 'utility');
     const analyzerPlugins = platformPlugins.filter((param) => param.category === 'analyzer');
     const platformCapabilities = getPlatformCapabilities();
+    const supportedExternalPlugins = pluginScanState.scannedPlugins.filter(
+        (plugin) => plugin.format.toLowerCase() === 'clap'
+    );
 
     useEffect(() => {
         if (!showDeviceMenu) {
@@ -146,9 +149,9 @@ export const TrackDevicesSection = ({ track, onSelectDevice }: TrackDevicesSecti
                                 ) : null}
                                 <DawMenuSeparator />
                                 <DawMenuSectionLabel>External</DawMenuSectionLabel>
-                                {platformCapabilities.hasNativePlugins && pluginScanState.scannedPlugins.length > 0 ? (
+                                {platformCapabilities.hasNativePlugins && supportedExternalPlugins.length > 0 ? (
                                     <div className="max-h-32 overflow-y-auto">
-                                        {pluginScanState.scannedPlugins.map((plugin) => (
+                                        {supportedExternalPlugins.map((plugin) => (
                                             <button
                                                 type="button"
                                                 key={plugin.id}
