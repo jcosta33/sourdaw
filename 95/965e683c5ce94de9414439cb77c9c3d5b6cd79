@@ -1,0 +1,51 @@
+src/modules/Transport/useCases/scheduling/applyAutomation/applyAutomation.ts
+  s_a40848e8f8cca9::t_287e26cd796a67 10,239-241,269
+src/modules/AudioEngine/useCases/engineAccess/scheduleSendAutomation.ts
+  s_a40848e8f8cca9::t_287e26cd796a67 1-10
+src/modules/AudioEngine/repositories/__tests__/createWebAudioEngineDelegation.spec.ts
+  s_a40848e8f8cca9::t_4a1d6aa6de4ed4 76,127-129,564-569
+  s_a40848e8f8cca9::t_5fd723ffdb78c5 570-571
+src/modules/AudioEngine/engine/__tests__/TrackNode.spec.ts
+  s_a40848e8f8cca9::t_98fa663ad00708 174-180,183-185,198-199
+  s_a40848e8f8cca9::t_9d516a1731ada7 156-161,163-165,167-168,170-171,200
+  s_a40848e8f8cca9::t_f79eed191b5f40 134-140,143-155,166,169,172-173
+  s_a40848e8f8cca9::t_cf44e0d13d7a29 141,181
+  s_a40848e8f8cca9::t_aef23455749a55 142,162,182
+src/modules/AudioEngine/useCases/index.ts
+  s_a40848e8f8cca9::t_287e26cd796a67 88
+src/modules/AudioEngine/engine/TrackNode.ts
+  s_a40848e8f8cca9::t_287e26cd796a67 234-242,257,267-268
+src/modules/AudioEngine/repositories/offlineScheduler/__tests__/automationScheduling.spec.ts
+  s_a40848e8f8cca9::t_d49fcb66ec567f 442,445-446
+src/modules/AudioEngine/repositories/createWebAudioEngine.ts
+  s_a40848e8f8cca9::t_287e26cd796a67 1218-1224
+src/modules/Transport/useCases/scheduling/applyAutomation/__tests__/applyAutomation.spec.ts
+  s_a40848e8f8cca9::t_f79eed191b5f40 827,829,834
+  s_a40848e8f8cca9::t_2f24c735e83831 7,71,165,172,176
+src/modules/Transport/useCases/scheduling/applyAutomation/restoreAutomationBaseValue.ts
+  s_a40848e8f8cca9::t_287e26cd796a67 8,90
+  s_a40848e8f8cca9::t_a92ffaa7131733 67-68
+src/modules/Transport/useCases/scheduling/applyAutomation/__tests__/restoreAutomationBaseValue.spec.ts
+  s_a40848e8f8cca9::t_f79eed191b5f40 3,23,78,91
+src/modules/AudioEngine/useCases/__tests__/engineAccess.spec.ts
+  s_a40848e8f8cca9::t_f79eed191b5f40 27,58,143-145
+  s_a40848e8f8cca9::t_5b88b79efbd097 146-147
+src/modules/AudioEngine/models/AudioEngineState.ts
+  s_a40848e8f8cca9::t_4a1d6aa6de4ed4 497-498
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "95965e683c5ce94de9414439cb77c9c3d5b6cd79",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
