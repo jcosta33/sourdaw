@@ -1,0 +1,33 @@
+src/modules/AiRuntime/useCases/describePlannedAction.ts
+  s_a40848e8f8cca9::t_518ed36b3f2ee0 8,256-272
+src/modules/AiRuntime/useCases/getPlannedActionAffectedIds.ts
+  s_a40848e8f8cca9::t_518ed36b3f2ee0 4-5,9-11,48-57
+src/modules/AiRuntime/transformers/getMidiArticulationSemanticChanges.ts
+  s_a40848e8f8cca9::t_518ed36b3f2ee0 1-54
+src/modules/AiRuntime/models/__tests__/RuntimeAction.spec.ts
+  s_a40848e8f8cca9::t_86ab2d3956706e 103
+src/modules/AiRuntime/useCases/__tests__/articulationTransferPromptWorkflow.spec.ts
+  s_a40848e8f8cca9::t_07d42bff4d9862 326-327,340-351,382,384,389-395
+src/utils/handlerContract.ts
+  s_a40848e8f8cca9::t_518ed36b3f2ee0 826
+src/modules/AiRuntime/useCases/__tests__/describePlannedAction.spec.ts
+  s_a40848e8f8cca9::t_fe45362308950e 89-157
+src/modules/AiRuntime/useCases/materializeActionStateGuards.ts
+  s_a40848e8f8cca9::t_518ed36b3f2ee0 56
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "521915215448c850cf5bf257bf1d3d57584c0eed",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
