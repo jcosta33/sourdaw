@@ -1,0 +1,63 @@
+src/modules/Command/useCases/executeAppActionBatch.ts
+  s_a40848e8f8cca9::t_5a52ad3b7ea753 467
+src/modules/Arrangement/handlers/device/__tests__/handleSetDeviceParameter.spec.ts
+  s_a40848e8f8cca9::t_2fb7274209b57e 3-4,11,65,75-94,96-111
+src/utils/handlerContract.ts
+  s_a40848e8f8cca9::t_f640fdd0de0260 677-688
+src/modules/AiRuntime/useCases/agentReference/getDeviceParameterPromptScope.ts
+  s_a40848e8f8cca9::t_58206cb58c6078 85
+  s_a40848e8f8cca9::t_f640fdd0de0260 1-5,7-10,12-20,22-51,53-84,86-88,90-125
+  s_a40848e8f8cca9::t_e643bbae426cce 6,11,21,52
+  s_a40848e8f8cca9::t_3afc857e69763c 89
+src/modules/AiRuntime/useCases/describePendingActionConfirmation.ts
+  s_a40848e8f8cca9::t_e643bbae426cce 54-61
+  s_a40848e8f8cca9::t_f640fdd0de0260 7,53,62
+src/modules/AiRuntime/useCases/validateActionPayload.ts
+  s_a40848e8f8cca9::t_5cab7960006dc3 250,260-261
+  s_a40848e8f8cca9::t_90513e7e076175 251-259,262-266
+src/modules/AiRuntime/useCases/agentReference/__tests__/bridgeGroundedLlmToolCalls.spec.ts
+  s_a40848e8f8cca9::t_e4769909b5ac40 3713-3724,3821-3832,3836-3847,3850-3861
+src/modules/Command/useCases/__tests__/executeAppActionBatch.spec.ts
+  s_a40848e8f8cca9::t_4815130b621a05 518-555
+src/modules/Arrangement/handlers/device/handleSetDeviceParameter.ts
+  s_a40848e8f8cca9::t_e643bbae426cce 56,67-72,75
+  s_a40848e8f8cca9::t_e8b950d4bf4ec0 73-74
+  s_a40848e8f8cca9::t_f640fdd0de0260 8-55,57-64,66
+  s_a40848e8f8cca9::t_4db987a1eacfbb 3,100-104
+  s_a40848e8f8cca9::t_9472b050201157 79-83,93-99,105
+src/modules/AiRuntime/useCases/agentReference/bridgeGroundedLlmToolCalls.ts
+  s_a40848e8f8cca9::t_f640fdd0de0260 20,1088-1125,1127,1509
+  s_a40848e8f8cca9::t_f9ec397033c284 1495-1507,1510
+  s_a40848e8f8cca9::t_ee556d6c837309 1126
+  s_a40848e8f8cca9::t_4fe9146b71d144 1128-1130
+  s_a40848e8f8cca9::t_e83fb3c0c9ce54 1508
+src/modules/AiRuntime/transformers/llmActionBridge.ts
+  s_a40848e8f8cca9::t_f640fdd0de0260 1833-1835,1840-1848
+src/modules/AiRuntime/useCases/__tests__/validateActionPayload.spec.ts
+  s_a40848e8f8cca9::t_5cab7960006dc3 540-541,544
+  s_a40848e8f8cca9::t_90513e7e076175 545
+src/modules/AiRuntime/useCases/__tests__/bassCompressorParameterPromptWorkflow.spec.ts
+  s_a40848e8f8cca9::t_6e19a807a468bd 1-4,6-8,10-29,33-60,63-64,66-68,77-176,206-209,215-287,301-335,346,351-383,387,390-392,394-401,403-404
+  s_a40848e8f8cca9::t_e8b950d4bf4ec0 486
+  s_a40848e8f8cca9::t_6859496b549dde 30,32,288-300
+  s_a40848e8f8cca9::t_273554f4eff16d 5,9,61-62,65,69-76,177-205,210-214,336-345,347-350,384-386,388-389,393,402,405-484,488-535,541-585
+  s_a40848e8f8cca9::t_e643bbae426cce 31,485,487,536-540
+src/modules/AiRuntime/transformers/__tests__/llmActionBridge.spec.ts
+  s_a40848e8f8cca9::t_dd96e91790e803 2594-2602,2637-2645,2671-2679
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "f1fbaa8c6eb0be32f427f898f340629cbdd327c6",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
