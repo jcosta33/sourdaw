@@ -1,0 +1,22 @@
+crates/daw-collab/src/persistence.rs
+  s_bc88af7d3b054c::t_4c9f04d3a2a379 222-224,227-231,233-235,239,242-244,246-247,254,286-290
+  s_bc88af7d3b054c::t_ce978096540d6e 232,236,245,248-253,293
+  s_bc88af7d3b054c::t_1b9c171c4aabd0 291-292
+  s_bc88af7d3b054c::t_084598b601c8b4 294
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "5390250b3d1a37f63af187464dc37d0f4b685a5c",
+  "prompts": {},
+  "sessions": {
+    "s_bc88af7d3b054c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f9b4a-11a2-7f61-8dfb-76eed0eb2a9c",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
