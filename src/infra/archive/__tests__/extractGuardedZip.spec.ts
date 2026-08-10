@@ -120,6 +120,7 @@ describe('extractGuardedZip', () => {
         ['empty ZIP', zip({})],
         ['symlink ZIP', markFirstEntryAsSymlink(zip({ link: bytes(1) }))],
         ['long-prefixed ZIP', prefixZip(zip({ 'payload.bin': bytes(1) }), 8192)],
+        ['suffixed ZIP', new Uint8Array([...zip({ payload: bytes(1) }), 0])],
     ])('rejects disguised nested %s content', (_name, nested) => {
         expect(() => extractGuardedZip({ bytes: zip({ 'nested.bin': nested }) })).toThrow(/nested archive content/i);
     });

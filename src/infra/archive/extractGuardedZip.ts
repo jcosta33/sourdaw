@@ -99,9 +99,9 @@ function inspectInventory(bytes: Uint8Array, limits: ZipExtractionLimits): ZipIn
     return inventory;
 }
 
-function readCentralDirectory(bytes: Uint8Array): ZipInventoryEntry[] {
+function readCentralDirectory(bytes: Uint8Array, allowTrailingBytes = false): ZipInventoryEntry[] {
     const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
-    const end = findEndRecord(view);
+    const end = findEndRecord(view, allowTrailingBytes);
     const entriesOnDisk = view.getUint16(end + 8, true);
     const entries = view.getUint16(end + 10, true);
     const centralBytes = view.getUint32(end + 12, true);
@@ -186,8 +186,7 @@ function validateLocalHeader(
         throw new Error('ZIP local and central entry names disagree');
     }
 }
-
-function findEndRecord(view: DataView): number {
+function findEndRecord(view: DataView, allowTrailingBytes = false): number {
     const first = view.byteLength - END_BYTES;
     const last = Math.max(0, first - 65_535);
     for (let offset = first; offset >= last; offset -= 1) {
@@ -195,7 +194,8 @@ function findEndRecord(view: DataView): number {
             continue;
         }
         const commentBytes = view.getUint16(offset + 20, true);
-        if (offset + END_BYTES + commentBytes === view.byteLength) {
+        const recordEnd = offset + END_BYTES + commentBytes;
+        if (recordEnd === view.byteLength || (allowTrailingBytes && recordEnd < view.byteLength)) {
             return offset;
         }
     }
@@ -325,7 +325,7 @@ function createStreamingExtraction(
 function hasNestedArchiveMagic(data: Uint8Array): boolean {
     if (data.byteLength >= END_BYTES) {
         try {
-            readCentralDirectory(data);
+            readCentralDirectory(data, true);
             return true;
         } catch (error) {
             if (error instanceof Error && error.message !== 'Input is not a supported ZIP archive') {
