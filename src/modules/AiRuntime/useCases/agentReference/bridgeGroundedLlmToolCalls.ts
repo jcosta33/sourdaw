@@ -3937,6 +3937,7 @@ export function bridgeGroundedLlmToolCalls({
                         expectedKind: target.kind,
                         expectedMuted: target.muted,
                         expectedClipIds: target.clips.map((clip) => clip.id),
+                        expectedAlternativeClipIds: target.alternativeClipIds,
                     },
                 };
             }),

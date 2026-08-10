@@ -285,6 +285,7 @@ describe('delete muted empty tracks prompt workflow', () => {
                     expectedKind: 'audio',
                     expectedMuted: true,
                     expectedClipIds: [],
+                    expectedAlternativeClipIds: [],
                 },
             },
             {
@@ -294,6 +295,7 @@ describe('delete muted empty tracks prompt workflow', () => {
                     expectedKind: 'midi',
                     expectedMuted: true,
                     expectedClipIds: [],
+                    expectedAlternativeClipIds: [],
                 },
             },
         ]);
@@ -314,6 +316,49 @@ describe('delete muted empty tracks prompt workflow', () => {
         expect(proposal?.content).toContain('Protected unchanged: "Muted Bus" (bus-muted-empty)');
         expect(proposal?.content).toContain('"Muted Group" (group-muted-empty)');
         expect(undoStore.value?.past).toEqual([]);
+    });
+
+    it('protects a muted track whose inactive alternative contains recorded content', async () => {
+        const hiddenContentTrackId = 'track-muted-hidden-content';
+        const state = trackStore.value;
+        if (!state) {
+            throw new Error('Expected track state');
+        }
+        trackStore.set({
+            ...state,
+            tracks: [
+                ...state.tracks,
+                {
+                    ...createTrack({ id: hiddenContentTrackId, name: 'Muted Hidden Content', muted: true }),
+                    activeAlternativeId: 'alt-empty',
+                    alternatives: [
+                        { id: 'alt-empty', name: 'Empty', clips: [] },
+                        {
+                            id: 'alt-recorded',
+                            name: 'Recorded',
+                            clips: [createClip(hiddenContentTrackId)],
+                        },
+                    ],
+                },
+            ],
+        });
+
+        await sendChatMessage(PROMPT);
+        const confirmation = getConfirmation();
+
+        expect(
+            confirmation?.actions.flatMap((action) => (action.type === 'removeTrack' ? [action.payload.trackId] : []))
+        ).toEqual(['track-muted-audio', 'track-muted-midi']);
+
+        await expect(confirmPendingChatActions({ confirmationId: confirmation?.id ?? '' })).resolves.toEqual({
+            status: 'executed',
+        });
+
+        expect(getTrack(hiddenContentTrackId).alternatives[1]?.clips.map((clip) => clip.id)).toEqual([
+            `clip-${hiddenContentTrackId}`,
+        ]);
+        expect(runtimeMocks.removeTrackStrip).toHaveBeenCalledTimes(2);
+        expect(runtimeMocks.removeTrackStrip).not.toHaveBeenCalledWith(hiddenContentTrackId);
     });
 
     it('confirms one atomic batch, receipts exact removals, and round-trips project and runtime through undo and redo', async () => {
@@ -375,6 +420,7 @@ describe('delete muted empty tracks prompt workflow', () => {
                     expectedKind: 'audio',
                     expectedMuted: true,
                     expectedClipIds: [],
+                    expectedAlternativeClipIds: [],
                 },
             },
             {
@@ -384,6 +430,7 @@ describe('delete muted empty tracks prompt workflow', () => {
                     expectedKind: 'midi',
                     expectedMuted: true,
                     expectedClipIds: [],
+                    expectedAlternativeClipIds: [],
                 },
             },
         ]);
@@ -463,6 +510,45 @@ describe('delete muted empty tracks prompt workflow', () => {
         expect(undoStore.value?.past).toEqual([]);
     });
 
+    it('aborts before deletion when alternative content is added after confirmation', async () => {
+        await sendChatMessage(PROMPT);
+        const confirmation = getConfirmation();
+        const state = trackStore.value;
+        if (!state) {
+            throw new Error('Expected track state');
+        }
+        trackStore.set({
+            ...state,
+            tracks: state.tracks.map((track) =>
+                track.id === 'track-muted-midi'
+                    ? {
+                          ...track,
+                          alternatives: [
+                              {
+                                  id: 'alt-collaborator',
+                                  name: 'Collaborator take',
+                                  clips: [createClip(track.id)],
+                              },
+                          ],
+                      }
+                    : track
+            ),
+        });
+        const beforeConfirm = structuredClone(trackStore.value?.tracks);
+
+        await expect(confirmPendingChatActions({ confirmationId: confirmation?.id ?? '' })).resolves.toMatchObject({
+            status: 'failed',
+        });
+
+        expect(trackStore.value?.tracks).toEqual(beforeConfirm);
+        expect(getTrack('track-muted-audio').muted).toBe(true);
+        expect(getTrack('track-muted-midi').alternatives[0]?.clips.map((clip) => clip.id)).toEqual([
+            'clip-track-muted-midi',
+        ]);
+        expect(runtimeMocks.removeTrackStrip).not.toHaveBeenCalled();
+        expect(undoStore.value?.past).toEqual([]);
+    });
+
     it('reconciles a transient later runtime-removal failure without partial graph residue', async () => {
         runtimeMocks.removeTrackStrip
             .mockImplementationOnce(() => undefined)
@@ -508,7 +594,7 @@ describe('delete muted empty tracks prompt workflow', () => {
         expect(receipt?.error).toContain('manual repair required');
     });
 
-    it('keeps grouped redo retryable when a collaborator makes one restored target nonempty', async () => {
+    it('keeps grouped redo retryable when a collaborator adds alternative content to one restored target', async () => {
         await sendChatMessage(PROMPT);
         await confirmPendingChatActions({ confirmationId: getConfirmation()?.id ?? '' });
         await undo();
@@ -520,7 +606,18 @@ describe('delete muted empty tracks prompt workflow', () => {
         trackStore.set({
             ...state,
             tracks: state.tracks.map((track) =>
-                track.id === 'track-muted-midi' ? { ...track, clips: [createClip(track.id)] } : track
+                track.id === 'track-muted-midi'
+                    ? {
+                          ...track,
+                          alternatives: [
+                              {
+                                  id: 'alt-collaborator',
+                                  name: 'Collaborator take',
+                                  clips: [createClip(track.id)],
+                              },
+                          ],
+                      }
+                    : track
             ),
         });
         const beforeRedo = structuredClone(trackStore.value?.tracks);

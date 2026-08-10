@@ -122,6 +122,25 @@ describe('handleRemoveTrack', () => {
     });
 
     describe('execute', () => {
+        it('rejects an alternative-content guard mismatch before project or runtime removal', async () => {
+            const alternativeClip = ClipDummy.create({ id: 'c-hidden', trackId: 't1' });
+            const track = TrackDummy.create({
+                id: 't1',
+                alternatives: [{ id: 'alt-hidden', name: 'Hidden', clips: [alternativeClip] }],
+            });
+            mocks.getTrackStoreState.mockReturnValue({ tracks: [track], selectedTrackId: null });
+
+            const result = await handleRemoveTrack.execute({
+                type: 'removeTrack',
+                payload: { trackId: 't1', expectedAlternativeClipIds: [] },
+            });
+
+            expect(result).toEqual({ status: 'conflict' });
+            expect(mocks.removeTrack).not.toHaveBeenCalled();
+            expect(mocks.removeTrackModulationReferences).not.toHaveBeenCalled();
+            expect(mocks.finalizeRuntimeRemoval).not.toHaveBeenCalled();
+        });
+
         it('removes the track and publishes only after commit', async () => {
             const result = await handleRemoveTrack.execute({
                 type: 'removeTrack',

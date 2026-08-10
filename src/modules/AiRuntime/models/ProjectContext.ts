@@ -142,6 +142,7 @@ export type ProjectContextTrack = {
     vcaGroupId?: string | null;
     outputId?: string;
     clipCount: number;
+    alternativeClipIds?: string[];
     deviceCount: number;
     clips: ProjectContextClip[];
     devices: ProjectContextDevice[];

@@ -21,13 +21,23 @@ export function getMutedEmptyTrackDeletionScope(prompt: string, context: Project
     const trackIds = context.tracks.map((track) => track.id);
     if (
         new Set(trackIds).size !== trackIds.length ||
-        context.tracks.some((track) => !trackKinds.has(track.kind) || track.clipCount !== track.clips.length)
+        context.tracks.some(
+            (track) =>
+                !trackKinds.has(track.kind) ||
+                track.clipCount !== track.clips.length ||
+                !Array.isArray(track.alternativeClipIds) ||
+                track.alternativeClipIds.some((clipId) => typeof clipId !== 'string' || clipId.length === 0)
+        )
     ) {
         return null;
     }
 
     const targets = context.tracks.filter(
-        (track) => (track.kind === 'audio' || track.kind === 'midi') && track.muted && track.clips.length === 0
+        (track) =>
+            (track.kind === 'audio' || track.kind === 'midi') &&
+            track.muted &&
+            track.clips.length === 0 &&
+            track.alternativeClipIds?.length === 0
     );
     if (targets.length === 0) {
         return null;
@@ -46,7 +56,15 @@ export function getMutedEmptyTrackDeletionScope(prompt: string, context: Project
     return {
         targetIds: targets.map((track) => track.id),
         protectedTrackIds: context.tracks
-            .filter((track) => track.kind === 'bus' || track.kind === 'folder')
+            .filter(
+                (track) =>
+                    track.kind === 'bus' ||
+                    track.kind === 'folder' ||
+                    ((track.kind === 'audio' || track.kind === 'midi') &&
+                        track.muted &&
+                        track.clips.length === 0 &&
+                        (track.alternativeClipIds?.length ?? 0) > 0)
+            )
             .map((track) => track.id),
     };
 }

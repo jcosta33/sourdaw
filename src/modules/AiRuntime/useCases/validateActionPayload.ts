@@ -169,7 +169,13 @@ const validators = {
     addTrack: (param): param is PayloadOf<'addTrack'> => isObj(param) && isString(param.name) && isString(param.kind),
     removeTrack: (param): param is PayloadOf<'removeTrack'> =>
         isObj(param) &&
-        hasOnlyKeys(param, ['trackId', 'expectedKind', 'expectedMuted', 'expectedClipIds']) &&
+        hasOnlyKeys(param, [
+            'trackId',
+            'expectedKind',
+            'expectedMuted',
+            'expectedClipIds',
+            'expectedAlternativeClipIds',
+        ]) &&
         Object.hasOwn(param, 'trackId') &&
         isNonEmptyString(param.trackId) &&
         isOptional(
@@ -180,6 +186,10 @@ const validators = {
         isOptional(param.expectedMuted, (value): value is boolean => typeof value === 'boolean') &&
         isOptional(
             param.expectedClipIds,
+            (value): value is readonly string[] => Array.isArray(value) && value.every(isNonEmptyString)
+        ) &&
+        isOptional(
+            param.expectedAlternativeClipIds,
             (value): value is readonly string[] => Array.isArray(value) && value.every(isNonEmptyString)
         ),
     renameTrack: (param): param is PayloadOf<'renameTrack'> =>

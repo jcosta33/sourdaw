@@ -445,6 +445,7 @@ export type AppAction =
               expectedKind?: 'audio' | 'midi' | 'bus' | 'master' | 'folder';
               expectedMuted?: boolean;
               expectedClipIds?: readonly string[];
+              expectedAlternativeClipIds?: readonly string[];
           };
       }
     | {

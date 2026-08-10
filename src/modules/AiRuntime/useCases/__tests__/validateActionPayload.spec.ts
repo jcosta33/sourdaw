@@ -903,6 +903,15 @@ describe('validateActionPayload / PAYLOAD_VALIDATORS', () => {
                 return;
             }
             expect(guard({ trackId: 'track-1' })).toBe(true);
+            expect(
+                guard({
+                    trackId: 'track-1',
+                    expectedKind: 'audio',
+                    expectedMuted: true,
+                    expectedClipIds: [],
+                    expectedAlternativeClipIds: ['clip-hidden'],
+                })
+            ).toBe(true);
         });
 
         it('should reject invalid payloads', () => {
@@ -916,6 +925,7 @@ describe('validateActionPayload / PAYLOAD_VALIDATORS', () => {
             expect(guard(null)).toBe(false);
             expect(guard({ trackId: '' })).toBe(false);
             expect(guard({ trackId: 'track-1', extra: true })).toBe(false);
+            expect(guard({ trackId: 'track-1', expectedAlternativeClipIds: [1] })).toBe(false);
         });
     });
 

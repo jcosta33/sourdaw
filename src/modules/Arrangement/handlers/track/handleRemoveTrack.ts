@@ -38,6 +38,20 @@ export const handleRemoveTrack = createHandler<'removeTrack'>({
                 return { status: 'conflict' };
             }
         }
+        if (action.payload.expectedAlternativeClipIds !== undefined) {
+            const currentAlternativeClipIds = currentTrack?.alternatives.flatMap((alternative) =>
+                alternative.clips.map((clip) => clip.id)
+            );
+            if (
+                !currentAlternativeClipIds ||
+                currentAlternativeClipIds.length !== action.payload.expectedAlternativeClipIds.length ||
+                currentAlternativeClipIds.some(
+                    (clipId, index) => clipId !== action.payload.expectedAlternativeClipIds?.[index]
+                )
+            ) {
+                return { status: 'conflict' };
+            }
+        }
         const result = removeTrack(action.payload.trackId, {
             deferRuntimeEffects: true,
             suppressRemovedEvent: true,
