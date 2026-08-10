@@ -409,6 +409,32 @@ describe('delete muted empty tracks prompt workflow', () => {
         expect(runtimeMocks.removeTrackStrip).toHaveBeenCalledTimes(4);
     });
 
+    it('atomically restores exact sibling routing when one deleted target routed to the other', async () => {
+        const state = trackStore.value;
+        if (!state) {
+            throw new Error('Expected track state');
+        }
+        trackStore.set({
+            ...state,
+            tracks: state.tracks.map((track) =>
+                track.id === 'track-muted-audio' ? { ...track, outputId: 'track-muted-midi' } : track
+            ),
+        });
+        const beforeDeletion = structuredClone(trackStore.value);
+
+        await sendChatMessage(PROMPT);
+        await confirmPendingChatActions({ confirmationId: getConfirmation()?.id ?? '' });
+        runtimeMocks.ensureTrackStrip.mockClear();
+
+        await undo();
+
+        expect(trackStore.value).toEqual(beforeDeletion);
+        expect(runtimeMocks.ensureTrackStrip).toHaveBeenCalledWith('track-muted-audio');
+        expect(runtimeMocks.ensureTrackStrip).toHaveBeenCalledWith('track-muted-midi');
+        expect(undoStore.value?.past).toEqual([]);
+        expect(undoStore.value?.future).toHaveLength(2);
+    });
+
     it('normalizes the hosted provider to the same immutable target set and receipt', async () => {
         runtimeMocks.backend.value = 'cloud';
 

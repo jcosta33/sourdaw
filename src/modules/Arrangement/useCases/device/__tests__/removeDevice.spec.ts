@@ -107,7 +107,7 @@ describe('removeDevice', () => {
         expect(mocks.unloadPlugin).toHaveBeenCalledWith('inst1');
     });
 
-    it('defers external unload until the owning transaction commits', async () => {
+    it('defers graph removal, latency cleanup, and external unload until the owning transaction commits', async () => {
         mocks.getTrackState.mockReturnValue({
             tracks: [
                 {
@@ -119,13 +119,17 @@ describe('removeDevice', () => {
             selectedTrackId: null,
         });
 
-        const result = removeDevice('d1', { deferExternalUnload: true });
+        const result = removeDevice('d1', { deferRuntimeEffects: true });
         if (typeof result === 'string') {
             throw new TypeError('Expected deferred unload result');
         }
 
         expect(mocks.unloadPlugin).not.toHaveBeenCalled();
+        expect(mocks.removeDeviceFromStrip).not.toHaveBeenCalled();
+        expect(mocks.clearReportedLatency).not.toHaveBeenCalled();
         await result.afterCommit();
+        expect(mocks.removeDeviceFromStrip).toHaveBeenCalledWith('t1', 'd1');
+        expect(mocks.clearReportedLatency).toHaveBeenCalledWith('d1');
         expect(mocks.unloadPlugin).toHaveBeenCalledWith('inst1');
     });
 
@@ -137,7 +141,7 @@ describe('removeDevice', () => {
         } as unknown as Track;
         mocks.getTrackState.mockReturnValue({ tracks: [track], selectedTrackId: null });
 
-        const result = removeDevice('d1', { deferExternalUnload: true });
+        const result = removeDevice('d1', { deferRuntimeEffects: true });
         if (typeof result === 'string') {
             throw new TypeError('Expected deferred unload result');
         }

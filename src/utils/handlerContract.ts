@@ -33,6 +33,10 @@ export type DeviceSnapshot = {
     readonly deviceState?: DeviceStateChunkSnapshot;
 };
 export type TrackSnapshot = { readonly id: string };
+export type BatchRestoreTrackSnapshot = {
+    readonly trackId: string;
+    readonly trackIndex: number;
+};
 export type TrackSendSnapshot = {
     readonly busId: string;
     readonly level: number;
@@ -467,6 +471,8 @@ export type AppAction =
               trackGain: number;
               trackParentId: string | null;
               trackIndex: number;
+              /** Internal context compiled only for sibling restores captured by one atomic batch. */
+              batchRestoreTracks?: readonly BatchRestoreTrackSnapshot[];
               wasSelected: boolean;
               routingPatches: readonly TrackRoutingPatchSnapshot[];
               automationLaneSnapshots: readonly AutomationLaneSnapshot[];

@@ -21,7 +21,7 @@ export const handleRemoveDevice = createHandler<'removeDevice'>({
                 return { status: 'conflict' };
             }
         }
-        const result = removeDevice(alpha.payload.deviceId, { deferExternalUnload: true });
+        const result = removeDevice(alpha.payload.deviceId, { deferRuntimeEffects: true });
         if (result === 'conflict') {
             return { status: 'conflict' };
         }
@@ -65,6 +65,6 @@ export const handleRemoveDevice = createHandler<'removeDevice'>({
             },
         };
     },
-    requiresAbortCompensation: true,
+    requiresAbortCompensation: false,
     undoable: true,
 });

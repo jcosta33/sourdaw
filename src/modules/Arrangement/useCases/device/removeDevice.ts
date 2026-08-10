@@ -19,11 +19,11 @@ type DeferredRemoveDeviceUnload = {
 export function removeDevice(deviceId: string): RemoveDeviceOutcome;
 export function removeDevice(
     deviceId: string,
-    options: { deferExternalUnload: true }
+    options: { deferRuntimeEffects: true }
 ): RemoveDeviceOutcome | DeferredRemoveDeviceUnload;
 export function removeDevice(
     deviceId: string,
-    options: { deferExternalUnload?: boolean } = {}
+    options: { deferRuntimeEffects?: boolean } = {}
 ): RemoveDeviceOutcome | DeferredRemoveDeviceUnload {
     const state = getTrackState();
     if (!state) {
@@ -85,34 +85,37 @@ export function removeDevice(
         return { ...candidate, devices: candidate.devices.filter((item) => item.id !== deviceId) };
     });
 
-    try {
-        removeDeviceFromStrip(track.id, deviceId);
-    } catch (error) {
-        logger.warn(`Failed to remove device ${deviceId} from track strip ${track.id}: ${String(error)}`);
-    }
-
-    // Drop reported-latency entries (PH-4) so the registry keeps no phantom
-    // compensation: getDeviceLatencyMs reads it unconditionally and getTrackLatency
-    // sums it, so a surviving entry inflates the whole track's delay forever.
-    //
-    // Two reasons an entry must go: the removed device leaves the chain even when
-    // its instance stays loaded, and every sibling whose instance this removal
-    // unloads stops processing audio. One set, so an entry that qualifies on both
-    // counts is still cleared exactly once.
     const latencyDeviceIdsToClear = new Set<string>(unloadedExternalDevices.keys());
     if (device.type === 'external-plugin') {
         latencyDeviceIdsToClear.add(deviceId);
     }
-    for (const clearedDeviceId of latencyDeviceIdsToClear) {
-        clearReportedLatency(clearedDeviceId);
-    }
 
-    if (deactivatesStrip) {
-        try {
-            removeTrackStrip(track.id);
-        } catch (error) {
-            logger.warn(`Failed to remove track strip ${track.id}: ${String(error)}`);
+    let runtimeRemovalFinalized = false;
+    function finalizeRuntimeRemoval(): void {
+        if (runtimeRemovalFinalized) {
+            return;
         }
+        try {
+            removeDeviceFromStrip(track.id, deviceId);
+        } catch (error) {
+            logger.warn(`Failed to remove device ${deviceId} from track strip ${track.id}: ${String(error)}`);
+        }
+
+        // Drop reported-latency entries (PH-4) only when the graph removal becomes
+        // durable. A transaction abort leaves both the live node and its latency
+        // projection untouched.
+        for (const clearedDeviceId of latencyDeviceIdsToClear) {
+            clearReportedLatency(clearedDeviceId);
+        }
+
+        if (deactivatesStrip) {
+            try {
+                removeTrackStrip(track.id);
+            } catch (error) {
+                logger.warn(`Failed to remove track strip ${track.id}: ${String(error)}`);
+            }
+        }
+        runtimeRemovalFinalized = true;
     }
 
     let unloadPromise: Promise<void> | null = null;
@@ -131,25 +134,30 @@ export function removeDevice(
         ).then(() => undefined);
         return unloadPromise;
     }
+    async function finalizeRuntimeEffects(): Promise<void> {
+        finalizeRuntimeRemoval();
+        await finalizeExternalUnloads();
+    }
     async function reconcileExternalUnloads(): Promise<void> {
         const currentOwners = (getTrackState()?.tracks ?? []).filter((candidate) =>
             candidate.devices.some((candidateDevice) => candidateDevice.id === deviceId)
         );
         if (currentOwners.length === 0) {
-            await finalizeExternalUnloads();
+            await finalizeRuntimeEffects();
             return;
         }
         if (currentOwners.length === 1) {
             projectTrackToLiveStrip({ trackId: currentOwners[0]!.id, activateDormantExternalPlugins: true });
         }
     }
-    if (options.deferExternalUnload) {
+    if (options.deferRuntimeEffects) {
         return {
             outcome: 'written',
-            afterCommit: finalizeExternalUnloads,
+            afterCommit: finalizeRuntimeEffects,
             afterAmbiguousCommit: reconcileExternalUnloads,
         };
     }
+    finalizeRuntimeRemoval();
     void finalizeExternalUnloads();
     return 'written';
 }

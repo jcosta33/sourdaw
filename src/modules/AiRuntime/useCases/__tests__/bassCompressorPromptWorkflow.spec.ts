@@ -785,13 +785,45 @@ describe('bass compressor prompt workflow', () => {
                     : track
             ),
         });
+        const beforeUndo = structuredClone(trackStore.value?.tracks);
+        const historyBeforeUndo = structuredClone(undoStore.value);
+        runtimeMocks.removeDeviceFromStrip.mockClear();
+        runtimeMocks.addDeviceToStrip.mockClear();
 
         await undo();
 
+        expect(trackStore.value?.tracks).toEqual(beforeUndo);
         expect(getTrack('track-bass-di').devices.map((device) => device.id)).toEqual([
             ...BASS_DI_INSERTED_DEVICE_IDS,
             'device-collaborator-gain',
         ]);
+        expect(getTrack('track-bass-amp').devices.map((device) => device.id)).toEqual(BASS_AMP_INSERTED_DEVICE_IDS);
+        expect(runtimeMocks.removeDeviceFromStrip).not.toHaveBeenCalled();
+        expect(runtimeMocks.addDeviceToStrip).not.toHaveBeenCalled();
+        expect(undoStore.value).toEqual(historyBeforeUndo);
+        runtimeMocks.removeDeviceFromStrip.mockClear();
+        runtimeMocks.addDeviceToStrip.mockClear();
+
+        const retryState = trackStore.value;
+        if (!retryState) {
+            throw new Error('Expected retryable track state');
+        }
+        trackStore.set({
+            ...retryState,
+            tracks: retryState.tracks.map((track) =>
+                track.id === 'track-bass-di'
+                    ? { ...track, devices: track.devices.filter((device) => device.id !== 'device-collaborator-gain') }
+                    : track
+            ),
+        });
+
+        await undo();
+
+        expect(getTrack('track-bass-di').devices.map((device) => device.id)).toEqual(BASS_DI_DEVICE_IDS);
         expect(getTrack('track-bass-amp').devices.map((device) => device.id)).toEqual(BASS_AMP_DEVICE_IDS);
+        expect(runtimeMocks.removeDeviceFromStrip).toHaveBeenCalledTimes(2);
+        expect(runtimeMocks.addDeviceToStrip).not.toHaveBeenCalled();
+        expect(undoStore.value?.past).toEqual([]);
+        expect(undoStore.value?.future).toHaveLength(2);
     });
 });

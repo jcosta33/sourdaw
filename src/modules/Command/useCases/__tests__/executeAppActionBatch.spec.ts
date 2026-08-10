@@ -15,6 +15,7 @@ type SetEditingToolAction = Extract<AppAction, { type: 'setEditingTool' }>;
 type SetSnapValueAction = Extract<AppAction, { type: 'setSnapValue' }>;
 type SetPlaybackAction = Extract<AppAction, { type: 'setPlayback' }>;
 type StopPlaybackAction = Extract<AppAction, { type: 'stopPlayback' }>;
+type RestoreTrackAction = Extract<AppAction, { type: 'restoreTrack' }>;
 
 const mocks = vi.hoisted(() => ({
     logger: {
@@ -61,6 +62,31 @@ function createHandler<Action extends AppAction>(input: {
         isNoop: input.isNoop,
         requiresAbortCompensation: input.requiresAbortCompensation,
         undoable: input.undoable ?? true,
+    };
+}
+
+function createRestoreTrackAction(trackId: string, trackIndex: number): RestoreTrackAction {
+    return {
+        type: 'restoreTrack',
+        payload: {
+            trackId,
+            trackSnapshot: { id: trackId },
+            trackName: trackId,
+            trackKind: 'audio',
+            trackGain: 1,
+            trackParentId: null,
+            trackIndex,
+            wasSelected: false,
+            routingPatches: [],
+            automationLaneSnapshots: [],
+            midiNotesByClipId: {},
+            midiCcByClipId: {},
+            midiPitchBendByClipId: {},
+            takeLaneSnapshots: [],
+            sidechainRouteSnapshots: [],
+            ownedModulatorSnapshots: [],
+            incomingModulationMappingSnapshots: [],
+        },
     };
 }
 
@@ -120,6 +146,48 @@ describe('executeAppActionBatch', () => {
             },
         ]);
         expect(mocks.commitUndoEntry).toHaveBeenCalledTimes(2);
+    });
+
+    it('records original identities and indices on sibling restore inverses from one atomic batch', async () => {
+        const firstAction: SetEditingToolAction = { type: 'setEditingTool', payload: { tool: 'marquee' } };
+        const secondAction: SetSnapValueAction = { type: 'setSnapValue', payload: { value: 0.5 } };
+        const firstRestore = createRestoreTrackAction('track-a', 0);
+        const secondRestore = createRestoreTrackAction('track-b', 1);
+        const batchRestoreTracks = [
+            { trackId: 'track-a', trackIndex: 0 },
+            { trackId: 'track-b', trackIndex: 1 },
+        ];
+        registerHandlerMap({
+            setEditingTool: createHandler<SetEditingToolAction>({
+                execute: () => ({ status: 'written' }),
+                describe: () => ({ label: 'First', inverseAction: firstRestore }),
+            }),
+            setSnapValue: createHandler<SetSnapValueAction>({
+                execute: () => ({ status: 'written' }),
+                describe: () => ({ label: 'Second', inverseAction: secondRestore }),
+            }),
+        });
+
+        await executeAppActionBatch([firstAction, secondAction], { groupId: 'batch-restore' });
+
+        expect(mocks.commitUndoEntry).toHaveBeenNthCalledWith(
+            1,
+            expect.objectContaining({
+                inverseAction: {
+                    ...firstRestore,
+                    payload: { ...firstRestore.payload, batchRestoreTracks },
+                },
+            })
+        );
+        expect(mocks.commitUndoEntry).toHaveBeenNthCalledWith(
+            2,
+            expect.objectContaining({
+                inverseAction: {
+                    ...secondRestore,
+                    payload: { ...secondRestore.payload, batchRestoreTracks },
+                },
+            })
+        );
     });
 
     it('retains a handler-provided guarded redo action in the committed undo entry', async () => {
