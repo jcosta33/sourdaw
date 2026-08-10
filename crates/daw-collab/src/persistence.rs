@@ -10,6 +10,13 @@ const SDAW_MAGIC: &[u8; 4] = b"SDAW";
 /// Current format version.
 const FORMAT_VERSION: u16 = 1;
 
+fn remaining_bytes(cursor: &Cursor<&[u8]>) -> usize {
+    cursor
+        .get_ref()
+        .len()
+        .saturating_sub(cursor.position() as usize)
+}
+
 /// Encode a document bundle into the .sdaw binary format.
 ///
 /// Format:
@@ -81,6 +88,12 @@ pub fn decode_sdaw(bytes: &[u8]) -> Result<HashMap<DocId, Vec<u8>>, String> {
             .read_exact(&mut id_len_bytes)
             .map_err(|_| format!("Truncated at document {} DocId length", i))?;
         let id_len = u32::from_le_bytes(id_len_bytes) as usize;
+        let remaining = remaining_bytes(&cursor);
+        if id_len > remaining {
+            return Err(format!(
+                "Invalid document {i} DocId length: declared {id_len} bytes, only {remaining} remain"
+            ));
+        }
 
         let mut id_bytes = vec![0u8; id_len];
         cursor
@@ -95,6 +108,12 @@ pub fn decode_sdaw(bytes: &[u8]) -> Result<HashMap<DocId, Vec<u8>>, String> {
             .read_exact(&mut data_len_bytes)
             .map_err(|_| format!("Truncated at document {} data length", i))?;
         let data_len = u32::from_le_bytes(data_len_bytes) as usize;
+        let remaining = remaining_bytes(&cursor);
+        if data_len > remaining {
+            return Err(format!(
+                "Invalid document {i} data length: declared {data_len} bytes, only {remaining} remain"
+            ));
+        }
 
         let mut data = vec![0u8; data_len];
         cursor
@@ -166,6 +185,40 @@ mod tests {
 
         let decoded = decode_sdaw(&buf).expect("should decode empty bundle");
         assert!(decoded.is_empty());
+    }
+
+    #[test]
+    fn decode_rejects_doc_id_length_larger_than_remaining_input_before_allocating() {
+        let mut buf = Vec::new();
+        buf.extend_from_slice(SDAW_MAGIC);
+        buf.extend_from_slice(&FORMAT_VERSION.to_le_bytes());
+        buf.extend_from_slice(&1u16.to_le_bytes());
+        buf.extend_from_slice(&u32::MAX.to_le_bytes());
+
+        let error = decode_sdaw(&buf).expect_err("oversized DocId length must be rejected");
+
+        assert_eq!(
+            error,
+            "Invalid document 0 DocId length: declared 4294967295 bytes, only 0 remain"
+        );
+    }
+
+    #[test]
+    fn decode_rejects_data_length_larger_than_remaining_input_before_allocating() {
+        let mut buf = Vec::new();
+        buf.extend_from_slice(SDAW_MAGIC);
+        buf.extend_from_slice(&FORMAT_VERSION.to_le_bytes());
+        buf.extend_from_slice(&1u16.to_le_bytes());
+        buf.extend_from_slice(&4u32.to_le_bytes());
+        buf.extend_from_slice(b"root");
+        buf.extend_from_slice(&u32::MAX.to_le_bytes());
+
+        let error = decode_sdaw(&buf).expect_err("oversized data length must be rejected");
+
+        assert_eq!(
+            error,
+            "Invalid document 0 data length: declared 4294967295 bytes, only 0 remain"
+        );
     }
 
     #[test]
