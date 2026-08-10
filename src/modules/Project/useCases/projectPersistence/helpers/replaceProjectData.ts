@@ -190,9 +190,10 @@ export async function replaceProjectData({
 
     let preparedEmbeddedBuffers: NonNullable<Awaited<ReturnType<typeof importCachedAudioBuffers>>>;
     let preparedStoredBuffers: Awaited<ReturnType<typeof prepareCachedAudioBuffersFromIdb>>;
+    let referencedIds: string[];
     try {
         const audioContext = getAudioContext();
-        const referencedIds = collectProjectAudioBufferIds({ data });
+        referencedIds = collectProjectAudioBufferIds({ data });
         const embeddedBufferIds = new Set([
             ...Object.keys(data.audioBuffers ?? {}),
             ...Object.keys(decodedAudioBuffers ?? {}),
@@ -286,7 +287,9 @@ export async function replaceProjectData({
         // Notification coalescing only: each write remains independently fallible
         // and is guarded so one owner failure cannot prevent later owner steps.
         batchStoreUpdates(() => {
-            runCommittedStep('runtime audio buffer reset', clearRuntimeCachedAudioBuffers);
+            runCommittedStep('runtime audio buffer reset', () =>
+                clearRuntimeCachedAudioBuffers({ retainedIds: referencedIds })
+            );
             runCommittedStep('stored audio buffer publication', preparedStoredBuffers.publish);
             runCommittedStep('embedded audio buffer publication', preparedEmbeddedBuffers.publish);
             runCommittedStep('module store reset', resetModuleStoresToDefault);

@@ -97,10 +97,35 @@ vi.mock('../verifyAudioBufferReferences', () => ({ verifyAudioBufferReferences: 
 
 import { replaceProjectData } from '../replaceProjectData';
 
-import type { HydratableProjectData } from '../isHydratableProjectData';
+import type { HydratableProjectData, HydratableProjectTrack } from '../isHydratableProjectData';
 import type { ProjectLoadTransaction } from '../runProjectLoadTransaction';
 
-function makeData(): HydratableProjectData {
+function makeData(referencedBufferId?: string): HydratableProjectData {
+    const tracks: HydratableProjectTrack[] = [];
+    if (referencedBufferId) {
+        tracks.push({
+            id: 'track-1',
+            name: 'Track 1',
+            kind: 'audio',
+            clips: [
+                {
+                    id: 'clip-1',
+                    trackId: 'track-1',
+                    name: 'Clip 1',
+                    startBeat: 0,
+                    endBeat: 4,
+                    type: 'audio',
+                    fadeInBeats: 0,
+                    fadeOutBeats: 0,
+                    gain: 1,
+                    color: '#ffffff',
+                    locked: false,
+                    muted: false,
+                    bufferId: referencedBufferId,
+                },
+            ],
+        });
+    }
     return {
         version: 1,
         meta: {
@@ -111,7 +136,7 @@ function makeData(): HydratableProjectData {
             scaleName: 'major',
             tuning: { name: '12-TET', frequencies: [] },
         },
-        arrangement: { tracks: [] },
+        arrangement: { tracks },
     };
 }
 
@@ -188,7 +213,7 @@ describe('replaceProjectData', () => {
 
         const result = await replaceProjectData({
             context: 'loadRecentProject',
-            data: makeData(),
+            data: makeData('shared-buffer'),
             transaction: makeTransaction(),
         });
         expect(result.status).toBe('committed');
@@ -204,6 +229,7 @@ describe('replaceProjectData', () => {
         expect(mockHydrateArrangement).toHaveBeenCalled();
         expect(mockClearUndoHistory).toHaveBeenCalled();
         expect(mockClearRuntimeCachedAudioBuffers).toHaveBeenCalledOnce();
+        expect(mockClearRuntimeCachedAudioBuffers).toHaveBeenCalledWith({ retainedIds: ['shared-buffer'] });
         expect(mockClearRuntimeCachedAudioBuffers.mock.invocationCallOrder[0]).toBeLessThan(
             storedPublish.mock.invocationCallOrder[0]!
         );

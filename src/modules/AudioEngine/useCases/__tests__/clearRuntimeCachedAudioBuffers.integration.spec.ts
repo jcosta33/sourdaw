@@ -55,4 +55,32 @@ describe('clearRuntimeCachedAudioBuffers', () => {
         expect(controls.committedMeta.get(projectAId)?.freezeProjectId).toBe(100);
         expect(controls.committedMeta.get(projectBId)?.freezeProjectId).toBe(200);
     });
+
+    it('retains incoming resident buffers while dropping unrelated runtime state', async () => {
+        const { audioBufferCache } = await import('../../stores/audioBufferCache');
+        const { clearRuntimeCachedAudioBuffers } = await import('../clearRuntimeCachedAudioBuffers');
+        audioBufferCache.set('shared-buffer', makeAudioBuffer(0.1));
+        audioBufferCache.set('old-project-only', makeAudioBuffer(0.2));
+        await flushIndexedDbTasks();
+
+        clearRuntimeCachedAudioBuffers({ retainedIds: ['shared-buffer'] });
+
+        expect(audioBufferCache.has('shared-buffer')).toBe(true);
+        expect(audioBufferCache.has('old-project-only')).toBe(false);
+    });
+
+    it('lets a pending durable write finish after the runtime entry is cleared', async () => {
+        const { audioBufferCache } = await import('../../stores/audioBufferCache');
+        const { clearRuntimeCachedAudioBuffers } = await import('../clearRuntimeCachedAudioBuffers');
+        const id = 'freeze-project-100-pending';
+        audioBufferCache.set(id, makeAudioBuffer(0.1), { freezeProjectId: 100 });
+        expect(controls.committed.has(id)).toBe(false);
+
+        clearRuntimeCachedAudioBuffers();
+        expect(audioBufferCache.has(id)).toBe(false);
+        await flushIndexedDbTasks();
+
+        expect(controls.committed.has(id)).toBe(true);
+        expect(controls.committedMeta.get(id)?.freezeProjectId).toBe(100);
+    });
 });

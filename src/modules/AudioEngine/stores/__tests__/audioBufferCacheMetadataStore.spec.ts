@@ -578,7 +578,7 @@ describe('audioBufferCache metadata store', () => {
         });
 
         it('clears resident project audio without deleting either project from IndexedDB', async () => {
-            const audioBufferCache = await importCache();
+            const { audioBufferCache, clearRuntimeAudioBufferCache } = await import('../audioBufferCache');
             const projectAId = 'freeze-project-100-track-a';
             const projectBId = 'freeze-project-200-track-b';
             audioBufferCache.set(projectAId, makeAudioBuffer([new Float32Array([0.1])]), {
@@ -589,7 +589,7 @@ describe('audioBufferCache metadata store', () => {
             });
             await flushIndexedDbTasks();
 
-            audioBufferCache.clearRuntime();
+            clearRuntimeAudioBufferCache();
 
             expect(audioBufferCache.has(projectAId)).toBe(false);
             expect(audioBufferCache.has(projectBId)).toBe(false);
