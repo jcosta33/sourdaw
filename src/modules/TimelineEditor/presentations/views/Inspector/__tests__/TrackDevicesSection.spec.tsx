@@ -116,13 +116,15 @@ vi.mock('#/components/ui/button', () => ({
     Button: ({
         children,
         onClick,
+        disabled,
         'aria-label': ariaLabel,
     }: {
         children: React.ReactNode;
         onClick?: (e?: React.MouseEvent) => void;
+        disabled?: boolean;
         'aria-label'?: string;
     }) => (
-        <button data-testid="button" aria-label={ariaLabel} onClick={onClick}>
+        <button data-testid="button" aria-label={ariaLabel} onClick={onClick} disabled={disabled}>
             {children}
         </button>
     ),
@@ -291,6 +293,33 @@ describe('TrackDevicesSection', () => {
 
         fireEvent.click(screen.getByRole('menuitem', { name: /Working CLAP/ }));
         expect(mockAddExternalDevice).toHaveBeenCalledWith('track-1', 'clap-1', 'Working CLAP');
+    });
+
+    it('marks a persisted external plugin unavailable when it is absent from the supported scan', () => {
+        mockGetPlatformCapabilities.mockReturnValue({ hasNativePlugins: true });
+        mockUseStore.mockReturnValue({
+            scannedPlugins: [{ id: 'other-clap', name: 'Other CLAP', format: 'clap' }],
+        });
+        const trackWithMissingPlugin: Track = {
+            ...mockTrack,
+            devices: [
+                {
+                    id: 'legacy-vst-slot',
+                    name: 'Legacy VST',
+                    type: 'external-plugin',
+                    bypassed: false,
+                    parameterValues: {},
+                    externalPluginId: 'missing-vst',
+                    externalInstanceId: 'legacy-instance',
+                },
+            ],
+        };
+
+        render(<TrackDevicesSection track={trackWithMissingPlugin} onSelectDevice={mockOnSelectDevice} />);
+
+        expect(screen.getByText('Unavailable')).toBeInTheDocument();
+        expect(screen.getByLabelText('Legacy VST unavailable')).toBeDisabled();
+        expect(screen.queryByLabelText('Open editor for Legacy VST')).not.toBeInTheDocument();
     });
 
     it('should apply opacity to bypassed devices', () => {

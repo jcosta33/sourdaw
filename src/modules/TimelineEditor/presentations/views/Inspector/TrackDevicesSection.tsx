@@ -56,6 +56,16 @@ export const TrackDevicesSection = ({ track, onSelectDevice }: TrackDevicesSecti
     const supportedExternalPlugins = pluginScanState.scannedPlugins.filter(
         (plugin) => plugin.format.toLowerCase() === 'clap'
     );
+    const supportedExternalPluginIds = new Set(supportedExternalPlugins.map((plugin) => plugin.id));
+    const unavailableExternalDeviceIds = new Set(
+        track.devices
+            .filter(
+                (device) =>
+                    device.type === 'external-plugin' &&
+                    (!device.externalPluginId || !supportedExternalPluginIds.has(device.externalPluginId))
+            )
+            .map((device) => device.id)
+    );
 
     useEffect(() => {
         if (!showDeviceMenu) {
@@ -205,7 +215,7 @@ export const TrackDevicesSection = ({ track, onSelectDevice }: TrackDevicesSecti
                             data-testid={`device-card-${device.id}`}
                             className={cn(
                                 'flex items-center justify-between cursor-grab active:cursor-grabbing',
-                                device.bypassed ? 'opacity-50' : ''
+                                device.bypassed || unavailableExternalDeviceIds.has(device.id) ? 'opacity-50' : ''
                             )}
                             onClick={() => {
                                 const descriptor = getPluginById(device.type);
@@ -243,15 +253,25 @@ export const TrackDevicesSection = ({ track, onSelectDevice }: TrackDevicesSecti
                                         <div className="w-1 h-1 bg-muted rounded-full"></div>
                                     </div>
                                 </span>
-                                <span className="text-xs text-foreground font-medium truncate">{device.name}</span>
+                                <div className="min-w-0">
+                                    <span className="text-xs text-foreground font-medium truncate">{device.name}</span>
+                                    {unavailableExternalDeviceIds.has(device.id) ? (
+                                        <span className="block text-[9px] text-muted-foreground">Unavailable</span>
+                                    ) : null}
+                                </div>
                             </div>
                             <div className="flex items-center gap-0.5 shrink-0">
                                 <Button
                                     variant="ghost"
                                     size="icon-xs"
                                     className="h-6 w-6"
-                                    aria-label={`${device.bypassed ? 'Enable' : 'Bypass'} ${device.name}`}
-                                    aria-pressed={device.bypassed}
+                                    aria-label={
+                                        unavailableExternalDeviceIds.has(device.id)
+                                            ? `${device.name} unavailable`
+                                            : `${device.bypassed ? 'Enable' : 'Bypass'} ${device.name}`
+                                    }
+                                    aria-pressed={device.bypassed || unavailableExternalDeviceIds.has(device.id)}
+                                    disabled={unavailableExternalDeviceIds.has(device.id)}
                                     data-testid={`device-bypass-${device.id}`}
                                     onClick={(event) => {
                                         event.stopPropagation();
@@ -259,10 +279,12 @@ export const TrackDevicesSection = ({ track, onSelectDevice }: TrackDevicesSecti
                                     }}
                                 >
                                     <Power
-                                        className={`size-3 ${device.bypassed ? 'text-muted-foreground' : 'text-[var(--color-state-success)]'}`}
+                                        className={`size-3 ${device.bypassed || unavailableExternalDeviceIds.has(device.id) ? 'text-muted-foreground' : 'text-[var(--color-state-success)]'}`}
                                     />
                                 </Button>
-                                {device.type === 'external-plugin' && device.externalInstanceId ? (
+                                {device.type === 'external-plugin' &&
+                                device.externalInstanceId &&
+                                !unavailableExternalDeviceIds.has(device.id) ? (
                                     <Tooltip>
                                         <TooltipTrigger asChild>
                                             <Button
