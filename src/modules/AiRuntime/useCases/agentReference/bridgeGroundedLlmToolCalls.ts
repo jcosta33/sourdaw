@@ -18,6 +18,7 @@ import { normalizeSafeProjectName } from '../../validators/normalizeSafeProjectN
 
 import { getBulkDeviceInsertionTrackScope } from './getBulkDeviceInsertionTrackScope';
 import { getDeviceParameterPromptScope } from './getDeviceParameterPromptScope';
+import { getDrumRoutingPromptScope } from './getDrumRoutingPromptScope';
 import { getMutedEmptyTrackDeletionScope } from './getMutedEmptyTrackDeletionScope';
 import { getWholeProjectVibeMixScope } from './getWholeProjectVibeMixScope';
 import { resolveAgentReference } from './resolveAgentReference';
@@ -1495,6 +1496,21 @@ function resolveActionPromptScope({
     }
     if (!groundingRules) {
         return null;
+    }
+    if (actionName === 'setTrackOutput') {
+        const drumRoutingScope = getDrumRoutingPromptScope(prompt, context);
+        if (
+            drumRoutingScope.status === 'request' &&
+            sameActionCallCount === drumRoutingScope.targetIds.length &&
+            sameActionAssertedArguments.every(
+                (arguments_) =>
+                    typeof arguments_.trackId === 'string' &&
+                    drumRoutingScope.targetIds.includes(arguments_.trackId) &&
+                    arguments_.outputId === drumRoutingScope.busId
+            )
+        ) {
+            return { text: prompt, masked: prompt, directional: false, matchedIntentPhrase: 'route' };
+        }
     }
     if (hasActionCancellation) {
         return null;
@@ -3444,12 +3460,22 @@ function groundToolCall({
         call.name === 'addDevice' ? (getBulkDeviceInsertionTrackScope(prompt, context)?.targetIds ?? null) : null;
     const bulkMutedEmptyTrackDeletionTargetIds =
         call.name === 'removeTrack' ? (getMutedEmptyTrackDeletionScope(prompt, context)?.targetIds ?? null) : null;
+    const drumRoutingScope = call.name === 'setTrackOutput' ? getDrumRoutingPromptScope(prompt, context) : null;
     for (const targetRule of groundingRules.targetRules) {
         const assertedValue = groundedArguments[targetRule.argument];
         if (targetRule.optional && assertedValue === undefined) {
             continue;
         }
         const targetPrompt = getTargetPromptScope(actionScope, targetRule.promptRole);
+        if (
+            drumRoutingScope?.status === 'request' &&
+            call.name === 'setTrackOutput' &&
+            targetRule.argument === 'trackId' &&
+            typeof assertedValue === 'string' &&
+            drumRoutingScope.targetIds.includes(assertedValue)
+        ) {
+            continue;
+        }
         if (
             bulkDeviceInsertionTargetIds &&
             call.name === 'addDevice' &&
@@ -3799,6 +3825,41 @@ export function bridgeGroundedLlmToolCalls({
         });
     }
     let effectiveCalls = calls;
+    const drumRoutingScope = getDrumRoutingPromptScope(prompt, context);
+    if (drumRoutingScope.status === 'invalid') {
+        return { actions: [], rejections: [rejection(0, '<batch>', drumRoutingScope.reason)] };
+    }
+    if (drumRoutingScope.status === 'request') {
+        const providerRoutes = calls.filter((call) => call.name === 'setTrackOutput');
+        const providerTrackIds = providerRoutes.flatMap((call) =>
+            typeof call.arguments.trackId === 'string' ? [call.arguments.trackId] : []
+        );
+        const providerTrackIdSet = new Set(providerTrackIds);
+        const targetIdSet = new Set(drumRoutingScope.targetIds);
+        const providerPlanMatches =
+            providerRoutes.length === calls.length &&
+            providerTrackIds.length === calls.length &&
+            providerTrackIdSet.size === providerTrackIds.length &&
+            providerTrackIds.length === drumRoutingScope.targetIds.length &&
+            drumRoutingScope.targetIds.every((trackId) => providerTrackIdSet.has(trackId)) &&
+            providerRoutes.every((call) => call.arguments.outputId === drumRoutingScope.busId);
+        if (!providerPlanMatches) {
+            return {
+                actions: [],
+                rejections: [rejection(0, '<batch>', 'Provider plan does not match the complete MF-01 drum route set')],
+            };
+        }
+        effectiveCalls = drumRoutingScope.targetIds.flatMap((trackId) => {
+            const route = providerRoutes.find((call) => call.arguments.trackId === trackId);
+            return route ? [route] : [];
+        });
+        if (targetIdSet.has(drumRoutingScope.protectedReturnId)) {
+            return {
+                actions: [],
+                rejections: [rejection(0, '<batch>', 'MF-01 protected return cannot enter the route target set')],
+            };
+        }
+    }
     const wholeProjectVibeMixScope = getWholeProjectVibeMixScope(prompt, context);
     const providerVibeMixCalls = calls.filter((call) => call.name === 'automateTrackGainRange');
     if (wholeProjectVibeMixScope || providerVibeMixCalls.length > 0) {

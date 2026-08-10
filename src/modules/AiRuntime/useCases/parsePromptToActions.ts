@@ -16,6 +16,7 @@ import {
 } from '../transformers/promptParser/parsing';
 
 import { bridgeGroundedLlmToolCalls } from './agentReference/bridgeGroundedLlmToolCalls';
+import { getDrumRoutingPromptScope } from './agentReference/getDrumRoutingPromptScope';
 import { getWholeProjectVibeMixScope } from './agentReference/getWholeProjectVibeMixScope';
 import { materializeBatchLocalActionIdentities } from './agentReference/materializeBatchLocalActionIdentities';
 import { type ProjectContext } from './getProjectContext';
@@ -115,6 +116,9 @@ export const parsePromptToActions = inject({ logger })(
             // 5. Provider-neutral LLM path. This only proposes typed actions;
             // sendChatMessage remains responsible for confirmation and execution.
             try {
+                const drumRoutingScope = getDrumRoutingPromptScope(prompt, context, projectRevision);
+                const drumRoutingCapability =
+                    drumRoutingScope.status === 'request' ? drumRoutingScope.capability : undefined;
                 const wholeProjectVibeMixCapability = getWholeProjectVibeMixScope(
                     prompt,
                     context,
@@ -126,6 +130,7 @@ export const parsePromptToActions = inject({ logger })(
                         prompt,
                         context,
                         projectRevision,
+                        drumRoutingCapability,
                         wholeProjectVibeMixCapability,
                     }),
                     getExecutableAppActionToolSchemas(),

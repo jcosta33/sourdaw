@@ -1,6 +1,7 @@
 import { resolveMarkerColorValue } from '#/utils/markerColorPalette';
 import { wouldCreateRoutingCycle } from '#/utils/routingCycle';
 
+import { type DrumRoutingCapability } from '../models/DrumRoutingCapability';
 import { type ProjectContext } from '../models/ProjectContext';
 import { type RuntimeAction } from '../models/RuntimeAction';
 import { type WholeProjectVibeMixCapability } from '../models/WholeProjectVibeMixPlan';
@@ -2991,15 +2992,18 @@ export function buildLlmActionUserMessage({
     prompt,
     context,
     projectRevision,
+    drumRoutingCapability,
     wholeProjectVibeMixCapability,
 }: {
     prompt: string;
     context: ProjectContext;
     projectRevision?: string;
+    drumRoutingCapability?: DrumRoutingCapability;
     wholeProjectVibeMixCapability?: WholeProjectVibeMixCapability;
 }): string {
     const commandContext = {
         ...(projectRevision ? { projectRevision } : {}),
+        ...(drumRoutingCapability ? { drumRoutingCapability } : {}),
         ...(wholeProjectVibeMixCapability ? { wholeProjectVibeMixCapability } : {}),
         tempo: context.tempo,
         timeSignature: context.timeSignature,

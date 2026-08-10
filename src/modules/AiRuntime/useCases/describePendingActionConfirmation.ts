@@ -6,6 +6,7 @@ import { type WholeProjectVibeMixPlan } from '../models/WholeProjectVibeMixPlan'
 
 import { getBulkDeviceInsertionTrackScope } from './agentReference/getBulkDeviceInsertionTrackScope';
 import { getDeviceParameterPromptScope } from './agentReference/getDeviceParameterPromptScope';
+import { getDrumRoutingPromptScope } from './agentReference/getDrumRoutingPromptScope';
 import { getMutedEmptyTrackDeletionScope } from './agentReference/getMutedEmptyTrackDeletionScope';
 import { describePlannedAction } from './describePlannedAction';
 import { getPlannedActionAffectedIds } from './getPlannedActionAffectedIds';
@@ -97,10 +98,16 @@ function getProtectedUnchangedTracks(
         }));
     }
     const planProtections = wholeProjectVibeMixPlan?.globalConstraints.map(({ id, name }) => ({ id, name })) ?? [];
+    const drumRoutingScope = getDrumRoutingPromptScope(prompt, context);
+    const drumRoutingProtections =
+        drumRoutingScope.status === 'request'
+            ? [{ id: drumRoutingScope.protectedReturnId, name: drumRoutingScope.protectedReturnName }]
+            : [];
     const protections = [
         ...protectedTracks.map(({ id, name }) => ({ id, name })),
         ...protectedParameters,
         ...planProtections,
+        ...drumRoutingProtections,
     ];
     return [...new Map(protections.map((protection) => [protection.id, protection])).values()];
 }
