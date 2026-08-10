@@ -1,0 +1,53 @@
+src/modules/AudioEngine/repositories/audioDecoding/wasmDecoding/decodeAudioBytesWasm.ts
+  s_bc88af7d3b054c::t_04479b383644e8 57-58,63-68
+  s_bc88af7d3b054c::t_7d4052a86353c5 69
+src/modules/AudioEngine/repositories/audioDecoding/wasmDecoding/__tests__/decodeAudioBytesWasm.spec.ts
+  s_bc88af7d3b054c::t_52c1ed1a06ff11 8-9,18-19,22-25,42-43,132-143
+  s_bc88af7d3b054c::t_849ab1000c8bef 144
+src-tauri/src/commands/crumbs.rs
+  s_bc88af7d3b054c::t_0b84cb5883978e 123,796-819
+  s_bc88af7d3b054c::t_04479b383644e8 133-134,294-295,361-362
+  s_bc88af7d3b054c::t_771fea6785c378 820-821
+src/modules/Crumbs/useCases/loadSample.ts
+  s_bc88af7d3b054c::t_04479b383644e8 82-88
+crates/daw-collab/src/persistence.rs
+  s_bc88af7d3b054c::t_41b4259b4eff9e 215-229,237,262-296
+  s_bc88af7d3b054c::t_07c30921b63a97 13-16,85-91,96-98,106,112,114,137,139,243,261
+  s_bc88af7d3b054c::t_01715954cc3ad5 107-111,132-136
+src/modules/Crumbs/useCases/__tests__/loadSample.spec.ts
+  s_bc88af7d3b054c::t_e8d7b525a8f44b 86-89
+  s_bc88af7d3b054c::t_52c1ed1a06ff11 45-46,75-85
+  s_bc88af7d3b054c::t_2f1bf15e0e60f3 90-91
+src/modules/AudioEngine/repositories/audioDecoding/wasmDecoding/loadWasmDecoderModule.ts
+  s_bc88af7d3b054c::t_04479b383644e8 6-7
+crates/daw-io/src/audio_decode.rs
+  s_bc88af7d3b054c::t_59ca55a6637fa3 11-12,20-22,28-42,82-84,93,119,128,131-139,148-149,172,177,241,253,259,262,268,275,280-281,291-294,306,312,317-318
+  s_bc88af7d3b054c::t_1318cc680387d5 201-227,261,263-267,269-274,276-279,282-290,295-299
+  s_bc88af7d3b054c::t_85ea83b4f47566 111,260
+  s_bc88af7d3b054c::t_769f5671af261d 114-118,120-127,129-130,145,147
+src/modules/Crumbs/models/CrumbsTypes.ts
+  s_bc88af7d3b054c::t_04479b383644e8 73-74
+crates/daw-wasm-decoder/src/lib.rs
+  s_bc88af7d3b054c::t_f90fd7f3af1cdb 45-46,68-77,101-104,109,124,128-129,131,136,148-149,168-183,188
+  s_bc88af7d3b054c::t_85ea83b4f47566 108,184-187
+public/wasm/daw-wasm-decoder/daw_wasm_decoder.js
+  s_bc88af7d3b054c::t_f9daaede54ae83 25-46
+public/wasm/manifest.json
+  s_bc88af7d3b054c::t_6540b47c2ca2ed 54,57-58
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "803f0c8bae133f13b521fbeb01524ede426fc34f",
+  "prompts": {},
+  "sessions": {
+    "s_bc88af7d3b054c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f9b4a-11a2-7f61-8dfb-76eed0eb2a9c",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
