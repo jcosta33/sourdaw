@@ -16,7 +16,7 @@ type TestPluginDescriptor = {
 } | null;
 
 type TestPluginScanViewState = {
-    scannedPlugins: Array<{ id: string; name: string; format: string }>;
+    scannedPlugins: Array<{ id: string; name: string; format: string; clap_id?: string }>;
 };
 
 // Mock external dependencies
@@ -320,6 +320,40 @@ describe('TrackDevicesSection', () => {
         expect(screen.getByText('Unavailable')).toBeInTheDocument();
         expect(screen.getByLabelText('Legacy VST unavailable')).toBeDisabled();
         expect(screen.queryByLabelText('Open editor for Legacy VST')).not.toBeInTheDocument();
+    });
+
+    it('keeps a persisted CLAP slot available when it uses the stable descriptor id', () => {
+        mockGetPlatformCapabilities.mockReturnValue({ hasNativePlugins: true });
+        mockUseStore.mockReturnValue({
+            scannedPlugins: [
+                {
+                    id: 'path-hash',
+                    clap_id: 'com.vendor.persisted-clap',
+                    name: 'Persisted CLAP',
+                    format: 'clap',
+                },
+            ],
+        });
+        const trackWithPersistedClap: Track = {
+            ...mockTrack,
+            devices: [
+                {
+                    id: 'persisted-clap-slot',
+                    name: 'Persisted CLAP',
+                    type: 'external-plugin',
+                    bypassed: false,
+                    parameterValues: {},
+                    externalPluginId: 'com.vendor.persisted-clap',
+                    externalInstanceId: 'persisted-instance',
+                },
+            ],
+        };
+
+        render(<TrackDevicesSection track={trackWithPersistedClap} onSelectDevice={mockOnSelectDevice} />);
+
+        expect(screen.queryByText('Unavailable')).not.toBeInTheDocument();
+        expect(screen.getByLabelText('Bypass Persisted CLAP')).toBeEnabled();
+        expect(screen.getByLabelText('Open editor for Persisted CLAP')).toBeInTheDocument();
     });
 
     it('should apply opacity to bypassed devices', () => {

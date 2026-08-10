@@ -37,6 +37,7 @@ type PluginScanViewState = {
         id: string;
         name: string;
         format: string;
+        clap_id?: string;
     }>;
 };
 
@@ -56,7 +57,9 @@ export const TrackDevicesSection = ({ track, onSelectDevice }: TrackDevicesSecti
     const supportedExternalPlugins = pluginScanState.scannedPlugins.filter(
         (plugin) => plugin.format.toLowerCase() === 'clap'
     );
-    const supportedExternalPluginIds = new Set(supportedExternalPlugins.map((plugin) => plugin.id));
+    const supportedExternalPluginIds = new Set(
+        supportedExternalPlugins.flatMap((plugin) => (plugin.clap_id ? [plugin.id, plugin.clap_id] : [plugin.id]))
+    );
     const unavailableExternalDeviceIds = new Set(
         track.devices
             .filter(
