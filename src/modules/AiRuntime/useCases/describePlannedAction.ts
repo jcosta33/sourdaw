@@ -5,6 +5,7 @@ import { type AppAction } from '#/utils/handlerContract';
 import { resolveMarkerColorName } from '#/utils/markerColorPalette';
 
 import { type ProjectContext } from '../models/ProjectContext';
+import { getMidiArticulationSemanticChanges } from '../transformers/getMidiArticulationSemanticChanges';
 
 type DescribePlannedActionInput = {
     action: AppAction;
@@ -252,11 +253,23 @@ export function describePlannedAction({ action, context }: DescribePlannedAction
         }
     }
     if (action.type === 'copyMidiArticulations') {
-        const clips = context.tracks.flatMap((track) => track.clips);
-        const source = clips.find((clip) => clip.id === action.payload.sourceClipId);
-        const target = clips.find((clip) => clip.id === action.payload.targetClipId);
-        if (source && target) {
-            return `Copy only articulation from "${source.name}" (${source.id}) to "${target.name}" (${target.id}); preserve target pitches, velocities, timing, and expression`;
+        const track = context.tracks.find((candidate) => candidate.id === action.payload.trackId);
+        const source = track?.clips.find((clip) => clip.id === action.payload.sourceClipId);
+        const target = track?.clips.find((clip) => clip.id === action.payload.targetClipId);
+        const changes = getMidiArticulationSemanticChanges({
+            notePairs: action.payload.notePairs,
+            sourceNotes: action.payload.expectedSourceNotes,
+            targetNotes: action.payload.expectedTargetNotes,
+        });
+        if (track && source && target && changes && changes.length > 0) {
+            const noteChanges = changes
+                .map((change) => {
+                    const current = change.currentTargetArticulation ?? 'none';
+                    const sourceValue = change.sourceArticulation ?? 'none';
+                    return `target note ${change.targetNoteId} from ${change.sourceNoteId} articulation ${current} → ${sourceValue}`;
+                })
+                .join('; ');
+            return `Track "${track.name}" (${track.id}): "${source.name}" (${source.id}) → "${target.name}" (${target.id}); ${noteChanges}; preserve target pitches, velocities, timing, and expression`;
         }
     }
 

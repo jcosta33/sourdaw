@@ -823,6 +823,7 @@ export type AppAction =
     | {
           type: 'copyMidiArticulations';
           payload: {
+              trackId: string;
               sourceClipId: string;
               targetClipId: string;
               notePairs: readonly { readonly sourceNoteId: string; readonly targetNoteId: string }[];

@@ -53,6 +53,7 @@ export function materializeActionStateGuards(
             materialized.push({
                 type: 'copyMidiArticulations',
                 payload: {
+                    trackId: sourceTarget.track.id,
                     sourceClipId: action.payload.sourceClipId,
                     targetClipId: action.payload.targetClipId,
                     notePairs: projectedPairs.map((pair) => ({

@@ -323,7 +323,8 @@ describe('MF-03 articulation transfer prompt workflow', () => {
 
         const confirmationId = getConfirmationId();
         expect(confirmationId).not.toBe('');
-        expect(getPendingActionConfirmation(confirmationId)?.actions).toEqual([
+        const confirmation = getPendingActionConfirmation(confirmationId);
+        expect(confirmation?.actions).toEqual([
             expect.objectContaining({
                 type: 'copyMidiArticulations',
                 payload: expect.objectContaining({
@@ -336,7 +337,18 @@ describe('MF-03 articulation transfer prompt workflow', () => {
                 }),
             }),
         ]);
-        expect(getPendingActionConfirmation(confirmationId)?.risk).toEqual({
+        const exactSemanticDiff =
+            'Track "Strings" (track-strings): "Strings Chorus One" (clip-chorus-one) → "Strings Chorus Two" (clip-chorus-two); target note target-low from source-low articulation legato → staccato; target note target-high from source-high articulation tenuto → accent; preserve target pitches, velocities, timing, and expression';
+        expect(confirmation?.actionLabels).toEqual([exactSemanticDiff]);
+        expect(confirmation?.approvalSnapshot.actionLabels).toEqual([exactSemanticDiff]);
+        expect(confirmation?.affectedIds).toEqual([
+            'track-strings',
+            'clip-chorus-one',
+            'clip-chorus-two',
+            'target-low',
+            'target-high',
+        ]);
+        expect(confirmation?.risk).toEqual({
             level: 'broad-reversible',
             reason: 'This action can change a broad section of the project.',
         });
@@ -367,12 +379,20 @@ describe('MF-03 articulation transfer prompt workflow', () => {
             executedActions: [
                 {
                     actionType: 'copyMidiArticulations',
+                    label: exactSemanticDiff,
                     executionKind: 'project',
-                    affectedIds: ['clip-chorus-one', 'clip-chorus-two'],
+                    affectedIds: ['track-strings', 'clip-chorus-one', 'clip-chorus-two', 'target-low', 'target-high'],
                     outcome: 'committed',
                 },
             ],
         });
+        const receipt = chatStore.value?.messages.find(
+            (message) => message.pendingActionConfirmationId === confirmationId
+        );
+        expect(receipt?.content).toContain(exactSemanticDiff);
+        expect(receipt?.content).toContain(
+            'Affected IDs: track-strings, clip-chorus-one, clip-chorus-two, target-low, target-high'
+        );
 
         await undo();
         expect(midiStore.value?.notesByClipId['clip-chorus-two']?.map((note) => note.articulation)).toEqual([

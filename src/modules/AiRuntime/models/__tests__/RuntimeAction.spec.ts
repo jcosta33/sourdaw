@@ -100,6 +100,7 @@ describe('RuntimeAction', () => {
         expectTypeOf<PayloadHasKey<'quantizeNotes', 'strength'>>().toEqualTypeOf<false>();
         expectTypeOf<PayloadHasKey<'quantizeNotes', 'swing'>>().toEqualTypeOf<false>();
         expectTypeOf<PayloadHasKey<'copyMidiArticulations', 'notePairs'>>().toEqualTypeOf<false>();
+        expectTypeOf<PayloadHasKey<'copyMidiArticulations', 'trackId'>>().toEqualTypeOf<false>();
         expectTypeOf<PayloadHasKey<'copyMidiArticulations', 'expectedSourceNotes'>>().toEqualTypeOf<false>();
         expectTypeOf<PayloadHasKey<'copyMidiArticulations', 'expectedTargetNotes'>>().toEqualTypeOf<false>();
         expectTypeOf<PayloadHasKey<'scaleAutomation', 'anchor'>>().toEqualTypeOf<false>();
