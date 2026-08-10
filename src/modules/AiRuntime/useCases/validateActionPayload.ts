@@ -168,7 +168,20 @@ const validators = {
     // Track lifecycle
     addTrack: (param): param is PayloadOf<'addTrack'> => isObj(param) && isString(param.name) && isString(param.kind),
     removeTrack: (param): param is PayloadOf<'removeTrack'> =>
-        isObj(param) && hasExactKeys(param, ['trackId']) && isNonEmptyString(param.trackId),
+        isObj(param) &&
+        hasOnlyKeys(param, ['trackId', 'expectedKind', 'expectedMuted', 'expectedClipIds']) &&
+        Object.hasOwn(param, 'trackId') &&
+        isNonEmptyString(param.trackId) &&
+        isOptional(
+            param.expectedKind,
+            (value): value is NonNullable<PayloadOf<'removeTrack'>['expectedKind']> =>
+                value === 'audio' || value === 'midi' || value === 'bus' || value === 'master' || value === 'folder'
+        ) &&
+        isOptional(param.expectedMuted, (value): value is boolean => typeof value === 'boolean') &&
+        isOptional(
+            param.expectedClipIds,
+            (value): value is readonly string[] => Array.isArray(value) && value.every(isNonEmptyString)
+        ),
     renameTrack: (param): param is PayloadOf<'renameTrack'> =>
         isObj(param) && isString(param.trackId) && isString(param.name),
     duplicateTrack: hasTrackId,

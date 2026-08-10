@@ -21,6 +21,23 @@ type MidiPitchBendEntry = { readonly id: string };
 
 export const handleRemoveTrack = createHandler<'removeTrack'>({
     execute: (action) => {
+        const currentTrack = getTrackStoreState()?.tracks.find((candidate) => candidate.id === action.payload.trackId);
+        if (action.payload.expectedKind !== undefined && currentTrack?.kind !== action.payload.expectedKind) {
+            return { status: 'conflict' };
+        }
+        if (action.payload.expectedMuted !== undefined && currentTrack?.muted !== action.payload.expectedMuted) {
+            return { status: 'conflict' };
+        }
+        if (action.payload.expectedClipIds !== undefined) {
+            const currentClipIds = currentTrack?.clips.map((clip) => clip.id);
+            if (
+                !currentClipIds ||
+                currentClipIds.length !== action.payload.expectedClipIds.length ||
+                currentClipIds.some((clipId, index) => clipId !== action.payload.expectedClipIds?.[index])
+            ) {
+                return { status: 'conflict' };
+            }
+        }
         const result = removeTrack(action.payload.trackId, {
             deferRuntimeEffects: true,
             suppressRemovedEvent: true,
@@ -40,7 +57,7 @@ export const handleRemoveTrack = createHandler<'removeTrack'>({
                     finalizeModulationRemoval.afterCommit,
                     () => publishTrackRemoved({ trackId: action.payload.trackId }),
                 ]),
-            afterAmbiguousCommit: () => {
+            afterAmbiguousCommit: async () => {
                 const committedTrack = getTrackStoreState()?.tracks.find(
                     (candidate) => candidate.id === action.payload.trackId
                 );
@@ -60,7 +77,14 @@ export const handleRemoveTrack = createHandler<'removeTrack'>({
                         publishTrackRemoved({ trackId: action.payload.trackId })
                     );
                 }
-                return runAllAsyncEffects(effects);
+                try {
+                    await runAllAsyncEffects(effects);
+                } catch (error) {
+                    const reason = error instanceof Error ? error.message : String(error);
+                    throw new Error(`Track runtime reconciliation failed; manual repair required: ${reason}`, {
+                        cause: error,
+                    });
+                }
             },
         };
     },

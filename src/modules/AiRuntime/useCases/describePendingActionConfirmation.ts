@@ -4,6 +4,7 @@ import { type AppAction } from '#/utils/handlerContract';
 import { type ProjectContext } from '../models/ProjectContext';
 
 import { getBulkDeviceInsertionTrackScope } from './agentReference/getBulkDeviceInsertionTrackScope';
+import { getMutedEmptyTrackDeletionScope } from './agentReference/getMutedEmptyTrackDeletionScope';
 import { describePlannedAction } from './describePlannedAction';
 import { getPlannedActionAffectedIds } from './getPlannedActionAffectedIds';
 
@@ -37,10 +38,14 @@ function getProtectedUnchangedTracks(prompt: string, context: ProjectContext): A
     const excludedFrozenTrackIds = new Set(
         getBulkDeviceInsertionTrackScope(prompt, context)?.excludedFrozenTrackIds ?? []
     );
+    const structurallyProtectedTrackIds = new Set(
+        getMutedEmptyTrackDeletionScope(prompt, context)?.protectedTrackIds ?? []
+    );
     const protectedTracks = context.tracks.filter((track) => {
         const normalizedName = normalizeText(track.name);
         return (
             excludedFrozenTrackIds.has(track.id) ||
+            structurallyProtectedTrackIds.has(track.id) ||
             protectedScopes.some((scope) => ` ${scope} `.includes(` ${normalizedName} `))
         );
     });

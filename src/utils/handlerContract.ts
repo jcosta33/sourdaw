@@ -438,7 +438,15 @@ type GeneratedMidiReplayOperation =
 
 export type AppAction =
     | { type: 'addTrack'; payload: { id?: string; name: string; kind: TrackKind; select?: boolean } }
-    | { type: 'removeTrack'; payload: { trackId: string } }
+    | {
+          type: 'removeTrack';
+          payload: {
+              trackId: string;
+              expectedKind?: 'audio' | 'midi' | 'bus' | 'master' | 'folder';
+              expectedMuted?: boolean;
+              expectedClipIds?: readonly string[];
+          };
+      }
     | {
           type: 'discardCreatedTrack';
           payload: { trackId: string; generatedMidiStateGuard?: GeneratedMidiStateGuard };
