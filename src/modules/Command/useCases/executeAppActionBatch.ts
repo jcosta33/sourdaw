@@ -246,8 +246,23 @@ function recordCommittedBatch(
     options: ExecuteOptions | undefined
 ): void {
     const timestamp = Date.now();
+    const historyActions = preparedActions.filter(
+        ({ description, handler }) => !options?.skipUndo && handler.undoable && description !== null
+    );
+    const historyGroupIds = historyActions.map(({ handler }) =>
+        handler.batchExecution === 'singleton' ? undefined : options?.groupId
+    );
+    const firstHistoryGroupId = historyGroupIds[0];
+    let stableHistoryGroupId: string | undefined;
+    if (
+        historyActions.length > 1 &&
+        firstHistoryGroupId !== undefined &&
+        historyGroupIds.every((groupId) => groupId === firstHistoryGroupId)
+    ) {
+        stableHistoryGroupId = firstHistoryGroupId;
+    }
     const batchRestoreTracks: Array<{ trackId: string; trackIndex: number }> = [];
-    for (const prepared of preparedActions) {
+    for (const prepared of stableHistoryGroupId ? historyActions : []) {
         const inverseAction = prepared.description?.inverseAction;
         if (
             inverseAction?.type === 'restoreTrack' &&
@@ -269,8 +284,13 @@ function recordCommittedBatch(
         }
 
         const entryId = crypto.randomUUID();
+        const historyGroupId = handler.batchExecution === 'singleton' ? undefined : options?.groupId;
         let inverseAction = description.inverseAction ?? null;
-        if (inverseAction?.type === 'restoreTrack' && batchRestoreTracks.length > 1) {
+        if (
+            inverseAction?.type === 'restoreTrack' &&
+            historyGroupId === stableHistoryGroupId &&
+            batchRestoreTracks.length > 1
+        ) {
             inverseAction = {
                 ...inverseAction,
                 payload: {
@@ -279,7 +299,6 @@ function recordCommittedBatch(
                 },
             };
         }
-        const historyGroupId = handler.batchExecution === 'singleton' ? undefined : options?.groupId;
         const historyGroupLabel = historyGroupId ? options?.groupLabel : undefined;
         const metadata = {
             id: entryId,

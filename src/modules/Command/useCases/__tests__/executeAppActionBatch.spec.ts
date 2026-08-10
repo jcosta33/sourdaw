@@ -190,6 +190,36 @@ describe('executeAppActionBatch', () => {
         );
     });
 
+    it('keeps restore inverses independent when a multi-action batch has no history group', async () => {
+        const firstAction: SetEditingToolAction = { type: 'setEditingTool', payload: { tool: 'marquee' } };
+        const secondAction: SetSnapValueAction = { type: 'setSnapValue', payload: { value: 0.5 } };
+        const firstRestore = createRestoreTrackAction('track-a', 0);
+        const secondRestore = createRestoreTrackAction('track-b', 1);
+        registerHandlerMap({
+            setEditingTool: createHandler<SetEditingToolAction>({
+                execute: () => ({ status: 'written' }),
+                describe: () => ({ label: 'First', inverseAction: firstRestore }),
+            }),
+            setSnapValue: createHandler<SetSnapValueAction>({
+                execute: () => ({ status: 'written' }),
+                describe: () => ({ label: 'Second', inverseAction: secondRestore }),
+            }),
+        });
+
+        await executeAppActionBatch([firstAction, secondAction]);
+
+        expect(mocks.commitUndoEntry).toHaveBeenNthCalledWith(
+            1,
+            expect.objectContaining({ inverseAction: firstRestore })
+        );
+        expect(mocks.commitUndoEntry).toHaveBeenNthCalledWith(
+            2,
+            expect.objectContaining({ inverseAction: secondRestore })
+        );
+        expect(mocks.commitUndoEntry.mock.calls[0]?.[0]).not.toHaveProperty('groupId');
+        expect(mocks.commitUndoEntry.mock.calls[1]?.[0]).not.toHaveProperty('groupId');
+    });
+
     it('retains a handler-provided guarded redo action in the committed undo entry', async () => {
         const action: SetEditingToolAction = { type: 'setEditingTool', payload: { tool: 'marquee' } };
         const redoAction: SetEditingToolAction = { type: 'setEditingTool', payload: { tool: 'marquee' } };

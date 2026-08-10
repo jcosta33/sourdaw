@@ -766,6 +766,39 @@ describe('bass compressor prompt workflow', () => {
         expect(undoStore.value?.past).toEqual([]);
     });
 
+    it('reports persistent post-commit runtime teardown failures as manual repair after grouped undo', async () => {
+        await sendChatMessage(PROMPT);
+        const confirmation = getConfirmation();
+        await confirmPendingChatActions({ confirmationId: confirmation?.id ?? '' });
+        runtimeMocks.removeDeviceFromStrip.mockImplementation(() => {
+            throw new Error('persistent runtime teardown failure');
+        });
+
+        let undoError: unknown;
+        try {
+            await undo();
+        } catch (error) {
+            undoError = error;
+        }
+
+        expect(undoError).toBeInstanceOf(Error);
+        if (!(undoError instanceof Error)) {
+            throw new Error('Expected grouped undo to report committed runtime divergence');
+        }
+        expect(undoError.name).toBe('AppActionCommittedError');
+        expect(undoError.cause).toBeInstanceOf(Error);
+        if (!(undoError.cause instanceof Error)) {
+            throw new Error('Expected committed error to retain the runtime warning');
+        }
+        expect(undoError.cause.message).toContain('persistent runtime teardown failure');
+        expect(undoError.cause.message.toLowerCase()).toContain('manual repair');
+        expect(getTrack('track-bass-di').devices.map((device) => device.id)).toEqual(BASS_DI_DEVICE_IDS);
+        expect(getTrack('track-bass-amp').devices.map((device) => device.id)).toEqual(BASS_AMP_DEVICE_IDS);
+        expect(runtimeMocks.removeDeviceFromStrip).toHaveBeenCalledTimes(4);
+        expect(undoStore.value?.past).toEqual([]);
+        expect(undoStore.value?.future).toHaveLength(2);
+    });
+
     it('refuses grouped undo after a collaborator changes one inserted chain', async () => {
         await sendChatMessage(PROMPT);
         const confirmation = getConfirmation();

@@ -133,6 +133,75 @@ describe('removeDevice', () => {
         expect(mocks.unloadPlugin).toHaveBeenCalledWith('inst1');
     });
 
+    it('keeps a failed deferred graph removal retryable during ambiguous reconciliation', async () => {
+        const track = {
+            id: 't1',
+            kind: 'audio',
+            devices: [createExternalDevice('d1', 'inst1')],
+        } as unknown as Track;
+        mocks.getTrackState.mockReturnValue({ tracks: [track], selectedTrackId: null });
+        mocks.removeDeviceFromStrip
+            .mockImplementationOnce(() => {
+                throw new Error('graph teardown failed');
+            })
+            .mockImplementationOnce(() => undefined);
+
+        const result = removeDevice('d1', { deferRuntimeEffects: true });
+        if (typeof result === 'string') {
+            throw new TypeError('Expected deferred unload result');
+        }
+        mocks.getTrackState.mockReturnValue({ tracks: [{ ...track, devices: [] }], selectedTrackId: null });
+
+        await expect(result.afterCommit()).rejects.toThrow('graph teardown failed');
+        await expect(result.afterAmbiguousCommit()).resolves.toBeUndefined();
+        expect(mocks.removeDeviceFromStrip).toHaveBeenCalledTimes(2);
+        expect(mocks.clearReportedLatency).toHaveBeenCalledOnce();
+        expect(mocks.unloadPlugin).toHaveBeenCalledOnce();
+    });
+
+    it('keeps a failed deferred plugin unload retryable without repeating finalized graph teardown', async () => {
+        const track = {
+            id: 't1',
+            kind: 'audio',
+            devices: [createExternalDevice('d1', 'inst1')],
+        } as unknown as Track;
+        mocks.getTrackState.mockReturnValue({ tracks: [track], selectedTrackId: null });
+        mocks.unloadPlugin.mockRejectedValueOnce(new Error('host teardown failed')).mockResolvedValueOnce(undefined);
+
+        const result = removeDevice('d1', { deferRuntimeEffects: true });
+        if (typeof result === 'string') {
+            throw new TypeError('Expected deferred unload result');
+        }
+        mocks.getTrackState.mockReturnValue({ tracks: [{ ...track, devices: [] }], selectedTrackId: null });
+
+        await expect(result.afterCommit()).rejects.toThrow('host teardown failed');
+        await expect(result.afterAmbiguousCommit()).resolves.toBeUndefined();
+        expect(mocks.removeDeviceFromStrip).toHaveBeenCalledOnce();
+        expect(mocks.unloadPlugin).toHaveBeenCalledTimes(2);
+    });
+
+    it('keeps a failed deferred strip teardown retryable without repeating finalized device removal', async () => {
+        const folder = createTrack({ id: 'folder-1', name: 'Folder', kind: 'folder' });
+        folder.devices = [{ id: 'toaster-1', name: 'Toaster', type: 'toaster', bypassed: false, parameterValues: {} }];
+        mocks.getTrackState.mockReturnValue({ tracks: [folder], selectedTrackId: null });
+        mocks.removeTrackStrip
+            .mockImplementationOnce(() => {
+                throw new Error('strip teardown failed');
+            })
+            .mockImplementationOnce(() => undefined);
+
+        const result = removeDevice('toaster-1', { deferRuntimeEffects: true });
+        if (typeof result === 'string') {
+            throw new TypeError('Expected deferred unload result');
+        }
+        mocks.getTrackState.mockReturnValue({ tracks: [{ ...folder, devices: [] }], selectedTrackId: null });
+
+        await expect(result.afterCommit()).rejects.toThrow('strip teardown failed');
+        await expect(result.afterAmbiguousCommit()).resolves.toBeUndefined();
+        expect(mocks.removeDeviceFromStrip).toHaveBeenCalledOnce();
+        expect(mocks.removeTrackStrip).toHaveBeenCalledTimes(2);
+    });
+
     it('reprojects a restored external device after an ambiguous rollback without unloading it', async () => {
         const track = {
             id: 't1',
