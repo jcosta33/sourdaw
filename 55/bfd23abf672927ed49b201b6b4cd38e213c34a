@@ -1,0 +1,18 @@
+src/modules/GrandBoule/presentations/views/GrandBoulePanel.tsx
+  h_1228e573df1f42 111
+tests/e2e/grandBoulePhysicalKnobsTestId.spec.ts
+  h_1228e573df1f42 1-50
+tests/e2e/grandBoule.spec.ts
+  h_1228e573df1f42 55,80
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "55bfd23abf672927ed49b201b6b4cd38e213c34a",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
