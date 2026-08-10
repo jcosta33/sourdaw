@@ -1830,14 +1830,22 @@ function bridgeToolCall({
         ) {
             return rejection(index, call.name, 'Expected an available device parameter and finite value');
         }
-        const device = findDevice(context, args.deviceId);
-        const parameter = (device?.parameters ?? []).find((candidate) => candidate.id === args.paramId);
-        if (!parameter || !isValidParameterValue(parameter, args.value)) {
+        const target = findDeviceTarget(context, args.deviceId);
+        const parameter = (target?.device.parameters ?? []).find((candidate) => candidate.id === args.paramId);
+        if (!target || target.track.frozen === true || !parameter || !isValidParameterValue(parameter, args.value)) {
             return rejection(index, call.name, 'Expected a descriptor-backed parameter value within project bounds');
         }
         return {
             type: 'setDeviceParameter',
-            payload: { deviceId: args.deviceId, paramId: args.paramId, value: args.value },
+            payload: {
+                deviceId: target.device.id,
+                paramId: parameter.id,
+                value: args.value,
+                expectedTrackId: target.track.id,
+                expectedDeviceType: target.device.type,
+                expectedDeviceIds: target.track.devices.map((device) => device.id),
+                expectedValue: parameter.value,
+            },
         };
     }
 

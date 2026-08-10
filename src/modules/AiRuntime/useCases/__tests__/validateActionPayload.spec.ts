@@ -537,8 +537,12 @@ const guardedPayloadContractCases = [
         invalidPayloads: [
             { trackId: 'track-1', deviceId: 'device-1', paramId: 'gain' },
             { deviceId: 'device-1', paramId: 'gain' },
+            { deviceId: '', paramId: 'gain', value: 0.75 },
+            { deviceId: 'device-1', paramId: '', value: 0.75 },
             { deviceId: 'device-1', paramId: 1, value: 0.75 },
             { deviceId: 'device-1', paramId: 'gain', value: Number.NaN },
+            { deviceId: 'device-1', paramId: 'gain', value: Number.POSITIVE_INFINITY },
+            { deviceId: 'device-1', paramId: 'gain', value: 0.75, providerOwnedGuard: 0.5 },
         ],
     }),
     guardedPayloadCase({

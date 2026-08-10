@@ -3710,7 +3710,18 @@ describe('bridgeGroundedLlmToolCalls', () => {
         expect(crossCallCueCollision.rejections).toEqual([expect.objectContaining({ index: 0, name: 'bypassDevice' })]);
         expect(parameter.rejections).toEqual([]);
         expect(parameter.actions).toEqual([
-            { type: 'setDeviceParameter', payload: { deviceId: 'device-reverb', paramId: 'mix', value: 0.25 } },
+            {
+                type: 'setDeviceParameter',
+                payload: {
+                    deviceId: 'device-reverb',
+                    paramId: 'mix',
+                    value: 0.25,
+                    expectedTrackId: 'track-vocals',
+                    expectedDeviceType: 'Reverb',
+                    expectedDeviceIds: ['device-reverb'],
+                    expectedValue: 0.25,
+                },
+            },
         ]);
     });
 
@@ -3807,14 +3818,47 @@ describe('bridgeGroundedLlmToolCalls', () => {
 
         expect(bypass.actions).toEqual([{ type: 'bypassDevice', payload: { deviceId: 'device-eq', bypassed: true } }]);
         expect(parameter.actions).toEqual([
-            { type: 'setDeviceParameter', payload: { deviceId: 'device-eq', paramId: 'frequency', value: 2400 } },
+            {
+                type: 'setDeviceParameter',
+                payload: {
+                    deviceId: 'device-eq',
+                    paramId: 'frequency',
+                    value: 2400,
+                    expectedTrackId: 'track-vocals',
+                    expectedDeviceType: 'EQ',
+                    expectedDeviceIds: ['device-eq'],
+                    expectedValue: 1200,
+                },
+            },
         ]);
         expect(wrongParameterDirection.actions).toEqual([]);
         expect(validParameterDirection.actions).toEqual([
-            { type: 'setDeviceParameter', payload: { deviceId: 'device-eq', paramId: 'frequency', value: 2400 } },
+            {
+                type: 'setDeviceParameter',
+                payload: {
+                    deviceId: 'device-eq',
+                    paramId: 'frequency',
+                    value: 2400,
+                    expectedTrackId: 'track-vocals',
+                    expectedDeviceType: 'EQ',
+                    expectedDeviceIds: ['device-eq'],
+                    expectedValue: 1200,
+                },
+            },
         ]);
         expect(ownerCollision.actions).toEqual([
-            { type: 'setDeviceParameter', payload: { deviceId: 'device-eq', paramId: 'mix', value: 0.5 } },
+            {
+                type: 'setDeviceParameter',
+                payload: {
+                    deviceId: 'device-eq',
+                    paramId: 'mix',
+                    value: 0.5,
+                    expectedTrackId: 'track-vocals',
+                    expectedDeviceType: 'EQ',
+                    expectedDeviceIds: ['device-eq'],
+                    expectedValue: 0.5,
+                },
+            },
         ]);
         expect(wrongOwner.actions).toEqual([]);
     });

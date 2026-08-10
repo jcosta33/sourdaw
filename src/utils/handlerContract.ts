@@ -674,7 +674,18 @@ export type AppAction =
               expectedDeviceIds?: readonly string[];
           };
       }
-    | { type: 'setDeviceParameter'; payload: { deviceId: string; paramId: string; value: number } }
+    | {
+          type: 'setDeviceParameter';
+          payload: {
+              deviceId: string;
+              paramId: string;
+              value: number;
+              expectedTrackId?: string;
+              expectedDeviceType?: string;
+              expectedDeviceIds?: readonly string[];
+              expectedValue?: number;
+          };
+      }
     | { type: 'setExternalPluginState'; payload: { deviceId: string; stateChunk: string } }
     | { type: 'setDeviceState'; payload: { deviceId: string; state: DeviceStateChunkSnapshot } }
     | { type: 'createBus'; payload: { name: string; /** Internal replay identity. */ busId?: string } }

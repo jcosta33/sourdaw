@@ -4,6 +4,7 @@ import { type AppAction } from '#/utils/handlerContract';
 import { type ProjectContext } from '../models/ProjectContext';
 
 import { getBulkDeviceInsertionTrackScope } from './agentReference/getBulkDeviceInsertionTrackScope';
+import { getDeviceParameterPromptScope } from './agentReference/getDeviceParameterPromptScope';
 import { getMutedEmptyTrackDeletionScope } from './agentReference/getMutedEmptyTrackDeletionScope';
 import { describePlannedAction } from './describePlannedAction';
 import { getPlannedActionAffectedIds } from './getPlannedActionAffectedIds';
@@ -49,7 +50,16 @@ function getProtectedUnchangedTracks(prompt: string, context: ProjectContext): A
             protectedScopes.some((scope) => ` ${scope} `.includes(` ${normalizedName} `))
         );
     });
-    return protectedTracks.map(({ id, name }) => ({ id, name }));
+    const deviceParameterScope = getDeviceParameterPromptScope(prompt, context);
+    let protectedParameters: Array<{ id: string; name: string }> = [];
+    if (deviceParameterScope) {
+        const deviceName = deviceParameterScope.device.name ?? deviceParameterScope.device.type;
+        protectedParameters = deviceParameterScope.protectedParameters.map((parameter) => ({
+            id: `${deviceParameterScope.device.id}:${parameter.id}`,
+            name: `${deviceParameterScope.track.name} ${deviceName} ${parameter.name} = ${String(parameter.value)}${parameter.unit === ':1' ? ':1' : ` ${parameter.unit}`}`,
+        }));
+    }
+    return [...protectedTracks.map(({ id, name }) => ({ id, name })), ...protectedParameters];
 }
 
 function describeExactAction(action: AppAction, actions: readonly AppAction[], context: ProjectContext): string {
