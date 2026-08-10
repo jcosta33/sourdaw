@@ -1,0 +1,39 @@
+src/modules/AiRuntime/useCases/__tests__/bassCompressorParameterPromptWorkflow.spec.ts
+  s_a40848e8f8cca9::t_97ae3a72f56910 37,353-356,360-361,363,368-369,371-372,404-411,435-443
+  s_a40848e8f8cca9::t_2cdb548aae4bc0 357-359,467
+  s_a40848e8f8cca9::t_67f07288111973 364-367,370,373,468
+  s_a40848e8f8cca9::t_5781ee673f557c 444-446
+  s_a40848e8f8cca9::t_e32b969ffe87da 362
+  s_a40848e8f8cca9::t_136da200309d42 447-448
+src/modules/AiRuntime/useCases/agentReference/bridgeGroundedLlmToolCalls.ts
+  s_a40848e8f8cca9::t_e32b969ffe87da 1498-1500,1513
+src/modules/Arrangement/handlers/device/__tests__/handleSetDeviceParameter.spec.ts
+  s_a40848e8f8cca9::t_7a19b1c9e66d8e 11-20,72-101
+  s_a40848e8f8cca9::t_ddcc4ab42cc978 102-103
+src/modules/Arrangement/handlers/device/handleSetDeviceParameter.ts
+  s_a40848e8f8cca9::t_e32b969ffe87da 3,66-75,77-82,84-85,90-94,96-97,118,120
+  s_a40848e8f8cca9::t_5781ee673f557c 76,83,86-89,95
+src/modules/AiRuntime/useCases/describePendingActionConfirmation.ts
+  s_a40848e8f8cca9::t_29ff7696a55ba4 57
+  s_a40848e8f8cca9::t_e32b969ffe87da 35-51,56,58-65,113-116,118
+  s_a40848e8f8cca9::t_2cdb548aae4bc0 52-55
+  s_a40848e8f8cca9::t_3413f7d86b22e6 117
+src/modules/AiRuntime/useCases/getPlannedActionAffectedIds.ts
+  s_a40848e8f8cca9::t_e32b969ffe87da 7-9
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "0232c10715acc0da774b91df937a3de2ec71f255",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
