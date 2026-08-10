@@ -1,0 +1,35 @@
+src-tauri/src/host/plugin_scan_worker.rs
+  s_bc88af7d3b054c::t_c81b2a330744b9 275-277,280,285-287
+  s_bc88af7d3b054c::t_071bb245ccc290 5,101-104,117,124-132,143-147,162,165-168,173-190
+  s_bc88af7d3b054c::t_9131b42a6f73aa 191-197
+  s_bc88af7d3b054c::t_e14f0ee69067b5 211-216,218,231,233-239,241,246-247,251-252,254-257,267-268,293
+  s_bc88af7d3b054c::t_b456d4441bef3a 278-279,281-284,288-292
+  s_bc88af7d3b054c::t_9b51216e4026b7 269
+  s_bc88af7d3b054c::t_8c5b334b5e4d91 294
+src-tauri/src/commands/plugins.rs
+  s_bc88af7d3b054c::t_4824b0487d5082 166
+  s_bc88af7d3b054c::t_00d03a4ded7852 18,55-87,168
+crates/daw-plugin-host/src/scanner.rs
+  s_bc88af7d3b054c::t_2ecc6305506d7c 273,279-280,304,308,314-315,341,348-349
+  s_bc88af7d3b054c::t_4824b0487d5082 118,191,275,306,343
+src-tauri/tests/plugin_scan_process_boundary.rs
+  s_bc88af7d3b054c::t_e2407da8820467 15-16
+  s_bc88af7d3b054c::t_b456d4441bef3a 4
+  s_bc88af7d3b054c::t_4824b0487d5082 11-12
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "978c65dbeba8bd34860a43f15b3ab0e33a05cef9",
+  "prompts": {},
+  "sessions": {
+    "s_bc88af7d3b054c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f9b4a-11a2-7f61-8dfb-76eed0eb2a9c",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
