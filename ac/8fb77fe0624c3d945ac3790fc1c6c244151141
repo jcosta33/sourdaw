@@ -1,0 +1,26 @@
+src/modules/TimelineEditor/presentations/views/Inspector/__tests__/TrackDevicesSection.spec.tsx
+  s_bc88af7d3b054c::t_b61253ba8019dc 119,124,127,298-322
+  s_bc88af7d3b054c::t_bdf7c8d1a7522b 323-324
+src/modules/TimelineEditor/presentations/views/Inspector/TrackDevicesSection.tsx
+  s_bc88af7d3b054c::t_54d255655ec0cc 59,203-259,261,303,316
+  s_bc88af7d3b054c::t_1035c9a1574a30 262-264,300-302
+  s_bc88af7d3b054c::t_437403a1e2c181 304-306,313-315
+  s_bc88af7d3b054c::t_9faa9c6970f99d 317-319
+  s_bc88af7d3b054c::t_f96a72ba3488ab 265-299,307-312,320-321
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "ac8fb77fe0624c3d945ac3790fc1c6c244151141",
+  "prompts": {},
+  "sessions": {
+    "s_bc88af7d3b054c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f9b4a-11a2-7f61-8dfb-76eed0eb2a9c",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
