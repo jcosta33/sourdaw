@@ -73,6 +73,7 @@ const Knob = ({
             defaultValue={defaultValue}
             size="sm"
             tone="lavender"
+            aria-label={label}
         />
         <div className="text-center">
             <div className="text-[8px] uppercase tracking-[0.2em] text-muted-foreground/60">{label}</div>
