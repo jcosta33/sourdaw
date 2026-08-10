@@ -4,8 +4,7 @@ use daw_dsp::fermenter::FermenterInstance;
 
 const SAMPLE_RATE: f32 = 48_000.0;
 const BLOCK: usize = 128;
-const RENDER_BLOCKS: usize = 375;
-const MAX_SHIPPED_PEAK: f32 = 2.0;
+const MAX_SAFE_PEAK: f32 = 2.0;
 
 struct ShippedPreset {
     name: &'static str,
@@ -21,8 +20,8 @@ const CRUSTY_SCREAM: ShippedPreset = ShippedPreset {
         ("osc_waveform", 1.0),
         ("filter_model", 4.0),
         ("cutoff", 1_500.0),
-        ("resonance", 4.0),
-        ("filter_drive", 2.0),
+        ("resonance", 7.0),
+        ("filter_drive", 3.0),
         ("amp_sustain", 0.7),
         ("mod_env_to_filter", 0.8),
         ("portamento", 0.05),
@@ -56,17 +55,18 @@ struct Measurement {
     nan_flushes: u64,
 }
 
-fn render(preset: &ShippedPreset) -> Measurement {
-    let mut instance = FermenterInstance::new(SAMPLE_RATE, 8);
+fn render(preset: &ShippedPreset, sample_rate: f32, note: u8) -> Measurement {
+    let mut instance = FermenterInstance::new(sample_rate, 8);
     for &(name, value) in preset.parameters {
         instance.set_param(name, value);
     }
-    instance.note_on(60, 100);
+    instance.note_on(note, 100);
 
     let mut peak = 0.0_f32;
     let mut sum_squares = 0.0_f64;
     let mut sample_count = 0_usize;
-    for _ in 0..RENDER_BLOCKS {
+    let render_blocks = sample_rate as usize / BLOCK;
+    for _ in 0..render_blocks {
         let left_pointer = instance.process(BLOCK as u32);
         let right_pointer = instance.get_right_ptr();
         // SAFETY: both pointers address the instance's 128-frame output buffers
@@ -90,8 +90,8 @@ fn render(preset: &ShippedPreset) -> Measurement {
 #[test]
 fn shipped_ms20_presets_render_without_numeric_blowup() {
     let measurements = [
-        (&CRUSTY_SCREAM, render(&CRUSTY_SCREAM)),
-        (&CRACKER_CLAV, render(&CRACKER_CLAV)),
+        (&CRUSTY_SCREAM, render(&CRUSTY_SCREAM, SAMPLE_RATE, 60)),
+        (&CRACKER_CLAV, render(&CRACKER_CLAV, SAMPLE_RATE, 60)),
     ];
 
     for (preset, measurement) in &measurements {
@@ -105,7 +105,7 @@ fn shipped_ms20_presets_render_without_numeric_blowup() {
             preset.name
         );
         assert!(
-            measurement.peak.is_finite() && measurement.peak < MAX_SHIPPED_PEAK,
+            measurement.peak.is_finite() && measurement.peak < MAX_SAFE_PEAK,
             "{} peak {} indicates numeric blowup",
             preset.name,
             measurement.peak
@@ -117,4 +117,29 @@ fn shipped_ms20_presets_render_without_numeric_blowup() {
             measurement.rms
         );
     }
+}
+
+#[test]
+fn max_range_ms20_controls_remain_level_safe() {
+    let max_range = ShippedPreset {
+        name: "Maximum-range MS-20 controls",
+        parameters: &[
+            ("filter_model", 4.0),
+            ("cutoff", 100.0),
+            ("resonance", 20.0),
+            ("filter_drive", 10.0),
+        ],
+    };
+    let measurement = render(&max_range, 96_000.0, 43);
+
+    println!("{}: {measurement:?}", max_range.name);
+    assert_eq!(
+        measurement.nan_flushes, 0,
+        "maximum-range controls emitted non-finite samples"
+    );
+    assert!(
+        measurement.peak.is_finite() && measurement.peak < MAX_SAFE_PEAK,
+        "maximum-range controls produced an unsafe peak: {}",
+        measurement.peak
+    );
 }

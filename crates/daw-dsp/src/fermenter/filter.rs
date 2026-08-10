@@ -332,7 +332,12 @@ impl Ms20Filter {
         let sample_rate = sample_rate.max(1.0);
         let max_cutoff = (sample_rate * 0.45).clamp(20.0, 20_000.0);
         let g = (core::f32::consts::PI * cutoff.clamp(20.0, max_cutoff) / sample_rate).tan();
-        let damping = 1.0 / resonance.clamp(0.5, 20.0);
+        // The HP and LP sections are cascaded, so assigning the full Q to
+        // both would multiply their resonant gains. Split the declared Q
+        // equally in log space: each section receives sqrt(Q), and the
+        // cascade retains the requested overall resonant gain.
+        let section_q = resonance.clamp(0.5, 20.0).sqrt();
+        let damping = 1.0 / section_q;
 
         let driven = if self.drive > 0.001 {
             fast_tanh(input * (1.0 + self.drive))
@@ -342,7 +347,11 @@ impl Ms20Filter {
 
         let (_, hp) = Self::process_section(driven, g, damping, &mut self.hp_s1, &mut self.hp_s2);
         let (lp, _) = Self::process_section(hp, g, damping, &mut self.lp_s1, &mut self.lp_s2);
-        lp
+
+        // Remove one section's center-frequency gain. The cascade therefore
+        // remains resonant while its peak grows with sqrt(Q), not Q, across
+        // the public control range.
+        lp / section_q.max(1.0)
     }
 
     #[inline]

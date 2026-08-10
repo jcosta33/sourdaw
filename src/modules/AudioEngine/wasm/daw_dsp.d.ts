@@ -1,4 +1,4 @@
-// @wasm-bindgen-dts crate-source: sha256:a149d9160163a18e999d3b5d9f4c338828345ae4758ec07315a028c2cfb79155
+// @wasm-bindgen-dts crate-source: sha256:616151ff142b6a9307a5ff349b03d0b77ab87c954f9021a807a8bf8eef2acf0c
 /* tslint:disable */
 /* eslint-disable */
 
@@ -798,30 +798,22 @@ export type InitInput = RequestInfo | URL | Response | BufferSource | WebAssembl
 
 export interface InitOutput {
     readonly memory: WebAssembly.Memory;
-    readonly __wbg_proofinstance_free: (a: number, b: number) => void;
-    readonly proofinstance_get_ab_gain_offset: (a: number) => number;
-    readonly proofinstance_get_correlation: (a: number) => number;
-    readonly proofinstance_get_dynamics_gr: (a: number, b: number) => number;
-    readonly proofinstance_get_input_left_ptr: (a: number) => number;
-    readonly proofinstance_get_input_lufs: (a: number) => number;
-    readonly proofinstance_get_input_right_ptr: (a: number) => number;
-    readonly proofinstance_get_integrated_lufs: (a: number) => number;
-    readonly proofinstance_get_latency_samples: (a: number) => number;
-    readonly proofinstance_get_limiter_gr_db: (a: number) => number;
-    readonly proofinstance_get_lra: (a: number) => number;
-    readonly proofinstance_get_module_order: (a: number) => [number, number];
-    readonly proofinstance_get_nan_flush_count: (a: number) => number;
-    readonly proofinstance_get_output_lufs: (a: number) => number;
-    readonly proofinstance_get_output_st_lufs: (a: number) => number;
-    readonly proofinstance_get_right_ptr: (a: number) => number;
-    readonly proofinstance_get_tap_peak_l: (a: number, b: number) => number;
-    readonly proofinstance_get_tap_peak_r: (a: number, b: number) => number;
-    readonly proofinstance_get_true_peak_db: (a: number) => number;
-    readonly proofinstance_new: (a: number) => number;
-    readonly proofinstance_process: (a: number, b: number) => number;
-    readonly proofinstance_reorder: (a: number, b: number, c: number, d: number, e: number, f: number) => void;
-    readonly proofinstance_reset_integrated: (a: number) => void;
-    readonly proofinstance_set_param: (a: number, b: number, c: number, d: number) => void;
+    readonly __wbg_gluteninstance_free: (a: number, b: number) => void;
+    readonly gluteninstance_get_crest: (a: number) => number;
+    readonly gluteninstance_get_gr_db: (a: number) => number;
+    readonly gluteninstance_get_input_db: (a: number) => number;
+    readonly gluteninstance_get_input_left_ptr: (a: number) => number;
+    readonly gluteninstance_get_input_right_ptr: (a: number) => number;
+    readonly gluteninstance_get_latency_samples: (a: number) => number;
+    readonly gluteninstance_get_nan_flush_count: (a: number) => number;
+    readonly gluteninstance_get_output_db: (a: number) => number;
+    readonly gluteninstance_get_phase_corr: (a: number) => number;
+    readonly gluteninstance_get_right_ptr: (a: number) => number;
+    readonly gluteninstance_get_sc_left_ptr: (a: number) => number;
+    readonly gluteninstance_get_sc_right_ptr: (a: number) => number;
+    readonly gluteninstance_new: (a: number) => number;
+    readonly gluteninstance_process: (a: number, b: number) => number;
+    readonly gluteninstance_set_param: (a: number, b: number, c: number, d: number) => void;
     readonly __wbg_fermenterinstance_free: (a: number, b: number) => void;
     readonly __wbg_grinderinstance_free: (a: number, b: number) => void;
     readonly fermenterinstance_active_voices: (a: number) => number;
@@ -876,22 +868,30 @@ export interface InitOutput {
     readonly bacteriainstance_new: (a: number) => number;
     readonly bacteriainstance_process: (a: number, b: number) => number;
     readonly bacteriainstance_set_param: (a: number, b: number, c: number, d: number) => void;
-    readonly __wbg_gluteninstance_free: (a: number, b: number) => void;
-    readonly gluteninstance_get_crest: (a: number) => number;
-    readonly gluteninstance_get_gr_db: (a: number) => number;
-    readonly gluteninstance_get_input_db: (a: number) => number;
-    readonly gluteninstance_get_input_left_ptr: (a: number) => number;
-    readonly gluteninstance_get_input_right_ptr: (a: number) => number;
-    readonly gluteninstance_get_latency_samples: (a: number) => number;
-    readonly gluteninstance_get_nan_flush_count: (a: number) => number;
-    readonly gluteninstance_get_output_db: (a: number) => number;
-    readonly gluteninstance_get_phase_corr: (a: number) => number;
-    readonly gluteninstance_get_right_ptr: (a: number) => number;
-    readonly gluteninstance_get_sc_left_ptr: (a: number) => number;
-    readonly gluteninstance_get_sc_right_ptr: (a: number) => number;
-    readonly gluteninstance_new: (a: number) => number;
-    readonly gluteninstance_process: (a: number, b: number) => number;
-    readonly gluteninstance_set_param: (a: number, b: number, c: number, d: number) => void;
+    readonly __wbg_proofinstance_free: (a: number, b: number) => void;
+    readonly proofinstance_get_ab_gain_offset: (a: number) => number;
+    readonly proofinstance_get_correlation: (a: number) => number;
+    readonly proofinstance_get_dynamics_gr: (a: number, b: number) => number;
+    readonly proofinstance_get_input_left_ptr: (a: number) => number;
+    readonly proofinstance_get_input_lufs: (a: number) => number;
+    readonly proofinstance_get_input_right_ptr: (a: number) => number;
+    readonly proofinstance_get_integrated_lufs: (a: number) => number;
+    readonly proofinstance_get_latency_samples: (a: number) => number;
+    readonly proofinstance_get_limiter_gr_db: (a: number) => number;
+    readonly proofinstance_get_lra: (a: number) => number;
+    readonly proofinstance_get_module_order: (a: number) => [number, number];
+    readonly proofinstance_get_nan_flush_count: (a: number) => number;
+    readonly proofinstance_get_output_lufs: (a: number) => number;
+    readonly proofinstance_get_output_st_lufs: (a: number) => number;
+    readonly proofinstance_get_right_ptr: (a: number) => number;
+    readonly proofinstance_get_tap_peak_l: (a: number, b: number) => number;
+    readonly proofinstance_get_tap_peak_r: (a: number, b: number) => number;
+    readonly proofinstance_get_true_peak_db: (a: number) => number;
+    readonly proofinstance_new: (a: number) => number;
+    readonly proofinstance_process: (a: number, b: number) => number;
+    readonly proofinstance_reorder: (a: number, b: number, c: number, d: number, e: number, f: number) => void;
+    readonly proofinstance_reset_integrated: (a: number) => void;
+    readonly proofinstance_set_param: (a: number, b: number, c: number, d: number) => void;
     readonly __wbg_kneadinstance_free: (a: number, b: number) => void;
     readonly kneadinstance_get_f0: (a: number) => number;
     readonly kneadinstance_get_input_left_ptr: (a: number) => number;

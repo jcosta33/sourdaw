@@ -65,8 +65,8 @@ describe('FERMENTER_PRESETS', () => {
 
         expect(crustyScream?.devices[0]?.parameterValues).toMatchObject({
             filterModel: 4,
-            filterResonance: 4,
-            filterDrive: 2,
+            filterResonance: 7,
+            filterDrive: 3,
         });
         expect(crackerClav?.devices[0]?.parameterValues).toMatchObject({
             filterModel: 4,
