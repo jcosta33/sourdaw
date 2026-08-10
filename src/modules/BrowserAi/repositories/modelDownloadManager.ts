@@ -375,6 +375,9 @@ export const downloadModel = inject({ logger })(
                     stage: 'error',
                     error: String(lastError),
                 });
+                if (lastError instanceof ZipArchiveError) {
+                    throw lastError;
+                }
                 throw new Error(
                     `Failed to download ${modelId} after ${String(MAX_RETRIES)} attempts: ${String(lastError)}`
                 );

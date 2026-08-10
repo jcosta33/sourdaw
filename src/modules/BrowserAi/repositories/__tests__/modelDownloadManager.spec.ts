@@ -16,7 +16,7 @@ import { createHash } from 'node:crypto';
 import { zipSync } from 'fflate';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { extractGuardedZip } from '#/infra/archive/extractGuardedZip';
+import { extractGuardedZip, ZipArchiveError } from '#/infra/archive/extractGuardedZip';
 
 import { type ModelDownloadProgressPayload } from '../../models/ModelDownloadProgress';
 import { downloadModel } from '../modelDownloadManager';
@@ -578,11 +578,15 @@ describe('downloadModel — buffered path (sha256 verification + ZIP extraction)
                 spec: { ...baseSpec, url: 'https://cdn.example/unsafe.zip', sizeBytes: zipped.length },
                 onProgress: (payload) => stages.push(payload.stage),
             });
-            const rejection = expect(promise).rejects.toThrow(/Unsafe archive path/);
-
+            const errorPromise: Promise<unknown> = promise.catch((reason: unknown) => reason);
             await vi.runAllTimersAsync();
-            await rejection;
+            const error = await errorPromise;
 
+            expect(error).toBeInstanceOf(ZipArchiveError);
+            if (!(error instanceof Error)) {
+                throw new Error('Expected an archive error');
+            }
+            expect(error.message).toContain('Unsafe archive path');
             expect(FakeGuardedZipWorker.instances).toHaveLength(1);
             expect(lastWritable).toBeNull();
             expect(stages).not.toContain('storing');
