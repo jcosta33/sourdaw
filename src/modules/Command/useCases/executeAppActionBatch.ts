@@ -166,6 +166,7 @@ async function executePreparedBatch(
         attemptedActions.push(prepared);
         const result: HandlerExecutionResult | void = await scope(() => prepared.handler.execute(prepared.action));
         if (result?.status === 'no-write' || result?.status === 'conflict') {
+            attemptedActions.pop();
             throw new AppActionConflictError(prepared.action.type);
         }
         prepared.afterCommit = result?.afterCommit ?? null;

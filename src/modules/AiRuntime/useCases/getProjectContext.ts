@@ -152,6 +152,7 @@ export function getProjectContext(): ProjectContext {
             soloed: time.soloed,
             soloSafe: time.soloSafe,
             armed: time.armed,
+            frozen: time.frozen,
             gain: time.gain,
             pan: time.pan,
             automationMode: time.automationMode,
@@ -208,6 +209,7 @@ export function getProjectContext(): ProjectContext {
                 });
                 return {
                     id: data.id,
+                    name: data.name,
                     type: data.type,
                     bypassed: data.bypassed,
                     parameters,

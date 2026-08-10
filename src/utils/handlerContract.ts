@@ -630,13 +630,30 @@ export type AppAction =
       }
     | { type: 'trimClipStart'; payload: { clipId: string; newStartBeat: number } }
     | { type: 'trimClipEnd'; payload: { clipId: string; newEndBeat: number } }
-    | { type: 'addDevice'; payload: { trackId: string; deviceType: string; deviceId?: string } }
+    | {
+          type: 'addDevice';
+          payload: {
+              trackId: string;
+              deviceType: string;
+              afterDeviceId?: string;
+              deviceId?: string;
+              expectedDeviceIds?: readonly string[];
+          };
+      }
     | { type: 'bypassDevice'; payload: { deviceId: string; bypassed: boolean } }
-    | { type: 'removeDevice'; payload: { deviceId: string } }
+    | {
+          type: 'removeDevice';
+          payload: { deviceId: string; expectedTrackId?: string; expectedDeviceIds?: readonly string[] };
+      }
     | {
           /** Inverse of `removeDevice`; emitted only from the device handler's pre-execute snapshot. */
           type: 'restoreDevice';
-          payload: { trackId: string; deviceSnapshot: DeviceSnapshot; deviceIndex: number };
+          payload: {
+              trackId: string;
+              deviceSnapshot: DeviceSnapshot;
+              deviceIndex: number;
+              expectedDeviceIds?: readonly string[];
+          };
       }
     | { type: 'setDeviceParameter'; payload: { deviceId: string; paramId: string; value: number } }
     | { type: 'setExternalPluginState'; payload: { deviceId: string; stateChunk: string } }

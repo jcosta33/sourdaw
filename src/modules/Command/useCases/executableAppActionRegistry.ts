@@ -31,6 +31,7 @@ export type ExecutableAppActionTargetRule = {
     dependsOn?: string;
     distinctFrom?: string;
     promptRole?: 'source' | 'destination' | 'container' | 'members';
+    optional?: boolean;
 };
 
 export type ExecutableAppActionValueRule =
@@ -1593,14 +1594,18 @@ export const executableAppActionDescriptors = [
     {
         actionType: 'addDevice',
         risk: 'bounded-reversible',
-        description: 'Insert a platform-available built-in device at the end of a track device chain.',
+        description: 'Insert a platform-available built-in device into a track device chain.',
         intentPhrases: ['add device', 'insert device', 'add plugin', 'insert plugin', 'add'],
-        targetRules: [{ argument: 'trackId', capability: 'device-host-track' }],
+        targetRules: [
+            { argument: 'trackId', capability: 'device-host-track' },
+            { argument: 'afterDeviceId', capability: 'device', dependsOn: 'trackId', optional: true },
+        ],
         valueRules: [{ argument: 'deviceType', kind: 'string-literal' }],
         parameters: {
             properties: {
                 trackId: { type: 'string', description: 'Existing track ID that accepts devices' },
                 deviceType: { type: 'string', description: 'Available built-in device ID or unique display name' },
+                afterDeviceId: { type: 'string', description: 'Existing device ID after which to insert' },
             },
             required: ['trackId', 'deviceType'],
         },

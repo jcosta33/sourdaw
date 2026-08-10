@@ -24,7 +24,13 @@ function nextDeviceIdStr(): string {
  * plugin. Presets need it — the type picks the device, the preset picks the
  * label — and it belongs in this call so the device is written once.
  */
-export function addDevice(trackId: string, deviceType: string, displayName?: string, deviceId?: string): Device | null {
+export function addDevice(
+    trackId: string,
+    deviceType: string,
+    displayName?: string,
+    deviceId?: string,
+    deviceIndex?: number
+): Device | null {
     const state = getTrackState();
     if (!state) {
         return null;
@@ -39,6 +45,10 @@ export function addDevice(trackId: string, deviceType: string, displayName?: str
     }
     const track = matchingTracks[0];
     if (!track || !getTrackEligibility(track.kind).acceptsDeviceAdd) {
+        return null;
+    }
+    const insertionIndex = deviceIndex ?? track.devices.length;
+    if (!Number.isInteger(insertionIndex) || insertionIndex < 0 || insertionIndex > track.devices.length) {
         return null;
     }
 
@@ -75,7 +85,11 @@ export function addDevice(trackId: string, deviceType: string, displayName?: str
 
     const hadLiveStrip = shouldCreateLiveTrackStrip(track);
     const activatesFolderStrip = !hadLiveStrip && track.kind === 'folder' && device.type === 'toaster';
-    updateTrack(trackId, (time) => ({ ...time, devices: [...time.devices, device] }));
+    const precedingDeviceIds = track.devices.slice(0, insertionIndex).map((candidate) => candidate.id);
+    updateTrack(trackId, (time) => ({
+        ...time,
+        devices: [...time.devices.slice(0, insertionIndex), device, ...time.devices.slice(insertionIndex)],
+    }));
 
     if (!plugin) {
         return device;
@@ -99,7 +113,12 @@ export function addDevice(trackId: string, deviceType: string, displayName?: str
                     // Faust compilation is best-effort — device falls back to passthrough
                 });
         }
-        addDeviceToStrip(trackId, device.id, plugin.id);
+        const stripArguments: [string, string, string, undefined?, string[]?] = [trackId, device.id, plugin.id];
+        if (deviceIndex !== undefined) {
+            stripArguments[3] = undefined;
+            stripArguments[4] = precedingDeviceIds;
+        }
+        addDeviceToStrip(...stripArguments);
         for (const param of plugin.parameters) {
             updateDeviceParam(trackId, device.id, param.id, param.value);
         }

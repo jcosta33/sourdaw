@@ -984,6 +984,52 @@ function resolveBulkTrackOutputScope(
     };
 }
 
+function getBulkDeviceInsertionTargetIds(prompt: string, context: ProjectContext): string[] | null {
+    const normalized = normalizePromptText(prompt);
+    const match = /\b(?:every|all) ([\p{L}\p{N}]+) tracks?\b/iu.exec(normalized);
+    const family = match?.[1];
+    if (
+        !family ||
+        !/\b(?:insert|add)\b/u.test(normalized) ||
+        !/\bafter\b/u.test(normalized) ||
+        !/\bexcluding frozen tracks?\b/u.test(normalized)
+    ) {
+        return null;
+    }
+    const familyPattern = new RegExp(`\\b${family.replaceAll(/[.*+?^${}()|[\]\\]/gu, '\\$&')}\\b`, 'u');
+    const ids = context.tracks
+        .filter(
+            (track) =>
+                track.kind !== 'vca' && track.frozen !== true && familyPattern.test(normalizePromptText(track.name))
+        )
+        .map((track) => track.id);
+    return ids.length > 0 ? ids : null;
+}
+
+function resolveBulkDeviceInsertionScope(
+    prompt: string,
+    context: ProjectContext,
+    sameActionAssertedArguments: readonly Readonly<Record<string, unknown>>[],
+    sameActionCallCount: number
+): ActionPromptScope | null {
+    const expectedTrackIds = getBulkDeviceInsertionTargetIds(prompt, context);
+    if (!expectedTrackIds || sameActionAssertedArguments.length !== sameActionCallCount) {
+        return null;
+    }
+    const assertedTrackIds = sameActionAssertedArguments.flatMap((arguments_) =>
+        typeof arguments_.trackId === 'string' ? [arguments_.trackId] : []
+    );
+    if (
+        expectedTrackIds.length !== sameActionCallCount ||
+        assertedTrackIds.length !== sameActionCallCount ||
+        new Set(assertedTrackIds).size !== sameActionCallCount ||
+        !expectedTrackIds.every((trackId) => assertedTrackIds.includes(trackId))
+    ) {
+        return null;
+    }
+    return { text: prompt, masked: prompt, directional: false, matchedIntentPhrase: 'insert device' };
+}
+
 function resolveRepeatedTrackPanScope({
     actionOrdinal,
     prompt,
@@ -1424,6 +1470,17 @@ function resolveActionPromptScope({
         );
         if (bulkTrackOutputScope) {
             return bulkTrackOutputScope;
+        }
+    }
+    if (actionName === 'addDevice') {
+        const bulkDeviceInsertionScope = resolveBulkDeviceInsertionScope(
+            prompt,
+            context,
+            sameActionAssertedArguments,
+            sameActionCallCount
+        );
+        if (bulkDeviceInsertionScope) {
+            return bulkDeviceInsertionScope;
         }
     }
     if (actionName === 'setTrackPan') {
@@ -3309,9 +3366,23 @@ function groundToolCall({
         return rejection(index, call.name, 'Provider action is not grounded in an explicit playback request');
     }
     const groundedArguments = { ...call.arguments };
+    const bulkDeviceInsertionTargetIds =
+        call.name === 'addDevice' ? getBulkDeviceInsertionTargetIds(prompt, context) : null;
     for (const targetRule of groundingRules.targetRules) {
         const assertedValue = groundedArguments[targetRule.argument];
+        if (targetRule.optional && assertedValue === undefined) {
+            continue;
+        }
         const targetPrompt = getTargetPromptScope(actionScope, targetRule.promptRole);
+        if (
+            bulkDeviceInsertionTargetIds &&
+            call.name === 'addDevice' &&
+            targetRule.argument === 'trackId' &&
+            typeof assertedValue === 'string' &&
+            bulkDeviceInsertionTargetIds.includes(assertedValue)
+        ) {
+            continue;
+        }
         if (targetRule.cardinality === 'many') {
             const dependencyValue = targetRule.dependsOn ? groundedArguments[targetRule.dependsOn] : undefined;
             const result = resolveAgentReferenceArray({

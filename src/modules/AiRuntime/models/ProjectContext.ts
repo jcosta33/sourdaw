@@ -93,6 +93,7 @@ export type ProjectContextClip = {
 
 export type ProjectContextDevice = {
     id: string;
+    name?: string;
     type: string;
     bypassed: boolean;
     parameters?: ProjectContextDeviceParameter[];
@@ -134,6 +135,7 @@ export type ProjectContextTrack = {
     soloed: boolean;
     soloSafe: boolean;
     armed: boolean;
+    frozen?: boolean;
     gain: number;
     pan: number;
     automationMode: 'read' | 'write' | 'touch' | 'latch' | 'off';
