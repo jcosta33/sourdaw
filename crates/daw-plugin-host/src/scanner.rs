@@ -115,7 +115,7 @@ fn plugin_name_from_path(path: &Path) -> String {
 
 // ── Directory scanning ──────────────────────────────────────────────────
 
-pub fn discover_clap_candidates(
+pub fn scan_directory(
     dir: &Path,
     candidates: &mut Vec<PathBuf>,
     errors: &mut Vec<String>,
@@ -188,7 +188,7 @@ pub fn discover_clap_candidates(
 
             candidates.push(entry_path);
         } else if is_dir {
-            discover_clap_candidates(&entry_path, candidates, errors);
+            scan_directory(&entry_path, candidates, errors);
         }
     }
 }
@@ -270,14 +270,14 @@ mod tests {
         std::os::unix::fs::symlink(&outside_plugin, &symlinked_plugin)
             .expect("symlink should be created");
 
-        let mut candidates = Vec::new();
+        let mut plugins = Vec::new();
         let mut errors = Vec::new();
-        discover_clap_candidates(&scan_root, &mut candidates, &mut errors);
+        scan_directory(&scan_root, &mut plugins, &mut errors);
         let _ = std::fs::remove_dir_all(&temp_root);
 
         assert!(
-            candidates.is_empty(),
-            "scanner must not register symlinked plugin paths: {candidates:?}"
+            plugins.is_empty(),
+            "scanner must not register symlinked plugin paths: {plugins:?}"
         );
         assert!(
             errors
@@ -301,18 +301,18 @@ mod tests {
         std::os::unix::fs::symlink(&outside_root, &symlinked_scan_root)
             .expect("scan root symlink should be created");
 
-        let mut candidates = Vec::new();
+        let mut plugins = Vec::new();
         let mut errors = Vec::new();
-        discover_clap_candidates(
+        scan_directory(
             &symlinked_scan_root.join("Vendor"),
-            &mut candidates,
+            &mut plugins,
             &mut errors,
         );
         let _ = std::fs::remove_dir_all(&temp_root);
 
         assert!(
-            candidates.is_empty(),
-            "scanner must not register plugins below symlinked scan roots: {candidates:?}"
+            plugins.is_empty(),
+            "scanner must not register plugins below symlinked scan roots: {plugins:?}"
         );
         assert!(
             errors
@@ -338,15 +338,15 @@ mod tests {
         std::fs::create_dir_all(&audio_unit_bundle)
             .expect("Audio Unit placeholder should be created");
 
-        let mut candidates = Vec::new();
+        let mut plugins = Vec::new();
         let mut errors = Vec::new();
-        discover_clap_candidates(&temp_root, &mut candidates, &mut errors);
+        scan_directory(&temp_root, &mut plugins, &mut errors);
         let _ = std::fs::remove_dir_all(&temp_root);
 
         assert!(errors.is_empty(), "unexpected scan errors: {errors:?}");
         assert!(
-            candidates.is_empty(),
-            "unsupported VST3 and Audio Unit bundles must not appear loadable: {candidates:?}"
+            plugins.is_empty(),
+            "unsupported VST3 and Audio Unit bundles must not appear loadable: {plugins:?}"
         );
     }
 

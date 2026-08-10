@@ -15,6 +15,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 use tauri::Manager;
 
 // Re-export PluginParameter from daw-plugin-host for TypeScript binding generation
@@ -50,6 +51,39 @@ fn remove_engine_plugin_record_after_scheduler_removal<EnginePluginRecord>(
 }
 
 // ── Scanning commands ───────────────────────────────────────────────────
+
+const MAX_SCAN_CANDIDATES: usize = 256;
+const MAX_SCAN_DURATION: Duration = Duration::from_secs(30);
+
+fn scan_candidates(
+    mut candidates: Vec<PathBuf>,
+    mut errors: Vec<String>,
+    timeout: Duration,
+) -> (Vec<ScannedPlugin>, Vec<String>) {
+    candidates.sort();
+    candidates.dedup();
+    if candidates.len() > MAX_SCAN_CANDIDATES {
+        errors.push(format!(
+            "Plugin scan candidate limit exceeded; scanning the first {MAX_SCAN_CANDIDATES}"
+        ));
+        candidates.truncate(MAX_SCAN_CANDIDATES);
+    }
+
+    let deadline = Instant::now() + timeout;
+    let mut plugins = Vec::new();
+    for candidate in candidates {
+        let remaining = deadline.saturating_duration_since(Instant::now());
+        if remaining.is_zero() {
+            errors.push("Plugin scan time limit exceeded".to_string());
+            break;
+        }
+        match plugin_scan_worker::scan_clap_metadata(&candidate, remaining) {
+            Ok(metadata) => plugins.push(scanner::scanned_plugin(&candidate, metadata)),
+            Err(error) => errors.push(format!("{}: {error}", candidate.display())),
+        }
+    }
+    (plugins, errors)
+}
 
 /// Build the lookup table `load_plugin` resolves against.
 ///
@@ -129,19 +163,9 @@ pub async fn scan_plugins(
         let mut candidates = Vec::new();
         let mut scan_errors = Vec::new();
         for path in authorized_paths {
-            scanner::discover_clap_candidates(&path, &mut candidates, &mut scan_errors);
+            scanner::scan_directory(&path, &mut candidates, &mut scan_errors);
         }
-        candidates.sort();
-        candidates.dedup();
-
-        let mut plugins = Vec::new();
-        for candidate in candidates {
-            match plugin_scan_worker::scan_clap_metadata(&candidate) {
-                Ok(metadata) => plugins.push(scanner::scanned_plugin(&candidate, metadata)),
-                Err(error) => scan_errors.push(format!("{}: {error}", candidate.display())),
-            }
-        }
-        (plugins, scan_errors)
+        scan_candidates(candidates, scan_errors, MAX_SCAN_DURATION)
     })
     .await
     .map_err(|error| format!("Plugin scan task failed: {error}"))?;
