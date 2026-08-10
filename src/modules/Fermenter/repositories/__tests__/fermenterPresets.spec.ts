@@ -59,6 +59,38 @@ describe('FERMENTER_PRESETS', () => {
         expect(parameterValues.oscLevel).toBe(DEFAULT_PATCH.oscLevel);
     });
 
+    it('ships the MS-20 presets with the stability-verified voicing', () => {
+        const crustyScream = FERMENTER_PRESETS.find((preset) => preset.id === 'fermenter-ms20-lead');
+        const crackerClav = FERMENTER_PRESETS.find((preset) => preset.id === 'fermenter-clavinet');
+
+        expect(crustyScream?.devices[0]?.parameterValues).toMatchObject({
+            oscEngine: 1,
+            oscWaveform: 1,
+            filterModel: 4,
+            filterCutoff: 1500,
+            filterResonance: 7,
+            filterDrive: 3,
+            ampSustain: 0.7,
+            filterEnvAmount: 0.8,
+            portamentoTime: 0.05,
+            distMix: 0.15,
+            distDrive: 2,
+        });
+        expect(crackerClav?.devices[0]?.parameterValues).toMatchObject({
+            oscEngine: 1,
+            oscWaveform: 2,
+            filterModel: 4,
+            filterCutoff: 3000,
+            filterResonance: 4,
+            ampAttack: 0.002,
+            ampDecay: 0.3,
+            ampSustain: 0.1,
+            ampRelease: 0.1,
+            filterDecay: 0.15,
+            filterEnvAmount: 0.8,
+        });
+    });
+
     it('should only use known sound preset categories', () => {
         const categories = new Set([
             'synth',
