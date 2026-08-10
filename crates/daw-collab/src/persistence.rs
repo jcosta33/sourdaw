@@ -14,6 +14,23 @@ const FORMAT_VERSION: u16 = 1;
 const RECORD_FRAMING_BYTES: usize = 8;
 const DATA_LENGTH_BYTES: usize = 4;
 
+#[derive(Clone, Copy)]
+struct SdawDecodeLimits {
+    container_bytes: usize,
+    records: usize,
+    doc_id_bytes: usize,
+    document_bytes: usize,
+    total_document_bytes: usize,
+}
+
+const SDAW_DECODE_LIMITS: SdawDecodeLimits = SdawDecodeLimits {
+    container_bytes: 512 * 1024 * 1024,
+    records: 10_000,
+    doc_id_bytes: 255,
+    document_bytes: 256 * 1024 * 1024,
+    total_document_bytes: 512 * 1024 * 1024,
+};
+
 fn remaining_bytes(cursor: &Cursor<&[u8]>) -> usize {
     cursor
         .get_ref()
@@ -52,6 +69,21 @@ pub fn encode_sdaw(bundle: &HashMap<DocId, Vec<u8>>) -> Vec<u8> {
 
 /// Decode an .sdaw binary into a document bundle.
 pub fn decode_sdaw(bytes: &[u8]) -> Result<HashMap<DocId, Vec<u8>>, String> {
+    decode_sdaw_with_limits(bytes, SDAW_DECODE_LIMITS)
+}
+
+fn decode_sdaw_with_limits(
+    bytes: &[u8],
+    limits: SdawDecodeLimits,
+) -> Result<HashMap<DocId, Vec<u8>>, String> {
+    if bytes.len() > limits.container_bytes {
+        return Err(format!(
+            "Invalid .sdaw container: {} bytes exceeds the {} byte container byte budget",
+            bytes.len(),
+            limits.container_bytes
+        ));
+    }
+
     let mut cursor = Cursor::new(bytes);
 
     // Read magic
@@ -89,9 +121,16 @@ pub fn decode_sdaw(bytes: &[u8]) -> Result<HashMap<DocId, Vec<u8>>, String> {
             "Invalid document count: declared {count}, but at most {max_records} records fit in {remaining} remaining bytes"
         ));
     }
+    if count > limits.records {
+        return Err(format!(
+            "Invalid document count: declared {count}, exceeding the {} record budget",
+            limits.records
+        ));
+    }
 
     let mut bundle = HashMap::with_capacity(count);
 
+    let mut total_document_bytes = 0usize;
     for i in 0..count {
         let later_record_count = count - i - 1;
         let later_record_framing = later_record_count * RECORD_FRAMING_BYTES;
@@ -112,6 +151,12 @@ pub fn decode_sdaw(bytes: &[u8]) -> Result<HashMap<DocId, Vec<u8>>, String> {
         if id_len > available {
             return Err(format!(
                 "Invalid document {i} DocId length: declared {id_len} bytes, only {available} available after reserving {required_framing} framing bytes"
+            ));
+        }
+        if id_len > limits.doc_id_bytes {
+            return Err(format!(
+                "Invalid document {i} DocId length: declared {id_len} bytes, exceeding the {} byte DocId byte budget",
+                limits.doc_id_bytes
             ));
         }
 
@@ -139,6 +184,21 @@ pub fn decode_sdaw(bytes: &[u8]) -> Result<HashMap<DocId, Vec<u8>>, String> {
                 "Invalid document {i} data length: declared {data_len} bytes, only {available} available after reserving {later_record_framing} framing bytes"
             ));
         }
+        if data_len > limits.document_bytes {
+            return Err(format!(
+                "Invalid document {i} data length: declared {data_len} bytes, exceeding the {} byte document byte budget",
+                limits.document_bytes
+            ));
+        }
+        total_document_bytes = total_document_bytes
+            .checked_add(data_len)
+            .ok_or_else(|| "Aggregate document byte count overflowed".to_string())?;
+        if total_document_bytes > limits.total_document_bytes {
+            return Err(format!(
+                "Invalid .sdaw data: {total_document_bytes} aggregate document bytes exceeds the {} byte aggregate document byte budget",
+                limits.total_document_bytes
+            ));
+        }
 
         let mut data = vec![0u8; data_len];
         cursor
@@ -159,6 +219,15 @@ pub fn save_sdaw_bundle(bundle: &HashMap<DocId, Vec<u8>>, path: &Path) -> Result
 
 /// Load a document bundle from an .sdaw file on disk.
 pub fn load_sdaw_bundle(path: &Path) -> Result<HashMap<DocId, Vec<u8>>, String> {
+    let file_len = std::fs::metadata(path)
+        .map_err(|e| format!("Failed to inspect .sdaw file: {e}"))?
+        .len();
+    if file_len > SDAW_DECODE_LIMITS.container_bytes as u64 {
+        return Err(format!(
+            "Invalid .sdaw container: {file_len} bytes exceeds the {} byte container byte budget",
+            SDAW_DECODE_LIMITS.container_bytes
+        ));
+    }
     let bytes = std::fs::read(path).map_err(|e| format!("Failed to read .sdaw file: {}", e))?;
     decode_sdaw(&bytes)
 }
@@ -166,6 +235,71 @@ pub fn load_sdaw_bundle(path: &Path) -> Result<HashMap<DocId, Vec<u8>>, String> 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    const TEST_LIMITS: SdawDecodeLimits = SdawDecodeLimits {
+        container_bytes: 64,
+        records: 1,
+        doc_id_bytes: 4,
+        document_bytes: 4,
+        total_document_bytes: 6,
+    };
+
+    fn encoded_bundle(entries: &[(&str, &[u8])]) -> Vec<u8> {
+        let bundle = entries
+            .iter()
+            .map(|(id, data)| ((*id).to_string(), (*data).to_vec()))
+            .collect();
+        encode_sdaw(&bundle)
+    }
+
+    #[test]
+    fn decode_rejects_container_over_explicit_budget() {
+        let bytes = vec![0; TEST_LIMITS.container_bytes + 1];
+        let error = decode_sdaw_with_limits(&bytes, TEST_LIMITS)
+            .expect_err("container budget must be checked before parsing");
+
+        assert!(error.contains("container byte budget"));
+    }
+
+    #[test]
+    fn decode_rejects_record_count_over_explicit_budget() {
+        let bytes = encoded_bundle(&[("one", &[1]), ("two", &[2])]);
+        let error = decode_sdaw_with_limits(&bytes, TEST_LIMITS)
+            .expect_err("record budget must be checked before preallocation");
+
+        assert!(error.contains("record budget"));
+    }
+
+    #[test]
+    fn decode_rejects_doc_id_over_explicit_budget() {
+        let bytes = encoded_bundle(&[("large", &[1])]);
+        let error = decode_sdaw_with_limits(&bytes, TEST_LIMITS)
+            .expect_err("DocId budget must be checked before allocation");
+
+        assert!(error.contains("DocId byte budget"));
+    }
+
+    #[test]
+    fn decode_rejects_document_over_explicit_budget() {
+        let bytes = encoded_bundle(&[("root", &[1, 2, 3, 4, 5])]);
+        let error = decode_sdaw_with_limits(&bytes, TEST_LIMITS)
+            .expect_err("document budget must be checked before allocation");
+
+        assert!(error.contains("document byte budget"));
+    }
+
+    #[test]
+    fn decode_rejects_aggregate_document_bytes_over_explicit_budget() {
+        let limits = SdawDecodeLimits {
+            records: 2,
+            ..TEST_LIMITS
+        };
+        let bytes = encoded_bundle(&[("one", &[1, 2, 3, 4]), ("two", &[5, 6, 7, 8])]);
+        let error = decode_sdaw_with_limits(&bytes, limits)
+            .expect_err("aggregate document budget must be checked before allocation");
+
+        assert!(error.contains("aggregate document byte budget"));
+    }
 
     #[test]
     fn encode_decode_roundtrip() {

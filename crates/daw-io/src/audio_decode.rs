@@ -9,6 +9,7 @@ use symphonia::core::io::MediaSourceStream;
 use symphonia::core::meta::MetadataOptions;
 
 const MAX_RETAINED_DECODE_WARNINGS: usize = 4;
+const MAX_RECOVERABLE_PACKET_ERRORS: u64 = 256;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct DecodedAudio {
@@ -174,6 +175,11 @@ fn append_decoded_packet(
     let interleaved = match decoded {
         Ok(interleaved) => interleaved,
         Err(error @ SymphoniaError::DecodeError(_)) | Err(error @ SymphoniaError::IoError(_)) => {
+            if diagnostics.warning_count >= MAX_RECOVERABLE_PACKET_ERRORS {
+                return Err(format!(
+                    "Audio decode aborted after {MAX_RECOVERABLE_PACKET_ERRORS} recoverable packet errors"
+                ));
+            }
             diagnostics.record(&error);
             return Ok(());
         }
@@ -279,6 +285,35 @@ mod tests {
 
         assert_eq!(diagnostics.warning_count, 100);
         assert_eq!(diagnostics.warnings.len(), MAX_RETAINED_DECODE_WARNINGS);
+    }
+
+    #[test]
+    fn recoverable_packet_errors_abort_at_the_work_budget() {
+        let mut channel_samples = vec![Vec::new()];
+        let mut diagnostics = DecodeDiagnostics::default();
+
+        for _ in 0..MAX_RECOVERABLE_PACKET_ERRORS {
+            append_decoded_packet(
+                Err(SymphoniaError::DecodeError("corrupt frame")),
+                &mut channel_samples,
+                1,
+                &mut diagnostics,
+            )
+            .expect("errors within the recovery budget remain recoverable");
+        }
+
+        let error = append_decoded_packet(
+            Err(SymphoniaError::DecodeError("corrupt frame")),
+            &mut channel_samples,
+            1,
+            &mut diagnostics,
+        )
+        .expect_err("the first packet beyond the recovery budget must abort");
+
+        assert_eq!(
+            error,
+            "Audio decode aborted after 256 recoverable packet errors"
+        );
     }
 
     #[test]
