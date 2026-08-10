@@ -1,0 +1,15 @@
+tests/e2e/clipSplitDuplicateTestId.spec.ts
+  h_1228e573df1f42 1-87,91-114
+  h_1228e573df1f42 88-90
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "2e2055d8045148acc5856426f39520141ba363fe",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
