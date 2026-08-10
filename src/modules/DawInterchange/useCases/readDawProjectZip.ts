@@ -8,31 +8,45 @@ export type DawProjectZipContents = {
 
 const textDecoder = new TextDecoder('utf-8');
 const projectXmlPath = /^project\.xml$/i;
+const metadataXmlPath = /^metadata\.xml$/i;
 
 export function readDawProjectZip(buffer: ArrayBuffer): DawProjectZipContents {
     const bytes = new Uint8Array(buffer);
-    const entries = extractGuardedZip({
+    const headerEntries = extractGuardedZip({
         bytes,
-        include: (path) => projectXmlPath.test(path) || isMetadataPath(path) || path.startsWith('audio/'),
+        include: (path) => projectXmlPath.test(path) || metadataXmlPath.test(path),
     });
-
-    const entryKey = Object.keys(entries).find((name) => projectXmlPath.test(name));
-    const projectEntry = entryKey ? entries[entryKey] : undefined;
-    if (!projectEntry) {
-        const selectedEntries = Object.keys(entries).join(', ') || '<empty>';
+    const projectPaths = Object.keys(headerEntries).filter((path) => projectXmlPath.test(path));
+    if (projectPaths.length === 0) {
+        const selectedEntries = Object.keys(headerEntries).join(', ') || '<empty>';
         throw new Error(`DAWproject archive is missing project.xml at its root. Selected entries: ${selectedEntries}`);
     }
+    if (projectPaths.length > 1) {
+        throw new Error('DAWproject archive contains duplicate project.xml roots');
+    }
+    const projectPath = projectPaths[0];
+    if (!projectPath) {
+        throw new Error('DAWproject archive is missing project.xml at its root');
+    }
+    const projectEntry = headerEntries[projectPath];
+    if (!projectEntry) {
+        throw new Error('DAWproject archive did not extract project.xml');
+    }
 
-    const metadataEntry = entries['metadata.xml'] ?? entries['Metadata.xml'] ?? null;
+    const metadataPaths = Object.keys(headerEntries).filter((path) => metadataXmlPath.test(path));
+    if (metadataPaths.length > 1) {
+        throw new Error('DAWproject archive contains duplicate metadata.xml roots');
+    }
+    const metadataPath = metadataPaths[0];
+    const metadataEntry = metadataPath ? headerEntries[metadataPath] : null;
+
+    const audioEntries = extractGuardedZip({
+        bytes,
+        include: (path) => path.startsWith('audio/'),
+    });
 
     const audioAssets = new Map<string, Uint8Array>();
-    for (const [path, data] of Object.entries(entries)) {
-        if (path === 'project.xml' || path === 'metadata.xml') {
-            continue;
-        }
-        if (!path.startsWith('audio/')) {
-            continue;
-        }
+    for (const [path, data] of Object.entries(audioEntries)) {
         if (path.endsWith('/')) {
             continue;
         }
@@ -51,8 +65,4 @@ function decodeUtf8(data: Uint8Array): string {
         return textDecoder.decode(data.subarray(3));
     }
     return textDecoder.decode(data);
-}
-
-function isMetadataPath(path: string): boolean {
-    return path === 'metadata.xml' || path === 'Metadata.xml';
 }
