@@ -1,0 +1,31 @@
+src/modules/Command/useCases/executeAppActionBatch.ts
+  s_a40848e8f8cca9::t_94202ced378909 256-257,261-263
+  s_a40848e8f8cca9::t_294e50e1bbe616 249-255,258-260,265,287,289-293
+src/modules/Command/useCases/__tests__/executeAppActionBatch.spec.ts
+  s_a40848e8f8cca9::t_c979c836f39a2d 193-210,221-222
+  s_a40848e8f8cca9::t_66a45ad98e0c29 211-220
+src/modules/Arrangement/useCases/device/removeDevice.ts
+  s_a40848e8f8cca9::t_db2e42631df7e5 93,116-117,127-189,191-197,202,206-211,213-216,218-221
+  s_a40848e8f8cca9::t_03b90a73fa2c5e 222-223
+src/modules/AiRuntime/useCases/__tests__/bassCompressorPromptWorkflow.spec.ts
+  s_a40848e8f8cca9::t_c979c836f39a2d 769-783,795-801
+  s_a40848e8f8cca9::t_66a45ad98e0c29 784-794
+src/modules/Arrangement/useCases/device/__tests__/removeDevice.spec.ts
+  s_a40848e8f8cca9::t_061b0565a2f3c3 136-204
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "85fee087ab1c3f09d5202796fb404631310ed039",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
