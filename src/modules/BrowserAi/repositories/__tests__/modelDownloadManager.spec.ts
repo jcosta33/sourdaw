@@ -26,6 +26,8 @@ import { downloadModel } from '../modelDownloadManager';
 type WriteCall = number; // byteLength of each streamed chunk
 let lastWritable: { writes: WriteCall[]; closed: boolean; aborted: boolean } | null = null;
 let pendingWrite: { promise: Promise<void>; resolve: () => void } | null = null;
+let pendingStorageEstimate: { promise: Promise<StorageEstimate>; resolve: () => void } | null = null;
+let removedEntries = 0;
 
 function installStorage(): void {
     function makeWritable(): FileSystemWritableFileStream {
@@ -55,7 +57,10 @@ function installStorage(): void {
         kind: 'directory',
         getDirectoryHandle: vi.fn(() => Promise.resolve(leafDir)),
         getFileHandle: vi.fn(() => Promise.resolve(fileHandle)),
-        removeEntry: vi.fn(() => Promise.resolve()),
+        removeEntry: vi.fn(() => {
+            removedEntries += 1;
+            return Promise.resolve();
+        }),
         // Empty directory — getStorageStatus iterates but measures nothing here.
         [Symbol.asyncIterator](): AsyncIterator<unknown> {
             return { next: () => Promise.resolve({ done: true, value: undefined }) };
@@ -65,7 +70,7 @@ function installStorage(): void {
         configurable: true,
         value: {
             getDirectory: vi.fn(() => Promise.resolve(leafDir)),
-            estimate: vi.fn(() => Promise.resolve({ quota: 1e12, usage: 0 })),
+            estimate: vi.fn(() => pendingStorageEstimate?.promise ?? Promise.resolve({ quota: 1e12, usage: 0 })),
             persisted: vi.fn(() => Promise.resolve(false)),
             persist: vi.fn(() => Promise.resolve(true)),
         },
@@ -183,6 +188,8 @@ beforeEach(() => {
     openChannels = 0;
     lastWritable = null;
     pendingWrite = null;
+    pendingStorageEstimate = null;
+    removedEntries = 0;
     FakeGuardedZipWorker.instances = [];
     FakeGuardedZipWorker.holdResponses = false;
     vi.stubGlobal('BroadcastChannel', FakeBroadcastChannel);
@@ -362,6 +369,36 @@ describe('downloadModel — cancellation', () => {
         await expect(promise).rejects.toMatchObject({ name: 'AbortError' });
         expect(lastWritable?.aborted).toBe(true);
         expect(lastWritable?.closed).toBe(false);
+        expect(stages).not.toContain('complete');
+    });
+
+    it('removes a committed model when cancellation arrives during the final storage check', async () => {
+        let resolveEstimate: (() => void) | undefined;
+        pendingStorageEstimate = {
+            promise: new Promise<StorageEstimate>((resolve) => {
+                resolveEstimate = () => resolve({ quota: 1e12, usage: 0 });
+            }),
+            resolve: () => resolveEstimate?.(),
+        };
+        const controller = new AbortController();
+        const zipped = zipSync({ 'model/weights.onnx': new Uint8Array([10, 20, 30, 40]) });
+        vi.stubGlobal(
+            'fetch',
+            vi.fn(() => Promise.resolve(streamingResponse([zipped], zipped.length)))
+        );
+        const stages: string[] = [];
+        const promise = downloadModel({
+            spec: { ...baseSpec, url: 'https://cdn.example/violin-1.zip', sizeBytes: zipped.length },
+            signal: controller.signal,
+            onProgress: (payload) => stages.push(payload.stage),
+        });
+
+        await vi.waitFor(() => expect(lastWritable?.closed).toBe(true));
+        controller.abort();
+        pendingStorageEstimate.resolve();
+
+        await expect(promise).rejects.toMatchObject({ name: 'AbortError' });
+        expect(removedEntries).toBe(1);
         expect(stages).not.toContain('complete');
     });
 });

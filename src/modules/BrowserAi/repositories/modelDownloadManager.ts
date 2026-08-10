@@ -50,6 +50,12 @@ function isAbortError(error: unknown): boolean {
     return error instanceof DOMException && error.name === 'AbortError';
 }
 
+function throwIfAborted(signal?: AbortSignal): void {
+    if (signal?.aborted) {
+        throw new DOMException('Aborted', 'AbortError');
+    }
+}
+
 /** Resolve after `ms`, or reject early if `signal` aborts during the wait. */
 function abortableSleep(ms: number, signal?: AbortSignal): Promise<void> {
     return new Promise<void>((resolve, reject) => {
@@ -129,9 +135,7 @@ export const downloadModel = inject({ logger })(
 
             try {
                 for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
-                    if (signal?.aborted) {
-                        throw new DOMException('Aborted', 'AbortError');
-                    }
+                    throwIfAborted(signal);
                     try {
                         logger.info(
                             `[ModelDownload] Downloading ${modelId} (attempt ${String(attempt + 1)}/${String(MAX_RETRIES)})`
@@ -190,6 +194,7 @@ export const downloadModel = inject({ logger })(
                                 if (writable) {
                                     // Stream directly to OPFS — no per-chunk accumulation.
                                     await writable.write(value);
+                                    throwIfAborted(signal);
                                 } else {
                                     chunks.push(value);
                                 }
@@ -209,10 +214,13 @@ export const downloadModel = inject({ logger })(
 
                         if (writable) {
                             // Streamed path: bytes already on disk, nothing to verify or extract.
+                            throwIfAborted(signal);
                             await writable.close();
+                            throwIfAborted(signal);
 
                             // Check storage quota (parity with the buffered path).
                             const streamedStatus = await getStorageStatus();
+                            throwIfAborted(signal);
                             if (streamedStatus.usedBytes > streamedStatus.limitBytes) {
                                 logger.warn('[ModelDownload] Storage limit exceeded — LRU eviction needed');
                                 // Eviction is handled by the removeModel use case
@@ -280,9 +288,7 @@ export const downloadModel = inject({ logger })(
                             logger.info(`[ModelDownload] Extracted ${extracted.path} from ZIP for ${modelId}`);
                         }
 
-                        if (signal?.aborted) {
-                            throw new DOMException('Aborted', 'AbortError');
-                        }
+                        throwIfAborted(signal);
 
                         // Store in OPFS
                         broadcast({
@@ -296,6 +302,7 @@ export const downloadModel = inject({ logger })(
 
                         // Check storage quota
                         const storageStatus = await getStorageStatus();
+                        throwIfAborted(signal);
                         if (storageStatus.usedBytes > storageStatus.limitBytes) {
                             logger.warn('[ModelDownload] Storage limit exceeded — LRU eviction needed');
                             // Eviction is handled by the removeModel use case
