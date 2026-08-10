@@ -22,11 +22,24 @@ describe('handleSetTrackGain', () => {
 
     describe('execute', () => {
         it('calls setTrackGain', () => {
+            mocks.getTrackStoreState.mockReturnValue({ tracks: [{ id: 't1', gain: 1 }] });
             void handleSetTrackGain.execute({
                 type: 'setTrackGain',
-                payload: { trackId: 't1', gain: 0.5 },
+                payload: { trackId: 't1', gain: 0.5, expectedGain: 1 },
             });
             expect(mocks.setTrackGain).toHaveBeenCalledWith('t1', 0.5);
+        });
+
+        it('rejects a gain write when current project truth diverged', () => {
+            mocks.getTrackStoreState.mockReturnValue({ tracks: [{ id: 't1', gain: 0.75 }] });
+
+            const result = handleSetTrackGain.execute({
+                type: 'setTrackGain',
+                payload: { trackId: 't1', gain: 0.5, expectedGain: 1 },
+            });
+
+            expect(result).toEqual({ status: 'conflict' });
+            expect(mocks.setTrackGain).not.toHaveBeenCalled();
         });
     });
 
@@ -36,13 +49,17 @@ describe('handleSetTrackGain', () => {
 
             const desc = handleSetTrackGain.describe({
                 type: 'setTrackGain',
-                payload: { trackId: 't1', gain: 0.5 },
+                payload: { trackId: 't1', gain: 0.5, expectedGain: 1 },
             });
 
             expect(desc.label).toBe('Set track gain');
             expect(desc.inverseAction).toEqual({
                 type: 'setTrackGain',
-                payload: { trackId: 't1', gain: 1.0 },
+                payload: { trackId: 't1', gain: 1.0, expectedGain: 0.5 },
+            });
+            expect(desc.redoAction).toEqual({
+                type: 'setTrackGain',
+                payload: { trackId: 't1', gain: 0.5, expectedGain: 1.0 },
             });
         });
 
@@ -51,7 +68,7 @@ describe('handleSetTrackGain', () => {
 
             const desc = handleSetTrackGain.describe({
                 type: 'setTrackGain',
-                payload: { trackId: 't1', gain: 0.5 },
+                payload: { trackId: 't1', gain: 0.5, expectedGain: 1 },
             });
 
             expect(desc.inverseAction).toBeNull();

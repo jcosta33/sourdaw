@@ -1,6 +1,8 @@
 import { executeAppAction } from '#/modules/Command/useCases';
 
 import { type RuntimeAction } from '../../models/RuntimeAction';
+import { getProjectContext } from '../getProjectContext';
+import { materializeActionStateGuards } from '../materializeActionStateGuards';
 import { validateActions } from '../validateActions';
 
 export async function runAppAction(action: RuntimeAction): Promise<void> {
@@ -9,5 +11,10 @@ export async function runAppAction(action: RuntimeAction): Promise<void> {
         return;
     }
 
-    await executeAppAction(validated_action);
+    const materialized = materializeActionStateGuards([validated_action], getProjectContext());
+    if (materialized.status === 'rejected') {
+        return;
+    }
+
+    await executeAppAction(materialized.actions[0]!);
 }

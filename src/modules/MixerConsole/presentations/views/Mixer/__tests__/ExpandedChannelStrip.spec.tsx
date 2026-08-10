@@ -147,7 +147,7 @@ describe('ExpandedChannelStrip', () => {
 
         fireEvent.click(screen.getByRole('button', { name: 'Mute' }));
         expect(mocks.executeAppAction).toHaveBeenCalledWith(
-            { type: 'muteTrack', payload: { trackId: 'track-1', muted: true } },
+            { type: 'muteTrack', payload: { trackId: 'track-1', muted: true, expectedMuted: false } },
             { skipUndo: true }
         );
 
@@ -199,7 +199,7 @@ describe('ExpandedChannelStrip', () => {
 
         fireEvent.click(screen.getByRole('menuitem', { name: 'Mute' }));
         expect(mocks.executeAppAction).toHaveBeenCalledWith(
-            { type: 'muteTrack', payload: { trackId: 'track-1', muted: true } },
+            { type: 'muteTrack', payload: { trackId: 'track-1', muted: true, expectedMuted: false } },
             { skipUndo: true }
         );
         expect(screen.queryByRole('menu')).not.toBeInTheDocument();

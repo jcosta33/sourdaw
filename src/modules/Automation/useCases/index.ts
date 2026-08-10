@@ -9,6 +9,7 @@ export { duplicateClipAutomationBatch } from './automation/duplicateClipAutomati
 export { getClipAutomationMoveState } from './automation/getClipAutomationMoveState';
 export { deleteAutomationTimeRange } from './automation/deleteAutomationTimeRange';
 export { recordAutomationValue } from './automationRecording/recordAutomationValue';
+export { captureAutomationRecordingRollback } from './automationRecording/captureAutomationRecordingRollback';
 export { setAutomationRecordingDependencies } from './automationRecording/recordingDependencies';
 export { setModulationDependencies } from './modulation/modulationDependencies';
 export { removeAutomationLane } from './automation/removeAutomationLane';

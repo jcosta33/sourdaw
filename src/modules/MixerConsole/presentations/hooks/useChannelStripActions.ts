@@ -221,7 +221,10 @@ export function useChannelStripActions(track: Track): ChannelStripActions {
         select: () => selectTrack(track.id),
         toggleMute: () => {
             void executeAppAction(
-                { type: 'muteTrack', payload: { trackId: track.id, muted: !track.muted } },
+                {
+                    type: 'muteTrack',
+                    payload: { trackId: track.id, muted: !track.muted, expectedMuted: track.muted },
+                },
                 PERFORMATIVE_TOGGLE
             );
         },
@@ -258,8 +261,13 @@ export function useChannelStripActions(track: Track): ChannelStripActions {
                 setTrackGain(track.id, value, true);
                 return;
             }
-            commitGesture({ type: 'setTrackGain', payload: { trackId: track.id, gain: value } }, 'gain', () =>
-                setGestureGain(null)
+            commitGesture(
+                {
+                    type: 'setTrackGain',
+                    payload: { trackId: track.id, gain: value, expectedGain: track.gain },
+                },
+                'gain',
+                () => setGestureGain(null)
             );
         },
         setPan: (value, isTransient = false) => {
@@ -268,8 +276,13 @@ export function useChannelStripActions(track: Track): ChannelStripActions {
                 setTrackPan(track.id, value, true);
                 return;
             }
-            commitGesture({ type: 'setTrackPan', payload: { trackId: track.id, pan: value } }, 'pan', () =>
-                setGesturePan(null)
+            commitGesture(
+                {
+                    type: 'setTrackPan',
+                    payload: { trackId: track.id, pan: value, expectedPan: track.pan },
+                },
+                'pan',
+                () => setGesturePan(null)
             );
         },
         setColor: (color) => {

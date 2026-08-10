@@ -760,11 +760,64 @@ function isAdjustmentLayers(value: unknown): value is ProjectAdjustmentLayers {
     );
 }
 
-function isAudioBuffers(value: unknown): value is Record<string, ProjectExportedAudioBuffer> {
+type AudioBufferReferenceCensus = {
+    frozenIds: Set<string>;
+    ordinaryIds: Set<string>;
+};
+
+const PROJECT_SCOPED_FREEZE_ID = /^freeze-project-(\d+)-/;
+
+function hasForeignEncodedFreezeProjectId(bufferId: string, projectId: number): boolean {
+    const match = PROJECT_SCOPED_FREEZE_ID.exec(bufferId);
+    if (!match) {
+        return false;
+    }
+    const encodedProjectId = Number(match[1]);
+    return !Number.isSafeInteger(encodedProjectId) || encodedProjectId !== projectId;
+}
+
+function addTrackBufferReferences(census: AudioBufferReferenceCensus, tracks: readonly HydratableProjectTrack[]): void {
+    for (const track of tracks) {
+        const frozenBufferId = track.freezeState?.frozenBufferId ?? track.frozenBufferId;
+        if (frozenBufferId) {
+            census.frozenIds.add(frozenBufferId);
+        }
+        for (const clip of [
+            ...track.clips,
+            ...(track.alternatives ?? []).flatMap((alternative) => alternative.clips),
+        ]) {
+            const bufferId = clip.bufferId ?? clip.audioBufferId;
+            if (bufferId) {
+                census.ordinaryIds.add(bufferId);
+            }
+        }
+    }
+}
+
+function collectAudioBufferReferences({
+    arrangements,
+    tracks,
+}: {
+    arrangements?: HydratableArrangementSnapshot[];
+    tracks: HydratableProjectTrack[];
+}): AudioBufferReferenceCensus {
+    const census: AudioBufferReferenceCensus = { frozenIds: new Set(), ordinaryIds: new Set() };
+    addTrackBufferReferences(census, tracks);
+    for (const arrangement of arrangements ?? []) {
+        addTrackBufferReferences(census, arrangement.tracks?.tracks ?? []);
+    }
+    return census;
+}
+
+function isAudioBuffers(
+    value: unknown,
+    projectId: number,
+    references: AudioBufferReferenceCensus
+): value is Record<string, ProjectExportedAudioBuffer> {
     return (
         isRecord(value) &&
-        Object.values(value).every(
-            (buffer) =>
+        Object.entries(value).every(
+            ([bufferId, buffer]) =>
                 isRecord(buffer) &&
                 typeof buffer.sampleRate === 'number' &&
                 Number.isFinite(buffer.sampleRate) &&
@@ -774,7 +827,12 @@ function isAudioBuffers(value: unknown): value is Record<string, ProjectExported
                 buffer.numberOfChannels > 0 &&
                 Array.isArray(buffer.channelData) &&
                 buffer.channelData.length === buffer.numberOfChannels &&
-                buffer.channelData.every((channel) => typeof channel === 'string')
+                buffer.channelData.every((channel) => typeof channel === 'string') &&
+                (buffer.freezeProjectId === undefined ||
+                    (buffer.freezeProjectId === projectId &&
+                        references.frozenIds.has(bufferId) &&
+                        !references.ordinaryIds.has(bufferId) &&
+                        !hasForeignEncodedFreezeProjectId(bufferId, projectId)))
         )
     );
 }
@@ -849,5 +907,12 @@ export function isHydratableProjectData(value: unknown): value is HydratableProj
     if (value.activeArrangementId !== undefined && typeof value.activeArrangementId !== 'string') {
         return false;
     }
-    return value.audioBuffers === undefined || isAudioBuffers(value.audioBuffers);
+    if (value.audioBuffers === undefined) {
+        return true;
+    }
+    const references = collectAudioBufferReferences({
+        arrangements: value.arrangements,
+        tracks: value.arrangement.tracks,
+    });
+    return isAudioBuffers(value.audioBuffers, value.meta.createdAt, references);
 }
