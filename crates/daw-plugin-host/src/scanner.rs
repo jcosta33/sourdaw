@@ -317,7 +317,6 @@ mod tests {
         );
     }
 
-    #[cfg(unix)]
     #[test]
     fn scan_directory_does_not_advertise_unsupported_native_bundles() {
         let temp_root = std::env::current_dir()

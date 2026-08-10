@@ -1,5 +1,10 @@
 import { logger } from '#/infra/logger/appLogger';
 
+import {
+    defaultExternalPluginActivationState,
+    externalPluginActivationStore,
+} from '../../stores/externalPluginActivationStore';
+
 import { externalLatencyReporters } from './externalLatencyReporters';
 import { loadedExternalInstances } from './loadedExternalInstances';
 import { loadPlugin } from './loadPlugin';
@@ -22,6 +27,19 @@ type ActivateExternalPluginInput = {
      */
     onLatencyMs?: (latencyMs: number) => void;
 };
+
+function setActivationStatus(instanceId: string, status: 'loading' | 'active' | 'error', message?: string): void {
+    externalPluginActivationStore.update((state) => {
+        const current = state ?? defaultExternalPluginActivationState;
+        return {
+            ...current,
+            byInstanceId: {
+                ...current.byInstanceId,
+                [instanceId]: message ? { status, message } : { status },
+            },
+        };
+    });
+}
 
 /**
  * Instantiate a native plugin in the live audio graph and restore its persisted
@@ -48,6 +66,7 @@ export function activateExternalPlugin({
         return;
     }
     loadedExternalInstances.add(instanceId);
+    setActivationStatus(instanceId, 'loading');
 
     if (onLatencyMs) {
         // Register before the load so a latency change the plugin flags during
@@ -60,6 +79,7 @@ export function activateExternalPlugin({
     void (async () => {
         try {
             const instance = await loadPlugin(pluginId, instanceId);
+            setActivationStatus(instanceId, 'active');
             // Report the latency read at activation (PH-4). loadPlugin always
             // resolves a PluginInstance with a numeric latency_ms (0 in the
             // browser stub), so no runtime guard is needed. Later changes arrive
@@ -70,6 +90,7 @@ export function activateExternalPlugin({
             // and the sink with it — nothing is live to report for.
             loadedExternalInstances.delete(instanceId);
             externalLatencyReporters.delete(instanceId);
+            setActivationStatus(instanceId, 'error', String(error));
             logger.warn(`Failed to load external plugin ${pluginId} for instance ${instanceId}: ${String(error)}`);
             return;
         }

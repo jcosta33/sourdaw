@@ -1,5 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import {
+    defaultExternalPluginActivationState,
+    externalPluginActivationStore,
+} from '../../../stores/externalPluginActivationStore';
 import { activateExternalPlugin } from '../activateExternalPlugin';
 import { clearLoadedExternalPlugins } from '../clearLoadedExternalPlugins';
 import { loadedExternalInstances } from '../loadedExternalInstances';
@@ -61,6 +65,7 @@ describe('activateExternalPlugin', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         clearLoadedExternalPlugins();
+        externalPluginActivationStore.set(defaultExternalPluginActivationState);
         mocks.loadPluginRepo.mockResolvedValue({ instance_id: 'inst-1' });
         mocks.setPluginStateRepo.mockResolvedValue(undefined);
     });
@@ -76,6 +81,7 @@ describe('activateExternalPlugin', () => {
         expect(mocks.loadPluginRepo).toHaveBeenCalledWith('p', 'inst-1');
         expect(mocks.setPluginStateRepo).toHaveBeenCalledTimes(1);
         expect(mocks.setPluginStateRepo).toHaveBeenCalledWith('inst-1', SAVED_BYTES);
+        expect(externalPluginActivationStore.value?.byInstanceId['inst-1']).toEqual({ status: 'active' });
     });
 
     it('marks the instance live synchronously so a same-tick second call is skipped', async () => {
@@ -109,6 +115,19 @@ describe('activateExternalPlugin', () => {
         activateExternalPlugin({ pluginId: 'p', instanceId: 'inst-1' });
         await vi.waitFor(() => expect(mocks.loadPluginRepo).toHaveBeenCalledTimes(2));
         expect(loadedExternalInstances.has('inst-1')).toBe(true);
+    });
+
+    it('publishes an error state when native activation fails', async () => {
+        mocks.loadPluginRepo.mockRejectedValueOnce(new Error('unsupported plugin format'));
+
+        activateExternalPlugin({ pluginId: 'p', instanceId: 'inst-1' });
+
+        await vi.waitFor(() =>
+            expect(externalPluginActivationStore.value?.byInstanceId['inst-1']).toEqual({
+                status: 'error',
+                message: 'Error: unsupported plugin format',
+            })
+        );
     });
 
     it('reports the activation latency in milliseconds to the injected sink', async () => {
@@ -181,6 +200,7 @@ describe('activateExternalPlugin', () => {
         await unloadPlugin('inst-1');
         emitLatencyChange({ instance_id: 'inst-1', latency_ms: 99 });
 
+        expect(externalPluginActivationStore.value?.byInstanceId['inst-1']).toBeUndefined();
         expect(onLatencyMs).toHaveBeenCalledTimes(1);
         expect(onLatencyMs).not.toHaveBeenCalledWith(99);
     });
