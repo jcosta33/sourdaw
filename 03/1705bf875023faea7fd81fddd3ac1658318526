@@ -1,0 +1,33 @@
+crates/daw-plugin-host/src/scanner.rs
+  s_bc88af7d3b054c::t_0a1963efc4add6 122,129,131,168,205
+  s_bc88af7d3b054c::t_9f81aec573f1b2 121
+  s_bc88af7d3b054c::t_e3a229f4e386b7 5,119-120,123-125,130,132-133,137,142,150,156,163,169-170,206-207,210
+src-tauri/tests/plugin_scan_process_boundary.rs
+  s_bc88af7d3b054c::t_5434cb2fbead92 36-37
+  s_bc88af7d3b054c::t_e0dc88186ab825 12
+  s_bc88af7d3b054c::t_e61ab3c061c89b 18-19
+  s_bc88af7d3b054c::t_07ba1b926ea8fe 31
+src-tauri/src/host/plugin_scan_worker.rs
+  s_bc88af7d3b054c::t_6f8c231a90f702 87
+  s_bc88af7d3b054c::t_d33938587d4168 8,24-28,30-33
+  s_bc88af7d3b054c::t_e61ab3c061c89b 22-23
+src-tauri/src/commands/plugins.rs
+  s_bc88af7d3b054c::t_15e872fc14bde6 16,136-137,141-145,147-153,164,169,181-185
+  s_bc88af7d3b054c::t_5d00da6528867b 146,154-163,165-168,171
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "031705bf875023faea7fd81fddd3ac1658318526",
+  "prompts": {},
+  "sessions": {
+    "s_bc88af7d3b054c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f9b4a-11a2-7f61-8dfb-76eed0eb2a9c",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
