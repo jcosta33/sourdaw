@@ -1,0 +1,19 @@
+src/modules/AudioEngine/useCases/__tests__/clearRuntimeCachedAudioBuffers.integration.spec.ts
+  s_bc88af7d3b054c::t_dc4799146b1542 71-85
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "f65c77d8a822b6b5b1943472f50bfc8ce6b6e13d",
+  "prompts": {},
+  "sessions": {
+    "s_bc88af7d3b054c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f9b4a-11a2-7f61-8dfb-76eed0eb2a9c",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
