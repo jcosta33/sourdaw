@@ -1,0 +1,16 @@
+src/modules/Crumbs/presentations/components/CrumbsControls.tsx
+  h_1228e573df1f42 76
+src/modules/Crumbs/presentations/components/__tests__/CrumbsControls.spec.tsx
+  h_1228e573df1f42 145-157
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "1ab6c1620c7df0797840cb6d0e7486965bcdfc12",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
