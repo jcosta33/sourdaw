@@ -3,7 +3,7 @@ import {
     garbageCollectCachedAudioBuffersBySize,
     garbageCollectFreezeAudioBuffers,
 } from '#/modules/AudioEngine/useCases';
-import { projectLoadFailureStore, projectStore } from '#/modules/Project/stores';
+import { arrangementStore, projectLoadFailureStore, projectStore } from '#/modules/Project/stores';
 
 import { trackStore } from '../../stores/trackStore';
 
@@ -30,6 +30,14 @@ export async function cleanupUnusedFreezeFiles(): Promise<void> {
     for (const track of state.tracks) {
         if (track.freezeState.frozenBufferId) {
             activeBufferIds.add(track.freezeState.frozenBufferId);
+        }
+    }
+    for (const arrangement of arrangementStore.value?.arrangements ?? []) {
+        for (const track of arrangement.tracks.tracks) {
+            const frozenBufferId = track.freezeState?.frozenBufferId ?? track.frozenBufferId;
+            if (frozenBufferId) {
+                activeBufferIds.add(frozenBufferId);
+            }
         }
     }
 
