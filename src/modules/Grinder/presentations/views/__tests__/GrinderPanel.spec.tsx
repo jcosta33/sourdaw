@@ -349,4 +349,19 @@ describe('GrinderPanel', () => {
         const idle_view = render(<GrinderPanel deviceId={device_id} />);
         expect(within(idle_view.container).getByRole('button', { name: 'Import NAM' })).toBeEnabled();
     });
+
+    it('labels the Gain parameter knob with an accessible name', () => {
+        // The GrinderKnob helper renders the label as a sibling span; the knob
+        // itself must carry the name too (not fall back to the generic
+        // "Parameter control"), so each param knob is addressable. The Gain knob
+        // lives in the amp section.
+        grinderStore.set({
+            [device_id]: {
+                patch: { ...DEFAULT_PATCH, uiSection: 'amp' },
+                basePatch: DEFAULT_PATCH,
+            },
+        });
+        render(<GrinderPanel deviceId={device_id} />);
+        expect(screen.getByRole('slider', { name: 'Gain' })).toBeInTheDocument();
+    });
 });
