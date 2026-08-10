@@ -1,0 +1,120 @@
+src/modules/Command/useCases/executableAppActionRegistry.ts
+  s_a40848e8f8cca9::t_1078f9dac1244d 816-841
+  s_a40848e8f8cca9::t_a18f02b95f9966 815
+src/modules/Command/useCases/getAppActionExecutionPolicy.ts
+  s_a40848e8f8cca9::t_ebace9a206a797 89
+src/modules/MIDI/models/MidiNote.ts
+  s_a40848e8f8cca9::t_004c13e31c11ed 25-26
+  s_a40848e8f8cca9::t_3fa09d5dcd2e3c 44-56
+src/modules/MIDI/stores/midiStore.ts
+  s_a40848e8f8cca9::t_004c13e31c11ed 43,143
+  s_a40848e8f8cca9::t_e3875de72db29d 98-99
+  s_a40848e8f8cca9::t_3fa09d5dcd2e3c 5,142
+  s_a40848e8f8cca9::t_c395eb3cf232eb 144
+src/modules/MIDI/transformers/copyMidiArticulationsToNotes.ts
+  s_a40848e8f8cca9::t_ebace9a206a797 14,19-24,27,30
+  s_a40848e8f8cca9::t_004c13e31c11ed 1-13,15-18,25-26,28-29,31-41
+src/modules/AiRuntime/transformers/projectMidiArticulationTransfer.ts
+  s_a40848e8f8cca9::t_2fa6f1afc1c549 1-18,22-61,64-71,75-79
+  s_a40848e8f8cca9::t_1078f9dac1244d 19-21,62-63,72-74
+src/modules/MIDI/useCases/getMidiNoteTransformHandlers.ts
+  s_a40848e8f8cca9::t_004c13e31c11ed 4,18,40
+src/modules/AiRuntime/useCases/describePendingActionConfirmation.ts
+  s_a40848e8f8cca9::t_222720eaa8ea46 7,113-127
+  s_a40848e8f8cca9::t_8b6bd08d294c47 128
+  s_a40848e8f8cca9::t_68d622153c9e7e 135
+src/modules/Arrangement/models/MidiNoteViewTypes.ts
+  s_a40848e8f8cca9::t_cf82b0d570bddf 20
+src/modules/MIDI/transformers/__tests__/midiNotesEqual.spec.ts
+  s_a40848e8f8cca9::t_17bad0a1bbf42b 19,52
+src/modules/AiGeneration/handlers/aiMidi/createMidiGenerationSourceGuard.ts
+  s_a40848e8f8cca9::t_cf82b0d570bddf 31-32
+src/modules/MIDI/handlers/noteTransform/handleCopyMidiArticulations.ts
+  s_a40848e8f8cca9::t_dfe9e300d3ad82 5,41-42,46-48
+  s_a40848e8f8cca9::t_004c13e31c11ed 1-4,6-40,43-45,49-50
+src/utils/handlerContract.ts
+  s_a40848e8f8cca9::t_004c13e31c11ed 199,823-832
+src/modules/AiRuntime/useCases/__tests__/articulationTransferPromptWorkflow.spec.ts
+  s_a40848e8f8cca9::t_5ec09e2aa93115 1-4,6,14-33,43-44,46-48,50-82,89-90,93-99,102-125,163-194,236-248,251,253,255,262-285,288-289,292-299,301-314,316-326,328,338,343-357,360-362,620,629-630
+  s_a40848e8f8cca9::t_3fa09d5dcd2e3c 34-42
+  s_a40848e8f8cca9::t_cd60f3af226c27 407-460,479-566,571-588
+  s_a40848e8f8cca9::t_2ad692b897a8e2 5,589-616,621-628
+  s_a40848e8f8cca9::t_0175b44af0b970 83-88,91-92,100-101,126-162
+  s_a40848e8f8cca9::t_47889baeca2246 7-13,45,49,195-235,249-250,252,254,256-261,363-406,461-478,567-570,617-619
+  s_a40848e8f8cca9::t_b3dd1b0d212d0c 286-287,290-291,300,358-359
+  s_a40848e8f8cca9::t_a47cfd10f82592 327,329-337
+  s_a40848e8f8cca9::t_3e670d27fe11b2 315
+  s_a40848e8f8cca9::t_ebace9a206a797 339-342
+src/modules/MIDI/useCases/midiNoteCrud/appendMidiNotes.ts
+  s_a40848e8f8cca9::t_cf82b0d570bddf 14,23,55
+  s_a40848e8f8cca9::t_3fa09d5dcd2e3c 1,56
+src/modules/MIDI/useCases/__tests__/getMidiNoteTransformHandlers.spec.ts
+  s_a40848e8f8cca9::t_53f26049bc90df 40
+src/modules/AiGeneration/handlers/aiMidi/__tests__/hasDurableMidiGenerationResult.spec.ts
+  s_a40848e8f8cca9::t_69498429e50b00 89-100
+src/modules/AiRuntime/useCases/materializeActionStateGuards.ts
+  s_a40848e8f8cca9::t_de1383e7f23121 5
+  s_a40848e8f8cca9::t_216cb349f51cf3 1,25-67
+src/modules/AiGeneration/handlers/aiMidi/__tests__/createMidiGenerationSourceGuard.spec.ts
+  s_a40848e8f8cca9::t_69498429e50b00 110-119
+src/modules/Command/useCases/__tests__/executableCommandRegistry.spec.ts
+  s_a40848e8f8cca9::t_5c1cb58922ed45 1444-1456
+  s_a40848e8f8cca9::t_53f26049bc90df 360-369
+  s_a40848e8f8cca9::t_67855091f42bc7 359
+  s_a40848e8f8cca9::t_9faffbfeeedd55 1443
+src/modules/AiRuntime/useCases/validateActionPayload.ts
+  s_a40848e8f8cca9::t_222720eaa8ea46 383-388
+src/modules/MIDI/stores/__tests__/midiStore.spec.ts
+  s_a40848e8f8cca9::t_e53ec704f57fc2 189,238
+src/modules/AiRuntime/models/ArticulationTransferCapability.ts
+  s_a40848e8f8cca9::t_1078f9dac1244d 6-8
+  s_a40848e8f8cca9::t_2fa6f1afc1c549 1-5,9-40
+src/modules/MIDI/transformers/midiNotesEqual.ts
+  s_a40848e8f8cca9::t_004c13e31c11ed 15-16
+src/modules/AiRuntime/useCases/agentReference/bridgeGroundedLlmToolCalls.ts
+  s_a40848e8f8cca9::t_a2f70ee95c3352 19,1517-1531,3498-3499,3508-3519,3896-3933,3937
+  s_a40848e8f8cca9::t_ca893942f4594f 3934-3936
+  s_a40848e8f8cca9::t_94f783e164e57d 3938
+src/modules/AiGeneration/handlers/aiMidi/hasDurableMidiGenerationResult.ts
+  s_a40848e8f8cca9::t_cf82b0d570bddf 31-32
+src/modules/AiRuntime/models/RuntimeAction.ts
+  s_a40848e8f8cca9::t_1078f9dac1244d 77,285,334
+src/modules/AiRuntime/models/__tests__/RuntimeAction.spec.ts
+  s_a40848e8f8cca9::t_53f26049bc90df 21
+  s_a40848e8f8cca9::t_2d8a171c723807 44-47,76,102-104
+  s_a40848e8f8cca9::t_5c1cb58922ed45 24
+src/modules/MIDI/useCases/midiNoteCrud/__tests__/appendMidiNotes.spec.ts
+  s_a40848e8f8cca9::t_17bad0a1bbf42b 38,112,216-219
+src/modules/AiRuntime/useCases/describePlannedAction.ts
+  s_a40848e8f8cca9::t_222720eaa8ea46 254-261
+src/modules/AiRuntime/transformers/llmActionBridge.ts
+  s_a40848e8f8cca9::t_609c3b2650f2b2 5,1291-1308,3052,3060,3067
+src/modules/MIDI/transformers/__tests__/copyMidiArticulationsToNotes.spec.ts
+  s_a40848e8f8cca9::t_f8bed89113d857 1-59
+src/modules/AiRuntime/useCases/agentReference/getArticulationTransferPromptScope.ts
+  s_a40848e8f8cca9::t_2fa6f1afc1c549 1-37,39-53,55-56,58-71,78-134
+  s_a40848e8f8cca9::t_de1383e7f23121 38
+  s_a40848e8f8cca9::t_1078f9dac1244d 54,57,72-77
+src/modules/Command/useCases/actionLabels.ts
+  s_a40848e8f8cca9::t_1078f9dac1244d 40
+src/modules/MIDI/useCases/midiNoteTransforms/copyMidiArticulations.ts
+  s_a40848e8f8cca9::t_004c13e31c11ed 1-44
+src/modules/AiRuntime/useCases/parsePromptToActions.ts
+  s_a40848e8f8cca9::t_609c3b2650f2b2 19,122-124,141
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "6be53725d980ade49f1f4f7f40177189773c30a5",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
