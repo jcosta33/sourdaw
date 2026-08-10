@@ -12,6 +12,7 @@ use std::time::Duration;
 use triple_buffer::Input;
 
 const MAX_CALLBACK_FRAMES: usize = 4096;
+const AUDIO_STREAM_STARTUP_TIMEOUT: Duration = Duration::from_secs(5);
 const AUDIO_STREAM_SHUTDOWN_TIMEOUT: Duration = Duration::from_millis(100);
 
 pub struct AudioThreadHandle {
@@ -42,6 +43,17 @@ where
     Stream: 'static,
     Factory: FnOnce() -> Result<Stream, String> + Send + 'static,
 {
+    spawn_owned_audio_stream_with_timeout(factory, AUDIO_STREAM_STARTUP_TIMEOUT)
+}
+
+fn spawn_owned_audio_stream_with_timeout<Stream, Factory>(
+    factory: Factory,
+    startup_timeout: Duration,
+) -> Result<AudioThreadHandle, String>
+where
+    Stream: 'static,
+    Factory: FnOnce() -> Result<Stream, String> + Send + 'static,
+{
     let (ready_tx, ready_rx) = mpsc::sync_channel(1);
     let (shutdown_tx, shutdown_rx) = mpsc::channel();
     let (shutdown_complete_tx, shutdown_complete_rx) = mpsc::channel();
@@ -61,13 +73,18 @@ where
         })
         .map_err(|error| format!("Failed to spawn audio owner thread: {error}"))?;
 
-    match ready_rx.recv() {
+    match ready_rx.recv_timeout(startup_timeout) {
         Ok(Ok(())) => Ok(AudioThreadHandle {
             shutdown_tx,
             shutdown_complete_rx,
         }),
         Ok(Err(error)) => Err(error),
-        Err(error) => Err(format!("Audio owner thread exited during startup: {error}")),
+        Err(RecvTimeoutError::Timeout) => {
+            Err("Timed out waiting for audio stream startup".to_string())
+        }
+        Err(RecvTimeoutError::Disconnected) => {
+            Err("Audio owner thread exited during startup".to_string())
+        }
     }
 }
 
@@ -168,7 +185,9 @@ fn build_audio_stream(
 
 #[cfg(test)]
 mod tests {
-    use super::{spawn_owned_audio_stream, AudioThreadHandle};
+    use super::{
+        spawn_owned_audio_stream, spawn_owned_audio_stream_with_timeout, AudioThreadHandle,
+    };
     use std::rc::Rc;
     use std::sync::mpsc;
     use std::thread;
@@ -249,6 +268,49 @@ mod tests {
         };
 
         assert_eq!(error, "audio device unavailable");
+    }
+
+    #[test]
+    fn stalled_stream_startup_times_out_without_stranding_the_owner_resource() {
+        let (release_tx, release_rx) = mpsc::channel();
+        let (dropped_tx, dropped_rx) = mpsc::channel();
+        let release_thread = thread::spawn(move || {
+            thread::sleep(Duration::from_millis(400));
+            release_tx
+                .send(())
+                .expect("owner thread should still be waiting");
+        });
+
+        let started_at = Instant::now();
+        let result = spawn_owned_audio_stream_with_timeout(
+            move || {
+                release_rx
+                    .recv()
+                    .expect("startup release should remain connected");
+                Ok(ThreadBoundResource {
+                    created_on: thread::current().id(),
+                    dropped_tx,
+                    _not_send: Rc::new(()),
+                })
+            },
+            Duration::from_millis(100),
+        );
+        let startup_duration = started_at.elapsed();
+        let error = match result {
+            Ok(handle) => {
+                drop(handle);
+                panic!("stalled startup should time out");
+            }
+            Err(error) => error,
+        };
+
+        assert_eq!(error, "Timed out waiting for audio stream startup");
+        assert!(startup_duration < Duration::from_millis(250));
+        release_thread.join().expect("release thread should finish");
+        let (created_on, dropped_on) = dropped_rx
+            .recv_timeout(Duration::from_secs(1))
+            .expect("late owner resource should still be dropped");
+        assert_eq!(dropped_on, created_on);
     }
 
     #[test]
