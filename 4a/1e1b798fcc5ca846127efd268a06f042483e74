@@ -1,0 +1,91 @@
+src/modules/AiRuntime/models/RuntimeAction.ts
+  s_a40848e8f8cca9::t_419b7e398e33b1 281
+docs/architecture/decisions/0032-capability-scoped-llm-sidechain-targeting.md
+  s_a40848e8f8cca9::t_eda84b3afcd936 1-29
+src/modules/AiRuntime/models/__tests__/RuntimeAction.spec.ts
+  s_a40848e8f8cca9::t_abe94379d26c8f 92
+src/utils/getSidechainTargetCapability.ts
+  s_a40848e8f8cca9::t_c52a707de23337 1-10
+src/modules/Routing/useCases/sidechain/addSidechainRouteSnapshot.ts
+  s_a40848e8f8cca9::t_8593c0ebe9b367 8,33,35-36
+src/modules/Arrangement/handlers/device/__tests__/handleAddSidechainRoute.spec.ts
+  s_a40848e8f8cca9::t_42010c4407a796 14-15
+  s_a40848e8f8cca9::t_d7430d1ab12ef1 31,62,80
+src/modules/Routing/useCases/index.ts
+  s_a40848e8f8cca9::t_8593c0ebe9b367 13
+src/modules/AiRuntime/transformers/llmActionBridge.ts
+  s_a40848e8f8cca9::t_0076ac157a2082 181
+  s_a40848e8f8cca9::t_e8e1208c3fb9d9 2285-2286,2463-2467,2476
+  s_a40848e8f8cca9::t_5d3f9e473895c0 2587,2605-2606
+  s_a40848e8f8cca9::t_79906e04937d32 2038
+  s_a40848e8f8cca9::t_c52a707de23337 1
+  s_a40848e8f8cca9::t_2ab25af5302f01 2284,2287-2288
+  s_a40848e8f8cca9::t_419b7e398e33b1 8,2021-2023,2025,2033-2037,2054-2058,3012,3019,3025
+src/modules/AiRuntime/useCases/__tests__/validateActionPayload.spec.ts
+  s_a40848e8f8cca9::t_7c9b582be661b3 737
+src/modules/Command/useCases/executableAppActionRegistry.ts
+  s_a40848e8f8cca9::t_419b7e398e33b1 1750,1757
+src/modules/AiRuntime/useCases/agentReference/getSidechainRoutingPromptScope.ts
+  s_a40848e8f8cca9::t_e7d18a195de0f4 1
+  s_a40848e8f8cca9::t_01900b3fbe7c78 3,22-23,55-57,61-63
+  s_a40848e8f8cca9::t_79906e04937d32 21
+  s_a40848e8f8cca9::t_8593c0ebe9b367 2,4-20,24-54,58-60,64-163
+src/modules/AiRuntime/useCases/__tests__/drumBusPromptWorkflow.spec.ts
+  s_a40848e8f8cca9::t_c19382f9a7e02a 21,38,63-64,88-89,449,473,1176-1177,1180-1214
+  s_a40848e8f8cca9::t_d632303918203c 278-404,1178-1179,1215-1216,1218-1269,1271-1293,1299-1352,1363-1364,1395,1397-1399
+  s_a40848e8f8cca9::t_d43375a97c79f7 1217
+  s_a40848e8f8cca9::t_590a91f6b26a33 1270
+  s_a40848e8f8cca9::t_f6cf944142e817 1380
+  s_a40848e8f8cca9::t_abe94379d26c8f 1294-1297
+  s_a40848e8f8cca9::t_d7ada57f4b571c 1353-1362,1365-1379,1381-1394,1396,1400-1528
+  s_a40848e8f8cca9::t_79906e04937d32 1298
+src/modules/Routing/useCases/sidechain/getSidechainTargetCapability.ts
+  s_a40848e8f8cca9::t_764e1ee0f04467 1
+src/modules/Arrangement/handlers/device/handleAddSidechainRoute.ts
+  s_a40848e8f8cca9::t_8593c0ebe9b367 1,22,24-27,29,31-32,35,43-45,49-51
+  s_a40848e8f8cca9::t_01900b3fbe7c78 18-19
+  s_a40848e8f8cca9::t_63ec2ac9709070 12-14,21
+  s_a40848e8f8cca9::t_d6679744e3d312 20
+docs/architecture/decisions/0028-llm-sidechain-routing-command-surface.md
+  s_a40848e8f8cca9::t_eda84b3afcd936 3
+src/modules/AiRuntime/useCases/agentReference/bridgeGroundedLlmToolCalls.ts
+  s_a40848e8f8cca9::t_01900b3fbe7c78 23
+  s_a40848e8f8cca9::t_419b7e398e33b1 1516-1532,3482-3483,3490-3502,3896-3937
+src/modules/AiRuntime/useCases/validateActionPayload.ts
+  s_a40848e8f8cca9::t_419b7e398e33b1 363-364,367
+src/modules/AiRuntime/useCases/parsePromptToActions.ts
+  s_a40848e8f8cca9::t_419b7e398e33b1 20,123-125,138
+src/modules/Command/useCases/__tests__/executableCommandRegistry.spec.ts
+  s_a40848e8f8cca9::t_01900b3fbe7c78 857,861
+src/modules/AiRuntime/models/SidechainRoutingCapability.ts
+  s_a40848e8f8cca9::t_8593c0ebe9b367 1-40
+src/utils/handlerContract.ts
+  s_a40848e8f8cca9::t_419b7e398e33b1 1149
+src/modules/AiRuntime/useCases/describePendingActionConfirmation.ts
+  s_a40848e8f8cca9::t_419b7e398e33b1 107-111,117
+  s_a40848e8f8cca9::t_01900b3fbe7c78 11
+src/modules/AiRuntime/useCases/describePlannedAction.ts
+  s_a40848e8f8cca9::t_419b7e398e33b1 260-263
+src/modules/AiRuntime/useCases/getPlannedActionAffectedIds.ts
+  s_a40848e8f8cca9::t_419b7e398e33b1 31-33
+src/modules/AiRuntime/transformers/__tests__/llmActionBridge.spec.ts
+  s_a40848e8f8cca9::t_7c9b582be661b3 3947,4151
+src/modules/Routing/useCases/sidechain/__tests__/getSidechainTargetCapability.spec.ts
+  s_a40848e8f8cca9::t_768bf28339af98 1-16
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "4a1e1b798fcc5ca846127efd268a06f042483e74",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
