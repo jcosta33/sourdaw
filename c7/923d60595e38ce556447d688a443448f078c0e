@@ -1,0 +1,22 @@
+src/modules/Project/useCases/projectPersistence/helpers/isHydratableProjectData.ts
+  s_bc88af7d3b054c::t_f0637e6425abd4 768-778,834-835
+src/modules/Project/useCases/projectPersistence/helpers/__tests__/isHydratableProjectData.spec.ts
+  s_bc88af7d3b054c::t_f0637e6425abd4 496-504
+  s_bc88af7d3b054c::t_577809a12bb95b 475-495,505-506
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "c7923d60595e38ce556447d688a443448f078c0e",
+  "prompts": {},
+  "sessions": {
+    "s_bc88af7d3b054c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f9b4a-11a2-7f61-8dfb-76eed0eb2a9c",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
