@@ -3,6 +3,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { configureAutomergeStoragePort } from '#/infra/store/storage/createAutomergeStorage';
 import { trackStore, type Track } from '#/modules/Arrangement/stores';
 import { getArrangementHandlers, setArrangementEventBus, setDeviceParameter } from '#/modules/Arrangement/useCases';
+import { automationStore } from '#/modules/Automation/stores';
+import {
+    recordAutomationValue,
+    releaseTouchAutomation,
+    setAutomationRecordingDependencies,
+    startAutomationRecording,
+    stopAutomationRecording,
+} from '#/modules/Automation/useCases';
 import { clearHandlerRegistry, macroStore, registerHandlerMap, undoStore } from '#/modules/Command/stores';
 import {
     clearUndoHistory,
@@ -18,6 +26,7 @@ import {
     removeCrdtDoc,
     resetCrdtProjectAuthority,
 } from '#/modules/CrdtDocument/useCases';
+import { defaultTransportState, transportStore } from '#/modules/Transport/stores';
 
 import { cloudSession } from '../../repositories/cloudLlm/cloudSession';
 import { generateWebLlmCompletion } from '../../repositories/webLlm/generateWebLlmCompletion';
@@ -578,6 +587,90 @@ describe('Bass DI compressor parameter prompt workflow', () => {
         );
         expect(undoStore.value?.past).toEqual([]);
     });
+
+    it.each(['write', 'touch', 'latch'] as const)(
+        'rolls back %s-mode parameter automation buffered by a failed atomic batch',
+        async (automationMode) => {
+            const parameterId = `${COMPRESSOR_ID}:comp-threshold`;
+            const baselinePoints = [
+                { beat: 0, value: -24, curve: 'linear' as const, tension: 0 },
+                { beat: 32, value: -20, curve: 'linear' as const, tension: 0 },
+            ];
+            trackStore.set({
+                ...trackStore.value!,
+                tracks: trackStore.value!.tracks.map((track) =>
+                    track.id === 'track-bass-di' ? { ...track, automationMode } : track
+                ),
+            });
+            automationStore.set({
+                lanes: [
+                    {
+                        id: 'lane-bass-di-threshold',
+                        trackId: 'track-bass-di',
+                        parameterId,
+                        parameterName: 'Threshold',
+                        points: baselinePoints.map((point) => ({ ...point })),
+                        objects: [],
+                        visible: true,
+                        enabled: true,
+                        collapsed: false,
+                        minValue: -60,
+                        maxValue: 0,
+                    },
+                ],
+            });
+            transportStore.set({
+                ...defaultTransportState,
+                isPlaying: true,
+                playheadPosition: 4,
+                tempo: 120,
+            });
+            setAutomationRecordingDependencies({
+                getAudioContext: () => ({ baseLatency: 0, outputLatency: 0 }) as AudioContext,
+                getCompensationDelay: () => 0,
+            });
+            startAutomationRecording();
+            recordAutomationValue('track-bass-di', parameterId, -22, 2);
+            releaseTouchAutomation('track-bass-di', parameterId);
+            const preBatchLane = structuredClone(automationStore.value?.lanes[0]);
+            if (!preBatchLane) {
+                throw new Error('Expected the pre-existing threshold lane');
+            }
+            const preExistingPendingPoint = { beat: 3, value: -21, curve: 'linear' as const, tension: 0 };
+            recordAutomationValue(
+                'track-bass-di',
+                parameterId,
+                preExistingPendingPoint.value,
+                preExistingPendingPoint.beat
+            );
+            let preExistingBasePoints = preBatchLane.points;
+            if (automationMode !== 'touch') {
+                preExistingBasePoints = preBatchLane.points.filter((point) => point.beat < 2 || point.beat > 3);
+            }
+            const expectedPreExistingLane = {
+                ...preBatchLane,
+                points: [...preExistingBasePoints, preExistingPendingPoint].sort(
+                    (left, right) => left.beat - right.beat
+                ),
+            };
+
+            const result = await executeAppActionBatch(createGuardedActions(999), {
+                requireCompensation: true,
+                source: 'prompt',
+            });
+            stopAutomationRecording();
+
+            expect(result).toMatchObject({ status: 'conflicted', actions: [] });
+            expect(automationStore.value?.lanes).toEqual([expectedPreExistingLane]);
+            expect(undoStore.value?.past).toHaveLength(1);
+            expect(undoStore.value?.future).toEqual([]);
+
+            await undo();
+            expect(automationStore.value?.lanes[0]?.points).toEqual(baselinePoints);
+            await redo();
+            expect(automationStore.value?.lanes).toEqual([expectedPreExistingLane]);
+        }
+    );
 
     it('reports persistent runtime compensation failure and permits explicit repair', async () => {
         runtimeMocks.failedRuntimeWrites.add('comp-threshold:-24');

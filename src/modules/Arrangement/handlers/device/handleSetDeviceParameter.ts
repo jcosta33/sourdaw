@@ -1,3 +1,4 @@
+import { captureAutomationRecordingRollback } from '#/modules/Automation/useCases';
 import { createHandler } from '#/utils/createHandler';
 
 import { getPluginById } from '../../models/DeviceParameter';
@@ -100,6 +101,7 @@ function describeParameterOutcome(input: { deviceId: string; paramId: string; va
 }
 
 export const handleSetDeviceParameter = createHandler<'setDeviceParameter'>({
+    prepareAbort: () => captureAutomationRecordingRollback(),
     execute: (alpha) => handleGuardedSetDeviceParameter(alpha),
     isNoop: (action) => {
         if (!executionGuardsMatch(action)) {
