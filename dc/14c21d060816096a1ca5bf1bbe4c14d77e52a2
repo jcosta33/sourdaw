@@ -1,0 +1,19 @@
+tests/e2e/modulatorRoutingTestId.spec.ts
+  s_a40848e8f8cca9::t_c72d39537aa884 1-70
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "dc14c21d060816096a1ca5bf1bbe4c14d77e52a2",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
