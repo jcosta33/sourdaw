@@ -1,4 +1,4 @@
-import { unzipSync, strFromU8 } from 'fflate';
+import { extractGuardedZip } from '#/infra/archive/extractGuardedZip';
 
 export type DawProjectZipContents = {
     projectXml: string;
@@ -7,16 +7,20 @@ export type DawProjectZipContents = {
 };
 
 const textDecoder = new TextDecoder('utf-8');
+const projectXmlPath = /^project\.xml$/i;
 
 export function readDawProjectZip(buffer: ArrayBuffer): DawProjectZipContents {
     const bytes = new Uint8Array(buffer);
-    const entries = unzipSync(bytes);
+    const entries = extractGuardedZip({
+        bytes,
+        include: (path) => projectXmlPath.test(path) || isMetadataPath(path) || path.startsWith('audio/'),
+    });
 
-    const entryKey = Object.keys(entries).find((name) => /^\/?project\.xml$/i.test(name));
+    const entryKey = Object.keys(entries).find((name) => projectXmlPath.test(name));
     const projectEntry = entryKey ? entries[entryKey] : undefined;
     if (!projectEntry) {
-        const available = Object.keys(entries).join(', ') || '<empty>';
-        throw new Error(`DAWproject archive is missing project.xml at its root. Found: ${available}`);
+        const selectedEntries = Object.keys(entries).join(', ') || '<empty>';
+        throw new Error(`DAWproject archive is missing project.xml at its root. Selected entries: ${selectedEntries}`);
     }
 
     const metadataEntry = entries['metadata.xml'] ?? entries['Metadata.xml'] ?? null;
@@ -44,7 +48,11 @@ export function readDawProjectZip(buffer: ArrayBuffer): DawProjectZipContents {
 
 function decodeUtf8(data: Uint8Array): string {
     if (data.length >= 3 && data[0] === 0xef && data[1] === 0xbb && data[2] === 0xbf) {
-        return strFromU8(data.subarray(3));
+        return textDecoder.decode(data.subarray(3));
     }
     return textDecoder.decode(data);
+}
+
+function isMetadataPath(path: string): boolean {
+    return path === 'metadata.xml' || path === 'Metadata.xml';
 }

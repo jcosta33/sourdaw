@@ -29,18 +29,16 @@ describe('readDawProjectZip — project.xml extraction', () => {
         expect(result.projectXml).toBe('<Project/>');
     });
 
-    it('matches project.xml with a leading slash (/project.xml)', () => {
+    it('rejects an absolute project.xml path', () => {
         const zip = makeZip({ '/project.xml': utf8('<Project/>') });
-        const result = readDawProjectZip(zip);
-        expect(result.projectXml).toBe('<Project/>');
+        expect(() => readDawProjectZip(zip)).toThrow(/unsafe archive path/i);
     });
 });
 
 describe('readDawProjectZip — missing project.xml', () => {
-    it('throws with available entry list when project.xml is missing', () => {
+    it('throws when project.xml is missing', () => {
         const zip = makeZip({ 'readme.txt': utf8('hello') });
         expect(() => readDawProjectZip(zip)).toThrow(/missing project\.xml/);
-        expect(() => readDawProjectZip(zip)).toThrow(/readme\.txt/);
     });
 
     it('throws with <empty> when the archive has no entries', () => {
@@ -76,6 +74,14 @@ describe('readDawProjectZip — metadata.xml', () => {
 });
 
 describe('readDawProjectZip — audio assets', () => {
+    it('rejects traversal-bearing audio paths before publishing entries', () => {
+        const zip = makeZip({
+            'project.xml': utf8('<Project/>'),
+            'audio/../escape.wav': utf8('RIFF....'),
+        });
+        expect(() => readDawProjectZip(zip)).toThrow(/unsafe archive path/i);
+    });
+
     it('extracts audio/ prefixed files', () => {
         const audioData = utf8('RIFF....');
         const zip = makeZip({
