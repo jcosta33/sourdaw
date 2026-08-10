@@ -1,0 +1,139 @@
+src/modules/AiRuntime/useCases/agentReference/bridgeBackingVocalPlatePlan.ts
+  s_a40848e8f8cca9::t_e56b9e3e8371dd 1-159
+src/modules/AiRuntime/useCases/__tests__/backingVocalPlateWorkflow.spec.ts
+  s_a40848e8f8cca9::t_e56b9e3e8371dd 1-640,648-820,822-940,942-951,953-1003
+  s_a40848e8f8cca9::t_f51dc3e0893afa 821
+  s_a40848e8f8cca9::t_391f95505909c1 641-647,941,952
+src/modules/AudioRendering/useCases/__tests__/renderAgentProjectSections.spec.ts
+  s_a40848e8f8cca9::t_e56b9e3e8371dd 1-183
+src/modules/AiRuntime/useCases/agentReference/getBackingVocalPlatePromptScope.ts
+  s_a40848e8f8cca9::t_e56b9e3e8371dd 1-54,58-251
+  s_a40848e8f8cca9::t_391f95505909c1 55-57
+  s_a40848e8f8cca9::t_a76dec8405bb79 252
+src/modules/Command/useCases/__tests__/executableCommandRegistry.spec.ts
+  s_a40848e8f8cca9::t_a0cb43474ea244 835,938-979
+  s_a40848e8f8cca9::t_640136ad9f7109 4,2039-2050,2203
+src/modules/AudioRendering/handlers/__tests__/handleRenderProjectSections.spec.ts
+  s_a40848e8f8cca9::t_e56b9e3e8371dd 1-128
+src/modules/AudioRendering/useCases/renderAgentProjectSections.ts
+  s_a40848e8f8cca9::t_e56b9e3e8371dd 1-113
+src/modules/AiRuntime/models/ExecutableRuntimeAction.ts
+  s_a40848e8f8cca9::t_e56b9e3e8371dd 9-10
+  s_a40848e8f8cca9::t_391f95505909c1 12-13
+src/modules/Command/useCases/executableAppActionRegistry.ts
+  s_a40848e8f8cca9::t_e56b9e3e8371dd 5,1725,1876-1926
+src/modules/AiRuntime/useCases/agentReference/bridgeGroundedLlmToolCalls.ts
+  s_a40848e8f8cca9::t_e56b9e3e8371dd 19-20,66,3886-3896
+src/modules/Automation/handlers/automation/handleRemoveSendAutomationRanges.ts
+  s_a40848e8f8cca9::t_e56b9e3e8371dd 1-120
+src/modules/AiRuntime/useCases/describePendingActionConfirmation.ts
+  s_a40848e8f8cca9::t_e56b9e3e8371dd 1,9,52-89,169-171,179,199-207,211-220,239-279
+src/modules/Automation/handlers/automation/handleAutomateSendRanges.ts
+  s_a40848e8f8cca9::t_e56b9e3e8371dd 1-115
+src/modules/AiRuntime/useCases/parsePromptToActions.ts
+  s_a40848e8f8cca9::t_e56b9e3e8371dd 20,123,129-130,146
+src/app/__tests__/bootstrap.spec.ts
+  s_a40848e8f8cca9::t_edb9393f5569cb 150-153,384
+src/app/bootstrap.ts
+  s_a40848e8f8cca9::t_3ff14fa41a08cd 50,393
+src/modules/AiRuntime/models/BackingVocalPlateCapability.ts
+  s_2f6f8b13dadcda::t_fd62ae95028aa5 1-37
+src/modules/AiRuntime/models/RuntimeAction.ts
+  s_a40848e8f8cca9::t_ca6e78f54aeb46 73,75,281,283,332,334
+src/modules/AiRuntime/models/__tests__/RuntimeAction.spec.ts
+  s_a40848e8f8cca9::t_7e3b33289d82b6 21,24-26
+src/modules/AiRuntime/transformers/llmActionBridge.ts
+  s_a40848e8f8cca9::t_0468aadc73c7e2 6,3054,3063,3071
+src/modules/AiRuntime/useCases/__tests__/bassCompressorParameterPromptWorkflow.spec.ts
+  s_a40848e8f8cca9::t_14ab2a64466136 675,687-688
+src/modules/AiRuntime/useCases/agentReference/BatchLocalActionIdentity.ts
+  s_4d51cd1f08db44::t_f11fdd0dd83ffd 1-11
+src/modules/AiRuntime/useCases/agentReference/__tests__/bridgeBackingVocalPlatePlan.spec.ts
+  s_a40848e8f8cca9::t_f48de946fea257 1-56
+src/modules/AiRuntime/useCases/agentReference/__tests__/materializeBatchLocalActionIdentities.spec.ts
+  s_a40848e8f8cca9::t_4485706d470eb4 6,27-43,61-72
+src/modules/AiRuntime/useCases/agentReference/materializeBatchLocalActionIdentities.ts
+  s_a40848e8f8cca9::t_8bb318b08905bf 4,10,16,18,20-25,29-32,36-41,45-46,48-61,64-67,70,72-73,77-85
+src/modules/AiRuntime/useCases/getPlannedActionAffectedIds.ts
+  s_a40848e8f8cca9::t_ec9588a5e0f314 48-65
+src/modules/AiRuntime/useCases/materializeActionStateGuards.ts
+  s_a40848e8f8cca9::t_8478aa146ef15f 7,12-35,141-153,170-185,198-201,204-232,327-416
+src/modules/AiRuntime/useCases/validateActionPayload.ts
+  s_a40848e8f8cca9::t_b6cd9ee327dc69 325-333,343-347
+src/modules/Arrangement/handlers/device/__tests__/handleSetDeviceParameter.spec.ts
+  s_a40848e8f8cca9::t_96d6d2629be2b9 8,10,28-35,47,222-260
+src/modules/Arrangement/handlers/device/handleSetDeviceParameter.ts
+  s_a40848e8f8cca9::t_5834776da25d35 1,4,105-117,119-145,166-176,180-184,188,190-195,202
+src/modules/AudioRendering/handlers/handleRemoveRenderedProjectSections.ts
+  s_a40848e8f8cca9::t_f949b405a68788 1-47
+src/modules/AudioRendering/handlers/handleRenderProjectSections.ts
+  s_a40848e8f8cca9::t_69184720266618 1-83
+src/modules/AudioRendering/models/AgentSectionRenderArtifact.ts
+  s_a40848e8f8cca9::t_e40490fce6773d 1-18
+src/modules/AudioRendering/stores/agentSectionRenderArtifactStore.ts
+  s_a40848e8f8cca9::t_f7c6a16b949eb3 1-11
+src/modules/AudioRendering/useCases/clearAgentSectionRenderArtifacts.ts
+  s_a40848e8f8cca9::t_70131750569f4f 1-5
+src/modules/AudioRendering/useCases/getAgentSectionRenderArtifacts.ts
+  s_a40848e8f8cca9::t_2059717ee7355e 1-5
+src/modules/AudioRendering/useCases/getAudioRenderingHandlers.ts
+  s_a40848e8f8cca9::t_034a653a385a25 1-19
+src/modules/AudioRendering/useCases/index.ts
+  s_a40848e8f8cca9::t_5030239b40a188 6-8
+src/modules/AudioRendering/useCases/removeAgentProjectSectionArtifacts.ts
+  s_a40848e8f8cca9::t_0bd632bb89c172 1-14
+src/modules/Automation/services/__tests__/buildSendAutomationRangesLane.spec.ts
+  s_bc88af7d3b054c::t_b2940d8a2bf74f 1-78
+src/modules/Automation/services/buildSendAutomationRangesLane.ts
+  s_a40848e8f8cca9::t_037e979d04e608 1-41
+src/modules/Automation/useCases/automation/applySendAutomationRanges.ts
+  s_a40848e8f8cca9::t_d9ccfc56de2145 1-31
+src/modules/Automation/useCases/getAutomationHandlers.ts
+  s_a40848e8f8cca9::t_4faaf502f150c3 6,13,28,31,56,59
+src/modules/Command/useCases/__tests__/executableAppActionRegistry.spec.ts
+  s_a40848e8f8cca9::t_40a54529ad82aa 30
+src/modules/Command/useCases/getAppActionExecutionPolicy.ts
+  s_a40848e8f8cca9::t_75adb36b845290 63-70
+src/utils/handlerContract.ts
+  s_a40848e8f8cca9::t_286fb8c17e57e4 309-326,764-821
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "9d2253870c833de18b8891ad82cc7ba75b3a2e2b",
+  "prompts": {},
+  "sessions": {
+    "s_2f6f8b13dadcda": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fec6e-6e4a-7361-aa75-f06592d94628",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_4d51cd1f08db44": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fec78-8bb7-7411-8158-a0b08e662a10",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_bc88af7d3b054c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f9b4a-11a2-7f61-8dfb-76eed0eb2a9c",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
