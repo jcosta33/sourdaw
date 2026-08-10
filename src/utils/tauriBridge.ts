@@ -35,6 +35,7 @@ type InvokeWithBinaryBodyInput = {
     command: string;
     bytes: Uint8Array;
     headers: Record<string, string>;
+    maxBytes?: number;
 };
 
 type InvokeWithBinaryBodyOutput = Promise<void>;
@@ -62,7 +63,9 @@ export async function invokeWithBinaryBody({
     command,
     bytes,
     headers,
+    maxBytes,
 }: InvokeWithBinaryBodyInput): InvokeWithBinaryBodyOutput {
+    ensureBinaryPayloadSize({ command, size: bytes.byteLength, maxBytes });
     const body = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;
     await invoke(command, body, { headers });
 }
@@ -70,6 +73,7 @@ export async function invokeWithBinaryBody({
 type InvokeForBinaryResponseInput = {
     command: string;
     args?: Record<string, unknown>;
+    maxBytes?: number;
 };
 
 type InvokeForBinaryResponseOutput = Promise<Uint8Array>;
@@ -88,19 +92,23 @@ type InvokeForBinaryResponseOutput = Promise<Uint8Array>;
 export async function invokeForBinaryResponse({
     command,
     args,
+    maxBytes,
 }: InvokeForBinaryResponseInput): InvokeForBinaryResponseOutput {
     const payload: unknown = await invoke(command, args);
 
     if (payload instanceof ArrayBuffer) {
+        ensureBinaryPayloadSize({ command, size: payload.byteLength, maxBytes });
         return new Uint8Array(payload);
     }
 
     if (ArrayBuffer.isView(payload)) {
+        ensureBinaryPayloadSize({ command, size: payload.byteLength, maxBytes });
         return new Uint8Array(payload.buffer, payload.byteOffset, payload.byteLength);
     }
 
     if (Array.isArray(payload)) {
         const rawBytes: readonly unknown[] = payload;
+        ensureBinaryPayloadSize({ command, size: rawBytes.length, maxBytes });
         const bytes = new Uint8Array(rawBytes.length);
         let index = 0;
         for (const rawByte of rawBytes) {
@@ -116,6 +124,18 @@ export async function invokeForBinaryResponse({
     throw new TypeError(`${command} returned an unsupported payload`);
 }
 
+type EnsureBinaryPayloadSizeInput = {
+    command: string;
+    size: number;
+    maxBytes?: number;
+};
+
+function ensureBinaryPayloadSize({ command, size, maxBytes }: EnsureBinaryPayloadSizeInput): void {
+    if (maxBytes !== undefined && size > maxBytes) {
+        throw new RangeError(`${command} payload exceeds ${String(maxBytes)}-byte IPC limit`);
+    }
+}
+
 /**
  * Header carrying the destination path for `write_file_bytes`.
  *
@@ -124,6 +144,8 @@ export async function invokeForBinaryResponse({
  * and travels as a header instead, percent-encoded.
  */
 const FILE_PATH_HEADER = 'x-sourdaw-path';
+const MAX_FILE_IPC_BYTES = 1024 * 1024 * 1024;
+const MAX_FILE_PATH_BYTES = 4096;
 
 type WriteFileBytesInput = {
     bytes: Uint8Array;
@@ -134,10 +156,12 @@ type WriteFileBytesOutput = Promise<void>;
 
 /** Write raw bytes to a native file over Tauri's binary IPC path. */
 export async function writeFileBytes({ bytes, path }: WriteFileBytesInput): WriteFileBytesOutput {
+    ensureNativeFilePath(path);
     await invokeWithBinaryBody({
         command: 'write_file_bytes',
         bytes,
         headers: { [FILE_PATH_HEADER]: encodeURIComponent(path) },
+        maxBytes: MAX_FILE_IPC_BYTES,
     });
 }
 
@@ -149,7 +173,18 @@ type ReadFileBytesOutput = Promise<Uint8Array>;
 
 /** Read a native file's bytes over Tauri's binary IPC path. */
 export async function readFileBytes({ path }: ReadFileBytesInput): ReadFileBytesOutput {
-    return invokeForBinaryResponse({ command: 'read_file_bytes', args: { path } });
+    ensureNativeFilePath(path);
+    return invokeForBinaryResponse({
+        command: 'read_file_bytes',
+        args: { path },
+        maxBytes: MAX_FILE_IPC_BYTES,
+    });
+}
+
+function ensureNativeFilePath(path: string): void {
+    if (new TextEncoder().encode(path).byteLength > MAX_FILE_PATH_BYTES) {
+        throw new RangeError(`Native file path exceeds ${String(MAX_FILE_PATH_BYTES)}-byte IPC limit`);
+    }
 }
 
 /**

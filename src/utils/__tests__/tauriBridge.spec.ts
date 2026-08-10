@@ -144,6 +144,23 @@ describe('binary file IPC (OE-5 / WB-5 / M-109)', () => {
             const [, message] = invokeMock.mock.calls[0] as [string, ArrayBuffer];
             expect(new Uint8Array(message)).toEqual(new Uint8Array([1, 2, 3]));
         });
+
+        it('should reject an oversized binary request before invoking native code', async () => {
+            const bytes = new Uint8Array();
+            Object.defineProperty(bytes, 'byteLength', { value: 1_073_741_825 });
+
+            await expect(writeFileBytes({ path: '/exports/mix.wav', bytes })).rejects.toThrow(
+                'write_file_bytes payload exceeds 1073741824-byte IPC limit'
+            );
+            expect(invokeMock).not.toHaveBeenCalled();
+        });
+
+        it('should reject an oversized path before placing it in an IPC header', async () => {
+            await expect(writeFileBytes({ path: `/${'x'.repeat(4096)}`, bytes: new Uint8Array() })).rejects.toThrow(
+                'Native file path exceeds 4096-byte IPC limit'
+            );
+            expect(invokeMock).not.toHaveBeenCalled();
+        });
     });
 
     describe('readFileBytes', () => {
@@ -186,6 +203,16 @@ describe('binary file IPC (OE-5 / WB-5 / M-109)', () => {
 
             await expect(readFileBytes({ path: '/samples/kick.wav' })).rejects.toThrow(
                 'read_file_bytes returned an unsupported payload'
+            );
+        });
+
+        it('should reject an oversized binary response before allocating a typed view', async () => {
+            const response = new ArrayBuffer(0);
+            Object.defineProperty(response, 'byteLength', { value: 1_073_741_825 });
+            invokeMock.mockResolvedValue(response);
+
+            await expect(readFileBytes({ path: '/samples/kick.wav' })).rejects.toThrow(
+                'read_file_bytes payload exceeds 1073741824-byte IPC limit'
             );
         });
     });

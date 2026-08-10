@@ -1,28 +1,30 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
-import { isTauri, tauriInvoke } from '#/utils/tauriBridge';
+import { isTauri, tauriInvoke, tauriListen } from '#/utils/tauriBridge';
 
 import { initNativeEngine } from '../initNativeEngine';
 import { nativeEngineState } from '../lifecycleState';
 import { stopNativeEngine } from '../stopNativeEngine';
 
-const { mockLogger } = vi.hoisted(() => ({
+const { mockLogger, mockLlmStatusSet } = vi.hoisted(() => ({
     mockLogger: {
         info: vi.fn(),
         warn: vi.fn(),
         error: vi.fn(),
         debug: vi.fn(),
     },
+    mockLlmStatusSet: vi.fn(),
 }));
 vi.mock('#/infra/logger/appLogger', () => ({ logger: mockLogger }));
 
 vi.mock('#/utils/tauriBridge', () => ({
     isTauri: vi.fn(() => false),
     tauriInvoke: vi.fn(),
+    tauriListen: vi.fn(),
 }));
 
 vi.mock('../../../stores/llmStatusStore', () => ({
-    llmStatusStore: { set: vi.fn(), value: {} },
+    llmStatusStore: { set: mockLlmStatusSet, value: {} },
 }));
 
 function ignoreResolution(): void {}
@@ -50,6 +52,7 @@ describe('nativeEngine lifecycle injectables', () => {
         globalThis.fetch = vi.fn().mockResolvedValue({ ok: true });
         vi.clearAllMocks();
         vi.mocked(isTauri).mockReturnValue(false);
+        vi.mocked(tauriListen).mockResolvedValue(vi.fn());
         nativeEngineState.ready = false;
     });
 
@@ -146,6 +149,37 @@ describe('nativeEngine lifecycle injectables', () => {
         await expect(initNativeEngine()).rejects.toThrow('could not commit a loaded model');
 
         expect(nativeEngineState.ready).toBe(false);
+    });
+
+    it('drops invalid or oversized native progress events before updating status', async () => {
+        vi.mocked(isTauri).mockReturnValue(true);
+        let progressHandler: (event: unknown) => void = ignoreResolution;
+        vi.mocked(tauriListen).mockImplementation((_event, handler) => {
+            progressHandler = handler;
+            return Promise.resolve(vi.fn());
+        });
+        vi.mocked(tauriInvoke).mockImplementation((command) => {
+            if (command === 'finalize_native_llm_initialization') {
+                return Promise.resolve({ loaded: true, modelId: 'qwen3-8b' });
+            }
+            return Promise.resolve(undefined);
+        });
+
+        await initNativeEngine();
+        mockLlmStatusSet.mockClear();
+        progressHandler({ payload: { progress: Number.NaN, text: 'loading' } });
+        progressHandler({ payload: { progress: -0.1, text: 'loading' } });
+        progressHandler({ payload: { progress: 1.1, text: 'loading' } });
+        progressHandler({ payload: { progress: 0.5, text: 'x'.repeat(513) } });
+
+        expect(mockLlmStatusSet).not.toHaveBeenCalled();
+
+        progressHandler({ payload: { progress: 0.5, text: 'Loading model' } });
+        expect(mockLlmStatusSet).toHaveBeenCalledWith({
+            state: 'loading',
+            progress: 0.5,
+            text: 'Loading model',
+        });
     });
 
     it('cleans up owned native state when cancellation wins during finalization', async () => {

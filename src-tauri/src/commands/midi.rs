@@ -18,6 +18,25 @@ pub struct MidiMessagePayload {
     pub data: Vec<u8>,
 }
 
+const MIN_MIDI_MESSAGE_BYTES: usize = 2;
+const MAX_MIDI_MESSAGE_BYTES: usize = 3;
+
+fn build_midi_message_payload(
+    port: &str,
+    timestamp: u64,
+    message: &[u8],
+) -> Option<MidiMessagePayload> {
+    if !(MIN_MIDI_MESSAGE_BYTES..=MAX_MIDI_MESSAGE_BYTES).contains(&message.len()) {
+        return None;
+    }
+
+    Some(MidiMessagePayload {
+        port: port.to_owned(),
+        timestamp,
+        data: message.to_vec(),
+    })
+}
+
 /// Managed state: holds the active MIDI input connection.
 pub struct MidiState {
     connection: Mutex<Option<MidiInputConnection<()>>>,
@@ -91,10 +110,10 @@ pub fn open_midi_input(
             port,
             "sourdaw-midi-listener",
             move |timestamp, message, _| {
-                let payload = MidiMessagePayload {
-                    port: name_for_callback.clone(),
-                    timestamp,
-                    data: message.to_vec(),
+                let Some(payload) =
+                    build_midi_message_payload(&name_for_callback, timestamp, message)
+                else {
+                    return;
                 };
                 let _ = app_handle.emit("midi-message", payload);
             },
@@ -122,4 +141,23 @@ pub fn close_midi_input(midi_state: tauri::State<'_, MidiState>) -> Result<(), S
         conn.close();
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn midi_event_source_boundary_admits_only_standard_messages() {
+        let note_on = build_midi_message_payload("Controller", 42, &[0x90, 0, 255]).unwrap();
+        assert_eq!(note_on.port, "Controller");
+        assert_eq!(note_on.timestamp, 42);
+        assert_eq!(note_on.data, vec![0x90, 0, 255]);
+
+        let note_off = build_midi_message_payload("Controller", 43, &[0x80, 60]).unwrap();
+        assert_eq!(note_off.data, vec![0x80, 60]);
+
+        assert!(build_midi_message_payload("Controller", 44, &[0xf0, 1, 2, 0xf7]).is_none());
+        assert!(build_midi_message_payload("Controller", 45, &[0x90]).is_none());
+    }
 }

@@ -24,4 +24,20 @@ describe('onDictationResult (voiceTauriAdapter)', () => {
         expect(callback).toHaveBeenCalledWith({ text: 'hello world', duration_ms: 1500 });
         expect(unlisten).toBe(mockUnlisten);
     });
+
+    it('drops malformed and oversized dictation payloads before they reach the callback', async () => {
+        vi.mocked(tauriListen).mockImplementation((_event, handler) => {
+            handler({ payload: { text: 'x'.repeat(32_769), duration_ms: 1500 } });
+            handler({ payload: { text: 'hello', duration_ms: -1 } });
+            handler({ payload: { text: 'hello', duration_ms: Number.NaN } });
+            handler({ payload: { text: 123, duration_ms: 1500 } });
+            handler({ payload: { text: 'hello', duration_ms: 3_600_001 } });
+            return Promise.resolve(vi.fn());
+        });
+
+        const callback = vi.fn();
+        await onDictationResult(callback);
+
+        expect(callback).not.toHaveBeenCalled();
+    });
 });
