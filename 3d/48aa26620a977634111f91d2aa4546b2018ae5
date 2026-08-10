@@ -1,0 +1,90 @@
+src/modules/Command/useCases/__tests__/executableCommandRegistry.spec.ts
+  s_a40848e8f8cca9::t_8b3eaee2e22bdd 778,782,1844-1847
+src/modules/Arrangement/useCases/device/addDevice.ts
+  s_a40848e8f8cca9::t_7bc86254aefbc3 116,118-119
+  s_a40848e8f8cca9::t_e031e98e1fa94d 89-92
+  s_a40848e8f8cca9::t_9d8c947cbc70b8 117,121
+  s_a40848e8f8cca9::t_e17d1a531d3928 120
+  s_a40848e8f8cca9::t_60e3c36f0ee886 27-33,50-53,88
+src/modules/AiRuntime/models/ProjectContext.ts
+  s_a40848e8f8cca9::t_9184903006d2de 96
+  s_a40848e8f8cca9::t_bdc29b43dc0cb2 138
+src/utils/handlerContract.ts
+  s_a40848e8f8cca9::t_6eeb9289dc2a94 633-642,644-647,651-656
+src/modules/AiRuntime/useCases/getProjectContext.ts
+  s_a40848e8f8cca9::t_6eeb9289dc2a94 155,212
+src/modules/AiRuntime/useCases/getPlannedActionAffectedIds.ts
+  s_a40848e8f8cca9::t_6eeb9289dc2a94 25-27
+src/modules/AiRuntime/useCases/agentReference/bridgeGroundedLlmToolCalls.ts
+  s_a40848e8f8cca9::t_bdc29b43dc0cb2 987-1032,1475-1485,3369-3370,3373-3375,3377-3385
+src/modules/AiRuntime/models/RuntimeAction.ts
+  s_a40848e8f8cca9::t_6eeb9289dc2a94 265
+src/modules/AiRuntime/useCases/__tests__/bassCompressorPromptWorkflow.spec.ts
+  s_a40848e8f8cca9::t_c1e716107bb597 105,503-507
+  s_a40848e8f8cca9::t_1262333e1c8911 445-490,493-499
+  s_a40848e8f8cca9::t_a8ea88b8da019a 491-492,512-513,544,547
+  s_a40848e8f8cca9::t_03e4cda66eae3a 364,419,441
+  s_a40848e8f8cca9::t_1159f177b1f673 266,276,387
+  s_a40848e8f8cca9::t_0d5fac531bb15e 33-45,209-217,220-221,247-248,265,275,303-314,331,348-349,354-355,373,383
+  s_a40848e8f8cca9::t_42158937fa7ce7 244-246,257,290-302,315-330,332-336,343-347,350-353,356-363,365-372,374-382,384-386,388-418,420-440,442-444,500-502,508-511,514-517,519-543,545-546
+  s_a40848e8f8cca9::t_61417d8ffedaab 1-8,10-11,13-20,22-28,30-32,46-57,70-71,73-75,77-104,106-139,148-149,165-167,169,195-208,218-219,222-238,240,242-243,249-256,258-264,267-274,277-279,518,548-549
+  s_a40848e8f8cca9::t_351f4db058be84 152-153,281,337-339,341
+  s_a40848e8f8cca9::t_d38645207ee432 282-289,340,342
+  s_a40848e8f8cca9::t_2d3dff00f0513b 9,12,21,29,58-69,72,76,140-147,150-151,154-164,168,170-194,239,241
+  s_a40848e8f8cca9::t_4fdb1db50b2cba 280
+src/modules/Arrangement/handlers/device/handleAddDevice.ts
+  s_a40848e8f8cca9::t_e17d1a531d3928 20-21,23-31,34-43,54,56
+  s_a40848e8f8cca9::t_7bc86254aefbc3 46,53
+  s_a40848e8f8cca9::t_8be89468831eee 47-52,55
+  s_a40848e8f8cca9::t_60e3c36f0ee886 4,32-33,44,60-77,80
+  s_a40848e8f8cca9::t_351f4db058be84 22
+src/modules/Command/useCases/executableAppActionRegistry.ts
+  s_a40848e8f8cca9::t_6eeb9289dc2a94 34,1597,1599-1602,1608
+src/modules/AiRuntime/useCases/agentReference/resolveAgentReference.ts
+  s_a40848e8f8cca9::t_bdc29b43dc0cb2 246-248,262-264
+src/modules/Arrangement/handlers/device/handleRemoveDevice.ts
+  s_a40848e8f8cca9::t_60e3c36f0ee886 8-23,61-63
+src/modules/Arrangement/handlers/device/handleRestoreDevice.ts
+  s_a40848e8f8cca9::t_60e3c36f0ee886 4,8-18
+src/modules/AiRuntime/useCases/validateActionPayload.ts
+  s_a40848e8f8cca9::t_60e3c36f0ee886 210,212-213
+src/modules/AiRuntime/useCases/describePlannedAction.ts
+  s_a40848e8f8cca9::t_1159f177b1f673 93-105
+src/modules/Arrangement/handlers/device/__tests__/handleRemoveDevice.spec.ts
+  s_a40848e8f8cca9::t_8b3eaee2e22bdd 76-81
+src/modules/AiRuntime/models/Tools/ClipAndDevice.ts
+  s_a40848e8f8cca9::t_6eeb9289dc2a94 165-168
+src/modules/AiRuntime/transformers/llmActionBridge.ts
+  s_a40848e8f8cca9::t_60e3c36f0ee886 1785-1787,1792-1799,1803,1806-1813
+  s_a40848e8f8cca9::t_9eb710e8854e76 2974
+  s_a40848e8f8cca9::t_f365284a82c443 1788-1791
+src/modules/AiRuntime/useCases/describePendingActionConfirmation.ts
+  s_a40848e8f8cca9::t_f365284a82c443 79-81,87-91
+  s_a40848e8f8cca9::t_1159f177b1f673 36,39-42
+  s_a40848e8f8cca9::t_e279a9dd288e42 78
+  s_a40848e8f8cca9::t_e17d1a531d3928 82-86
+src/modules/Command/useCases/executeAppActionBatch.ts
+  s_a40848e8f8cca9::t_683fd0e042cb01 169
+src/modules/AiRuntime/useCases/materializeActionStateGuards.ts
+  s_a40848e8f8cca9::t_e17d1a531d3928 60,87,91-92
+  s_a40848e8f8cca9::t_d171f424cdb239 71-78
+  s_a40848e8f8cca9::t_1159f177b1f673 15,61-67,84-86,88
+  s_a40848e8f8cca9::t_fd301bbb5a908e 16-18,56-57,68-70,79-81,93
+  s_a40848e8f8cca9::t_6eeb9289dc2a94 55,58-59,82-83,89-90,94
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "3d48aa26620a977634111f91d2aa4546b2018ae5",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
