@@ -4297,6 +4297,45 @@ describe('bridgeGroundedLlmToolCalls', () => {
         expect(reversed.rejections[0]?.reason).toContain('targetTrackId');
     });
 
+    it('rejects provider device selection outside the exact MF-06 capability', () => {
+        const kick = createTrack({ id: 'track-kick', name: 'Kick' });
+        const bass = createTrack({
+            id: 'track-bass',
+            name: 'Bass',
+            devices: [
+                {
+                    id: 'device-sidechain-a',
+                    type: 'builtin-sidechain-compressor',
+                    bypassed: false,
+                    parameters: [],
+                },
+                {
+                    id: 'device-sidechain-b',
+                    type: 'builtin-sidechain-compressor',
+                    bypassed: false,
+                    parameters: [],
+                },
+            ],
+        });
+        const result = bridge(
+            [
+                {
+                    name: 'addSidechainRoute',
+                    arguments: {
+                        sourceTrackId: kick.id,
+                        targetTrackId: bass.id,
+                        targetDeviceId: 'device-sidechain-a',
+                    },
+                },
+            ],
+            'add sidechain from Kick to Bass',
+            { ...projectContext, tracks: [kick, bass, master], sidechainRoutes: [] }
+        );
+
+        expect(result.actions).toEqual([]);
+        expect(result.rejections[0]?.reason).toContain('MF-06 capability');
+    });
+
     it('grounds gain and pan lane creation only when the requested parameter is explicit', () => {
         const contextWithoutAutomation = { ...projectContext, automationLanes: [] };
         const gain = bridge(

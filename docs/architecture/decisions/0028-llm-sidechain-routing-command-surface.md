@@ -1,6 +1,8 @@
 # ADR 0028: LLM sidechain routing command surface
 
-**Status:** Superseded by ADR 0032
+**Status:** Accepted
+
+**Narrow exception:** ADR 0032 supersedes only this decision's endpoint-only and exactly-one-supported-device clauses for the revision-bound, capability-scoped MF-06 workflow. Every other constraint below remains accepted.
 
 ## Context
 

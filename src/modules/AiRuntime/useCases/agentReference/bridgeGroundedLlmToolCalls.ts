@@ -3858,6 +3858,11 @@ export function bridgeGroundedLlmToolCalls({
         });
     }
     let effectiveCalls = calls;
+    let sidechainRouteDeviceAdmissions: ReadonlyArray<{
+        sourceTrackId: string;
+        targetDeviceId: string;
+        targetTrackId: string;
+    }> = [];
     const drumRoutingScope = getDrumRoutingPromptScope(prompt, context);
     if (drumRoutingScope.status === 'invalid') {
         return { actions: [], rejections: [rejection(0, '<batch>', drumRoutingScope.reason)] };
@@ -3898,6 +3903,7 @@ export function bridgeGroundedLlmToolCalls({
         return { actions: [], rejections: [rejection(0, '<batch>', sidechainRoutingScope.reason)] };
     }
     if (sidechainRoutingScope.status === 'request') {
+        sidechainRouteDeviceAdmissions = sidechainRoutingScope.routes;
         const providerRoutes = calls.filter((call) => call.name === 'addSidechainRoute');
         const providerRouteKeys = providerRoutes.flatMap((call) => {
             const { sourceTrackId, targetTrackId, targetDeviceId } = call.arguments;
@@ -4153,6 +4159,7 @@ export function bridgeGroundedLlmToolCalls({
         markerSignatures,
         projectPunchRegion: createPunchRegionPatch,
         sectionSignatures,
+        sidechainRouteDeviceAdmissions,
     });
     if (mutedEmptyDeletionScope) {
         const targetIds = new Set(mutedEmptyDeletionScope.targetIds);

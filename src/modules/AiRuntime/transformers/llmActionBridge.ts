@@ -47,6 +47,13 @@ type BridgeLlmToolCallsInput = {
     markerSignatures?: readonly MarkerPlanningSignature[];
     projectPunchRegion: ProjectPunchRegion;
     sectionSignatures?: readonly SectionPlanningSignature[];
+    sidechainRouteDeviceAdmissions?: readonly SidechainRouteDeviceAdmission[];
+};
+
+type SidechainRouteDeviceAdmission = {
+    sourceTrackId: string;
+    targetDeviceId: string;
+    targetTrackId: string;
 };
 
 type PunchRegion = Pick<ProjectContext, 'punchInBeat' | 'punchOutBeat'>;
@@ -349,6 +356,7 @@ function bridgeToolCall({
     markerSignatures,
     projectPunchRegion,
     sectionSignatures,
+    sidechainRouteDeviceAdmissions,
 }: {
     call: ToolCallResult;
     context: ProjectContext;
@@ -356,6 +364,7 @@ function bridgeToolCall({
     markerSignatures: readonly MarkerPlanningSignature[];
     projectPunchRegion: ProjectPunchRegion;
     sectionSignatures: readonly SectionPlanningSignature[];
+    sidechainRouteDeviceAdmissions: readonly SidechainRouteDeviceAdmission[];
 }): RuntimeAction | LlmActionRejection {
     const args = call.arguments;
 
@@ -2029,6 +2038,17 @@ function bridgeToolCall({
         ) {
             return rejection(index, call.name, 'Expected two distinct routable source and target tracks');
         }
+        if (
+            args.targetDeviceId !== undefined &&
+            !sidechainRouteDeviceAdmissions.some(
+                (admission) =>
+                    admission.sourceTrackId === source.id &&
+                    admission.targetTrackId === target.id &&
+                    admission.targetDeviceId === args.targetDeviceId
+            )
+        ) {
+            return rejection(index, call.name, 'targetDeviceId requires an exact application-owned MF-06 capability');
+        }
         const supportedDevices = findSupportedSidechainDevices(target);
         let targetDevice = supportedDevices.find((device) => device.id === args.targetDeviceId);
         if (args.targetDeviceId === undefined && supportedDevices.length === 1) {
@@ -2621,6 +2641,7 @@ export function bridgeLlmToolCalls({
     markerSignatures = [],
     projectPunchRegion,
     sectionSignatures = [],
+    sidechainRouteDeviceAdmissions = [],
 }: BridgeLlmToolCallsInput): LlmActionBridgeResult {
     if (calls.length > MAX_LLM_ACTIONS_PER_BATCH) {
         return {
@@ -2737,6 +2758,7 @@ export function bridgeLlmToolCalls({
             markerSignatures,
             projectPunchRegion,
             sectionSignatures,
+            sidechainRouteDeviceAdmissions,
         });
         if ('type' in result) {
             const actionClipTargetIds = getClipTargetIds(result);
