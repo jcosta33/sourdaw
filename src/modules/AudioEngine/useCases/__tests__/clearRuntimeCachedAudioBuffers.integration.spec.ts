@@ -68,4 +68,19 @@ describe('clearRuntimeCachedAudioBuffers', () => {
         expect(audioBufferCache.has('shared-buffer')).toBe(true);
         expect(audioBufferCache.has('old-project-only')).toBe(false);
     });
+
+    it('lets a pending durable write finish after the runtime entry is cleared', async () => {
+        const { audioBufferCache } = await import('../../stores/audioBufferCache');
+        const { clearRuntimeCachedAudioBuffers } = await import('../clearRuntimeCachedAudioBuffers');
+        const id = 'freeze-project-100-pending';
+        audioBufferCache.set(id, makeAudioBuffer(0.1), { freezeProjectId: 100 });
+        expect(controls.committed.has(id)).toBe(false);
+
+        clearRuntimeCachedAudioBuffers();
+        expect(audioBufferCache.has(id)).toBe(false);
+        await flushIndexedDbTasks();
+
+        expect(controls.committed.has(id)).toBe(true);
+        expect(controls.committedMeta.get(id)?.freezeProjectId).toBe(100);
+    });
 });
