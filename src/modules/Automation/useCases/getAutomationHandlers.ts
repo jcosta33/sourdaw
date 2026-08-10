@@ -2,10 +2,12 @@ import { type ActionHandler, type AppAction } from '#/utils/handlerContract';
 
 import { handleAddAutomationLane } from '../handlers/automation/handleAddAutomationLane';
 import { handleAddAutomationPoint } from '../handlers/automation/handleAddAutomationPoint';
+import { handleAutomateSendRange } from '../handlers/automation/handleAutomateSendRange';
 import { handleInvertAutomation } from '../handlers/automation/handleInvertAutomation';
 import { handleQuantizeAutomation } from '../handlers/automation/handleQuantizeAutomation';
 import { handleRemoveAutomationLane } from '../handlers/automation/handleRemoveAutomationLane';
 import { handleRemoveAutomationPoint } from '../handlers/automation/handleRemoveAutomationPoint';
+import { handleRemoveSendAutomationRange } from '../handlers/automation/handleRemoveSendAutomationRange';
 import { handleRestoreAutomationLanePoints } from '../handlers/automation/handleRestoreAutomationLanePoints';
 import { handleReverseAutomation } from '../handlers/automation/handleReverseAutomation';
 import { handleScaleAutomation } from '../handlers/automation/handleScaleAutomation';
@@ -18,6 +20,8 @@ type AutomationAction =
     | Extract<AppAction, { type: 'removeAutomationLane' }>
     | Extract<AppAction, { type: 'setAutomationLaneEnabled' }>
     | Extract<AppAction, { type: 'addAutomationPoint' }>
+    | Extract<AppAction, { type: 'automateSendRange' }>
+    | Extract<AppAction, { type: 'removeSendAutomationRange' }>
     | Extract<AppAction, { type: 'removeAutomationPoint' }>
     | Extract<AppAction, { type: 'scaleAutomation' }>
     | Extract<AppAction, { type: 'stretchAutomation' }>
@@ -40,6 +44,8 @@ export function getAutomationHandlers(): AutomationHandlersMap {
         removeAutomationLane: handleRemoveAutomationLane,
         setAutomationLaneEnabled: handleSetAutomationLaneEnabled,
         addAutomationPoint: handleAddAutomationPoint,
+        automateSendRange: handleAutomateSendRange,
+        removeSendAutomationRange: handleRemoveSendAutomationRange,
         removeAutomationPoint: handleRemoveAutomationPoint,
         scaleAutomation: handleScaleAutomation,
         stretchAutomation: handleStretchAutomation,

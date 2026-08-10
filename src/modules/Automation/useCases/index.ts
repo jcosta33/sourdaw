@@ -1,5 +1,6 @@
 // Automation/useCases — public contract surface for cross-module automation access.
 export { addAutomationLane } from './automation/addAutomationLane';
+export { getSendAutomationBusId } from './automation/getSendAutomationBusId';
 export { addAutomationPoint } from './automation/addAutomationPoint';
 export { batchAddAutomationPoints } from './automation/batchAddAutomationPoints';
 export { createAutomationLane } from './automation/createAutomationLane';

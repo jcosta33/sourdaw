@@ -131,7 +131,58 @@ describe('TrackNode', () => {
         expect(panParam.linearRampToValueAtTime).toHaveBeenCalledWith(1, ctx.currentTime + 0.02);
     });
 
-    it('RT-5: cancelAutomationRamps holds fader gain and pan at their current value and drops pending ramps', () => {
+    it('RT-5: schedules an existing send gain at the requested compensated time', () => {
+        const sendGain = ctx.createGain();
+        sendGain.gain.value = 0.5;
+        vi.mocked(deps.getSendsForTrack).mockReturnValue([
+            {
+                sourceTrackId: 'track-1',
+                busId: 'bus-hall',
+                gainNode: sendGain as unknown as GainNode,
+                sourceNode: ctx.createGain(),
+                preFader: true,
+            },
+        ]);
+        const track = new TrackNode('track-1', deps);
+
+        track.scheduleSendAutomation('bus-hall', 0.35, ctx.currentTime + 0.05);
+
+        expect(sendGain.gain.cancelScheduledValues).toHaveBeenCalledWith(ctx.currentTime);
+        expect(sendGain.gain.setValueAtTime).toHaveBeenCalledWith(0.5, ctx.currentTime);
+        expect(sendGain.gain.linearRampToValueAtTime).toHaveBeenCalledWith(0.35, ctx.currentTime + 0.05);
+    });
+
+    it('RT-5: ignores a scheduled send write when that graph edge does not exist', () => {
+        const otherSendGain = ctx.createGain();
+        vi.mocked(deps.getSendsForTrack).mockReturnValue([
+            {
+                sourceTrackId: 'track-1',
+                busId: 'other-bus',
+                gainNode: otherSendGain as unknown as GainNode,
+                sourceNode: ctx.createGain(),
+                preFader: false,
+            },
+        ]);
+        const track = new TrackNode('track-1', deps);
+
+        track.scheduleSendAutomation('missing-bus', 0.35, ctx.currentTime + 0.05);
+
+        expect(otherSendGain.gain.cancelScheduledValues).not.toHaveBeenCalled();
+        expect(otherSendGain.gain.linearRampToValueAtTime).not.toHaveBeenCalled();
+    });
+
+    it('RT-5: cancelAutomationRamps holds fader, pan, and send params and drops pending ramps', () => {
+        const sendGain = ctx.createGain();
+        sendGain.gain.value = 0.35;
+        vi.mocked(deps.getSendsForTrack).mockReturnValue([
+            {
+                sourceTrackId: 'track-1',
+                busId: 'bus-hall',
+                gainNode: sendGain as unknown as GainNode,
+                sourceNode: ctx.createGain(),
+                preFader: false,
+            },
+        ]);
         const track = new TrackNode('track-1', deps);
         const faderGain = track.strip.faderNode.gain;
         const panParam = track.strip.panNode.pan;
@@ -144,6 +195,9 @@ describe('TrackNode', () => {
         expect(faderGain.setValueAtTime).toHaveBeenCalledWith(0.6, ctx.currentTime);
         expect(panParam.cancelScheduledValues).toHaveBeenCalledWith(ctx.currentTime);
         expect(panParam.setValueAtTime).toHaveBeenCalledWith(-0.4, ctx.currentTime);
+        expect(sendGain.gain.cancelScheduledValues).toHaveBeenCalledWith(ctx.currentTime);
+        expect(sendGain.gain.setValueAtTime).toHaveBeenCalledWith(0.35, ctx.currentTime);
+        expect(sendGain.gain.linearRampToValueAtTime).not.toHaveBeenCalled();
         // Held, not ramped — no fresh ramp is scheduled toward a post-stop time.
         expect(faderGain.linearRampToValueAtTime).not.toHaveBeenCalled();
         expect(panParam.linearRampToValueAtTime).not.toHaveBeenCalled();

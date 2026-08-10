@@ -5,11 +5,13 @@ import {
     quantiseDeviceParameterValue,
 } from '#/modules/Arrangement/useCases';
 import {
+    scheduleSendAutomation,
     scheduleTrackGain,
     scheduleTrackPan,
     updateDeviceParam,
     updateMidiFxParam,
 } from '#/modules/AudioEngine/useCases';
+import { getSendAutomationBusId } from '#/modules/Automation/useCases';
 import { applyFermenterRuntimeParam } from '#/modules/Fermenter/useCases';
 import {
     getDeviceAutomationParameterId,
@@ -24,6 +26,7 @@ type RestoreTargetTrack = {
     pan: number;
     devices: RestoreTargetDevice[];
     midiFx: { id: string; type: string; parameterValues: Record<string, number> }[];
+    sends?: Array<{ busId: string; level: number; preFader: boolean }>;
 };
 
 export type RestoreAutomationBaseValueInput = {
@@ -61,8 +64,8 @@ function deviceAcceptsAutomationParameter(
  * exactly as the drive path checks it, so a restore never writes to a device
  * another track owns.
  *
- * gain/pan land as a-rate ramps (`scheduleTrackGain`/`scheduleTrackPan`), so
- * those restores are smooth. Device and MIDI-FX parameters reach their DSP by
+ * gain/pan/send land as a-rate ramps, so those restores are smooth. Device and
+ * MIDI-FX parameters reach their DSP by
  * worklet message and step to the base in one tick — 'off' is a discrete state
  * change, not a glide, and the AutoMatch ramp is the touch-release path.
  */
@@ -77,6 +80,15 @@ export function restoreAutomationBaseValue({ lane, track, landTime }: RestoreAut
     if (lane.parameterId === 'pan') {
         // track.pan is already the canonical −50..50 the engine accepts.
         scheduleTrackPan(lane.trackId, track.pan, landTime);
+        return;
+    }
+
+    const sendBusId = getSendAutomationBusId(lane.parameterId);
+    if (sendBusId !== null) {
+        const send = track.sends?.find((candidate) => candidate.busId === sendBusId);
+        if (send) {
+            scheduleSendAutomation(lane.trackId, sendBusId, send.level, landTime);
+        }
         return;
     }
 

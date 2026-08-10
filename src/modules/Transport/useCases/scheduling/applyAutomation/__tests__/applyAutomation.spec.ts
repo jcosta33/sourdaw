@@ -4,6 +4,7 @@ import { deriveVcaMultiplier, resolveEligibleDeviceWriteTarget, trackStore } fro
 import {
     getCompensationDelay,
     getCurrentTime,
+    scheduleSendAutomation,
     scheduleTrackGain,
     scheduleTrackPan,
     updateDeviceParam,
@@ -67,6 +68,7 @@ vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => {
     const mod = await importOriginal<typeof import('#/modules/AudioEngine/useCases')>();
     return {
         ...mod,
+        scheduleSendAutomation: vi.fn(),
         scheduleTrackGain: vi.fn(),
         scheduleTrackPan: vi.fn(),
         getCurrentTime: vi.fn(() => 5),
@@ -83,7 +85,6 @@ vi.mock('#/modules/Fermenter/useCases', async (importOriginal) => {
         setFermenterMappedParam: vi.fn(),
     };
 });
-
 type MutableTrackStore = { value: { tracks: unknown[] } };
 type MutableAutomationStore = { value: { lanes: unknown[] } };
 
@@ -115,6 +116,7 @@ function seedDeviceLane(options: {
         clips: [],
         midiFx: options.duplicateOwner ? [{ id: 'midi-fx', parameterValues: { 'eq-low-gain': 0 } }] : [],
         devices: options.devices,
+        sends: [],
     };
     const tracks = options.duplicateOwner ? [track, { ...track, id: 'track-2', midiFx: [] }] : [track];
     mutableTrackStore.value = { tracks };
@@ -158,6 +160,22 @@ describe('applyAutomation', () => {
         applyAutomation(0);
 
         expect(scheduleTrackPan).toHaveBeenCalledWith('track-1', expectedPan, 5);
+    });
+
+    it('schedules a send lane on the compensated live clock without changing its tap', () => {
+        seedDeviceLane({ devices: [], laneParameterId: 'send:bus-hall' });
+        const track = mutableTrackStore.value.tracks[0] as {
+            sends: Array<{ busId: string; level: number; preFader: boolean }>;
+        };
+        track.sends = [{ busId: 'bus-hall', level: 0.5, preFader: true }];
+        vi.mocked(getAutomationValueAtBeat).mockReturnValue(0.5 * 10 ** (-3 / 20));
+        vi.mocked(getCompensationDelay).mockReturnValue(0.05);
+
+        applyAutomation(16);
+
+        expect(scheduleSendAutomation).toHaveBeenCalledWith('track-1', 'bus-hall', 0.5 * 10 ** (-3 / 20), 5.05);
+        expect(scheduleTrackGain).not.toHaveBeenCalled();
+        expect(scheduleTrackPan).not.toHaveBeenCalled();
     });
 
     it('routes a canonical Fermenter lane through the runtime-only mapped use-case', () => {
@@ -775,6 +793,45 @@ describe('applyAutomation', () => {
             applyAutomation(2);
 
             expect(updateDeviceParam).toHaveBeenLastCalledWith('track-1', 'eq-restore', 'eq-low-gain', 0.2);
+        });
+
+        it('restores a persisted send base when undo removes its driving lane', () => {
+            mutableTrackStore.value = {
+                tracks: [
+                    {
+                        id: 'track-1',
+                        kind: 'audio',
+                        automationMode: 'read',
+                        clips: [],
+                        midiFx: [],
+                        devices: [],
+                        sends: [{ busId: 'bus-hall', level: 0.5, preFader: true }],
+                        gain: 0.4,
+                        pan: 12,
+                    },
+                ],
+            };
+            mutableAutomationStore.value = {
+                lanes: [
+                    {
+                        id: 'lane-removed-send-restore',
+                        trackId: 'track-1',
+                        parameterId: 'send:bus-hall',
+                        minValue: 0,
+                        points: [{ beat: 0, value: 0.25 }],
+                    },
+                ],
+            };
+            vi.mocked(getAutomationValueAtBeat).mockReset();
+            vi.mocked(getAutomationValueAtBeat).mockReturnValue(0.25);
+            vi.mocked(getCompensationDelay).mockReturnValue(0.05);
+            applyAutomation(16);
+            expect(scheduleSendAutomation).toHaveBeenLastCalledWith('track-1', 'bus-hall', 0.25, 5.05);
+
+            mutableAutomationStore.value = { lanes: [] };
+            applyAutomation(16);
+
+            expect(scheduleSendAutomation).toHaveBeenLastCalledWith('track-1', 'bus-hall', 0.5, 5.05);
         });
     });
 

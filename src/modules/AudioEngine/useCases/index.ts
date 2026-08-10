@@ -85,6 +85,7 @@ export { ensureBusStrip } from './engineAccess/ensureBusStrip';
 export { removeBusStrip } from './engineAccess/removeBusStrip';
 export { setBusGain } from './engineAccess/setBusGain';
 export { setSend } from './engineAccess/setSend';
+export { scheduleSendAutomation } from './engineAccess/scheduleSendAutomation';
 export { removeSend } from './engineAccess/removeSend';
 export { wireSidechainRoute } from './engineAccess/wireSidechainRoute';
 export { unwireSidechainRoute } from './engineAccess/unwireSidechainRoute';

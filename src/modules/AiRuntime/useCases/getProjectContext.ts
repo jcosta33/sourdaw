@@ -1,4 +1,4 @@
-import { clipSelectionStore, trackStore, vcaGroupStore } from '#/modules/Arrangement/stores';
+import { clipSelectionStore, markerStore, trackStore, vcaGroupStore } from '#/modules/Arrangement/stores';
 import { getGlueEligibleClipPairs, getPlatformPlugins, getPluginById } from '#/modules/Arrangement/useCases';
 import { automationStore } from '#/modules/Automation/stores';
 import { midiStore } from '#/modules/MIDI/stores';
@@ -18,6 +18,7 @@ export type {
     ProjectContextDevice,
     ProjectContextDeviceParameter,
     ProjectContextSend,
+    ProjectContextSection,
     ProjectContextSidechainRoute,
     ProjectContextTrack,
     ProjectContextVcaGroup,
@@ -36,6 +37,7 @@ const contextCache: {
     selection: unknown;
     midi: unknown;
     sidechain: unknown;
+    marker: unknown;
     vca: unknown;
     glueEligibilitySignature: string;
     context: ProjectContext | null;
@@ -47,6 +49,7 @@ const contextCache: {
     selection: null,
     midi: null,
     sidechain: null,
+    marker: null,
     vca: null,
     glueEligibilitySignature: '',
     context: null,
@@ -62,6 +65,7 @@ export function getProjectContext(): ProjectContext {
     // project at ~20 clips each that's 2000 store dereferences → 1.
     const midiState = midiStore.value;
     const sidechainState = sidechainStore.value;
+    const markerState = markerStore.value;
     const vcaState = vcaGroupStore.value;
     const notesByClipId = midiState?.notesByClipId;
     const glueEligibleClipPairs = getGlueEligibleClipPairs();
@@ -76,6 +80,7 @@ export function getProjectContext(): ProjectContext {
         contextCache.selection === selectionState &&
         contextCache.midi === midiState &&
         contextCache.sidechain === sidechainState &&
+        contextCache.marker === markerState &&
         contextCache.vca === vcaState &&
         contextCache.glueEligibilitySignature === glueEligibilitySignature
     ) {
@@ -125,6 +130,12 @@ export function getProjectContext(): ProjectContext {
             targetDeviceId: route.targetDeviceId,
             targetParameterId: route.targetParameterId,
             gain: route.gain,
+        })),
+        sections: (markerState?.sections ?? []).map((section) => ({
+            id: section.id,
+            name: section.name,
+            startBeat: section.startBeat,
+            endBeat: section.endBeat,
         })),
         vcaGroups: (vcaState?.groups ?? []).map((group) => ({
             id: group.id,
@@ -223,6 +234,7 @@ export function getProjectContext(): ProjectContext {
     contextCache.selection = selectionState;
     contextCache.midi = midiState;
     contextCache.sidechain = sidechainState;
+    contextCache.marker = markerState;
     contextCache.vca = vcaState;
     contextCache.glueEligibilitySignature = glueEligibilitySignature;
     contextCache.context = built;

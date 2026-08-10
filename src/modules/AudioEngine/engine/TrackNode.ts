@@ -231,6 +231,15 @@ export class TrackNode {
         this.rampAutomationParam(this.strip.panNode.pan, Math.max(-1, Math.min(1, pan / 50)), time);
     }
 
+    /** PDC-aligned automation for one existing pre- or post-fader send. */
+    public scheduleSendAutomation(busId: string, level: number, time: number): void {
+        const send = this.deps.getSendsForTrack(this.trackId).find((candidate) => candidate.busId === busId);
+        if (!send) {
+            return;
+        }
+        this.rampAutomationParam(send.gainNode.gain, Math.max(0, Math.min(1, level)), time);
+    }
+
     private rampAutomationParam(param: AudioParam, value: number, time: number): void {
         const now = this.deps.context.currentTime;
         // Never land before a minimum ramp past `now`: an uncompensated track
@@ -245,7 +254,7 @@ export class TrackNode {
     }
 
     /**
-     * RT-5: hold the fader gain and pan at their current value and drop any
+     * RT-5: hold fader, pan, and send automation at their current values and drop any
      * pending scheduled automation ramp. Wired to transport stop so a ramp
      * scheduled toward a compensated future time does not keep gliding after
      * playback ends — the AudioParam analog of stopActiveSources' source
@@ -255,7 +264,8 @@ export class TrackNode {
      */
     public cancelAutomationRamps(): void {
         const now = this.deps.context.currentTime;
-        for (const param of [this.strip.faderNode.gain, this.strip.panNode.pan]) {
+        const sendParams = this.deps.getSendsForTrack(this.trackId).map((send) => send.gainNode.gain);
+        for (const param of [this.strip.faderNode.gain, this.strip.panNode.pan, ...sendParams]) {
             param.cancelScheduledValues(now);
             param.setValueAtTime(param.value, now);
         }

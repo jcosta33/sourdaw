@@ -63,6 +63,8 @@ export type ScheduleTrackAutomationInput = {
     trackId: string;
     trackGainNode: GainNode;
     trackPanNode: StereoPannerNode;
+    /** App-owned graph bindings keyed by the persisted `send:<busId>` target. */
+    sendAutomationParams?: ReadonlyMap<string, AudioParam>;
     deviceEntries: ScheduleTrackAutomationDeviceEntry[];
     durationSeconds: number;
     defaultTempo: number;
@@ -93,6 +95,7 @@ export function scheduleTrackAutomation({
     trackId,
     trackGainNode,
     trackPanNode,
+    sendAutomationParams,
     deviceEntries,
     durationSeconds,
     defaultTempo,
@@ -206,6 +209,25 @@ export function scheduleTrackAutomation({
                 projectBeatToSeconds,
                 compensationDelaySec,
                 laneOptions
+            );
+            continue;
+        }
+
+        const sendParam = sendAutomationParams?.get(lane.parameterId);
+        if (sendParam) {
+            scheduleAutomationOnParam(
+                sendParam,
+                points,
+                durationSeconds,
+                defaultTempo,
+                changes,
+                regionStartSeconds,
+                projectBeatToSeconds,
+                compensationDelaySec,
+                {
+                    ...laneOptions,
+                    valueTransform: (value) => Math.max(0, Math.min(1, value)),
+                }
             );
             continue;
         }
