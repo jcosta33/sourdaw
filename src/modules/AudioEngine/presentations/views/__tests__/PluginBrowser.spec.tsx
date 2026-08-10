@@ -55,7 +55,8 @@ const { getPlatformCapabilities } = await import('#/utils/platformCapabilities')
 const mockPlugins = [
     { id: 'p1', name: 'Test VST', vendor: 'TestCorp', category: 'Effect', format: 'vst3', num_parameters: 10 },
     { id: 'p2', name: 'CLAP Synth', vendor: 'SynthCo', category: 'Instrument', format: 'clap', num_parameters: 25 },
-    { id: 'p3', name: 'AU Filter', vendor: 'AudioDev', category: 'Effect', format: 'au', num_parameters: 5 },
+    { id: 'p3', name: 'CLAP Filter', vendor: 'AudioDev', category: 'Effect', format: 'clap', num_parameters: 5 },
+    { id: 'p4', name: 'AU Filter', vendor: 'AudioDev', category: 'Effect', format: 'au', num_parameters: 5 },
 ];
 
 describe('PluginBrowser', () => {
@@ -109,20 +110,19 @@ describe('PluginBrowser', () => {
             errors: [],
         });
         render(<PluginBrowser selectedTrackId={null} searchQuery="" />);
-        expect(screen.getByText('3')).toBeInTheDocument();
+        expect(screen.getByText('External Plugins').parentElement).toHaveTextContent('External Plugins2');
     });
 
-    it('should group plugins by format', () => {
+    it('should group supported plugins by format', () => {
         (useStore as ReturnType<typeof vi.fn>).mockReturnValue({
             scannedPlugins: mockPlugins,
             isScanning: false,
             errors: [],
         });
         render(<PluginBrowser selectedTrackId={null} searchQuery="" />);
-        // Use getAllByText since format appears in both header badge and plugin row
-        expect(screen.getAllByText('vst3').length).toBeGreaterThanOrEqual(1);
         expect(screen.getAllByText('clap').length).toBeGreaterThanOrEqual(1);
-        expect(screen.getAllByText('au').length).toBeGreaterThanOrEqual(1);
+        expect(screen.queryByText('vst3')).not.toBeInTheDocument();
+        expect(screen.queryByText('au')).not.toBeInTheDocument();
     });
 
     it('should render plugin names', () => {
@@ -132,9 +132,10 @@ describe('PluginBrowser', () => {
             errors: [],
         });
         render(<PluginBrowser selectedTrackId={null} searchQuery="" />);
-        expect(screen.getByText('Test VST')).toBeInTheDocument();
         expect(screen.getByText('CLAP Synth')).toBeInTheDocument();
-        expect(screen.getByText('AU Filter')).toBeInTheDocument();
+        expect(screen.getByText('CLAP Filter')).toBeInTheDocument();
+        expect(screen.queryByText('Test VST')).not.toBeInTheDocument();
+        expect(screen.queryByText('AU Filter')).not.toBeInTheDocument();
     });
 
     it('should filter plugins by local search', () => {
@@ -147,12 +148,28 @@ describe('PluginBrowser', () => {
         const searchInput = screen.getByLabelText('Filter external plugins');
         fireEvent.change(searchInput, { target: { value: 'VST' } });
         expect(searchInput).toHaveValue('VST');
+        expect(screen.getByText(/No plugins match/)).toBeInTheDocument();
     });
 
     it('should show desktop-only notice when native plugins not available', () => {
         (getPlatformCapabilities as ReturnType<typeof vi.fn>).mockReturnValue({ hasNativePlugins: false });
         render(<PluginBrowser selectedTrackId={null} searchQuery="" />);
+        expect(screen.getByText('CLAP plugins')).toBeInTheDocument();
         expect(screen.getByText('Desktop app required')).toBeInTheDocument();
+    });
+
+    it('does not advertise unsupported scanned plugin formats', () => {
+        (useStore as ReturnType<typeof vi.fn>).mockReturnValue({
+            scannedPlugins: mockPlugins,
+            isScanning: false,
+            errors: [],
+        });
+
+        render(<PluginBrowser selectedTrackId={null} searchQuery="" />);
+
+        expect(screen.getByText('CLAP Synth')).toBeInTheDocument();
+        expect(screen.queryByText('Test VST')).not.toBeInTheDocument();
+        expect(screen.queryByText('AU Filter')).not.toBeInTheDocument();
     });
 
     it('should render format badges', () => {
@@ -162,7 +179,7 @@ describe('PluginBrowser', () => {
             errors: [],
         });
         render(<PluginBrowser selectedTrackId={null} searchQuery="" />);
-        const formatBadges = screen.getAllByText(/vst3|clap|au/i);
+        const formatBadges = screen.getAllByText(/clap/i);
         expect(formatBadges.length).toBeGreaterThan(0);
     });
 
@@ -173,9 +190,9 @@ describe('PluginBrowser', () => {
             errors: [],
         });
         render(<PluginBrowser selectedTrackId="track1" searchQuery="" />);
-        const plugin = screen.getByText('Test VST');
+        const plugin = screen.getByText('CLAP Filter');
         fireEvent.click(plugin.closest('[role="button"]') || plugin);
-        expect(addExternalDevice).toHaveBeenCalled();
+        expect(addExternalDevice).toHaveBeenCalledWith('track1', 'p3', 'CLAP Filter');
     });
 
     // ── handleLoadPlugin: no selected track ⇒ creates a track of the right kind ─
@@ -201,9 +218,9 @@ describe('PluginBrowser', () => {
             errors: [],
         });
         render(<PluginBrowser selectedTrackId={null} searchQuery="" />);
-        const plugin = screen.getByText('Test VST'); // category: 'Effect'
+        const plugin = screen.getByText('CLAP Filter'); // category: 'Effect'
         fireEvent.click(plugin.closest('[role="button"]') || plugin);
-        expect(addTrack).toHaveBeenCalledWith({ name: 'Test VST', kind: 'audio' });
+        expect(addTrack).toHaveBeenCalledWith({ name: 'CLAP Filter', kind: 'audio' });
     });
 
     it('aborts the load when addTrack returns null and there is no selected track', () => {
@@ -215,7 +232,7 @@ describe('PluginBrowser', () => {
         vi.mocked(addTrack).mockReturnValueOnce(null);
 
         render(<PluginBrowser selectedTrackId={null} searchQuery="" />);
-        const plugin = screen.getByText('Test VST');
+        const plugin = screen.getByText('CLAP Filter');
         fireEvent.click(plugin.closest('[role="button"]') || plugin);
         // Track creation failed ⇒ addExternalDevice never called.
         expect(addExternalDevice).not.toHaveBeenCalled();
@@ -231,14 +248,14 @@ describe('PluginBrowser', () => {
         });
         render(<PluginBrowser selectedTrackId={null} searchQuery="" />);
         // Format header buttons are the <button> elements containing the format text.
-        const vstHeader = screen.getAllByText('vst3')[0]!.closest('button')!;
+        const clapHeader = screen.getAllByText('clap')[0]!.closest('button')!;
         // Collapse: rows hide.
-        fireEvent.click(vstHeader);
+        fireEvent.click(clapHeader);
         // The plugin row should no longer be visible.
-        expect(vstHeader).toBeInTheDocument();
+        expect(clapHeader).toBeInTheDocument();
         // Expand back: rows reappear.
-        fireEvent.click(vstHeader);
-        expect(screen.getByText('Test VST')).toBeInTheDocument();
+        fireEvent.click(clapHeader);
+        expect(screen.getByText('CLAP Synth')).toBeInTheDocument();
     });
 
     // ── searchQuery prop drives the filter (overrides local search) ────────────

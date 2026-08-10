@@ -28,12 +28,10 @@ type PluginBrowserProps = {
 };
 
 const FORMAT_COLORS: Record<string, string> = {
-    vst3: 'bg-[var(--color-accent-cyan)]/20 text-[var(--color-accent-cyan)]',
     clap: 'bg-[var(--color-accent-mint)]/20 text-[var(--color-accent-mint)]',
-    au: 'bg-[var(--color-accent-lavender)]/20 text-[var(--color-accent-lavender)]',
 };
 
-const FORMAT_ORDER = ['vst3', 'clap', 'au'];
+const FORMAT_ORDER = ['clap'];
 
 export const PluginBrowser = ({ selectedTrackId, searchQuery }: PluginBrowserProps): ReactElement | null => {
     const state = useStore(pluginScanStore, defaultPluginScanState);
@@ -55,7 +53,7 @@ export const PluginBrowser = ({ selectedTrackId, searchQuery }: PluginBrowserPro
                             compact
                             className="cursor-not-allowed opacity-50"
                             icon={<Monitor className="size-5" aria-hidden="true" />}
-                            title="VST / AU / CLAP plugins"
+                            title="CLAP plugins"
                             description="Desktop app required"
                         />
                     </TooltipTrigger>
@@ -67,9 +65,10 @@ export const PluginBrowser = ({ selectedTrackId, searchQuery }: PluginBrowserPro
         );
     }
 
+    const supportedPlugins = state.scannedPlugins.filter((plugin) => plugin.format.toLowerCase() === 'clap');
     const query = (searchQuery || localSearch).toLowerCase().trim();
 
-    const filtered = state.scannedPlugins.filter((param) => {
+    const filtered = supportedPlugins.filter((param) => {
         if (!query) {
             return true;
         }
@@ -119,9 +118,9 @@ export const PluginBrowser = ({ selectedTrackId, searchQuery }: PluginBrowserPro
             <div className="flex items-center gap-1 px-1 py-0.5 pt-2">
                 <Plug className="size-3 text-muted-foreground" aria-hidden="true" />
                 <DawEyebrowLabel size="sm">External Plugins</DawEyebrowLabel>
-                <span className="ml-auto text-[9px] text-muted-foreground">{state.scannedPlugins.length}</span>
+                <span className="ml-auto text-[9px] text-muted-foreground">{supportedPlugins.length}</span>
             </div>
-            {state.scannedPlugins.length === 0 && !state.isScanning ? (
+            {supportedPlugins.length === 0 && !state.isScanning ? (
                 <div className="px-2 py-3">
                     <DawEmptyState
                         compact
@@ -144,7 +143,7 @@ export const PluginBrowser = ({ selectedTrackId, searchQuery }: PluginBrowserPro
                     </DawInlineHint>
                 </div>
             ) : null}
-            {state.scannedPlugins.length > 0 ? (
+            {supportedPlugins.length > 0 ? (
                 <>
                     <div className="flex items-center gap-1 px-1">
                         <div className="flex-1 flex items-center gap-1">

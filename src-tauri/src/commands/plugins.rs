@@ -9,10 +9,10 @@ use daw_engine::audio_bridge::create_audio_bridge;
 use daw_engine::plugin_slot::{MidiNoteEvent, TransportState};
 use daw_engine::EngineHandle;
 use daw_plugin_host::scanner::{self, ScanResult, ScannedPlugin};
-use daw_plugin_host::{AudioPlugin, ClapWrapper, Vst3Wrapper};
+use daw_plugin_host::{AudioPlugin, ClapWrapper};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::Arc;
 use tauri::Manager;
 
@@ -293,32 +293,7 @@ pub async fn load_plugin(
             Ok(instance)
         }
         "vst3" => {
-            let wrapper = Vst3Wrapper::new(&entry.path)?;
-            let name = wrapper.get_name().to_string();
-            let params = wrapper.get_parameters();
-
-            // Store in plugins map (VST3 runs through the same AudioPlugin trait)
-            let mut plugins = state
-                .plugins
-                .lock()
-                .map_err(|e| format!("Failed to lock plugins: {}", e))?;
-            plugins.insert(
-                instance_id.0.clone(),
-                PluginInstanceData {
-                    plugin: Box::new(wrapper),
-                },
-            );
-
-            Ok(PluginInstance {
-                instance_id: instance_id.clone(),
-                plugin_id: plugin_id.clone(),
-                name,
-                parameters: params,
-                is_active: true,
-                latency_samples: 0,
-                latency_ms: 0.0,
-                engine_plugin_id: None,
-            })
+            Err("VST3 plugin loading is not supported. CLAP plugins are supported.".to_string())
         }
         "au" => Err(
             "Audio Unit plugin loading is not yet implemented. CLAP plugins are supported."
@@ -807,6 +782,7 @@ mod tests {
     use super::*;
     use crate::state::EnginePluginInstanceData;
     use daw_core::PluginInstanceId;
+    use std::path::Path;
     use tauri::Manager;
 
     fn plugin_parameter(id: u32, value: f64) -> PluginParameter {
@@ -908,6 +884,39 @@ mod tests {
         assert!(!paths.is_empty());
         for path in paths {
             assert_eq!(scan_policy.authorize_scan_root(Path::new(&path)), Ok(()));
+        }
+    }
+
+    #[test]
+    fn load_plugin_rejects_vst3_without_loading_the_bundle() {
+        let app = command_test_app();
+        let state = app.state::<AppState>();
+        state
+            .plugin_registry
+            .lock()
+            .expect("plugin registry lock should be available")
+            .insert(
+                "vst3-fixture".to_string(),
+                PluginRegistryEntry {
+                    path: "/plugins/should-not-be-loaded.vst3".to_string(),
+                    clap_id: String::new(),
+                    format: "vst3".to_string(),
+                    name: "Unsupported VST3".to_string(),
+                },
+            );
+
+        let result = tauri::async_runtime::block_on(load_plugin(
+            PluginId("vst3-fixture".to_string()),
+            PluginInstanceId("vst3-instance".to_string()),
+            state,
+        ));
+
+        match result {
+            Err(error) => assert_eq!(
+                error,
+                "VST3 plugin loading is not supported. CLAP plugins are supported."
+            ),
+            Ok(instance) => panic!("unsupported VST3 unexpectedly loaded: {instance:?}"),
         }
     }
 

@@ -5,11 +5,12 @@ import { handleLoadExternalPlugin } from '../handleLoadExternalPlugin';
 const mocks = vi.hoisted(() => ({
     addExternalDevice: vi.fn(),
     addTrack: vi.fn(),
-    findPluginByName: vi.fn(),
+    findSupportedPlugin: vi.fn(),
 }));
 
 vi.mock('#/modules/PluginHost/useCases', () => ({
-    findPluginByName: mocks.findPluginByName,
+    findSupportedPlugin: mocks.findSupportedPlugin,
+    findPluginByName: mocks.findSupportedPlugin,
 }));
 
 vi.mock('../../../useCases/addTrack', () => ({
@@ -23,7 +24,7 @@ vi.mock('../../../useCases/device/addExternalDevice', () => ({
 describe('handleLoadExternalPlugin', () => {
     beforeEach(() => {
         vi.clearAllMocks();
-        mocks.findPluginByName.mockReturnValue({ name: 'Compressor', category: 'Effect' });
+        mocks.findSupportedPlugin.mockReturnValue({ id: 'plugin-1', name: 'Compressor', category: 'Effect' });
     });
 
     it('reports a write when the external device is added to a provided track', async () => {
@@ -76,7 +77,7 @@ describe('handleLoadExternalPlugin', () => {
     });
 
     it('creates a midi track for an instrument plugin when no track is provided', async () => {
-        mocks.findPluginByName.mockReturnValue({ name: 'Synth', category: 'Instrument' });
+        mocks.findSupportedPlugin.mockReturnValue({ id: 'plugin-1', name: 'Synth', category: 'Instrument' });
         mocks.addTrack.mockReturnValue({ id: 'midi-track' });
         mocks.addExternalDevice.mockReturnValue({ id: 'device-1' });
 
@@ -89,19 +90,17 @@ describe('handleLoadExternalPlugin', () => {
         expect(result).toEqual({ status: 'written' });
     });
 
-    it('falls back to a default name and an audio track when the plugin is unknown', async () => {
-        mocks.findPluginByName.mockReturnValue(undefined);
-        mocks.addTrack.mockReturnValue({ id: 'audio-track' });
-        mocks.addExternalDevice.mockReturnValue({ id: 'device-1' });
+    it('rejects an unknown plugin before creating a track or device', async () => {
+        mocks.findSupportedPlugin.mockReturnValue(undefined);
 
-        await handleLoadExternalPlugin.execute({
+        const result = await handleLoadExternalPlugin.execute({
             type: 'loadExternalPlugin',
             payload: { pluginId: 'plugin-1' },
         });
 
-        expect(mocks.addTrack).toHaveBeenCalledWith({ name: 'Plugin', kind: 'audio' });
-        // addExternalDevice uses the raw pluginId as the name when no plugin is found.
-        expect(mocks.addExternalDevice).toHaveBeenCalledWith('audio-track', 'plugin-1', 'plugin-1');
+        expect(mocks.addTrack).not.toHaveBeenCalled();
+        expect(mocks.addExternalDevice).not.toHaveBeenCalled();
+        expect(result).toEqual({ status: 'no-write' });
     });
 
     it('provides a description naming the plugin id', () => {

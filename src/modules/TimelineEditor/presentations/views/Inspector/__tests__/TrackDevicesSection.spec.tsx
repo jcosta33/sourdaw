@@ -15,14 +15,25 @@ type TestPluginDescriptor = {
     hasCustomUI?: boolean;
 } | null;
 
+type TestPluginScanViewState = {
+    scannedPlugins: Array<{ id: string; name: string; format: string; clap_id?: string }>;
+};
+
+type TestActivationState = {
+    byInstanceId: Record<string, { status: 'loading' | 'active' | 'error'; message?: string }>;
+};
+
 // Mock external dependencies
 const mockBypassDevice = vi.fn<(deviceId: string, bypassed: boolean) => void>();
 const mockRemoveDevice = vi.fn<(deviceId: string) => void>();
 const mockAddDevice = vi.fn<(trackId: string, pluginName: string) => void>();
 const mockAddExternalDevice = vi.fn<(trackId: string, pluginId: string, pluginName: string) => void>();
 const mockReorderDevices = vi.fn<(trackId: string, fromIndex: number, toIndex: number) => void>();
+const mockProjectTrackToLiveStrip =
+    vi.fn<(input: { trackId: string; activateDormantExternalPlugins: boolean }) => void>();
 const mockGetPlatformPlugins = vi.fn<() => TestPlatformPlugin[]>(() => []);
 const mockGetPluginById = vi.fn<(id: string) => TestPluginDescriptor>(() => null);
+const mockGetPlatformCapabilities = vi.fn(() => ({ hasNativePlugins: false }));
 vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => {
     const actual = await importOriginal<typeof import('#/modules/Arrangement/useCases')>();
     return {
@@ -41,6 +52,9 @@ vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => {
         },
         reorderDevices: (trackId: string, fromIndex: number, toIndex: number): void => {
             mockReorderDevices(trackId, fromIndex, toIndex);
+        },
+        projectTrackToLiveStrip: (input: { trackId: string; activateDormantExternalPlugins: boolean }): void => {
+            mockProjectTrackToLiveStrip(input);
         },
         getPlatformPlugins: () => mockGetPlatformPlugins(),
         getPluginById: (id: string) => mockGetPluginById(id),
@@ -63,22 +77,28 @@ vi.mock('#/modules/WorkspaceShell/useCases', () => ({
     },
 }));
 
-const mockUseStore = vi.fn((_store: unknown, _defaultState: unknown) => ({ scannedPlugins: [] }));
+const mockStores = vi.hoisted(() => ({ scan: {}, activation: {} }));
+const mockScanState = vi.fn<() => TestPluginScanViewState>(() => ({
+    scannedPlugins: [],
+}));
+const mockActivationState = vi.fn<() => TestActivationState>(() => ({ byInstanceId: {} }));
 vi.mock('#/infra/store/useStore', () => ({
-    useStore: (store: unknown, defaultState: unknown) => mockUseStore(store, defaultState),
+    useStore: (store: unknown) => (store === mockStores.activation ? mockActivationState() : mockScanState()),
 }));
 
 vi.mock('#/modules/PluginHost/stores', async (importOriginal) => {
     const actual = await importOriginal<typeof import('#/modules/PluginHost/stores')>();
     return {
         ...actual,
-        pluginScanStore: {},
+        pluginScanStore: mockStores.scan,
         defaultPluginScanState: { scannedPlugins: [] },
+        externalPluginActivationStore: mockStores.activation,
+        defaultExternalPluginActivationState: { byInstanceId: {} },
     };
 });
 
 vi.mock('#/utils/platformCapabilities', () => ({
-    getPlatformCapabilities: () => ({ hasNativePlugins: false }),
+    getPlatformCapabilities: () => mockGetPlatformCapabilities(),
     DISABLED_REASONS: { nativePlugins: 'Desktop app required' },
 }));
 
@@ -109,13 +129,23 @@ vi.mock('#/components/ui/button', () => ({
     Button: ({
         children,
         onClick,
+        disabled,
         'aria-label': ariaLabel,
+        'aria-pressed': ariaPressed,
     }: {
         children: React.ReactNode;
         onClick?: (e?: React.MouseEvent) => void;
+        disabled?: boolean;
         'aria-label'?: string;
+        'aria-pressed'?: boolean;
     }) => (
-        <button data-testid="button" aria-label={ariaLabel} onClick={onClick}>
+        <button
+            data-testid="button"
+            aria-label={ariaLabel}
+            aria-pressed={ariaPressed}
+            onClick={onClick}
+            disabled={disabled}
+        >
             {children}
         </button>
     ),
@@ -190,7 +220,9 @@ describe('TrackDevicesSection', () => {
         vi.clearAllMocks();
         mockGetPlatformPlugins.mockReturnValue([]);
         mockGetPluginById.mockReturnValue(null);
-        mockUseStore.mockReturnValue({ scannedPlugins: [] });
+        mockGetPlatformCapabilities.mockReturnValue({ hasNativePlugins: false });
+        mockScanState.mockReturnValue({ scannedPlugins: [] });
+        mockActivationState.mockReturnValue({ byInstanceId: {} });
     });
 
     it('should render without crashing', () => {
@@ -263,6 +295,123 @@ describe('TrackDevicesSection', () => {
         // *or* id, and three catalog names are carried by two plugins each.
         expect(mockAddDevice).toHaveBeenCalledWith('track-1', 'chorus');
         expect(screen.queryByRole('menuitem', { name: 'Chorus' })).not.toBeInTheDocument();
+    });
+
+    it('offers only supported CLAP plugins from stale scan state', () => {
+        mockGetPlatformCapabilities.mockReturnValue({ hasNativePlugins: true });
+        mockScanState.mockReturnValue({
+            scannedPlugins: [
+                { id: 'vst-1', name: 'Stale VST', format: 'vst3' },
+                { id: 'clap-1', name: 'Working CLAP', format: 'clap' },
+                { id: 'au-1', name: 'Stale AU', format: 'au' },
+            ],
+        });
+
+        render(<TrackDevicesSection track={mockTrack} onSelectDevice={mockOnSelectDevice} />);
+        fireEvent.click(screen.getByLabelText('Add device'));
+
+        expect(screen.queryByRole('menuitem', { name: /Stale VST/ })).not.toBeInTheDocument();
+        expect(screen.queryByRole('menuitem', { name: /Stale AU/ })).not.toBeInTheDocument();
+
+        fireEvent.click(screen.getByRole('menuitem', { name: /Working CLAP/ }));
+        expect(mockAddExternalDevice).toHaveBeenCalledWith('track-1', 'clap-1', 'Working CLAP');
+    });
+
+    it('marks a persisted external plugin unavailable when it is absent from the supported scan', () => {
+        mockGetPlatformCapabilities.mockReturnValue({ hasNativePlugins: true });
+        mockScanState.mockReturnValue({
+            scannedPlugins: [{ id: 'other-clap', name: 'Other CLAP', format: 'clap' }],
+        });
+        const trackWithMissingPlugin: Track = {
+            ...mockTrack,
+            devices: [
+                {
+                    id: 'legacy-vst-slot',
+                    name: 'Legacy VST',
+                    type: 'external-plugin',
+                    bypassed: false,
+                    parameterValues: {},
+                    externalPluginId: 'missing-vst',
+                    externalInstanceId: 'legacy-instance',
+                },
+            ],
+        };
+
+        render(<TrackDevicesSection track={trackWithMissingPlugin} onSelectDevice={mockOnSelectDevice} />);
+
+        expect(screen.getByText('Unavailable')).toBeInTheDocument();
+        const powerButton = screen.getByLabelText('Legacy VST unavailable');
+        expect(powerButton).toBeDisabled();
+        expect(powerButton).toHaveAttribute('aria-pressed', 'false');
+        expect(screen.queryByLabelText('Open editor for Legacy VST')).not.toBeInTheDocument();
+    });
+
+    it('keeps a persisted CLAP slot available when it uses the stable descriptor id', () => {
+        mockGetPlatformCapabilities.mockReturnValue({ hasNativePlugins: true });
+        mockScanState.mockReturnValue({
+            scannedPlugins: [
+                {
+                    id: 'path-hash',
+                    clap_id: 'com.vendor.persisted-clap',
+                    name: 'Persisted CLAP',
+                    format: 'clap',
+                },
+            ],
+        });
+        const trackWithPersistedClap: Track = {
+            ...mockTrack,
+            devices: [
+                {
+                    id: 'persisted-clap-slot',
+                    name: 'Persisted CLAP',
+                    type: 'external-plugin',
+                    bypassed: false,
+                    parameterValues: {},
+                    externalPluginId: 'com.vendor.persisted-clap',
+                    externalInstanceId: 'persisted-instance',
+                },
+            ],
+        };
+
+        render(<TrackDevicesSection track={trackWithPersistedClap} onSelectDevice={mockOnSelectDevice} />);
+
+        expect(screen.queryByText('Unavailable')).not.toBeInTheDocument();
+        expect(screen.getByLabelText('Bypass Persisted CLAP')).toBeEnabled();
+        expect(screen.getByLabelText('Open editor for Persisted CLAP')).toBeInTheDocument();
+    });
+
+    it('surfaces activation failure and retries without changing project state', () => {
+        mockGetPlatformCapabilities.mockReturnValue({ hasNativePlugins: true });
+        mockScanState.mockReturnValue({
+            scannedPlugins: [{ id: 'path-hash', name: 'Broken CLAP', format: 'clap' }],
+        });
+        mockActivationState.mockReturnValue({
+            byInstanceId: { 'broken-instance': { status: 'error', message: 'Native activation failed' } },
+        });
+        const trackWithFailedClap: Track = {
+            ...mockTrack,
+            devices: [
+                {
+                    id: 'broken-clap-slot',
+                    name: 'Broken CLAP',
+                    type: 'external-plugin',
+                    bypassed: false,
+                    parameterValues: {},
+                    externalPluginId: 'path-hash',
+                    externalInstanceId: 'broken-instance',
+                },
+            ],
+        };
+
+        render(<TrackDevicesSection track={trackWithFailedClap} onSelectDevice={mockOnSelectDevice} />);
+
+        expect(screen.getByText('Unavailable')).toBeInTheDocument();
+        fireEvent.click(screen.getByLabelText('Retry Broken CLAP'));
+        expect(mockProjectTrackToLiveStrip).toHaveBeenCalledWith({
+            trackId: 'track-1',
+            activateDormantExternalPlugins: true,
+        });
+        expect(mockBypassDevice).not.toHaveBeenCalled();
     });
 
     it('should apply opacity to bypassed devices', () => {

@@ -22,6 +22,7 @@ export { activateExternalPlugin } from './pluginLifecycle/activateExternalPlugin
 export { clearLoadedExternalPlugins } from './pluginLifecycle/clearLoadedExternalPlugins';
 
 export { findPluginByName } from './pluginScan/queries';
+export { findSupportedPlugin } from './pluginScan/findSupportedPlugin';
 
 export { startPluginScan } from './pluginScan/scanning/startPluginScan';
 export { addScanPath } from './pluginScan/scanning/addScanPath';

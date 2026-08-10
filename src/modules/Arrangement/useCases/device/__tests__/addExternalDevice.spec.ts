@@ -8,6 +8,7 @@ const mocks = vi.hoisted(() => ({
     addDeviceToStrip: vi.fn(),
     activateExternalPlugin: vi.fn(),
     reportLatency: vi.fn(),
+    findSupportedPlugin: vi.fn(),
 }));
 
 /** The latency sink `addExternalDevice` injected into the activation call. */
@@ -36,12 +37,14 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
 
 vi.mock('#/modules/PluginHost/useCases', () => ({
     activateExternalPlugin: mocks.activateExternalPlugin,
+    findSupportedPlugin: mocks.findSupportedPlugin,
 }));
 
 describe('addExternalDevice', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         mocks.getTrackState.mockReturnValue({ tracks: [{ id: 'audio-1', kind: 'audio', devices: [] }] });
+        mocks.findSupportedPlugin.mockReturnValue({ id: 'plugin-1', format: 'clap' });
     });
 
     it('persists an external plugin on an ordinary folder without starting runtime work', () => {
@@ -138,6 +141,15 @@ describe('addExternalDevice', () => {
         mocks.getTrackState.mockReturnValue(null);
 
         expect(addExternalDevice('audio-1', 'plugin-1', 'Plugin')).toBeNull();
+        expect(mocks.updateTrack).not.toHaveBeenCalled();
+        expect(mocks.addDeviceToStrip).not.toHaveBeenCalled();
+        expect(mocks.activateExternalPlugin).not.toHaveBeenCalled();
+    });
+
+    it('rejects an unsupported plugin id before project or runtime work', () => {
+        mocks.findSupportedPlugin.mockReturnValue(undefined);
+
+        expect(addExternalDevice('audio-1', 'unsupported-vst', 'Unsupported VST')).toBeNull();
         expect(mocks.updateTrack).not.toHaveBeenCalled();
         expect(mocks.addDeviceToStrip).not.toHaveBeenCalled();
         expect(mocks.activateExternalPlugin).not.toHaveBeenCalled();
