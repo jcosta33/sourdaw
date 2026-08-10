@@ -25,6 +25,28 @@ export class DecodedAudioWasm {
     /**
      * @returns {number}
      */
+    get decode_warning_count() {
+        const ret = wasm.decodedaudiowasm_decode_warning_count(this.__wbg_ptr);
+        return ret >>> 0;
+    }
+    /**
+     * @returns {string}
+     */
+    get decode_warning_summary() {
+        let deferred1_0;
+        let deferred1_1;
+        try {
+            const ret = wasm.decodedaudiowasm_decode_warning_summary(this.__wbg_ptr);
+            deferred1_0 = ret[0];
+            deferred1_1 = ret[1];
+            return getStringFromWasm0(ret[0], ret[1]);
+        } finally {
+            wasm.__wbindgen_free(deferred1_0, deferred1_1, 1);
+        }
+    }
+    /**
+     * @returns {number}
+     */
     get sample_rate() {
         const ret = wasm.decodedaudiowasm_sample_rate(this.__wbg_ptr);
         return ret >>> 0;
