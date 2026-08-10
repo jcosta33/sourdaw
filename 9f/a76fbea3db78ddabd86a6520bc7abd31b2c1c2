@@ -1,0 +1,26 @@
+src/modules/DawInterchange/useCases/__tests__/parseDawProject.spec.ts
+  s_bc88af7d3b054c::t_0fea705d27084f 90-103,154-156
+  s_bc88af7d3b054c::t_745cdc688e486a 157
+src/modules/DawInterchange/useCases/readDawProjectZip.ts
+  s_bc88af7d3b054c::t_70eb1c5fd94848 6,35-47
+src/modules/DawInterchange/useCases/__tests__/readDawProjectZip.spec.ts
+  s_bc88af7d3b054c::t_70eb1c5fd94848 128-130,142-144,155
+src/modules/DawInterchange/useCases/parseDawProject.ts
+  s_bc88af7d3b054c::t_70eb1c5fd94848 10,20
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "9fa76fbea3db78ddabd86a6520bc7abd31b2c1c2",
+  "prompts": {},
+  "sessions": {
+    "s_bc88af7d3b054c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f9b4a-11a2-7f61-8dfb-76eed0eb2a9c",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
