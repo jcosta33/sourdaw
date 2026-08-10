@@ -5,6 +5,22 @@ use daw_dsp::fermenter::FermenterInstance;
 const SAMPLE_RATE: f32 = 48_000.0;
 const BLOCK: usize = 128;
 const MAX_SAFE_PEAK: f32 = 2.0;
+const ONE_DB_RATIO: f32 = 1.122_018_5;
+
+fn is_within_one_db(actual: f32, expected: f32) -> bool {
+    actual.is_finite()
+        && actual >= expected / ONE_DB_RATIO
+        && actual <= expected * ONE_DB_RATIO
+}
+
+fn shipped_level_is_acceptable(
+    measurement: &Measurement,
+    expected_peak: f32,
+    expected_rms: f32,
+) -> bool {
+    is_within_one_db(measurement.peak, expected_peak)
+        && is_within_one_db(measurement.rms, expected_rms)
+}
 
 struct ShippedPreset {
     name: &'static str,
@@ -90,33 +106,53 @@ fn render(preset: &ShippedPreset, sample_rate: f32, note: u8) -> Measurement {
 #[test]
 fn shipped_ms20_presets_render_without_numeric_blowup() {
     let measurements = [
-        (&CRUSTY_SCREAM, render(&CRUSTY_SCREAM, SAMPLE_RATE, 60)),
-        (&CRACKER_CLAV, render(&CRACKER_CLAV, SAMPLE_RATE, 60)),
+        (
+            &CRUSTY_SCREAM,
+            render(&CRUSTY_SCREAM, SAMPLE_RATE, 60),
+            0.40749264,
+            0.1182144,
+        ),
+        (
+            &CRACKER_CLAV,
+            render(&CRACKER_CLAV, SAMPLE_RATE, 60),
+            0.20233074,
+            0.026556833,
+        ),
     ];
 
-    for (preset, measurement) in &measurements {
+    for (preset, measurement, _, _) in &measurements {
         println!("{}: {measurement:?}", preset.name);
     }
 
-    for (preset, measurement) in measurements {
+    for (preset, measurement, expected_peak, expected_rms) in measurements {
         assert_eq!(
             measurement.nan_flushes, 0,
             "{} emitted non-finite samples",
             preset.name
         );
         assert!(
-            measurement.peak.is_finite() && measurement.peak < MAX_SAFE_PEAK,
-            "{} peak {} indicates numeric blowup",
+            shipped_level_is_acceptable(&measurement, expected_peak, expected_rms),
+            "{} level moved outside its measured band: peak {}, RMS {}",
             preset.name,
-            measurement.peak
-        );
-        assert!(
-            measurement.rms.is_finite() && measurement.rms > 1e-5,
-            "{} did not render a finite audible signal: RMS {}",
-            preset.name,
+            measurement.peak,
             measurement.rms
         );
     }
+}
+
+#[test]
+fn shipped_ms20_level_guard_rejects_a_40_db_drop() {
+    let attenuated = Measurement {
+        peak: 0.0040749264,
+        rms: 0.001182144,
+        nan_flushes: 0,
+    };
+
+    assert!(!shipped_level_is_acceptable(
+        &attenuated,
+        0.40749264,
+        0.1182144
+    ));
 }
 
 #[test]
