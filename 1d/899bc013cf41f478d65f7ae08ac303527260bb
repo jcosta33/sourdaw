@@ -1,0 +1,242 @@
+crates/daw-dsp/src/grand_boule/engine.rs
+  h_1228e573df1f42 13,67,133,461,466-477,656-658,704,1654-1713
+crates/daw-dsp/src/grand_boule/mod.rs
+  h_1228e573df1f42 20
+crates/daw-dsp/src/grand_boule/radiation.rs
+  h_1228e573df1f42 1-168
+crates/daw-dsp/tests/device_process_rt.rs
+  h_1228e573df1f42 1017-1020
+public/wasm/daw-dsp/daw_dsp.d.ts
+  h_1228e573df1f42 1,984-1003
+public/wasm/daw-dsp/daw_dsp_bg.wasm.d.ts
+  h_1228e573df1f42 1,188-207
+public/wasm/manifest.json
+  h_1228e573df1f42 12,16-18,21,26
+src/app/__tests__/bootstrap.spec.ts
+  h_1228e573df1f42 150-153,384
+src/app/bootstrap.ts
+  h_1228e573df1f42 50,393
+src/modules/AiRuntime/models/BackingVocalPlateCapability.ts
+  h_1228e573df1f42 1-37
+src/modules/AiRuntime/models/BassProcessingCopyCapability.ts
+  h_1228e573df1f42 1-57
+src/modules/AiRuntime/models/Chat.ts
+  h_1228e573df1f42 6-7,22
+src/modules/AiRuntime/models/ExecutableRuntimeAction.ts
+  h_1228e573df1f42 9-10,12-13
+src/modules/AiRuntime/models/ProjectContext.ts
+  h_1228e573df1f42 16,30-57
+src/modules/AiRuntime/models/RuntimeAction.ts
+  h_1228e573df1f42 73,75,193,271-280,292,294,316,333,345,347,369
+src/modules/AiRuntime/models/__tests__/RuntimeAction.spec.ts
+  h_1228e573df1f42 21,24-26,62-72,102,137-139
+src/modules/AiRuntime/presentations/views/ChatPanel.tsx
+  h_1228e573df1f42 3,155-156,216-229
+src/modules/AiRuntime/presentations/views/__tests__/ChatPanel.spec.tsx
+  h_1228e573df1f42 165-189
+src/modules/AiRuntime/stores/pendingActionConfirmationStore.ts
+  h_1228e573df1f42 3,41-42,110-111,165-192,230-261
+src/modules/AiRuntime/transformers/llmActionBridge.ts
+  h_1228e573df1f42 6-7,772-797,3081-3082,3091-3092,3100-3101
+src/modules/AiRuntime/useCases/__tests__/backingVocalPlateWorkflow.spec.ts
+  h_1228e573df1f42 1-1141
+src/modules/AiRuntime/useCases/__tests__/bassCompressorParameterPromptWorkflow.spec.ts
+  h_1228e573df1f42 675,687-688
+src/modules/AiRuntime/useCases/__tests__/bassCompressorPromptWorkflow.spec.ts
+  h_1228e573df1f42 297,401
+src/modules/AiRuntime/useCases/__tests__/bassProcessingCopyPromptWorkflow.spec.ts
+  h_1228e573df1f42 1-964
+src/modules/AiRuntime/useCases/__tests__/getProjectContext.spec.ts
+  h_1228e573df1f42 5,11-37,40-44,122,162,396-408,411,458,503-556
+src/modules/AiRuntime/useCases/agentReference/BatchLocalActionIdentity.ts
+  h_1228e573df1f42 1-11
+src/modules/AiRuntime/useCases/agentReference/__tests__/bridgeBackingVocalPlatePlan.spec.ts
+  h_1228e573df1f42 1-56
+src/modules/AiRuntime/useCases/agentReference/__tests__/materializeBatchLocalActionIdentities.spec.ts
+  h_1228e573df1f42 6,27-43,61-72
+src/modules/AiRuntime/useCases/agentReference/bridgeBackingVocalPlatePlan.ts
+  h_1228e573df1f42 1-165
+src/modules/AiRuntime/useCases/agentReference/bridgeGroundedLlmToolCalls.ts
+  h_1228e573df1f42 19-20,22-25,67-68,72,3892-3903,3905-3954,4259-4278,4360-4364,4369-4374
+src/modules/AiRuntime/useCases/agentReference/getBackingVocalPlatePromptScope.ts
+  h_1228e573df1f42 1-297
+src/modules/AiRuntime/useCases/agentReference/getBassProcessingCopyPromptScope.ts
+  h_1228e573df1f42 1-246
+src/modules/AiRuntime/useCases/agentReference/getDrumRoutingPromptScope.ts
+  h_1228e573df1f42 8-9,92
+src/modules/AiRuntime/useCases/agentReference/materializeBatchLocalActionIdentities.ts
+  h_1228e573df1f42 4,10,16,18,20-25,29-32,36-41,45-46,48-61,64-67,70,72-73,77-85
+src/modules/AiRuntime/useCases/agentReference/projectCanonicalTrackRole.ts
+  h_1228e573df1f42 1-68
+src/modules/AiRuntime/useCases/confirmPendingChatActions.ts
+  h_1228e573df1f42 2,13,16,74-134,141-142,146-148,161-249,257-259,334-346,375-383,387-389,396
+src/modules/AiRuntime/useCases/describePendingActionConfirmation.ts
+  h_1228e573df1f42 1,9-10,53-90,170-175,183-184,204-229,233-242,261-301,333-334
+src/modules/AiRuntime/useCases/getPlannedActionAffectedIds.ts
+  h_1228e573df1f42 39-50,60-77
+src/modules/AiRuntime/useCases/getProjectContext.ts
+  h_1228e573df1f42 1-7,20-21,42,55,70,88,123-134,258
+src/modules/AiRuntime/useCases/materializeActionStateGuards.ts
+  h_1228e573df1f42 7-8,13-41,44-45,50-63,70-127,220-232,249-264,277-280,283-311,406-499
+src/modules/AiRuntime/useCases/parsePromptToActions.ts
+  h_1228e573df1f42 20-21,124-125,131-134,150-151,241-244
+src/modules/AiRuntime/useCases/validateActionPayload.ts
+  h_1228e573df1f42 325-333,343-347,747-757
+src/modules/Arrangement/handlers/batchFeature/adjustmentLayerHandlers.ts
+  h_1228e573df1f42 94-128,135-136
+src/modules/Arrangement/handlers/batchFeature/handleAddAdjustmentRegion.ts
+  h_1228e573df1f42 2,4-5,8-54,57-75,82-83,86-110
+src/modules/Arrangement/handlers/batchFeature/handleRemoveAdjustmentRegion.ts
+  h_1228e573df1f42 3-4,7-19,22-33,35-61,65-73
+src/modules/Arrangement/handlers/device/__tests__/handleSetDeviceParameter.spec.ts
+  h_1228e573df1f42 8,10,28-35,47,136,197,199-205,210,213-274,290-328
+src/modules/Arrangement/handlers/device/handleSetDeviceParameter.ts
+  h_1228e573df1f42 1,4,18,27,40,53,62,64,69-71,75-83,118-130,132-169,175-181,190-193,195-209,213-217,221,223-230,234-254,258
+src/modules/Arrangement/models/PluginDescriptors/GrandBouleDescriptor.ts
+  h_1228e573df1f42 55-80
+src/modules/Arrangement/models/PluginDescriptors/__tests__/BuiltinInstrumentDescriptors.spec.ts
+  h_1228e573df1f42 4,65-73
+src/modules/Arrangement/models/PluginDescriptors/__tests__/declaredRangeVsKnobTravel.spec.ts
+  h_1228e573df1f42 1667-1668,1753-1756,2224,2254
+src/modules/Arrangement/models/__tests__/DeviceParameterLaw.spec.ts
+  h_1228e573df1f42 296-297,300
+src/modules/Arrangement/stores/__tests__/deviceWriteBoundaryClosure.spec.ts
+  h_1228e573df1f42 56-60,347-349,356,590-594
+src/modules/Arrangement/useCases/adjustmentLayer/addAdjustmentRegion.ts
+  h_1228e573df1f42 8-9,24-25
+src/modules/Arrangement/useCases/device/setDeviceParameter/setDeviceParameter.ts
+  h_1228e573df1f42 13-22,67-73,76
+src/modules/AudioEngine/engine/GrandBouleNode.ts
+  h_1228e573df1f42 74-75,92-132,622-629
+src/modules/AudioEngine/engine/__tests__/GrandBouleNode.spec.ts
+  h_1228e573df1f42 112-119,652,657-704
+src/modules/AudioEngine/repositories/offlineScheduler/__tests__/offlineAutomationCoverage.spec.ts
+  h_1228e573df1f42 7,29,48,53-54,64,270-271,289-294
+src/modules/AudioEngine/wasm/daw_dsp.d.ts
+  h_1228e573df1f42 1,984-1003
+src/modules/AudioEngine/worklets/__tests__/grandBouleDispatchParity.spec.ts
+  h_1228e573df1f42 177-178,301-302
+src/modules/AudioEngine/worklets/__tests__/grandBouleOfflineNoteTiming.spec.ts
+  h_1228e573df1f42 47-49,59,65-68,182-195,231-232,285-430
+src/modules/AudioEngine/worklets/grandBouleEngineCore.ts
+  h_1228e573df1f42 60-61
+src/modules/AudioEngine/worklets/grandBouleOfflineProcessor.ts
+  h_1228e573df1f42 49,64-162,170-171,182,242,247-268,273,277-309,328-332
+src/modules/AudioRendering/handlers/__tests__/handleRenderProjectSections.spec.ts
+  h_1228e573df1f42 1-128
+src/modules/AudioRendering/handlers/handleRemoveRenderedProjectSections.ts
+  h_1228e573df1f42 1-47
+src/modules/AudioRendering/handlers/handleRenderProjectSections.ts
+  h_1228e573df1f42 1-83
+src/modules/AudioRendering/models/AgentSectionRenderArtifact.ts
+  h_1228e573df1f42 1-19
+src/modules/AudioRendering/models/AgentSectionRenderRetentionPolicy.ts
+  h_1228e573df1f42 1-5
+src/modules/AudioRendering/stores/agentSectionRenderArtifactStore.ts
+  h_1228e573df1f42 1-11
+src/modules/AudioRendering/useCases/__tests__/renderAgentProjectSections.spec.ts
+  h_1228e573df1f42 1-234
+src/modules/AudioRendering/useCases/clearAgentSectionRenderArtifacts.ts
+  h_1228e573df1f42 1-5
+src/modules/AudioRendering/useCases/getAgentSectionRenderArtifacts.ts
+  h_1228e573df1f42 1-8
+src/modules/AudioRendering/useCases/getAudioRenderingHandlers.ts
+  h_1228e573df1f42 1-19
+src/modules/AudioRendering/useCases/index.ts
+  h_1228e573df1f42 6-9
+src/modules/AudioRendering/useCases/pruneExpiredAgentSectionRenderArtifacts.ts
+  h_1228e573df1f42 1-10
+src/modules/AudioRendering/useCases/removeAgentProjectSectionArtifacts.ts
+  h_1228e573df1f42 1-14
+src/modules/AudioRendering/useCases/renderAgentProjectSections.ts
+  h_1228e573df1f42 1-154
+src/modules/AudioRendering/useCases/retryAgentProjectSectionRenders.ts
+  h_1228e573df1f42 1-15
+src/modules/Automation/handlers/automation/handleAutomateSendRanges.ts
+  h_1228e573df1f42 1-115
+src/modules/Automation/handlers/automation/handleRemoveSendAutomationRanges.ts
+  h_1228e573df1f42 1-120
+src/modules/Automation/services/__tests__/buildSendAutomationRangesLane.spec.ts
+  h_1228e573df1f42 1-78
+src/modules/Automation/services/buildSendAutomationRangesLane.ts
+  h_1228e573df1f42 1-41
+src/modules/Automation/useCases/automation/applySendAutomationRanges.ts
+  h_1228e573df1f42 1-31
+src/modules/Automation/useCases/getAutomationHandlers.ts
+  h_1228e573df1f42 6,13,28,31,56,59
+src/modules/Command/useCases/__tests__/executableAppActionRegistry.spec.ts
+  h_1228e573df1f42 30
+src/modules/Command/useCases/__tests__/executableCommandRegistry.spec.ts
+  h_1228e573df1f42 4,835,891-905,953-994,2030-2035,2060-2071,2224
+src/modules/Command/useCases/__tests__/executeAppAction.spec.ts
+  h_1228e573df1f42 289,292,300,306,309,317,473,489,503
+src/modules/Command/useCases/__tests__/executeAppActionBatch.spec.ts
+  h_1228e573df1f42 608-612,614,630,933,935-937,942
+src/modules/Command/useCases/__tests__/redo.spec.ts
+  h_1228e573df1f42 82-89,91-101,108,114-119,127-166,182-207,215,275-305,335-338,422-425
+src/modules/Command/useCases/__tests__/undoToIndex.integration.spec.ts
+  h_1228e573df1f42 123-126
+src/modules/Command/useCases/executableAppActionRegistry.ts
+  h_1228e573df1f42 5,1725,1804-1823,1896-1946
+src/modules/Command/useCases/executeAppAction.ts
+  h_1228e573df1f42 25-36,40,76-81,84-92,190,194,196-199,216-217
+src/modules/Command/useCases/executeAppActionBatch.ts
+  h_1228e573df1f42 45,497-498,538-545
+src/modules/Command/useCases/getAppActionExecutionPolicy.ts
+  h_1228e573df1f42 63-70
+src/modules/Command/useCases/redo.ts
+  h_1228e573df1f42 47-56,58-61,71,75-81,112-122,124
+src/modules/Gluten/presentations/views/GlutenPanel.tsx
+  h_1228e573df1f42 1,18,36,237-262,375,387-388,396-397,420,424,433-440,454-457,789,814,911,917,920,936,942,945
+src/modules/Gluten/presentations/views/__tests__/glutenProjectHydration.spec.tsx
+  h_1228e573df1f42 1-77
+src/modules/Gluten/presentations/views/__tests__/glutenTopologyControlGating.spec.tsx
+  h_1228e573df1f42 39-44,131-143,178-203
+src/modules/Gluten/useCases/glutenParamBridge/hydrateGlutenPatchFromProject.ts
+  h_1228e573df1f42 1-161
+src/modules/GrandBoule/models/GrandBouleConfig.ts
+  h_1228e573df1f42 15-18,44-45
+src/modules/GrandBoule/presentations/views/GrandBoulePanel.tsx
+  h_1228e573df1f42 36,154-159,166-168,183-186,194-201,265,271,280,429-474,581
+src/modules/GrandBoule/presentations/views/__tests__/GrandBoulePanel.spec.tsx
+  h_1228e573df1f42 1,6,10-17,19-29,32-82,92-93,115,117-159
+src/modules/GrandBoule/useCases/__tests__/grandBouleParameterPersistence.integration.spec.ts
+  h_1228e573df1f42 9,30,91-92,99-100,128-145,289-369
+src/modules/GrandBoule/useCases/__tests__/setGrandBouleMasterGain.spec.ts
+  h_1228e573df1f42 55,60,71-74
+src/modules/GrandBoule/useCases/__tests__/setGrandBouleSoundboardSend.spec.ts
+  h_1228e573df1f42 53,58,69-72,74,76
+src/modules/GrandBoule/useCases/__tests__/setGrandBouleSympatheticSend.spec.ts
+  h_1228e573df1f42 53,58,69-72,74,76
+src/modules/GrandBoule/useCases/grandBouleParamBridge/helpers.ts
+  h_1228e573df1f42 2,5,8,17,22-28,32-58,71,73,92-94,116-119,129-138
+src/modules/GrandBoule/useCases/hydrateGrandBouleConfigFromProject.ts
+  h_1228e573df1f42 3,7,19-21,44,47-51,54-55
+src/modules/GrandBoule/useCases/normalizeGrandBoulePersistedParamValue.ts
+  h_1228e573df1f42 1-26
+src/modules/GrandBoule/useCases/setGrandBouleRadiationParam.ts
+  h_1228e573df1f42 1-36
+src/modules/ProofChamber/models/ProofChamberState.ts
+  h_1228e573df1f42 246-251
+src/modules/ProofChamber/presentations/views/ProofChamberPanel.tsx
+  h_1228e573df1f42 18,61-62,137-162,253,266-267,274-275,298,300-302,307-310,313-316,493,626,655,721,833,840-841,899,906-907
+src/modules/ProofChamber/presentations/views/__tests__/proofChamberAlgorithmGating.spec.tsx
+  h_1228e573df1f42 38-43,114,172,178,180,183,277-298
+src/modules/ProofChamber/useCases/proofChamber/__tests__/hydrateChamberStateFromProject.spec.ts
+  h_1228e573df1f42 101-109,149-152
+src/modules/ProofChamber/useCases/proofChamber/hydrateChamberStateFromProject.ts
+  h_1228e573df1f42 7,87-88
+src/utils/handlerContract.ts
+  h_1228e573df1f42 309-326,706,708-709,767-824,1409-1410,1412-1432
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "1d899bc013cf41f478d65f7ae08ac303527260bb",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
