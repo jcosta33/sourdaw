@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
+import { once } from 'node:events';
 import { createServer } from 'node:net';
 import { afterEach, test } from 'node:test';
 
@@ -27,7 +28,7 @@ async function getFreePort(): Promise<number> {
 
 async function startServer(): Promise<{ process: ChildProcessWithoutNullStreams; url: string }> {
     const port = await getFreePort();
-    const process = spawn('./node_modules/.bin/tsx', ['collab-server.ts'], {
+    const process = spawn(globalThis.process.execPath, ['--import', 'tsx', 'collab-server.ts'], {
         cwd: globalThis.process.cwd(),
         env: { ...globalThis.process.env, COLLAB_HEARTBEAT_MS: '40', PORT: String(port) },
         stdio: 'pipe',
@@ -93,10 +94,22 @@ afterEach(async () => {
     sockets.clear();
 
     for (const process of processes) {
+        if (process.exitCode !== null || process.signalCode !== null) {
+            continue;
+        }
+
+        const exited = once(process, 'exit');
         process.kill('SIGTERM');
-        await new Promise<void>((resolve) => process.once('exit', () => resolve()));
+        await exited;
     }
     processes.clear();
+});
+
+void test('does not hang cleanup when the relay already exited', { timeout: 1_000 }, async () => {
+    const { process } = await startServer();
+    const exited = once(process, 'exit');
+    process.kill('SIGKILL');
+    await exited;
 });
 
 void test('rejects a duplicate peer without letting its close destroy the live host', async () => {
