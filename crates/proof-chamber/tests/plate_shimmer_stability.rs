@@ -12,6 +12,7 @@ const BLOCK: usize = 128;
 const RENDER_SECONDS: usize = 20;
 const BURST_FRAMES: usize = SAMPLE_RATE / 10;
 const OUTPUT_CEILING: f32 = 2.0;
+const MIN_AUDIBLE_TAIL_PEAK: f32 = 0.01;
 const SETTLING_RATIO: f32 = 0.01;
 
 struct RenderMetrics {
@@ -82,6 +83,11 @@ fn render_shimmer(amount: f32, decay: f32) -> RenderMetrics {
 fn assert_settles(metrics: &RenderMetrics, label: &str) {
     let first_tail_peak = metrics.peak_by_second[1];
     let final_peak = metrics.peak_by_second[RENDER_SECONDS - 1];
+    assert!(
+        first_tail_peak >= MIN_AUDIBLE_TAIL_PEAK,
+        "{label} was effectively silent after the input ended: first tail-second peak {first_tail_peak}, per-second {:?}",
+        metrics.peak_by_second
+    );
     assert!(
         final_peak <= first_tail_peak * SETTLING_RATIO,
         "{label} did not settle below {:.0}% of its first tail second: first {}, final {}, per-second {:?}",
