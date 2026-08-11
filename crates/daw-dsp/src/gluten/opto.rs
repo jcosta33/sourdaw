@@ -4,7 +4,7 @@
 //! Feedback topology with soft, inherently program-dependent ratio.
 
 use super::detector::{DetectionMode, StereoDetector};
-use super::gain_computer::db_to_linear;
+use super::gain_computer::{auto_makeup, db_to_linear};
 use crate::primitives::flush_denormal;
 
 /// One side's opto cell. The CdS memory is per-channel because it *is* the
@@ -62,12 +62,18 @@ impl OptoCompressor {
         self.threshold
     }
 
-    pub fn get_ratio(&self) -> f32 {
-        if self.limit_mode {
+    fn ratio_for_excess(&self, excess: f32) -> f32 {
+        let max_ratio = if self.limit_mode {
             10.0
         } else {
-            3.0
-        }
+            3.0 + self.base_ratio
+        };
+        self.base_ratio + (max_ratio - self.base_ratio) * (excess / 20.0).min(1.0)
+    }
+
+    pub fn auto_makeup_gain(&self) -> f32 {
+        let excess = (0.0 - self.threshold).max(0.0);
+        auto_makeup(self.threshold, self.ratio_for_excess(excess))
     }
 
     pub fn set_param(&mut self, name: &str, value: f32) {
@@ -102,13 +108,7 @@ impl OptoCompressor {
         let excess = (detect_db - self.threshold).max(0.0);
 
         // Program-dependent ratio: increases with excess
-        let max_ratio = if self.limit_mode {
-            10.0
-        } else {
-            3.0 + self.base_ratio
-        };
-        let effective_ratio =
-            self.base_ratio + (max_ratio - self.base_ratio) * (excess / 20.0).min(1.0);
+        let effective_ratio = self.ratio_for_excess(excess);
         let desired_gr_db = excess * (1.0 - 1.0 / effective_ratio);
 
         let sample_rate = self.sample_rate;

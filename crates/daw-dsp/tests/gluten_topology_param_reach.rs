@@ -27,10 +27,10 @@
 //! * **Stage two.** `process_block` runs the blend topology on the primary's
 //!   output whenever `blend_amount > 0.001` and the two differ, so Release on
 //!   Diode is audible the moment Stage 2 is turned up with VCA behind it.
-//! * **Auto gain.** `compute_auto_makeup` reads the engine's own
-//!   `current_ratio`, which the `ratio` name sets regardless of topology. So
-//!   Ratio on Opto — whose cell derives its own ratio and has no arm for the
-//!   name — still changes the output level while Auto gain is on.
+//! * **Auto gain.** The makeup stage reads the active topology's actual curve.
+//!   A shared Ratio write therefore remains inert on Opto, whose cell derives
+//!   its own ratio, while Amount and direct threshold/ratio writes stay
+//!   equivalent on the topologies that implement both controls.
 
 use daw_dsp::gluten::GlutenInstance;
 
@@ -229,6 +229,46 @@ fn threshold_reaches_every_topology() {
 }
 
 #[test]
+fn amount_and_direct_threshold_ratio_render_identically_with_auto_gain() {
+    for (label, topology) in ALL_TOPOLOGIES {
+        let amount = render(|i| {
+            base(topology)(i);
+            i.set_param("auto_makeup", 1.0);
+            i.set_param("amount", 100.0);
+        });
+        let direct = render(|i| {
+            base(topology)(i);
+            i.set_param("auto_makeup", 1.0);
+            i.set_param("threshold", -40.0);
+            i.set_param("ratio", 8.0);
+        });
+
+        assert_eq!(
+            max_delta(&amount, &direct),
+            0.0,
+            "Amount 100% and its exact threshold/ratio expansion must have identical Auto gain on {label}"
+        );
+    }
+}
+
+#[test]
+fn auto_gain_uses_diodes_clamped_ratio() {
+    let with_auto_gain = |ratio: f32| {
+        render(|i| {
+            base(TOPOLOGY_DIODE)(i);
+            i.set_param("auto_makeup", 1.0);
+            i.set_param("ratio", ratio);
+        })
+    };
+
+    assert_eq!(
+        max_delta(&with_auto_gain(6.0), &with_auto_gain(20.0)),
+        0.0,
+        "Auto gain must use Diode's clamped ratio rather than the raw control value"
+    );
+}
+
+#[test]
 fn stage_two_makes_release_audible_on_diode() {
     // The escape the panel's gate has to respect. With VCA behind it, Diode's
     // Release knob is live again — so gating on the primary topology alone
@@ -289,10 +329,10 @@ fn a_release_set_on_diode_is_still_there_after_switching_to_vca() {
 }
 
 #[test]
-fn auto_gain_makes_ratio_audible_on_opto() {
-    // `compute_auto_makeup` reads `current_ratio`, which the engine stores for
-    // any topology. The opto cell never sees the name, but the makeup stage
-    // does.
+fn auto_gain_does_not_make_ratio_audible_on_opto() {
+    // The opto cell derives its own ratio from signal excess. Auto gain must
+    // compensate that curve, not revive the shared Ratio control behind the
+    // topology's back.
     let with_auto_gain = |ratio: f32| {
         render(|i| {
             base(TOPOLOGY_OPTO)(i);
@@ -301,9 +341,9 @@ fn auto_gain_makes_ratio_audible_on_opto() {
         })
     };
     let delta = max_delta(&with_auto_gain(1.5), &with_auto_gain(6.0));
-    assert!(
-        delta > 0.0,
-        "Auto gain must make `ratio` audible on Opto through the makeup stage"
+    assert_eq!(
+        delta, 0.0,
+        "Auto gain must not make `ratio` audible on Opto"
     );
 
     assert_eq!(delta_for(TOPOLOGY_OPTO, "ratio", 1.5, 6.0), 0.0);

@@ -493,7 +493,7 @@ describe('glutenControlGate', () => {
         expect(gate.isInert).toBe(true);
     });
 
-    it('refuses Ratio on Opto only while Auto gain is off', () => {
+    it('refuses Ratio on Opto even while Auto gain is on', () => {
         const opto: GlutenPatch = { ...DEFAULT_PATCH, topology: 'opto', autoMakeup: false };
 
         expect(glutenControlGate({ patch: opto, paramKey: 'ratio', controlLabel: 'Ratio' }).isInert).toBe(true);
@@ -503,7 +503,7 @@ describe('glutenControlGate', () => {
                 paramKey: 'ratio',
                 controlLabel: 'Ratio',
             }).isInert
-        ).toBe(false);
+        ).toBe(true);
     });
 
     it('says "yet" for an unbuilt row and not for a structural one', () => {

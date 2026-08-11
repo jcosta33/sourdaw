@@ -1,4 +1,4 @@
-// @wasm-bindgen-dts crate-source: sha256:f5b4f7a3aa48f58df771214d1601f538fc9599484dd390863c15e54e7b7cd9d0
+// @wasm-bindgen-dts crate-source: sha256:3527d5ed84b689d97af8d7f46bb3ef6a9fdb99ba4218afa3c5ef79d60cf5878f
 /* tslint:disable */
 /* eslint-disable */
 export const memory: WebAssembly.Memory;
@@ -112,21 +112,6 @@ export const kneadinstance_process: (a: number, b: number) => number;
 export const kneadinstance_set_formant_preserve: (a: number, b: number) => void;
 export const kneadinstance_set_retune_speed_ms: (a: number, b: number) => void;
 export const kneadinstance_set_shift_semitones: (a: number, b: number) => void;
-export const __wbg_bacteriainstance_free: (a: number, b: number) => void;
-export const bacteriainstance_add_macro_mapping: (a: number, b: number, c: number, d: number, e: number) => void;
-export const bacteriainstance_add_mod_assignment: (a: number, b: number, c: number, d: number) => void;
-export const bacteriainstance_get_band_levels_ptr: (a: number) => number;
-export const bacteriainstance_get_input_db: (a: number) => number;
-export const bacteriainstance_get_input_left_ptr: (a: number) => number;
-export const bacteriainstance_get_input_right_ptr: (a: number) => number;
-export const bacteriainstance_get_latency_samples: (a: number) => number;
-export const bacteriainstance_get_nan_flush_count: (a: number) => number;
-export const bacteriainstance_get_output_db: (a: number) => number;
-export const bacteriainstance_get_right_ptr: (a: number) => number;
-export const bacteriainstance_new: (a: number) => number;
-export const bacteriainstance_process: (a: number, b: number) => number;
-export const bacteriainstance_set_param: (a: number, b: number, c: number, d: number) => void;
-export const init_panic_hook: () => void;
 export const __wbg_crumbsinstance_free: (a: number, b: number) => void;
 export const __wbg_levaininstance_free: (a: number, b: number) => void;
 export const __wbg_proofinstance_free: (a: number, b: number) => void;
@@ -205,6 +190,21 @@ export const toasterinstance_set_pad_dry_routed: (a: number, b: number, c: numbe
 export const toasterinstance_set_pad_param: (a: number, b: number, c: number, d: number, e: number) => void;
 export const toasterinstance_set_param: (a: number, b: number, c: number, d: number) => void;
 export const toasterinstance_set_param_by_id: (a: number, b: number, c: number) => void;
+export const __wbg_bacteriainstance_free: (a: number, b: number) => void;
+export const bacteriainstance_add_macro_mapping: (a: number, b: number, c: number, d: number, e: number) => void;
+export const bacteriainstance_add_mod_assignment: (a: number, b: number, c: number, d: number) => void;
+export const bacteriainstance_get_band_levels_ptr: (a: number) => number;
+export const bacteriainstance_get_input_db: (a: number) => number;
+export const bacteriainstance_get_input_left_ptr: (a: number) => number;
+export const bacteriainstance_get_input_right_ptr: (a: number) => number;
+export const bacteriainstance_get_latency_samples: (a: number) => number;
+export const bacteriainstance_get_nan_flush_count: (a: number) => number;
+export const bacteriainstance_get_output_db: (a: number) => number;
+export const bacteriainstance_get_right_ptr: (a: number) => number;
+export const bacteriainstance_new: (a: number) => number;
+export const bacteriainstance_process: (a: number, b: number) => number;
+export const bacteriainstance_set_param: (a: number, b: number, c: number, d: number) => void;
+export const init_panic_hook: () => void;
 export const __wbindgen_free: (a: number, b: number, c: number) => void;
 export const __wbindgen_malloc: (a: number, b: number) => number;
 export const __wbindgen_realloc: (a: number, b: number, c: number, d: number) => number;
