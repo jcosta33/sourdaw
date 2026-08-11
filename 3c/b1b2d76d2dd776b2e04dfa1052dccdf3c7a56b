@@ -1,0 +1,14 @@
+tests/e2e/proofChamberDecayMixTestId.spec.ts
+  h_1228e573df1f42 1-55
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "3cb1b2d76d2dd776b2e04dfa1052dccdf3c7a56b",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
