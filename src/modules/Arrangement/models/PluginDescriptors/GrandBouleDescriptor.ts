@@ -62,7 +62,7 @@ export const GRAND_BOULE_DESCRIPTOR: PluginDescriptor = {
             minValue: 0,
             maxValue: 1,
             unit: '',
-            automatable: false,
+            automatable: true,
             hasAutomation: false,
         },
         {
@@ -75,7 +75,7 @@ export const GRAND_BOULE_DESCRIPTOR: PluginDescriptor = {
             minValue: 0,
             maxValue: 2,
             unit: '',
-            automatable: false,
+            automatable: true,
             hasAutomation: false,
         },
     ],
