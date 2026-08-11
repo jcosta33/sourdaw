@@ -1,0 +1,35 @@
+src/modules/Arrangement/models/PluginDescriptors/NativeDspDescriptors.ts
+  s_bc88af7d3b054c::t_b479379acf1e21 106-108
+crates/proof-chamber/src/fdn.rs
+  s_bc88af7d3b054c::t_4666e6fb26bd7c 195-199,325-330,416,588-590,747-761
+  s_bc88af7d3b054c::t_978edb3cef2b92 631-635,730-746
+  s_bc88af7d3b054c::t_6293cf275270d3 630
+crates/proof-chamber/tests/plate_default_damping.rs
+  s_bc88af7d3b054c::t_b479379acf1e21 342-350
+  s_bc88af7d3b054c::t_4666e6fb26bd7c 511-513
+  s_bc88af7d3b054c::t_b30f0a2cb1ecde 351-353
+public/wasm/manifest.json
+  s_bc88af7d3b054c::t_5bfa852e872725 26,30-32,35
+public/wasm/proof-chamber/proof_chamber.d.ts
+  s_bc88af7d3b054c::t_90e1e2379a3ab5 1
+public/wasm/proof-chamber/proof_chamber_bg.wasm.d.ts
+  s_bc88af7d3b054c::t_c6954e51d2db2a 1
+src/modules/AudioEngine/wasm/proof_chamber.d.ts
+  s_bc88af7d3b054c::t_5762b1c0f09f6f 1
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "14075cc861e5eb500be75112de69f8ce11e81cf9",
+  "prompts": {},
+  "sessions": {
+    "s_bc88af7d3b054c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f9b4a-11a2-7f61-8dfb-76eed0eb2a9c",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
