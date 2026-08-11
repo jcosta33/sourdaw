@@ -1,0 +1,40 @@
+src/modules/Crumbs/stores/__tests__/crumbsStore.spec.ts
+  s_bc88af7d3b054c::t_850879553815bc 4-5,8,80-90
+  s_bc88af7d3b054c::t_3ead36b73cf187 91
+src/modules/Crumbs/useCases/hydrateCrumbsParametersFromProject.ts
+  s_bc88af7d3b054c::t_367ea4b63075bb 6-7,10
+src/modules/Crumbs/useCases/setCrumbsParamWithAudio.ts
+  s_bc88af7d3b054c::t_6daafa8366d120 6,70-72,77-79
+src/modules/Grinder/useCases/hydrateGrinderPatchFromProject.ts
+  s_bc88af7d3b054c::t_367ea4b63075bb 6-7,10
+src/modules/Grinder/models/GrinderProjectParameterMap.ts
+  s_bc88af7d3b054c::t_1551088fe78e1b 63-70,75-76
+  s_bc88af7d3b054c::t_f5f2bec501a385 7,17-22,28,30-31,35,39-40,44,54,56-59
+  s_bc88af7d3b054c::t_fad27be7ba714a 78-89,106,110-112,114
+  s_bc88af7d3b054c::t_6daafa8366d120 3,5,8,12,47-49,71-74,77,90-105,107-109,113,115,125,128
+src/modules/Grinder/models/__tests__/GrinderProjectParameterMap.spec.ts
+  s_bc88af7d3b054c::t_850879553815bc 11,13
+  s_bc88af7d3b054c::t_28572dd61d3712 19-38,46-49,52-57
+  s_bc88af7d3b054c::t_6daafa8366d120 9,14
+  s_bc88af7d3b054c::t_ff3ffab4a4a464 58
+src/modules/Grinder/useCases/grinderParamBridge/syncGrinderPatchToAudio.ts
+  s_bc88af7d3b054c::t_6daafa8366d120 5,145
+src/modules/Crumbs/stores/crumbsStore.ts
+  s_bc88af7d3b054c::t_6daafa8366d120 81-96,348-350,378
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "74f800d9584f506297f1702a506254b96772a2a9",
+  "prompts": {},
+  "sessions": {
+    "s_bc88af7d3b054c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f9b4a-11a2-7f61-8dfb-76eed0eb2a9c",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
