@@ -32,6 +32,7 @@ import { resolveDrumKit } from '../../services/deviceResolution';
 import { audioBufferCache } from '../../stores/audioBufferCache';
 import { type DeviceNodeEntry, buildDeviceChain } from '../buildDeviceChain';
 import { getCompensationDelay } from '../latencyCompensation/compensation/getCompensationDelay';
+import { getDefaultBendRangeSemitones } from '../noteExpression/getDefaultBendRangeSemitones';
 
 import { MICRO_FADE_SECONDS, MIXER_AUTOMATION_PARAMETER_IDS, YIELD_EVERY_N_NOTES } from './constants';
 import { projectOfflineYeastTrackNotes } from './projectOfflineYeastTrackNotes';
@@ -423,6 +424,11 @@ export async function scheduleTrackClips({
         endSamples: number;
         toasterPadIndex: number;
         articulationId?: number;
+        pressure?: number;
+        slide?: number;
+        pitchBend?: number;
+        pitchBendRangeSemitones?: number;
+        clipGain: number;
     };
     type WorkletMidiEvent = {
         time: number;
@@ -433,6 +439,24 @@ export async function scheduleTrackClips({
         toasterPadIndex: number;
         articulationId?: number;
     };
+
+    function resolveScheduledMpe(note: ScheduledMidiNote) {
+        const hasExpression = note.pressure !== undefined || note.slide !== undefined || note.pitchBend !== undefined;
+        if (!hasExpression) {
+            return undefined;
+        }
+
+        const mpe = {
+            pressure: note.pressure,
+            slide: note.slide,
+            pitchBend: note.pitchBend,
+            pitchBendRangeSemitones: note.pitchBendRangeSemitones,
+        };
+        if (note.pitchBend !== undefined && mpe.pitchBendRangeSemitones === undefined) {
+            mpe.pitchBendRangeSemitones = getDefaultBendRangeSemitones();
+        }
+        return mpe;
+    }
 
     const drumKit = resolveDrumKit(track.devices);
     const drumKitDevice = track.devices.find(
@@ -540,10 +564,28 @@ export async function scheduleTrackClips({
                     });
                 }
             } else if (kitDef) {
-                scheduleDrumKitNote(offlineCtx, trackInputNode, kitDef, note.pitch, startTime, note.velocity);
+                scheduleDrumKitNote(
+                    offlineCtx,
+                    trackInputNode,
+                    kitDef,
+                    note.pitch,
+                    startTime,
+                    note.velocity,
+                    note.clipGain
+                );
             } else if (drumKit) {
-                scheduleKitNote(offlineCtx, trackInputNode, drumKit, note.pitch, startTime, duration, note.velocity);
+                scheduleKitNote(
+                    offlineCtx,
+                    trackInputNode,
+                    drumKit,
+                    note.pitch,
+                    startTime,
+                    duration,
+                    note.velocity,
+                    note.clipGain
+                );
             } else {
+                const mpe = resolveScheduledMpe(note);
                 scheduleNoteOffline(
                     offlineCtx,
                     trackInputNode,
@@ -551,7 +593,9 @@ export async function scheduleTrackClips({
                     startTime,
                     duration,
                     note.velocity,
-                    synthParams!
+                    synthParams!,
+                    mpe,
+                    note.clipGain
                 );
             }
 
@@ -646,10 +690,15 @@ export async function scheduleTrackClips({
             await scheduleMidiNoteBatch(
                 scheduledNotes.map((note) => {
                     if (note.toasterPadIndex < 0) {
-                        return note;
+                        return { ...note, clipGain: 1 };
                     }
                     const endpoints = projectNoteEndpoints(note.startBeat, note.endBeat, note.toasterPadIndex);
-                    return { ...note, startSamples: endpoints.startSamples, endSamples: endpoints.endSamples };
+                    return {
+                        ...note,
+                        startSamples: endpoints.startSamples,
+                        endSamples: endpoints.endSamples,
+                        clipGain: 1,
+                    };
                 })
             );
         }
@@ -741,6 +790,11 @@ export async function scheduleTrackClips({
                         endSamples: endpoints.endSamples,
                         toasterPadIndex,
                         articulationId: getScheduledArticulationId(note.articulation),
+                        pressure: note.pressure,
+                        slide: note.slide,
+                        pitchBend: note.pitchBend,
+                        pitchBendRangeSemitones: note.pitchBendRangeSemitones,
+                        clipGain: clip.gain,
                     };
                 });
                 await scheduleMidiNoteBatch(scheduledNotes);
