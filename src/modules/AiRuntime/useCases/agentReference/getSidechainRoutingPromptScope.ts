@@ -21,6 +21,10 @@ type SidechainRoutingPromptScope =
 const KICK_PATTERN = /^(?:kick|kick drum|bass drum|bd)(?: (?:in|out|inside|outside|sub|close|far|mic|[0-9]+))*$/u;
 const BASS_PATTERN =
     /^(?:bass|bass di|di bass|bass guitar|electric bass|upright bass|bass synth|synth bass|sub bass)(?: [0-9]+)*$/u;
+const SIDECHAIN_ROUTING_PROMPTS = new Set([
+    'create a sidechain from the kick to every bass compressor that supports sidechain input',
+    'reduce kick bass masking without replacing either basic sound',
+]);
 
 function normalizeText(value: string): string {
     return value
@@ -52,9 +56,7 @@ export function getSidechainRoutingPromptScope(
     projectRevision?: string
 ): SidechainRoutingPromptScope {
     const normalizedPrompt = normalizeText(prompt);
-    if (
-        normalizedPrompt !== 'create a sidechain from the kick to every bass compressor that supports sidechain input'
-    ) {
+    if (!SIDECHAIN_ROUTING_PROMPTS.has(normalizedPrompt)) {
         return { status: 'none' };
     }
 

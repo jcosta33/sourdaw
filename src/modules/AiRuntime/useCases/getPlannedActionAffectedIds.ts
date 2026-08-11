@@ -54,8 +54,13 @@ export function getPlannedActionAffectedIds(action: AppAction): string[] {
     if (action.type === 'addDevice' && action.payload.deviceId) {
         affectedIds.add(action.payload.deviceId);
     }
-    if (action.type === 'addSidechainRoute' && action.payload.targetDeviceId) {
-        affectedIds.add(action.payload.targetDeviceId);
+    if (action.type === 'addSidechainRoute') {
+        if (action.payload.targetDeviceId) {
+            affectedIds.add(action.payload.targetDeviceId);
+        }
+        if (action.payload.routeId) {
+            affectedIds.add(action.payload.routeId);
+        }
     }
     if (action.type === 'addAdjustmentRegion') {
         affectedIds.add(action.payload.layerId);
