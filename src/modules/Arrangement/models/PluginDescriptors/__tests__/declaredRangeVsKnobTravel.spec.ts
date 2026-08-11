@@ -46,9 +46,11 @@ import { BUILTIN_PLUGINS } from '../../DeviceParameter';
  * is enumerated in `BINDING_ATTRIBUTES` below.
  *
  * **Leg 3 — engine clamp.** The two-sided numeric `value.clamp(a, b)` in the
- * Rust `set_param` arm, read the way `descriptorEngineParamWeld` reads the arm
- * names, split per exclusive alternative where a device has one. Covers 116 of 193; every shape it cannot read is named in
- * `ENGINE_CLAMP_COVERAGE`, at the point where the derivation stops.
+ * Rust `set_param` arm, or in an explicitly mapped one-hop setter whose matching
+ * arm passes raw `value` into the clamped parameter. Sources are split per
+ * exclusive alternative where a device has one. Covers 116 of 193; every shape
+ * it cannot read is named in `ENGINE_CLAMP_COVERAGE`, at the point where the
+ * derivation stops.
  *
  * ## Coverage is part of the claim
  *
@@ -571,7 +573,7 @@ type CalleeClampProvider = {
     readonly paramName: string;
     readonly dispatcherSource: string;
     readonly dispatcherFunctionName: string;
-    readonly dispatcherCallExpression: string;
+    readonly dispatcherReceiverName: string;
     readonly source: string;
     readonly functionName: string;
     readonly valueName: string;
@@ -588,7 +590,7 @@ const CALLEE_CLAMP_PROVIDERS: Readonly<Record<string, readonly CalleeClampProvid
             paramName: 'sc_hpf_freq',
             dispatcherSource: 'crates/daw-dsp/src/gluten/engine.rs',
             dispatcherFunctionName: 'set_param',
-            dispatcherCallExpression: 'sidechain.set_hpf_freq(self.sample_rate, value)',
+            dispatcherReceiverName: 'sidechain',
             source: 'crates/daw-dsp/src/gluten/sidechain.rs',
             functionName: 'set_hpf_freq',
             valueName: 'frequency',
@@ -597,7 +599,7 @@ const CALLEE_CLAMP_PROVIDERS: Readonly<Record<string, readonly CalleeClampProvid
             paramName: 'sc_lpf_freq',
             dispatcherSource: 'crates/daw-dsp/src/gluten/engine.rs',
             dispatcherFunctionName: 'set_param',
-            dispatcherCallExpression: 'sidechain.set_lpf_freq(self.sample_rate, value)',
+            dispatcherReceiverName: 'sidechain',
             source: 'crates/daw-dsp/src/gluten/sidechain.rs',
             functionName: 'set_lpf_freq',
             valueName: 'frequency',
@@ -702,27 +704,43 @@ function readClampsFromFiles(files: readonly string[]): {
     return { byName, contested };
 }
 
-function readNamedFunctionBody(source: string, functionName: string): string | null {
-    const signature = new RegExp(String.raw`\bfn\s+${functionName}\s*\(`);
+type NamedFunction = {
+    readonly body: string;
+    readonly parameterNames: readonly string[];
+};
+
+function readNamedFunction(source: string, functionName: string): NamedFunction | null {
+    const signature = new RegExp(String.raw`\bfn\s+${functionName}\s*\(([^)]*)\)`);
     const match = signature.exec(source);
     if (match === null) {
         return null;
     }
     const openIndex = source.indexOf('{', match.index + match[0].length);
-    return openIndex === -1 ? null : readBraced(source, openIndex);
+    if (openIndex === -1) {
+        return null;
+    }
+    const parameterNames = match[1]!
+        .split(',')
+        .map((parameter) => parameter.trim())
+        .filter((parameter) => parameter !== '' && !parameter.includes('self'))
+        .map((parameter) => /^([A-Za-z_]\w*)\s*:/.exec(parameter)?.[1] ?? '');
+    if (parameterNames.includes('')) {
+        return null;
+    }
+    return { body: readBraced(source, openIndex), parameterNames };
 }
 
-function dispatcherArmPassesRawValue(provider: CalleeClampProvider): boolean {
+function dispatcherArmPassesRawValue(provider: CalleeClampProvider, valueParameterIndex: number): boolean {
     const sourcePath = join(REPO_ROOT, provider.dispatcherSource);
     if (!existsSync(sourcePath)) {
         return false;
     }
     const source = stripComments(readFileSync(sourcePath, 'utf8'));
-    const body = readNamedFunctionBody(source, provider.dispatcherFunctionName);
-    if (body === null) {
+    const dispatcher = readNamedFunction(source, provider.dispatcherFunctionName);
+    if (dispatcher === null) {
         return false;
     }
-    const flattened = body.replaceAll(/\s+/g, ' ');
+    const flattened = dispatcher.body.replaceAll(/\s+/g, ' ');
     const armHeader = /"([\w-]+)"((?:\s*\|\s*"[\w-]+")*)\s*=>/g;
     const headers = [...flattened.matchAll(armHeader)];
     const headerIndex = headers.findIndex((header) => {
@@ -735,21 +753,29 @@ function dispatcherArmPassesRawValue(provider: CalleeClampProvider): boolean {
     const header = headers[headerIndex]!;
     const start = header.index + header[0].length;
     const end = headers[headerIndex + 1]?.index ?? flattened.length;
-    const arm = flattened.slice(start, end).replaceAll(/\s+/g, '');
-    return arm.includes(provider.dispatcherCallExpression.replaceAll(/\s+/g, ''));
+    const arm = flattened.slice(start, end);
+    const call = new RegExp(
+        String.raw`\b${provider.dispatcherReceiverName}\.${provider.functionName}\s*\(([^)]*)\)`
+    ).exec(arm);
+    if (call === null) {
+        return false;
+    }
+    const argumentsByPosition = call[1]!.split(',').map((argument) => argument.trim());
+    return argumentsByPosition[valueParameterIndex] === 'value';
 }
 
 function readCalleeClamp(provider: CalleeClampProvider): Clamp | null {
     const sourcePath = join(REPO_ROOT, provider.source);
-    if (!existsSync(sourcePath) || !dispatcherArmPassesRawValue(provider)) {
+    if (!existsSync(sourcePath)) {
         return null;
     }
     const source = stripComments(readFileSync(sourcePath, 'utf8'));
-    const functionBody = readNamedFunctionBody(source, provider.functionName);
-    if (functionBody === null) {
+    const callee = readNamedFunction(source, provider.functionName);
+    const valueParameterIndex = callee?.parameterNames.indexOf(provider.valueName) ?? -1;
+    if (callee === null || valueParameterIndex === -1 || !dispatcherArmPassesRawValue(provider, valueParameterIndex)) {
         return null;
     }
-    const body = functionBody.replaceAll(/\s+/g, ' ');
+    const body = callee.body.replaceAll(/\s+/g, ' ');
     const clamp = new RegExp(
         String.raw`\b${provider.valueName}\.clamp\(\s*(${RUST_NUMBER})\s*,\s*(${RUST_NUMBER})\s*\)`
     ).exec(body);
