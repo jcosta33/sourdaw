@@ -11,7 +11,7 @@ use crate::midi_fx::{Arpeggiator, MidiEventBuffer, MidiFx, ProbabilityEvaluator,
 use crate::plugin_slot::{MidiNoteEvent, NativePlugin, TransportState};
 use daw_core::tuning::TuningTable;
 use daw_dsp::knead::engine::KneadEngine;
-use rtrb::Consumer;
+use rtrb::{Consumer, Producer, PushError};
 use triple_buffer::{Input, Output};
 
 pub enum MidiFxKind {
@@ -68,6 +68,66 @@ struct ActiveEffect {
     pending_midi: MidiEventBuffer,
 }
 
+pub(crate) const RETIREMENT_QUEUE_CAPACITY: usize = 256;
+
+/// Opaque graph resources removed by the real-time scheduler.
+///
+/// The consumer paired with `AudioScheduler::new` must be drained on a
+/// non-real-time thread so plugin, MIDI FX, and bridge destructors never run in
+/// the audio callback.
+pub struct RetiredGraphObjects {
+    effect: Option<ActiveEffect>,
+    audio_bridge: Option<PluginAudioBridge>,
+    midi_fx: Option<Box<dyn MidiFx>>,
+}
+
+impl RetiredGraphObjects {
+    fn effect(effect: ActiveEffect) -> Self {
+        Self {
+            effect: Some(effect),
+            audio_bridge: None,
+            midi_fx: None,
+        }
+    }
+
+    fn effect_with_bridge(
+        effect: Option<ActiveEffect>,
+        audio_bridge: Option<PluginAudioBridge>,
+    ) -> Option<Self> {
+        if effect.is_none() && audio_bridge.is_none() {
+            return None;
+        }
+
+        Some(Self {
+            effect,
+            audio_bridge,
+            midi_fx: None,
+        })
+    }
+
+    fn audio_bridge(audio_bridge: PluginAudioBridge) -> Self {
+        Self {
+            effect: None,
+            audio_bridge: Some(audio_bridge),
+            midi_fx: None,
+        }
+    }
+
+    fn midi_fx(midi_fx: Box<dyn MidiFx>) -> Self {
+        Self {
+            effect: None,
+            audio_bridge: None,
+            midi_fx: Some(midi_fx),
+        }
+    }
+
+    pub(crate) fn len(&self) -> usize {
+        usize::from(self.effect.is_some())
+            + usize::from(self.audio_bridge.is_some())
+            + usize::from(self.midi_fx.is_some())
+    }
+}
+
 impl ActiveEffect {
     fn new(id: usize, instance: PluginCore) -> Self {
         Self {
@@ -93,6 +153,8 @@ pub struct AudioScheduler {
     effects: Vec<ActiveEffect>,
     audio_bridges: Vec<PluginAudioBridge>,
     command_rx: Consumer<GraphCommand>,
+    retired_tx: Producer<RetiredGraphObjects>,
+    pending_retirement: Option<RetiredGraphObjects>,
     sample_rate: f32,
     transport: TransportState,
     midi_rt_diagnostics: ActiveMidiRtDiagnostics,
@@ -100,13 +162,22 @@ pub struct AudioScheduler {
 }
 
 impl AudioScheduler {
-    pub fn new(command_rx: Consumer<GraphCommand>, sample_rate: f32) -> Self {
+    /// Create a scheduler with a producer for removed graph resources.
+    ///
+    /// The matching consumer is part of the control-plane ownership contract
+    /// and must be drained outside the audio callback.
+    pub fn new(
+        command_rx: Consumer<GraphCommand>,
+        retired_tx: Producer<RetiredGraphObjects>,
+        sample_rate: f32,
+    ) -> Self {
         let (diagnostics_tx, _diagnostics_reader) = active_midi_rt_diagnostics_channel();
-        Self::with_midi_rt_diagnostics(command_rx, sample_rate, diagnostics_tx)
+        Self::with_midi_rt_diagnostics(command_rx, retired_tx, sample_rate, diagnostics_tx)
     }
 
     pub(crate) fn with_midi_rt_diagnostics(
         command_rx: Consumer<GraphCommand>,
+        retired_tx: Producer<RetiredGraphObjects>,
         sample_rate: f32,
         midi_rt_diagnostics_tx: Input<ActiveMidiRtDiagnosticsSnapshot>,
     ) -> Self {
@@ -114,6 +185,8 @@ impl AudioScheduler {
             effects: Vec::with_capacity(128),
             audio_bridges: Vec::with_capacity(128),
             command_rx,
+            retired_tx,
+            pending_retirement: None,
             sample_rate,
             transport: TransportState::default(),
             midi_rt_diagnostics: ActiveMidiRtDiagnostics::new(),
@@ -130,8 +203,12 @@ impl AudioScheduler {
     /// Process pending UI commands lock-free on the audio thread.
     #[inline]
     pub fn update_graph(&mut self) {
+        if !self.flush_pending_retirement() {
+            return;
+        }
+
         while let Ok(cmd) = self.command_rx.pop() {
-            match cmd {
+            let retired = match cmd {
                 GraphCommand::AddEffect(id, plugin_type) => {
                     let instance = match plugin_type.as_str() {
                         "knead" => Some(PluginCore::Knead(KneadEngine::new(self.sample_rate))),
@@ -140,32 +217,39 @@ impl AudioScheduler {
                     if let Some(inst) = instance {
                         self.effects.push(ActiveEffect::new(id, inst));
                     }
+                    None
                 }
                 GraphCommand::RemoveEffect(id) | GraphCommand::RemovePlugin(id) => {
-                    self.effects.retain(|e| e.id != id);
+                    self.remove_effect(id).map(RetiredGraphObjects::effect)
                 }
                 GraphCommand::RemovePluginWithBridge(id) => {
-                    self.effects.retain(|e| e.id != id);
-                    self.audio_bridges.retain(|b| b.plugin_id != id);
+                    RetiredGraphObjects::effect_with_bridge(
+                        self.remove_effect(id),
+                        self.remove_audio_bridge(id),
+                    )
                 }
                 GraphCommand::SetParam(id, _name, _value) => {
                     if let Some(_effect) = self.effects.iter_mut().find(|e| e.id == id) {
                         // TODO: Map string parameters to Knead methods
                     }
+                    None
                 }
                 GraphCommand::SetBypass(id, bypassed) => {
                     if let Some(effect) = self.effects.iter_mut().find(|e| e.id == id) {
                         effect.bypassed = bypassed;
                     }
+                    None
                 }
                 GraphCommand::AddPlugin(id, plugin) => {
                     self.effects
                         .push(ActiveEffect::new(id, PluginCore::Native(plugin)));
+                    None
                 }
                 GraphCommand::AddPluginWithBridge(id, plugin, bridge) => {
                     self.effects
                         .push(ActiveEffect::new(id, PluginCore::Native(plugin)));
                     self.audio_bridges.push(bridge);
+                    None
                 }
                 GraphCommand::AddMidiFx(id, fx_kind) => {
                     if let Some(effect) = self.effects.iter_mut().find(|e| e.id == id) {
@@ -175,12 +259,17 @@ impl AudioScheduler {
                         };
                         effect.midi_fx.push(fx);
                     }
+                    None
                 }
                 GraphCommand::RemoveMidiFx(id, index) => {
                     if let Some(effect) = self.effects.iter_mut().find(|e| e.id == id) {
                         if index < effect.midi_fx.len() {
-                            effect.midi_fx.remove(index);
+                            Some(RetiredGraphObjects::midi_fx(effect.midi_fx.remove(index)))
+                        } else {
+                            None
                         }
+                    } else {
+                        None
                     }
                 }
                 GraphCommand::SetMidiFxParam(id, index, name, value) => {
@@ -189,24 +278,66 @@ impl AudioScheduler {
                             fx.set_param(&name, value);
                         }
                     }
+                    None
                 }
                 GraphCommand::SendMidiNote(id, event) => {
                     if let Some(effect) = self.effects.iter_mut().find(|e| e.id == id) {
                         effect.enqueue_midi(event, &mut self.midi_rt_diagnostics);
                     }
+                    None
                 }
                 GraphCommand::SetTransport(state) => {
                     self.transport = state;
+                    None
                 }
                 GraphCommand::RegisterTuning(_id, _output) => {
                     // The current KneadEngine contract does not expose a tuning input.
+                    None
                 }
                 GraphCommand::RegisterAudioBridge(bridge) => {
                     self.audio_bridges.push(bridge);
+                    None
                 }
-                GraphCommand::UnregisterAudioBridge(plugin_id) => {
-                    self.audio_bridges.retain(|b| b.plugin_id != plugin_id);
+                GraphCommand::UnregisterAudioBridge(plugin_id) => self
+                    .remove_audio_bridge(plugin_id)
+                    .map(RetiredGraphObjects::audio_bridge),
+            };
+
+            if let Some(retired) = retired {
+                if !self.retire(retired) {
+                    return;
                 }
+            }
+        }
+    }
+
+    fn remove_effect(&mut self, id: usize) -> Option<ActiveEffect> {
+        let index = self.effects.iter().position(|effect| effect.id == id)?;
+        Some(self.effects.remove(index))
+    }
+
+    fn remove_audio_bridge(&mut self, plugin_id: usize) -> Option<PluginAudioBridge> {
+        let index = self
+            .audio_bridges
+            .iter()
+            .position(|bridge| bridge.plugin_id == plugin_id)?;
+        Some(self.audio_bridges.remove(index))
+    }
+
+    fn flush_pending_retirement(&mut self) -> bool {
+        let Some(retired) = self.pending_retirement.take() else {
+            return true;
+        };
+
+        self.retire(retired)
+    }
+
+    fn retire(&mut self, retired: RetiredGraphObjects) -> bool {
+        match self.retired_tx.push(retired) {
+            Ok(()) => true,
+            Err(PushError::Full(retired)) => {
+                self.pending_retirement = Some(retired);
+                false
             }
         }
     }
@@ -351,8 +482,9 @@ mod tests {
     use std::any::Any;
     use std::sync::{
         atomic::{AtomicUsize, Ordering},
-        Arc,
+        mpsc, Arc,
     };
+    use std::thread;
 
     struct FakeNativePlugin {
         value: f32,
@@ -361,6 +493,61 @@ mod tests {
     struct MidiRecordingPlugin {
         received_event_count: Arc<AtomicUsize>,
         received_channel_sum: Arc<AtomicUsize>,
+    }
+
+    struct DropTrackingPlugin {
+        dropped_tx: mpsc::Sender<thread::ThreadId>,
+    }
+
+    struct DropTrackingMidiFx {
+        dropped_tx: mpsc::Sender<thread::ThreadId>,
+    }
+
+    impl Drop for DropTrackingPlugin {
+        fn drop(&mut self) {
+            self.dropped_tx
+                .send(thread::current().id())
+                .expect("drop observer should remain connected");
+        }
+    }
+
+    impl NativePlugin for DropTrackingPlugin {
+        fn process_audio(&mut self, _left: &mut [f32], _right: &mut [f32], _num_samples: usize) {}
+
+        fn name(&self) -> &str {
+            "drop-tracking-plugin"
+        }
+
+        fn as_any(&self) -> &dyn Any {
+            self
+        }
+
+        fn as_any_mut(&mut self) -> &mut dyn Any {
+            self
+        }
+    }
+
+    impl Drop for DropTrackingMidiFx {
+        fn drop(&mut self) {
+            self.dropped_tx
+                .send(thread::current().id())
+                .expect("drop observer should remain connected");
+        }
+    }
+
+    impl MidiFx for DropTrackingMidiFx {
+        fn process_midi(
+            &mut self,
+            _events: &mut MidiEventBuffer,
+            _transport: &TransportState,
+            _sample_rate: f32,
+            _num_samples: usize,
+        ) {
+        }
+
+        fn set_param(&mut self, _name: &str, _value: f32) {}
+
+        fn reset(&mut self) {}
     }
 
     impl NativePlugin for FakeNativePlugin {
@@ -418,16 +605,31 @@ mod tests {
         }
     }
 
-    fn create_scheduler() -> (rtrb::Producer<GraphCommand>, AudioScheduler) {
+    fn create_scheduler() -> (
+        rtrb::Producer<GraphCommand>,
+        AudioScheduler,
+        rtrb::Consumer<RetiredGraphObjects>,
+    ) {
         let (command_tx, command_rx) = RingBuffer::new(16);
-        let scheduler = AudioScheduler::new(command_rx, 48_000.0);
+        let (retired_tx, retired_rx) = RingBuffer::new(16);
+        let scheduler = AudioScheduler::new(command_rx, retired_tx, 48_000.0);
 
-        (command_tx, scheduler)
+        (command_tx, scheduler, retired_rx)
+    }
+
+    fn reclaim_on_background_thread(retired: RetiredGraphObjects) -> thread::ThreadId {
+        thread::spawn(move || {
+            let reclaimer_thread = thread::current().id();
+            drop(retired);
+            reclaimer_thread
+        })
+        .join()
+        .expect("reclaimer should finish")
     }
 
     #[test]
     fn add_plugin_with_bridge_registers_plugin_and_bridge_atomically() {
-        let (mut command_tx, mut scheduler) = create_scheduler();
+        let (mut command_tx, mut scheduler, _retired_rx) = create_scheduler();
         let (bridge, _handle) = crate::audio_bridge::create_audio_bridge(42);
 
         assert!(command_tx
@@ -457,7 +659,7 @@ mod tests {
 
     #[test]
     fn a_bridged_plugin_processes_only_the_audio_that_arrived_over_its_bridge() {
-        let (mut command_tx, mut scheduler) = create_scheduler();
+        let (mut command_tx, mut scheduler, _retired_rx) = create_scheduler();
         let (bridge, mut handle) = crate::audio_bridge::create_audio_bridge(42);
 
         command_tx
@@ -498,7 +700,7 @@ mod tests {
 
     #[test]
     fn remove_plugin_with_bridge_removes_plugin_and_bridge_atomically() {
-        let (mut command_tx, mut scheduler) = create_scheduler();
+        let (mut command_tx, mut scheduler, mut retired_rx) = create_scheduler();
         let (bridge, _handle) = crate::audio_bridge::create_audio_bridge(42);
 
         command_tx
@@ -517,11 +719,94 @@ mod tests {
 
         assert!(scheduler.effects.is_empty());
         assert!(scheduler.audio_bridges.is_empty());
+        let retired = retired_rx.pop().expect("plugin and bridge retirement");
+        assert!(retired.effect.is_some());
+        assert!(retired.audio_bridge.is_some());
+    }
+
+    #[test]
+    fn removing_plugin_does_not_destroy_it_on_the_scheduler_thread() {
+        let (mut command_tx, mut scheduler, mut retired_rx) = create_scheduler();
+        let (dropped_tx, dropped_rx) = mpsc::channel();
+
+        command_tx
+            .push(GraphCommand::AddPlugin(
+                42,
+                Box::new(DropTrackingPlugin { dropped_tx }),
+            ))
+            .unwrap();
+        scheduler.update_graph();
+        command_tx.push(GraphCommand::RemovePlugin(42)).unwrap();
+        scheduler.update_graph();
+
+        assert_eq!(dropped_rx.try_recv(), Err(mpsc::TryRecvError::Empty));
+        let reclaimer_thread =
+            reclaim_on_background_thread(retired_rx.pop().expect("retired plugin"));
+        assert_eq!(dropped_rx.recv().unwrap(), reclaimer_thread);
+    }
+
+    #[test]
+    fn removing_midi_fx_does_not_destroy_it_on_the_scheduler_thread() {
+        let (mut command_tx, mut scheduler, mut retired_rx) = create_scheduler();
+        let (dropped_tx, dropped_rx) = mpsc::channel();
+
+        command_tx
+            .push(GraphCommand::AddPlugin(
+                42,
+                Box::new(FakeNativePlugin { value: 0.25 }),
+            ))
+            .unwrap();
+        scheduler.update_graph();
+        scheduler.effects[0]
+            .midi_fx
+            .push(Box::new(DropTrackingMidiFx { dropped_tx }));
+        command_tx.push(GraphCommand::RemoveMidiFx(42, 0)).unwrap();
+        scheduler.update_graph();
+
+        assert_eq!(dropped_rx.try_recv(), Err(mpsc::TryRecvError::Empty));
+        let reclaimer_thread =
+            reclaim_on_background_thread(retired_rx.pop().expect("retired MIDI FX"));
+        assert_eq!(dropped_rx.recv().unwrap(), reclaimer_thread);
+    }
+
+    #[test]
+    fn full_retirement_queue_keeps_removed_plugins_alive_until_reclaimed() {
+        let (mut command_tx, command_rx) = RingBuffer::new(16);
+        let (retired_tx, mut retired_rx) = RingBuffer::new(1);
+        let mut scheduler = AudioScheduler::new(command_rx, retired_tx, 48_000.0);
+        let (dropped_tx, dropped_rx) = mpsc::channel();
+
+        for id in [41, 42] {
+            command_tx
+                .push(GraphCommand::AddPlugin(
+                    id,
+                    Box::new(DropTrackingPlugin {
+                        dropped_tx: dropped_tx.clone(),
+                    }),
+                ))
+                .unwrap();
+        }
+        scheduler.update_graph();
+        for id in [41, 42] {
+            command_tx.push(GraphCommand::RemovePlugin(id)).unwrap();
+        }
+        scheduler.update_graph();
+
+        assert_eq!(dropped_rx.try_recv(), Err(mpsc::TryRecvError::Empty));
+        let first_reclaimer =
+            reclaim_on_background_thread(retired_rx.pop().expect("first retired plugin"));
+        assert_eq!(dropped_rx.recv().unwrap(), first_reclaimer);
+
+        scheduler.update_graph();
+        assert_eq!(dropped_rx.try_recv(), Err(mpsc::TryRecvError::Empty));
+        let second_reclaimer =
+            reclaim_on_background_thread(retired_rx.pop().expect("second retired plugin"));
+        assert_eq!(dropped_rx.recv().unwrap(), second_reclaimer);
     }
 
     #[test]
     fn probability_zero_is_gated_before_arpeggiation() {
-        let (mut command_tx, mut scheduler) = create_scheduler();
+        let (mut command_tx, mut scheduler, _retired_rx) = create_scheduler();
         let received_event_count = Arc::new(AtomicUsize::new(0));
         let received_channel_sum = Arc::new(AtomicUsize::new(0));
 
@@ -579,7 +864,8 @@ mod tests {
     fn send_midi_note_drops_newest_events_after_fixed_capacity() {
         let midi_capacity = MIDI_EVENT_BUFFER_CAPACITY;
         let (mut command_tx, command_rx) = RingBuffer::new(256);
-        let mut scheduler = AudioScheduler::new(command_rx, 48_000.0);
+        let (retired_tx, _retired_rx) = RingBuffer::new(256);
+        let mut scheduler = AudioScheduler::new(command_rx, retired_tx, 48_000.0);
         let received_event_count = Arc::new(AtomicUsize::new(0));
         let received_channel_sum = Arc::new(AtomicUsize::new(0));
 

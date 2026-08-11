@@ -3,9 +3,11 @@
 use crate::midi::diagnostics::{
     active_midi_rt_diagnostics_channel, ActiveMidiRtDiagnosticsSnapshot,
 };
-use crate::scheduler::{AudioScheduler, GraphCommand};
+use crate::scheduler::{
+    AudioScheduler, GraphCommand, RetiredGraphObjects, RETIREMENT_QUEUE_CAPACITY,
+};
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
-use rtrb::Consumer;
+use rtrb::{Consumer, RingBuffer};
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender};
 use std::thread;
 use std::time::Duration;
@@ -14,6 +16,7 @@ use triple_buffer::Input;
 const MAX_CALLBACK_FRAMES: usize = 4096;
 const AUDIO_STREAM_STARTUP_TIMEOUT: Duration = Duration::from_secs(5);
 const AUDIO_STREAM_SHUTDOWN_TIMEOUT: Duration = Duration::from_millis(100);
+const AUDIO_OWNER_POLL_INTERVAL: Duration = Duration::from_millis(10);
 
 pub struct AudioThreadHandle {
     shutdown_tx: Sender<()>,
@@ -43,7 +46,7 @@ where
     Stream: 'static,
     Factory: FnOnce() -> Result<Stream, String> + Send + 'static,
 {
-    spawn_owned_audio_stream_with_timeout(factory, AUDIO_STREAM_STARTUP_TIMEOUT)
+    spawn_owned_audio_stream_with_timeout_and_idle(factory, AUDIO_STREAM_STARTUP_TIMEOUT, || {})
 }
 
 fn spawn_owned_audio_stream_with_timeout<Stream, Factory>(
@@ -54,6 +57,19 @@ where
     Stream: 'static,
     Factory: FnOnce() -> Result<Stream, String> + Send + 'static,
 {
+    spawn_owned_audio_stream_with_timeout_and_idle(factory, startup_timeout, || {})
+}
+
+fn spawn_owned_audio_stream_with_timeout_and_idle<Stream, Factory, Idle>(
+    factory: Factory,
+    startup_timeout: Duration,
+    mut idle: Idle,
+) -> Result<AudioThreadHandle, String>
+where
+    Stream: 'static,
+    Factory: FnOnce() -> Result<Stream, String> + Send + 'static,
+    Idle: FnMut() + Send + 'static,
+{
     let (ready_tx, ready_rx) = mpsc::sync_channel(1);
     let (shutdown_tx, shutdown_rx) = mpsc::channel();
     let (shutdown_complete_tx, shutdown_complete_rx) = mpsc::channel();
@@ -62,12 +78,19 @@ where
         .spawn(move || match factory() {
             Ok(stream) => {
                 if ready_tx.send(Ok(())).is_ok() {
-                    let _ = shutdown_rx.recv();
+                    loop {
+                        match shutdown_rx.recv_timeout(AUDIO_OWNER_POLL_INTERVAL) {
+                            Ok(()) | Err(RecvTimeoutError::Disconnected) => break,
+                            Err(RecvTimeoutError::Timeout) => idle(),
+                        }
+                    }
                 }
                 drop(stream);
+                idle();
                 let _ = shutdown_complete_tx.send(());
             }
             Err(error) => {
+                idle();
                 let _ = ready_tx.send(Err(error));
             }
         })
@@ -98,11 +121,23 @@ pub(crate) fn spawn_audio_thread_with_diagnostics(
     command_rx: Consumer<GraphCommand>,
     midi_rt_diagnostics_tx: Input<ActiveMidiRtDiagnosticsSnapshot>,
 ) -> Result<AudioThreadHandle, String> {
-    spawn_owned_audio_stream(move || build_audio_stream(command_rx, midi_rt_diagnostics_tx))
+    let (retired_tx, mut retired_rx) = RingBuffer::new(RETIREMENT_QUEUE_CAPACITY);
+
+    spawn_owned_audio_stream_with_timeout_and_idle(
+        move || build_audio_stream(command_rx, retired_tx, midi_rt_diagnostics_tx),
+        AUDIO_STREAM_STARTUP_TIMEOUT,
+        move || {
+            while let Ok(retired) = retired_rx.pop() {
+                debug_assert!(retired.len() > 0);
+                drop(retired);
+            }
+        },
+    )
 }
 
 fn build_audio_stream(
     command_rx: Consumer<GraphCommand>,
+    retired_tx: rtrb::Producer<RetiredGraphObjects>,
     midi_rt_diagnostics_tx: Input<ActiveMidiRtDiagnosticsSnapshot>,
 ) -> Result<cpal::Stream, String> {
     let host = cpal::default_host();
@@ -115,8 +150,12 @@ fn build_audio_stream(
         .map_err(|e| format!("Failed to get default output config: {}", e))?;
 
     let sample_rate = config.sample_rate() as f32;
-    let mut scheduler =
-        AudioScheduler::with_midi_rt_diagnostics(command_rx, sample_rate, midi_rt_diagnostics_tx);
+    let mut scheduler = AudioScheduler::with_midi_rt_diagnostics(
+        command_rx,
+        retired_tx,
+        sample_rate,
+        midi_rt_diagnostics_tx,
+    );
 
     // We strictly use f32 streams
     let err_fn = |err| eprintln!("an error occurred on stream: {}", err);
@@ -186,7 +225,8 @@ fn build_audio_stream(
 #[cfg(test)]
 mod tests {
     use super::{
-        spawn_owned_audio_stream, spawn_owned_audio_stream_with_timeout, AudioThreadHandle,
+        spawn_owned_audio_stream, spawn_owned_audio_stream_with_timeout,
+        spawn_owned_audio_stream_with_timeout_and_idle, AudioThreadHandle,
     };
     use std::rc::Rc;
     use std::sync::mpsc;
@@ -255,6 +295,26 @@ mod tests {
             .recv()
             .expect("owned resource should report its drop thread");
         assert_eq!(dropped_on, created_on);
+    }
+
+    #[test]
+    fn owner_thread_runs_non_realtime_cleanup_while_stream_is_alive() {
+        let (cleanup_tx, cleanup_rx) = mpsc::channel();
+        let handle = spawn_owned_audio_stream_with_timeout_and_idle(
+            || Ok(()),
+            Duration::from_secs(1),
+            move || {
+                let _ = cleanup_tx.send(thread::current().id());
+            },
+        )
+        .expect("owner thread should start");
+
+        let cleanup_thread = cleanup_rx
+            .recv_timeout(Duration::from_secs(1))
+            .expect("owner thread should poll cleanup");
+        assert_ne!(cleanup_thread, thread::current().id());
+
+        drop(handle);
     }
 
     #[test]
