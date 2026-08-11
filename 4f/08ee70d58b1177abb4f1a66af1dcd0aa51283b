@@ -1,0 +1,29 @@
+src/modules/AiRuntime/useCases/__tests__/backingVocalPlateWorkflow.spec.ts
+  s_a40848e8f8cca9::t_cc65b0658b05bd 769-775,826-830
+src/modules/AiRuntime/useCases/confirmPendingChatActions.ts
+  s_a40848e8f8cca9::t_19140d68184a65 103-106,123-125
+  s_a40848e8f8cca9::t_3980f7f4bae01e 336-346
+  s_a40848e8f8cca9::t_076668b0c437e1 13,74,78-80,82-93,95-102,107-115,117-122,126-127,129-138,141,146-148,166-167,335
+  s_a40848e8f8cca9::t_cd066b3d7d3cf2 128
+  s_a40848e8f8cca9::t_38828e3b22f44f 334
+  s_a40848e8f8cca9::t_b0d3530f0b19fc 162-163,180,185-186,220,226-227,237,243-244
+src/modules/AiRuntime/stores/pendingActionConfirmationStore.ts
+  s_a40848e8f8cca9::t_cd066b3d7d3cf2 183
+  s_a40848e8f8cca9::t_076668b0c437e1 165-182,184-192
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "4f08ee70d58b1177abb4f1a66af1dcd0aa51283b",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
