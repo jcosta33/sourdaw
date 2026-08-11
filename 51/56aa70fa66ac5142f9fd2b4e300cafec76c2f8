@@ -1,0 +1,35 @@
+crates/daw-dsp/src/crumbs/voice.rs
+  s_bc88af7d3b054c::t_0bd37f71d398aa 559-560,608-609,634
+  s_bc88af7d3b054c::t_a5b0ac12a43c83 263,273-299,555,610,612-615,621,627-628,631,633,642,648-649
+  s_bc88af7d3b054c::t_f29a556e78c655 635-636,673-674,725,738-741
+  s_bc88af7d3b054c::t_a4e46122e8db55 658-668,670-672,675-680,682-685,689-699,711-714,726,729,748-749
+  s_bc88af7d3b054c::t_a210e78203f415 40-42,93-95,137,258-259,264-271,408-411,413-415,616-617
+  s_bc88af7d3b054c::t_3ac5930bfac17b 557-558,669,681,686-688,700-710,715-724,727-728,730-737,742-747
+  s_bc88af7d3b054c::t_88a80d30125342 625-626,629-630,632,643-647
+  s_bc88af7d3b054c::t_022c2b2910263c 556,561-607,622,624,637
+  s_bc88af7d3b054c::t_8e183f85a1ea12 611,618-620,623,638-641,650-657
+public/wasm/manifest.json
+  s_bc88af7d3b054c::t_d1419309774775 12,16-18,21
+public/wasm/daw-dsp/daw_dsp.d.ts
+  s_bc88af7d3b054c::t_e8362d6f08c80f 1,865-878,952-1003
+public/wasm/daw-dsp/daw_dsp_bg.wasm.d.ts
+  s_bc88af7d3b054c::t_ab944fe94478cd 1,69-82,156-207
+src/modules/AudioEngine/wasm/daw_dsp.d.ts
+  s_bc88af7d3b054c::t_f0fe444af25489 1,865-878,952-1003
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "5156aa70fa66ac5142f9fd2b4e300cafec76c2f8",
+  "prompts": {},
+  "sessions": {
+    "s_bc88af7d3b054c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f9b4a-11a2-7f61-8dfb-76eed0eb2a9c",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
