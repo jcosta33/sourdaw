@@ -71,6 +71,8 @@ export type GrandBouleNodeResult = {
         sampleFrame?: number
     ) => void;
     setParam: (name: string, value: number) => void;
+    acceptsScheduledParam?: (name: string) => boolean;
+    scheduleParam?: (name: string, segments: readonly OfflineAutomationSegment[]) => void;
     setSustain: (position: number) => void;
     setUnaCorda: (engaged: boolean) => void;
     setSostenuto: (engaged: boolean) => void;
@@ -86,6 +88,47 @@ export type GrandBouleNodeResult = {
     /** Confirms that an offline processor did not fault in its final render quantum. */
     runtimeHealthCheck?: () => Promise<void>;
 };
+
+type OfflineAutomationSegment = {
+    startFrame: number;
+    endFrame: number;
+    startValue: number;
+    endValue: number;
+};
+
+/** Offline scheduling capabilities; values are stable capability IDs, not WASM ordinals. */
+export const GRAND_BOULE_AUTOMATION_PARAM_IDS = {
+    masterGain: 0,
+    soundboardSend: 1,
+    sympatheticSend: 2,
+    lidPosition: 3,
+    micPosition: 4,
+} as const;
+
+function acceptsGrandBouleAutomation(name: string): boolean {
+    return Object.hasOwn(GRAND_BOULE_AUTOMATION_PARAM_IDS, name);
+}
+
+function validAutomationSegments(segments: readonly OfflineAutomationSegment[]): boolean {
+    if (segments.length === 0) {
+        return false;
+    }
+    let previousEndFrame = 0;
+    for (const segment of segments) {
+        if (
+            !Number.isInteger(segment.startFrame) ||
+            !Number.isInteger(segment.endFrame) ||
+            segment.startFrame < previousEndFrame ||
+            segment.endFrame < segment.startFrame ||
+            !Number.isFinite(segment.startValue) ||
+            !Number.isFinite(segment.endValue)
+        ) {
+            return false;
+        }
+        previousEndFrame = segment.endFrame;
+    }
+    return true;
+}
 
 export function isGrandBouleDevice(deviceType: string): boolean {
     return deviceType === 'grand-boule';
@@ -574,6 +617,14 @@ export async function createGrandBouleNode(
         setParam(name: string, value: number) {
             if (Number.isFinite(value)) {
                 post({ type: 'param', name, value });
+            }
+        },
+        acceptsScheduledParam(name: string) {
+            return isOfflineRender && acceptsGrandBouleAutomation(name);
+        },
+        scheduleParam(name: string, segments: readonly OfflineAutomationSegment[]) {
+            if (isOfflineRender && acceptsGrandBouleAutomation(name) && validAutomationSegments(segments)) {
+                post({ type: 'paramAutomation', name, segments });
             }
         },
         setSustain(position: number) {
