@@ -1,4 +1,5 @@
 import { trackStore } from '#/modules/Arrangement/stores';
+import { transportStore } from '#/modules/Transport/stores';
 import { type MidiClipNoteSnapshot } from '#/utils/handlerContract';
 
 import { midiStore } from '../../stores/midiStore';
@@ -16,6 +17,12 @@ type RestoreMidiClipNotesInput = {
         expectedTrackFrozen: boolean;
         expectedSourceClipLocked: boolean;
         expectedTargetClipLocked: boolean;
+    };
+    noteTransformReplayGuard?: {
+        trackId: string;
+        expectedTrackFrozen: boolean;
+        expectedClipLocked: boolean;
+        expectedTempo?: number;
     };
 };
 
@@ -47,6 +54,7 @@ export function restoreMidiClipNotes({
     expectedNotes,
     allowMissingExpectedEmpty = false,
     articulationReplayGuard,
+    noteTransformReplayGuard,
 }: RestoreMidiClipNotesInput): 'written' | 'no-write' | 'conflict' {
     const state = midiStore.value;
     if (!state) {
@@ -54,6 +62,21 @@ export function restoreMidiClipNotes({
     }
     if (articulationReplayGuard && !isArticulationReplayGuardCurrent(clipId, articulationReplayGuard)) {
         return 'conflict';
+    }
+    if (noteTransformReplayGuard) {
+        const track = trackStore.value?.tracks.find((candidate) => candidate.id === noteTransformReplayGuard.trackId);
+        const clip = track?.clips.find((candidate) => candidate.id === clipId);
+        if (
+            !track ||
+            !clip ||
+            clip.type !== 'midi' ||
+            (track.frozen === true) !== noteTransformReplayGuard.expectedTrackFrozen ||
+            (clip.locked === true) !== noteTransformReplayGuard.expectedClipLocked ||
+            (noteTransformReplayGuard.expectedTempo !== undefined &&
+                transportStore.value?.tempo !== noteTransformReplayGuard.expectedTempo)
+        ) {
+            return 'conflict';
+        }
     }
     const storedNotes = state.notesByClipId[clipId];
     const canTreatMissingAsEmpty = storedNotes === undefined && allowMissingExpectedEmpty && expectedNotes.length === 0;

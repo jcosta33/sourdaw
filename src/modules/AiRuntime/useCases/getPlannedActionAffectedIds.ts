@@ -1,4 +1,5 @@
 import { getExecutableAppActionGroundingRules } from '#/modules/Command/useCases';
+import { projectShortMidiOverlapRemoval } from '#/modules/MIDI/useCases';
 import { type AppAction } from '#/utils/handlerContract';
 
 import { getMidiArticulationSemanticChanges } from '../transformers/getMidiArticulationSemanticChanges';
@@ -8,6 +9,18 @@ export function getPlannedActionAffectedIds(action: AppAction): string[] {
     const payload: Readonly<Record<string, unknown>> = action.payload ?? {};
     if (action.type === 'copyMidiArticulations') {
         affectedIds.add(action.payload.trackId);
+    }
+    if (action.type === 'removeShortMidiOverlaps') {
+        affectedIds.add(action.payload.expectedTrackId);
+        affectedIds.add(action.payload.clipId);
+        const projected = projectShortMidiOverlapRemoval({
+            notes: action.payload.expectedNotes,
+            tempo: action.payload.expectedTempo,
+            maximumOverlapMs: action.payload.maximumOverlapMs,
+        });
+        for (const shortened of projected?.shortenedNotes ?? []) {
+            affectedIds.add(shortened.noteId);
+        }
     }
     if (action.type === 'setDeviceParameter' && action.payload.expectedTrackId) {
         affectedIds.add(action.payload.expectedTrackId);

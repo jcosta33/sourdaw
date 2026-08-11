@@ -88,6 +88,7 @@ const executionPolicies = {
     arpeggiate: boundedPolicy,
     closeMixer: boundedPolicy,
     copyMidiArticulations: broadPolicy,
+    removeShortMidiOverlaps: broadPolicy,
     createFolder: boundedPolicy,
     disableMpe: boundedPolicy,
     disableTrack: boundedPolicy,

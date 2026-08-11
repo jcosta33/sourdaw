@@ -26,6 +26,10 @@ import {
 import { getBulkDeviceInsertionTrackScope } from './getBulkDeviceInsertionTrackScope';
 import { getDeviceParameterPromptScope } from './getDeviceParameterPromptScope';
 import { getDrumRoutingPromptScope } from './getDrumRoutingPromptScope';
+import {
+    getMidiOverlapTransformPromptScope,
+    type MidiOverlapTransformRequestScope,
+} from './getMidiOverlapTransformPromptScope';
 import { getMutedEmptyTrackDeletionScope } from './getMutedEmptyTrackDeletionScope';
 import { getSidechainRoutingPromptScope } from './getSidechainRoutingPromptScope';
 import { getWholeProjectVibeMixScope } from './getWholeProjectVibeMixScope';
@@ -66,6 +70,7 @@ type GroundingRules = NonNullable<ReturnType<typeof getExecutableAppActionGround
 type BridgeGroundedLlmToolCallsResult = LlmActionBridgeResult & {
     appOwnedRenderTailSeconds?: number;
     bassProcessingCopyScope?: BassProcessingCopyRequestScope;
+    midiOverlapTransformScope?: MidiOverlapTransformRequestScope;
     batchLocalActionIdentities?: BatchLocalActionIdentity[];
 };
 
@@ -4000,6 +4005,39 @@ export function bridgeGroundedLlmToolCalls({
             return providerTransfer ? [providerTransfer] : [];
         });
     }
+    const midiOverlapTransformScope = getMidiOverlapTransformPromptScope(prompt, context);
+    if (midiOverlapTransformScope.status === 'invalid') {
+        return { actions: [], rejections: [rejection(0, '<batch>', midiOverlapTransformScope.reason)] };
+    }
+    if (midiOverlapTransformScope.status === 'request') {
+        const providerTransforms = calls.filter((call) => call.name === 'removeShortMidiOverlaps');
+        const providerClipIds = providerTransforms.flatMap((call) =>
+            typeof call.arguments.clipId === 'string' ? [call.arguments.clipId] : []
+        );
+        const providerClipIdSet = new Set(providerClipIds);
+        const expectedClipIds = midiOverlapTransformScope.entries.map(({ clipId }) => clipId);
+        const providerPlanMatches =
+            providerTransforms.length === calls.length &&
+            providerClipIds.length === calls.length &&
+            providerClipIdSet.size === providerClipIds.length &&
+            providerClipIds.length === expectedClipIds.length &&
+            expectedClipIds.every((clipId) => providerClipIdSet.has(clipId)) &&
+            providerTransforms.every(
+                (call) => call.arguments.maximumOverlapMs === midiOverlapTransformScope.maximumOverlapMs
+            );
+        if (!providerPlanMatches) {
+            return {
+                actions: [],
+                rejections: [
+                    rejection(0, '<batch>', 'Provider plan does not match the complete EX-04 selected MIDI clip set'),
+                ],
+            };
+        }
+        effectiveCalls = expectedClipIds.flatMap((clipId) => {
+            const providerTransform = providerTransforms.find((call) => call.arguments.clipId === clipId);
+            return providerTransform ? [providerTransform] : [];
+        });
+    }
     const drumRoutingScope = getDrumRoutingPromptScope(prompt, context);
     if (drumRoutingScope.status === 'invalid') {
         return { actions: [], rejections: [rejection(0, '<batch>', drumRoutingScope.reason)] };
@@ -4257,7 +4295,10 @@ export function bridgeGroundedLlmToolCalls({
         const sameActionCalls = effectiveCalls.filter((candidate) => candidate.name === call.name);
         const sameActionCallCount = sameActionCalls.length;
         let grounded: ToolCallResult | LlmActionRejection;
-        if (bassProcessingCopyScope.status === 'request' && call.name === 'addAdjustmentRegion') {
+        if (
+            (bassProcessingCopyScope.status === 'request' && call.name === 'addAdjustmentRegion') ||
+            (midiOverlapTransformScope.status === 'request' && call.name === 'removeShortMidiOverlaps')
+        ) {
             grounded = call;
         } else {
             grounded = groundToolCall({
@@ -4360,6 +4401,7 @@ export function bridgeGroundedLlmToolCalls({
         return {
             actions: bridged.actions,
             ...(bassProcessingCopyScope.status === 'request' ? { bassProcessingCopyScope } : {}),
+            ...(midiOverlapTransformScope.status === 'request' ? { midiOverlapTransformScope } : {}),
             rejections,
         };
     }
@@ -4369,6 +4411,7 @@ export function bridgeGroundedLlmToolCalls({
     return {
         actions: bridged.actions,
         ...(bassProcessingCopyScope.status === 'request' ? { bassProcessingCopyScope } : {}),
+        ...(midiOverlapTransformScope.status === 'request' ? { midiOverlapTransformScope } : {}),
         batchLocalActionIdentities,
         rejections,
     };
