@@ -192,6 +192,15 @@ impl AbsorptiveFilter {
 // ---------------------------------------------------------------------------
 
 const MAX_FDN_CHANNELS: usize = 16;
+const SHIPPED_DAMPING: f32 = 0.3;
+
+fn normalized_hf_rt60_ratio(damping: f32) -> f32 {
+    2.0_f32.powf(-damping.clamp(0.0, 0.999) / SHIPPED_DAMPING)
+}
+
+fn legacy_hf_rt60_ratio(damping: f32) -> f32 {
+    (1.0 - damping.clamp(0.0, 0.999)) * 0.5
+}
 
 pub struct FdnReverb {
     sample_rate: f32,
@@ -231,6 +240,7 @@ pub struct FdnReverb {
     /// Normalised 0..0.999 damping. `rt60_hf` is derived from it and the
     /// current `rt60` on every filter update, so the two cannot drift apart.
     damping: f32,
+    normalized_damping: bool,
     pub size: f32,
     pub mix: f32,
     pub early_late_balance: f32, // 0=all early, 1=all late
@@ -318,56 +328,11 @@ impl FdnReverb {
             early_reflections_r: EarlyReflections::new(sample_rate, 0.5),
             rt60: 2.0,
             rt60_hf: 0.8,
-            // 0.2 gives `rt60_hf/rt60 = (1 - 0.2) * 0.5 = 0.4`, the historical
-            // ratio — but **no shipping instance renders it**, and the comment
-            // that used to sit here implied one did. `addDevice` writes the
-            // Dutch Oven descriptor's `damping` into `Device.parameterValues`,
-            // and `set_param("algorithm", …)` replays the cached parameters
-            // into every engine it constructs (`lib.rs`, and
-            // `tests/algorithm_switch_parameter_retention.rs` pins the replay
-            // bit-exactly), so an FDN reached from the panel is built with 0.2
-            // and immediately overwritten with the descriptor value.
-            //
-            // Since #1546 that value is 0.3, which is `(1 - 0.3) * 0.5 = 0.35`.
-            // So this literal is the value an FDN renders only in a test that
-            // selects the algorithm and writes nothing else. It is kept at 0.2
-            // because moving it would change nothing a user hears while
-            // desynchronising this file from the ratio it documents.
-            //
-            // 0.35 is darker than the convention among the reverbs that publish
-            // an actual RT60 ratio, and all three land near 0.50:
-            //
-            // - **Dragonfly Hall** ships `High Mult` at 0.50 above a 5500 Hz
-            //   crossover. It is a genuine ratio — `DSP.cpp:91-94` routes it to
-            //   `late.setrt60_factor_high(value)`, a Freeverb3 RT60 multiplier.
-            // - **zita-rev1** builds the HF target as `0.5 * _rtmid`
-            //   (`reverb.cc:262`), so the 0.5 is structural rather than a
-            //   preset. Its crossover depends on which layer you mean:
-            //   `reverb.cc:209` initialises `_fdamp = 3000 Hz`, while
-            //   `mainwin.cc:65` constructs the knob at 6000 Hz and pushes it
-            //   into the engine — 6000 is the shipped *application*, 3000 the
-            //   library a headless caller gets.
-            // - **Faust `dm.fdnrev0_demo`** gives per-band T60 defaults of
-            //   8.4/6.5/5.0/3.8/2.7 s, so the top band is 0.54x the 2 kHz band.
-            //   Note the layer: `reverbs.lib` publishes no defaults at all —
-            //   every number lives in `demos.lib`, and the `dattorro_rev(…)`
-            //   values in its doc comments are illustrative calls. "The Faust
-            //   library defaults to X" is never a correct sentence.
-            //
-            // Nothing credible defaults to the 0.7-1.0x regime, which is where
-            // the old 0.4998 sat — so this change moves the FDN past the
-            // convention rather than toward it, having started level with it.
-            // (Dragonfly *Room* is not comparable: its `Early Damp`/`Late Damp`
-            // are Hz-valued in-loop cutoffs via `late.setdamp` /
-            // `late.setoutputdamp`, not a ratio.)
-            //
-            // The crossover here is also hard-coded at 2 kHz against their
-            // 5.5-6 kHz, so 0.35 bites lower as well as harder. That is a real
-            // divergence and its fix is a per-algorithm default table rather
-            // than a different single number: 0.3 is correct on the plate, and
-            // is the spring's own constructor value. See the `damping` row in
-            // `NativeDspDescriptors.ts`.
+            // Bare and unversioned saved instances retain the historical curve.
+            // Newly added project devices opt into the normalized curve through
+            // the private `fdn_damping_version` wire parameter.
             damping: 0.2,
+            normalized_damping: false,
             size: 0.5,
             mix: 0.3,
             early_late_balance: 0.4,
@@ -446,6 +411,11 @@ impl FdnReverb {
         }
     }
 
+    pub(crate) fn set_damping_version(&mut self, version: u8) {
+        self.normalized_damping = version >= 2;
+        self.update_absorptive_filters();
+    }
+
     /// Recompute the per-line absorptive gains.
     ///
     /// `rt60_hf` is derived here rather than stored at `damping`-set time: the
@@ -453,7 +423,12 @@ impl FdnReverb {
     /// must re-derive it or the high band stays pinned to whatever RT60 was
     /// current when damping was last touched.
     fn update_absorptive_filters(&mut self) {
-        self.rt60_hf = self.rt60 * (1.0 - self.damping) * 0.5;
+        let ratio = if self.normalized_damping {
+            normalized_hf_rt60_ratio(self.damping)
+        } else {
+            legacy_hf_rt60_ratio(self.damping)
+        };
+        self.rt60_hf = self.rt60 * ratio;
         for (i, filter) in self.absorptive_filters.iter_mut().enumerate() {
             if i < self.delay_lengths.len() {
                 filter.update_rt60(
@@ -625,7 +600,10 @@ impl FdnReverb {
 
 #[cfg(test)]
 mod tests {
-    use super::{decay_to_rt60_seconds, FdnReverb, MAX_RT60_SECONDS, MIN_RT60_SECONDS};
+    use super::{
+        decay_to_rt60_seconds, normalized_hf_rt60_ratio, FdnReverb, MAX_RT60_SECONDS,
+        MIN_RT60_SECONDS,
+    };
 
     #[test]
     fn a_bare_instance_has_already_told_its_decay_eq_what_the_loop_does() {
@@ -663,6 +641,13 @@ mod tests {
         let mut reverb = FdnReverb::new(48_000.0, 8);
         reverb.set_param("decay", decay);
         reverb.rt60
+    }
+
+    fn hf_ratio_for_damping(damping: f32) -> f32 {
+        let mut reverb = FdnReverb::new(48_000.0, 8);
+        reverb.set_damping_version(2);
+        reverb.set_param("damping", damping);
+        reverb.rt60_hf / reverb.rt60
     }
 
     #[test]
@@ -757,6 +742,49 @@ mod tests {
             "the HF band must stretch with the tail, got {} s",
             reverb.rt60_hf
         );
+    }
+
+    #[test]
+    fn zero_damping_leaves_the_high_frequency_rt60_undiminished() {
+        let ratio = hf_ratio_for_damping(0.0);
+        assert!(
+            (ratio - 1.0).abs() < 1e-6,
+            "damping=0 must leave HF RT60 equal to the base RT60, got ratio {ratio}"
+        );
+    }
+
+    #[test]
+    fn descriptor_default_halves_the_high_frequency_rt60() {
+        let ratio = hf_ratio_for_damping(0.3);
+        assert!(
+            (ratio - 0.5).abs() < 1e-6,
+            "the shipped damping=0.3 must land on the conventional 0.5x HF RT60, got {ratio}"
+        );
+    }
+
+    #[test]
+    fn legacy_project_damping_keeps_its_original_ratio() {
+        let mut reverb = FdnReverb::new(48_000.0, 8);
+        reverb.set_param("damping", 0.3);
+        let ratio = reverb.rt60_hf / reverb.rt60;
+        assert!(
+            (ratio - 0.35).abs() < 1e-6,
+            "an unversioned saved device must keep the legacy 0.35x ratio, got {ratio}"
+        );
+    }
+
+    #[test]
+    fn damping_mapping_is_strictly_darker_across_the_declared_range() {
+        let mut previous = f32::INFINITY;
+        for step in 0..=999 {
+            let damping = step as f32 / 1000.0;
+            let ratio = normalized_hf_rt60_ratio(damping);
+            assert!(
+                ratio < previous,
+                "HF RT60 ratio must fall as damping rises: {damping} produced {ratio} after {previous}"
+            );
+            previous = ratio;
+        }
     }
 
     #[test]

@@ -8,7 +8,7 @@ import { addDeviceToStrip, updateDeviceParam, removeDeviceFromStrip } from '#/mo
 import { compileFaustDSP } from '#/modules/PluginHost/useCases';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
-import { clampDeviceParameterValue } from '../../models/DeviceParameterLaw';
+import { clampDeviceParameterValue, isInternalDeviceParameter } from '../../models/DeviceParameterLaw';
 import { type SoundPreset, type DevicePreset } from '../../models/SoundPreset';
 import { getTrackById } from '../../repositories/track/getTrackById';
 import { updateTrack } from '../../repositories/track/updateTrack';
@@ -49,12 +49,20 @@ function attachEffectDevice(trackId: string, dp: DevicePreset): void {
     // matrix render, and it is the preset's to choose — `attachInstrumentDevice`
     // keeps `dp.name` for the same reason. Passing it here keeps the device to
     // a single write instead of adding then renaming.
-    const added = addDevice(trackId, dp.type, dp.name);
+    const internalParameterValues = Object.fromEntries(
+        Object.entries(dp.parameterValues).filter(([paramId]) =>
+            isInternalDeviceParameter({ deviceType: dp.type, paramId })
+        )
+    );
+    const added = addDevice(trackId, dp.type, dp.name, undefined, undefined, internalParameterValues);
     if (!added) {
         return;
     }
 
     for (const [paramId, value] of Object.entries(dp.parameterValues)) {
+        if (isInternalDeviceParameter({ deviceType: dp.type, paramId })) {
+            continue;
+        }
         // `setDeviceParameter` already clamps and pushes the clamped value to
         // the engine. The raw `updateDeviceParam` that used to follow it here
         // wrote second and therefore won, handing the DSP the unclamped value

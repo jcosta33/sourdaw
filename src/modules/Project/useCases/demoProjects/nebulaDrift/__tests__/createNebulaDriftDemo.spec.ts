@@ -49,6 +49,11 @@ describe('createNebulaDriftDemo', () => {
         expect(demoSource).not.toContain('randomUUID().slice(0, 8)');
     });
 
+    it('marks its newly constructed Dutch Oven with the corrected damping semantics', () => {
+        const dutchOven = demoSource.match(/type:\s*['"]dutch-oven['"][\s\S]*?parameterValues:\s*\{([\s\S]*?)\n\s*\}/);
+        expect(dutchOven?.[1]).toContain('fdn_damping_version: 2');
+    });
+
     /**
      * Intro audibility.
      *

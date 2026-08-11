@@ -23,13 +23,18 @@ function nextDeviceIdStr(): string {
  * `displayName` overrides the label this would otherwise take from the resolved
  * plugin. Presets need it — the type picks the device, the preset picks the
  * label — and it belongs in this call so the device is written once.
+ *
+ * Serialized preset callers supply their saved internal parameter subset.
+ * Omitting it applies current defaults for a newly created device; passing an
+ * empty object preserves legacy semantics for an unversioned preset.
  */
 export function addDevice(
     trackId: string,
     deviceType: string,
     displayName?: string,
     deviceId?: string,
-    deviceIndex?: number
+    deviceIndex?: number,
+    initialInternalParameterValues?: Readonly<Record<string, number>>
 ): Device | null {
     const state = getTrackState();
     if (!state) {
@@ -68,7 +73,8 @@ export function addDevice(
     const plugin = getPlatformPlugins().find(
         (param1) => param1.name.toLowerCase() === deviceType.toLowerCase() || param1.id === deviceType
     );
-    const parameterValues: Record<string, number> = {};
+    const internalParameterValues = initialInternalParameterValues ?? plugin?.internalParameterValues ?? {};
+    const parameterValues: Record<string, number> = { ...internalParameterValues };
     if (plugin) {
         for (const param of plugin.parameters) {
             parameterValues[param.id] = param.value;
@@ -119,8 +125,8 @@ export function addDevice(
             stripArguments[4] = precedingDeviceIds;
         }
         addDeviceToStrip(...stripArguments);
-        for (const param of plugin.parameters) {
-            updateDeviceParam(trackId, device.id, param.id, param.value);
+        for (const [paramId, value] of Object.entries(device.parameterValues)) {
+            updateDeviceParam(trackId, device.id, paramId, value);
         }
     }
 
