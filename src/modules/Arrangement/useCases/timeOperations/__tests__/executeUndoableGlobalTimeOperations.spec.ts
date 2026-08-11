@@ -26,40 +26,35 @@ describe('undoable global time operations', () => {
         vi.clearAllMocks();
     });
 
-    it('restores the exact insert snapshot and reuses the captured replay identities', () => {
+    it('restores and redoes the exact captured insert snapshot', () => {
         const replayPlan = { version: 1 };
-        const firstInverse = { version: 1, expected: 'inserted', replacement: 'before' };
-        const replayInverse = { version: 1, expected: 'replayed', replacement: 'before' };
+        const inversePlan = { version: 1, expected: 'inserted', replacement: 'before' };
         const apply = vi.fn(() => true);
-        mocks.insertTime
-            .mockReturnValueOnce({
-                status: 'applied',
-                hasChanges: true,
-                replayPlan,
-                inversePlan: firstInverse,
-            })
-            .mockReturnValueOnce({
-                status: 'applied',
-                hasChanges: true,
-                replayPlan,
-                inversePlan: replayInverse,
-            });
+        const revert = vi.fn(() => true);
+        mocks.insertTime.mockReturnValue({
+            status: 'applied',
+            hasChanges: true,
+            replayPlan,
+            inversePlan,
+        });
         mocks.prepareTimeOperationStateRestore.mockReturnValue({
             status: 'ready',
             hasChanges: true,
             apply,
+            revert,
         });
 
         const transaction = executeUndoableInsertTime(4, 2);
         expect(transaction).not.toBeNull();
         transaction?.undo();
-        expect(mocks.prepareTimeOperationStateRestore).toHaveBeenLastCalledWith(firstInverse);
+        expect(mocks.prepareTimeOperationStateRestore).toHaveBeenLastCalledWith(inversePlan);
         expect(apply).toHaveBeenCalledOnce();
 
         transaction?.redo();
-        expect(mocks.insertTime).toHaveBeenNthCalledWith(2, 4, 2, replayPlan);
+        expect(revert).toHaveBeenCalledOnce();
+        expect(mocks.insertTime).toHaveBeenCalledOnce();
         transaction?.undo();
-        expect(mocks.prepareTimeOperationStateRestore).toHaveBeenLastCalledWith(replayInverse);
+        expect(mocks.prepareTimeOperationStateRestore).toHaveBeenLastCalledWith(inversePlan);
     });
 
     it('returns no transaction when duplicate preparation is rejected', () => {
@@ -73,33 +68,29 @@ describe('undoable global time operations', () => {
         expect(executeUndoableDuplicateTimeRange(4, 8)).toBeNull();
     });
 
-    it('fails closed when duplicate replay no longer matches project state', () => {
+    it('fails closed when the exact duplicate redo no longer matches project state', () => {
         const replayPlan = { version: 1 };
         const inversePlan = { version: 1, expected: 'duplicate', replacement: 'before' };
-        mocks.duplicateTimeRange
-            .mockReturnValueOnce({
-                status: 'applied',
-                hasChanges: true,
-                replayPlan,
-                inversePlan,
-            })
-            .mockReturnValueOnce({
-                status: 'rejected',
-                hasChanges: false,
-                replayPlan: null,
-                inversePlan: null,
-            });
+        const revert = vi.fn(() => false);
+        mocks.duplicateTimeRange.mockReturnValue({
+            status: 'applied',
+            hasChanges: true,
+            replayPlan,
+            inversePlan,
+        });
         mocks.prepareTimeOperationStateRestore.mockReturnValue({
             status: 'ready',
-            hasChanges: false,
-            apply: vi.fn(),
+            hasChanges: true,
+            apply: vi.fn(() => true),
+            revert,
         });
 
         const transaction = executeUndoableDuplicateTimeRange(4, 8);
 
-        expect(() => transaction?.redo()).toThrow('Global time operation redo conflicts with current project state');
-        expect(mocks.duplicateTimeRange).toHaveBeenNthCalledWith(2, 4, 8, replayPlan);
         transaction?.undo();
+        expect(() => transaction?.redo()).toThrow('Global time operation redo conflicts with current project state');
+        expect(revert).toHaveBeenCalledOnce();
+        expect(mocks.duplicateTimeRange).toHaveBeenCalledOnce();
         expect(mocks.prepareTimeOperationStateRestore).toHaveBeenCalledWith(inversePlan);
     });
 

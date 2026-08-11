@@ -4,39 +4,41 @@ import type { executeGlobalTimeOperation } from './executeGlobalTimeOperation';
 
 type GlobalTimeOperationResult = ReturnType<typeof executeGlobalTimeOperation>;
 type AppliedGlobalTimeOperationResult = Extract<GlobalTimeOperationResult, { status: 'applied' }>;
+type ReadyTimeOperationRestore = Extract<ReturnType<typeof prepareTimeOperationStateRestore>, { status: 'ready' }>;
 
 type CreateUndoableGlobalTimeOperationInput = {
     initialResult: AppliedGlobalTimeOperationResult;
-    replay: () => GlobalTimeOperationResult;
 };
 
-function restoreOrThrow(plan: unknown): void {
+function restoreOrThrow(plan: unknown): ReadyTimeOperationRestore {
     const restoration = prepareTimeOperationStateRestore(plan);
     if (restoration.status !== 'ready') {
         throw new Error('Global time operation undo conflicts with current project state');
     }
     if (!restoration.hasChanges) {
-        return;
+        throw new Error('Global time operation undo was not applied');
     }
     if (!restoration.apply()) {
         throw new Error('Global time operation undo was not applied');
     }
+    return restoration;
 }
 
-export function createUndoableGlobalTimeOperation({ initialResult, replay }: CreateUndoableGlobalTimeOperationInput): {
+export function createUndoableGlobalTimeOperation({ initialResult }: CreateUndoableGlobalTimeOperationInput): {
     undo: () => void;
     redo: () => void;
 } {
-    let inversePlan = initialResult.inversePlan;
+    let redoRestoration: ReadyTimeOperationRestore | null = null;
 
     return {
-        undo: () => restoreOrThrow(inversePlan),
+        undo: () => {
+            redoRestoration = restoreOrThrow(initialResult.inversePlan);
+        },
         redo: () => {
-            const replayResult = replay();
-            if (replayResult.status !== 'applied') {
+            if (!redoRestoration?.revert()) {
                 throw new Error('Global time operation redo conflicts with current project state');
             }
-            inversePlan = replayResult.inversePlan;
+            redoRestoration = null;
         },
     };
 }

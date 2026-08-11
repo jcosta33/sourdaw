@@ -59,10 +59,15 @@ async function revertActionGroupImpl(groupId: string): Promise<void> {
         return;
     }
 
-    const newPast = state.past.filter((entry) => entry.groupId !== groupId);
+    const liveState = undoStore.value;
+    if (!liveState) {
+        return;
+    }
+    const revertedIds = new Set(groupEntries.map((entry) => entry.id));
+    const newPast = liveState.past.filter((entry) => !revertedIds.has(entry.id));
     undoStore.set({
         past: newPast,
-        future: [...groupEntries, ...state.future],
+        future: [...groupEntries, ...liveState.future],
     });
     undoTreeMoveTo(newPast.length > 0 ? newPast[newPast.length - 1]!.id : null);
 }

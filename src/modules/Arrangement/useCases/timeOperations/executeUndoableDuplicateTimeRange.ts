@@ -7,9 +7,5 @@ export function executeUndoableDuplicateTimeRange(startBeat: number, endBeat: nu
         return null;
     }
 
-    const replayPlan = initialResult.replayPlan;
-    return createUndoableGlobalTimeOperation({
-        initialResult,
-        replay: () => duplicateTimeRange(startBeat, endBeat, replayPlan),
-    });
+    return createUndoableGlobalTimeOperation({ initialResult });
 }

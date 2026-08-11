@@ -7,9 +7,5 @@ export function executeUndoableInsertTime(atBeat: number, durationBeats: number)
         return null;
     }
 
-    const replayPlan = initialResult.replayPlan;
-    return createUndoableGlobalTimeOperation({
-        initialResult,
-        replay: () => insertTime(atBeat, durationBeats, replayPlan),
-    });
+    return createUndoableGlobalTimeOperation({ initialResult });
 }

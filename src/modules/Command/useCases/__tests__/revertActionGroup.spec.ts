@@ -139,4 +139,23 @@ describe('revertActionGroup', () => {
             { skipUndo: true, skipMacroRecording: true }
         );
     });
+
+    it('preserves an action committed while a group inverse is in flight', async () => {
+        const other = actionEntry('keep', 'g0');
+        const group = actionEntry('group', 'g1');
+        const concurrent = actionEntry('concurrent', 'g2');
+        mocks.undoStoreValue.value = { past: [other, group], future: [] };
+        mocks.executeAppAction.mockImplementationOnce(() => {
+            mocks.undoStoreValue.value = { past: [other, group, concurrent], future: [] };
+            return Promise.resolve(undefined);
+        });
+
+        await revertActionGroup('g1');
+
+        expect(mocks.undoStoreSet).toHaveBeenCalledWith({
+            past: [other, concurrent],
+            future: [group],
+        });
+        expect(mocks.undoTreeMoveTo).toHaveBeenCalledWith('concurrent');
+    });
 });
