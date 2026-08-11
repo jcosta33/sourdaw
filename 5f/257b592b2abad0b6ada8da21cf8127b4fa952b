@@ -1,0 +1,42 @@
+src/modules/Arrangement/handlers/device/__tests__/handleSetDeviceParameter.spec.ts
+  s_bc88af7d3b054c::t_10b528fc51bb78 197,199-205,210,213-214,216-219,224-225,227-229,231-233,239,241
+  s_bc88af7d3b054c::t_63522b4eae6324 136
+  s_bc88af7d3b054c::t_6d517217d47013 215,220-223,226,230,234-238,240
+src/modules/GrandBoule/useCases/grandBouleParamBridge/helpers.ts
+  s_bc88af7d3b054c::t_a817c41951677a 2,5,31-57,115-118,128-130,132-134,136-137
+  s_bc88af7d3b054c::t_d279f1eab2501e 16,91-93
+  s_bc88af7d3b054c::t_6d517217d47013 131,135
+src/utils/handlerContract.ts
+  s_bc88af7d3b054c::t_6d517217d47013 706,708-709
+src/modules/AiRuntime/models/RuntimeAction.ts
+  s_bc88af7d3b054c::t_e91cdf81af1c06 270-279
+  s_bc88af7d3b054c::t_3ba10dd4d90672 331
+src/modules/Arrangement/useCases/device/setDeviceParameter/setDeviceParameter.ts
+  s_bc88af7d3b054c::t_3ba10dd4d90672 13-22,67-73,76
+src/modules/Arrangement/handlers/device/handleSetDeviceParameter.ts
+  s_bc88af7d3b054c::t_37ed449ad54a26 83
+  s_bc88af7d3b054c::t_5941a0d0f6c061 75-82
+  s_bc88af7d3b054c::t_95e9e66a4a465e 140,151-156
+  s_bc88af7d3b054c::t_87d3d5d30efcfe 18,27,40,53,62,64,69-71,141-144,147-148,175-181,190-193,195-196,226,232-248,250-252
+  s_bc88af7d3b054c::t_63522b4eae6324 200,227-228,249
+src/modules/GrandBoule/useCases/__tests__/grandBouleParameterPersistence.integration.spec.ts
+  s_bc88af7d3b054c::t_10b528fc51bb78 9,309-334,336-340,346-348,350,352-353,355-357
+  s_bc88af7d3b054c::t_00bc9d95b33a34 335,341-345,349,351,354
+  s_bc88af7d3b054c::t_5de0e7dda377a2 358
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "5f257b592b2abad0b6ada8da21cf8127b4fa952b",
+  "prompts": {},
+  "sessions": {
+    "s_bc88af7d3b054c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f9b4a-11a2-7f61-8dfb-76eed0eb2a9c",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
