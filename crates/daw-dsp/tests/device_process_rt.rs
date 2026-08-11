@@ -892,6 +892,11 @@ fn gluten_process_does_not_allocate_while_compressing() {
     instance.set_param("attack", 5.0);
     instance.set_param("release", 100.0);
     instance.set_param("makeup", 3.0);
+    instance.set_param("sc_hpf_enabled", 1.0);
+    instance.set_param("sc_lpf_enabled", 1.0);
+    instance.set_param("sc_eq_enabled", 1.0);
+    instance.set_param("sc_eq_gain", 6.0);
+    instance.set_param("thrust", 2.0);
 
     unsafe {
         fill_input(

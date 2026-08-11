@@ -39,13 +39,8 @@ function booleanPatchKeys(): (keyof GlutenPatch)[] {
 
 /**
  * Switches that a patch can ship *engaged* — the ones where shipping a value
- * the topology cannot hear leaves a control lit and, since the panel gates it,
- * unclearable.
- *
- * A *frequency* on a filter whose stage is not running is deliberately not
- * policed: it is the preset's stated intent and becomes correct the moment the
- * topology can hear it, which is why the Master presets keep `scHpfFreq` and
- * lost `scHpfEnabled`.
+ * the topology cannot hear leaves a control lit and unclearable. Detector-chain
+ * controls are valid on every topology and therefore are not rejected here.
  *
  * **Known gap, recorded rather than papered over:** `blendAmount` and
  * `blendTopology` are a *pair* — Stage 2 above zero is only meaningful together
@@ -89,18 +84,7 @@ describe('the engaged-switch population', () => {
 });
 
 describe('a preset never ships a value its own topology cannot hear', () => {
-    /**
-     * `Loud Master` shipped `thrust: 2` on a VCA preset, and both Master
-     * presets shipped `scHpfEnabled: true` — all three on a topology whose
-     * detector never sees the sidechain chain. Latent before this PR (the
-     * controls did nothing and the user could clear them); load-bearing after
-     * it, because the gate refuses the click that would clear them. Worse, a
-     * diode Stage two would then drive the detector at Thrust *loud*, a setting
-     * the user never chose.
-     *
-     * The rule is checked against every preset rather than the two that were
-     * wrong, and against the default patch, which had the same flag.
-     */
+    /** Checked against every preset and the default patch. */
     const CASES: readonly (readonly [string, GlutenPatch])[] = [
         ...GLUTEN_PRESETS.map((preset) => [preset.name, preset.patch] as const),
         ['Init (the default patch)', DEFAULT_PATCH] as const,

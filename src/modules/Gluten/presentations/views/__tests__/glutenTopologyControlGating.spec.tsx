@@ -309,22 +309,18 @@ describe('every censused control is actually refused on the screen', () => {
         }
     });
 
-    it('gives every detector control back once Stage two runs the Diode', () => {
-        // The routing rows are gated per live stage, not per primary, because
-        // `process_block` hands the filtered detector to whichever stage is a
-        // diode. `a_diode_stage_two_gives_every_primary_a_working_sidechain`
-        // measures all ten as audible in exactly this configuration.
-        renderPanel({ topology: 'vca', blendTopology: 'diode', blendAmount: 0.5, scEqGain: 6 });
+    it.each(['vca', 'opto', 'fet', 'diode'] as const)('keeps every detector control live on %s', (topology) => {
+        renderPanel({ topology, scEqGain: 6 });
 
         for (const paramKey of DETECTOR_CONTROLS) {
             for (const element of CONTROL_LOCATORS[paramKey]!()) {
-                expect(element.getAttribute('aria-disabled'), `${paramKey} with a Diode stage two`).toBeNull();
+                expect(element.getAttribute('aria-disabled'), `${paramKey} on ${topology}`).toBeNull();
             }
         }
     });
 });
 
-/** The twelve controls the ten detector-routing names draw. */
+/** The twelve controls the shared detector chain draws. */
 const DETECTOR_CONTROLS = [
     'scHpfFreq',
     'scLpfFreq',

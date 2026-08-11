@@ -8,11 +8,8 @@
 //! measured here.
 //!
 //! * **Detector routing.** `process_block` filters the detector signal — SC
-//!   HPF, SC LPF, the SC EQ, Thrust and the external sidechain — and then hands
-//!   it only to `DiodeCompressor::process_sample_with_sc`. The other three
-//!   topologies call `process_sample`, which derives its own detector from the
-//!   audio path and never sees the filtered signal. Ten names, twelve rendered
-//!   controls, inert on three topologies out of four.
+//!   HPF, SC LPF, the SC EQ, Thrust and the external sidechain — and every
+//!   topology must use that signal whenever the shared detector chain is active.
 //! * **Patch state.** Three controls are switched off by *another control's
 //!   value* rather than by the topology: Link under Dual mono, Stage 2 when
 //!   both stages name the same topology, and the SC EQ's frequency and width
@@ -22,7 +19,7 @@
 //! parameter, compared sample for sample, and every claim of inertness is
 //! paired with a configuration where the same parameter moves the output.
 
-use daw_dsp::gluten::GlutenInstance;
+use daw_dsp::gluten::{sidechain::SidechainChain, GlutenInstance};
 
 const SAMPLE_RATE: f32 = 48_000.0;
 const BLOCK: usize = 512;
@@ -34,14 +31,24 @@ const TOPOLOGY_FET: f32 = 2.0;
 const TOPOLOGY_DIODE: f32 = 3.0;
 
 const STEREO_MODE_STEREO: f32 = 0.0;
+const STEREO_MODE_SIDE: f32 = 2.0;
 const STEREO_MODE_DUAL_MONO: f32 = 3.0;
 
-/// The three topologies whose `process_topology` arm takes no sidechain.
-const DETECTOR_BLIND: [(&str, f32); 3] = [
+const TOPOLOGIES: [(&str, f32); 4] = [
     ("vca", TOPOLOGY_VCA),
     ("opto", TOPOLOGY_OPTO),
     ("fet", TOPOLOGY_FET),
+    ("diode", TOPOLOGY_DIODE),
 ];
+
+#[test]
+fn a_bare_sidechain_chain_uses_the_declared_hpf_default() {
+    let mut bare = SidechainChain::new(SAMPLE_RATE);
+    let mut declared = SidechainChain::new(SAMPLE_RATE);
+    declared.set_hpf_enabled(true);
+    declared.set_hpf_freq(SAMPLE_RATE, 80.0);
+    assert_eq!(bare.process(0.5, -0.5), declared.process(0.5, -0.5));
+}
 
 /// See `gluten_topology_param_reach.rs` — a steady sine settles every envelope
 /// follower and would make timing controls measure as inert on the topologies
@@ -128,15 +135,15 @@ fn detector_base(topology: f32) -> impl Fn(&mut GlutenInstance) {
 
 fn detector_delta(topology: f32, name: &'static str, low: f32, high: f32) -> f32 {
     let configure = detector_base(topology);
-    let a = render(|i| {
-        configure(i);
-        i.set_param(name, low);
-    });
-    let b = render(|i| {
-        configure(i);
-        i.set_param(name, high);
-    });
-    max_delta(&a, &b)
+    let render_value = |value| {
+        render(|i| {
+            configure(i);
+            i.set_param(name, f32::NAN);
+            i.process(1);
+            i.set_param(name, value);
+        })
+    };
+    max_delta(&render_value(low), &render_value(high))
 }
 
 /// Every name the sidechain chain configures, with a pair of values far enough
@@ -155,30 +162,20 @@ const DETECTOR_NAMES: [(&str, f32, f32); 10] = [
 ];
 
 #[test]
-fn the_filtered_detector_reaches_the_diode_and_nothing_else() {
+fn the_filtered_detector_reaches_every_topology() {
     for (name, low, high) in DETECTOR_NAMES {
-        assert!(
-            detector_delta(TOPOLOGY_DIODE, name, low, high) > 0.0,
-            "`{name}` must reach the diode's detector — otherwise this file certifies inertness with a stimulus that proves nothing"
-        );
-
-        for (label, topology) in DETECTOR_BLIND {
+        for (label, topology) in TOPOLOGIES {
             let delta = detector_delta(topology, name, low, high);
-            assert_eq!(
-                delta, 0.0,
-                "`{name}` must not reach the {label} topology, but rendered a max delta of {delta:e}"
+            assert!(
+                delta > 1.0e-6,
+                "`{name}` must reach the {label} topology's detector, but rendered a max delta of {delta:e}"
             );
         }
     }
 }
 
 #[test]
-fn a_diode_stage_two_gives_every_primary_a_working_sidechain() {
-    // Why the sidechain rows are gated per *live stage* rather than hidden
-    // behind a "Diode only" note: the filtered detector is handed to whichever
-    // stage is a diode, and Stage two is a stage. So on a VCA primary with
-    // Diode behind it, all ten names are live again — the same escape the
-    // release rows already respect.
+fn stage_two_uses_the_same_shared_detector_chain() {
     for (name, low, high) in DETECTOR_NAMES {
         let with_diode_stage_two = |value: f32| {
             render(|i| {
@@ -189,11 +186,137 @@ fn a_diode_stage_two_gives_every_primary_a_working_sidechain() {
             })
         };
         let delta = max_delta(&with_diode_stage_two(low), &with_diode_stage_two(high));
-        assert!(
-            delta > 0.0,
-            "`{name}` must be audible on a VCA primary once Stage two runs the diode"
-        );
+        assert!(delta > 0.0, "`{name}` must be audible through both stages");
     }
+}
+
+fn render_right_with_left_level(left_level: f32) -> Vec<f32> {
+    let mut instance = GlutenInstance::new(SAMPLE_RATE);
+    detector_base(TOPOLOGY_DIODE)(&mut instance);
+    instance.set_param("stereo_link", 0.0);
+    instance.set_param("sc_hpf_enabled", 0.0);
+    instance.set_param("sc_lpf_enabled", 0.0);
+    instance.set_param("sc_eq_enabled", 1.0);
+    instance.set_param("sc_eq_gain", 12.0);
+    instance.set_param("sc_eq_freq", 400.0);
+    instance.set_param("sc_eq_q", 1.5);
+    instance.set_param("thrust", 2.0);
+    let mut captured = Vec::with_capacity(BLOCKS * BLOCK);
+    for block in 0..BLOCKS {
+        let base = block * BLOCK;
+        let left_ptr = instance.get_input_left_ptr();
+        let right_ptr = instance.get_input_right_ptr();
+        for n in 0..BLOCK {
+            let t = (base + n) as f32 / SAMPLE_RATE;
+            unsafe {
+                *left_ptr.add(n) = left_level * (std::f32::consts::TAU * 180.0 * t).sin();
+                *right_ptr.add(n) = 0.35 * (std::f32::consts::TAU * 630.0 * t).sin();
+            }
+        }
+        instance.process(BLOCK as u32);
+        let out_right = instance.get_right_ptr();
+        for n in 0..BLOCK {
+            captured.push(unsafe { *out_right.add(n) });
+        }
+    }
+    captured
+}
+
+#[test]
+fn detector_filters_keep_unlinked_channel_state_isolated() {
+    let quiet_left = render_right_with_left_level(0.0);
+    let loud_left = render_right_with_left_level(0.9);
+    let delta = max_delta(&quiet_left, &loud_left);
+    assert!(
+        delta < 1.0e-6,
+        "the right detector must not inherit left-channel EQ or Thrust state, but moved by {delta:e}"
+    );
+}
+
+fn render_side_mode_with_external_sidechain(sc_left_level: f32, sc_right_level: f32) -> Vec<f32> {
+    let mut instance = GlutenInstance::new(SAMPLE_RATE);
+    detector_base(TOPOLOGY_VCA)(&mut instance);
+    instance.set_param("stereo_mode", STEREO_MODE_SIDE);
+    instance.set_param("ext_sidechain", 1.0);
+    let mut captured = Vec::with_capacity(BLOCKS * BLOCK);
+    for block in 0..BLOCKS {
+        let base = block * BLOCK;
+        let left_ptr = instance.get_input_left_ptr();
+        let right_ptr = instance.get_input_right_ptr();
+        let sc_left_ptr = instance.get_sc_left_ptr();
+        let sc_right_ptr = instance.get_sc_right_ptr();
+        for n in 0..BLOCK {
+            let t = (base + n) as f32 / SAMPLE_RATE;
+            let main = 0.35 * (std::f32::consts::TAU * 220.0 * t).sin();
+            let detector = (std::f32::consts::TAU * 110.0 * t).sin();
+            unsafe {
+                *left_ptr.add(n) = main;
+                *right_ptr.add(n) = -main;
+                *sc_left_ptr.add(n) = sc_left_level * detector;
+                *sc_right_ptr.add(n) = sc_right_level * detector;
+            }
+        }
+        let out_left = instance.process(BLOCK as u32);
+        for n in 0..BLOCK {
+            captured.push(unsafe { *out_left.add(n) });
+        }
+    }
+    captured
+}
+
+#[test]
+fn external_sidechain_is_encoded_before_side_only_detection() {
+    let silent = render_side_mode_with_external_sidechain(0.0, 0.0);
+    let centered = render_side_mode_with_external_sidechain(0.9, 0.9);
+    assert_eq!(
+        max_delta(&silent, &centered),
+        0.0,
+        "a centered external signal has no Side component"
+    );
+    let anti_phase = render_side_mode_with_external_sidechain(0.9, -0.9);
+    assert!(
+        max_delta(&silent, &anti_phase) > 1.0e-4,
+        "the presence pin: an anti-phase external signal must drive Side detection"
+    );
+}
+
+fn render_diode_step(lookahead_ms: f32) -> Vec<f32> {
+    const FRAMES: usize = 1024;
+    let mut instance = GlutenInstance::new(SAMPLE_RATE);
+    detector_base(TOPOLOGY_DIODE)(&mut instance);
+    instance.set_param("limiter_threshold", 0.0);
+    instance.set_param("lookahead", lookahead_ms);
+    let left_ptr = instance.get_input_left_ptr();
+    let right_ptr = instance.get_input_right_ptr();
+    for n in 0..FRAMES {
+        unsafe {
+            *left_ptr.add(n) = 0.9;
+            *right_ptr.add(n) = 0.9;
+        }
+    }
+    let out_left = instance.process(FRAMES as u32);
+    (0..FRAMES).map(|n| unsafe { *out_left.add(n) }).collect()
+}
+
+#[test]
+fn diode_lookahead_drives_detection_from_the_undelayed_program() {
+    const LOOKAHEAD_MS: f32 = 10.0;
+    const ONSET_WINDOW: usize = 24;
+    let no_lookahead = render_diode_step(0.0);
+    let with_lookahead = render_diode_step(LOOKAHEAD_MS);
+    let latency = (LOOKAHEAD_MS * 0.001 * SAMPLE_RATE) as usize;
+    let no_lookahead_peak = no_lookahead[..ONSET_WINDOW]
+        .iter()
+        .map(|sample| sample.abs())
+        .fold(0.0_f32, f32::max);
+    let lookahead_peak = with_lookahead[latency..latency + ONSET_WINDOW]
+        .iter()
+        .map(|sample| sample.abs())
+        .fold(0.0_f32, f32::max);
+    assert!(
+        lookahead_peak < no_lookahead_peak * 0.8,
+        "the detector must use the undelayed program: lookahead onset {lookahead_peak} vs immediate onset {no_lookahead_peak}"
+    );
 }
 
 // ── Patch state ──────────────────────────────────────────────────────────────
@@ -283,7 +406,10 @@ fn the_sc_eq_frequency_and_width_do_nothing_at_zero_gain() {
             i.set_param(name, value);
         })
     };
-    assert_eq!(max_delta(&flat("sc_eq_freq", 200.0), &flat("sc_eq_freq", 5000.0)), 0.0);
+    assert_eq!(
+        max_delta(&flat("sc_eq_freq", 200.0), &flat("sc_eq_freq", 5000.0)),
+        0.0
+    );
     assert_eq!(max_delta(&flat("sc_eq_q", 0.5), &flat("sc_eq_q", 8.0)), 0.0);
 
     // The presence pin for both, with the bell doing something.
