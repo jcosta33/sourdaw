@@ -29,7 +29,14 @@ async function getFreePort(): Promise<number> {
 }
 
 function spawnServer(env: NodeJS.ProcessEnv): ChildProcessWithoutNullStreams {
-    const process = spawn(globalThis.process.execPath, ['--import', 'tsx', 'collab-server.ts'], {
+    const clockImport =
+        env.COLLAB_TEST_FORWARD_CLOCK === '1'
+            ? [
+                  '--import',
+                  'data:text/javascript,const original=Date.now;const started=performance.now();Date.now=()=>original()+(performance.now()-started>=100?60000:0)',
+              ]
+            : [];
+    const process = spawn(globalThis.process.execPath, [...clockImport, '--import', 'tsx', 'collab-server.ts'], {
         cwd: globalThis.process.cwd(),
         env: {
             ...globalThis.process.env,
@@ -227,6 +234,28 @@ void test('does not reset the message budget at a fixed window boundary', async 
     socket.send(cursor);
     socket.send(cursor);
     await new Promise((resolve) => setTimeout(resolve, 100));
+    socket.send(cursor);
+    socket.send(cursor);
+
+    assert.equal(await closeCodeWithin(socket), 1008);
+});
+
+void test('does not refill the message budget after a wall-clock jump', async () => {
+    const { url } = await startServer({
+        COLLAB_RATE_LIMIT_PER_SECOND: '3',
+        COLLAB_TEST_FORWARD_CLOCK: '1',
+    });
+    const socket = await connect(url);
+    await join(socket, 'session', 'peer');
+
+    const cursor = JSON.stringify({
+        type: 'cursor',
+        sessionId: 'session',
+        peerId: 'peer',
+        cursor: { trackId: 't', beat: 1 },
+    });
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    socket.send(cursor);
     socket.send(cursor);
     socket.send(cursor);
 

@@ -1,4 +1,5 @@
 import { timingSafeEqual } from 'node:crypto';
+import { performance } from 'node:perf_hooks';
 
 import { WebSocketServer, WebSocket, type RawData, type VerifyClientCallbackAsync } from 'ws';
 
@@ -149,7 +150,7 @@ function selectProtocol(protocols: Set<string>): string | false {
 }
 
 function exceedsMessageRate(ws: WebSocket, byteLength: number): boolean {
-    const now = Date.now();
+    const now = performance.now();
     const rate = socketRateLimits.get(ws);
     if (!rate) {
         return true;
@@ -679,7 +680,7 @@ wss.on('connection', (ws, request) => {
     socketRateLimits.set(ws, {
         byteTokens: RATE_LIMIT_BYTES_PER_SECOND,
         messageTokens: RATE_LIMIT_PER_SECOND,
-        updatedAt: Date.now(),
+        updatedAt: performance.now(),
     });
 
     ws.on('pong', () => {
