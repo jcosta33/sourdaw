@@ -1,0 +1,39 @@
+src/modules/Gluten/models/GlutenTopologyGating.ts
+  s_bc88af7d3b054c::t_c013dd84992271 535-538
+crates/daw-dsp/src/gluten/opto.rs
+  s_bc88af7d3b054c::t_c013dd84992271 7,65-66,69-76,111
+src/modules/Gluten/models/__tests__/glutenTopologyGating.spec.ts
+  s_bc88af7d3b054c::t_7374e3d17768c0 496,506
+crates/daw-dsp/tests/gluten_topology_param_reach.rs
+  s_bc88af7d3b054c::t_65cda5ad62ce66 255
+  s_bc88af7d3b054c::t_4850659bf19e30 344-346
+  s_bc88af7d3b054c::t_9e91a64aad222e 233-244,246-254,256-263,265,267
+  s_bc88af7d3b054c::t_7374e3d17768c0 30-33,231-232,245,264,266,268-270,332-335
+crates/daw-dsp/src/gluten/engine.rs
+  s_bc88af7d3b054c::t_4850659bf19e30 605-616
+  s_bc88af7d3b054c::t_c013dd84992271 621-626
+public/wasm/daw-dsp/daw_dsp.d.ts
+  s_bc88af7d3b054c::t_8e9b873426048b 1,989-1003
+public/wasm/daw-dsp/daw_dsp_bg.wasm.d.ts
+  s_bc88af7d3b054c::t_545416df8314ee 1,193-207
+public/wasm/manifest.json
+  s_bc88af7d3b054c::t_cf1740251ae9c5 12,16-18,21
+src/modules/AudioEngine/wasm/daw_dsp.d.ts
+  s_bc88af7d3b054c::t_e3fda13b3b7a51 1,989-1003
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "eadedb82c8a8515a3f11da379329abe399416e1f",
+  "prompts": {},
+  "sessions": {
+    "s_bc88af7d3b054c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f9b4a-11a2-7f61-8dfb-76eed0eb2a9c",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
