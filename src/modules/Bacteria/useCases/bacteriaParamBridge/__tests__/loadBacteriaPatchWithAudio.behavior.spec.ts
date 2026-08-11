@@ -22,9 +22,11 @@ const getBacteriaStateMock = vi.mocked(getBacteriaState);
 const TRACK_ID = 'track-1';
 const DEVICE_ID = 'device-1';
 
-function makeDeps() {
+function makeDeps(parameterValues: Record<string, number> = {}) {
     return {
-        getAllTracks: vi.fn().mockReturnValue([{ id: TRACK_ID, devices: [{ id: DEVICE_ID, type: 'bacteria' }] }]),
+        getAllTracks: vi
+            .fn()
+            .mockReturnValue([{ id: TRACK_ID, devices: [{ id: DEVICE_ID, type: 'bacteria', parameterValues }] }]),
         updateDeviceParam: vi.fn(),
         persistDeviceParam: vi.fn(),
         resolveEligibleDeviceWriteTarget: vi.fn().mockReturnValue({
@@ -89,6 +91,19 @@ describe('loadBacteriaPatchWithAudio — engine sync', () => {
         expect(pushedKeys).toContain('mix');
         expect(pushedKeys).not.toContain('outputGain'); // unchanged → not re-sent
         expect(pushedKeys).not.toContain('inputGain'); // unchanged → not re-sent
+    });
+
+    it('unfreezes persisted project state even when the session store already matches the preset', () => {
+        const deps = makeDeps({ band0_grainFreeze: 1 });
+        const patch: BacteriaPatch = {
+            ...DEFAULT_PATCH,
+            bands: [{ ...DEFAULT_BAND, granularEnabled: true, grainFreeze: false }, ...DEFAULT_PATCH.bands.slice(1)],
+        };
+
+        loadBacteriaPatchWithAudio(deps as never)(DEVICE_ID, patch);
+
+        expect(pushedParams(deps)).toContainEqual(['band0_grainFreeze', 0]);
+        expect(deps.persistDeviceParam).toHaveBeenCalledWith(DEVICE_ID, 'band0_grainFreeze', 0);
     });
 
     it('only iterates the active bandCount, not the full 6-entry band array', () => {
