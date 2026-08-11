@@ -10,7 +10,7 @@ use super::gain_computer::{auto_makeup, db_to_linear};
 use super::lookahead::LookaheadDelay;
 use super::opto::OptoCompressor;
 use super::params::SmoothedParam;
-use super::sidechain::{SidechainEq, SidechainHpf, SidechainLpf, ThrustFilter};
+use super::sidechain::SidechainChain;
 use super::stereo::{decode_ms, encode_ms, parallel_mix, StereoMode};
 use super::vca::VcaCompressor;
 
@@ -21,6 +21,17 @@ pub enum Topology {
     Opto,  // LA-2A
     Fet,   // 1176
     Diode, // Neve 33609
+}
+
+impl Topology {
+    fn index(self) -> usize {
+        match self {
+            Self::Vca => 0,
+            Self::Opto => 1,
+            Self::Fet => 2,
+            Self::Diode => 3,
+        }
+    }
 }
 
 /// Style presets (Level 1 UI).
@@ -47,14 +58,7 @@ pub struct GlutenEngine {
     blend_amount: f32,
 
     // Sidechain
-    sc_hpf_l: SidechainHpf,
-    sc_hpf_r: SidechainHpf,
-    sc_hpf_freq: f32,
-    sc_lpf_l: SidechainLpf,
-    sc_lpf_r: SidechainLpf,
-    sc_lpf_freq: f32,
-    sc_eq: SidechainEq,
-    thrust: ThrustFilter,
+    sidechains: [SidechainChain; 4],
 
     // Detector. The detectors themselves live inside each topology, next to the
     // ballistics they steer; the engine keeps the selections so it can restate
@@ -123,14 +127,7 @@ impl GlutenEngine {
             blend_topology: Topology::Opto,
             blend_amount: 0.0,
 
-            sc_hpf_l: SidechainHpf::new(sample_rate, 80.0),
-            sc_hpf_r: SidechainHpf::new(sample_rate, 80.0),
-            sc_hpf_freq: 80.0,
-            sc_lpf_l: SidechainLpf::new(sample_rate, 20000.0),
-            sc_lpf_r: SidechainLpf::new(sample_rate, 20000.0),
-            sc_lpf_freq: 20000.0,
-            sc_eq: SidechainEq::new(sample_rate),
-            thrust: ThrustFilter::new(sample_rate),
+            sidechains: std::array::from_fn(|_| SidechainChain::new(sample_rate)),
 
             detection_mode: DetectionMode::Rms,
 
@@ -260,30 +257,53 @@ impl GlutenEngine {
 
             // Sidechain
             "sc_hpf_freq" => {
-                self.sc_hpf_freq = value.clamp(20.0, 500.0);
-                self.sc_hpf_l.set_freq(self.sample_rate, self.sc_hpf_freq);
-                self.sc_hpf_r.set_freq(self.sample_rate, self.sc_hpf_freq);
+                for sidechain in &mut self.sidechains {
+                    sidechain.set_hpf_freq(self.sample_rate, value);
+                }
             }
             "sc_hpf_enabled" => {
                 let enabled = value > 0.5;
-                self.sc_hpf_l.set_enabled(enabled);
-                self.sc_hpf_r.set_enabled(enabled);
+                for sidechain in &mut self.sidechains {
+                    sidechain.set_hpf_enabled(enabled);
+                }
             }
-            "thrust" => self.thrust.set_mode(value),
+            "thrust" => {
+                for sidechain in &mut self.sidechains {
+                    sidechain.set_thrust(value);
+                }
+            }
             "sc_lpf_freq" => {
-                self.sc_lpf_freq = value.clamp(1000.0, 20000.0);
-                self.sc_lpf_l.set_freq(self.sample_rate, self.sc_lpf_freq);
-                self.sc_lpf_r.set_freq(self.sample_rate, self.sc_lpf_freq);
+                for sidechain in &mut self.sidechains {
+                    sidechain.set_lpf_freq(self.sample_rate, value);
+                }
             }
             "sc_lpf_enabled" => {
                 let enabled = value > 0.5;
-                self.sc_lpf_l.set_enabled(enabled);
-                self.sc_lpf_r.set_enabled(enabled);
+                for sidechain in &mut self.sidechains {
+                    sidechain.set_lpf_enabled(enabled);
+                }
             }
-            "sc_eq_freq" => self.sc_eq.set_freq(value),
-            "sc_eq_gain" => self.sc_eq.set_gain(value),
-            "sc_eq_q" => self.sc_eq.set_q(value),
-            "sc_eq_enabled" => self.sc_eq.set_enabled(value > 0.5),
+            "sc_eq_freq" => {
+                for sidechain in &mut self.sidechains {
+                    sidechain.set_eq_freq(value);
+                }
+            }
+            "sc_eq_gain" => {
+                for sidechain in &mut self.sidechains {
+                    sidechain.set_eq_gain(value);
+                }
+            }
+            "sc_eq_q" => {
+                for sidechain in &mut self.sidechains {
+                    sidechain.set_eq_q(value);
+                }
+            }
+            "sc_eq_enabled" => {
+                let enabled = value > 0.5;
+                for sidechain in &mut self.sidechains {
+                    sidechain.set_eq_enabled(enabled);
+                }
+            }
             "delta_listen" => self.delta_listen = value > 0.5,
             "ext_sidechain" => self.ext_sidechain = value > 0.5,
             "gain_match_bypass" => self.gain_match_bypass = value > 0.5,
@@ -419,25 +439,32 @@ impl GlutenEngine {
             let delayed_l = self.lookahead_l.process(proc_l, lookahead_samples);
             let delayed_r = self.lookahead_r.process(proc_r, lookahead_samples);
 
-            // Sidechain source: external aux or derived from main input
-            let (sc_raw_l, sc_raw_r) = if self.ext_sidechain && i < self.ext_sc_left.len() {
-                (
-                    self.ext_sc_left[i],
-                    self.ext_sc_right.get(i).copied().unwrap_or(0.0),
-                )
-            } else {
-                (proc_l, proc_r)
+            // The diode is feed-forward, so its internal detector must stay on
+            // the undelayed program while the audio path receives lookahead.
+            // Stage two historically shared this same detector source.
+            let program_detector = match self.stereo_mode {
+                StereoMode::Mid => (proc_l, 0.0),
+                StereoMode::Side => (0.0, proc_r),
+                _ => (proc_l, proc_r),
             };
 
-            // Sidechain filtering: HPF → LPF → EQ → Thrust shape the detector input.
-            let sc_l = self.thrust.process(
-                self.sc_eq
-                    .process(self.sc_lpf_l.process(self.sc_hpf_l.process(sc_raw_l))),
-            );
-            let sc_r = self.thrust.process(
-                self.sc_eq
-                    .process(self.sc_lpf_r.process(self.sc_hpf_r.process(sc_raw_r))),
-            );
+            let external_detector = if self.ext_sidechain && i < self.ext_sc_left.len() {
+                let raw = (
+                    self.ext_sc_left[i],
+                    self.ext_sc_right.get(i).copied().unwrap_or(0.0),
+                );
+                let detector = match self.stereo_mode {
+                    StereoMode::Mid | StereoMode::Side => encode_ms(raw.0, raw.1),
+                    _ => raw,
+                };
+                Some(match self.stereo_mode {
+                    StereoMode::Mid => (detector.0, 0.0),
+                    StereoMode::Side => (0.0, detector.1),
+                    _ => detector,
+                })
+            } else {
+                None
+            };
 
             // Process through active topology.
             let (topo_l, topo_r) = match self.stereo_mode {
@@ -445,21 +472,25 @@ impl GlutenEngine {
                 StereoMode::Side => (0.0, delayed_r),
                 _ => (delayed_l, delayed_r),
             };
-            let (sc_topo_l, sc_topo_r) = match self.stereo_mode {
-                StereoMode::Mid => (sc_l, 0.0),
-                StereoMode::Side => (0.0, sc_r),
-                _ => (sc_l, sc_r),
-            };
-
             // Primary topology
-            let (mut wet_l, mut wet_r, gr_db) =
-                self.process_topology(self.active_topology, topo_l, topo_r, sc_topo_l, sc_topo_r);
+            let (mut wet_l, mut wet_r, gr_db) = self.process_topology(
+                self.active_topology,
+                topo_l,
+                topo_r,
+                program_detector,
+                external_detector,
+            );
 
             // Dual-stage serial routing (Shadow Hills style)
             // Second topology processes the output of the first
             if self.blend_amount > 0.001 && self.blend_topology != self.active_topology {
-                let (s2_l, s2_r, gr2) =
-                    self.process_topology(self.blend_topology, wet_l, wet_r, sc_topo_l, sc_topo_r);
+                let (s2_l, s2_r, gr2) = self.process_topology(
+                    self.blend_topology,
+                    wet_l,
+                    wet_r,
+                    program_detector,
+                    external_detector,
+                );
                 // Crossfade between single and dual-stage
                 let b = self.blend_amount;
                 wet_l = wet_l * (1.0 - b) + s2_l * b;
@@ -565,14 +596,25 @@ impl GlutenEngine {
         topo: Topology,
         l: f32,
         r: f32,
-        sc_l: f32,
-        sc_r: f32,
+        program_detector: (f32, f32),
+        external_detector: Option<(f32, f32)>,
     ) -> (f32, f32, f32) {
+        let detector_source = external_detector.unwrap_or_else(|| match topo {
+            Topology::Vca => self.vca.detector_source(l, r),
+            Topology::Opto => self.opto.detector_source(),
+            Topology::Fet => self.fet.detector_source(),
+            Topology::Diode => self
+                .diode
+                .detector_source(program_detector.0, program_detector.1),
+        });
+        let (detector_l, detector_r) =
+            self.sidechains[topo.index()].process(detector_source.0, detector_source.1);
+
         match topo {
-            Topology::Vca => self.vca.process_sample(l, r),
-            Topology::Opto => self.opto.process_sample(l, r),
-            Topology::Fet => self.fet.process_sample(l, r),
-            Topology::Diode => self.diode.process_sample_with_sc(l, r, sc_l, sc_r),
+            Topology::Vca => self.vca.process_sample_with_detector(l, r, detector_l, detector_r),
+            Topology::Opto => self.opto.process_sample_with_detector(l, r, detector_l, detector_r),
+            Topology::Fet => self.fet.process_sample_with_detector(l, r, detector_l, detector_r),
+            Topology::Diode => self.diode.process_sample_with_detector(l, r, detector_l, detector_r),
         }
     }
 
