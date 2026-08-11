@@ -4,6 +4,7 @@ export { getSendAutomationBusId } from './automation/getSendAutomationBusId';
 export { addAutomationPoint } from './automation/addAutomationPoint';
 export { batchAddAutomationPoints } from './automation/batchAddAutomationPoints';
 export { createAutomationLane } from './automation/createAutomationLane';
+export { setAutomationParameterRangeResolver } from './automation/automationParameterRangeDependencies';
 export { clipAutomationMoveStateMatches } from './automation/clipAutomationMoveStateMatches';
 export { duplicateClipAutomation } from './automation/duplicateClipAutomation';
 export { duplicateClipAutomationBatch } from './automation/duplicateClipAutomationBatch';

@@ -14,6 +14,7 @@ import { persistDeviceParam, resolveEligibleDeviceWriteTarget } from '#/modules/
 import {
     clampDeviceParameterValue,
     getAllTracks,
+    getAutomationParameterRange,
     getPluginById,
     isDeviceParameterAutomatable,
     persistDevicePatch,
@@ -55,6 +56,7 @@ import {
     prepareAutomationTimeStateRestore,
     recordAutomationValue,
     setAutomationRecordingDependencies,
+    setAutomationParameterRangeResolver,
     setModulationDependencies,
 } from '#/modules/Automation/useCases';
 import { updateBacteriaMeters } from '#/modules/Bacteria/stores';
@@ -283,6 +285,8 @@ setStopPlaybackCallback(() => {
         logger.error(new Error('Scheduler stop request failed', { cause: error }));
     });
 });
+
+setAutomationParameterRangeResolver(getAutomationParameterRange);
 
 setAutomationRecordingDependencies({
     getAudioContext,

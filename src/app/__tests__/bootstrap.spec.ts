@@ -54,6 +54,8 @@ const {
     prepareOfflineLevainMock,
     initBranchStateMock,
     flushDeferredStorageNoticeMock,
+    getAutomationParameterRangeMock,
+    setAutomationParameterRangeResolverMock,
 } = vi.hoisted(() => {
     const noop = vi.fn();
     const sentinelHandlers = (moduleId: string) => vi.fn<() => HandlerMapSentinel>(() => ({ moduleId }));
@@ -81,6 +83,8 @@ const {
         prepareOfflineLevainMock: vi.fn(() => Promise.resolve()),
         initBranchStateMock: vi.fn(),
         flushDeferredStorageNoticeMock: vi.fn(),
+        getAutomationParameterRangeMock: vi.fn(),
+        setAutomationParameterRangeResolverMock: vi.fn(),
     };
 });
 
@@ -110,6 +114,7 @@ vi.mock('#/modules/Arrangement/useCases', () => ({
     isDeviceParameterAutomatable: noop,
     quantiseDeviceParameterValue: noop,
     getAllTracks: noop,
+    getAutomationParameterRange: getAutomationParameterRangeMock,
     getPluginById: noop,
     persistDevicePatch: noop,
     cleanupUnusedFreezeFiles: noop,
@@ -158,6 +163,7 @@ vi.mock('#/modules/Automation/useCases', () => ({
     prepareAutomationTimeStateRestore: prepareAutomationTimeStateRestoreMock,
     recordAutomationValue: noop,
     setAutomationRecordingDependencies: noop,
+    setAutomationParameterRangeResolver: setAutomationParameterRangeResolverMock,
     setModulationDependencies: noop,
 }));
 
@@ -447,6 +453,12 @@ describe('bootstrap', () => {
         expect(setVcaRuntimeProjectionDependenciesMock).toHaveBeenCalledExactlyOnceWith({
             reconcileVcaRuntimeGain: reconcileVcaRuntimeGainMock,
         });
+    });
+
+    it('wires Automation lane ranges to Arrangement descriptor truth', () => {
+        expect(setAutomationParameterRangeResolverMock).toHaveBeenCalledExactlyOnceWith(
+            getAutomationParameterRangeMock
+        );
     });
 
     describe('offline instrument setup dispatch', () => {

@@ -11,13 +11,11 @@ import type { Device, Track } from '../../../../models/TrackViewTypes';
 
 // Mock external dependencies
 const mockSetDeviceParameter = vi.fn();
-const mockGetBuiltinPlugins = vi.fn<() => unknown[]>(() => []);
 vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => {
     const actual = await importOriginal<typeof import('#/modules/Arrangement/useCases')>();
     return {
         ...actual,
         setDeviceParameter: (...args: unknown[]) => mockSetDeviceParameter(...args),
-        getBuiltinPlugins: () => mockGetBuiltinPlugins(),
     };
 });
 
@@ -422,9 +420,6 @@ describe('DeviceParameterControl', () => {
     });
 
     it('creates Inspector menu automation with the stable id of a legacy-named built-in', () => {
-        mockGetBuiltinPlugins.mockReturnValue([
-            { id: 'builtin-crumbs', name: 'Crumbs', parameters: [{ id: 'cutoff', name: 'Cutoff', automatable: true }] },
-        ]);
         const track: Track = {
             id: 'track-1',
             name: 'Test Track',
@@ -436,7 +431,7 @@ describe('DeviceParameterControl', () => {
             pan: 0,
             color: '#ff0000',
             clips: [],
-            devices: [{ id: 'device-1', name: 'Crumbs', type: 'builtin-crumbs', bypassed: false, parameterValues: {} }],
+            devices: [{ id: 'device-1', name: 'Crumbs', type: 'cRuMbS', bypassed: false, parameterValues: {} }],
             midiFx: [],
             sends: [],
             frozen: false,
@@ -462,9 +457,9 @@ describe('DeviceParameterControl', () => {
         render(<TrackAutomationSection track={track} />);
 
         fireEvent.click(screen.getByLabelText('Add automation lane'));
-        fireEvent.click(screen.getByRole('menuitem', { name: 'Cutoff' }));
+        fireEvent.click(screen.getByRole('menuitem', { name: 'Tune' }));
 
-        expect(mockAddAutomationLane).toHaveBeenCalledWith('track-1', 'device-1:cutoff', 'Crumbs: Cutoff');
+        expect(mockAddAutomationLane).toHaveBeenCalledWith('track-1', 'device-1:tune', 'Crumbs: Tune');
     });
 
     it('should not render automation button for non-automatable parameters', () => {
