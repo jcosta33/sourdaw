@@ -1,0 +1,41 @@
+crates/daw-engine/src/audio_thread.rs
+  s_bc88af7d3b054c::t_dcc4c44c589463 49
+  s_bc88af7d3b054c::t_9f3ccda703f2f8 10,19,60-71,81-86,89,93,124-130,132-135,140,153-158
+  s_bc88af7d3b054c::t_f50f5336cbd834 131
+  s_bc88af7d3b054c::t_3571d231c711ee 228-229,300-317
+  s_bc88af7d3b054c::t_2c8210a77cbb99 6-8
+  s_bc88af7d3b054c::t_9c96d9a3206d20 59
+  s_bc88af7d3b054c::t_a8ea7509a3d14e 318-319
+crates/daw-engine/src/scheduler.rs
+  s_bc88af7d3b054c::t_dcc4c44c589463 301-303,763
+  s_bc88af7d3b054c::t_68040560582a9c 72,82-83,156-157,170-173,180,188-189,206-209,211,220,235,241,246,252,262,268-269,271-272,281,287,291,295,299,304-308,314-340
+  s_bc88af7d3b054c::t_6bf909143d552f 485,487,498-501,506-526,546,551-552,725-728,730-742
+  s_bc88af7d3b054c::t_9411efe2d7df94 14,78,169,175,615,776,867-868
+  s_bc88af7d3b054c::t_58a3d89b0c758c 608-612,614,617,632,662,703,722,729,769,809
+  s_bc88af7d3b054c::t_12f485335f6146 71
+  s_bc88af7d3b054c::t_681bf4538c7f4b 73-77,165-168
+  s_bc88af7d3b054c::t_5abeb50dd8ed69 79-81,84-130,223,226-229,267,723-724
+  s_bc88af7d3b054c::t_885af5df18ff02 342-343,502-505,527-545,547-550,618,620-627,743-762,764-768,770-775,777-804
+  s_bc88af7d3b054c::t_37087cd1e5b484 341
+  s_bc88af7d3b054c::t_ee72cd48314cf4 344
+  s_bc88af7d3b054c::t_5c907655950f8e 616
+crates/daw-engine/src/midi/rt_contract.rs
+  s_bc88af7d3b054c::t_1c3caf976f2684 99,143
+  s_bc88af7d3b054c::t_dcc4c44c589463 102,146
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "586ddc2e79e3e2407db60e31bbd5bbe4c7b07bda",
+  "prompts": {},
+  "sessions": {
+    "s_bc88af7d3b054c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f9b4a-11a2-7f61-8dfb-76eed0eb2a9c",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
