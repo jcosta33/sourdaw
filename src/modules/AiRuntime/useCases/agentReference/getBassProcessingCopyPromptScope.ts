@@ -7,6 +7,8 @@ import {
     type ProjectContextTrack,
 } from '../../models/ProjectContext';
 
+import { projectCanonicalTrackRole } from './projectCanonicalTrackRole';
+
 type BassProcessingCopyPlanEntry = {
     layer: ProjectContextAdjustmentLayer;
     sourceRegion: ProjectContextAdjustmentRegion;
@@ -50,6 +52,10 @@ function findUniqueSection(context: ProjectContext, name: string): ProjectContex
 function isBassTrack(track: ProjectContextTrack): boolean {
     if (track.kind !== 'audio' && track.kind !== 'midi') {
         return false;
+    }
+    const projectedRole = projectCanonicalTrackRole(track);
+    if (projectedRole.classification !== 'ambiguous') {
+        return projectedRole.classification === 'non-drum' && projectedRole.role === 'bass-instrument';
     }
     return /(?:^| )bass(?: |$)/u.test(normalizeText(track.name));
 }

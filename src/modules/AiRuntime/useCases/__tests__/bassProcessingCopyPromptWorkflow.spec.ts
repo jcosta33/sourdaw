@@ -605,6 +605,52 @@ describe('bass-processing section copy workflow', () => {
         expect(getProviderVisibleRegionPlan(confirmation?.actions)).toEqual(providerPlan.map((call) => call.arguments));
     });
 
+    it('protects canonical kick aliases that contain the word bass', async () => {
+        const trackState = trackStore.value;
+        const layerState = adjustmentLayerStore.value;
+        if (!trackState || !layerState) {
+            throw new TypeError('Expected project state');
+        }
+        trackStore.set({
+            ...trackState,
+            tracks: [...trackState.tracks, createTrack('track-bass-drum', 'Bass Drum')],
+        });
+        adjustmentLayerStore.set({
+            layers: [
+                ...layerState.layers,
+                createLayer({
+                    id: 'layer-bass-drum-eq',
+                    name: 'Bass Drum Chorus EQ',
+                    effectType: 'eq',
+                    affectedTrackIds: ['track-bass-drum'],
+                    region: {
+                        id: 'region-bass-drum-eq-chorus-one',
+                        startBeat: 16,
+                        endBeat: 32,
+                        blend: 0.9,
+                        fadeInBeats: 0,
+                        fadeOutBeats: 0,
+                    },
+                }),
+            ],
+        });
+
+        await sendChatMessage(PROMPT);
+
+        const confirmation = getPendingActionConfirmation(getConfirmationId());
+        expect(
+            confirmation?.actions.flatMap((action) =>
+                action.type === 'addAdjustmentRegion' ? [action.payload.layerId] : []
+            )
+        ).toEqual(['layer-bass-eq', 'layer-bass-compressor']);
+        expect(confirmation?.protectedUnchanged).toEqual(
+            expect.arrayContaining([
+                { id: 'track-bass-drum', name: 'Bass Drum' },
+                { id: 'layer-bass-drum-eq', name: 'Bass Drum Chorus EQ' },
+            ])
+        );
+    });
+
     it('copies multiple source regions from one layer as one atomic batch', async () => {
         const state = adjustmentLayerStore.value;
         if (!state) {
