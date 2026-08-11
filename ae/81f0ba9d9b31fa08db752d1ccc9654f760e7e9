@@ -1,0 +1,30 @@
+src/modules/Grinder/presentations/views/__tests__/GrinderPanel.spec.tsx
+  s_bc88af7d3b054c::t_4e2c5623b6c248 407
+src/modules/Arrangement/useCases/getEligibleDeviceParameterValues.ts
+  s_bc88af7d3b054c::t_4e2c5623b6c248 1,18,24,26
+src/modules/Crumbs/presentations/views/__tests__/CrumbsPanel.spec.tsx
+  s_bc88af7d3b054c::t_4e2c5623b6c248 90
+src/modules/Grinder/models/__tests__/GrinderProjectParameterMap.spec.ts
+  s_bc88af7d3b054c::t_8f1f5becf79751 42
+src/modules/Crumbs/stores/crumbsStore.ts
+  s_bc88af7d3b054c::t_4e2c5623b6c248 355
+src/modules/Grinder/models/GrinderProjectParameterMap.ts
+  s_bc88af7d3b054c::t_4e2c5623b6c248 101
+  s_bc88af7d3b054c::t_626b413e176616 109-111
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "ae81f0ba9d9b31fa08db752d1ccc9654f760e7e9",
+  "prompts": {},
+  "sessions": {
+    "s_bc88af7d3b054c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f9b4a-11a2-7f61-8dfb-76eed0eb2a9c",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
