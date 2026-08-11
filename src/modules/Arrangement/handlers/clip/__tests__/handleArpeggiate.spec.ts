@@ -121,6 +121,42 @@ describe('handleArpeggiate', () => {
         });
     });
 
+    it('keeps the app-owned guard path when valid display names are empty', () => {
+        const expectedNotes = [{ id: 'source', pitch: 60, startBeat: 0, duration: 2, velocity: 100, channel: 0 }];
+        const addedNotes = [{ id: 'arp-1', pitch: 60, startBeat: 0.25, duration: 0.25, velocity: 100, channel: 0 }];
+        const action = {
+            type: 'arpeggiate' as const,
+            payload: {
+                clipId: 'clip-chords',
+                pattern: 'up',
+                rate: 8,
+                octaves: 1,
+                gate: 50,
+                expectedTrackId: 'track-chords',
+                trackName: '',
+                expectedTrackFrozen: false,
+                clipName: '',
+                expectedClipLocked: false,
+                expectedNotes,
+                addedNotes,
+            },
+        };
+
+        expect(handleArpeggiate.execute(action)).toEqual({ status: 'written' });
+        expect(mocks.restoreMidiClipNotes).toHaveBeenCalledWith({
+            clipId: 'clip-chords',
+            notes: [...expectedNotes, ...addedNotes],
+            expectedNotes,
+            noteTransformReplayGuard: {
+                trackId: 'track-chords',
+                expectedTrackFrozen: false,
+                expectedClipLocked: false,
+            },
+        });
+        expect(mocks.arpeggiate).not.toHaveBeenCalled();
+        expect(handleArpeggiate.describe(action).label).toContain('Track "" (track-chords), clip "" (clip-chords)');
+    });
+
     it('is undoable', () => {
         expect(handleArpeggiate.undoable).toBe(true);
         expect(handleArpeggiate.requiresAbortCompensation).toBe(false);

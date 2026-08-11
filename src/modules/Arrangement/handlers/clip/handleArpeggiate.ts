@@ -12,12 +12,12 @@ function getGuardedArpeggio(action: ArpeggiateAction) {
         action.payload;
     if (
         !addedNotes ||
-        !clipName ||
+        clipName === undefined ||
         expectedClipLocked === undefined ||
         !expectedNotes ||
         expectedTrackFrozen === undefined ||
         !expectedTrackId ||
-        !trackName
+        trackName === undefined
     ) {
         return null;
     }
