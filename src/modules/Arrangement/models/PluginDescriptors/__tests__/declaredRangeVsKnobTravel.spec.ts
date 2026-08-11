@@ -27,7 +27,7 @@ import { BUILTIN_PLUGINS } from '../../DeviceParameter';
  *     declared range  ==  knob travel  ==  engine clamp
  *
  * Two of those legs are derivable for every parameter this file compares; the
- * third is derivable for 116 of the 192. So the census is **three-way where it
+ * third is derivable for 114 of the 192. So the census is **three-way where it
  * can be and two-way where it cannot**, and it says which is which rather than
  * implying uniform coverage. A two-way row that is honest beats a three-way one
  * that fabricates a clamp from a comment.
@@ -47,7 +47,7 @@ import { BUILTIN_PLUGINS } from '../../DeviceParameter';
  *
  * **Leg 3 — engine clamp.** The two-sided numeric `value.clamp(a, b)` in the
  * Rust `set_param` arm, read the way `descriptorEngineParamWeld` reads the arm
- * names, split per exclusive alternative where a device has one. Covers 116 of 192; every shape it cannot read is named in
+ * names, split per exclusive alternative where a device has one. Covers 114 of 192; every shape it cannot read is named in
  * `ENGINE_CLAMP_COVERAGE`, at the point where the derivation stops.
  *
  * ## Coverage is part of the claim
