@@ -256,8 +256,10 @@ export class AutomergeSync {
 
         const transition = waitForCrdtDocumentTransition(docId);
         if (transition) {
-            void transition.then(() => {
-                this.receiveSync({ peerId, docId, syncMessageBase64 });
+            void transition.then((outcome) => {
+                if (outcome === 'committed') {
+                    this.receiveSync({ peerId, docId, syncMessageBase64 });
+                }
                 return undefined;
             });
             return;

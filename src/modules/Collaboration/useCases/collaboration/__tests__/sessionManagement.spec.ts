@@ -74,6 +74,7 @@ const crdtMock = vi.hoisted(() => {
         getCrdtDoc: vi.fn(),
         mutateCrdtDoc: vi.fn(),
         persistCrdtProject: vi.fn().mockResolvedValue(undefined),
+        waitForCrdtDocumentTransition: vi.fn<(docId: string) => Promise<'aborted' | 'committed'> | null>(),
         subscribeToCrdtChanges: vi.fn().mockReturnValue(unsubscribeAutomergeChanges),
         unsubscribeAutomergeChanges,
         preserveBranchStateForSession: vi.fn(),
@@ -168,6 +169,7 @@ vi.mock('#/modules/CrdtDocument/useCases', () => ({
     getCrdtDoc: crdtMock.getCrdtDoc,
     mutateCrdtDoc: crdtMock.mutateCrdtDoc,
     persistCrdtProject: crdtMock.persistCrdtProject,
+    waitForCrdtDocumentTransition: crdtMock.waitForCrdtDocumentTransition,
     subscribeToCrdtChanges: crdtMock.subscribeToCrdtChanges,
     preserveBranchStateForSession: crdtMock.preserveBranchStateForSession,
     replaceBranchState: crdtMock.replaceBranchState,
@@ -314,6 +316,7 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
         trackStoreMock.value = null;
         transportStoreMock.value = null;
         crdtMock.hasCrdtDoc.mockReturnValue(false);
+        crdtMock.waitForCrdtDocumentTransition.mockReturnValue(null);
     });
 
     afterEach(() => {
@@ -672,6 +675,58 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
             const doc: Record<string, unknown> = {};
             changeFn(doc);
             expect(doc.branches).toEqual([{ id: 'mirrored' }]);
+        });
+
+        it('defers local branch metadata until its document transition commits', async () => {
+            let finishTransition: ((outcome: 'aborted' | 'committed') => void) | undefined;
+            const transition = new Promise<'aborted' | 'committed'>((resolve) => {
+                finishTransition = resolve;
+            });
+            crdtMock.hasCrdtDoc.mockReturnValue(true);
+            crdtMock.waitForCrdtDocumentTransition.mockReturnValue(transition);
+            sessionRuntimePrimitives.startBranchSync(true);
+            const branchStoreListener = branchStoreMock.subscribe.mock.calls.at(-1)![0] as (
+                state: { branches: unknown[]; activeBranchId: string } | null
+            ) => void;
+            crdtMock.mutateCrdtDoc.mockClear();
+
+            branchStoreListener({ branches: [{ id: 'committed' }], activeBranchId: 'b1' });
+
+            expect(crdtMock.mutateCrdtDoc).not.toHaveBeenCalled();
+            finishTransition?.('committed');
+            await transition;
+            await Promise.resolve();
+
+            expect(crdtMock.mutateCrdtDoc).toHaveBeenCalledTimes(1);
+            const [{ id, changeFn }] = crdtMock.mutateCrdtDoc.mock.calls[0] as [
+                { id: string; changeFn: (doc: Record<string, unknown>) => void },
+            ];
+            expect(id).toBe('__branches__');
+            const doc: Record<string, unknown> = {};
+            changeFn(doc);
+            expect(doc.branches).toEqual([{ id: 'committed' }]);
+        });
+
+        it('drops provisional branch metadata when its document transition aborts', async () => {
+            let finishTransition: ((outcome: 'aborted' | 'committed') => void) | undefined;
+            const transition = new Promise<'aborted' | 'committed'>((resolve) => {
+                finishTransition = resolve;
+            });
+            crdtMock.hasCrdtDoc.mockReturnValue(true);
+            crdtMock.waitForCrdtDocumentTransition.mockReturnValue(transition);
+            sessionRuntimePrimitives.startBranchSync(true);
+            const branchStoreListener = branchStoreMock.subscribe.mock.calls.at(-1)![0] as (
+                state: { branches: unknown[]; activeBranchId: string } | null
+            ) => void;
+            crdtMock.mutateCrdtDoc.mockClear();
+
+            branchStoreListener({ branches: [{ id: 'provisional' }], activeBranchId: 'b1' });
+
+            finishTransition?.('aborted');
+            await transition;
+            await Promise.resolve();
+
+            expect(crdtMock.mutateCrdtDoc).not.toHaveBeenCalled();
         });
 
         it('does not mirror branch mutations while a projection is already in flight', () => {

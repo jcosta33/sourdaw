@@ -22,6 +22,6 @@ export async function rollbackCreatedDrumPreviewBranches(action: DeleteDrumPrevi
         }
         throw new Error('Drum preview branch rollback conflicted; manual repair is required');
     } finally {
-        branchDocumentTransitionFence.release(action.payload.ownerId);
+        branchDocumentTransitionFence.release(action.payload.ownerId, 'aborted');
     }
 }

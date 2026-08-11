@@ -118,9 +118,11 @@ describe('runBranchDocumentTransition', () => {
         } satisfies Extract<AppAction, { type: 'deleteDrumPreviewBranches' }>;
         branchDocumentTransitionFence.begin({ docIds: candidateIds, ownerId });
 
-        expect(waitForCrdtDocumentTransition(candidateIds[0]!)).not.toBeNull();
+        const transition = waitForCrdtDocumentTransition(candidateIds[0]!);
+        expect(transition).not.toBeNull();
         await rollbackCreatedDrumPreviewBranches(action);
 
+        await expect(transition).resolves.toBe('aborted');
         expect(automergeRepository.getDocIds().toSorted()).toEqual(['root']);
         expect(branchStore.value).toEqual(initialBranchState);
         expect(waitForCrdtDocumentTransition(candidateIds[0]!)).toBeNull();

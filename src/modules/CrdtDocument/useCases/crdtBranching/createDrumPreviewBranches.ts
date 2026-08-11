@@ -1,3 +1,4 @@
+import { DOC_BRANCHES } from '../../models/CrdtDocumentTypes';
 import { automergeRepository } from '../../repositories/automergeRepository';
 import { branchStore } from '../../stores/branchStore';
 
@@ -11,11 +12,11 @@ export async function createDrumPreviewBranches(prepared: PreparedDrumPreviewBra
         throw new Error('Branch store is unavailable');
     }
     const ownerId = prepared.action.payload.ownerId;
-    const affectedDocIds = prepared.branches.map(({ record }) => record.rootDocId);
-    branchDocumentTransitionFence.begin({ docIds: affectedDocIds, ownerId });
+    const candidateDocIds = prepared.branches.map(({ record }) => record.rootDocId);
+    branchDocumentTransitionFence.begin({ docIds: [...candidateDocIds, DOC_BRANCHES], ownerId });
     try {
         await runBranchDocumentTransition({
-            affectedDocIds,
+            affectedDocIds: candidateDocIds,
             previousState,
             transitionOwnerId: ownerId,
             apply: () => {
@@ -32,7 +33,7 @@ export async function createDrumPreviewBranches(prepared: PreparedDrumPreviewBra
             },
         });
     } catch (error) {
-        branchDocumentTransitionFence.release(ownerId);
+        branchDocumentTransitionFence.release(ownerId, 'aborted');
         throw error;
     }
 
@@ -43,9 +44,9 @@ export async function createDrumPreviewBranches(prepared: PreparedDrumPreviewBra
         }
         finalized = true;
         try {
-            automergeRepository.publishDocumentChanges(affectedDocIds);
+            automergeRepository.publishDocumentChanges(candidateDocIds);
         } finally {
-            branchDocumentTransitionFence.release(ownerId);
+            branchDocumentTransitionFence.release(ownerId, 'committed');
         }
     };
 }

@@ -28,7 +28,7 @@ const command_mocks = vi.hoisted(() => ({
 }));
 
 const crdt_mocks = vi.hoisted(() => ({
-    wait_for_document_transition: vi.fn<(docId: string) => Promise<void> | null>(),
+    wait_for_document_transition: vi.fn<(docId: string) => Promise<'aborted' | 'committed'> | null>(),
 }));
 
 vi.mock('#/modules/Command/useCases', () => ({
@@ -154,8 +154,8 @@ describe('AutomergeSync', () => {
     });
 
     it('defers an incoming branch-document sync until its owning transition releases the document', async () => {
-        let releaseTransition: (() => void) | undefined;
-        const transition = new Promise<void>((resolve) => {
+        let releaseTransition: ((outcome: 'aborted' | 'committed') => void) | undefined;
+        const transition = new Promise<'aborted' | 'committed'>((resolve) => {
             releaseTransition = resolve;
         });
         crdt_mocks.wait_for_document_transition.mockReturnValueOnce(transition).mockReturnValue(null);
@@ -169,11 +169,34 @@ describe('AutomergeSync', () => {
         });
 
         expect(replaceCrdtDoc).not.toHaveBeenCalled();
-        releaseTransition?.();
+        releaseTransition?.('committed');
         await transition;
         await Promise.resolve();
 
         expect(replaceCrdtDoc).toHaveBeenCalledWith(expect.objectContaining({ id: 'branch_candidate' }));
+    });
+
+    it('drops a deferred branch-document sync when its owning transition aborts', async () => {
+        let finishTransition: ((outcome: 'aborted' | 'committed') => void) | undefined;
+        const transition = new Promise<'aborted' | 'committed'>((resolve) => {
+            finishTransition = resolve;
+        });
+        crdt_mocks.wait_for_document_transition.mockReturnValueOnce(transition).mockReturnValue(null);
+        vi.mocked(getCrdtDoc).mockReturnValue(undefined);
+        const sync = new AutomergeSync(makePeerManager());
+
+        sync.receiveSync({
+            peerId: 'peer-1',
+            docId: 'branch_candidate',
+            syncMessageBase64: makeRealSyncMessage(),
+        });
+
+        finishTransition?.('aborted');
+        await transition;
+        await Promise.resolve();
+
+        expect(createCrdtDoc).not.toHaveBeenCalled();
+        expect(replaceCrdtDoc).not.toHaveBeenCalled();
     });
 
     it.each(['root', 'branch_feature'])('sanitizes and persists an authorized peer document: %s', async (doc_id) => {

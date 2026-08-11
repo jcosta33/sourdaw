@@ -1,8 +1,10 @@
+export type BranchDocumentTransitionOutcome = 'aborted' | 'committed';
+
 type ActiveBranchDocumentTransition = {
-    completion: Promise<void>;
+    completion: Promise<BranchDocumentTransitionOutcome>;
     docIds: ReadonlySet<string>;
     ownerId: string;
-    resolve: () => void;
+    resolve: (outcome: BranchDocumentTransitionOutcome) => void;
 };
 
 let activeTransition: ActiveBranchDocumentTransition | null = null;
@@ -12,29 +14,29 @@ export const branchDocumentTransitionFence = {
         if (activeTransition) {
             throw new Error('A branch document transition is already awaiting commit');
         }
-        let resolveTransition: (() => void) | undefined;
-        const completion = new Promise<void>((resolve) => {
+        let resolveTransition: ((outcome: BranchDocumentTransitionOutcome) => void) | undefined;
+        const completion = new Promise<BranchDocumentTransitionOutcome>((resolve) => {
             resolveTransition = resolve;
         });
         activeTransition = {
             completion,
             docIds: new Set(docIds),
             ownerId,
-            resolve: () => resolveTransition?.(),
+            resolve: (outcome) => resolveTransition?.(outcome),
         };
     },
     isBlockedFor(ownerId: string | undefined): boolean {
         return activeTransition !== null && activeTransition.ownerId !== ownerId;
     },
-    release(ownerId: string): void {
+    release(ownerId: string, outcome: BranchDocumentTransitionOutcome): void {
         if (activeTransition?.ownerId !== ownerId) {
             return;
         }
         const { resolve } = activeTransition;
         activeTransition = null;
-        resolve();
+        resolve(outcome);
     },
-    wait(docId: string): Promise<void> | null {
+    wait(docId: string): Promise<BranchDocumentTransitionOutcome> | null {
         if (!activeTransition?.docIds.has(docId)) {
             return null;
         }
