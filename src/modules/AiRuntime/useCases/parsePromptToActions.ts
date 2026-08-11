@@ -23,6 +23,7 @@ import { getDrumPreviewBranchesPromptScope } from './agentReference/getDrumPrevi
 import { getDrumRoutingPromptScope } from './agentReference/getDrumRoutingPromptScope';
 import { getMidiOverlapTransformPromptScope } from './agentReference/getMidiOverlapTransformPromptScope';
 import { getSidechainRoutingPromptScope } from './agentReference/getSidechainRoutingPromptScope';
+import { getSyncopatedArpeggioPromptScope } from './agentReference/getSyncopatedArpeggioPromptScope';
 import { getWholeProjectVibeMixScope } from './agentReference/getWholeProjectVibeMixScope';
 import { materializeBatchLocalActionIdentities } from './agentReference/materializeBatchLocalActionIdentities';
 import { type ProjectContext } from './getProjectContext';
@@ -143,6 +144,9 @@ export const parsePromptToActions = inject({ logger })(
                 const sidechainRoutingScope = getSidechainRoutingPromptScope(prompt, context, projectRevision);
                 const sidechainRoutingCapability =
                     sidechainRoutingScope.status === 'request' ? sidechainRoutingScope.capability : undefined;
+                const syncopatedArpeggioScope = getSyncopatedArpeggioPromptScope(prompt, context, projectRevision);
+                const syncopatedArpeggioCapability =
+                    syncopatedArpeggioScope.status === 'request' ? syncopatedArpeggioScope.capability : undefined;
                 const wholeProjectVibeMixCapability = getWholeProjectVibeMixScope(
                     prompt,
                     context,
@@ -161,6 +165,7 @@ export const parsePromptToActions = inject({ logger })(
                         drumPreviewBranchesCapability,
                         midiOverlapTransformCapability,
                         sidechainRoutingCapability,
+                        syncopatedArpeggioCapability,
                         wholeProjectVibeMixCapability,
                     }),
                     getExecutableAppActionToolSchemas(),
@@ -253,6 +258,7 @@ export const parsePromptToActions = inject({ logger })(
                         bassProcessingCopyScope: bridged.bassProcessingCopyScope,
                         midiOverlapTransformScope: bridged.midiOverlapTransformScope,
                         drumPreviewBranchesScope: bridged.drumPreviewBranchesScope,
+                        syncopatedArpeggioScope: bridged.syncopatedArpeggioScope,
                     });
                     if (guarded.status === 'rejected') {
                         logger.warn(`[AI] Rejected LLM action batch because ${guarded.reason}`);

@@ -781,7 +781,19 @@ const validators = {
         Array.isArray(param.notes) &&
         param.notes.length > 0 &&
         param.notes.every(isAddNotesNote),
-    arpeggiate: 'unchecked',
+    arpeggiate: (param): param is PayloadOf<'arpeggiate'> =>
+        isObj(param) &&
+        hasOnlyKeys(param, ['clipId', 'pattern', 'rate', 'octaves', 'gate']) &&
+        isNonEmptyString(param.clipId) &&
+        (param.pattern === undefined ||
+            param.pattern === 'up' ||
+            param.pattern === 'down' ||
+            param.pattern === 'updown' ||
+            param.pattern === 'downup' ||
+            param.pattern === 'random') &&
+        (param.rate === undefined || param.rate === 4 || param.rate === 8 || param.rate === 16 || param.rate === 32) &&
+        (param.octaves === undefined || (Number.isInteger(param.octaves) && isInRange(param.octaves, 1, 4))) &&
+        (param.gate === undefined || isInRange(param.gate, 1, 100)),
 
     // Automation secondary ops
     setAutomationMode: (param): param is PayloadOf<'setAutomationMode'> =>
