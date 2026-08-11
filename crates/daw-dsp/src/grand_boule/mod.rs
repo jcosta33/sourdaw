@@ -17,6 +17,7 @@ pub mod mechanical_noise;
 pub mod midi2;
 pub mod parameters;
 pub mod pedals;
+mod radiation;
 pub mod soundboard;
 pub mod string;
 pub mod sympathetic;

@@ -174,6 +174,8 @@ const PARITY_MESSAGES: readonly GrandBouleDispatchMsg[] = [
     { type: 'noteOff', midiNote: 67, sampleFrame: 6_000 },
     // Unframed control messages.
     { type: 'param', name: 'masterGain', value: 0.7 },
+    { type: 'param', name: 'lidPosition', value: 0.5 },
+    { type: 'param', name: 'micPosition', value: 2 },
     { type: 'param', name: 'already_snake_case', value: 0.25 },
     { type: 'sustain', position: 0.6 },
     { type: 'unaCorda', engaged: true },
@@ -296,6 +298,8 @@ describe('the worker and the offline processor dispatch identically', () => {
             { method: 'note_off', args: [62] },
             { method: 'note_on_with_channel', args: [64, 0.4, 0] },
             { method: 'set_param', args: ['master_gain', 0.7] },
+            { method: 'set_param', args: ['lid_position', 0.5] },
+            { method: 'set_param', args: ['mic_position', 2] },
             { method: 'set_param', args: ['already_snake_case', 0.25] },
             { method: 'set_sustain', args: [0.6] },
             { method: 'set_una_corda', args: [true] },
