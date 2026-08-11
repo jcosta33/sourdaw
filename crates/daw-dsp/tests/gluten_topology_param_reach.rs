@@ -322,6 +322,27 @@ fn auto_gain_compensates_a_full_serial_blend() {
 }
 
 #[test]
+fn nonfinite_blend_amount_does_not_poison_auto_gain() {
+    let disabled = render(|i| {
+        base(TOPOLOGY_VCA)(i);
+        i.set_param("blend_topology", TOPOLOGY_FET);
+        i.set_param("auto_makeup", 1.0);
+    });
+    let nonfinite = render(|i| {
+        base(TOPOLOGY_VCA)(i);
+        i.set_param("blend_topology", TOPOLOGY_FET);
+        i.set_param("blend_amount", f32::NAN);
+        i.set_param("auto_makeup", 1.0);
+    });
+
+    assert_eq!(
+        max_delta(&nonfinite, &disabled),
+        0.0,
+        "a rejected blend amount must leave Stage 2 and its compensation disabled"
+    );
+}
+
+#[test]
 fn opto_auto_gain_uses_the_feedback_fixed_point() {
     let without_auto_gain = render(|i| {
         base(TOPOLOGY_OPTO)(i);
