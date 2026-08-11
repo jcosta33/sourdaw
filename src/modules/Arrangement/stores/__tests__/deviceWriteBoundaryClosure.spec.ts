@@ -587,7 +587,11 @@ const DEVICE_DATA_COUNTS = {
         // rather than left to be rediscovered.
         'src/modules/Arrangement/useCases/device/restoreDevice.ts': 1,
         'src/modules/Arrangement/useCases/device/setDeviceParameter/persistDevicePatch.ts': 1,
-        'src/modules/Arrangement/useCases/device/setDeviceParameter/setDeviceParameter.ts': 2,
+        // Count provenance: measured 1 after presence-aware deletion introduced
+        // a local `parameterValues` copy and returned it with property shorthand.
+        // The remaining `devices:` hit is the same guarded CRDT-backed write;
+        // shorthand is outside this census pattern, as documented above.
+        'src/modules/Arrangement/useCases/device/setDeviceParameter/setDeviceParameter.ts': 1,
         // Count provenance: PH-3 (#730) — setExternalPluginState maps track
         // devices to store the captured native-plugin state chunk; the single
         // `devices:` is the reviewed CRDT-backed write through executeAppAction.
