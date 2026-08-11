@@ -13,6 +13,7 @@ import { DawPluginMetricTile } from '#/components/daw/DawPluginMetricTile';
 import { DawPluginSectionCard } from '#/components/daw/DawPluginSectionCard';
 import { logger } from '#/infra/logger/appLogger';
 import { useStoreSelector } from '#/infra/store/useStoreSelector';
+import { trackStore, type TrackStoreState } from '#/modules/Arrangement/stores';
 
 import { midiNoteToName } from '../../models/CrumbsTypes';
 import { defaultCrumbsState, crumbsStore } from '../../stores/crumbsStore';
@@ -22,6 +23,7 @@ import { ensureCrumbsInstanceFromProject } from '../../useCases/crumbsLifecycle/
 import { initCrumbsEngine } from '../../useCases/crumbsLifecycle/initCrumbsEngine';
 import { teardownCrumbsEngine } from '../../useCases/crumbsLifecycle/teardownCrumbsEngine';
 import { handleCrumbsFileDrop } from '../../useCases/handleFileDrop';
+import { hydrateCrumbsParametersFromProject } from '../../useCases/hydrateCrumbsParametersFromProject';
 import { subscribeToPosition } from '../../useCases/positionTracking';
 import { armCrumbsRecording } from '../../useCases/recording/armCrumbsRecording';
 import { stopCrumbsRecording } from '../../useCases/recording/stopCrumbsRecording';
@@ -57,11 +59,24 @@ const SectionCard = ({
     </DawPluginSectionCard>
 );
 
+function selectProjectParameterValues(state: TrackStoreState | null, deviceId: string): Record<string, number> | null {
+    for (const track of state?.tracks ?? []) {
+        const device = track.devices.find((candidate) => candidate.id === deviceId);
+        if (device) {
+            return device.parameterValues;
+        }
+    }
+    return null;
+}
+
 export const CrumbsPanel = ({ deviceId }: { deviceId: string }): ReactElement => {
     // §209.1 — Typed defaults instead of non-null assertion on live values.
     const state = useStoreSelector(crumbsStore, (s) => s?.[deviceId] ?? defaultCrumbsState);
     const pads = useStoreSelector(padStore, (s) => s?.[deviceId] ?? defaultPadState);
     const slices = useStoreSelector(sliceStore, (s) => s?.[deviceId] ?? defaultSliceState);
+    const projectParameterValues = useStoreSelector(trackStore, (project) =>
+        selectProjectParameterValues(project, deviceId)
+    );
 
     const [isDragOver, setIsDragOver] = useState(false);
     const [isRecording, setIsRecording] = useState(false);
@@ -109,6 +124,12 @@ export const CrumbsPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
             });
         };
     }, [deviceId]);
+
+    useEffect(() => {
+        if (projectParameterValues) {
+            hydrateCrumbsParametersFromProject(deviceId);
+        }
+    }, [deviceId, projectParameterValues]);
 
     if (!state || !pads) {
         return <div className="h-full" />;

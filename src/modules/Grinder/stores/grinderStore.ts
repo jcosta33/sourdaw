@@ -13,6 +13,7 @@ import {
     isSupportedGrinderChainPedalType,
     migrateGrinderPatch,
 } from '../models/GrinderPatch';
+import { applyGrinderProjectParameters } from '../models/GrinderProjectParameterMap';
 
 export type GrinderState = {
     patch: GrinderPatch;
@@ -100,6 +101,21 @@ export function replaceGrinderPatchLocally(deviceId: string, patch: GrinderPatch
             ...state,
             patch: migrated_patch,
             basePatch: migrateGrinderPatch(migrated_patch),
+        },
+    });
+}
+
+export function replaceGrinderProjectParameters(
+    deviceId: string,
+    parameterValues: Readonly<Record<string, unknown>>
+): void {
+    const instances = grinderStore.value ?? {};
+    const state = normalizeGrinderState(instances[deviceId]);
+    grinderStore.set({
+        ...instances,
+        [deviceId]: {
+            ...state,
+            patch: applyGrinderProjectParameters(state.patch, parameterValues),
         },
     });
 }

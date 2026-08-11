@@ -1,5 +1,8 @@
-import { render, screen, within } from '@testing-library/react';
+import { act, render, screen, waitFor, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+
+import { type Track, trackStore } from '#/modules/Arrangement/stores';
+import { createTrack } from '#/modules/Arrangement/useCases';
 
 import { DEFAULT_PATCH } from '../../../models/GrinderPatch';
 import { grinderNeuralLibraryStore } from '../../../stores/grinderNeuralLibraryStore';
@@ -16,6 +19,13 @@ vi.mock('../../../useCases/restoreGrinderNeuralLibrary', () => ({
 
 describe('GrinderPanel', () => {
     const device_id = 'test-device';
+
+    function grinderTrack(parameterValues: Record<string, number>): Track {
+        return {
+            ...createTrack({ id: 'track-1', name: 'Guitar', kind: 'audio' }),
+            devices: [{ id: device_id, name: 'Grinder', type: 'grinder', bypassed: false, parameterValues }],
+        };
+    }
 
     beforeEach(() => {
         grinderNeuralLibraryStore.set({
@@ -35,6 +45,7 @@ describe('GrinderPanel', () => {
                 basePatch: DEFAULT_PATCH,
             },
         });
+        trackStore.set({ tracks: [], selectedTrackId: null, ghostClips: [] });
     });
 
     it('should render an explicit gate enable toggle in the lab section', () => {
@@ -363,5 +374,41 @@ describe('GrinderPanel', () => {
         });
         render(<GrinderPanel deviceId={device_id} />);
         expect(screen.getByRole('slider', { name: 'Gain' })).toBeInTheDocument();
+    });
+
+    it('reconciles a mounted control when project truth changes or removes its value', async () => {
+        grinderStore.set({
+            [device_id]: {
+                patch: { ...DEFAULT_PATCH, uiSection: 'amp', gain: 8 },
+                basePatch: DEFAULT_PATCH,
+            },
+        });
+        trackStore.set({
+            tracks: [grinderTrack({ gain: 8 })],
+            selectedTrackId: 'track-1',
+            ghostClips: [],
+        });
+
+        render(<GrinderPanel deviceId={device_id} />);
+        const gain = screen.getByRole('slider', { name: 'Gain' });
+        expect(gain).toHaveAttribute('aria-valuenow', '8');
+
+        act(() => {
+            trackStore.set({
+                tracks: [grinderTrack({ gain: 2 })],
+                selectedTrackId: 'track-1',
+                ghostClips: [],
+            });
+        });
+        await waitFor(() => expect(gain).toHaveAttribute('aria-valuenow', '2'));
+
+        act(() => {
+            trackStore.set({
+                tracks: [grinderTrack({})],
+                selectedTrackId: 'track-1',
+                ghostClips: [],
+            });
+        });
+        await waitFor(() => expect(gain).toHaveAttribute('aria-valuenow', String(DEFAULT_PATCH.gain)));
     });
 });

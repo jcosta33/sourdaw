@@ -1,7 +1,10 @@
-import { render, screen } from '@testing-library/react';
+import { act, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { crumbsStore, ensureInstance, setActiveSample, setMode } from '../../../stores/crumbsStore';
+import { type Track, trackStore } from '#/modules/Arrangement/stores';
+import { createTrack } from '#/modules/Arrangement/useCases';
+
+import { crumbsStore, defaultCrumbsState, ensureInstance, setActiveSample, setMode } from '../../../stores/crumbsStore';
 import { ensurePadInstance, padStore } from '../../../stores/padStore';
 import { ensureSliceInstance, sliceStore } from '../../../stores/sliceStore';
 import { initCrumbsEngine } from '../../../useCases/crumbsLifecycle/initCrumbsEngine';
@@ -26,6 +29,13 @@ vi.mock('#/infra/logger/appLogger', () => ({
 const initEngineMock = vi.mocked(initCrumbsEngine);
 
 const DEVICE = 'panel-test';
+
+function crumbsTrack(parameterValues: Record<string, number>): Track {
+    return {
+        ...createTrack({ id: 'track-1', name: 'Sampler', kind: 'audio' }),
+        devices: [{ id: DEVICE, name: 'Crumbs', type: 'crumbs', bypassed: false, parameterValues }],
+    };
+}
 
 function seedSample(overrides: Partial<SampleMeta> = {}): SampleMeta {
     return {
@@ -55,6 +65,7 @@ beforeEach(() => {
     ensureSliceInstance(DEVICE);
     initEngineMock.mockReset();
     initEngineMock.mockResolvedValue(undefined);
+    trackStore.set({ tracks: [], selectedTrackId: null, ghostClips: [] });
 });
 
 afterEach(() => {
@@ -62,6 +73,35 @@ afterEach(() => {
 });
 
 describe('CrumbsPanel', () => {
+    it('reconciles a mounted control when project truth changes or removes its value', async () => {
+        trackStore.set({
+            tracks: [crumbsTrack({ masterGain: defaultCrumbsState.masterGain })],
+            selectedTrackId: 'track-1',
+            ghostClips: [],
+        });
+
+        render(<CrumbsPanel deviceId={DEVICE} />);
+        const gain = screen.getByRole('slider', { name: 'Gain' });
+
+        act(() => {
+            trackStore.set({
+                tracks: [crumbsTrack({ masterGain: 0.25 })],
+                selectedTrackId: 'track-1',
+                ghostClips: [],
+            });
+        });
+        await waitFor(() => expect(gain).toHaveAttribute('aria-valuenow', '0.25'));
+
+        act(() => {
+            trackStore.set({
+                tracks: [crumbsTrack({})],
+                selectedTrackId: 'track-1',
+                ghostClips: [],
+            });
+        });
+        await waitFor(() => expect(gain).toHaveAttribute('aria-valuenow', String(defaultCrumbsState.masterGain)));
+    });
+
     it('renders the always-present sections', () => {
         render(<CrumbsPanel deviceId={DEVICE} />);
 
