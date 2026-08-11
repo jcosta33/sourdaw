@@ -46,6 +46,7 @@ import {
     createGrandBouleBlockViews,
     createGrandBouleInstance,
     createGrandBouleNoteQueue,
+    dispatch,
     receiveGrandBouleMessage,
     type GrandBouleDispatchMsg,
 } from './grandBouleEngineCore';
@@ -60,6 +61,86 @@ const RENDER_QUANTUM_FRAMES = 128;
 const MAX_BLOCK_FRAMES = 4096;
 
 type RuntimeHealthCheckMessage = { type: 'runtimeHealthCheck'; requestId: number };
+type OfflineAutomationSegment = {
+    startFrame: number;
+    endFrame: number;
+    startValue: number;
+    endValue: number;
+};
+type GrandBouleAutomationParam = 'masterGain' | 'soundboardSend' | 'sympatheticSend' | 'lidPosition' | 'micPosition';
+type GrandBouleParamAutomationMessage = {
+    type: 'paramAutomation';
+    name: GrandBouleAutomationParam;
+    segments: readonly OfflineAutomationSegment[];
+};
+type GrandBouleControlMessage = GrandBouleDispatchMsg | GrandBouleParamAutomationMessage;
+type ScheduledParam = {
+    name: GrandBouleAutomationParam;
+    segments: readonly OfflineAutomationSegment[];
+    segmentIndex: number;
+};
+
+function isValidAutomationMessage(message: GrandBouleParamAutomationMessage): boolean {
+    if (automationSlotFor(message.name) === null || message.segments.length === 0) {
+        return false;
+    }
+    let previousEndFrame = 0;
+    for (const segment of message.segments) {
+        if (
+            !Number.isInteger(segment.startFrame) ||
+            !Number.isInteger(segment.endFrame) ||
+            segment.startFrame < previousEndFrame ||
+            segment.endFrame < segment.startFrame ||
+            !Number.isFinite(segment.startValue) ||
+            !Number.isFinite(segment.endValue)
+        ) {
+            return false;
+        }
+        previousEndFrame = segment.endFrame;
+    }
+    return true;
+}
+
+function automationSlotFor(name: string): number | null {
+    switch (name) {
+        case 'masterGain':
+            return 0;
+        case 'soundboardSend':
+            return 1;
+        case 'sympatheticSend':
+            return 2;
+        case 'lidPosition':
+            return 3;
+        case 'micPosition':
+            return 4;
+        default:
+            return null;
+    }
+}
+
+function automationValueAtFrame(schedule: ScheduledParam, frame: number): { value: number; complete: boolean } {
+    while (
+        schedule.segmentIndex + 1 < schedule.segments.length &&
+        frame >= (schedule.segments[schedule.segmentIndex]?.endFrame ?? Number.POSITIVE_INFINITY)
+    ) {
+        schedule.segmentIndex++;
+    }
+    const segment = schedule.segments[schedule.segmentIndex];
+    if (!segment) {
+        return { value: 0, complete: true };
+    }
+    if (segment.endFrame === segment.startFrame) {
+        return { value: segment.endValue, complete: schedule.segmentIndex === schedule.segments.length - 1 };
+    }
+    if (frame <= segment.startFrame) {
+        return { value: segment.startValue, complete: false };
+    }
+    if (frame >= segment.endFrame) {
+        return { value: segment.endValue, complete: schedule.segmentIndex === schedule.segments.length - 1 };
+    }
+    const progress = (frame - segment.startFrame) / (segment.endFrame - segment.startFrame);
+    return { value: segment.startValue + (segment.endValue - segment.startValue) * progress, complete: false };
+}
 
 class GrandBouleOfflineProcessor extends AudioWorkletProcessor {
     _instance: GrandBouleInstance | null = null;
@@ -67,7 +148,8 @@ class GrandBouleOfflineProcessor extends AudioWorkletProcessor {
     _ready = false;
     _faulted = false;
     _faultMessage: string | null = null;
-    _pendingMessages: GrandBouleDispatchMsg[] = [];
+    _pendingMessages: GrandBouleControlMessage[] = [];
+    _paramAutomation: Array<ScheduledParam | null> = [null, null, null, null, null];
     _queue = createGrandBouleNoteQueue();
     // Cached WASM linear-memory views, revalidated on a memory.grow() buffer
     // identity change (audit RT-7). In steady state `update` performs four
@@ -78,7 +160,7 @@ class GrandBouleOfflineProcessor extends AudioWorkletProcessor {
         super();
         let wasmModule = resolveProcessorWasmModule(args[0]);
         this.port.onmessage = (
-            event: MessageEvent<{ type: 'init' } | RuntimeHealthCheckMessage | GrandBouleDispatchMsg>
+            event: MessageEvent<{ type: 'init' } | RuntimeHealthCheckMessage | GrandBouleControlMessage>
         ) => {
             const msg = event.data;
             if (msg.type === 'runtimeHealthCheck') {
@@ -138,9 +220,20 @@ class GrandBouleOfflineProcessor extends AudioWorkletProcessor {
         this.port.postMessage({ type: 'ready' });
     }
 
-    _handleMessage(msg: GrandBouleDispatchMsg): void {
+    _handleMessage(msg: GrandBouleControlMessage): void {
         const instance = this._instance;
         if (!instance) {
+            return;
+        }
+        if (msg.type === 'paramAutomation') {
+            if (!isValidAutomationMessage(msg)) {
+                return;
+            }
+            const schedule: ScheduledParam = { name: msg.name, segments: msg.segments, segmentIndex: 0 };
+            const slot = automationSlotFor(msg.name);
+            if (slot !== null) {
+                this._paramAutomation[slot] = schedule;
+            }
             return;
         }
         // `currentFrame` is the first frame of the quantum this worklet is about
@@ -153,6 +246,20 @@ class GrandBouleOfflineProcessor extends AudioWorkletProcessor {
             msg,
             blockEndFrame: currentFrame + RENDER_QUANTUM_FRAMES,
         });
+    }
+
+    _applyAutomation(instance: GrandBouleInstance, frame: number): void {
+        for (let slot = 0; slot < this._paramAutomation.length; slot++) {
+            const schedule = this._paramAutomation[slot];
+            if (!schedule) {
+                continue;
+            }
+            const next = automationValueAtFrame(schedule, frame);
+            dispatch(instance, { type: 'param', name: schedule.name, value: next.value });
+            if (next.complete) {
+                this._paramAutomation[slot] = null;
+            }
+        }
     }
 
     process(_inputs: Float32Array[][], outputs: Float32Array[][]): boolean {
@@ -178,6 +285,7 @@ class GrandBouleOfflineProcessor extends AudioWorkletProcessor {
         // place a note can be placed at all. Exclusive bound: a note landing
         // exactly on `currentFrame + frames` belongs to the next block.
         this._queue.drain(instance, currentFrame + frames);
+        this._applyAutomation(instance, currentFrame);
 
         try {
             const mem = this._memory?.buffer;

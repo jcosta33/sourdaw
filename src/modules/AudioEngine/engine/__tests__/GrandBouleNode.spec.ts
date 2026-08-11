@@ -109,6 +109,14 @@ function findInitMessage(spy: PostMessageSpy): PostedInit | undefined {
     return undefined;
 }
 
+function readProcessorOption(options: AudioWorkletNodeOptions | undefined, key: string): unknown {
+    const processorOptions: unknown = Reflect.get(options ?? {}, 'processorOptions');
+    if (processorOptions === null || typeof processorOptions !== 'object') {
+        return undefined;
+    }
+    return Reflect.get(processorOptions, key);
+}
+
 describe('createGrandBouleNode', () => {
     let workerPostMessage: PostMessageSpy;
     let workerTerminate: ReturnType<typeof vi.fn>;
@@ -641,9 +649,57 @@ describe('createGrandBouleNode', () => {
         // would mean the ring consumer was built by mistake — the failure mode
         // that produced a silent export reporting zero dropouts.
         expect({
-            hasWasmModule: lastProcessorOptions?.processorOptions?.wasmModule instanceof WebAssembly.Module,
+            hasWasmModule: readProcessorOption(lastProcessorOptions, 'wasmModule') instanceof WebAssembly.Module,
             initMessages: nodePostMessage.mock.calls.map(([message]) => message),
         }).toEqual({ hasWasmModule: true, initMessages: [{ type: 'init' }] });
+    });
+
+    it('schedules every automatable Grand Boule parameter on the offline engine', async () => {
+        class FakeOfflineAudioContext {
+            state = 'suspended';
+            currentTime = 0;
+            sampleRate = 48000;
+        }
+        vi.stubGlobal('OfflineAudioContext', FakeOfflineAudioContext);
+
+        const node = await createGrandBouleNode(new FakeOfflineAudioContext() as unknown as BaseAudioContext);
+        nodePostMessage.mockClear();
+
+        const acceptsScheduledParam: unknown = Reflect.get(node, 'acceptsScheduledParam');
+        const scheduleParam: unknown = Reflect.get(node, 'scheduleParam');
+        expect(typeof acceptsScheduledParam).toBe('function');
+        expect(typeof scheduleParam).toBe('function');
+        if (typeof acceptsScheduledParam !== 'function' || typeof scheduleParam !== 'function') {
+            throw new TypeError('Grand Boule did not expose offline parameter automation');
+        }
+
+        expect([
+            Reflect.apply(acceptsScheduledParam, node, ['lidPosition']),
+            Reflect.apply(acceptsScheduledParam, node, ['micPosition']),
+            Reflect.apply(acceptsScheduledParam, node, ['masterGain']),
+            Reflect.apply(acceptsScheduledParam, node, ['soundboardSend']),
+            Reflect.apply(acceptsScheduledParam, node, ['sympatheticSend']),
+            Reflect.apply(acceptsScheduledParam, node, ['notAParameter']),
+        ]).toEqual([true, true, true, true, true, false]);
+
+        const segments = [{ startFrame: 0, endFrame: 4800, startValue: 1, endValue: 0.25 }];
+        Reflect.apply(scheduleParam, node, ['lidPosition', segments]);
+
+        expect(nodePostMessage).toHaveBeenCalledWith({
+            type: 'paramAutomation',
+            name: 'lidPosition',
+            segments,
+        });
+
+        nodePostMessage.mockClear();
+        Reflect.apply(scheduleParam, node, [
+            'lidPosition',
+            [
+                { startFrame: 100, endFrame: 200, startValue: 1, endValue: 0.5 },
+                { startFrame: 150, endFrame: 250, startValue: 0.5, endValue: 0 },
+            ],
+        ]);
+        expect(nodePostMessage).not.toHaveBeenCalled();
     });
 
     it('refuses a live node without cross-origin isolation before doing any work for it', async () => {

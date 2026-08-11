@@ -4,6 +4,7 @@ import { getBuiltinPlugins } from '#/modules/Arrangement/useCases';
 
 import { asBaseAudioContext, createMockAudioContext } from '../../../../../helpers/__tests__/audioContext.mock';
 import { FERMENTER_AUTOMATION_PARAM_IDS, isFermenterDevice } from '../../../engine/FermenterNode';
+import { GRAND_BOULE_AUTOMATION_PARAM_IDS, isGrandBouleDevice } from '../../../engine/GrandBouleNode';
 import { PROOF_CHAMBER_AUTOMATION_PARAM_IDS, isProofChamberDevice } from '../../../engine/ProofChamberNode';
 import { TOASTER_AUTOMATION_PARAM_IDS, isToasterDevice } from '../../../engine/ToasterNode';
 import { resolveDeviceParamTargets } from '../../../services/deviceResolution';
@@ -25,7 +26,7 @@ function makeAudioParamStub() {
 
 /**
  * The nodes that supply a `scheduleParam`/`acceptsScheduledParam` pair, each
- * paired with its own ordinal map read off the node module rather than restated
+ * paired with its own capability map read off the node module rather than restated
  * here. This is the *capability* side of the census; the *expectation* side is
  * `offlineAutomationExemptions.ts`, and the whole point is that they are
  * different files with different authors.
@@ -44,13 +45,13 @@ function makeAudioParamStub() {
  *
  * The *parameter-level* half — this spec's subject — is not tautological,
  * because the verdict and the expectation come from different files: the
- * ordinal maps below versus `offlineAutomationExemptions.ts`.
+ * capability maps below versus `offlineAutomationExemptions.ts`.
  *
  * One more thing not to overstate: this re-implements `acceptsScheduledParam`
  * as `Object.hasOwn(map, name)` rather than calling the node's own, which is
  * created inside `createFermenterNode` and unreachable here. What is shipped
- * and under test is the **ordinal map**; the predicate around it is restated.
- * The map's ordinals are pinned against the real binary by
+ * and under test is the **capability map**; the predicate around it is restated.
+ * Fermenter's map ordinals are pinned against the real binary by
  * `wasm/__tests__/dawDspFermenterAutomationOrdinals.spec.ts`.
  */
 const SCHEDULING_CAPABLE_NODES: ReadonlyArray<{
@@ -60,6 +61,7 @@ const SCHEDULING_CAPABLE_NODES: ReadonlyArray<{
     { accepts: isFermenterDevice, params: FERMENTER_AUTOMATION_PARAM_IDS },
     { accepts: isToasterDevice, params: TOASTER_AUTOMATION_PARAM_IDS },
     { accepts: isProofChamberDevice, params: PROOF_CHAMBER_AUTOMATION_PARAM_IDS },
+    { accepts: isGrandBouleDevice, params: GRAND_BOULE_AUTOMATION_PARAM_IDS },
 ];
 
 type NativeDspCensus = {
@@ -265,7 +267,8 @@ describe('offline device-param automation capability coverage', () => {
         //
         // These three exact counts are also the presence pin for the two empty
         // assertions above (ADR 0015 rule 4). A walk that went blind reaches
-        // zero pairs and cannot produce 107/182/19, so `uncovered === []` cannot
+        // zero pairs and cannot produce the pinned counts below, so
+        // `uncovered === []` cannot
         // be satisfied by an empty extraction — the shape that let a device-write
         // census spend 41 commits comparing nothing against a four-element
         // expectation.
@@ -283,13 +286,12 @@ describe('offline device-param automation capability coverage', () => {
         // which were exempt only because the engine discarded what they said —
         // `Layer::portamento_time_for_note_on` and the generalised stereo
         // restoration in `Voice::render` now read them.
-        expect(census.verdicts).toBe(109);
-        // 185, was 182: `builtin-crumbs` declared `stackCount`, `detuneSpread`
-        // and `stackSpread` as automatable parameters, and Crumbs is already
-        // exempt at the *device* level, so the three new pairs land in that
-        // class rather than in `uncovered`. A device-level number moving because
-        // a device gained parameters is the one legitimate way it moves.
-        expect(census.deviceLevelExemptions).toBe(185);
+        // Grand Boule's five automatable parameters now share its offline
+        // worklet scheduling path, so 109 covered pairs becomes 114.
+        expect(census.verdicts).toBe(114);
+        // Moving Grand Boule out of the device-level class removes its five
+        // parameter pairs from that count.
+        expect(census.deviceLevelExemptions).toBe(182);
         // 17 → 23: #1539's six `decay_eq_*` bands on `dutch-oven`. They land in
         // this class rather than in `verdicts` because the Dutch Oven declares
         // exactly two offline ordinals (`mix`, `decay`) and always has — the

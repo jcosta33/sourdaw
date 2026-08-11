@@ -44,6 +44,8 @@ function currentBlock(): number {
 
 type Dispatch = { note: number; velocity: number; channel: number; block: number };
 const dispatches: Dispatch[] = [];
+type ParamDispatch = { name: string; value: number; block: number };
+const paramDispatches: ParamDispatch[] = [];
 
 const wasmStub = vi.hoisted(() => {
     const memory = new WebAssembly.Memory({ initial: 1 });
@@ -58,7 +60,9 @@ class GrandBouleInstanceMock {
     note_off(_note: number): void {}
     note_off_on_channel(_note: number, _channel: number): void {}
     note_expression(): void {}
-    set_param(_name: string, _value: number): void {}
+    set_param(name: string, value: number): void {
+        paramDispatches.push({ name, value, block: currentBlock() });
+    }
     set_sustain(_position: number): void {}
     set_una_corda(_engaged: boolean): void {}
     set_sostenuto(_engaged: boolean): void {}
@@ -207,6 +211,7 @@ describe('offline Grand Boule scheduling reaches the engine at the scheduled fra
 
     beforeEach(() => {
         dispatches.length = 0;
+        paramDispatches.length = 0;
         harnessFrame = 0;
         liveProcessor = null;
         vi.stubGlobal('OfflineAudioContext', HarnessOfflineAudioContext);
@@ -258,5 +263,44 @@ describe('offline Grand Boule scheduling reaches the engine at the scheduled fra
         // number here is truncated into a real member channel and the voice
         // becomes unreachable to channel-addressed release and expression.
         expect(dispatches).toEqual([{ note: 60, velocity: 90, channel: 0, block: 1 }]);
+    });
+
+    it('applies lid automation across the offline render blocks', async () => {
+        const strategy = await buildGrandBouleStrategy();
+        const binding = strategy.resolveOfflineAutomation('lidPosition');
+        expect(binding?.kind).toBe('segments');
+        if (!binding || binding.kind !== 'segments') {
+            throw new Error('Grand Boule did not expose lid automation to offline rendering');
+        }
+
+        binding.apply([
+            { startFrame: 0, endFrame: 256, startValue: 1, endValue: 0.5 },
+            { startFrame: 256, endFrame: 512, startValue: 0.5, endValue: 0 },
+        ]);
+        for (let block = 0; block < 4; block++) {
+            renderBlock();
+        }
+
+        expect(paramDispatches).toEqual([
+            { name: 'lid_position', value: 1, block: 0 },
+            { name: 'lid_position', value: 0.75, block: 1 },
+            { name: 'lid_position', value: 0.5, block: 2 },
+            { name: 'lid_position', value: 0.25, block: 3 },
+        ]);
+    });
+
+    it('applies and completes a zero-length microphone step at its render block', async () => {
+        const strategy = await buildGrandBouleStrategy();
+        const binding = strategy.resolveOfflineAutomation('micPosition');
+        expect(binding?.kind).toBe('segments');
+        if (!binding || binding.kind !== 'segments') {
+            throw new Error('Grand Boule did not expose microphone automation to offline rendering');
+        }
+
+        binding.apply([{ startFrame: 0, endFrame: 0, startValue: 0, endValue: 2 }]);
+        renderBlock();
+        renderBlock();
+
+        expect(paramDispatches).toEqual([{ name: 'mic_position', value: 2, block: 0 }]);
     });
 });
