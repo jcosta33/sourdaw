@@ -1,4 +1,4 @@
-import { clampDeviceParameterValue, quantiseDeviceParameterValue } from '../models/DeviceParameterLaw';
+import { clampDeviceParameterValue } from '../models/DeviceParameterLaw';
 import { resolveEligibleDeviceWriteTarget } from '../stores/resolveEligibleDeviceWriteTarget';
 import { trackStore } from '../stores/trackStore';
 
@@ -15,14 +15,13 @@ export function getEligibleDeviceParameterValues(deviceId: string): Record<strin
         return null;
     }
 
-    const delivered: Record<string, number> = {};
+    const clampedValues: Record<string, number> = {};
     for (const [paramId, value] of Object.entries(device.parameterValues)) {
         if (!Number.isFinite(value)) {
             continue;
         }
         const identity = { deviceType: device.type, paramId, value };
-        const clamped = clampDeviceParameterValue(identity);
-        delivered[paramId] = quantiseDeviceParameterValue({ ...identity, value: clamped });
+        clampedValues[paramId] = clampDeviceParameterValue(identity);
     }
-    return delivered;
+    return clampedValues;
 }

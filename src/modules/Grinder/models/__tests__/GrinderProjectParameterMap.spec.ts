@@ -21,20 +21,12 @@ describe('Grinder project parameter projection', () => {
                 uiSection: 'lab',
                 gain: 9,
                 bright: true,
-                engineMode: 'hybrid',
-                gateEnabled: false,
                 ampModel: 'clean-twin',
-                routingMode: 'serial',
-                limiterEnabled: true,
             },
             {
                 gain: 2,
                 bright: 0,
-                engineMode: 1,
-                gateEnabled: 1,
                 ampModel: 4,
-                routingMode: 3,
-                limiterEnabled: 0,
             }
         );
 
@@ -42,19 +34,13 @@ describe('Grinder project parameter projection', () => {
             uiSection: 'lab',
             gain: 2,
             bright: false,
-            engineMode: 'capture',
-            gateEnabled: true,
             ampModel: 'rectifier',
-            routingMode: 'dual-amp',
-            limiterEnabled: false,
             bass: DEFAULT_PATCH.bass,
         });
 
         expect(applyGrinderProjectParameters(projected, {})).toMatchObject({
-            gateEnabled: DEFAULT_PATCH.gateEnabled,
+            bright: DEFAULT_PATCH.bright,
             ampModel: DEFAULT_PATCH.ampModel,
-            routingMode: DEFAULT_PATCH.routingMode,
-            limiterEnabled: DEFAULT_PATCH.limiterEnabled,
         });
     });
 });

@@ -352,7 +352,7 @@ export function replaceCrumbsProjectParameters(
             const raw = parameterValues[paramId];
             let value: number;
             if (typeof raw === 'number' && Number.isFinite(raw)) {
-                value = raw;
+                value = paramId === 'stackCount' ? Math.trunc(raw) : raw;
             } else if (target.kind === 'envelope') {
                 value = defaultCrumbsState.envelope[target.key];
             } else if (target.kind === 'voiceStack') {

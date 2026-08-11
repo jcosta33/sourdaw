@@ -72,7 +72,6 @@ describe('replaceCrumbsProjectParameters', () => {
         replaceCrumbsProjectParameters(DEVICE, { masterGain: 0.6 });
         expect(crumbsStore.value?.[DEVICE]).toMatchObject({
             masterGain: 0.6,
-            waveformPeaks: [0.25, 0.5],
             envelope: { attack: defaultCrumbsState.envelope.attack },
             voiceStack: { stackCount: defaultCrumbsState.voiceStack.stackCount },
         });

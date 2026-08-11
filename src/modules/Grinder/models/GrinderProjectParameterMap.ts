@@ -1,6 +1,5 @@
 import { DEFAULT_PATCH, type GrinderPatch } from './GrinderPatch';
 
-/** Direct Grinder patch controls serialized into `Device.parameterValues`. */
 export const GRINDER_PROJECT_PARAM_KEYS = [
     'engineMode',
     'inputImpedance',
@@ -99,13 +98,16 @@ const BOOLEAN_KEYS: ReadonlySet<keyof GrinderPatch> = new Set([
 ]);
 
 function indexedValue(options: readonly string[], raw: number): string {
-    const index = Math.max(0, Math.min(options.length - 1, Math.round(raw)));
+    const index = Math.max(0, Math.min(options.length - 1, Math.trunc(raw)));
     return options[index] ?? options[0] ?? '';
 }
 
 function decodeProjectValue(key: GrinderProjectParamKey, raw: number): unknown {
     if (BOOLEAN_KEYS.has(key)) {
         return raw > 0.5;
+    }
+    if (key === 'channel') {
+        return Math.trunc(raw);
     }
     const options = INDEXED_VALUES[key];
     if (options) {

@@ -87,7 +87,7 @@ describe('CrumbsPanel', () => {
             setProjectParameters({ masterGain: 99, stackCount: 1.5 });
         });
         await waitFor(() => expect(gain).toHaveAttribute('aria-valuenow', '2'));
-        expect(screen.getByRole('slider', { name: 'Voices' })).toHaveAttribute('aria-valuenow', '2');
+        expect(screen.getByRole('slider', { name: 'Voices' })).toHaveAttribute('aria-valuenow', '1');
 
         act(() => {
             setProjectParameters({});

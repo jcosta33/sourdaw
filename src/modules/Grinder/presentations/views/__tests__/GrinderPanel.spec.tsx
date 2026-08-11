@@ -404,7 +404,7 @@ describe('GrinderPanel', () => {
         await waitFor(() => expect(gain).toHaveAttribute('aria-valuenow', '10'));
         expect(
             screen
-                .getAllByRole('button', { name: 'Lead' })
+                .getAllByRole('button', { name: 'Crunch' })
                 .some((button) => button.getAttribute('aria-pressed') === 'true')
         ).toBe(true);
 
