@@ -1,4 +1,4 @@
-import { type ReactElement, type ReactNode, useState } from 'react';
+import { type ReactElement, type ReactNode, useEffect, useState } from 'react';
 
 import { Activity, Flame, Radio, Search, SlidersHorizontal, Sun, Zap } from 'lucide-react';
 
@@ -32,6 +32,7 @@ import {
     type GlutenControlGate,
 } from '../../models/GlutenTopologyGating';
 import { glutenStore, getGlutenState, type GlutenState } from '../../stores/glutenStore';
+import { hydrateGlutenPatchFromProject } from '../../useCases/glutenParamBridge/hydrateGlutenPatchFromProject';
 import { loadGlutenPatchWithAudio } from '../../useCases/glutenParamBridge/loadGlutenPatchWithAudio';
 import { setGlutenParamWithAudio } from '../../useCases/glutenParamBridge/setGlutenParamWithAudio';
 import { GLUTEN_PRESETS } from '../../useCases/glutenPresets';
@@ -425,6 +426,10 @@ export const GlutenPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
     const { grDb, inputDb, outputDb, crest, phaseCorr, latency } = useGlutenMeters(deviceId);
     const [search, setSearch] = useState('');
     const [category, setCategory] = useState('all');
+
+    useEffect(() => {
+        hydrateGlutenPatchFromProject(deviceId);
+    }, [deviceId]);
 
     const { patch } = state;
     const currentPatch = patch;
