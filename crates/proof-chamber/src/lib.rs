@@ -346,7 +346,11 @@ impl ProofChamberInstance {
         // Global params
         match name {
             "fdn_damping_version" => {
-                self.fdn_damping_version = if value >= 2.0 { 2 } else { 1 };
+                self.fdn_damping_version = match value {
+                    1.0 => 1,
+                    2.0 => 2,
+                    _ => return,
+                };
                 apply_fdn_damping_version(&mut self.engine, self.fdn_damping_version);
                 return;
             }
@@ -623,5 +627,18 @@ mod tests {
         instance.set_param("damping", 0.3);
         instance.set_param("algorithm", 1.0);
         assert!((fdn_hf_ratio(&instance) - 0.35).abs() < 1e-6);
+    }
+
+    #[test]
+    fn unknown_damping_version_does_not_select_or_replace_supported_semantics() {
+        let mut instance = ProofChamberInstance::new(48_000.0);
+        instance.set_param("fdn_damping_version", 3.0);
+        instance.set_param("damping", 0.3);
+        instance.set_param("algorithm", 1.0);
+        assert!((fdn_hf_ratio(&instance) - 0.35).abs() < 1e-6);
+
+        instance.set_param("fdn_damping_version", 2.0);
+        instance.set_param("fdn_damping_version", 3.0);
+        assert!((fdn_hf_ratio(&instance) - 0.5).abs() < 1e-6);
     }
 }
