@@ -36,6 +36,18 @@ export function getPlannedActionAffectedIds(action: AppAction): string[] {
     if (action.type === 'addSidechainRoute' && action.payload.targetDeviceId) {
         affectedIds.add(action.payload.targetDeviceId);
     }
+    if (action.type === 'addAdjustmentRegion') {
+        affectedIds.add(action.payload.layerId);
+        if (action.payload.regionId) {
+            affectedIds.add(action.payload.regionId);
+        }
+        if (action.payload.targetSection) {
+            affectedIds.add(action.payload.targetSection.id);
+        }
+        for (const track of action.payload.expectedTracks ?? []) {
+            affectedIds.add(track.trackId);
+        }
+    }
     if (action.type === 'automateSendRange' && action.payload.sectionId) {
         affectedIds.add(action.payload.sectionId);
     }

@@ -744,6 +744,17 @@ const validators = {
         normalizeSafeProjectName(param.name) !== null,
     addTimeSignatureChange: 'unchecked',
     createAdjustmentLayer: 'unchecked',
+    addAdjustmentRegion: (param): param is PayloadOf<'addAdjustmentRegion'> =>
+        isObj(param) &&
+        hasExactKeys(param, ['layerId', 'startBeat', 'endBeat', 'blend', 'fadeInBeats', 'fadeOutBeats']) &&
+        isNonEmptyString(param.layerId) &&
+        isNonNegativeNumber(param.startBeat) &&
+        isNumber(param.endBeat) &&
+        param.endBeat > param.startBeat &&
+        isInRange(param.blend, 0, 1) &&
+        isNonNegativeNumber(param.fadeInBeats) &&
+        isNonNegativeNumber(param.fadeOutBeats) &&
+        param.fadeInBeats + param.fadeOutBeats <= param.endBeat - param.startBeat,
 
     // MIDI-note ops (non-destructive enough: they're scoped by clipId on the handler)
     humanizeNotes: 'unchecked',

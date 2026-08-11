@@ -1,4 +1,10 @@
-import { clipSelectionStore, markerStore, trackStore, vcaGroupStore } from '#/modules/Arrangement/stores';
+import {
+    adjustmentLayerStore,
+    clipSelectionStore,
+    markerStore,
+    trackStore,
+    vcaGroupStore,
+} from '#/modules/Arrangement/stores';
 import { getGlueEligibleClipPairs, getPlatformPlugins, getPluginById } from '#/modules/Arrangement/useCases';
 import { automationStore } from '#/modules/Automation/stores';
 import { midiStore } from '#/modules/MIDI/stores';
@@ -11,6 +17,8 @@ import { type ProjectContext } from '../models/ProjectContext';
 
 export type {
     ProjectContext,
+    ProjectContextAdjustmentLayer,
+    ProjectContextAdjustmentRegion,
     ProjectContextAvailableDeviceType,
     ProjectContextAutomationLane,
     ProjectContextAutomationPoint,
@@ -31,6 +39,7 @@ export type {
 // the entire track/clip/device graph for the AI chat pipeline.
 const contextCache: {
     track: unknown;
+    adjustmentLayer: unknown;
     automation: unknown;
     transport: unknown;
     workspace: unknown;
@@ -43,6 +52,7 @@ const contextCache: {
     context: ProjectContext | null;
 } = {
     track: null,
+    adjustmentLayer: null,
     automation: null,
     transport: null,
     workspace: null,
@@ -57,6 +67,7 @@ const contextCache: {
 
 export function getProjectContext(): ProjectContext {
     const trackState = trackStore.value;
+    const adjustmentLayerState = adjustmentLayerStore.value;
     const automationState = automationStore.value;
     const transportState = transportStore.value;
     const workspaceState = workspaceStore.value;
@@ -74,6 +85,7 @@ export function getProjectContext(): ProjectContext {
     if (
         contextCache.context !== null &&
         contextCache.track === trackState &&
+        contextCache.adjustmentLayer === adjustmentLayerState &&
         contextCache.automation === automationState &&
         contextCache.transport === transportState &&
         contextCache.workspace === workspaceState &&
@@ -108,6 +120,18 @@ export function getProjectContext(): ProjectContext {
         availableDeviceTypes: getPlatformPlugins()
             .filter((plugin) => plugin.id !== 'crust')
             .map((plugin) => ({ id: plugin.id, name: plugin.name })),
+        adjustmentLayers: (adjustmentLayerState?.layers ?? []).map((layer) => ({
+            id: layer.id,
+            name: layer.name,
+            effectType: layer.effectType,
+            parameters: layer.parameters.map((parameter) => ({ ...parameter })),
+            affectedTrackIds: [...layer.affectedTrackIds],
+            insertionIndex: layer.insertionIndex,
+            regions: layer.regions.map((region) => ({ ...region })),
+            enabled: layer.enabled,
+            mix: layer.mix,
+            color: layer.color,
+        })),
         automationLanes: (automationState?.lanes ?? []).map((lane) => ({
             id: lane.id,
             trackId: lane.trackId,
@@ -231,6 +255,7 @@ export function getProjectContext(): ProjectContext {
     };
 
     contextCache.track = trackState;
+    contextCache.adjustmentLayer = adjustmentLayerState;
     contextCache.automation = automationState;
     contextCache.transport = transportState;
     contextCache.workspace = workspaceState;

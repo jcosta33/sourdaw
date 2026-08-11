@@ -1802,6 +1802,26 @@ export const executableAppActionDescriptors = [
         },
     },
     {
+        actionType: 'addAdjustmentRegion',
+        risk: 'bounded-reversible',
+        description:
+            'Add one app-grounded section region to an existing adjustment layer without changing its processing settings.',
+        intentPhrases: ['copy the bass processing', 'copy bass processing'],
+        targetRules: [],
+        valueRules: [],
+        parameters: {
+            properties: {
+                layerId: { type: 'string', description: 'Exact app-grounded adjustment-layer ID' },
+                startBeat: { type: 'number', minimum: 0 },
+                endBeat: { type: 'number', exclusiveMinimum: 0 },
+                blend: { type: 'number', minimum: 0, maximum: 1 },
+                fadeInBeats: { type: 'number', minimum: 0 },
+                fadeOutBeats: { type: 'number', minimum: 0 },
+            },
+            required: ['layerId', 'startBeat', 'endBeat', 'blend', 'fadeInBeats', 'fadeOutBeats'],
+        },
+    },
+    {
         actionType: 'automateSendRange',
         risk: 'authority-sensitive',
         description: 'Lower an exact set of existing sends by a relative dB amount inside one named section.',

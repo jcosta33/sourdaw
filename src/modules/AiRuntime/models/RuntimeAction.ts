@@ -190,6 +190,7 @@ export const RUNTIME_ACTION_TYPES = [
     'completeMidi',
     'connectPush',
     'createAdjustmentLayer',
+    'addAdjustmentRegion',
     'createCompGroup',
     'createPatternInstance',
     'createProjectVersion',
@@ -302,6 +303,7 @@ export const RUNTIME_ACTION_OVERRIDE_PAYLOAD_KEYS = {
     createVcaGroup: ['name', 'trackIds'],
     addChordEvent: ['beat', 'root', 'quality', 'duration'],
     createAdjustmentLayer: ['name', 'effectType'],
+    addAdjustmentRegion: ['layerId', 'startBeat', 'endBeat', 'blend', 'fadeInBeats', 'fadeOutBeats'],
 } as const satisfies Partial<Record<RuntimeActionType, readonly string[]>>;
 
 export const RUNTIME_ACTION_OVERRIDE_REQUIRED_PAYLOAD_KEYS = {
@@ -353,6 +355,7 @@ export const RUNTIME_ACTION_OVERRIDE_REQUIRED_PAYLOAD_KEYS = {
     createVcaGroup: ['name', 'trackIds'],
     addChordEvent: ['beat', 'root', 'quality'],
     createAdjustmentLayer: ['name', 'effectType'],
+    addAdjustmentRegion: ['layerId', 'startBeat', 'endBeat', 'blend', 'fadeInBeats', 'fadeOutBeats'],
 } as const satisfies {
     [
         ActionType in keyof typeof RUNTIME_ACTION_OVERRIDE_PAYLOAD_KEYS

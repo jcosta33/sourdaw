@@ -7,6 +7,7 @@ import { type WholeProjectVibeMixPlan } from '../models/WholeProjectVibeMixPlan'
 
 import { getArticulationTransferPromptScope } from './agentReference/getArticulationTransferPromptScope';
 import { getBackingVocalPlatePromptScope } from './agentReference/getBackingVocalPlatePromptScope';
+import { getBassProcessingCopyPromptScope } from './agentReference/getBassProcessingCopyPromptScope';
 import { getBulkDeviceInsertionTrackScope } from './agentReference/getBulkDeviceInsertionTrackScope';
 import { getDeviceParameterPromptScope } from './agentReference/getDeviceParameterPromptScope';
 import { getDrumRoutingPromptScope } from './agentReference/getDrumRoutingPromptScope';
@@ -169,6 +170,9 @@ function getProtectedUnchangedTracks(
     const backingVocalPlateScope = getBackingVocalPlatePromptScope(prompt, context);
     const backingVocalPlateProtections =
         backingVocalPlateScope.status === 'request' ? backingVocalPlateScope.protectedObjects : [];
+    const bassProcessingCopyScope = getBassProcessingCopyPromptScope(prompt, context);
+    const bassProcessingCopyProtections =
+        bassProcessingCopyScope.status === 'request' ? bassProcessingCopyScope.protectedObjects : [];
     const protections = [
         ...protectedTracks.map(({ id, name }) => ({ id, name })),
         ...protectedParameters,
@@ -177,6 +181,7 @@ function getProtectedUnchangedTracks(
         ...sidechainRoutingProtections,
         ...articulationProtections,
         ...backingVocalPlateProtections,
+        ...bassProcessingCopyProtections,
     ];
     return [...new Map(protections.map((protection) => [protection.id, protection])).values()];
 }
@@ -196,6 +201,23 @@ function describeWholeProjectVibeMixPlan(plan: WholeProjectVibeMixPlan): string 
 }
 
 function describeExactAction(action: AppAction, actions: readonly AppAction[], context: ProjectContext): string {
+    if (
+        action.type === 'addAdjustmentRegion' &&
+        action.payload.expectedLayer &&
+        action.payload.sourceRegionId &&
+        action.payload.sourceSection &&
+        action.payload.targetSection
+    ) {
+        const sourceRegion = action.payload.expectedLayer.regions.find(
+            (region) => region.id === action.payload.sourceRegionId
+        );
+        const tracks = (action.payload.expectedTracks ?? [])
+            .map((track) => `"${track.trackName}" (${track.trackId})`)
+            .join(', ');
+        if (sourceRegion) {
+            return `Copy ${action.payload.expectedLayer.effectType} layer "${action.payload.expectedLayer.name}" (${action.payload.layerId}) on ${tracks} from "${action.payload.sourceSection.name}" (${action.payload.sourceSection.id}) region ${sourceRegion.id} beats ${String(sourceRegion.startBeat)}–${String(sourceRegion.endBeat)} to "${action.payload.targetSection.name}" (${action.payload.targetSection.id}) as ${action.payload.regionId ?? 'application-assigned region'} beats ${String(action.payload.startBeat)}–${String(action.payload.endBeat)}, blend ${String(action.payload.blend ?? 1)}, fades ${String(action.payload.fadeInBeats ?? 0.25)}/${String(action.payload.fadeOutBeats ?? 0.25)} beats; preserve layer parameters and mix`;
+        }
+    }
     if (action.type === 'removeDevice') {
         const owner = context.tracks.find((track) =>
             track.devices.some((device) => device.id === action.payload.deviceId)
@@ -308,7 +330,8 @@ export function describePendingActionConfirmation({
     };
     if (
         actions.length > 1 &&
-        actions.every((action) => action.type === 'addDevice') &&
+        (actions.every((action) => action.type === 'addDevice') ||
+            actions.every((action) => action.type === 'addAdjustmentRegion')) &&
         riskPolicy.risk === 'bounded-reversible'
     ) {
         risk = {
