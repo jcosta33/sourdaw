@@ -6,6 +6,8 @@
 
 use std::f32::consts::PI;
 
+const FRONTIER_HOLD_FADE_SAMPLES: usize = 64;
+
 /// Grain window shape.
 #[derive(Clone, Copy)]
 pub enum GrainWindow {
@@ -20,6 +22,8 @@ struct Grain {
     samples_behind_write_head: f32,
     frontier_fade_remaining: usize,
     frontier_fade_total: usize,
+    hold_last_sample: bool,
+    last_sample: f32,
     size_samples: usize,
     progress: usize,
     pitch_ratio: f32,
@@ -34,6 +38,8 @@ impl Grain {
             samples_behind_write_head: 0.0,
             frontier_fade_remaining: 0,
             frontier_fade_total: 0,
+            hold_last_sample: false,
+            last_sample: 0.0,
             size_samples: 0,
             progress: 0,
             pitch_ratio: 1.0,
@@ -53,6 +59,14 @@ impl Grain {
                 (-0.5 * x * x).exp()
             }
         }
+    }
+
+    fn begin_frontier_hold_fade(&mut self) {
+        let envelope_remaining = self.size_samples.saturating_sub(self.progress);
+        let fade_samples = envelope_remaining.min(FRONTIER_HOLD_FADE_SAMPLES);
+        self.frontier_fade_remaining = fade_samples;
+        self.frontier_fade_total = fade_samples;
+        self.hold_last_sample = true;
     }
 }
 
@@ -105,7 +119,11 @@ impl GranularProcessor {
             "grainSize" => self.grain_size_ms = value.clamp(1.0, 500.0),
             "grainDensity" => self.density = value.clamp(0.1, 100.0),
             "grainPosOffset" => self.pos_offset_ms = value.clamp(0.0, 2000.0),
-            "grainPitch" => self.pitch_semitones = value,
+            "grainPitch" => {
+                if value.is_finite() {
+                    self.pitch_semitones = value.clamp(-24.0, 24.0);
+                }
+            }
             "grainWindow" => {
                 self.window = if value < 0.5 {
                     GrainWindow::Hann
@@ -120,14 +138,29 @@ impl GranularProcessor {
                         if !grain.active || grain.frontier_fade_total != 0 {
                             continue;
                         }
-                        let causal_remaining = ((grain.samples_behind_write_head.max(0.0)
+                        let envelope_remaining = grain.size_samples.saturating_sub(grain.progress);
+                        if grain.samples_behind_write_head < 0.0 {
+                            grain.begin_frontier_hold_fade();
+                            continue;
+                        }
+                        let causal_remaining = ((grain.samples_behind_write_head
                             / grain.pitch_ratio)
                             .floor() as usize)
                             .saturating_add(1);
-                        let envelope_remaining = grain.size_samples.saturating_sub(grain.progress);
                         if causal_remaining < envelope_remaining {
                             grain.frontier_fade_remaining = causal_remaining;
                             grain.frontier_fade_total = causal_remaining;
+                        }
+                    }
+                }
+                if !freeze && self.freeze {
+                    let oldest_distance = (self.buffer_size - 1) as f32;
+                    for grain in &mut self.grains {
+                        if grain.active
+                            && grain.frontier_fade_total == 0
+                            && grain.samples_behind_write_head + 1.0 > oldest_distance
+                        {
+                            grain.begin_frontier_hold_fade();
                         }
                     }
                 }
@@ -163,7 +196,7 @@ impl GranularProcessor {
             if !grain.active {
                 continue;
             }
-            if grain.samples_behind_write_head < 0.0 {
+            if grain.samples_behind_write_head < 0.0 && !grain.hold_last_sample {
                 grain.active = false;
                 continue;
             }
@@ -174,15 +207,21 @@ impl GranularProcessor {
                 total => (grain.frontier_fade_remaining - 1) as f32 / (total - 1) as f32,
             };
             let win = grain.window_value() * frontier_gain;
-            let read_idx = grain.read_pos.floor() as usize % self.buffer_size;
-            let next_idx = (read_idx + 1) % self.buffer_size;
-            let fraction = grain.read_pos.fract();
-            let sample =
-                self.buffer[read_idx] + (self.buffer[next_idx] - self.buffer[read_idx]) * fraction;
+            let sample = if grain.hold_last_sample {
+                grain.last_sample
+            } else {
+                let read_idx = grain.read_pos.floor() as usize % self.buffer_size;
+                let next_idx = (read_idx + 1) % self.buffer_size;
+                let fraction = grain.read_pos.fract();
+                self.buffer[read_idx] + (self.buffer[next_idx] - self.buffer[read_idx]) * fraction
+            };
+            grain.last_sample = sample;
             grain_sum += sample * win;
 
-            grain.read_pos = (grain.read_pos + grain.pitch_ratio) % self.buffer_size as f32;
-            grain.samples_behind_write_head -= grain.pitch_ratio;
+            if !grain.hold_last_sample {
+                grain.read_pos = (grain.read_pos + grain.pitch_ratio) % self.buffer_size as f32;
+                grain.samples_behind_write_head -= grain.pitch_ratio;
+            }
             grain.progress += 1;
             if grain.frontier_fade_total != 0 {
                 grain.frontier_fade_remaining = grain.frontier_fade_remaining.saturating_sub(1);
@@ -217,6 +256,10 @@ impl GranularProcessor {
                     ((offset as f32 / pitch_ratio).floor() as usize).saturating_add(1)
                 } else if pitch_ratio > 1.0 {
                     ((offset as f32 / (pitch_ratio - 1.0)).floor() as usize).saturating_add(1)
+                } else if pitch_ratio < 1.0 {
+                    (((self.buffer_size - 1 - offset) as f32 / (1.0 - pitch_ratio)).floor()
+                        as usize)
+                        .saturating_add(1)
                 } else {
                     grain_size
                 };
@@ -227,6 +270,8 @@ impl GranularProcessor {
                 grain.samples_behind_write_head = offset as f32;
                 grain.frontier_fade_remaining = 0;
                 grain.frontier_fade_total = 0;
+                grain.hold_last_sample = false;
+                grain.last_sample = 0.0;
 
                 // Read position: `offset` samples back from the most recently
                 // written sample.
@@ -335,7 +380,8 @@ mod tests {
 
             let started_on = spawned_grain_start_value(&mut processor);
             assert_eq!(
-                started_on, expected,
+                started_on,
+                expected,
                 "Position {offset_ms} ms must start the grain on the sample written \
                  {} samples before the newest one. It started on {started_on}, which is \
                  {} samples back — #1570.",
@@ -389,7 +435,8 @@ mod tests {
 
         let started_on = spawned_grain_start_value(&mut processor);
         assert_eq!(
-            started_on, newest,
+            started_on,
+            newest,
             "after {count} writes into a {}-sample ring, Position 0 ms must still start \
              on the newest sample ({newest}). It started on {started_on}, which is the \
              sample from {} writes ago.",
@@ -582,6 +629,96 @@ mod tests {
         assert!(
             worst_step < 0.01,
             "Freeze cut a sounding grain by {worst_step} instead of fading it"
+        );
+    }
+
+    #[test]
+    fn freezing_a_position_zero_grain_fades_its_last_causal_sample() {
+        let mut processor = quiet_spawner();
+        processor.buffer.fill(1.0);
+        processor.set_param("grainMix", 1.0);
+        processor.set_param("grainSize", 40.0);
+        processor.set_param("grainPosOffset", 0.0);
+        processor.spawn_counter = 1.0;
+
+        let mut before_freeze = processor.process_sample(1.0);
+        for _ in 1..960 {
+            before_freeze = processor.process_sample(1.0);
+        }
+        assert!(
+            before_freeze > 0.9,
+            "the Position-0 grain was not sounding near its Hann peak: {before_freeze}"
+        );
+
+        processor.set_param("grainFreeze", 1.0);
+        let after_freeze: Vec<f32> = (0..65).map(|_| processor.process_sample(0.0)).collect();
+        let worst_step = std::iter::once(before_freeze)
+            .chain(after_freeze.iter().copied())
+            .collect::<Vec<_>>()
+            .windows(2)
+            .map(|pair| (pair[1] - pair[0]).abs())
+            .fold(0.0_f32, f32::max);
+
+        assert!(
+            worst_step < 0.05,
+            "Freeze cut a Position-0 grain by {worst_step} at its Hann peak"
+        );
+        assert!(
+            after_freeze.last().copied().unwrap_or(1.0).abs() <= f32::EPSILON,
+            "the held frontier sample did not fade to silence"
+        );
+    }
+
+    #[test]
+    fn non_finite_pitch_is_rejected_without_poisoning_an_active_grain() {
+        let mut processor = quiet_spawner();
+        processor.buffer.fill(1.0);
+        processor.write_pos = 2_000;
+        processor.set_param("grainMix", 1.0);
+        processor.set_param("grainSize", 40.0);
+        processor.set_param("grainPosOffset", 20.0);
+        processor.set_param("grainPitch", f32::NAN);
+        processor.spawn_grain();
+
+        let before_recovery: Vec<f32> = (0..8).map(|_| processor.process_sample(1.0)).collect();
+        processor.set_param("grainPitch", 12.0);
+        let after_recovery: Vec<f32> = (0..8).map(|_| processor.process_sample(1.0)).collect();
+
+        assert!(
+            before_recovery
+                .iter()
+                .chain(&after_recovery)
+                .all(|sample| sample.is_finite()),
+            "a rejected NaN pitch poisoned the active grain after a valid update"
+        );
+    }
+
+    #[test]
+    fn a_down_pitched_grain_never_reads_slots_the_writer_has_reclaimed() {
+        let mut processor = quiet_spawner();
+        processor.buffer.fill(1.0);
+        processor.write_pos = 0;
+        processor.set_param("grainMix", 1.0);
+        processor.set_param("grainSize", 500.0);
+        processor.set_param("grainPosOffset", 2000.0);
+        processor.set_param("grainPitch", -24.0);
+        processor.set_param("grainWindow", 1.0);
+        processor.spawn_counter = 1.0;
+
+        let rendered: Vec<f32> = (0..64).map(|_| processor.process_sample(-1.0)).collect();
+        let reclaimed_peak = rendered
+            .iter()
+            .copied()
+            .map(|sample| (-sample).max(0.0))
+            .fold(0.0_f32, f32::max);
+
+        assert_eq!(
+            processor.grains[0].size_samples, 1,
+            "the oldest legal Position leaves one causal read before the writer reclaims it"
+        );
+        assert!(
+            reclaimed_peak <= f32::EPSILON,
+            "the down-pitched grain rendered newly written input at peak {reclaimed_peak}"
         );
     }
 
