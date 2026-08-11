@@ -169,6 +169,23 @@ describe('addDevice', () => {
         expect(mocks.updateDeviceParam).toHaveBeenNthCalledWith(2, 't1', result?.id, 'damping', 0.3);
     });
 
+    it('uses an explicit empty internal parameter set for an unversioned saved device', () => {
+        mocks.getPlatformPlugins.mockReturnValue([
+            {
+                id: 'dutch-oven',
+                name: 'Dutch Oven',
+                internalParameterValues: { fdn_damping_version: 2 },
+                parameters: [{ id: 'damping', value: 0.3 }],
+            },
+        ]);
+
+        const result = addDevice('t1', 'dutch-oven', undefined, undefined, undefined, {});
+
+        expect(result?.parameterValues).toEqual({ damping: 0.3 });
+        expect(mocks.updateDeviceParam).toHaveBeenCalledOnce();
+        expect(mocks.updateDeviceParam).toHaveBeenCalledWith('t1', result?.id, 'damping', 0.3);
+    });
+
     it('uses a caller-reserved device ID for project and runtime identity', () => {
         mocks.getPlatformPlugins.mockReturnValue([{ id: 'p1', name: 'Reverb', parameters: [] }]);
 

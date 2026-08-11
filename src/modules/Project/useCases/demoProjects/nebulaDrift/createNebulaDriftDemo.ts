@@ -280,6 +280,7 @@ export async function demo5_NebulaDrift(): Promise<void> {
             type: 'dutch-oven',
             bypassed: false,
             parameterValues: {
+                fdn_damping_version: 2,
                 mix: 1, // fully wet — the bus IS the reverb return
                 decay: 0.78,
                 damping: 0.32,

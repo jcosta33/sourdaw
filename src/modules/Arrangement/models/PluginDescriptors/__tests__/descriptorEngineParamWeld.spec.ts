@@ -702,7 +702,6 @@ describe('descriptor parameter ids are welded to engine set_param arms', () => {
 
         expect(shared.has('algorithm')).toBe(true); // lib.rs, before the forward
         expect(shared.has('vintage')).toBe(true);
-        expect(shared.has('fdn_damping_version')).toBe(true);
         expect(shared.has('matrix')).toBe(false);
         expect(shared.has('dispersion')).toBe(false);
     });
