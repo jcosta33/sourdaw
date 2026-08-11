@@ -126,15 +126,15 @@ fn detector_base(topology: f32) -> impl Fn(&mut GlutenInstance) {
 
 fn detector_delta(topology: f32, name: &'static str, low: f32, high: f32) -> f32 {
     let configure = detector_base(topology);
-    let a = render(|i| {
-        configure(i);
-        i.set_param(name, low);
-    });
-    let b = render(|i| {
-        configure(i);
-        i.set_param(name, high);
-    });
-    max_delta(&a, &b)
+    let render_value = |value| {
+        render(|i| {
+            configure(i);
+            i.set_param(name, f32::NAN);
+            i.process(1);
+            i.set_param(name, value);
+        })
+    };
+    max_delta(&render_value(low), &render_value(high))
 }
 
 /// Every name the sidechain chain configures, with a pair of values far enough
