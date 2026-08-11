@@ -70,7 +70,9 @@ export const RUNTIME_ACTION_TYPES = [
     'renameSection',
     'addAutomationLane',
     'automateSendRange',
+    'automateSendRanges',
     'automateTrackGainRange',
+    'renderProjectSections',
     'addAutomationPoint',
     'setAutomationLaneEnabled',
     'quantizeNotes',
@@ -188,6 +190,7 @@ export const RUNTIME_ACTION_TYPES = [
     'completeMidi',
     'connectPush',
     'createAdjustmentLayer',
+    'addAdjustmentRegion',
     'createCompGroup',
     'createPatternInstance',
     'createProjectVersion',
@@ -265,6 +268,16 @@ export const RUNTIME_ACTION_OVERRIDE_PAYLOAD_KEYS = {
     addClip: ['trackId', 'startBeat', 'endBeat', 'name', 'type', 'audioBufferId'],
     addNotes: ['clipId', 'notes'],
     addDevice: ['trackId', 'deviceType', 'afterDeviceId'],
+    setDeviceParameter: [
+        'deviceId',
+        'paramId',
+        'value',
+        'expectedTrackId',
+        'expectedDeviceType',
+        'expectedDeviceIds',
+        'expectedValue',
+        'expectedTrackFrozen',
+    ],
     createBus: ['name'],
     createTrackAlternative: ['trackId', 'name', 'duplicateActive'],
     deleteTrackAlternative: ['trackId', 'alternativeId'],
@@ -276,7 +289,9 @@ export const RUNTIME_ACTION_OVERRIDE_PAYLOAD_KEYS = {
     addSection: ['startBeat', 'endBeat', 'name'],
     addAutomationLane: ['trackId', 'parameterId', 'parameterName'],
     automateSendRange: ['trackIds', 'busId', 'sectionName', 'reductionDb'],
+    automateSendRanges: ['trackIds', 'busId', 'sectionIds', 'tailBars', 'targetLevelDb'],
     automateTrackGainRange: ['trackIds', 'sectionName', 'gainDb'],
+    renderProjectSections: ['sectionIds'],
     addAutomationPoint: ['laneId', 'beat', 'value', 'curve', 'tension', 'stairSteps', 'cp1', 'cp2'],
     removeAutomationPoint: ['laneId', 'pointIndex'],
     addSidechainRoute: ['sourceTrackId', 'targetTrackId', 'targetDeviceId'],
@@ -298,6 +313,7 @@ export const RUNTIME_ACTION_OVERRIDE_PAYLOAD_KEYS = {
     createVcaGroup: ['name', 'trackIds'],
     addChordEvent: ['beat', 'root', 'quality', 'duration'],
     createAdjustmentLayer: ['name', 'effectType'],
+    addAdjustmentRegion: ['layerId', 'startBeat', 'endBeat', 'blend', 'fadeInBeats', 'fadeOutBeats'],
 } as const satisfies Partial<Record<RuntimeActionType, readonly string[]>>;
 
 export const RUNTIME_ACTION_OVERRIDE_REQUIRED_PAYLOAD_KEYS = {
@@ -314,6 +330,7 @@ export const RUNTIME_ACTION_OVERRIDE_REQUIRED_PAYLOAD_KEYS = {
     addClip: ['trackId', 'startBeat', 'endBeat', 'name'],
     addNotes: ['clipId', 'notes'],
     addDevice: ['trackId', 'deviceType'],
+    setDeviceParameter: ['deviceId', 'paramId', 'value'],
     createBus: ['name'],
     createTrackAlternative: ['trackId', 'name', 'duplicateActive'],
     deleteTrackAlternative: ['trackId', 'alternativeId'],
@@ -325,7 +342,9 @@ export const RUNTIME_ACTION_OVERRIDE_REQUIRED_PAYLOAD_KEYS = {
     addSection: ['startBeat', 'endBeat', 'name'],
     addAutomationLane: ['trackId', 'parameterId', 'parameterName'],
     automateSendRange: ['trackIds', 'busId', 'sectionName', 'reductionDb'],
+    automateSendRanges: ['trackIds', 'busId', 'sectionIds', 'tailBars', 'targetLevelDb'],
     automateTrackGainRange: ['trackIds', 'sectionName', 'gainDb'],
+    renderProjectSections: ['sectionIds'],
     addAutomationPoint: ['laneId', 'beat', 'value'],
     removeAutomationPoint: ['laneId', 'pointIndex'],
     addSidechainRoute: ['sourceTrackId', 'targetTrackId'],
@@ -347,6 +366,7 @@ export const RUNTIME_ACTION_OVERRIDE_REQUIRED_PAYLOAD_KEYS = {
     createVcaGroup: ['name', 'trackIds'],
     addChordEvent: ['beat', 'root', 'quality'],
     createAdjustmentLayer: ['name', 'effectType'],
+    addAdjustmentRegion: ['layerId', 'startBeat', 'endBeat', 'blend', 'fadeInBeats', 'fadeOutBeats'],
 } as const satisfies {
     [
         ActionType in keyof typeof RUNTIME_ACTION_OVERRIDE_PAYLOAD_KEYS

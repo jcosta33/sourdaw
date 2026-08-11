@@ -1,4 +1,4 @@
-import { type ReactElement, type ReactNode, useState } from 'react';
+import { type ReactElement, type ReactNode, useEffect, useState } from 'react';
 
 import { Activity, Flame, Radio, Search, SlidersHorizontal, Sun, Zap } from 'lucide-react';
 
@@ -15,6 +15,7 @@ import { DawReadoutRow } from '#/components/daw/DawReadoutRow';
 import { RotaryKnob } from '#/components/daw/RotaryKnob';
 import { Stack, Row, Grid } from '#/components/layout';
 import { useStore } from '#/infra/store/useStore';
+import { trackStore } from '#/modules/Arrangement/stores';
 
 import {
     OVERSAMPLING_FACTORS,
@@ -32,6 +33,7 @@ import {
     type GlutenControlGate,
 } from '../../models/GlutenTopologyGating';
 import { glutenStore, getGlutenState, type GlutenState } from '../../stores/glutenStore';
+import { hydrateGlutenPatchFromProject } from '../../useCases/glutenParamBridge/hydrateGlutenPatchFromProject';
 import { loadGlutenPatchWithAudio } from '../../useCases/glutenParamBridge/loadGlutenPatchWithAudio';
 import { setGlutenParamWithAudio } from '../../useCases/glutenParamBridge/setGlutenParamWithAudio';
 import { GLUTEN_PRESETS } from '../../useCases/glutenPresets';
@@ -232,6 +234,32 @@ function normalize(value: number, min: number, max: number): number {
     return Math.max(0, Math.min(1, (value - min) / (max - min)));
 }
 
+type GlutenControlRange = {
+    min: number;
+    max: number;
+};
+
+function glutenRatioRange(topology: GlutenTopology): GlutenControlRange {
+    if (topology === 'diode') {
+        return { min: 1.5, max: 6 };
+    }
+    return { min: 1, max: 20 };
+}
+
+function glutenAttackRange(topology: GlutenTopology): GlutenControlRange {
+    if (topology === 'diode') {
+        return { min: 0.5, max: 30 };
+    }
+    if (topology === 'fet') {
+        return { min: 0.02, max: 2 };
+    }
+    return { min: 0.02, max: 250 };
+}
+
+function clampToRange(value: number, range: GlutenControlRange): number {
+    return Math.max(range.min, Math.min(range.max, value));
+}
+
 function describePreset(patch: GlutenPatch): string {
     const topologyLabel = TOPOLOGY_META[patch.topology].label;
     return `${topologyLabel} · ${formatValue(patch.ratio, ':1')} · ${formatValue(patch.threshold, 'dB')}`;
@@ -344,6 +372,7 @@ const Knob = ({
     defaultValue,
     unit,
     gate,
+    activeRange,
 }: {
     deviceId: string;
     value: number;
@@ -355,6 +384,8 @@ const Knob = ({
     defaultValue: number;
     unit?: string;
     gate: GlutenControlGate;
+    /** Selected-engine travel; `min`/`max` remain the persisted parameter domain. */
+    activeRange?: GlutenControlRange;
 }): ReactElement => (
     <div className="flex flex-col items-center gap-1">
         <RotaryKnob
@@ -362,8 +393,8 @@ const Knob = ({
             onChange={(nextValue, isTransient) =>
                 setGlutenParamWithAudio(deviceId, param, nextValue as GlutenPatch[typeof param], isTransient)
             }
-            min={min}
-            max={max}
+            min={activeRange?.min ?? min}
+            max={activeRange?.max ?? max}
             step={step}
             defaultValue={defaultValue}
             size="sm"
@@ -386,9 +417,11 @@ const Knob = ({
 );
 
 const defaultGlutenInstances: Record<string, GlutenState> = {};
+const defaultTrackState = { tracks: [], selectedTrackId: null, ghostClips: [] };
 
 export const GlutenPanel = ({ deviceId }: { deviceId: string }): ReactElement => {
     const allInstances = useStore(glutenStore, defaultGlutenInstances);
+    const trackState = useStore(trackStore, defaultTrackState);
     const state: GlutenState = allInstances[deviceId] ?? getGlutenState(deviceId);
     // Meters live in their own per-device store: a ~60 Hz tick on this device
     // re-renders this panel's meter readouts without rebuilding the patch map,
@@ -396,6 +429,14 @@ export const GlutenPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
     const { grDb, inputDb, outputDb, crest, phaseCorr, latency } = useGlutenMeters(deviceId);
     const [search, setSearch] = useState('');
     const [category, setCategory] = useState('all');
+
+    const projectParameterValues = trackState.tracks
+        .flatMap((track) => track.devices)
+        .find((device) => device.id === deviceId)?.parameterValues;
+
+    useEffect(() => {
+        hydrateGlutenPatchFromProject(deviceId);
+    }, [deviceId, projectParameterValues]);
 
     const { patch } = state;
     const currentPatch = patch;
@@ -410,6 +451,10 @@ export const GlutenPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
 
     const topologyMeta = TOPOLOGY_META[currentPatch.topology];
     const accentColor = topologyMeta.color;
+    const ratioRange = glutenRatioRange(currentPatch.topology);
+    const attackRange = glutenAttackRange(currentPatch.topology);
+    const effectiveRatio = clampToRange(currentPatch.ratio, ratioRange);
+    const effectiveAttack = clampToRange(currentPatch.attack, attackRange);
 
     let phaseCorrStr = phaseCorr.toFixed(2);
     if (phaseCorr > 0.99) {
@@ -741,7 +786,7 @@ export const GlutenPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
                                 <div className="overflow-x-auto">
                                     <GlutenCurve
                                         threshold={patch.threshold}
-                                        ratio={patch.ratio}
+                                        ratio={effectiveRatio}
                                         knee={patch.knee}
                                         makeup={patch.makeup}
                                         grDb={grDb}
@@ -766,7 +811,7 @@ export const GlutenPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
                                     >
                                         <LensBar
                                             label="Attack"
-                                            value={normalize(patch.attack, 0.02, 250)}
+                                            value={normalize(effectiveAttack, attackRange.min, attackRange.max)}
                                             accentColor={accentColor}
                                         />
                                         <LensBar
@@ -863,15 +908,16 @@ export const GlutenPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
                             />
                             <Knob
                                 deviceId={deviceId}
-                                value={patch.ratio}
+                                value={effectiveRatio}
                                 param="ratio"
                                 label="Ratio"
                                 min={1}
                                 max={20}
                                 step={0.5}
-                                defaultValue={4}
+                                defaultValue={clampToRange(4, ratioRange)}
                                 unit=":1"
                                 gate={gateFor('ratio', 'Ratio')}
+                                activeRange={ratioRange}
                             />
                             <Knob
                                 deviceId={deviceId}
@@ -887,15 +933,16 @@ export const GlutenPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
                             />
                             <Knob
                                 deviceId={deviceId}
-                                value={patch.attack}
+                                value={effectiveAttack}
                                 param="attack"
                                 label="Attack"
                                 min={0.02}
                                 max={250}
                                 step={0.1}
-                                defaultValue={10}
+                                defaultValue={clampToRange(10, attackRange)}
                                 unit="ms"
                                 gate={gateFor('attack', 'Attack')}
+                                activeRange={attackRange}
                             />
                             <Knob
                                 deviceId={deviceId}

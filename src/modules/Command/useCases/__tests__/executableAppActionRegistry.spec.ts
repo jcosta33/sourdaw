@@ -27,6 +27,7 @@ describe('executableAppActionRegistry', () => {
             'broad-reversible',
             'destructive-reversible',
             'authority-sensitive',
+            'external-effect',
         ]);
         for (const descriptor of executableAppActionDescriptors) {
             expect(validRisks.has(descriptor.risk)).toBe(true);

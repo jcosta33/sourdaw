@@ -1,10 +1,10 @@
 import { trackStore } from '#/modules/Arrangement/stores';
 
 import {
-    ALGORITHM_BY_WIRE_VALUE,
     BOOLEAN_ENGINE_FIELDS,
     NUMERIC_ENGINE_FIELDS,
     PARAM_MAP,
+    proofChamberAlgorithmFromWireValue,
     type ProofChamberEngineState,
 } from '../../models/ProofChamberState';
 import { chamberStore } from '../../stores/chamberStore';
@@ -84,11 +84,8 @@ export function hydrateChamberStateFromProject(deviceId: string): void {
 
     const storedAlgorithm = device.parameterValues.algorithm;
     if (typeof storedAlgorithm === 'number' && Number.isFinite(storedAlgorithm)) {
-        const algorithm = ALGORITHM_BY_WIRE_VALUE[storedAlgorithm];
-        if (algorithm !== undefined) {
-            restored.algorithm = algorithm;
-            changed = true;
-        }
+        restored.algorithm = proofChamberAlgorithmFromWireValue(storedAlgorithm);
+        changed = true;
     }
 
     if (!changed) {

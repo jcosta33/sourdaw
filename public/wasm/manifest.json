@@ -9,21 +9,21 @@
   "packages": {
     "daw-dsp": {
       "crate": "crates/daw-dsp",
-      "crateSourceHash": "sha256:61a90547b48115b97dc5d37743dce88f5e97a747cff68a3446f3258ac93b0598",
+      "crateSourceHash": "sha256:ef758f163af92898f2b98e22625f0c4ae20016ccc61b1d932d9b68506552c722",
       "schemaHash": "344f42d3211c4765",
       "artifacts": {
         "public/wasm/daw-dsp/daw_dsp.js": "sha256:a0a69e6d8d1f6005a13928e5111a14702ae2582babb1da2055cd8be81de5255b",
-        "public/wasm/daw-dsp/daw_dsp_bg.wasm": "sha256:d7d18ce457f57dcb8bda203c8fec17f28161e78e46975d47c22c1a650615ba37",
-        "public/wasm/daw-dsp/daw_dsp.d.ts": "sha256:1c0bbb3ec07cbf406e3ad13543d240cc268d468720ce74f4c527ee39986df936",
-        "public/wasm/daw-dsp/daw_dsp_bg.wasm.d.ts": "sha256:11ab9872b6bd6e726179a28f1a9cf79320b5b1614dd18d714527bee22e347d8a",
+        "public/wasm/daw-dsp/daw_dsp_bg.wasm": "sha256:760d7623b459f74eb8554a5e2e3a4e57016192d16c37543113cb7b00fc16b7af",
+        "public/wasm/daw-dsp/daw_dsp.d.ts": "sha256:c1af0b9f5cc1eafe424df7c069764703e5eb89efd7fd84ec636a952747522816",
+        "public/wasm/daw-dsp/daw_dsp_bg.wasm.d.ts": "sha256:4d1928263bbb460afc1e3d23dbff5aeac3bd751e7ecdc9c0de6d3638e1d8f659",
         "public/wasm/daw-dsp/package.json": "sha256:f267baf6685da8a939785e34ecfcda4b5d707aa456a7109a1330fd5f52211000",
         "src/modules/AudioEngine/wasm/daw_dsp.js": "sha256:4ec0c70246c42e9995797544da802271216344cb6835e16e6dbe2409fe295df2",
-        "src/modules/AudioEngine/wasm/daw_dsp.d.ts": "sha256:1c0bbb3ec07cbf406e3ad13543d240cc268d468720ce74f4c527ee39986df936"
+        "src/modules/AudioEngine/wasm/daw_dsp.d.ts": "sha256:c1af0b9f5cc1eafe424df7c069764703e5eb89efd7fd84ec636a952747522816"
       }
     },
     "proof-chamber": {
       "crate": "crates/proof-chamber",
-      "crateSourceHash": "sha256:01ca255f50c5cb3291c2241983d8d16911defba94cd3bac3b5fb57069e1809c4",
+      "crateSourceHash": "sha256:222232385534cb6f29711c351b65da07e3e69bd6b0547e89716809c294d68ec0",
       "schemaHash": "344f42d3211c4765",
       "artifacts": {
         "public/wasm/proof-chamber/proof_chamber.js": "sha256:7df8399e45b903c728fe51bb5d7ccdb1f0f08bb892bf8b0c34051aff4cefa879",

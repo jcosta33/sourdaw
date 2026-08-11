@@ -5,6 +5,8 @@ export type AddAdjustmentRegionInput = {
     startBeat: number;
     endBeat: number;
     blend?: number;
+    fadeInBeats?: number;
+    fadeOutBeats?: number;
     regionId?: string;
 };
 
@@ -19,8 +21,8 @@ export function addAdjustmentRegion(input: AddAdjustmentRegionInput): void {
         startBeat: input.startBeat,
         endBeat: input.endBeat,
         blend: input.blend ?? 1,
-        fadeInBeats: 0.25,
-        fadeOutBeats: 0.25,
+        fadeInBeats: input.fadeInBeats ?? 0.25,
+        fadeOutBeats: input.fadeOutBeats ?? 0.25,
     };
 
     adjustmentLayerStore.set({

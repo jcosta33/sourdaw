@@ -1,4 +1,4 @@
-// @wasm-bindgen-dts crate-source: sha256:61a90547b48115b97dc5d37743dce88f5e97a747cff68a3446f3258ac93b0598
+// @wasm-bindgen-dts crate-source: sha256:ef758f163af92898f2b98e22625f0c4ae20016ccc61b1d932d9b68506552c722
 /* tslint:disable */
 /* eslint-disable */
 export const memory: WebAssembly.Memory;
@@ -80,27 +80,7 @@ export const toasterinstance_set_pad_dry_routed: (a: number, b: number, c: numbe
 export const toasterinstance_set_pad_param: (a: number, b: number, c: number, d: number, e: number) => void;
 export const toasterinstance_set_param: (a: number, b: number, c: number, d: number) => void;
 export const toasterinstance_set_param_by_id: (a: number, b: number, c: number) => void;
-export const __wbg_crustinstance_free: (a: number, b: number) => void;
-export const crustinstance_get_gr_db: (a: number) => number;
-export const crustinstance_get_input_db: (a: number) => number;
-export const crustinstance_get_input_left_ptr: (a: number) => number;
-export const crustinstance_get_input_right_ptr: (a: number) => number;
-export const crustinstance_get_latency_samples: (a: number) => number;
-export const crustinstance_get_lra: (a: number) => number;
-export const crustinstance_get_lufs_integrated: (a: number) => number;
-export const crustinstance_get_lufs_momentary: (a: number) => number;
-export const crustinstance_get_lufs_short_term: (a: number) => number;
-export const crustinstance_get_nan_flush_count: (a: number) => number;
-export const crustinstance_get_output_db: (a: number) => number;
-export const crustinstance_get_right_ptr: (a: number) => number;
-export const crustinstance_get_true_peak_exceeded: (a: number) => number;
-export const crustinstance_get_true_peak_max: (a: number) => number;
-export const crustinstance_new: (a: number) => number;
-export const crustinstance_process: (a: number, b: number) => number;
-export const crustinstance_reset_true_peak: (a: number) => void;
-export const crustinstance_set_param: (a: number, b: number, c: number, d: number) => void;
 export const __wbg_kneadinstance_free: (a: number, b: number) => void;
-export const init_panic_hook: () => void;
 export const kneadinstance_get_f0: (a: number) => number;
 export const kneadinstance_get_input_left_ptr: (a: number) => number;
 export const kneadinstance_get_input_right_ptr: (a: number) => number;
@@ -205,6 +185,26 @@ export const grandbouleinstance_set_sostenuto: (a: number, b: number) => void;
 export const grandbouleinstance_set_sustain: (a: number, b: number) => void;
 export const grandbouleinstance_set_temperament: (a: number, b: number) => void;
 export const grandbouleinstance_set_una_corda: (a: number, b: number) => void;
+export const init_panic_hook: () => void;
+export const __wbg_crustinstance_free: (a: number, b: number) => void;
+export const crustinstance_get_gr_db: (a: number) => number;
+export const crustinstance_get_input_db: (a: number) => number;
+export const crustinstance_get_input_left_ptr: (a: number) => number;
+export const crustinstance_get_input_right_ptr: (a: number) => number;
+export const crustinstance_get_latency_samples: (a: number) => number;
+export const crustinstance_get_lra: (a: number) => number;
+export const crustinstance_get_lufs_integrated: (a: number) => number;
+export const crustinstance_get_lufs_momentary: (a: number) => number;
+export const crustinstance_get_lufs_short_term: (a: number) => number;
+export const crustinstance_get_nan_flush_count: (a: number) => number;
+export const crustinstance_get_output_db: (a: number) => number;
+export const crustinstance_get_right_ptr: (a: number) => number;
+export const crustinstance_get_true_peak_exceeded: (a: number) => number;
+export const crustinstance_get_true_peak_max: (a: number) => number;
+export const crustinstance_new: (a: number) => number;
+export const crustinstance_process: (a: number, b: number) => number;
+export const crustinstance_reset_true_peak: (a: number) => void;
+export const crustinstance_set_param: (a: number, b: number, c: number, d: number) => void;
 export const __wbindgen_free: (a: number, b: number, c: number) => void;
 export const __wbindgen_malloc: (a: number, b: number) => number;
 export const __wbindgen_realloc: (a: number, b: number, c: number, d: number) => number;

@@ -1,5 +1,7 @@
+import { updateDeviceParam } from '#/modules/AudioEngine/useCases';
 import { captureAutomationRecordingRollback } from '#/modules/Automation/useCases';
 import { createHandler } from '#/utils/createHandler';
+import { runAllEffects } from '#/utils/runEffects';
 
 import { getPluginById } from '../../models/DeviceParameter';
 import { clampDeviceParameterValue } from '../../models/DeviceParameterLaw';
@@ -13,6 +15,7 @@ function hasExecutionGuards(action: {
         expectedDeviceType?: string;
         expectedDeviceIds?: readonly string[];
         expectedValue?: number;
+        expectedValuePresent?: boolean;
         expectedTrackFrozen?: boolean;
     };
 }): boolean {
@@ -21,6 +24,7 @@ function hasExecutionGuards(action: {
         action.payload.expectedDeviceType !== undefined ||
         action.payload.expectedDeviceIds !== undefined ||
         action.payload.expectedValue !== undefined ||
+        action.payload.expectedValuePresent !== undefined ||
         action.payload.expectedTrackFrozen !== undefined
     );
 }
@@ -33,6 +37,7 @@ function executionGuardsMatch(action: {
         expectedDeviceType?: string;
         expectedDeviceIds?: readonly string[];
         expectedValue?: number;
+        expectedValuePresent?: boolean;
         expectedTrackFrozen?: boolean;
     };
 }): boolean {
@@ -45,6 +50,7 @@ function executionGuardsMatch(action: {
     const owner = owners.length === 1 ? owners[0] : undefined;
     const device = owner?.devices.find((candidate) => candidate.id === action.payload.deviceId);
     const currentDeviceIds = owner?.devices.map((candidate) => candidate.id);
+    const valuePresent = device ? Object.hasOwn(device.parameterValues, action.payload.paramId) : false;
     return (
         owner !== undefined &&
         device !== undefined &&
@@ -53,19 +59,28 @@ function executionGuardsMatch(action: {
         (action.payload.expectedDeviceIds === undefined ||
             (action.payload.expectedDeviceIds.length === currentDeviceIds?.length &&
                 action.payload.expectedDeviceIds.every((deviceId, index) => currentDeviceIds[index] === deviceId))) &&
+        (action.payload.expectedValuePresent === undefined || action.payload.expectedValuePresent === valuePresent) &&
         (action.payload.expectedValue === undefined ||
-            device.parameterValues[action.payload.paramId] === action.payload.expectedValue) &&
+            (valuePresent && device.parameterValues[action.payload.paramId] === action.payload.expectedValue)) &&
         (action.payload.expectedTrackFrozen === undefined || owner.frozen === action.payload.expectedTrackFrozen)
     );
 }
 
-function handleGuardedSetDeviceParameter(action: { payload: { deviceId: string; paramId: string; value: number } }) {
+function handleGuardedSetDeviceParameter(action: {
+    payload: { deviceId: string; paramId: string; value: number; deleteParameter?: boolean };
+}) {
     if (!executionGuardsMatch(action)) {
         return { status: 'conflict' as const };
     }
-    return toHandlerExecutionResult(
-        setDeviceParameter(action.payload.deviceId, action.payload.paramId, action.payload.value)
-    );
+    let didWrite: boolean;
+    if (action.payload.deleteParameter) {
+        didWrite = setDeviceParameter(action.payload.deviceId, action.payload.paramId, action.payload.value, {
+            deleteParameter: true,
+        });
+    } else {
+        didWrite = setDeviceParameter(action.payload.deviceId, action.payload.paramId, action.payload.value);
+    }
+    return toHandlerExecutionResult(didWrite);
 }
 
 function formatParameterValue(value: number, unit: string): string {
@@ -100,19 +115,70 @@ function describeParameterOutcome(input: { deviceId: string; paramId: string; va
     return `Set "${owner.name}" (${owner.id}) device "${device.name}" (${device.id}, ${device.type}) parameter "${parameter.name}" (${parameter.id}) from ${formatParameterValue(previousValue, parameter.unit)} to ${formatParameterValue(committedValue, parameter.unit)}`;
 }
 
+function createRuntimeParameterRollbackFailure(input: {
+    deviceId: string;
+    error: unknown;
+    paramId: string;
+    trackId: string;
+}): Error {
+    const detail = input.error instanceof Error ? input.error.message : String(input.error);
+    return new Error(
+        `Runtime parameter rollback failed for ${input.trackId}/${input.deviceId}/${input.paramId}; manual repair is required: ${detail}`,
+        { cause: input.error }
+    );
+}
+
 export const handleSetDeviceParameter = createHandler<'setDeviceParameter'>({
-    prepareAbort: () => captureAutomationRecordingRollback(),
+    prepareAbort: (action) => {
+        const rollbackAutomationRecording = captureAutomationRecordingRollback();
+        const owner = getTrackStoreState()?.tracks.find((track) =>
+            track.devices.some((device) => device.id === action.payload.deviceId)
+        );
+        const previousValue = owner?.devices.find((device) => device.id === action.payload.deviceId)?.parameterValues[
+            action.payload.paramId
+        ];
+        const parameter = owner?.devices.find((device) => device.id === action.payload.deviceId)?.type;
+        const defaultValue = parameter
+            ? getPluginById(parameter)?.parameters.find((candidate) => candidate.id === action.payload.paramId)
+                  ?.defaultValue
+            : undefined;
+        return () => {
+            const effects: Array<() => void> = [rollbackAutomationRecording];
+            const runtimeRollbackValue = previousValue ?? defaultValue;
+            if (owner && runtimeRollbackValue !== undefined) {
+                effects.unshift(() => {
+                    try {
+                        updateDeviceParam(
+                            owner.id,
+                            action.payload.deviceId,
+                            action.payload.paramId,
+                            runtimeRollbackValue
+                        );
+                    } catch (error) {
+                        throw createRuntimeParameterRollbackFailure({
+                            deviceId: action.payload.deviceId,
+                            error,
+                            paramId: action.payload.paramId,
+                            trackId: owner.id,
+                        });
+                    }
+                });
+            }
+            runAllEffects(effects);
+        };
+    },
     execute: (alpha) => handleGuardedSetDeviceParameter(alpha),
     isNoop: (action) => {
         if (!executionGuardsMatch(action)) {
             return false;
         }
-        return (
-            getTrackStoreState()
-                ?.tracks.flatMap((track) => track.devices)
-                .find((device) => device.id === action.payload.deviceId)?.parameterValues[action.payload.paramId] ===
-            action.payload.value
-        );
+        const device = getTrackStoreState()
+            ?.tracks.flatMap((track) => track.devices)
+            .find((candidate) => candidate.id === action.payload.deviceId);
+        if (action.payload.deleteParameter) {
+            return device !== undefined && !Object.hasOwn(device.parameterValues, action.payload.paramId);
+        }
+        return device?.parameterValues[action.payload.paramId] === action.payload.value;
     },
     describe: (alpha) => {
         const state = getTrackStoreState();
@@ -121,32 +187,73 @@ export const handleSetDeviceParameter = createHandler<'setDeviceParameter'>({
         );
         const prev = owner?.devices.find((device) => device.id === alpha.payload.deviceId);
         const previousValue = prev?.parameterValues[alpha.payload.paramId];
+        const previousValuePresent = prev ? Object.hasOwn(prev.parameterValues, alpha.payload.paramId) : false;
+        const parameter = prev
+            ? getPluginById(prev.type)?.parameters.find((candidate) => candidate.id === alpha.payload.paramId)
+            : undefined;
         const exactLabel = describeParameterOutcome(alpha.payload);
+        const expectedPreviousValue = alpha.payload.expectedValue ?? previousValue ?? parameter?.defaultValue;
+        const expectedPreviousValuePresent =
+            alpha.payload.expectedValuePresent ??
+            (alpha.payload.expectedValue === undefined ? previousValuePresent : true);
+        const expectedTrackId = alpha.payload.expectedTrackId ?? owner?.id;
+        const expectedDeviceType = alpha.payload.expectedDeviceType ?? prev?.type;
+        const expectedDeviceIds = alpha.payload.expectedDeviceIds ?? owner?.devices.map((device) => device.id);
+        const expectedTrackFrozen = alpha.payload.expectedTrackFrozen ?? owner?.frozen;
+        const committedValue = expectedDeviceType
+            ? clampDeviceParameterValue({
+                  deviceType: expectedDeviceType,
+                  paramId: alpha.payload.paramId,
+                  value: alpha.payload.value,
+              })
+            : undefined;
         return {
             label: exactLabel ?? `Set ${alpha.payload.paramId}`,
-            // A param absent from the store cannot be restored to "absent" —
-            // only snapshot real previous values.
             inverseAction:
-                prev && typeof previousValue === 'number'
+                expectedTrackId &&
+                expectedDeviceType &&
+                expectedDeviceIds &&
+                expectedPreviousValue !== undefined &&
+                committedValue !== undefined
                     ? {
                           type: 'setDeviceParameter',
                           payload: {
-                              deviceId: prev.id,
+                              deviceId: alpha.payload.deviceId,
                               paramId: alpha.payload.paramId,
-                              value: previousValue,
-                              expectedTrackId: owner?.id,
-                              expectedDeviceType: prev.type,
-                              expectedDeviceIds: owner?.devices.map((device) => device.id),
-                              expectedValue: clampDeviceParameterValue({
-                                  deviceType: prev.type,
-                                  paramId: alpha.payload.paramId,
-                                  value: alpha.payload.value,
-                              }),
-                              expectedTrackFrozen: owner?.frozen,
+                              value: expectedPreviousValue,
+                              expectedTrackId,
+                              expectedDeviceType,
+                              expectedDeviceIds: [...expectedDeviceIds],
+                              expectedValue: committedValue,
+                              expectedValuePresent: true,
+                              ...(expectedTrackFrozen === undefined ? {} : { expectedTrackFrozen }),
+                              ...(expectedPreviousValuePresent ? {} : { deleteParameter: true }),
                           },
                       }
                     : null,
+            redoAction:
+                expectedTrackId &&
+                expectedDeviceType &&
+                expectedDeviceIds &&
+                expectedPreviousValue !== undefined &&
+                committedValue !== undefined
+                    ? {
+                          type: 'setDeviceParameter',
+                          payload: {
+                              deviceId: alpha.payload.deviceId,
+                              paramId: alpha.payload.paramId,
+                              value: committedValue,
+                              expectedTrackId,
+                              expectedDeviceType,
+                              expectedDeviceIds: [...expectedDeviceIds],
+                              expectedValue: expectedPreviousValuePresent ? expectedPreviousValue : undefined,
+                              expectedValuePresent: expectedPreviousValuePresent,
+                              ...(expectedTrackFrozen === undefined ? {} : { expectedTrackFrozen }),
+                          },
+                      }
+                    : undefined,
         };
     },
     undoable: true,
+    requiresAbortCompensation: false,
 });
