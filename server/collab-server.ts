@@ -87,6 +87,12 @@ const MAX_PAYLOAD_BYTES = readIntegerEnv({
     min: 1024,
     max: 64 * 1024 * 1024,
 });
+const MAX_BUFFERED_BYTES = readIntegerEnv({
+    name: 'COLLAB_MAX_BUFFERED_BYTES',
+    fallback: 32 * 1024 * 1024,
+    min: 128,
+    max: 256 * 1024 * 1024,
+});
 const MAX_CONNECTIONS = readIntegerEnv({ name: 'COLLAB_MAX_CONNECTIONS', fallback: 1024, min: 1, max: 100_000 });
 const MAX_SOURCE_CONNECTIONS = readIntegerEnv({
     name: 'COLLAB_MAX_SOURCE_CONNECTIONS',
@@ -393,9 +399,18 @@ function get_verified_session(input: GetVerifiedSessionInput): GetVerifiedSessio
 }
 
 function sendTo(ws: WebSocket, msg: ServerMessage): void {
-    if (ws.readyState === WebSocket.OPEN) {
-        ws.send(JSON.stringify(msg));
+    if (ws.readyState !== WebSocket.OPEN) {
+        return;
     }
+
+    const payload = JSON.stringify(msg);
+    if (ws.bufferedAmount + Buffer.byteLength(payload) > MAX_BUFFERED_BYTES) {
+        cleanupSocket(ws);
+        ws.terminate();
+        return;
+    }
+
+    ws.send(payload);
 }
 
 function rawDataToString(data: RawData): string {

@@ -42,6 +42,7 @@ function spawnServer(env: NodeJS.ProcessEnv): ChildProcessWithoutNullStreams {
             ...globalThis.process.env,
             COLLAB_AUTH_TOKEN: AUTH_TOKEN,
             COLLAB_HEARTBEAT_MS: '40',
+            COLLAB_MAX_BUFFERED_BYTES: '4096',
             COLLAB_MAX_CONNECTIONS: '20',
             COLLAB_MAX_PAYLOAD_BYTES: '1024',
             COLLAB_MAX_PEERS_PER_SESSION: '10',
@@ -260,6 +261,28 @@ void test('does not refill the message budget after a wall-clock jump', async ()
     socket.send(cursor);
 
     assert.equal(await closeCodeWithin(socket), 1008);
+});
+
+void test('disconnects a recipient before its outbound queue exceeds the configured cap', async () => {
+    const { url } = await startServer({ COLLAB_MAX_BUFFERED_BYTES: '512' });
+    const sender = await connect(url);
+    const recipient = await connect(url);
+    await join(sender, 'session', 'sender');
+    const peerJoined = nextMessage(sender);
+    await join(recipient, 'session', 'recipient');
+    await peerJoined;
+
+    const peerLeft = nextMessage(sender);
+    sender.send(
+        JSON.stringify({
+            type: 'state-update',
+            sessionId: 'session',
+            peerId: 'sender',
+            state: 'x'.repeat(700),
+        })
+    );
+
+    assert.deepEqual(await peerLeft, { type: 'peer-left', peerId: 'recipient', newHostId: null });
 });
 
 void test('caps source connections and releases capacity after close', async () => {
