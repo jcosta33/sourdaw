@@ -150,6 +150,9 @@ function automationValueAtFrame(schedule: ScheduledParam, frame: number): Automa
             complete: schedule.segmentIndex === schedule.segments.length - 1,
         };
     }
+    if (schedule.name === 'micPosition') {
+        return { active: true, value: segment.startValue, complete: false };
+    }
     const progress = (frame - segment.startFrame) / (segment.endFrame - segment.startFrame);
     return {
         active: true,

@@ -322,6 +322,25 @@ describe('offline Grand Boule scheduling reaches the engine at the scheduled fra
         expect(paramDispatches).toEqual([{ name: 'mic_position', value: 2, block: 0 }]);
     });
 
+    it('holds each discrete microphone value until the next automation tick', async () => {
+        const strategy = await buildGrandBouleStrategy();
+        const binding = strategy.resolveOfflineAutomation('micPosition');
+        if (!binding || binding.kind !== 'segments') {
+            throw new Error('Grand Boule did not expose microphone automation to offline rendering');
+        }
+
+        binding.apply([{ startFrame: 0, endFrame: 256, startValue: 0, endValue: 2 }]);
+        renderBlock();
+        renderBlock();
+        renderBlock();
+
+        expect(paramDispatches).toEqual([
+            { name: 'mic_position', value: 0, block: 0 },
+            { name: 'mic_position', value: 0, block: 1 },
+            { name: 'mic_position', value: 2, block: 2 },
+        ]);
+    });
+
     it('applies frame-zero automation before voicing a frame-zero note', async () => {
         const strategy = await buildGrandBouleStrategy();
         const binding = strategy.resolveOfflineAutomation('lidPosition');
