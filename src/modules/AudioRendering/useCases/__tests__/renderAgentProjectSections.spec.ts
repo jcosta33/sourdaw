@@ -1,7 +1,8 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { type RenderProjectSectionJobSnapshot } from '#/utils/handlerContract';
 
+import { AGENT_SECTION_RENDER_RETENTION_POLICY } from '../../models/AgentSectionRenderRetentionPolicy';
 import { clearAgentSectionRenderArtifacts } from '../clearAgentSectionRenderArtifacts';
 import { getAgentSectionRenderArtifacts } from '../getAgentSectionRenderArtifacts';
 import { renderAgentProjectSections } from '../renderAgentProjectSections';
@@ -58,6 +59,10 @@ describe('renderAgentProjectSections', () => {
         mocks.renderOffline.mockResolvedValue(createAudioBuffer());
     });
 
+    afterEach(() => {
+        vi.useRealTimers();
+    });
+
     it('renders exact ranges into session-owned revision-bound artifacts', async () => {
         const job = createJob();
         const input = { jobs: [job], sourceRevision: 'revision-a' };
@@ -81,6 +86,7 @@ describe('renderAgentProjectSections', () => {
                 durationSeconds: 2,
                 frameCount: 88_200,
                 channelCount: 2,
+                byteSize: 705_600,
                 warnings: [],
             }),
         ]);
@@ -166,6 +172,51 @@ describe('renderAgentProjectSections', () => {
             'artifact capacity exceeded: 17/16'
         );
         expect(mocks.renderOffline).toHaveBeenCalledOnce();
+        expect(getAgentSectionRenderArtifacts()).toEqual([]);
+    });
+
+    it('evicts the oldest completed artifacts when a later render reaches the session count bound', async () => {
+        const jobs = Array.from({ length: 17 }, (_, index) =>
+            createJob({
+                jobId: `render-${String(index)}`,
+                sectionId: `section-${String(index)}`,
+                sectionName: `Section ${String(index)}`,
+            })
+        );
+
+        for (const job of jobs) {
+            await renderAgentProjectSections({ jobs: [job], sourceRevision: 'revision-a' });
+        }
+
+        expect(getAgentSectionRenderArtifacts().map((artifact) => artifact.jobId)).toEqual(
+            jobs.slice(1).map((job) => job.jobId)
+        );
+        expect(mocks.renderOffline).toHaveBeenCalledTimes(17);
+    });
+
+    it('expires old artifacts and rejects a buffer larger than the session byte bound', async () => {
+        vi.useFakeTimers();
+        vi.setSystemTime(new Date('2026-08-11T08:00:00Z'));
+        await renderAgentProjectSections({ jobs: [createJob()], sourceRevision: 'revision-a' });
+
+        vi.advanceTimersByTime(AGENT_SECTION_RENDER_RETENTION_POLICY.maxAgeMs + 1);
+        const freshJob = createJob({
+            jobId: 'render-chorus-two',
+            sectionId: 'section-chorus-two',
+            sectionName: 'Chorus Two',
+        });
+        await renderAgentProjectSections({ jobs: [freshJob], sourceRevision: 'revision-a' });
+
+        expect(getAgentSectionRenderArtifacts().map((artifact) => artifact.jobId)).toEqual([freshJob.jobId]);
+
+        clearAgentSectionRenderArtifacts();
+        const oversizedFrameCount =
+            Math.floor(AGENT_SECTION_RENDER_RETENTION_POLICY.maxPcmBytes / (2 * Float32Array.BYTES_PER_ELEMENT)) + 1;
+        mocks.renderOffline.mockResolvedValueOnce(createAudioBuffer({ length: oversizedFrameCount }));
+
+        await expect(renderAgentProjectSections({ jobs: [createJob()], sourceRevision: 'revision-a' })).rejects.toThrow(
+            'artifact byte capacity exceeded'
+        );
         expect(getAgentSectionRenderArtifacts()).toEqual([]);
     });
 

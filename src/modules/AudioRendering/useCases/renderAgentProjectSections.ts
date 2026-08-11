@@ -3,9 +3,12 @@ import { captureProjectRevision } from '#/modules/CrdtDocument/useCases';
 import { type RenderProjectSectionJobSnapshot } from '#/utils/handlerContract';
 
 import { type AgentSectionRenderArtifact } from '../models/AgentSectionRenderArtifact';
+import { AGENT_SECTION_RENDER_RETENTION_POLICY } from '../models/AgentSectionRenderRetentionPolicy';
 import { agentSectionRenderArtifactStore } from '../stores/agentSectionRenderArtifactStore';
 
-const MAX_AGENT_SECTION_RENDER_ARTIFACTS = 16;
+import { pruneExpiredAgentSectionRenderArtifacts } from './pruneExpiredAgentSectionRenderArtifacts';
+
+const PCM_SAMPLE_BYTE_SIZE = Float32Array.BYTES_PER_ELEMENT;
 
 type RenderAgentProjectSectionsInput = {
     jobs: readonly RenderProjectSectionJobSnapshot[];
@@ -33,22 +36,56 @@ function failureReason(error: unknown): string {
     return error instanceof Error ? error.message : String(error);
 }
 
+function retainArtifactsForIncoming(
+    artifacts: readonly AgentSectionRenderArtifact[],
+    incoming: AgentSectionRenderArtifact,
+    protectedJobIds: ReadonlySet<string>
+): AgentSectionRenderArtifact[] {
+    if (incoming.byteSize > AGENT_SECTION_RENDER_RETENTION_POLICY.maxPcmBytes) {
+        throw new Error(
+            `Section render artifact byte capacity exceeded: ${String(incoming.byteSize)}/${String(AGENT_SECTION_RENDER_RETENTION_POLICY.maxPcmBytes)}`
+        );
+    }
+    const retained = [...artifacts];
+    const evictionCandidates = retained
+        .filter((artifact) => !protectedJobIds.has(artifact.jobId))
+        .sort((left, right) => left.renderedAt - right.renderedAt || left.jobId.localeCompare(right.jobId));
+    let retainedBytes = retained.reduce((total, artifact) => total + artifact.byteSize, 0);
+    while (
+        retained.length + 1 > AGENT_SECTION_RENDER_RETENTION_POLICY.maxArtifacts ||
+        retainedBytes + incoming.byteSize > AGENT_SECTION_RENDER_RETENTION_POLICY.maxPcmBytes
+    ) {
+        const candidate = evictionCandidates.shift();
+        if (!candidate) {
+            throw new Error(
+                `Section render artifact retention capacity cannot preserve the current job set: ${String(retained.length + 1)} artifacts, ${String(retainedBytes + incoming.byteSize)} bytes`
+            );
+        }
+        const candidateIndex = retained.findIndex((artifact) => artifact.jobId === candidate.jobId);
+        if (candidateIndex >= 0) {
+            retained.splice(candidateIndex, 1);
+            retainedBytes -= candidate.byteSize;
+        }
+    }
+    return [...retained, incoming];
+}
+
 export async function renderAgentProjectSections(input: RenderAgentProjectSectionsInput): Promise<void> {
+    if (input.jobs.length > AGENT_SECTION_RENDER_RETENTION_POLICY.maxArtifacts) {
+        throw new Error(
+            `Section render artifact capacity exceeded: ${String(input.jobs.length)}/${String(AGENT_SECTION_RENDER_RETENTION_POLICY.maxArtifacts)}`
+        );
+    }
+    pruneExpiredAgentSectionRenderArtifacts();
     const initialArtifacts = agentSectionRenderArtifactStore.value?.artifacts ?? [];
     const existingByJobId = new Map(initialArtifacts.map((artifact) => [artifact.jobId, artifact]));
-    const newJobs = input.jobs.filter((job) => !existingByJobId.has(job.jobId));
     for (const job of input.jobs) {
         const existing = existingByJobId.get(job.jobId);
         if (existing && !jobMatchesArtifact(job, existing, input.sourceRevision)) {
             throw new Error(`Section render job identity is already owned by another artifact: ${job.jobId}`);
         }
     }
-    if (initialArtifacts.length + newJobs.length > MAX_AGENT_SECTION_RENDER_ARTIFACTS) {
-        throw new Error(
-            `Section render artifact capacity exceeded: ${String(initialArtifacts.length + newJobs.length)}/${String(MAX_AGENT_SECTION_RENDER_ARTIFACTS)}`
-        );
-    }
-
+    const protectedJobIds = new Set(input.jobs.map((job) => job.jobId));
     const failures: string[] = [];
     for (const job of input.jobs) {
         const existing = existingByJobId.get(job.jobId);
@@ -92,12 +129,16 @@ export async function renderAgentProjectSections(input: RenderAgentProjectSectio
                 durationSeconds: buffer.duration,
                 frameCount: buffer.length,
                 channelCount: buffer.numberOfChannels,
+                byteSize: buffer.length * buffer.numberOfChannels * PCM_SAMPLE_BYTE_SIZE,
                 warnings: [...warnings],
                 buffer,
             };
-            agentSectionRenderArtifactStore.update((state) => ({
-                artifacts: [...(state?.artifacts ?? []), artifact],
-            }));
+            const retainedArtifacts = retainArtifactsForIncoming(
+                agentSectionRenderArtifactStore.value?.artifacts ?? [],
+                artifact,
+                protectedJobIds
+            );
+            agentSectionRenderArtifactStore.set({ artifacts: retainedArtifacts });
             existingByJobId.set(job.jobId, artifact);
             if (warnings.length > 0) {
                 failures.push(`${job.jobId}: ${warnings.join('; ')}`);

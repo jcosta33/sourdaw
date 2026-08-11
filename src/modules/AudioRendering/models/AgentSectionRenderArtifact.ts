@@ -13,6 +13,7 @@ export type AgentSectionRenderArtifact = {
     readonly durationSeconds: number;
     readonly frameCount: number;
     readonly channelCount: number;
+    readonly byteSize: number;
     readonly warnings: readonly string[];
     readonly buffer: AudioBuffer;
 };
