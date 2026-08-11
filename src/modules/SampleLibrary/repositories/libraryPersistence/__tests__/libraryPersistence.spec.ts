@@ -434,7 +434,7 @@ describe('Library Persistence', () => {
             const factorySample = createAnalyzedSample({
                 id: 'factory-sample',
                 libraryRootId: 'factory',
-                analysis: { bpm: toBpm(120) },
+                analysis: undefined,
             });
             const db = createPersistenceDb({ samples: [userSample, factorySample] });
             vi.spyOn(helpers, 'openDb').mockResolvedValue(db as any);
