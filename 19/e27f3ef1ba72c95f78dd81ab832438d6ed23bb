@@ -1,0 +1,33 @@
+crates/daw-engine/src/scheduler.rs
+  s_bc88af7d3b054c::t_35b3083be784ad 74
+  s_bc88af7d3b054c::t_e231aa8b26523c 197
+  s_bc88af7d3b054c::t_0a240b43c17a3b 774,783-785,790
+  s_bc88af7d3b054c::t_fab2d3d56012c4 794,800,818-820,822-829
+  s_bc88af7d3b054c::t_0ca7e02b5a76db 71,79-80,89-90,106-107,116-117,126-150,158-159,365-369,511-525,796
+  s_bc88af7d3b054c::t_cc632dc6a5af48 815,821
+  s_bc88af7d3b054c::t_4ae9ad0573951e 526-528
+crates/daw-engine/src/audio_thread.rs
+  s_bc88af7d3b054c::t_e231aa8b26523c 367-369
+  s_bc88af7d3b054c::t_b3f250f2f424c4 11,20,27-38,62,81,107-133,146-156,158-159
+  s_bc88af7d3b054c::t_71526c11fd4c17 145
+  s_bc88af7d3b054c::t_85333552b68849 353-354,360,388
+  s_bc88af7d3b054c::t_9b16832e33ddc5 253,255,288-289,298,312-314,355-359,361,363-364,366,370,372,374-381,383-387
+  s_bc88af7d3b054c::t_1f7affb21861f0 281-287,297,299-311,362,365
+  s_bc88af7d3b054c::t_211a231587f526 134
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "19e27f3ef1ba72c95f78dd81ab832438d6ed23bb",
+  "prompts": {},
+  "sessions": {
+    "s_bc88af7d3b054c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f9b4a-11a2-7f61-8dfb-76eed0eb2a9c",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
