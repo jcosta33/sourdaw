@@ -106,6 +106,37 @@ fn max_delta(left: &[f32], right: &[f32]) -> f32 {
         .fold(0.0_f32, f32::max)
 }
 
+fn max_scaled_delta(actual: &[f32], source: &[f32], gain_db: f32) -> f32 {
+    let gain = 10.0_f32.powf(gain_db / 20.0);
+    assert_eq!(
+        actual.len(),
+        source.len(),
+        "renders must be the same length"
+    );
+    actual
+        .iter()
+        .zip(source.iter())
+        .map(|(actual, source)| (actual - source * gain).abs())
+        .fold(0.0_f32, f32::max)
+}
+
+fn opto_feedback_gr_at_zero_db(threshold: f32) -> f32 {
+    let mut low = 0.0;
+    let mut high = -threshold;
+    for _ in 0..32 {
+        let gr = (low + high) * 0.5;
+        let excess = (-gr - threshold).max(0.0);
+        let ratio = 3.0 + 3.0 * (excess / 20.0).min(1.0);
+        let desired_gr = excess * (1.0 - 1.0 / ratio);
+        if gr < desired_gr {
+            low = gr;
+        } else {
+            high = gr;
+        }
+    }
+    (low + high) * 0.5
+}
+
 /// Every shared control the panel renders, stated once, so each guard varies
 /// exactly one name and nothing is left at a default it did not choose.
 ///
@@ -265,6 +296,47 @@ fn auto_gain_uses_diodes_clamped_ratio() {
         max_delta(&with_auto_gain(6.0), &with_auto_gain(20.0)),
         0.0,
         "Auto gain must use Diode's clamped ratio rather than the raw control value"
+    );
+}
+
+#[test]
+fn auto_gain_compensates_a_full_serial_blend() {
+    let without_auto_gain = render(|i| {
+        base(TOPOLOGY_VCA)(i);
+        i.set_param("blend_topology", TOPOLOGY_FET);
+        i.set_param("blend_amount", 1.0);
+    });
+    let with_auto_gain = render(|i| {
+        base(TOPOLOGY_VCA)(i);
+        i.set_param("blend_topology", TOPOLOGY_FET);
+        i.set_param("blend_amount", 1.0);
+        i.set_param("auto_makeup", 1.0);
+    });
+
+    // Both stages share threshold -24 / ratio 4, which is 9 dB of half-GR
+    // compensation per stage at the 0 dB reference.
+    assert!(
+        max_scaled_delta(&with_auto_gain, &without_auto_gain, 18.0) < 1e-5,
+        "Auto gain must compensate both stages at a full serial blend"
+    );
+}
+
+#[test]
+fn opto_auto_gain_uses_the_feedback_fixed_point() {
+    let without_auto_gain = render(|i| {
+        base(TOPOLOGY_OPTO)(i);
+        i.set_param("threshold", -40.0);
+    });
+    let with_auto_gain = render(|i| {
+        base(TOPOLOGY_OPTO)(i);
+        i.set_param("threshold", -40.0);
+        i.set_param("auto_makeup", 1.0);
+    });
+    let expected_makeup = opto_feedback_gr_at_zero_db(-40.0) * 0.5;
+
+    assert!(
+        max_scaled_delta(&with_auto_gain, &without_auto_gain, expected_makeup) < 1e-5,
+        "Opto Auto gain must use half the feedback curve's 0 dB fixed-point reduction"
     );
 }
 

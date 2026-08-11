@@ -618,7 +618,15 @@ impl GlutenEngine {
     }
 
     fn compute_auto_makeup(&self) -> f32 {
-        match self.active_topology {
+        let primary = self.topology_auto_makeup(self.active_topology);
+        if self.blend_amount <= 0.001 || self.blend_topology == self.active_topology {
+            return primary;
+        }
+        primary + self.topology_auto_makeup(self.blend_topology) * self.blend_amount
+    }
+
+    fn topology_auto_makeup(&self, topology: Topology) -> f32 {
+        match topology {
             Topology::Vca => auto_makeup(self.vca.get_threshold(), self.vca.get_ratio()),
             Topology::Opto => self.opto.auto_makeup_gain(),
             Topology::Fet => auto_makeup(self.fet.get_threshold(), self.fet.get_ratio()),

@@ -4,7 +4,7 @@
 //! Feedback topology with soft, inherently program-dependent ratio.
 
 use super::detector::{DetectionMode, StereoDetector};
-use super::gain_computer::{auto_makeup, db_to_linear};
+use super::gain_computer::db_to_linear;
 use crate::primitives::flush_denormal;
 
 /// One side's opto cell. The CdS memory is per-channel because it *is* the
@@ -37,11 +37,12 @@ pub struct OptoCompressor {
     tau_memory_decay: f32,
     /// Compress vs Limit mode (LA-2A)
     limit_mode: bool,
+    auto_makeup_db: f32,
 }
 
 impl OptoCompressor {
     pub fn new(sample_rate: f32) -> Self {
-        Self {
+        let mut compressor = Self {
             sample_rate,
             threshold: -20.0,
             base_ratio: 3.0,
@@ -55,7 +56,10 @@ impl OptoCompressor {
             tau_memory_charge: 0.200,
             tau_memory_decay: 2.0,
             limit_mode: false,
-        }
+            auto_makeup_db: 0.0,
+        };
+        compressor.refresh_auto_makeup();
+        compressor
     }
 
     pub fn get_threshold(&self) -> f32 {
@@ -72,17 +76,40 @@ impl OptoCompressor {
     }
 
     pub fn auto_makeup_gain(&self) -> f32 {
-        let excess = (0.0 - self.threshold).max(0.0);
-        auto_makeup(self.threshold, self.ratio_for_excess(excess))
+        self.auto_makeup_db
+    }
+
+    fn refresh_auto_makeup(&mut self) {
+        let mut low_gr = 0.0;
+        let mut high_gr = -self.threshold;
+        for _ in 0..32 {
+            let gr = (low_gr + high_gr) * 0.5;
+            let excess = (-gr - self.threshold).max(0.0);
+            let ratio = self.ratio_for_excess(excess);
+            let desired_gr = excess * (1.0 - 1.0 / ratio);
+            if gr < desired_gr {
+                low_gr = gr;
+            } else {
+                high_gr = gr;
+            }
+        }
+        self.auto_makeup_db = (low_gr + high_gr) * 0.25;
     }
 
     pub fn set_param(&mut self, name: &str, value: f32) {
         match name {
-            "threshold" => self.threshold = value.clamp(-60.0, 0.0),
-            "limit_mode" => self.limit_mode = value > 0.5,
+            "threshold" => {
+                self.threshold = value.clamp(-60.0, 0.0);
+                self.refresh_auto_makeup();
+            }
+            "limit_mode" => {
+                self.limit_mode = value > 0.5;
+                self.refresh_auto_makeup();
+            }
             "peak_reduction" => {
                 // LA-2A style: maps 0-100 to threshold range
                 self.threshold = -(value.clamp(0.0, 100.0) * 0.5);
+                self.refresh_auto_makeup();
             }
             _ => {}
         }
