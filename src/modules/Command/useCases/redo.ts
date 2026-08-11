@@ -94,23 +94,41 @@ async function executeRedo(entry: UndoEntry): Promise<RedoOutcome> {
         return { status: 'applied' };
     }
 
+    let committedError: AppActionCommittedError | null = null;
     try {
         await executeAppAction(entry.redoAction ?? entry.action, {
             skipUndo: true,
             skipMacroRecording: true,
             source: entry.source,
         });
-        recordRedoAction(entry);
-        return { status: 'applied' };
     } catch (error) {
         if (error instanceof AppActionConflictError) {
             return { status: 'conflict' };
         }
         if (error instanceof AppActionCommittedError) {
-            return { status: 'committed', error };
+            committedError = error;
+        } else {
+            throw error;
         }
-        throw error;
     }
+
+    try {
+        recordRedoAction(entry);
+    } catch (error) {
+        let cause: unknown = error;
+        if (committedError !== null) {
+            cause = new AggregateError([committedError, error], 'Redo and macro recording both completed with errors');
+        }
+        return {
+            status: 'committed',
+            error: new AppActionCommittedError(entry.action.type, cause),
+        };
+    }
+
+    if (committedError !== null) {
+        return { status: 'committed', error: committedError };
+    }
+    return { status: 'applied' };
 }
 
 async function redoImpl(): Promise<void> {

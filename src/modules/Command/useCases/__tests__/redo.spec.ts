@@ -110,6 +110,38 @@ describe('redo', () => {
         expect(mocks.undoTreeMoveTo).toHaveBeenCalledWith('e1');
     });
 
+    it('records and advances a redo whose action committed with a post-commit warning', async () => {
+        const entry = actionEntry();
+        const committedError = new AppActionCommittedError('togglePlayback', new Error('runtime warning'));
+        mocks.undoStoreValue.value = { past: [], future: [entry] };
+        mocks.executeAppAction.mockRejectedValue(committedError);
+
+        await expect(redo()).rejects.toBe(committedError);
+
+        expect(mocks.recordAction).toHaveBeenCalledOnce();
+        expect(mocks.recordAction).toHaveBeenCalledWith(entry.action);
+        expect(mocks.undoStoreSet).toHaveBeenCalledWith({ past: [entry], future: [] });
+        expect(mocks.undoTreeMoveTo).toHaveBeenCalledWith(entry.id);
+    });
+
+    it('advances committed history when macro recording fails so the action cannot replay twice', async () => {
+        const entry = actionEntry();
+        const macroError = new Error('macro recording failed');
+        mocks.undoStoreValue.value = { past: [], future: [entry] };
+        mocks.recordAction.mockImplementation(() => {
+            throw macroError;
+        });
+
+        await expect(redo()).rejects.toBeInstanceOf(AppActionCommittedError);
+
+        expect(mocks.executeAppAction).toHaveBeenCalledOnce();
+        expect(mocks.undoStoreSet).toHaveBeenCalledWith({ past: [entry], future: [] });
+        expect(mocks.undoTreeMoveTo).toHaveBeenCalledWith(entry.id);
+
+        await redo();
+        expect(mocks.executeAppAction).toHaveBeenCalledOnce();
+    });
+
     it('uses a guarded redo action when recomputing the original action would be unsafe', async () => {
         const guardedRedo = { type: 'stopPlayback' as const };
         const entry = actionEntry({ redoAction: guardedRedo, source: 'ai' });
