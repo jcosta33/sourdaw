@@ -394,6 +394,12 @@ const validators = {
         isNonEmptyString(param.clipId) &&
         isPositiveNumber(param.gridSize) &&
         param.gridSize <= 64,
+    removeShortMidiOverlaps: (param): param is PayloadOf<'removeShortMidiOverlaps'> =>
+        isObj(param) &&
+        hasExactKeys(param, ['clipId', 'maximumOverlapMs']) &&
+        isNonEmptyString(param.clipId) &&
+        isPositiveNumber(param.maximumOverlapMs) &&
+        param.maximumOverlapMs <= 1_000,
     copyMidiArticulations: (param): param is PayloadOf<'copyMidiArticulations'> =>
         isObj(param) &&
         hasExactKeys(param, ['sourceClipId', 'targetClipId']) &&

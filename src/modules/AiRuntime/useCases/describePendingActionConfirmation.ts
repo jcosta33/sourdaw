@@ -11,6 +11,7 @@ import { getBassProcessingCopyPromptScope } from './agentReference/getBassProces
 import { getBulkDeviceInsertionTrackScope } from './agentReference/getBulkDeviceInsertionTrackScope';
 import { getDeviceParameterPromptScope } from './agentReference/getDeviceParameterPromptScope';
 import { getDrumRoutingPromptScope } from './agentReference/getDrumRoutingPromptScope';
+import { getMidiOverlapTransformPromptScope } from './agentReference/getMidiOverlapTransformPromptScope';
 import { getMutedEmptyTrackDeletionScope } from './agentReference/getMutedEmptyTrackDeletionScope';
 import { getSidechainRoutingPromptScope } from './agentReference/getSidechainRoutingPromptScope';
 import { describePlannedAction } from './describePlannedAction';
@@ -173,6 +174,9 @@ function getProtectedUnchangedTracks(
     const bassProcessingCopyScope = getBassProcessingCopyPromptScope(prompt, context);
     const bassProcessingCopyProtections =
         bassProcessingCopyScope.status === 'request' ? bassProcessingCopyScope.protectedObjects : [];
+    const midiOverlapTransformScope = getMidiOverlapTransformPromptScope(prompt, context);
+    const midiOverlapTransformProtections =
+        midiOverlapTransformScope.status === 'request' ? midiOverlapTransformScope.protectedObjects : [];
     const protections = [
         ...protectedTracks.map(({ id, name }) => ({ id, name })),
         ...protectedParameters,
@@ -182,6 +186,7 @@ function getProtectedUnchangedTracks(
         ...articulationProtections,
         ...backingVocalPlateProtections,
         ...bassProcessingCopyProtections,
+        ...midiOverlapTransformProtections,
     ];
     return [...new Map(protections.map((protection) => [protection.id, protection])).values()];
 }

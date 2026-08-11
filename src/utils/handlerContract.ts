@@ -900,6 +900,20 @@ export type AppAction =
       }
     | { type: 'quantizeNotes'; payload: { clipId: string; gridSize: number; strength?: number; swing?: number } }
     | {
+          type: 'removeShortMidiOverlaps';
+          payload: {
+              clipId: string;
+              maximumOverlapMs: number;
+              expectedTempo: number;
+              expectedTrackId: string;
+              trackName: string;
+              expectedTrackFrozen: boolean;
+              clipName: string;
+              expectedClipLocked: boolean;
+              expectedNotes: readonly MidiClipNoteSnapshot[];
+          };
+      }
+    | {
           type: 'copyMidiArticulations';
           payload: {
               trackId: string;
@@ -930,6 +944,13 @@ export type AppAction =
                   expectedTrackFrozen: boolean;
                   expectedSourceClipLocked: boolean;
                   expectedTargetClipLocked: boolean;
+              };
+              /** General guarded replay eligibility for deterministic whole-clip note transforms. */
+              noteTransformReplayGuard?: {
+                  trackId: string;
+                  expectedTrackFrozen: boolean;
+                  expectedClipLocked: boolean;
+                  expectedTempo?: number;
               };
           };
       }

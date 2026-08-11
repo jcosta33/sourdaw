@@ -42,6 +42,7 @@ describe('getMidiNoteTransformHandlers', () => {
             'invertNotes',
             'quantizeNoteLengths',
             'quantizeNotes',
+            'removeShortMidiOverlaps',
             'restoreMidiClipNotes',
             'retrogradeNotes',
             'scaleAllVelocities',

@@ -18,12 +18,12 @@ describe('RuntimeAction', () => {
             }
         }
 
-        expect(RUNTIME_ACTION_TYPES).toHaveLength(245);
+        expect(RUNTIME_ACTION_TYPES).toHaveLength(246);
         expect(new Set(RUNTIME_ACTION_TYPES).size).toBe(RUNTIME_ACTION_TYPES.length);
         expect(RUNTIME_ACTION_TYPES).not.toContain('replayGeneratedMidi');
         expect(RUNTIME_ACTION_TYPES).toContain('automateSendRanges');
         expect(RUNTIME_ACTION_TYPES).toContain('renderProjectSections');
-        expect(digest >>> 0).toBe(3_066_609_740);
+        expect(digest >>> 0).toBe(2_795_759_651);
     });
 
     it('derives initiating payloads without exposing command-owned replay fields', () => {
@@ -43,6 +43,7 @@ describe('RuntimeAction', () => {
             { type: 'addSidechainRoute', payload: { sourceTrackId: 'track-1', targetTrackId: 'track-2' } },
             { type: 'removeSidechainRoute', payload: { sourceTrackId: 'track-1', targetTrackId: 'track-2' } },
             { type: 'quantizeNotes', payload: { clipId: 'clip-1', gridSize: 0.25 } },
+            { type: 'removeShortMidiOverlaps', payload: { clipId: 'clip-1', maximumOverlapMs: 30 } },
             {
                 type: 'copyMidiArticulations',
                 payload: { sourceClipId: 'clip-1', targetClipId: 'clip-2' },
@@ -86,6 +87,7 @@ describe('RuntimeAction', () => {
             'addSidechainRoute',
             'removeSidechainRoute',
             'quantizeNotes',
+            'removeShortMidiOverlaps',
             'copyMidiArticulations',
             'transposeNotes',
             'scaleAutomation',
@@ -113,6 +115,13 @@ describe('RuntimeAction', () => {
         expectTypeOf<PayloadHasKey<'removeSidechainRoute', 'gain'>>().toEqualTypeOf<false>();
         expectTypeOf<PayloadHasKey<'quantizeNotes', 'strength'>>().toEqualTypeOf<false>();
         expectTypeOf<PayloadHasKey<'quantizeNotes', 'swing'>>().toEqualTypeOf<false>();
+        expectTypeOf<PayloadHasKey<'removeShortMidiOverlaps', 'expectedTempo'>>().toEqualTypeOf<false>();
+        expectTypeOf<PayloadHasKey<'removeShortMidiOverlaps', 'expectedTrackId'>>().toEqualTypeOf<false>();
+        expectTypeOf<PayloadHasKey<'removeShortMidiOverlaps', 'trackName'>>().toEqualTypeOf<false>();
+        expectTypeOf<PayloadHasKey<'removeShortMidiOverlaps', 'expectedTrackFrozen'>>().toEqualTypeOf<false>();
+        expectTypeOf<PayloadHasKey<'removeShortMidiOverlaps', 'clipName'>>().toEqualTypeOf<false>();
+        expectTypeOf<PayloadHasKey<'removeShortMidiOverlaps', 'expectedClipLocked'>>().toEqualTypeOf<false>();
+        expectTypeOf<PayloadHasKey<'removeShortMidiOverlaps', 'expectedNotes'>>().toEqualTypeOf<false>();
         expectTypeOf<PayloadHasKey<'copyMidiArticulations', 'notePairs'>>().toEqualTypeOf<false>();
         expectTypeOf<PayloadHasKey<'copyMidiArticulations', 'trackId'>>().toEqualTypeOf<false>();
         expectTypeOf<PayloadHasKey<'copyMidiArticulations', 'expectedSourceNotes'>>().toEqualTypeOf<false>();

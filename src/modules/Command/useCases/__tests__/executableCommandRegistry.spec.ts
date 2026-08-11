@@ -358,6 +358,22 @@ const EXPECTED_COMMANDS = [
         true
     ),
     expectedCommand(
+        'removeShortMidiOverlaps',
+        'Remove only same-pitch/channel MIDI note overlaps strictly below an explicit millisecond threshold in one selected clip.',
+        {
+            clipId: { type: 'string', description: 'Application-admitted selected MIDI clip ID' },
+            maximumOverlapMs: {
+                type: 'number',
+                exclusiveMinimum: 0,
+                maximum: 1_000,
+                description: 'Strict millisecond overlap ceiling; equality is preserved',
+            },
+        },
+        ['clipId', 'maximumOverlapMs'],
+        'broad-reversible',
+        true
+    ),
+    expectedCommand(
         'copyMidiArticulations',
         'Copy only per-note articulation between one exact pair of structurally matched MIDI clips.',
         {
@@ -1498,6 +1514,19 @@ const EXPECTED_GROUNDING = [
         intentPhrases: ['quantize notes', 'quantize midi', 'snap midi notes'],
         targetRules: [{ argument: 'clipId', capability: 'editable-midi-clip' }],
         valueRules: [{ argument: 'gridSize', kind: 'number-if-present', requiredInPrompt: true, match: 'exact' }],
+    },
+    {
+        actionType: 'removeShortMidiOverlaps',
+        intentPhrases: ['shorten overlaps', 'remove short midi overlaps', 'shorten midi overlaps'],
+        targetRules: [{ argument: 'clipId', capability: 'editable-midi-clip' }],
+        valueRules: [
+            {
+                argument: 'maximumOverlapMs',
+                kind: 'number-if-present',
+                requiredInPrompt: true,
+                match: 'exact',
+            },
+        ],
     },
     {
         actionType: 'copyMidiArticulations',
