@@ -142,7 +142,7 @@ describe('TempoEditor', () => {
         render(<TempoEditor />);
         expect(screen.getByTestId('tempo-input')).toHaveValue(120);
         expect(screen.getByText('4/4')).toBeInTheDocument();
-        expect(screen.getByLabelText('Tempo BPM')).toBeInTheDocument();
+        expect(screen.getByLabelText('Tempo BPM')).not.toHaveAccessibleDescription();
     });
 
     it('should read out the map-governed tempo, not the inert base tempo', () => {
@@ -153,10 +153,12 @@ describe('TempoEditor', () => {
         render(<TempoEditor />);
 
         expect(screen.getByTestId('tempo-input')).toHaveValue(90);
-        expect(screen.getByLabelText('Tempo BPM')).toBeInTheDocument();
+        expect(screen.getByLabelText('Tempo BPM')).toHaveAccessibleDescription(
+            'Tempo at the playhead. Editing changes the tempo-map event that governs it.'
+        );
         expect(
-            screen.getByText('Tempo at the playhead. Editing changes the tempo-map event that governs it.')
-        ).toBeInTheDocument();
+            screen.getAllByText('Tempo at the playhead. Editing changes the tempo-map event that governs it.')
+        ).toHaveLength(2);
     });
 
     it('should still commit edits through setTempoValue while the map governs', () => {
@@ -193,12 +195,14 @@ describe('TempoEditor', () => {
 
         expect(screen.getByTestId('tempo-input')).toHaveValue(110);
         expect(screen.getByTestId('tempo-input')).toHaveAttribute('readonly');
-        expect(screen.getByLabelText('Tempo BPM')).toHaveAccessibleDescription('ramp');
-        // Both the field's own hint and the disabled TAP button's hint name the
-        // reason — TAP used to keep offering "Tap to set tempo" while refusing.
+        expect(screen.getByLabelText('Tempo BPM')).toHaveAccessibleDescription(
+            'The playhead is inside a tempo ramp. Edit its end points in the tempo map.'
+        );
+        // The field description and both tooltips name the reason — TAP used to
+        // keep offering "Tap to set tempo" while refusing.
         expect(
             screen.getAllByText('The playhead is inside a tempo ramp. Edit its end points in the tempo map.')
-        ).toHaveLength(2);
+        ).toHaveLength(3);
         expect(screen.queryByText('Tap to set tempo')).toBeNull();
     });
 
@@ -212,8 +216,10 @@ describe('TempoEditor', () => {
         render(<TempoEditor />);
 
         expect(screen.getByTestId('tempo-input')).toHaveAttribute('readonly');
-        expect(screen.getByLabelText('Tempo BPM')).toHaveAccessibleDescription('loading');
-        expect(screen.getAllByText('The transport state has not loaded yet.')).toHaveLength(2);
+        expect(screen.getByLabelText('Tempo BPM')).toHaveAccessibleDescription(
+            'The transport state has not loaded yet.'
+        );
+        expect(screen.getAllByText('The transport state has not loaded yet.')).toHaveLength(3);
         expect(screen.getByTestId('tempo-lock-reason')).toHaveTextContent('loading');
     });
 

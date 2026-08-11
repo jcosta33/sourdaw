@@ -11,8 +11,7 @@ import { cn } from '#/utils/Styles/cn';
 
 import { useTempoEditorState } from '../hooks/useTempoEditorState';
 
-/** Ties the visible lock badge to the field it explains, via `aria-describedby`. */
-const TEMPO_LOCK_REASON_ID = 'tempo-field-lock-reason';
+const TEMPO_FIELD_DESCRIPTION_ID = 'tempo-field-description';
 const TEMPO_FIELD_LABEL = 'Tempo BPM';
 
 export const TempoEditor = (): ReactElement => {
@@ -50,6 +49,7 @@ export const TempoEditor = (): ReactElement => {
         tempoLockBadge = 'loading';
         tempoFieldStatus = 'Tempo field locked: the transport state has not loaded yet.';
     }
+    const tempoFieldDescription = tempoField.governedByMap || tempoField.lockReason !== null ? tempoFieldHint : '';
 
     return (
         <div className="daw-readout-well relative flex h-8 items-center gap-2 rounded-sm px-2">
@@ -68,6 +68,9 @@ export const TempoEditor = (): ReactElement => {
             <span className="sr-only" aria-live="polite" role="status">
                 {tempoFieldStatus}
             </span>
+            <span id={TEMPO_FIELD_DESCRIPTION_ID} className="sr-only">
+                {tempoFieldDescription}
+            </span>
             <Tooltip>
                 <TooltipTrigger asChild>
                     <div data-testid="transport-tempo-bpm">
@@ -77,10 +80,7 @@ export const TempoEditor = (): ReactElement => {
                             onReset={time.resetTempoValue ?? undefined}
                             readOnly={!tempoField.editable}
                             ariaLabel={TEMPO_FIELD_LABEL}
-                            // The reason travels with the control rather than
-                            // sitting beside it, so anything that finds the field
-                            // finds why it is locked.
-                            ariaDescribedBy={tempoLockBadge === null ? undefined : TEMPO_LOCK_REASON_ID}
+                            ariaDescribedBy={tempoFieldDescription === '' ? undefined : TEMPO_FIELD_DESCRIPTION_ID}
                             commitMode="release"
                             min={tempoField.minTempo}
                             max={tempoField.maxTempo}
@@ -95,7 +95,6 @@ export const TempoEditor = (): ReactElement => {
             </Tooltip>
             {tempoLockBadge === null ? null : (
                 <span
-                    id={TEMPO_LOCK_REASON_ID}
                     data-testid="tempo-lock-reason"
                     className="flex items-center gap-0.5 text-[9px] uppercase tracking-[0.12em] text-muted-foreground"
                 >
