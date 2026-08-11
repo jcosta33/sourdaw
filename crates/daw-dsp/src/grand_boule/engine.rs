@@ -10,6 +10,7 @@ use super::parameters::{
     key_fundamental_hz, midi_to_key, railsback_smooth_cents, temperament_offset_cents, Temperament,
 };
 use super::pedals::PedalState;
+use super::radiation::RadiationModel;
 use super::soundboard::Soundboard;
 use super::sympathetic::Sympathetic;
 use super::voice::{PianoVoice, PianoVoiceStart};
@@ -63,6 +64,7 @@ pub struct GrandBouleEngine {
     active_steal_tails: Vec<usize>,
     pedals: PedalState,
     soundboard: Soundboard,
+    radiation: RadiationModel,
     sympathetic: Sympathetic,
     noise: MechanicalNoise,
     attack_samples: AttackSampleSet,
@@ -128,6 +130,7 @@ impl GrandBouleEngine {
             active_steal_tails: Vec::with_capacity(count),
             pedals: PedalState::new(),
             soundboard: Soundboard::new(sample_rate),
+            radiation: RadiationModel::new(sample_rate),
             sympathetic: Sympathetic::new(sample_rate),
             noise: MechanicalNoise::new(sample_rate),
             attack_samples: AttackSampleSet::new(),
@@ -455,10 +458,23 @@ impl GrandBouleEngine {
     }
 
     pub fn set_param(&mut self, name: &str, value: f32) {
+        let was_sleeping = self.lifecycle() == ProcessLifecycle::Sleep;
         match name {
             "master_gain" => self.master_gain = value.clamp(0.0, 2.0),
             "soundboard_send" => self.soundboard_send = value.clamp(0.0, 1.0),
             "sympathetic_send" => self.sympathetic_send = value.clamp(0.0, 1.0),
+            "lid_position" => {
+                self.radiation.set_lid_position(value);
+                if was_sleeping {
+                    self.radiation.snap_to_target();
+                }
+            }
+            "mic_position" => {
+                self.radiation.set_mic_position(value);
+                if was_sleeping {
+                    self.radiation.snap_to_target();
+                }
+            }
             "hammer_hardness" => self.hammer_hardness_offset = value.clamp(-1.0, 1.0),
             "tone_tilt" => self.tone_tilt = value.clamp(-1.0, 1.0),
             "stereo_width" => self.stereo_width = value.clamp(0.0, 1.0),
@@ -637,8 +653,9 @@ impl GrandBouleEngine {
 
             // Stereo width: 0 = mono, 1 = full stereo spread.
             let w = self.stereo_width;
-            let sample_l = (mono + side * w) * self.master_gain;
-            let sample_r = (mono - side * w) * self.master_gain;
+            let (radiated_l, radiated_r) = self.radiation.tick(mono + side * w, mono - side * w);
+            let sample_l = radiated_l * self.master_gain;
+            let sample_r = radiated_r * self.master_gain;
             left[frame] += sample_l;
             right[frame] += sample_r;
         }
@@ -684,6 +701,7 @@ impl GrandBouleEngine {
         self.active_steal_tails.clear();
         self.pedals.clear_playing_keys();
         self.soundboard.reset();
+        self.radiation.reset();
         self.sympathetic.reset();
         self.noise.reset();
         self.quiet_block_count = QUIET_BLOCKS_BEFORE_SLEEP;
@@ -1631,6 +1649,66 @@ mod tests {
             collected.extend_from_slice(&left);
         }
         collected
+    }
+
+    fn render_radiation(lid_position: f32, mic_position: f32) -> Vec<f32> {
+        let mut engine = GrandBouleEngine::new(48_000.0, 8);
+        engine.set_param("master_gain", 0.7);
+        engine.set_param("lid_position", lid_position);
+        engine.set_param("mic_position", mic_position);
+        engine.note_on(60, 0.8);
+        render_engine(&mut engine, 160)
+    }
+
+    fn rms(samples: &[f32]) -> f32 {
+        (samples.iter().map(|sample| sample * sample).sum::<f32>() / samples.len() as f32).sqrt()
+    }
+
+    fn high_frequency_proxy(samples: &[f32]) -> f32 {
+        samples
+            .windows(2)
+            .map(|pair| {
+                let delta = pair[1] - pair[0];
+                delta * delta
+            })
+            .sum::<f32>()
+            / (samples.len() - 1) as f32
+    }
+
+    #[test]
+    fn lid_position_continuously_changes_the_rendered_radiation() {
+        let closed = rms(&render_radiation(0.0, 1.0));
+        let half = rms(&render_radiation(0.5, 1.0));
+        let open = rms(&render_radiation(1.0, 1.0));
+
+        assert!(
+            closed < half && half < open,
+            "expected closed < half < open RMS, got {closed}, {half}, {open}"
+        );
+    }
+
+    #[test]
+    fn microphone_positions_have_distinct_rendered_responses() {
+        let close = render_radiation(1.0, 0.0);
+        let player = render_radiation(1.0, 1.0);
+        let room = render_radiation(1.0, 2.0);
+
+        let signatures = [
+            (rms(&close), high_frequency_proxy(&close)),
+            (rms(&player), high_frequency_proxy(&player)),
+            (rms(&room), high_frequency_proxy(&room)),
+        ];
+        let brightness = signatures.map(|(level, high)| high / (level * level));
+        assert!(
+            brightness[0] > brightness[1] && brightness[1] > brightness[2],
+            "expected Close > Player > Room brightness, got {brightness:?}"
+        );
+        assert!(
+            signatures[2].0 < signatures[1].0,
+            "Room should be softer than Player, got RMS {} vs {}",
+            signatures[2].0,
+            signatures[1].0
+        );
     }
 
     fn zero_crossings(samples: &[f32]) -> usize {

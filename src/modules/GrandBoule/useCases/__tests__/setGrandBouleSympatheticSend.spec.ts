@@ -50,12 +50,12 @@ describe('setGrandBouleSympatheticSend', () => {
         expect(dispatched).toEqual([]);
     });
 
-    it('commits through setDeviceParameter and leaves the engine to the action', () => {
+    it('commits through setDeviceParameter and waits for project truth before changing the session', () => {
         const store = seededStore();
 
         setGrandBouleSympatheticSend({ deviceId: 'gb-1', engine: engine(), store, amount: 0.66 });
 
-        expect(store.value?.config.sympatheticSend).toBe(0.66);
+        expect(store.value?.config.sympatheticSend).toBe(0.02);
         expect(dispatched).toEqual([
             { type: 'setDeviceParameter', payload: { deviceId: 'gb-1', paramId: 'sympatheticSend', value: 0.66 } },
         ]);
@@ -66,10 +66,14 @@ describe('setGrandBouleSympatheticSend', () => {
         const store = seededStore();
 
         setGrandBouleSympatheticSend({ deviceId: 'gb-1', engine: engine(), store, amount: 12 });
-        expect(store.value?.config.sympatheticSend).toBe(1);
+        expect(dispatched).toEqual([
+            { type: 'setDeviceParameter', payload: { deviceId: 'gb-1', paramId: 'sympatheticSend', value: 1 } },
+        ]);
+        expect(store.value?.config.sympatheticSend).toBe(0.02);
 
-        setGrandBouleSympatheticSend({ deviceId: 'gb-1', engine: engine(), store, amount: -7 });
+        setGrandBouleSympatheticSend({ deviceId: 'gb-1', engine: engine(), store, amount: -7, isTransient: true });
         expect(store.value?.config.sympatheticSend).toBe(0);
+        expect(engineWrites).toEqual([{ name: 'sympatheticSend', value: 0 }]);
     });
 
     it('leaves every other config field alone', () => {

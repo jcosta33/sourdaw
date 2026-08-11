@@ -1,3 +1,4 @@
+import { getPluginById } from '#/modules/Arrangement/useCases';
 import { getAppActionExecutionPolicy } from '#/modules/Command/useCases';
 import { type AppAction } from '#/utils/handlerContract';
 
@@ -5,6 +6,8 @@ import { type ProjectContext } from '../models/ProjectContext';
 import { type WholeProjectVibeMixPlan } from '../models/WholeProjectVibeMixPlan';
 
 import { getArticulationTransferPromptScope } from './agentReference/getArticulationTransferPromptScope';
+import { getBackingVocalPlatePromptScope } from './agentReference/getBackingVocalPlatePromptScope';
+import { getBassProcessingCopyPromptScope } from './agentReference/getBassProcessingCopyPromptScope';
 import { getBulkDeviceInsertionTrackScope } from './agentReference/getBulkDeviceInsertionTrackScope';
 import { getDeviceParameterPromptScope } from './agentReference/getDeviceParameterPromptScope';
 import { getDrumRoutingPromptScope } from './agentReference/getDrumRoutingPromptScope';
@@ -45,6 +48,44 @@ function formatParameterValue(value: number, unit: string): string {
         return `${String(value)} ${unit}`;
     }
     return String(value);
+}
+
+function formatDescriptorParameterValue(value: number, unit: string, choices?: readonly string[]): string {
+    const choice = Number.isInteger(value) ? choices?.[value] : undefined;
+    if (choice) {
+        return `"${choice}" (${String(value)})`;
+    }
+    return formatParameterValue(value, unit);
+}
+
+function formatDecibelsFromGain(value: number): string {
+    if (value <= 0) {
+        return '-∞ dB';
+    }
+    const decibels = 20 * Math.log10(value);
+    const rounded = Math.round(decibels * 100) / 100;
+    return `${String(rounded)} dB`;
+}
+
+function resolveActionTrackName(trackId: string, actions: readonly AppAction[], context: ProjectContext): string {
+    const existing = context.tracks.find((track) => track.id === trackId);
+    if (existing) {
+        return existing.name;
+    }
+    const created = actions.find((action) => action.type === 'createBus' && action.payload.busId === trackId);
+    return created?.type === 'createBus' ? created.payload.name : trackId;
+}
+
+function resolveActionDeviceName(deviceId: string, actions: readonly AppAction[], context: ProjectContext): string {
+    const existing = context.tracks.flatMap((track) => track.devices).find((device) => device.id === deviceId);
+    if (existing) {
+        return existing.name ?? existing.type;
+    }
+    const created = actions.find((action) => action.type === 'addDevice' && action.payload.deviceId === deviceId);
+    if (created?.type === 'addDevice') {
+        return getPluginById(created.payload.deviceType)?.name ?? created.payload.deviceType;
+    }
+    return deviceId;
 }
 
 function describeDeviceParameterAction(
@@ -126,6 +167,12 @@ function getProtectedUnchangedTracks(
                   })),
               ]
             : [];
+    const backingVocalPlateScope = getBackingVocalPlatePromptScope(prompt, context);
+    const backingVocalPlateProtections =
+        backingVocalPlateScope.status === 'request' ? backingVocalPlateScope.protectedObjects : [];
+    const bassProcessingCopyScope = getBassProcessingCopyPromptScope(prompt, context);
+    const bassProcessingCopyProtections =
+        bassProcessingCopyScope.status === 'request' ? bassProcessingCopyScope.protectedObjects : [];
     const protections = [
         ...protectedTracks.map(({ id, name }) => ({ id, name })),
         ...protectedParameters,
@@ -133,6 +180,8 @@ function getProtectedUnchangedTracks(
         ...drumRoutingProtections,
         ...sidechainRoutingProtections,
         ...articulationProtections,
+        ...backingVocalPlateProtections,
+        ...bassProcessingCopyProtections,
     ];
     return [...new Map(protections.map((protection) => [protection.id, protection])).values()];
 }
@@ -152,8 +201,44 @@ function describeWholeProjectVibeMixPlan(plan: WholeProjectVibeMixPlan): string 
 }
 
 function describeExactAction(action: AppAction, actions: readonly AppAction[], context: ProjectContext): string {
+    if (
+        action.type === 'addAdjustmentRegion' &&
+        action.payload.expectedLayer &&
+        action.payload.sourceRegionId &&
+        action.payload.sourceSection &&
+        action.payload.targetSection
+    ) {
+        const sourceRegion = action.payload.expectedLayer.regions.find(
+            (region) => region.id === action.payload.sourceRegionId
+        );
+        const tracks = (action.payload.expectedTracks ?? [])
+            .map((track) => `"${track.trackName}" (${track.trackId})`)
+            .join(', ');
+        if (sourceRegion) {
+            return `Copy ${action.payload.expectedLayer.effectType} layer "${action.payload.expectedLayer.name}" (${action.payload.layerId}) on ${tracks} from "${action.payload.sourceSection.name}" (${action.payload.sourceSection.id}) region ${sourceRegion.id} beats ${String(sourceRegion.startBeat)}–${String(sourceRegion.endBeat)} to "${action.payload.targetSection.name}" (${action.payload.targetSection.id}) as ${action.payload.regionId ?? 'application-assigned region'} beats ${String(action.payload.startBeat)}–${String(action.payload.endBeat)}, blend ${String(action.payload.blend ?? 1)}, fades ${String(action.payload.fadeInBeats ?? 0.25)}/${String(action.payload.fadeOutBeats ?? 0.25)} beats; preserve layer parameters and mix`;
+        }
+    }
+    if (action.type === 'removeDevice') {
+        const owner = context.tracks.find((track) =>
+            track.devices.some((device) => device.id === action.payload.deviceId)
+        );
+        const device = owner?.devices.find((candidate) => candidate.id === action.payload.deviceId);
+        if (owner && device) {
+            return `Remove device "${device.name ?? device.type}" (${device.id}, ${device.type}) from "${owner.name}" (${owner.id})`;
+        }
+    }
     if (action.type === 'createBus' && action.payload.busId) {
         return `Create bus "${action.payload.name}" (${action.payload.busId})`;
+    }
+    if (action.type === 'addDevice' && action.payload.deviceId) {
+        const trackName = resolveActionTrackName(action.payload.trackId, actions, context);
+        const deviceName = getPluginById(action.payload.deviceType)?.name ?? action.payload.deviceType;
+        let anchor = 'at the end of the chain';
+        if (action.payload.afterDeviceId) {
+            const anchorName = resolveActionDeviceName(action.payload.afterDeviceId, actions, context);
+            anchor = `after "${anchorName}" (${action.payload.afterDeviceId})`;
+        }
+        return `Insert "${deviceName}" (${action.payload.deviceId}, ${action.payload.deviceType}) on "${trackName}" (${action.payload.trackId}) ${anchor}`;
     }
     if (action.type === 'setTrackOutput') {
         const source = context.tracks.find((track) => track.id === action.payload.trackId);
@@ -173,6 +258,47 @@ function describeExactAction(action: AppAction, actions: readonly AppAction[], c
         if (description) {
             return description;
         }
+        const createdDevice = actions.find(
+            (candidate) => candidate.type === 'addDevice' && candidate.payload.deviceId === action.payload.deviceId
+        );
+        if (createdDevice?.type === 'addDevice' && action.payload.expectedValue !== undefined) {
+            const trackName = resolveActionTrackName(createdDevice.payload.trackId, actions, context);
+            const descriptor = getPluginById(createdDevice.payload.deviceType);
+            const parameter = descriptor?.parameters.find((candidate) => candidate.id === action.payload.paramId);
+            if (parameter) {
+                return `Set "${trackName}" (${createdDevice.payload.trackId}) device "${descriptor?.name ?? createdDevice.payload.deviceType}" (${action.payload.deviceId}, ${createdDevice.payload.deviceType}) parameter "${parameter.name}" (${parameter.id}) from ${formatDescriptorParameterValue(action.payload.expectedValue, parameter.unit, parameter.choices)} to ${formatDescriptorParameterValue(action.payload.value, parameter.unit, parameter.choices)}`;
+            }
+        }
+    }
+    if (action.type === 'addSend') {
+        const sourceName = resolveActionTrackName(action.payload.trackId, actions, context);
+        const busName = resolveActionTrackName(action.payload.busId, actions, context);
+        const tap = action.payload.preFader === true ? 'pre-fader' : 'post-fader';
+        return `Create ${tap} send from "${sourceName}" (${action.payload.trackId}) to "${busName}" (${action.payload.busId}) at ${formatDecibelsFromGain(action.payload.level)}`;
+    }
+    if (action.type === 'automateSendRanges' && action.payload.ranges && action.payload.expectedTracks) {
+        const targets = action.payload.expectedTracks
+            .map(
+                (track) =>
+                    `"${track.trackName}" (${track.trackId}) ${formatDecibelsFromGain(track.sendLevel)}→${String(action.payload.targetLevelDb)} dB`
+            )
+            .join(', ');
+        const ranges = action.payload.ranges
+            .map(
+                (range) =>
+                    `"${range.sectionName}" (${range.sectionId}) ramp beats ${String(range.automationStartBeat)}–${String(range.endBeat)}`
+            )
+            .join(', ');
+        return `Automate sends to "${action.payload.busName ?? action.payload.busId}" (${action.payload.busId}) over the final ${String(action.payload.tailBars)} bars: ${targets}; ${ranges}; restore base levels at each section end`;
+    }
+    if (action.type === 'renderProjectSections' && action.payload.jobs) {
+        const jobs = action.payload.jobs
+            .map(
+                (job) =>
+                    `"${job.sectionName}" (${job.sectionId}) beats ${String(job.startBeat)}–${String(job.endBeat)} as ${job.jobId} at ${String(job.sampleRate)} Hz with ${String(job.tailSeconds)} s tail`
+            )
+            .join(', ');
+        return `Render ${jobs} into session-owned artifacts; undo removes them and redo renders fresh artifacts`;
     }
     if (action.type === 'automateTrackGainRange' && action.payload.expectedTracks) {
         const targets = action.payload.expectedTracks
@@ -204,7 +330,8 @@ export function describePendingActionConfirmation({
     };
     if (
         actions.length > 1 &&
-        actions.every((action) => action.type === 'addDevice') &&
+        (actions.every((action) => action.type === 'addDevice') ||
+            actions.every((action) => action.type === 'addAdjustmentRegion')) &&
         riskPolicy.risk === 'bounded-reversible'
     ) {
         risk = {

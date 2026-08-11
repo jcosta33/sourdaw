@@ -18,10 +18,12 @@ describe('RuntimeAction', () => {
             }
         }
 
-        expect(RUNTIME_ACTION_TYPES).toHaveLength(242);
+        expect(RUNTIME_ACTION_TYPES).toHaveLength(245);
         expect(new Set(RUNTIME_ACTION_TYPES).size).toBe(RUNTIME_ACTION_TYPES.length);
         expect(RUNTIME_ACTION_TYPES).not.toContain('replayGeneratedMidi');
-        expect(digest >>> 0).toBe(3_048_932_721);
+        expect(RUNTIME_ACTION_TYPES).toContain('automateSendRanges');
+        expect(RUNTIME_ACTION_TYPES).toContain('renderProjectSections');
+        expect(digest >>> 0).toBe(3_066_609_740);
     });
 
     it('derives initiating payloads without exposing command-owned replay fields', () => {
@@ -58,6 +60,17 @@ describe('RuntimeAction', () => {
             { type: 'glueClips', payload: { clipIds: ['clip-1', 'clip-2'] } },
             { type: 'setPunchEnabled', payload: { enabled: true } },
             {
+                type: 'addAdjustmentRegion',
+                payload: {
+                    layerId: 'layer-bass-eq',
+                    startBeat: 48,
+                    endBeat: 64,
+                    blend: 0.75,
+                    fadeInBeats: 0.5,
+                    fadeOutBeats: 0.25,
+                },
+            },
+            {
                 type: 'automateTrackGainRange',
                 payload: { trackIds: ['bus-drums', 'bus-bass'], sectionName: 'Chorus Two', gainDb: 1.5 },
             },
@@ -86,6 +99,7 @@ describe('RuntimeAction', () => {
             'setClipLoop',
             'glueClips',
             'setPunchEnabled',
+            'addAdjustmentRegion',
             'automateTrackGainRange',
         ]);
         expectTypeOf<PayloadHasKey<'duplicateClip', 'targetClipId'>>().toEqualTypeOf<false>();
@@ -120,6 +134,9 @@ describe('RuntimeAction', () => {
         expectTypeOf<PayloadHasKey<'glueClips', 'expected'>>().toEqualTypeOf<false>();
         expectTypeOf<PayloadHasKey<'glueClips', 'replacement'>>().toEqualTypeOf<false>();
         expectTypeOf<PayloadHasKey<'setPunchEnabled', 'expectedEnabled'>>().toEqualTypeOf<false>();
+        expectTypeOf<PayloadHasKey<'addAdjustmentRegion', 'regionId'>>().toEqualTypeOf<false>();
+        expectTypeOf<PayloadHasKey<'addAdjustmentRegion', 'expectedLayer'>>().toEqualTypeOf<false>();
+        expectTypeOf<PayloadHasKey<'addAdjustmentRegion', 'expectedTracks'>>().toEqualTypeOf<false>();
         expectTypeOf<PayloadHasKey<'muteTrack', 'expectedMuted'>>().toEqualTypeOf<false>();
         expectTypeOf<PayloadHasKey<'setTrackGain', 'expectedGain'>>().toEqualTypeOf<false>();
         expectTypeOf<PayloadHasKey<'setTrackPan', 'expectedPan'>>().toEqualTypeOf<false>();

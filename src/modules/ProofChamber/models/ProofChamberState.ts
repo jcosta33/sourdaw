@@ -243,6 +243,12 @@ export const ALGORITHM_BY_WIRE_VALUE: Readonly<Record<number, ProofChamberAlgori
     return inverted;
 })();
 
+/** Match Rust's finite `f32 as u8` conversion before dispatching the wire id. */
+export function proofChamberAlgorithmFromWireValue(value: number): ProofChamberAlgorithm {
+    const wireValue = Math.min(255, Math.max(0, Math.trunc(value)));
+    return ALGORITHM_BY_WIRE_VALUE[wireValue] ?? 'plate';
+}
+
 /**
  * The engine-state fields that round-trip through `Device.parameterValues`,
  * split by the type they carry back.

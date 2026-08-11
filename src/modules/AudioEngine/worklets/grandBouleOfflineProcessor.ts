@@ -46,6 +46,7 @@ import {
     createGrandBouleBlockViews,
     createGrandBouleInstance,
     createGrandBouleNoteQueue,
+    dispatch,
     receiveGrandBouleMessage,
     type GrandBouleDispatchMsg,
 } from './grandBouleEngineCore';
@@ -60,6 +61,105 @@ const RENDER_QUANTUM_FRAMES = 128;
 const MAX_BLOCK_FRAMES = 4096;
 
 type RuntimeHealthCheckMessage = { type: 'runtimeHealthCheck'; requestId: number };
+type OfflineAutomationSegment = {
+    startFrame: number;
+    endFrame: number;
+    startValue: number;
+    endValue: number;
+};
+type GrandBouleAutomationParam = 'masterGain' | 'soundboardSend' | 'sympatheticSend' | 'lidPosition' | 'micPosition';
+type GrandBouleParamAutomationMessage = {
+    type: 'paramAutomation';
+    name: GrandBouleAutomationParam;
+    segments: readonly OfflineAutomationSegment[];
+};
+type GrandBouleControlMessage = GrandBouleDispatchMsg | GrandBouleParamAutomationMessage;
+type ScheduledParam = {
+    name: GrandBouleAutomationParam;
+    segments: readonly OfflineAutomationSegment[];
+    segmentIndex: number;
+    complete: boolean;
+};
+
+function isValidAutomationMessage(message: GrandBouleParamAutomationMessage): boolean {
+    if (automationSlotFor(message.name) === null || message.segments.length === 0) {
+        return false;
+    }
+    let previousEndFrame = 0;
+    for (const segment of message.segments) {
+        if (
+            !Number.isInteger(segment.startFrame) ||
+            !Number.isInteger(segment.endFrame) ||
+            segment.startFrame < previousEndFrame ||
+            segment.endFrame < segment.startFrame ||
+            !Number.isFinite(segment.startValue) ||
+            !Number.isFinite(segment.endValue)
+        ) {
+            return false;
+        }
+        previousEndFrame = segment.endFrame;
+    }
+    return true;
+}
+
+function automationSlotFor(name: string): number | null {
+    switch (name) {
+        case 'masterGain':
+            return 0;
+        case 'soundboardSend':
+            return 1;
+        case 'sympatheticSend':
+            return 2;
+        case 'lidPosition':
+            return 3;
+        case 'micPosition':
+            return 4;
+        default:
+            return null;
+    }
+}
+
+type AutomationFrameValue = { active: boolean; value: number; complete: boolean };
+
+function automationValueAtFrame(schedule: ScheduledParam, frame: number): AutomationFrameValue {
+    while (schedule.segmentIndex + 1 < schedule.segments.length) {
+        const nextSegment = schedule.segments[schedule.segmentIndex + 1];
+        if (!nextSegment || frame < nextSegment.startFrame) {
+            break;
+        }
+        schedule.segmentIndex++;
+    }
+    const segment = schedule.segments[schedule.segmentIndex];
+    if (!segment) {
+        return { active: false, value: 0, complete: true };
+    }
+    if (frame < segment.startFrame) {
+        return { active: false, value: segment.startValue, complete: false };
+    }
+    if (segment.endFrame === segment.startFrame) {
+        return {
+            active: true,
+            value: segment.endValue,
+            complete: schedule.segmentIndex === schedule.segments.length - 1,
+        };
+    }
+    if (frame >= segment.endFrame) {
+        return {
+            active: true,
+            value: segment.endValue,
+            complete: schedule.segmentIndex === schedule.segments.length - 1,
+        };
+    }
+    if (schedule.name === 'micPosition') {
+        return { active: true, value: segment.startValue, complete: false };
+    }
+    const progress = (frame - segment.startFrame) / (segment.endFrame - segment.startFrame);
+    return {
+        active: true,
+        value: segment.startValue + (segment.endValue - segment.startValue) * progress,
+        complete: false,
+    };
+}
 
 class GrandBouleOfflineProcessor extends AudioWorkletProcessor {
     _instance: GrandBouleInstance | null = null;
@@ -67,7 +167,8 @@ class GrandBouleOfflineProcessor extends AudioWorkletProcessor {
     _ready = false;
     _faulted = false;
     _faultMessage: string | null = null;
-    _pendingMessages: GrandBouleDispatchMsg[] = [];
+    _pendingMessages: GrandBouleControlMessage[] = [];
+    _paramAutomation: ScheduledParam[][] = [[], [], [], [], []];
     _queue = createGrandBouleNoteQueue();
     // Cached WASM linear-memory views, revalidated on a memory.grow() buffer
     // identity change (audit RT-7). In steady state `update` performs four
@@ -78,7 +179,7 @@ class GrandBouleOfflineProcessor extends AudioWorkletProcessor {
         super();
         let wasmModule = resolveProcessorWasmModule(args[0]);
         this.port.onmessage = (
-            event: MessageEvent<{ type: 'init' } | RuntimeHealthCheckMessage | GrandBouleDispatchMsg>
+            event: MessageEvent<{ type: 'init' } | RuntimeHealthCheckMessage | GrandBouleControlMessage>
         ) => {
             const msg = event.data;
             if (msg.type === 'runtimeHealthCheck') {
@@ -138,21 +239,72 @@ class GrandBouleOfflineProcessor extends AudioWorkletProcessor {
         this.port.postMessage({ type: 'ready' });
     }
 
-    _handleMessage(msg: GrandBouleDispatchMsg): void {
+    _handleMessage(msg: GrandBouleControlMessage): void {
         const instance = this._instance;
         if (!instance) {
             return;
         }
-        // `currentFrame` is the first frame of the quantum this worklet is about
-        // to render, so this is the same quantity the Worker computes from its
-        // ring write head plus the consumer offset. The shared core decides
-        // enqueue-versus-voice from it, identically for both hosts.
+        if (msg.type === 'paramAutomation') {
+            if (!isValidAutomationMessage(msg)) {
+                return;
+            }
+            const slot = automationSlotFor(msg.name);
+            if (slot !== null) {
+                this._paramAutomation[slot]?.push({
+                    name: msg.name,
+                    segments: msg.segments,
+                    segmentIndex: 0,
+                    complete: false,
+                });
+            }
+            return;
+        }
+        // Offline scheduling posts the complete part before rendering starts.
+        // Hold a note exactly on the next frame so frame-zero automation reaches
+        // the sleeping engine first; preserve the shared host behavior for notes
+        // already inside the remainder of the current quantum and for late notes.
+        const holdAtCurrentFrame =
+            (msg.type === 'noteOn' || msg.type === 'noteOff' || msg.type === 'noteExpression') &&
+            msg.sampleFrame === currentFrame;
         receiveGrandBouleMessage({
             instance,
             queue: this._queue,
             msg,
-            blockEndFrame: currentFrame + RENDER_QUANTUM_FRAMES,
+            blockEndFrame: holdAtCurrentFrame ? currentFrame : currentFrame + RENDER_QUANTUM_FRAMES,
         });
+    }
+
+    _applyAutomation(instance: GrandBouleInstance, frame: number, blockEndFrame: number): void {
+        for (let slot = 0; slot < this._paramAutomation.length; slot++) {
+            const schedules = this._paramAutomation[slot];
+            if (!schedules) {
+                continue;
+            }
+            let retainedCount = 0;
+            for (let scheduleIndex = 0; scheduleIndex < schedules.length; scheduleIndex++) {
+                const schedule = schedules[scheduleIndex];
+                if (!schedule) {
+                    continue;
+                }
+                let next = automationValueAtFrame(schedule, frame);
+                const upcomingStart = schedule.segments[schedule.segmentIndex]?.startFrame;
+                if (!next.active && upcomingStart !== undefined && upcomingStart < blockEndFrame) {
+                    next = automationValueAtFrame(schedule, upcomingStart);
+                }
+                if (!next.active) {
+                    schedules[retainedCount] = schedule;
+                    retainedCount++;
+                } else {
+                    dispatch(instance, { type: 'param', name: schedule.name, value: next.value });
+                    schedule.complete = next.complete;
+                    if (!schedule.complete) {
+                        schedules[retainedCount] = schedule;
+                        retainedCount++;
+                    }
+                }
+            }
+            schedules.length = retainedCount;
+        }
     }
 
     process(_inputs: Float32Array[][], outputs: Float32Array[][]): boolean {
@@ -172,6 +324,11 @@ class GrandBouleOfflineProcessor extends AudioWorkletProcessor {
         }
         const frames = out0.length;
         const processFrames = Math.min(frames, MAX_BLOCK_FRAMES);
+
+        // Apply the block's parameter state before waking any note in it. The
+        // sleeping engine snaps parameters; reversing this order creates an
+        // audible 20 ms glide from defaults at the start of an offline part.
+        this._applyAutomation(instance, currentFrame, currentFrame + frames);
 
         // Voice everything that belongs in the block about to be produced. The
         // engine has no sub-block note offset, so the block boundary is the only

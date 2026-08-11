@@ -2,27 +2,46 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import {
     getProjectContext,
+    type ProjectContextAdjustmentLayer,
     type ProjectContextSection,
     type ProjectContextSidechainRoute,
     type ProjectContextVcaGroup,
 } from '../getProjectContext';
 
-const mocks = vi.hoisted(() => ({
-    trackStoreValue: { value: null } as any,
-    midiStoreValue: { value: null } as any,
-    transportStoreValue: { value: null } as any,
-    workspaceStoreValue: { value: null } as any,
-    clipSelectionStoreValue: { value: null } as any,
-    automationStoreValue: { value: null } as any,
-    sidechainStoreValue: { value: null as { routes: ProjectContextSidechainRoute[] } | null },
-    markerStoreValue: { value: null as { sections: ProjectContextSection[] } | null },
-    vcaStoreValue: { value: null as { groups: ProjectContextVcaGroup[] } | null },
-    getPluginById: vi.fn(),
-    getPlatformPlugins: vi.fn(),
-    getGlueEligibleClipPairs: vi.fn(),
-}));
+const mocks = vi.hoisted(() => {
+    const trackStoreValue: { value: unknown } = { value: null };
+    const midiStoreValue: { value: unknown } = { value: null };
+    const transportStoreValue: { value: unknown } = { value: null };
+    const workspaceStoreValue: { value: unknown } = { value: null };
+    const clipSelectionStoreValue: { value: unknown } = { value: null };
+    const automationStoreValue: { value: unknown } = { value: null };
+    const adjustmentLayerStoreValue: { value: { layers: ProjectContextAdjustmentLayer[] } | null } = { value: null };
+    const sidechainStoreValue: { value: { routes: ProjectContextSidechainRoute[] } | null } = { value: null };
+    const markerStoreValue: { value: { sections: ProjectContextSection[] } | null } = { value: null };
+    const vcaStoreValue: { value: { groups: ProjectContextVcaGroup[] } | null } = { value: null };
+    return {
+        trackStoreValue,
+        midiStoreValue,
+        transportStoreValue,
+        workspaceStoreValue,
+        clipSelectionStoreValue,
+        automationStoreValue,
+        adjustmentLayerStoreValue,
+        sidechainStoreValue,
+        markerStoreValue,
+        vcaStoreValue,
+        getPluginById: vi.fn(),
+        getPlatformPlugins: vi.fn(),
+        getGlueEligibleClipPairs: vi.fn(),
+    };
+});
 
 vi.mock('#/modules/Arrangement/stores', () => ({
+    adjustmentLayerStore: {
+        get value() {
+            return mocks.adjustmentLayerStoreValue.value;
+        },
+    },
     trackStore: {
         get value() {
             return mocks.trackStoreValue.value;
@@ -100,6 +119,7 @@ describe('getProjectContext', () => {
         mocks.workspaceStoreValue.value = null;
         mocks.clipSelectionStoreValue.value = null;
         mocks.automationStoreValue.value = null;
+        mocks.adjustmentLayerStoreValue.value = null;
         mocks.sidechainStoreValue.value = null;
         mocks.markerStoreValue.value = null;
         mocks.vcaStoreValue.value = null;
@@ -139,6 +159,7 @@ describe('getProjectContext', () => {
         expect(context.metronomeVolume).toBe(0.5);
         expect(context.masterGain).toBe(0.8);
         expect(context.availableDeviceTypes).toEqual([{ id: 'builtin-eq', name: 'EQ' }]);
+        expect(context.adjustmentLayers).toEqual([]);
         expect(context.automationLanes).toEqual([]);
         expect(context.sidechainRoutes).toEqual([]);
         expect(context.sections).toEqual([]);
@@ -372,21 +393,22 @@ describe('getProjectContext', () => {
     });
 
     it('maps automation lanes with clip ownership and invalidates the cache when automation state changes', () => {
+        const gainLane = {
+            id: 'lane-gain',
+            trackId: 'track-vocals',
+            parameterId: 'gain',
+            parameterName: 'Gain',
+            enabled: true,
+            minValue: 0,
+            maxValue: 1,
+            points: [
+                { beat: 0, value: 0.4, curve: 'linear', tension: 0 },
+                { beat: 8, value: 0.8, curve: 'smooth', tension: 0.2 },
+            ],
+        };
         mocks.automationStoreValue.value = {
             lanes: [
-                {
-                    id: 'lane-gain',
-                    trackId: 'track-vocals',
-                    parameterId: 'gain',
-                    parameterName: 'Gain',
-                    enabled: true,
-                    minValue: 0,
-                    maxValue: 1,
-                    points: [
-                        { beat: 0, value: 0.4, curve: 'linear', tension: 0 },
-                        { beat: 8, value: 0.8, curve: 'smooth', tension: 0.2 },
-                    ],
-                },
+                gainLane,
                 {
                     id: 'lane-clip-gain',
                     trackId: 'track-vocals',
@@ -433,7 +455,7 @@ describe('getProjectContext', () => {
         mocks.automationStoreValue.value = {
             lanes: [
                 {
-                    ...mocks.automationStoreValue.value.lanes[0],
+                    ...gainLane,
                     enabled: false,
                 },
             ],
@@ -477,5 +499,59 @@ describe('getProjectContext', () => {
 
         expect(second).not.toBe(first);
         expect(second.sections?.[0]?.endBeat).toBe(36);
+    });
+
+    it('maps adjustment layers and invalidates the cache when their regions change', () => {
+        mocks.adjustmentLayerStoreValue.value = {
+            layers: [
+                {
+                    id: 'layer-bass-eq',
+                    name: 'Bass Chorus EQ',
+                    effectType: 'eq',
+                    parameters: [{ name: 'Low Mid Gain', value: -2, min: -12, max: 12, unit: 'dB' }],
+                    affectedTrackIds: ['track-bass'],
+                    insertionIndex: 0,
+                    regions: [
+                        {
+                            id: 'region-chorus-one',
+                            startBeat: 16,
+                            endBeat: 32,
+                            blend: 0.75,
+                            fadeInBeats: 0.5,
+                            fadeOutBeats: 0.25,
+                        },
+                    ],
+                    enabled: true,
+                    mix: 0.8,
+                    color: '#6f7cff',
+                },
+            ],
+        };
+
+        const first = getProjectContext();
+        expect(first.adjustmentLayers).toEqual(mocks.adjustmentLayerStoreValue.value.layers);
+
+        mocks.adjustmentLayerStoreValue.value = {
+            layers: [
+                {
+                    ...mocks.adjustmentLayerStoreValue.value.layers[0]!,
+                    regions: [
+                        ...mocks.adjustmentLayerStoreValue.value.layers[0]!.regions,
+                        {
+                            id: 'region-chorus-two',
+                            startBeat: 48,
+                            endBeat: 64,
+                            blend: 0.75,
+                            fadeInBeats: 0.5,
+                            fadeOutBeats: 0.25,
+                        },
+                    ],
+                },
+            ],
+        };
+
+        const second = getProjectContext();
+        expect(second).not.toBe(first);
+        expect(second.adjustmentLayers?.[0]?.regions).toHaveLength(2);
     });
 });

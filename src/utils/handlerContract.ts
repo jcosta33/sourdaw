@@ -306,6 +306,24 @@ export type PitchContourSnapshot = {
 
 export type AutomationMode = 'read' | 'write' | 'touch' | 'latch' | 'off';
 
+export type SendAutomationRangeSnapshot = {
+    sectionId: string;
+    sectionName: string;
+    startBeat: number;
+    endBeat: number;
+    automationStartBeat: number;
+};
+
+export type RenderProjectSectionJobSnapshot = {
+    jobId: string;
+    sectionId: string;
+    sectionName: string;
+    startBeat: number;
+    endBeat: number;
+    sampleRate: number;
+    tailSeconds: number;
+};
+
 export type GrooveConsumerSnapshot = 'clip' | 'yeast-processor' | 'toaster-pattern' | 'arpeggiator' | 'sequencer';
 export type GrooveTemplateActionSnapshot = {
     id: string;
@@ -685,7 +703,10 @@ export type AppAction =
               expectedDeviceType?: string;
               expectedDeviceIds?: readonly string[];
               expectedValue?: number;
+              expectedValuePresent?: boolean;
               expectedTrackFrozen?: boolean;
+              /** Internal replay flag: restore the parameter map to an absent property. */
+              deleteParameter?: boolean;
           };
       }
     | { type: 'setExternalPluginState'; payload: { deviceId: string; stateChunk: string } }
@@ -741,6 +762,64 @@ export type AppAction =
               endBeat?: number;
               expectedSends?: Array<{ trackId: string; level: number; preFader: boolean }>;
               expectedSection?: { name: string; startBeat: number; endBeat: number };
+          };
+      }
+    | {
+          type: 'automateSendRanges';
+          payload: {
+              trackIds: string[];
+              busId: string;
+              sectionIds: string[];
+              tailBars: number;
+              targetLevelDb: number;
+              busName?: string;
+              expectedTimeSignature?: [number, number];
+              ranges?: SendAutomationRangeSnapshot[];
+              expectedTracks?: Array<{
+                  trackId: string;
+                  trackName: string;
+                  frozen: boolean;
+                  automationMode: AutomationMode;
+                  sendLevel: number;
+                  sendPreFader: boolean;
+              }>;
+          };
+      }
+    | {
+          /** Internal guarded inverse for `automateSendRanges`. */
+          type: 'removeSendAutomationRanges';
+          payload: {
+              trackIds: string[];
+              busId: string;
+              sectionIds: string[];
+              tailBars: number;
+              targetLevelDb: number;
+              busName: string;
+              expectedTimeSignature: [number, number];
+              ranges: SendAutomationRangeSnapshot[];
+              expectedTracks: Array<{
+                  trackId: string;
+                  trackName: string;
+                  frozen: boolean;
+                  automationMode: AutomationMode;
+                  sendLevel: number;
+                  sendPreFader: boolean;
+              }>;
+          };
+      }
+    | {
+          type: 'renderProjectSections';
+          payload: {
+              sectionIds: string[];
+              jobs?: RenderProjectSectionJobSnapshot[];
+          };
+      }
+    | {
+          /** Internal guarded inverse for `renderProjectSections`. */
+          type: 'removeRenderedProjectSections';
+          payload: {
+              sectionIds: string[];
+              jobs: RenderProjectSectionJobSnapshot[];
           };
       }
     | {
@@ -1327,10 +1406,32 @@ export type AppAction =
               startBeat: number;
               endBeat: number;
               blend?: number;
+              fadeInBeats?: number;
+              fadeOutBeats?: number;
               regionId?: string;
+              sourceRegionId?: string;
+              sourceSection?: { id: string; name: string; startBeat: number; endBeat: number };
+              targetSection?: { id: string; name: string; startBeat: number; endBeat: number };
+              expectedLayer?: AdjustmentLayerSnapshot;
+              expectedTracks?: Array<{ trackId: string; trackName: string; frozen: boolean }>;
           };
       }
-    | { type: 'removeAdjustmentRegion'; payload: { layerId: string; regionId: string } }
+    | {
+          type: 'removeAdjustmentRegion';
+          payload: {
+              layerId: string;
+              regionId: string;
+              expectedRegion?: {
+                  id: string;
+                  startBeat: number;
+                  endBeat: number;
+                  blend: number;
+                  fadeInBeats: number;
+                  fadeOutBeats: number;
+              };
+              expectedTracks?: Array<{ trackId: string; trackName: string; frozen: boolean }>;
+          };
+      }
     | { type: 'moveAdjustmentRegion'; payload: { regionId: string; startBeat: number; endBeat: number } }
     | { type: 'setLayerFades'; payload: { regionId: string; fadeInBeats: number; fadeOutBeats: number } }
     | { type: 'setLayerAffectedTracks'; payload: { layerId: string; trackIds: string[] } }

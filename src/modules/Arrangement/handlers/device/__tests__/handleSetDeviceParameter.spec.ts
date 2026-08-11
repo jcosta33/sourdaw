@@ -5,7 +5,9 @@ import { type AppAction } from '#/utils/handlerContract';
 import { handleSetDeviceParameter } from '../handleSetDeviceParameter';
 
 const mocks = vi.hoisted(() => ({
+    captureAutomationRecordingRollback: vi.fn<() => () => void>(),
     setDeviceParameter: vi.fn(),
+    updateDeviceParam: vi.fn(),
     getTrackStoreState: vi.fn<
         () => {
             tracks: {
@@ -23,6 +25,14 @@ const mocks = vi.hoisted(() => ({
     >(),
 }));
 
+vi.mock('#/modules/AudioEngine/useCases', () => ({
+    updateDeviceParam: mocks.updateDeviceParam,
+}));
+
+vi.mock('#/modules/Automation/useCases', () => ({
+    captureAutomationRecordingRollback: mocks.captureAutomationRecordingRollback,
+}));
+
 vi.mock('../../../useCases/device/setDeviceParameter/setDeviceParameter', () => ({
     setDeviceParameter: mocks.setDeviceParameter,
 }));
@@ -34,6 +44,7 @@ vi.mock('../../../useCases/getTrackStoreState', () => ({
 describe('handleSetDeviceParameter', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        mocks.captureAutomationRecordingRollback.mockReturnValue(vi.fn());
         mocks.getTrackStoreState.mockReturnValue(null);
     });
 
@@ -122,6 +133,7 @@ describe('handleSetDeviceParameter', () => {
                 expectedDeviceType: 'compressor',
                 expectedDeviceIds: ['d1'],
                 expectedValue: 0.5,
+                expectedValuePresent: true,
             },
         });
     });
@@ -182,17 +194,84 @@ describe('handleSetDeviceParameter', () => {
         expect(mocks.setDeviceParameter).not.toHaveBeenCalled();
     });
 
-    it('describes a null inverse when the parameter has no stored value to restore', () => {
+    it('describes presence-aware undo and redo when a declared parameter is absent', () => {
         mocks.getTrackStoreState.mockReturnValue({
-            tracks: [{ id: 't1', devices: [{ id: 'd1', parameterValues: {} }] }],
+            tracks: [
+                {
+                    id: 't1',
+                    frozen: false,
+                    devices: [{ id: 'd1', type: 'grand-boule', parameterValues: {} }],
+                },
+            ],
         });
 
         const desc = handleSetDeviceParameter.describe({
             type: 'setDeviceParameter',
-            payload: { deviceId: 'd1', paramId: 'gain', value: 0.5 },
+            payload: { deviceId: 'd1', paramId: 'lidPosition', value: 0.5 },
         });
 
-        expect(desc.inverseAction).toBeNull();
+        expect(desc.inverseAction).toEqual({
+            type: 'setDeviceParameter',
+            payload: {
+                deviceId: 'd1',
+                paramId: 'lidPosition',
+                value: 1,
+                deleteParameter: true,
+                expectedDeviceIds: ['d1'],
+                expectedDeviceType: 'grand-boule',
+                expectedTrackFrozen: false,
+                expectedTrackId: 't1',
+                expectedValue: 0.5,
+                expectedValuePresent: true,
+            },
+        });
+        expect(desc.redoAction).toEqual({
+            type: 'setDeviceParameter',
+            payload: {
+                deviceId: 'd1',
+                paramId: 'lidPosition',
+                value: 0.5,
+                expectedDeviceIds: ['d1'],
+                expectedDeviceType: 'grand-boule',
+                expectedTrackFrozen: false,
+                expectedTrackId: 't1',
+                expectedValue: undefined,
+                expectedValuePresent: false,
+            },
+        });
+    });
+
+    it('preserves an explicit expected value as a present-value redo guard before a batch-created device exists', () => {
+        mocks.getTrackStoreState.mockReturnValue({ tracks: [] });
+
+        const desc = handleSetDeviceParameter.describe({
+            type: 'setDeviceParameter',
+            payload: {
+                deviceId: 'd1',
+                paramId: 'filter-cutoff',
+                value: 250,
+                expectedTrackId: 't1',
+                expectedDeviceType: 'builtin-filter',
+                expectedDeviceIds: ['d1'],
+                expectedValue: 1_000,
+                expectedTrackFrozen: false,
+            },
+        });
+
+        expect(desc.redoAction).toEqual({
+            type: 'setDeviceParameter',
+            payload: {
+                deviceId: 'd1',
+                paramId: 'filter-cutoff',
+                value: 250,
+                expectedDeviceIds: ['d1'],
+                expectedDeviceType: 'builtin-filter',
+                expectedTrackFrozen: false,
+                expectedTrackId: 't1',
+                expectedValue: 1_000,
+                expectedValuePresent: true,
+            },
+        });
     });
 
     it('detects an unchanged parameter value as a semantic no-op', () => {
@@ -206,6 +285,45 @@ describe('handleSetDeviceParameter', () => {
         });
 
         expect(isNoop).toBe(true);
+    });
+
+    it('restores runtime and automation-recording state through the abort owner', async () => {
+        const rollbackAutomationRecording = vi.fn();
+        mocks.captureAutomationRecordingRollback.mockReturnValue(rollbackAutomationRecording);
+        mocks.getTrackStoreState.mockReturnValue({
+            tracks: [{ id: 't1', devices: [{ id: 'd1', type: 'compressor', parameterValues: { gain: 0.8 } }] }],
+        });
+        const action: Extract<AppAction, { type: 'setDeviceParameter' }> = {
+            type: 'setDeviceParameter',
+            payload: { deviceId: 'd1', paramId: 'gain', value: 0.5 },
+        };
+
+        await handleSetDeviceParameter.prepareAbort?.(action)();
+
+        expect(mocks.updateDeviceParam).toHaveBeenCalledWith('t1', 'd1', 'gain', 0.8);
+        expect(rollbackAutomationRecording).toHaveBeenCalledOnce();
+        expect(handleSetDeviceParameter.requiresAbortCompensation).toBe(false);
+    });
+
+    it('still restores automation-recording state when runtime rollback fails', () => {
+        const rollbackAutomationRecording = vi.fn();
+        mocks.captureAutomationRecordingRollback.mockReturnValue(rollbackAutomationRecording);
+        mocks.updateDeviceParam.mockImplementation(() => {
+            throw new Error('runtime unavailable');
+        });
+        mocks.getTrackStoreState.mockReturnValue({
+            tracks: [{ id: 't1', devices: [{ id: 'd1', type: 'compressor', parameterValues: { gain: 0.8 } }] }],
+        });
+        const action: Extract<AppAction, { type: 'setDeviceParameter' }> = {
+            type: 'setDeviceParameter',
+            payload: { deviceId: 'd1', paramId: 'gain', value: 0.5 },
+        };
+
+        const rollback = handleSetDeviceParameter.prepareAbort?.(action);
+
+        expect(rollback).toBeTypeOf('function');
+        expect(() => rollback?.()).toThrow('manual repair is required: runtime unavailable');
+        expect(rollbackAutomationRecording).toHaveBeenCalledOnce();
     });
 
     // `docs/manual/devices/07-gluten.md` prints this flag as a promise to the
