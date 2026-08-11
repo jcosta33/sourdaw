@@ -286,9 +286,10 @@ describe('executeAppAction', () => {
     it('skips execution, macro recording, history metadata, and undo for a semantic no-op', async () => {
         const action: SetEditingToolAction = { type: 'setEditingTool', payload: { tool: 'marquee' } };
         const handler = create_mock_handler<SetEditingToolAction>({ isNoop: () => true });
+        const onCommitted = vi.fn();
         registerHandlerMap({ [action.type]: handler });
 
-        await executeAppAction(action);
+        await executeAppAction(action, { onCommitted });
 
         expect(handler.describe).not.toHaveBeenCalled();
         expect(handler.execute).not.toHaveBeenCalled();
@@ -296,14 +297,16 @@ describe('executeAppAction', () => {
         expect(mocks.recordAction).not.toHaveBeenCalled();
         expect(mocks.recordActionHistoryMetadata).not.toHaveBeenCalled();
         expect(mocks.commitUndoEntry).not.toHaveBeenCalled();
+        expect(onCommitted).not.toHaveBeenCalled();
     });
 
     it('drops history and undo when execution discovers a concurrent no-write', async () => {
         const action: SetEditingToolAction = { type: 'setEditingTool', payload: { tool: 'marquee' } };
         const handler = create_mock_handler<SetEditingToolAction>({ execute: () => ({ status: 'no-write' }) });
+        const onCommitted = vi.fn();
         registerHandlerMap({ [action.type]: handler });
 
-        await executeAppAction(action);
+        await executeAppAction(action, { onCommitted });
 
         expect(handler.describe).toHaveBeenCalledOnce();
         expect(handler.execute).toHaveBeenCalledOnce();
@@ -311,6 +314,7 @@ describe('executeAppAction', () => {
         expect(mocks.recordAction).not.toHaveBeenCalled();
         expect(mocks.recordActionHistoryMetadata).not.toHaveBeenCalled();
         expect(mocks.commitUndoEntry).not.toHaveBeenCalled();
+        expect(onCommitted).not.toHaveBeenCalled();
     });
 
     it('aborts compensated storage writes when execution returns no-write', async () => {
@@ -466,6 +470,7 @@ describe('executeAppAction', () => {
         const reconcileRuntime = vi.fn(() => {
             reconciledRuntime = docs.primary?.editingTool;
         });
+        const onCommitted = vi.fn();
         expect(primaryStorage.hydrate?.()).toBe(true);
         expect(secondaryStorage.hydrate?.()).toBe(true);
         const handler = create_mock_handler<SetEditingToolAction>({
@@ -481,7 +486,7 @@ describe('executeAppAction', () => {
         });
         registerHandlerMap({ [action.type]: handler });
 
-        const execution = executeAppAction(action);
+        const execution = executeAppAction(action, { onCommitted });
 
         await expect(execution).rejects.toBeInstanceOf(AppActionCommittedError);
         const reportedError = mocks.logger.error.mock.calls.at(-1)?.[0];
@@ -495,6 +500,7 @@ describe('executeAppAction', () => {
         expect(mocks.recordAction).not.toHaveBeenCalled();
         expect(mocks.recordActionHistoryMetadata).not.toHaveBeenCalled();
         expect(mocks.commitUndoEntry).not.toHaveBeenCalled();
+        expect(onCommitted).not.toHaveBeenCalled();
     });
 
     it('waits for snapshot ownership before describing or executing an action', async () => {
