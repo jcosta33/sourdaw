@@ -1,0 +1,21 @@
+scripts/test-health-gate-scripts.sh
+  s_bc88af7d3b054c::t_759900ad68b063 45-47,178,186-199,228,251
+scripts/health-gates-server.sh
+  s_bc88af7d3b054c::t_03a6599881b4be 26
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "081cdfdd96bbed92c8470251cb699a8457301152",
+  "prompts": {},
+  "sessions": {
+    "s_bc88af7d3b054c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f9b4a-11a2-7f61-8dfb-76eed0eb2a9c",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
