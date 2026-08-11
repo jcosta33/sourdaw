@@ -98,6 +98,15 @@ describe('hydrateChamberStateFromProject', () => {
         expect(engineState().algorithm).toBe('reverse');
     });
 
+    it('matches the engine wire conversion for fractional algorithm values', () => {
+        // Rust dispatches `value as u8`, so 3.9 selects Spring. Exact object-key
+        // lookup used to leave the panel on Plate while audio ran Spring.
+        seedProject({ algorithm: 3.9 });
+        hydrateChamberStateFromProject(DEVICE_ID);
+
+        expect(engineState().algorithm).toBe('spring');
+    });
+
     it('restores numeric and boolean parameters at the values the project holds', () => {
         seedProject({
             algorithm: ALGORITHM_MAP.spring,
@@ -137,6 +146,10 @@ describe('hydrateChamberStateFromProject', () => {
         // 4 and 5 are reserved for the convolution-backed engines that fall
         // through to the plate. A stored 4 must not become an algorithm id the
         // selector cannot draw, and must not gate against one either.
+        seedProject({ algorithm: ALGORITHM_MAP.reverse });
+        hydrateChamberStateFromProject(DEVICE_ID);
+        expect(engineState().algorithm).toBe('reverse');
+
         seedProject({ algorithm: 4 });
         hydrateChamberStateFromProject(DEVICE_ID);
 
