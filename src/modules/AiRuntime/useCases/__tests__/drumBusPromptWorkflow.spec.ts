@@ -1259,6 +1259,8 @@ describe('drum bus prompt workflow', () => {
                 gain: 1,
             }),
         ]);
+        const routeIds = sidechainStore.value?.routes.map((route) => route.id) ?? [];
+        expect(routeIds).toHaveLength(3);
         expect(runtimeMocks.wireSidechainRoute.mock.calls).toEqual([
             ['track-kick', 'track-bass-synth', 'device-bass-comp-a'],
             ['track-kick', 'track-bass-synth', 'device-bass-comp-b'],
@@ -1269,6 +1271,11 @@ describe('drum bus prompt workflow', () => {
         );
         expect(receipt?.content).toContain('Outcome: committed');
         expect(receipt?.content).toContain('Affected IDs: track-bass-synth, track-kick, device-bass-comp-a');
+        const executedActions = getPendingActionConfirmation(confirmation?.id ?? '')?.executedActions;
+        for (const [index, routeId] of routeIds.entries()) {
+            expect(executedActions?.[index]?.affectedIds).toContain(routeId);
+            expect(receipt?.content).toContain(routeId);
+        }
         expect(undoStore.value?.past).toHaveLength(3);
 
         await undo();
@@ -1352,6 +1359,13 @@ describe('drum bus prompt workflow', () => {
         );
         expect(receipt?.content).toContain('Outcome: committed');
         expect(receipt?.content).toContain('Affected IDs: track-bass-synth, track-kick, device-bass-comp-a');
+        const routeIds = sidechainStore.value?.routes.map((route) => route.id) ?? [];
+        const executedActions = getPendingActionConfirmation(confirmation?.id ?? '')?.executedActions;
+        expect(routeIds).toHaveLength(3);
+        for (const [index, routeId] of routeIds.entries()) {
+            expect(executedActions?.[index]?.affectedIds).toContain(routeId);
+            expect(receipt?.content).toContain(routeId);
+        }
 
         await undo();
         expect(sidechainStore.value?.routes).toEqual([]);
@@ -1378,11 +1392,32 @@ describe('drum bus prompt workflow', () => {
             chatStore.value?.messages.find((message) => message.pendingActionConfirmationId)
                 ?.pendingActionConfirmationId ?? ''
         );
-        expect(
-            confirmation?.actions.flatMap((action) =>
-                action.type === 'addSidechainRoute' ? [action.payload.targetDeviceId] : []
-            )
-        ).toEqual(['device-bass-comp-a', 'device-bass-comp-b', 'device-bass-di-comp']);
+        expect(confirmation?.actions).toEqual([
+            {
+                type: 'addSidechainRoute',
+                payload: {
+                    sourceTrackId: 'track-kick',
+                    targetTrackId: 'track-bass-synth',
+                    targetDeviceId: 'device-bass-comp-a',
+                },
+            },
+            {
+                type: 'addSidechainRoute',
+                payload: {
+                    sourceTrackId: 'track-kick',
+                    targetTrackId: 'track-bass-synth',
+                    targetDeviceId: 'device-bass-comp-b',
+                },
+            },
+            {
+                type: 'addSidechainRoute',
+                payload: {
+                    sourceTrackId: 'track-kick',
+                    targetTrackId: 'track-bass-di',
+                    targetDeviceId: 'device-bass-di-comp',
+                },
+            },
+        ]);
     });
 
     it.each(['omission', 'enlargement'] as const)(
