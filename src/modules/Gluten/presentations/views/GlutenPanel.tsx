@@ -15,6 +15,7 @@ import { DawReadoutRow } from '#/components/daw/DawReadoutRow';
 import { RotaryKnob } from '#/components/daw/RotaryKnob';
 import { Stack, Row, Grid } from '#/components/layout';
 import { useStore } from '#/infra/store/useStore';
+import { trackStore } from '#/modules/Arrangement/stores';
 
 import {
     OVERSAMPLING_FACTORS,
@@ -416,9 +417,11 @@ const Knob = ({
 );
 
 const defaultGlutenInstances: Record<string, GlutenState> = {};
+const defaultTrackState = { tracks: [], selectedTrackId: null, ghostClips: [] };
 
 export const GlutenPanel = ({ deviceId }: { deviceId: string }): ReactElement => {
     const allInstances = useStore(glutenStore, defaultGlutenInstances);
+    const trackState = useStore(trackStore, defaultTrackState);
     const state: GlutenState = allInstances[deviceId] ?? getGlutenState(deviceId);
     // Meters live in their own per-device store: a ~60 Hz tick on this device
     // re-renders this panel's meter readouts without rebuilding the patch map,
@@ -427,9 +430,13 @@ export const GlutenPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
     const [search, setSearch] = useState('');
     const [category, setCategory] = useState('all');
 
+    const projectParameterValues = trackState.tracks
+        .flatMap((track) => track.devices)
+        .find((device) => device.id === deviceId)?.parameterValues;
+
     useEffect(() => {
         hydrateGlutenPatchFromProject(deviceId);
-    }, [deviceId]);
+    }, [deviceId, projectParameterValues]);
 
     const { patch } = state;
     const currentPatch = patch;

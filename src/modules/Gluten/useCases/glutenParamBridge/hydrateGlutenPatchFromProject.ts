@@ -59,72 +59,46 @@ function clamp(value: number, min: number, max: number): number {
     return Math.min(max, Math.max(min, value));
 }
 
-function normalizeNumericField(field: (typeof NUMERIC_FIELDS)[number], value: number): number {
-    switch (field) {
-        case 'amount':
-            return clamp(value, 0, 100);
-        case 'threshold':
-            return clamp(value, -60, 0);
-        case 'ratio':
-            return clamp(value, 1, 20);
-        case 'attack':
-            return clamp(value, 0.02, 250);
-        case 'release':
-            return clamp(value, 25, 5000);
-        case 'knee':
-            return clamp(value, 0, 30);
-        case 'makeup':
-            return clamp(value, -12, 24);
-        case 'mix':
-        case 'stereoLink':
-        case 'blendAmount':
-            return clamp(value, 0, 1);
-        case 'range':
-            return clamp(value, 0, 60);
-        case 'scHpfFreq':
-            return clamp(value, 20, 500);
-        case 'thrust':
-            return Math.min(2, rustU8(value));
-        case 'oversampling':
-            return clampOversampling(rustU8(value));
-        case 'lookahead':
-            return clamp(value, 0, 20);
-        case 'scLpfFreq':
-            return clamp(value, 1000, 20000);
-        case 'scEqFreq':
-            return clamp(value, 20, 20000);
-        case 'scEqGain':
-            return clamp(value, -18, 18);
-        case 'scEqQ':
-            return clamp(value, 0.1, 10);
-        case 'inputGain':
-            return clamp(value, -12, 24);
-        case 'outputGain':
-            return clamp(value, -24, 24);
-        case 'xfmrDrive':
-            return clamp(value, 0, 3);
-        case 'recovery':
-            return clamp(rustU8(value), 1, 5);
-        case 'vcaType':
-            return clamp(rustU8(value), 0, 2);
-        case 'vcaCharacter':
-            return clamp(value, 0, 0.02);
-        case 'jfetK3':
-            return clamp(value, 0, 0.5);
-        case 'xfmrK2':
-            return clamp(value, 0, 0.3);
-        default: {
-            const exhaustiveField: never = field;
-            return exhaustiveField;
-        }
-    }
-}
+type NumericField = (typeof NUMERIC_FIELDS)[number];
+
+const NUMERIC_NORMALIZERS = {
+    amount: (value) => clamp(value, 0, 100),
+    threshold: (value) => clamp(value, -60, 0),
+    ratio: (value) => clamp(value, 1, 20),
+    attack: (value) => clamp(value, 0.02, 250),
+    release: (value) => clamp(value, 25, 5000),
+    knee: (value) => clamp(value, 0, 30),
+    makeup: (value) => clamp(value, -12, 24),
+    mix: (value) => clamp(value, 0, 1),
+    range: (value) => clamp(value, 0, 60),
+    scHpfFreq: (value) => clamp(value, 20, 500),
+    thrust: (value) => Math.min(2, rustU8(value)),
+    stereoLink: (value) => clamp(value, 0, 1),
+    oversampling: (value) => clampOversampling(rustU8(value)),
+    lookahead: (value) => clamp(value, 0, 20),
+    scLpfFreq: (value) => clamp(value, 1000, 20000),
+    scEqFreq: (value) => clamp(value, 20, 20000),
+    scEqGain: (value) => clamp(value, -18, 18),
+    scEqQ: (value) => clamp(value, 0.1, 10),
+    inputGain: (value) => clamp(value, -12, 24),
+    outputGain: (value) => clamp(value, -24, 24),
+    xfmrDrive: (value) => clamp(value, 0, 3),
+    recovery: (value) => clamp(rustU8(value), 1, 5),
+    vcaType: (value) => clamp(rustU8(value), 0, 2),
+    vcaCharacter: (value) => clamp(value, 0, 0.02),
+    jfetK3: (value) => clamp(value, 0, 0.5),
+    xfmrK2: (value) => clamp(value, 0, 0.3),
+    blendAmount: (value) => clamp(value, 0, 1),
+} satisfies Record<NumericField, (value: number) => number>;
 
 function topologyFromWire(value: number, fallback: GlutenTopology): GlutenTopology {
     return TOPOLOGIES[rustU8(value)] ?? fallback;
 }
 
 function withField<Key extends keyof GlutenPatch>(patch: GlutenPatch, key: Key, value: GlutenPatch[Key]): GlutenPatch {
+    if (Object.is(patch[key], value)) {
+        return patch;
+    }
     return { ...patch, [key]: value };
 }
 
@@ -139,12 +113,13 @@ export function hydrateGlutenPatchFromProject(deviceId: string): void {
         return;
     }
 
-    let patch = { ...getGlutenState(deviceId).patch };
+    const currentPatch = getGlutenState(deviceId).patch;
+    let patch = currentPatch;
 
     for (const field of NUMERIC_FIELDS) {
         const stored = device.parameterValues[field];
         if (typeof stored === 'number' && Number.isFinite(stored)) {
-            patch = withField(patch, field, normalizeNumericField(field, stored));
+            patch = withField(patch, field, NUMERIC_NORMALIZERS[field](stored));
         }
     }
 
@@ -180,5 +155,7 @@ export function hydrateGlutenPatchFromProject(deviceId: string): void {
         patch = withField(patch, 'stereoMode', STEREO_MODES[rustU8(stereoMode)] ?? DEFAULT_PATCH.stereoMode);
     }
 
-    loadGlutenPatch(deviceId, patch);
+    if (patch !== currentPatch) {
+        loadGlutenPatch(deviceId, patch);
+    }
 }

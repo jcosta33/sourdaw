@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { act, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it } from 'vitest';
 
 import { type Track, trackStore } from '#/modules/Arrangement/stores';
@@ -79,6 +79,17 @@ describe('GlutenPanel project hydration', () => {
         expect(getGlutenState(DEVICE_ID).patch.recovery).toBe(4);
         expect(getGlutenState(DEVICE_ID).patch.vcaType).toBe(1);
         expect(getGlutenState(DEVICE_ID).patch.mix).toBe(1);
+
+        act(() => {
+            trackStore.set({
+                tracks: [glutenTrack({ topology: 0, ratio: 20, attack: 250 })],
+                selectedTrackId: 'track-1',
+                ghostClips: [],
+            });
+        });
+
+        await waitFor(() => expect(ratio.getAttribute('aria-valuemax')).toBe('20'));
+        expect(attack.getAttribute('aria-valuemax')).toBe('250');
     });
 
     it('matches Rust truncation before resolving a fractional oversampling wire value', () => {

@@ -15,6 +15,7 @@ import { DawReadoutRow } from '#/components/daw/DawReadoutRow';
 import { RotaryKnob } from '#/components/daw/RotaryKnob';
 import { logger } from '#/infra/logger/appLogger';
 import { useStore } from '#/infra/store/useStore';
+import { trackStore } from '#/modules/Arrangement/stores';
 import { executeAppAction, executeAppActionBatch, generateGroupId } from '#/modules/Command/useCases';
 import { type AppAction } from '#/utils/handlerContract';
 import { decayToRt60Seconds } from '#/utils/reverbDecayLaw';
@@ -56,6 +57,8 @@ const SPACES: ReadonlyArray<{ id: SpaceType; label: string; mood: string }> = [
     { id: 'infinite', label: 'Infinite', mood: 'Freeze loaf' },
     { id: 'spring', label: 'Spring', mood: 'Boing and drip' },
 ];
+
+const defaultTrackState = { tracks: [], selectedTrackId: null, ghostClips: [] };
 
 const VINTAGE_MODES = [
     { id: 0, label: 'Modern' },
@@ -292,17 +295,19 @@ function KnobCell({
 
 export const ProofChamberPanel = ({ deviceId }: { deviceId: string }): ReactElement => {
     const storeState = useStore(chamberStore, { activeInstanceId: null, instances: {} });
+    const trackState = useStore(trackStore, defaultTrackState);
     const params = storeState?.instances?.[deviceId]?.engineState ?? DEFAULT_PARAMS;
+    const projectParameterValues = trackState.tracks
+        .flatMap((track) => track.devices)
+        .find((device) => device.id === deviceId)?.parameterValues;
 
     useEffect(() => {
         registerChamberInstance(deviceId);
-        // Read project truth back into the store the panel draws from, so a
-        // reverb saved on Reverse reopens gated for Reverse. `chamberStore`
-        // otherwise starts every session at `DEFAULT_PARAMS` while the engine
-        // is replayed from `Device.parameterValues`, and the gate would trust
-        // the wrong one.
-        hydrateChamberStateFromProject(deviceId);
     }, [deviceId]);
+
+    useEffect(() => {
+        hydrateChamberStateFromProject(deviceId);
+    }, [deviceId, projectParameterValues]);
     const [showDecayEq, setShowDecayEq] = useState(false);
     const [showFlow, setShowFlow] = useState(false);
     const decayRange = decayRangeForAlgorithm(params.algorithm);
