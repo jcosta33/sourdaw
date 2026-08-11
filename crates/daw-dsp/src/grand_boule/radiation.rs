@@ -109,6 +109,9 @@ impl RadiationModel {
 
     #[inline]
     pub fn tick(&mut self, left: f32, right: f32) -> (f32, f32) {
+        let left = if left.is_finite() { left } else { 0.0 };
+        let right = if right.is_finite() { right } else { 0.0 };
+
         self.current.low += (self.target.low - self.current.low) * self.smooth_alpha;
         self.current.high += (self.target.high - self.current.high) * self.smooth_alpha;
         self.current.side += (self.target.side - self.current.side) * self.smooth_alpha;
@@ -148,5 +151,18 @@ mod tests {
         model.set_lid_position(0.0);
         let after = model.tick(0.5, 0.5).0;
         assert!((after - before).abs() < 0.001);
+    }
+
+    #[test]
+    fn non_finite_input_does_not_poison_later_audio() {
+        let mut model = RadiationModel::new(48_000.0);
+
+        let invalid = model.tick(f32::NAN, f32::INFINITY);
+        assert!(invalid.0.is_finite());
+        assert!(invalid.1.is_finite());
+
+        let recovered = model.tick(0.25, -0.125);
+        assert!((recovered.0 - 0.25).abs() < 1.0e-6);
+        assert!((recovered.1 + 0.125).abs() < 1.0e-6);
     }
 }
