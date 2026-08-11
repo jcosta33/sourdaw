@@ -1,0 +1,56 @@
+src/modules/Command/useCases/__tests__/redo.spec.ts
+  s_bc88af7d3b054c::t_0038ce8b4ecf3b 263-278
+src/modules/CommandInterface/useCases/keyboardShortcutActions/handleKeyboardShortcut/handleKeydown.ts
+  s_bc88af7d3b054c::t_1858c73b888e13 8-9,177-181,393-395
+  s_bc88af7d3b054c::t_a9c58f47265fef 396-397
+src/modules/Arrangement/useCases/timeOperations/insertTime.ts
+  s_bc88af7d3b054c::t_1858c73b888e13 3-18
+src/modules/Arrangement/useCases/timeOperations/__tests__/executeUndoableGlobalTimeOperations.spec.ts
+  s_bc88af7d3b054c::t_f78d0047152515 59
+  s_bc88af7d3b054c::t_0038ce8b4ecf3b 76,100-102
+  s_bc88af7d3b054c::t_06285cd52f7a30 1-58,60-75,77-99,103-123
+src/modules/CommandInterface/useCases/keyboardShortcutActions/handleKeyboardShortcut/__tests__/handleKeydown.spec.ts
+  s_bc88af7d3b054c::t_06285cd52f7a30 10-11,104-105,480,727-728,732,734-735,738,740-742,748,764-765,769,778-779
+  s_bc88af7d3b054c::t_dc53ed89e47e5a 736-737,739,743,776
+src/modules/Command/useCases/revertActionGroup.ts
+  s_bc88af7d3b054c::t_1858c73b888e13 5,38,69-71
+  s_bc88af7d3b054c::t_6a39356fb9700f 72
+src/modules/Arrangement/useCases/timeOperations/__tests__/insertTime.spec.ts
+  s_bc88af7d3b054c::t_06285cd52f7a30 35-54
+src/modules/Command/useCases/__tests__/revertActionGroup.spec.ts
+  s_bc88af7d3b054c::t_dc53ed89e47e5a 4,121-140
+  s_bc88af7d3b054c::t_3b40baab671c98 141
+src/modules/Arrangement/useCases/timeOperations/executeUndoableDuplicateTimeRange.ts
+  s_bc88af7d3b054c::t_1858c73b888e13 1-15
+src/modules/Arrangement/useCases/timeOperations/createUndoableGlobalTimeOperation.ts
+  s_bc88af7d3b054c::t_cfacb1e28427b2 26
+  s_bc88af7d3b054c::t_1858c73b888e13 1,4-25,27,29-36,38-42
+  s_bc88af7d3b054c::t_92f45c322fdf9d 2-3
+  s_bc88af7d3b054c::t_f78d0047152515 28,37
+src/modules/Arrangement/useCases/index.ts
+  s_bc88af7d3b054c::t_1858c73b888e13 146-147
+src/modules/Command/useCases/__tests__/undo.spec.ts
+  s_bc88af7d3b054c::t_0038ce8b4ecf3b 111-126
+src/modules/Arrangement/useCases/timeOperations/__tests__/globalTimeTransaction.spec.ts
+  s_bc88af7d3b054c::t_3fd2cd72de872b 363-367
+  s_bc88af7d3b054c::t_7294242eb20029 71,355-362,368-385
+  s_bc88af7d3b054c::t_51d630618a5d05 386-387
+src/modules/Arrangement/useCases/timeOperations/executeUndoableInsertTime.ts
+  s_bc88af7d3b054c::t_1858c73b888e13 1-15
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "a8af29e5573b168f4158c3cafa15236e9f3d78ee",
+  "prompts": {},
+  "sessions": {
+    "s_bc88af7d3b054c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f9b4a-11a2-7f61-8dfb-76eed0eb2a9c",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
