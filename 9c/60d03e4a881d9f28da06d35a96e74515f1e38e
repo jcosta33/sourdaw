@@ -1,0 +1,24 @@
+crates/proof-chamber/tests/plate_shimmer_stability.rs
+  s_bc88af7d3b054c::t_9bfa1e0fd25692 1-2,7-14,16-21,23-26,28-43,46-59,69-81,95-96,99-111,114
+  s_bc88af7d3b054c::t_ef8be478b144d4 44-45,65-68
+  s_bc88af7d3b054c::t_af74f2c708c249 22,27,97-98
+  s_bc88af7d3b054c::t_a8f04582f67e26 3-6,15,60-64,82-94,112-113
+crates/proof-chamber/src/proof_chamber.rs
+  s_bc88af7d3b054c::t_c7d46bdc61df7a 308,339-346,905,909,938
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "9c60d03e4a881d9f28da06d35a96e74515f1e38e",
+  "prompts": {},
+  "sessions": {
+    "s_bc88af7d3b054c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f9b4a-11a2-7f61-8dfb-76eed0eb2a9c",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
