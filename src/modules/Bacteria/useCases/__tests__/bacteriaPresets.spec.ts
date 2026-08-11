@@ -48,4 +48,18 @@ describe('BACTERIA_PRESETS', () => {
             }
         }
     });
+
+    it('starts Frozen Texture unfrozen so its wet granular voice renders', () => {
+        const preset = BACTERIA_PRESETS.find(({ id }) => id === 'bac-frozen-texture');
+
+        expect(preset?.patch.bands[0]).toMatchObject({
+            granularEnabled: true,
+            grainSize: 120,
+            grainDensity: 25,
+            grainPosOffset: 100,
+            grainPitch: 7,
+            grainFreeze: false,
+            grainMix: 0.8,
+        });
+    });
 });

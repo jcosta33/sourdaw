@@ -106,7 +106,6 @@ export const BACTERIA_PRESETS: readonly BacteriaPreset[] = [
                 granularEnabled: true,
                 grainSize: 120,
                 grainDensity: 25,
-                grainFreeze: true,
                 grainPitch: 7,
                 grainMix: 0.8,
             }),

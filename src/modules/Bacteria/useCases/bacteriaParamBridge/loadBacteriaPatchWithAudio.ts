@@ -42,6 +42,7 @@ function createPushParamImmediately(
 }
 
 export const loadBacteriaPatchWithAudio = inject(bacteriaParamBridgeDependencies)(({
+    getAllTracks: getAllTracksFn,
     updateDeviceParam: updateDeviceParamFn,
     persistDeviceParam: persistDeviceParamFn,
     resolveEligibleDeviceWriteTarget: resolveEligibleDeviceWriteTargetFn,
@@ -53,11 +54,13 @@ export const loadBacteriaPatchWithAudio = inject(bacteriaParamBridgeDependencies
             return;
         }
 
-        // Capture the engine's current view (the store mirrors it) *before*
-        // loadBacteriaPatch overwrites it, so we can diff and push only the
-        // params that actually changed — a preset switch otherwise re-sends
-        // every scalar (~330 messages) even when most are identical.
+        // The session store mirrors interactive engine writes, while project
+        // parameter values survive reopen and collaboration. A parameter is
+        // safe to skip only when both available views already match the preset.
         const previousPatch = getBacteriaState(deviceId).patch;
+        const projectParameterValues = getAllTracksFn()
+            .find((track) => track.id === target.trackId)
+            ?.devices.find((device) => device.id === target.deviceId)?.parameterValues;
 
         loadBacteriaPatch(deviceId, patch);
 
@@ -71,7 +74,8 @@ export const loadBacteriaPatchWithAudio = inject(bacteriaParamBridgeDependencies
                 continue;
             }
             const previousEncoded = encodePatchValue(key, previousPatch[key]);
-            if (previousEncoded === encodedValue) {
+            const projectEncoded = projectParameterValues?.[key];
+            if (previousEncoded === encodedValue && (projectEncoded === undefined || projectEncoded === encodedValue)) {
                 continue;
             }
             pushParamImmediately(target, key, encodedValue);
@@ -102,10 +106,15 @@ export const loadBacteriaPatchWithAudio = inject(bacteriaParamBridgeDependencies
                     continue;
                 }
                 const previousEncoded = previousBand === undefined ? null : encodePatchValue(key, previousBand[key]);
-                if (previousEncoded === encodedValue) {
+                const prefixedKey = `band${bandIndex}_${key}`;
+                const projectEncoded = projectParameterValues?.[prefixedKey];
+                if (
+                    previousEncoded === encodedValue &&
+                    (projectEncoded === undefined || projectEncoded === encodedValue)
+                ) {
                     continue;
                 }
-                pushParamImmediately(target, `band${bandIndex}_${key}`, encodedValue);
+                pushParamImmediately(target, prefixedKey, encodedValue);
             }
         }
     };
