@@ -36,7 +36,12 @@ import { GlutenPanel } from '../GlutenPanel';
  */
 
 vi.mock('#/infra/store/useStore', () => ({
-    useStore: vi.fn(() => MOCKED_INSTANCES),
+    useStore: vi.fn((_store: unknown, defaultValue: unknown) => {
+        if (typeof defaultValue === 'object' && defaultValue !== null && 'tracks' in defaultValue) {
+            return defaultValue;
+        }
+        return MOCKED_INSTANCES;
+    }),
 }));
 
 vi.mock('../../../useCases/glutenParamBridge/setGlutenParamWithAudio', () => ({

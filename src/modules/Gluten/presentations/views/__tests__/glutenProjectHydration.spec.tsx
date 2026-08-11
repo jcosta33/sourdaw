@@ -2,6 +2,7 @@ import { act, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it } from 'vitest';
 
 import { type Track, trackStore } from '#/modules/Arrangement/stores';
+import { createTrack } from '#/modules/Arrangement/useCases';
 
 import { getGlutenState, glutenMeterStore, glutenStore } from '../../../stores/glutenStore';
 import { hydrateGlutenPatchFromProject } from '../../../useCases/glutenParamBridge/hydrateGlutenPatchFromProject';
@@ -11,38 +12,8 @@ const DEVICE_ID = 'gluten-project-device';
 
 function glutenTrack(parameterValues: Record<string, number>): Track {
     return {
-        id: 'track-1',
-        name: 'Drum bus',
-        kind: 'audio',
-        muted: false,
-        soloed: false,
-        armed: false,
-        gain: 0.8,
-        pan: 0,
-        color: '#00ffff',
-        clips: [],
+        ...createTrack({ id: 'track-1', name: 'Drum bus', kind: 'audio' }),
         devices: [{ id: DEVICE_ID, name: 'Gluten', type: 'gluten', bypassed: false, parameterValues }],
-        sends: [],
-        frozen: false,
-        freezeState: { status: 'unfrozen' },
-        parentId: null,
-        collapsed: false,
-        inputMonitoring: 'auto',
-        hidden: false,
-        disabled: false,
-        height: 80,
-        outputId: 'master',
-        automationMode: 'read',
-        groupId: null,
-        soloSafe: false,
-        notes: '',
-        inputId: null,
-        activeAlternativeId: 'alt-1',
-        alternatives: [{ id: 'alt-1', name: 'Alternative 1', clips: [] }],
-        vcaGroupId: null,
-        midiFx: [],
-        midiOutputTrackId: null,
-        followChordTrack: false,
     };
 }
 

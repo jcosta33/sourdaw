@@ -1,7 +1,6 @@
 import { render, fireEvent, screen, cleanup } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-import { useStore } from '#/infra/store/useStore';
 import { executeAppAction } from '#/modules/Command/useCases';
 import { NATIVE_DSP_ENGINE_GAPS, findNativeDspEngineGapParam } from '#/utils/nativeDspEngineGaps';
 
@@ -36,7 +35,12 @@ import { ProofChamberPanel } from '../ProofChamberPanel';
  */
 
 vi.mock('#/infra/store/useStore', () => ({
-    useStore: vi.fn((_store, defaultValue) => defaultValue),
+    useStore: vi.fn((_store: unknown, defaultValue: unknown) => {
+        if (typeof defaultValue === 'object' && defaultValue !== null && 'instances' in defaultValue) {
+            return MOCKED_CHAMBER_STORE_STATE;
+        }
+        return defaultValue;
+    }),
 }));
 
 vi.mock('#/modules/Command/useCases', () => ({
@@ -107,6 +111,7 @@ const DECAY_EQ_CONTROL_NAMES = [
 ];
 
 const DEVICE_ID = 'test-device';
+let MOCKED_CHAMBER_STORE_STATE = { activeInstanceId: DEVICE_ID, instances: {} };
 
 /**
  * How each advertised parameter appears on screen.
@@ -172,10 +177,10 @@ function renderPanel(algorithm: ProofChamberAlgorithm, overrides: Partial<ProofC
         saturation: true,
         ...overrides,
     };
-    vi.mocked(useStore).mockReturnValue({
+    MOCKED_CHAMBER_STORE_STATE = {
         activeInstanceId: DEVICE_ID,
         instances: { [DEVICE_ID]: { id: DEVICE_ID, isBypassed: false, uiLevel: 1, engineState } },
-    });
+    };
     render(<ProofChamberPanel deviceId={DEVICE_ID} />);
     // The Decay EQ overlay is behind a view toggle that starts closed, and its
     // six bands are part of the population below. The chip is a view control,
@@ -223,7 +228,6 @@ function isGapped(algorithm: ProofChamberAlgorithm, paramId: string): boolean {
 describe('the Dutch Oven panel offers only controls the live algorithm can hear', () => {
     beforeEach(() => {
         vi.clearAllMocks();
-        vi.mocked(useStore).mockImplementation((_store, defaultValue) => defaultValue);
     });
 
     it('gives every knob an accessible name of its own', () => {
