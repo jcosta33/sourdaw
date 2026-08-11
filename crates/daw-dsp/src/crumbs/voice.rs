@@ -20,6 +20,8 @@ use super::types::{
 
 const MIN_PLAYBACK_SPEED: f64 = 1.0 / 16.0;
 const MAX_PLAYBACK_SPEED: f64 = 16.0;
+const UNITY_RESAMPLING_WORK_UNITS: usize = 8;
+const MIN_BANDLIMITED_TAPS: usize = 49;
 
 // ── Crumbs Voice ──────────────────────────────────────────────────────
 
@@ -382,27 +384,55 @@ impl CrumbsVoice {
             LoopMode::Forward => {
                 if self.position >= end {
                     self.has_looped = true;
-                    let overshoot = self.position - end;
-                    self.position = start + overshoot;
+                    let length = end - start;
+                    if length <= 0.0 {
+                        self.active = false;
+                        return;
+                    }
+                    self.position = start + (self.position - start).rem_euclid(length);
                 }
             }
 
             LoopMode::PingPong => {
-                if self.direction > 0.0 && self.position >= end {
+                if self.position >= end || self.position <= start {
                     self.has_looped = true;
-                    self.direction = -1.0;
-                    self.position = end - (self.position - end);
-                } else if self.direction < 0.0 && self.position <= start {
-                    self.has_looped = true;
-                    self.direction = 1.0;
-                    self.position = start + (start - self.position);
+                    let length = end - start;
+                    if length <= 0.0 {
+                        self.active = false;
+                        return;
+                    }
+                    let travel = if self.direction > 0.0 {
+                        self.position - start
+                    } else {
+                        end - self.position
+                    };
+                    let phase = travel.rem_euclid(length * 2.0);
+                    if phase <= length {
+                        if self.direction > 0.0 {
+                            self.position = start + phase;
+                            self.direction = 1.0;
+                        } else {
+                            self.position = end - phase;
+                            self.direction = -1.0;
+                        }
+                    } else if self.direction > 0.0 {
+                        self.position = end - (phase - length);
+                        self.direction = -1.0;
+                    } else {
+                        self.position = start + (phase - length);
+                        self.direction = 1.0;
+                    }
                 }
             }
 
             LoopMode::Reverse => {
                 if self.position < start {
-                    let undershoot = start - self.position;
-                    self.position = end - undershoot;
+                    let length = end - start;
+                    if length <= 0.0 {
+                        self.active = false;
+                        return;
+                    }
+                    self.position = start + (self.position - start).rem_euclid(length);
                 }
             }
         }
@@ -438,20 +468,17 @@ impl CrumbsVoice {
     }
 
     fn set_playback_speed(&mut self, semitone_diff: f32) {
-        if !semitone_diff.is_finite() {
+        let Some(speed) = bounded_playback_speed(semitone_diff) else {
             return;
-        }
-        self.speed = 2.0_f64
-            .powf(semitone_diff as f64 / 12.0)
-            .clamp(MIN_PLAYBACK_SPEED, MAX_PLAYBACK_SPEED);
+        };
+        self.speed = speed;
         self.anti_alias_cutoff = (1.0 / self.speed).min(1.0) as f32;
         let step = core::f32::consts::PI * self.anti_alias_cutoff;
         (self.anti_alias_step_sin, self.anti_alias_step_cos) = step.sin_cos();
         // A Hamming-window transition needs roughly five source samples per
         // playback-ratio step to retain the 42 dB stop-band contract. Cap the
         // supported pitch range at 16x so the audio-thread work stays bounded.
-        let radius = ((5.0 * self.speed).ceil() as usize).clamp(24, 80);
-        self.anti_alias_taps = radius * 2 + 1;
+        self.anti_alias_taps = bandlimited_tap_count(self.speed);
         let window_step = 2.0 * core::f32::consts::PI / (self.anti_alias_taps - 1) as f32;
         (
             self.anti_alias_window_step_sin,
@@ -513,6 +540,50 @@ impl CrumbsVoice {
     pub fn position_frames(&self) -> u64 {
         self.position as u64
     }
+
+    pub(crate) fn resampling_work_units(&self) -> usize {
+        if self.speed > 1.0 {
+            bandlimited_work_units(self.anti_alias_taps)
+        } else {
+            UNITY_RESAMPLING_WORK_UNITS
+        }
+    }
+}
+
+pub(crate) fn resampling_work_units_for_pitch(note: u8, root_note: u8, tune_cents: f32) -> usize {
+    let semitone_diff = (note as f32 - root_note as f32) + tune_cents / 100.0;
+    let Some(speed) = bounded_playback_speed(semitone_diff) else {
+        return UNITY_RESAMPLING_WORK_UNITS;
+    };
+    if speed > 1.0 {
+        bandlimited_work_units(bandlimited_tap_count(speed))
+    } else {
+        UNITY_RESAMPLING_WORK_UNITS
+    }
+}
+
+fn bounded_playback_speed(semitone_diff: f32) -> Option<f64> {
+    if !semitone_diff.is_finite() {
+        return None;
+    }
+    Some(
+        2.0_f64
+            .powf(semitone_diff as f64 / 12.0)
+            .clamp(MIN_PLAYBACK_SPEED, MAX_PLAYBACK_SPEED),
+    )
+}
+
+fn bandlimited_tap_count(speed: f64) -> usize {
+    let radius = ((5.0 * speed).ceil() as usize).clamp(24, 80);
+    radius * 2 + 1
+}
+
+fn bandlimited_work_units(tap_count: usize) -> usize {
+    // Longer sinc kernels also raise the surrounding per-voice loop cost.
+    // Weight growth above the 49-tap baseline so the engine budget preserves
+    // 128 ordinary pitch-up voices without admitting a deadline-breaking
+    // number of 161-tap voices.
+    tap_count.saturating_add(tap_count.saturating_sub(MIN_BANDLIMITED_TAPS) / 2)
 }
 
 // ── Voice Trigger Parameters ───────────────────────────────────────────
@@ -957,5 +1028,37 @@ mod tests {
         assert_eq!(voice.tune_cents, 1_200.0);
         assert_eq!(voice.speed, 2.0);
         assert!(voice.position.is_finite());
+    }
+
+    #[test]
+    fn high_speed_loop_overshoot_stays_inside_the_active_region() {
+        let sample = SampleData::from_mono(vec![0.25; 64], SAMPLE_RATE as u32);
+
+        for loop_mode in [LoopMode::Forward, LoopMode::PingPong, LoopMode::Reverse] {
+            let mut voice = CrumbsVoice::new(SAMPLE_RATE);
+            voice.trigger(&VoiceTriggerParams {
+                note: 84,
+                root_note: 60,
+                playback_mode: PlaybackMode::Sustain,
+                loop_mode,
+                loop_start: 16,
+                loop_end: 20,
+                start_frame: 16,
+                ..VoiceTriggerParams::default()
+            });
+            voice.set_tune(2_400.0);
+
+            for _ in 0..8 {
+                let mut left = 0.0;
+                let mut right = 0.0;
+                assert!(voice.render_sample(&sample, &mut left, &mut right));
+                assert!(left.is_finite() && right.is_finite());
+                assert!(
+                    (16.0..20.0).contains(&voice.position),
+                    "{loop_mode:?} left the loop at position {}",
+                    voice.position
+                );
+            }
+        }
     }
 }

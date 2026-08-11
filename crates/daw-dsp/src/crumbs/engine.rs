@@ -45,9 +45,13 @@ use super::types::{
     CrumbsCommand, CrumbsMode, CrumbsParam, FilterType, LoopMode, PlaybackMode, RecordState,
     SampleId, MAX_STACK_VOICES, MAX_VOICES,
 };
-use super::voice::{CrumbsVoice, VoiceTriggerParams};
+use super::voice::{resampling_work_units_for_pitch, CrumbsVoice, VoiceTriggerParams};
 
 // ── Crumbs Engine ─────────────────────────────────────────────────────
+
+/// One 49-tap octave-up voice costs 49 units, so this preserves the full
+/// 128-voice pool at ordinary pitch-up while bounding more expensive ratios.
+const MAX_RESAMPLING_WORK_UNITS: usize = 49 * MAX_VOICES;
 
 /// A `CrumbsVoice` must own no heap storage, transitively.
 ///
@@ -413,11 +417,29 @@ impl CrumbsEngine {
             return;
         }
 
-        // Choke once per note, before any voice is allocated — otherwise the
-        // second voice of a stack would choke the first.
-        self.choke_voices_in_group(params.choke_group);
-
         let count = self.stack_count.max(1);
+        let mut requested_work = 0_usize;
+        for stack_idx in 0..count {
+            let detune_cents = if count > 1 {
+                let t = stack_idx as f32 / (count - 1) as f32;
+                self.detune_spread * (t - 0.5)
+            } else {
+                0.0
+            };
+            requested_work = requested_work.saturating_add(resampling_work_units_for_pitch(
+                params.note,
+                params.root_note,
+                self.tune_cents + detune_cents,
+            ));
+        }
+        if self.resampling_work_units().saturating_add(requested_work) > MAX_RESAMPLING_WORK_UNITS {
+            return;
+        }
+
+        // Choke once per note, after the whole stack has passed the work
+        // budget but before any voice is allocated. A rejected note must not
+        // silence an existing choke group, and a stack must land atomically.
+        self.choke_voices_in_group(params.choke_group);
 
         // Slots this call has already handed to the stack. Without it, the
         // voice triggered by the previous iteration plays `note`, is not yet
@@ -433,6 +455,15 @@ impl CrumbsEngine {
         let mut claimed_len = 0_usize;
 
         for stack_idx in 0..count {
+            let (detune_cents, stack_pan) = if count > 1 {
+                let t = stack_idx as f32 / (count - 1) as f32;
+                let detune = self.detune_spread * (t - 0.5);
+                let pan = self.stack_spread * (t * 2.0 - 1.0);
+                (detune, pan)
+            } else {
+                (0.0, 0.0)
+            };
+
             // Try to allocate a voice
             let voice_index = match self.allocator.allocate() {
                 Some(idx) => idx,
@@ -460,18 +491,6 @@ impl CrumbsEngine {
                         None => return,
                     }
                 }
-            };
-
-            // Calculate per-voice detune and pan for stacking
-            let (detune_cents, stack_pan) = if count > 1 {
-                // Spread detune evenly: -spread/2 ... +spread/2
-                let t = stack_idx as f32 / (count - 1) as f32; // 0.0 to 1.0
-                let detune = self.detune_spread * (t - 0.5); // centered
-                                                             // Spread pan: -stack_spread ... +stack_spread
-                let pan = self.stack_spread * (t * 2.0 - 1.0);
-                (detune, pan)
-            } else {
-                (0.0, 0.0)
             };
 
             self.voices[voice_index].trigger(&params);
@@ -502,6 +521,21 @@ impl CrumbsEngine {
                 claimed_len += 1;
             }
         }
+    }
+
+    fn resampling_work_units(&self) -> usize {
+        let playable = self
+            .voices
+            .iter()
+            .filter(|voice| voice.active)
+            .map(CrumbsVoice::resampling_work_units)
+            .sum::<usize>();
+        let tails = self
+            .active_steal_tails
+            .iter()
+            .map(|&index| self.steal_tails[index].resampling_work_units())
+            .sum::<usize>();
+        playable.saturating_add(tails)
     }
 
     fn note_off(&mut self, note: u8) {
@@ -822,7 +856,11 @@ impl CrumbsEngine {
             // no users, correctness wins outright, and no version-gated branch
             // preserves the silent reading — but the change is real and is
             // stated here rather than discovered.
-            CrumbsParam::Tune => self.tune_cents = value.clamp(-24.0, 24.0) * 100.0,
+            CrumbsParam::Tune => {
+                if value.is_finite() {
+                    self.tune_cents = value.clamp(-24.0, 24.0) * 100.0;
+                }
+            }
             CrumbsParam::Pan => {
                 // Pan is set per-voice; this sets the default for new voices.
                 // Existing voices are not affected.
@@ -1183,6 +1221,17 @@ mod tests {
             );
         }
         assert_eq!(engine.sample_pool().count(), 3);
+    }
+
+    #[test]
+    fn non_finite_tune_preserves_the_last_finite_engine_value() {
+        let mut engine = CrumbsEngine::new(44_100.0);
+        engine.set_param(CrumbsParam::Tune, 12.0);
+
+        engine.set_param(CrumbsParam::Tune, f32::NAN);
+        engine.set_param(CrumbsParam::Tune, f32::INFINITY);
+
+        assert_eq!(engine.tune_cents, 1_200.0);
     }
 }
 
