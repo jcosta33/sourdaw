@@ -500,7 +500,7 @@ describe('executeAppAction', () => {
         expect(mocks.recordAction).not.toHaveBeenCalled();
         expect(mocks.recordActionHistoryMetadata).not.toHaveBeenCalled();
         expect(mocks.commitUndoEntry).not.toHaveBeenCalled();
-        expect(onCommitted).toHaveBeenCalledOnce();
+        expect(onCommitted).not.toHaveBeenCalled();
     });
 
     it('waits for snapshot ownership before describing or executing an action', async () => {

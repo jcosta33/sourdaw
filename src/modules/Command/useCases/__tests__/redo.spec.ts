@@ -149,11 +149,14 @@ describe('redo', () => {
         const entry = actionEntry();
         const macroError = new Error('macro recording failed');
         mocks.undoStoreValue.value = { past: [], future: [entry] };
-        mocks.executeAppAction.mockRejectedValue(new AppActionCommittedError(entry.action.type, macroError));
+        mocks.recordAction.mockImplementation(() => {
+            throw macroError;
+        });
 
         await expect(redo()).rejects.toBeInstanceOf(AppActionCommittedError);
 
         expect(mocks.executeAppAction).toHaveBeenCalledOnce();
+        expect(mocks.recordAction).toHaveBeenCalledOnce();
         expect(mocks.undoStoreSet).toHaveBeenCalledWith({ past: [entry], future: [] });
         expect(mocks.undoTreeMoveTo).toHaveBeenCalledWith(entry.id);
 

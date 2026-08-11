@@ -193,14 +193,9 @@ export const executeAppAction: ExecuteAppAction = inject({ logger })(
                     } catch (reconciliationError) {
                         committedFailures.push(reconciliationError);
                     }
-                    try {
-                        options?.onCommitted?.();
-                    } catch (observerError) {
-                        committedFailures.push(observerError);
-                    }
                     const committedCause = collapseCommittedFailures(
                         committedFailures,
-                        'Storage commit, runtime reconciliation, or committed observer failed'
+                        'Storage commit or runtime reconciliation failed'
                     );
                     const committed_error = new AppActionCommittedError(action.type, committedCause);
                     logger.error(committed_error);
