@@ -63,12 +63,11 @@ describe('BuiltinInstrumentDescriptors', () => {
         expect(ids).toContain('builtin-synth');
     });
 
-    it('does not advertise new Grand Boule radiation controls before offline scheduling lands', () => {
+    it('does not publish Grand Boule radiation controls before persistence lands', () => {
         const radiationParameters = GRAND_BOULE_DESCRIPTOR.parameters.filter((parameter) =>
             ['lidPosition', 'micPosition'].includes(parameter.id)
         );
 
-        expect(radiationParameters).toHaveLength(2);
-        expect(radiationParameters.map((parameter) => parameter.automatable)).toEqual([false, false]);
+        expect(radiationParameters).toHaveLength(0);
     });
 });
