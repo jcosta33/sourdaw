@@ -1,5 +1,6 @@
 import { markerStore } from '#/modules/Arrangement/stores';
 import { describeAction } from '#/modules/Command/useCases';
+import { describeShortMidiOverlapRemoval, projectShortMidiOverlapRemoval } from '#/modules/MIDI/useCases';
 import { createPunchRegionPatch } from '#/modules/Transport/useCases';
 import { type AppAction } from '#/utils/handlerContract';
 import { resolveMarkerColorName } from '#/utils/markerColorPalette';
@@ -212,6 +213,23 @@ export function describePlannedAction({ action, context }: DescribePlannedAction
                 return `Remove section "${section.name}" from beat ${String(section.startBeat)} to beat ${String(section.endBeat)} (${section.id})`;
             }
             return `Rename section "${section.name}" to "${action.payload.name}" from beat ${String(section.startBeat)} to beat ${String(section.endBeat)} (${section.id})`;
+        }
+    }
+    if (action.type === 'removeShortMidiOverlaps') {
+        const projected = projectShortMidiOverlapRemoval({
+            notes: action.payload.expectedNotes,
+            tempo: action.payload.expectedTempo,
+            maximumOverlapMs: action.payload.maximumOverlapMs,
+        });
+        if (projected) {
+            return describeShortMidiOverlapRemoval({
+                trackId: action.payload.expectedTrackId,
+                trackName: action.payload.trackName,
+                clipId: action.payload.clipId,
+                clipName: action.payload.clipName,
+                maximumOverlapMs: action.payload.maximumOverlapMs,
+                shortenedNotes: projected.shortenedNotes,
+            });
         }
     }
     if (

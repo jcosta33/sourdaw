@@ -6,6 +6,7 @@ import { type ArticulationTransferCapability } from '../models/ArticulationTrans
 import { type BackingVocalPlateCapability } from '../models/BackingVocalPlateCapability';
 import { type BassProcessingCopyCapability } from '../models/BassProcessingCopyCapability';
 import { type DrumRoutingCapability } from '../models/DrumRoutingCapability';
+import { type MidiOverlapTransformCapability } from '../models/MidiOverlapTransformCapability';
 import { type ProjectContext } from '../models/ProjectContext';
 import { type RuntimeAction } from '../models/RuntimeAction';
 import { type SidechainRoutingCapability } from '../models/SidechainRoutingCapability';
@@ -1314,6 +1315,27 @@ function bridgeToolCall({
             );
         }
         return { type: 'quantizeNotes', payload: { clipId: target.clip.id, gridSize: args.gridSize } };
+    }
+
+    if (call.name === 'removeShortMidiOverlaps') {
+        const target = findEditableMidiClip(context, args.clipId);
+        if (
+            !hasExactKeys(args, ['clipId', 'maximumOverlapMs']) ||
+            !target ||
+            !isFiniteNumber(args.maximumOverlapMs) ||
+            args.maximumOverlapMs <= 0 ||
+            args.maximumOverlapMs > 1_000
+        ) {
+            return rejection(
+                index,
+                call.name,
+                'Expected an unlocked non-empty MIDI clip and a finite maximumOverlapMs greater than 0 and at most 1000'
+            );
+        }
+        return {
+            type: 'removeShortMidiOverlaps',
+            payload: { clipId: target.clip.id, maximumOverlapMs: args.maximumOverlapMs },
+        };
     }
 
     if (call.name === 'copyMidiArticulations') {
@@ -3081,6 +3103,7 @@ export function buildLlmActionUserMessage({
     backingVocalPlateCapability,
     bassProcessingCopyCapability,
     drumRoutingCapability,
+    midiOverlapTransformCapability,
     sidechainRoutingCapability,
     wholeProjectVibeMixCapability,
 }: {
@@ -3091,6 +3114,7 @@ export function buildLlmActionUserMessage({
     backingVocalPlateCapability?: BackingVocalPlateCapability;
     bassProcessingCopyCapability?: BassProcessingCopyCapability;
     drumRoutingCapability?: DrumRoutingCapability;
+    midiOverlapTransformCapability?: MidiOverlapTransformCapability;
     sidechainRoutingCapability?: SidechainRoutingCapability;
     wholeProjectVibeMixCapability?: WholeProjectVibeMixCapability;
 }): string {
@@ -3100,6 +3124,7 @@ export function buildLlmActionUserMessage({
         ...(backingVocalPlateCapability ? { backingVocalPlateCapability } : {}),
         ...(bassProcessingCopyCapability ? { bassProcessingCopyCapability } : {}),
         ...(drumRoutingCapability ? { drumRoutingCapability } : {}),
+        ...(midiOverlapTransformCapability ? { midiOverlapTransformCapability } : {}),
         ...(sidechainRoutingCapability ? { sidechainRoutingCapability } : {}),
         ...(wholeProjectVibeMixCapability ? { wholeProjectVibeMixCapability } : {}),
         tempo: context.tempo,

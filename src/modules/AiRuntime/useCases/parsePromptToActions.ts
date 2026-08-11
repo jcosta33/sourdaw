@@ -20,6 +20,7 @@ import { getArticulationTransferPromptScope } from './agentReference/getArticula
 import { getBackingVocalPlatePromptScope } from './agentReference/getBackingVocalPlatePromptScope';
 import { getBassProcessingCopyPromptScope } from './agentReference/getBassProcessingCopyPromptScope';
 import { getDrumRoutingPromptScope } from './agentReference/getDrumRoutingPromptScope';
+import { getMidiOverlapTransformPromptScope } from './agentReference/getMidiOverlapTransformPromptScope';
 import { getSidechainRoutingPromptScope } from './agentReference/getSidechainRoutingPromptScope';
 import { getWholeProjectVibeMixScope } from './agentReference/getWholeProjectVibeMixScope';
 import { materializeBatchLocalActionIdentities } from './agentReference/materializeBatchLocalActionIdentities';
@@ -121,6 +122,7 @@ export const parsePromptToActions = inject({ logger })(
             // sendChatMessage remains responsible for confirmation and execution.
             try {
                 const drumRoutingScope = getDrumRoutingPromptScope(prompt, context, projectRevision);
+                const midiOverlapTransformScope = getMidiOverlapTransformPromptScope(prompt, context, projectRevision);
                 const backingVocalPlateScope = getBackingVocalPlatePromptScope(prompt, context, projectRevision);
                 const bassProcessingCopyScope = getBassProcessingCopyPromptScope(prompt, context, projectRevision);
                 const articulationTransferScope = getArticulationTransferPromptScope(prompt, context, projectRevision);
@@ -128,6 +130,8 @@ export const parsePromptToActions = inject({ logger })(
                     articulationTransferScope.status === 'request' ? articulationTransferScope.capability : undefined;
                 const drumRoutingCapability =
                     drumRoutingScope.status === 'request' ? drumRoutingScope.capability : undefined;
+                const midiOverlapTransformCapability =
+                    midiOverlapTransformScope.status === 'request' ? midiOverlapTransformScope.capability : undefined;
                 const backingVocalPlateCapability =
                     backingVocalPlateScope.status === 'request' ? backingVocalPlateScope.capability : undefined;
                 const bassProcessingCopyCapability =
@@ -150,6 +154,7 @@ export const parsePromptToActions = inject({ logger })(
                         backingVocalPlateCapability,
                         bassProcessingCopyCapability,
                         drumRoutingCapability,
+                        midiOverlapTransformCapability,
                         sidechainRoutingCapability,
                         wholeProjectVibeMixCapability,
                     }),
@@ -241,6 +246,7 @@ export const parsePromptToActions = inject({ logger })(
                     const guarded = materializeActionStateGuards(materialized.actions, context, {
                         appOwnedRenderTailSeconds: bridged.appOwnedRenderTailSeconds,
                         bassProcessingCopyScope: bridged.bassProcessingCopyScope,
+                        midiOverlapTransformScope: bridged.midiOverlapTransformScope,
                     });
                     if (guarded.status === 'rejected') {
                         logger.warn(`[AI] Rejected LLM action batch because ${guarded.reason}`);

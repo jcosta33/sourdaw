@@ -115,6 +115,8 @@ export { humanizeNotes } from './midiNoteTransforms/humanizeNotes';
 export { invertNotes } from './midiNoteTransforms/invertNotes';
 export { joinNotes } from './midiNoteTransforms/joinNotes';
 export { legatoNotes } from './midiNoteTransforms/legatoNotes';
+export { describeShortMidiOverlapRemoval } from './midiNoteTransforms/describeShortMidiOverlapRemoval';
+export { projectShortMidiOverlapRemoval } from './midiNoteTransforms/projectShortMidiOverlapRemoval';
 export { quantizeNoteLengths } from './midiNoteTransforms/quantizeNoteLengths';
 export { quantizeNotes } from './midiNoteTransforms/quantizeNotes';
 export { retrogradeNotes } from './midiNoteTransforms/retrogradeNotes';

@@ -813,6 +813,34 @@ export const executableAppActionDescriptors = [
         },
     },
     {
+        actionType: 'removeShortMidiOverlaps',
+        risk: 'broad-reversible',
+        description:
+            'Remove only same-pitch/channel MIDI note overlaps strictly below an explicit millisecond threshold in one selected clip.',
+        intentPhrases: ['shorten overlaps', 'remove short midi overlaps', 'shorten midi overlaps'],
+        targetRules: editableMidiClipTargetRules,
+        valueRules: [
+            {
+                argument: 'maximumOverlapMs',
+                kind: 'number-if-present',
+                requiredInPrompt: true,
+                match: 'exact',
+            },
+        ],
+        parameters: {
+            properties: {
+                clipId: { type: 'string', description: 'Application-admitted selected MIDI clip ID' },
+                maximumOverlapMs: {
+                    type: 'number',
+                    exclusiveMinimum: 0,
+                    maximum: 1_000,
+                    description: 'Strict millisecond overlap ceiling; equality is preserved',
+                },
+            },
+            required: ['clipId', 'maximumOverlapMs'],
+        },
+    },
+    {
         actionType: 'copyMidiArticulations',
         risk: 'broad-reversible',
         description: 'Copy only per-note articulation between one exact pair of structurally matched MIDI clips.',

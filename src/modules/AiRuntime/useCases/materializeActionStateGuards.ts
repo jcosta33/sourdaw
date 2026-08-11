@@ -5,6 +5,7 @@ import { type MaterializableRuntimeAction } from '../models/ExecutableRuntimeAct
 import { projectMidiArticulationTransfer } from '../transformers/projectMidiArticulationTransfer';
 
 import { type BassProcessingCopyRequestScope } from './agentReference/getBassProcessingCopyPromptScope';
+import { type MidiOverlapTransformRequestScope } from './agentReference/getMidiOverlapTransformPromptScope';
 import { type ProjectContext, type ProjectContextAdjustmentLayer, type ProjectContextTrack } from './getProjectContext';
 
 type MaterializeActionStateGuardsResult =
@@ -13,6 +14,7 @@ type MaterializeActionStateGuardsResult =
 type MaterializeActionStateGuardsOptions = {
     appOwnedRenderTailSeconds?: number;
     bassProcessingCopyScope?: BassProcessingCopyRequestScope;
+    midiOverlapTransformScope?: MidiOverlapTransformRequestScope;
 };
 
 function createProjectedBus(busId: string, name: string): ProjectContextTrack {
@@ -168,6 +170,32 @@ export function materializeActionStateGuards(
                     expectedTrackFrozen: sourceTarget.track.frozen ?? false,
                     expectedSourceClipLocked: sourceTarget.clip.locked ?? false,
                     expectedTargetClipLocked: targetTarget.clip.locked ?? false,
+                },
+            });
+            continue;
+        }
+        if (action.type === 'removeShortMidiOverlaps') {
+            const scope = options.midiOverlapTransformScope;
+            const entry = scope?.entries.find(
+                (candidate) =>
+                    candidate.clipId === action.payload.clipId &&
+                    scope.maximumOverlapMs === action.payload.maximumOverlapMs
+            );
+            if (!scope || !entry) {
+                return { status: 'rejected', reason: 'EX-04 selected MIDI overlap scope is unavailable' };
+            }
+            materialized.push({
+                type: 'removeShortMidiOverlaps',
+                payload: {
+                    clipId: entry.clipId,
+                    maximumOverlapMs: scope.maximumOverlapMs,
+                    expectedTempo: scope.tempo,
+                    expectedTrackId: entry.trackId,
+                    trackName: entry.trackName,
+                    expectedTrackFrozen: entry.expectedTrackFrozen,
+                    clipName: entry.clipName,
+                    expectedClipLocked: entry.expectedClipLocked,
+                    expectedNotes: entry.expectedNotes.map((note) => ({ ...note })),
                 },
             });
             continue;
