@@ -123,15 +123,20 @@ export const TempoEditor = (): ReactElement => {
                     <Button
                         variant="ghost"
                         size="icon-xs"
-                        onClick={time.handleTapTempo}
+                        onClick={() => {
+                            if (!tempoField.editable) {
+                                return;
+                            }
+                            time.handleTapTempo();
+                        }}
                         aria-label="Tap tempo"
                         // Tap tempo writes through the same field, so it lands
                         // wherever the field lands — and refuses wherever the
                         // field refuses. It stays live during playback, the state
                         // tap tempo is most for; under a lock it is visibly
-                        // disabled rather than silently doing nothing.
-                        disabled={!tempoField.editable}
-                        className="text-[9px] font-bold w-6 h-5"
+                        // unavailable without dropping keyboard focus.
+                        aria-disabled={!tempoField.editable || undefined}
+                        className="text-[9px] font-bold w-6 h-5 aria-disabled:cursor-not-allowed aria-disabled:opacity-50"
                     >
                         TAP
                     </Button>
