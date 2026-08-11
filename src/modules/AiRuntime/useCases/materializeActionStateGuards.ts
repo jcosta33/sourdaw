@@ -4,13 +4,15 @@ import { type AppAction } from '#/utils/handlerContract';
 import { type MaterializableRuntimeAction } from '../models/ExecutableRuntimeAction';
 import { projectMidiArticulationTransfer } from '../transformers/projectMidiArticulationTransfer';
 
-import { type ProjectContext, type ProjectContextTrack } from './getProjectContext';
+import { type BassProcessingCopyRequestScope } from './agentReference/getBassProcessingCopyPromptScope';
+import { type ProjectContext, type ProjectContextAdjustmentLayer, type ProjectContextTrack } from './getProjectContext';
 
 type MaterializeActionStateGuardsResult =
     { status: 'accepted'; actions: AppAction[] } | { status: 'rejected'; reason: string };
 
 type MaterializeActionStateGuardsOptions = {
     appOwnedRenderTailSeconds?: number;
+    bassProcessingCopyScope?: BassProcessingCopyRequestScope;
 };
 
 function createProjectedBus(busId: string, name: string): ProjectContextTrack {
@@ -45,12 +47,84 @@ export function materializeActionStateGuards(
     const tracksById = new Map(context.tracks.map((track) => [track.id, track]));
     const frozenByTrack = new Map(context.tracks.map((track) => [track.id, track.frozen] as const));
     const reservedDeviceIds = new Set(context.tracks.flatMap((track) => track.devices.map((device) => device.id)));
+    const reservedAdjustmentRegionIds = new Set(
+        (context.adjustmentLayers ?? []).flatMap((layer) => layer.regions.map((region) => region.id))
+    );
+    const projectedAdjustmentLayers = new Map<string, ProjectContextAdjustmentLayer>(
+        (context.adjustmentLayers ?? []).map((layer) => [
+            layer.id,
+            {
+                ...layer,
+                parameters: layer.parameters.map((parameter) => ({ ...parameter })),
+                affectedTrackIds: [...layer.affectedTrackIds],
+                regions: layer.regions.map((region) => ({ ...region })),
+            },
+        ])
+    );
     const deviceIdsByTrack = new Map(
         context.tracks.map((track) => [track.id, track.devices.map((device) => device.id)] as const)
     );
     const materialized: AppAction[] = [];
 
     for (const action of actions) {
+        if (action.type === 'addAdjustmentRegion') {
+            const scope = options.bassProcessingCopyScope;
+            const entry = scope?.entries.find(
+                (candidate) =>
+                    candidate.layer.id === action.payload.layerId &&
+                    candidate.targetRegion.startBeat === action.payload.startBeat &&
+                    candidate.targetRegion.endBeat === action.payload.endBeat &&
+                    candidate.targetRegion.blend === action.payload.blend &&
+                    candidate.targetRegion.fadeInBeats === action.payload.fadeInBeats &&
+                    candidate.targetRegion.fadeOutBeats === action.payload.fadeOutBeats
+            );
+            const layer = projectedAdjustmentLayers.get(action.payload.layerId);
+            if (!scope || !entry || !layer) {
+                return { status: 'rejected', reason: 'EX-03 adjustment-layer scope is unavailable' };
+            }
+            const expectedTracks = layer.affectedTrackIds.flatMap((trackId) => {
+                const track = tracksById.get(trackId);
+                return track ? [{ trackId: track.id, trackName: track.name, frozen: track.frozen ?? false }] : [];
+            });
+            if (expectedTracks.length !== layer.affectedTrackIds.length) {
+                return { status: 'rejected', reason: `EX-03 target track is unavailable: ${layer.id}` };
+            }
+            let regionId = `adjr-${crypto.randomUUID()}`;
+            while (reservedAdjustmentRegionIds.has(regionId)) {
+                regionId = `adjr-${crypto.randomUUID()}`;
+            }
+            reservedAdjustmentRegionIds.add(regionId);
+            const region = {
+                id: regionId,
+                startBeat: action.payload.startBeat,
+                endBeat: action.payload.endBeat,
+                blend: action.payload.blend,
+                fadeInBeats: action.payload.fadeInBeats,
+                fadeOutBeats: action.payload.fadeOutBeats,
+            };
+            materialized.push({
+                type: 'addAdjustmentRegion',
+                payload: {
+                    ...action.payload,
+                    regionId,
+                    sourceRegionId: entry.sourceRegion.id,
+                    sourceSection: { ...scope.sourceSection },
+                    targetSection: { ...scope.targetSection },
+                    expectedLayer: {
+                        ...layer,
+                        parameters: layer.parameters.map((parameter) => ({ ...parameter })),
+                        affectedTrackIds: [...layer.affectedTrackIds],
+                        regions: layer.regions.map((region) => ({ ...region })),
+                    },
+                    expectedTracks,
+                },
+            });
+            projectedAdjustmentLayers.set(layer.id, {
+                ...layer,
+                regions: [...layer.regions, region].sort((alpha, beta) => alpha.startBeat - beta.startBeat),
+            });
+            continue;
+        }
         if (action.type === 'copyMidiArticulations') {
             const sourceTarget = context.tracks.flatMap((track) =>
                 track.clips.filter((clip) => clip.id === action.payload.sourceClipId).map((clip) => ({ clip, track }))

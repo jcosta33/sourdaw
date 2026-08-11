@@ -4,6 +4,7 @@ import { wouldCreateRoutingCycle } from '#/utils/routingCycle';
 
 import { type ArticulationTransferCapability } from '../models/ArticulationTransferCapability';
 import { type BackingVocalPlateCapability } from '../models/BackingVocalPlateCapability';
+import { type BassProcessingCopyCapability } from '../models/BassProcessingCopyCapability';
 import { type DrumRoutingCapability } from '../models/DrumRoutingCapability';
 import { type ProjectContext } from '../models/ProjectContext';
 import { type RuntimeAction } from '../models/RuntimeAction';
@@ -765,6 +766,32 @@ function bridgeToolCall({
                 parameterId: args.parameterId,
                 parameterName: automationLaneDisplayNameByParameterId[args.parameterId],
             },
+        };
+    }
+
+    if (call.name === 'addAdjustmentRegion') {
+        const { layerId, startBeat, endBeat, blend, fadeInBeats, fadeOutBeats } = args;
+        if (
+            !hasExactKeys(args, ['layerId', 'startBeat', 'endBeat', 'blend', 'fadeInBeats', 'fadeOutBeats']) ||
+            typeof layerId !== 'string' ||
+            !isFiniteNumber(startBeat) ||
+            startBeat < 0 ||
+            !isFiniteNumber(endBeat) ||
+            endBeat <= startBeat ||
+            !isFiniteNumber(blend) ||
+            blend < 0 ||
+            blend > 1 ||
+            !isFiniteNumber(fadeInBeats) ||
+            fadeInBeats < 0 ||
+            !isFiniteNumber(fadeOutBeats) ||
+            fadeOutBeats < 0 ||
+            fadeInBeats + fadeOutBeats > endBeat - startBeat
+        ) {
+            return rejection(index, call.name, 'Expected one exact bounded adjustment-layer region');
+        }
+        return {
+            type: 'addAdjustmentRegion',
+            payload: { layerId, startBeat, endBeat, blend, fadeInBeats, fadeOutBeats },
         };
     }
 
@@ -3052,6 +3079,7 @@ export function buildLlmActionUserMessage({
     projectRevision,
     articulationTransferCapability,
     backingVocalPlateCapability,
+    bassProcessingCopyCapability,
     drumRoutingCapability,
     sidechainRoutingCapability,
     wholeProjectVibeMixCapability,
@@ -3061,6 +3089,7 @@ export function buildLlmActionUserMessage({
     projectRevision?: string;
     articulationTransferCapability?: ArticulationTransferCapability;
     backingVocalPlateCapability?: BackingVocalPlateCapability;
+    bassProcessingCopyCapability?: BassProcessingCopyCapability;
     drumRoutingCapability?: DrumRoutingCapability;
     sidechainRoutingCapability?: SidechainRoutingCapability;
     wholeProjectVibeMixCapability?: WholeProjectVibeMixCapability;
@@ -3069,6 +3098,7 @@ export function buildLlmActionUserMessage({
         ...(projectRevision ? { projectRevision } : {}),
         ...(articulationTransferCapability ? { articulationTransferCapability } : {}),
         ...(backingVocalPlateCapability ? { backingVocalPlateCapability } : {}),
+        ...(bassProcessingCopyCapability ? { bassProcessingCopyCapability } : {}),
         ...(drumRoutingCapability ? { drumRoutingCapability } : {}),
         ...(sidechainRoutingCapability ? { sidechainRoutingCapability } : {}),
         ...(wholeProjectVibeMixCapability ? { wholeProjectVibeMixCapability } : {}),

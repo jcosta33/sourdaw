@@ -1406,10 +1406,32 @@ export type AppAction =
               startBeat: number;
               endBeat: number;
               blend?: number;
+              fadeInBeats?: number;
+              fadeOutBeats?: number;
               regionId?: string;
+              sourceRegionId?: string;
+              sourceSection?: { id: string; name: string; startBeat: number; endBeat: number };
+              targetSection?: { id: string; name: string; startBeat: number; endBeat: number };
+              expectedLayer?: AdjustmentLayerSnapshot;
+              expectedTracks?: Array<{ trackId: string; trackName: string; frozen: boolean }>;
           };
       }
-    | { type: 'removeAdjustmentRegion'; payload: { layerId: string; regionId: string } }
+    | {
+          type: 'removeAdjustmentRegion';
+          payload: {
+              layerId: string;
+              regionId: string;
+              expectedRegion?: {
+                  id: string;
+                  startBeat: number;
+                  endBeat: number;
+                  blend: number;
+                  fadeInBeats: number;
+                  fadeOutBeats: number;
+              };
+              expectedTracks?: Array<{ trackId: string; trackName: string; frozen: boolean }>;
+          };
+      }
     | { type: 'moveAdjustmentRegion'; payload: { regionId: string; startBeat: number; endBeat: number } }
     | { type: 'setLayerFades'; payload: { regionId: string; fadeInBeats: number; fadeOutBeats: number } }
     | { type: 'setLayerAffectedTracks'; payload: { layerId: string; trackIds: string[] } }
