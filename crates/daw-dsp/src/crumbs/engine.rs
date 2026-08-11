@@ -45,9 +45,13 @@ use super::types::{
     CrumbsCommand, CrumbsMode, CrumbsParam, FilterType, LoopMode, PlaybackMode, RecordState,
     SampleId, MAX_STACK_VOICES, MAX_VOICES,
 };
-use super::voice::{CrumbsVoice, VoiceTriggerParams};
+use super::voice::{resampling_work_units_for_pitch, CrumbsVoice, VoiceTriggerParams};
 
 // ── Crumbs Engine ─────────────────────────────────────────────────────
+
+/// One 49-tap octave-up voice costs 49 units, so this preserves the full
+/// 128-voice pool at ordinary pitch-up while bounding more expensive ratios.
+const MAX_RESAMPLING_WORK_UNITS: usize = 49 * MAX_VOICES;
 
 /// A `CrumbsVoice` must own no heap storage, transitively.
 ///
@@ -413,66 +417,71 @@ impl CrumbsEngine {
             return;
         }
 
-        // Choke once per note, before any voice is allocated — otherwise the
-        // second voice of a stack would choke the first.
-        self.choke_voices_in_group(params.choke_group);
-
         let count = self.stack_count.max(1);
-
-        // Slots this call has already handed to the stack. Without it, the
-        // voice triggered by the previous iteration plays `note`, is not yet
-        // fading and therefore scores `StealPriority::SameNote` — the top
-        // priority — so iterations 2..n steal the stack's own freshly
-        // triggered voices. One voice of the stack survived and the rest
-        // became 3 ms fades of notes that never sounded.
-        //
-        // `stack_count` is clamped to `MAX_STACK_VOICES`, so this is a
-        // fixed-size array on the stack and the scan in `find_steal_target` is
-        // at most eight comparisons per candidate. Nothing is allocated.
-        let mut claimed = [0_usize; MAX_STACK_VOICES as usize];
-        let mut claimed_len = 0_usize;
-
+        let mut requested_work = 0_usize;
         for stack_idx in 0..count {
-            // Try to allocate a voice
-            let voice_index = match self.allocator.allocate() {
-                Some(idx) => idx,
-                None => {
-                    // All voices in use — need to steal one.
-                    match self.find_steal_target(note, params.choke_group, &claimed[..claimed_len])
-                    {
-                        Some(idx) => {
-                            // The displaced voice moves aside before the slot
-                            // is reused. Starting its fade in place did
-                            // nothing: `release` freed exactly one bit, so the
-                            // `allocate` that followed handed the same index
-                            // straight back and `trigger` reset `steal_fade`
-                            // to 1.0 on the same struct. The fade never
-                            // rendered a single sample and every steal cut the
-                            // note at full gain.
-                            //
-                            // The allocator bit for `idx` is already set and
-                            // stays set: the slot is occupied continuously,
-                            // first by the outgoing voice and then — on the
-                            // same sample — by the incoming one.
-                            self.move_voice_to_steal_tail(idx);
-                            idx
-                        }
-                        None => return,
+            let detune_cents = if count > 1 {
+                let t = stack_idx as f32 / (count - 1) as f32;
+                self.detune_spread * (t - 0.5)
+            } else {
+                0.0
+            };
+            requested_work = requested_work.saturating_add(resampling_work_units_for_pitch(
+                params.note,
+                params.root_note,
+                self.tune_cents + detune_cents,
+            ));
+        }
+        if self.resampling_work_units().saturating_add(requested_work) > MAX_RESAMPLING_WORK_UNITS {
+            return;
+        }
+
+        // Reserve the whole stack before choking or triggering anything. Free
+        // slots are claimed in the allocator; steal targets remain live but
+        // are excluded from later reservations. If the complete stack cannot
+        // land, release only the newly claimed free slots and leave every
+        // sounding voice untouched.
+        let mut claimed = [0_usize; MAX_STACK_VOICES as usize];
+        let mut reserved_steals = [false; MAX_STACK_VOICES as usize];
+        let mut claimed_len = 0_usize;
+        while claimed_len < count as usize {
+            let reservation = match self.allocator.allocate() {
+                Some(index) => Some((index, false)),
+                None => self
+                    .find_steal_target(note, params.choke_group, &claimed[..claimed_len])
+                    .map(|index| (index, true)),
+            };
+            let Some((voice_index, will_steal)) = reservation else {
+                for reserved_index in 0..claimed_len {
+                    if !reserved_steals[reserved_index] {
+                        self.allocator.release(claimed[reserved_index]);
                     }
                 }
+                return;
             };
+            claimed[claimed_len] = voice_index;
+            reserved_steals[claimed_len] = will_steal;
+            claimed_len += 1;
+        }
 
-            // Calculate per-voice detune and pan for stacking
+        // Choke once per note after both the work and slot preflights. A
+        // rejected note must not silence an existing choke group.
+        self.choke_voices_in_group(params.choke_group);
+
+        for stack_idx in 0..count {
             let (detune_cents, stack_pan) = if count > 1 {
-                // Spread detune evenly: -spread/2 ... +spread/2
-                let t = stack_idx as f32 / (count - 1) as f32; // 0.0 to 1.0
-                let detune = self.detune_spread * (t - 0.5); // centered
-                                                             // Spread pan: -stack_spread ... +stack_spread
+                let t = stack_idx as f32 / (count - 1) as f32;
+                let detune = self.detune_spread * (t - 0.5);
                 let pan = self.stack_spread * (t * 2.0 - 1.0);
                 (detune, pan)
             } else {
                 (0.0, 0.0)
             };
+            let reservation_index = stack_idx as usize;
+            let voice_index = claimed[reservation_index];
+            if reserved_steals[reservation_index] {
+                self.move_voice_to_steal_tail(voice_index);
+            }
 
             self.voices[voice_index].trigger(&params);
 
@@ -496,12 +505,22 @@ impl CrumbsEngine {
             if count > 1 {
                 self.voices[voice_index].set_pan(stack_pan);
             }
-
-            if claimed_len < claimed.len() {
-                claimed[claimed_len] = voice_index;
-                claimed_len += 1;
-            }
         }
+    }
+
+    fn resampling_work_units(&self) -> usize {
+        let playable = self
+            .voices
+            .iter()
+            .filter(|voice| voice.active)
+            .map(CrumbsVoice::resampling_work_units)
+            .sum::<usize>();
+        let tails = self
+            .active_steal_tails
+            .iter()
+            .map(|&index| self.steal_tails[index].resampling_work_units())
+            .sum::<usize>();
+        playable.saturating_add(tails)
     }
 
     fn note_off(&mut self, note: u8) {
@@ -822,7 +841,11 @@ impl CrumbsEngine {
             // no users, correctness wins outright, and no version-gated branch
             // preserves the silent reading — but the change is real and is
             // stated here rather than discovered.
-            CrumbsParam::Tune => self.tune_cents = value.clamp(-24.0, 24.0) * 100.0,
+            CrumbsParam::Tune => {
+                if value.is_finite() {
+                    self.tune_cents = value.clamp(-24.0, 24.0) * 100.0;
+                }
+            }
             CrumbsParam::Pan => {
                 // Pan is set per-voice; this sets the default for new voices.
                 // Existing voices are not affected.
@@ -1183,6 +1206,17 @@ mod tests {
             );
         }
         assert_eq!(engine.sample_pool().count(), 3);
+    }
+
+    #[test]
+    fn non_finite_tune_preserves_the_last_finite_engine_value() {
+        let mut engine = CrumbsEngine::new(44_100.0);
+        engine.set_param(CrumbsParam::Tune, 12.0);
+
+        engine.set_param(CrumbsParam::Tune, f32::NAN);
+        engine.set_param(CrumbsParam::Tune, f32::INFINITY);
+
+        assert_eq!(engine.tune_cents, 1_200.0);
     }
 }
 

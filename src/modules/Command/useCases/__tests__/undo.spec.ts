@@ -68,6 +68,9 @@ function callbackEntry(overrides: Partial<CallbackUndoEntry> = {}): CallbackUndo
 describe('undo', () => {
     beforeEach(() => {
         mocks.undoStoreSet.mockReset();
+        mocks.undoStoreSet.mockImplementation((state) => {
+            mocks.undoStoreValue.value = state;
+        });
         mocks.executeAppAction.mockReset();
         mocks.executeAppActionBatch.mockReset();
         mocks.executeAppActionBatch.mockResolvedValue({ status: 'executed', actions: [] });
@@ -106,6 +109,20 @@ describe('undo', () => {
             past: [],
             future: [entry],
         });
+    });
+
+    it('preserves a normal commit made while callback undo yields', async () => {
+        const concurrent = actionEntry({ id: 'concurrent' });
+        const entry = callbackEntry({
+            undo: () => {
+                mocks.undoStoreValue.value = { past: [entry, concurrent], future: [] };
+            },
+        });
+        mocks.undoStoreValue.value = { past: [entry], future: [] };
+
+        await undo();
+
+        expect(mocks.undoStoreSet).toHaveBeenCalledWith({ past: [concurrent], future: [entry] });
     });
 
     it('should undo a whole group newest-first and move it to future in original order', async () => {

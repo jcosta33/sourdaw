@@ -7,8 +7,8 @@ import {
     clearClipSelection,
     deleteTimeRange,
     dismissGhostClip,
-    duplicateTimeRange,
-    insertTime,
+    executeUndoableDuplicateTimeRange,
+    executeUndoableInsertTime,
     removeClip,
     selectAllClips,
     selectClipWithFocus,
@@ -101,8 +101,8 @@ vi.mock('#/modules/Arrangement/useCases', () => ({
     acceptGhostClip: vi.fn(),
     dismissGhostClip: vi.fn(),
     deleteTimeRange: vi.fn(),
-    insertTime: vi.fn(),
-    duplicateTimeRange: vi.fn(),
+    executeUndoableInsertTime: vi.fn(),
+    executeUndoableDuplicateTimeRange: vi.fn(),
     removeClip: vi.fn(),
     addClip: vi.fn(),
     clearClipSelection: vi.fn(),
@@ -477,7 +477,7 @@ describe('handleKeydown', () => {
 
             handleKeydown(descriptor({ key: 'F1' }));
 
-            expect(duplicateTimeRange).toHaveBeenCalledWith(2, 6);
+            expect(executeUndoableDuplicateTimeRange).toHaveBeenCalledWith(2, 6);
             expect(executeAppAction).not.toHaveBeenCalled();
         });
 
@@ -724,16 +724,28 @@ describe('handleKeydown', () => {
             ];
             clipSelectionStoreMock.value.marqueeSelection = { startBeat: 2, endBeat: 5, trackIds: ['t1'] };
             trackStoreMock.value.tracks = [{ id: 't1', clips: [] }];
+            const undoTransaction = { undo: vi.fn(), redo: vi.fn(() => true) };
+            vi.mocked(executeUndoableInsertTime).mockReturnValueOnce(undoTransaction);
 
             const withMarquee = handleKeydown(descriptor({ key: 'F1' }));
             expect(withMarquee).toBe(true);
-            expect(insertTime).toHaveBeenCalledWith(2, 3);
+            expect(executeUndoableInsertTime).toHaveBeenCalledWith(2, 3);
             expect(pushUndoEntry).toHaveBeenCalledWith('Insert Silence', expect.any(Function), expect.any(Function));
+            const undoEntryCall = vi.mocked(pushUndoEntry).mock.calls[0];
+            if (!undoEntryCall) {
+                throw new Error('expected Insert Silence undo callback');
+            }
+            const [, undoEntry, redoEntry] = undoEntryCall;
+            undoEntry();
+            redoEntry();
+            expect(undoTransaction.undo).toHaveBeenCalledOnce();
+            expect(undoTransaction.redo).toHaveBeenCalledOnce();
+            expect(deleteTimeRange).not.toHaveBeenCalled();
 
             clipSelectionStoreMock.value.marqueeSelection = null;
             const withoutMarquee = handleKeydown(descriptor({ key: 'F1' }));
             expect(withoutMarquee).toBe(false);
-            expect(insertTime).toHaveBeenCalledTimes(1);
+            expect(executeUndoableInsertTime).toHaveBeenCalledTimes(1);
         });
 
         it('duplicates the marqueed time range and wires an undo entry that reverses it', () => {
@@ -749,19 +761,22 @@ describe('handleKeydown', () => {
                 { id: 't1', clips: [] },
                 { id: 't2', clips: [] },
             ];
+            const undoTransaction = { undo: vi.fn(), redo: vi.fn(() => true) };
+            vi.mocked(executeUndoableDuplicateTimeRange).mockReturnValueOnce(undoTransaction);
 
             handleKeydown(descriptor({ key: 'F1' }));
 
-            expect(duplicateTimeRange).toHaveBeenNthCalledWith(1, 2, 6);
+            expect(executeUndoableDuplicateTimeRange).toHaveBeenCalledExactlyOnceWith(2, 6);
             const call = vi.mocked(pushUndoEntry).mock.calls[0];
             if (!call) {
                 throw new Error('expected pushUndoEntry to have been called');
             }
             const [, undoEntry, redoEntry] = call;
             undoEntry();
-            expect(deleteTimeRange).toHaveBeenCalledWith(6, 10, ['t1', 't2']);
+            expect(deleteTimeRange).not.toHaveBeenCalled();
             redoEntry();
-            expect(duplicateTimeRange).toHaveBeenNthCalledWith(2, 2, 6);
+            expect(undoTransaction.undo).toHaveBeenCalledOnce();
+            expect(undoTransaction.redo).toHaveBeenCalledOnce();
         });
 
         it('cycles selection to the next and previous ghost clip, wrapping at the ends', () => {

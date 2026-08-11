@@ -1,6 +1,6 @@
 use daw_dsp::crumbs::engine::CrumbsEngine;
 use daw_dsp::crumbs::types::CrumbsCommand;
-/// Bridge: implements daw_engine::NativePlugin for ClapWrapper and Vst3Wrapper.
+/// Bridge: implements daw_engine::NativePlugin for ClapWrapper.
 ///
 /// This allows plugin instances from daw-plugin-host to be sent to the native
 /// audio thread and processed inline by the scheduler — no IPC in the audio path.
@@ -11,7 +11,6 @@ use daw_dsp::crumbs::types::CrumbsCommand;
 use daw_engine::plugin_slot::{MidiNoteEvent, NativePlugin, TransportState};
 use daw_plugin_host::{
     AudioPlugin, ClapParameterUpdate, ClapWrapper, HostTransport, PluginParameter, ProcessingGate,
-    Vst3Wrapper,
 };
 use rtrb::Consumer;
 use std::cell::UnsafeCell;
@@ -685,31 +684,6 @@ impl NativePlugin for ClapPluginSlot {
 
     fn accepts_midi(&self) -> bool {
         true // CLAP instruments accept MIDI
-    }
-
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
-    }
-
-    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
-        self
-    }
-}
-
-/// VST3 plugin slot — adapts Vst3Wrapper for the native audio thread.
-pub struct Vst3PluginSlot {
-    pub wrapper: Vst3Wrapper,
-}
-
-impl NativePlugin for Vst3PluginSlot {
-    fn process_audio(&mut self, _left: &mut [f32], _right: &mut [f32], _num_samples: usize) {
-        // Vst3Wrapper is currently passthrough-only (COM audio processing pending).
-        // Audio passes through unchanged — no allocation needed.
-        // When COM processing is added, add preallocated scratch buffers here.
-    }
-
-    fn name(&self) -> &str {
-        self.wrapper.get_name()
     }
 
     fn as_any(&self) -> &dyn std::any::Any {

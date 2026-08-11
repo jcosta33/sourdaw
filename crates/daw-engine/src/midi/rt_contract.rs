@@ -96,9 +96,10 @@ fn public_rt_entry_points_remain_source_compatible() {
 #[test]
 fn scheduler_event_overflow_reports_exact_count_and_preserves_accepted_prefix() {
     let (mut command_tx, command_rx) = RingBuffer::new(256);
+    let (retired_tx, _retired_rx) = RingBuffer::new(256);
     let (diagnostics_tx, mut diagnostics_reader) = active_midi_rt_diagnostics_channel();
     let mut scheduler =
-        AudioScheduler::with_midi_rt_diagnostics(command_rx, 48_000.0, diagnostics_tx);
+        AudioScheduler::with_midi_rt_diagnostics(command_rx, retired_tx, 48_000.0, diagnostics_tx);
     let received_event_count = Arc::new(AtomicUsize::new(0));
     let received_channel_sum = Arc::new(AtomicUsize::new(0));
 
@@ -139,9 +140,10 @@ fn scheduler_event_overflow_reports_exact_count_and_preserves_accepted_prefix() 
 #[test]
 fn arpeggiator_exhaustion_publishes_through_scheduler_reader() {
     let (mut command_tx, command_rx) = RingBuffer::new(256);
+    let (retired_tx, _retired_rx) = RingBuffer::new(256);
     let (diagnostics_tx, mut diagnostics_reader) = active_midi_rt_diagnostics_channel();
     let mut scheduler =
-        AudioScheduler::with_midi_rt_diagnostics(command_rx, 48_000.0, diagnostics_tx);
+        AudioScheduler::with_midi_rt_diagnostics(command_rx, retired_tx, 48_000.0, diagnostics_tx);
     let received_event_count = Arc::new(AtomicUsize::new(0));
     let received_channel_sum = Arc::new(AtomicUsize::new(0));
 

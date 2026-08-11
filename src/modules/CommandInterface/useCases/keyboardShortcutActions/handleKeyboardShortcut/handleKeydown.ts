@@ -5,8 +5,8 @@ import {
     acceptGhostClip,
     dismissGhostClip,
     deleteTimeRange,
-    insertTime,
-    duplicateTimeRange,
+    executeUndoableDuplicateTimeRange,
+    executeUndoableInsertTime,
     removeClip,
     addClip,
     clearClipSelection,
@@ -174,14 +174,11 @@ function getSelectedGhostClipId(): string | null {
 }
 
 function executeDuplicateTimeRange(startBeat: number, endBeat: number): void {
-    const duration = endBeat - startBeat;
-    const trackIdsAtAction = (trackStore.value?.tracks ?? []).map((time) => time.id);
-    duplicateTimeRange(startBeat, endBeat);
-    pushUndoEntry(
-        'Duplicate Time Range',
-        () => deleteTimeRange(endBeat, endBeat + duration, trackIdsAtAction),
-        () => duplicateTimeRange(startBeat, endBeat)
-    );
+    const transaction = executeUndoableDuplicateTimeRange(startBeat, endBeat);
+    if (!transaction) {
+        return;
+    }
+    pushUndoEntry('Duplicate Time Range', transaction.undo, transaction.redo);
 }
 
 export const handleKeydown = inject({ eventBus: CommandEventBus })(({ eventBus }) => {
@@ -393,15 +390,11 @@ export const handleKeydown = inject({ eventBus: CommandEventBus })(({ eventBus }
                     if (!sel) {
                         return false;
                     }
-                    const duration = sel.endBeat - sel.startBeat;
-                    const atBeat = sel.startBeat;
-                    const trackIdsAtAction = (trackStore.value?.tracks ?? []).map((time) => time.id);
-                    insertTime(atBeat, duration);
-                    pushUndoEntry(
-                        'Insert Silence',
-                        () => deleteTimeRange(atBeat, atBeat + duration, trackIdsAtAction),
-                        () => insertTime(atBeat, duration)
-                    );
+                    const transaction = executeUndoableInsertTime(sel.startBeat, sel.endBeat - sel.startBeat);
+                    if (!transaction) {
+                        return true;
+                    }
+                    pushUndoEntry('Insert Silence', transaction.undo, transaction.redo);
                     return true;
                 }
                 case 'duplicateTimeRange': {

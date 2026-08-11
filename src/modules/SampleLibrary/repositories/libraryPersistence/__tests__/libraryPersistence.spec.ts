@@ -1,10 +1,11 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { injectDependencies } from '#/infra/di/testing/injectDependencies';
+import { batchStoreUpdates } from '#/infra/store/createStore';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 import { isTauri } from '#/utils/tauriBridge';
 
-import { type LibraryRoot, type SampleRecord } from '../../../models/LibraryTypes';
+import { type LibraryRoot, type SampleRecord, toBpm } from '../../../models/LibraryTypes';
 import { addLibraryRoot, addSamples, setActiveRoot, type LibraryState } from '../../../stores/libraryStore';
 import { readTauriDirectory } from '../../readTauriDirectory';
 import * as helpers from '../helpers';
@@ -16,6 +17,10 @@ import { restoreLibrary } from '../restoreLibrary';
 // Mutable stand-in for the store: the real `Store.value` is a readonly getter, so
 // tests drive state through this hoisted object instead of assigning through it.
 const mockLibraryStore = vi.hoisted(() => ({ value: null as LibraryState | null }));
+
+vi.mock('#/infra/store/createStore', () => ({
+    batchStoreUpdates: vi.fn((write: () => void) => write()),
+}));
 
 vi.mock('../../../stores/libraryStore', () => ({
     libraryStore: mockLibraryStore,
@@ -76,9 +81,7 @@ function createRestoreDb({ roots, handles = [], samples = [] }: RestoreDbInput) 
 }
 
 type PersistedHandle = { id: string; handle: FileSystemDirectoryHandle };
-type PersistedRow = LibraryRoot | SampleRecord | PersistedHandle;
-
-function clonePersistedRow<Row extends PersistedRow>(row: Row): Row {
+function clonePersistedRow<Row extends { id: string }>(row: Row): Row {
     return structuredClone(row);
 }
 
@@ -89,7 +92,7 @@ function getPersistedRowId(key: IDBValidKey): string {
     throw new Error('Unexpected non-string persistence test key');
 }
 
-function createWritableStore<Row extends PersistedRow>(initial: Row[] = []) {
+function createWritableStore<Row extends { id: string }>(initial: Row[] = []) {
     const rows = new Map(initial.map((row) => [row.id, clonePersistedRow(row)]));
     return {
         rows,
@@ -101,38 +104,68 @@ function createWritableStore<Row extends PersistedRow>(initial: Row[] = []) {
 }
 
 type PersistenceDbInput = {
-    roots?: LibraryRoot[];
-    handles?: PersistedHandle[];
-    samples?: SampleRecord[];
+    roots?: Array<LibraryRoot | { id: string }>;
+    handles?: Array<PersistedHandle | { id: string }>;
+    samples?: Array<SampleRecord | ({ id: string } & Record<string, unknown>)>;
+    abortWrites?: boolean;
 };
 
-function createPersistenceDb({ roots = [], handles = [], samples = [] }: PersistenceDbInput = {}) {
+function createPersistenceDb({ roots = [], handles = [], samples = [], abortWrites = false }: PersistenceDbInput = {}) {
     const stores = {
         roots: createWritableStore(roots),
         handles: createWritableStore(handles),
         samples: createWritableStore(samples),
     };
+    let shouldAbortWrites = abortWrites;
     return {
-        transaction: () => ({
-            objectStore: (name: string) => {
-                if (name === 'roots') {
-                    return stores.roots;
-                }
-                if (name === 'handles') {
-                    return stores.handles;
-                }
-                if (name === 'samples') {
-                    return stores.samples;
-                }
-                throw new Error(`Unexpected object store ${name}`);
-            },
-            set oncomplete(cb: () => void) {
-                queueMicrotask(cb);
-            },
-            set onerror(_cb: () => void) {
-                /* unused in the success path */
-            },
-        }),
+        transaction: (_storeNames?: string | string[], mode?: IDBTransactionMode) => {
+            const transactionStores =
+                mode === 'readwrite'
+                    ? {
+                          roots: createWritableStore([...stores.roots.rows.values()]),
+                          handles: createWritableStore([...stores.handles.rows.values()]),
+                          samples: createWritableStore([...stores.samples.rows.values()]),
+                      }
+                    : stores;
+            return {
+                objectStore: (name: string) => {
+                    if (name === 'roots') {
+                        return transactionStores.roots;
+                    }
+                    if (name === 'handles') {
+                        return transactionStores.handles;
+                    }
+                    if (name === 'samples') {
+                        return transactionStores.samples;
+                    }
+                    throw new Error(`Unexpected object store ${name}`);
+                },
+                set oncomplete(cb: () => void) {
+                    if (shouldAbortWrites && mode === 'readwrite') {
+                        return;
+                    }
+                    queueMicrotask(() => {
+                        if (mode === 'readwrite') {
+                            for (const name of ['roots', 'handles', 'samples'] as const) {
+                                stores[name].rows.clear();
+                                for (const [id, row] of transactionStores[name].rows) {
+                                    stores[name].rows.set(id, clonePersistedRow(row));
+                                }
+                            }
+                        }
+                        cb();
+                    });
+                },
+                set onabort(cb: () => void) {
+                    if (shouldAbortWrites && mode === 'readwrite') {
+                        queueMicrotask(cb);
+                    }
+                },
+            };
+        },
+        resumeWrites: () => {
+            shouldAbortWrites = false;
+        },
         close: vi.fn(),
         stores,
     };
@@ -148,6 +181,23 @@ function createTauriRoot(overrides: Partial<LibraryRoot> = {}): LibraryRoot {
         status: 'offline',
         fileCount: 0,
         settings: { recursive: true },
+        ...overrides,
+    };
+}
+
+function createAnalyzedSample(overrides: Partial<SampleRecord> = {}): SampleRecord {
+    return {
+        id: 'sample-1',
+        libraryRootId: 'root-1',
+        relativePath: 'Loops/User.wav',
+        displayName: 'User',
+        ext: 'wav',
+        folder: 'Loops',
+        sync: { exists: true, status: 'analyzed' },
+        format: {},
+        analysis: { bpm: toBpm(128), descriptors: { centroid: 1234, rms: 0.25 } },
+        tags: [],
+        favorite: false,
         ...overrides,
     };
 }
@@ -168,6 +218,10 @@ function createLibraryState(overrides: Partial<LibraryState> = {}): LibraryState
         scanProgress: 0,
         ...overrides,
     };
+}
+
+function expectRestoredRoot(expected: Partial<LibraryRoot>): void {
+    expect(addLibraryRoot).toHaveBeenCalledWith(expect.objectContaining(expected), { activate: false });
 }
 
 describe('Library Persistence', () => {
@@ -370,14 +424,77 @@ describe('Library Persistence', () => {
             const restoredRootIds = await restoreLibrary();
 
             expect(readTauriDirectory).toHaveBeenCalledWith({ path: '/Users/jose/Samples' });
-            expect(addLibraryRoot).toHaveBeenCalledWith(
-                expect.objectContaining({
-                    id: 'root-1',
-                    status: 'ready',
-                }),
-                { activate: false }
-            );
+            expectRestoredRoot({ id: 'root-1', status: 'ready' });
+            expect(batchStoreUpdates).toHaveBeenCalledTimes(1);
             expect(restoredRootIds).toEqual(['root-1']);
+        });
+
+        it('removes all unversioned analysis and rewrites the persisted rows', async () => {
+            const userSample = createAnalyzedSample();
+            const factorySample = createAnalyzedSample({
+                id: 'factory-sample',
+                libraryRootId: 'factory',
+                analysis: undefined,
+            });
+            const db = createPersistenceDb({ samples: [userSample, factorySample] });
+            vi.spyOn(helpers, 'openDb').mockResolvedValue(db as any);
+
+            await restoreLibrary();
+
+            const restoredSamples = vi.mocked(addSamples).mock.calls[0]?.[0];
+            expect(restoredSamples?.map((sample) => sample.sync.status)).toEqual(['indexed', 'indexed']);
+            expect(restoredSamples?.[0]).not.toHaveProperty('analysis');
+            expect(restoredSamples?.[1]).not.toHaveProperty('analysis');
+            expect(db.stores.samples.rows.get('sample-1')).not.toHaveProperty('analysis');
+            expect(db.stores.samples.rows.get('factory-sample')).not.toHaveProperty('analysis');
+        });
+
+        it('quarantines malformed rows without blocking cleanup of valid rows', async () => {
+            const malformedSample = { ...createAnalyzedSample({ id: 'malformed' }), sync: null };
+            const malformedFormat = {
+                ...createAnalyzedSample({ id: 'bad-format' }),
+                format: { durationSec: 'bad' },
+            };
+            const db = createPersistenceDb({
+                roots: [{ id: 'bad-root' }, createTauriRoot()],
+                handles: [{ id: 'bad-handle' }],
+                samples: [malformedSample, malformedFormat, createAnalyzedSample()],
+            });
+            vi.spyOn(helpers, 'openDb').mockResolvedValue(db as any);
+
+            await restoreLibrary();
+
+            const restoredSamples = vi.mocked(addSamples).mock.calls[0]?.[0];
+            expect(addLibraryRoot).toHaveBeenCalledTimes(1);
+            expectRestoredRoot({ id: 'root-1' });
+            expect(restoredSamples?.map((sample) => sample.id)).toEqual(['sample-1']);
+            expect(restoredSamples?.[0]).not.toHaveProperty('analysis');
+            expect(db.stores.samples.rows.get('malformed')).toHaveProperty('analysis');
+            expect(db.stores.samples.rows.get('bad-format')).toHaveProperty('analysis');
+            expect(db.stores.samples.rows.get('sample-1')).not.toHaveProperty('analysis');
+        });
+
+        it('does not expose partial restore state when cleanup aborts', async () => {
+            const root = createTauriRoot();
+            const db = createPersistenceDb({ roots: [root], samples: [createAnalyzedSample()], abortWrites: true });
+            vi.spyOn(helpers, 'openDb').mockResolvedValue(db as any);
+
+            const restoredRootIds = await restoreLibrary();
+
+            expect(restoredRootIds).toEqual([]);
+            expect(batchStoreUpdates).not.toHaveBeenCalled();
+            expect(addLibraryRoot).not.toHaveBeenCalled();
+            expect(addSamples).not.toHaveBeenCalled();
+            expect(db.stores.samples.rows.get('sample-1')).toHaveProperty('analysis');
+            expect(db.close).toHaveBeenCalledTimes(1);
+
+            db.resumeWrites();
+            await restoreLibrary();
+
+            expect(batchStoreUpdates).toHaveBeenCalledTimes(1);
+            expect(addLibraryRoot).toHaveBeenCalledTimes(1);
+            expect(addSamples).toHaveBeenCalledTimes(1);
+            expect(db.stores.samples.rows.get('sample-1')).not.toHaveProperty('analysis');
         });
 
         it('should mark restored Tauri roots missing when the native directory reader reports a missing path', async () => {
@@ -388,13 +505,7 @@ describe('Library Persistence', () => {
 
             await restoreLibrary();
 
-            expect(addLibraryRoot).toHaveBeenCalledWith(
-                expect.objectContaining({
-                    id: 'root-1',
-                    status: 'path_missing',
-                }),
-                { activate: false }
-            );
+            expectRestoredRoot({ id: 'root-1', status: 'path_missing' });
         });
 
         it('should keep restored Tauri roots ready when a child entry fails after the root opens', async () => {
@@ -405,13 +516,7 @@ describe('Library Persistence', () => {
 
             await restoreLibrary();
 
-            expect(addLibraryRoot).toHaveBeenCalledWith(
-                expect.objectContaining({
-                    id: 'root-1',
-                    status: 'ready',
-                }),
-                { activate: false }
-            );
+            expectRestoredRoot({ id: 'root-1', status: 'ready' });
         });
 
         it('should keep restored Tauri roots ready when child metadata fails after the root opens', async () => {
@@ -422,13 +527,7 @@ describe('Library Persistence', () => {
 
             await restoreLibrary();
 
-            expect(addLibraryRoot).toHaveBeenCalledWith(
-                expect.objectContaining({
-                    id: 'root-1',
-                    status: 'ready',
-                }),
-                { activate: false }
-            );
+            expectRestoredRoot({ id: 'root-1', status: 'ready' });
         });
 
         it('should mark restored Tauri roots offline when the root cannot be read', async () => {
@@ -439,13 +538,7 @@ describe('Library Persistence', () => {
 
             await restoreLibrary();
 
-            expect(addLibraryRoot).toHaveBeenCalledWith(
-                expect.objectContaining({
-                    id: 'root-1',
-                    status: 'offline',
-                }),
-                { activate: false }
-            );
+            expectRestoredRoot({ id: 'root-1', status: 'offline' });
         });
 
         it('restores a browsed root handle and marks it ready when read permission is granted', async () => {
@@ -459,10 +552,7 @@ describe('Library Persistence', () => {
 
             await restoreLibrary();
 
-            expect(addLibraryRoot).toHaveBeenCalledWith(
-                expect.objectContaining({ id: 'b1', status: 'ready', handle }),
-                { activate: false }
-            );
+            expectRestoredRoot({ id: 'b1', status: 'ready', handle });
         });
 
         it('flags a browsed root permission_required when read permission has lapsed', async () => {
@@ -476,10 +566,7 @@ describe('Library Persistence', () => {
 
             await restoreLibrary();
 
-            expect(addLibraryRoot).toHaveBeenCalledWith(
-                expect.objectContaining({ id: 'b1', status: 'permission_required', handle }),
-                { activate: false }
-            );
+            expectRestoredRoot({ id: 'b1', status: 'permission_required', handle });
         });
 
         it('marks a browsed root offline when checking its permission throws', async () => {
@@ -493,9 +580,7 @@ describe('Library Persistence', () => {
 
             await restoreLibrary();
 
-            expect(addLibraryRoot).toHaveBeenCalledWith(expect.objectContaining({ id: 'b1', status: 'offline' }), {
-                activate: false,
-            });
+            expectRestoredRoot({ id: 'b1', status: 'offline' });
         });
 
         it('marks a browsed root offline when its persisted handle cannot be found', async () => {
@@ -504,9 +589,7 @@ describe('Library Persistence', () => {
 
             await restoreLibrary();
 
-            expect(addLibraryRoot).toHaveBeenCalledWith(expect.objectContaining({ id: 'b1', status: 'offline' }), {
-                activate: false,
-            });
+            expectRestoredRoot({ id: 'b1', status: 'offline' });
         });
 
         it('restores the previously focused root id from localStorage', async () => {
@@ -515,11 +598,7 @@ describe('Library Persistence', () => {
             const root = createTauriRoot({ id: 'root-1' });
             localStorage.setItem(ACTIVE_ROOT_KEY, 'root-1');
             vi.spyOn(helpers, 'openDb').mockResolvedValue(createRestoreDb({ roots: [root] }) as any);
-            // setActiveRoot only fires for a saved id that matches a root the
-            // in-memory store already knows about; addLibraryRoot is mocked, so
-            // that root must be seeded here rather than relying on the restore.
             mockLibraryStore.value = createLibraryState({ roots: [root] });
-
             await restoreLibrary();
 
             expect(setActiveRoot).toHaveBeenCalledWith('root-1');

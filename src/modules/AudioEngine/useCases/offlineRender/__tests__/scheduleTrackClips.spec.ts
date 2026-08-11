@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 
 import { type TakeLaneStoreState, type Track } from '#/modules/Arrangement/stores';
 import { type MidiStoreState } from '#/modules/MIDI/stores';
@@ -83,6 +83,13 @@ const mocks = vi.hoisted(() => {
         resolveArticulationId: vi.fn(({ articulation }: { articulation: string | undefined }) =>
             articulation === 'staccato' ? 8 : null
         ),
+        getDrumKitDefByIndex: vi.fn<() => unknown>(() => null),
+        getSynthParamsFromDevices: vi.fn<() => unknown>(() => null),
+        scheduleDrumKitNote: vi.fn(),
+        scheduleKitNote: vi.fn(),
+        scheduleNoteOffline: vi.fn(),
+        resolveDrumKit: vi.fn<() => unknown>(() => null),
+        checkCancel: vi.fn(),
         shouldPlayMidiEvent: vi.fn<OfflineMidiProbabilitySelector>(({ probabilityPercent }) => probabilityPercent > 0),
         projection,
     };
@@ -215,6 +222,10 @@ vi.mock('../../../stores/audioBufferCache', () => ({
     audioBufferCache: mocks.audioBufferCache,
 }));
 
+vi.mock('../checkCancel', () => ({
+    checkCancel: mocks.checkCancel,
+}));
+
 // Synth note-scheduling helpers are unused on the worklet-instrument path
 // (instrumentControls present → events go to pendingWorkletEvents), but the
 // module is imported so we stub it to keep it inert.
@@ -225,16 +236,16 @@ vi.mock('#/modules/Synth/useCases', async (importOriginal) => {
     const actual = await importOriginal<typeof import('#/modules/Synth/useCases')>();
     return {
         ...actual,
-        getDrumKitDefByIndex: vi.fn(() => null),
-        getSynthParamsFromDevices: vi.fn(() => null),
-        scheduleDrumKitNote: vi.fn(),
-        scheduleKitNote: vi.fn(),
-        scheduleNoteOffline: vi.fn(),
+        getDrumKitDefByIndex: mocks.getDrumKitDefByIndex,
+        getSynthParamsFromDevices: mocks.getSynthParamsFromDevices,
+        scheduleDrumKitNote: mocks.scheduleDrumKitNote,
+        scheduleKitNote: mocks.scheduleKitNote,
+        scheduleNoteOffline: mocks.scheduleNoteOffline,
     };
 });
 
 vi.mock('#/modules/AudioEngine/services/deviceResolution', () => ({
-    resolveDrumKit: vi.fn(() => null),
+    resolveDrumKit: mocks.resolveDrumKit,
 }));
 
 /** Minimal OfflineAudioContext stub — the instrument path never touches it. */
@@ -304,6 +315,16 @@ type RunScheduleInput = {
     regionStartBeat?: number;
     automationMode?: Track['automationMode'];
     instrumentParameterValues?: Record<string, number>;
+    clipGain?: number;
+    noteExpression?: {
+        pressure: number;
+        slide: number;
+        pitchBend: number;
+        pitchBendRangeSemitones: number;
+    };
+    useLegacyScheduler?: boolean;
+    trackDeviceType?: string;
+    includeSecondNote?: boolean;
 };
 
 async function runSchedule({
@@ -319,6 +340,11 @@ async function runSchedule({
     regionStartBeat = 0,
     automationMode,
     instrumentParameterValues,
+    clipGain,
+    noteExpression,
+    useLegacyScheduler = false,
+    trackDeviceType,
+    includeSecondNote = false,
 }: RunScheduleInput = {}): Promise<PendingWorkletEvent[]> {
     const offlineCtx = makeOfflineCtx();
     const track = makeMidiTrack();
@@ -329,7 +355,19 @@ async function runSchedule({
     if (instrumentParameterValues) {
         track.devices[0]!.parameterValues = instrumentParameterValues;
     }
+    if (trackDeviceType !== undefined) {
+        track.devices[0]!.type = trackDeviceType;
+    }
+    if (clipGain !== undefined) {
+        track.clips[0]!.gain = clipGain;
+    }
     const midi = makeMidi();
+    if (noteExpression) {
+        Object.assign(midi.notesByClipId['clip-1']![0]!, noteExpression);
+    }
+    if (includeSecondNote) {
+        midi.notesByClipId['clip-1']!.push({ id: 'note-2', pitch: 62, startBeat: 2, duration: 1, velocity: 90 });
+    }
     if (probability !== undefined) {
         midi.notesByClipId['clip-1']![0]!.probability = probability;
     }
@@ -368,7 +406,7 @@ async function runSchedule({
     if (withToaster) {
         entry.deviceType = 'toaster';
     }
-    const deviceEntriesByTrack = new Map<string, DeviceNodeEntry[]>([[track.id, [entry]]]);
+    const deviceEntriesByTrack = new Map<string, DeviceNodeEntry[]>([[track.id, useLegacyScheduler ? [] : [entry]]]);
     const pendingWorkletEvents: PendingWorkletEvent[] = [];
 
     const inputNode = {} as GainNode;
@@ -404,6 +442,123 @@ async function runSchedule({
 
     return pendingWorkletEvents;
 }
+
+describe('scheduleTrackClips — legacy instrument parity', () => {
+    beforeEach(() => {
+        vi.clearAllMocks();
+        mocks.getDrumKitDefByIndex.mockReturnValue(null);
+        mocks.getSynthParamsFromDevices.mockReturnValue(null);
+        mocks.resolveDrumKit.mockReturnValue(null);
+        mocks.checkCancel.mockImplementation(() => {});
+    });
+
+    afterEach(() => {
+        mocks.getDrumKitDefByIndex.mockReturnValue(null);
+        mocks.getSynthParamsFromDevices.mockReturnValue(null);
+        mocks.resolveDrumKit.mockReturnValue(null);
+        mocks.checkCancel.mockImplementation(() => {});
+    });
+
+    it('passes clip gain and recorded MPE expression to the offline built-in synth', async () => {
+        const synthParams = { waveform: 'sawtooth' };
+        const mpe = {
+            pressure: 90,
+            slide: 45,
+            pitchBend: 4_096,
+            pitchBendRangeSemitones: 12,
+        };
+        mocks.getSynthParamsFromDevices.mockReturnValue(synthParams);
+
+        await runSchedule({ useLegacyScheduler: true, clipGain: 0.25, noteExpression: mpe });
+
+        expect(mocks.scheduleNoteOffline).toHaveBeenCalledWith(
+            expect.anything(),
+            expect.anything(),
+            60,
+            0.5,
+            0.5,
+            100,
+            synthParams,
+            mpe,
+            0.25
+        );
+    });
+
+    it('passes clip gain to the fixed drum-kit scheduler', async () => {
+        const kitDefinition = { name: '808' };
+        mocks.getDrumKitDefByIndex.mockReturnValue(kitDefinition);
+
+        await runSchedule({ useLegacyScheduler: true, trackDeviceType: 'builtin-drum-kit', clipGain: 0.35 });
+
+        expect(mocks.scheduleDrumKitNote).toHaveBeenCalledWith(
+            expect.anything(),
+            expect.anything(),
+            kitDefinition,
+            60,
+            0.5,
+            100,
+            0.35
+        );
+    });
+
+    it('passes clip gain to the resolved drum-kit scheduler', async () => {
+        const drumKit = { name: 'Acoustic' };
+        mocks.resolveDrumKit.mockReturnValue(drumKit);
+
+        await runSchedule({ useLegacyScheduler: true, clipGain: 0.35 });
+
+        expect(mocks.scheduleKitNote).toHaveBeenCalledWith(
+            expect.anything(),
+            expect.anything(),
+            drumKit,
+            60,
+            0.5,
+            0.5,
+            100,
+            0.35
+        );
+    });
+
+    it('preserves routed clip expression and gain through Yeast', async () => {
+        const synthParams = { waveform: 'sawtooth' };
+        const mpe = { pressure: 90, slide: 45, pitchBend: 4_096, pitchBendRangeSemitones: 12 };
+        mocks.getSynthParamsFromDevices.mockReturnValue(synthParams);
+
+        await runSchedule({ useLegacyScheduler: true, withYeast: true, clipGain: 0.25, noteExpression: mpe });
+
+        expect(mocks.scheduleNoteOffline.mock.calls[0]?.slice(7)).toEqual([mpe, 0.25]);
+    });
+
+    it('normalizes persisted expression before it reaches oscillator math', async () => {
+        mocks.getSynthParamsFromDevices.mockReturnValue({ waveform: 'sawtooth' });
+
+        await runSchedule({
+            useLegacyScheduler: true,
+            noteExpression: { pressure: 999, slide: -4, pitchBend: 90_000, pitchBendRangeSemitones: 999 },
+        });
+
+        expect(mocks.scheduleNoteOffline.mock.calls[0]?.[7]).toEqual({
+            pressure: 127,
+            slide: 0,
+            pitchBend: 8_191,
+            pitchBendRangeSemitones: 127,
+        });
+    });
+
+    it('stops a dense note batch as soon as export cancellation is observed', async () => {
+        mocks.getSynthParamsFromDevices.mockReturnValue({ waveform: 'sawtooth' });
+        mocks.checkCancel
+            .mockImplementationOnce(() => {})
+            .mockImplementationOnce(() => {
+                throw new Error('Export cancelled');
+            });
+
+        await expect(runSchedule({ useLegacyScheduler: true, includeSecondNote: true })).rejects.toThrow(
+            'Export cancelled'
+        );
+        expect(mocks.scheduleNoteOffline).toHaveBeenCalledTimes(1);
+    });
+});
 
 describe('scheduleTrackClips — MIDI plugin-delay compensation', () => {
     beforeEach(() => {

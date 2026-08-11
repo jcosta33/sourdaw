@@ -75,6 +75,9 @@ function callbackEntry(overrides: Partial<CallbackUndoEntry> = {}): CallbackUndo
 describe('redo', () => {
     beforeEach(() => {
         mocks.undoStoreSet.mockReset();
+        mocks.undoStoreSet.mockImplementation((state) => {
+            mocks.undoStoreValue.value = state;
+        });
         mocks.executeAppAction.mockReset();
         mocks.executeAppActionBatch.mockReset();
         mocks.executeAppActionBatch.mockResolvedValue({ status: 'committed', actions: [] });
@@ -258,6 +261,20 @@ describe('redo', () => {
             future: [],
         });
         expect(mocks.undoTreeMoveTo).toHaveBeenCalledWith('callback-1');
+    });
+
+    it('preserves a normal commit made while callback redo yields', async () => {
+        const concurrent = actionEntry({ id: 'concurrent' });
+        const entry = callbackEntry({
+            redo: () => {
+                mocks.undoStoreValue.value = { past: [concurrent], future: [] };
+            },
+        });
+        mocks.undoStoreValue.value = { past: [], future: [entry] };
+
+        await redo();
+
+        expect(mocks.undoStoreSet).toHaveBeenCalledWith({ past: [concurrent, entry], future: [] });
     });
 
     it('consumes a callback entry that reports it was not applied, keeping past unchanged', async () => {

@@ -580,6 +580,43 @@ fn crumbs_voice_stealing_does_not_allocate() {
     );
 }
 
+#[test]
+fn crumbs_resampling_budget_bounds_max_pitch_process_without_allocating() {
+    use daw_dsp::crumbs::CrumbsInstance;
+
+    let mut instance = CrumbsInstance::new(SAMPLE_RATE);
+    let frame_count = 4_800_usize;
+    let pcm: Vec<f32> = (0..frame_count)
+        .map(|i| (i as f32 / SAMPLE_RATE * 220.0 * std::f32::consts::TAU).sin() * 0.8)
+        .collect();
+    let sample_id = instance.add_sample(pcm, 1, SAMPLE_RATE as u32);
+    instance.set_active_sample(sample_id);
+    instance.set_param("loopMode", 1.0);
+    instance.set_param("loopEnd", frame_count as f32);
+    instance.set_param("stackCount", 8.0);
+    instance.set_param("tune", 24.0);
+
+    for _ in 0..16 {
+        instance.note_on(127, 100);
+    }
+    instance.process(BLOCK as u32);
+    assert_eq!(instance.active_voices(), 24);
+
+    instance.all_sound_off();
+    for _ in 0..16 {
+        instance.note_on(127, 100);
+    }
+
+    let mut output_ptr = std::ptr::null();
+    assert_no_alloc(|| {
+        output_ptr = instance.process(BLOCK as u32);
+    });
+    let output = unsafe { read_output(output_ptr, BLOCK) };
+    assert_all_finite(&output, "crumbs max-pitch full pool");
+    assert_eq!(instance.active_voices(), 24);
+    assert!(peak(&output) > 1.0e-6);
+}
+
 /// Crust drives more stages per sample than any other effect here — five band
 /// limiters, an oversampled saturator, the LR-4 splitter, dither and the full
 /// EBU R 128 meter set — and each of them owns a buffer sized at construction.

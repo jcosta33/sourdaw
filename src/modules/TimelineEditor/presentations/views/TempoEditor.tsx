@@ -11,21 +11,18 @@ import { cn } from '#/utils/Styles/cn';
 
 import { useTempoEditorState } from '../hooks/useTempoEditorState';
 
-/** Ties the visible lock badge to the field it explains, via `aria-describedby`. */
-const TEMPO_LOCK_REASON_ID = 'tempo-field-lock-reason';
+const TEMPO_FIELD_DESCRIPTION_ID = 'tempo-field-description';
+const TEMPO_FIELD_LABEL = 'Tempo BPM';
 
 export const TempoEditor = (): ReactElement => {
     const time = useTempoEditorState();
 
-    // With a tempo map the field reads out the map's value at the playhead and
-    // edits the event governing it, so say so rather than let it look like a
-    // free-standing project tempo. Where it cannot write that event, it says
-    // that too instead of leaving a control that writes somewhere else.
+    // Keep the accessible name stable for voice control. The tooltip,
+    // description, read-only state, visible badge, and live status carry the
+    // changing map and lock context.
     const tempoField = time.tempoField;
-    let tempoFieldLabel = 'Tempo BPM';
     let tempoFieldHint = 'Drag up/down to adjust, arrows to step, double-click to reset, Shift for fine.';
     if (tempoField.governedByMap) {
-        tempoFieldLabel = 'Tempo BPM at playhead (tempo map)';
         tempoFieldHint = 'Tempo at the playhead. Editing changes the tempo-map event that governs it.';
     }
 
@@ -43,17 +40,16 @@ export const TempoEditor = (): ReactElement => {
      */
     let tempoFieldStatus = '';
     if (tempoField.lockReason === 'tempo-ramp') {
-        tempoFieldLabel = 'Tempo BPM at playhead (tempo ramp, read-only)';
         tempoFieldHint = 'The playhead is inside a tempo ramp. Edit its end points in the tempo map.';
         tempoLockBadge = 'ramp';
         tempoFieldStatus = 'Tempo field locked: the playhead is inside a tempo ramp.';
     }
     if (tempoField.lockReason === 'no-transport-state') {
-        tempoFieldLabel = 'Tempo BPM (transport state loading, read-only)';
         tempoFieldHint = 'The transport state has not loaded yet.';
         tempoLockBadge = 'loading';
         tempoFieldStatus = 'Tempo field locked: the transport state has not loaded yet.';
     }
+    const tempoFieldDescription = tempoField.governedByMap || tempoField.lockReason !== null ? tempoFieldHint : '';
 
     return (
         <div className="daw-readout-well relative flex h-8 items-center gap-2 rounded-sm px-2">
@@ -72,6 +68,9 @@ export const TempoEditor = (): ReactElement => {
             <span className="sr-only" aria-live="polite" role="status">
                 {tempoFieldStatus}
             </span>
+            <span id={TEMPO_FIELD_DESCRIPTION_ID} className="sr-only">
+                {tempoFieldDescription}
+            </span>
             <Tooltip>
                 <TooltipTrigger asChild>
                     <div data-testid="transport-tempo-bpm">
@@ -80,11 +79,8 @@ export const TempoEditor = (): ReactElement => {
                             onChange={time.setTempoValue}
                             onReset={time.resetTempoValue ?? undefined}
                             readOnly={!tempoField.editable}
-                            ariaLabel={tempoFieldLabel}
-                            // The reason travels with the control rather than
-                            // sitting beside it, so anything that finds the field
-                            // finds why it is locked.
-                            ariaDescribedBy={tempoLockBadge === null ? undefined : TEMPO_LOCK_REASON_ID}
+                            ariaLabel={TEMPO_FIELD_LABEL}
+                            ariaDescribedBy={tempoFieldDescription === '' ? undefined : TEMPO_FIELD_DESCRIPTION_ID}
                             commitMode="release"
                             min={tempoField.minTempo}
                             max={tempoField.maxTempo}
@@ -99,7 +95,6 @@ export const TempoEditor = (): ReactElement => {
             </Tooltip>
             {tempoLockBadge === null ? null : (
                 <span
-                    id={TEMPO_LOCK_REASON_ID}
                     data-testid="tempo-lock-reason"
                     className="flex items-center gap-0.5 text-[9px] uppercase tracking-[0.12em] text-muted-foreground"
                 >
@@ -128,15 +123,20 @@ export const TempoEditor = (): ReactElement => {
                     <Button
                         variant="ghost"
                         size="icon-xs"
-                        onClick={time.handleTapTempo}
+                        onClick={() => {
+                            if (!tempoField.editable) {
+                                return;
+                            }
+                            time.handleTapTempo();
+                        }}
                         aria-label="Tap tempo"
                         // Tap tempo writes through the same field, so it lands
                         // wherever the field lands — and refuses wherever the
                         // field refuses. It stays live during playback, the state
                         // tap tempo is most for; under a lock it is visibly
-                        // disabled rather than silently doing nothing.
-                        disabled={!tempoField.editable}
-                        className="text-[9px] font-bold w-6 h-5"
+                        // unavailable without dropping keyboard focus.
+                        aria-disabled={!tempoField.editable || undefined}
+                        className="text-[9px] font-bold w-6 h-5 aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:hover:bg-transparent aria-disabled:hover:text-text-secondary aria-disabled:active:translate-y-0 aria-disabled:active:border-0 aria-disabled:active:[background:none] aria-disabled:active:shadow-none"
                     >
                         TAP
                     </Button>

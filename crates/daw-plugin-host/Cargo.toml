@@ -2,7 +2,7 @@
 name = "daw-plugin-host"
 version = "0.1.0"
 edition = "2021"
-description = "Native plugin hosting: CLAP/VST3 scanning, loading, parameter access, GUI lifecycle."
+description = "Native plugin discovery and CLAP hosting, parameter access, and GUI lifecycle."
 
 [lib]
 crate-type = ["rlib"]

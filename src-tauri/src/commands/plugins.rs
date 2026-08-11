@@ -3,17 +3,19 @@
 use crate::commands::binary_ipc::{raw_body_bytes, read_percent_encoded_header};
 use crate::host::native_bridge::{ClapPluginSlot, SharedClapPlugin};
 use crate::host::plugin_scan_policy::PluginScanPolicy;
+use crate::host::plugin_scan_worker;
 use crate::state::{AppState, PluginInstanceData, PluginRegistryEntry};
 use cpal::traits::{DeviceTrait, HostTrait};
 use daw_engine::audio_bridge::create_audio_bridge;
 use daw_engine::plugin_slot::{MidiNoteEvent, TransportState};
 use daw_engine::EngineHandle;
 use daw_plugin_host::scanner::{self, ScanResult, ScannedPlugin};
-use daw_plugin_host::{AudioPlugin, ClapWrapper, Vst3Wrapper};
+use daw_plugin_host::{AudioPlugin, ClapWrapper};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 use tauri::Manager;
 
 // Re-export PluginParameter from daw-plugin-host for TypeScript binding generation
@@ -49,6 +51,10 @@ fn remove_engine_plugin_record_after_scheduler_removal<EnginePluginRecord>(
 }
 
 // ── Scanning commands ───────────────────────────────────────────────────
+
+const MAX_SCAN_CANDIDATES: usize = 256;
+const MAX_SCAN_DURATION: Duration = Duration::from_secs(30);
+static PLUGIN_SCAN_PERMIT: tokio::sync::Semaphore = tokio::sync::Semaphore::const_new(1);
 
 /// Build the lookup table `load_plugin` resolves against.
 ///
@@ -105,9 +111,12 @@ pub async fn scan_plugins(
     paths: Vec<String>,
     state: tauri::State<'_, AppState>,
 ) -> Result<ScanResult, String> {
+    let permit = PLUGIN_SCAN_PERMIT
+        .try_acquire()
+        .map_err(|_| "Plugin scan already in progress".to_string())?;
     let start = std::time::Instant::now();
     let scan_policy = PluginScanPolicy::platform_defaults();
-    let mut plugins = Vec::new();
+    let mut authorized_paths = Vec::new();
     let mut errors = Vec::new();
 
     for scan_path in &paths {
@@ -121,14 +130,73 @@ pub async fn scan_plugins(
             errors.push(format!("Not a directory: {}", scan_path));
             continue;
         }
-        scanner::scan_directory(&path, &mut plugins, &mut errors);
+        authorized_paths.push(path);
     }
+
+    let scan_roots = authorized_paths.clone();
+    let deadline = start + MAX_SCAN_DURATION;
+    let (plugins, scan_errors, scanned_paths, scan_complete) =
+        tokio::task::spawn_blocking(move || {
+            let _permit = permit;
+            let mut candidates = Vec::new();
+            let mut scan_errors = Vec::new();
+            let mut scan_complete = true;
+            for path in scan_roots {
+                if !scanner::scan_directory_bounded(
+                    &path,
+                    &mut candidates,
+                    &mut scan_errors,
+                    (MAX_SCAN_CANDIDATES, deadline),
+                ) {
+                    let message = if candidates.len() >= MAX_SCAN_CANDIDATES {
+                        "Plugin scan candidate limit exceeded"
+                    } else {
+                        "Plugin scan time limit exceeded"
+                    };
+                    scan_errors.push(message.to_string());
+                    scan_complete = false;
+                    break;
+                }
+            }
+            candidates.sort();
+            candidates.dedup();
+            let mut plugins = Vec::new();
+            let mut scanned_paths = Vec::new();
+            for candidate in candidates {
+                let remaining = deadline.saturating_duration_since(Instant::now());
+                if remaining.is_zero() {
+                    scan_errors.push("Plugin scan time limit exceeded".to_string());
+                    scan_complete = false;
+                    break;
+                }
+                scanned_paths.push(candidate.clone());
+                match plugin_scan_worker::scan_clap_metadata(&candidate, remaining) {
+                    Ok(metadata) => plugins.push(scanner::scanned_plugin(&candidate, metadata)),
+                    Err(error) => scan_errors.push(format!("{}: {error}", candidate.display())),
+                }
+            }
+            (plugins, scan_errors, scanned_paths, scan_complete)
+        })
+        .await
+        .map_err(|error| format!("Plugin scan task failed: {error}"))?;
+    errors.extend(scan_errors);
 
     // Populate the plugin registry so load_plugin can find them. The scanner
     // already read every CLAP descriptor; this used to re-`dlopen` each one to
     // recover the id it had thrown away.
     if let Ok(mut registry) = state.plugin_registry.lock() {
+        registry.retain(|_, entry| {
+            let path = Path::new(&entry.path);
+            if scan_complete {
+                return !authorized_paths.iter().any(|root| path.starts_with(root));
+            }
+            !scanned_paths.iter().any(|scanned| scanned == path)
+        });
         registry.extend(index_scanned_plugins(&plugins));
+    }
+
+    if !scan_complete {
+        return Err("Plugin scan did not complete within safety limits".to_string());
     }
 
     Ok(ScanResult {
@@ -293,32 +361,7 @@ pub async fn load_plugin(
             Ok(instance)
         }
         "vst3" => {
-            let wrapper = Vst3Wrapper::new(&entry.path)?;
-            let name = wrapper.get_name().to_string();
-            let params = wrapper.get_parameters();
-
-            // Store in plugins map (VST3 runs through the same AudioPlugin trait)
-            let mut plugins = state
-                .plugins
-                .lock()
-                .map_err(|e| format!("Failed to lock plugins: {}", e))?;
-            plugins.insert(
-                instance_id.0.clone(),
-                PluginInstanceData {
-                    plugin: Box::new(wrapper),
-                },
-            );
-
-            Ok(PluginInstance {
-                instance_id: instance_id.clone(),
-                plugin_id: plugin_id.clone(),
-                name,
-                parameters: params,
-                is_active: true,
-                latency_samples: 0,
-                latency_ms: 0.0,
-                engine_plugin_id: None,
-            })
+            Err("VST3 plugin loading is not supported. CLAP plugins are supported.".to_string())
         }
         "au" => Err(
             "Audio Unit plugin loading is not yet implemented. CLAP plugins are supported."
@@ -644,13 +687,8 @@ pub async fn start_native_engine(state: tauri::State<'_, AppState>) -> Result<St
         return Ok("Native engine already running".to_string());
     }
 
-    let mut handle =
+    let handle =
         EngineHandle::new().map_err(|e| format!("Failed to start native audio engine: {}", e))?;
-
-    // Create the default tuning source inside daw-engine, which owns the triple-buffer dependency.
-    handle.register_default_mts_esp_master();
-
-    eprintln!("[Engine] Native audio engine started with MTS-ESP support");
     *engine_guard = Some(handle);
     Ok("Native engine started".to_string())
 }
@@ -776,13 +814,6 @@ pub async fn process_plugin_audio(
     // Push input to the audio thread
     bridge.push_input(&left, &right);
 
-    // Update MTS-ESP tuning master (background task)
-    if let Ok(mut engine_guard) = state.engine.lock() {
-        if let Some(ref mut engine) = *engine_guard {
-            engine.update_mts_esp();
-        }
-    }
-
     // Try to pop processed output
     // This may be from the previous block with one block of latency.
     if let Some(output) = bridge.pop_output() {
@@ -807,6 +838,7 @@ mod tests {
     use super::*;
     use crate::state::EnginePluginInstanceData;
     use daw_core::PluginInstanceId;
+    use std::path::Path;
     use tauri::Manager;
 
     fn plugin_parameter(id: u32, value: f64) -> PluginParameter {
@@ -908,6 +940,39 @@ mod tests {
         assert!(!paths.is_empty());
         for path in paths {
             assert_eq!(scan_policy.authorize_scan_root(Path::new(&path)), Ok(()));
+        }
+    }
+
+    #[test]
+    fn load_plugin_rejects_vst3_without_loading_the_bundle() {
+        let app = command_test_app();
+        let state = app.state::<AppState>();
+        state
+            .plugin_registry
+            .lock()
+            .expect("plugin registry lock should be available")
+            .insert(
+                "vst3-fixture".to_string(),
+                PluginRegistryEntry {
+                    path: "/plugins/should-not-be-loaded.vst3".to_string(),
+                    clap_id: String::new(),
+                    format: "vst3".to_string(),
+                    name: "Unsupported VST3".to_string(),
+                },
+            );
+
+        let result = tauri::async_runtime::block_on(load_plugin(
+            PluginId("vst3-fixture".to_string()),
+            PluginInstanceId("vst3-instance".to_string()),
+            state,
+        ));
+
+        match result {
+            Err(error) => assert_eq!(
+                error,
+                "VST3 plugin loading is not supported. CLAP plugins are supported."
+            ),
+            Ok(instance) => panic!("unsupported VST3 unexpectedly loaded: {instance:?}"),
         }
     }
 

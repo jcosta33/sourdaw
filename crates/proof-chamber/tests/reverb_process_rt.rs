@@ -143,8 +143,10 @@ fn assert_audible(out: &[f32], algorithm: &str) {
 #[test]
 fn plate_process_does_not_allocate() {
     let mut instance = configured(ALGORITHM_PLATE);
+    instance.set_param("shimmer", 1.0);
+    instance.set_param("shimmer_amount", 0.3);
     let out = guarded_run(&mut instance);
-    assert_audible(&out, "plate");
+    assert_audible(&out, "plate with shimmer");
 }
 
 #[test]

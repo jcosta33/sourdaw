@@ -12,6 +12,20 @@ function makeZip(entries: Record<string, Uint8Array>): ArrayBuffer {
     return zipSync(entries).buffer;
 }
 
+function makeCorruptStoredZip(entries: Record<string, Uint8Array>): ArrayBuffer {
+    const archive = zipSync(entries, { level: 0 });
+    const view = new DataView(archive.buffer, archive.byteOffset, archive.byteLength);
+    const nameBytes = view.getUint16(26, true);
+    const extraBytes = view.getUint16(28, true);
+    const dataOffset = 30 + nameBytes + extraBytes;
+    const firstDataByte = archive[dataOffset];
+    if (firstDataByte === undefined) {
+        throw new Error('Stored ZIP fixture has no entry payload');
+    }
+    archive[dataOffset] = firstDataByte ^ 0xff;
+    return archive.buffer;
+}
+
 function utf8(text: string): Uint8Array {
     return new TextEncoder().encode(text);
 }
@@ -29,23 +43,34 @@ describe('readDawProjectZip — project.xml extraction', () => {
         expect(result.projectXml).toBe('<Project/>');
     });
 
-    it('matches project.xml with a leading slash (/project.xml)', () => {
+    it('rejects an absolute project.xml path', () => {
         const zip = makeZip({ '/project.xml': utf8('<Project/>') });
-        const result = readDawProjectZip(zip);
-        expect(result.projectXml).toBe('<Project/>');
+        expect(() => readDawProjectZip(zip)).toThrow(/unsafe archive path/i);
+    });
+
+    it('rejects case-folded duplicate project roots', () => {
+        const zip = makeCorruptStoredZip({
+            'project.xml': utf8('<Project name="first"/>'),
+            'Project.xml': utf8('<Project name="second"/>'),
+        });
+        expect(() => readDawProjectZip(zip)).toThrow(/duplicate project\.xml/i);
     });
 });
 
 describe('readDawProjectZip — missing project.xml', () => {
-    it('throws with available entry list when project.xml is missing', () => {
+    it('throws when project.xml is missing', () => {
         const zip = makeZip({ 'readme.txt': utf8('hello') });
         expect(() => readDawProjectZip(zip)).toThrow(/missing project\.xml/);
-        expect(() => readDawProjectZip(zip)).toThrow(/readme\.txt/);
     });
 
-    it('throws with <empty> when the archive has no entries', () => {
+    it('throws when the archive has no entries', () => {
         const zip = makeZip({});
-        expect(() => readDawProjectZip(zip)).toThrow(/<empty>/);
+        expect(() => readDawProjectZip(zip)).toThrow(/missing project\.xml/i);
+    });
+
+    it('rejects a missing project before inflating selected audio', () => {
+        const zip = makeCorruptStoredZip({ 'audio/broken.wav': utf8('RIFF....') });
+        expect(() => readDawProjectZip(zip)).toThrow(/missing project\.xml/i);
     });
 });
 
@@ -73,9 +98,26 @@ describe('readDawProjectZip — metadata.xml', () => {
         const result = readDawProjectZip(zip);
         expect(result.metadataXml).toBeNull();
     });
+
+    it('rejects case-folded duplicate metadata roots', () => {
+        const zip = makeCorruptStoredZip({
+            'project.xml': utf8('<Project/>'),
+            'metadata.xml': utf8('<Meta name="first"/>'),
+            'Metadata.xml': utf8('<Meta name="second"/>'),
+        });
+        expect(() => readDawProjectZip(zip)).toThrow(/duplicate metadata\.xml/i);
+    });
 });
 
 describe('readDawProjectZip — audio assets', () => {
+    it('rejects traversal-bearing audio paths before publishing entries', () => {
+        const zip = makeZip({
+            'project.xml': utf8('<Project/>'),
+            'audio/../escape.wav': utf8('RIFF....'),
+        });
+        expect(() => readDawProjectZip(zip)).toThrow(/unsafe archive path/i);
+    });
+
     it('extracts audio/ prefixed files', () => {
         const audioData = utf8('RIFF....');
         const zip = makeZip({
@@ -83,8 +125,9 @@ describe('readDawProjectZip — audio assets', () => {
             'audio/kick.wav': audioData,
         });
         const result = readDawProjectZip(zip);
-        expect(result.audioAssets.has('audio/kick.wav')).toBe(true);
-        const extracted = result.audioAssets.get('audio/kick.wav')!;
+        const audioAssets = result.readAudioAssets();
+        expect(audioAssets.has('audio/kick.wav')).toBe(true);
+        const extracted = audioAssets.get('audio/kick.wav')!;
         expect(extracted.length).toBe(audioData.length);
         expect(Array.from(extracted)).toEqual(Array.from(audioData));
     });
@@ -96,8 +139,9 @@ describe('readDawProjectZip — audio assets', () => {
             'audio/snare.wav': utf8('RIFF....'),
         });
         const result = readDawProjectZip(zip);
-        expect(result.audioAssets.size).toBe(1);
-        expect(result.audioAssets.has('readme.txt')).toBe(false);
+        const audioAssets = result.readAudioAssets();
+        expect(audioAssets.size).toBe(1);
+        expect(audioAssets.has('readme.txt')).toBe(false);
     });
 
     it('extracts multiple audio assets', () => {
@@ -108,7 +152,7 @@ describe('readDawProjectZip — audio assets', () => {
             'audio/hat.wav': utf8('hat'),
         });
         const result = readDawProjectZip(zip);
-        expect(result.audioAssets.size).toBe(3);
+        expect(result.readAudioAssets().size).toBe(3);
     });
 });
 

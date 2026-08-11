@@ -21,7 +21,6 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 dirs = "6"
 serde_bytes = "0.11"
-vst3 = "0.3"
 raw-window-handle = "0.6"
 midir = "0.11"
 tokio = { version = "1", features = ["time", "net", "rt", "sync"] }
@@ -35,7 +34,6 @@ ort = { version = "2.0.0-rc.12", features = ["load-dynamic"] }
 mistralrs = { version = "0.8", features = ["metal", "accelerate"] }
 ndarray = "0.17"
 sha2 = "0.11"
-triple_buffer = "9.0.0"
 rtrb = "0.3"
 hound = "3.5"
 uuid = { version = "1.23.0", features = ["v4"] }

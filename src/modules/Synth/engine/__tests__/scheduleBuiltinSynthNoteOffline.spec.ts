@@ -1,5 +1,6 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
+import * as builtinScheduler from '../scheduleBuiltinSynthNote';
 import { scheduleBuiltinSynthNoteOffline } from '../scheduleBuiltinSynthNoteOffline';
 
 type ParamEvent = { method: string; value: number; time: number };
@@ -89,6 +90,7 @@ function scheduleWithVelocity(ctx: BaseAudioContext, velocity: number, startTime
         duration: 1,
         velocity,
         params: baseBuiltinSynthParams,
+        clipGain: 1,
     });
 }
 
@@ -111,5 +113,38 @@ describe('scheduleBuiltinSynthNoteOffline', () => {
         scheduleWithVelocity(maximum.ctx, 127, startTime);
 
         expect(over.events).toEqual(maximum.events);
+    });
+
+    it('delegates every offline note to the full monitored graph', () => {
+        const graph = vi.spyOn(builtinScheduler, 'scheduleBuiltinSynthNote').mockImplementation(() => {
+            return {} as OscillatorNode & { _env: GainNode };
+        });
+        const mpe = { pressure: 90, slide: 45, pitchBend: 4_096, pitchBendRangeSemitones: 12 };
+        const { ctx } = makeFakeContext();
+
+        scheduleBuiltinSynthNoteOffline({
+            ctx,
+            destination,
+            pitch: 69,
+            startTime: 2,
+            duration: 1.5,
+            velocity: 100,
+            params: baseBuiltinSynthParams,
+            mpe,
+            clipGain: 0.25,
+        });
+
+        expect(graph).toHaveBeenCalledWith({
+            ctx,
+            destination,
+            pitch: 69,
+            startTime: 2,
+            duration: 1.5,
+            velocity: 100,
+            params: baseBuiltinSynthParams,
+            mpe,
+            clipGain: 0.25,
+        });
+        graph.mockRestore();
     });
 });

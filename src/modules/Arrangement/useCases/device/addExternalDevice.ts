@@ -1,5 +1,5 @@
 import { addDeviceToStrip, reportLatency } from '#/modules/AudioEngine/useCases';
-import { activateExternalPlugin } from '#/modules/PluginHost/useCases';
+import { activateExternalPlugin, findSupportedPlugin } from '#/modules/PluginHost/useCases';
 
 import { getTrackState } from '../../repositories/track/getTrackState';
 import { updateTrack } from '../../repositories/track/updateTrack';
@@ -11,6 +11,10 @@ function nextDeviceIdStr(): string {
 }
 
 export function addExternalDevice(trackId: string, pluginId: string, pluginName: string): Device | null {
+    if (!findSupportedPlugin(pluginId)) {
+        return null;
+    }
+
     const state = getTrackState();
     if (!state) {
         return null;

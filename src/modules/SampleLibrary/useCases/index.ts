@@ -4,7 +4,6 @@ export { readTauriLibrarySampleFile } from './readTauriLibrarySampleFile';
 export { resolveDroppedSampleFile } from './resolveDroppedSampleFile';
 export { restoreLibrary } from './restoreLibrary';
 export { searchSamples } from './searchSamples';
-export { analyzeSample } from './analyzeSample';
 export { findSimilarSamples } from './findSimilarSamples';
 export { projectSpatialMap } from './projectSpatialMap';
 export { seedFactoryLibrary } from './seedFactoryLibrary';

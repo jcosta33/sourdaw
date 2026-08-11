@@ -16,6 +16,8 @@ import { createHash } from 'node:crypto';
 import { zipSync } from 'fflate';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { extractGuardedZip, ZipArchiveError } from '#/infra/archive/extractGuardedZip';
+
 import { type ModelDownloadProgressPayload } from '../../models/ModelDownloadProgress';
 import { downloadModel } from '../modelDownloadManager';
 
@@ -23,6 +25,9 @@ import { downloadModel } from '../modelDownloadManager';
 
 type WriteCall = number; // byteLength of each streamed chunk
 let lastWritable: { writes: WriteCall[]; closed: boolean; aborted: boolean } | null = null;
+let pendingWrite: { promise: Promise<void>; resolve: () => void; reject: (error: unknown) => void } | null = null;
+let pendingStorageEstimate: { promise: Promise<StorageEstimate>; resolve: () => void } | null = null;
+let removedEntries = 0;
 
 function installStorage(): void {
     function makeWritable(): FileSystemWritableFileStream {
@@ -31,7 +36,7 @@ function installStorage(): void {
         return {
             write(chunk: ArrayBufferView | ArrayBuffer): Promise<void> {
                 state.writes.push('byteLength' in chunk ? chunk.byteLength : (chunk as ArrayBuffer).byteLength);
-                return Promise.resolve();
+                return pendingWrite?.promise ?? Promise.resolve();
             },
             close(): Promise<void> {
                 state.closed = true;
@@ -39,6 +44,7 @@ function installStorage(): void {
             },
             abort(): Promise<void> {
                 state.aborted = true;
+                pendingWrite?.reject(new DOMException('Aborted', 'AbortError'));
                 return Promise.resolve();
             },
         } as unknown as FileSystemWritableFileStream;
@@ -52,7 +58,10 @@ function installStorage(): void {
         kind: 'directory',
         getDirectoryHandle: vi.fn(() => Promise.resolve(leafDir)),
         getFileHandle: vi.fn(() => Promise.resolve(fileHandle)),
-        removeEntry: vi.fn(() => Promise.resolve()),
+        removeEntry: vi.fn(() => {
+            removedEntries += 1;
+            return Promise.resolve();
+        }),
         // Empty directory — getStorageStatus iterates but measures nothing here.
         [Symbol.asyncIterator](): AsyncIterator<unknown> {
             return { next: () => Promise.resolve({ done: true, value: undefined }) };
@@ -62,7 +71,7 @@ function installStorage(): void {
         configurable: true,
         value: {
             getDirectory: vi.fn(() => Promise.resolve(leafDir)),
-            estimate: vi.fn(() => Promise.resolve({ quota: 1e12, usage: 0 })),
+            estimate: vi.fn(() => pendingStorageEstimate?.promise ?? Promise.resolve({ quota: 1e12, usage: 0 })),
             persisted: vi.fn(() => Promise.resolve(false)),
             persist: vi.fn(() => Promise.resolve(true)),
         },
@@ -85,9 +94,72 @@ class FakeBroadcastChannel {
     }
 }
 
+// --- guarded ZIP worker ----------------------------------------------------
+
+type GuardedZipWorkerRequest = { bytes: ArrayBuffer; suffix: string };
+type GuardedZipWorkerResponse =
+    | { type: 'success'; path: string; data: ArrayBuffer }
+    | {
+          type: 'error';
+          code: 'invalid-archive';
+          message: string;
+      };
+
+class FakeGuardedZipWorker {
+    static instances: FakeGuardedZipWorker[] = [];
+    static holdResponses = false;
+    onmessage: ((event: MessageEvent<GuardedZipWorkerResponse>) => void) | null = null;
+    onerror: ((event: ErrorEvent) => void) | null = null;
+    onmessageerror: ((event: MessageEvent) => void) | null = null;
+    postMessage = vi.fn((request: GuardedZipWorkerRequest) => {
+        if (FakeGuardedZipWorker.holdResponses) {
+            return;
+        }
+        queueMicrotask(() => {
+            try {
+                let selectedPath: string | undefined;
+                const extracted = extractGuardedZip({
+                    bytes: new Uint8Array(request.bytes),
+                    validateInventory: (paths) => {
+                        const matches = paths.filter((path) => path.endsWith(request.suffix));
+                        if (matches.length !== 1) {
+                            throw new Error(`Expected exactly one ${request.suffix} entry`);
+                        }
+                        selectedPath = matches[0];
+                    },
+                    include: (path) => path === selectedPath,
+                });
+                if (!selectedPath) {
+                    throw new Error('Missing selected ZIP entry');
+                }
+                const data = extracted[selectedPath];
+                if (!data) {
+                    throw new Error('Missing extracted ZIP entry');
+                }
+                this.onmessage?.({
+                    data: { type: 'success', path: selectedPath, data: data.slice().buffer },
+                } as MessageEvent<GuardedZipWorkerResponse>);
+            } catch (error) {
+                this.onmessage?.({
+                    data: {
+                        type: 'error',
+                        code: 'invalid-archive',
+                        message: error instanceof Error ? error.message : String(error),
+                    },
+                } as MessageEvent<GuardedZipWorkerResponse>);
+            }
+        });
+    });
+    terminate = vi.fn();
+
+    constructor() {
+        FakeGuardedZipWorker.instances.push(this);
+    }
+}
+
 // --- fetch helpers ----------------------------------------------------------
 
-function streamingResponse(chunks: Uint8Array[], totalBytes: number): Response {
+function streamingResponse(chunks: Uint8Array[], totalBytes: number, cancel = vi.fn()): Response {
     let i = 0;
     return {
         ok: true,
@@ -97,6 +169,7 @@ function streamingResponse(chunks: Uint8Array[], totalBytes: number): Response {
         body: {
             getReader() {
                 return {
+                    cancel,
                     read(): Promise<{ done: boolean; value?: Uint8Array }> {
                         if (i < chunks.length) {
                             return Promise.resolve({ done: false, value: chunks[i++] });
@@ -115,7 +188,13 @@ beforeEach(() => {
     channelConstructions = 0;
     openChannels = 0;
     lastWritable = null;
+    pendingWrite = null;
+    pendingStorageEstimate = null;
+    removedEntries = 0;
+    FakeGuardedZipWorker.instances = [];
+    FakeGuardedZipWorker.holdResponses = false;
     vi.stubGlobal('BroadcastChannel', FakeBroadcastChannel);
+    vi.stubGlobal('Worker', FakeGuardedZipWorker);
     installStorage();
 });
 
@@ -237,9 +316,149 @@ describe('downloadModel — cancellation', () => {
         const init = fetchMock.mock.calls[0]?.[1];
         expect(init?.signal).toBe(controller.signal);
     });
+
+    it('terminates in-flight archive extraction and publishes no model after abort', async () => {
+        FakeGuardedZipWorker.holdResponses = true;
+        const controller = new AbortController();
+        const zipped = zipSync({ 'model/weights.onnx': new Uint8Array([10, 20, 30, 40]) });
+        vi.stubGlobal(
+            'fetch',
+            vi.fn(() => Promise.resolve(streamingResponse([zipped], zipped.length)))
+        );
+
+        const stages: string[] = [];
+        const promise = downloadModel({
+            spec: { ...baseSpec, url: 'https://cdn.example/violin-1.zip', sizeBytes: zipped.length },
+            signal: controller.signal,
+            onProgress: (payload) => stages.push(payload.stage),
+        });
+
+        await vi.waitFor(() => expect(FakeGuardedZipWorker.instances).toHaveLength(1));
+        controller.abort();
+
+        await expect(promise).rejects.toMatchObject({ name: 'AbortError' });
+        expect(FakeGuardedZipWorker.instances[0]?.terminate).toHaveBeenCalledOnce();
+        expect(lastWritable).toBeNull();
+        expect(stages).not.toContain('complete');
+    });
+
+    it('aborts a pending final OPFS write without publishing the model', async () => {
+        let resolveWrite: (() => void) | undefined;
+        let rejectWrite: ((error: unknown) => void) | undefined;
+        pendingWrite = {
+            promise: new Promise<void>((resolve, reject) => {
+                resolveWrite = resolve;
+                rejectWrite = reject;
+            }),
+            resolve: () => resolveWrite?.(),
+            reject: (error) => rejectWrite?.(error),
+        };
+        const controller = new AbortController();
+        const zipped = zipSync({ 'model/weights.onnx': new Uint8Array([10, 20, 30, 40]) });
+        vi.stubGlobal(
+            'fetch',
+            vi.fn(() => Promise.resolve(streamingResponse([zipped], zipped.length)))
+        );
+        const stages: string[] = [];
+        const promise = downloadModel({
+            spec: { ...baseSpec, url: 'https://cdn.example/violin-1.zip', sizeBytes: zipped.length },
+            signal: controller.signal,
+            onProgress: (payload) => stages.push(payload.stage),
+        });
+
+        await vi.waitFor(() => expect(lastWritable?.writes).toEqual([4]));
+        controller.abort();
+
+        await expect(promise).rejects.toMatchObject({ name: 'AbortError' });
+        expect(lastWritable?.aborted).toBe(true);
+        expect(lastWritable?.closed).toBe(false);
+        expect(stages).not.toContain('complete');
+    });
+
+    it('aborts a pending streamed write when cancellation arrives', async () => {
+        let resolveWrite: (() => void) | undefined;
+        let rejectWrite: ((error: unknown) => void) | undefined;
+        pendingWrite = {
+            promise: new Promise<void>((resolve, reject) => {
+                resolveWrite = resolve;
+                rejectWrite = reject;
+            }),
+            resolve: () => resolveWrite?.(),
+            reject: (error) => rejectWrite?.(error),
+        };
+        const controller = new AbortController();
+        vi.stubGlobal(
+            'fetch',
+            vi.fn(() => Promise.resolve(streamingResponse([new Uint8Array(30)], 30)))
+        );
+
+        const promise = downloadModel({ spec: baseSpec, signal: controller.signal });
+        await vi.waitFor(() => expect(lastWritable?.writes).toEqual([30]));
+        controller.abort();
+
+        await vi.waitFor(() => expect(lastWritable?.aborted).toBe(true));
+        await expect(promise).rejects.toMatchObject({ name: 'AbortError' });
+        expect(lastWritable?.closed).toBe(false);
+    });
+
+    it('removes a committed model when cancellation arrives during the final storage check', async () => {
+        let resolveEstimate: (() => void) | undefined;
+        pendingStorageEstimate = {
+            promise: new Promise<StorageEstimate>((resolve) => {
+                resolveEstimate = () => resolve({ quota: 1e12, usage: 0 });
+            }),
+            resolve: () => resolveEstimate?.(),
+        };
+        const controller = new AbortController();
+        const zipped = zipSync({ 'model/weights.onnx': new Uint8Array([10, 20, 30, 40]) });
+        vi.stubGlobal(
+            'fetch',
+            vi.fn(() => Promise.resolve(streamingResponse([zipped], zipped.length)))
+        );
+        const stages: string[] = [];
+        const promise = downloadModel({
+            spec: { ...baseSpec, url: 'https://cdn.example/violin-1.zip', sizeBytes: zipped.length },
+            signal: controller.signal,
+            onProgress: (payload) => stages.push(payload.stage),
+        });
+
+        await vi.waitFor(() => expect(lastWritable?.closed).toBe(true));
+        controller.abort();
+        pendingStorageEstimate.resolve();
+
+        await expect(promise).rejects.toMatchObject({ name: 'AbortError' });
+        expect(removedEntries).toBe(1);
+        expect(stages).not.toContain('complete');
+    });
 });
 
 describe('downloadModel — buffered path (sha256 verification + ZIP extraction)', () => {
+    it('stops before concatenation and verification when the final download progress callback cancels', async () => {
+        const controller = new AbortController();
+        const zipped = zipSync({ 'model/weights.onnx': new Uint8Array([10, 20, 30, 40]) });
+        vi.stubGlobal(
+            'fetch',
+            vi.fn(() => Promise.resolve(streamingResponse([zipped], zipped.length)))
+        );
+        const stages: string[] = [];
+
+        const promise = downloadModel({
+            spec: { ...baseSpec, url: 'https://cdn.example/violin-1.zip', sizeBytes: zipped.length },
+            signal: controller.signal,
+            onProgress: (payload) => {
+                stages.push(payload.stage);
+                if (payload.stage === 'downloading') {
+                    controller.abort();
+                }
+            },
+        });
+
+        await expect(promise).rejects.toMatchObject({ name: 'AbortError' });
+        expect(stages).not.toContain('verifying');
+        expect(stages).not.toContain('extracting');
+        expect(FakeGuardedZipWorker.instances).toEqual([]);
+    });
+
     it('verifies a matching sha256 and writes the fully-buffered data via writeModel', async () => {
         const bytes = new Uint8Array([1, 2, 3, 4, 5]);
         const sha256 = createHash('sha256').update(bytes).digest('hex');
@@ -304,5 +523,76 @@ describe('downloadModel — buffered path (sha256 verification + ZIP extraction)
         expect(stages).toContain('complete');
         // Only the extracted .onnx bytes reach OPFS — not the whole ZIP.
         expect(lastWritable?.writes).toEqual([onnxBytes.length]);
+        expect(FakeGuardedZipWorker.instances).toHaveLength(1);
+        expect(FakeGuardedZipWorker.instances[0]?.terminate).toHaveBeenCalledOnce();
+    });
+
+    it('recognizes container pathnames regardless of URL query, fragment, or extension case', async () => {
+        const onnxBytes = new Uint8Array([10, 20, 30, 40]);
+        const zipped = zipSync({ 'model/weights.onnx': onnxBytes });
+        vi.stubGlobal(
+            'fetch',
+            vi.fn(() => Promise.resolve(streamingResponse([zipped], zipped.length)))
+        );
+
+        await downloadModel({
+            spec: {
+                ...baseSpec,
+                url: 'https://cdn.example/violin-1.ZIP?download=1#model',
+                sizeBytes: zipped.length,
+            },
+        });
+
+        expect(FakeGuardedZipWorker.instances).toHaveLength(1);
+        expect(lastWritable?.writes).toEqual([onnxBytes.length]);
+    });
+
+    it('cancels the reader before buffering a declared oversized archive', async () => {
+        const cancel = vi.fn(() => Promise.resolve());
+        vi.stubGlobal(
+            'fetch',
+            vi.fn(() => Promise.resolve(streamingResponse([new Uint8Array([1])], 2 * 1024 * 1024 * 1024 + 1, cancel)))
+        );
+
+        await expect(
+            downloadModel({
+                spec: { ...baseSpec, url: 'https://cdn.example/oversized.zip', sizeBytes: 1 },
+            })
+        ).rejects.toThrow(/archive byte limit/);
+        expect(cancel).toHaveBeenCalledOnce();
+        expect(FakeGuardedZipWorker.instances).toEqual([]);
+        expect(lastWritable).toBeNull();
+    });
+
+    it('rejects an unsafe model archive without publishing an OPFS artifact', async () => {
+        vi.useFakeTimers();
+        const zipped = zipSync({ '../weights.onnx': new Uint8Array([10, 20, 30, 40]) });
+        vi.stubGlobal(
+            'fetch',
+            vi.fn(() => Promise.resolve(streamingResponse([zipped], zipped.length)))
+        );
+        const stages: string[] = [];
+
+        try {
+            const promise = downloadModel({
+                spec: { ...baseSpec, url: 'https://cdn.example/unsafe.zip', sizeBytes: zipped.length },
+                onProgress: (payload) => stages.push(payload.stage),
+            });
+            const errorPromise: Promise<unknown> = promise.catch((reason: unknown) => reason);
+            await vi.runAllTimersAsync();
+            const error = await errorPromise;
+
+            expect(error).toBeInstanceOf(ZipArchiveError);
+            if (!(error instanceof Error)) {
+                throw new Error('Expected an archive error');
+            }
+            expect(error.message).toContain('Unsafe archive path');
+            expect(FakeGuardedZipWorker.instances).toHaveLength(1);
+            expect(lastWritable).toBeNull();
+            expect(stages).not.toContain('storing');
+            expect(stages).not.toContain('complete');
+        } finally {
+            vi.useRealTimers();
+        }
     });
 });

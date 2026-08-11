@@ -10,7 +10,7 @@
 import { isTauri } from './tauriRuntime';
 
 export type PlatformCapabilities = {
-    /** VST3/AU/CLAP plugin hosting — Tauri only */
+    /** CLAP plugin hosting — Tauri only */
     readonly hasNativePlugins: boolean;
     /** Plugin directory scanning — Tauri only */
     readonly hasPluginScanning: boolean;
@@ -62,7 +62,7 @@ export function getPlatformCapabilities(): PlatformCapabilities {
 // ── Tooltip reason messages ─────────────────────────────────────────────
 
 export const DISABLED_REASONS = {
-    nativePlugins: 'Native audio plugins (VST/AU/CLAP) require the desktop app',
+    nativePlugins: 'CLAP plugins require the desktop app',
     pluginScanning: 'Plugin scanning requires the desktop app',
     midiInput: 'MIDI input is not supported in this browser. Use Chrome or the desktop app',
     voiceCommands: 'Voice commands require the desktop app',

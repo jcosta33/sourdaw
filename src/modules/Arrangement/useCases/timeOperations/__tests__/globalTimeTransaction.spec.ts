@@ -68,6 +68,7 @@ vi.mock('../../../stores/markerStore', async (importOriginal) => {
 
 import { TrackDummy } from '../../../__tests__/TrackDummy';
 import { executeGlobalTimeOperation, UnrecoveredGlobalTimeStateError } from '../executeGlobalTimeOperation';
+import { executeUndoableInsertTime } from '../executeUndoableInsertTime';
 import { prepareTimeOperationStateRestore } from '../prepareTimeOperationStateRestore';
 import { setTimeOperationDependencies } from '../timeOperationDependencies';
 import { timeOperationStateCodec } from '../timeOperationStateCodec';
@@ -349,6 +350,36 @@ describe('executeGlobalTimeOperation', () => {
         expect(replacementMarkers).toEqual(capturedMarkerState);
         expect(Object.is(expectedTrackState?.tracks[0]?.pan, -0)).toBe(true);
         expect(Object.is(replacementTrackState?.tracks[0]?.pan, -0)).toBe(true);
+    });
+
+    it('rejects exact redo after a marker changes post-undo', () => {
+        const clip = createClip({ id: 'clip-1', startBeat: 5, endBeat: 7 });
+        setStates({
+            tracks: [createTrack('track-1', 'midi', [clip])],
+            markers: [{ id: 'marker-1', beat: 5, name: 'Marker', color: '' }],
+        });
+        const beforeTrackState = structuredClone(mocks.trackState.value);
+        const beforeMarkerState = structuredClone(mocks.markerState.value);
+        registerDependencies({
+            automation: createHandle('automation', false),
+            transport: createHandle('transport', false),
+            midi: createHandle('midi', false),
+        });
+        const transaction = executeUndoableInsertTime(4, 2);
+        transaction?.undo();
+        const collaboratorMarkerState = {
+            markers: [{ id: 'marker-1', beat: 6, name: 'Collaborator', color: '' }],
+            sections: [],
+        };
+        mocks.markerState.value = collaboratorMarkerState;
+
+        expect(() => transaction?.redo()).toThrow('Global time operation redo conflicts with current project state');
+        expect(mocks.trackState.value).toEqual(beforeTrackState);
+        expect(mocks.markerState.value).toBe(collaboratorMarkerState);
+
+        mocks.markerState.value = beforeMarkerState;
+        expect(() => transaction?.redo()).not.toThrow();
+        expect(mocks.markerState.value).toMatchObject({ markers: [{ id: 'marker-1', beat: 7 }] });
     });
 
     it('round trips and restores exact negative zero from a real Automation owner plan', () => {

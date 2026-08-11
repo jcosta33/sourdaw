@@ -9,14 +9,15 @@
  * - LRU eviction when the 2 GB cache limit is exceeded
  */
 
-import { unzip } from 'fflate';
-
+import { MAX_GUARDED_ZIP_BYTES, ZipArchiveError } from '#/infra/archive/extractGuardedZip';
+import { extractSingleGuardedZipEntry } from '#/infra/archive/extractSingleGuardedZipEntry';
 import { inject } from '#/infra/di/inject';
 import { logger } from '#/infra/logger/appLogger';
 
 import { type ModelDownloadProgressPayload } from '../models/ModelDownloadProgress';
 import { updateModelStatus } from '../stores/modelRegistryStore';
 
+import { abortWritable } from './abortWritable';
 import { createModelWritable } from './createModelWritable';
 import { deleteModel } from './deleteModel';
 import { getStorageStatus } from './getStorageStatus';
@@ -50,6 +51,12 @@ function isAbortError(error: unknown): boolean {
     return error instanceof DOMException && error.name === 'AbortError';
 }
 
+function throwIfAborted(signal?: AbortSignal): void {
+    if (signal?.aborted) {
+        throw new DOMException('Aborted', 'AbortError');
+    }
+}
+
 /** Resolve after `ms`, or reject early if `signal` aborts during the wait. */
 function abortableSleep(ms: number, signal?: AbortSignal): Promise<void> {
     return new Promise<void>((resolve, reject) => {
@@ -67,6 +74,16 @@ function abortableSleep(ms: number, signal?: AbortSignal): Promise<void> {
         }
         signal?.addEventListener('abort', onAbort, { once: true });
     });
+}
+
+function isModelArchiveUrl(url: string): boolean {
+    try {
+        const pathname = new URL(url, 'https://sourdaw.invalid').pathname.toLowerCase();
+        return pathname.endsWith('.oudep') || pathname.endsWith('.zip');
+    } catch {
+        const pathname = url.split(/[?#]/u, 1)[0]?.toLowerCase() ?? '';
+        return pathname.endsWith('.oudep') || pathname.endsWith('.zip');
+    }
 }
 
 /**
@@ -119,9 +136,7 @@ export const downloadModel = inject({ logger })(
 
             try {
                 for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
-                    if (signal?.aborted) {
-                        throw new DOMException('Aborted', 'AbortError');
-                    }
+                    throwIfAborted(signal);
                     try {
                         logger.info(
                             `[ModelDownload] Downloading ${modelId} (attempt ${String(attempt + 1)}/${String(MAX_RETRIES)})`
@@ -140,19 +155,33 @@ export const downloadModel = inject({ logger })(
                             throw new Error('Response body not readable');
                         }
 
-                        const isContainer = url.endsWith('.oudep') || url.endsWith('.zip');
+                        const isContainer = isModelArchiveUrl(url);
                         // We must buffer the bytes in memory only when we have to inspect the
                         // whole payload — SHA256 verification (no streaming digest in WebCrypto)
                         // or ZIP/oudep extraction. Otherwise we stream chunks straight to OPFS.
                         const mustBuffer = isContainer || Boolean(sha256);
 
                         let writable: FileSystemWritableFileStream | null = null;
+                        let streamedAbortPromise: Promise<void> | undefined;
+                        function abortStreamedWritable(): void {
+                            if (writable) {
+                                streamedAbortPromise ??= abortWritable(writable);
+                            }
+                        }
                         const chunks: Uint8Array[] = [];
                         let bytesDownloaded = 0;
 
                         try {
+                            if (isContainer && totalBytes > MAX_GUARDED_ZIP_BYTES) {
+                                await reader.cancel();
+                                throw new ZipArchiveError(
+                                    `Model archive byte limit exceeds ${String(MAX_GUARDED_ZIP_BYTES)}`
+                                );
+                            }
                             if (!mustBuffer) {
                                 writable = await createModelWritable({ family, modelId });
+                                signal?.addEventListener('abort', abortStreamedWritable, { once: true });
+                                throwIfAborted(signal);
                             }
 
                             for (;;) {
@@ -164,10 +193,17 @@ export const downloadModel = inject({ logger })(
                                     throw new DOMException('Aborted', 'AbortError');
                                 }
                                 bytesDownloaded += value.byteLength;
+                                if (isContainer && bytesDownloaded > MAX_GUARDED_ZIP_BYTES) {
+                                    await reader.cancel();
+                                    throw new ZipArchiveError(
+                                        `Model archive byte limit exceeds ${String(MAX_GUARDED_ZIP_BYTES)}`
+                                    );
+                                }
 
                                 if (writable) {
                                     // Stream directly to OPFS — no per-chunk accumulation.
                                     await writable.write(value);
+                                    throwIfAborted(signal);
                                 } else {
                                     chunks.push(value);
                                 }
@@ -181,33 +217,44 @@ export const downloadModel = inject({ logger })(
                         } catch (error) {
                             // Abandon the partial writable before bubbling up so a retry
                             // re-creates a clean file.
-                            await writable?.abort().catch(() => undefined);
+                            if (writable) {
+                                await (streamedAbortPromise ?? abortWritable(writable));
+                            }
+                            signal?.removeEventListener('abort', abortStreamedWritable);
                             throw error;
                         }
 
                         if (writable) {
-                            // Streamed path: bytes already on disk, nothing to verify or extract.
-                            await writable.close();
+                            try {
+                                // Streamed path: bytes already on disk, nothing to verify or extract.
+                                throwIfAborted(signal);
+                                await writable.close();
+                                throwIfAborted(signal);
 
-                            // Check storage quota (parity with the buffered path).
-                            const streamedStatus = await getStorageStatus();
-                            if (streamedStatus.usedBytes > streamedStatus.limitBytes) {
-                                logger.warn('[ModelDownload] Storage limit exceeded — LRU eviction needed');
-                                // Eviction is handled by the removeModel use case
+                                // Check storage quota (parity with the buffered path).
+                                const streamedStatus = await getStorageStatus();
+                                throwIfAborted(signal);
+                                if (streamedStatus.usedBytes > streamedStatus.limitBytes) {
+                                    logger.warn('[ModelDownload] Storage limit exceeded — LRU eviction needed');
+                                    // Eviction is handled by the removeModel use case
+                                }
+
+                                updateModelStatus(modelId, { status: 'ready', downloadProgress: 1 });
+                                broadcast({
+                                    modelId,
+                                    bytesDownloaded: sizeBytes,
+                                    totalBytes: sizeBytes,
+                                    progress: 1,
+                                    stage: 'complete',
+                                });
+                                logger.info(`[ModelDownload] Completed: ${modelId}`);
+                                return;
+                            } finally {
+                                signal?.removeEventListener('abort', abortStreamedWritable);
                             }
-
-                            updateModelStatus(modelId, { status: 'ready', downloadProgress: 1 });
-                            broadcast({
-                                modelId,
-                                bytesDownloaded: sizeBytes,
-                                totalBytes: sizeBytes,
-                                progress: 1,
-                                stage: 'complete',
-                            });
-                            logger.info(`[ModelDownload] Completed: ${modelId}`);
-                            return;
                         }
 
+                        throwIfAborted(signal);
                         // Buffered path: concatenate chunks once.
                         const totalLength = chunks.reduce((acc, context) => acc + context.byteLength, 0);
                         const fullData = new Uint8Array(totalLength);
@@ -239,8 +286,7 @@ export const downloadModel = inject({ logger })(
                             }
                         }
 
-                        // Extract ONNX from ZIP/oudep container if needed.
-                        // Uses async unzip (fflate) to avoid blocking the main thread.
+                        // Extract ONNX from ZIP/oudep container in a cancellable worker.
                         let onnxData: ArrayBuffer = fullData.buffer;
                         if (isContainer) {
                             broadcast({
@@ -250,29 +296,16 @@ export const downloadModel = inject({ logger })(
                                 progress: 0.97,
                                 stage: 'extracting',
                             });
-                            const files = await new Promise<Record<string, Uint8Array>>((resolve, reject) => {
-                                unzip(fullData, (err, result) => {
-                                    if (err) {
-                                        reject(err);
-                                    } else {
-                                        resolve(result);
-                                    }
-                                });
+                            const extracted = await extractSingleGuardedZipEntry({
+                                bytes: fullData,
+                                suffix: '.onnx',
+                                signal,
                             });
-                            const onnxEntry = Object.keys(files).find((name) => name.endsWith('.onnx'));
-                            const onnxBytes = onnxEntry ? files[onnxEntry] : undefined;
-                            if (!onnxEntry || !onnxBytes) {
-                                throw new Error(`No .onnx file found inside ZIP package for ${modelId}`);
-                            }
-                            // .slice() copies just the ONNX bytes — fflate returns views into a
-                            // shared backing buffer, so .buffer alone would include adjacent ZIP entries.
-                            onnxData = onnxBytes.slice(0).buffer;
-                            logger.info(`[ModelDownload] Extracted ${onnxEntry} from ZIP for ${modelId}`);
+                            onnxData = extracted.data.buffer;
+                            logger.info(`[ModelDownload] Extracted ${extracted.path} from ZIP for ${modelId}`);
                         }
 
-                        if (signal?.aborted) {
-                            throw new DOMException('Aborted', 'AbortError');
-                        }
+                        throwIfAborted(signal);
 
                         // Store in OPFS
                         broadcast({
@@ -282,10 +315,11 @@ export const downloadModel = inject({ logger })(
                             progress: 0.98,
                             stage: 'storing',
                         });
-                        await writeModel({ family, modelId, data: onnxData });
+                        await writeModel({ family, modelId, data: onnxData, signal });
 
                         // Check storage quota
                         const storageStatus = await getStorageStatus();
+                        throwIfAborted(signal);
                         if (storageStatus.usedBytes > storageStatus.limitBytes) {
                             logger.warn('[ModelDownload] Storage limit exceeded — LRU eviction needed');
                             // Eviction is handled by the removeModel use case
@@ -314,6 +348,9 @@ export const downloadModel = inject({ logger })(
                         logger.warn(
                             `[ModelDownload] Attempt ${String(attempt + 1)} failed for ${modelId}: ${String(error)}`
                         );
+                        if (error instanceof ZipArchiveError) {
+                            break;
+                        }
                         if (attempt < MAX_RETRIES - 1) {
                             try {
                                 await abortableSleep(1000 * 2 ** attempt, signal);
@@ -338,6 +375,9 @@ export const downloadModel = inject({ logger })(
                     stage: 'error',
                     error: String(lastError),
                 });
+                if (lastError instanceof ZipArchiveError) {
+                    throw lastError;
+                }
                 throw new Error(
                     `Failed to download ${modelId} after ${String(MAX_RETRIES)} attempts: ${String(lastError)}`
                 );

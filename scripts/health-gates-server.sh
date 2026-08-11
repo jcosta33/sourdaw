@@ -23,6 +23,7 @@ fi
 
 (
     cd server
+    npm test
     npm run build
 )
 

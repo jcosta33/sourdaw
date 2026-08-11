@@ -1,6 +1,6 @@
 import { type ReactElement, useState, useEffect, useRef } from 'react';
 
-import { Plus, Power, Trash2, Monitor, LayoutGrid } from 'lucide-react';
+import { Plus, Power, Trash2, Monitor, LayoutGrid, RefreshCw } from 'lucide-react';
 
 import { DawBlockedState } from '#/components/daw/DawBlockedState';
 import { DawHeaderBand } from '#/components/daw/DawHeaderBand';
@@ -16,8 +16,14 @@ import {
     addDevice,
     addExternalDevice,
     reorderDevices,
+    projectTrackToLiveStrip,
 } from '#/modules/Arrangement/useCases';
-import { pluginScanStore, defaultPluginScanState } from '#/modules/PluginHost/stores';
+import {
+    pluginScanStore,
+    defaultPluginScanState,
+    externalPluginActivationStore,
+    defaultExternalPluginActivationState,
+} from '#/modules/PluginHost/stores';
 import { openPluginGui } from '#/modules/PluginHost/useCases';
 import { showDevicePanelForType } from '#/modules/WorkspaceShell/useCases';
 import { getPlatformCapabilities, DISABLED_REASONS } from '#/utils/platformCapabilities';
@@ -37,6 +43,7 @@ type PluginScanViewState = {
         id: string;
         name: string;
         format: string;
+        clap_id?: string;
     }>;
 };
 
@@ -45,6 +52,7 @@ export const TrackDevicesSection = ({ track, onSelectDevice }: TrackDevicesSecti
     const deviceMenuRef = useRef<HTMLDivElement>(null);
 
     const pluginScanState = useStore<PluginScanViewState>(pluginScanStore, defaultPluginScanState);
+    const activationState = useStore(externalPluginActivationStore, defaultExternalPluginActivationState);
 
     // Snapshot the platform catalog once per render instead of walking it three times
     // (effects / utility / analyzer) and re-querying capabilities twice.
@@ -53,6 +61,25 @@ export const TrackDevicesSection = ({ track, onSelectDevice }: TrackDevicesSecti
     const utilityPlugins = platformPlugins.filter((param) => param.category === 'utility');
     const analyzerPlugins = platformPlugins.filter((param) => param.category === 'analyzer');
     const platformCapabilities = getPlatformCapabilities();
+    const supportedExternalPlugins = pluginScanState.scannedPlugins.filter(
+        (plugin) => plugin.format.toLowerCase() === 'clap'
+    );
+    const supportedExternalPluginIds = new Set(
+        supportedExternalPlugins.flatMap((plugin) => (plugin.clap_id ? [plugin.id, plugin.clap_id] : [plugin.id]))
+    );
+    const unavailableExternalDeviceIds = new Set(
+        track.devices
+            .filter(
+                (device) =>
+                    device.type === 'external-plugin' &&
+                    (!device.externalPluginId ||
+                        !supportedExternalPluginIds.has(device.externalPluginId) ||
+                        (device.externalInstanceId
+                            ? activationState.byInstanceId[device.externalInstanceId]?.status === 'error'
+                            : false))
+            )
+            .map((device) => device.id)
+    );
 
     useEffect(() => {
         if (!showDeviceMenu) {
@@ -146,9 +173,9 @@ export const TrackDevicesSection = ({ track, onSelectDevice }: TrackDevicesSecti
                                 ) : null}
                                 <DawMenuSeparator />
                                 <DawMenuSectionLabel>External</DawMenuSectionLabel>
-                                {platformCapabilities.hasNativePlugins && pluginScanState.scannedPlugins.length > 0 ? (
+                                {platformCapabilities.hasNativePlugins && supportedExternalPlugins.length > 0 ? (
                                     <div className="max-h-32 overflow-y-auto">
-                                        {pluginScanState.scannedPlugins.map((plugin) => (
+                                        {supportedExternalPlugins.map((plugin) => (
                                             <button
                                                 type="button"
                                                 key={plugin.id}
@@ -202,7 +229,7 @@ export const TrackDevicesSection = ({ track, onSelectDevice }: TrackDevicesSecti
                             data-testid={`device-card-${device.id}`}
                             className={cn(
                                 'flex items-center justify-between cursor-grab active:cursor-grabbing',
-                                device.bypassed ? 'opacity-50' : ''
+                                device.bypassed || unavailableExternalDeviceIds.has(device.id) ? 'opacity-50' : ''
                             )}
                             onClick={() => {
                                 const descriptor = getPluginById(device.type);
@@ -240,15 +267,25 @@ export const TrackDevicesSection = ({ track, onSelectDevice }: TrackDevicesSecti
                                         <div className="w-1 h-1 bg-muted rounded-full"></div>
                                     </div>
                                 </span>
-                                <span className="text-xs text-foreground font-medium truncate">{device.name}</span>
+                                <div className="min-w-0">
+                                    <span className="text-xs text-foreground font-medium truncate">{device.name}</span>
+                                    {unavailableExternalDeviceIds.has(device.id) ? (
+                                        <span className="block text-[9px] text-muted-foreground">Unavailable</span>
+                                    ) : null}
+                                </div>
                             </div>
                             <div className="flex items-center gap-0.5 shrink-0">
                                 <Button
                                     variant="ghost"
                                     size="icon-xs"
                                     className="h-6 w-6"
-                                    aria-label={`${device.bypassed ? 'Enable' : 'Bypass'} ${device.name}`}
+                                    aria-label={
+                                        unavailableExternalDeviceIds.has(device.id)
+                                            ? `${device.name} unavailable`
+                                            : `${device.bypassed ? 'Enable' : 'Bypass'} ${device.name}`
+                                    }
                                     aria-pressed={device.bypassed}
+                                    disabled={unavailableExternalDeviceIds.has(device.id)}
                                     data-testid={`device-bypass-${device.id}`}
                                     onClick={(event) => {
                                         event.stopPropagation();
@@ -256,10 +293,34 @@ export const TrackDevicesSection = ({ track, onSelectDevice }: TrackDevicesSecti
                                     }}
                                 >
                                     <Power
-                                        className={`size-3 ${device.bypassed ? 'text-muted-foreground' : 'text-[var(--color-state-success)]'}`}
+                                        className={`size-3 ${device.bypassed || unavailableExternalDeviceIds.has(device.id) ? 'text-muted-foreground' : 'text-[var(--color-state-success)]'}`}
                                     />
                                 </Button>
-                                {device.type === 'external-plugin' && device.externalInstanceId ? (
+                                {unavailableExternalDeviceIds.has(device.id) && device.externalInstanceId ? (
+                                    <Tooltip>
+                                        <TooltipTrigger asChild>
+                                            <Button
+                                                variant="ghost"
+                                                size="icon-xs"
+                                                className="h-6 w-6"
+                                                aria-label={`Retry ${device.name}`}
+                                                onClick={(event) => {
+                                                    event.stopPropagation();
+                                                    projectTrackToLiveStrip({
+                                                        trackId: track.id,
+                                                        activateDormantExternalPlugins: true,
+                                                    });
+                                                }}
+                                            >
+                                                <RefreshCw className="size-3 text-muted-foreground" />
+                                            </Button>
+                                        </TooltipTrigger>
+                                        <TooltipContent side="top">Retry plugin activation</TooltipContent>
+                                    </Tooltip>
+                                ) : null}
+                                {device.type === 'external-plugin' &&
+                                device.externalInstanceId &&
+                                !unavailableExternalDeviceIds.has(device.id) ? (
                                     <Tooltip>
                                         <TooltipTrigger asChild>
                                             <Button
