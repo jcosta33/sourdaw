@@ -1,0 +1,30 @@
+crates/daw-dsp/tests/gluten_routing_and_patch_state_reach.rs
+  s_bc88af7d3b054c::t_83645bcd30328b 129-137
+crates/daw-dsp/src/gluten/sidechain.rs
+  s_bc88af7d3b054c::t_83645bcd30328b 318-319
+  s_bc88af7d3b054c::t_a2962ae24bf820 39-41,116-118,253-255,260-262,267-269
+public/wasm/daw-dsp/daw_dsp.d.ts
+  s_bc88af7d3b054c::t_0688366ae82fe2 1,897-924
+public/wasm/daw-dsp/daw_dsp_bg.wasm.d.ts
+  s_bc88af7d3b054c::t_40c3ff616128ae 1,101-128
+public/wasm/manifest.json
+  s_bc88af7d3b054c::t_35803c2faf25aa 12,16-18,21
+src/modules/AudioEngine/wasm/daw_dsp.d.ts
+  s_bc88af7d3b054c::t_8494289c48522d 1,897-924
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "7a62c80ac3253a8a5aa53d42dccf5e987dfd6e64",
+  "prompts": {},
+  "sessions": {
+    "s_bc88af7d3b054c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f9b4a-11a2-7f61-8dfb-76eed0eb2a9c",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
