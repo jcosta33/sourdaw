@@ -9,38 +9,6 @@ import { readTauriDirectory } from '../readTauriDirectory';
 import { HANDLES_STORE, ROOTS_STORE, SAMPLES_STORE, openDb } from './helpers';
 import { ACTIVE_ROOT_KEY } from './persistSamples';
 
-type RestoreLibraryInput = {
-    trustedAnalysisRootId?: string;
-};
-
-function removeUntrustedAnalysis(sample: SampleRecord, trustedAnalysisRootId?: string): SampleRecord {
-    if (sample.libraryRootId === trustedAnalysisRootId) {
-        return sample;
-    }
-    if (sample.analysis === undefined && sample.sync.status !== 'analyzed') {
-        return sample;
-    }
-
-    const sanitized = {
-        ...sample,
-        sync: sample.sync.status === 'analyzed' ? { ...sample.sync, status: 'indexed' as const } : sample.sync,
-    };
-    delete sanitized.analysis;
-    return sanitized;
-}
-
-function persistSanitizedSamples(db: IDBDatabase, samples: SampleRecord[]): Promise<void> {
-    return new Promise((resolve, reject) => {
-        const tx = db.transaction(SAMPLES_STORE, 'readwrite');
-        const store = tx.objectStore(SAMPLES_STORE);
-        for (const sample of samples) {
-            store.put(sample);
-        }
-        tx.oncomplete = () => resolve();
-        tx.onerror = () => reject(tx.error ?? new Error('IDB transaction failed'));
-    });
-}
-
 function getNativeDirectoryErrorMessage(error: unknown): string {
     if (error instanceof Error) {
         return error.message;
@@ -94,7 +62,7 @@ async function resolveTauriRootStatus(root: LibraryRoot): Promise<LibraryRoot['s
  * logic, so the rebuild is the caller's responsibility, not this function's. On
  * failure the empty array is returned (nothing was restored).
  */
-export async function restoreLibrary({ trustedAnalysisRootId }: RestoreLibraryInput = {}): Promise<string[]> {
+export async function restoreLibrary(): Promise<string[]> {
     try {
         const db = await openDb();
 
@@ -165,14 +133,8 @@ export async function restoreLibrary({ trustedAnalysisRootId }: RestoreLibraryIn
             request.onerror = () => reject(request.error ?? new Error('IDB request failed'));
         });
 
-        const restoredSamples = samples.map((sample) => removeUntrustedAnalysis(sample, trustedAnalysisRootId));
-        const sanitizedSamples = restoredSamples.filter((sample, index) => sample !== samples[index]);
-        if (sanitizedSamples.length > 0) {
-            await persistSanitizedSamples(db, sanitizedSamples);
-        }
-
-        if (restoredSamples.length > 0) {
-            addSamples(restoredSamples);
+        if (samples.length > 0) {
+            addSamples(samples);
         }
 
         // Restore the session's last focused root if it was persisted and still
