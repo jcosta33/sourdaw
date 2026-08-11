@@ -1,23 +1,37 @@
-import { type ReactElement } from 'react';
+import { type ChangeEvent, type ReactElement } from 'react';
 
 import { Settings } from 'lucide-react';
 
+import { DawCompactSelect } from '#/components/daw/DawCompactSelect';
 import { Button } from '#/components/ui/button';
 import { Separator } from '#/components/ui/separator';
 import { Slider } from '#/components/ui/slider';
 import { Tooltip, TooltipContent, TooltipTrigger } from '#/components/ui/tooltip';
 
+import {
+    AUTO_SAVE_INTERVAL_OPTIONS,
+    isAutoSaveIntervalMs,
+    type Preferences,
+    type SoloModePreference,
+} from '../../../models/Preferences';
 import { SectionTitle, FieldGroup, ToggleRow, VoiceKeyEditor, GridSubdivisionSection } from '../preferencesShared';
-
-import type { Preferences, SoloModePreference } from '../../../models/Preferences';
 
 type SectionProps = {
     prefs: Preferences;
     update: (partial: Partial<Preferences>) => void;
 };
 
+const AUTO_SAVE_DESCRIPTION_ID = 'auto-save-policy-description';
+
 export const GeneralSection = ({ prefs, update }: SectionProps): ReactElement => {
     const trackHeights: Preferences['trackHeight'][] = ['compact', 'normal', 'large'];
+    const handleAutoSaveIntervalChange = (event: ChangeEvent<HTMLSelectElement>): void => {
+        const interval = Number(event.target.value);
+        if (!isAutoSaveIntervalMs(interval)) {
+            return;
+        }
+        update({ autoSaveIntervalMs: interval });
+    };
 
     return (
         <>
@@ -53,7 +67,31 @@ export const GeneralSection = ({ prefs, update }: SectionProps): ReactElement =>
                     value={prefs.snapToZeroCrossing}
                     onChange={(value) => update({ snapToZeroCrossing: value })}
                 />
-                <ToggleRow label="Auto Save" value={prefs.autoSave} onChange={(value) => update({ autoSave: value })} />
+                <div className="space-y-2">
+                    <ToggleRow
+                        label="Auto Save"
+                        value={prefs.autoSave}
+                        onChange={(value) => update({ autoSave: value })}
+                        descriptionId={AUTO_SAVE_DESCRIPTION_ID}
+                    />
+                    <DawCompactSelect
+                        value={prefs.autoSaveIntervalMs}
+                        onChange={handleAutoSaveIntervalChange}
+                        className="w-full"
+                        aria-label="Auto-save interval"
+                        aria-describedby={AUTO_SAVE_DESCRIPTION_ID}
+                    >
+                        {AUTO_SAVE_INTERVAL_OPTIONS.map((option) => (
+                            <option key={option.value} value={option.value}>
+                                {option.label}
+                            </option>
+                        ))}
+                    </DawCompactSelect>
+                    <p id={AUTO_SAVE_DESCRIPTION_ID} className="text-[10px] leading-relaxed text-muted-foreground">
+                        Auto Save creates a reopenable local project snapshot while playback is stopped. Turning it off
+                        stops scheduled snapshots; crash-recovery data still updates in the background.
+                    </p>
+                </div>
                 <ToggleRow
                     label="Show Minimap"
                     value={prefs.showMinimap}

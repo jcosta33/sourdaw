@@ -8,6 +8,7 @@ import {
     GRID_SNAP_OPTIONS,
     PREFERENCES_SCHEMA_VERSION,
     defaultPreferences,
+    isAutoSaveIntervalMs,
     type Preferences,
 } from '../models/Preferences';
 
@@ -45,7 +46,7 @@ const PREFERENCES_SCHEMA: { [K in keyof Preferences]: (value: unknown) => boolea
     trackHeight: isOneOf('compact', 'normal', 'large'),
     colorblindMode: (value) => typeof value === 'boolean',
     autoSave: (value) => typeof value === 'boolean',
-    autoSaveIntervalMs: isFiniteNumber,
+    autoSaveIntervalMs: isAutoSaveIntervalMs,
     snapToGrid: (value) => typeof value === 'boolean',
     snapToZeroCrossing: (value) => typeof value === 'boolean',
     gridSubdivision: (value) => GRID_SNAP_VALUES.has(value),

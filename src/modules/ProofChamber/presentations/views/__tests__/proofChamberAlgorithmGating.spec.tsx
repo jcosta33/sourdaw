@@ -1,7 +1,6 @@
 import { render, fireEvent, screen, cleanup } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-import { useStore } from '#/infra/store/useStore';
 import { executeAppAction } from '#/modules/Command/useCases';
 import { NATIVE_DSP_ENGINE_GAPS, findNativeDspEngineGapParam } from '#/utils/nativeDspEngineGaps';
 
@@ -36,7 +35,12 @@ import { ProofChamberPanel } from '../ProofChamberPanel';
  */
 
 vi.mock('#/infra/store/useStore', () => ({
-    useStore: vi.fn((_store, defaultValue) => defaultValue),
+    useStore: vi.fn((_store: unknown, defaultValue: unknown) => {
+        if (typeof defaultValue === 'object' && defaultValue !== null && 'instances' in defaultValue) {
+            return MOCKED_CHAMBER_STORE_STATE;
+        }
+        return defaultValue;
+    }),
 }));
 
 vi.mock('#/modules/Command/useCases', () => ({
@@ -107,6 +111,7 @@ const DECAY_EQ_CONTROL_NAMES = [
 ];
 
 const DEVICE_ID = 'test-device';
+let MOCKED_CHAMBER_STORE_STATE = { activeInstanceId: DEVICE_ID, instances: {} };
 
 /**
  * How each advertised parameter appears on screen.
@@ -164,17 +169,18 @@ const ALGORITHMS: readonly ProofChamberAlgorithm[] = ['plate', 'fdn-8', 'fdn-16'
  * shimmer engaged, then switched to Reverse, is exactly the state that has to
  * behave.
  */
-function renderPanel(algorithm: ProofChamberAlgorithm): void {
+function renderPanel(algorithm: ProofChamberAlgorithm, overrides: Partial<ProofChamberEngineState> = {}): void {
     const engineState: ProofChamberEngineState = {
         ...DEFAULT_PARAMS,
         algorithm,
         shimmer: true,
         saturation: true,
+        ...overrides,
     };
-    vi.mocked(useStore).mockReturnValue({
+    MOCKED_CHAMBER_STORE_STATE = {
         activeInstanceId: DEVICE_ID,
         instances: { [DEVICE_ID]: { id: DEVICE_ID, isBypassed: false, uiLevel: 1, engineState } },
-    });
+    };
     render(<ProofChamberPanel deviceId={DEVICE_ID} />);
     // The Decay EQ overlay is behind a view toggle that starts closed, and its
     // six bands are part of the population below. The chip is a view control,
@@ -222,7 +228,6 @@ function isGapped(algorithm: ProofChamberAlgorithm, paramId: string): boolean {
 describe('the Dutch Oven panel offers only controls the live algorithm can hear', () => {
     beforeEach(() => {
         vi.clearAllMocks();
-        vi.mocked(useStore).mockImplementation((_store, defaultValue) => defaultValue);
     });
 
     it('gives every knob an accessible name of its own', () => {
@@ -267,6 +272,28 @@ describe('the Dutch Oven panel offers only controls the live algorithm can hear'
         expect(perEngine).toEqual({ fdn: 9, spring: 11, reverse: 21 });
         expect(chamberEngineIdForAlgorithm('fdn-16')).toBe('fdn');
         expect(chamberEngineIdForAlgorithm('plate')).toBe('plate');
+    });
+
+    it('shows the Spring decay and damping ranges the engine can actually hear', () => {
+        renderPanel('spring', { decay: 0.999, damping: 0.999 });
+
+        const decay = screen.getByRole('slider', { name: 'Decay' });
+        const damping = screen.getByRole('slider', { name: 'Damp' });
+        expect(decay).toHaveAttribute('aria-valuemax', '0.95');
+        expect(decay).toHaveAttribute('aria-valuenow', '0.95');
+        expect(damping).toHaveAttribute('aria-valuemax', '0.99');
+        expect(damping).toHaveAttribute('aria-valuenow', '0.99');
+        expect(screen.getAllByText('0.950')).toHaveLength(2);
+        expect(screen.getAllByText('99%')).toHaveLength(2);
+    });
+
+    it('limits Reverse decay without narrowing Plate', () => {
+        renderPanel('reverse', { decay: 0.999 });
+        expect(screen.getByRole('slider', { name: 'Decay' })).toHaveAttribute('aria-valuemax', '0.99');
+
+        cleanup();
+        renderPanel('plate', { decay: 0.999 });
+        expect(screen.getByRole('slider', { name: 'Decay' })).toHaveAttribute('aria-valuemax', '0.999');
     });
 
     for (const algorithm of ALGORITHMS) {

@@ -33,10 +33,12 @@ export const ToggleRow = ({
     label,
     value,
     onChange,
+    descriptionId,
 }: {
     label: string;
     value: boolean;
     onChange: (v: boolean) => void;
+    descriptionId?: string;
 }): ReactElement => (
     <div className="flex items-center justify-between">
         <span className="text-xs text-foreground">{label}</span>
@@ -45,6 +47,7 @@ export const ToggleRow = ({
             role="switch"
             aria-checked={value}
             aria-label={label}
+            aria-describedby={descriptionId}
             className={`relative h-5 w-9 rounded-full transition-colors ${value ? 'bg-primary' : 'bg-muted/50'}`}
             onClick={() => onChange(!value)}
         >

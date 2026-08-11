@@ -214,6 +214,12 @@ describe('validateStoredPreferences — per-field schema guards', () => {
         expect(result.defaultVelocity).toBe(64);
     });
 
+    it('rejects an unsupported autosave interval instead of arming a hot persistence loop', () => {
+        const result = validateStoredPreferences({ ...defaultPreferences, autoSaveIntervalMs: 1 });
+
+        expect(result.autoSaveIntervalMs).toBe(defaultPreferences.autoSaveIntervalMs);
+    });
+
     it('replaces a non-string voiceCommandKey with its default', () => {
         const result = validateStoredPreferences({ ...defaultPreferences, voiceCommandKey: 42 });
 
