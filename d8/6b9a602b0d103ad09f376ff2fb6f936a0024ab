@@ -1,0 +1,24 @@
+src/modules/TimelineEditor/presentations/views/__tests__/TempoEditor.spec.tsx
+  s_bc88af7d3b054c::t_e2a6d5891821cc 198-200,219-221
+  s_bc88af7d3b054c::t_a0ae8395ecc44c 145,156-158,160-161,201-202,205,222
+src/modules/TimelineEditor/presentations/views/__tests__/TempoEditorRampAbort.spec.tsx
+  s_bc88af7d3b054c::t_a0ae8395ecc44c 275-277,288-290,297-299
+src/modules/TimelineEditor/presentations/views/TempoEditor.tsx
+  s_bc88af7d3b054c::t_e2a6d5891821cc 14,52,71-73,83
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "d86b9a602b0d103ad09f376ff2fb6f936a0024ab",
+  "prompts": {},
+  "sessions": {
+    "s_bc88af7d3b054c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f9b4a-11a2-7f61-8dfb-76eed0eb2a9c",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
