@@ -19,7 +19,7 @@
 //! parameter, compared sample for sample, and every claim of inertness is
 //! paired with a configuration where the same parameter moves the output.
 
-use daw_dsp::gluten::GlutenInstance;
+use daw_dsp::gluten::{sidechain::SidechainChain, GlutenInstance};
 
 const SAMPLE_RATE: f32 = 48_000.0;
 const BLOCK: usize = 512;
@@ -40,6 +40,15 @@ const TOPOLOGIES: [(&str, f32); 4] = [
     ("fet", TOPOLOGY_FET),
     ("diode", TOPOLOGY_DIODE),
 ];
+
+#[test]
+fn a_bare_sidechain_chain_uses_the_declared_hpf_default() {
+    let mut bare = SidechainChain::new(SAMPLE_RATE);
+    let mut declared = SidechainChain::new(SAMPLE_RATE);
+    declared.set_hpf_enabled(true);
+    declared.set_hpf_freq(SAMPLE_RATE, 80.0);
+    assert_eq!(bare.process(0.5, -0.5), declared.process(0.5, -0.5));
+}
 
 /// See `gluten_topology_param_reach.rs` — a steady sine settles every envelope
 /// follower and would make timing controls measure as inert on the topologies
@@ -192,7 +201,6 @@ fn render_right_with_left_level(left_level: f32) -> Vec<f32> {
     instance.set_param("sc_eq_freq", 400.0);
     instance.set_param("sc_eq_q", 1.5);
     instance.set_param("thrust", 2.0);
-
     let mut captured = Vec::with_capacity(BLOCKS * BLOCK);
     for block in 0..BLOCKS {
         let base = block * BLOCK;
@@ -205,7 +213,6 @@ fn render_right_with_left_level(left_level: f32) -> Vec<f32> {
                 *right_ptr.add(n) = 0.35 * (std::f32::consts::TAU * 630.0 * t).sin();
             }
         }
-
         instance.process(BLOCK as u32);
         let out_right = instance.get_right_ptr();
         for n in 0..BLOCK {
@@ -220,7 +227,6 @@ fn detector_filters_keep_unlinked_channel_state_isolated() {
     let quiet_left = render_right_with_left_level(0.0);
     let loud_left = render_right_with_left_level(0.9);
     let delta = max_delta(&quiet_left, &loud_left);
-
     assert!(
         delta < 1.0e-6,
         "the right detector must not inherit left-channel EQ or Thrust state, but moved by {delta:e}"
@@ -232,7 +238,6 @@ fn render_side_mode_with_external_sidechain(sc_left_level: f32, sc_right_level: 
     detector_base(TOPOLOGY_VCA)(&mut instance);
     instance.set_param("stereo_mode", STEREO_MODE_SIDE);
     instance.set_param("ext_sidechain", 1.0);
-
     let mut captured = Vec::with_capacity(BLOCKS * BLOCK);
     for block in 0..BLOCKS {
         let base = block * BLOCK;
@@ -251,7 +256,6 @@ fn render_side_mode_with_external_sidechain(sc_left_level: f32, sc_right_level: 
                 *sc_right_ptr.add(n) = sc_right_level * detector;
             }
         }
-
         let out_left = instance.process(BLOCK as u32);
         for n in 0..BLOCK {
             captured.push(unsafe { *out_left.add(n) });
@@ -269,7 +273,6 @@ fn external_sidechain_is_encoded_before_side_only_detection() {
         0.0,
         "a centered external signal has no Side component"
     );
-
     let anti_phase = render_side_mode_with_external_sidechain(0.9, -0.9);
     assert!(
         max_delta(&silent, &anti_phase) > 1.0e-4,
@@ -283,7 +286,6 @@ fn render_diode_step(lookahead_ms: f32) -> Vec<f32> {
     detector_base(TOPOLOGY_DIODE)(&mut instance);
     instance.set_param("limiter_threshold", 0.0);
     instance.set_param("lookahead", lookahead_ms);
-
     let left_ptr = instance.get_input_left_ptr();
     let right_ptr = instance.get_input_right_ptr();
     for n in 0..FRAMES {
@@ -292,7 +294,6 @@ fn render_diode_step(lookahead_ms: f32) -> Vec<f32> {
             *right_ptr.add(n) = 0.9;
         }
     }
-
     let out_left = instance.process(FRAMES as u32);
     (0..FRAMES).map(|n| unsafe { *out_left.add(n) }).collect()
 }
@@ -312,7 +313,6 @@ fn diode_lookahead_drives_detection_from_the_undelayed_program() {
         .iter()
         .map(|sample| sample.abs())
         .fold(0.0_f32, f32::max);
-
     assert!(
         lookahead_peak < no_lookahead_peak * 0.8,
         "the detector must use the undelayed program: lookahead onset {lookahead_peak} vs immediate onset {no_lookahead_peak}"

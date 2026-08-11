@@ -29,7 +29,7 @@ impl SidechainHpf {
             x2: 0.0,
             y1: 0.0,
             y2: 0.0,
-            enabled: false,
+            enabled: true,
         };
         f.set_freq(sample_rate, freq);
         f
