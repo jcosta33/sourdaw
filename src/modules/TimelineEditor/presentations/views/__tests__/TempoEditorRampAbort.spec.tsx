@@ -272,7 +272,9 @@ describe('TempoEditor — a tempo drag aborted by the playhead entering a ramp',
         const field = screen.getByRole('spinbutton');
 
         expect(screen.getByRole('status')).toHaveTextContent('');
-        expect(field).not.toHaveAttribute('aria-describedby');
+        expect(field).toHaveAccessibleDescription(
+            'Tempo at the playhead. Editing changes the tempo-map event that governs it.'
+        );
 
         startDragAt(field);
         advancePlayheadTo(2.5);
@@ -283,14 +285,18 @@ describe('TempoEditor — a tempo drag aborted by the playhead entering a ramp',
         expect(screen.getByRole('status')).toHaveTextContent(
             'Tempo field locked: the playhead is inside a tempo ramp.'
         );
-        expect(field).toHaveAccessibleDescription('ramp');
+        expect(field).toHaveAccessibleDescription(
+            'The playhead is inside a tempo ramp. Edit its end points in the tempo map.'
+        );
 
         // ...and it goes quiet again when the control comes back, rather than
         // leaving a stale reason attached to a field that is now writable.
         advancePlayheadTo(20);
 
         expect(screen.getByRole('status')).toHaveTextContent('');
-        expect(field).not.toHaveAttribute('aria-describedby');
+        expect(field).toHaveAccessibleDescription(
+            'Tempo at the playhead. Editing changes the tempo-map event that governs it.'
+        );
     });
 
     it('should keep an adjustment key it owns while the ramp holds, instead of leaking it to the workspace', () => {
