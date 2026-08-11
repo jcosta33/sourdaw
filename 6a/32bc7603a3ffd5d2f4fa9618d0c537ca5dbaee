@@ -1,0 +1,22 @@
+src/modules/AudioEngine/worklets/grandBouleOfflineProcessor.ts
+  s_bc88af7d3b054c::t_59548e8bd3a452 259-265,270
+  s_bc88af7d3b054c::t_6ecf17fffc2168 81,122-129,134,136-137,139-144,147-151,154-158,168,250-255,276-277,280-289,312-316
+src/modules/AudioEngine/worklets/__tests__/grandBouleOfflineNoteTiming.spec.ts
+  s_bc88af7d3b054c::t_52302dac6726d7 49,59,67,218,310-364
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "6a32bc7603a3ffd5d2f4fa9618d0c537ca5dbaee",
+  "prompts": {},
+  "sessions": {
+    "s_bc88af7d3b054c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f9b4a-11a2-7f61-8dfb-76eed0eb2a9c",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
