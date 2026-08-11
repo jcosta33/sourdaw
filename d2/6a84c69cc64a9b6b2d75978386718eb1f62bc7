@@ -1,0 +1,21 @@
+src/modules/WorkspaceShell/presentations/hooks/useAppInitialization.ts
+  s_bc88af7d3b054c::t_b9ecd310497d27 147,149,154-156
+src/modules/WorkspaceShell/presentations/hooks/__tests__/useAppInitialization.spec.ts
+  s_bc88af7d3b054c::t_e4e85aa38666ad 358-382
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "d26a84c69cc64a9b6b2d75978386718eb1f62bc7",
+  "prompts": {},
+  "sessions": {
+    "s_bc88af7d3b054c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f9b4a-11a2-7f61-8dfb-76eed0eb2a9c",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
