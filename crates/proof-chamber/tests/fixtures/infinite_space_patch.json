@@ -1,0 +1,33 @@
+{
+  "space": "infinite",
+  "parameters": {
+    "algorithm": 0.0,
+    "mix": 0.3,
+    "decay": 0.999,
+    "damping": 0.0,
+    "predelay": 0.0,
+    "size": 0.6,
+    "mod_rate": 1.0,
+    "mod_depth": 0.0,
+    "diffusion": 0.75,
+    "high_cut": 12000.0,
+    "low_cut": 80.0,
+    "width": 1.0,
+    "freeze": 0.0,
+    "shimmer": 0.0,
+    "shimmer_amount": 0.2,
+    "shimmer_pitch": 1.0,
+    "gravity": 0.5,
+    "saturation": 0.0,
+    "saturation_type": 0.0,
+    "early_late": 0.4,
+    "density": 1.0,
+    "decay_eq_0": 1.0,
+    "decay_eq_1": 1.0,
+    "decay_eq_2": 1.0,
+    "decay_eq_3": 1.0,
+    "decay_eq_4": 1.0,
+    "decay_eq_5": 1.0,
+    "vintage": 0.0
+  }
+}

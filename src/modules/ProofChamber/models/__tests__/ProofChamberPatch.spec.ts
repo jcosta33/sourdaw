@@ -1,6 +1,15 @@
 import { describe, it, expect } from 'vitest';
 
-import { ALGORITHM_MAP, DEFAULT_PARAMS, PARAM_MAP, SPACE_PRESETS, expandSpacePreset } from '../ProofChamberState';
+import infiniteSpacePatch from '../../../../../crates/proof-chamber/tests/fixtures/infinite_space_patch.json';
+import {
+    ALGORITHM_MAP,
+    BOOLEAN_ENGINE_FIELDS,
+    DEFAULT_PARAMS,
+    NUMERIC_ENGINE_FIELDS,
+    PARAM_MAP,
+    SPACE_PRESETS,
+    expandSpacePreset,
+} from '../ProofChamberState';
 
 describe('ProofChamberPatch constants', () => {
     it('should map every algorithm type to a distinct index', () => {
@@ -46,6 +55,27 @@ describe('expandSpacePreset', () => {
     });
 
     it('lets the Infinite space fill the tank before the user freezes it', () => {
-        expect(SPACE_PRESETS.infinite.freeze).toBe(false);
+        const expanded = expandSpacePreset('infinite');
+        const parameters: Record<string, number> = {
+            algorithm: ALGORITHM_MAP[expanded.algorithm],
+        };
+        for (const key of NUMERIC_ENGINE_FIELDS) {
+            const paramId = PARAM_MAP[key];
+            expect(paramId).toBeDefined();
+            if (!paramId) {
+                continue;
+            }
+            parameters[paramId] = expanded[key];
+        }
+        for (const key of BOOLEAN_ENGINE_FIELDS) {
+            const paramId = PARAM_MAP[key];
+            expect(paramId).toBeDefined();
+            if (!paramId) {
+                continue;
+            }
+            parameters[paramId] = expanded[key] ? 1 : 0;
+        }
+
+        expect({ space: expanded.space, parameters }).toEqual(infiniteSpacePatch);
     });
 });
