@@ -1,0 +1,27 @@
+crates/daw-dsp/src/bacteria/granular.rs
+  s_bc88af7d3b054c::t_8ef8b19159df3a 171,178-181,477,500
+  s_bc88af7d3b054c::t_922ac57b833c66 498-499
+  s_bc88af7d3b054c::t_34a6a58f096450 512-527
+  s_bc88af7d3b054c::t_c4695c318065f9 20,32,123-127,143-146,149-151,156-157,182,184,186-189,193
+  s_bc88af7d3b054c::t_d91c8ad61070e0 152-153,183,185,490
+  s_bc88af7d3b054c::t_cae0a01c58e1e8 489,491-495
+  s_bc88af7d3b054c::t_63f120f074f6e9 452-476,478-488,496-497,501-511,528-555
+crates/daw-dsp/tests/device_process_rt.rs
+  s_bc88af7d3b054c::t_cae0a01c58e1e8 222-269
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "0758a095b21c794a4f3729b25410755c3c4b1981",
+  "prompts": {},
+  "sessions": {
+    "s_bc88af7d3b054c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f9b4a-11a2-7f61-8dfb-76eed0eb2a9c",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
