@@ -34,7 +34,7 @@ vi.mock('../undoTree/undoTreeMoveTo', () => ({
     undoTreeMoveTo: mocks.undoTreeMoveTo,
 }));
 
-function actionEntry(id: string, groupId: string | undefined): UndoEntry {
+function actionEntry(id: string, groupId: string | undefined): Extract<UndoEntry, { kind: 'action' }> {
     return {
         kind: 'action',
         id,
@@ -157,5 +157,27 @@ describe('revertActionGroup', () => {
             future: [group],
         });
         expect(mocks.undoTreeMoveTo).toHaveBeenCalledWith('concurrent');
+    });
+
+    it('moves only successfully reverted members when a mixed group contains an inert entry', async () => {
+        const inert = { ...actionEntry('inert', 'g1'), inverseAction: null } satisfies UndoEntry;
+        const reverted = actionEntry('reverted', 'g1');
+        mocks.undoStoreValue.value = { past: [inert, reverted], future: [] };
+
+        await revertActionGroup('g1');
+
+        expect(mocks.undoStoreSet).toHaveBeenCalledWith({ past: [inert], future: [reverted] });
+    });
+
+    it('commits successful newer inverses before rethrowing an older failure', async () => {
+        const failed = actionEntry('failed', 'g1');
+        const reverted = actionEntry('reverted', 'g1');
+        const failure = new Error('inverse failed');
+        mocks.undoStoreValue.value = { past: [failed, reverted], future: [] };
+        mocks.executeAppAction.mockResolvedValueOnce(undefined).mockRejectedValueOnce(failure);
+
+        await expect(revertActionGroup('g1')).rejects.toBe(failure);
+
+        expect(mocks.undoStoreSet).toHaveBeenCalledWith({ past: [failed], future: [reverted] });
     });
 });

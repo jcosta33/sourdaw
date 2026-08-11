@@ -68,6 +68,9 @@ function callbackEntry(overrides: Partial<CallbackUndoEntry> = {}): CallbackUndo
 describe('undo', () => {
     beforeEach(() => {
         mocks.undoStoreSet.mockReset();
+        mocks.undoStoreSet.mockImplementation((state) => {
+            mocks.undoStoreValue.value = state;
+        });
         mocks.executeAppAction.mockReset();
         mocks.executeAppActionBatch.mockReset();
         mocks.executeAppActionBatch.mockResolvedValue({ status: 'executed', actions: [] });
@@ -108,20 +111,18 @@ describe('undo', () => {
         });
     });
 
-    it('retains callback history when guarded undo rejects current state', async () => {
-        const conflict = new Error('stale project state');
+    it('preserves a normal commit made while callback undo yields', async () => {
+        const concurrent = actionEntry({ id: 'concurrent' });
         const entry = callbackEntry({
             undo: () => {
-                throw conflict;
+                mocks.undoStoreValue.value = { past: [entry, concurrent], future: [] };
             },
         });
         mocks.undoStoreValue.value = { past: [entry], future: [] };
 
-        await expect(undo()).rejects.toBe(conflict);
+        await undo();
 
-        expect(mocks.undoStoreSet).not.toHaveBeenCalled();
-        expect(mocks.undoTreeMoveTo).not.toHaveBeenCalled();
-        expect(mocks.undoStoreValue.value).toEqual({ past: [entry], future: [] });
+        expect(mocks.undoStoreSet).toHaveBeenCalledWith({ past: [concurrent], future: [entry] });
     });
 
     it('should undo a whole group newest-first and move it to future in original order', async () => {

@@ -75,6 +75,9 @@ function callbackEntry(overrides: Partial<CallbackUndoEntry> = {}): CallbackUndo
 describe('redo', () => {
     beforeEach(() => {
         mocks.undoStoreSet.mockReset();
+        mocks.undoStoreSet.mockImplementation((state) => {
+            mocks.undoStoreValue.value = state;
+        });
         mocks.executeAppAction.mockReset();
         mocks.executeAppActionBatch.mockReset();
         mocks.executeAppActionBatch.mockResolvedValue({ status: 'committed', actions: [] });
@@ -260,20 +263,18 @@ describe('redo', () => {
         expect(mocks.undoTreeMoveTo).toHaveBeenCalledWith('callback-1');
     });
 
-    it('retains callback history when guarded redo rejects current state', async () => {
-        const conflict = new Error('stale project state');
+    it('preserves a normal commit made while callback redo yields', async () => {
+        const concurrent = actionEntry({ id: 'concurrent' });
         const entry = callbackEntry({
             redo: () => {
-                throw conflict;
+                mocks.undoStoreValue.value = { past: [concurrent], future: [] };
             },
         });
         mocks.undoStoreValue.value = { past: [], future: [entry] };
 
-        await expect(redo()).rejects.toBe(conflict);
+        await redo();
 
-        expect(mocks.undoStoreSet).not.toHaveBeenCalled();
-        expect(mocks.undoTreeMoveTo).not.toHaveBeenCalled();
-        expect(mocks.undoStoreValue.value).toEqual({ past: [], future: [entry] });
+        expect(mocks.undoStoreSet).toHaveBeenCalledWith({ past: [concurrent, entry], future: [] });
     });
 
     it('consumes a callback entry that reports it was not applied, keeping past unchanged', async () => {

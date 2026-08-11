@@ -4,41 +4,60 @@ import type { executeGlobalTimeOperation } from './executeGlobalTimeOperation';
 
 type GlobalTimeOperationResult = ReturnType<typeof executeGlobalTimeOperation>;
 type AppliedGlobalTimeOperationResult = Extract<GlobalTimeOperationResult, { status: 'applied' }>;
-type ReadyTimeOperationRestore = Extract<ReturnType<typeof prepareTimeOperationStateRestore>, { status: 'ready' }>;
-
 type CreateUndoableGlobalTimeOperationInput = {
     initialResult: AppliedGlobalTimeOperationResult;
 };
 
-function restoreOrThrow(plan: unknown): ReadyTimeOperationRestore {
+function assertRecord(value: unknown): asserts value is Record<string, unknown> {
+    if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+        throw new TypeError('Global time operation produced an invalid inverse');
+    }
+}
+
+function reverseTransition(value: unknown): unknown {
+    if (value === null) {
+        return null;
+    }
+    assertRecord(value);
+    return {
+        ...value,
+        expected: value.replacement,
+        replacement: value.expected,
+    };
+}
+
+function reverseRestorePlan(value: unknown): unknown {
+    assertRecord(value);
+    return {
+        ...value,
+        local: reverseTransition(value.local),
+        automation: reverseTransition(value.automation),
+        midi: reverseTransition(value.midi),
+        timelineMap: reverseTransition(value.timelineMap),
+    };
+}
+
+function restoreOrThrow(plan: unknown, operation: 'undo' | 'redo'): void {
     const restoration = prepareTimeOperationStateRestore(plan);
     if (restoration.status !== 'ready') {
-        throw new Error('Global time operation undo conflicts with current project state');
+        throw new Error(`Global time operation ${operation} conflicts with current project state`);
     }
     if (!restoration.hasChanges) {
-        throw new Error('Global time operation undo was not applied');
+        throw new Error(`Global time operation ${operation} was not applied`);
     }
     if (!restoration.apply()) {
-        throw new Error('Global time operation undo was not applied');
+        throw new Error(`Global time operation ${operation} was not applied`);
     }
-    return restoration;
 }
 
 export function createUndoableGlobalTimeOperation({ initialResult }: CreateUndoableGlobalTimeOperationInput): {
     undo: () => void;
     redo: () => void;
 } {
-    let redoRestoration: ReadyTimeOperationRestore | null = null;
+    const redoPlan = reverseRestorePlan(initialResult.inversePlan);
 
     return {
-        undo: () => {
-            redoRestoration = restoreOrThrow(initialResult.inversePlan);
-        },
-        redo: () => {
-            if (!redoRestoration?.revert()) {
-                throw new Error('Global time operation redo conflicts with current project state');
-            }
-            redoRestoration = null;
-        },
+        undo: () => restoreOrThrow(initialResult.inversePlan, 'undo'),
+        redo: () => restoreOrThrow(redoPlan, 'redo'),
     };
 }

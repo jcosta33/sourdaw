@@ -13,6 +13,22 @@ function currentEntryId(past: readonly UndoEntry[]): string | null {
     return past.length > 0 ? past[past.length - 1]!.id : null;
 }
 
+function commitUndoTransition(
+    initialPast: readonly UndoEntry[],
+    retainedPast: readonly UndoEntry[],
+    futureEntries: readonly UndoEntry[]
+): void {
+    const live = undoStore.value;
+    if (!live) {
+        return;
+    }
+    const retainedIds = new Set(retainedPast.map((entry) => entry.id));
+    const removedIds = new Set(initialPast.filter((entry) => !retainedIds.has(entry.id)).map((entry) => entry.id));
+    const past = live.past.filter((entry) => !removedIds.has(entry.id));
+    undoStore.set({ past, future: [...futureEntries, ...live.future] });
+    undoTreeMoveTo(currentEntryId(past));
+}
+
 type ExecuteUndoInput = {
     entry: UndoEntry;
     runExecuteAppAction: typeof executeAppAction;
@@ -112,8 +128,6 @@ async function undoImpl(): Promise<void> {
     }
 
     let past = initial.past;
-    const future = initial.future;
-
     // Scan downwards until something is actually undone. Inert entries (action
     // entries without an inverseAction) are dropped along the way so they can
     // never wedge the undoable entries beneath them.
@@ -137,11 +151,7 @@ async function undoImpl(): Promise<void> {
                     return;
                 }
 
-                undoStore.set({
-                    past,
-                    future: [...groupEntries, ...future],
-                });
-                undoTreeMoveTo(currentEntryId(past));
+                commitUndoTransition(initial.past, past, groupEntries);
                 if (outcome.status === 'committed') {
                     throw outcome.error;
                 }
@@ -186,11 +196,7 @@ async function undoImpl(): Promise<void> {
 
             const nextPast = [...past, ...retainedEntries];
             if (undoneEntries.length > 0 || nextPast.length !== initial.past.length) {
-                undoStore.set({
-                    past: nextPast,
-                    future: [...undoneEntries, ...future],
-                });
-                undoTreeMoveTo(currentEntryId(nextPast));
+                commitUndoTransition(initial.past, nextPast, undoneEntries);
             }
             if (committedError !== undefined) {
                 throw committedError;
@@ -207,19 +213,14 @@ async function undoImpl(): Promise<void> {
             // Nothing was written, so the entry stays undoable. Only a purge
             // of inert entries made earlier in this scan needs persisting.
             if (past.length !== initial.past.length) {
-                undoStore.set({ past, future });
-                undoTreeMoveTo(currentEntryId(past));
+                commitUndoTransition(initial.past, past, []);
             }
             return;
         }
 
         past = past.slice(0, -1);
         if (outcome.status === 'undone' || outcome.status === 'committed') {
-            undoStore.set({
-                past,
-                future: [lastEntry, ...future],
-            });
-            undoTreeMoveTo(currentEntryId(past));
+            commitUndoTransition(initial.past, past, [lastEntry]);
             if (outcome.status === 'committed') {
                 throw outcome.error;
             }
@@ -230,8 +231,7 @@ async function undoImpl(): Promise<void> {
 
     // The stack held only inert entries: persist the purge so the wedge is gone.
     if (past.length !== initial.past.length) {
-        undoStore.set({ past, future });
-        undoTreeMoveTo(currentEntryId(past));
+        commitUndoTransition(initial.past, past, []);
     }
 }
 

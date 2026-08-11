@@ -2,58 +2,46 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
     duplicateTimeRange: vi.fn(),
-    prepareTimeOperationStateRestore: vi.fn(),
+    prepareRestore: vi.fn(),
 }));
 
-vi.mock('../duplicateTimeRange', () => ({
-    duplicateTimeRange: mocks.duplicateTimeRange,
-}));
-
+vi.mock('../duplicateTimeRange', () => ({ duplicateTimeRange: mocks.duplicateTimeRange }));
 vi.mock('../prepareTimeOperationStateRestore', () => ({
-    prepareTimeOperationStateRestore: mocks.prepareTimeOperationStateRestore,
+    prepareTimeOperationStateRestore: mocks.prepareRestore,
 }));
 
 import { executeUndoableDuplicateTimeRange } from '../executeUndoableDuplicateTimeRange';
 
+const inversePlan = {
+    version: 1,
+    scope: 'global',
+    local: { version: 1, expected: 'duplicate', replacement: 'before' },
+    automation: null,
+    midi: null,
+    timelineMap: null,
+};
+
 describe('executeUndoableDuplicateTimeRange', () => {
-    beforeEach(() => {
-        vi.clearAllMocks();
-    });
+    beforeEach(() => vi.clearAllMocks());
 
-    it('returns no transaction when duplicate preparation is rejected', () => {
-        mocks.duplicateTimeRange.mockReturnValue({
-            status: 'rejected',
-            hasChanges: false,
-            replayPlan: null,
-            inversePlan: null,
-        });
-
-        expect(executeUndoableDuplicateTimeRange(4, 8)).toBeNull();
-    });
-
-    it('fails closed when the exact duplicate redo no longer matches project state', () => {
-        const replayPlan = { version: 1 };
-        const inversePlan = { version: 1, expected: 'duplicate', replacement: 'before' };
-        const revert = vi.fn(() => false);
+    it('keeps an exact rejected redo retryable', () => {
         mocks.duplicateTimeRange.mockReturnValue({
             status: 'applied',
             hasChanges: true,
-            replayPlan,
+            replayPlan: { version: 1 },
             inversePlan,
         });
-        mocks.prepareTimeOperationStateRestore.mockReturnValue({
-            status: 'ready',
-            hasChanges: true,
-            apply: vi.fn(() => true),
-            revert,
-        });
-
+        mocks.prepareRestore
+            .mockReturnValueOnce({ status: 'ready', hasChanges: true, apply: vi.fn(() => true) })
+            .mockReturnValueOnce({ status: 'rejected', hasChanges: false, apply: vi.fn() })
+            .mockReturnValueOnce({ status: 'ready', hasChanges: true, apply: vi.fn(() => true) });
         const transaction = executeUndoableDuplicateTimeRange(4, 8);
-
         transaction?.undo();
         expect(() => transaction?.redo()).toThrow('Global time operation redo conflicts with current project state');
-        expect(revert).toHaveBeenCalledOnce();
-        expect(mocks.duplicateTimeRange).toHaveBeenCalledOnce();
-        expect(mocks.prepareTimeOperationStateRestore).toHaveBeenCalledWith(inversePlan);
+        expect(() => transaction?.redo()).not.toThrow();
+        expect(mocks.prepareRestore).toHaveBeenLastCalledWith({
+            ...inversePlan,
+            local: { version: 1, expected: 'before', replacement: 'duplicate' },
+        });
     });
 });

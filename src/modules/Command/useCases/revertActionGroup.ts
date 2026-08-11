@@ -28,6 +28,17 @@ async function revertEntry(entry: UndoEntry): Promise<boolean> {
     return false;
 }
 
+function commitRevertedEntries(entries: readonly UndoEntry[]): void {
+    const liveState = undoStore.value;
+    if (!liveState || entries.length === 0) {
+        return;
+    }
+    const revertedIds = new Set(entries.map((entry) => entry.id));
+    const past = liveState.past.filter((entry) => !revertedIds.has(entry.id));
+    undoStore.set({ past, future: [...entries, ...liveState.future] });
+    undoTreeMoveTo(past.length > 0 ? past[past.length - 1]!.id : null);
+}
+
 /**
  * Revert every undo entry tagged with `groupId`, owning the undo-store write
  * inside the Command module. Used by AiRuntime to revert an AI action group
@@ -46,30 +57,24 @@ async function revertActionGroupImpl(groupId: string): Promise<void> {
         return;
     }
 
-    let anyReverted = false;
+    const revertedEntries: UndoEntry[] = [];
+    let failure: unknown;
     for (let index = groupEntries.length - 1; index >= 0; index--) {
-        const reverted = await revertEntry(groupEntries[index]!);
-        anyReverted = anyReverted || reverted;
+        const entry = groupEntries[index]!;
+        try {
+            if (await revertEntry(entry)) {
+                revertedEntries.unshift(entry);
+            }
+        } catch (error) {
+            failure = error;
+            break;
+        }
     }
 
-    // If no member could be undone, the operation was inert — leave the group in
-    // `past` rather than silently consuming it (which would let a later redo
-    // re-apply the actions). Mirrors the inert-undo guard in `undoRedo`.
-    if (!anyReverted) {
-        return;
+    commitRevertedEntries(revertedEntries);
+    if (failure !== undefined) {
+        throw failure instanceof Error ? failure : new Error('Action group revert failed', { cause: failure });
     }
-
-    const liveState = undoStore.value;
-    if (!liveState) {
-        return;
-    }
-    const revertedIds = new Set(groupEntries.map((entry) => entry.id));
-    const newPast = liveState.past.filter((entry) => !revertedIds.has(entry.id));
-    undoStore.set({
-        past: newPast,
-        future: [...groupEntries, ...liveState.future],
-    });
-    undoTreeMoveTo(newPast.length > 0 ? newPast[newPast.length - 1]!.id : null);
 }
 
 export function revertActionGroup(groupId: string): Promise<void> {
