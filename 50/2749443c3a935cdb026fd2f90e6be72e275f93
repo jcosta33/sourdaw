@@ -1,0 +1,30 @@
+crates/daw-dsp/src/bacteria/granular.rs
+  s_bc88af7d3b054c::t_9776e95db73b38 9-10,25-26,41-42,63-70,122-126,141-146,156-166,199,210-215,217-218,221-224,259,261,273-274
+  s_bc88af7d3b054c::t_c7051d1cac701d 216,383-384,438-439,654,683,685,708
+  s_bc88af7d3b054c::t_dc2f0b43dedcbf 260,262
+  s_bc88af7d3b054c::t_3fd83c915ed62a 635-653,655-682,684,686-707,709-724
+public/wasm/daw-dsp/daw_dsp.d.ts
+  s_bc88af7d3b054c::t_e72617c2dab1a3 1,801-925
+public/wasm/daw-dsp/daw_dsp_bg.wasm.d.ts
+  s_bc88af7d3b054c::t_ce75434c660452 1,5-129
+public/wasm/manifest.json
+  s_bc88af7d3b054c::t_4ad67efac8dd92 12,16-18,21
+src/modules/AudioEngine/wasm/daw_dsp.d.ts
+  s_bc88af7d3b054c::t_5e569dd2174feb 1,801-925
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "502749443c3a935cdb026fd2f90e6be72e275f93",
+  "prompts": {},
+  "sessions": {
+    "s_bc88af7d3b054c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f9b4a-11a2-7f61-8dfb-76eed0eb2a9c",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
