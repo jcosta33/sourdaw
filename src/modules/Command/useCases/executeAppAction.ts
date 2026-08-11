@@ -22,11 +22,22 @@ import { createUndoEntry } from './createUndoEntry';
 import { recordAction } from './macro/recording/recordAction';
 import { traceAppAction } from './traceAppAction';
 
-type ExecuteAppAction = (action: AppAction, options?: ExecuteOptions) => Promise<void>;
+type ExecuteAppActionOptions = ExecuteOptions & {
+    onCommitted?: () => void;
+};
+
+type ExecuteAppAction = (action: AppAction, options?: ExecuteAppActionOptions) => Promise<void>;
+
+function collapseCommittedFailures(failures: readonly unknown[], message: string): unknown {
+    if (failures.length === 1) {
+        return failures[0];
+    }
+    return new AggregateError(failures, message);
+}
 
 export const executeAppAction: ExecuteAppAction = inject({ logger })(
     ({ logger }) =>
-        async function executeAppAction(action: AppAction, options?: ExecuteOptions): Promise<void> {
+        async function executeAppAction(action: AppAction, options?: ExecuteAppActionOptions): Promise<void> {
             traceAppAction(action.type, options?.source ?? 'manual');
 
             const handler = getHandler(action);
@@ -62,10 +73,23 @@ export const executeAppAction: ExecuteAppAction = inject({ logger })(
                     throw new AppActionConflictError(action.type);
                 }
 
+                const committed_failures: unknown[] = [];
+                try {
+                    options?.onCommitted?.();
+                } catch (error) {
+                    committed_failures.push(error);
+                }
                 try {
                     await runtime_result?.afterRuntimeExecution?.();
-                } catch (runtime_error) {
-                    const committed_error = new AppActionCommittedError(action.type, runtime_error);
+                } catch (error) {
+                    committed_failures.push(error);
+                }
+                if (committed_failures.length > 0) {
+                    const cause = collapseCommittedFailures(
+                        committed_failures,
+                        'Runtime action and committed observer both completed with errors'
+                    );
+                    const committed_error = new AppActionCommittedError(action.type, cause);
                     logger.error(committed_error);
                     throw committed_error;
                 }
@@ -163,15 +187,21 @@ export const executeAppAction: ExecuteAppAction = inject({ logger })(
                     );
                 }
                 if (error instanceof AutomergeStorageTransactionCommittedError) {
-                    let committedCause = error.cause;
+                    const committedFailures: unknown[] = [error.cause];
                     try {
                         await execution_result?.afterAmbiguousCommit?.();
                     } catch (reconciliationError) {
-                        committedCause = new AggregateError(
-                            [error.cause, reconciliationError],
-                            'Storage commit and runtime reconciliation both failed'
-                        );
+                        committedFailures.push(reconciliationError);
                     }
+                    try {
+                        options?.onCommitted?.();
+                    } catch (observerError) {
+                        committedFailures.push(observerError);
+                    }
+                    const committedCause = collapseCommittedFailures(
+                        committedFailures,
+                        'Storage commit, runtime reconciliation, or committed observer failed'
+                    );
                     const committed_error = new AppActionCommittedError(action.type, committedCause);
                     logger.error(committed_error);
                     throw committed_error;
@@ -188,6 +218,8 @@ export const executeAppAction: ExecuteAppAction = inject({ logger })(
             }
 
             try {
+                options?.onCommitted?.();
+
                 if (!options?.skipMacroRecording) {
                     // Record to macro playback
                     recordAction(action);
