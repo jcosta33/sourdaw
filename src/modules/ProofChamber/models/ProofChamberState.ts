@@ -166,7 +166,7 @@ export const SPACE_PRESETS: Record<SpaceType, Partial<ProofChamberEngineState>> 
         shimmerAmount: 0.3,
         predelay: 25,
     },
-    infinite: { size: 0.6, decay: 0.999, damping: 0.0, diffusion: 0.75, modDepth: 0.0, freeze: true, predelay: 0 },
+    infinite: { size: 0.6, decay: 0.999, damping: 0.0, diffusion: 0.75, modDepth: 0.0, freeze: false, predelay: 0 },
     spring: {
         algorithm: 'spring',
         size: 0.5,
