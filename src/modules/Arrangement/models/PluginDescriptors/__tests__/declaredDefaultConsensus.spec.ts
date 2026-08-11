@@ -981,7 +981,7 @@ const PANEL_FILES: readonly { readonly file: string; readonly declared?: number;
     { file: 'src/modules/Fermenter/presentations/components/OscillatorSection.tsx', declared: 5, readable: 5 },
     { file: 'src/modules/Fermenter/presentations/components/UnisonSection.tsx', declared: 3, readable: 3 },
     { file: 'src/modules/Fermenter/presentations/components/WarpSection.tsx', declared: 3, readable: 3 },
-    { file: 'src/modules/Gluten/presentations/views/GlutenPanel.tsx', declared: 25, readable: 24 },
+    { file: 'src/modules/Gluten/presentations/views/GlutenPanel.tsx', declared: 25, readable: 22 },
     { file: 'src/modules/GrandBoule/presentations/components/MidiCalibrationPanel.tsx', readable: 0 },
     { file: 'src/modules/GrandBoule/presentations/components/MorphPanel.tsx', readable: 0 },
     { file: 'src/modules/GrandBoule/presentations/components/PerNoteEditor.tsx', readable: 0 },
