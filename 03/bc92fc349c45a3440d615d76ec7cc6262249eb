@@ -1,0 +1,59 @@
+src/modules/Grinder/models/__tests__/GrinderProjectParameterMap.spec.ts
+  s_bc88af7d3b054c::t_e557eed0675205 1-29
+src/modules/Grinder/presentations/views/GrinderPanel.tsx
+  s_bc88af7d3b054c::t_ac60d622b02f2b 50,65
+  s_bc88af7d3b054c::t_cbac91c58073ec 12-13,66-74,2071-2073,2077-2081
+  s_bc88af7d3b054c::t_3f40cfac91d8a6 2082
+src/modules/Crumbs/presentations/views/__tests__/CrumbsPanel.spec.tsx
+  s_bc88af7d3b054c::t_6480208fc4f4c6 35
+  s_bc88af7d3b054c::t_c89a172ebb8b35 1,4-6,33-34,36-39,68,76-104
+  s_bc88af7d3b054c::t_ac60d622b02f2b 7
+src/modules/Crumbs/stores/__tests__/crumbsStore.spec.ts
+  s_bc88af7d3b054c::t_e557eed0675205 3-9,46-76
+  s_bc88af7d3b054c::t_fb8d51234bc604 77
+src/modules/Grinder/models/GrinderProjectParameterMap.ts
+  s_bc88af7d3b054c::t_3e041459521a84 62,65,67
+  s_bc88af7d3b054c::t_75959524d08fa4 1-61,63-64,66,68-75
+src/modules/Grinder/stores/grinderStore.ts
+  s_bc88af7d3b054c::t_75959524d08fa4 16,108-118
+  s_bc88af7d3b054c::t_7198ed6725f277 119-121
+  s_a40848e8f8cca9::t_46982bd367698d 122
+src/modules/Grinder/useCases/hydrateGrinderPatchFromProject.ts
+  s_bc88af7d3b054c::t_75959524d08fa4 1-15
+src/modules/Crumbs/useCases/hydrateCrumbsParametersFromProject.ts
+  s_bc88af7d3b054c::t_75959524d08fa4 1-15
+src/modules/Grinder/presentations/views/__tests__/GrinderPanel.spec.tsx
+  s_bc88af7d3b054c::t_c89a172ebb8b35 1,4-6,23-29,48,378-412
+  s_bc88af7d3b054c::t_2a7fa58f36a08d 413
+src/modules/Crumbs/stores/crumbsStore.ts
+  s_bc88af7d3b054c::t_1880ed840a6b1a 9-13
+  s_bc88af7d3b054c::t_75959524d08fa4 320-357
+src/modules/Crumbs/presentations/views/CrumbsPanel.tsx
+  s_bc88af7d3b054c::t_ac60d622b02f2b 62
+  s_bc88af7d3b054c::t_cbac91c58073ec 16,26,63-71,77-79,128-132
+  s_bc88af7d3b054c::t_25c0bbf66b50ae 133
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "03bc92fc349c45a3440d615d76ec7cc6262249eb",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_bc88af7d3b054c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f9b4a-11a2-7f61-8dfb-76eed0eb2a9c",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
