@@ -86,7 +86,7 @@ function normalizeNumericField(field: (typeof NUMERIC_FIELDS)[number], value: nu
         case 'thrust':
             return Math.min(2, rustU8(value));
         case 'oversampling':
-            return clampOversampling(value);
+            return clampOversampling(rustU8(value));
         case 'lookahead':
             return clamp(value, 0, 20);
         case 'scLpfFreq':

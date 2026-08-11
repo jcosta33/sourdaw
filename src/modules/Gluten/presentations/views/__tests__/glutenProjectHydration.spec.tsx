@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { type Track, trackStore } from '#/modules/Arrangement/stores';
 
 import { getGlutenState, glutenMeterStore, glutenStore } from '../../../stores/glutenStore';
+import { hydrateGlutenPatchFromProject } from '../../../useCases/glutenParamBridge/hydrateGlutenPatchFromProject';
 import { GlutenPanel } from '../GlutenPanel';
 
 const DEVICE_ID = 'gluten-project-device';
@@ -78,5 +79,17 @@ describe('GlutenPanel project hydration', () => {
         expect(getGlutenState(DEVICE_ID).patch.recovery).toBe(4);
         expect(getGlutenState(DEVICE_ID).patch.vcaType).toBe(1);
         expect(getGlutenState(DEVICE_ID).patch.mix).toBe(1);
+    });
+
+    it('matches Rust truncation before resolving a fractional oversampling wire value', () => {
+        trackStore.set({
+            tracks: [glutenTrack({ oversampling: 1.9 })],
+            selectedTrackId: 'track-1',
+            ghostClips: [],
+        });
+
+        hydrateGlutenPatchFromProject(DEVICE_ID);
+
+        expect(getGlutenState(DEVICE_ID).patch.oversampling).toBe(1);
     });
 });
