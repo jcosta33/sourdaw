@@ -8,6 +8,7 @@ use crate::scheduler::{
 };
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use rtrb::{Consumer, RingBuffer};
+use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender};
 use std::thread;
 use std::time::Duration;
@@ -108,13 +109,13 @@ fn spawn_retirement_reclaimer<T: Send + 'static>(
         .name("sourdaw-plugin-reclaimer".to_string())
         .spawn(move || loop {
             while let Ok(retired) = retired_rx.pop() {
-                spawn_retirement_drop(retired);
+                reclaim_retired(retired);
             }
 
             match shutdown_rx.recv_timeout(RETIREMENT_RECLAIMER_POLL_INTERVAL) {
                 Ok(()) | Err(RecvTimeoutError::Disconnected) => {
                     while let Ok(retired) = retired_rx.pop() {
-                        spawn_retirement_drop(retired);
+                        reclaim_retired(retired);
                     }
                     break;
                 }
@@ -126,12 +127,9 @@ fn spawn_retirement_reclaimer<T: Send + 'static>(
     Ok(shutdown_tx)
 }
 
-fn spawn_retirement_drop<T: Send + 'static>(retired: T) {
-    if let Err(error) = thread::Builder::new()
-        .name("sourdaw-plugin-drop".to_string())
-        .spawn(move || drop(retired))
-    {
-        eprintln!("[Engine] Failed to spawn plugin destructor thread: {error}");
+fn reclaim_retired<T>(retired: T) {
+    if catch_unwind(AssertUnwindSafe(|| drop(retired))).is_err() {
+        eprintln!("[Engine] Plugin destructor panicked during retirement");
     }
 }
 
@@ -283,7 +281,7 @@ mod tests {
 
     enum ReclaimerProbe {
         Panic,
-        Observed(mpsc::Sender<()>),
+        Observed(mpsc::Sender<String>),
         Blocking {
             entered_tx: mpsc::Sender<()>,
             release_rx: mpsc::Receiver<()>,
@@ -302,7 +300,8 @@ mod tests {
             match self {
                 Self::Panic => panic!("retirement destructor panic"),
                 Self::Observed(dropped_tx) => {
-                    let _ = dropped_tx.send(());
+                    let thread_name = thread::current().name().unwrap_or("unnamed").to_string();
+                    let _ = dropped_tx.send(thread_name);
                 }
                 Self::Blocking {
                     entered_tx,
@@ -353,7 +352,7 @@ mod tests {
     }
 
     #[test]
-    fn reclaimer_failures_do_not_delay_audio_owner_shutdown() {
+    fn reclaimer_panics_do_not_delay_later_retirement_or_audio_owner_shutdown() {
         let (mut retired_tx, retired_rx) = RingBuffer::new(3);
         let reclaimer_shutdown_tx =
             spawn_retirement_reclaimer(retired_rx).expect("reclaimer should start");
@@ -362,20 +361,21 @@ mod tests {
         let (dropped_tx, dropped_rx) = mpsc::channel();
         retired_tx.push(ReclaimerProbe::Panic).unwrap();
         retired_tx
+            .push(ReclaimerProbe::Observed(dropped_tx))
+            .unwrap();
+        retired_tx
             .push(ReclaimerProbe::Blocking {
                 entered_tx,
                 release_rx,
             })
             .unwrap();
-        retired_tx
-            .push(ReclaimerProbe::Observed(dropped_tx))
-            .unwrap();
+        let drop_thread = dropped_rx
+            .recv_timeout(Duration::from_secs(1))
+            .expect("a panicking destructor must not stop later reclamation");
+        assert_eq!(drop_thread, "sourdaw-plugin-reclaimer");
         entered_rx
             .recv_timeout(Duration::from_secs(1))
             .expect("reclaimer should enter the blocking destructor");
-        dropped_rx
-            .recv_timeout(Duration::from_secs(1))
-            .expect("blocked and panicking destructors must not stop later reclamation");
 
         let handle = spawn_owned_audio_stream(move || {
             Ok(StreamWithReclaimerShutdown(Some(()), reclaimer_shutdown_tx))
