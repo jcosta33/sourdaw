@@ -1,0 +1,38 @@
+src/modules/Arrangement/useCases/index.ts
+  s_bc88af7d3b054c::t_ce363823abe306 19
+src/modules/Automation/useCases/automation/addAutomationLane.ts
+  s_bc88af7d3b054c::t_4505e9e386f7b3 4-5,21-22
+src/modules/Automation/useCases/index.ts
+  s_bc88af7d3b054c::t_4505e9e386f7b3 7
+src/modules/Arrangement/useCases/getAutomationDeviceDescriptor.ts
+  s_bc88af7d3b054c::t_436309d8a42083 3
+  s_bc88af7d3b054c::t_ce363823abe306 1-2,4-11
+src/modules/Automation/useCases/automation/automationParameterRangeDependencies.ts
+  s_bc88af7d3b054c::t_4505e9e386f7b3 1,6-7,9
+src/modules/Arrangement/useCases/getAutomationParameterRange.ts
+  s_bc88af7d3b054c::t_ce363823abe306 5,27,39
+src/modules/TimelineEditor/presentations/helpers/automationViewHelpers.ts
+  s_bc88af7d3b054c::t_ce363823abe306 2,31,65
+src/modules/Automation/useCases/automation/__tests__/addAutomationLane.spec.ts
+  s_bc88af7d3b054c::t_4505e9e386f7b3 6
+src/modules/Automation/useCases/automation/getAutomationParameterRangeResolver.ts
+  s_bc88af7d3b054c::t_4505e9e386f7b3 1-8
+src/modules/TimelineEditor/presentations/views/Inspector/TrackAutomationSection.tsx
+  s_bc88af7d3b054c::t_ce363823abe306 10,17,107
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "5a7be6146de4a1246cef64dc7da775e7d53586e9",
+  "prompts": {},
+  "sessions": {
+    "s_bc88af7d3b054c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f9b4a-11a2-7f61-8dfb-76eed0eb2a9c",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
