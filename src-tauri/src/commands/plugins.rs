@@ -687,13 +687,8 @@ pub async fn start_native_engine(state: tauri::State<'_, AppState>) -> Result<St
         return Ok("Native engine already running".to_string());
     }
 
-    let mut handle =
+    let handle =
         EngineHandle::new().map_err(|e| format!("Failed to start native audio engine: {}", e))?;
-
-    // Create the default tuning source inside daw-engine, which owns the triple-buffer dependency.
-    handle.register_default_mts_esp_master();
-
-    eprintln!("[Engine] Native audio engine started with MTS-ESP support");
     *engine_guard = Some(handle);
     Ok("Native engine started".to_string())
 }
@@ -818,13 +813,6 @@ pub async fn process_plugin_audio(
 
     // Push input to the audio thread
     bridge.push_input(&left, &right);
-
-    // Update MTS-ESP tuning master (background task)
-    if let Ok(mut engine_guard) = state.engine.lock() {
-        if let Some(ref mut engine) = *engine_guard {
-            engine.update_mts_esp();
-        }
-    }
 
     // Try to pop processed output
     // This may be from the previous block with one block of latency.

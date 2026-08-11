@@ -47,8 +47,7 @@ export const ProjectTab = (): ReactElement => {
                         </div>
 
                         <p className="text-[11px] leading-relaxed text-muted-foreground">
-                            Change the project's base tuning. Affects all built-in instruments and MTS-ESP compatible
-                            plugins.
+                            Change the project's base tuning. Affects all built-in instruments.
                         </p>
 
                         <Button

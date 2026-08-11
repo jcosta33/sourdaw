@@ -7465,7 +7465,6 @@ dependencies = [
  "tauri-plugin-shell",
  "tauri-specta",
  "tokio",
- "triple_buffer",
  "uuid 1.24.0",
  "whisper-rs",
 ]
