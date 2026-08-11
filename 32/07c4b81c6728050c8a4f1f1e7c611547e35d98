@@ -1,0 +1,54 @@
+src/modules/AudioEngine/repositories/offlineScheduler/__tests__/offlineAutomationCoverage.spec.ts
+  s_bc88af7d3b054c::t_a74619be8800f6 29,48,53-54,270-271
+  s_bc88af7d3b054c::t_357ad2f989d318 7,64,289-294
+src/modules/AudioEngine/engine/__tests__/GrandBouleNode.spec.ts
+  s_bc88af7d3b054c::t_a74619be8800f6 693-702
+  s_bc88af7d3b054c::t_357ad2f989d318 657,680-683
+  s_bc88af7d3b054c::t_af58707daaa30d 658-672,674-679,684-692,703-704
+  s_bc88af7d3b054c::t_5c6708154e154f 112-119,652
+  s_bc88af7d3b054c::t_721c13772b3f94 673
+src/modules/GrandBoule/presentations/views/GrandBoulePanel.tsx
+  s_bc88af7d3b054c::t_2d6fb6cde1714f 280
+  s_bc88af7d3b054c::t_313847b38caa56 166-168
+  s_bc88af7d3b054c::t_721c13772b3f94 183-186,265,271
+  s_bc88af7d3b054c::t_2e0ecfbfe9d7a5 194-201
+src/modules/GrandBoule/useCases/__tests__/grandBouleParameterPersistence.integration.spec.ts
+  s_bc88af7d3b054c::t_af58707daaa30d 293-299,302-307
+  s_bc88af7d3b054c::t_c132f7fa75ad8b 292,300-301
+src/modules/GrandBoule/presentations/views/__tests__/GrandBoulePanel.spec.tsx
+  s_bc88af7d3b054c::t_4ecde232232ff8 10-17,19-29,32-40,55,96-113
+  s_bc88af7d3b054c::t_a4f82331155c5c 114-115
+src/modules/AudioEngine/worklets/grandBouleOfflineProcessor.ts
+  s_bc88af7d3b054c::t_313847b38caa56 49,64-69,71-83,119-130,134-143,151,163,223,228-232,236-238,251,256,259,261-264,288
+  s_bc88af7d3b054c::t_721c13772b3f94 70
+  s_bc88af7d3b054c::t_357ad2f989d318 84-118,131-133,152,233-235,252-255,257-258,260
+src/modules/GrandBoule/useCases/hydrateGrandBouleConfigFromProject.ts
+  s_bc88af7d3b054c::t_721c13772b3f94 50
+  s_bc88af7d3b054c::t_313847b38caa56 3,43,47,51
+  s_bc88af7d3b054c::t_5d476c33fcdee0 18-20
+src/modules/AudioEngine/engine/GrandBouleNode.ts
+  s_bc88af7d3b054c::t_313847b38caa56 92-98,108,110-112,131-132,622-627,629
+  s_bc88af7d3b054c::t_357ad2f989d318 99-107,109,113-130
+  s_bc88af7d3b054c::t_2bdfef277511cc 74-75
+  s_bc88af7d3b054c::t_c7a41c49d07a71 628
+src/modules/AudioEngine/worklets/__tests__/grandBouleOfflineNoteTiming.spec.ts
+  s_bc88af7d3b054c::t_c132f7fa75ad8b 47-48,63-65,214,267-271,275,277-289
+  s_bc88af7d3b054c::t_2bdfef277511cc 272-274,276,296-298,300
+  s_bc88af7d3b054c::t_a74619be8800f6 290-295,299,301-305
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "3207c4b81c6728050c8a4f1f1e7c611547e35d98",
+  "prompts": {},
+  "sessions": {
+    "s_bc88af7d3b054c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f9b4a-11a2-7f61-8dfb-76eed0eb2a9c",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
