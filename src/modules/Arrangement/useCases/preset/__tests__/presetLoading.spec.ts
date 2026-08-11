@@ -234,6 +234,53 @@ describe('loadPresetToTrack', () => {
         expect(updateDeviceParam).not.toHaveBeenCalled();
     });
 
+    it('does not stamp corrected damping semantics onto an unversioned saved preset', () => {
+        vi.mocked(getTrackById).mockReturnValue(makeTrack('legacy'));
+        vi.mocked(addDevice).mockReturnValue({
+            id: 'legacy-oven',
+            name: 'Dutch Oven',
+            type: 'dutch-oven',
+            bypassed: false,
+            parameterValues: {},
+        });
+
+        loadPresetToTrack(
+            'legacy',
+            basePreset([{ type: 'dutch-oven', name: 'Dutch Oven', parameterValues: { damping: 0.3 } }])
+        );
+
+        expect(addDevice).toHaveBeenCalledWith('legacy', 'dutch-oven', 'Dutch Oven', undefined, undefined, {});
+        expect(setDeviceParameter).toHaveBeenCalledWith('legacy-oven', 'damping', 0.3);
+    });
+
+    it('restores saved internal semantics without replaying them through the public setter', () => {
+        vi.mocked(getTrackById).mockReturnValue(makeTrack('modern'));
+        vi.mocked(addDevice).mockReturnValue({
+            id: 'modern-oven',
+            name: 'Dutch Oven',
+            type: 'dutch-oven',
+            bypassed: false,
+            parameterValues: { fdn_damping_version: 2 },
+        });
+
+        loadPresetToTrack(
+            'modern',
+            basePreset([
+                {
+                    type: 'dutch-oven',
+                    name: 'Dutch Oven',
+                    parameterValues: { fdn_damping_version: 2, damping: 0.3 },
+                },
+            ])
+        );
+
+        expect(addDevice).toHaveBeenCalledWith('modern', 'dutch-oven', 'Dutch Oven', undefined, undefined, {
+            fdn_damping_version: 2,
+        });
+        expect(setDeviceParameter).toHaveBeenCalledOnce();
+        expect(setDeviceParameter).toHaveBeenCalledWith('modern-oven', 'damping', 0.3);
+    });
+
     it('holds an instrument preset value to the declared range before it lands in the track', () => {
         vi.mocked(getTrackById).mockReturnValue(makeTrack('t6'));
 
@@ -261,7 +308,7 @@ describe('loadPresetToTrack', () => {
 
         loadPresetToTrack('t4', basePreset([{ type: 'delay', name: 'Delay', parameterValues: { mix: 0.5 } }]));
 
-        expect(addDevice).toHaveBeenCalledWith('t4', 'delay', 'Delay');
+        expect(addDevice).toHaveBeenCalledWith('t4', 'delay', 'Delay', undefined, undefined, {});
         expect(setDeviceParameter).not.toHaveBeenCalled();
         expect(updateDeviceParam).not.toHaveBeenCalled();
     });
@@ -289,7 +336,7 @@ describe('loadPresetToTrack', () => {
             basePreset([{ type: 'builtin-compressor', name: 'Drum Comp', parameterValues: { 'comp-ratio': 4 } }])
         );
 
-        expect(addDevice).toHaveBeenCalledWith('t5', 'builtin-compressor', 'Drum Comp');
+        expect(addDevice).toHaveBeenCalledWith('t5', 'builtin-compressor', 'Drum Comp', undefined, undefined, {});
         expect(setDeviceParameter).toHaveBeenCalledWith('new-comp', 'comp-ratio', 4);
     });
 
@@ -311,7 +358,7 @@ describe('loadPresetToTrack', () => {
 
         loadPresetToTrack('t7', basePreset([{ type: 'builtin-compressor', name: 'Drum Comp', parameterValues: {} }]));
 
-        expect(addDevice).toHaveBeenCalledWith('t7', 'builtin-compressor', 'Drum Comp');
+        expect(addDevice).toHaveBeenCalledWith('t7', 'builtin-compressor', 'Drum Comp', undefined, undefined, {});
         // Only the strip clear — the device is written once, by addDevice.
         expect(vi.mocked(updateTrack).mock.calls).toHaveLength(1);
     });

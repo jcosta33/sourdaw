@@ -69,6 +69,7 @@ const SPRING: f32 = 3.0;
 /// choice biasing one band over another.
 fn render_on(algorithm: f32, writes: &[Write]) -> Vec<f32> {
     let mut instance = ProofChamberInstance::new(SAMPLE_RATE);
+    instance.set_param("fdn_damping_version", 2.0);
     instance.set_param("algorithm", algorithm);
     instance.set_param("mix", 1.0);
     for &(name, value) in writes {
@@ -340,6 +341,18 @@ fn damping_darkens_the_late_tail_on_every_algorithm_that_hears_it() {
 }
 
 #[test]
+fn the_shipped_damping_no_longer_overdamps_the_fdns() {
+    for (algorithm, name) in [(FDN8, "fdn-8"), (FDN16, "fdn-16")] {
+        let tilt = late_tilt_db(&render_on(algorithm, &[("damping", 0.3)]));
+        assert!(
+            tilt > -45.0,
+            "{name} damping=0.3 must use the 0.5x HF RT60 anchor, not the old 0.35x curve; \
+             measured late tilt {tilt:+.2} dB"
+        );
+    }
+}
+
+#[test]
 fn the_constructor_default_renders_as_the_value_the_panel_resets_to() {
     // The panel's Damp knob resets to 0.3 (`ProofChamberPanel.tsx`) and
     // `DEFAULT_PARAMS.damping` is 0.3. This is the render-side half of that: an
@@ -496,10 +509,9 @@ fn the_constructor_still_writes_the_bandwidth_literal_the_comment_cites() {
 /// at its constructor value. Aligning the descriptor with 0.3 stops the
 /// overwrite, so the spring now renders what it was built to render.
 ///
-/// This is asserted rather than narrated because it is the one algorithm where
-/// the descriptor value and the engine's own default coincide, and a future
-/// per-algorithm default table (the real fix for the FDN, see the descriptor
-/// comment) must not quietly move the spring off its own number.
+/// This is asserted rather than narrated because the descriptor value and the
+/// engine's own default coincide; FDN-specific coefficient mapping must not
+/// quietly move the spring off its own number.
 #[test]
 fn the_descriptor_default_restores_the_springs_own_designed_damping() {
     let untouched_spring = render_on(SPRING, &[]);

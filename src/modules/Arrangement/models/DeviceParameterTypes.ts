@@ -126,6 +126,9 @@ export type PluginDescriptor = {
     format: PluginFormat;
     category: 'instrument' | 'effect' | 'analyzer' | 'utility';
     parameters: DeviceParameter[];
+    /** Numeric engine configuration persisted on newly added devices without
+     * exposing a user-facing or automatable parameter. */
+    internalParameterValues?: Readonly<Record<string, number>>;
     hasCustomUI: boolean;
     /** Which runtime this plugin is available on. Defaults to 'both'. */
     platform?: PluginPlatform;

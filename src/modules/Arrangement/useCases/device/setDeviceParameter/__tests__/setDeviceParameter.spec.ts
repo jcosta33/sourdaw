@@ -119,6 +119,22 @@ describe('setDeviceParameter', () => {
         expect(didWrite).toBe(true);
     });
 
+    it('refuses writes to internal engine configuration', () => {
+        const track = makeTrack('t1');
+        track.devices[0] = {
+            id: 'd1',
+            name: 'Dutch Oven',
+            type: 'dutch-oven',
+            bypassed: false,
+            parameterValues: { fdn_damping_version: 2, damping: 0.3 },
+        };
+        setTrackState([track]);
+
+        expect(setDeviceParameter('d1', 'fdn_damping_version', 1)).toBe(false);
+        expect(mocks.updateDeviceParam).not.toHaveBeenCalled();
+        expect(mocks.updateTrack).not.toHaveBeenCalled();
+    });
+
     it('leaves sibling devices untouched while updating only the targeted device', () => {
         const track = makeTrack('t1', 'target');
         track.devices = [
