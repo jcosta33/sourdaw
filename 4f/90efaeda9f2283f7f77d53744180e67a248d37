@@ -1,0 +1,25 @@
+crates/proof-chamber/tests/infinite_space_tail.rs
+  s_bc88af7d3b054c::t_7356ca0768327e 3-4,6,12-17,24-26,28-29
+  s_bc88af7d3b054c::t_3f7e2d67312b7c 21-23
+crates/proof-chamber/tests/fixtures/infinite_space_patch.json
+  s_bc88af7d3b054c::t_7356ca0768327e 1-33
+src/modules/ProofChamber/models/__tests__/ProofChamberPatch.spec.ts
+  s_bc88af7d3b054c::t_7e3994ae7e95c1 3-12,58-62,69-70,77-79
+  s_bc88af7d3b054c::t_18f49d71d96410 63-68,71-76
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "4f90efaeda9f2283f7f77d53744180e67a248d37",
+  "prompts": {},
+  "sessions": {
+    "s_bc88af7d3b054c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f9b4a-11a2-7f61-8dfb-76eed0eb2a9c",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
