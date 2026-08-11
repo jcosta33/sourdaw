@@ -44,4 +44,8 @@ describe('expandSpacePreset', () => {
         // SPACE_PRESETS.spring sets algorithm: 'spring'.
         expect(expandSpacePreset('spring').algorithm).toBe('spring');
     });
+
+    it('lets the Infinite space fill the tank before the user freezes it', () => {
+        expect(SPACE_PRESETS.infinite.freeze).toBe(false);
+    });
 });
