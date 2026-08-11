@@ -235,7 +235,12 @@ function readManualReleaseTimes(): number[] {
  * So: render it, on both sides of the gate.
  */
 vi.mock('#/infra/store/useStore', () => ({
-    useStore: vi.fn(() => MOCKED_INSTANCES),
+    useStore: vi.fn((_store: unknown, defaultValue: unknown) => {
+        if (typeof defaultValue === 'object' && defaultValue !== null && 'tracks' in defaultValue) {
+            return defaultValue;
+        }
+        return MOCKED_INSTANCES;
+    }),
 }));
 
 const DEVICE_ID = 'gluten-recovery-hint-device';
