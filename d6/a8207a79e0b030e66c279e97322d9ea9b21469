@@ -1,0 +1,29 @@
+server/__tests__/collab-server.spec.ts
+  s_bc88af7d3b054c::t_8645e4e50c4128 220
+  s_bc88af7d3b054c::t_3c63146bb431e9 229-234
+  s_bc88af7d3b054c::t_2857a10d8cea02 38,40-43,124-141,176,206-219,221-228,235-246
+server/collab-server.ts
+  s_bc88af7d3b054c::t_e2ace04276332f 50-52,89-102,109-114,133,145,151,155-156,160-165
+  s_bc88af7d3b054c::t_abb7dbb13512a8 398-409,438-445
+  s_bc88af7d3b054c::t_934f01516ea4bb 446,639-663,665,672,681,685
+  s_bc88af7d3b054c::t_8645e4e50c4128 3,132,134-144
+  s_bc88af7d3b054c::t_df2834a46ed5bd 447
+docs/architecture/06-crdt-collaboration.md
+  s_bc88af7d3b054c::t_98552f61642b5e 75
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "d6a8207a79e0b030e66c279e97322d9ea9b21469",
+  "prompts": {},
+  "sessions": {
+    "s_bc88af7d3b054c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f9b4a-11a2-7f61-8dfb-76eed0eb2a9c",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
