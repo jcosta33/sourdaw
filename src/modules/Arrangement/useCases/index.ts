@@ -16,6 +16,7 @@ export { getAllTracks } from './getAllTracks';
 export { getTrackById } from './getTrackById';
 export { getSynthParamsForTrack } from './getSynthParamsForTrack';
 export { getTrackStoreState } from './getTrackStoreState';
+export { getAutomationDeviceDescriptor } from './getAutomationDeviceDescriptor';
 export { getAutomationParameterRange } from './getAutomationParameterRange';
 export { hydrateTracksForProject } from './hydrateTracksForProject';
 export { projectTrackToLiveStrip } from './projectTrackToLiveStrip';

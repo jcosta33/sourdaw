@@ -1,5 +1,5 @@
 import { trackStore } from '#/modules/Arrangement/stores';
-import { getBuiltinPlugins } from '#/modules/Arrangement/useCases';
+import { getAutomationDeviceDescriptor } from '#/modules/Arrangement/useCases';
 import { automationStore } from '#/modules/Automation/stores';
 import {
     createDeviceAutomationTargetId,
@@ -10,19 +10,6 @@ import {
 import { type AutomationPoint } from '../../models/AutomationViewTypes';
 
 export const LANE_HEIGHT = 100;
-
-export function findAutomationDeviceDescriptor(
-    deviceType: string
-): ReturnType<typeof getBuiltinPlugins>[number] | undefined {
-    const builtinPlugins = getBuiltinPlugins();
-    const exactDescriptor = builtinPlugins.find((candidate) => candidate.id === deviceType);
-    if (exactDescriptor) {
-        return exactDescriptor;
-    }
-
-    const legacyName = deviceType.toLowerCase();
-    return builtinPlugins.find((candidate) => candidate.name.toLowerCase() === legacyName);
-}
 
 export const getAutomatableParams = (
     trackId: string,
@@ -41,7 +28,7 @@ export const getAutomatableParams = (
         if (!deviceId) {
             continue;
         }
-        const plugin = findAutomationDeviceDescriptor(device.type);
+        const plugin = getAutomationDeviceDescriptor(device.type);
         if (!plugin) {
             continue;
         }
@@ -75,7 +62,7 @@ function acceptsAutomationParameter(device: AutomationTargetDevice, parameterId:
     if (device.parameterValues?.[parameterId] !== undefined) {
         return true;
     }
-    const plugin = findAutomationDeviceDescriptor(device.type);
+    const plugin = getAutomationDeviceDescriptor(device.type);
     return plugin?.parameters.some((parameter) => parameter.id === parameterId && parameter.automatable) ?? false;
 }
 

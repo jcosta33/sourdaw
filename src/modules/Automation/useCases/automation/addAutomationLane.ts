@@ -1,6 +1,7 @@
 import { createAutomationLane } from '../../models/Automation';
-import { resolveAutomationParameterRange } from '../../services/automationParameterRangeResolver';
 import { automationStore } from '../../stores/automationStore';
+
+import { getAutomationParameterRangeResolver } from './getAutomationParameterRangeResolver';
 
 export function addAutomationLane(trackId: string, parameterId: string, parameterName: string, laneId?: string): void {
     const state = automationStore.value;
@@ -17,7 +18,8 @@ export function addAutomationLane(trackId: string, parameterId: string, paramete
 
     let parameterRange = null;
     if (parameterId !== 'gain' && parameterId !== 'pan') {
-        parameterRange = resolveAutomationParameterRange({ trackId, parameterTargetId: parameterId });
+        const resolveParameterRange = getAutomationParameterRangeResolver();
+        parameterRange = resolveParameterRange?.({ trackId, parameterTargetId: parameterId }) ?? null;
     }
     const minValue = parameterRange?.minValue ?? (parameterId === 'pan' ? -1 : 0);
     const maxValue = parameterRange?.maxValue ?? 1;

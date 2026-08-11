@@ -2,8 +2,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { createAutomationLane } from '../../../models/Automation';
 import { automationStore } from '../../../stores/automationStore';
-import { setAutomationParameterRangeResolver } from '../../setAutomationParameterRangeResolver';
 import { addAutomationLane } from '../addAutomationLane';
+import { setAutomationParameterRangeResolver } from '../automationParameterRangeDependencies';
 
 describe('addAutomationLane', () => {
     beforeEach(() => {
