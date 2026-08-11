@@ -29,7 +29,7 @@ impl SidechainHpf {
             x2: 0.0,
             y1: 0.0,
             y2: 0.0,
-            enabled: true,
+            enabled: false,
         };
         f.set_freq(sample_rate, freq);
         f
@@ -295,5 +295,97 @@ impl SidechainEq {
         self.x2 = 0.0;
         self.y1 = 0.0;
         self.y2 = 0.0;
+    }
+}
+
+/// One topology's stereo detector-conditioning path.
+///
+/// Every topology receives the same control values, but keeps independent
+/// filter history. That matters for dual-stage operation: advancing one shared
+/// filter twice per sample would couple the stages, just as sharing one mono
+/// filter between left and right would couple the channels.
+pub struct SidechainChain {
+    hpf_l: SidechainHpf,
+    hpf_r: SidechainHpf,
+    lpf_l: SidechainLpf,
+    lpf_r: SidechainLpf,
+    eq_l: SidechainEq,
+    eq_r: SidechainEq,
+    thrust_l: ThrustFilter,
+    thrust_r: ThrustFilter,
+}
+
+impl SidechainChain {
+    pub fn new(sample_rate: f32) -> Self {
+        Self {
+            hpf_l: SidechainHpf::new(sample_rate, 80.0),
+            hpf_r: SidechainHpf::new(sample_rate, 80.0),
+            lpf_l: SidechainLpf::new(sample_rate, 20_000.0),
+            lpf_r: SidechainLpf::new(sample_rate, 20_000.0),
+            eq_l: SidechainEq::new(sample_rate),
+            eq_r: SidechainEq::new(sample_rate),
+            thrust_l: ThrustFilter::new(sample_rate),
+            thrust_r: ThrustFilter::new(sample_rate),
+        }
+    }
+
+    pub fn set_hpf_freq(&mut self, sample_rate: f32, frequency: f32) {
+        let frequency = frequency.clamp(20.0, 500.0);
+        self.hpf_l.set_freq(sample_rate, frequency);
+        self.hpf_r.set_freq(sample_rate, frequency);
+    }
+
+    pub fn set_hpf_enabled(&mut self, enabled: bool) {
+        self.hpf_l.set_enabled(enabled);
+        self.hpf_r.set_enabled(enabled);
+    }
+
+    pub fn set_lpf_freq(&mut self, sample_rate: f32, frequency: f32) {
+        let frequency = frequency.clamp(1000.0, 20_000.0);
+        self.lpf_l.set_freq(sample_rate, frequency);
+        self.lpf_r.set_freq(sample_rate, frequency);
+    }
+
+    pub fn set_lpf_enabled(&mut self, enabled: bool) {
+        self.lpf_l.set_enabled(enabled);
+        self.lpf_r.set_enabled(enabled);
+    }
+
+    pub fn set_eq_freq(&mut self, frequency: f32) {
+        self.eq_l.set_freq(frequency);
+        self.eq_r.set_freq(frequency);
+    }
+
+    pub fn set_eq_gain(&mut self, gain_db: f32) {
+        self.eq_l.set_gain(gain_db);
+        self.eq_r.set_gain(gain_db);
+    }
+
+    pub fn set_eq_q(&mut self, q: f32) {
+        self.eq_l.set_q(q);
+        self.eq_r.set_q(q);
+    }
+
+    pub fn set_eq_enabled(&mut self, enabled: bool) {
+        self.eq_l.set_enabled(enabled);
+        self.eq_r.set_enabled(enabled);
+    }
+
+    pub fn set_thrust(&mut self, mode: f32) {
+        self.thrust_l.set_mode(mode);
+        self.thrust_r.set_mode(mode);
+    }
+
+    #[inline]
+    pub fn process(&mut self, left: f32, right: f32) -> (f32, f32) {
+        let left = self.thrust_l.process(
+            self.eq_l
+                .process(self.lpf_l.process(self.hpf_l.process(left))),
+        );
+        let right = self.thrust_r.process(
+            self.eq_r
+                .process(self.lpf_r.process(self.hpf_r.process(right))),
+        );
+        (left, right)
     }
 }

@@ -119,24 +119,19 @@ impl DiodeCompressor {
         self.detector.set_link(link);
     }
 
-    /// Process with external sidechain signal for detection (feed-forward).
-    /// Audio path uses `left`/`right`, detection uses `sc_l`/`sc_r` (HPF+Thrust filtered).
-    #[inline]
-    pub fn process_sample_with_sc(
-        &mut self,
-        left: f32,
-        right: f32,
-        sc_l: f32,
-        sc_r: f32,
-    ) -> (f32, f32, f32) {
-        let (detect_l_db, detect_r_db) = self.detector.detect_db(sc_l, sc_r);
-        self.process_with_level(left, right, detect_l_db, detect_r_db)
+    pub(crate) fn detector_source(&self, left: f32, right: f32) -> (f32, f32) {
+        (left, right)
     }
 
     #[inline]
-    pub fn process_sample(&mut self, left: f32, right: f32) -> (f32, f32, f32) {
-        // Feed-forward detection (33609 is feed-forward)
-        let (detect_l_db, detect_r_db) = self.detector.detect_db(left, right);
+    pub fn process_sample(
+        &mut self,
+        left: f32,
+        right: f32,
+        detector_l: f32,
+        detector_r: f32,
+    ) -> (f32, f32, f32) {
+        let (detect_l_db, detect_r_db) = self.detector.detect_db(detector_l, detector_r);
         self.process_with_level(left, right, detect_l_db, detect_r_db)
     }
 

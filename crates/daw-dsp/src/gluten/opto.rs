@@ -147,11 +147,19 @@ impl OptoCompressor {
         channel.gr_state
     }
 
+    pub(crate) fn detector_source(&self) -> (f32, f32) {
+        (self.last_output_l, self.last_output_r)
+    }
+
     #[inline]
-    pub fn process_sample(&mut self, left: f32, right: f32) -> (f32, f32, f32) {
-        // Feedback: detect from previous output
-        let (detect_l_db, detect_r_db) =
-            self.detector.detect_db(self.last_output_l, self.last_output_r);
+    pub fn process_sample(
+        &mut self,
+        left: f32,
+        right: f32,
+        detector_l: f32,
+        detector_r: f32,
+    ) -> (f32, f32, f32) {
+        let (detect_l_db, detect_r_db) = self.detector.detect_db(detector_l, detector_r);
 
         let gr_l = self.channel_gr_db(detect_l_db, false);
         let gr_r = if self.detector.is_fully_linked() {

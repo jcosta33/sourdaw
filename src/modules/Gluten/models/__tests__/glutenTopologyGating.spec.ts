@@ -16,7 +16,6 @@ import {
     glutenCardNotice,
     glutenControlGate,
     glutenStageTwoOptionGate,
-    type GlutenGapLayer,
 } from '../GlutenTopologyGating';
 
 /**
@@ -44,20 +43,16 @@ import {
  * output sample for sample, so the arms this file reads are known to mean what
  * their absence implies.
  *
- * ## Three populations, three derivations
+ * ## Two populations, two derivations
  *
- * An arm scan sees one of the three ways a Gluten control reaches nothing, and
+ * An arm scan sees one of the two ways a Gluten control reaches nothing, and
  * an earlier revision of this file shipped with only that one — which made the
  * census blind by construction to the other two rather than merely incomplete.
  *
  * - **`set-param`** — derived from the four structs' arms, as above.
- * - **`detector-routing`** — derived too, and from two independent reads of
- *   `engine.rs`: which identifiers `process_block` uses to build `sc_l`/`sc_r`,
- *   and which `set_param` arms touch any of them. The topologies that *read*
- *   the filtered detector come from a third read, of `process_topology`. So
- *   giving the VCA a sidechain-aware entry point deletes ten rows here without
- *   anyone editing this file, and adding a filter stage adds its control to the
- *   population the same way.
+ * - **detector routing** — every configured detector stage is derived from
+ *   `engine.rs`, then `process_topology` is checked to prove all four topology
+ *   calls consume the conditioned detector.
  * - **patch state** — not derivable from source at all, because the claim is
  *   about a *value* rather than a name. Its weld is measurement:
  *   `crates/daw-dsp/tests/gluten_routing_and_patch_state_reach.rs` renders each
@@ -206,12 +201,9 @@ function forwardedSharedControls(): (keyof GlutenPatch)[] {
     return GLUTEN_SHARED_CONTROLS.filter((paramKey) => !ENGINE_ARMS.has(wireName(paramKey)));
 }
 
-function censusFor(topology: GlutenTopology, layer: GlutenGapLayer): string[] {
+function censusFor(topology: GlutenTopology): string[] {
     const gap = GLUTEN_TOPOLOGY_GAPS.find((entry) => entry.topology === topology);
-    return [...(gap?.params ?? [])]
-        .filter((param) => param.layer === layer)
-        .map((param) => String(param.paramKey))
-        .sort();
+    return [...(gap?.params ?? [])].map((param) => String(param.paramKey)).sort();
 }
 
 /**
@@ -237,30 +229,19 @@ function readEngineArmBodies(): Map<string, string> {
 }
 
 /**
- * The engine fields that carry the *filtered detector* — the ones
- * `process_block` reads to build `sc_l` and `sc_r`.
- *
- * Read from the source rather than listed, so a stage added to the chain joins
- * the population without an edit here. The slice runs from the sidechain source
- * selection to the end of the `sc_r` assignment, which is the whole chain and
- * nothing else.
+ * The engine fields that own the detector source and conditioning chain.
  */
 function readDetectorChainFields(): Set<string> {
     const source = readSource(ENGINE_SOURCE);
-    const from = source.indexOf('let (sc_raw_l, sc_raw_r)');
-    expect(from, 'engine.rs must build a sidechain source').toBeGreaterThan(-1);
-    const to = source.indexOf('// Process through active topology', from);
-    expect(to, 'engine.rs must hand the sidechain on to a topology').toBeGreaterThan(from);
-
-    const chain = source.slice(from, to);
-    return new Set([...chain.matchAll(/self\.([a-z0-9_]+)/g)].map((match) => match[1]!));
+    expect(source).toContain('let external_detector');
+    expect(source).toContain('self.sidechains[topo.index()].process');
+    return new Set(['ext_sidechain', 'sidechains']);
 }
 
 /**
  * The patch keys whose engine arm configures a stage in that chain.
  *
- * This is the detector-routing population: every one of these has an arm, is
- * accepted, and shapes a signal only some topologies ever read.
+ * Every one of these has an engine arm and configures the shared detector path.
  */
 function readDetectorRoutedControls(): string[] {
     const chainFields = readDetectorChainFields();
@@ -278,9 +259,7 @@ function readDetectorRoutedControls(): string[] {
 /**
  * The topologies `process_topology` hands the filtered detector to.
  *
- * The arms that take `sc_l`/`sc_r` are the ones that can hear any of it. Today
- * that is the diode alone; the day another engine grows a sidechain-aware entry
- * point, this set widens and the rows for that topology have to go.
+ * The arms that take `detector_l`/`detector_r` are the ones that can hear it.
  */
 function readDetectorAwareTopologies(): Set<string> {
     const source = readSource(ENGINE_SOURCE);
@@ -292,7 +271,7 @@ function readDetectorAwareTopologies(): Set<string> {
     // sidechain is the one whose call has extra arguments, so a comma-bounded
     // read truncates exactly the arm being looked for and finds nothing.
     const arms = [...block.matchAll(/Topology::(\w+)\s*=>\s*(.+)$/gm)];
-    return new Set(arms.filter((arm) => arm[2]!.includes('sc_l')).map((arm) => arm[1]!.toLowerCase()));
+    return new Set(arms.filter((arm) => arm[2]!.includes('detector_l')).map((arm) => arm[1]!.toLowerCase()));
 }
 
 const ALL_TOPOLOGIES: GlutenTopology[] = ['vca', 'opto', 'fet', 'diode'];
@@ -367,23 +346,15 @@ describe('Gluten topology gap census', () => {
             .map((paramKey) => String(paramKey))
             .sort();
 
-        expect(censusFor(topology, 'set-param')).toEqual(derived);
-    });
-
-    it.each(ALL_TOPOLOGIES)('matches what the %s topology can read of the filtered detector', (topology) => {
-        const detectorAware = readDetectorAwareTopologies();
-        const derived = detectorAware.has(topology) ? [] : readDetectorRoutedControls();
-
-        expect(censusFor(topology, 'detector-routing')).toEqual(derived);
+        expect(censusFor(topology)).toEqual(derived);
     });
 
     it('finds the detector chain rather than assuming it', () => {
         // The vacuity guard for the derivation above. A rename in `engine.rs`
         // that made either read return nothing would empty the routing
-        // population and silently un-gate twelve controls on three topologies,
-        // while the comparison above kept passing by comparing nothing to
-        // nothing. Both ends are pinned: the count, and the one topology that
-        // is currently allowed to hear any of it.
+        // population while the routing check kept passing by comparing nothing
+        // to nothing. Both ends are pinned: the configured controls and all
+        // four topology consumers.
         expect(readDetectorRoutedControls()).toEqual([
             'extSidechain',
             'scEqEnabled',
@@ -396,7 +367,7 @@ describe('Gluten topology gap census', () => {
             'scLpfFreq',
             'thrust',
         ]);
-        expect([...readDetectorAwareTopologies()]).toEqual(['diode']);
+        expect([...readDetectorAwareTopologies()]).toEqual(['vca', 'opto', 'fet', 'diode']);
     });
 
     it('leaves every topology-owned control answered by its own topology', () => {
@@ -437,7 +408,7 @@ describe('Gluten topology gap census', () => {
         // that a fact rather than a comment, and it reds on the first row that
         // is dead everywhere.
         function isDeafTo(topology: GlutenTopology, paramKey: string): boolean {
-            return [...censusFor(topology, 'set-param'), ...censusFor(topology, 'detector-routing')].includes(paramKey);
+            return censusFor(topology).includes(paramKey);
         }
 
         const censused = new Set(
@@ -547,38 +518,18 @@ describe('glutenControlGate', () => {
         expect(structural.explanation).not.toContain('yet');
     });
 
-    it('refuses the detector controls off Diode, and names the way back', () => {
-        const gate = glutenControlGate({
-            patch: { ...DEFAULT_PATCH, topology: 'vca' },
-            paramKey: 'scHpfFreq',
-            controlLabel: 'SC HPF',
-        });
-
-        expect(gate.isInert).toBe(true);
-        expect(gate.kind).toBe('unbuilt');
-        expect(gate.explanation).toContain('only the Diode topology reads the filtered detector yet');
-        expect(gate.explanation).toContain('Stage two');
-        // Not the generic unbuilt sentence: this control is built, and telling
-        // a user it is not implemented would send them looking for the wrong
-        // thing.
-        expect(gate.explanation).not.toContain('is not implemented on');
-    });
-
-    it('leaves the detector controls live on Diode, and on any primary running Diode in Stage two', () => {
-        for (const paramKey of ['scHpfFreq', 'scEqGain', 'thrust', 'extSidechain'] as const) {
-            expect(
-                glutenControlGate({ patch: { ...diode, scEqGain: 6 }, paramKey, controlLabel: 'x' }).isInert,
-                `${paramKey} on a Diode primary`
-            ).toBe(false);
-
-            expect(
-                glutenControlGate({
-                    patch: { ...DEFAULT_PATCH, topology: 'vca', blendTopology: 'diode', blendAmount: 0.5, scEqGain: 6 },
-                    paramKey,
-                    controlLabel: 'x',
-                }).isInert,
-                `${paramKey} on a VCA primary with a Diode stage two`
-            ).toBe(false);
+    it('leaves the detector controls live on every topology', () => {
+        for (const topology of ALL_TOPOLOGIES) {
+            for (const paramKey of ['scHpfFreq', 'scEqGain', 'thrust', 'extSidechain'] as const) {
+                expect(
+                    glutenControlGate({
+                        patch: { ...DEFAULT_PATCH, topology, scEqGain: 6 },
+                        paramKey,
+                        controlLabel: 'x',
+                    }).isInert,
+                    `${paramKey} on ${topology}`
+                ).toBe(false);
+            }
         }
     });
 
@@ -635,18 +586,15 @@ describe('glutenControlGate', () => {
         }
     });
 
-    it('prefers the topology reason over the patch-state one when both are true', () => {
-        // On the VCA, EQ Q is inert whatever EQ Gain is. Telling the user to
-        // set the gain would send them to a control that changes nothing
-        // either, so the deeper fact wins.
+    it('uses the flat-EQ patch-state reason on every topology', () => {
         const gate = glutenControlGate({
             patch: { ...DEFAULT_PATCH, topology: 'vca', scEqGain: 0 },
             paramKey: 'scEqQ',
             controlLabel: 'EQ Q',
         });
 
-        expect(gate.kind).toBe('unbuilt');
-        expect(gate.explanation).not.toContain('Set EQ Gain first');
+        expect(gate.kind).toBe('overridden');
+        expect(gate.explanation).toContain('Set EQ Gain first');
     });
 
     it('has a patch-state row for every control the panel can switch off with another control', () => {
@@ -704,21 +652,13 @@ describe('glutenControlGate', () => {
     it('names every topology that would bring a refused control back', () => {
         // The escape clause, derived per parameter rather than phrased
         // generically — "run another topology in Stage two" is false. Knee
-        // comes back only under the VCA; Release under the VCA or the FET; the
-        // detector controls only under the diode.
+        // comes back only under the VCA; Release under the VCA or the FET.
         function onDiode(paramKey: keyof GlutenPatch): string | null {
             return glutenControlGate({ patch: diode, paramKey, controlLabel: 'x' }).remedy;
         }
 
         expect(onDiode('knee')).toBe('Select VCA, or run VCA in Stage two, to use this.');
         expect(onDiode('release')).toBe('Select VCA or FET, or run one of them in Stage two, to use this.');
-        const onVca = glutenControlGate({
-            patch: { ...DEFAULT_PATCH, topology: 'vca' },
-            paramKey: 'scHpfFreq',
-            controlLabel: 'x',
-        });
-        expect(onVca.remedy).toBe('Select Diode, or run Diode in Stage two, to use this.');
-
         // And it is the tail of the explanation, so a `title` reader gets it too.
         const gate = glutenControlGate({ patch: diode, paramKey: 'knee', controlLabel: 'Knee' });
         expect(gate.explanation?.endsWith(gate.remedy ?? '')).toBe(true);

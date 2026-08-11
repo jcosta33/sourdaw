@@ -225,18 +225,24 @@ impl VcaCompressor {
         channel.gr_state
     }
 
-    /// Process one sample pair. Returns (left, right, gain_reduction_db).
-    #[inline]
-    pub fn process_sample(&mut self, left: f32, right: f32) -> (f32, f32, f32) {
-        // Detection source: feedback (SSL default) or feed-forward. The
-        // detector decides *how* the source is rectified and how much the two
-        // sides share; this only chooses which signal it reads.
-        let (source_l, source_r) = if self.feed_forward {
+    pub(crate) fn detector_source(&self, left: f32, right: f32) -> (f32, f32) {
+        if self.feed_forward {
             (left, right)
         } else {
             (self.last_output_l, self.last_output_r)
-        };
-        let (detect_l_db, detect_r_db) = self.detector.detect_db(source_l, source_r);
+        }
+    }
+
+    /// Process one sample pair. Returns (left, right, gain_reduction_db).
+    #[inline]
+    pub fn process_sample(
+        &mut self,
+        left: f32,
+        right: f32,
+        detector_l: f32,
+        detector_r: f32,
+    ) -> (f32, f32, f32) {
+        let (detect_l_db, detect_r_db) = self.detector.detect_db(detector_l, detector_r);
 
         let smoothed_l = self.channel_gain_db(detect_l_db, false);
         let smoothed_r = if self.detector.is_fully_linked() {

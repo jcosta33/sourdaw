@@ -121,13 +121,9 @@ export const DEFAULT_PATCH: GlutenPatch = {
     autoRelease: true,
     range: 15,
     scHpfFreq: 80,
-    // Off, because a fresh device is a VCA and the detector filters only reach
-    // the diode. Shipping the sidechain HPF *engaged* advertised a filter that
-    // never ran; once the panel started gating the detector controls off Diode,
-    // it also became the first thing a user is likely to click and the click
-    // was swallowed. A default must not enable a stage its own topology cannot
-    // run. `GlutenDescriptor`'s declared default moves with it.
-    scHpfEnabled: false,
+    // The detector chain is shared by every topology, so the original 80 Hz
+    // rumble rejection is an audible part of the fresh VCA patch again.
+    scHpfEnabled: true,
     thrust: 0,
     detection: 'rms',
     stereoMode: 'stereo',

@@ -92,26 +92,8 @@ export const GLUTEN_TOPOLOGY_OWNED_CONTROLS: Record<GlutenTopology, readonly (ke
  */
 export const GLUTEN_UNRENDERED_PARAMS: readonly string[] = ['peakReduction', 'limiterThreshold', 'bypass'];
 
-/**
- * Which layer of the engine drops a write before the user hears it.
- *
- * Two different mechanisms, and a census derived from only one of them is blind
- * to the other by construction — which is what the first revision of this file
- * was.
- *
- * - `set-param` — the topology struct has no match arm for the name, so its own
- *   `_ => {}` swallows it. Derivable by scanning the four structs' arms.
- * - `detector-routing` — the name has an arm, at *engine* level, and configures
- *   a stage whose output only one topology reads. `process_block` filters the
- *   detector (SC HPF → SC LPF → SC EQ → Thrust, or the external sidechain) and
- *   hands the result to `DiodeCompressor::process_sample_with_sc` alone; the
- *   other three call `process_sample` and derive their own detector from the
- *   audio path. No arm scan can see this: the arms are all present.
- *
- * `glutenTopologyGating.spec.ts` derives both populations out of the Rust and
- * asserts the table against each, so neither half is a hand-maintained list.
- */
-export type GlutenGapLayer = 'set-param' | 'detector-routing';
+/** The topology struct has no match arm for the name, so `_ => {}` swallows it. */
+export type GlutenGapLayer = 'set-param';
 
 /**
  * A parameter one topology cannot hear.
@@ -141,42 +123,6 @@ export type GlutenTopologyGap = {
     readonly params: readonly GlutenTopologyGapParam[];
     readonly reason: string;
 };
-
-/**
- * The ten names that configure the detector chain, and are therefore inert on
- * every topology whose `process_topology` arm takes no sidechain.
- *
- * Twelve rendered controls: five knobs (SC HPF, SC LPF, SC EQ, EQ Gain, EQ Q),
- * four toggles (HPF, LPF, SC EQ, Ext SC) and the three Thrust chips.
- *
- * `unbuilt` rather than structural, and gated rather than left live, for the
- * reason the census file states about `unbuilt` generally: the row deletes
- * itself the day the other three topologies get a sidechain-aware entry point,
- * and the weld reds until it does. The routing fix itself is #1564 and is not
- * in this PR; the gate is, because the two are independent — with Diode in
- * Stage two all ten go live again on any primary, which is a panel decision the
- * routing fix would not make for us.
- */
-const DETECTOR_ROUTED_CONTROLS: readonly (keyof GlutenPatch)[] = [
-    'scHpfFreq',
-    'scHpfEnabled',
-    'scLpfFreq',
-    'scLpfEnabled',
-    'scEqFreq',
-    'scEqGain',
-    'scEqQ',
-    'scEqEnabled',
-    'thrust',
-    'extSidechain',
-];
-
-function detectorRoutingGaps(): GlutenTopologyGapParam[] {
-    return DETECTOR_ROUTED_CONTROLS.map((paramKey) => ({
-        paramKey,
-        kind: 'unbuilt' as const,
-        layer: 'detector-routing' as const,
-    }));
-}
 
 /**
  * Every shared control each topology's struct drops on the floor.
@@ -222,15 +168,15 @@ function detectorRoutingGaps(): GlutenTopologyGapParam[] {
 export const GLUTEN_TOPOLOGY_GAPS: readonly GlutenTopologyGap[] = [
     {
         topology: 'vca',
-        params: [{ paramKey: 'oversampling', kind: 'unbuilt', layer: 'set-param' }, ...detectorRoutingGaps()],
+        params: [{ paramKey: 'oversampling', kind: 'unbuilt', layer: 'set-param' }],
         reason:
             '`VcaCompressor::set_param` (`vca.rs`) answers to threshold, ratio, attack, release, knee, range, ' +
             'auto_release, vca_character, vca_type and feed_forward — every shared timing and curve control the ' +
             'panel offers. Only `oversampling` is missing, and it is a stage to write rather than a category ' +
             'error: the VCA runs its own k2 waveshaper (`vca_distortion`), so there is aliasing for a higher ' +
             'internal rate to move, and `ConfigurableOversample` already sits in the same module serving the FET ' +
-            'and the diode bridge. VCA is the default topology, so this row and the ten routing rows are what a ' +
-            'user meets without touching anything.',
+            'and the diode bridge. VCA is the default topology, so this is the one topology-specific gap a user ' +
+            'meets without touching anything.',
     },
     {
         topology: 'opto',
@@ -272,7 +218,6 @@ export const GLUTEN_TOPOLOGY_GAPS: readonly GlutenTopologyGap[] = [
                 layer: 'set-param',
                 note: 'The opto path applies its gain reduction as a plain multiply, with no waveshaper anywhere in it, so there is no aliasing for a higher internal rate to move.',
             },
-            ...detectorRoutingGaps(),
         ],
         reason:
             '`OptoCompressor::set_param` (`opto.rs`) answers to threshold, limit_mode and peak_reduction, and to ' +
@@ -281,9 +226,7 @@ export const GLUTEN_TOPOLOGY_GAPS: readonly GlutenTopologyGap[] = [
             'structural, and they are the same five an LA-2A leaves off its front panel: an opto compressor is ' +
             'defined by a cell that chooses its own ratio and its own timing. `range` is the exception — a ' +
             'max-reduction clamp is `apply_range`, which the VCA, FET and diode paths all call and this one does ' +
-            'not, so it is one line rather than a category error. The other ten rows are the detector-routing ' +
-            'class, which no arm scan can see: this topology has every sidechain arm and reads none of their ' +
-            'output. Seventeen of the panel’s shared controls are inert here in total.',
+            'not, so it is one line rather than a category error.',
     },
     {
         topology: 'fet',
@@ -291,16 +234,13 @@ export const GLUTEN_TOPOLOGY_GAPS: readonly GlutenTopologyGap[] = [
             { paramKey: 'knee', kind: 'unbuilt', layer: 'set-param' },
             { paramKey: 'range', kind: 'unbuilt', layer: 'set-param' },
             { paramKey: 'autoRelease', kind: 'unbuilt', layer: 'set-param' },
-            ...detectorRoutingGaps(),
         ],
         reason:
             '`FetCompressor::set_param` (`fet.rs`) answers to threshold, ratio, attack, release, the five ' +
             'character controls and oversampling. All three gaps are `unbuilt`: `knee` and `range` are *literals* ' +
             'at the call site — `gain_computer(input_db, threshold, effective_ratio, 3.0)` and ' +
             '`apply_range(gc, 60.0)` — so each is one field away from working, and `auto_release` has a real ' +
-            'release time here for an auto mode to steer and simply has no such mode written. The ten ' +
-            'detector-routing rows are the same set the VCA and the opto carry: this topology has every sidechain ' +
-            'arm and reads none of their output.',
+            'release time here for an auto mode to steer and simply has no such mode written.',
     },
     {
         topology: 'diode',
@@ -324,9 +264,7 @@ export const GLUTEN_TOPOLOGY_GAPS: readonly GlutenTopologyGap[] = [
             '`DiodeCompressor::set_param` (`diode.rs`) answers to threshold, ratio, attack, recovery, ' +
             'limiter_threshold and oversampling. `release` and `auto_release` are the pair this device was ' +
             'reported for and both are structural — Recovery owns the release time. `knee` and `range` are the ' +
-            'same literals-at-the-call-site shape as the FET, at 4.0 and 40.0. No detector-routing rows: this is ' +
-            'the one topology `process_block` hands the filtered detector to, which is why it is also the escape ' +
-            'the other three get through Stage two.',
+            'same literals-at-the-call-site shape as the FET, at 4.0 and 40.0.',
     },
 ];
 
@@ -591,28 +529,13 @@ function explain({
     blend: GlutenTopology | null;
 }): string {
     let where = `the ${GLUTEN_TOPOLOGY_LABELS[primary]} topology`;
-    let stages = `The ${GLUTEN_TOPOLOGY_LABELS[primary]} topology does not — it derives`;
     if (blend !== null) {
         where = `${where}, or to the ${GLUTEN_TOPOLOGY_LABELS[blend]} stage behind it`;
-        stages =
-            `Neither the ${GLUTEN_TOPOLOGY_LABELS[primary]} topology nor the ` +
-            `${GLUTEN_TOPOLOGY_LABELS[blend]} stage behind it does — each derives`;
     }
 
     const remedy = remedyFor(gap.paramKey);
     const tail = remedy === null ? '' : ` ${remedy}`;
 
-    if (gap.layer === 'detector-routing') {
-        // Distinct wording from the other `unbuilt` rows on purpose: this
-        // control *is* built and does shape the detector — it is the topology
-        // that has no way to read the filtered detector yet. Telling a user
-        // "SC HPF is not implemented" would send them looking for the wrong
-        // thing.
-        return (
-            `${controlLabel} shapes the detector, and only the Diode topology reads the filtered detector yet. ` +
-            `${stages} its own detector from the audio path.${tail}`
-        );
-    }
     if (gap.kind === 'structural') {
         return `${controlLabel} does not apply to ${where}. ${gap.note}${tail}`;
     }
@@ -627,7 +550,7 @@ export type GlutenControlGateInput = {
 };
 
 /**
- * Resolve one panel control against all three censuses.
+ * Resolve one panel control against the topology and patch-state censuses.
  *
  * A control is inert only when **no live stage** answers to it and nothing
  * outside the topologies reads it either. Anything short of that leaves the
@@ -635,11 +558,8 @@ export type GlutenControlGateInput = {
  * reach a parameter that works, which is worse than the defect being fixed.
  *
  * Order matters where two reasons are true at once. The topology census is
- * asked first because it is the deeper fact: on the VCA, EQ Q is inert whatever
- * the EQ Gain is, and telling the user to set the gain would send them to a
- * control that changes nothing either. On the Diode, where the detector chain
- * is live, the same knob falls through to the patch-state reason, which is the
- * one they can act on.
+ * asked first because it is the deeper fact; a patch-state remedy cannot make a
+ * topology-owned parameter work on a topology that does not implement it.
  */
 export function glutenControlGate({ patch, paramKey, controlLabel }: GlutenControlGateInput): GlutenControlGate {
     if (hasNonTopologyConsumer(patch, paramKey)) {

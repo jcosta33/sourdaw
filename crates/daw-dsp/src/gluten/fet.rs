@@ -169,16 +169,24 @@ impl FetCompressor {
         channel.gr_state
     }
 
+    pub(crate) fn detector_source(&self) -> (f32, f32) {
+        (self.last_output_l, self.last_output_r)
+    }
+
     #[inline]
-    pub fn process_sample(&mut self, left: f32, right: f32) -> (f32, f32, f32) {
+    pub fn process_sample(
+        &mut self,
+        left: f32,
+        right: f32,
+        detector_l: f32,
+        detector_r: f32,
+    ) -> (f32, f32, f32) {
         // Input gain (drive)
         let input_linear = db_to_linear(self.input_gain);
         let in_l = left * input_linear;
         let in_r = right * input_linear;
 
-        // Feedback detection
-        let (detect_l_db, detect_r_db) =
-            self.detector.detect_db(self.last_output_l, self.last_output_r);
+        let (detect_l_db, detect_r_db) = self.detector.detect_db(detector_l, detector_r);
 
         let gr_l = self.channel_gain_db(detect_l_db, false);
         let gr_r = if self.detector.is_fully_linked() {
