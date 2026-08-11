@@ -12,6 +12,10 @@ export type GrandBouleConfig = {
     soundboardSend: number;
     /** Sympathetic-resonance send amount (0.0 – 1.0). */
     sympatheticSend: number;
+    /** Grand-piano lid position (0.0 closed – 1.0 fully open). */
+    lidPosition: number;
+    /** Radiation perspective: 0 close, 1 player, 2 room. */
+    micPosition: number;
     /** Whether the hybrid sampled-attack pathway is active. */
     sampledAttackEnabled: boolean;
     /**
@@ -37,6 +41,8 @@ export function createDefaultGrandBouleConfig(): GrandBouleConfig {
         activePresetId: null,
         soundboardSend: 0.6,
         sympatheticSend: 0.25,
+        lidPosition: 1.0,
+        micPosition: 1,
         sampledAttackEnabled: false,
         stretchAmount: 1.0,
         attackBite: 1.0,

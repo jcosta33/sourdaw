@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { BUILTIN_INSTRUMENT_DESCRIPTORS } from '../BuiltinInstrumentDescriptors';
+import { GRAND_BOULE_DESCRIPTOR } from '../GrandBouleDescriptor';
 
 describe('BuiltinInstrumentDescriptors', () => {
     it('exports instrument descriptors', () => {
@@ -60,5 +61,13 @@ describe('BuiltinInstrumentDescriptors', () => {
     it('includes builtin-synth descriptor', () => {
         const ids = BUILTIN_INSTRUMENT_DESCRIPTORS.map((d) => d.id);
         expect(ids).toContain('builtin-synth');
+    });
+
+    it('does not publish Grand Boule radiation controls before persistence lands', () => {
+        const radiationParameters = GRAND_BOULE_DESCRIPTOR.parameters.filter((parameter) =>
+            ['lidPosition', 'micPosition'].includes(parameter.id)
+        );
+
+        expect(radiationParameters).toHaveLength(0);
     });
 });

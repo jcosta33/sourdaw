@@ -1009,6 +1009,10 @@ fn grand_boule_process_does_not_allocate_with_notes_held() {
     let mut instance = GrandBouleInstance::new(SAMPLE_RATE, 0);
     instance.set_param("cc_smoothing_ms", 25.0);
     instance.set_param("sustain_threshold", 0.3);
+    // Keep the new radiation smoother and non-default room response active in
+    // the guarded region; a default Player/open setting is an identity path.
+    instance.set_param("lid_position", 0.35);
+    instance.set_param("mic_position", 2.0);
     instance.set_sustain(0.9);
     instance.note_on(48, 0.9);
     instance.note_on(60, 0.7);
