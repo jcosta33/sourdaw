@@ -634,6 +634,14 @@ describe('bass-processing section copy workflow', () => {
                             fadeInBeats: 0,
                             fadeOutBeats: 0.25,
                         },
+                        {
+                            id: 'region-bass-eq-after-target',
+                            startBeat: 80,
+                            endBeat: 88,
+                            blend: 0.4,
+                            fadeInBeats: 0.25,
+                            fadeOutBeats: 0.25,
+                        },
                     ],
                 };
             }),
@@ -656,7 +664,7 @@ describe('bass-processing section copy workflow', () => {
         expect(
             adjustmentLayerStore.value?.layers
                 .find((layer) => layer.id === 'layer-bass-eq')
-                ?.regions.filter((region) => region.startBeat >= 48)
+                ?.regions.filter((region) => region.startBeat >= 48 && region.endBeat <= 64)
                 .map(({ startBeat, endBeat, blend, fadeInBeats, fadeOutBeats }) => ({
                     startBeat,
                     endBeat,
@@ -668,6 +676,11 @@ describe('bass-processing section copy workflow', () => {
             { startBeat: 48, endBeat: 56, blend: 0.75, fadeInBeats: 0.5, fadeOutBeats: 0 },
             { startBeat: 56, endBeat: 64, blend: 0.6, fadeInBeats: 0, fadeOutBeats: 0.25 },
         ]);
+        expect(
+            adjustmentLayerStore.value?.layers
+                .find((layer) => layer.id === 'layer-bass-eq')
+                ?.regions.find((region) => region.id === 'region-bass-eq-after-target')
+        ).toEqual(originalState?.layers.find((layer) => layer.id === 'layer-bass-eq')?.regions[2]);
 
         await undo();
         expect(adjustmentLayerStore.value).toEqual(originalState);
@@ -675,7 +688,7 @@ describe('bass-processing section copy workflow', () => {
         expect(
             adjustmentLayerStore.value?.layers
                 .find((layer) => layer.id === 'layer-bass-eq')
-                ?.regions.filter((region) => region.startBeat >= 48)
+                ?.regions.filter((region) => region.startBeat >= 48 && region.endBeat <= 64)
         ).toHaveLength(2);
     });
 

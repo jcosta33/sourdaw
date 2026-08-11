@@ -121,7 +121,7 @@ export function materializeActionStateGuards(
             });
             projectedAdjustmentLayers.set(layer.id, {
                 ...layer,
-                regions: [...layer.regions, region],
+                regions: [...layer.regions, region].sort((alpha, beta) => alpha.startBeat - beta.startBeat),
             });
             continue;
         }
