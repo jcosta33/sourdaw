@@ -74,13 +74,43 @@ function formatExecutionReceipt(
     executions: readonly PendingActionExecution[],
     confirmation: PendingAppActionConfirmation
 ): string {
+    const renderAction = confirmation.approvalSnapshot.actions.find(
+        (action) => action.type === 'renderProjectSections'
+    );
+    const renderJobs = renderAction?.type === 'renderProjectSections' ? (renderAction.payload.jobs ?? []) : [];
+    const plannedRenderAffectedIds = new Set(renderJobs.flatMap((job) => [job.sectionId, job.jobId]));
+    const artifacts = getAgentSectionRenderArtifacts();
+    const completedRenderAffectedIds = new Set(
+        renderJobs.flatMap((job) => {
+            const matchingArtifact = artifacts.some(
+                (artifact) =>
+                    artifact.jobId === job.jobId &&
+                    artifact.sectionId === job.sectionId &&
+                    artifact.sectionName === job.sectionName &&
+                    artifact.startBeat === job.startBeat &&
+                    artifact.endBeat === job.endBeat &&
+                    artifact.sampleRate === job.sampleRate &&
+                    artifact.tailSeconds === job.tailSeconds
+            );
+            return matchingArtifact ? [job.sectionId, job.jobId] : [];
+        })
+    );
+    function getActualAffectedIds(execution: PendingActionExecution): string[] {
+        if (execution.actionType !== 'renderProjectSections') {
+            return execution.affectedIds;
+        }
+        return execution.affectedIds.filter(
+            (id) => !plannedRenderAffectedIds.has(id) || completedRenderAffectedIds.has(id)
+        );
+    }
     const executedActions = executions
         .map((execution) => {
-            const affectedIds = execution.affectedIds.length > 0 ? execution.affectedIds.join(', ') : 'none';
+            const actualAffectedIds = getActualAffectedIds(execution);
+            const affectedIds = actualAffectedIds.length > 0 ? actualAffectedIds.join(', ') : 'none';
             return `- **${execution.actionType}**: ${execution.label}\n  - Affected IDs: ${affectedIds}\n  - Outcome: ${execution.outcome}`;
         })
         .join('\n');
-    const protectedAffectedIds = new Set(executions.flatMap((execution) => execution.affectedIds));
+    const protectedAffectedIds = new Set(executions.flatMap(getActualAffectedIds));
     const approvedProtectedTargets = confirmation.approvalSnapshot.protectedUnchanged;
     const preservedProtectedTargets = approvedProtectedTargets.every((target) => !protectedAffectedIds.has(target.id));
     if (!preservedProtectedTargets) {

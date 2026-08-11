@@ -728,6 +728,11 @@ describe('backing-vocal plate workflow', () => {
         if (renderAction?.type !== 'renderProjectSections' || !renderAction.payload.jobs) {
             throw new Error('Expected materialized render jobs');
         }
+        const successfulJob = renderAction.payload.jobs[0];
+        const failedJob = renderAction.payload.jobs[1];
+        if (!successfulJob || !failedJob) {
+            throw new Error('Expected two materialized render jobs');
+        }
         runtimeMocks.renderOffline.mockImplementation((options: { startBeat?: number }) => {
             if (options.startBeat === 64) {
                 return Promise.reject(new Error('chorus two renderer unavailable'));
@@ -742,7 +747,7 @@ describe('backing-vocal plate workflow', () => {
         expect(runtimeMocks.renderOffline).toHaveBeenCalledTimes(3);
         expect(getAgentSectionRenderArtifacts()).toEqual([
             expect.objectContaining({
-                jobId: renderAction.payload.jobs[0]?.jobId,
+                jobId: successfulJob.jobId,
                 sectionId: 'section-chorus-one',
             }),
         ]);
@@ -754,6 +759,13 @@ describe('backing-vocal plate workflow', () => {
         expect(receipt?.content).toContain('chorus two renderer unavailable');
         expect(receipt?.content).toContain('Do not replay the confirmed project actions');
         expect(receipt?.content).toContain('Retry missing renders below');
+        const receiptLines = receipt?.content.split('\n') ?? [];
+        const renderReceiptIndex = receiptLines.findIndex((line) => line.startsWith('- **renderProjectSections**:'));
+        const renderAffectedIds = receiptLines[renderReceiptIndex + 1];
+        expect(renderAffectedIds).toContain(successfulJob.sectionId);
+        expect(renderAffectedIds).toContain(successfulJob.jobId);
+        expect(renderAffectedIds).not.toContain(failedJob.sectionId);
+        expect(renderAffectedIds).not.toContain(failedJob.jobId);
         expect(undoStore.value?.past).toHaveLength(11);
 
         const committedTracks = structuredClone(trackStore.value?.tracks ?? []);
@@ -797,6 +809,13 @@ describe('backing-vocal plate workflow', () => {
         expect(completedReceipt?.content).toContain(
             'Missing section render artifacts completed without replaying project actions'
         );
+        const completedReceiptLines = completedReceipt?.content.split('\n') ?? [];
+        const completedRenderReceiptIndex = completedReceiptLines.findIndex((line) =>
+            line.startsWith('- **renderProjectSections**:')
+        );
+        const completedRenderAffectedIds = completedReceiptLines[completedRenderReceiptIndex + 1];
+        expect(completedRenderAffectedIds).toContain(failedJob.sectionId);
+        expect(completedRenderAffectedIds).toContain(failedJob.jobId);
         expect(completedReceipt?.content).not.toContain('Do not replay the confirmed project actions');
 
         await undo();
