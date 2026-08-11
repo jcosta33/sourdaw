@@ -35,7 +35,12 @@ function spawnServer(env: NodeJS.ProcessEnv): ChildProcessWithoutNullStreams {
             ...globalThis.process.env,
             COLLAB_AUTH_TOKEN: AUTH_TOKEN,
             COLLAB_HEARTBEAT_MS: '40',
+            COLLAB_MAX_CONNECTIONS: '20',
             COLLAB_MAX_PAYLOAD_BYTES: '1024',
+            COLLAB_MAX_PEERS_PER_SESSION: '10',
+            COLLAB_MAX_SESSIONS: '10',
+            COLLAB_MAX_SOURCE_CONNECTIONS: '20',
+            COLLAB_RATE_LIMIT_BYTES_PER_SECOND: '4096',
             COLLAB_RATE_LIMIT_PER_SECOND: '20',
             ...env,
         },
@@ -116,6 +121,24 @@ async function closeCodeWithin(socket: WebSocket): Promise<number> {
     ]);
 }
 
+async function rejectedConnectionStatus(url: string, protocols: string[]): Promise<number> {
+    const socket = new WebSocket(url, protocols);
+    socket.on('error', () => undefined);
+    const status = await new Promise<number>((resolve) => {
+        socket.once('unexpected-response', (request, response) => {
+            request.abort();
+            response.resume();
+            resolve(response.statusCode ?? 0);
+        });
+        socket.once('open', () => resolve(101));
+    });
+    socket.removeAllListeners();
+    socket.on('error', () => undefined);
+    socket.terminate();
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    return status;
+}
+
 async function join(socket: WebSocket, sessionId: string, peerId: string): Promise<ServerMessage> {
     const response = nextMessage(socket);
     socket.send(JSON.stringify({ type: 'join', sessionId, peerId, name: peerId }));
@@ -150,23 +173,7 @@ void test('does not hang cleanup when the relay already exited', { timeout: 1_00
 
 void test('rejects connections without the configured bearer token', async () => {
     const { url } = await startServer();
-    const socket = new WebSocket(url, ['sourdaw']);
-    sockets.add(socket);
-    socket.on('error', () => undefined);
-    const status = await new Promise<number>((resolve) => {
-        socket.once('unexpected-response', (request, response) => {
-            request.abort();
-            response.resume();
-            resolve(response.statusCode ?? 0);
-        });
-        socket.once('open', () => resolve(101));
-    });
-    assert.equal(status, 401);
-    socket.removeAllListeners();
-    socket.on('error', () => undefined);
-    socket.terminate();
-    await new Promise<void>((resolve) => setImmediate(resolve));
-    sockets.delete(socket);
+    assert.equal(await rejectedConnectionStatus(url, ['sourdaw']), 401);
 });
 
 void test('rejects oversized relay messages at the websocket boundary', async () => {
@@ -194,6 +201,47 @@ void test('closes a client that exceeds the configured message rate', async () =
     socket.send(cursor);
     socket.send(cursor);
     assert.equal(await closeCodeWithin(socket), 1008);
+});
+
+void test('closes a client that exceeds the configured byte rate', async () => {
+    const { url } = await startServer({ COLLAB_RATE_LIMIT_BYTES_PER_SECOND: '500' });
+    const socket = await connect(url);
+    await join(socket, 'session', 'peer');
+
+    socket.send(JSON.stringify({ type: 'state-update', sessionId: 'session', peerId: 'peer', state: 'x'.repeat(500) }));
+    assert.equal(await closeCodeWithin(socket), 1008);
+});
+
+void test('caps source connections and releases capacity after close', async () => {
+    const { url } = await startServer({ COLLAB_MAX_SOURCE_CONNECTIONS: '1' });
+    const first = await connect(url);
+    assert.equal(await rejectedConnectionStatus(url, ['sourdaw', AUTH_TOKEN]), 503);
+
+    const closed = once(first, 'close');
+    first.terminate();
+    await closed;
+    const replacement = await connect(url);
+    assert.equal(replacement.readyState, WebSocket.OPEN);
+});
+
+void test('caps total authenticated connections', async () => {
+    const { url } = await startServer({ COLLAB_MAX_CONNECTIONS: '1' });
+    await connect(url);
+    assert.equal(await rejectedConnectionStatus(url, ['sourdaw', AUTH_TOKEN]), 503);
+});
+
+void test('caps sessions and peers without mutating existing membership', async () => {
+    const { url } = await startServer({ COLLAB_MAX_PEERS_PER_SESSION: '1', COLLAB_MAX_SESSIONS: '1' });
+    const host = await connect(url);
+    const extraPeer = await connect(url);
+    const extraSession = await connect(url);
+    await join(host, 'session', 'host');
+
+    assert.deepEqual(await join(extraPeer, 'session', 'guest'), { type: 'error', message: 'Session is full' });
+    assert.deepEqual(await join(extraSession, 'other-session', 'other'), {
+        type: 'error',
+        message: 'Session limit reached',
+    });
 });
 
 void test('rejects an invalid port with a controlled startup error', async () => {

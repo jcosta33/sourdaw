@@ -1,6 +1,6 @@
 import { timingSafeEqual } from 'node:crypto';
 
-import { WebSocketServer, WebSocket, type RawData, type VerifyClientCallbackSync } from 'ws';
+import { WebSocketServer, WebSocket, type RawData, type VerifyClientCallbackAsync } from 'ws';
 
 type Peer = {
     ws: WebSocket;
@@ -47,7 +47,9 @@ type JsonObject = { [key: string]: unknown };
 const sessions = new Map<string, Session>();
 const peerToSession = new Map<WebSocket, Peer>();
 const socketLiveness = new Map<WebSocket, boolean>();
-const socketRateLimits = new Map<WebSocket, { count: number; startedAt: number }>();
+const socketRateLimits = new Map<WebSocket, { bytes: number; count: number; startedAt: number }>();
+const socketSources = new Map<WebSocket, string>();
+const sourceConnectionCounts = new Map<string, number>();
 
 function readIntegerEnv(input: { name: string; fallback: number; min: number; max: number }): number {
     const rawValue = process.env[input.name];
@@ -84,11 +86,31 @@ const MAX_PAYLOAD_BYTES = readIntegerEnv({
     min: 1024,
     max: 64 * 1024 * 1024,
 });
+const MAX_CONNECTIONS = readIntegerEnv({ name: 'COLLAB_MAX_CONNECTIONS', fallback: 1024, min: 1, max: 100_000 });
+const MAX_SOURCE_CONNECTIONS = readIntegerEnv({
+    name: 'COLLAB_MAX_SOURCE_CONNECTIONS',
+    fallback: 16,
+    min: 1,
+    max: 10_000,
+});
+const MAX_SESSIONS = readIntegerEnv({ name: 'COLLAB_MAX_SESSIONS', fallback: 512, min: 1, max: 100_000 });
+const MAX_PEERS_PER_SESSION = readIntegerEnv({
+    name: 'COLLAB_MAX_PEERS_PER_SESSION',
+    fallback: 32,
+    min: 1,
+    max: 10_000,
+});
 const RATE_LIMIT_PER_SECOND = readIntegerEnv({
     name: 'COLLAB_RATE_LIMIT_PER_SECOND',
     fallback: 120,
     min: 1,
     max: 10_000,
+});
+const RATE_LIMIT_BYTES_PER_SECOND = readIntegerEnv({
+    name: 'COLLAB_RATE_LIMIT_BYTES_PER_SECOND',
+    fallback: 32 * 1024 * 1024,
+    min: 1,
+    max: 256 * 1024 * 1024,
 });
 
 function isAuthorized(protocolHeader: string | string[] | undefined): boolean {
@@ -107,22 +129,40 @@ function isAuthorized(protocolHeader: string | string[] | undefined): boolean {
     return expected.length === provided.length && timingSafeEqual(expected, provided);
 }
 
-const verifyClient: VerifyClientCallbackSync = ({ req }) => isAuthorized(req.headers['sec-websocket-protocol']);
+const verifyClient: VerifyClientCallbackAsync = ({ req }, done) => {
+    const source = req.socket.remoteAddress ?? 'unknown';
+    if (!isAuthorized(req.headers['sec-websocket-protocol'])) {
+        done(false, 401, 'Unauthorized');
+        return;
+    }
+
+    if (!canAcceptConnection(source)) {
+        done(false, 503, 'Capacity exceeded');
+        return;
+    }
+
+    done(true);
+};
 
 function selectProtocol(protocols: Set<string>): string | false {
     return protocols.has('sourdaw') ? 'sourdaw' : false;
 }
 
-function exceedsMessageRate(ws: WebSocket): boolean {
+function exceedsMessageRate(ws: WebSocket, byteLength: number): boolean {
     const now = Date.now();
     const rate = socketRateLimits.get(ws);
     if (!rate || now - rate.startedAt >= 1_000) {
-        socketRateLimits.set(ws, { count: 1, startedAt: now });
-        return false;
+        socketRateLimits.set(ws, { bytes: byteLength, count: 1, startedAt: now });
+        return byteLength > RATE_LIMIT_BYTES_PER_SECOND;
     }
 
     rate.count += 1;
-    return rate.count > RATE_LIMIT_PER_SECOND;
+    rate.bytes += byteLength;
+    return rate.count > RATE_LIMIT_PER_SECOND || rate.bytes > RATE_LIMIT_BYTES_PER_SECOND;
+}
+
+function canAcceptConnection(source: string): boolean {
+    return socketSources.size < MAX_CONNECTIONS && (sourceConnectionCounts.get(source) ?? 0) < MAX_SOURCE_CONNECTIONS;
 }
 
 function is_json_object(value: unknown): value is JsonObject {
@@ -355,6 +395,18 @@ function rawDataToString(data: RawData): string {
     return data.toString();
 }
 
+function rawDataByteLength(data: RawData): number {
+    if (data instanceof ArrayBuffer) {
+        return data.byteLength;
+    }
+
+    if (Array.isArray(data)) {
+        return data.reduce((total, chunk) => total + chunk.byteLength, 0);
+    }
+
+    return data.byteLength;
+}
+
 function broadcastToOthers(session: Session, senderPeerId: string, msg: ServerMessage): void {
     for (const [id, peer] of session.peers) {
         if (id !== senderPeerId) {
@@ -380,6 +432,16 @@ function handleJoin(ws: WebSocket, msg: Extract<ClientMessage, { type: 'join' }>
     let session = sessions.get(msg.sessionId);
     if (session?.peers.has(msg.peerId)) {
         sendTo(ws, { type: 'error', message: 'Peer ID already in use' });
+        return;
+    }
+
+    if (!session && sessions.size >= MAX_SESSIONS) {
+        sendTo(ws, { type: 'error', message: 'Session limit reached' });
+        return;
+    }
+
+    if (session && session.peers.size >= MAX_PEERS_PER_SESSION) {
+        sendTo(ws, { type: 'error', message: 'Session is full' });
         return;
     }
 
@@ -574,16 +636,40 @@ const wss = new WebSocketServer({
     verifyClient,
 });
 
-wss.on('connection', (ws) => {
+function cleanupSocket(ws: WebSocket): void {
+    socketLiveness.delete(ws);
+    socketRateLimits.delete(ws);
+
+    const source = socketSources.get(ws);
+    if (source) {
+        socketSources.delete(ws);
+        const remaining = (sourceConnectionCounts.get(source) ?? 1) - 1;
+        if (remaining === 0) {
+            sourceConnectionCounts.delete(source);
+        } else {
+            sourceConnectionCounts.set(source, remaining);
+        }
+    }
+
+    const peer = peerToSession.get(ws);
+    if (peer) {
+        handleLeave(ws, peer.peerId, peer.sessionId);
+    }
+}
+
+wss.on('connection', (ws, request) => {
+    const source = request.socket.remoteAddress ?? 'unknown';
+    socketSources.set(ws, source);
+    sourceConnectionCounts.set(source, (sourceConnectionCounts.get(source) ?? 0) + 1);
     socketLiveness.set(ws, true);
-    socketRateLimits.set(ws, { count: 0, startedAt: Date.now() });
+    socketRateLimits.set(ws, { bytes: 0, count: 0, startedAt: Date.now() });
 
     ws.on('pong', () => {
         socketLiveness.set(ws, true);
     });
 
     ws.on('message', (data) => {
-        if (exceedsMessageRate(ws)) {
+        if (exceedsMessageRate(ws, rawDataByteLength(data))) {
             ws.close(1008, 'Message rate exceeded');
             return;
         }
@@ -592,21 +678,11 @@ wss.on('connection', (ws) => {
     });
 
     ws.on('close', () => {
-        socketLiveness.delete(ws);
-        socketRateLimits.delete(ws);
-        const peer = peerToSession.get(ws);
-        if (peer) {
-            handleLeave(ws, peer.peerId, peer.sessionId);
-        }
+        cleanupSocket(ws);
     });
 
     ws.on('error', () => {
-        socketLiveness.delete(ws);
-        socketRateLimits.delete(ws);
-        const peer = peerToSession.get(ws);
-        if (peer) {
-            handleLeave(ws, peer.peerId, peer.sessionId);
-        }
+        cleanupSocket(ws);
     });
 });
 
