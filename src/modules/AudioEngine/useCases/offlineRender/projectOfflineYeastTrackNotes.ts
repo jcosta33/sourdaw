@@ -137,7 +137,7 @@ export function projectOfflineYeastTrackNotes({
                 projectPitch,
             });
             for (const projectedNote of projectedNotes) {
-                const sourceNote = sourceNotesByEventId.get(projectedNote.id);
+                const sourceNote = sourceNotesByEventId.get(projectedNote.id) ?? iteration.sourceNotes[0];
                 scheduledNotes.push({
                     ...projectedNote,
                     pressure: sourceNote?.pressure,
