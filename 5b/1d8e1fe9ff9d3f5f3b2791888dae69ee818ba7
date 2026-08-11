@@ -1,0 +1,38 @@
+crates/daw-dsp/src/bacteria/granular.rs
+  s_bc88af7d3b054c::t_998511b061b712 175-177
+  s_bc88af7d3b054c::t_236a3458fa04a3 358-371,687,713,822
+  s_bc88af7d3b054c::t_6674d89fe13452 799-821,823-824
+  s_bc88af7d3b054c::t_b9f4237239c0d9 798
+public/wasm/daw-dsp/daw_dsp.d.ts
+  s_6a1c3865137784::t_1bc635daa9f7da 1,897-910
+public/wasm/daw-dsp/daw_dsp_bg.wasm.d.ts
+  s_6a1c3865137784::t_d4cd38a6b491bf 1,101-114
+public/wasm/manifest.json
+  s_6a1c3865137784::t_b9e6690957ed02 12,16-18,21
+src/modules/AudioEngine/wasm/daw_dsp.d.ts
+  s_6a1c3865137784::t_444f98eeadabd3 1,897-910
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "5b1d8e1fe9ff9d3f5f3b2791888dae69ee818ba7",
+  "prompts": {},
+  "sessions": {
+    "s_6a1c3865137784": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019ff1ed-675e-7803-9021-59cb80aeddb7",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_bc88af7d3b054c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f9b4a-11a2-7f61-8dfb-76eed0eb2a9c",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
