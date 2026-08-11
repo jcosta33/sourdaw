@@ -1,0 +1,24 @@
+crates/daw-dsp/tests/bacteria_frozen_texture_preset.rs
+  s_bc88af7d3b054c::t_de735f29fe6b1e 15
+  s_bc88af7d3b054c::t_d35deab05247af 36,40-41
+  s_bc88af7d3b054c::t_8bd6c6ef430fa8 1-14,16-35,37-39,42-47
+src/modules/Bacteria/useCases/__tests__/bacteriaPresets.spec.ts
+  s_bc88af7d3b054c::t_952c311dbf4dff 52
+  s_bc88af7d3b054c::t_12cda201dd9e51 51,53-64
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "3f73d0947725d5617700addcc38561497c19ce2f",
+  "prompts": {},
+  "sessions": {
+    "s_bc88af7d3b054c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f9b4a-11a2-7f61-8dfb-76eed0eb2a9c",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
