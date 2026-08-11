@@ -5,6 +5,7 @@ import { executeAppAction } from '#/modules/Command/useCases';
 import { createDefaultGrandBouleConfig } from '../../models/GrandBouleConfig';
 import { type GrandBouleEngineHandle } from '../../repositories/grandBouleEngineHandle';
 import { type GrandBouleState } from '../../stores/grandBouleStore';
+import { normalizeGrandBoulePersistedParamValue } from '../normalizeGrandBoulePersistedParamValue';
 
 /**
  * The Grand Boule config knobs that ride `Device.parameterValues`.
@@ -38,11 +39,11 @@ function reconcileGrandBouleParam(input: {
     const device = trackStore.value?.tracks
         .flatMap((track) => track.devices)
         .find((candidate) => candidate.id === input.deviceId);
-    const storedValue = device?.parameterValues[input.paramId];
-    const authoritativeValue =
-        typeof storedValue === 'number' && Number.isFinite(storedValue)
-            ? storedValue
-            : createDefaultGrandBouleConfig()[input.paramId];
+    const authoritativeValue = normalizeGrandBoulePersistedParamValue({
+        defaultValue: createDefaultGrandBouleConfig()[input.paramId],
+        paramId: input.paramId,
+        value: device?.parameterValues[input.paramId],
+    });
     const state = input.store.value;
     if (state !== null && state.config[input.paramId] !== authoritativeValue) {
         input.store.set({

@@ -290,6 +290,19 @@ describe('Grand Boule knob values survive a reload', () => {
         expect(sessionConfig('micPosition')).toBe(defaults.micPosition);
     });
 
+    it('normalizes finite corrupt persisted radiation values before they reach the session controls', () => {
+        trackStore.set({
+            tracks: [grandBouleTrack({ lidPosition: -1e308, micPosition: 1.5 })],
+            selectedTrackId: TRACK_ID,
+            ghostClips: [],
+        });
+
+        simulateReload();
+
+        expect(sessionConfig('lidPosition')).toBe(0);
+        expect(sessionConfig('micPosition')).toBe(2);
+    });
+
     it('restores the default control value when project truth has no stored value', () => {
         trackStore.set({
             tracks: [grandBouleTrack({})],
