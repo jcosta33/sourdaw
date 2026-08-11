@@ -268,6 +268,20 @@ describe('LibraryBrowser', () => {
         );
     });
 
+    it('does not offer fabricated musical analysis for indexed samples', () => {
+        mocks.libraryState = createLibraryState({
+            provider: 'tauri',
+            ext: 'wav',
+            rootRef: '/Users/jose/Samples',
+            relativePath: 'Drums/Kick.wav',
+            displayName: 'Kick',
+        });
+
+        render(<LibraryBrowser preview={mocks.preview} selectedTrackId={null} />);
+
+        expect(screen.queryByRole('button', { name: 'Analyze' })).toBeNull();
+    });
+
     it('should render the Re-project UMAP control disabled with the unavailable label and never dispatch', () => {
         mocks.libraryState = createLibraryState({
             provider: 'tauri',

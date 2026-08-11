@@ -27,7 +27,6 @@ import {
     setSearchQuery,
     setFavoritesOnly,
 } from '../../stores/libraryStore';
-import { analyzeSample } from '../../useCases/analyzeSample';
 import { connectFolder } from '../../useCases/connectFolder/connectFolder';
 import { disconnectLibraryRoot } from '../../useCases/connectFolder/disconnectLibraryRoot';
 import { rescanRoot } from '../../useCases/connectFolder/rescanRoot';
@@ -263,12 +262,6 @@ export const LibraryBrowser = ({ preview, selectedTrackId: _selectedTrackId }: L
         }
     };
 
-    const handleAnalyzeFolder = (): void => {
-        for (const sample of visibleFiles) {
-            void analyzeSample(sample.id);
-        }
-    };
-
     const handleFindSimilar = (sampleId: string): void => {
         const similarIds = findSimilarSamples(sampleId);
         if (similarIds.length > 0) {
@@ -318,16 +311,6 @@ export const LibraryBrowser = ({ preview, selectedTrackId: _selectedTrackId }: L
                     <span className="text-[8px] font-bold">MAP</span>
                 </button>
 
-                {activeRoot && visibleFiles.length > 0 ? (
-                    <button
-                        type="button"
-                        className="h-5 px-1.5 rounded text-[9px] text-muted-foreground hover:bg-white/5 hover:text-foreground transition-colors"
-                        onClick={handleAnalyzeFolder}
-                        title="Analyze current folder (G1)"
-                    >
-                        Analyze
-                    </button>
-                ) : null}
                 <button
                     type="button"
                     aria-label="Show favorites only"

@@ -22,7 +22,7 @@ describe('restoreLibrary', () => {
 
         await restoreLibrary();
 
-        expect(repoRestoreLibrary).toHaveBeenCalledTimes(1);
+        expect(repoRestoreLibrary).toHaveBeenCalledWith({ trustedAnalysisRootId: 'factory' });
     });
 
     it('rebuilds a folder tree for each root the repository restored', async () => {

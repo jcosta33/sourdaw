@@ -4,7 +4,7 @@ import { injectDependencies } from '#/infra/di/testing/injectDependencies';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 import { isTauri } from '#/utils/tauriBridge';
 
-import { type LibraryRoot, type SampleRecord } from '../../../models/LibraryTypes';
+import { type LibraryRoot, type SampleRecord, makeMusicalKey, toBpm } from '../../../models/LibraryTypes';
 import { addLibraryRoot, addSamples, setActiveRoot, type LibraryState } from '../../../stores/libraryStore';
 import { readTauriDirectory } from '../../readTauriDirectory';
 import * as helpers from '../helpers';
@@ -378,6 +378,53 @@ describe('Library Persistence', () => {
                 { activate: false }
             );
             expect(restoredRootIds).toEqual(['root-1']);
+        });
+
+        it('removes unversioned analysis from user samples while preserving declared factory tempo', async () => {
+            const userRoot = createTauriRoot({ id: 'user-root' });
+            const factoryRoot = createTauriRoot({ id: 'factory' });
+            const fabricatedAnalysis = {
+                bpm: toBpm(128),
+                key: makeMusicalKey('C', 'minor'),
+                descriptors: { centroid: 1234, rms: 0.25 },
+            };
+            const userSample = {
+                id: 'user-sample',
+                libraryRootId: userRoot.id,
+                relativePath: 'Loops/User.wav',
+                displayName: 'User',
+                ext: 'wav',
+                folder: 'Loops',
+                sync: { exists: true, status: 'analyzed' },
+                format: {},
+                analysis: fabricatedAnalysis,
+                tags: [],
+                favorite: false,
+            } satisfies SampleRecord;
+            const factorySample = {
+                ...userSample,
+                id: 'factory-sample',
+                libraryRootId: factoryRoot.id,
+                analysis: { bpm: toBpm(120) },
+            } satisfies SampleRecord;
+            const db = createPersistenceDb({
+                roots: [userRoot, factoryRoot],
+                samples: [userSample, factorySample],
+            });
+            vi.spyOn(helpers, 'openDb').mockResolvedValue(db as any);
+
+            await restoreLibrary({ trustedAnalysisRootId: 'factory' });
+
+            const restoredSamples = vi.mocked(addSamples).mock.calls[0]?.[0];
+            expect(restoredSamples?.[0]?.id).toBe('user-sample');
+            expect(restoredSamples?.[0]?.sync.status).toBe('indexed');
+            expect(restoredSamples?.[0]).not.toHaveProperty('analysis');
+            expect(restoredSamples?.[1]?.id).toBe('factory-sample');
+            expect(restoredSamples?.[1]?.sync.status).toBe('analyzed');
+            expect(restoredSamples?.[1]?.analysis).toEqual({ bpm: 120 });
+            const persistedUserSample = db.stores.samples.rows.get('user-sample');
+            expect(persistedUserSample?.sync.status).toBe('indexed');
+            expect(persistedUserSample).not.toHaveProperty('analysis');
         });
 
         it('should mark restored Tauri roots missing when the native directory reader reports a missing path', async () => {
