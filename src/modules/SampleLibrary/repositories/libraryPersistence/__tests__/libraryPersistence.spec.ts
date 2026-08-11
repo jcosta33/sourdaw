@@ -4,7 +4,7 @@ import { injectDependencies } from '#/infra/di/testing/injectDependencies';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 import { isTauri } from '#/utils/tauriBridge';
 
-import { type LibraryRoot, type SampleRecord } from '../../../models/LibraryTypes';
+import { type LibraryRoot, type SampleRecord, toBpm } from '../../../models/LibraryTypes';
 import { addLibraryRoot, addSamples, setActiveRoot, type LibraryState } from '../../../stores/libraryStore';
 import { readTauriDirectory } from '../../readTauriDirectory';
 import * as helpers from '../helpers';
@@ -76,9 +76,7 @@ function createRestoreDb({ roots, handles = [], samples = [] }: RestoreDbInput) 
 }
 
 type PersistedHandle = { id: string; handle: FileSystemDirectoryHandle };
-type PersistedRow = LibraryRoot | SampleRecord | PersistedHandle;
-
-function clonePersistedRow<Row extends PersistedRow>(row: Row): Row {
+function clonePersistedRow<Row extends { id: string }>(row: Row): Row {
     return structuredClone(row);
 }
 
@@ -89,7 +87,7 @@ function getPersistedRowId(key: IDBValidKey): string {
     throw new Error('Unexpected non-string persistence test key');
 }
 
-function createWritableStore<Row extends PersistedRow>(initial: Row[] = []) {
+function createWritableStore<Row extends { id: string }>(initial: Row[] = []) {
     const rows = new Map(initial.map((row) => [row.id, clonePersistedRow(row)]));
     return {
         rows,
@@ -103,17 +101,18 @@ function createWritableStore<Row extends PersistedRow>(initial: Row[] = []) {
 type PersistenceDbInput = {
     roots?: LibraryRoot[];
     handles?: PersistedHandle[];
-    samples?: SampleRecord[];
+    samples?: Array<SampleRecord | { id: string }>;
+    abortWrites?: boolean;
 };
 
-function createPersistenceDb({ roots = [], handles = [], samples = [] }: PersistenceDbInput = {}) {
+function createPersistenceDb({ roots = [], handles = [], samples = [], abortWrites = false }: PersistenceDbInput = {}) {
     const stores = {
         roots: createWritableStore(roots),
         handles: createWritableStore(handles),
         samples: createWritableStore(samples),
     };
     return {
-        transaction: () => ({
+        transaction: (_storeNames?: string | string[], mode?: IDBTransactionMode) => ({
             objectStore: (name: string) => {
                 if (name === 'roots') {
                     return stores.roots;
@@ -127,10 +126,17 @@ function createPersistenceDb({ roots = [], handles = [], samples = [] }: Persist
                 throw new Error(`Unexpected object store ${name}`);
             },
             set oncomplete(cb: () => void) {
-                queueMicrotask(cb);
+                if (!abortWrites || mode !== 'readwrite') {
+                    queueMicrotask(cb);
+                }
             },
             set onerror(_cb: () => void) {
                 /* unused in the success path */
+            },
+            set onabort(cb: () => void) {
+                if (abortWrites && mode === 'readwrite') {
+                    queueMicrotask(cb);
+                }
             },
         }),
         close: vi.fn(),
@@ -148,6 +154,23 @@ function createTauriRoot(overrides: Partial<LibraryRoot> = {}): LibraryRoot {
         status: 'offline',
         fileCount: 0,
         settings: { recursive: true },
+        ...overrides,
+    };
+}
+
+function createAnalyzedSample(overrides: Partial<SampleRecord> = {}): SampleRecord {
+    return {
+        id: 'sample-1',
+        libraryRootId: 'root-1',
+        relativePath: 'Loops/User.wav',
+        displayName: 'User',
+        ext: 'wav',
+        folder: 'Loops',
+        sync: { exists: true, status: 'analyzed' },
+        format: {},
+        analysis: { bpm: toBpm(128), descriptors: { centroid: 1234, rms: 0.25 } },
+        tags: [],
+        favorite: false,
         ...overrides,
     };
 }
@@ -378,6 +401,53 @@ describe('Library Persistence', () => {
                 { activate: false }
             );
             expect(restoredRootIds).toEqual(['root-1']);
+        });
+
+        it('removes all unversioned analysis and rewrites the persisted rows', async () => {
+            const userSample = createAnalyzedSample();
+            const factorySample = createAnalyzedSample({
+                id: 'factory-sample',
+                libraryRootId: 'factory',
+                analysis: { bpm: toBpm(120) },
+            });
+            const db = createPersistenceDb({ samples: [userSample, factorySample] });
+            vi.spyOn(helpers, 'openDb').mockResolvedValue(db as any);
+
+            await restoreLibrary();
+
+            const restoredSamples = vi.mocked(addSamples).mock.calls[0]?.[0];
+            expect(restoredSamples?.map((sample) => sample.sync.status)).toEqual(['indexed', 'indexed']);
+            expect(restoredSamples?.[0]).not.toHaveProperty('analysis');
+            expect(restoredSamples?.[1]).not.toHaveProperty('analysis');
+            expect(db.stores.samples.rows.get('sample-1')).not.toHaveProperty('analysis');
+            expect(db.stores.samples.rows.get('factory-sample')).not.toHaveProperty('analysis');
+        });
+
+        it('quarantines malformed rows without blocking cleanup of valid rows', async () => {
+            const malformedSample = { ...createAnalyzedSample({ id: 'malformed' }), sync: null };
+            const db = createPersistenceDb({ samples: [malformedSample, createAnalyzedSample()] });
+            vi.spyOn(helpers, 'openDb').mockResolvedValue(db as any);
+
+            await restoreLibrary();
+
+            const restoredSamples = vi.mocked(addSamples).mock.calls[0]?.[0];
+            expect(restoredSamples?.map((sample) => sample.id)).toEqual(['sample-1']);
+            expect(restoredSamples?.[0]).not.toHaveProperty('analysis');
+            expect(db.stores.samples.rows.get('malformed')).toHaveProperty('analysis');
+            expect(db.stores.samples.rows.get('sample-1')).not.toHaveProperty('analysis');
+        });
+
+        it('does not expose partial restore state when cleanup aborts', async () => {
+            const root = createTauriRoot();
+            const db = createPersistenceDb({ roots: [root], samples: [createAnalyzedSample()], abortWrites: true });
+            vi.spyOn(helpers, 'openDb').mockResolvedValue(db as any);
+
+            const restoredRootIds = await restoreLibrary();
+
+            expect(restoredRootIds).toEqual([]);
+            expect(addLibraryRoot).not.toHaveBeenCalled();
+            expect(addSamples).not.toHaveBeenCalled();
+            expect(db.close).toHaveBeenCalledTimes(1);
         });
 
         it('should mark restored Tauri roots missing when the native directory reader reports a missing path', async () => {
