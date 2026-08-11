@@ -2,7 +2,7 @@ import { audioEngine } from '../../repositories/createWebAudioEngine';
 
 /**
  * Register a global tuning table with the engine.
- * This table is used for built-in microtonal pitch shifting (Knead).
+ * This table is used by Fermenter instruments.
  */
 export function registerTuningTable(frequencies: number[]): void {
     if (frequencies.length !== 128) {

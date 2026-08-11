@@ -47,7 +47,7 @@ export const ProjectTab = (): ReactElement => {
                         </div>
 
                         <p className="text-[11px] leading-relaxed text-muted-foreground">
-                            Change the project's base tuning. Affects all built-in instruments.
+                            Change the project's base tuning for Fermenter instruments.
                         </p>
 
                         <Button
