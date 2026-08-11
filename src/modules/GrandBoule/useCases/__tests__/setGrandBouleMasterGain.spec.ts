@@ -52,12 +52,12 @@ describe('setGrandBouleMasterGain', () => {
         expect(dispatched).toEqual([]);
     });
 
-    it('commits through setDeviceParameter and leaves the engine to the action', () => {
+    it('commits through setDeviceParameter and waits for project truth before changing the session', () => {
         const store = seededStore();
 
         setGrandBouleMasterGain({ deviceId: 'gb-1', engine: engine(), store, gain: 1.25 });
 
-        expect(store.value?.config.masterGain).toBe(1.25);
+        expect(store.value?.config.masterGain).toBe(0.15);
         expect(dispatched).toEqual([
             { type: 'setDeviceParameter', payload: { deviceId: 'gb-1', paramId: 'masterGain', value: 1.25 } },
         ]);
@@ -68,7 +68,10 @@ describe('setGrandBouleMasterGain', () => {
         const store = seededStore();
 
         setGrandBouleMasterGain({ deviceId: 'gb-1', engine: engine(), store, gain: 7.5 });
-        expect(store.value?.config.masterGain).toBe(2);
+        expect(dispatched).toEqual([
+            { type: 'setDeviceParameter', payload: { deviceId: 'gb-1', paramId: 'masterGain', value: 2 } },
+        ]);
+        expect(store.value?.config.masterGain).toBe(0.15);
 
         setGrandBouleMasterGain({ deviceId: 'gb-1', engine: engine(), store, gain: -3, isTransient: true });
         expect(store.value?.config.masterGain).toBe(0);

@@ -344,16 +344,16 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         // family's pattern.
         'src/modules/Crumbs/useCases/setCrumbsParamWithAudio.ts': 1,
         'src/modules/GrandBoule/useCases/calibrateGrandBouleMidi/syncMidiCalibrationToEngine.ts': 2,
-        // Count provenance: new file entry, measured 2 — the single
-        // `engine.setParam` call on the transient branch, plus one doc-comment
-        // mention recording why the *commit* branch does not also push at the
+        // Count provenance: measured 3 — the transient preview and rejected-
+        // commit reconciliation each call `engine.setParam`, plus one doc-comment
+        // mention recording why a successful commit does not also push at the
         // handle (`setDeviceParameter` reaches the same worklet controls through
         // `updateDeviceParam`). This is the write the three Mix setters used to
         // each hold one of: `setGrandBouleMasterGain.ts`,
         // `setGrandBouleSoundboardSend.ts` and `setGrandBouleSympatheticSend.ts`
         // each scored 1 and now score 0, so they leave this table. They clamp to
         // their declared range and delegate; nothing else changed about them.
-        'src/modules/GrandBoule/useCases/grandBouleParamBridge/helpers.ts': 2,
+        'src/modules/GrandBoule/useCases/grandBouleParamBridge/helpers.ts': 3,
         'src/modules/GrandBoule/useCases/loadGrandBoulePreset.ts': 4,
         // Count provenance: measured 3 with `grep -o`, was 2. The two
         // executable hits are unchanged — the `setParam` handle on the returned
@@ -587,7 +587,11 @@ const DEVICE_DATA_COUNTS = {
         // rather than left to be rediscovered.
         'src/modules/Arrangement/useCases/device/restoreDevice.ts': 1,
         'src/modules/Arrangement/useCases/device/setDeviceParameter/persistDevicePatch.ts': 1,
-        'src/modules/Arrangement/useCases/device/setDeviceParameter/setDeviceParameter.ts': 2,
+        // Count provenance: measured 1 after presence-aware deletion introduced
+        // a local `parameterValues` copy and returned it with property shorthand.
+        // The remaining `devices:` hit is the same guarded CRDT-backed write;
+        // shorthand is outside this census pattern, as documented above.
+        'src/modules/Arrangement/useCases/device/setDeviceParameter/setDeviceParameter.ts': 1,
         // Count provenance: PH-3 (#730) — setExternalPluginState maps track
         // devices to store the captured native-plugin state chunk; the single
         // `devices:` is the reviewed CRDT-backed write through executeAppAction.

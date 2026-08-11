@@ -4,6 +4,7 @@ import { createDefaultGrandBouleConfig } from '../models/GrandBouleConfig';
 import { createGrandBouleStore } from '../stores/grandBouleStore';
 
 import { GRAND_BOULE_PERSISTED_PARAM_IDS } from './grandBouleParamBridge/helpers';
+import { normalizeGrandBoulePersistedParamValue } from './normalizeGrandBoulePersistedParamValue';
 
 /**
  * Seed a device's session config from the knob values project truth holds.
@@ -43,8 +44,11 @@ export function hydrateGrandBouleConfigFromProject(deviceId: string): void {
     const defaults = createDefaultGrandBouleConfig();
     const restored: Record<string, number> = {};
     for (const paramId of GRAND_BOULE_PERSISTED_PARAM_IDS) {
-        const stored = device.parameterValues[paramId];
-        restored[paramId] = typeof stored === 'number' && Number.isFinite(stored) ? stored : defaults[paramId];
+        restored[paramId] = normalizeGrandBoulePersistedParamValue({
+            defaultValue: defaults[paramId],
+            paramId,
+            value: device.parameterValues[paramId],
+        });
     }
 
     const unchanged = GRAND_BOULE_PERSISTED_PARAM_IDS.every((paramId) => state.config[paramId] === restored[paramId]);
