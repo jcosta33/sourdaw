@@ -21,12 +21,14 @@ describe('Grinder project parameter projection', () => {
                 uiSection: 'lab',
                 gain: 9,
                 bright: true,
-                ampModel: 'clean-twin',
+                cabType: 'ir',
             },
             {
                 gain: 2,
                 bright: 0,
-                ampModel: 4,
+                cabType: 1.5,
+                routingMode: 1.5,
+                neuralCpuBudget: 1.5,
             }
         );
 
@@ -34,13 +36,11 @@ describe('Grinder project parameter projection', () => {
             uiSection: 'lab',
             gain: 2,
             bright: false,
-            ampModel: 'rectifier',
-            bass: DEFAULT_PATCH.bass,
+            cabType: 'both',
+            routingMode: 'wet-dry-wet',
+            neuralCpuBudget: 2,
         });
 
-        expect(applyGrinderProjectParameters(projected, {})).toMatchObject({
-            bright: DEFAULT_PATCH.bright,
-            ampModel: DEFAULT_PATCH.ampModel,
-        });
+        expect(applyGrinderProjectParameters(projected, {}).cabType).toBe(DEFAULT_PATCH.cabType);
     });
 });

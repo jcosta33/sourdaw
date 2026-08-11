@@ -97,11 +97,6 @@ const BOOLEAN_KEYS: ReadonlySet<keyof GrinderPatch> = new Set([
     'limiterEnabled',
 ]);
 
-function indexedValue(options: readonly string[], raw: number): string {
-    const index = Math.max(0, Math.min(options.length - 1, Math.trunc(raw)));
-    return options[index] ?? options[0] ?? '';
-}
-
 function decodeProjectValue(key: GrinderProjectParamKey, raw: number): unknown {
     if (BOOLEAN_KEYS.has(key)) {
         return raw > 0.5;
@@ -109,9 +104,14 @@ function decodeProjectValue(key: GrinderProjectParamKey, raw: number): unknown {
     if (key === 'channel') {
         return Math.trunc(raw);
     }
+    if (key === 'neuralCpuBudget') {
+        return Math.round(raw);
+    }
     const options = INDEXED_VALUES[key];
     if (options) {
-        return indexedValue(options, raw);
+        const normalized = key === 'cabType' || key === 'routingMode' ? Math.round(raw) : Math.trunc(raw);
+        const index = Math.max(0, Math.min(options.length - 1, normalized));
+        return options[index] ?? options[0] ?? '';
     }
     return raw;
 }
