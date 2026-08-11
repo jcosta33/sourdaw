@@ -103,25 +103,13 @@ export const NATIVE_DSP_DESCRIPTORS: PluginDescriptor[] = [
                 //   SpringReverb Tone 5 -> 6500 Hz; Chowdhury BYOD `damping` 0.5 ->
                 //   ~8485 Hz; smiarx/aelapse 4500 Hz); the commercial ones publish
                 //   nothing.
-                // - **FDN 8/16** — `rt60_hf/rt60 = (1 - damping) * 0.5`, so 0.3 gives
-                //   0.35 where 0.0005 gave 0.4998. The old ratio sat almost exactly on
-                //   the convention among reverbs that publish a real RT60 ratio — all
-                //   near 0.50 — so on the FDN this change is a real darkening, 25.9 dB
-                //   more HF loss in the late window on an impulse, and its crossover
-                //   is hard-coded at 2 kHz against their 5.5-6 kHz, so it bites lower
-                //   too. `crates/proof-chamber/src/fdn.rs` carries the citations with
-                //   the layer named for each, which matters: zita-rev1 initialises
-                //   3000 Hz in the library and 6000 Hz in the shipped application, and
-                //   Faust's `reverbs.lib` publishes no defaults at all.
+                // - **FDN 8/16** — an exponential coefficient map makes zero mean no
+                //   HF damping and maps the shared 0.3 default to a conventional 0.5x
+                //   HF RT60. Higher values continue to darken monotonically.
                 // - **Reverse** — `damping` is bit-dead across the whole range. Already
                 //   recorded in `nativeDspEngineGaps.ts` and gated in the panel, so
                 //   this value is inert there.
                 //
-                // The FDN divergence is not fixed here and is not hidden: the right
-                // fix is a per-algorithm default rather than a different single
-                // number, since 0.3 is correct on the two algorithms that have an
-                // opinion. Measured figures are in
-                // `crates/proof-chamber/tests/plate_default_damping.rs`.
                 value: 0.3,
                 defaultValue: 0.3,
                 minValue: 0,
