@@ -1,0 +1,29 @@
+src/modules/GrandBoule/presentations/views/GrandBoulePanel.tsx
+  s_bc88af7d3b054c::t_7c1c5bc6dc0730 36,154-159,166-168,183-186,194-201,265,271,280,429-474,581
+src/modules/GrandBoule/presentations/views/__tests__/GrandBoulePanel.spec.tsx
+  s_bc88af7d3b054c::t_0a28e39f77f53f 1,6,10-17,19-34,37-44,54-55,77,79-113
+src/modules/GrandBoule/useCases/__tests__/grandBouleParameterPersistence.integration.spec.ts
+  s_bc88af7d3b054c::t_b0d546df569426 29,90-91,98-99,127-144,288-305
+src/modules/GrandBoule/useCases/grandBouleParamBridge/helpers.ts
+  s_bc88af7d3b054c::t_3bed4eace01fca 19-25,41,43
+src/modules/GrandBoule/useCases/hydrateGrandBouleConfigFromProject.ts
+  s_bc88af7d3b054c::t_7c4a34905146b7 3,18-20,43,47,50-51
+src/modules/GrandBoule/useCases/setGrandBouleRadiationParam.ts
+  s_bc88af7d3b054c::t_167b670c4d39af 1-36
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "a7beafa0c81e50e41b284b77d3583aca9a0ff5d5",
+  "prompts": {},
+  "sessions": {
+    "s_bc88af7d3b054c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f9b4a-11a2-7f61-8dfb-76eed0eb2a9c",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
