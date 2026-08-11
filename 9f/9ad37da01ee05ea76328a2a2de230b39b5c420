@@ -1,0 +1,21 @@
+src/modules/Grinder/models/__tests__/GrinderProjectParameterMap.spec.ts
+  s_bc88af7d3b054c::t_edea2ad14adbd9 24,29-31,39-41,44
+src/modules/Grinder/models/GrinderProjectParameterMap.ts
+  s_bc88af7d3b054c::t_edea2ad14adbd9 107-109,112-114
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "9f9ad37da01ee05ea76328a2a2de230b39b5c420",
+  "prompts": {},
+  "sessions": {
+    "s_bc88af7d3b054c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f9b4a-11a2-7f61-8dfb-76eed0eb2a9c",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
