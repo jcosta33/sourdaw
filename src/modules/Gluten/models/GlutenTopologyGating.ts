@@ -447,26 +447,6 @@ export function glutenBlendStage(patch: GlutenPatch): GlutenTopology | null {
 }
 
 /**
- * Whether something *other than a topology* reads this parameter on this patch.
- *
- * One case, and it is measured rather than assumed: `compute_auto_makeup`
- * (`engine.rs`) reads the engine's own `current_ratio`, which the `ratio` name
- * sets for any topology on its way past. So Ratio on Opto — whose cell derives
- * its own ratio and has no arm for the name — still changes the output level
- * while Auto gain is on, by 1.39 peak in
- * `auto_gain_makes_ratio_audible_on_opto`, against exactly 0 with Auto gain off.
- *
- * Whether that side channel is *desirable* is a separate question: it computes
- * makeup from a ratio the opto cell never uses, so the compensation is wrong
- * for this topology. That is a defect in the makeup stage, filed separately.
- * Until it is fixed, the control is audible, and a gate is not allowed to call
- * an audible control inert.
- */
-function hasNonTopologyConsumer(patch: GlutenPatch, paramKey: keyof GlutenPatch): boolean {
-    return paramKey === 'ratio' && patch.autoMakeup;
-}
-
-/**
  * The topologies that *do* answer to a parameter, in selector order.
  *
  * Derived by subtraction from the same census the gate reads, so it cannot
@@ -552,20 +532,16 @@ export type GlutenControlGateInput = {
 /**
  * Resolve one panel control against the topology and patch-state censuses.
  *
- * A control is inert only when **no live stage** answers to it and nothing
- * outside the topologies reads it either. Anything short of that leaves the
- * control alone: the cost of a wrongly-greyed control is a user who cannot
- * reach a parameter that works, which is worse than the defect being fixed.
+ * A control is inert only when **no live topology stage** answers to it.
+ * Anything short of that leaves the control alone: the cost of a wrongly-greyed
+ * control is a user who cannot reach a parameter that works, which is worse than
+ * the defect being fixed.
  *
  * Order matters where two reasons are true at once. The topology census is
  * asked first because it is the deeper fact; a patch-state remedy cannot make a
  * topology-owned parameter work on a topology that does not implement it.
  */
 export function glutenControlGate({ patch, paramKey, controlLabel }: GlutenControlGateInput): GlutenControlGate {
-    if (hasNonTopologyConsumer(patch, paramKey)) {
-        return LIVE;
-    }
-
     const blend = glutenBlendStage(patch);
     const primaryGap = findGap(patch.topology, paramKey);
     const blendHearsIt = blend !== null && findGap(blend, paramKey) === null;
