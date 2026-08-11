@@ -12,6 +12,12 @@ fn collect_production_sources(path: &Path, sources: &mut Vec<std::path::PathBuf>
         let entry = entry.expect("production source entry must be readable");
         let entry_path = entry.path();
         if entry_path.is_dir() {
+            if matches!(
+                entry_path.file_name().and_then(|name| name.to_str()),
+                Some("tests" | "__tests__")
+            ) {
+                continue;
+            }
             collect_production_sources(&entry_path, sources);
             continue;
         }
@@ -19,7 +25,7 @@ fn collect_production_sources(path: &Path, sources: &mut Vec<std::path::PathBuf>
             entry_path
                 .extension()
                 .and_then(|extension| extension.to_str()),
-            Some("rs" | "ts" | "tsx")
+            Some("rs" | "ts" | "tsx" | "toml")
         ) {
             sources.push(entry_path);
         }
@@ -33,16 +39,17 @@ fn native_engine_exposes_no_mts_esp_stub_or_false_support_path() {
         .parent()
         .expect("src-tauri must be inside the workspace");
     let engine_root = workspace_root.join("crates/daw-engine");
-    let tauri_manifest = read(&tauri_root.join("Cargo.toml"));
-    let engine_manifest = read(&engine_root.join("Cargo.toml"));
     let mut production_sources = Vec::new();
     for root in [
-        engine_root.join("src"),
+        workspace_root.join("crates"),
         tauri_root.join("src"),
         workspace_root.join("src"),
+        workspace_root.join("server"),
     ] {
         collect_production_sources(&root, &mut production_sources);
     }
+    production_sources.push(workspace_root.join("Cargo.toml"));
+    production_sources.push(tauri_root.join("Cargo.toml"));
 
     assert!(!engine_root.join("src/mts_esp.rs").exists());
     for source_path in production_sources {
@@ -55,8 +62,7 @@ fn native_engine_exposes_no_mts_esp_stub_or_false_support_path() {
             );
         }
     }
-    assert!(!engine_manifest.contains("mts"));
-    assert!(!tauri_manifest.contains("triple_buffer ="));
+    assert!(!read(&tauri_root.join("Cargo.toml")).contains("triple_buffer ="));
 
     let allowed_guidance = read(&tauri_root.join("AGENTS.md"));
     assert!(allowed_guidance.contains("MTS-ESP host support is absent"));
