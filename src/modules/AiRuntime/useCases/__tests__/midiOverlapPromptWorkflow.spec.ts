@@ -127,6 +127,15 @@ function createTrack(id: string, name: string, clipId: string): Track {
     };
 }
 
+function createAudioTrack(id: string, name: string, clipId: string): Track {
+    const track = createTrack(id, name, clipId);
+    return {
+        ...track,
+        kind: 'audio',
+        clips: track.clips.map((clip) => ({ ...clip, type: 'audio' })),
+    };
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
     return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
@@ -411,6 +420,44 @@ describe('EX-04 selected MIDI overlap prompt workflow', () => {
         expect(getNoteDuration('clip-piano', 'piano-short-a')).toBe(1);
         expect(getNoteDuration('clip-strings', 'strings-short-a')).toBe(1);
         expect(midiStore.value?.notesByClipId['clip-unselected']).toEqual(originalUnselected);
+    });
+
+    it('excludes a selected audio clip while applying the workflow to every selected MIDI clip', async () => {
+        const audioTrack = createAudioTrack('track-audio', 'Audio', 'clip-audio');
+        trackStore.set({
+            ...trackStore.value!,
+            tracks: [...trackStore.value!.tracks, audioTrack],
+        });
+        clipSelectionStore.set({
+            ...clipSelectionStore.value!,
+            selectedClipIds: ['clip-piano', 'clip-audio', 'clip-strings'],
+        });
+
+        await sendChatMessage(PROMPT);
+
+        const confirmationId = getConfirmationId();
+        const confirmation = getPendingActionConfirmation(confirmationId);
+        expect(confirmation?.actions).toHaveLength(2);
+        expect(confirmation?.actions[0]).toMatchObject({
+            type: 'removeShortMidiOverlaps',
+            payload: { clipId: 'clip-piano' },
+        });
+        expect(confirmation?.actions[1]).toMatchObject({
+            type: 'removeShortMidiOverlaps',
+            payload: { clipId: 'clip-strings' },
+        });
+        expect(confirmation?.protectedUnchanged).toContainEqual({
+            id: 'clip-audio',
+            name: 'Audio Phrase (selected non-MIDI clip)',
+        });
+
+        await confirmPendingChatActions({ confirmationId });
+
+        expect(trackStore.value?.tracks.find((track) => track.id === 'track-audio')).toEqual(audioTrack);
+        const receipt = chatStore.value?.messages.find(
+            (message) => message.pendingActionConfirmationId === confirmationId
+        );
+        expect(receipt?.content).toContain('Audio Phrase (selected non-MIDI clip)');
     });
 
     it('normalizes the hosted OpenAI-compatible plan from the same revision-bound capability', async () => {

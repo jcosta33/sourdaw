@@ -76,7 +76,11 @@ export function getMidiOverlapTransformPromptScope(
             return { status: 'invalid', reason: `EX-04 selected clip identity is missing or ambiguous: ${clipId}` };
         }
         const { clip, track } = matches[0]!;
-        if (track.kind !== 'midi' || clip.type !== 'midi' || track.frozen === true || clip.locked === true) {
+        if (track.kind !== 'midi' || clip.type !== 'midi') {
+            protectedObjects.push({ id: clipId, name: `${clip.name} (selected non-MIDI clip)` });
+            continue;
+        }
+        if (track.frozen === true || clip.locked === true) {
             return { status: 'invalid', reason: `EX-04 selected clip is unavailable or protected: ${clipId}` };
         }
         const expectedNotes = getNotesForClip(clipId).map((note) => ({ ...note }));
@@ -119,6 +123,9 @@ export function getMidiOverlapTransformPromptScope(
             expectedNotes,
             shortenedNotes: projected.shortenedNotes,
         });
+    }
+    if (selectedClips.length === 0) {
+        return { status: 'invalid', reason: 'EX-04 requires at least one selected MIDI clip' };
     }
     if (entries.length === 0) {
         return { status: 'invalid', reason: 'EX-04 found no selected MIDI overlaps strictly below 30 ms' };
