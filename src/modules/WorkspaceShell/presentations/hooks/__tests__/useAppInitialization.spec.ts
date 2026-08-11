@@ -407,6 +407,19 @@ describe('useAppInitialization — autosave governed by preferences', () => {
 
         expect(saveProject).toHaveBeenCalledTimes(1);
     });
+
+    it('defers autosave while project authority is being replaced', () => {
+        mockPreferencesValueHolder.current = { uiScale: 1, autoSave: true, autoSaveIntervalMs: 10_000 };
+        projectStoreMock.current = { dirty: true, loading: true };
+        renderHook(() => useAppInitialization());
+
+        vi.advanceTimersByTime(30_000);
+        expect(saveProject).not.toHaveBeenCalled();
+
+        projectStoreMock.current = { dirty: true, loading: false };
+        vi.advanceTimersByTime(10_000);
+        expect(saveProject).toHaveBeenCalledOnce();
+    });
 });
 
 describe('useAppInitialization — Project loading boundary', () => {

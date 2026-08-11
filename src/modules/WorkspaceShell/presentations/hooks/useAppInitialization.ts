@@ -138,8 +138,9 @@ export const useAppInitialization = (): void => {
 
             const enabled = preferencesStore.value?.autoSave ?? true;
             const requiresSnapshot = projectStore.value?.dirty === true;
+            const projectIsLoading = projectStore.value?.loading === true;
             const transportIsPlaying = getTransportState()?.isPlaying === true;
-            if (!enabled || !requiresSnapshot || transportIsPlaying) {
+            if (!enabled || !requiresSnapshot || projectIsLoading || transportIsPlaying) {
                 return;
             }
 
