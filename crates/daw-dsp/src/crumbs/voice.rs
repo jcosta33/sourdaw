@@ -18,6 +18,9 @@ use super::types::{
 
 // ── Constants ──────────────────────────────────────────────────────────
 
+const MIN_PLAYBACK_SPEED: f64 = 1.0 / 16.0;
+const MAX_PLAYBACK_SPEED: f64 = 16.0;
+
 // ── Crumbs Voice ──────────────────────────────────────────────────────
 
 #[derive(Debug, Clone)]
@@ -40,6 +43,9 @@ pub struct CrumbsVoice {
     anti_alias_cutoff: f32,
     anti_alias_step_sin: f32,
     anti_alias_step_cos: f32,
+    anti_alias_taps: usize,
+    anti_alias_window_step_sin: f32,
+    anti_alias_window_step_cos: f32,
 
     // Playback configuration
     playback_mode: PlaybackMode,
@@ -95,6 +101,9 @@ impl CrumbsVoice {
             anti_alias_cutoff: 1.0,
             anti_alias_step_sin: 0.0,
             anti_alias_step_cos: -1.0,
+            anti_alias_taps: BANDLIMITED_SINC_TAPS,
+            anti_alias_window_step_sin: 0.0,
+            anti_alias_window_step_cos: 1.0,
             playback_mode: PlaybackMode::Sustain,
             loop_mode: LoopMode::Off,
             region_start: 0,
@@ -274,6 +283,9 @@ impl CrumbsVoice {
                 self.anti_alias_cutoff,
                 self.anti_alias_step_sin,
                 self.anti_alias_step_cos,
+                self.anti_alias_taps,
+                self.anti_alias_window_step_sin,
+                self.anti_alias_window_step_cos,
                 self.region_start,
                 self.loop_start,
                 self.loop_end,
@@ -417,16 +429,34 @@ impl CrumbsVoice {
     }
 
     pub fn set_tune(&mut self, cents: f32) {
+        if !cents.is_finite() {
+            return;
+        }
         self.tune_cents = cents;
         let semitone_diff = (self.note as f32 - self.root_note as f32) + self.tune_cents / 100.0;
         self.set_playback_speed(semitone_diff);
     }
 
     fn set_playback_speed(&mut self, semitone_diff: f32) {
-        self.speed = 2.0_f64.powf(semitone_diff as f64 / 12.0);
+        if !semitone_diff.is_finite() {
+            return;
+        }
+        self.speed = 2.0_f64
+            .powf(semitone_diff as f64 / 12.0)
+            .clamp(MIN_PLAYBACK_SPEED, MAX_PLAYBACK_SPEED);
         self.anti_alias_cutoff = (1.0 / self.speed).min(1.0) as f32;
         let step = core::f32::consts::PI * self.anti_alias_cutoff;
         (self.anti_alias_step_sin, self.anti_alias_step_cos) = step.sin_cos();
+        // A Hamming-window transition needs roughly five source samples per
+        // playback-ratio step to retain the 42 dB stop-band contract. Cap the
+        // supported pitch range at 16x so the audio-thread work stays bounded.
+        let radius = ((5.0 * self.speed).ceil() as usize).clamp(24, 80);
+        self.anti_alias_taps = radius * 2 + 1;
+        let window_step = 2.0 * core::f32::consts::PI / (self.anti_alias_taps - 1) as f32;
+        (
+            self.anti_alias_window_step_sin,
+            self.anti_alias_window_step_cos,
+        ) = window_step.sin_cos();
     }
 
     // ── Steal Priority ─────────────────────────────────────────────────
@@ -567,60 +597,8 @@ fn windowed_sinc(t: f32, samples: &[f32; 8]) -> f32 {
     sum
 }
 
+/// Minimum odd tap count; higher pitch ratios scale this to at most 161 taps.
 const BANDLIMITED_SINC_TAPS: usize = 49;
-/// Fixed Blackman-Harris window. Keeping it as coefficients avoids evaluating
-/// four trigonometric functions per tap on the audio thread.
-const BANDLIMITED_SINC_WINDOW: [f32; BANDLIMITED_SINC_TAPS] = [
-    0.000060000,
-    0.000312476,
-    0.001191140,
-    0.003059167,
-    0.006518456,
-    0.012399195,
-    0.021735837,
-    0.035722840,
-    0.055645000,
-    0.082780374,
-    0.118278187,
-    0.163019107,
-    0.217470000,
-    0.281548891,
-    0.354517675,
-    0.434919534,
-    0.520575000,
-    0.608645251,
-    0.695764163,
-    0.778232715,
-    0.852261544,
-    0.914240925,
-    0.961012998,
-    0.990119525,
-    1.000000000,
-    0.990119525,
-    0.961012998,
-    0.914240925,
-    0.852261544,
-    0.778232715,
-    0.695764163,
-    0.608645251,
-    0.520575000,
-    0.434919534,
-    0.354517675,
-    0.281548891,
-    0.217470000,
-    0.163019107,
-    0.118278187,
-    0.082780374,
-    0.055645000,
-    0.035722840,
-    0.021735837,
-    0.012399195,
-    0.006518456,
-    0.003059167,
-    0.001191140,
-    0.000312476,
-    0.000060000,
-];
 
 fn bandlimited_stereo_sample(
     sample: &SampleData,
@@ -629,6 +607,9 @@ fn bandlimited_stereo_sample(
     cutoff_scale: f32,
     sinc_step_sin: f32,
     sinc_step_cos: f32,
+    tap_count: usize,
+    window_step_sin: f32,
+    window_step_cos: f32,
     region_start: u32,
     loop_start: u32,
     loop_end: u32,
@@ -638,7 +619,7 @@ fn bandlimited_stereo_sample(
     let mut output_left = 0.0;
     let mut output_right = 0.0;
     let mut weight_sum = 0.0;
-    let radius = (BANDLIMITED_SINC_TAPS / 2) as f32;
+    let radius = (tap_count / 2) as f32;
     let stereo = sample.is_stereo();
     let mut distance = fraction + radius;
     let sinc_angle = core::f32::consts::PI * distance * cutoff_scale;
@@ -650,15 +631,18 @@ fn bandlimited_stereo_sample(
     } else {
         sample.frame_count()
     };
+    let mut window_sin = 0.0;
+    let mut window_cos = 1.0;
 
-    for tap in 0..BANDLIMITED_SINC_TAPS {
+    for tap in 0..tap_count {
         let lowpass = if distance.abs() < f32::EPSILON {
             cutoff_scale
         } else {
             sinc_sin / (core::f32::consts::PI * distance)
         };
-        let weight = lowpass * BANDLIMITED_SINC_WINDOW[tap];
-        let raw_index = frame as i64 + tap as i64 - BANDLIMITED_SINC_TAPS as i64 / 2;
+        let window = 0.54 - 0.46 * window_cos;
+        let weight = lowpass * window;
+        let raw_index = frame as i64 + tap as i64 - tap_count as i64 / 2;
         if let Some(index) = map_bandlimited_frame(
             raw_index,
             region_start,
@@ -671,16 +655,23 @@ fn bandlimited_stereo_sample(
             if stereo {
                 output_right += sample.read_right(index) * weight;
             }
+            weight_sum += weight;
         }
-        weight_sum += weight;
 
         let next_sinc_sin = sinc_sin * sinc_step_cos - sinc_cos * sinc_step_sin;
         sinc_cos = sinc_cos * sinc_step_cos + sinc_sin * sinc_step_sin;
         sinc_sin = next_sinc_sin;
+        let next_window_sin = window_sin * window_step_cos + window_cos * window_step_sin;
+        window_cos = window_cos * window_step_cos - window_sin * window_step_sin;
+        window_sin = next_window_sin;
         distance -= 1.0;
     }
 
-    let normalization = 1.0 / weight_sum.max(1.0e-12);
+    let normalization = if weight_sum.abs() > 1.0e-12 {
+        1.0 / weight_sum
+    } else {
+        0.0
+    };
     let left = output_left * normalization;
     let right = if stereo {
         output_right * normalization
@@ -868,5 +859,103 @@ mod tests {
                  {alias_to_signal_db:.1} dB (tune control: {use_tune_control})"
             );
         }
+    }
+
+    #[test]
+    fn high_ratio_playback_suppresses_foldback_by_at_least_42_db() {
+        let render = |source_frequency: f32, ratio: usize, note: u8, tune_cents: f32| {
+            let source_frames = (OUTPUT_SAMPLES + SETTLE_SAMPLES) * ratio + 512;
+            let source = (0..source_frames)
+                .map(|frame| {
+                    let phase =
+                        2.0 * core::f32::consts::PI * source_frequency * frame as f32 / SAMPLE_RATE;
+                    phase.sin()
+                })
+                .collect();
+            let sample = SampleData::from_mono(source, SAMPLE_RATE as u32);
+            let mut voice = CrumbsVoice::new(SAMPLE_RATE);
+            voice.trigger(&VoiceTriggerParams {
+                note,
+                root_note: 60,
+                playback_mode: PlaybackMode::OneShot,
+                ..VoiceTriggerParams::default()
+            });
+            voice.set_tune(tune_cents);
+
+            let mut output = Vec::with_capacity(OUTPUT_SAMPLES);
+            for frame in 0..(OUTPUT_SAMPLES + SETTLE_SAMPLES) {
+                let mut left = 0.0;
+                let mut right = 0.0;
+                voice.render_sample(&sample, &mut left, &mut right);
+                if frame >= SETTLE_SAMPLES {
+                    output.push(left);
+                }
+            }
+            output
+        };
+
+        for (ratio, note, tune_cents) in [(4, 84, 0.0), (8, 96, 0.0), (16, 84, 2_400.0)] {
+            let passband = bin_magnitude(
+                &render(8_000.0 / ratio as f32, ratio, note, tune_cents),
+                8_000.0,
+                SAMPLE_RATE,
+            );
+            let foldback = bin_magnitude(
+                &render(32_000.0 / ratio as f32, ratio, note, tune_cents),
+                16_000.0,
+                SAMPLE_RATE,
+            );
+            let alias_to_signal_db = 20.0 * (foldback / passband.max(1.0e-12)).log10();
+
+            assert!(passband > 0.1, "{ratio}x passband reference was inaudible");
+            assert!(
+                alias_to_signal_db <= -42.0,
+                "{ratio}x playback must suppress foldback by at least 42 dB, got \
+                 {alias_to_signal_db:.1} dB"
+            );
+        }
+    }
+
+    #[test]
+    fn pitched_up_reader_preserves_short_region_dc_gain() {
+        let sample = SampleData::from_mono(vec![1.0], SAMPLE_RATE as u32);
+        let step = core::f32::consts::PI * 0.5;
+        let (step_sin, step_cos) = step.sin_cos();
+        let window_step = 2.0 * core::f32::consts::PI / (BANDLIMITED_SINC_TAPS - 1) as f32;
+        let (window_step_sin, window_step_cos) = window_step.sin_cos();
+
+        let (left, right) = bandlimited_stereo_sample(
+            &sample,
+            0,
+            0.0,
+            0.5,
+            step_sin,
+            step_cos,
+            BANDLIMITED_SINC_TAPS,
+            window_step_sin,
+            window_step_cos,
+            0,
+            0,
+            1,
+            LoopMode::Off,
+            false,
+        );
+
+        assert!((left - 1.0).abs() < 1.0e-6, "left DC gain was {left}");
+        assert!((right - 1.0).abs() < 1.0e-6, "right DC gain was {right}");
+    }
+
+    #[test]
+    fn non_finite_tune_preserves_the_last_finite_playback_state() {
+        let mut voice = CrumbsVoice::new(SAMPLE_RATE);
+        voice.trigger(&VoiceTriggerParams::default());
+        voice.set_tune(1_200.0);
+
+        voice.set_tune(f32::NAN);
+        voice.set_tune(f32::INFINITY);
+
+        assert_eq!(voice.tune_cents, 1_200.0);
+        assert_eq!(voice.speed, 2.0);
+        assert!(voice.position.is_finite());
     }
 }
