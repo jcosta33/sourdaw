@@ -1,0 +1,32 @@
+src/modules/ProofChamber/models/ProofChamberState.ts
+  s_bc88af7d3b054c::t_fa38a7da908659 246-251
+src/modules/ProofChamber/useCases/proofChamber/hydrateChamberStateFromProject.ts
+  s_bc88af7d3b054c::t_fa38a7da908659 7,87-88
+src/modules/Gluten/presentations/views/GlutenPanel.tsx
+  s_bc88af7d3b054c::t_fa38a7da908659 1,35,430-432
+  s_bc88af7d3b054c::t_9c5d5a1197f609 433
+src/modules/Gluten/presentations/views/__tests__/glutenProjectHydration.spec.tsx
+  s_bc88af7d3b054c::t_17fc50b3909329 1-68
+src/modules/ProofChamber/useCases/proofChamber/__tests__/hydrateChamberStateFromProject.spec.ts
+  s_bc88af7d3b054c::t_fa38a7da908659 149-152
+  s_bc88af7d3b054c::t_17fc50b3909329 101-109
+src/modules/Gluten/useCases/glutenParamBridge/hydrateGlutenPatchFromProject.ts
+  s_bc88af7d3b054c::t_fa38a7da908659 1-61,63-119
+  s_bc88af7d3b054c::t_eb8b43ee47b967 62
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "4c7137cef5fe0f60314519b89942a45a5158742f",
+  "prompts": {},
+  "sessions": {
+    "s_bc88af7d3b054c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f9b4a-11a2-7f61-8dfb-76eed0eb2a9c",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
