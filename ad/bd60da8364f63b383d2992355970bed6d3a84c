@@ -1,0 +1,25 @@
+src/modules/SampleLibrary/repositories/libraryPersistence/__tests__/libraryPersistence.spec.ts
+  s_bc88af7d3b054c::t_c0bccaa399604c 7,79,90,104-105,108,115,129-131,136-140,161-177,406-450
+  s_bc88af7d3b054c::t_fcce1d123cbd9d 451-452
+src/modules/SampleLibrary/repositories/libraryPersistence/restoreLibrary.ts
+  s_bc88af7d3b054c::t_011f6c6b0aec90 14-19,30,32,34
+  s_bc88af7d3b054c::t_063ded5ee19e10 42-43
+  s_bc88af7d3b054c::t_dcf0e4e0a5827d 12-13,20-29,31,33,35-41,44-67,122,180,184,188-191,193-201,218,222
+  s_bc88af7d3b054c::t_3fa2f6de37f5be 124-125,129,139,181,192,217
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "adbd60da8364f63b383d2992355970bed6d3a84c",
+  "prompts": {},
+  "sessions": {
+    "s_bc88af7d3b054c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f9b4a-11a2-7f61-8dfb-76eed0eb2a9c",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
