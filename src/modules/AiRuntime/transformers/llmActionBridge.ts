@@ -3,6 +3,7 @@ import { resolveMarkerColorValue } from '#/utils/markerColorPalette';
 import { wouldCreateRoutingCycle } from '#/utils/routingCycle';
 
 import { type ArticulationTransferCapability } from '../models/ArticulationTransferCapability';
+import { type BackingVocalPlateCapability } from '../models/BackingVocalPlateCapability';
 import { type DrumRoutingCapability } from '../models/DrumRoutingCapability';
 import { type ProjectContext } from '../models/ProjectContext';
 import { type RuntimeAction } from '../models/RuntimeAction';
@@ -3050,6 +3051,7 @@ export function buildLlmActionUserMessage({
     context,
     projectRevision,
     articulationTransferCapability,
+    backingVocalPlateCapability,
     drumRoutingCapability,
     sidechainRoutingCapability,
     wholeProjectVibeMixCapability,
@@ -3058,6 +3060,7 @@ export function buildLlmActionUserMessage({
     context: ProjectContext;
     projectRevision?: string;
     articulationTransferCapability?: ArticulationTransferCapability;
+    backingVocalPlateCapability?: BackingVocalPlateCapability;
     drumRoutingCapability?: DrumRoutingCapability;
     sidechainRoutingCapability?: SidechainRoutingCapability;
     wholeProjectVibeMixCapability?: WholeProjectVibeMixCapability;
@@ -3065,6 +3068,7 @@ export function buildLlmActionUserMessage({
     const commandContext = {
         ...(projectRevision ? { projectRevision } : {}),
         ...(articulationTransferCapability ? { articulationTransferCapability } : {}),
+        ...(backingVocalPlateCapability ? { backingVocalPlateCapability } : {}),
         ...(drumRoutingCapability ? { drumRoutingCapability } : {}),
         ...(sidechainRoutingCapability ? { sidechainRoutingCapability } : {}),
         ...(wholeProjectVibeMixCapability ? { wholeProjectVibeMixCapability } : {}),

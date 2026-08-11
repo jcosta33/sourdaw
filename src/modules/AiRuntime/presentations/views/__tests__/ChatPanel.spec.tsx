@@ -162,6 +162,31 @@ describe('ChatPanel', () => {
         expect(cancelPendingChatActions).toHaveBeenCalledWith({ confirmationId: 'confirm-1' });
     });
 
+    it('offers one accessible retry for receipt-bound missing render artifacts', () => {
+        (useStore as ReturnType<typeof vi.fn>).mockReturnValue({
+            messages: [
+                {
+                    id: 'assistant-1',
+                    role: 'assistant',
+                    content: 'The project committed, but one section render is missing.',
+                    timestamp: 1,
+                    isCommandAction: true,
+                    pendingActionConfirmationId: 'confirm-1',
+                    pendingActionConfirmationStatus: 'executed',
+                    pendingActionFollowUpStatus: 'retryable',
+                },
+            ],
+            isGenerating: false,
+            chatMode: 'prompt',
+            enableReasoning: false,
+        });
+
+        render(<ChatPanel />);
+
+        fireEvent.click(screen.getByRole('button', { name: 'Retry missing section renders' }));
+        expect(confirmPendingChatActions).toHaveBeenCalledWith({ confirmationId: 'confirm-1' });
+    });
+
     it('should have correct accessibility attributes', () => {
         render(<ChatPanel />);
         const panel = screen.getByText('AI Chat').closest('[class*="flex-col"]');

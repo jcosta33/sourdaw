@@ -306,6 +306,24 @@ export type PitchContourSnapshot = {
 
 export type AutomationMode = 'read' | 'write' | 'touch' | 'latch' | 'off';
 
+export type SendAutomationRangeSnapshot = {
+    sectionId: string;
+    sectionName: string;
+    startBeat: number;
+    endBeat: number;
+    automationStartBeat: number;
+};
+
+export type RenderProjectSectionJobSnapshot = {
+    jobId: string;
+    sectionId: string;
+    sectionName: string;
+    startBeat: number;
+    endBeat: number;
+    sampleRate: number;
+    tailSeconds: number;
+};
+
 export type GrooveConsumerSnapshot = 'clip' | 'yeast-processor' | 'toaster-pattern' | 'arpeggiator' | 'sequencer';
 export type GrooveTemplateActionSnapshot = {
     id: string;
@@ -741,6 +759,64 @@ export type AppAction =
               endBeat?: number;
               expectedSends?: Array<{ trackId: string; level: number; preFader: boolean }>;
               expectedSection?: { name: string; startBeat: number; endBeat: number };
+          };
+      }
+    | {
+          type: 'automateSendRanges';
+          payload: {
+              trackIds: string[];
+              busId: string;
+              sectionIds: string[];
+              tailBars: number;
+              targetLevelDb: number;
+              busName?: string;
+              expectedTimeSignature?: [number, number];
+              ranges?: SendAutomationRangeSnapshot[];
+              expectedTracks?: Array<{
+                  trackId: string;
+                  trackName: string;
+                  frozen: boolean;
+                  automationMode: AutomationMode;
+                  sendLevel: number;
+                  sendPreFader: boolean;
+              }>;
+          };
+      }
+    | {
+          /** Internal guarded inverse for `automateSendRanges`. */
+          type: 'removeSendAutomationRanges';
+          payload: {
+              trackIds: string[];
+              busId: string;
+              sectionIds: string[];
+              tailBars: number;
+              targetLevelDb: number;
+              busName: string;
+              expectedTimeSignature: [number, number];
+              ranges: SendAutomationRangeSnapshot[];
+              expectedTracks: Array<{
+                  trackId: string;
+                  trackName: string;
+                  frozen: boolean;
+                  automationMode: AutomationMode;
+                  sendLevel: number;
+                  sendPreFader: boolean;
+              }>;
+          };
+      }
+    | {
+          type: 'renderProjectSections';
+          payload: {
+              sectionIds: string[];
+              jobs?: RenderProjectSectionJobSnapshot[];
+          };
+      }
+    | {
+          /** Internal guarded inverse for `renderProjectSections`. */
+          type: 'removeRenderedProjectSections';
+          payload: {
+              sectionIds: string[];
+              jobs: RenderProjectSectionJobSnapshot[];
           };
       }
     | {
