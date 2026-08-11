@@ -1,0 +1,20 @@
+src/modules/Arrangement/models/PluginDescriptors/__tests__/declaredRangeVsKnobTravel.spec.ts
+  s_a40848e8f8cca9::t_628e0da4b4cd5b 30,50,570-598,696-708,710-713,715-738,752,914,1242-1244,1747-1748,1751,1844,2036-2046
+  s_a40848e8f8cca9::t_8e33a240662e66 191,709,714
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "e2b55fe0e08a87de34266b4cb302717cefa03fe8",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
