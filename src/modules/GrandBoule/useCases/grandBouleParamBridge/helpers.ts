@@ -1,8 +1,11 @@
 import { type Store } from '#/infra/store/types';
+import { trackStore } from '#/modules/Arrangement/stores';
 import { executeAppAction } from '#/modules/Command/useCases';
 
+import { createDefaultGrandBouleConfig } from '../../models/GrandBouleConfig';
 import { type GrandBouleEngineHandle } from '../../repositories/grandBouleEngineHandle';
 import { type GrandBouleState } from '../../stores/grandBouleStore';
+import { normalizeGrandBoulePersistedParamValue } from '../normalizeGrandBoulePersistedParamValue';
 
 /**
  * The Grand Boule config knobs that ride `Device.parameterValues`.
@@ -11,14 +14,47 @@ import { type GrandBouleState } from '../../stores/grandBouleStore';
  * `GrandBouleConfig` field, and the key `PARAM_MAP` (`grandBouleEngineCore.ts:56`)
  * translates to the engine's snake_case. That is not a coincidence to be relied on
  * quietly — `grandBouleParameterRegistry.spec.ts` derives the population from the
- * descriptor and holds all three alignments, so a rename on any side reds.
+ * descriptor and holds all five alignments, so a rename on any side reds.
  *
  * The remaining knobs on the panel — Stretch, Bite, Velocity Curve, Morph — declare
  * no descriptor parameter and so have nowhere to be stored. See the PR body.
  */
-export const GRAND_BOULE_PERSISTED_PARAM_IDS = ['masterGain', 'soundboardSend', 'sympatheticSend'] as const;
+export const GRAND_BOULE_PERSISTED_PARAM_IDS = [
+    'masterGain',
+    'soundboardSend',
+    'sympatheticSend',
+    'lidPosition',
+    'micPosition',
+] as const;
 
 export type GrandBoulePersistedParamId = (typeof GRAND_BOULE_PERSISTED_PARAM_IDS)[number];
+
+function reconcileGrandBouleParam(input: {
+    deviceId: string;
+    engine: GrandBouleEngineHandle;
+    optimisticValue: number;
+    paramId: GrandBoulePersistedParamId;
+    store: Store<GrandBouleState>;
+}): void {
+    const device = trackStore.value?.tracks
+        .flatMap((track) => track.devices)
+        .find((candidate) => candidate.id === input.deviceId);
+    const authoritativeValue = normalizeGrandBoulePersistedParamValue({
+        defaultValue: createDefaultGrandBouleConfig()[input.paramId],
+        paramId: input.paramId,
+        value: device?.parameterValues[input.paramId],
+    });
+    const state = input.store.value;
+    if (state !== null && state.config[input.paramId] !== authoritativeValue) {
+        input.store.set({
+            ...state,
+            config: { ...state.config, [input.paramId]: authoritativeValue },
+        });
+    }
+    if (authoritativeValue !== input.optimisticValue) {
+        input.engine.setParam({ name: input.paramId, value: authoritativeValue });
+    }
+}
 
 type DispatchGrandBouleParamInput = {
     /** Device id — the address project truth and the undo entry are keyed by. */
@@ -32,9 +68,9 @@ type DispatchGrandBouleParamInput = {
 };
 
 /**
- * Land one Grand Boule config knob, splitting the gesture from its commit.
+ * Land one persisted Grand Boule control, splitting the gesture from its commit.
  *
- * **The value was not persisted at all.** These three knobs wrote
+ * The first persisted controls wrote
  * `createGrandBouleStore(deviceId)` — a module-level `Map` of session stores that
  * `resetGrandBouleStores()` wipes on project teardown — and pushed the value at the
  * engine handle. Nothing wrote `Device.parameterValues`, so the store's own
@@ -53,8 +89,9 @@ type DispatchGrandBouleParamInput = {
  * Cost per gesture: one action, one Automerge transaction, one undo entry, and zero
  * project-truth writes during the drag.
  *
- * The session store is written on both halves — the panel is controlled off it, so
- * a knob whose field did not move would snap back mid-drag.
+ * The transient half writes the session store so the controlled knob tracks the
+ * pointer. The commit half waits for project truth, then reconciles the session and
+ * preview engine on success, refusal, or conflict.
  *
  * The commit half does **not** also call `engine.setParam`. `setDeviceParameter`
  * calls `updateDeviceParam`, which reaches the same worklet controls through
@@ -75,12 +112,11 @@ export function dispatchGrandBouleParam({
         return;
     }
 
-    store.set({
-        ...state,
-        config: { ...state.config, [paramId]: value },
-    });
-
     if (isTransient) {
+        store.set({
+            ...state,
+            config: { ...state.config, [paramId]: value },
+        });
         // camelCase on purpose: `PARAM_MAP` translates it to the engine's
         // snake_case, so the descriptor id is the only spelling any caller needs.
         engine.setParam({ name: paramId, value });
@@ -90,5 +126,14 @@ export function dispatchGrandBouleParam({
     void executeAppAction({
         type: 'setDeviceParameter',
         payload: { deviceId, paramId, value },
-    });
+    }).then(
+        () => {
+            reconcileGrandBouleParam({ deviceId, engine, optimisticValue: value, paramId, store });
+            return undefined;
+        },
+        () => {
+            reconcileGrandBouleParam({ deviceId, engine, optimisticValue: value, paramId, store });
+            return undefined;
+        }
+    );
 }
