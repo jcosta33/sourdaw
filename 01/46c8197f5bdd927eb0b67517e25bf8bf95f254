@@ -1,0 +1,27 @@
+src/modules/AudioEngine/engine/GrandBouleNode.ts
+  s_a40848e8f8cca9::t_9da79561728c66 74-75,92-132,622-629
+src/modules/AudioEngine/engine/__tests__/GrandBouleNode.spec.ts
+  s_a40848e8f8cca9::t_dffa5d386e5550 112-119,652,657-704
+src/modules/AudioEngine/repositories/offlineScheduler/__tests__/offlineAutomationCoverage.spec.ts
+  s_a40848e8f8cca9::t_d9c81d90d09977 7,29,48,53-54,64,270-271,289-294
+src/modules/AudioEngine/worklets/__tests__/grandBouleOfflineNoteTiming.spec.ts
+  s_a40848e8f8cca9::t_9983659bdbaffc 47-48,63-65,214,267-305
+src/modules/AudioEngine/worklets/grandBouleOfflineProcessor.ts
+  s_a40848e8f8cca9::t_6104b620567925 49,64-143,151-152,163,223,228-238,251-264,288
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "0146c8197f5bdd927eb0b67517e25bf8bf95f254",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
