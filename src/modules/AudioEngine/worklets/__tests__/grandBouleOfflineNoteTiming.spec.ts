@@ -46,6 +46,7 @@ type Dispatch = { note: number; velocity: number; channel: number; block: number
 const dispatches: Dispatch[] = [];
 type ParamDispatch = { name: string; value: number; block: number };
 const paramDispatches: ParamDispatch[] = [];
+const engineEvents: string[] = [];
 
 const wasmStub = vi.hoisted(() => {
     const memory = new WebAssembly.Memory({ initial: 1 });
@@ -55,6 +56,7 @@ const wasmStub = vi.hoisted(() => {
 class GrandBouleInstanceMock {
     note_on_with_channel(note: number, velocity: number, channel: number): void {
         dispatches.push({ note, velocity, channel, block: currentBlock() });
+        engineEvents.push(`note:${String(note)}`);
     }
     note_on(_note: number, _velocity: number): void {}
     note_off(_note: number): void {}
@@ -62,6 +64,7 @@ class GrandBouleInstanceMock {
     note_expression(): void {}
     set_param(name: string, value: number): void {
         paramDispatches.push({ name, value, block: currentBlock() });
+        engineEvents.push(`param:${name}:${String(value)}`);
     }
     set_sustain(_position: number): void {}
     set_una_corda(_engaged: boolean): void {}
@@ -212,6 +215,7 @@ describe('offline Grand Boule scheduling reaches the engine at the scheduled fra
     beforeEach(() => {
         dispatches.length = 0;
         paramDispatches.length = 0;
+        engineEvents.length = 0;
         harnessFrame = 0;
         liveProcessor = null;
         vi.stubGlobal('OfflineAudioContext', HarnessOfflineAudioContext);
@@ -302,5 +306,60 @@ describe('offline Grand Boule scheduling reaches the engine at the scheduled fra
         renderBlock();
 
         expect(paramDispatches).toEqual([{ name: 'mic_position', value: 2, block: 0 }]);
+    });
+
+    it('applies frame-zero automation before voicing a frame-zero note', async () => {
+        const strategy = await buildGrandBouleStrategy();
+        const binding = strategy.resolveOfflineAutomation('lidPosition');
+        if (!binding || binding.kind !== 'segments') {
+            throw new Error('Grand Boule did not expose lid automation to offline rendering');
+        }
+
+        binding.apply([{ startFrame: 0, endFrame: 0, startValue: 0.25, endValue: 0.25 }]);
+        schedulePendingSuspends(
+            { sampleRate: OFFLINE_SAMPLE_RATE } as unknown as OfflineAudioContext,
+            [noteOnEvent(0, 60, strategy)],
+            4
+        );
+        renderBlock();
+
+        expect(engineEvents).toEqual(['param:lid_position:0.25', 'note:60']);
+    });
+
+    it('leaves the current parameter untouched until a future clip lane starts', async () => {
+        const strategy = await buildGrandBouleStrategy();
+        const binding = strategy.resolveOfflineAutomation('lidPosition');
+        if (!binding || binding.kind !== 'segments') {
+            throw new Error('Grand Boule did not expose lid automation to offline rendering');
+        }
+
+        binding.apply([{ startFrame: 256, endFrame: 384, startValue: 0.75, endValue: 0.25 }]);
+        renderBlock();
+        renderBlock();
+        expect(paramDispatches).toEqual([]);
+
+        renderBlock();
+        expect(paramDispatches).toEqual([{ name: 'lid_position', value: 0.75, block: 2 }]);
+    });
+
+    it('retains disjoint clip-lane schedules targeting the same parameter', async () => {
+        const strategy = await buildGrandBouleStrategy();
+        const binding = strategy.resolveOfflineAutomation('lidPosition');
+        if (!binding || binding.kind !== 'segments') {
+            throw new Error('Grand Boule did not expose lid automation to offline rendering');
+        }
+
+        binding.apply([{ startFrame: 0, endFrame: 128, startValue: 1, endValue: 0.5 }]);
+        binding.apply([{ startFrame: 256, endFrame: 384, startValue: 0.5, endValue: 0 }]);
+        for (let block = 0; block < 4; block++) {
+            renderBlock();
+        }
+
+        expect(paramDispatches).toEqual([
+            { name: 'lid_position', value: 1, block: 0 },
+            { name: 'lid_position', value: 0.5, block: 1 },
+            { name: 'lid_position', value: 0.5, block: 2 },
+            { name: 'lid_position', value: 0, block: 3 },
+        ]);
     });
 });
