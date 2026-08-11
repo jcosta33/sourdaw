@@ -1,0 +1,26 @@
+src-tauri/src/commands/plugins.rs
+  s_bc88af7d3b054c::t_9bd34e60277037 690
+src/modules/AudioEngine/useCases/deviceControls/tuningControls.ts
+  s_bc88af7d3b054c::t_9bd34e60277037 5
+src-tauri/tests/mts_esp_stub_absence.rs
+  s_bc88af7d3b054c::t_c0c59ec00b3523 1,3-5,8-10,14-17,19-26,37-40,42
+  s_bc88af7d3b054c::t_7679ffbc6026a4 11-13,27-30,32-36
+src/modules/ContentBrowser/presentations/views/Sidebar/ProjectTab.tsx
+  s_bc88af7d3b054c::t_9bd34e60277037 50
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "ad7826cf4af5d8cafd3bcfb24b6b493d7fefe63a",
+  "prompts": {},
+  "sessions": {
+    "s_bc88af7d3b054c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f9b4a-11a2-7f61-8dfb-76eed0eb2a9c",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
