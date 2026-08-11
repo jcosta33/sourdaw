@@ -42,6 +42,9 @@ printf '%s\n' \
     'if [ "${NODE_ENV:-}" = "production" ] && [ "${3:-}" = "ls" ]; then' \
     '    case " $* " in *" --include=dev "*) ;; *) exit 42 ;; esac' \
     'fi' \
+    'if [ "${1:-}" = "test" ]; then' \
+    '    exit "${FAKE_SERVER_TEST_STATUS:-0}"' \
+    'fi' \
     > "$fake_bin/npm"
 printf '%s\n' \
     '#!/bin/sh' \
@@ -172,12 +175,27 @@ PATH="$fake_bin:$PATH" \
     sh "$temp_root/scripts/health-gates-server.sh" >/dev/null
 printf '%s\n' \
     'npm --prefix server ls --depth=0 --silent --include=dev' \
+    'npm test' \
     'npm run build' \
     'cargo fmt --all --check' \
     'cargo clippy --workspace --exclude sourdaw --all-targets --all-features' \
     'cargo test --workspace --exclude sourdaw --all-features' \
     > "$temp_root/expected-server-success.log"
 diff -u "$temp_root/expected-server-success.log" "$temp_root/server-success.log"
+
+set +e
+PATH="$fake_bin:$PATH" \
+    COMMAND_LOG="$temp_root/server-test-failure.log" \
+    FAKE_SERVER_TEST_STATUS=23 \
+    sh "$temp_root/scripts/health-gates-server.sh" >/dev/null 2>&1
+server_test_status=$?
+set -e
+test "$server_test_status" -eq 23
+printf '%s\n' \
+    'npm --prefix server ls --depth=0 --silent --include=dev' \
+    'npm test' \
+    > "$temp_root/expected-server-test-failure.log"
+diff -u "$temp_root/expected-server-test-failure.log" "$temp_root/server-test-failure.log"
 
 # A missing Rust toolchain must be reported before any build runs, not
 # discovered after the collaboration server has already been built.
@@ -207,6 +225,7 @@ set -e
 test "$cargo_clippy_status" -eq 101
 printf '%s\n' \
     'npm --prefix server ls --depth=0 --silent --include=dev' \
+    'npm test' \
     'npm run build' \
     'cargo fmt --all --check' \
     'cargo clippy --workspace --exclude sourdaw --all-targets --all-features' \
@@ -229,6 +248,7 @@ printf '%s\n' \
     'collection scope failure stops before the suite: PASS' \
     "missing server dependencies exit: $server_status" \
     'server remediation and production build dependency sequence: PASS' \
+    "server test failure exit: $server_test_status" \
     "missing cargo exit: $no_cargo_status" \
     "cargo clippy failure exit: $cargo_clippy_status" \
     "cargo test failure exit (SIGABRT): $cargo_test_status" \
