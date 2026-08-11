@@ -436,23 +436,37 @@ impl CrumbsEngine {
             return;
         }
 
-        // Choke once per note, after the whole stack has passed the work
-        // budget but before any voice is allocated. A rejected note must not
-        // silence an existing choke group, and a stack must land atomically.
-        self.choke_voices_in_group(params.choke_group);
-
-        // Slots this call has already handed to the stack. Without it, the
-        // voice triggered by the previous iteration plays `note`, is not yet
-        // fading and therefore scores `StealPriority::SameNote` — the top
-        // priority — so iterations 2..n steal the stack's own freshly
-        // triggered voices. One voice of the stack survived and the rest
-        // became 3 ms fades of notes that never sounded.
-        //
-        // `stack_count` is clamped to `MAX_STACK_VOICES`, so this is a
-        // fixed-size array on the stack and the scan in `find_steal_target` is
-        // at most eight comparisons per candidate. Nothing is allocated.
+        // Reserve the whole stack before choking or triggering anything. Free
+        // slots are claimed in the allocator; steal targets remain live but
+        // are excluded from later reservations. If the complete stack cannot
+        // land, release only the newly claimed free slots and leave every
+        // sounding voice untouched.
         let mut claimed = [0_usize; MAX_STACK_VOICES as usize];
+        let mut reserved_steals = [false; MAX_STACK_VOICES as usize];
         let mut claimed_len = 0_usize;
+        while claimed_len < count as usize {
+            let reservation = match self.allocator.allocate() {
+                Some(index) => Some((index, false)),
+                None => self
+                    .find_steal_target(note, params.choke_group, &claimed[..claimed_len])
+                    .map(|index| (index, true)),
+            };
+            let Some((voice_index, will_steal)) = reservation else {
+                for reserved_index in 0..claimed_len {
+                    if !reserved_steals[reserved_index] {
+                        self.allocator.release(claimed[reserved_index]);
+                    }
+                }
+                return;
+            };
+            claimed[claimed_len] = voice_index;
+            reserved_steals[claimed_len] = will_steal;
+            claimed_len += 1;
+        }
+
+        // Choke once per note after both the work and slot preflights. A
+        // rejected note must not silence an existing choke group.
+        self.choke_voices_in_group(params.choke_group);
 
         for stack_idx in 0..count {
             let (detune_cents, stack_pan) = if count > 1 {
@@ -463,35 +477,11 @@ impl CrumbsEngine {
             } else {
                 (0.0, 0.0)
             };
-
-            // Try to allocate a voice
-            let voice_index = match self.allocator.allocate() {
-                Some(idx) => idx,
-                None => {
-                    // All voices in use — need to steal one.
-                    match self.find_steal_target(note, params.choke_group, &claimed[..claimed_len])
-                    {
-                        Some(idx) => {
-                            // The displaced voice moves aside before the slot
-                            // is reused. Starting its fade in place did
-                            // nothing: `release` freed exactly one bit, so the
-                            // `allocate` that followed handed the same index
-                            // straight back and `trigger` reset `steal_fade`
-                            // to 1.0 on the same struct. The fade never
-                            // rendered a single sample and every steal cut the
-                            // note at full gain.
-                            //
-                            // The allocator bit for `idx` is already set and
-                            // stays set: the slot is occupied continuously,
-                            // first by the outgoing voice and then — on the
-                            // same sample — by the incoming one.
-                            self.move_voice_to_steal_tail(idx);
-                            idx
-                        }
-                        None => return,
-                    }
-                }
-            };
+            let reservation_index = stack_idx as usize;
+            let voice_index = claimed[reservation_index];
+            if reserved_steals[reservation_index] {
+                self.move_voice_to_steal_tail(voice_index);
+            }
 
             self.voices[voice_index].trigger(&params);
 
@@ -514,11 +504,6 @@ impl CrumbsEngine {
             // is only the spread across a stack and means nothing at count 1.
             if count > 1 {
                 self.voices[voice_index].set_pan(stack_pan);
-            }
-
-            if claimed_len < claimed.len() {
-                claimed[claimed_len] = voice_index;
-                claimed_len += 1;
             }
         }
     }
