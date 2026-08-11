@@ -1,0 +1,14 @@
+tests/e2e/crustOversamplingTestId.spec.ts
+  h_1228e573df1f42 1-45
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "8952beb6db6d052590d48f6f8888484139ffdb50",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
