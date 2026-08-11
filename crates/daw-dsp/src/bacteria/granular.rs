@@ -23,7 +23,7 @@ struct Grain {
     frontier_fade_remaining: usize,
     frontier_fade_total: usize,
     hold_last_sample: bool,
-    last_sample: f32,
+    last_windowed_sample: f32,
     size_samples: usize,
     progress: usize,
     pitch_ratio: f32,
@@ -39,7 +39,7 @@ impl Grain {
             frontier_fade_remaining: 0,
             frontier_fade_total: 0,
             hold_last_sample: false,
-            last_sample: 0.0,
+            last_windowed_sample: 0.0,
             size_samples: 0,
             progress: 0,
             pitch_ratio: 1.0,
@@ -62,10 +62,8 @@ impl Grain {
     }
 
     fn begin_frontier_hold_fade(&mut self) {
-        let envelope_remaining = self.size_samples.saturating_sub(self.progress);
-        let fade_samples = envelope_remaining.min(FRONTIER_HOLD_FADE_SAMPLES);
-        self.frontier_fade_remaining = fade_samples;
-        self.frontier_fade_total = fade_samples;
+        self.frontier_fade_remaining = FRONTIER_HOLD_FADE_SAMPLES;
+        self.frontier_fade_total = FRONTIER_HOLD_FADE_SAMPLES;
         self.hold_last_sample = true;
     }
 }
@@ -147,7 +145,9 @@ impl GranularProcessor {
                             / grain.pitch_ratio)
                             .floor() as usize)
                             .saturating_add(1);
-                        if causal_remaining < envelope_remaining {
+                        if causal_remaining <= 1 && causal_remaining < envelope_remaining {
+                            grain.begin_frontier_hold_fade();
+                        } else if causal_remaining < envelope_remaining {
                             grain.frontier_fade_remaining = causal_remaining;
                             grain.frontier_fade_total = causal_remaining;
                         }
@@ -221,17 +221,18 @@ impl GranularProcessor {
                 1 => 0.0,
                 total => (grain.frontier_fade_remaining - 1) as f32 / (total - 1) as f32,
             };
-            let win = grain.window_value() * frontier_gain;
-            let sample = if grain.hold_last_sample {
-                grain.last_sample
+            let windowed_sample = if grain.hold_last_sample {
+                grain.last_windowed_sample
             } else {
                 let read_idx = grain.read_pos.floor() as usize % self.buffer_size;
                 let next_idx = (read_idx + 1) % self.buffer_size;
                 let fraction = grain.read_pos.fract();
-                self.buffer[read_idx] + (self.buffer[next_idx] - self.buffer[read_idx]) * fraction
+                let sample = self.buffer[read_idx]
+                    + (self.buffer[next_idx] - self.buffer[read_idx]) * fraction;
+                sample * grain.window_value()
             };
-            grain.last_sample = sample;
-            grain_sum += sample * win;
+            grain.last_windowed_sample = windowed_sample;
+            grain_sum += windowed_sample * frontier_gain;
 
             if !grain.hold_last_sample {
                 grain.read_pos = (grain.read_pos + grain.pitch_ratio) % self.buffer_size as f32;
@@ -241,7 +242,7 @@ impl GranularProcessor {
             if grain.frontier_fade_total != 0 {
                 grain.frontier_fade_remaining = grain.frontier_fade_remaining.saturating_sub(1);
             }
-            if grain.progress >= grain.size_samples {
+            if grain.progress >= grain.size_samples && !grain.hold_last_sample {
                 grain.active = false;
             }
             if grain.frontier_fade_total != 0 && grain.frontier_fade_remaining == 0 {
@@ -286,7 +287,7 @@ impl GranularProcessor {
                 grain.frontier_fade_remaining = 0;
                 grain.frontier_fade_total = 0;
                 grain.hold_last_sample = false;
-                grain.last_sample = 0.0;
+                grain.last_windowed_sample = 0.0;
 
                 // Read position: `offset` samples back from the most recently
                 // written sample.
@@ -681,6 +682,46 @@ mod tests {
         assert!(
             after_freeze.last().copied().unwrap_or(1.0).abs() <= f32::EPSILON,
             "the held frontier sample did not fade to silence"
+        );
+    }
+
+    #[test]
+    fn freezing_at_the_last_nonnegative_frontier_sample_fades_without_a_step() {
+        let mut processor = quiet_spawner();
+        processor.buffer.fill(1.0);
+        processor.set_param("grainMix", 1.0);
+        processor.set_param("grainSize", 40.0);
+        processor.set_param("grainPosOffset", 20.0);
+        processor.set_param("grainPitch", 12.0);
+        processor.set_param("grainWindow", 1.0);
+        processor.spawn_counter = 1.0;
+
+        let mut before_freeze = processor.process_sample(1.0);
+        for _ in 1..959 {
+            before_freeze = processor.process_sample(1.0);
+        }
+        assert_eq!(processor.grains[0].samples_behind_write_head, 0.0);
+        assert!(
+            before_freeze > 0.1,
+            "the pitched Gaussian grain was not sounding at the frontier: {before_freeze}"
+        );
+
+        processor.set_param("grainFreeze", 1.0);
+        let after_freeze: Vec<f32> = (0..65).map(|_| processor.process_sample(0.0)).collect();
+        let worst_step = std::iter::once(before_freeze)
+            .chain(after_freeze.iter().copied())
+            .collect::<Vec<_>>()
+            .windows(2)
+            .map(|pair| (pair[1] - pair[0]).abs())
+            .fold(0.0_f32, f32::max);
+
+        assert!(
+            worst_step < 0.05,
+            "Freeze cut the last causal Gaussian sample by {worst_step}"
+        );
+        assert!(
+            after_freeze.last().copied().unwrap_or(1.0).abs() <= f32::EPSILON,
+            "the held final causal sample did not fade to silence"
         );
     }
 

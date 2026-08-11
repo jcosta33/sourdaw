@@ -1,4 +1,4 @@
-// @wasm-bindgen-dts crate-source: sha256:4c7cc47c32b8f868fbd9099e5aa8121b8a0cf0392331f28800abb8b7bc8bc11d
+// @wasm-bindgen-dts crate-source: sha256:ee95cda3b95c686c92af321c04d9afea66e918ecee15f364a903ab1a728f8c24
 /* tslint:disable */
 /* eslint-disable */
 export const memory: WebAssembly.Memory;
@@ -98,20 +98,6 @@ export const crustinstance_new: (a: number) => number;
 export const crustinstance_process: (a: number, b: number) => number;
 export const crustinstance_reset_true_peak: (a: number) => void;
 export const crustinstance_set_param: (a: number, b: number, c: number, d: number) => void;
-export const __wbg_kneadinstance_free: (a: number, b: number) => void;
-export const kneadinstance_get_f0: (a: number) => number;
-export const kneadinstance_get_input_left_ptr: (a: number) => number;
-export const kneadinstance_get_input_right_ptr: (a: number) => number;
-export const kneadinstance_get_latency_samples: (a: number) => number;
-export const kneadinstance_get_nan_flush_count: (a: number) => number;
-export const kneadinstance_get_periodicity: (a: number) => number;
-export const kneadinstance_get_right_ptr: (a: number) => number;
-export const kneadinstance_is_voiced: (a: number) => number;
-export const kneadinstance_new: (a: number) => number;
-export const kneadinstance_process: (a: number, b: number) => number;
-export const kneadinstance_set_formant_preserve: (a: number, b: number) => void;
-export const kneadinstance_set_retune_speed_ms: (a: number, b: number) => void;
-export const kneadinstance_set_shift_semitones: (a: number, b: number) => void;
 export const __wbg_bacteriainstance_free: (a: number, b: number) => void;
 export const bacteriainstance_add_macro_mapping: (a: number, b: number, c: number, d: number, e: number) => void;
 export const bacteriainstance_add_mod_assignment: (a: number, b: number, c: number, d: number) => void;
@@ -127,6 +113,20 @@ export const bacteriainstance_new: (a: number) => number;
 export const bacteriainstance_process: (a: number, b: number) => number;
 export const bacteriainstance_set_param: (a: number, b: number, c: number, d: number) => void;
 export const init_panic_hook: () => void;
+export const __wbg_kneadinstance_free: (a: number, b: number) => void;
+export const kneadinstance_get_f0: (a: number) => number;
+export const kneadinstance_get_input_left_ptr: (a: number) => number;
+export const kneadinstance_get_input_right_ptr: (a: number) => number;
+export const kneadinstance_get_latency_samples: (a: number) => number;
+export const kneadinstance_get_nan_flush_count: (a: number) => number;
+export const kneadinstance_get_periodicity: (a: number) => number;
+export const kneadinstance_get_right_ptr: (a: number) => number;
+export const kneadinstance_is_voiced: (a: number) => number;
+export const kneadinstance_new: (a: number) => number;
+export const kneadinstance_process: (a: number, b: number) => number;
+export const kneadinstance_set_formant_preserve: (a: number, b: number) => void;
+export const kneadinstance_set_retune_speed_ms: (a: number, b: number) => void;
+export const kneadinstance_set_shift_semitones: (a: number, b: number) => void;
 export const __wbg_crumbsinstance_free: (a: number, b: number) => void;
 export const __wbg_levaininstance_free: (a: number, b: number) => void;
 export const __wbg_proofinstance_free: (a: number, b: number) => void;
