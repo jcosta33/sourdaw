@@ -198,4 +198,19 @@ describe('loading a ProofChamber space preset', () => {
         await undo();
         expect(undoStore.value?.past.length).toBe(0);
     });
+
+    it('unfreezes an already frozen tank when Infinite is selected', async () => {
+        trackStore.set({
+            tracks: [reverbBus({ ...SEEDED, freeze: 1 })],
+            selectedTrackId: TRACK_ID,
+            ghostClips: [],
+        });
+
+        render(<ProofChamberPanel deviceId={DEVICE_ID} />);
+        fireEvent.click(screen.getAllByText('Infinite')[0]!);
+
+        await vi.waitFor(() => {
+            expect(storedParams().freeze).toBe(0);
+        });
+    });
 });
