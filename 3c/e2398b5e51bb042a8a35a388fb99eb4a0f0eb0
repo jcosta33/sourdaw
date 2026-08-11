@@ -1,0 +1,27 @@
+src/modules/Arrangement/useCases/timeOperations/__tests__/executeUndoableInsertTime.spec.ts
+  s_bc88af7d3b054c::t_d9ad911fd84c82 1,3,5
+src/modules/Arrangement/useCases/timeOperations/__tests__/executeUndoableDuplicateTimeRange.spec.ts
+  s_bc88af7d3b054c::t_d9ad911fd84c82 1,3,5
+src/modules/Command/useCases/revertActionGroup.ts
+  s_bc88af7d3b054c::t_0122340666e847 5,70-72
+src/modules/Command/useCases/__tests__/revertActionGroup.spec.ts
+  s_bc88af7d3b054c::t_6705753d65a681 4
+  s_bc88af7d3b054c::t_cad34eeecf8ac4 3,183-192
+  s_bc88af7d3b054c::t_4a9b6eab474e6b 193
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "3ce2398b5e51bb042a8a35a388fb99eb4a0f0eb0",
+  "prompts": {},
+  "sessions": {
+    "s_bc88af7d3b054c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f9b4a-11a2-7f61-8dfb-76eed0eb2a9c",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
