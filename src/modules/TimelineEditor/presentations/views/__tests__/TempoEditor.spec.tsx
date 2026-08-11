@@ -243,14 +243,17 @@ describe('TempoEditor', () => {
         expect(screen.getByTestId('tempo-lock-reason')).toHaveTextContent('ramp');
     });
 
-    it('should disable TAP while the field is locked instead of leaving it doing nothing', () => {
-        // Tap tempo silently early-returned under every lock while still offering
-        // its "Tap to set tempo" tooltip.
-        mockState.tempoField = { ...mapGovernedField, editable: false, lockReason: 'tempo-ramp' };
-
-        render(<TempoEditor />);
+    it('should keep TAP focused but refuse its write when a tempo lock arrives', () => {
+        const { rerender } = render(<TempoEditor />);
         const tapButton = screen.getByLabelText('Tap tempo');
-        expect(tapButton).toBeDisabled();
+        tapButton.focus();
+
+        mockState.tempoField = { ...mapGovernedField, editable: false, lockReason: 'tempo-ramp' };
+        rerender(<TempoEditor />);
+
+        expect(tapButton).toHaveFocus();
+        expect(tapButton).not.toBeDisabled();
+        expect(tapButton).toHaveAttribute('aria-disabled', 'true');
 
         fireEvent.click(tapButton);
         expect(mockState.handleTapTempo).not.toHaveBeenCalled();
