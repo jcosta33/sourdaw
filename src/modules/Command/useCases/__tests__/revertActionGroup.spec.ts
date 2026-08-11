@@ -1,8 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+import { AppActionCommittedError } from '../../errors/AppActionExecutionError';
+import { type UndoEntry } from '../../models/UndoEntry';
 import { revertActionGroup } from '../revertActionGroup';
-
-import type { UndoEntry } from '../../models/UndoEntry';
+import { runUndoRedoExclusive } from '../undoRedo';
 
 const mocks = vi.hoisted(() => ({
     undoStoreValue: {
@@ -33,7 +34,7 @@ vi.mock('../undoTree/undoTreeMoveTo', () => ({
     undoTreeMoveTo: mocks.undoTreeMoveTo,
 }));
 
-function actionEntry(id: string, groupId: string | undefined): UndoEntry {
+function actionEntry(id: string, groupId: string | undefined): Extract<UndoEntry, { kind: 'action' }> {
     return {
         kind: 'action',
         id,
@@ -116,5 +117,78 @@ describe('revertActionGroup', () => {
 
         expect(mocks.executeAppAction).not.toHaveBeenCalled();
         expect(mocks.undoStoreSet).not.toHaveBeenCalled();
+    });
+
+    it('waits behind an in-flight undo mutation before reading or reverting the group', async () => {
+        const group = actionEntry('1', 'g1');
+        mocks.undoStoreValue.value = { past: [group], future: [] };
+        let releaseMutation: (() => void) | undefined;
+        const mutationGate = new Promise<void>((resolve) => {
+            releaseMutation = resolve;
+        });
+        const inFlightMutation = runUndoRedoExclusive(async () => mutationGate);
+
+        const revert = revertActionGroup('g1');
+        await Promise.resolve();
+
+        expect(mocks.executeAppAction).not.toHaveBeenCalled();
+        releaseMutation?.();
+        await Promise.all([inFlightMutation, revert]);
+        expect(mocks.executeAppAction).toHaveBeenCalledExactlyOnceWith(
+            { type: 'toggleRecording' },
+            { skipUndo: true, skipMacroRecording: true }
+        );
+    });
+
+    it('preserves an action committed while a group inverse is in flight', async () => {
+        const other = actionEntry('keep', 'g0');
+        const group = actionEntry('group', 'g1');
+        const concurrent = actionEntry('concurrent', 'g2');
+        mocks.undoStoreValue.value = { past: [other, group], future: [] };
+        mocks.executeAppAction.mockImplementationOnce(() => {
+            mocks.undoStoreValue.value = { past: [other, group, concurrent], future: [] };
+            return Promise.resolve(undefined);
+        });
+
+        await revertActionGroup('g1');
+
+        expect(mocks.undoStoreSet).toHaveBeenCalledWith({
+            past: [other, concurrent],
+            future: [group],
+        });
+        expect(mocks.undoTreeMoveTo).toHaveBeenCalledWith('concurrent');
+    });
+
+    it('moves only successfully reverted members when a mixed group contains an inert entry', async () => {
+        const inert = { ...actionEntry('inert', 'g1'), inverseAction: null } satisfies UndoEntry;
+        const reverted = actionEntry('reverted', 'g1');
+        mocks.undoStoreValue.value = { past: [inert, reverted], future: [] };
+
+        await revertActionGroup('g1');
+
+        expect(mocks.undoStoreSet).toHaveBeenCalledWith({ past: [inert], future: [reverted] });
+    });
+
+    it('commits successful newer inverses before rethrowing an older failure', async () => {
+        const failed = actionEntry('failed', 'g1');
+        const reverted = actionEntry('reverted', 'g1');
+        const failure = new Error('inverse failed');
+        mocks.undoStoreValue.value = { past: [failed, reverted], future: [] };
+        mocks.executeAppAction.mockResolvedValueOnce(undefined).mockRejectedValueOnce(failure);
+
+        await expect(revertActionGroup('g1')).rejects.toBe(failure);
+
+        expect(mocks.undoStoreSet).toHaveBeenCalledWith({ past: [failed], future: [reverted] });
+    });
+
+    it('moves an inverse that committed before its post-commit failure', async () => {
+        const committed = actionEntry('committed', 'g1');
+        const failure = new AppActionCommittedError('toggleRecording', new Error('after commit'));
+        mocks.undoStoreValue.value = { past: [committed], future: [] };
+        mocks.executeAppAction.mockRejectedValueOnce(failure);
+
+        await expect(revertActionGroup('g1')).rejects.toBe(failure);
+
+        expect(mocks.undoStoreSet).toHaveBeenCalledWith({ past: [], future: [committed] });
     });
 });

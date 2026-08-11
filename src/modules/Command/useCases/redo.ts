@@ -16,6 +16,23 @@ function currentEntryId(past: readonly UndoEntry[]): string | null {
     return past.length > 0 ? past[past.length - 1]!.id : null;
 }
 
+function commitRedoTransition(
+    initialFuture: readonly UndoEntry[],
+    retainedFuture: readonly UndoEntry[],
+    pastEntries: readonly UndoEntry[]
+): void {
+    const live = undoStore.value;
+    if (!live) {
+        return;
+    }
+    const retainedIds = new Set(retainedFuture.map((entry) => entry.id));
+    const removedIds = new Set(initialFuture.filter((entry) => !retainedIds.has(entry.id)).map((entry) => entry.id));
+    const past = [...live.past, ...pastEntries];
+    const future = live.future.filter((entry) => !removedIds.has(entry.id));
+    undoStore.set({ past, future });
+    undoTreeMoveTo(currentEntryId(past));
+}
+
 /**
  * What happened when one entry's redo side-effect ran. Audit CC-6 — mirrors
  * `UndoOutcome`: a conflict wrote nothing and the entry stays redoable, while
@@ -138,16 +155,13 @@ async function redoImpl(): Promise<void> {
                 const outcome = await executeActionGroupRedo(groupEntries);
                 if (outcome.status === 'conflict') {
                     if (future.length !== state.future.length) {
-                        undoStore.set({ past: state.past, future });
-                        undoTreeMoveTo(currentEntryId(state.past));
+                        commitRedoTransition(state.future, future, []);
                     }
                     return;
                 }
 
                 future = future.slice(groupEntries.length);
-                const newPast = [...state.past, ...groupEntries];
-                undoStore.set({ past: newPast, future });
-                undoTreeMoveTo(currentEntryId(newPast));
+                commitRedoTransition(state.future, future, groupEntries);
                 if (outcome.status === 'committed') {
                     throw outcome.error;
                 }
@@ -162,20 +176,14 @@ async function redoImpl(): Promise<void> {
             // and remains redoable. Only a purge of not-applied entries made
             // earlier in this scan needs persisting.
             if (future.length !== state.future.length) {
-                undoStore.set({ past: state.past, future });
-                undoTreeMoveTo(currentEntryId(state.past));
+                commitRedoTransition(state.future, future, []);
             }
             return;
         }
 
         future = remainingFuture;
         if (outcome.status === 'applied' || outcome.status === 'committed') {
-            const newPast = [...state.past, entry];
-            undoStore.set({
-                past: newPast,
-                future,
-            });
-            undoTreeMoveTo(currentEntryId(newPast));
+            commitRedoTransition(state.future, future, [entry]);
             if (outcome.status === 'committed') {
                 throw outcome.error;
             }
@@ -186,8 +194,7 @@ async function redoImpl(): Promise<void> {
 
     // The whole future stack was not-applied: persist the purge so the wedge is gone.
     if (future.length !== state.future.length) {
-        undoStore.set({ past: state.past, future });
-        undoTreeMoveTo(currentEntryId(state.past));
+        commitRedoTransition(state.future, future, []);
     }
 }
 
