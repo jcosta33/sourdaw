@@ -1,0 +1,14 @@
+tests/e2e/crustPresetSelectTestId.spec.ts
+  h_1228e573df1f42 1-72
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "894f435465d16ad36b716ff8263bc4db1573bb1d",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
