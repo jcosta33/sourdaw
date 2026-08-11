@@ -78,6 +78,7 @@ import {
     markActionHistoryEntryReverted,
     recordActionHistoryEntry,
     clearActionHistory as clearCrdtActionHistory,
+    getDrumPreviewBranchHandlers,
     registerCrdtStorageRuntime,
 } from '#/modules/CrdtDocument/useCases';
 import { initCrumbsDeviceStatePersistence, prepareCrumbsEngine } from '#/modules/Crumbs/useCases';
@@ -399,6 +400,7 @@ registerHandlerMap(getAiMidiHandlers());
 registerHandlerMap(getAiOrganizationHandlers());
 registerHandlerMap(getChordTrackHandlers());
 registerHandlerMap(getMidiNoteTransformHandlers());
+registerHandlerMap(getDrumPreviewBranchHandlers());
 registerHandlerMap(getMidiGrooveHandlers());
 registerHandlerMap(getControlSurfaceHandlers());
 registerHandlerMap(getScratchPadHandlers());

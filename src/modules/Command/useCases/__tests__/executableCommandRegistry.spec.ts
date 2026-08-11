@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { getArrangementHandlers } from '#/modules/Arrangement/useCases';
 import { getAudioRenderingHandlers } from '#/modules/AudioRendering/useCases';
 import { getAutomationHandlers } from '#/modules/Automation/useCases';
+import { getDrumPreviewBranchHandlers } from '#/modules/CrdtDocument/useCases';
 import { getMidiNoteTransformHandlers } from '#/modules/MIDI/useCases';
 import { getTransportHandlers } from '#/modules/Transport/useCases';
 
@@ -370,6 +371,32 @@ const EXPECTED_COMMANDS = [
             },
         },
         ['clipId', 'maximumOverlapMs'],
+        'broad-reversible',
+        true
+    ),
+    expectedCommand(
+        'createDrumPreviewBranches',
+        'Create exactly three app-owned preview branches for one admitted eight-bar drum section while preserving Kick and varying only Snare and Hi-Hat programming.',
+        {
+            sectionId: {
+                type: 'string',
+                description: 'Exact application-admitted eight-bar section ID',
+            },
+            candidateCount: {
+                type: 'number',
+                enum: [3],
+                description: 'Exactly three candidates',
+            },
+            varyingRoles: {
+                type: 'array',
+                items: { type: 'string', enum: ['snare', 'hi-hat'] },
+                minItems: 2,
+                maxItems: 2,
+                uniqueItems: true,
+                description: 'Exact mutable drum roles, ordered Snare then Hi-Hat',
+            },
+        },
+        ['sectionId', 'candidateCount', 'varyingRoles'],
         'broad-reversible',
         true
     ),
@@ -1529,6 +1556,12 @@ const EXPECTED_GROUNDING = [
         ],
     },
     {
+        actionType: 'createDrumPreviewBranches',
+        intentPhrases: ['create three drum arrangement candidates', 'create drum preview branches'],
+        targetRules: [],
+        valueRules: [],
+    },
+    {
         actionType: 'copyMidiArticulations',
         intentPhrases: ['copy articulation', 'copy midi articulation', 'transfer articulation'],
         targetRules: [
@@ -2252,6 +2285,7 @@ describe('executable command registry', () => {
             getArrangementHandlers(),
             getAudioRenderingHandlers(),
             getAutomationHandlers(),
+            getDrumPreviewBranchHandlers(),
             getMidiNoteTransformHandlers(),
             getTransportHandlers(),
         ];

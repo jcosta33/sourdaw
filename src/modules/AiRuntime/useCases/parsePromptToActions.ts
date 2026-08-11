@@ -19,6 +19,7 @@ import { bridgeGroundedLlmToolCalls } from './agentReference/bridgeGroundedLlmTo
 import { getArticulationTransferPromptScope } from './agentReference/getArticulationTransferPromptScope';
 import { getBackingVocalPlatePromptScope } from './agentReference/getBackingVocalPlatePromptScope';
 import { getBassProcessingCopyPromptScope } from './agentReference/getBassProcessingCopyPromptScope';
+import { getDrumPreviewBranchesPromptScope } from './agentReference/getDrumPreviewBranchesPromptScope';
 import { getDrumRoutingPromptScope } from './agentReference/getDrumRoutingPromptScope';
 import { getMidiOverlapTransformPromptScope } from './agentReference/getMidiOverlapTransformPromptScope';
 import { getSidechainRoutingPromptScope } from './agentReference/getSidechainRoutingPromptScope';
@@ -122,6 +123,7 @@ export const parsePromptToActions = inject({ logger })(
             // sendChatMessage remains responsible for confirmation and execution.
             try {
                 const drumRoutingScope = getDrumRoutingPromptScope(prompt, context, projectRevision);
+                const drumPreviewBranchesScope = getDrumPreviewBranchesPromptScope(prompt, context, projectRevision);
                 const midiOverlapTransformScope = getMidiOverlapTransformPromptScope(prompt, context, projectRevision);
                 const backingVocalPlateScope = getBackingVocalPlatePromptScope(prompt, context, projectRevision);
                 const bassProcessingCopyScope = getBassProcessingCopyPromptScope(prompt, context, projectRevision);
@@ -130,6 +132,8 @@ export const parsePromptToActions = inject({ logger })(
                     articulationTransferScope.status === 'request' ? articulationTransferScope.capability : undefined;
                 const drumRoutingCapability =
                     drumRoutingScope.status === 'request' ? drumRoutingScope.capability : undefined;
+                const drumPreviewBranchesCapability =
+                    drumPreviewBranchesScope.status === 'request' ? drumPreviewBranchesScope.capability : undefined;
                 const midiOverlapTransformCapability =
                     midiOverlapTransformScope.status === 'request' ? midiOverlapTransformScope.capability : undefined;
                 const backingVocalPlateCapability =
@@ -154,6 +158,7 @@ export const parsePromptToActions = inject({ logger })(
                         backingVocalPlateCapability,
                         bassProcessingCopyCapability,
                         drumRoutingCapability,
+                        drumPreviewBranchesCapability,
                         midiOverlapTransformCapability,
                         sidechainRoutingCapability,
                         wholeProjectVibeMixCapability,
@@ -247,6 +252,7 @@ export const parsePromptToActions = inject({ logger })(
                         appOwnedRenderTailSeconds: bridged.appOwnedRenderTailSeconds,
                         bassProcessingCopyScope: bridged.bassProcessingCopyScope,
                         midiOverlapTransformScope: bridged.midiOverlapTransformScope,
+                        drumPreviewBranchesScope: bridged.drumPreviewBranchesScope,
                     });
                     if (guarded.status === 'rejected') {
                         logger.warn(`[AI] Rejected LLM action batch because ${guarded.reason}`);

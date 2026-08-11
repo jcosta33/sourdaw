@@ -25,6 +25,10 @@ import {
 } from './getBassProcessingCopyPromptScope';
 import { getBulkDeviceInsertionTrackScope } from './getBulkDeviceInsertionTrackScope';
 import { getDeviceParameterPromptScope } from './getDeviceParameterPromptScope';
+import {
+    getDrumPreviewBranchesPromptScope,
+    type DrumPreviewBranchesRequestScope,
+} from './getDrumPreviewBranchesPromptScope';
 import { getDrumRoutingPromptScope } from './getDrumRoutingPromptScope';
 import {
     getMidiOverlapTransformPromptScope,
@@ -71,6 +75,7 @@ type BridgeGroundedLlmToolCallsResult = LlmActionBridgeResult & {
     appOwnedRenderTailSeconds?: number;
     bassProcessingCopyScope?: BassProcessingCopyRequestScope;
     midiOverlapTransformScope?: MidiOverlapTransformRequestScope;
+    drumPreviewBranchesScope?: DrumPreviewBranchesRequestScope;
     batchLocalActionIdentities?: BatchLocalActionIdentity[];
 };
 
@@ -4038,6 +4043,41 @@ export function bridgeGroundedLlmToolCalls({
             return providerTransform ? [providerTransform] : [];
         });
     }
+    const drumPreviewBranchesScope = getDrumPreviewBranchesPromptScope(prompt, context);
+    if (drumPreviewBranchesScope.status === 'invalid') {
+        return { actions: [], rejections: [rejection(0, '<batch>', drumPreviewBranchesScope.reason)] };
+    }
+    if (drumPreviewBranchesScope.status === 'request') {
+        const providerActions = calls.filter((call) => call.name === 'createDrumPreviewBranches');
+        const providerAction = providerActions[0];
+        if (!providerAction) {
+            return {
+                actions: [],
+                rejections: [
+                    rejection(0, '<batch>', 'Provider plan does not match the complete EX-05 preview-branch request'),
+                ],
+            };
+        }
+        const varyingRoles = providerAction.arguments.varyingRoles;
+        const providerPlanMatches =
+            calls.length === 1 &&
+            providerActions.length === 1 &&
+            providerAction.arguments.sectionId === drumPreviewBranchesScope.section.id &&
+            providerAction.arguments.candidateCount === 3 &&
+            Array.isArray(varyingRoles) &&
+            varyingRoles.length === 2 &&
+            varyingRoles[0] === 'snare' &&
+            varyingRoles[1] === 'hi-hat';
+        if (!providerPlanMatches) {
+            return {
+                actions: [],
+                rejections: [
+                    rejection(0, '<batch>', 'Provider plan does not match the complete EX-05 preview-branch request'),
+                ],
+            };
+        }
+        effectiveCalls = [providerAction];
+    }
     const drumRoutingScope = getDrumRoutingPromptScope(prompt, context);
     if (drumRoutingScope.status === 'invalid') {
         return { actions: [], rejections: [rejection(0, '<batch>', drumRoutingScope.reason)] };
@@ -4297,7 +4337,8 @@ export function bridgeGroundedLlmToolCalls({
         let grounded: ToolCallResult | LlmActionRejection;
         if (
             (bassProcessingCopyScope.status === 'request' && call.name === 'addAdjustmentRegion') ||
-            (midiOverlapTransformScope.status === 'request' && call.name === 'removeShortMidiOverlaps')
+            (midiOverlapTransformScope.status === 'request' && call.name === 'removeShortMidiOverlaps') ||
+            (drumPreviewBranchesScope.status === 'request' && call.name === 'createDrumPreviewBranches')
         ) {
             grounded = call;
         } else {
@@ -4402,6 +4443,7 @@ export function bridgeGroundedLlmToolCalls({
             actions: bridged.actions,
             ...(bassProcessingCopyScope.status === 'request' ? { bassProcessingCopyScope } : {}),
             ...(midiOverlapTransformScope.status === 'request' ? { midiOverlapTransformScope } : {}),
+            ...(drumPreviewBranchesScope.status === 'request' ? { drumPreviewBranchesScope } : {}),
             rejections,
         };
     }
@@ -4412,6 +4454,7 @@ export function bridgeGroundedLlmToolCalls({
         actions: bridged.actions,
         ...(bassProcessingCopyScope.status === 'request' ? { bassProcessingCopyScope } : {}),
         ...(midiOverlapTransformScope.status === 'request' ? { midiOverlapTransformScope } : {}),
+        ...(drumPreviewBranchesScope.status === 'request' ? { drumPreviewBranchesScope } : {}),
         batchLocalActionIdentities,
         rejections,
     };

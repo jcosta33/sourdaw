@@ -1,28 +1,23 @@
 import { type DocId } from '../../models/CrdtDocumentTypes';
 import { type BranchStoreState } from '../../stores/branchStore';
-import { runCrdtPersistenceOperation } from '../runCrdtPersistenceOperation';
 
 import { runBranchTransition } from './runBranchTransition';
 
-type RunBranchLineageTransitionInput<TResult> = {
+type RunBranchDocumentTransitionInput<TResult> = {
     affectedDocIds: DocId[];
     apply: () => { nextState?: BranchStoreState; result: TResult };
-    from: string;
     previousState: BranchStoreState;
-    to: string;
 };
 
-export function runBranchLineageTransition<TResult>({
+export function runBranchDocumentTransition<TResult>({
     affectedDocIds,
     apply,
-    from,
     previousState,
-    to,
-}: RunBranchLineageTransitionInput<TResult>): Promise<TResult> {
+}: RunBranchDocumentTransitionInput<TResult>): Promise<TResult> {
     return runBranchTransition({
         affectedDocIds,
         apply,
         previousState,
-        persistenceOperation: () => runCrdtPersistenceOperation({ type: 'root-lineage-transition', from, to }),
+        persistenceOperation: () => Promise.resolve(),
     });
 }
