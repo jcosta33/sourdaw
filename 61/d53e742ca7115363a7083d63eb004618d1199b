@@ -1,0 +1,31 @@
+src/modules/Arrangement/useCases/index.ts
+  s_bc88af7d3b054c::t_147bd6f215d8ed 21
+src/modules/Crumbs/presentations/views/__tests__/CrumbsPanel.spec.tsx
+  s_bc88af7d3b054c::t_5c5db037b5c67f 36,40-43,81,87,89-90,93
+src/modules/Grinder/presentations/views/__tests__/GrinderPanel.spec.tsx
+  s_bc88af7d3b054c::t_5c5db037b5c67f 23,25,30-33,390,397,399,402,404,408-409
+  s_bc88af7d3b054c::t_4337dd11e48792 405-407
+  s_bc88af7d3b054c::t_e6b2b0dc6c8457 410-411
+src/modules/Arrangement/useCases/getEligibleDeviceParameterValues.ts
+  s_bc88af7d3b054c::t_147bd6f215d8ed 1-28
+src/modules/Crumbs/useCases/hydrateCrumbsParametersFromProject.ts
+  s_bc88af7d3b054c::t_147bd6f215d8ed 1,6-7,10
+src/modules/Grinder/useCases/hydrateGrinderPatchFromProject.ts
+  s_bc88af7d3b054c::t_147bd6f215d8ed 1,6-7,10
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "61d53e742ca7115363a7083d63eb004618d1199b",
+  "prompts": {},
+  "sessions": {
+    "s_bc88af7d3b054c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f9b4a-11a2-7f61-8dfb-76eed0eb2a9c",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
