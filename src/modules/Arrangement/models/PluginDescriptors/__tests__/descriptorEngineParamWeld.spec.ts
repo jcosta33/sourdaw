@@ -12,6 +12,7 @@ import {
 import { DUTCH_OVEN_ENGINE_BY_WIRE_VALUE, NATIVE_DSP_ENGINE_GAPS } from '#/utils/nativeDspEngineGaps';
 
 import { BUILTIN_PLUGINS } from '../../DeviceParameter';
+import { isDeviceParameterAutomatable, isInternalDeviceParameter } from '../../DeviceParameterLaw';
 
 /**
  * A descriptor is a contract with an engine, and nothing checked that the
@@ -568,6 +569,7 @@ type NativeDescriptor = {
     readonly deviceType: NativeDspDeviceType;
     readonly paramIds: readonly string[];
     readonly legalSets: ReadonlyMap<string, readonly number[]>;
+    readonly internalParameterValues: ReadonlyMap<string, number>;
 };
 
 const NATIVE_DESCRIPTORS: readonly NativeDescriptor[] = BUILTIN_PLUGINS.flatMap((descriptor) => {
@@ -581,7 +583,15 @@ const NATIVE_DESCRIPTORS: readonly NativeDescriptor[] = BUILTIN_PLUGINS.flatMap(
             legalSets.set(param.id, param.legalSet.values);
         }
     }
-    return [{ deviceType, paramIds: descriptor.parameters.map((param) => param.id), legalSets }];
+    const internalParameterValues = new Map(Object.entries(descriptor.internalParameterValues ?? {}));
+    return [
+        {
+            deviceType,
+            paramIds: [...descriptor.parameters.map((param) => param.id), ...internalParameterValues.keys()],
+            legalSets,
+            internalParameterValues,
+        },
+    ];
 });
 
 const ENGINE_FILES = new Map(NATIVE_DSP_DEVICE_TYPES.map((deviceType) => [deviceType, resolveEngineFiles(deviceType)]));
@@ -702,8 +712,25 @@ describe('descriptor parameter ids are welded to engine set_param arms', () => {
 
         expect(shared.has('algorithm')).toBe(true); // lib.rs, before the forward
         expect(shared.has('vintage')).toBe(true);
+        expect(shared.has('fdn_damping_version')).toBe(true);
         expect(shared.has('matrix')).toBe(false);
         expect(shared.has('dispersion')).toBe(false);
+    });
+
+    it('welds private descriptor defaults to exact supported engine wire values', () => {
+        const descriptor = NATIVE_DESCRIPTORS.find((entry) => entry.deviceType === 'dutch-oven')!;
+        const declaredVersion = descriptor.internalParameterValues.get('fdn_damping_version');
+        const source = readSource(`${PROOF_CHAMBER}/lib.rs`);
+        const armStart = source.indexOf('"fdn_damping_version" =>');
+        const arm = readBalancedBlock(source, source.indexOf('{', armStart));
+        const supportedVersions = [...arm.matchAll(/(\d+)\.0\s*=>\s*(\d+)/g)]
+            .filter((match) => match[1] === match[2])
+            .map((match) => Number(match[1]));
+
+        expect(declaredVersion).toBe(2);
+        expect(supportedVersions).toContain(declaredVersion);
+        expect(isInternalDeviceParameter({ deviceType: 'dutch-oven', paramId: 'fdn_damping_version' })).toBe(true);
+        expect(isDeviceParameterAutomatable({ deviceType: 'dutch-oven', paramId: 'fdn_damping_version' })).toBe(false);
     });
 
     it('does not let an out-of-band sub-tree vouch for a device-level id', () => {
