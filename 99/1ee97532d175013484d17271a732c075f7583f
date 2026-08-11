@@ -1,0 +1,22 @@
+src/modules/Gluten/useCases/glutenParamBridge/hydrateGlutenPatchFromProject.ts
+  s_bc88af7d3b054c::t_afd8b63616c321 89
+src/modules/Gluten/presentations/views/__tests__/glutenProjectHydration.spec.tsx
+  s_bc88af7d3b054c::t_a929af3a05dfdc 7,83-93
+  s_bc88af7d3b054c::t_f3309a67f40b33 94
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "991ee97532d175013484d17271a732c075f7583f",
+  "prompts": {},
+  "sessions": {
+    "s_bc88af7d3b054c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f9b4a-11a2-7f61-8dfb-76eed0eb2a9c",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
