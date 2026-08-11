@@ -1,6 +1,6 @@
 import { type ReactElement, type CSSProperties, useState, useRef, useEffect, useId, type KeyboardEvent } from 'react';
 
-import { X, Trash2, Bot, User, ChevronRight, ChevronDown, Zap, Check } from 'lucide-react';
+import { X, Trash2, Bot, User, ChevronRight, ChevronDown, Zap, Check, RotateCw } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 
@@ -152,6 +152,8 @@ const ChatMessageItem = ({
 
     const pendingConfirmationId =
         msg.pendingActionConfirmationStatus === 'proposed' ? msg.pendingActionConfirmationId : undefined;
+    const retryableFollowUpId =
+        msg.pendingActionFollowUpStatus === 'retryable' ? msg.pendingActionConfirmationId : undefined;
 
     return (
         <div className={cn('flex w-full flex-col', msg.role === 'user' ? 'items-end' : 'items-start')}>
@@ -208,6 +210,20 @@ const ChatMessageItem = ({
                         >
                             <X className="size-3" />
                             Cancel
+                        </Button>
+                    </div>
+                ) : null}
+                {retryableFollowUpId ? (
+                    <div className="mt-3 flex items-center gap-2 border-t border-emerald-500/20 pt-2">
+                        <Button
+                            size="xs"
+                            variant="secondary"
+                            onClick={() => onConfirmPendingActions(retryableFollowUpId)}
+                            aria-label="Retry missing section renders"
+                            className="h-7 gap-1.5 text-[11px]"
+                        >
+                            <RotateCw className="size-3" />
+                            Retry renders
                         </Button>
                     </div>
                 ) : null}

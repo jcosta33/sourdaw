@@ -15,7 +15,12 @@ type BridgeBackingVocalPlatePlanInput = {
 type BridgeBackingVocalPlatePlanResult =
     | { status: 'none' }
     | { status: 'rejected'; reason: string }
-    | { status: 'accepted'; actions: RuntimeAction[]; identities: BatchLocalActionIdentity[] };
+    | {
+          status: 'accepted';
+          actions: RuntimeAction[];
+          identities: BatchLocalActionIdentity[];
+          renderTailSeconds: number;
+      };
 
 const EX_01_ONLY_TOOL_NAMES = new Set(['automateSendRanges', 'renderProjectSections']);
 
@@ -155,5 +160,6 @@ export function bridgeBackingVocalPlatePlan({
             { actionType: 'addDevice', actionOrdinal: 0, deviceId: filterDeviceId },
             { actionType: 'addDevice', actionOrdinal: 1, deviceId: plateDeviceId },
         ],
+        renderTailSeconds: values.renderTailSeconds,
     };
 }

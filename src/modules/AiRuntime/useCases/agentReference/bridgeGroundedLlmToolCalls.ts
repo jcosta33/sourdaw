@@ -60,6 +60,7 @@ type GroundingCatalog = ReturnType<typeof getExecutableAppActionGroundingCatalog
 type GroundingRules = NonNullable<ReturnType<typeof getExecutableAppActionGroundingRules>>;
 
 type BridgeGroundedLlmToolCallsResult = LlmActionBridgeResult & {
+    appOwnedRenderTailSeconds?: number;
     batchLocalActionIdentities?: BatchLocalActionIdentity[];
 };
 
@@ -3890,6 +3891,7 @@ export function bridgeGroundedLlmToolCalls({
     if (backingVocalPlatePlan.status === 'accepted') {
         return {
             actions: backingVocalPlatePlan.actions,
+            appOwnedRenderTailSeconds: backingVocalPlatePlan.renderTailSeconds,
             batchLocalActionIdentities: backingVocalPlatePlan.identities,
             rejections: [],
         };

@@ -6,3 +6,4 @@ export { normalizeExportBuffer } from './normalizeExportBuffer';
 export { clearAgentSectionRenderArtifacts } from './clearAgentSectionRenderArtifacts';
 export { getAgentSectionRenderArtifacts } from './getAgentSectionRenderArtifacts';
 export { getAudioRenderingHandlers } from './getAudioRenderingHandlers';
+export { retryAgentProjectSectionRenders } from './retryAgentProjectSectionRenders';

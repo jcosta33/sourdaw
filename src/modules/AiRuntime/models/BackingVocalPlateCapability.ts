@@ -31,7 +31,7 @@ export type BackingVocalPlateCapability = {
         automationTailBars: 4;
         automationTargetLevelDb: -10;
         renderSampleRate: 44_100;
-        renderTailSeconds: 0;
+        renderTailSeconds: number;
     };
     orderedToolPlan: BackingVocalPlateProviderCall[];
 };

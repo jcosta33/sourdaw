@@ -1,4 +1,5 @@
 import { logger } from '#/infra/logger/appLogger';
+import { getAgentSectionRenderArtifacts, retryAgentProjectSectionRenders } from '#/modules/AudioRendering/useCases';
 import { executeAppActionBatch, generateGroupId } from '#/modules/Command/useCases';
 import { captureProjectRevision } from '#/modules/CrdtDocument/useCases';
 
@@ -11,6 +12,7 @@ import {
     recordPendingActionExecution,
     type PendingActionExecution,
     type PendingAppActionConfirmation,
+    updatePendingActionFollowUp,
     updatePendingActionConfirmationStatus,
 } from '../stores/pendingActionConfirmationStore';
 
@@ -91,12 +93,106 @@ function formatExecutionReceipt(
     return `${executedActions}\n\nProtected unchanged: ${protectedUnchanged}`;
 }
 
+function getIncompleteSectionRenderJobs(confirmation: PendingAppActionConfirmation) {
+    const renderAction = confirmation.approvalSnapshot.actions.find(
+        (action) => action.type === 'renderProjectSections'
+    );
+    if (renderAction?.type !== 'renderProjectSections' || !renderAction.payload.jobs) {
+        return null;
+    }
+    const artifactJobIds = new Set(getAgentSectionRenderArtifacts().map((artifact) => artifact.jobId));
+    const missingJobIds = renderAction.payload.jobs
+        .filter((job) => !artifactJobIds.has(job.jobId))
+        .map((job) => job.jobId);
+    return missingJobIds.length > 0 ? { jobs: renderAction.payload.jobs, missingJobIds } : null;
+}
+
+async function retryCommittedSectionRenders(
+    confirmation: PendingAppActionConfirmation
+): ConfirmPendingChatActionsOutput {
+    if (chatStore.value?.isGenerating === true) {
+        return { status: 'busy' };
+    }
+    const followUp = getIncompleteSectionRenderJobs(confirmation);
+    if (!followUp) {
+        updatePendingActionFollowUp({ confirmationId: confirmation.id, error: null, status: 'complete' });
+        updatePendingActionConfirmationStatus({ confirmationId: confirmation.id, status: 'executed' });
+        updateChatMessage(confirmation.assistantMessageId, {
+            pendingActionFollowUpStatus: 'complete',
+            error: undefined,
+            content: `Applied after confirmation:\n\n${formatExecutionReceipt(
+                confirmation.executedActions,
+                confirmation
+            )}\n\nAll section render artifacts are complete; project actions were not replayed.`,
+        });
+        return { status: 'executed' };
+    }
+
+    const sourceRevision = confirmation.followUpProjectRevision;
+    if (!sourceRevision || captureProjectRevision() !== sourceRevision) {
+        const reason =
+            'Project changed after the committed render receipt; the missing original artifacts cannot be recreated safely.';
+        updatePendingActionFollowUp({ confirmationId: confirmation.id, error: reason, status: 'failed' });
+        updatePendingActionConfirmationStatus({ confirmationId: confirmation.id, status: 'executed', error: reason });
+        updateChatMessage(confirmation.assistantMessageId, {
+            pendingActionConfirmationStatus: 'executed',
+            pendingActionFollowUpStatus: 'failed',
+            error: reason,
+            content: `The project changes remain committed, but the missing section renders were not retried: ${reason}`,
+        });
+        return { status: 'failed', reason };
+    }
+
+    updatePendingActionFollowUp({ confirmationId: confirmation.id, status: 'running' });
+    updateChatMessage(confirmation.assistantMessageId, { pendingActionFollowUpStatus: 'running' });
+    setChatGenerating(true);
+    try {
+        await retryAgentProjectSectionRenders({ jobs: followUp.jobs, sourceRevision });
+        const remaining = getIncompleteSectionRenderJobs(confirmation);
+        if (remaining) {
+            throw new Error(`Section render jobs remain incomplete: ${remaining.missingJobIds.join(', ')}`);
+        }
+    } catch (error) {
+        const reason = error instanceof Error ? error.message : String(error);
+        updatePendingActionFollowUp({ confirmationId: confirmation.id, error: reason, status: 'retryable' });
+        updatePendingActionConfirmationStatus({ confirmationId: confirmation.id, status: 'executed', error: reason });
+        updateChatMessage(confirmation.assistantMessageId, {
+            pendingActionConfirmationStatus: 'executed',
+            pendingActionFollowUpStatus: 'retryable',
+            error: reason,
+            content: `Applied after confirmation:\n\n${formatExecutionReceipt(
+                confirmation.executedActions,
+                confirmation
+            )}\n\nThe project actions remain committed. Missing section renders are still incomplete: ${reason}. Retry missing renders without replaying the project actions.`,
+        });
+        return { status: 'failed', reason };
+    } finally {
+        setChatGenerating(false);
+    }
+
+    updatePendingActionFollowUp({ confirmationId: confirmation.id, error: null, status: 'complete' });
+    updatePendingActionConfirmationStatus({ confirmationId: confirmation.id, status: 'executed' });
+    updateChatMessage(confirmation.assistantMessageId, {
+        pendingActionConfirmationStatus: 'executed',
+        pendingActionFollowUpStatus: 'complete',
+        error: undefined,
+        content: `Applied after confirmation:\n\n${formatExecutionReceipt(
+            confirmation.executedActions,
+            confirmation
+        )}\n\nMissing section render artifacts completed without replaying project actions.`,
+    });
+    return { status: 'executed' };
+}
+
 export async function confirmPendingChatActions(
     input: ConfirmPendingChatActionsInput
 ): ConfirmPendingChatActionsOutput {
     const confirmation = getPendingActionConfirmation(input.confirmationId);
     if (!confirmation) {
         return { status: 'missing' };
+    }
+    if (confirmation.status === 'executed' && confirmation.followUpStatus === 'retryable') {
+        return retryCommittedSectionRenders(confirmation);
     }
     if (confirmation.status !== 'proposed') {
         return { status: 'not_pending', currentStatus: confirmation.status };
@@ -207,15 +303,28 @@ export async function confirmPendingChatActions(
                 executedLabels.map((entry) => entry.actionType)
             );
             updatePendingActionConfirmationStatus({ confirmationId: confirmation.id, status: 'executed' });
+            const incompleteSectionRenders = getIncompleteSectionRenderJobs(confirmation);
+            if (incompleteSectionRenders && batchResult.status === 'committed-with-warning') {
+                updatePendingActionFollowUp({
+                    confirmationId: confirmation.id,
+                    error: batchResult.warning,
+                    projectRevision: captureProjectRevision(),
+                    status: 'retryable',
+                });
+            }
             let content = `Executed after confirmation:\n\n${executionReceipt}`;
             if (batchResult.status === 'committed-with-warning') {
                 content = `Applied after confirmation:\n\n${executionReceipt}\n\nThe project change committed with a follow-up warning: ${batchResult.warning}. Do not retry these confirmed actions.`;
+                if (incompleteSectionRenders) {
+                    content = `Applied after confirmation:\n\n${executionReceipt}\n\nThe project change committed with a follow-up warning: ${batchResult.warning}. Do not replay the confirmed project actions. Retry missing renders below; only receipt-bound missing artifacts will run.`;
+                }
             }
             if (batchResult.status === 'executed-with-warning') {
                 content = `Executed after confirmation:\n\n${executionReceipt}\n\nThe runtime command executed with a follow-up warning: ${batchResult.warning}. Do not retry these confirmed actions.`;
             }
             updateChatMessage(confirmation.assistantMessageId, {
                 pendingActionConfirmationStatus: 'executed',
+                pendingActionFollowUpStatus: incompleteSectionRenders ? 'retryable' : undefined,
                 error: warning,
                 content,
             });

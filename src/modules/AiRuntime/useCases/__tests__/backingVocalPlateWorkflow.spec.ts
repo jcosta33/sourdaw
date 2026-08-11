@@ -2,7 +2,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { configureAutomergeStoragePort } from '#/infra/store/storage/createAutomergeStorage';
 import { markerStore, trackStore, type Track } from '#/modules/Arrangement/stores';
-import { getArrangementHandlers, setArrangementEventBus } from '#/modules/Arrangement/useCases';
+import { getArrangementHandlers, getPluginById, setArrangementEventBus } from '#/modules/Arrangement/useCases';
+import { getDeviceChainTailSeconds } from '#/modules/AudioEngine/useCases';
 import {
     clearAgentSectionRenderArtifacts,
     getAgentSectionRenderArtifacts,
@@ -14,6 +15,7 @@ import { clearHandlerRegistry, macroStore, registerHandlerMap, undoStore } from 
 import {
     clearUndoHistory,
     executeAppAction,
+    getExecutableAppActionToolSchemas,
     redo,
     resetActionReplayAuthority,
     setActionHistoryMetadataPort,
@@ -51,23 +53,6 @@ const providerPlan = [
         arguments: {
             trackId: '$backing-vocal-plate',
             deviceType: 'builtin-filter',
-            binding: 'backing-vocal-plate-filter',
-        },
-    },
-    {
-        name: 'setDeviceParameter',
-        arguments: {
-            deviceId: '$backing-vocal-plate-filter',
-            paramId: 'filter-type',
-            value: 1,
-        },
-    },
-    {
-        name: 'setDeviceParameter',
-        arguments: {
-            deviceId: '$backing-vocal-plate-filter',
-            paramId: 'filter-cutoff',
-            value: 250,
         },
     },
     {
@@ -75,7 +60,6 @@ const providerPlan = [
         arguments: {
             trackId: '$backing-vocal-plate',
             deviceType: 'dutch-oven',
-            afterDeviceId: '$backing-vocal-plate-filter',
         },
     },
     {
@@ -338,6 +322,27 @@ function createTestAudioBuffer(sampleRate = 44_100): AudioBuffer {
     };
 }
 
+function getExpectedPlateTailSeconds(): number {
+    const descriptor = getPluginById('dutch-oven');
+    if (!descriptor?.tail) {
+        throw new Error('Expected Dutch Oven tail declaration');
+    }
+    const parameterValues = Object.fromEntries(
+        descriptor.parameters.map((parameter) => [parameter.id, parameter.defaultValue])
+    );
+    return getDeviceChainTailSeconds({
+        devices: [
+            {
+                id: 'expected-dutch-oven',
+                type: descriptor.id,
+                parameterValues,
+                bypassed: false,
+            },
+        ],
+        tailForDeviceType: (deviceType) => getPluginById(deviceType)?.tail,
+    }).seconds;
+}
+
 describe('backing-vocal plate workflow', () => {
     beforeEach(() => {
         vi.clearAllMocks();
@@ -451,6 +456,63 @@ describe('backing-vocal plate workflow', () => {
                 { id: 'device-bgv-low-delay', name: 'Backing Vocal Low Backing Low Delay' },
             ])
         );
+    });
+
+    it('publishes a schema-valid provider plan while keeping device identities application-owned', async () => {
+        await sendChatMessage(PROMPT);
+
+        const plan = createProviderPlanFromUserMessage(getWebLlmUserMessage());
+        const schemas = new Map<string, { properties: Readonly<Record<string, unknown>> }>();
+        for (const schema of getExecutableAppActionToolSchemas()) {
+            schemas.set(schema.function.name, schema.function.parameters);
+        }
+        for (const call of plan) {
+            const schema = schemas.get(call.name);
+            expect(schema, `Missing provider schema for ${call.name}`).toBeDefined();
+            expect(Object.keys(call.arguments).filter((key) => !(key in (schema?.properties ?? {})))).toEqual([]);
+        }
+        expect(plan.filter((call) => 'binding' in call.arguments).map((call) => call.name)).toEqual(['createBus']);
+        expect(JSON.stringify(plan)).not.toContain('$backing-vocal-plate-filter');
+    });
+
+    it('includes every qualifier-named chorus while excluding the pre-chorus', async () => {
+        markerStore.set({
+            markers: [],
+            sections: [
+                { id: 'section-pre', name: 'Pre-Chorus', startBeat: 0, endBeat: 16, color: '#ffffff' },
+                { id: 'section-one', name: 'Chorus One', startBeat: 16, endBeat: 48, color: '#ffffff' },
+                { id: 'section-big', name: 'Big Chorus', startBeat: 48, endBeat: 80, color: '#ffffff' },
+                { id: 'section-final', name: 'Final Chorus', startBeat: 80, endBeat: 112, color: '#ffffff' },
+                { id: 'section-a', name: 'Chorus A', startBeat: 112, endBeat: 144, color: '#ffffff' },
+            ],
+        });
+
+        await sendChatMessage(PROMPT);
+
+        const confirmation = getPendingActionConfirmation(getConfirmationId());
+        const renderAction = confirmation?.actions.find((action) => action.type === 'renderProjectSections');
+        expect(renderAction?.type === 'renderProjectSections' ? renderAction.payload.sectionIds : []).toEqual([
+            'section-one',
+            'section-big',
+            'section-final',
+            'section-a',
+        ]);
+    });
+
+    it('fails closed when a chorus-like section name cannot be classified', async () => {
+        markerStore.set({
+            markers: [],
+            sections: [
+                { id: 'section-one', name: 'Chorus One', startBeat: 16, endBeat: 48, color: '#ffffff' },
+                { id: 'section-ambiguous', name: 'ChorusA', startBeat: 48, endBeat: 80, color: '#ffffff' },
+            ],
+        });
+
+        await sendChatMessage(PROMPT);
+
+        expect(getConfirmationId()).toBe('');
+        expect(runtimeMocks.renderOffline).not.toHaveBeenCalled();
+        expect(undoStore.value?.past).toEqual([]);
     });
 
     it('resolves standard BV and BG Vox role labels into the complete backing-vocal set', async () => {
@@ -690,8 +752,52 @@ describe('backing-vocal plate workflow', () => {
         );
         expect(receipt?.content).toContain('The project change committed with a follow-up warning');
         expect(receipt?.content).toContain('chorus two renderer unavailable');
-        expect(receipt?.content).toContain('Do not retry these confirmed actions');
+        expect(receipt?.content).toContain('Do not replay the confirmed project actions');
+        expect(receipt?.content).toContain('Retry missing renders below');
         expect(undoStore.value?.past).toHaveLength(11);
+
+        const committedTracks = structuredClone(trackStore.value?.tracks ?? []);
+        const committedLanes = structuredClone(automationStore.value?.lanes ?? []);
+
+        const failedRetry = await confirmPendingChatActions({ confirmationId: confirmation.id });
+        expect(failedRetry.status).toBe('failed');
+        if (failedRetry.status !== 'failed') {
+            throw new Error(`Expected failed render retry, received ${failedRetry.status}`);
+        }
+        expect(failedRetry.reason).toContain('chorus two renderer unavailable');
+        expect(runtimeMocks.renderOffline).toHaveBeenCalledTimes(4);
+        expect(trackStore.value?.tracks).toEqual(committedTracks);
+        expect(automationStore.value?.lanes).toEqual(committedLanes);
+        expect(undoStore.value?.past).toHaveLength(11);
+        expect(getPendingActionConfirmation(confirmation.id)).toMatchObject({
+            status: 'executed',
+            followUpStatus: 'retryable',
+        });
+
+        runtimeMocks.renderOffline.mockResolvedValue(createTestAudioBuffer());
+
+        await expect(confirmPendingChatActions({ confirmationId: confirmation.id })).resolves.toEqual({
+            status: 'executed',
+        });
+
+        expect(runtimeMocks.renderOffline).toHaveBeenCalledTimes(5);
+        expect(getAgentSectionRenderArtifacts().map((artifact) => artifact.jobId)).toEqual(
+            renderAction.payload.jobs.map((job) => job.jobId)
+        );
+        expect(trackStore.value?.tracks).toEqual(committedTracks);
+        expect(automationStore.value?.lanes).toEqual(committedLanes);
+        expect(undoStore.value?.past).toHaveLength(11);
+        expect(getPendingActionConfirmation(confirmation.id)).toMatchObject({
+            status: 'executed',
+            error: null,
+        });
+        const completedReceipt = chatStore.value?.messages.find(
+            (message) => message.pendingActionConfirmationId === confirmation.id
+        );
+        expect(completedReceipt?.content).toContain(
+            'Missing section render artifacts completed without replaying project actions'
+        );
+        expect(completedReceipt?.content).not.toContain('Do not replay the confirmed project actions');
 
         await undo();
         expect(trackStore.value?.tracks).toEqual(originalTracks);
@@ -815,6 +921,7 @@ describe('backing-vocal plate workflow', () => {
             throw new Error('Expected two materialized render jobs');
         }
         const renderJobs = [firstRenderJob, secondRenderJob] as const;
+        const expectedRenderTailSeconds = getExpectedPlateTailSeconds();
         const laneIds = [
             `auto-send-track-bgv-high-${encodeURIComponent(busId)}`,
             `auto-send-track-bgv-low-${encodeURIComponent(busId)}`,
@@ -858,7 +965,7 @@ describe('backing-vocal plate workflow', () => {
             `Create post-fader send from "Backing Vocal High" (track-bgv-high) to "Backing Vocal Plate" (${busId}) at -18 dB`,
             `Create post-fader send from "Backing Vocal Low" (track-bgv-low) to "Backing Vocal Plate" (${busId}) at -18 dB`,
             `Automate sends to "Backing Vocal Plate" (${busId}) over the final 4 bars: "Backing Vocal High" (track-bgv-high) -18 dB→-10 dB, "Backing Vocal Low" (track-bgv-low) -18 dB→-10 dB; "Chorus One" (section-chorus-one) ramp beats 32–48, "Chorus Two" (section-chorus-two) ramp beats 80–96; restore base levels at each section end`,
-            `Render "Chorus One" (section-chorus-one) beats 16–48 as ${renderJobs[0].jobId} at 44100 Hz with 0 s tail, "Chorus Two" (section-chorus-two) beats 64–96 as ${renderJobs[1].jobId} at 44100 Hz with 0 s tail into session-owned artifacts; undo removes them and redo renders fresh artifacts`,
+            `Render "Chorus One" (section-chorus-one) beats 16–48 as ${renderJobs[0].jobId} at 44100 Hz with ${String(expectedRenderTailSeconds)} s tail, "Chorus Two" (section-chorus-two) beats 64–96 as ${renderJobs[1].jobId} at 44100 Hz with ${String(expectedRenderTailSeconds)} s tail into session-owned artifacts; undo removes them and redo renders fresh artifacts`,
         ]);
 
         await expect(confirmPendingChatActions({ confirmationId: confirmation.id })).resolves.toEqual({
@@ -920,14 +1027,14 @@ describe('backing-vocal plate workflow', () => {
             durationBeats: 32,
             startBeat: 16,
             sampleRate: 44_100,
-            tailSeconds: 0,
+            tailSeconds: expectedRenderTailSeconds,
             onWarning: expect.any(Function),
         });
         expect(runtimeMocks.renderOffline).toHaveBeenNthCalledWith(2, {
             durationBeats: 32,
             startBeat: 64,
             sampleRate: 44_100,
-            tailSeconds: 0,
+            tailSeconds: expectedRenderTailSeconds,
             onWarning: expect.any(Function),
         });
         expect(getAgentSectionRenderArtifacts()).toEqual([
@@ -939,7 +1046,7 @@ describe('backing-vocal plate workflow', () => {
                 startBeat: 16,
                 endBeat: 48,
                 sampleRate: 44_100,
-                tailSeconds: 0,
+                tailSeconds: expectedRenderTailSeconds,
                 warnings: [],
             }),
             expect.objectContaining({
@@ -950,7 +1057,7 @@ describe('backing-vocal plate workflow', () => {
                 startBeat: 64,
                 endBeat: 96,
                 sampleRate: 44_100,
-                tailSeconds: 0,
+                tailSeconds: expectedRenderTailSeconds,
                 warnings: [],
             }),
         ]);

@@ -9,6 +9,10 @@ import { type ProjectContext, type ProjectContextTrack } from './getProjectConte
 type MaterializeActionStateGuardsResult =
     { status: 'accepted'; actions: AppAction[] } | { status: 'rejected'; reason: string };
 
+type MaterializeActionStateGuardsOptions = {
+    appOwnedRenderTailSeconds?: number;
+};
+
 function createProjectedBus(busId: string, name: string): ProjectContextTrack {
     return {
         id: busId,
@@ -35,7 +39,8 @@ function createProjectedBus(busId: string, name: string): ProjectContextTrack {
 
 export function materializeActionStateGuards(
     actions: readonly MaterializableRuntimeAction[],
-    context: ProjectContext
+    context: ProjectContext,
+    options: MaterializeActionStateGuardsOptions = {}
 ): MaterializeActionStateGuardsResult {
     const tracksById = new Map(context.tracks.map((track) => [track.id, track]));
     const frozenByTrack = new Map(context.tracks.map((track) => [track.id, track.frozen] as const));
@@ -394,6 +399,10 @@ export function materializeActionStateGuards(
             continue;
         }
         if (action.type === 'renderProjectSections') {
+            const tailSeconds = options.appOwnedRenderTailSeconds;
+            if (tailSeconds === undefined || !Number.isFinite(tailSeconds) || tailSeconds <= 0) {
+                return { status: 'rejected', reason: 'Section render tail was not materialized by the application' };
+            }
             const sectionsById = new Map((context.sections ?? []).map((section) => [section.id, section]));
             const jobs = [];
             for (const sectionId of action.payload.sectionIds) {
@@ -408,7 +417,7 @@ export function materializeActionStateGuards(
                     startBeat: section.startBeat,
                     endBeat: section.endBeat,
                     sampleRate: 44_100,
-                    tailSeconds: 0,
+                    tailSeconds,
                 });
             }
             materialized.push({ type: 'renderProjectSections', payload: { ...action.payload, jobs } });

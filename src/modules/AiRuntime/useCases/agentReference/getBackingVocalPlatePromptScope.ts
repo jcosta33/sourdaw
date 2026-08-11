@@ -1,9 +1,11 @@
+import { getPluginById } from '#/modules/Arrangement/useCases';
+import { getDeviceChainTailSeconds } from '#/modules/AudioEngine/useCases';
+
 import { type BackingVocalPlateCapability } from '../../models/BackingVocalPlateCapability';
 import { type ProjectContext, type ProjectContextSection, type ProjectContextTrack } from '../../models/ProjectContext';
 
 const BUS_NAME = 'Backing Vocal Plate';
 const BUS_BINDING = 'backing-vocal-plate';
-const FILTER_BINDING = 'backing-vocal-plate-filter';
 const FILTER_DEVICE_TYPE = 'builtin-filter';
 const PLATE_DEVICE_TYPE = 'dutch-oven';
 const SEND_LEVEL_DB = -18;
@@ -11,7 +13,6 @@ const SEND_LEVEL = 10 ** (SEND_LEVEL_DB / 20);
 const AUTOMATION_TAIL_BARS = 4;
 const AUTOMATION_TARGET_LEVEL_DB = -10;
 const RENDER_SAMPLE_RATE = 44_100;
-const RENDER_TAIL_SECONDS = 0;
 
 const REVERB_DEVICE_TYPES = new Set([
     'builtin-reverb',
@@ -73,10 +74,22 @@ function hasAmbiguousVocalRole(track: ProjectContextTrack): boolean {
     return /\b(?:vocal|vocals|vox|bgv|bvs?|bv)\b/u.test(normalizeText(track.name));
 }
 
-function isChorus(section: ProjectContextSection): boolean {
-    return /^chorus(?: (?:[0-9]+|[ivx]+|one|two|three|four|five|six|seven|eight|nine|ten))?$/u.test(
-        normalizeText(section.name)
-    );
+function classifyChorusSection(section: ProjectContextSection): 'chorus' | 'not-chorus' | 'ambiguous' {
+    const normalizedName = normalizeText(section.name);
+    const tokens = normalizedName.split(' ').filter(Boolean);
+    const chorusIndexes = tokens.flatMap((token, index) => (token === 'chorus' ? [index] : []));
+    if (chorusIndexes.length === 0) {
+        return normalizedName.includes('chorus') ? 'ambiguous' : 'not-chorus';
+    }
+    if (chorusIndexes.length > 1) {
+        return 'ambiguous';
+    }
+    const chorusIndex = chorusIndexes[0];
+    const prefix = chorusIndex === undefined ? undefined : tokens[chorusIndex - 1];
+    if (prefix === 'pre' || prefix === 'post') {
+        return 'not-chorus';
+    }
+    return 'chorus';
 }
 
 function isReverbDevice(device: ProjectContextTrack['devices'][number]): boolean {
@@ -103,6 +116,28 @@ function getProtectedObjects(context: ProjectContext, backingVocals: readonly Pr
         }
     }
     return protections;
+}
+
+function getPlateRenderTailSeconds(): number | null {
+    const descriptor = getPluginById(PLATE_DEVICE_TYPE);
+    if (!descriptor?.tail) {
+        return null;
+    }
+    const parameterValues = Object.fromEntries(
+        descriptor.parameters.map((parameter) => [parameter.id, parameter.defaultValue])
+    );
+    const estimate = getDeviceChainTailSeconds({
+        devices: [
+            {
+                id: 'planned-backing-vocal-plate',
+                type: descriptor.id,
+                parameterValues,
+                bypassed: false,
+            },
+        ],
+        tailForDeviceType: (deviceType) => getPluginById(deviceType)?.tail,
+    });
+    return Number.isFinite(estimate.seconds) && estimate.seconds > 0 ? estimate.seconds : null;
 }
 
 export function getBackingVocalPlatePromptScope(
@@ -148,8 +183,24 @@ export function getBackingVocalPlatePromptScope(
     if (!Number.isFinite(automationLengthBeats) || automationLengthBeats <= 0) {
         return { status: 'invalid', reason: 'EX-01 requires one finite positive project time signature' };
     }
-    const chorusSections = [...(context.sections ?? [])]
-        .filter(isChorus)
+    const sectionClassifications = (context.sections ?? []).map((section) => ({
+        classification: classifyChorusSection(section),
+        section,
+    }));
+    const ambiguousChorusSections = sectionClassifications.filter(
+        ({ classification }) => classification === 'ambiguous'
+    );
+    if (ambiguousChorusSections.length > 0) {
+        return {
+            status: 'invalid',
+            reason: `EX-01 found unclassified chorus-like sections: ${ambiguousChorusSections
+                .map(({ section }) => section.name)
+                .join(', ')}`,
+        };
+    }
+    const chorusSections = sectionClassifications
+        .filter(({ classification }) => classification === 'chorus')
+        .map(({ section }) => section)
         .sort((left, right) => left.startBeat - right.startBeat || left.id.localeCompare(right.id));
     if (
         chorusSections.length === 0 ||
@@ -167,6 +218,10 @@ export function getBackingVocalPlatePromptScope(
     if (removableReverbs.length === 0) {
         return { status: 'invalid', reason: 'EX-01 found no backing-vocal reverb device to remove' };
     }
+    const renderTailSeconds = getPlateRenderTailSeconds();
+    if (renderTailSeconds === null) {
+        return { status: 'invalid', reason: 'EX-01 requires a bounded Dutch Oven render-tail declaration' };
+    }
     const protectedObjects = getProtectedObjects(context, backingVocals);
     const sectionIds = chorusSections.map((section) => section.id);
     const trackIds = backingVocals.map((track) => track.id);
@@ -181,23 +236,13 @@ export function getBackingVocalPlatePromptScope(
             arguments: {
                 trackId: `$${BUS_BINDING}`,
                 deviceType: FILTER_DEVICE_TYPE,
-                binding: FILTER_BINDING,
             },
-        },
-        {
-            name: 'setDeviceParameter',
-            arguments: { deviceId: `$${FILTER_BINDING}`, paramId: 'filter-type', value: 1 },
-        },
-        {
-            name: 'setDeviceParameter',
-            arguments: { deviceId: `$${FILTER_BINDING}`, paramId: 'filter-cutoff', value: 250 },
         },
         {
             name: 'addDevice',
             arguments: {
                 trackId: `$${BUS_BINDING}`,
                 deviceType: PLATE_DEVICE_TYPE,
-                afterDeviceId: `$${FILTER_BINDING}`,
             },
         },
         ...trackIds.map((trackId) => ({
@@ -244,7 +289,7 @@ export function getBackingVocalPlatePromptScope(
             automationTailBars: AUTOMATION_TAIL_BARS,
             automationTargetLevelDb: AUTOMATION_TARGET_LEVEL_DB,
             renderSampleRate: RENDER_SAMPLE_RATE,
-            renderTailSeconds: RENDER_TAIL_SECONDS,
+            renderTailSeconds,
         },
         orderedToolPlan,
     };

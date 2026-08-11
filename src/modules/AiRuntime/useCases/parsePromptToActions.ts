@@ -233,7 +233,9 @@ export const parsePromptToActions = inject({ logger })(
                         };
                     }
 
-                    const guarded = materializeActionStateGuards(materialized.actions, context);
+                    const guarded = materializeActionStateGuards(materialized.actions, context, {
+                        appOwnedRenderTailSeconds: bridged.appOwnedRenderTailSeconds,
+                    });
                     if (guarded.status === 'rejected') {
                         logger.warn(`[AI] Rejected LLM action batch because ${guarded.reason}`);
                         return {
