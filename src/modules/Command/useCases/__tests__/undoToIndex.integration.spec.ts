@@ -122,7 +122,7 @@ describe('undoToIndex via the Undo History panel path', () => {
         expect(mocks.executeAppAction).toHaveBeenCalledTimes(1);
         expect(mocks.executeAppAction).toHaveBeenCalledWith(undoableB.action, {
             skipUndo: true,
-            skipMacroRecording: true,
+            skipMacroRecording: false,
             source: 'manual',
         });
         expect(mocks.undoStoreValue.value).toEqual({ past: [undoableA, undoableB], future: [] });
