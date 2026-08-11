@@ -59,7 +59,7 @@ type EngineTuneArm = {
 function readEngineTuneArm(): EngineTuneArm {
     const source = readSource(CRUMBS_ENGINE_SOURCE);
     const arm =
-        /CrumbsParam::Tune\s*=>\s*self\.tune_cents\s*=\s*value\.clamp\(\s*(-?[\d.]+)\s*,\s*(-?[\d.]+)\s*\)\s*\*\s*([\d.]+)/.exec(
+        /CrumbsParam::Tune\s*=>\s*(?:\{\s*)?(?:if\s+value\.is_finite\(\)\s*\{\s*)?self\.tune_cents\s*=\s*value\.clamp\(\s*(-?[\d.]+)\s*,\s*(-?[\d.]+)\s*\)\s*\*\s*([\d.]+)/.exec(
             source
         );
     if (!arm) {
