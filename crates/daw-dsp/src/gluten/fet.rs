@@ -174,7 +174,13 @@ impl FetCompressor {
     }
 
     #[inline]
-    pub fn process_sample(
+    pub fn process_sample(&mut self, left: f32, right: f32) -> (f32, f32, f32) {
+        let detector = self.detector_source();
+        self.process_sample_with_detector(left, right, detector.0, detector.1)
+    }
+
+    #[inline]
+    pub(crate) fn process_sample_with_detector(
         &mut self,
         left: f32,
         right: f32,

@@ -331,10 +331,7 @@ mod tests {
         fet.set_param("jfet_k3", 0.0);
         fet.set_param("xfmr_drive", 0.0);
         fet.set_param("xfmr_k2", 0.0);
-        let ratio = rms_ratio(|x| {
-            let detector = fet.detector_source();
-            fet.process_sample(x, x, detector.0, detector.1).0
-        });
+        let ratio = rms_ratio(|x| fet.process_sample(x, x).0);
         assert!(
             db(ratio).abs() < 0.01,
             "FET topology must not change level with its distortion off, \
@@ -351,8 +348,7 @@ mod tests {
         let response: Vec<f32> = (0..8)
             .map(|n| {
                 let x = if n == 0 { 1.0 } else { 0.0 };
-                let detector = fet.detector_source();
-                fet.process_sample(x, x, detector.0, detector.1).0
+                fet.process_sample(x, x).0
             })
             .collect();
         assert!(
@@ -370,10 +366,7 @@ mod tests {
     #[test]
     fn diode_topology_is_level_neutral_below_its_threshold() {
         let mut diode = DiodeCompressor::new(SAMPLE_RATE);
-        let ratio = rms_ratio(|x| {
-            let input = x * 0.05;
-            diode.process_sample(input, input, input, input).0 / 0.05
-        });
+        let ratio = rms_ratio(|x| diode.process_sample(x * 0.05, x * 0.05).0 / 0.05);
         assert!(
             db(ratio).abs() < 0.01,
             "Diode topology must not change level below threshold, \

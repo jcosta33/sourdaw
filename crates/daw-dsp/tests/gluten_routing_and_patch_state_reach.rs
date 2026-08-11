@@ -31,6 +31,7 @@ const TOPOLOGY_FET: f32 = 2.0;
 const TOPOLOGY_DIODE: f32 = 3.0;
 
 const STEREO_MODE_STEREO: f32 = 0.0;
+const STEREO_MODE_SIDE: f32 = 2.0;
 const STEREO_MODE_DUAL_MONO: f32 = 3.0;
 
 const TOPOLOGIES: [(&str, f32); 4] = [
@@ -223,6 +224,98 @@ fn detector_filters_keep_unlinked_channel_state_isolated() {
     assert!(
         delta < 1.0e-6,
         "the right detector must not inherit left-channel EQ or Thrust state, but moved by {delta:e}"
+    );
+}
+
+fn render_side_mode_with_external_sidechain(sc_left_level: f32, sc_right_level: f32) -> Vec<f32> {
+    let mut instance = GlutenInstance::new(SAMPLE_RATE);
+    detector_base(TOPOLOGY_VCA)(&mut instance);
+    instance.set_param("stereo_mode", STEREO_MODE_SIDE);
+    instance.set_param("ext_sidechain", 1.0);
+
+    let mut captured = Vec::with_capacity(BLOCKS * BLOCK);
+    for block in 0..BLOCKS {
+        let base = block * BLOCK;
+        let left_ptr = instance.get_input_left_ptr();
+        let right_ptr = instance.get_input_right_ptr();
+        let sc_left_ptr = instance.get_sc_left_ptr();
+        let sc_right_ptr = instance.get_sc_right_ptr();
+        for n in 0..BLOCK {
+            let t = (base + n) as f32 / SAMPLE_RATE;
+            let main = 0.35 * (std::f32::consts::TAU * 220.0 * t).sin();
+            let detector = (std::f32::consts::TAU * 110.0 * t).sin();
+            unsafe {
+                *left_ptr.add(n) = main;
+                *right_ptr.add(n) = -main;
+                *sc_left_ptr.add(n) = sc_left_level * detector;
+                *sc_right_ptr.add(n) = sc_right_level * detector;
+            }
+        }
+
+        let out_left = instance.process(BLOCK as u32);
+        for n in 0..BLOCK {
+            captured.push(unsafe { *out_left.add(n) });
+        }
+    }
+    captured
+}
+
+#[test]
+fn external_sidechain_is_encoded_before_side_only_detection() {
+    let silent = render_side_mode_with_external_sidechain(0.0, 0.0);
+    let centered = render_side_mode_with_external_sidechain(0.9, 0.9);
+    assert_eq!(
+        max_delta(&silent, &centered),
+        0.0,
+        "a centered external signal has no Side component"
+    );
+
+    let anti_phase = render_side_mode_with_external_sidechain(0.9, -0.9);
+    assert!(
+        max_delta(&silent, &anti_phase) > 1.0e-4,
+        "the presence pin: an anti-phase external signal must drive Side detection"
+    );
+}
+
+fn render_diode_step(lookahead_ms: f32) -> Vec<f32> {
+    const FRAMES: usize = 1024;
+    let mut instance = GlutenInstance::new(SAMPLE_RATE);
+    detector_base(TOPOLOGY_DIODE)(&mut instance);
+    instance.set_param("limiter_threshold", 0.0);
+    instance.set_param("lookahead", lookahead_ms);
+
+    let left_ptr = instance.get_input_left_ptr();
+    let right_ptr = instance.get_input_right_ptr();
+    for n in 0..FRAMES {
+        unsafe {
+            *left_ptr.add(n) = 0.9;
+            *right_ptr.add(n) = 0.9;
+        }
+    }
+
+    let out_left = instance.process(FRAMES as u32);
+    (0..FRAMES).map(|n| unsafe { *out_left.add(n) }).collect()
+}
+
+#[test]
+fn diode_lookahead_drives_detection_from_the_undelayed_program() {
+    const LOOKAHEAD_MS: f32 = 10.0;
+    const ONSET_WINDOW: usize = 24;
+    let no_lookahead = render_diode_step(0.0);
+    let with_lookahead = render_diode_step(LOOKAHEAD_MS);
+    let latency = (LOOKAHEAD_MS * 0.001 * SAMPLE_RATE) as usize;
+    let no_lookahead_peak = no_lookahead[..ONSET_WINDOW]
+        .iter()
+        .map(|sample| sample.abs())
+        .fold(0.0_f32, f32::max);
+    let lookahead_peak = with_lookahead[latency..latency + ONSET_WINDOW]
+        .iter()
+        .map(|sample| sample.abs())
+        .fold(0.0_f32, f32::max);
+
+    assert!(
+        lookahead_peak < no_lookahead_peak * 0.8,
+        "the detector must use the undelayed program: lookahead onset {lookahead_peak} vs immediate onset {no_lookahead_peak}"
     );
 }
 

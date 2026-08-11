@@ -439,15 +439,28 @@ impl GlutenEngine {
             let delayed_l = self.lookahead_l.process(proc_l, lookahead_samples);
             let delayed_r = self.lookahead_r.process(proc_r, lookahead_samples);
 
+            // The diode is feed-forward, so its internal detector must stay on
+            // the undelayed program while the audio path receives lookahead.
+            // Stage two historically shared this same detector source.
+            let program_detector = match self.stereo_mode {
+                StereoMode::Mid => (proc_l, 0.0),
+                StereoMode::Side => (0.0, proc_r),
+                _ => (proc_l, proc_r),
+            };
+
             let external_detector = if self.ext_sidechain && i < self.ext_sc_left.len() {
                 let raw = (
                     self.ext_sc_left[i],
                     self.ext_sc_right.get(i).copied().unwrap_or(0.0),
                 );
-                Some(match self.stereo_mode {
-                    StereoMode::Mid => (raw.0, 0.0),
-                    StereoMode::Side => (0.0, raw.1),
+                let detector = match self.stereo_mode {
+                    StereoMode::Mid | StereoMode::Side => encode_ms(raw.0, raw.1),
                     _ => raw,
+                };
+                Some(match self.stereo_mode {
+                    StereoMode::Mid => (detector.0, 0.0),
+                    StereoMode::Side => (0.0, detector.1),
+                    _ => detector,
                 })
             } else {
                 None
@@ -460,14 +473,24 @@ impl GlutenEngine {
                 _ => (delayed_l, delayed_r),
             };
             // Primary topology
-            let (mut wet_l, mut wet_r, gr_db) =
-                self.process_topology(self.active_topology, topo_l, topo_r, external_detector);
+            let (mut wet_l, mut wet_r, gr_db) = self.process_topology(
+                self.active_topology,
+                topo_l,
+                topo_r,
+                program_detector,
+                external_detector,
+            );
 
             // Dual-stage serial routing (Shadow Hills style)
             // Second topology processes the output of the first
             if self.blend_amount > 0.001 && self.blend_topology != self.active_topology {
-                let (s2_l, s2_r, gr2) =
-                    self.process_topology(self.blend_topology, wet_l, wet_r, external_detector);
+                let (s2_l, s2_r, gr2) = self.process_topology(
+                    self.blend_topology,
+                    wet_l,
+                    wet_r,
+                    program_detector,
+                    external_detector,
+                );
                 // Crossfade between single and dual-stage
                 let b = self.blend_amount;
                 wet_l = wet_l * (1.0 - b) + s2_l * b;
@@ -573,22 +596,25 @@ impl GlutenEngine {
         topo: Topology,
         l: f32,
         r: f32,
+        program_detector: (f32, f32),
         external_detector: Option<(f32, f32)>,
     ) -> (f32, f32, f32) {
         let detector_source = external_detector.unwrap_or_else(|| match topo {
             Topology::Vca => self.vca.detector_source(l, r),
             Topology::Opto => self.opto.detector_source(),
             Topology::Fet => self.fet.detector_source(),
-            Topology::Diode => self.diode.detector_source(l, r),
+            Topology::Diode => self
+                .diode
+                .detector_source(program_detector.0, program_detector.1),
         });
         let (detector_l, detector_r) =
             self.sidechains[topo.index()].process(detector_source.0, detector_source.1);
 
         match topo {
-            Topology::Vca => self.vca.process_sample(l, r, detector_l, detector_r),
-            Topology::Opto => self.opto.process_sample(l, r, detector_l, detector_r),
-            Topology::Fet => self.fet.process_sample(l, r, detector_l, detector_r),
-            Topology::Diode => self.diode.process_sample(l, r, detector_l, detector_r),
+            Topology::Vca => self.vca.process_sample_with_detector(l, r, detector_l, detector_r),
+            Topology::Opto => self.opto.process_sample_with_detector(l, r, detector_l, detector_r),
+            Topology::Fet => self.fet.process_sample_with_detector(l, r, detector_l, detector_r),
+            Topology::Diode => self.diode.process_sample_with_detector(l, r, detector_l, detector_r),
         }
     }
 
