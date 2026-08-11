@@ -35,7 +35,7 @@ import { ProofChamberPanel } from '../ProofChamberPanel';
  */
 
 vi.mock('#/infra/store/useStore', () => ({
-    useStore: vi.fn((_store, defaultValue) => defaultValue),
+    useStore: vi.fn((_store: unknown, defaultValue: unknown) => defaultValue),
 }));
 
 vi.mock('#/modules/Command/useCases', () => ({
@@ -74,9 +74,15 @@ const DAMP_STEP = 0.001;
  */
 function renderDampKnobAt(damping: number): HTMLElement {
     const engineState: ProofChamberEngineState = { ...DEFAULT_PARAMS, algorithm: 'plate', damping };
-    vi.mocked(useStore).mockReturnValue({
+    const chamberState = {
         activeInstanceId: DEVICE_ID,
         instances: { [DEVICE_ID]: { id: DEVICE_ID, isBypassed: false, uiLevel: 1, engineState } },
+    };
+    vi.mocked(useStore).mockImplementation((_store, defaultValue) => {
+        if (typeof defaultValue === 'object' && defaultValue !== null && 'instances' in defaultValue) {
+            return chamberState;
+        }
+        return defaultValue;
     });
     render(<ProofChamberPanel deviceId={DEVICE_ID} />);
     const knobs = screen.getAllByRole('slider', { name: 'Damp' });
