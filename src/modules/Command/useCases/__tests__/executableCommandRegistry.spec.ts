@@ -889,6 +889,21 @@ const EXPECTED_COMMANDS = [
         true
     ),
     expectedCommand(
+        'addAdjustmentRegion',
+        'Add one app-grounded section region to an existing adjustment layer without changing its processing settings.',
+        {
+            layerId: { type: 'string', description: 'Exact app-grounded adjustment-layer ID' },
+            startBeat: { type: 'number', minimum: 0 },
+            endBeat: { type: 'number', exclusiveMinimum: 0 },
+            blend: { type: 'number', minimum: 0, maximum: 1 },
+            fadeInBeats: { type: 'number', minimum: 0 },
+            fadeOutBeats: { type: 'number', minimum: 0 },
+        },
+        ['layerId', 'startBeat', 'endBeat', 'blend', 'fadeInBeats', 'fadeOutBeats'],
+        'bounded-reversible',
+        false
+    ),
+    expectedCommand(
         'automateSendRange',
         'Lower an exact set of existing sends by a relative dB amount inside one named section.',
         {
@@ -2012,6 +2027,12 @@ const EXPECTED_GROUNDING = [
         ],
         valueRules: [],
     })),
+    {
+        actionType: 'addAdjustmentRegion',
+        intentPhrases: ['copy the bass processing', 'copy bass processing'],
+        targetRules: [],
+        valueRules: [],
+    },
     {
         actionType: 'automateSendRange',
         intentPhrases: ['lower every vocal send', 'lower vocal sends', 'lower send', 'automate send'],
