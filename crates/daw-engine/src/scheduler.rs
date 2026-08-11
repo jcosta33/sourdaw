@@ -70,25 +70,33 @@ struct ActiveEffect {
 
 pub(crate) const RETIREMENT_QUEUE_CAPACITY: usize = 257;
 
-/// Opaque graph resources removed by the real-time scheduler.
-/// Its consumer must be drained off the audio callback.
 pub struct RetiredGraphObjects {
     effect: Option<ActiveEffect>,
     audio_bridge: Option<PluginAudioBridge>,
     midi_fx: Option<Box<dyn MidiFx>>,
     remaining_effects: Vec<ActiveEffect>,
     remaining_audio_bridges: Vec<PluginAudioBridge>,
+    queued_commands: Vec<GraphCommand>,
 }
 
 impl RetiredGraphObjects {
-    fn effect(effect: ActiveEffect) -> Self {
+    fn removed(
+        effect: Option<ActiveEffect>,
+        audio_bridge: Option<PluginAudioBridge>,
+        midi_fx: Option<Box<dyn MidiFx>>,
+    ) -> Self {
         Self {
-            effect: Some(effect),
-            audio_bridge: None,
-            midi_fx: None,
+            effect,
+            audio_bridge,
+            midi_fx,
             remaining_effects: Vec::new(),
             remaining_audio_bridges: Vec::new(),
+            queued_commands: Vec::new(),
         }
+    }
+
+    fn effect(effect: ActiveEffect) -> Self {
+        Self::removed(Some(effect), None, None)
     }
 
     fn effect_with_bridge(
@@ -99,55 +107,32 @@ impl RetiredGraphObjects {
             return None;
         }
 
-        Some(Self {
-            effect,
-            audio_bridge,
-            midi_fx: None,
-            remaining_effects: Vec::new(),
-            remaining_audio_bridges: Vec::new(),
-        })
+        Some(Self::removed(effect, audio_bridge, None))
     }
 
     fn audio_bridge(audio_bridge: PluginAudioBridge) -> Self {
-        Self {
-            effect: None,
-            audio_bridge: Some(audio_bridge),
-            midi_fx: None,
-            remaining_effects: Vec::new(),
-            remaining_audio_bridges: Vec::new(),
-        }
+        Self::removed(None, Some(audio_bridge), None)
     }
 
     fn midi_fx(midi_fx: Box<dyn MidiFx>) -> Self {
-        Self {
-            effect: None,
-            audio_bridge: None,
-            midi_fx: Some(midi_fx),
-            remaining_effects: Vec::new(),
-            remaining_audio_bridges: Vec::new(),
-        }
+        Self::removed(None, None, Some(midi_fx))
     }
 
     fn shutdown(
         pending: Option<Self>,
         remaining_effects: Vec<ActiveEffect>,
         remaining_audio_bridges: Vec<PluginAudioBridge>,
+        queued_commands: Vec<GraphCommand>,
     ) -> Self {
-        let (effect, audio_bridge, midi_fx) = match pending {
-            Some(pending) => {
-                debug_assert!(pending.remaining_effects.is_empty());
-                debug_assert!(pending.remaining_audio_bridges.is_empty());
-                (pending.effect, pending.audio_bridge, pending.midi_fx)
-            }
-            None => (None, None, None),
-        };
+        let pending = pending.unwrap_or_else(|| Self::removed(None, None, None));
 
         Self {
-            effect,
-            audio_bridge,
-            midi_fx,
+            effect: pending.effect,
+            audio_bridge: pending.audio_bridge,
+            midi_fx: pending.midi_fx,
             remaining_effects,
             remaining_audio_bridges,
+            queued_commands,
         }
     }
 
@@ -157,6 +142,7 @@ impl RetiredGraphObjects {
             + usize::from(self.midi_fx.is_some())
             + self.remaining_effects.len()
             + self.remaining_audio_bridges.len()
+            + self.queued_commands.len()
     }
 }
 
@@ -187,6 +173,7 @@ pub struct AudioScheduler {
     command_rx: Consumer<GraphCommand>,
     retired_tx: Producer<RetiredGraphObjects>,
     pending_retirement: Option<RetiredGraphObjects>,
+    shutdown_commands: Vec<GraphCommand>,
     sample_rate: f32,
     transport: TransportState,
     midi_rt_diagnostics: ActiveMidiRtDiagnostics,
@@ -210,12 +197,14 @@ impl AudioScheduler {
         sample_rate: f32,
         midi_rt_diagnostics_tx: Input<ActiveMidiRtDiagnosticsSnapshot>,
     ) -> Self {
+        let command_queue_capacity = command_rx.buffer().capacity();
         Self {
             effects: Vec::with_capacity(128),
             audio_bridges: Vec::with_capacity(128),
             command_rx,
             retired_tx,
             pending_retirement: None,
+            shutdown_commands: Vec::with_capacity(command_queue_capacity),
             sample_rate,
             transport: TransportState::default(),
             midi_rt_diagnostics: ActiveMidiRtDiagnostics::new(),
@@ -510,10 +499,14 @@ impl AudioScheduler {
 
 impl Drop for AudioScheduler {
     fn drop(&mut self) {
+        while let Ok(command) = self.command_rx.pop() {
+            self.shutdown_commands.push(command);
+        }
         let retired = RetiredGraphObjects::shutdown(
             self.pending_retirement.take(),
             std::mem::take(&mut self.effects),
             std::mem::take(&mut self.audio_bridges),
+            std::mem::take(&mut self.shutdown_commands),
         );
         if retired.len() == 0 {
             return;
@@ -811,6 +804,14 @@ mod tests {
         for id in [41, 42] {
             command_tx.push(GraphCommand::RemovePlugin(id)).unwrap();
         }
+        command_tx
+            .push(GraphCommand::AddPlugin(
+                44,
+                Box::new(DropTrackingPlugin {
+                    dropped_tx: dropped_tx.clone(),
+                }),
+            ))
+            .unwrap();
         scheduler.update_graph();
         drop(scheduler);
 
@@ -820,6 +821,7 @@ mod tests {
         let shutdown_reclaimer =
             reclaim_on_background_thread(retired_rx.pop().expect("shutdown retirement"));
         let drop_threads = [
+            dropped_rx.recv().unwrap(),
             dropped_rx.recv().unwrap(),
             dropped_rx.recv().unwrap(),
             dropped_rx.recv().unwrap(),

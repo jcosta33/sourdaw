@@ -8,7 +8,6 @@ use crate::scheduler::{
 };
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use rtrb::{Consumer, RingBuffer};
-use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender};
 use std::thread;
 use std::time::Duration;
@@ -24,15 +23,12 @@ pub struct AudioThreadHandle {
     shutdown_complete_rx: Receiver<()>,
 }
 
-struct StreamWithReclaimerShutdown<Stream> {
-    stream: Option<Stream>,
-    reclaimer_shutdown_tx: Sender<()>,
-}
+struct StreamWithReclaimerShutdown<Stream>(Option<Stream>, Sender<()>);
 
 impl<Stream> Drop for StreamWithReclaimerShutdown<Stream> {
     fn drop(&mut self) {
-        drop(self.stream.take());
-        let _ = self.reclaimer_shutdown_tx.send(());
+        drop(self.0.take());
+        let _ = self.1.send(());
     }
 }
 
@@ -112,15 +108,13 @@ fn spawn_retirement_reclaimer<T: Send + 'static>(
         .name("sourdaw-plugin-reclaimer".to_string())
         .spawn(move || loop {
             while let Ok(retired) = retired_rx.pop() {
-                if catch_unwind(AssertUnwindSafe(|| drop(retired))).is_err() {
-                    eprintln!("[Engine] Plugin resource destructor panicked during reclamation");
-                }
+                spawn_retirement_drop(retired);
             }
 
             match shutdown_rx.recv_timeout(RETIREMENT_RECLAIMER_POLL_INTERVAL) {
                 Ok(()) | Err(RecvTimeoutError::Disconnected) => {
                     while let Ok(retired) = retired_rx.pop() {
-                        let _ = catch_unwind(AssertUnwindSafe(|| drop(retired)));
+                        spawn_retirement_drop(retired);
                     }
                     break;
                 }
@@ -130,6 +124,15 @@ fn spawn_retirement_reclaimer<T: Send + 'static>(
         .map_err(|error| format!("Failed to spawn plugin reclaimer thread: {error}"))?;
 
     Ok(shutdown_tx)
+}
+
+fn spawn_retirement_drop<T: Send + 'static>(retired: T) {
+    if let Err(error) = thread::Builder::new()
+        .name("sourdaw-plugin-drop".to_string())
+        .spawn(move || drop(retired))
+    {
+        eprintln!("[Engine] Failed to spawn plugin destructor thread: {error}");
+    }
 }
 
 pub fn spawn_audio_thread(command_rx: Consumer<GraphCommand>) -> Result<AudioThreadHandle, String> {
@@ -147,10 +150,10 @@ pub(crate) fn spawn_audio_thread_with_diagnostics(
 
     spawn_owned_audio_stream(move || {
         match build_audio_stream(command_rx, retired_tx, midi_rt_diagnostics_tx) {
-            Ok(stream) => Ok(StreamWithReclaimerShutdown {
-                stream: Some(stream),
+            Ok(stream) => Ok(StreamWithReclaimerShutdown(
+                Some(stream),
                 reclaimer_shutdown_tx,
-            }),
+            )),
             Err(error) => {
                 let _ = reclaimer_shutdown_tx.send(());
                 Err(error)
@@ -370,12 +373,12 @@ mod tests {
         entered_rx
             .recv_timeout(Duration::from_secs(1))
             .expect("reclaimer should enter the blocking destructor");
+        dropped_rx
+            .recv_timeout(Duration::from_secs(1))
+            .expect("blocked and panicking destructors must not stop later reclamation");
 
         let handle = spawn_owned_audio_stream(move || {
-            Ok(StreamWithReclaimerShutdown {
-                stream: Some(()),
-                reclaimer_shutdown_tx,
-            })
+            Ok(StreamWithReclaimerShutdown(Some(()), reclaimer_shutdown_tx))
         })
         .expect("audio owner should start");
         let started_at = Instant::now();
@@ -383,9 +386,6 @@ mod tests {
         assert!(started_at.elapsed() < Duration::from_millis(250));
 
         release_tx.send(()).unwrap();
-        dropped_rx
-            .recv_timeout(Duration::from_secs(1))
-            .expect("reclaimer should survive panic and resume after release");
     }
 
     #[test]
