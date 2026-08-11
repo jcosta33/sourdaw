@@ -21,6 +21,8 @@ type SectionProps = {
     update: (partial: Partial<Preferences>) => void;
 };
 
+const AUTO_SAVE_DESCRIPTION_ID = 'auto-save-policy-description';
+
 export const GeneralSection = ({ prefs, update }: SectionProps): ReactElement => {
     const trackHeights: Preferences['trackHeight'][] = ['compact', 'normal', 'large'];
     const handleAutoSaveIntervalChange = (event: ChangeEvent<HTMLSelectElement>): void => {
@@ -70,12 +72,14 @@ export const GeneralSection = ({ prefs, update }: SectionProps): ReactElement =>
                         label="Auto Save"
                         value={prefs.autoSave}
                         onChange={(value) => update({ autoSave: value })}
+                        descriptionId={AUTO_SAVE_DESCRIPTION_ID}
                     />
                     <DawCompactSelect
                         value={prefs.autoSaveIntervalMs}
                         onChange={handleAutoSaveIntervalChange}
                         className="w-full"
                         aria-label="Auto-save interval"
+                        aria-describedby={AUTO_SAVE_DESCRIPTION_ID}
                     >
                         {AUTO_SAVE_INTERVAL_OPTIONS.map((option) => (
                             <option key={option.value} value={option.value}>
@@ -83,7 +87,7 @@ export const GeneralSection = ({ prefs, update }: SectionProps): ReactElement =>
                             </option>
                         ))}
                     </DawCompactSelect>
-                    <p className="text-[10px] leading-relaxed text-muted-foreground">
+                    <p id={AUTO_SAVE_DESCRIPTION_ID} className="text-[10px] leading-relaxed text-muted-foreground">
                         Auto Save creates a reopenable local project snapshot while playback is stopped. Turning it off
                         stops scheduled snapshots; crash-recovery data still updates in the background.
                     </p>

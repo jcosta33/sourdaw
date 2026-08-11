@@ -69,8 +69,12 @@ describe('GeneralSection', () => {
             />
         );
 
-        expect(screen.getByText(/crash-recovery data still updates/i)).toBeInTheDocument();
-        fireEvent.change(screen.getByRole('combobox', { name: 'Auto-save interval' }), {
+        const policy = /crash-recovery data still updates/i;
+        const autoSaveToggle = screen.getByRole('switch', { name: 'Auto Save' });
+        const interval = screen.getByRole('combobox', { name: 'Auto-save interval' });
+        expect(autoSaveToggle).toHaveAccessibleDescription(policy);
+        expect(interval).toHaveAccessibleDescription(policy);
+        fireEvent.change(interval, {
             target: { value: '60000' },
         });
 
