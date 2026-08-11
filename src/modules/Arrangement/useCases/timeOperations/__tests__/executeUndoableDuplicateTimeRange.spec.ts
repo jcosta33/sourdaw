@@ -1,15 +1,8 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
-const mocks = vi.hoisted(() => ({
-    duplicateTimeRange: vi.fn(),
-    prepareRestore: vi.fn(),
-}));
-
+const mocks = vi.hoisted(() => ({ duplicateTimeRange: vi.fn(), prepareRestore: vi.fn() }));
 vi.mock('../duplicateTimeRange', () => ({ duplicateTimeRange: mocks.duplicateTimeRange }));
-vi.mock('../prepareTimeOperationStateRestore', () => ({
-    prepareTimeOperationStateRestore: mocks.prepareRestore,
-}));
-
+vi.mock('../prepareTimeOperationStateRestore', () => ({ prepareTimeOperationStateRestore: mocks.prepareRestore }));
 import { executeUndoableDuplicateTimeRange } from '../executeUndoableDuplicateTimeRange';
 
 const inversePlan = {
@@ -22,8 +15,6 @@ const inversePlan = {
 };
 
 describe('executeUndoableDuplicateTimeRange', () => {
-    beforeEach(() => vi.clearAllMocks());
-
     it('keeps an exact rejected redo retryable', () => {
         mocks.duplicateTimeRange.mockReturnValue({
             status: 'applied',

@@ -2,6 +2,7 @@ import { type UndoEntry } from '../models/UndoEntry';
 import { undoStore } from '../stores/undoStore';
 
 import { executeAppAction } from './executeAppAction';
+import { isAppActionCommittedError } from './isAppActionCommittedError';
 import { runUndoRedoExclusive } from './undoRedo';
 import { undoTreeMoveTo } from './undoTree/undoTreeMoveTo';
 
@@ -66,6 +67,9 @@ async function revertActionGroupImpl(groupId: string): Promise<void> {
                 revertedEntries.unshift(entry);
             }
         } catch (error) {
+            if (isAppActionCommittedError(error)) {
+                revertedEntries.unshift(entry);
+            }
             failure = error;
             break;
         }

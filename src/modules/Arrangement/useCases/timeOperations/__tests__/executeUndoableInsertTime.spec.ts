@@ -1,15 +1,8 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
-const mocks = vi.hoisted(() => ({
-    insertTime: vi.fn(),
-    prepareRestore: vi.fn(),
-}));
-
+const mocks = vi.hoisted(() => ({ insertTime: vi.fn(), prepareRestore: vi.fn() }));
 vi.mock('../insertTime', () => ({ insertTime: mocks.insertTime }));
-vi.mock('../prepareTimeOperationStateRestore', () => ({
-    prepareTimeOperationStateRestore: mocks.prepareRestore,
-}));
-
+vi.mock('../prepareTimeOperationStateRestore', () => ({ prepareTimeOperationStateRestore: mocks.prepareRestore }));
 import { executeUndoableInsertTime } from '../executeUndoableInsertTime';
 
 const inversePlan = {
@@ -22,8 +15,6 @@ const inversePlan = {
 };
 
 describe('executeUndoableInsertTime', () => {
-    beforeEach(() => vi.clearAllMocks());
-
     it('restores and redoes the exact captured insert snapshot', () => {
         mocks.insertTime.mockReturnValue({
             status: 'applied',
@@ -41,6 +32,5 @@ describe('executeUndoableInsertTime', () => {
             ...inversePlan,
             local: { version: 1, expected: 'before', replacement: 'inserted' },
         });
-        transaction?.undo();
     });
 });

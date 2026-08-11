@@ -1,9 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+import { AppActionCommittedError } from '../../errors/AppActionExecutionError';
+import { type UndoEntry } from '../../models/UndoEntry';
 import { revertActionGroup } from '../revertActionGroup';
 import { runUndoRedoExclusive } from '../undoRedo';
-
-import type { UndoEntry } from '../../models/UndoEntry';
 
 const mocks = vi.hoisted(() => ({
     undoStoreValue: {
@@ -179,5 +179,16 @@ describe('revertActionGroup', () => {
         await expect(revertActionGroup('g1')).rejects.toBe(failure);
 
         expect(mocks.undoStoreSet).toHaveBeenCalledWith({ past: [failed], future: [reverted] });
+    });
+
+    it('moves an inverse that committed before its post-commit failure', async () => {
+        const committed = actionEntry('committed', 'g1');
+        const failure = new AppActionCommittedError('toggleRecording', new Error('after commit'));
+        mocks.undoStoreValue.value = { past: [committed], future: [] };
+        mocks.executeAppAction.mockRejectedValueOnce(failure);
+
+        await expect(revertActionGroup('g1')).rejects.toBe(failure);
+
+        expect(mocks.undoStoreSet).toHaveBeenCalledWith({ past: [], future: [committed] });
     });
 });
