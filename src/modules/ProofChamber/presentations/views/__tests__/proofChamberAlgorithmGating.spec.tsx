@@ -164,12 +164,13 @@ const ALGORITHMS: readonly ProofChamberAlgorithm[] = ['plate', 'fdn-8', 'fdn-16'
  * shimmer engaged, then switched to Reverse, is exactly the state that has to
  * behave.
  */
-function renderPanel(algorithm: ProofChamberAlgorithm): void {
+function renderPanel(algorithm: ProofChamberAlgorithm, overrides: Partial<ProofChamberEngineState> = {}): void {
     const engineState: ProofChamberEngineState = {
         ...DEFAULT_PARAMS,
         algorithm,
         shimmer: true,
         saturation: true,
+        ...overrides,
     };
     vi.mocked(useStore).mockReturnValue({
         activeInstanceId: DEVICE_ID,
@@ -267,6 +268,28 @@ describe('the Dutch Oven panel offers only controls the live algorithm can hear'
         expect(perEngine).toEqual({ fdn: 9, spring: 11, reverse: 21 });
         expect(chamberEngineIdForAlgorithm('fdn-16')).toBe('fdn');
         expect(chamberEngineIdForAlgorithm('plate')).toBe('plate');
+    });
+
+    it('shows the Spring decay and damping ranges the engine can actually hear', () => {
+        renderPanel('spring', { decay: 0.999, damping: 0.999 });
+
+        const decay = screen.getByRole('slider', { name: 'Decay' });
+        const damping = screen.getByRole('slider', { name: 'Damp' });
+        expect(decay).toHaveAttribute('aria-valuemax', '0.95');
+        expect(decay).toHaveAttribute('aria-valuenow', '0.95');
+        expect(damping).toHaveAttribute('aria-valuemax', '0.99');
+        expect(damping).toHaveAttribute('aria-valuenow', '0.99');
+        expect(screen.getAllByText('0.950')).toHaveLength(2);
+        expect(screen.getAllByText('99%')).toHaveLength(2);
+    });
+
+    it('limits Reverse decay without narrowing Plate', () => {
+        renderPanel('reverse', { decay: 0.999 });
+        expect(screen.getByRole('slider', { name: 'Decay' })).toHaveAttribute('aria-valuemax', '0.99');
+
+        cleanup();
+        renderPanel('plate', { decay: 0.999 });
+        expect(screen.getByRole('slider', { name: 'Decay' })).toHaveAttribute('aria-valuemax', '0.999');
     });
 
     for (const algorithm of ALGORITHMS) {

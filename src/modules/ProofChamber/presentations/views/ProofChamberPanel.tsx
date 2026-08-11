@@ -131,6 +131,32 @@ function formatDecayReadout(decay: number, algorithm: ProofChamberAlgorithm): st
     return decay.toFixed(3);
 }
 
+type ChamberControlRange = {
+    min: number;
+    max: number;
+};
+
+function decayRangeForAlgorithm(algorithm: ProofChamberAlgorithm): ChamberControlRange {
+    if (algorithm === 'spring') {
+        return { min: 0, max: 0.95 };
+    }
+    if (algorithm === 'reverse') {
+        return { min: 0, max: 0.99 };
+    }
+    return { min: 0, max: 0.999 };
+}
+
+function dampingRangeForAlgorithm(algorithm: ProofChamberAlgorithm): ChamberControlRange {
+    if (algorithm === 'spring') {
+        return { min: 0, max: 0.99 };
+    }
+    return { min: 0, max: 0.999 };
+}
+
+function clampToRange(value: number, range: ChamberControlRange): number {
+    return Math.max(range.min, Math.min(range.max, value));
+}
+
 function StatusTile({ label, value, accent }: { label: string; value: string; accent: string }): ReactElement {
     return (
         <DawPluginMetricTile
@@ -221,6 +247,7 @@ function KnobCell({
     readout,
     bipolar,
     gate,
+    activeRange,
 }: {
     label: string;
     value: number;
@@ -233,14 +260,16 @@ function KnobCell({
     readout?: string;
     bipolar?: boolean;
     gate: ChamberControlGate;
+    /** Selected-engine travel; `min`/`max` remain the persisted parameter domain. */
+    activeRange?: ChamberControlRange;
 }): ReactElement {
     return (
         <div className="flex min-w-[68px] flex-col items-center gap-1 rounded-[18px] border border-white/8 bg-[var(--color-bg-panelInset)] px-2 py-2 shadow-[var(--shadow-elevation-inset)]">
             <RotaryKnob
                 value={value}
                 onChange={onChange}
-                min={min}
-                max={max}
+                min={activeRange?.min ?? min}
+                max={activeRange?.max ?? max}
                 step={step}
                 defaultValue={defaultValue}
                 size={size}
@@ -276,6 +305,10 @@ export const ProofChamberPanel = ({ deviceId }: { deviceId: string }): ReactElem
     }, [deviceId]);
     const [showDecayEq, setShowDecayEq] = useState(false);
     const [showFlow, setShowFlow] = useState(false);
+    const decayRange = decayRangeForAlgorithm(params.algorithm);
+    const dampingRange = dampingRangeForAlgorithm(params.algorithm);
+    const effectiveDecay = clampToRange(params.decay, decayRange);
+    const effectiveDamping = clampToRange(params.damping, dampingRange);
 
     function setParam(key: keyof ProofChamberEngineState, value: number | boolean): void {
         updateChamberEngine(deviceId, (prev: ProofChamberEngineState) => ({ ...prev, [key]: value }));
@@ -452,7 +485,7 @@ export const ProofChamberPanel = ({ deviceId }: { deviceId: string }): ReactElem
     const decayEqGate = chamberDecayEqGate({
         algorithm: params.algorithm,
         freeze: params.freeze,
-        decay: params.decay,
+        decay: effectiveDecay,
     });
     const decayEqMultipliers = PROOF_CHAMBER_DECAY_EQ_BANDS.map((band) => params[band]);
 
@@ -585,7 +618,7 @@ export const ProofChamberPanel = ({ deviceId }: { deviceId: string }): ReactElem
                     <DawPluginMetricStrip className="ml-auto">
                         <StatusTile
                             label="Decay"
-                            value={formatDecayReadout(params.decay, params.algorithm)}
+                            value={formatDecayReadout(effectiveDecay, params.algorithm)}
                             accent="var(--color-accent-cyan)"
                         />
                         <StatusTile
@@ -614,7 +647,7 @@ export const ProofChamberPanel = ({ deviceId }: { deviceId: string }): ReactElem
                                 <ChamberLed>{tailViewLed}</ChamberLed>
                             </div>
                             <div className="relative min-h-0 flex-1 border-t border-white/6">
-                                <ReverbSpectrogram decay={params.decay} damping={params.damping} />
+                                <ReverbSpectrogram decay={effectiveDecay} damping={effectiveDamping} />
                                 {showDecayEq ? (
                                     <DecayEqOverlay
                                         multipliers={decayEqMultipliers}
@@ -680,7 +713,7 @@ export const ProofChamberPanel = ({ deviceId }: { deviceId: string }): ReactElem
                                 />
                                 <DawReadoutRow
                                     label="Damping"
-                                    value={formatValue(params.damping, '%')}
+                                    value={formatValue(effectiveDamping, '%')}
                                     labelClassName="text-white/56"
                                     valueClassName="text-white/82"
                                 />
@@ -792,14 +825,15 @@ export const ProofChamberPanel = ({ deviceId }: { deviceId: string }): ReactElem
                                 <KnobCell
                                     label="Decay"
                                     gate={gateFor('decay', 'Decay')}
-                                    value={params.decay}
+                                    value={effectiveDecay}
                                     onChange={(value) => setParam('decay', value)}
                                     min={0}
                                     max={0.999}
                                     step={0.001}
                                     defaultValue={0.5}
                                     size="md"
-                                    readout={formatDecayReadout(params.decay, params.algorithm)}
+                                    readout={formatDecayReadout(effectiveDecay, params.algorithm)}
+                                    activeRange={decayRange}
                                 />
                                 <KnobCell
                                     label="Mix"
@@ -857,14 +891,15 @@ export const ProofChamberPanel = ({ deviceId }: { deviceId: string }): ReactElem
                                 <KnobCell
                                     label="Damp"
                                     gate={gateFor('damping', 'Damp')}
-                                    value={params.damping}
+                                    value={effectiveDamping}
                                     onChange={(value) => setParam('damping', value)}
                                     min={0}
                                     max={0.999}
                                     step={0.001}
                                     defaultValue={0.3}
                                     size="md"
-                                    readout={formatValue(params.damping, '%')}
+                                    readout={formatValue(effectiveDamping, '%')}
+                                    activeRange={dampingRange}
                                 />
                                 <KnobCell
                                     label="Diffuse"

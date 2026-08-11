@@ -123,6 +123,19 @@ describe('Gluten topology control gating', () => {
     });
 
     describe('Diode', () => {
+        it('shows the ratio and attack ranges the diode can actually hear', () => {
+            renderPanel({ topology: 'diode', ratio: 20, attack: 0.02 });
+
+            expect(knobFor('Ratio')).toHaveAttribute('aria-valuemin', '1.5');
+            expect(knobFor('Ratio')).toHaveAttribute('aria-valuemax', '6');
+            expect(knobFor('Ratio')).toHaveAttribute('aria-valuenow', '6');
+            expect(knobFor('Attack')).toHaveAttribute('aria-valuemin', '0.5');
+            expect(knobFor('Attack')).toHaveAttribute('aria-valuemax', '30');
+            expect(knobFor('Attack')).toHaveAttribute('aria-valuenow', '0.5');
+            expect(screen.getByText('6.0:1')).toBeInTheDocument();
+            expect(screen.getByText('500 µs')).toBeInTheDocument();
+        });
+
         it('refuses the Release knob and says why on the control itself', () => {
             renderPanel({ topology: 'diode' });
 
@@ -154,6 +167,32 @@ describe('Gluten topology control gating', () => {
 
             expect(knobFor('Release').getAttribute('aria-disabled')).toBeNull();
             expect(chipFor('Auto rel').getAttribute('aria-disabled')).toBeNull();
+        });
+    });
+
+    describe('FET', () => {
+        it('limits Attack to the FET detector range without narrowing VCA', () => {
+            renderPanel({ topology: 'fet', attack: 250 });
+
+            expect(knobFor('Attack')).toHaveAttribute('aria-valuemin', '0.02');
+            expect(knobFor('Attack')).toHaveAttribute('aria-valuemax', '2');
+            expect(knobFor('Attack')).toHaveAttribute('aria-valuenow', '2');
+            expect(screen.getByText('2 ms')).toBeInTheDocument();
+
+            cleanup();
+            renderPanel({ topology: 'vca', attack: 250 });
+
+            expect(knobFor('Attack')).toHaveAttribute('aria-valuemax', '250');
+            expect(knobFor('Attack')).toHaveAttribute('aria-valuenow', '250');
+        });
+
+        it('changes only the topology, leaving broader saved values available when VCA returns', () => {
+            renderPanel({ topology: 'vca', ratio: 20, attack: 250 });
+
+            fireEvent.click(screen.getByRole('button', { name: /FET Snap/i }));
+
+            expect(setParam).toHaveBeenCalledTimes(1);
+            expect(setParam).toHaveBeenCalledWith('gluten-gating-device', 'topology', 'fet');
         });
     });
 
