@@ -1,0 +1,43 @@
+src/modules/Command/useCases/__tests__/executableCommandRegistry.spec.ts
+  s_a40848e8f8cca9::t_729ffaedffc72c 2288
+src/modules/CrdtDocument/handlers/previewBranches/handleCreateDrumPreviewBranches.ts
+  s_a40848e8f8cca9::t_cef0562241c5b7 23-26,28-72
+  s_a40848e8f8cca9::t_729ffaedffc72c 27
+src/modules/AiRuntime/useCases/__tests__/drumPreviewBranchesPromptWorkflow.spec.ts
+  s_a40848e8f8cca9::t_729ffaedffc72c 8-9
+  s_a40848e8f8cca9::t_3ee62d5929c252 605-608
+  s_a40848e8f8cca9::t_9a9dee2d0a098b 292-305,332,596-604,609-611
+  s_a40848e8f8cca9::t_7165869ba1fc04 619
+  s_a40848e8f8cca9::t_5307ef18d83965 616,681-696
+  s_a40848e8f8cca9::t_cef0562241c5b7 328
+  s_a40848e8f8cca9::t_b423c369b4ad4f 612-615
+  s_a40848e8f8cca9::t_7839739c23e1a7 617
+src/modules/Collaboration/useCases/collaboration/canMutateBranchMetadata.ts
+  s_a40848e8f8cca9::t_cef0562241c5b7 1-6
+src/modules/CrdtDocument/handlers/previewBranches/handleDeleteDrumPreviewBranches.ts
+  s_a40848e8f8cca9::t_cef0562241c5b7 5-25
+src/app/__tests__/bootstrap.spec.ts
+  s_a40848e8f8cca9::t_d4dbc5428917f7 173
+src/modules/Collaboration/useCases/index.ts
+  s_a40848e8f8cca9::t_cef0562241c5b7 9
+src/app/bootstrap.ts
+  s_a40848e8f8cca9::t_cef0562241c5b7 62,403
+src/modules/CrdtDocument/useCases/getDrumPreviewBranchHandlers.ts
+  s_a40848e8f8cca9::t_cef0562241c5b7 1-2,4-8,10-11
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "1a901288a77f31255147afbaaa1b674be0983ca3",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
