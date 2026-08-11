@@ -1,0 +1,101 @@
+src/modules/AiRuntime/useCases/__tests__/bassProcessingCopyPromptWorkflow.spec.ts
+  s_a40848e8f8cca9::t_136d443a5c9190 426-427,432-434,438-464,467-510,519-523,525-589,592-594,596-604
+  s_a40848e8f8cca9::t_ad2ae6d7c57c06 764-782
+  s_a40848e8f8cca9::t_df841d4e9e0956 14,17,20,37,81,85,101-120,126-154,157-170,174-192
+  s_a40848e8f8cca9::t_47fa683e2ae967 1-11,15-16,18-19,21-36,38-67,79-80,82-84,86-100,193,214-282,293,300-420,423-425,428-431,435-437,590-591,904-905
+  s_a40848e8f8cca9::t_67fc409658f1a0 13
+  s_a40848e8f8cca9::t_fce8f294266789 68-72,74-78
+  s_a40848e8f8cca9::t_260c195232bf08 285-287,291-292,294-299,422
+  s_a40848e8f8cca9::t_aa6b5d511232b0 12,283-284,421
+  s_a40848e8f8cca9::t_ab162267622d7c 194-213
+  s_a40848e8f8cca9::t_d02dbfdeb5440d 595,606-607,682,685-686,688-703,705-710,712-763,783-865,867-881,883-885,887-903
+  s_a40848e8f8cca9::t_6b6db56f2b081a 866,886
+  s_a40848e8f8cca9::t_5a72661abb1d32 608-681
+  s_a40848e8f8cca9::t_ba54d2cbf8b183 73,121-125,155-156,171-173,288-290,465-466,511-518,524,605,683-684,687,704,711,882
+src/modules/Arrangement/handlers/batchFeature/adjustmentLayerHandlers.ts
+  s_a40848e8f8cca9::t_275c0125dce38a 94,96-112,135
+  s_a40848e8f8cca9::t_f6f4ad8c90dd39 95,113-128,136
+src/modules/Arrangement/handlers/batchFeature/handleAddAdjustmentRegion.ts
+  s_a40848e8f8cca9::t_275c0125dce38a 88-106,108-110
+  s_a40848e8f8cca9::t_5b6a2b5250a2a0 107
+  s_a40848e8f8cca9::t_cf13c01fc6ea00 4-5,57-58,60-64,66-75,82-83,86
+  s_a40848e8f8cca9::t_1d756ffc4952ac 2,8-54,59
+  s_a40848e8f8cca9::t_fce8f294266789 65
+  s_a40848e8f8cca9::t_41052b74e250c2 87
+src/modules/AiRuntime/useCases/agentReference/getBassProcessingCopyPromptScope.ts
+  s_a40848e8f8cca9::t_c3f73070a89ac9 1-182,189-239
+  s_a40848e8f8cca9::t_706166d8f3b1c2 183-188
+  s_a40848e8f8cca9::t_617f7612a3f1e1 240
+src/modules/AiRuntime/transformers/llmActionBridge.ts
+  s_a40848e8f8cca9::t_f5bd0babd62613 7,3082,3092,3101
+  s_a40848e8f8cca9::t_93458284415534 772-797
+src/modules/AiRuntime/useCases/parsePromptToActions.ts
+  s_a40848e8f8cca9::t_2708a0be5afef8 243
+  s_a40848e8f8cca9::t_f5bd0babd62613 21,125,133-134,151
+src/modules/Command/useCases/executableAppActionRegistry.ts
+  s_a40848e8f8cca9::t_6c62301587250e 1805-1823
+  s_a40848e8f8cca9::t_39bb6080201e12 1804
+src/utils/handlerContract.ts
+  s_a40848e8f8cca9::t_1c8fed03a9e5ee 1406-1407,1409-1413
+  s_a40848e8f8cca9::t_275c0125dce38a 1416-1429
+  s_a40848e8f8cca9::t_5bc3d2853bd73f 1414-1415
+src/modules/AiRuntime/useCases/validateActionPayload.ts
+  s_a40848e8f8cca9::t_68f32ac6ea8df4 747-757
+src/modules/AiRuntime/models/BassProcessingCopyCapability.ts
+  s_a40848e8f8cca9::t_c3f73070a89ac9 1-57
+src/modules/AiRuntime/useCases/agentReference/bridgeGroundedLlmToolCalls.ts
+  s_a40848e8f8cca9::t_0bff87f62ee297 22-25,68,3905-3952,4360-4364,4369-4372
+  s_a40848e8f8cca9::t_8b1092dc3860c1 4259-4276
+  s_a40848e8f8cca9::t_ea2bc657c6f4ce 3953-3954
+  s_a40848e8f8cca9::t_c374f2b8f46711 4277-4278
+  s_a40848e8f8cca9::t_ee8c0a43e5a8b3 4373-4374
+src/modules/Arrangement/useCases/adjustmentLayer/addAdjustmentRegion.ts
+  s_a40848e8f8cca9::t_5bd7eb0605957c 8-9,24-25
+src/modules/AiRuntime/useCases/describePendingActionConfirmation.ts
+  s_a40848e8f8cca9::t_706166d8f3b1c2 10,173-175,184,204-220
+  s_a40848e8f8cca9::t_e73fb8863e0c35 333-334
+src/modules/Arrangement/handlers/batchFeature/handleRemoveAdjustmentRegion.ts
+  s_a40848e8f8cca9::t_fce8f294266789 28
+  s_a40848e8f8cca9::t_f6f4ad8c90dd39 3,37-61,65-73
+  s_a40848e8f8cca9::t_275c0125dce38a 4,22-27,29,31-33,35
+  s_a40848e8f8cca9::t_1d756ffc4952ac 7-19,30
+  s_a40848e8f8cca9::t_97061a435ea0d7 36
+src/modules/AiRuntime/useCases/getProjectContext.ts
+  s_a40848e8f8cca9::t_240ecb1557fec8 1-7,20-21,42,55,70,88,123-132,134,258
+  s_a40848e8f8cca9::t_c2967f91200c08 133
+src/modules/AiRuntime/useCases/__tests__/getProjectContext.spec.ts
+  s_a40848e8f8cca9::t_27314bff80d457 11-37
+  s_a40848e8f8cca9::t_6347256181ad0f 5,40-44,122,162,503-555
+  s_a40848e8f8cca9::t_f875aec7ec6869 396-408,411,458
+  s_a40848e8f8cca9::t_bb3a336d35009b 556
+src/modules/AiRuntime/models/RuntimeAction.ts
+  s_a40848e8f8cca9::t_807781982d8162 193,306,358
+src/modules/AiRuntime/models/__tests__/RuntimeAction.spec.ts
+  s_a40848e8f8cca9::t_daa627c7ab9324 26
+  s_a40848e8f8cca9::t_4527193f5af48a 21,63-72,102,137-139
+  s_a40848e8f8cca9::t_c96299c5ac6e2c 62
+src/modules/AiRuntime/useCases/getPlannedActionAffectedIds.ts
+  s_a40848e8f8cca9::t_706166d8f3b1c2 39-50
+src/modules/AiRuntime/models/ProjectContext.ts
+  s_a40848e8f8cca9::t_240ecb1557fec8 16,30-41,52-57
+  s_a40848e8f8cca9::t_e1088b3357ce60 42-51
+src/modules/AiRuntime/useCases/materializeActionStateGuards.ts
+  s_a40848e8f8cca9::t_1800f8cc4f91e0 8,53-63,81,87,97-104,121-124
+  s_a40848e8f8cca9::t_2708a0be5afef8 7,15,50-52,70-80,82-86,88-96,105-120,125-127
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "ae7c062e22d09611bca2697927581b936a1de342",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
