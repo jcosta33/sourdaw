@@ -27,7 +27,7 @@ import { BUILTIN_PLUGINS } from '../../DeviceParameter';
  *     declared range  ==  knob travel  ==  engine clamp
  *
  * Two of those legs are derivable for every parameter this file compares; the
- * third is derivable for 114 of the 192. So the census is **three-way where it
+ * third is derivable for 116 of the 193. So the census is **three-way where it
  * can be and two-way where it cannot**, and it says which is which rather than
  * implying uniform coverage. A two-way row that is honest beats a three-way one
  * that fabricates a clamp from a comment.
@@ -47,7 +47,7 @@ import { BUILTIN_PLUGINS } from '../../DeviceParameter';
  *
  * **Leg 3 — engine clamp.** The two-sided numeric `value.clamp(a, b)` in the
  * Rust `set_param` arm, read the way `descriptorEngineParamWeld` reads the arm
- * names, split per exclusive alternative where a device has one. Covers 114 of 192; every shape it cannot read is named in
+ * names, split per exclusive alternative where a device has one. Covers 116 of 193; every shape it cannot read is named in
  * `ENGINE_CLAMP_COVERAGE`, at the point where the derivation stops.
  *
  * ## Coverage is part of the claim
@@ -188,6 +188,7 @@ function collectTsx(dir: string, out: string[] = []): string[] {
 }
 
 const NUMBER = String.raw`-?\d+(?:\.\d+)?(?:e-?\d+)?`;
+const RUST_NUMBER = String.raw`-?\d(?:_?\d)*(?:\.\d(?:_?\d)*)?(?:e-?\d(?:_?\d)*)?`;
 
 /** The value of JSX attribute `name`: a braced expression, or a quoted string. */
 function readAttribute(tag: string, name: string): string | null {
@@ -566,6 +567,35 @@ const ENGINE_SOURCES: Readonly<Record<string, string | null>> = {
     yeast: null,
 };
 
+type CalleeClampProvider = {
+    readonly paramName: string;
+    readonly source: string;
+    readonly functionName: string;
+    readonly valueName: string;
+};
+
+/**
+ * Explicit one-hop providers for dispatcher arms whose bound moved into a
+ * named setter. The mapping prevents a generic same-name search from letting
+ * an unrelated callee vouch for a parameter.
+ */
+const CALLEE_CLAMP_PROVIDERS: Readonly<Record<string, readonly CalleeClampProvider[]>> = {
+    gluten: [
+        {
+            paramName: 'sc_hpf_freq',
+            source: 'crates/daw-dsp/src/gluten/sidechain.rs',
+            functionName: 'set_hpf_freq',
+            valueName: 'frequency',
+        },
+        {
+            paramName: 'sc_lpf_freq',
+            source: 'crates/daw-dsp/src/gluten/sidechain.rs',
+            functionName: 'set_lpf_freq',
+            valueName: 'frequency',
+        },
+    ],
+};
+
 function collectRust(path: string, out: string[] = []): string[] {
     for (const entry of readdirSync(path)) {
         const full = join(path, entry);
@@ -663,6 +693,49 @@ function readClampsFromFiles(files: readonly string[]): {
     return { byName, contested };
 }
 
+function readCalleeClamp(provider: CalleeClampProvider): Clamp | null {
+    const source = stripComments(readFileSync(join(REPO_ROOT, provider.source), 'utf8'));
+    const signature = new RegExp(String.raw`\bfn\s+${provider.functionName}\s*\(`);
+    const match = signature.exec(source);
+    if (match === null) {
+        return null;
+    }
+    const openIndex = source.indexOf('{', match.index + match[0].length);
+    if (openIndex === -1) {
+        return null;
+    }
+    const body = readBraced(source, openIndex).replaceAll(/\s+/g, ' ');
+    const clamp = new RegExp(
+        String.raw`\b${provider.valueName}\.clamp\(\s*(${RUST_NUMBER})\s*,\s*(${RUST_NUMBER})\s*\)`
+    ).exec(body);
+    if (clamp === null) {
+        return null;
+    }
+    return [Number(clamp[1]!.replaceAll('_', '')), Number(clamp[2]!.replaceAll('_', ''))];
+}
+
+function mergeCalleeClamps(
+    deviceId: string,
+    direct: { readonly byName: ReadonlyMap<string, Clamp>; readonly contested: readonly string[] }
+): { byName: ReadonlyMap<string, Clamp>; contested: readonly string[] } {
+    const byName = new Map(direct.byName);
+    const contested = new Set(direct.contested);
+    for (const provider of CALLEE_CLAMP_PROVIDERS[deviceId] ?? []) {
+        const clamp = readCalleeClamp(provider);
+        if (clamp === null) {
+            continue;
+        }
+        const existing = byName.get(provider.paramName);
+        if (existing !== undefined && (existing[0] !== clamp[0] || existing[1] !== clamp[1])) {
+            byName.delete(provider.paramName);
+            contested.add(provider.paramName);
+            continue;
+        }
+        byName.set(provider.paramName, clamp);
+    }
+    return { byName, contested: [...contested].sort() };
+}
+
 /** `filterCutoff` → `filter_cutoff`, the translation every camelCase worklet performs. */
 function camelToSnake(paramId: string): string {
     return paramId.replaceAll(/[A-Z]/g, (letter) => `_${letter.toLowerCase()}`);
@@ -676,7 +749,7 @@ function readEngineClampsUnioned(deviceId: string): {
     if (root === null || root === undefined) {
         return { byName: new Map(), contested: [] };
     }
-    return readClampsFromFiles(collectRust(join(REPO_ROOT, root)));
+    return mergeCalleeClamps(deviceId, readClampsFromFiles(collectRust(join(REPO_ROOT, root))));
 }
 
 /**
@@ -838,7 +911,7 @@ function readEngineClamps(deviceId: string): EngineClamps {
     const present = (sources: readonly string[]): string[] =>
         sources.map((source) => join(REPO_ROOT, source)).filter((file) => existsSync(file));
 
-    const shared = readClampsFromFiles(present(split.sharedSources));
+    const shared = mergeCalleeClamps(deviceId, readClampsFromFiles(present(split.sharedSources)));
     const perEngine = new Map<string, ReadonlyMap<string, Clamp>>();
     for (const alternative of split.alternatives) {
         perEngine.set(alternative.engineId, readClampsFromFiles(present(alternative.sources)).byName);
@@ -1166,8 +1239,9 @@ const KNOWN_RANGE_DISAGREEMENTS: readonly RangeDisagreement[] = [
  * Written here, at the point the derivation stops, rather than only in a PR
  * description: a future lane reading this file will otherwise assume the third
  * leg is covered everywhere and build on it. It is **not** a population-wide
- * equality. It covers 116 of the 192 compared parameters — the ones whose arm
- * contains a two-sided numeric `value.clamp(a, b)`. The remaining 76 are not
+ * equality. It covers 116 of the 193 compared parameters — the ones whose arm
+ * contains a two-sided numeric `value.clamp(a, b)` or whose explicitly mapped
+ * one-hop provider does. The remaining 77 are not
  * skipped for effort; each shape below yields no interval to compare, and
  * inventing one is exactly the "fabricate a clamp from a comment" this census
  * must not do.
@@ -1670,11 +1744,11 @@ describe('declared parameter range agrees with the knob that drives it', () => {
         expect(CENSUS.ambiguous).toStrictEqual([]);
 
         // threeWay = the subset of `compared` that ALSO has a derivable engine
-        // clamp. 114 of 192 is the honest size of the three-way census; the
-        // other 78 are two-way only, for the shapes named in
+        // clamp. 116 of 193 is the honest size of the three-way census; the
+        // other 77 are two-way only, for the shapes named in
         // `ENGINE_CLAMP_COVERAGE.notDerivable`. Distribution is pinned
         // separately, by identity, in `threeWayPerDevice`.
-        expect(CENSUS.threeWay.length).toBe(114);
+        expect(CENSUS.threeWay.length).toBe(116);
 
         // The findings themselves, **by identity**. This was a bare count, which
         // is the wrong shape for a list of named defects: one row leaving while
@@ -1767,7 +1841,7 @@ describe('declared parameter range agrees with the knob that drives it', () => {
         // is a named zero that has to be justified.
         expect(Object.fromEntries(CENSUS.threeWayPerDevice)).toStrictEqual({
             fermenter: 53,
-            gluten: 19,
+            gluten: 21,
             bacteria: 19,
             'dutch-oven': 12,
             // Only four of Grinder's 25 compared parameters reach leg 3: most of
@@ -1959,6 +2033,17 @@ describe('declared parameter range agrees with the knob that drives it', () => {
         expect(readEngineClamps('fermenter').shared.get('osc_coarse')).toStrictEqual([-24, 24]);
         expect(readEngineClamps('crust').shared.get('ceiling')).toStrictEqual([-24, 0]);
         expect(readEngineClamps('grand-boule').shared.get('velocity_curve')).toStrictEqual([0.5, 2]);
+        const gluten = readEngineClamps('gluten');
+        expect(gluten.shared.get('sc_hpf_freq')).toStrictEqual([20, 500]);
+        expect(gluten.shared.get('sc_lpf_freq')).toStrictEqual([1000, 20000]);
+        expect(
+            CENSUS.threeWay
+                .filter(
+                    (row) => row.deviceId === 'gluten' && (row.paramId === 'scHpfFreq' || row.paramId === 'scLpfFreq')
+                )
+                .map((row) => row.paramId)
+                .sort()
+        ).toStrictEqual(['scHpfFreq', 'scLpfFreq']);
 
         // And the shape that must stay ABSENT. `(value / 10.0).clamp(0.0, 1.0)`
         // at `crates/daw-dsp/src/grinder/pedals.rs:36-38` bounds the transformed
