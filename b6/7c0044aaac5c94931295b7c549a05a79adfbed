@@ -1,0 +1,92 @@
+src/modules/MIDI/useCases/midiNoteTransforms/projectShortMidiOverlapRemoval.ts
+  s_a40848e8f8cca9::t_3799afaf255b81 1-88
+  s_a40848e8f8cca9::t_44f94f6801fe34 89-90
+src/modules/AiRuntime/models/MidiOverlapTransformCapability.ts
+  s_a40848e8f8cca9::t_829c962cd55f1d 1-32
+src/modules/AiRuntime/useCases/agentReference/getMidiOverlapTransformPromptScope.ts
+  s_a40848e8f8cca9::t_829c962cd55f1d 1-161
+src/modules/AiRuntime/useCases/validateActionPayload.ts
+  s_a40848e8f8cca9::t_05e27497441cde 397-402
+src/modules/MIDI/useCases/getMidiNoteTransformHandlers.ts
+  s_a40848e8f8cca9::t_1594f8113df3dc 9,24,47
+src/modules/Command/useCases/actionLabels.ts
+  s_a40848e8f8cca9::t_05e27497441cde 40
+src/modules/AiRuntime/useCases/parsePromptToActions.ts
+  s_a40848e8f8cca9::t_076460cff5b7ff 23,125,133-134,157,249
+src/utils/handlerContract.ts
+  s_a40848e8f8cca9::t_1594f8113df3dc 903-915,948-953
+  s_a40848e8f8cca9::t_2baf2e0c0992ec 902
+  s_a40848e8f8cca9::t_5cf0d433352435 954
+src/modules/MIDI/useCases/midiNoteTransforms/restoreMidiClipNotes.ts
+  s_a40848e8f8cca9::t_1594f8113df3dc 2,21-26,57,66-79
+  s_a40848e8f8cca9::t_029ccaf0f95dbe 80
+src/modules/AiRuntime/useCases/describePlannedAction.ts
+  s_a40848e8f8cca9::t_6df1c2fc327440 3,218-232
+  s_a40848e8f8cca9::t_190bc2e76feff0 233-234
+src/modules/MIDI/useCases/midiNoteTransforms/__tests__/projectShortMidiOverlapRemoval.spec.ts
+  s_a40848e8f8cca9::t_db9a12ca2d8226 1-23,31-53,55-69
+  s_a40848e8f8cca9::t_ca557a4a595f14 24-30,54
+src/modules/AiRuntime/models/__tests__/RuntimeAction.spec.ts
+  s_a40848e8f8cca9::t_dfe42b2ca50b06 26
+  s_a40848e8f8cca9::t_93f419040f56af 21,46,90,118-124
+src/modules/AiRuntime/transformers/llmActionBridge.ts
+  s_a40848e8f8cca9::t_8248902bf2f633 9,1320-1340,3106,3117,3127
+src/modules/MIDI/handlers/noteTransform/handleRemoveShortMidiOverlaps.ts
+  s_a40848e8f8cca9::t_3799afaf255b81 1-66
+src/modules/AiRuntime/models/RuntimeAction.ts
+  s_a40848e8f8cca9::t_05e27497441cde 79,301,355
+src/modules/MIDI/useCases/__tests__/getMidiNoteTransformHandlers.spec.ts
+  s_a40848e8f8cca9::t_93f419040f56af 45
+src/modules/Command/useCases/__tests__/executableCommandRegistry.spec.ts
+  s_a40848e8f8cca9::t_93f419040f56af 361-375,1518-1529
+  s_a40848e8f8cca9::t_e5b643436d551b 360
+  s_a40848e8f8cca9::t_42fd9675d6f7dd 1530
+src/modules/MIDI/useCases/midiNoteTransforms/removeShortMidiOverlaps.ts
+  s_a40848e8f8cca9::t_3799afaf255b81 1-46
+src/modules/Command/useCases/executableAppActionRegistry.ts
+  s_a40848e8f8cca9::t_05e27497441cde 816-842
+  s_a40848e8f8cca9::t_15d75dabd7cec9 815
+src/modules/AiRuntime/useCases/getPlannedActionAffectedIds.ts
+  s_a40848e8f8cca9::t_8f345774f1bb7e 15
+  s_a40848e8f8cca9::t_6df1c2fc327440 2,13-14,16-23
+  s_a40848e8f8cca9::t_34f820c6bfb9f8 24
+src/modules/AiRuntime/useCases/describePendingActionConfirmation.ts
+  s_a40848e8f8cca9::t_6df1c2fc327440 14,177-179,189
+src/modules/AiRuntime/useCases/materializeActionStateGuards.ts
+  s_a40848e8f8cca9::t_c1d3675472a7bb 8,17,177-198
+  s_a40848e8f8cca9::t_2c2af98c99a0cd 199-201
+  s_a40848e8f8cca9::t_e4ea115785cd7e 202
+src/modules/MIDI/useCases/midiNoteTransforms/describeShortMidiOverlapRemoval.ts
+  s_a40848e8f8cca9::t_3799afaf255b81 1-27
+src/modules/MIDI/useCases/index.ts
+  s_a40848e8f8cca9::t_1594f8113df3dc 118-119
+src/modules/Command/useCases/getAppActionExecutionPolicy.ts
+  s_a40848e8f8cca9::t_05e27497441cde 91
+src/modules/AiRuntime/useCases/agentReference/bridgeGroundedLlmToolCalls.ts
+  s_a40848e8f8cca9::t_e2619a9eaf9ec5 29-32,73,4008-4040,4298-4301,4404,4414
+src/modules/AiRuntime/useCases/__tests__/midiOverlapPromptWorkflow.spec.ts
+  s_a40848e8f8cca9::t_fc5951bfadabf5 278-281
+  s_a40848e8f8cca9::t_bfe6ecb2e7dc94 156-160,163,166-167
+  s_a40848e8f8cca9::t_465e32febebe9e 500-540
+  s_a40848e8f8cca9::t_e640e006da7cdb 218-225,307-311,341-420,431-499,541-546,556-632
+  s_a40848e8f8cca9::t_ca557a4a595f14 49,134-137,172,176,318-340,421-430,547-555
+  s_a40848e8f8cca9::t_2757044470d697 11,14,17,36,42-48,50-52,55,59
+  s_a40848e8f8cca9::t_577c3b641dd8c9 1-10,12-13,15-16,18-35,37-41,53-54,56-58,60-133,138-155,161-162,164-165,168-169,211-217,226-228,231,233,235,242-277,282-306,312-317,633-634
+  s_a40848e8f8cca9::t_e961d1bcaf5d3c 170-171,173-175,177-210,229-230,232,234,236-241
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "b67c0044aaac5c94931295b7c549a05a79adfbed",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
