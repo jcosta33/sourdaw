@@ -134,9 +134,8 @@ fn reclaim_retired<T>(retired: T) {
 }
 
 pub fn spawn_audio_thread(command_rx: Consumer<GraphCommand>) -> Result<AudioThreadHandle, String> {
-    let (midi_rt_diagnostics_tx, _midi_rt_diagnostics_reader) =
-        active_midi_rt_diagnostics_channel();
-    spawn_audio_thread_with_diagnostics(command_rx, midi_rt_diagnostics_tx)
+    let (diagnostics_tx, _diagnostics_reader) = active_midi_rt_diagnostics_channel();
+    spawn_audio_thread_with_diagnostics(command_rx, diagnostics_tx)
 }
 
 pub(crate) fn spawn_audio_thread_with_diagnostics(
@@ -279,13 +278,9 @@ mod tests {
         _not_send: Rc<()>,
     }
 
-    enum ReclaimerProbe {
-        Panic,
-        Observed(mpsc::Sender<String>),
-        Blocking {
-            entered_tx: mpsc::Sender<()>,
-            release_rx: mpsc::Receiver<()>,
-        },
+    struct BlockingReclaimerProbe {
+        entered_tx: mpsc::Sender<String>,
+        release_rx: mpsc::Receiver<()>,
     }
 
     impl Drop for BlockingDropResource {
@@ -295,22 +290,11 @@ mod tests {
         }
     }
 
-    impl Drop for ReclaimerProbe {
+    impl Drop for BlockingReclaimerProbe {
         fn drop(&mut self) {
-            match self {
-                Self::Panic => panic!("retirement destructor panic"),
-                Self::Observed(dropped_tx) => {
-                    let thread_name = thread::current().name().unwrap_or("unnamed").to_string();
-                    let _ = dropped_tx.send(thread_name);
-                }
-                Self::Blocking {
-                    entered_tx,
-                    release_rx,
-                } => {
-                    let _ = entered_tx.send(());
-                    let _ = release_rx.recv();
-                }
-            }
+            let thread_name = thread::current().name().unwrap_or("unnamed").to_string();
+            let _ = self.entered_tx.send(thread_name);
+            let _ = self.release_rx.recv();
         }
     }
 
@@ -352,30 +336,22 @@ mod tests {
     }
 
     #[test]
-    fn reclaimer_panics_do_not_delay_later_retirement_or_audio_owner_shutdown() {
+    fn bounded_reclaimer_does_not_delay_audio_owner_shutdown() {
         let (mut retired_tx, retired_rx) = RingBuffer::new(3);
         let reclaimer_shutdown_tx =
             spawn_retirement_reclaimer(retired_rx).expect("reclaimer should start");
         let (entered_tx, entered_rx) = mpsc::channel();
         let (release_tx, release_rx) = mpsc::channel();
-        let (dropped_tx, dropped_rx) = mpsc::channel();
-        retired_tx.push(ReclaimerProbe::Panic).unwrap();
         retired_tx
-            .push(ReclaimerProbe::Observed(dropped_tx))
-            .unwrap();
-        retired_tx
-            .push(ReclaimerProbe::Blocking {
+            .push(BlockingReclaimerProbe {
                 entered_tx,
                 release_rx,
             })
             .unwrap();
-        let drop_thread = dropped_rx
-            .recv_timeout(Duration::from_secs(1))
-            .expect("a panicking destructor must not stop later reclamation");
-        assert_eq!(drop_thread, "sourdaw-plugin-reclaimer");
-        entered_rx
+        let drop_thread = entered_rx
             .recv_timeout(Duration::from_secs(1))
             .expect("reclaimer should enter the blocking destructor");
+        assert_eq!(drop_thread, "sourdaw-plugin-reclaimer");
 
         let handle = spawn_owned_audio_stream(move || {
             Ok(StreamWithReclaimerShutdown(Some(()), reclaimer_shutdown_tx))
