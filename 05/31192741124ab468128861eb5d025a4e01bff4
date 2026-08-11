@@ -1,0 +1,45 @@
+crates/daw-dsp/src/grand_boule/engine.rs
+  s_bc88af7d3b054c::t_89fa32d672f71e 13,67,133,461,466-477,656-658,704,1654-1713
+crates/daw-dsp/src/grand_boule/mod.rs
+  s_bc88af7d3b054c::t_9335ef1be77e01 20
+crates/daw-dsp/src/grand_boule/radiation.rs
+  s_bc88af7d3b054c::t_b4b7c32eaa1a67 1-152
+crates/daw-dsp/tests/device_process_rt.rs
+  s_bc88af7d3b054c::t_dbd08b71cb19db 1012-1015
+public/wasm/daw-dsp/daw_dsp.d.ts
+  s_bc88af7d3b054c::t_17d4a899c5e154 1,879-892,894-1003
+public/wasm/daw-dsp/daw_dsp_bg.wasm.d.ts
+  s_bc88af7d3b054c::t_85d34001cab085 1,83-96,98-207
+public/wasm/manifest.json
+  s_bc88af7d3b054c::t_943b3c0f7b75e1 12,16-18,21
+src/modules/Arrangement/models/PluginDescriptors/GrandBouleDescriptor.ts
+  s_bc88af7d3b054c::t_34af7bc8351499 55-80
+src/modules/Arrangement/models/PluginDescriptors/__tests__/declaredRangeVsKnobTravel.spec.ts
+  s_bc88af7d3b054c::t_1cc070bb750835 1667-1668,1753-1756,2224,2254
+src/modules/Arrangement/models/__tests__/DeviceParameterLaw.spec.ts
+  s_bc88af7d3b054c::t_0d2b5beb674542 296-297,300
+src/modules/AudioEngine/wasm/daw_dsp.d.ts
+  s_bc88af7d3b054c::t_c5cc04dbc3b3b7 1,879-892,894-1003
+src/modules/AudioEngine/worklets/__tests__/grandBouleDispatchParity.spec.ts
+  s_bc88af7d3b054c::t_f4e1447d366a47 177-178,301-302
+src/modules/AudioEngine/worklets/grandBouleEngineCore.ts
+  s_bc88af7d3b054c::t_556ccb57b837bd 60-61
+src/modules/GrandBoule/models/GrandBouleConfig.ts
+  s_bc88af7d3b054c::t_81f12736032d8c 15-18,44-45
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "0531192741124ab468128861eb5d025a4e01bff4",
+  "prompts": {},
+  "sessions": {
+    "s_bc88af7d3b054c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f9b4a-11a2-7f61-8dfb-76eed0eb2a9c",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
