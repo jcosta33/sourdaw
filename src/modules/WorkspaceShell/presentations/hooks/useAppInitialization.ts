@@ -126,6 +126,34 @@ export const useAppInitialization = (): void => {
         // autosave and changing the interval re-arms at the new cadence. We
         // re-read on every preferences change rather than capturing once.
         let interval: ReturnType<typeof setInterval> | null = null;
+        let saveInFlight = false;
+        let savePending = false;
+        let disposed = false;
+
+        const runAutosave = async (): Promise<void> => {
+            if (saveInFlight) {
+                savePending = true;
+                return;
+            }
+
+            const enabled = preferencesStore.value?.autoSave ?? true;
+            const requiresSnapshot = projectStore.value?.dirty === true;
+            const transportIsPlaying = getTransportState()?.isPlaying === true;
+            if (!enabled || !requiresSnapshot || transportIsPlaying) {
+                return;
+            }
+
+            saveInFlight = true;
+            try {
+                await saveProject();
+            } finally {
+                saveInFlight = false;
+                if (savePending && !disposed) {
+                    savePending = false;
+                    void runAutosave();
+                }
+            }
+        };
 
         const applyAutosaveSchedule = (): void => {
             if (interval !== null) {
@@ -139,18 +167,15 @@ export const useAppInitialization = (): void => {
             }
             const intervalMs = prefs?.autoSaveIntervalMs ?? 30_000;
             interval = setInterval(() => {
-                const requiresSnapshot = projectStore.value?.dirty === true;
-                const transportIsPlaying = getTransportState()?.isPlaying === true;
-                if (requiresSnapshot && !transportIsPlaying) {
-                    // saveProject reports full-snapshot failures to the user.
-                    void saveProject();
-                }
+                // saveProject reports full-snapshot failures to the user.
+                void runAutosave();
             }, intervalMs);
         };
 
         applyAutosaveSchedule();
         const unsubscribe = preferencesStore.subscribe(applyAutosaveSchedule);
         return () => {
+            disposed = true;
             if (interval !== null) {
                 clearInterval(interval);
             }

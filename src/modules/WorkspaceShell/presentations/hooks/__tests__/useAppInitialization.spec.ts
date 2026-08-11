@@ -255,6 +255,7 @@ describe('useAppInitialization — autosave governed by preferences', () => {
         vi.useFakeTimers();
         vi.mocked(resumeEngine).mockResolvedValue(undefined);
         vi.mocked(requestMicPermission).mockResolvedValue(false);
+        vi.mocked(saveProject).mockResolvedValue(true);
         mockPreferencesValueHolder.current = { uiScale: 1, autoSave: true, autoSaveIntervalMs: 30_000 };
         try {
             localStorage.setItem('wd:first-load-hint-shown', '1');
@@ -280,25 +281,25 @@ describe('useAppInitialization — autosave governed by preferences', () => {
         expect(saveProject).not.toHaveBeenCalled();
     });
 
-    it('fires saveProject on the preference-configured interval when autoSave is enabled', () => {
+    it('fires saveProject on the preference-configured interval when autoSave is enabled', async () => {
         mockPreferencesValueHolder.current = { uiScale: 1, autoSave: true, autoSaveIntervalMs: 10_000 };
         projectStoreMock.current = { dirty: true };
 
         renderHook(() => useAppInitialization());
 
-        vi.advanceTimersByTime(10_000);
+        await vi.advanceTimersByTimeAsync(10_000);
         expect(saveProject).toHaveBeenCalledTimes(1);
 
-        vi.advanceTimersByTime(20_000);
+        await vi.advanceTimersByTimeAsync(20_000);
         expect(saveProject).toHaveBeenCalledTimes(3);
     });
 
-    it('stops, starts, and re-arms autosave when preferences change mid-session', () => {
+    it('stops, starts, and re-arms autosave when preferences change mid-session', async () => {
         mockPreferencesValueHolder.current = { uiScale: 1, autoSave: false, autoSaveIntervalMs: 30_000 };
         projectStoreMock.current = { dirty: true };
         renderHook(() => useAppInitialization());
 
-        vi.advanceTimersByTime(60_000);
+        await vi.advanceTimersByTimeAsync(60_000);
         expect(saveProject).not.toHaveBeenCalled();
 
         mockPreferencesValueHolder.current = { uiScale: 1, autoSave: true, autoSaveIntervalMs: 30_000 };
@@ -307,9 +308,9 @@ describe('useAppInitialization — autosave governed by preferences', () => {
                 listener();
             }
         });
-        vi.advanceTimersByTime(29_999);
+        await vi.advanceTimersByTimeAsync(29_999);
         expect(saveProject).not.toHaveBeenCalled();
-        vi.advanceTimersByTime(1);
+        await vi.advanceTimersByTimeAsync(1);
         expect(saveProject).toHaveBeenCalledOnce();
 
         mockPreferencesValueHolder.current = { uiScale: 1, autoSave: true, autoSaveIntervalMs: 60_000 };
@@ -318,9 +319,9 @@ describe('useAppInitialization — autosave governed by preferences', () => {
                 listener();
             }
         });
-        vi.advanceTimersByTime(59_999);
+        await vi.advanceTimersByTimeAsync(59_999);
         expect(saveProject).toHaveBeenCalledOnce();
-        vi.advanceTimersByTime(1);
+        await vi.advanceTimersByTimeAsync(1);
         expect(saveProject).toHaveBeenCalledTimes(2);
 
         mockPreferencesValueHolder.current = { uiScale: 1, autoSave: false, autoSaveIntervalMs: 60_000 };
@@ -329,7 +330,28 @@ describe('useAppInitialization — autosave governed by preferences', () => {
                 listener();
             }
         });
-        vi.advanceTimersByTime(120_000);
+        await vi.advanceTimersByTimeAsync(120_000);
+        expect(saveProject).toHaveBeenCalledTimes(2);
+    });
+
+    it('coalesces ticks while a project snapshot is still being saved', async () => {
+        let finishFirstSave: ((saved: boolean) => void) | undefined;
+        const firstSave = new Promise<boolean>((resolve) => {
+            finishFirstSave = resolve;
+        });
+        vi.mocked(saveProject).mockReturnValueOnce(firstSave);
+        mockPreferencesValueHolder.current = { uiScale: 1, autoSave: true, autoSaveIntervalMs: 10_000 };
+        projectStoreMock.current = { dirty: true };
+        renderHook(() => useAppInitialization());
+
+        vi.advanceTimersByTime(30_000);
+        expect(saveProject).toHaveBeenCalledOnce();
+
+        await act(async () => {
+            finishFirstSave?.(true);
+            await firstSave;
+        });
+
         expect(saveProject).toHaveBeenCalledTimes(2);
     });
 
