@@ -1,0 +1,26 @@
+src/modules/ProofChamber/models/ProofChamberState.ts
+  s_bc88af7d3b054c::t_deb2d257c9ec12 169
+src/modules/ProofChamber/models/__tests__/ProofChamberPatch.spec.ts
+  s_bc88af7d3b054c::t_87e991487e16de 47-50
+crates/proof-chamber/tests/infinite_space_tail.rs
+  s_bc88af7d3b054c::t_87f231676cd742 45-48,57
+  s_bc88af7d3b054c::t_87e991487e16de 1-44,49-56,58-62
+src/modules/ProofChamber/presentations/views/__tests__/proofChamberPresetUndo.integration.spec.tsx
+  s_bc88af7d3b054c::t_ce9ca46b4fa820 201-215
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "fae0ab655db180aea511c634d55c1ebfb4fe38ab",
+  "prompts": {},
+  "sessions": {
+    "s_bc88af7d3b054c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f9b4a-11a2-7f61-8dfb-76eed0eb2a9c",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
