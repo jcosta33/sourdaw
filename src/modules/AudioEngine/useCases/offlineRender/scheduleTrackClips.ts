@@ -34,6 +34,7 @@ import { type DeviceNodeEntry, buildDeviceChain } from '../buildDeviceChain';
 import { getCompensationDelay } from '../latencyCompensation/compensation/getCompensationDelay';
 import { getDefaultBendRangeSemitones } from '../noteExpression/getDefaultBendRangeSemitones';
 
+import { checkCancel } from './checkCancel';
 import { MICRO_FADE_SECONDS, MIXER_AUTOMATION_PARAMETER_IDS, YIELD_EVERY_N_NOTES } from './constants';
 import { projectOfflineYeastTrackNotes } from './projectOfflineYeastTrackNotes';
 import { type OfflineScheduleTally, type PendingWorkletEvent } from './types';
@@ -440,6 +441,13 @@ export async function scheduleTrackClips({
         articulationId?: number;
     };
 
+    function clampOptional(value: number | undefined, minimum: number, maximum: number): number | undefined {
+        if (value === undefined) {
+            return undefined;
+        }
+        return Math.max(minimum, Math.min(maximum, value));
+    }
+
     function resolveScheduledMpe(note: ScheduledMidiNote) {
         const hasExpression = note.pressure !== undefined || note.slide !== undefined || note.pitchBend !== undefined;
         if (!hasExpression) {
@@ -447,10 +455,10 @@ export async function scheduleTrackClips({
         }
 
         const mpe = {
-            pressure: note.pressure,
-            slide: note.slide,
-            pitchBend: note.pitchBend,
-            pitchBendRangeSemitones: note.pitchBendRangeSemitones,
+            pressure: clampOptional(note.pressure, 0, 127),
+            slide: clampOptional(note.slide, 0, 127),
+            pitchBend: clampOptional(note.pitchBend, -8192, 8191),
+            pitchBendRangeSemitones: clampOptional(note.pitchBendRangeSemitones, 0, 127),
         };
         if (note.pitchBend !== undefined && mpe.pitchBendRangeSemitones === undefined) {
             mpe.pitchBendRangeSemitones = getDefaultBendRangeSemitones();
@@ -517,6 +525,7 @@ export async function scheduleTrackClips({
 
     async function scheduleMidiNoteBatch(notes: readonly ScheduledMidiNote[]): Promise<void> {
         for (const note of notes) {
+            checkCancel();
             if (note.endSamples <= regionStartSec * offlineCtx.sampleRate) {
                 continue;
             }
@@ -670,6 +679,7 @@ export async function scheduleTrackClips({
                     midiOffsetBeats: clip.midiOffsetBeats ?? 0,
                     loopEnabled: clip.loopEnabled ?? false,
                     toasterPadIndex: padIndex,
+                    clipGain: clip.gain,
                 });
             }
         }
@@ -690,14 +700,13 @@ export async function scheduleTrackClips({
             await scheduleMidiNoteBatch(
                 scheduledNotes.map((note) => {
                     if (note.toasterPadIndex < 0) {
-                        return { ...note, clipGain: 1 };
+                        return note;
                     }
                     const endpoints = projectNoteEndpoints(note.startBeat, note.endBeat, note.toasterPadIndex);
                     return {
                         ...note,
                         startSamples: endpoints.startSamples,
                         endSamples: endpoints.endSamples,
-                        clipGain: 1,
                     };
                 })
             );

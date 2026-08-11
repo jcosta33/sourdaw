@@ -89,6 +89,7 @@ const mocks = vi.hoisted(() => {
         scheduleKitNote: vi.fn(),
         scheduleNoteOffline: vi.fn(),
         resolveDrumKit: vi.fn<() => unknown>(() => null),
+        checkCancel: vi.fn(),
         shouldPlayMidiEvent: vi.fn<OfflineMidiProbabilitySelector>(({ probabilityPercent }) => probabilityPercent > 0),
         projection,
     };
@@ -221,6 +222,10 @@ vi.mock('../../../stores/audioBufferCache', () => ({
     audioBufferCache: mocks.audioBufferCache,
 }));
 
+vi.mock('../checkCancel', () => ({
+    checkCancel: mocks.checkCancel,
+}));
+
 // Synth note-scheduling helpers are unused on the worklet-instrument path
 // (instrumentControls present → events go to pendingWorkletEvents), but the
 // module is imported so we stub it to keep it inert.
@@ -319,6 +324,7 @@ type RunScheduleInput = {
     };
     useLegacyScheduler?: boolean;
     trackDeviceType?: string;
+    includeSecondNote?: boolean;
 };
 
 async function runSchedule({
@@ -338,6 +344,7 @@ async function runSchedule({
     noteExpression,
     useLegacyScheduler = false,
     trackDeviceType,
+    includeSecondNote = false,
 }: RunScheduleInput = {}): Promise<PendingWorkletEvent[]> {
     const offlineCtx = makeOfflineCtx();
     const track = makeMidiTrack();
@@ -357,6 +364,9 @@ async function runSchedule({
     const midi = makeMidi();
     if (noteExpression) {
         Object.assign(midi.notesByClipId['clip-1']![0]!, noteExpression);
+    }
+    if (includeSecondNote) {
+        midi.notesByClipId['clip-1']!.push({ id: 'note-2', pitch: 62, startBeat: 2, duration: 1, velocity: 90 });
     }
     if (probability !== undefined) {
         midi.notesByClipId['clip-1']![0]!.probability = probability;
@@ -439,12 +449,14 @@ describe('scheduleTrackClips — legacy instrument parity', () => {
         mocks.getDrumKitDefByIndex.mockReturnValue(null);
         mocks.getSynthParamsFromDevices.mockReturnValue(null);
         mocks.resolveDrumKit.mockReturnValue(null);
+        mocks.checkCancel.mockImplementation(() => {});
     });
 
     afterEach(() => {
         mocks.getDrumKitDefByIndex.mockReturnValue(null);
         mocks.getSynthParamsFromDevices.mockReturnValue(null);
         mocks.resolveDrumKit.mockReturnValue(null);
+        mocks.checkCancel.mockImplementation(() => {});
     });
 
     it('passes clip gain and recorded MPE expression to the offline built-in synth', async () => {
@@ -505,6 +517,46 @@ describe('scheduleTrackClips — legacy instrument parity', () => {
             100,
             0.35
         );
+    });
+
+    it('preserves routed clip expression and gain through Yeast', async () => {
+        const synthParams = { waveform: 'sawtooth' };
+        const mpe = { pressure: 90, slide: 45, pitchBend: 4_096, pitchBendRangeSemitones: 12 };
+        mocks.getSynthParamsFromDevices.mockReturnValue(synthParams);
+
+        await runSchedule({ useLegacyScheduler: true, withYeast: true, clipGain: 0.25, noteExpression: mpe });
+
+        expect(mocks.scheduleNoteOffline.mock.calls[0]?.slice(7)).toEqual([mpe, 0.25]);
+    });
+
+    it('normalizes persisted expression before it reaches oscillator math', async () => {
+        mocks.getSynthParamsFromDevices.mockReturnValue({ waveform: 'sawtooth' });
+
+        await runSchedule({
+            useLegacyScheduler: true,
+            noteExpression: { pressure: 999, slide: -4, pitchBend: 90_000, pitchBendRangeSemitones: 999 },
+        });
+
+        expect(mocks.scheduleNoteOffline.mock.calls[0]?.[7]).toEqual({
+            pressure: 127,
+            slide: 0,
+            pitchBend: 8_191,
+            pitchBendRangeSemitones: 127,
+        });
+    });
+
+    it('stops a dense note batch as soon as export cancellation is observed', async () => {
+        mocks.getSynthParamsFromDevices.mockReturnValue({ waveform: 'sawtooth' });
+        mocks.checkCancel
+            .mockImplementationOnce(() => {})
+            .mockImplementationOnce(() => {
+                throw new Error('Export cancelled');
+            });
+
+        await expect(runSchedule({ useLegacyScheduler: true, includeSecondNote: true })).rejects.toThrow(
+            'Export cancelled'
+        );
+        expect(mocks.scheduleNoteOffline).toHaveBeenCalledTimes(1);
     });
 });
 
