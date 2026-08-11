@@ -1,0 +1,25 @@
+crates/daw-engine/src/audio_thread.rs
+  s_bc88af7d3b054c::t_24b853844baf5f 26,30-31,153-154,156,381
+  s_bc88af7d3b054c::t_20f58d8f952816 111,117,129-135,376-378
+  s_bc88af7d3b054c::t_033d64c6e109d0 136-137
+crates/daw-engine/src/scheduler.rs
+  s_bc88af7d3b054c::t_6cf5cc9bd42d0e 83-87,89-91,98-101,110,114,118,127,130-132
+  s_bc88af7d3b054c::t_5d6c86f101138a 79,94,125,135,145,176,200,207,502-504,509,807-814
+  s_bc88af7d3b054c::t_ff9a9d01a9d4a9 827
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "829c4dc64b20ad5e18692e2b03618b812c8aabc4",
+  "prompts": {},
+  "sessions": {
+    "s_bc88af7d3b054c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f9b4a-11a2-7f61-8dfb-76eed0eb2a9c",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
