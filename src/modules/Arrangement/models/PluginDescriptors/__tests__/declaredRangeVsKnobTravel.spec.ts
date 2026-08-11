@@ -569,6 +569,9 @@ const ENGINE_SOURCES: Readonly<Record<string, string | null>> = {
 
 type CalleeClampProvider = {
     readonly paramName: string;
+    readonly dispatcherSource: string;
+    readonly dispatcherFunctionName: string;
+    readonly dispatcherCallExpression: string;
     readonly source: string;
     readonly functionName: string;
     readonly valueName: string;
@@ -583,12 +586,18 @@ const CALLEE_CLAMP_PROVIDERS: Readonly<Record<string, readonly CalleeClampProvid
     gluten: [
         {
             paramName: 'sc_hpf_freq',
+            dispatcherSource: 'crates/daw-dsp/src/gluten/engine.rs',
+            dispatcherFunctionName: 'set_param',
+            dispatcherCallExpression: 'sidechain.set_hpf_freq(self.sample_rate, value)',
             source: 'crates/daw-dsp/src/gluten/sidechain.rs',
             functionName: 'set_hpf_freq',
             valueName: 'frequency',
         },
         {
             paramName: 'sc_lpf_freq',
+            dispatcherSource: 'crates/daw-dsp/src/gluten/engine.rs',
+            dispatcherFunctionName: 'set_param',
+            dispatcherCallExpression: 'sidechain.set_lpf_freq(self.sample_rate, value)',
             source: 'crates/daw-dsp/src/gluten/sidechain.rs',
             functionName: 'set_lpf_freq',
             valueName: 'frequency',
@@ -693,18 +702,54 @@ function readClampsFromFiles(files: readonly string[]): {
     return { byName, contested };
 }
 
-function readCalleeClamp(provider: CalleeClampProvider): Clamp | null {
-    const source = stripComments(readFileSync(join(REPO_ROOT, provider.source), 'utf8'));
-    const signature = new RegExp(String.raw`\bfn\s+${provider.functionName}\s*\(`);
+function readNamedFunctionBody(source: string, functionName: string): string | null {
+    const signature = new RegExp(String.raw`\bfn\s+${functionName}\s*\(`);
     const match = signature.exec(source);
     if (match === null) {
         return null;
     }
     const openIndex = source.indexOf('{', match.index + match[0].length);
-    if (openIndex === -1) {
+    return openIndex === -1 ? null : readBraced(source, openIndex);
+}
+
+function dispatcherArmPassesRawValue(provider: CalleeClampProvider): boolean {
+    const sourcePath = join(REPO_ROOT, provider.dispatcherSource);
+    if (!existsSync(sourcePath)) {
+        return false;
+    }
+    const source = stripComments(readFileSync(sourcePath, 'utf8'));
+    const body = readNamedFunctionBody(source, provider.dispatcherFunctionName);
+    if (body === null) {
+        return false;
+    }
+    const flattened = body.replaceAll(/\s+/g, ' ');
+    const armHeader = /"([\w-]+)"((?:\s*\|\s*"[\w-]+")*)\s*=>/g;
+    const headers = [...flattened.matchAll(armHeader)];
+    const headerIndex = headers.findIndex((header) => {
+        const names = [header[1]!, ...[...header[2]!.matchAll(/"([\w-]+)"/g)].map((alt) => alt[1]!)];
+        return names.includes(provider.paramName);
+    });
+    if (headerIndex === -1) {
+        return false;
+    }
+    const header = headers[headerIndex]!;
+    const start = header.index + header[0].length;
+    const end = headers[headerIndex + 1]?.index ?? flattened.length;
+    const arm = flattened.slice(start, end).replaceAll(/\s+/g, '');
+    return arm.includes(provider.dispatcherCallExpression.replaceAll(/\s+/g, ''));
+}
+
+function readCalleeClamp(provider: CalleeClampProvider): Clamp | null {
+    const sourcePath = join(REPO_ROOT, provider.source);
+    if (!existsSync(sourcePath) || !dispatcherArmPassesRawValue(provider)) {
         return null;
     }
-    const body = readBraced(source, openIndex).replaceAll(/\s+/g, ' ');
+    const source = stripComments(readFileSync(sourcePath, 'utf8'));
+    const functionBody = readNamedFunctionBody(source, provider.functionName);
+    if (functionBody === null) {
+        return null;
+    }
+    const body = functionBody.replaceAll(/\s+/g, ' ');
     const clamp = new RegExp(
         String.raw`\b${provider.valueName}\.clamp\(\s*(${RUST_NUMBER})\s*,\s*(${RUST_NUMBER})\s*\)`
     ).exec(body);
@@ -1307,12 +1352,13 @@ const KNOWN_RANGE_DISAGREEMENTS: readonly RangeDisagreement[] = [
  * that closes one of these shapes has to come here and delete the row.
  */
 const ENGINE_CLAMP_COVERAGE = {
-    derivable: 'two-sided numeric `value.clamp(a, b)` in the `set_param` arm body',
+    derivable:
+        'two-sided numeric `value.clamp(a, b)` in the `set_param` arm body, or an explicitly mapped one-hop setter that receives raw `value`',
     notDerivable: [
         'bare assignment (`self.x = value`, `x.set(value)`) — no interval exists',
         'one-sided (`value.max(0.0)`, `.min(n)`) — one endpoint only, the other would have to be invented',
         'clamp on a transformed value (`(value / 10.0).clamp(…)`) — bounds the result, not the wire domain',
-        'clamp applied in a callee or in a sub-processor the arm delegates to',
+        'unmapped clamp applied in a callee or in a sub-processor the arm delegates to',
         'named-constant bounds — the same constant name is defined with different values in different modules',
         'contested — two files in one source group clamp the same arm name to different intervals',
         'Crumbs: enum-variant arms behind `parse_crumbs_param`, not string arms',
@@ -1791,7 +1837,7 @@ describe('declared parameter range agrees with the knob that drives it', () => {
 
     it('pins compared coverage per device, so a device at zero is stated not implied', () => {
         // **The most important assertion in this file**, and the one it shipped
-        // without. A total of 192 says nothing about distribution: the first
+        // without. A total of 193 says nothing about distribution: the first
         // revision reported "184 across 13 devices" while six of the thirteen
         // were at zero, and #1474's exact defect could be re-created on
         // `masterGain` in Toaster, Levain and GrandBoule simultaneously — three
@@ -2353,7 +2399,7 @@ describe('declared parameter range agrees with the knob that drives it', () => {
             'bare assignment (`self.x = value`, `x.set(value)`) — no interval exists',
             'one-sided (`value.max(0.0)`, `.min(n)`) — one endpoint only, the other would have to be invented',
             'clamp on a transformed value (`(value / 10.0).clamp(…)`) — bounds the result, not the wire domain',
-            'clamp applied in a callee or in a sub-processor the arm delegates to',
+            'unmapped clamp applied in a callee or in a sub-processor the arm delegates to',
             'named-constant bounds — the same constant name is defined with different values in different modules',
             'contested — two files in one source group clamp the same arm name to different intervals',
             'Crumbs: enum-variant arms behind `parse_crumbs_param`, not string arms',
