@@ -57,6 +57,7 @@ vi.mock('#/modules/Transport/useCases', () => ({
 }));
 vi.mock('#/utils/Notification/notifyUser', () => ({ notifyUser: vi.fn() }));
 const mockPreferencesValueHolder: { current: Record<string, unknown> | null } = { current: { uiScale: 1 } };
+const preferenceListeners = vi.hoisted(() => new Set<() => void>());
 // Mock the preferences store the hook imports from #/modules/Preferences/stores,
 // so the mock actually intercepts it.
 vi.mock('#/modules/Preferences/stores', () => ({
@@ -64,12 +65,16 @@ vi.mock('#/modules/Preferences/stores', () => ({
         get value(): Record<string, unknown> | null {
             return mockPreferencesValueHolder.current;
         },
-        subscribe: vi.fn(() => () => {}),
+        subscribe: vi.fn((listener: () => void) => {
+            preferenceListeners.add(listener);
+            return () => preferenceListeners.delete(listener);
+        }),
     },
 }));
 
 beforeEach(() => {
     transportStateMock.current = null;
+    preferenceListeners.clear();
 });
 
 describe('useAppInitialization — first-gesture engine resume', () => {
@@ -286,6 +291,46 @@ describe('useAppInitialization — autosave governed by preferences', () => {
 
         vi.advanceTimersByTime(20_000);
         expect(saveProject).toHaveBeenCalledTimes(3);
+    });
+
+    it('stops, starts, and re-arms autosave when preferences change mid-session', () => {
+        mockPreferencesValueHolder.current = { uiScale: 1, autoSave: false, autoSaveIntervalMs: 30_000 };
+        projectStoreMock.current = { dirty: true };
+        renderHook(() => useAppInitialization());
+
+        vi.advanceTimersByTime(60_000);
+        expect(saveProject).not.toHaveBeenCalled();
+
+        mockPreferencesValueHolder.current = { uiScale: 1, autoSave: true, autoSaveIntervalMs: 30_000 };
+        act(() => {
+            for (const listener of preferenceListeners) {
+                listener();
+            }
+        });
+        vi.advanceTimersByTime(29_999);
+        expect(saveProject).not.toHaveBeenCalled();
+        vi.advanceTimersByTime(1);
+        expect(saveProject).toHaveBeenCalledOnce();
+
+        mockPreferencesValueHolder.current = { uiScale: 1, autoSave: true, autoSaveIntervalMs: 60_000 };
+        act(() => {
+            for (const listener of preferenceListeners) {
+                listener();
+            }
+        });
+        vi.advanceTimersByTime(59_999);
+        expect(saveProject).toHaveBeenCalledOnce();
+        vi.advanceTimersByTime(1);
+        expect(saveProject).toHaveBeenCalledTimes(2);
+
+        mockPreferencesValueHolder.current = { uiScale: 1, autoSave: false, autoSaveIntervalMs: 60_000 };
+        act(() => {
+            for (const listener of preferenceListeners) {
+                listener();
+            }
+        });
+        vi.advanceTimersByTime(120_000);
+        expect(saveProject).toHaveBeenCalledTimes(2);
     });
 
     it('does not rebuild a full project snapshot while the project is clean', () => {
