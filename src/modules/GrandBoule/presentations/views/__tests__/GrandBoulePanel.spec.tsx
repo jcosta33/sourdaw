@@ -40,6 +40,11 @@ describe('GrandBoulePanel', () => {
         expect(interactive).toBeGreaterThan(0);
     });
 
+    it('does not expose a cosmetic lid-position control', () => {
+        render(<GrandBoulePanel deviceId="dev-1" />);
+        expect(screen.queryByRole('slider', { name: 'Position' })).not.toBeInTheDocument();
+    });
+
     it('emits events through the event bus when rendered (wiring check)', () => {
         render(<GrandBoulePanel deviceId="dev-1" />);
         // The event bus is wired — at minimum it was registered.
