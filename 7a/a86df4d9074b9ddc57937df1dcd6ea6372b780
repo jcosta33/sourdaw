@@ -1,0 +1,77 @@
+src/modules/AiRuntime/models/SyncopatedArpeggioCapability.ts
+  s_a40848e8f8cca9::t_b586e26762a49f 1-39
+src/modules/AiRuntime/useCases/describePendingActionConfirmation.ts
+  s_a40848e8f8cca9::t_1d4025d545413e 18,185-187,199
+src/modules/Arrangement/handlers/clip/__tests__/handleArpeggiate.spec.ts
+  s_a40848e8f8cca9::t_d75da92cd5de69 7,12,60-123,126
+src/modules/MIDI/useCases/index.ts
+  s_a40848e8f8cca9::t_4eca39971e641e 120
+  s_a40848e8f8cca9::t_31eaea5570b447 122
+src/modules/AiRuntime/models/Tools/MidiAutomationRouting.ts
+  s_a40848e8f8cca9::t_4f6d92ffd9cac6 78-79,81
+src/modules/AiRuntime/useCases/getPlannedActionAffectedIds.ts
+  s_a40848e8f8cca9::t_1d4025d545413e 25-31
+src/modules/Command/useCases/__tests__/executableCommandRegistry.spec.ts
+  s_a40848e8f8cca9::t_1c91c06657c611 378-390
+  s_a40848e8f8cca9::t_d75f7eba32be55 1573-1577
+  s_a40848e8f8cca9::t_f5202e7076ace4 377
+  s_a40848e8f8cca9::t_ef9c5d77966136 1572
+src/modules/Command/useCases/executableAppActionRegistry.ts
+  s_a40848e8f8cca9::t_0dc0872533c780 844-861
+  s_a40848e8f8cca9::t_edc5e96e2c169f 843
+src/modules/AiRuntime/useCases/validateActionPayload.ts
+  s_a40848e8f8cca9::t_4f6d92ffd9cac6 784-796
+src/modules/AiRuntime/useCases/__tests__/syncopatedArpeggioPromptWorkflow.spec.ts
+  s_a40848e8f8cca9::t_fe4384da128a1f 27,250
+  s_a40848e8f8cca9::t_78d67e276fa022 45
+  s_a40848e8f8cca9::t_73e73ec144e930 457,474
+  s_a40848e8f8cca9::t_061c417d03147b 1-26,28-44,47,49-51,53-55,57-130,135-164,206-229,232,234,236,243-249,251-290,297-305,308-317,319-320,342-369,390-395,501-502
+  s_a40848e8f8cca9::t_c097568582956a 46,48,52,56,131-134,165-205,230-231,233,235,237-242,291-296,306-307,318,321-341,370-389,396-456,458-473,475-500
+src/modules/AiRuntime/useCases/agentReference/getSyncopatedArpeggioPromptScope.ts
+  s_a40848e8f8cca9::t_b586e26762a49f 1-4,6-15,17-43,45-122
+  s_a40848e8f8cca9::t_4eca39971e641e 16
+  s_a40848e8f8cca9::t_78d67e276fa022 5,44
+  s_a40848e8f8cca9::t_ee35caaec5d742 123
+src/modules/AiRuntime/useCases/parsePromptToActions.ts
+  s_a40848e8f8cca9::t_62ca43f196289a 26,147-149
+  s_a40848e8f8cca9::t_5ffcff19a6fb8c 168,261
+src/modules/Arrangement/handlers/clip/handleArpeggiate.ts
+  s_a40848e8f8cca9::t_78d67e276fa022 60
+  s_a40848e8f8cca9::t_31eaea5570b447 1,3,7-32,35-45,61-81,83
+  s_a40848e8f8cca9::t_270161b0ae4002 57-59
+  s_a40848e8f8cca9::t_0360a0dd3771df 53-56
+src/modules/AiRuntime/models/RuntimeAction.ts
+  s_a40848e8f8cca9::t_4f6d92ffd9cac6 301,357
+src/modules/AiRuntime/useCases/describePlannedAction.ts
+  s_a40848e8f8cca9::t_73e73ec144e930 235-244
+src/modules/AiRuntime/useCases/materializeActionStateGuards.ts
+  s_a40848e8f8cca9::t_62ca43f196289a 10,21,207-235,237
+  s_a40848e8f8cca9::t_09124506006381 236
+  s_a40848e8f8cca9::t_9509cbab49c09d 238-239
+src/modules/AiRuntime/transformers/llmActionBridge.ts
+  s_a40848e8f8cca9::t_62ca43f196289a 14,1343-1364,3162,3175,3187
+src/modules/MIDI/useCases/midiNoteTransforms/projectSyncopatedArpeggio.ts
+  s_a40848e8f8cca9::t_b586e26762a49f 1-98
+src/modules/MIDI/useCases/midiNoteTransforms/__tests__/projectSyncopatedArpeggio.spec.ts
+  s_a40848e8f8cca9::t_d75da92cd5de69 1-55
+src/utils/handlerContract.ts
+  s_a40848e8f8cca9::t_4f6d92ffd9cac6 1340-1354
+src/modules/AiRuntime/useCases/agentReference/bridgeGroundedLlmToolCalls.ts
+  s_a40848e8f8cca9::t_62ca43f196289a 39-42,83,4051-4080,4376,4483,4495
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "7aa86df4d9074b9ddc57937df1dcd6ea6372b780",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
