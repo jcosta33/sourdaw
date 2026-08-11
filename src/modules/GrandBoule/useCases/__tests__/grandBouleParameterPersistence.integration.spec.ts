@@ -26,6 +26,7 @@ import { createGrandBouleStore, resetGrandBouleStores } from '../../stores/grand
 import { GRAND_BOULE_PERSISTED_PARAM_IDS, type GrandBoulePersistedParamId } from '../grandBouleParamBridge/helpers';
 import { hydrateGrandBouleConfigFromProject } from '../hydrateGrandBouleConfigFromProject';
 import { setGrandBouleMasterGain } from '../setGrandBouleMasterGain';
+import { setGrandBouleRadiationParam } from '../setGrandBouleRadiationParam';
 import { setGrandBouleSoundboardSend } from '../setGrandBouleSoundboardSend';
 import { setGrandBouleSympatheticSend } from '../setGrandBouleSympatheticSend';
 
@@ -86,12 +87,16 @@ const COMMITTED: Readonly<Record<GrandBoulePersistedParamId, number>> = {
     masterGain: 1.45,
     soundboardSend: 0.18,
     sympatheticSend: 0.83,
+    lidPosition: 0.35,
+    micPosition: 2,
 };
 
 const CONSTRUCTED: Readonly<Record<GrandBoulePersistedParamId, number>> = {
     masterGain: 0.32,
     soundboardSend: 0.91,
     sympatheticSend: 0.07,
+    lidPosition: 0.82,
+    micPosition: 0,
 };
 
 const SETTERS: Readonly<Record<GrandBoulePersistedParamId, (value: number, isTransient?: boolean) => void>> = {
@@ -117,6 +122,24 @@ const SETTERS: Readonly<Record<GrandBoulePersistedParamId, (value: number, isTra
             engine: recordingEngine(),
             store: createGrandBouleStore(DEVICE_ID),
             amount: value,
+            isTransient,
+        }),
+    lidPosition: (value, isTransient) =>
+        setGrandBouleRadiationParam({
+            deviceId: DEVICE_ID,
+            engine: recordingEngine(),
+            store: createGrandBouleStore(DEVICE_ID),
+            paramId: 'lidPosition',
+            value,
+            isTransient,
+        }),
+    micPosition: (value, isTransient) =>
+        setGrandBouleRadiationParam({
+            deviceId: DEVICE_ID,
+            engine: recordingEngine(),
+            store: createGrandBouleStore(DEVICE_ID),
+            paramId: 'micPosition',
+            value,
             isTransient,
         }),
 };
@@ -262,6 +285,24 @@ describe('Grand Boule knob values survive a reload', () => {
         expect(sessionConfig('masterGain')).toBe(1.9);
         expect(sessionConfig('soundboardSend')).toBe(defaults.soundboardSend);
         expect(sessionConfig('sympatheticSend')).toBe(defaults.sympatheticSend);
+        expect(sessionConfig('lidPosition')).toBe(defaults.lidPosition);
+        expect(sessionConfig('micPosition')).toBe(defaults.micPosition);
+    });
+
+    it('restores the default control value when project truth has no stored value', () => {
+        trackStore.set({
+            tracks: [grandBouleTrack({})],
+            selectedTrackId: TRACK_ID,
+            ghostClips: [],
+        });
+        resetGrandBouleStores();
+
+        SETTERS.lidPosition(0.25, true);
+        expect(sessionConfig('lidPosition')).toBe(0.25);
+
+        hydrateGrandBouleConfigFromProject(DEVICE_ID);
+
+        expect(sessionConfig('lidPosition')).toBe(createDefaultGrandBouleConfig().lidPosition);
     });
 
     it('spends exactly one undo entry on a drag, whatever it passes through on the way', async () => {
