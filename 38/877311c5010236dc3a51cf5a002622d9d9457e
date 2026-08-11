@@ -1,0 +1,35 @@
+src/modules/Arrangement/useCases/timeOperations/insertTime.ts
+  s_bc88af7d3b054c::t_0f06a1b561f68d 3-10
+src/modules/Arrangement/useCases/timeOperations/createUndoableGlobalTimeOperation.ts
+  s_bc88af7d3b054c::t_7af46f030f1904 7,13,19,24,27,31,34-36,38,41
+src/modules/Command/useCases/revertActionGroup.ts
+  s_bc88af7d3b054c::t_0f06a1b561f68d 62-67,70
+src/modules/Arrangement/useCases/timeOperations/__tests__/executeUndoableGlobalTimeOperations.spec.ts
+  s_bc88af7d3b054c::t_005c6ea94e7b7b 29,31,33-39,44,50,54-55,57,71,74-80,83-85,91-93
+src/modules/Command/useCases/__tests__/revertActionGroup.spec.ts
+  s_bc88af7d3b054c::t_005c6ea94e7b7b 142-147,149,151-160
+  s_bc88af7d3b054c::t_4ff7c80ce0ed56 148,150
+src/modules/Arrangement/useCases/timeOperations/executeUndoableDuplicateTimeRange.ts
+  s_bc88af7d3b054c::t_7af46f030f1904 10
+src/modules/Arrangement/useCases/timeOperations/__tests__/globalTimeTransaction.spec.ts
+  s_bc88af7d3b054c::t_1ee7efcf876c50 388-403,405-412
+  s_bc88af7d3b054c::t_6349ecbac617ca 404
+src/modules/Arrangement/useCases/timeOperations/executeUndoableInsertTime.ts
+  s_bc88af7d3b054c::t_7af46f030f1904 10
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "38877311c5010236dc3a51cf5a002622d9d9457e",
+  "prompts": {},
+  "sessions": {
+    "s_bc88af7d3b054c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f9b4a-11a2-7f61-8dfb-76eed0eb2a9c",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
