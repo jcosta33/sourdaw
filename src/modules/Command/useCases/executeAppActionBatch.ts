@@ -504,13 +504,7 @@ export const executeAppActionBatch: ExecuteAppActionBatch = inject({ logger })(
                 logger.error(new Error('Action batch storage commit failed', { cause: error }));
                 if (error instanceof AutomergeStorageTransactionCommittedError) {
                     const reconciliationWarning = await reconcileAmbiguousRuntime(executedActions);
-                    let committedObserverWarning: string | null = null;
-                    try {
-                        options?.onCommitted?.(committedActions);
-                    } catch (observerError) {
-                        committedObserverWarning = `Committed observer failed: ${failureReason(observerError)}`;
-                    }
-                    const warnings = [cleanupWarning, reconciliationWarning, committedObserverWarning].filter(
+                    const warnings = [cleanupWarning, reconciliationWarning].filter(
                         (warning): warning is string => warning !== null
                     );
                     const ambiguousReason = warnings.length > 0 ? `${reason}; ${warnings.join('; ')}` : reason;

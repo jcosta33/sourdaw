@@ -286,19 +286,17 @@ describe('redo', () => {
         expect(mocks.undoStoreSet).toHaveBeenCalledWith({ past: [first, second], future: [] });
     });
 
-    it('records original group actions before advancing an ambiguous committed redo', async () => {
+    it('advances an ambiguous committed group without recording unproven macro actions', async () => {
         const first = actionEntry({ id: 'group-1', groupId: 'group', redoAction: { type: 'stopPlayback' } });
         const second = actionEntry({ id: 'group-2', groupId: 'group', redoAction: { type: 'toggleRecording' } });
         mocks.undoStoreValue.value = { past: [], future: [first, second] };
-        mocks.executeAppActionBatch.mockImplementation((actions, options) => {
-            options?.onCommitted?.(actions);
+        mocks.executeAppActionBatch.mockImplementation(() => {
             return Promise.resolve({ status: 'ambiguous', reason: 'partial storage commit', actions: [] });
         });
 
         await expect(redo()).rejects.toBeInstanceOf(AppActionCommittedError);
 
-        expect(mocks.recordAction).toHaveBeenNthCalledWith(1, first.action);
-        expect(mocks.recordAction).toHaveBeenNthCalledWith(2, second.action);
+        expect(mocks.recordAction).not.toHaveBeenCalled();
         expect(mocks.undoStoreSet).toHaveBeenCalledWith({ past: [first, second], future: [] });
     });
 

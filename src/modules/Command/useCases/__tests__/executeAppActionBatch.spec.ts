@@ -627,7 +627,7 @@ describe('executeAppActionBatch', () => {
         ]);
         expect(mocks.recordAction).not.toHaveBeenCalled();
         expect(mocks.commitUndoEntry).not.toHaveBeenCalled();
-        expect(onCommitted).toHaveBeenCalledWith(actions);
+        expect(onCommitted).not.toHaveBeenCalled();
     });
 
     it('treats a first-document failure after mutation as ambiguous and reconciles runtime from durable truth', async () => {
