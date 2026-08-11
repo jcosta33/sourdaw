@@ -355,6 +355,31 @@ describe('useAppInitialization — autosave governed by preferences', () => {
         expect(saveProject).toHaveBeenCalledTimes(2);
     });
 
+    it('waits for the configured cadence after a pending autosave fails', async () => {
+        let finishFirstSave: ((saved: boolean) => void) | undefined;
+        const firstSave = new Promise<boolean>((resolve) => {
+            finishFirstSave = resolve;
+        });
+        vi.mocked(saveProject).mockReturnValueOnce(firstSave);
+        mockPreferencesValueHolder.current = { uiScale: 1, autoSave: true, autoSaveIntervalMs: 10_000 };
+        projectStoreMock.current = { dirty: true };
+        renderHook(() => useAppInitialization());
+
+        vi.advanceTimersByTime(30_000);
+        expect(saveProject).toHaveBeenCalledOnce();
+
+        await act(async () => {
+            finishFirstSave?.(false);
+            await firstSave;
+        });
+        expect(saveProject).toHaveBeenCalledOnce();
+
+        await vi.advanceTimersByTimeAsync(9_999);
+        expect(saveProject).toHaveBeenCalledOnce();
+        await vi.advanceTimersByTimeAsync(1);
+        expect(saveProject).toHaveBeenCalledTimes(2);
+    });
+
     it('does not rebuild a full project snapshot while the project is clean', () => {
         mockPreferencesValueHolder.current = { uiScale: 1, autoSave: true, autoSaveIntervalMs: 10_000 };
         projectStoreMock.current = { dirty: false };

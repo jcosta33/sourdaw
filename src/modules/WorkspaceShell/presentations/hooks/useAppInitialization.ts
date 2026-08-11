@@ -144,13 +144,16 @@ export const useAppInitialization = (): void => {
             }
 
             saveInFlight = true;
+            let saved = false;
             try {
-                await saveProject();
+                saved = await saveProject();
             } finally {
                 saveInFlight = false;
                 if (savePending && !disposed) {
                     savePending = false;
-                    void runAutosave();
+                    if (saved) {
+                        void runAutosave();
+                    }
                 }
             }
         };
