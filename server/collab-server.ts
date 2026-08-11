@@ -47,7 +47,7 @@ type JsonObject = { [key: string]: unknown };
 const sessions = new Map<string, Session>();
 const peerToSession = new Map<WebSocket, Peer>();
 const socketLiveness = new Map<WebSocket, boolean>();
-const socketRateLimits = new Map<WebSocket, { bytes: number; count: number; startedAt: number }>();
+const socketRateLimits = new Map<WebSocket, { byteTokens: number; messageTokens: number; updatedAt: number }>();
 const socketSources = new Map<WebSocket, string>();
 const sourceConnectionCounts = new Map<string, number>();
 
@@ -151,14 +151,28 @@ function selectProtocol(protocols: Set<string>): string | false {
 function exceedsMessageRate(ws: WebSocket, byteLength: number): boolean {
     const now = Date.now();
     const rate = socketRateLimits.get(ws);
-    if (!rate || now - rate.startedAt >= 1_000) {
-        socketRateLimits.set(ws, { bytes: byteLength, count: 1, startedAt: now });
-        return byteLength > RATE_LIMIT_BYTES_PER_SECOND;
+    if (!rate) {
+        return true;
     }
 
-    rate.count += 1;
-    rate.bytes += byteLength;
-    return rate.count > RATE_LIMIT_PER_SECOND || rate.bytes > RATE_LIMIT_BYTES_PER_SECOND;
+    const elapsedMs = Math.max(0, now - rate.updatedAt);
+    rate.messageTokens = Math.min(
+        RATE_LIMIT_PER_SECOND,
+        rate.messageTokens + (elapsedMs * RATE_LIMIT_PER_SECOND) / 1_000
+    );
+    rate.byteTokens = Math.min(
+        RATE_LIMIT_BYTES_PER_SECOND,
+        rate.byteTokens + (elapsedMs * RATE_LIMIT_BYTES_PER_SECOND) / 1_000
+    );
+    rate.updatedAt = now;
+
+    if (rate.messageTokens < 1 || rate.byteTokens < byteLength) {
+        return true;
+    }
+
+    rate.messageTokens -= 1;
+    rate.byteTokens -= byteLength;
+    return false;
 }
 
 function canAcceptConnection(source: string): boolean {
@@ -662,7 +676,11 @@ wss.on('connection', (ws, request) => {
     socketSources.set(ws, source);
     sourceConnectionCounts.set(source, (sourceConnectionCounts.get(source) ?? 0) + 1);
     socketLiveness.set(ws, true);
-    socketRateLimits.set(ws, { bytes: 0, count: 0, startedAt: Date.now() });
+    socketRateLimits.set(ws, {
+        byteTokens: RATE_LIMIT_BYTES_PER_SECOND,
+        messageTokens: RATE_LIMIT_PER_SECOND,
+        updatedAt: Date.now(),
+    });
 
     ws.on('pong', () => {
         socketLiveness.set(ws, true);

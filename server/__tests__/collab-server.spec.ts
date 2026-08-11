@@ -212,6 +212,27 @@ void test('closes a client that exceeds the configured byte rate', async () => {
     assert.equal(await closeCodeWithin(socket), 1008);
 });
 
+void test('does not reset the message budget at a fixed window boundary', async () => {
+    const { url } = await startServer({ COLLAB_RATE_LIMIT_PER_SECOND: '3' });
+    const socket = await connect(url);
+    await join(socket, 'session', 'peer');
+
+    const cursor = JSON.stringify({
+        type: 'cursor',
+        sessionId: 'session',
+        peerId: 'peer',
+        cursor: { trackId: 't', beat: 1 },
+    });
+    await new Promise((resolve) => setTimeout(resolve, 950));
+    socket.send(cursor);
+    socket.send(cursor);
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    socket.send(cursor);
+    socket.send(cursor);
+
+    assert.equal(await closeCodeWithin(socket), 1008);
+});
+
 void test('caps source connections and releases capacity after close', async () => {
     const { url } = await startServer({ COLLAB_MAX_SOURCE_CONNECTIONS: '1' });
     const first = await connect(url);
