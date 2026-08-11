@@ -260,6 +260,22 @@ describe('redo', () => {
         expect(mocks.undoTreeMoveTo).toHaveBeenCalledWith('callback-1');
     });
 
+    it('retains callback history when guarded redo rejects current state', async () => {
+        const conflict = new Error('stale project state');
+        const entry = callbackEntry({
+            redo: () => {
+                throw conflict;
+            },
+        });
+        mocks.undoStoreValue.value = { past: [], future: [entry] };
+
+        await expect(redo()).rejects.toBe(conflict);
+
+        expect(mocks.undoStoreSet).not.toHaveBeenCalled();
+        expect(mocks.undoTreeMoveTo).not.toHaveBeenCalled();
+        expect(mocks.undoStoreValue.value).toEqual({ past: [], future: [entry] });
+    });
+
     it('consumes a callback entry that reports it was not applied, keeping past unchanged', async () => {
         const entry = callbackEntry({ redo: () => REDO_NOT_APPLIED });
         mocks.undoStoreValue.value = { past: [], future: [entry] };

@@ -68,6 +68,7 @@ vi.mock('../../../stores/markerStore', async (importOriginal) => {
 
 import { TrackDummy } from '../../../__tests__/TrackDummy';
 import { executeGlobalTimeOperation, UnrecoveredGlobalTimeStateError } from '../executeGlobalTimeOperation';
+import { executeUndoableInsertTime } from '../executeUndoableInsertTime';
 import { prepareTimeOperationStateRestore } from '../prepareTimeOperationStateRestore';
 import { setTimeOperationDependencies } from '../timeOperationDependencies';
 import { timeOperationStateCodec } from '../timeOperationStateCodec';
@@ -349,6 +350,39 @@ describe('executeGlobalTimeOperation', () => {
         expect(replacementMarkers).toEqual(capturedMarkerState);
         expect(Object.is(expectedTrackState?.tracks[0]?.pan, -0)).toBe(true);
         expect(Object.is(replacementTrackState?.tracks[0]?.pan, -0)).toBe(true);
+    });
+
+    it('round-trips an undoable insert through the real guarded restore path', () => {
+        const clip = createClip({ id: 'clip-1', startBeat: 5, endBeat: 7 });
+        setStates({
+            tracks: [createTrack('track-1', 'midi', [clip])],
+            markers: [{ id: 'marker-1', beat: 5, name: 'Marker', color: '' }],
+        });
+        const beforeTrackState = structuredClone(mocks.trackState.value);
+        const beforeMarkerState = structuredClone(mocks.markerState.value);
+        registerDependencies({
+            automation: createHandle('automation', false),
+            transport: createHandle('transport', false),
+            midi: createHandle('midi', false),
+        });
+
+        const transaction = executeUndoableInsertTime(4, 2);
+
+        expect(transaction).not.toBeNull();
+        expect(mocks.trackState.value).toMatchObject({
+            tracks: [{ clips: [{ id: 'clip-1', startBeat: 7, endBeat: 9 }] }],
+        });
+        expect(mocks.markerState.value).toMatchObject({ markers: [{ id: 'marker-1', beat: 7 }] });
+
+        transaction?.undo();
+        expect(mocks.trackState.value).toEqual(beforeTrackState);
+        expect(mocks.markerState.value).toEqual(beforeMarkerState);
+
+        transaction?.redo();
+        expect(mocks.trackState.value).toMatchObject({
+            tracks: [{ clips: [{ id: 'clip-1', startBeat: 7, endBeat: 9 }] }],
+        });
+        expect(mocks.markerState.value).toMatchObject({ markers: [{ id: 'marker-1', beat: 7 }] });
     });
 
     it('round trips and restores exact negative zero from a real Automation owner plan', () => {

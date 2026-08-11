@@ -108,6 +108,22 @@ describe('undo', () => {
         });
     });
 
+    it('retains callback history when guarded undo rejects current state', async () => {
+        const conflict = new Error('stale project state');
+        const entry = callbackEntry({
+            undo: () => {
+                throw conflict;
+            },
+        });
+        mocks.undoStoreValue.value = { past: [entry], future: [] };
+
+        await expect(undo()).rejects.toBe(conflict);
+
+        expect(mocks.undoStoreSet).not.toHaveBeenCalled();
+        expect(mocks.undoTreeMoveTo).not.toHaveBeenCalled();
+        expect(mocks.undoStoreValue.value).toEqual({ past: [entry], future: [] });
+    });
+
     it('should undo a whole group newest-first and move it to future in original order', async () => {
         const previous = actionEntry({ id: 'previous' });
         const first = actionEntry({

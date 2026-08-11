@@ -32,4 +32,24 @@ describe('insertTime', () => {
         });
         expect(result).toBe(expected);
     });
+
+    it('forwards a supplied replay plan without cloning it', () => {
+        const replayPlan = {
+            version: 1 as const,
+            operation: { type: 'insert' as const, atBeat: 4, durationBeats: 2 },
+            clips: [],
+            midi: { version: 1 as const, notes: [] },
+        };
+
+        insertTime(4, 2, replayPlan);
+
+        expect(executeGlobalTimeOperation).toHaveBeenCalledExactlyOnceWith({
+            operation: {
+                type: 'insert',
+                atBeat: 4,
+                durationBeats: 2,
+            },
+            replayPlan,
+        });
+    });
 });

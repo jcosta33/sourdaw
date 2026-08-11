@@ -143,6 +143,8 @@ export { persistDevicePatch } from './device/setDeviceParameter/persistDevicePat
 export { deleteTime } from './timeOperations/deleteTime';
 export { duplicateTimeRange } from './timeOperations/duplicateTimeRange';
 export { insertTime } from './timeOperations/insertTime';
+export { executeUndoableDuplicateTimeRange } from './timeOperations/executeUndoableDuplicateTimeRange';
+export { executeUndoableInsertTime } from './timeOperations/executeUndoableInsertTime';
 export { setTimeOperationDependencies } from './timeOperations/timeOperationDependencies';
 export { setVcaRuntimeProjectionDependencies } from './vca/vcaRuntimeProjectionDependencies';
 

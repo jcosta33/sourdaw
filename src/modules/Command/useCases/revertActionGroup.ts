@@ -2,6 +2,7 @@ import { type UndoEntry } from '../models/UndoEntry';
 import { undoStore } from '../stores/undoStore';
 
 import { executeAppAction } from './executeAppAction';
+import { runUndoRedoExclusive } from './undoRedo';
 import { undoTreeMoveTo } from './undoTree/undoTreeMoveTo';
 
 /**
@@ -34,7 +35,7 @@ async function revertEntry(entry: UndoEntry): Promise<boolean> {
  * by hand. The entries are undone newest-first, removed from `past`, and pushed
  * onto `future` so a redo re-applies them in order.
  */
-export async function revertActionGroup(groupId: string): Promise<void> {
+async function revertActionGroupImpl(groupId: string): Promise<void> {
     const state = undoStore.value;
     if (!state) {
         return;
@@ -64,4 +65,8 @@ export async function revertActionGroup(groupId: string): Promise<void> {
         future: [...groupEntries, ...state.future],
     });
     undoTreeMoveTo(newPast.length > 0 ? newPast[newPast.length - 1]!.id : null);
+}
+
+export function revertActionGroup(groupId: string): Promise<void> {
+    return runUndoRedoExclusive(() => revertActionGroupImpl(groupId));
 }

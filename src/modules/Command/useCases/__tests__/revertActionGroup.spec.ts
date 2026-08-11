@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { revertActionGroup } from '../revertActionGroup';
+import { runUndoRedoExclusive } from '../undoRedo';
 
 import type { UndoEntry } from '../../models/UndoEntry';
 
@@ -116,5 +117,26 @@ describe('revertActionGroup', () => {
 
         expect(mocks.executeAppAction).not.toHaveBeenCalled();
         expect(mocks.undoStoreSet).not.toHaveBeenCalled();
+    });
+
+    it('waits behind an in-flight undo mutation before reading or reverting the group', async () => {
+        const group = actionEntry('1', 'g1');
+        mocks.undoStoreValue.value = { past: [group], future: [] };
+        let releaseMutation: (() => void) | undefined;
+        const mutationGate = new Promise<void>((resolve) => {
+            releaseMutation = resolve;
+        });
+        const inFlightMutation = runUndoRedoExclusive(async () => mutationGate);
+
+        const revert = revertActionGroup('g1');
+        await Promise.resolve();
+
+        expect(mocks.executeAppAction).not.toHaveBeenCalled();
+        releaseMutation?.();
+        await Promise.all([inFlightMutation, revert]);
+        expect(mocks.executeAppAction).toHaveBeenCalledExactlyOnceWith(
+            { type: 'toggleRecording' },
+            { skipUndo: true, skipMacroRecording: true }
+        );
     });
 });
