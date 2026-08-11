@@ -1,0 +1,69 @@
+src/modules/Arrangement/models/PluginDescriptors/__tests__/declaredRangeVsKnobTravel.spec.ts
+  s_bc88af7d3b054c::t_98702b8a0ee4b2 1667-1668,1753-1756,2224,2254
+src/modules/AudioEngine/worklets/grandBouleEngineCore.ts
+  s_bc88af7d3b054c::t_9f857b96b4dab4 60-61
+src/modules/AudioEngine/worklets/__tests__/grandBouleDispatchParity.spec.ts
+  s_bc88af7d3b054c::t_fa71b347987f68 177-178,301-302
+src/modules/GrandBoule/useCases/__tests__/grandBouleParameterPersistence.integration.spec.ts
+  s_bc88af7d3b054c::t_434a3bbde60ae6 29,90-91,98-99,127-144,288-289
+public/wasm/manifest.json
+  s_bc88af7d3b054c::t_cb72f4a80bf617 12,16-18,21
+src/modules/AudioEngine/repositories/offlineScheduler/__tests__/offlineAutomationCoverage.spec.ts
+  s_bc88af7d3b054c::t_98702b8a0ee4b2 287-290
+src/modules/GrandBoule/useCases/setGrandBouleRadiationParam.ts
+  s_bc88af7d3b054c::t_9f857b96b4dab4 1-36
+crates/daw-dsp/src/grand_boule/mod.rs
+  s_bc88af7d3b054c::t_9f857b96b4dab4 20
+src/modules/Arrangement/models/PluginDescriptors/GrandBouleDescriptor.ts
+  s_bc88af7d3b054c::t_9f857b96b4dab4 55-80
+crates/daw-dsp/tests/device_process_rt.rs
+  s_bc88af7d3b054c::t_239e59f1785ef8 1012-1015
+src/modules/GrandBoule/presentations/views/__tests__/GrandBoulePanel.spec.tsx
+  s_bc88af7d3b054c::t_4de85c7cc731fe 14-17,62-65
+  s_bc88af7d3b054c::t_27a5a0009307c6 51
+  s_bc88af7d3b054c::t_fa71b347987f68 49,52
+  s_bc88af7d3b054c::t_97de5c09977ac8 1,6,27,53-55,57-61
+  s_bc88af7d3b054c::t_e0db27d9bdfe49 50
+src/modules/GrandBoule/useCases/grandBouleParamBridge/helpers.ts
+  s_bc88af7d3b054c::t_9f857b96b4dab4 19-25
+  s_bc88af7d3b054c::t_92833ff3dbaf7c 41,43
+src/modules/GrandBoule/presentations/views/GrandBoulePanel.tsx
+  s_bc88af7d3b054c::t_a4e9959e04cc15 154-159,421-466,573
+  s_bc88af7d3b054c::t_5b03e22f851dd0 36
+crates/daw-dsp/src/grand_boule/radiation.rs
+  s_bc88af7d3b054c::t_968471568301ef 117-118,120-121
+  s_bc88af7d3b054c::t_335c56cfa9cbf9 61-64
+  s_bc88af7d3b054c::t_9f857b96b4dab4 1-60,65-116,119,122-152
+crates/daw-dsp/src/grand_boule/engine.rs
+  s_bc88af7d3b054c::t_909b1146d3564c 1701-1711
+  s_bc88af7d3b054c::t_335c56cfa9cbf9 461,466-477
+  s_bc88af7d3b054c::t_968471568301ef 1684-1687
+  s_bc88af7d3b054c::t_9f857b96b4dab4 13,67,133,656-658,704
+  s_bc88af7d3b054c::t_fa71b347987f68 1654-1683,1688-1700,1712-1713
+src/modules/GrandBoule/models/GrandBouleConfig.ts
+  s_bc88af7d3b054c::t_9f857b96b4dab4 15-18,44-45
+src/modules/Arrangement/models/__tests__/DeviceParameterLaw.spec.ts
+  s_bc88af7d3b054c::t_98702b8a0ee4b2 296-297,300
+public/wasm/daw-dsp/daw_dsp.d.ts
+  s_bc88af7d3b054c::t_fe4e6c80791f32 1,879-892,894-1003
+public/wasm/daw-dsp/daw_dsp_bg.wasm.d.ts
+  s_bc88af7d3b054c::t_dbd0b0a8071617 1,83-96,98-207
+src/modules/AudioEngine/wasm/daw_dsp.d.ts
+  s_bc88af7d3b054c::t_17c2c5667597fd 1,879-892,894-1003
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "616f643541e62cebf83cffb29cf9368cd6fd085f",
+  "prompts": {},
+  "sessions": {
+    "s_bc88af7d3b054c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f9b4a-11a2-7f61-8dfb-76eed0eb2a9c",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
