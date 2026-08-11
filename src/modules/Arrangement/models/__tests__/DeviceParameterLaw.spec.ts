@@ -4,6 +4,7 @@ import { BUILTIN_PLUGINS } from '../DeviceParameter';
 import {
     clampDeviceParameterValue,
     isDeviceParameterAutomatable,
+    isInternalDeviceParameter,
     quantiseDeviceParameterValue,
 } from '../DeviceParameterLaw';
 
@@ -350,6 +351,11 @@ describe('quantiseDeviceParameterValue', () => {
 });
 
 describe('isDeviceParameterAutomatable', () => {
+    it('keeps internal engine configuration out of automation', () => {
+        expect(isInternalDeviceParameter({ deviceType: 'dutch-oven', paramId: 'fdn_damping_version' })).toBe(true);
+        expect(isDeviceParameterAutomatable({ deviceType: 'dutch-oven', paramId: 'fdn_damping_version' })).toBe(false);
+    });
+
     it('refuses a parameter the descriptor declares non-automatable', () => {
         expect(isDeviceParameterAutomatable({ deviceType: 'dutch-oven', paramId: 'shimmer_pitch' })).toBe(false);
     });

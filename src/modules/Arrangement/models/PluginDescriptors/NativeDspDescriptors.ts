@@ -18,6 +18,9 @@ export const NATIVE_DSP_DESCRIPTORS: PluginDescriptor[] = [
         category: 'effect',
         hasCustomUI: true,
         platform: 'both',
+        // Absent on saved legacy devices, which keeps their original FDN
+        // damping curve. New devices opt into the normalized curve.
+        internalParameterValues: { fdn_damping_version: 2 },
         // `decay` is a normalised coefficient, never seconds — the engines
         // convert it through `#/utils/reverbDecayLaw`, so the tail has to be
         // read through the same law. Reading the raw value as seconds would cap
@@ -103,9 +106,9 @@ export const NATIVE_DSP_DESCRIPTORS: PluginDescriptor[] = [
                 //   SpringReverb Tone 5 -> 6500 Hz; Chowdhury BYOD `damping` 0.5 ->
                 //   ~8485 Hz; smiarx/aelapse 4500 Hz); the commercial ones publish
                 //   nothing.
-                // - **FDN 8/16** — an exponential coefficient map makes zero mean no
-                //   HF damping and maps the shared 0.3 default to a conventional 0.5x
-                //   HF RT60. Higher values continue to darken monotonically.
+                // - **FDN 8/16** — newly added devices use an exponential map where
+                //   zero is undamped and 0.3 is a conventional 0.5x HF RT60. Saved
+                //   unversioned devices retain the curve they were created with.
                 // - **Reverse** — `damping` is bit-dead across the whole range. Already
                 //   recorded in `nativeDspEngineGaps.ts` and gated in the panel, so
                 //   this value is inert there.

@@ -194,8 +194,12 @@ impl AbsorptiveFilter {
 const MAX_FDN_CHANNELS: usize = 16;
 const SHIPPED_DAMPING: f32 = 0.3;
 
-fn hf_rt60_ratio(damping: f32) -> f32 {
+fn normalized_hf_rt60_ratio(damping: f32) -> f32 {
     2.0_f32.powf(-damping.clamp(0.0, 0.999) / SHIPPED_DAMPING)
+}
+
+fn legacy_hf_rt60_ratio(damping: f32) -> f32 {
+    (1.0 - damping.clamp(0.0, 0.999)) * 0.5
 }
 
 pub struct FdnReverb {
@@ -236,6 +240,7 @@ pub struct FdnReverb {
     /// Normalised 0..0.999 damping. `rt60_hf` is derived from it and the
     /// current `rt60` on every filter update, so the two cannot drift apart.
     damping: f32,
+    normalized_damping: bool,
     pub size: f32,
     pub mix: f32,
     pub early_late_balance: f32, // 0=all early, 1=all late
@@ -322,12 +327,12 @@ impl FdnReverb {
             early_reflections_l: EarlyReflections::new(sample_rate, 0.5),
             early_reflections_r: EarlyReflections::new(sample_rate, 0.5),
             rt60: 2.0,
-            rt60_hf: 1.0,
-            // The shared Damp control has one semantic across algorithms:
-            // zero is undamped and the shipped 0.3 is a conventional 0.5x HF
-            // RT60. The exponential mapping below supplies darker values while
-            // preserving that anchor.
-            damping: SHIPPED_DAMPING,
+            rt60_hf: 0.8,
+            // Bare and unversioned saved instances retain the historical curve.
+            // Newly added project devices opt into the normalized curve through
+            // the private `fdn_damping_version` wire parameter.
+            damping: 0.2,
+            normalized_damping: false,
             size: 0.5,
             mix: 0.3,
             early_late_balance: 0.4,
@@ -406,6 +411,11 @@ impl FdnReverb {
         }
     }
 
+    pub(crate) fn set_damping_version(&mut self, version: u8) {
+        self.normalized_damping = version >= 2;
+        self.update_absorptive_filters();
+    }
+
     /// Recompute the per-line absorptive gains.
     ///
     /// `rt60_hf` is derived here rather than stored at `damping`-set time: the
@@ -413,7 +423,12 @@ impl FdnReverb {
     /// must re-derive it or the high band stays pinned to whatever RT60 was
     /// current when damping was last touched.
     fn update_absorptive_filters(&mut self) {
-        self.rt60_hf = self.rt60 * hf_rt60_ratio(self.damping);
+        let ratio = if self.normalized_damping {
+            normalized_hf_rt60_ratio(self.damping)
+        } else {
+            legacy_hf_rt60_ratio(self.damping)
+        };
+        self.rt60_hf = self.rt60 * ratio;
         for (i, filter) in self.absorptive_filters.iter_mut().enumerate() {
             if i < self.delay_lengths.len() {
                 filter.update_rt60(
@@ -586,7 +601,8 @@ impl FdnReverb {
 #[cfg(test)]
 mod tests {
     use super::{
-        decay_to_rt60_seconds, hf_rt60_ratio, FdnReverb, MAX_RT60_SECONDS, MIN_RT60_SECONDS,
+        decay_to_rt60_seconds, normalized_hf_rt60_ratio, FdnReverb, MAX_RT60_SECONDS,
+        MIN_RT60_SECONDS,
     };
 
     #[test]
@@ -629,6 +645,7 @@ mod tests {
 
     fn hf_ratio_for_damping(damping: f32) -> f32 {
         let mut reverb = FdnReverb::new(48_000.0, 8);
+        reverb.set_damping_version(2);
         reverb.set_param("damping", damping);
         reverb.rt60_hf / reverb.rt60
     }
@@ -746,11 +763,22 @@ mod tests {
     }
 
     #[test]
+    fn legacy_project_damping_keeps_its_original_ratio() {
+        let mut reverb = FdnReverb::new(48_000.0, 8);
+        reverb.set_param("damping", 0.3);
+        let ratio = reverb.rt60_hf / reverb.rt60;
+        assert!(
+            (ratio - 0.35).abs() < 1e-6,
+            "an unversioned saved device must keep the legacy 0.35x ratio, got {ratio}"
+        );
+    }
+
+    #[test]
     fn damping_mapping_is_strictly_darker_across_the_declared_range() {
         let mut previous = f32::INFINITY;
         for step in 0..=999 {
             let damping = step as f32 / 1000.0;
-            let ratio = hf_rt60_ratio(damping);
+            let ratio = normalized_hf_rt60_ratio(damping);
             assert!(
                 ratio < previous,
                 "HF RT60 ratio must fall as damping rises: {damping} produced {ratio} after {previous}"

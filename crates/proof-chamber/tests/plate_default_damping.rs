@@ -69,6 +69,7 @@ const SPRING: f32 = 3.0;
 /// choice biasing one band over another.
 fn render_on(algorithm: f32, writes: &[Write]) -> Vec<f32> {
     let mut instance = ProofChamberInstance::new(SAMPLE_RATE);
+    instance.set_param("fdn_damping_version", 2.0);
     instance.set_param("algorithm", algorithm);
     instance.set_param("mix", 1.0);
     for &(name, value) in writes {

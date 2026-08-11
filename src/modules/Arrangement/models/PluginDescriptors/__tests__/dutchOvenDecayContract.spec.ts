@@ -39,6 +39,11 @@ describe('dutch-oven decay contract', () => {
         expect(decay?.defaultValue).toBe(0.5);
     });
 
+    it('versions the corrected FDN damping curve only on newly added devices', () => {
+        expect(dutchOven?.internalParameterValues).toEqual({ fdn_damping_version: 2 });
+        expect(dutchOven?.parameters.some((parameter) => parameter.id === 'fdn_damping_version')).toBe(false);
+    });
+
     it('maps the declared range onto the full RT60 the FDN can realise', () => {
         expect(decayToRt60Seconds(decay?.minValue ?? Number.NaN)).toBeCloseTo(MIN_RT60_SECONDS, 4);
         expect(decayToRt60Seconds(decay?.defaultValue ?? Number.NaN)).toBeCloseTo(1.732, 3);

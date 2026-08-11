@@ -2,7 +2,7 @@ import { updateDeviceParam } from '#/modules/AudioEngine/useCases';
 import { recordAutomationValue } from '#/modules/Automation/useCases';
 import { transportStore } from '#/modules/Transport/stores';
 
-import { clampDeviceParameterValue } from '../../../models/DeviceParameterLaw';
+import { clampDeviceParameterValue, isInternalDeviceParameter } from '../../../models/DeviceParameterLaw';
 import { getTrackState } from '../../../repositories/track/getTrackState';
 import { updateTrack } from '../../../repositories/track/updateTrack';
 import { resolveEligibleDeviceWriteTarget } from '../../../stores/resolveEligibleDeviceWriteTarget';
@@ -42,6 +42,9 @@ export function setDeviceParameter(
 
     const targetDevice = track.devices.find((candidate) => candidate.id === target.deviceId);
     if (!targetDevice) {
+        return false;
+    }
+    if (isInternalDeviceParameter({ deviceType: targetDevice.type, paramId })) {
         return false;
     }
 

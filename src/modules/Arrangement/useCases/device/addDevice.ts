@@ -68,7 +68,7 @@ export function addDevice(
     const plugin = getPlatformPlugins().find(
         (param1) => param1.name.toLowerCase() === deviceType.toLowerCase() || param1.id === deviceType
     );
-    const parameterValues: Record<string, number> = {};
+    const parameterValues: Record<string, number> = { ...plugin?.internalParameterValues };
     if (plugin) {
         for (const param of plugin.parameters) {
             parameterValues[param.id] = param.value;
@@ -119,8 +119,8 @@ export function addDevice(
             stripArguments[4] = precedingDeviceIds;
         }
         addDeviceToStrip(...stripArguments);
-        for (const param of plugin.parameters) {
-            updateDeviceParam(trackId, device.id, param.id, param.value);
+        for (const [paramId, value] of Object.entries(device.parameterValues)) {
+            updateDeviceParam(trackId, device.id, paramId, value);
         }
     }
 

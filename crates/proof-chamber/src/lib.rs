@@ -296,6 +296,15 @@ fn forward_to_engine(engine: &mut ReverbEngine, name: &str, value: f32) {
     }
 }
 
+fn apply_fdn_damping_version(engine: &mut ReverbEngine, version: u8) {
+    match engine {
+        ReverbEngine::Fdn8(reverb) | ReverbEngine::Fdn16(reverb) => {
+            reverb.set_damping_version(version);
+        }
+        _ => {}
+    }
+}
+
 // ---------------------------------------------------------------------------
 // WASM instance — unified interface
 // ---------------------------------------------------------------------------
@@ -309,6 +318,7 @@ pub struct ProofChamberInstance {
     out_right: Vec<f32>,
     nan_flush_count: u64,
     params: ParameterCache,
+    fdn_damping_version: u8,
 }
 
 #[wasm_bindgen]
@@ -327,12 +337,19 @@ impl ProofChamberInstance {
             // constructor defaults and a first `algorithm` write replays
             // nothing into the engine it builds.
             params: ParameterCache::new(),
+            // Missing from legacy project parameter maps by design.
+            fdn_damping_version: 1,
         }
     }
 
     pub fn set_param(&mut self, name: &str, value: f32) {
         // Global params
         match name {
+            "fdn_damping_version" => {
+                self.fdn_damping_version = if value >= 2.0 { 2 } else { 1 };
+                apply_fdn_damping_version(&mut self.engine, self.fdn_damping_version);
+                return;
+            }
             "algorithm" => {
                 let sr = self.sample_rate;
                 self.engine = match value as u8 {
@@ -355,6 +372,7 @@ impl ProofChamberInstance {
                     // already stored.
                     _ => ReverbEngine::Plate(ProofChamber::new(sr)),
                 };
+                apply_fdn_damping_version(&mut self.engine, self.fdn_damping_version);
                 // The engine above is factory-fresh and knows nothing about
                 // the sound the user had built. Without this line every
                 // parameter is discarded on every algorithm change, which is
@@ -544,7 +562,7 @@ impl ProofChamberInstance {
 
 #[cfg(test)]
 mod tests {
-    use super::{ProofChamberInstance, UnexposedEngine};
+    use super::{ProofChamberInstance, ReverbEngine, UnexposedEngine};
     use assert_no_alloc::{assert_no_alloc, AllocDisabler};
 
     #[global_allocator]
@@ -575,5 +593,35 @@ mod tests {
             instance.set_param_by_id(1, 0.8);
             instance.set_param_by_id(u32::MAX, 0.5);
         });
+    }
+
+    fn fdn_hf_ratio(instance: &ProofChamberInstance) -> f32 {
+        match &instance.engine {
+            ReverbEngine::Fdn8(reverb) | ReverbEngine::Fdn16(reverb) => {
+                reverb.rt60_hf / reverb.rt60
+            }
+            _ => panic!("expected an FDN engine"),
+        }
+    }
+
+    #[test]
+    fn damping_version_survives_algorithm_reconstruction() {
+        let mut instance = ProofChamberInstance::new(48_000.0);
+        instance.set_param("fdn_damping_version", 2.0);
+        instance.set_param("damping", 0.3);
+        instance.set_param("algorithm", 1.0);
+        assert!((fdn_hf_ratio(&instance) - 0.5).abs() < 1e-6);
+
+        instance.set_param("algorithm", 0.0);
+        instance.set_param("algorithm", 2.0);
+        assert!((fdn_hf_ratio(&instance) - 0.5).abs() < 1e-6);
+    }
+
+    #[test]
+    fn missing_damping_version_preserves_legacy_project_sound() {
+        let mut instance = ProofChamberInstance::new(48_000.0);
+        instance.set_param("damping", 0.3);
+        instance.set_param("algorithm", 1.0);
+        assert!((fdn_hf_ratio(&instance) - 0.35).abs() < 1e-6);
     }
 }

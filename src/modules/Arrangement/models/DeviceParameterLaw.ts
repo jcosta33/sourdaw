@@ -38,6 +38,11 @@ function findParameterDescriptor({ deviceType, paramId }: DeviceParameterIdentit
     return getPluginById(deviceType)?.parameters.find((parameter) => parameter.id === paramId);
 }
 
+export function isInternalDeviceParameter({ deviceType, paramId }: DeviceParameterIdentity): boolean {
+    const internalValues = getPluginById(deviceType)?.internalParameterValues;
+    return internalValues !== undefined && Object.hasOwn(internalValues, paramId);
+}
+
 /**
  * The value a write is actually allowed to land, given the declared range.
  *
@@ -230,6 +235,9 @@ export function quantiseDeviceParameterValue({ deviceType, paramId, value }: Cla
  * the flag forbids is a *curve* driving it over time.
  */
 export function isDeviceParameterAutomatable({ deviceType, paramId }: DeviceParameterIdentity): boolean {
+    if (isInternalDeviceParameter({ deviceType, paramId })) {
+        return false;
+    }
     const descriptor = findParameterDescriptor({ deviceType, paramId });
     if (!descriptor) {
         return true;
