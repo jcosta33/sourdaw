@@ -156,11 +156,26 @@ impl GranularProcessor {
                 if !freeze && self.freeze {
                     let oldest_distance = (self.buffer_size - 1) as f32;
                     for grain in &mut self.grains {
-                        if grain.active
-                            && grain.frontier_fade_total == 0
-                            && grain.samples_behind_write_head + 1.0 > oldest_distance
-                        {
+                        if !grain.active || grain.frontier_fade_total != 0 {
+                            continue;
+                        }
+                        let first_live_distance = grain.samples_behind_write_head + 1.0;
+                        if first_live_distance > oldest_distance {
                             grain.begin_frontier_hold_fade();
+                            continue;
+                        }
+                        if grain.pitch_ratio < 1.0 {
+                            let causal_remaining = (((oldest_distance - first_live_distance)
+                                / (1.0 - grain.pitch_ratio))
+                                .floor()
+                                as usize)
+                                .saturating_add(1);
+                            let envelope_remaining =
+                                grain.size_samples.saturating_sub(grain.progress);
+                            if causal_remaining < envelope_remaining {
+                                grain.frontier_fade_remaining = causal_remaining;
+                                grain.frontier_fade_total = causal_remaining;
+                            }
                         }
                     }
                 }
@@ -719,6 +734,35 @@ mod tests {
         assert!(
             reclaimed_peak <= f32::EPSILON,
             "the down-pitched grain rendered newly written input at peak {reclaimed_peak}"
+        );
+    }
+
+    #[test]
+    fn thawing_a_down_pitched_grain_fades_before_the_oldest_frontier() {
+        let mut processor = quiet_spawner();
+        processor.buffer.fill(1.0);
+        processor.write_pos = 0;
+        processor.set_param("grainMix", 1.0);
+        processor.set_param("grainSize", 500.0);
+        processor.set_param("grainPosOffset", 1700.0);
+        processor.set_param("grainPitch", -24.0);
+        processor.set_param("grainWindow", 1.0);
+        processor.set_param("grainFreeze", 1.0);
+        processor.spawn_grain();
+        processor.set_param("grainFreeze", 0.0);
+
+        let reclaimed_peak = (0..24_000)
+            .map(|_| processor.process_sample(-1.0))
+            .map(|sample| (-sample).max(0.0))
+            .fold(0.0_f32, f32::max);
+
+        assert!(
+            processor.grains[0].frontier_fade_total > 0,
+            "thaw did not schedule a fade before the writer catches the grain"
+        );
+        assert!(
+            reclaimed_peak <= f32::EPSILON,
+            "the thawed grain rendered reclaimed input at peak {reclaimed_peak}"
         );
     }
 
