@@ -114,6 +114,10 @@ function rawDataToString(data: RawData): string {
     return data.toString();
 }
 
+function isPausable(value: unknown): value is { pause: () => void } {
+    return typeof value === 'object' && value !== null && 'pause' in value && typeof value.pause === 'function';
+}
+
 async function waitForExit(process: ChildProcessWithoutNullStreams): Promise<{ code: number | null; stderr: string }> {
     if (process.exitCode === null && process.signalCode === null) {
         await once(process, 'exit');
@@ -264,7 +268,12 @@ void test('does not refill the message budget after a wall-clock jump', async ()
 });
 
 void test('disconnects a recipient before its outbound queue exceeds the configured cap', async () => {
-    const { url } = await startServer({ COLLAB_MAX_BUFFERED_BYTES: '512' });
+    const { url } = await startServer({
+        COLLAB_HEARTBEAT_MS: '300000',
+        COLLAB_MAX_BUFFERED_BYTES: '4096',
+        COLLAB_RATE_LIMIT_BYTES_PER_SECOND: String(256 * 1024 * 1024),
+        COLLAB_RATE_LIMIT_PER_SECOND: '10000',
+    });
     const sender = await connect(url);
     const recipient = await connect(url);
     await join(sender, 'session', 'sender');
@@ -272,15 +281,20 @@ void test('disconnects a recipient before its outbound queue exceeds the configu
     await join(recipient, 'session', 'recipient');
     await peerJoined;
 
-    const peerLeft = nextMessage(sender);
-    sender.send(
-        JSON.stringify({
-            type: 'state-update',
-            sessionId: 'session',
-            peerId: 'sender',
-            state: 'x'.repeat(700),
-        })
-    );
+    const transport: unknown = Reflect.get(recipient, '_socket');
+    assert(isPausable(transport));
+    transport.pause();
+
+    const peerLeft = nextMessage(sender, 5_000);
+    const update = JSON.stringify({
+        type: 'state-update',
+        sessionId: 'session',
+        peerId: 'sender',
+        state: 'x'.repeat(800),
+    });
+    for (let message = 0; message < 8_000; message += 1) {
+        sender.send(update);
+    }
 
     assert.deepEqual(await peerLeft, { type: 'peer-left', peerId: 'recipient', newHostId: null });
 });
