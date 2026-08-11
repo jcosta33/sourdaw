@@ -1,0 +1,34 @@
+src/modules/Gluten/presentations/views/__tests__/glutenTopologyControlGating.spec.tsx
+  s_bc88af7d3b054c::t_31a2d44b8114ff 126-138,173-186
+  s_bc88af7d3b054c::t_79f10e2eaf0912 187-196
+  s_bc88af7d3b054c::t_f66d23a9cbfda0 197-198
+src/modules/Gluten/presentations/views/GlutenPanel.tsx
+  s_bc88af7d3b054c::t_5199f668ee637c 235-260,442-445,777,802,899,905,924,930
+  s_bc88af7d3b054c::t_37f0f7931d9eb5 385
+  s_bc88af7d3b054c::t_be13716a2a9bbd 373,386,394-395,908,933
+src/modules/ProofChamber/presentations/views/__tests__/proofChamberAlgorithmGating.spec.tsx
+  s_bc88af7d3b054c::t_31a2d44b8114ff 173,273-281,284-293
+  s_bc88af7d3b054c::t_8721328138b290 167
+  s_bc88af7d3b054c::t_af733603380b42 282-283
+  s_bc88af7d3b054c::t_439c6b17e6b22d 294
+src/modules/ProofChamber/presentations/views/ProofChamberPanel.tsx
+  s_bc88af7d3b054c::t_37f0f7931d9eb5 263
+  s_bc88af7d3b054c::t_be13716a2a9bbd 250,264,271-272,836,902
+  s_bc88af7d3b054c::t_5199f668ee637c 134-159,308-311,488,621,650,716,828,835,894,901
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "e51a7d30c9f655a600e05f98cd032d4b772c7f67",
+  "prompts": {},
+  "sessions": {
+    "s_bc88af7d3b054c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f9b4a-11a2-7f61-8dfb-76eed0eb2a9c",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
