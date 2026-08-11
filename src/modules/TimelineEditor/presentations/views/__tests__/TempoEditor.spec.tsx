@@ -69,17 +69,29 @@ type MockValueFieldProps = {
     max?: number;
     commitMode?: 'live' | 'release';
     ariaLabel?: string;
+    ariaDescribedBy?: string;
 };
 
 // The accessible name is rendered onto the control itself. A name the view puts
 // on a wrapper instead would leave this input anonymous, which is the state the
 // review found: `aria-label` on a role-less div has no ARIA mapping.
 vi.mock('#/components/daw/ValueField', () => ({
-    ValueField: ({ value, onChange, onReset, readOnly, min, max, commitMode, ariaLabel }: MockValueFieldProps) => (
+    ValueField: ({
+        value,
+        onChange,
+        onReset,
+        readOnly,
+        min,
+        max,
+        commitMode,
+        ariaLabel,
+        ariaDescribedBy,
+    }: MockValueFieldProps) => (
         <input
             type="number"
             data-testid="tempo-input"
             aria-label={ariaLabel}
+            aria-describedby={ariaDescribedBy}
             value={value}
             readOnly={readOnly}
             min={min}
@@ -141,8 +153,7 @@ describe('TempoEditor', () => {
         render(<TempoEditor />);
 
         expect(screen.getByTestId('tempo-input')).toHaveValue(90);
-        expect(screen.getByLabelText('Tempo BPM at playhead (tempo map)')).toBeInTheDocument();
-        expect(screen.queryByLabelText('Tempo BPM')).toBeNull();
+        expect(screen.getByLabelText('Tempo BPM')).toBeInTheDocument();
         expect(
             screen.getByText('Tempo at the playhead. Editing changes the tempo-map event that governs it.')
         ).toBeInTheDocument();
@@ -182,7 +193,7 @@ describe('TempoEditor', () => {
 
         expect(screen.getByTestId('tempo-input')).toHaveValue(110);
         expect(screen.getByTestId('tempo-input')).toHaveAttribute('readonly');
-        expect(screen.getByLabelText('Tempo BPM at playhead (tempo ramp, read-only)')).toBeInTheDocument();
+        expect(screen.getByLabelText('Tempo BPM')).toHaveAccessibleDescription('ramp');
         // Both the field's own hint and the disabled TAP button's hint name the
         // reason — TAP used to keep offering "Tap to set tempo" while refusing.
         expect(
@@ -201,7 +212,7 @@ describe('TempoEditor', () => {
         render(<TempoEditor />);
 
         expect(screen.getByTestId('tempo-input')).toHaveAttribute('readonly');
-        expect(screen.getByLabelText('Tempo BPM (transport state loading, read-only)')).toBeInTheDocument();
+        expect(screen.getByLabelText('Tempo BPM')).toHaveAccessibleDescription('loading');
         expect(screen.getAllByText('The transport state has not loaded yet.')).toHaveLength(2);
         expect(screen.getByTestId('tempo-lock-reason')).toHaveTextContent('loading');
     });
