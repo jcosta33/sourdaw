@@ -136,7 +136,7 @@ export const TempoEditor = (): ReactElement => {
                         // tap tempo is most for; under a lock it is visibly
                         // unavailable without dropping keyboard focus.
                         aria-disabled={!tempoField.editable || undefined}
-                        className="text-[9px] font-bold w-6 h-5 aria-disabled:cursor-not-allowed aria-disabled:opacity-50"
+                        className="text-[9px] font-bold w-6 h-5 aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:hover:bg-transparent aria-disabled:hover:text-text-secondary aria-disabled:active:translate-y-0 aria-disabled:active:border-0 aria-disabled:active:bg-transparent aria-disabled:active:shadow-none"
                     >
                         TAP
                     </Button>
