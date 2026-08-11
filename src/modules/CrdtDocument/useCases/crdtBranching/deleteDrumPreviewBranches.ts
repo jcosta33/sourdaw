@@ -54,6 +54,7 @@ export function deleteDrumPreviewBranches(action: DeleteDrumPreviewBranchesActio
     return runBranchDocumentTransition({
         affectedDocIds: branches.map(({ rootDocId }) => rootDocId),
         previousState: state,
+        transitionOwnerId: action.payload.ownerId,
         apply: () => {
             for (const branch of branches) {
                 automergeRepository.removeDoc(branch.rootDocId);

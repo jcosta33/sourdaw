@@ -7,17 +7,20 @@ type RunBranchDocumentTransitionInput<TResult> = {
     affectedDocIds: DocId[];
     apply: () => { nextState?: BranchStoreState; result: TResult };
     previousState: BranchStoreState;
+    transitionOwnerId?: string;
 };
 
 export function runBranchDocumentTransition<TResult>({
     affectedDocIds,
     apply,
     previousState,
+    transitionOwnerId,
 }: RunBranchDocumentTransitionInput<TResult>): Promise<TResult> {
     return runBranchTransition({
         affectedDocIds,
         apply,
         previousState,
         persistenceOperation: () => Promise.resolve(),
+        transitionOwnerId,
     });
 }

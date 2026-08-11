@@ -1,7 +1,7 @@
 import { logger } from '#/infra/logger/appLogger';
 import { type AppAction } from '#/utils/handlerContract';
 
-import { DOC_PREFIX_ROOT } from '../../models/CrdtDocumentTypes';
+import { DOC_BRANCHES, DOC_PREFIX_ROOT } from '../../models/CrdtDocumentTypes';
 import { automergeRepository } from '../../repositories/automergeRepository';
 import { branchStore, type BranchRecord } from '../../stores/branchStore';
 
@@ -82,6 +82,9 @@ function hasExactDocumentSnapshot(
         return false;
     }
     return action.payload.expectedDocuments.every(({ docId, heads }) => {
+        if (docId === DOC_BRANCHES) {
+            return true;
+        }
         const liveHeads = [...(automergeRepository.getHeads(docId) ?? [])].map(String).toSorted();
         return arraysEqual(liveHeads, heads);
     });

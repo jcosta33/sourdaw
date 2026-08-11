@@ -12,6 +12,8 @@ import { compactProject } from '../compactProject';
 import { loadCrdtProject } from '../loadCrdtProject';
 import { projectCrdtToStores } from '../projection/projectProjection';
 
+import { branchDocumentTransitionFence } from './branchDocumentTransitionFence';
+
 type DocumentSnapshot = {
     id: DocId;
     doc: Doc<unknown> | null;
@@ -22,6 +24,7 @@ export type RunBranchTransitionInput<TResult> = {
     apply: () => { nextState?: BranchStoreState; result: TResult };
     persistenceOperation: () => Promise<void>;
     previousState: BranchStoreState;
+    transitionOwnerId?: string;
 };
 
 let branchTransitionInProgress = false;
@@ -93,8 +96,9 @@ export async function runBranchTransition<TResult>({
     apply,
     persistenceOperation,
     previousState,
+    transitionOwnerId,
 }: RunBranchTransitionInput<TResult>): Promise<TResult> {
-    if (branchTransitionInProgress) {
+    if (branchTransitionInProgress || branchDocumentTransitionFence.isBlockedFor(transitionOwnerId)) {
         throw createBranchError('A branch transition is already in progress');
     }
 

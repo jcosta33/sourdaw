@@ -16,6 +16,7 @@ import {
 import { branchStore, MAIN_BRANCH_ID } from '#/modules/CrdtDocument/stores';
 import {
     createCrdtDoc,
+    DOC_BRANCHES,
     getCrdtDoc,
     getCrdtDocIds,
     getDrumPreviewBranchHandlers,
@@ -23,6 +24,7 @@ import {
     registerCrdtStorageRuntime,
     removeCrdtDoc,
     resetCrdtProjectAuthority,
+    subscribeToCrdtChanges,
 } from '#/modules/CrdtDocument/useCases';
 import { midiStore } from '#/modules/MIDI/stores';
 import { defaultTransportState, transportStore } from '#/modules/Transport/stores';
@@ -572,6 +574,45 @@ describe('EX-05 drum preview-branch prompt workflow', () => {
         expect(
             chatStore.value?.messages.find((message) => message.pendingActionConfirmationId === confirmationId)?.content
         ).not.toContain('Outcome: committed');
+    });
+
+    it('commits against the exact host-owned branch metadata delta during an active collaboration projection', async () => {
+        createCrdtDoc(DOC_BRANCHES);
+        mutateCrdtDoc<{ branches?: unknown }>({
+            id: DOC_BRANCHES,
+            changeFn: (draft) => {
+                draft.branches = structuredClone(branchStore.value?.branches ?? []);
+            },
+        });
+        const unsubscribe = branchStore.subscribe((state) => {
+            mutateCrdtDoc<{ branches?: unknown }>({
+                id: DOC_BRANCHES,
+                changeFn: (draft) => {
+                    draft.branches = structuredClone(state?.branches ?? []);
+                },
+            });
+        });
+        const changedDocIds: string[] = [];
+        const unsubscribeCrdt = subscribeToCrdtChanges((docId) => {
+            if (docId) {
+                changedDocIds.push(docId);
+            }
+        });
+
+        await sendChatMessage(PROMPT);
+        const confirmationId = getConfirmationId();
+        const action = getPreviewAction(confirmationId);
+        const result = await confirmPendingChatActions({ confirmationId });
+
+        expect(result).toEqual({ status: 'executed' });
+        expect(branchStore.value?.branches).toHaveLength(4);
+        expect(readPlainDoc(DOC_BRANCHES).branches).toHaveLength(4);
+        expect(changedDocIds).toEqual(
+            expect.arrayContaining(action.payload.candidates.map(({ rootDocId }) => rootDocId))
+        );
+        expect(undoStore.value?.past).toHaveLength(1);
+        unsubscribeCrdt();
+        unsubscribe();
     });
 
     it('preserves all three candidates and the whole undo entry when a collaborator edits one branch', async () => {

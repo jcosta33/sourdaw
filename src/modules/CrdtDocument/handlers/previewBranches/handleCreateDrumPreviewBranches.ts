@@ -26,8 +26,8 @@ export const handleCreateDrumPreviewBranches = createHandler<'createDrumPreviewB
         if (!prepared) {
             return { status: 'conflict' };
         }
-        await createDrumPreviewBranches(prepared);
-        return { status: 'written' };
+        const finalize = await createDrumPreviewBranches(prepared);
+        return { status: 'written', afterCommit: finalize, afterAmbiguousCommit: finalize };
     },
     describe: (action) => {
         const prepared = prepareDrumPreviewBranches(action);

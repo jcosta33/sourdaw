@@ -1,8 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { type AppAction } from '#/utils/handlerContract';
+
 import { automergeRepository } from '../../../repositories/automergeRepository';
 import { branchStore, MAIN_BRANCH_ID } from '../../../stores/branchStore';
 import { compactProject } from '../../compactProject';
+import { waitForCrdtDocumentTransition } from '../../waitForCrdtDocumentTransition';
+import { branchDocumentTransitionFence } from '../branchDocumentTransitionFence';
+import { rollbackCreatedDrumPreviewBranches } from '../rollbackCreatedDrumPreviewBranches';
 import { runBranchDocumentTransition } from '../runBranchDocumentTransition';
 
 vi.mock('../../compactProject', () => ({
@@ -74,5 +79,50 @@ describe('runBranchDocumentTransition', () => {
 
         expect(automergeRepository.getDocIds().toSorted()).toEqual(['root']);
         expect(branchStore.value).toEqual(initialBranchState);
+    });
+
+    it('lets the owning abort remove fenced candidate documents and release deferred peer sync', async () => {
+        const ownerId = 'preview-owner';
+        const candidateIds = ['branch_candidate-1', 'branch_candidate-2', 'branch_candidate-3'];
+        const candidateRecords = candidateIds.map((rootDocId, index) => {
+            automergeRepository.createChildDoc(rootDocId);
+            automergeRepository.changeDoc<Record<string, unknown>>(rootDocId, (draft) => {
+                draft.candidate = index;
+            });
+            return {
+                branchId: rootDocId.replace('branch_', ''),
+                name: `Candidate ${String(index + 1)}`,
+                rootDocId,
+                sourceBranchId: MAIN_BRANCH_ID,
+                createdAt: 1,
+                createdFromHeads: [],
+                note: `agent-preview:${ownerId}`,
+            };
+        });
+        branchStore.set({
+            ...initialBranchState,
+            branches: [...initialBranchState.branches, ...candidateRecords],
+        });
+        const action = {
+            type: 'deleteDrumPreviewBranches',
+            payload: {
+                ownerId,
+                expectedSourceBranchId: MAIN_BRANCH_ID,
+                branches: candidateRecords.map(({ branchId, name, rootDocId }) => ({
+                    branchId,
+                    branchName: name,
+                    rootDocId,
+                    expectedHeads: [...(automergeRepository.getHeads(rootDocId) ?? [])].map(String).toSorted(),
+                })),
+            },
+        } satisfies Extract<AppAction, { type: 'deleteDrumPreviewBranches' }>;
+        branchDocumentTransitionFence.begin({ docIds: candidateIds, ownerId });
+
+        expect(waitForCrdtDocumentTransition(candidateIds[0]!)).not.toBeNull();
+        await rollbackCreatedDrumPreviewBranches(action);
+
+        expect(automergeRepository.getDocIds().toSorted()).toEqual(['root']);
+        expect(branchStore.value).toEqual(initialBranchState);
+        expect(waitForCrdtDocumentTransition(candidateIds[0]!)).toBeNull();
     });
 });
