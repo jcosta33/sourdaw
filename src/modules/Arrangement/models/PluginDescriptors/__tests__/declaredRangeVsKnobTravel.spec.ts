@@ -1670,11 +1670,11 @@ describe('declared parameter range agrees with the knob that drives it', () => {
         expect(CENSUS.ambiguous).toStrictEqual([]);
 
         // threeWay = the subset of `compared` that ALSO has a derivable engine
-        // clamp. 116 of 192 is the honest size of the three-way census; the
-        // other 76 are two-way only, for the shapes named in
+        // clamp. 114 of 192 is the honest size of the three-way census; the
+        // other 78 are two-way only, for the shapes named in
         // `ENGINE_CLAMP_COVERAGE.notDerivable`. Distribution is pinned
         // separately, by identity, in `threeWayPerDevice`.
-        expect(CENSUS.threeWay.length).toBe(116);
+        expect(CENSUS.threeWay.length).toBe(114);
 
         // The findings themselves, **by identity**. This was a bare count, which
         // is the wrong shape for a list of named defects: one row leaving while
@@ -1767,7 +1767,7 @@ describe('declared parameter range agrees with the knob that drives it', () => {
         // is a named zero that has to be justified.
         expect(Object.fromEntries(CENSUS.threeWayPerDevice)).toStrictEqual({
             fermenter: 53,
-            gluten: 21,
+            gluten: 19,
             bacteria: 19,
             'dutch-oven': 12,
             // Only four of Grinder's 25 compared parameters reach leg 3: most of
