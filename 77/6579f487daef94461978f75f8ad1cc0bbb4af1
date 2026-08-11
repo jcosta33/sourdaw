@@ -1,0 +1,23 @@
+server/__tests__/collab-server.spec.ts
+  s_bc88af7d3b054c::t_bbdb49052bc780 32-39,243-260
+  s_bc88af7d3b054c::t_eb6484a24c0286 261-263
+  s_bc88af7d3b054c::t_f88fe809151394 264
+server/collab-server.ts
+  s_bc88af7d3b054c::t_203824ffbac818 2,153,683
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "776579f487daef94461978f75f8ad1cc0bbb4af1",
+  "prompts": {},
+  "sessions": {
+    "s_bc88af7d3b054c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f9b4a-11a2-7f61-8dfb-76eed0eb2a9c",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
