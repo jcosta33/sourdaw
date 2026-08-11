@@ -179,15 +179,16 @@ class GlutenProcessor extends AudioWorkletProcessor {
             this._inLeftView.get(mem, inLeftPtr, frames).set(in0);
             this._inRightView.get(mem, inRightPtr, frames).set(input[1] ?? in0);
 
+            const scLeft = this._scLeftView.get(mem, inst.get_sc_left_ptr(), frames);
+            const scRight = this._scRightView.get(mem, inst.get_sc_right_ptr(), frames);
             const scInput = inputs[1];
-            if (scInput && scInput.length > 0) {
-                const sc0 = scInput[0];
-                if (sc0 && sc0.length > 0) {
-                    const scLeftPtr = inst.get_sc_left_ptr();
-                    const scRightPtr = inst.get_sc_right_ptr();
-                    this._scLeftView.get(mem, scLeftPtr, frames).set(sc0);
-                    this._scRightView.get(mem, scRightPtr, frames).set(scInput[1] ?? sc0);
-                }
+            const sc0 = scInput?.[0];
+            if (sc0 && sc0.length > 0) {
+                scLeft.set(sc0);
+                scRight.set(scInput[1] ?? sc0);
+            } else {
+                scLeft.fill(0);
+                scRight.fill(0);
             }
 
             const outLeftPtr = inst.process(frames);

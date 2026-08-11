@@ -9,7 +9,7 @@ import { ProofChamberPanel } from '../ProofChamberPanel';
 
 // Mock dependencies
 vi.mock('#/infra/store/useStore', () => ({
-    useStore: vi.fn((_store, defaultValue) => defaultValue),
+    useStore: vi.fn((_store: unknown, defaultValue: unknown) => defaultValue),
 }));
 
 vi.mock('#/modules/Command/useCases', () => ({
@@ -160,7 +160,7 @@ describe('ProofChamberPanel', () => {
     });
 
     it('dispatches the saturation curve at the index the engine matches on', () => {
-        vi.mocked(useStore).mockReturnValue({
+        const chamberState = {
             activeInstanceId: 'test-device',
             instances: {
                 'test-device': {
@@ -170,6 +170,12 @@ describe('ProofChamberPanel', () => {
                     engineState: { ...DEFAULT_PARAMS, saturation: true },
                 },
             },
+        };
+        vi.mocked(useStore).mockImplementation((_store, defaultValue) => {
+            if (typeof defaultValue === 'object' && defaultValue !== null && 'instances' in defaultValue) {
+                return chamberState;
+            }
+            return defaultValue;
         });
 
         render(<ProofChamberPanel deviceId="test-device" />);
