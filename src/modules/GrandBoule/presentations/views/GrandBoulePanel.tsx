@@ -161,7 +161,6 @@ export const GrandBoulePanel = ({ deviceId }: { deviceId: string }): ReactElemen
     const store = createGrandBouleStore(deviceId);
     const state = useStore(store, defaultGrandBouleState);
     const [activeNotes, setActiveNotes] = useState<ReadonlyMap<number, number>>(() => new Map());
-    const [lidPosition, setLidPosition] = useState(1.0);
     const [lastVelocity, setLastVelocity] = useState(0);
 
     // The pedal subscriber dispatches through use cases that need the live
@@ -294,13 +293,6 @@ export const GrandBoulePanel = ({ deviceId }: { deviceId: string }): ReactElemen
         velocityCurveReadout = 'soft';
     } else if (parameters.velocityCurve > 1.05) {
         velocityCurveReadout = 'hard';
-    }
-
-    let lidPositionReadout = 'full';
-    if (lidPosition < 0.3) {
-        lidPositionReadout = 'closed';
-    } else if (lidPosition < 0.7) {
-        lidPositionReadout = 'half';
     }
 
     return (
@@ -525,7 +517,7 @@ export const GrandBoulePanel = ({ deviceId }: { deviceId: string }): ReactElemen
                         <PianoModel3D
                             activeNotes={activeNotes}
                             sustainPedal={pedals.sustain}
-                            lidPosition={lidPosition}
+                            lidPosition={1}
                             onNoteOn={handleNoteOn}
                             onNoteOff={handleNoteOff}
                             className="h-full w-full"
@@ -648,19 +640,6 @@ export const GrandBoulePanel = ({ deviceId }: { deviceId: string }): ReactElemen
                                 Panic
                             </DawPluginChip>
                         </div>
-                    </SectionCard>
-
-                    <SectionCard title="Lid" detail="Grand piano lid position.">
-                        <Knob
-                            value={lidPosition}
-                            onChange={setLidPosition}
-                            label="Position"
-                            min={0}
-                            max={1}
-                            step={0.01}
-                            defaultValue={1.0}
-                            readout={lidPositionReadout}
-                        />
                     </SectionCard>
                 </aside>
             </div>
