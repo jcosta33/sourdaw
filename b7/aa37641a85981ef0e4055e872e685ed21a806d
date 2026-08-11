@@ -1,0 +1,24 @@
+src/modules/Arrangement/models/PluginDescriptors/__tests__/BuiltinInstrumentDescriptors.spec.ts
+  s_bc88af7d3b054c::t_c4165915da4495 4,67
+  s_bc88af7d3b054c::t_9fa4f843e794db 65-66,69-71,73
+  s_bc88af7d3b054c::t_b718eae36dbb95 72
+  s_bc88af7d3b054c::t_3d22a1fd82928f 68
+src/modules/Arrangement/models/PluginDescriptors/GrandBouleDescriptor.ts
+  s_bc88af7d3b054c::t_646b99d22f0055 65,78
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "b7aa37641a85981ef0e4055e872e685ed21a806d",
+  "prompts": {},
+  "sessions": {
+    "s_bc88af7d3b054c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f9b4a-11a2-7f61-8dfb-76eed0eb2a9c",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
