@@ -1,8 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import {
+    applyCrumbsParamValue,
+    beginCrumbsParamPreview,
     crumbsStore,
     defaultCrumbsState,
+    endCrumbsParamPreview,
     ensureInstance,
     replaceCrumbsProjectParameters,
     setMasterGain,
@@ -73,5 +76,17 @@ describe('replaceCrumbsProjectParameters', () => {
             envelope: { attack: defaultCrumbsState.envelope.attack },
             voiceStack: { stackCount: defaultCrumbsState.voiceStack.stackCount },
         });
+    });
+
+    it('preserves an active preview while reconciling unrelated project changes', () => {
+        beginCrumbsParamPreview(DEVICE, 'masterGain');
+        applyCrumbsParamValue(DEVICE, 'masterGain', 0.3);
+
+        replaceCrumbsProjectParameters(DEVICE, { masterGain: defaultCrumbsState.masterGain, tune: 4 });
+        expect(crumbsStore.value?.[DEVICE]).toMatchObject({ masterGain: 0.3, tune: 4 });
+
+        endCrumbsParamPreview(DEVICE, 'masterGain');
+        replaceCrumbsProjectParameters(DEVICE, { masterGain: 0.6, tune: 4 });
+        expect(crumbsStore.value?.[DEVICE]?.masterGain).toBe(0.6);
     });
 });
