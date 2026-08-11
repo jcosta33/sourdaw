@@ -18,6 +18,8 @@ struct Grain {
     active: bool,
     read_pos: f32,
     samples_behind_write_head: f32,
+    frontier_fade_remaining: usize,
+    frontier_fade_total: usize,
     size_samples: usize,
     progress: usize,
     pitch_ratio: f32,
@@ -30,6 +32,8 @@ impl Grain {
             active: false,
             read_pos: 0.0,
             samples_behind_write_head: 0.0,
+            frontier_fade_remaining: 0,
+            frontier_fade_total: 0,
             size_samples: 0,
             progress: 0,
             pitch_ratio: 1.0,
@@ -109,7 +113,26 @@ impl GranularProcessor {
                     GrainWindow::Gaussian
                 };
             }
-            "grainFreeze" => self.freeze = value > 0.5,
+            "grainFreeze" => {
+                let freeze = value > 0.5;
+                if freeze && !self.freeze {
+                    for grain in &mut self.grains {
+                        if !grain.active || grain.frontier_fade_total != 0 {
+                            continue;
+                        }
+                        let causal_remaining = ((grain.samples_behind_write_head.max(0.0)
+                            / grain.pitch_ratio)
+                            .floor() as usize)
+                            .saturating_add(1);
+                        let envelope_remaining = grain.size_samples.saturating_sub(grain.progress);
+                        if causal_remaining < envelope_remaining {
+                            grain.frontier_fade_remaining = causal_remaining;
+                            grain.frontier_fade_total = causal_remaining;
+                        }
+                    }
+                }
+                self.freeze = freeze;
+            }
             "grainMix" => self.mix = value.clamp(0.0, 1.0),
             _ => {}
         }
@@ -145,7 +168,12 @@ impl GranularProcessor {
                 continue;
             }
 
-            let win = grain.window_value();
+            let frontier_gain = match grain.frontier_fade_total {
+                0 => 1.0,
+                1 => 0.0,
+                total => (grain.frontier_fade_remaining - 1) as f32 / (total - 1) as f32,
+            };
+            let win = grain.window_value() * frontier_gain;
             let read_idx = grain.read_pos.floor() as usize % self.buffer_size;
             let next_idx = (read_idx + 1) % self.buffer_size;
             let fraction = grain.read_pos.fract();
@@ -156,7 +184,13 @@ impl GranularProcessor {
             grain.read_pos = (grain.read_pos + grain.pitch_ratio) % self.buffer_size as f32;
             grain.samples_behind_write_head -= grain.pitch_ratio;
             grain.progress += 1;
+            if grain.frontier_fade_total != 0 {
+                grain.frontier_fade_remaining = grain.frontier_fade_remaining.saturating_sub(1);
+            }
             if grain.progress >= grain.size_samples {
+                grain.active = false;
+            }
+            if grain.frontier_fade_total != 0 && grain.frontier_fade_remaining == 0 {
                 grain.active = false;
             }
         }
@@ -191,6 +225,8 @@ impl GranularProcessor {
                 grain.pitch_ratio = pitch_ratio;
                 grain.window = self.window;
                 grain.samples_behind_write_head = offset as f32;
+                grain.frontier_fade_remaining = 0;
+                grain.frontier_fade_total = 0;
 
                 // Read position: `offset` samples back from the most recently
                 // written sample.
@@ -521,6 +557,31 @@ mod tests {
         assert!(
             peak <= f32::EPSILON,
             "freezing an active grain let it read poisoned history at peak {peak}"
+        );
+    }
+
+    #[test]
+    fn freezing_an_active_grain_fades_before_the_capture_frontier() {
+        let mut processor = quiet_spawner();
+        processor.buffer.fill(1.0);
+        processor.write_pos = 2_000;
+        processor.set_param("grainMix", 1.0);
+        processor.set_param("grainSize", 40.0);
+        processor.set_param("grainPosOffset", 20.0);
+        processor.spawn_grain();
+        processor.set_param("grainFreeze", 1.0);
+
+        let rendered: Vec<f32> = (0..962).map(|_| processor.process_sample(0.0)).collect();
+        let peak = rendered.iter().copied().fold(0.0_f32, f32::max);
+        let worst_step = rendered
+            .windows(2)
+            .map(|pair| (pair[1] - pair[0]).abs())
+            .fold(0.0_f32, f32::max);
+
+        assert!(peak > 0.2, "the active grain was inaudible at peak {peak}");
+        assert!(
+            worst_step < 0.01,
+            "Freeze cut a sounding grain by {worst_step} instead of fading it"
         );
     }
 
