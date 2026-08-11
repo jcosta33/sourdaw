@@ -172,7 +172,9 @@ impl GranularProcessor {
                                 .saturating_add(1);
                             let envelope_remaining =
                                 grain.size_samples.saturating_sub(grain.progress);
-                            if causal_remaining < envelope_remaining {
+                            if causal_remaining <= 1 && causal_remaining < envelope_remaining {
+                                grain.begin_frontier_hold_fade();
+                            } else if causal_remaining < envelope_remaining {
                                 grain.frontier_fade_remaining = causal_remaining;
                                 grain.frontier_fade_total = causal_remaining;
                             }
@@ -351,6 +353,20 @@ mod tests {
         let mut processor = GranularProcessor::new(SR);
         processor.set_param("grainDensity", 0.1);
         processor
+    }
+
+    fn assert_bounded_fade(before: f32, after: &[f32], transition: &str) {
+        let worst_step = std::iter::once(before)
+            .chain(after.iter().copied())
+            .collect::<Vec<_>>()
+            .windows(2)
+            .map(|pair| (pair[1] - pair[0]).abs())
+            .fold(0.0_f32, f32::max);
+        assert!(worst_step < 0.05, "{transition} stepped by {worst_step}");
+        assert!(
+            after.last().copied().unwrap_or(1.0).abs() <= f32::EPSILON,
+            "{transition} did not fade to silence"
+        );
     }
 
     /// Write `1.0, 2.0, … count` and hand back the last value written.
@@ -668,21 +684,7 @@ mod tests {
 
         processor.set_param("grainFreeze", 1.0);
         let after_freeze: Vec<f32> = (0..65).map(|_| processor.process_sample(0.0)).collect();
-        let worst_step = std::iter::once(before_freeze)
-            .chain(after_freeze.iter().copied())
-            .collect::<Vec<_>>()
-            .windows(2)
-            .map(|pair| (pair[1] - pair[0]).abs())
-            .fold(0.0_f32, f32::max);
-
-        assert!(
-            worst_step < 0.05,
-            "Freeze cut a Position-0 grain by {worst_step} at its Hann peak"
-        );
-        assert!(
-            after_freeze.last().copied().unwrap_or(1.0).abs() <= f32::EPSILON,
-            "the held frontier sample did not fade to silence"
-        );
+        assert_bounded_fade(before_freeze, &after_freeze, "Position-0 Freeze");
     }
 
     #[test]
@@ -708,21 +710,7 @@ mod tests {
 
         processor.set_param("grainFreeze", 1.0);
         let after_freeze: Vec<f32> = (0..65).map(|_| processor.process_sample(0.0)).collect();
-        let worst_step = std::iter::once(before_freeze)
-            .chain(after_freeze.iter().copied())
-            .collect::<Vec<_>>()
-            .windows(2)
-            .map(|pair| (pair[1] - pair[0]).abs())
-            .fold(0.0_f32, f32::max);
-
-        assert!(
-            worst_step < 0.05,
-            "Freeze cut the last causal Gaussian sample by {worst_step}"
-        );
-        assert!(
-            after_freeze.last().copied().unwrap_or(1.0).abs() <= f32::EPSILON,
-            "the held final causal sample did not fade to silence"
-        );
+        assert_bounded_fade(before_freeze, &after_freeze, "last-sample Freeze");
     }
 
     #[test]
@@ -805,6 +793,33 @@ mod tests {
             reclaimed_peak <= f32::EPSILON,
             "the thawed grain rendered reclaimed input at peak {reclaimed_peak}"
         );
+    }
+
+    #[test]
+    fn thawing_at_the_last_oldest_frontier_sample_fades_without_a_step() {
+        let mut processor = quiet_spawner();
+        processor.buffer.fill(1.0);
+        processor.write_pos = 0;
+        processor.set_param("grainMix", 1.0);
+        processor.set_param("grainSize", 500.0);
+        processor.set_param("grainPosOffset", 2000.0);
+        processor.set_param("grainPitch", -24.0);
+        processor.set_param("grainWindow", 1.0);
+        processor.set_param("grainFreeze", 1.0);
+        processor.spawn_grain();
+
+        let mut before_thaw = 0.0;
+        for _ in 0..4 {
+            before_thaw = processor.process_sample(0.0);
+        }
+        assert!(
+            before_thaw > 0.1,
+            "the frozen Gaussian grain was not sounding at the oldest frontier: {before_thaw}"
+        );
+
+        processor.set_param("grainFreeze", 0.0);
+        let after_thaw: Vec<f32> = (0..65).map(|_| processor.process_sample(-1.0)).collect();
+        assert_bounded_fade(before_thaw, &after_thaw, "last-sample Thaw");
     }
 
     #[test]
