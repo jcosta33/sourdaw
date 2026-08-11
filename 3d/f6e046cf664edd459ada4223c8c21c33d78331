@@ -1,0 +1,38 @@
+crates/daw-dsp/src/gluten/engine.rs
+  s_bc88af7d3b054c::t_3c0ab9bd09c638 201-203
+crates/daw-dsp/tests/gluten_topology_param_reach.rs
+  s_bc88af7d3b054c::t_ead5d6872acaa4 346-379
+  s_bc88af7d3b054c::t_a864af8af1d969 345
+public/wasm/daw-dsp/daw_dsp.d.ts
+  s_a40848e8f8cca9::t_9ff539a2e390e7 1,801-814,944-983,985-1003
+public/wasm/daw-dsp/daw_dsp_bg.wasm.d.ts
+  s_a40848e8f8cca9::t_26f4d2d522bf1f 1,5-18,148-187,189-207
+public/wasm/manifest.json
+  s_a40848e8f8cca9::t_daf8042708678a 12,16-18,21
+src/modules/AudioEngine/wasm/daw_dsp.d.ts
+  s_a40848e8f8cca9::t_ee5c5a4f8cd738 1,801-814,944-983,985-1003
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "3df6e046cf664edd459ada4223c8c21c33d78331",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_bc88af7d3b054c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f9b4a-11a2-7f61-8dfb-76eed0eb2a9c",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
