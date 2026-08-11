@@ -3,9 +3,12 @@
 use crate::midi::diagnostics::{
     active_midi_rt_diagnostics_channel, ActiveMidiRtDiagnosticsSnapshot,
 };
-use crate::scheduler::{AudioScheduler, GraphCommand};
+use crate::scheduler::{
+    AudioScheduler, GraphCommand, RetiredGraphObjects, RETIREMENT_QUEUE_CAPACITY,
+};
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
-use rtrb::Consumer;
+use rtrb::{Consumer, RingBuffer};
+use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender};
 use std::thread;
 use std::time::Duration;
@@ -14,10 +17,20 @@ use triple_buffer::Input;
 const MAX_CALLBACK_FRAMES: usize = 4096;
 const AUDIO_STREAM_STARTUP_TIMEOUT: Duration = Duration::from_secs(5);
 const AUDIO_STREAM_SHUTDOWN_TIMEOUT: Duration = Duration::from_millis(100);
+const RETIREMENT_RECLAIMER_POLL_INTERVAL: Duration = Duration::from_millis(10);
 
 pub struct AudioThreadHandle {
     shutdown_tx: Sender<()>,
     shutdown_complete_rx: Receiver<()>,
+}
+
+struct StreamWithReclaimerShutdown<Stream>(Option<Stream>, Sender<()>);
+
+impl<Stream> Drop for StreamWithReclaimerShutdown<Stream> {
+    fn drop(&mut self) {
+        drop(self.0.take());
+        let _ = self.1.send(());
+    }
 }
 
 impl Drop for AudioThreadHandle {
@@ -88,21 +101,67 @@ where
     }
 }
 
+fn spawn_retirement_reclaimer<T: Send + 'static>(
+    mut retired_rx: Consumer<T>,
+) -> Result<Sender<()>, String> {
+    let (shutdown_tx, shutdown_rx) = mpsc::channel();
+    thread::Builder::new()
+        .name("sourdaw-plugin-reclaimer".to_string())
+        .spawn(move || loop {
+            while let Ok(retired) = retired_rx.pop() {
+                reclaim_retired(retired);
+            }
+
+            match shutdown_rx.recv_timeout(RETIREMENT_RECLAIMER_POLL_INTERVAL) {
+                Ok(()) | Err(RecvTimeoutError::Disconnected) => {
+                    while let Ok(retired) = retired_rx.pop() {
+                        reclaim_retired(retired);
+                    }
+                    break;
+                }
+                Err(RecvTimeoutError::Timeout) => {}
+            }
+        })
+        .map_err(|error| format!("Failed to spawn plugin reclaimer thread: {error}"))?;
+
+    Ok(shutdown_tx)
+}
+
+fn reclaim_retired<T>(retired: T) {
+    if catch_unwind(AssertUnwindSafe(|| drop(retired))).is_err() {
+        eprintln!("[Engine] Plugin destructor panicked during retirement");
+    }
+}
+
 pub fn spawn_audio_thread(command_rx: Consumer<GraphCommand>) -> Result<AudioThreadHandle, String> {
-    let (midi_rt_diagnostics_tx, _midi_rt_diagnostics_reader) =
-        active_midi_rt_diagnostics_channel();
-    spawn_audio_thread_with_diagnostics(command_rx, midi_rt_diagnostics_tx)
+    let (diagnostics_tx, _diagnostics_reader) = active_midi_rt_diagnostics_channel();
+    spawn_audio_thread_with_diagnostics(command_rx, diagnostics_tx)
 }
 
 pub(crate) fn spawn_audio_thread_with_diagnostics(
     command_rx: Consumer<GraphCommand>,
     midi_rt_diagnostics_tx: Input<ActiveMidiRtDiagnosticsSnapshot>,
 ) -> Result<AudioThreadHandle, String> {
-    spawn_owned_audio_stream(move || build_audio_stream(command_rx, midi_rt_diagnostics_tx))
+    let (retired_tx, retired_rx) = RingBuffer::new(RETIREMENT_QUEUE_CAPACITY);
+    let reclaimer_shutdown_tx = spawn_retirement_reclaimer(retired_rx)?;
+
+    spawn_owned_audio_stream(move || {
+        match build_audio_stream(command_rx, retired_tx, midi_rt_diagnostics_tx) {
+            Ok(stream) => Ok(StreamWithReclaimerShutdown(
+                Some(stream),
+                reclaimer_shutdown_tx,
+            )),
+            Err(error) => {
+                let _ = reclaimer_shutdown_tx.send(());
+                Err(error)
+            }
+        }
+    })
 }
 
 fn build_audio_stream(
     command_rx: Consumer<GraphCommand>,
+    retired_tx: rtrb::Producer<RetiredGraphObjects>,
     midi_rt_diagnostics_tx: Input<ActiveMidiRtDiagnosticsSnapshot>,
 ) -> Result<cpal::Stream, String> {
     let host = cpal::default_host();
@@ -115,8 +174,12 @@ fn build_audio_stream(
         .map_err(|e| format!("Failed to get default output config: {}", e))?;
 
     let sample_rate = config.sample_rate() as f32;
-    let mut scheduler =
-        AudioScheduler::with_midi_rt_diagnostics(command_rx, sample_rate, midi_rt_diagnostics_tx);
+    let mut scheduler = AudioScheduler::with_midi_rt_diagnostics(
+        command_rx,
+        retired_tx,
+        sample_rate,
+        midi_rt_diagnostics_tx,
+    );
 
     // We strictly use f32 streams
     let err_fn = |err| eprintln!("an error occurred on stream: {}", err);
@@ -186,8 +249,10 @@ fn build_audio_stream(
 #[cfg(test)]
 mod tests {
     use super::{
-        spawn_owned_audio_stream, spawn_owned_audio_stream_with_timeout, AudioThreadHandle,
+        spawn_owned_audio_stream, spawn_owned_audio_stream_with_timeout,
+        spawn_retirement_reclaimer, AudioThreadHandle, StreamWithReclaimerShutdown,
     };
+    use rtrb::RingBuffer;
     use std::rc::Rc;
     use std::sync::mpsc;
     use std::thread;
@@ -213,10 +278,23 @@ mod tests {
         _not_send: Rc<()>,
     }
 
+    struct BlockingReclaimerProbe {
+        entered_tx: mpsc::Sender<String>,
+        release_rx: mpsc::Receiver<()>,
+    }
+
     impl Drop for BlockingDropResource {
         fn drop(&mut self) {
             let _ = self.release_rx.recv();
             let _ = self.dropped_tx.send(());
+        }
+    }
+
+    impl Drop for BlockingReclaimerProbe {
+        fn drop(&mut self) {
+            let thread_name = thread::current().name().unwrap_or("unnamed").to_string();
+            let _ = self.entered_tx.send(thread_name);
+            let _ = self.release_rx.recv();
         }
     }
 
@@ -255,6 +333,35 @@ mod tests {
             .recv()
             .expect("owned resource should report its drop thread");
         assert_eq!(dropped_on, created_on);
+    }
+
+    #[test]
+    fn bounded_reclaimer_does_not_delay_audio_owner_shutdown() {
+        let (mut retired_tx, retired_rx) = RingBuffer::new(3);
+        let reclaimer_shutdown_tx =
+            spawn_retirement_reclaimer(retired_rx).expect("reclaimer should start");
+        let (entered_tx, entered_rx) = mpsc::channel();
+        let (release_tx, release_rx) = mpsc::channel();
+        retired_tx
+            .push(BlockingReclaimerProbe {
+                entered_tx,
+                release_rx,
+            })
+            .unwrap();
+        let drop_thread = entered_rx
+            .recv_timeout(Duration::from_secs(1))
+            .expect("reclaimer should enter the blocking destructor");
+        assert_eq!(drop_thread, "sourdaw-plugin-reclaimer");
+
+        let handle = spawn_owned_audio_stream(move || {
+            Ok(StreamWithReclaimerShutdown(Some(()), reclaimer_shutdown_tx))
+        })
+        .expect("audio owner should start");
+        let started_at = Instant::now();
+        drop(handle);
+        assert!(started_at.elapsed() < Duration::from_millis(250));
+
+        release_tx.send(()).unwrap();
     }
 
     #[test]
