@@ -33,8 +33,12 @@ const DEVICE = 'panel-test';
 function crumbsTrack(parameterValues: Record<string, number>): Track {
     return {
         ...createTrack({ id: 'track-1', name: 'Sampler', kind: 'audio' }),
-        devices: [{ id: DEVICE, name: 'Crumbs', type: 'crumbs', bypassed: false, parameterValues }],
+        devices: [{ id: DEVICE, name: 'Crumbs', type: 'builtin-crumbs', bypassed: false, parameterValues }],
     };
+}
+
+function setProjectParameters(parameterValues: Record<string, number>): void {
+    trackStore.set({ tracks: [crumbsTrack(parameterValues)], selectedTrackId: 'track-1', ghostClips: [] });
 }
 
 function seedSample(overrides: Partial<SampleMeta> = {}): SampleMeta {
@@ -74,30 +78,19 @@ afterEach(() => {
 
 describe('CrumbsPanel', () => {
     it('reconciles a mounted control when project truth changes or removes its value', async () => {
-        trackStore.set({
-            tracks: [crumbsTrack({ masterGain: defaultCrumbsState.masterGain })],
-            selectedTrackId: 'track-1',
-            ghostClips: [],
-        });
+        setProjectParameters({ masterGain: defaultCrumbsState.masterGain });
 
         render(<CrumbsPanel deviceId={DEVICE} />);
         const gain = screen.getByRole('slider', { name: 'Gain' });
 
         act(() => {
-            trackStore.set({
-                tracks: [crumbsTrack({ masterGain: 0.25 })],
-                selectedTrackId: 'track-1',
-                ghostClips: [],
-            });
+            setProjectParameters({ masterGain: 99, stackCount: 1.5 });
         });
-        await waitFor(() => expect(gain).toHaveAttribute('aria-valuenow', '0.25'));
+        await waitFor(() => expect(gain).toHaveAttribute('aria-valuenow', '2'));
+        expect(screen.getByRole('slider', { name: 'Voices' })).toHaveAttribute('aria-valuenow', '2');
 
         act(() => {
-            trackStore.set({
-                tracks: [crumbsTrack({})],
-                selectedTrackId: 'track-1',
-                ghostClips: [],
-            });
+            setProjectParameters({});
         });
         await waitFor(() => expect(gain).toHaveAttribute('aria-valuenow', String(defaultCrumbsState.masterGain)));
     });

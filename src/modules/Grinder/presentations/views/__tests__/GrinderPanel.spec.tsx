@@ -20,11 +20,15 @@ vi.mock('../../../useCases/restoreGrinderNeuralLibrary', () => ({
 describe('GrinderPanel', () => {
     const device_id = 'test-device';
 
-    function grinderTrack(parameterValues: Record<string, number>): Track {
+    function grinderTrack(parameterValues: Record<string, number>, trackId = 'track-1'): Track {
         return {
-            ...createTrack({ id: 'track-1', name: 'Guitar', kind: 'audio' }),
+            ...createTrack({ id: trackId, name: 'Guitar', kind: 'audio' }),
             devices: [{ id: device_id, name: 'Grinder', type: 'grinder', bypassed: false, parameterValues }],
         };
+    }
+
+    function setProjectTracks(tracks: Track[]): void {
+        trackStore.set({ tracks, selectedTrackId: tracks[0]?.id ?? null, ghostClips: [] });
     }
 
     beforeEach(() => {
@@ -383,32 +387,28 @@ describe('GrinderPanel', () => {
                 basePatch: DEFAULT_PATCH,
             },
         });
-        trackStore.set({
-            tracks: [grinderTrack({ gain: 8 })],
-            selectedTrackId: 'track-1',
-            ghostClips: [],
-        });
+        setProjectTracks([grinderTrack({ gain: 8 })]);
 
         render(<GrinderPanel deviceId={device_id} />);
         const gain = screen.getByRole('slider', { name: 'Gain' });
         expect(gain).toHaveAttribute('aria-valuenow', '8');
 
         act(() => {
-            trackStore.set({
-                tracks: [grinderTrack({ gain: 2 })],
-                selectedTrackId: 'track-1',
-                ghostClips: [],
-            });
+            setProjectTracks([grinderTrack({ gain: 9 }, 'duplicate-a'), grinderTrack({ gain: 1 }, 'duplicate-b')]);
         });
-        await waitFor(() => expect(gain).toHaveAttribute('aria-valuenow', '2'));
+        expect(gain).toHaveAttribute('aria-valuenow', '8');
 
         act(() => {
-            trackStore.set({
-                tracks: [grinderTrack({})],
-                selectedTrackId: 'track-1',
-                ghostClips: [],
-            });
+            setProjectTracks([grinderTrack({ gain: 99, channel: 1.5 })]);
         });
+        await waitFor(() => expect(gain).toHaveAttribute('aria-valuenow', '10'));
+        expect(
+            screen
+                .getAllByRole('button', { name: 'Lead' })
+                .some((button) => button.getAttribute('aria-pressed') === 'true')
+        ).toBe(true);
+
+        act(() => setProjectTracks([grinderTrack({})]));
         await waitFor(() => expect(gain).toHaveAttribute('aria-valuenow', String(DEFAULT_PATCH.gain)));
     });
 });

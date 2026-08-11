@@ -1,11 +1,11 @@
-import { trackStore } from '#/modules/Arrangement/stores';
+import { getEligibleDeviceParameterValues } from '#/modules/Arrangement/useCases';
 
 import { replaceGrinderProjectParameters } from '../stores/grinderStore';
 
 export function hydrateGrinderPatchFromProject(deviceId: string): void {
-    const device = trackStore.value?.tracks.flatMap((track) => track.devices).find((entry) => entry.id === deviceId);
-    if (!device) {
+    const parameterValues = getEligibleDeviceParameterValues(deviceId);
+    if (!parameterValues) {
         return;
     }
-    replaceGrinderProjectParameters(deviceId, device.parameterValues);
+    replaceGrinderProjectParameters(deviceId, parameterValues);
 }
