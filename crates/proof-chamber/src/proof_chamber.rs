@@ -305,7 +305,7 @@ impl GranularShifter {
     #[inline]
     fn process(&mut self, input: f32) -> f32 {
         if !self.enabled {
-            return 0.0;
+            return input;
         }
 
         let buf_len = self.buffer.len();
@@ -336,7 +336,14 @@ impl GranularShifter {
         let idx1 = ((read1 as isize).rem_euclid(buf_len as isize)) as usize;
         let idx2 = ((read2 as isize).rem_euclid(buf_len as isize)) as usize;
 
-        (self.buffer[idx1] * env1 + self.buffer[idx2] * env2) * self.amount
+        let shifted = self.buffer[idx1] * env1 + self.buffer[idx2] * env2;
+
+        // Shimmer lives inside the tank feedback path. Adding the shifted
+        // signal at full scale makes the path's gain exceed unity when Decay
+        // is near its reachable ceiling. Normalising by the sum of the dry and
+        // shifted weights preserves their existing ratio while keeping this
+        // stage at unity gain across the whole Amount range.
+        (input + shifted * self.amount) / (1.0 + self.amount)
     }
 }
 
@@ -895,11 +902,11 @@ impl ProofChamber {
             // the decay-linked `dd2` tilted by `gravity`.
             let ap_out_l = self.left_ap.process(decayed_l);
 
-            // Shimmer: process the tank signal and feed back
+            // Shimmer: blend the pitch-shifted signal into the tank feedback.
             let shimmer_l = self.shimmer.process(ap_out_l);
 
             // Fixed delay 2
-            self.left_delay_2.write(ap_out_l + shimmer_l);
+            self.left_delay_2.write(shimmer_l);
             self.left_tank_output = self.left_delay_2.read(self.scaled_delays[2]);
 
             // ── Right half ──
@@ -928,7 +935,7 @@ impl ProofChamber {
 
             let shimmer_r = self.shimmer.process(ap_out_r);
 
-            self.right_delay_2.write(ap_out_r + shimmer_r);
+            self.right_delay_2.write(shimmer_r);
             self.right_tank_output = self.right_delay_2.read(self.scaled_delays[5]);
 
             // ── Stereo output (14 taps) ──────────────────────────
