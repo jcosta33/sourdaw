@@ -6,6 +6,7 @@ import { getArrangementHandlers, getPluginById } from '#/modules/Arrangement/use
 import { clearHandlerRegistry, macroStore, registerHandlerMap, undoStore } from '#/modules/Command/stores';
 import {
     clearUndoHistory,
+    redo,
     resetActionReplayAuthority,
     setActionHistoryMetadataPort,
     undo,
@@ -303,6 +304,56 @@ describe('Grand Boule knob values survive a reload', () => {
         hydrateGrandBouleConfigFromProject(DEVICE_ID);
 
         expect(sessionConfig('lidPosition')).toBe(createDefaultGrandBouleConfig().lidPosition);
+    });
+
+    it('undoes and redoes the first legacy-project radiation edit exactly', async () => {
+        const legacyValues: Record<string, number> = { ...CONSTRUCTED };
+        delete legacyValues.lidPosition;
+        trackStore.set({
+            tracks: [grandBouleTrack(legacyValues)],
+            selectedTrackId: TRACK_ID,
+            ghostClips: [],
+        });
+        resetGrandBouleStores();
+
+        SETTERS.lidPosition(0.35);
+        await vi.waitFor(() => {
+            expect(stored('lidPosition')).toBe(0.35);
+        });
+        expect(undoDepth()).toBe(1);
+
+        await undo();
+        const afterUndo = trackStore.value?.tracks[0]?.devices[0]?.parameterValues ?? {};
+        expect(Object.hasOwn(afterUndo, 'lidPosition')).toBe(false);
+        hydrateGrandBouleConfigFromProject(DEVICE_ID);
+        expect(sessionConfig('lidPosition')).toBe(createDefaultGrandBouleConfig().lidPosition);
+
+        await redo();
+        expect(stored('lidPosition')).toBe(0.35);
+    });
+
+    it('reconciles transient UI and audio when the device disappears before commit', async () => {
+        resetGrandBouleStores();
+        hydrateGrandBouleConfigFromProject(DEVICE_ID);
+
+        SETTERS.lidPosition(0.25, true);
+        expect(sessionConfig('lidPosition')).toBe(0.25);
+        trackStore.set({
+            tracks: [{ ...grandBouleTrack({ ...CONSTRUCTED }), devices: [] }],
+            selectedTrackId: TRACK_ID,
+            ghostClips: [],
+        });
+        SETTERS.lidPosition(0.25);
+
+        await vi.waitFor(() => {
+            expect(sessionConfig('lidPosition')).toBe(createDefaultGrandBouleConfig().lidPosition);
+        });
+        expect(stored('lidPosition')).toBeUndefined();
+        expect(handleWrites).toEqual([
+            { name: 'lidPosition', value: 0.25 },
+            { name: 'lidPosition', value: createDefaultGrandBouleConfig().lidPosition },
+        ]);
+        expect(undoDepth()).toBe(0);
     });
 
     it('spends exactly one undo entry on a drag, whatever it passes through on the way', async () => {
