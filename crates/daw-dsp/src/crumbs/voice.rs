@@ -18,6 +18,11 @@ use super::types::{
 
 // ── Constants ──────────────────────────────────────────────────────────
 
+const MIN_PLAYBACK_SPEED: f64 = 1.0 / 16.0;
+const MAX_PLAYBACK_SPEED: f64 = 16.0;
+const UNITY_RESAMPLING_WORK_UNITS: usize = 8;
+const MIN_BANDLIMITED_TAPS: usize = 49;
+
 // ── Crumbs Voice ──────────────────────────────────────────────────────
 
 #[derive(Debug, Clone)]
@@ -37,13 +42,21 @@ pub struct CrumbsVoice {
     position: f64,
     speed: f64,
     direction: f64,
+    anti_alias_cutoff: f32,
+    anti_alias_step_sin: f32,
+    anti_alias_step_cos: f32,
+    anti_alias_taps: usize,
+    anti_alias_window_step_sin: f32,
+    anti_alias_window_step_cos: f32,
 
     // Playback configuration
     playback_mode: PlaybackMode,
     loop_mode: LoopMode,
+    region_start: u32,
     loop_start: u32,
     loop_end: u32,
     loop_crossfade: u32,
+    has_looped: bool,
 
     // DSP components
     amp_envelope: AhdsrEnvelope,
@@ -87,11 +100,19 @@ impl CrumbsVoice {
             position: 0.0,
             speed: 1.0,
             direction: 1.0,
+            anti_alias_cutoff: 1.0,
+            anti_alias_step_sin: 0.0,
+            anti_alias_step_cos: -1.0,
+            anti_alias_taps: BANDLIMITED_SINC_TAPS,
+            anti_alias_window_step_sin: 0.0,
+            anti_alias_window_step_cos: 1.0,
             playback_mode: PlaybackMode::Sustain,
             loop_mode: LoopMode::Off,
+            region_start: 0,
             loop_start: 0,
             loop_end: 0,
             loop_crossfade: LOOP_CROSSFADE_DEFAULT,
+            has_looped: false,
             amp_envelope: AhdsrEnvelope::new(sample_rate),
             filter_l: TptSvf::new(sample_rate),
             filter_r: TptSvf::new(sample_rate),
@@ -121,14 +142,16 @@ impl CrumbsVoice {
         self.choke_group = params.choke_group;
         self.playback_mode = params.playback_mode;
         self.loop_mode = params.loop_mode;
+        self.region_start = params.start_frame;
         self.loop_start = params.loop_start;
         self.loop_end = params.loop_end;
         self.loop_crossfade = params.loop_crossfade;
+        self.has_looped = self.loop_mode == LoopMode::Reverse;
 
         // Calculate playback speed from pitch difference
         let semitone_diff =
             (params.note as f32 - params.root_note as f32) + self.tune_cents / 100.0;
-        self.speed = 2.0_f64.powf(semitone_diff as f64 / 12.0);
+        self.set_playback_speed(semitone_diff);
 
         self.direction = if self.loop_mode == LoopMode::Reverse {
             -1.0
@@ -249,36 +272,56 @@ impl CrumbsVoice {
             return false;
         }
 
-        // Read sample with 8-point windowed Sinc interpolation
+        // Pitch-up needs a narrower interpolation kernel so source content
+        // above the destination Nyquist limit cannot fold into the output.
         let frame = self.position as usize;
         let frac = (self.position - frame as f64) as f32;
 
-        let left_samples = [
-            sample_data.read_left(frame.wrapping_sub(3)),
-            sample_data.read_left(frame.wrapping_sub(2)),
-            sample_data.read_left(frame.wrapping_sub(1)),
-            sample_data.read_left(frame),
-            sample_data.read_left(frame + 1),
-            sample_data.read_left(frame + 2),
-            sample_data.read_left(frame + 3),
-            sample_data.read_left(frame + 4),
-        ];
-        let left = windowed_sinc(frac, &left_samples);
-
-        let right = if sample_data.is_stereo() {
-            let right_samples = [
-                sample_data.read_right(frame.wrapping_sub(3)),
-                sample_data.read_right(frame.wrapping_sub(2)),
-                sample_data.read_right(frame.wrapping_sub(1)),
-                sample_data.read_right(frame),
-                sample_data.read_right(frame + 1),
-                sample_data.read_right(frame + 2),
-                sample_data.read_right(frame + 3),
-                sample_data.read_right(frame + 4),
-            ];
-            windowed_sinc(frac, &right_samples)
+        let (left, right) = if self.speed > 1.0 {
+            bandlimited_stereo_sample(
+                sample_data,
+                frame,
+                frac,
+                self.anti_alias_cutoff,
+                self.anti_alias_step_sin,
+                self.anti_alias_step_cos,
+                self.anti_alias_taps,
+                self.anti_alias_window_step_sin,
+                self.anti_alias_window_step_cos,
+                self.region_start,
+                self.loop_start,
+                self.loop_end,
+                self.loop_mode,
+                self.has_looped,
+            )
         } else {
-            left
+            let left_samples = [
+                sample_data.read_left(frame.wrapping_sub(3)),
+                sample_data.read_left(frame.wrapping_sub(2)),
+                sample_data.read_left(frame.wrapping_sub(1)),
+                sample_data.read_left(frame),
+                sample_data.read_left(frame + 1),
+                sample_data.read_left(frame + 2),
+                sample_data.read_left(frame + 3),
+                sample_data.read_left(frame + 4),
+            ];
+            let left = windowed_sinc(frac, &left_samples);
+            let right = if sample_data.is_stereo() {
+                let right_samples = [
+                    sample_data.read_right(frame.wrapping_sub(3)),
+                    sample_data.read_right(frame.wrapping_sub(2)),
+                    sample_data.read_right(frame.wrapping_sub(1)),
+                    sample_data.read_right(frame),
+                    sample_data.read_right(frame + 1),
+                    sample_data.read_right(frame + 2),
+                    sample_data.read_right(frame + 3),
+                    sample_data.read_right(frame + 4),
+                ];
+                windowed_sinc(frac, &right_samples)
+            } else {
+                left
+            };
+            (left, right)
         };
 
         // Apply filter — independent state per channel so L/R don't cross-talk
@@ -340,25 +383,56 @@ impl CrumbsVoice {
 
             LoopMode::Forward => {
                 if self.position >= end {
-                    let overshoot = self.position - end;
-                    self.position = start + overshoot;
+                    self.has_looped = true;
+                    let length = end - start;
+                    if length <= 0.0 {
+                        self.active = false;
+                        return;
+                    }
+                    self.position = start + (self.position - start).rem_euclid(length);
                 }
             }
 
             LoopMode::PingPong => {
-                if self.direction > 0.0 && self.position >= end {
-                    self.direction = -1.0;
-                    self.position = end - (self.position - end);
-                } else if self.direction < 0.0 && self.position <= start {
-                    self.direction = 1.0;
-                    self.position = start + (start - self.position);
+                if self.position >= end || self.position <= start {
+                    self.has_looped = true;
+                    let length = end - start;
+                    if length <= 0.0 {
+                        self.active = false;
+                        return;
+                    }
+                    let travel = if self.direction > 0.0 {
+                        self.position - start
+                    } else {
+                        end - self.position
+                    };
+                    let phase = travel.rem_euclid(length * 2.0);
+                    if phase <= length {
+                        if self.direction > 0.0 {
+                            self.position = start + phase;
+                            self.direction = 1.0;
+                        } else {
+                            self.position = end - phase;
+                            self.direction = -1.0;
+                        }
+                    } else if self.direction > 0.0 {
+                        self.position = end - (phase - length);
+                        self.direction = -1.0;
+                    } else {
+                        self.position = start + (phase - length);
+                        self.direction = 1.0;
+                    }
                 }
             }
 
             LoopMode::Reverse => {
                 if self.position < start {
-                    let undershoot = start - self.position;
-                    self.position = end - undershoot;
+                    let length = end - start;
+                    if length <= 0.0 {
+                        self.active = false;
+                        return;
+                    }
+                    self.position = start + (self.position - start).rem_euclid(length);
                 }
             }
         }
@@ -385,9 +459,31 @@ impl CrumbsVoice {
     }
 
     pub fn set_tune(&mut self, cents: f32) {
+        if !cents.is_finite() {
+            return;
+        }
         self.tune_cents = cents;
         let semitone_diff = (self.note as f32 - self.root_note as f32) + self.tune_cents / 100.0;
-        self.speed = 2.0_f64.powf(semitone_diff as f64 / 12.0);
+        self.set_playback_speed(semitone_diff);
+    }
+
+    fn set_playback_speed(&mut self, semitone_diff: f32) {
+        let Some(speed) = bounded_playback_speed(semitone_diff) else {
+            return;
+        };
+        self.speed = speed;
+        self.anti_alias_cutoff = (1.0 / self.speed).min(1.0) as f32;
+        let step = core::f32::consts::PI * self.anti_alias_cutoff;
+        (self.anti_alias_step_sin, self.anti_alias_step_cos) = step.sin_cos();
+        // A Hamming-window transition needs roughly five source samples per
+        // playback-ratio step to retain the 42 dB stop-band contract. Cap the
+        // supported pitch range at 16x so the audio-thread work stays bounded.
+        self.anti_alias_taps = bandlimited_tap_count(self.speed);
+        let window_step = 2.0 * core::f32::consts::PI / (self.anti_alias_taps - 1) as f32;
+        (
+            self.anti_alias_window_step_sin,
+            self.anti_alias_window_step_cos,
+        ) = window_step.sin_cos();
     }
 
     // ── Steal Priority ─────────────────────────────────────────────────
@@ -444,6 +540,50 @@ impl CrumbsVoice {
     pub fn position_frames(&self) -> u64 {
         self.position as u64
     }
+
+    pub(crate) fn resampling_work_units(&self) -> usize {
+        if self.speed > 1.0 {
+            bandlimited_work_units(self.anti_alias_taps)
+        } else {
+            UNITY_RESAMPLING_WORK_UNITS
+        }
+    }
+}
+
+pub(crate) fn resampling_work_units_for_pitch(note: u8, root_note: u8, tune_cents: f32) -> usize {
+    let semitone_diff = (note as f32 - root_note as f32) + tune_cents / 100.0;
+    let Some(speed) = bounded_playback_speed(semitone_diff) else {
+        return UNITY_RESAMPLING_WORK_UNITS;
+    };
+    if speed > 1.0 {
+        bandlimited_work_units(bandlimited_tap_count(speed))
+    } else {
+        UNITY_RESAMPLING_WORK_UNITS
+    }
+}
+
+fn bounded_playback_speed(semitone_diff: f32) -> Option<f64> {
+    if !semitone_diff.is_finite() {
+        return None;
+    }
+    Some(
+        2.0_f64
+            .powf(semitone_diff as f64 / 12.0)
+            .clamp(MIN_PLAYBACK_SPEED, MAX_PLAYBACK_SPEED),
+    )
+}
+
+fn bandlimited_tap_count(speed: f64) -> usize {
+    let radius = ((5.0 * speed).ceil() as usize).clamp(24, 80);
+    radius * 2 + 1
+}
+
+fn bandlimited_work_units(tap_count: usize) -> usize {
+    // Longer sinc kernels also raise the surrounding per-voice loop cost.
+    // Weight growth above the 49-tap baseline so the engine budget preserves
+    // 128 ordinary pitch-up voices without admitting a deadline-breaking
+    // number of 161-tap voices.
+    tap_count.saturating_add(tap_count.saturating_sub(MIN_BANDLIMITED_TAPS) / 2)
 }
 
 // ── Voice Trigger Parameters ───────────────────────────────────────────
@@ -526,4 +666,399 @@ fn windowed_sinc(t: f32, samples: &[f32; 8]) -> f32 {
     }
 
     sum
+}
+
+/// Minimum odd tap count; higher pitch ratios scale this to at most 161 taps.
+const BANDLIMITED_SINC_TAPS: usize = 49;
+
+fn bandlimited_stereo_sample(
+    sample: &SampleData,
+    frame: usize,
+    fraction: f32,
+    cutoff_scale: f32,
+    sinc_step_sin: f32,
+    sinc_step_cos: f32,
+    tap_count: usize,
+    window_step_sin: f32,
+    window_step_cos: f32,
+    region_start: u32,
+    loop_start: u32,
+    loop_end: u32,
+    loop_mode: LoopMode,
+    has_looped: bool,
+) -> (f32, f32) {
+    let mut output_left = 0.0;
+    let mut output_right = 0.0;
+    let mut weight_sum = 0.0;
+    let radius = (tap_count / 2) as f32;
+    let stereo = sample.is_stereo();
+    let mut distance = fraction + radius;
+    let sinc_angle = core::f32::consts::PI * distance * cutoff_scale;
+    let (mut sinc_sin, mut sinc_cos) = sinc_angle.sin_cos();
+    let region_start = region_start as usize;
+    let loop_start = loop_start as usize;
+    let region_end = if loop_end > 0 {
+        (loop_end as usize).min(sample.frame_count())
+    } else {
+        sample.frame_count()
+    };
+    let mut window_sin = 0.0;
+    let mut window_cos = 1.0;
+
+    for tap in 0..tap_count {
+        let lowpass = if distance.abs() < f32::EPSILON {
+            cutoff_scale
+        } else {
+            sinc_sin / (core::f32::consts::PI * distance)
+        };
+        let window = 0.54 - 0.46 * window_cos;
+        let weight = lowpass * window;
+        let raw_index = frame as i64 + tap as i64 - tap_count as i64 / 2;
+        if let Some(index) = map_bandlimited_frame(
+            raw_index,
+            region_start,
+            loop_start,
+            region_end,
+            loop_mode,
+            has_looped,
+        ) {
+            output_left += sample.read_left(index) * weight;
+            if stereo {
+                output_right += sample.read_right(index) * weight;
+            }
+            weight_sum += weight;
+        }
+
+        let next_sinc_sin = sinc_sin * sinc_step_cos - sinc_cos * sinc_step_sin;
+        sinc_cos = sinc_cos * sinc_step_cos + sinc_sin * sinc_step_sin;
+        sinc_sin = next_sinc_sin;
+        let next_window_sin = window_sin * window_step_cos + window_cos * window_step_sin;
+        window_cos = window_cos * window_step_cos - window_sin * window_step_sin;
+        window_sin = next_window_sin;
+        distance -= 1.0;
+    }
+
+    let normalization = if weight_sum.abs() > 1.0e-12 {
+        1.0 / weight_sum
+    } else {
+        0.0
+    };
+    let left = output_left * normalization;
+    let right = if stereo {
+        output_right * normalization
+    } else {
+        left
+    };
+    (left, right)
+}
+
+fn map_bandlimited_frame(
+    index: i64,
+    region_start: usize,
+    loop_start: usize,
+    region_end: usize,
+    loop_mode: LoopMode,
+    has_looped: bool,
+) -> Option<usize> {
+    if region_end <= region_start {
+        return None;
+    }
+
+    if loop_mode == LoopMode::Off {
+        return ((region_start as i64)..(region_end as i64))
+            .contains(&index)
+            .then_some(index as usize);
+    }
+
+    if loop_start >= region_end {
+        return None;
+    }
+
+    if !has_looped && index < region_start as i64 {
+        return None;
+    }
+    if !has_looped && index < region_end as i64 {
+        return Some(index as usize);
+    }
+
+    let start = loop_start as i64;
+    let length = region_end as i64 - start;
+    let relative = (index - start).rem_euclid(length);
+    if loop_mode != LoopMode::PingPong {
+        return Some((start + relative) as usize);
+    }
+
+    let reflected = (index - start).rem_euclid(length * 2);
+    if reflected < length {
+        Some((start + reflected) as usize)
+    } else {
+        Some((start + length * 2 - reflected - 1) as usize)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::primitives::alias_probe::bin_magnitude;
+
+    const SAMPLE_RATE: f32 = 48_000.0;
+    const OUTPUT_SAMPLES: usize = 8_192;
+    const SETTLE_SAMPLES: usize = 2_048;
+
+    fn render_pitched_tone(source_frequency: f32, use_tune_control: bool) -> Vec<f32> {
+        let source_frames = (OUTPUT_SAMPLES + SETTLE_SAMPLES) * 2 + 128;
+        let source = (0..source_frames)
+            .map(|frame| {
+                let phase =
+                    2.0 * core::f32::consts::PI * source_frequency * frame as f32 / SAMPLE_RATE;
+                phase.sin()
+            })
+            .collect();
+        let sample = SampleData::from_mono(source, SAMPLE_RATE as u32);
+        let mut voice = CrumbsVoice::new(SAMPLE_RATE);
+        voice.trigger(&VoiceTriggerParams {
+            note: if use_tune_control { 60 } else { 72 },
+            root_note: 60,
+            playback_mode: PlaybackMode::OneShot,
+            ..VoiceTriggerParams::default()
+        });
+        if use_tune_control {
+            voice.set_tune(1_200.0);
+        }
+
+        let mut output = Vec::with_capacity(OUTPUT_SAMPLES);
+        for frame in 0..(OUTPUT_SAMPLES + SETTLE_SAMPLES) {
+            let mut left = 0.0;
+            let mut right = 0.0;
+            voice.render_sample(&sample, &mut left, &mut right);
+            if frame >= SETTLE_SAMPLES {
+                output.push(left);
+            }
+        }
+        output
+    }
+
+    fn render_unfiltered_pitched_tone(source_frequency: f32) -> Vec<f32> {
+        (SETTLE_SAMPLES..(OUTPUT_SAMPLES + SETTLE_SAMPLES))
+            .map(|frame| {
+                let source_frame = frame * 2;
+                let phase = 2.0 * core::f32::consts::PI * source_frequency * source_frame as f32
+                    / SAMPLE_RATE;
+                phase.sin()
+            })
+            .collect()
+    }
+
+    fn render_region_boundary(loop_mode: LoopMode, outside_value: f32) -> (f32, f32) {
+        let mut left = vec![outside_value; 256];
+        let mut right = vec![-outside_value; 256];
+        left[64..128].fill(0.25);
+        right[64..128].fill(-0.5);
+        let sample = SampleData::from_stereo(left, right, SAMPLE_RATE as u32);
+        let mut voice = CrumbsVoice::new(SAMPLE_RATE);
+        voice.trigger(&VoiceTriggerParams {
+            note: 72,
+            root_note: 60,
+            playback_mode: PlaybackMode::Sustain,
+            loop_mode,
+            loop_start: 64,
+            loop_end: 128,
+            start_frame: 64,
+            ..VoiceTriggerParams::default()
+        });
+
+        let mut output_left = 0.0;
+        let mut output_right = 0.0;
+        voice.render_sample(&sample, &mut output_left, &mut output_right);
+        (output_left, output_right)
+    }
+
+    #[test]
+    fn pitched_up_reader_does_not_cross_voice_region_boundaries() {
+        for loop_mode in [
+            LoopMode::Off,
+            LoopMode::Forward,
+            LoopMode::PingPong,
+            LoopMode::Reverse,
+        ] {
+            let clean = render_region_boundary(loop_mode, 0.0);
+            let poisoned = render_region_boundary(loop_mode, 8.0);
+
+            assert!(
+                clean.0 > 0.0 && clean.1 < 0.0,
+                "{loop_mode:?} must preserve stereo"
+            );
+            assert!(
+                (clean.0 - poisoned.0).abs() < 1.0e-6 && (clean.1 - poisoned.1).abs() < 1.0e-6,
+                "{loop_mode:?} mixed adjacent-region audio: clean {clean:?}, poisoned {poisoned:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn pitched_up_playback_suppresses_foldback_by_at_least_42_db() {
+        let unfiltered_signal = bin_magnitude(
+            &render_unfiltered_pitched_tone(5_000.0),
+            10_000.0,
+            SAMPLE_RATE,
+        );
+        let unfiltered_foldback = bin_magnitude(
+            &render_unfiltered_pitched_tone(15_000.0),
+            18_000.0,
+            SAMPLE_RATE,
+        );
+        let unfiltered_db = 20.0 * (unfiltered_foldback / unfiltered_signal.max(1.0e-12)).log10();
+        assert!(
+            unfiltered_db > -3.0,
+            "unfiltered pitch-up must genuinely alias, got {unfiltered_db:.1} dB"
+        );
+
+        for use_tune_control in [false, true] {
+            let passband = render_pitched_tone(5_000.0, use_tune_control);
+            let aliased = render_pitched_tone(15_000.0, use_tune_control);
+            let signal = bin_magnitude(&passband, 10_000.0, SAMPLE_RATE);
+            let foldback = bin_magnitude(&aliased, 18_000.0, SAMPLE_RATE);
+            let alias_to_signal_db = 20.0 * (foldback / signal.max(1.0e-12)).log10();
+
+            assert!(
+                signal > 0.1,
+                "passband reference must remain audible, got {signal}"
+            );
+            assert!(
+                alias_to_signal_db <= -42.0,
+                "pitched playback must suppress foldback by at least 42 dB, got \
+                 {alias_to_signal_db:.1} dB (tune control: {use_tune_control})"
+            );
+        }
+    }
+
+    #[test]
+    fn high_ratio_playback_suppresses_foldback_by_at_least_42_db() {
+        let render = |source_frequency: f32, ratio: usize, note: u8, tune_cents: f32| {
+            let source_frames = (OUTPUT_SAMPLES + SETTLE_SAMPLES) * ratio + 512;
+            let source = (0..source_frames)
+                .map(|frame| {
+                    let phase =
+                        2.0 * core::f32::consts::PI * source_frequency * frame as f32 / SAMPLE_RATE;
+                    phase.sin()
+                })
+                .collect();
+            let sample = SampleData::from_mono(source, SAMPLE_RATE as u32);
+            let mut voice = CrumbsVoice::new(SAMPLE_RATE);
+            voice.trigger(&VoiceTriggerParams {
+                note,
+                root_note: 60,
+                playback_mode: PlaybackMode::OneShot,
+                ..VoiceTriggerParams::default()
+            });
+            voice.set_tune(tune_cents);
+
+            let mut output = Vec::with_capacity(OUTPUT_SAMPLES);
+            for frame in 0..(OUTPUT_SAMPLES + SETTLE_SAMPLES) {
+                let mut left = 0.0;
+                let mut right = 0.0;
+                voice.render_sample(&sample, &mut left, &mut right);
+                if frame >= SETTLE_SAMPLES {
+                    output.push(left);
+                }
+            }
+            output
+        };
+
+        for (ratio, note, tune_cents) in [(4, 84, 0.0), (8, 96, 0.0), (16, 84, 2_400.0)] {
+            let passband = bin_magnitude(
+                &render(8_000.0 / ratio as f32, ratio, note, tune_cents),
+                8_000.0,
+                SAMPLE_RATE,
+            );
+            let foldback = bin_magnitude(
+                &render(32_000.0 / ratio as f32, ratio, note, tune_cents),
+                16_000.0,
+                SAMPLE_RATE,
+            );
+            let alias_to_signal_db = 20.0 * (foldback / passband.max(1.0e-12)).log10();
+
+            assert!(passband > 0.1, "{ratio}x passband reference was inaudible");
+            assert!(
+                alias_to_signal_db <= -42.0,
+                "{ratio}x playback must suppress foldback by at least 42 dB, got \
+                 {alias_to_signal_db:.1} dB"
+            );
+        }
+    }
+
+    #[test]
+    fn pitched_up_reader_preserves_short_region_dc_gain() {
+        let sample = SampleData::from_mono(vec![1.0], SAMPLE_RATE as u32);
+        let step = core::f32::consts::PI * 0.5;
+        let (step_sin, step_cos) = step.sin_cos();
+        let window_step = 2.0 * core::f32::consts::PI / (BANDLIMITED_SINC_TAPS - 1) as f32;
+        let (window_step_sin, window_step_cos) = window_step.sin_cos();
+
+        let (left, right) = bandlimited_stereo_sample(
+            &sample,
+            0,
+            0.0,
+            0.5,
+            step_sin,
+            step_cos,
+            BANDLIMITED_SINC_TAPS,
+            window_step_sin,
+            window_step_cos,
+            0,
+            0,
+            1,
+            LoopMode::Off,
+            false,
+        );
+
+        assert!((left - 1.0).abs() < 1.0e-6, "left DC gain was {left}");
+        assert!((right - 1.0).abs() < 1.0e-6, "right DC gain was {right}");
+    }
+
+    #[test]
+    fn non_finite_tune_preserves_the_last_finite_playback_state() {
+        let mut voice = CrumbsVoice::new(SAMPLE_RATE);
+        voice.trigger(&VoiceTriggerParams::default());
+        voice.set_tune(1_200.0);
+
+        voice.set_tune(f32::NAN);
+        voice.set_tune(f32::INFINITY);
+
+        assert_eq!(voice.tune_cents, 1_200.0);
+        assert_eq!(voice.speed, 2.0);
+        assert!(voice.position.is_finite());
+    }
+
+    #[test]
+    fn high_speed_loop_overshoot_stays_inside_the_active_region() {
+        let sample = SampleData::from_mono(vec![0.25; 64], SAMPLE_RATE as u32);
+
+        for loop_mode in [LoopMode::Forward, LoopMode::PingPong, LoopMode::Reverse] {
+            let mut voice = CrumbsVoice::new(SAMPLE_RATE);
+            voice.trigger(&VoiceTriggerParams {
+                note: 84,
+                root_note: 60,
+                playback_mode: PlaybackMode::Sustain,
+                loop_mode,
+                loop_start: 16,
+                loop_end: 20,
+                start_frame: 16,
+                ..VoiceTriggerParams::default()
+            });
+            voice.set_tune(2_400.0);
+
+            for _ in 0..8 {
+                let mut left = 0.0;
+                let mut right = 0.0;
+                assert!(voice.render_sample(&sample, &mut left, &mut right));
+                assert!(left.is_finite() && right.is_finite());
+                assert!(
+                    (16.0..20.0).contains(&voice.position),
+                    "{loop_mode:?} left the loop at position {}",
+                    voice.position
+                );
+            }
+        }
+    }
 }

@@ -559,6 +559,28 @@ fn a_choked_voice_is_not_stolen_again_while_its_fade_is_running() {
 }
 
 #[test]
+fn a_stack_lands_whole_when_only_part_of_it_has_free_slots() {
+    let mut engine = choke_pair_engine(1.0, 0.4);
+    engine.handle_command(CrumbsCommand::SetParam {
+        param: daw_dsp::crumbs::types::CrumbsParam::StackCount,
+        value: 7.0,
+    });
+
+    for _ in 0..18 {
+        note_on(&mut engine, 36, 127);
+    }
+    assert_eq!(engine.playable_voice_count(), 126);
+
+    note_on(&mut engine, 37, 127);
+
+    assert_eq!(
+        engine.active_voices_with_note(37),
+        7,
+        "the two free slots admitted only part of a seven-voice stack"
+    );
+}
+
+#[test]
 fn a_pad_in_a_choke_group_cuts_the_voice_already_sounding_in_it() {
     // Open and closed hi-hat: striking the second must silence the first.
     let mut choked = choke_pair_engine(1.0, 0.4);
