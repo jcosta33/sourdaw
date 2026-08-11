@@ -22,6 +22,14 @@ export function getPlannedActionAffectedIds(action: AppAction): string[] {
             affectedIds.add(shortened.noteId);
         }
     }
+    if (action.type === 'createDrumPreviewBranches') {
+        for (const candidate of action.payload.candidates) {
+            affectedIds.add(candidate.branchId);
+            affectedIds.add(candidate.rootDocId);
+            affectedIds.add(`${candidate.branchId}:${action.payload.snare.clipId}`);
+            affectedIds.add(`${candidate.branchId}:${action.payload.hiHat.clipId}`);
+        }
+    }
     if (action.type === 'setDeviceParameter' && action.payload.expectedTrackId) {
         affectedIds.add(action.payload.expectedTrackId);
     }

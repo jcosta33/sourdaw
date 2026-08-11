@@ -1,7 +1,7 @@
 import { logger } from '#/infra/logger/appLogger';
 import { getAgentSectionRenderArtifacts, retryAgentProjectSectionRenders } from '#/modules/AudioRendering/useCases';
 import { executeAppActionBatch, generateGroupId } from '#/modules/Command/useCases';
-import { captureProjectRevision } from '#/modules/CrdtDocument/useCases';
+import { captureProjectRevision, isDrumPreviewBranchPlanApplied } from '#/modules/CrdtDocument/useCases';
 
 import { AiProposalInvalidatedError } from '../errors/AiProposalInvalidatedError';
 import { type ChatActionConfirmationStatus } from '../models/Chat';
@@ -34,6 +34,21 @@ type ConfirmPendingChatActionsResult =
     | { status: 'failed'; reason: string };
 
 type ConfirmPendingChatActionsOutput = Promise<ConfirmPendingChatActionsResult>;
+
+function isConfirmationExecutionAuthorized(confirmation: PendingAppActionConfirmation, signal: AbortSignal): boolean {
+    if (signal.aborted) {
+        return false;
+    }
+    if (captureProjectRevision() === confirmation.projectRevision) {
+        return true;
+    }
+    const actions = confirmation.approvalSnapshot.actions;
+    return (
+        actions.length === 1 &&
+        actions[0]?.type === 'createDrumPreviewBranches' &&
+        isDrumPreviewBranchPlanApplied(actions[0])
+    );
+}
 
 function getProtectedAffectedIds(
     actions: readonly PendingAppActionConfirmation['actions'][number][],
@@ -294,7 +309,7 @@ export async function confirmPendingChatActions(
             ...group,
             source: 'prompt',
             requireCompensation: confirmation.executionMode === 'atomic',
-            shouldExecute: () => !aborter.signal.aborted && captureProjectRevision() === confirmation.projectRevision,
+            shouldExecute: () => isConfirmationExecutionAuthorized(confirmation, aborter.signal),
         });
     } catch (error) {
         const reason = error instanceof Error ? error.message : String(error);

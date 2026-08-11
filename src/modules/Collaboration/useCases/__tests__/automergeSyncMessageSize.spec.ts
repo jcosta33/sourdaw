@@ -26,6 +26,7 @@ vi.mock('#/modules/CrdtDocument/useCases', () => ({
     hasCrdtDoc: vi.fn().mockReturnValue(false),
     getCrdtDocIds: vi.fn().mockReturnValue([]),
     persistCrdtProject: vi.fn().mockResolvedValue(undefined),
+    waitForCrdtDocumentTransition: vi.fn().mockReturnValue(null),
     sanitizeIncomingCrdtDocument: vi.fn((document) => document),
     DOC_PREFIX_ROOT: 'root',
     DOC_BRANCHES: '__branches__',

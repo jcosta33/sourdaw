@@ -400,6 +400,15 @@ const validators = {
         isNonEmptyString(param.clipId) &&
         isPositiveNumber(param.maximumOverlapMs) &&
         param.maximumOverlapMs <= 1_000,
+    createDrumPreviewBranches: (param): param is PayloadOf<'createDrumPreviewBranches'> =>
+        isObj(param) &&
+        hasExactKeys(param, ['sectionId', 'candidateCount', 'varyingRoles']) &&
+        isNonEmptyString(param.sectionId) &&
+        param.candidateCount === 3 &&
+        Array.isArray(param.varyingRoles) &&
+        param.varyingRoles.length === 2 &&
+        param.varyingRoles[0] === 'snare' &&
+        param.varyingRoles[1] === 'hi-hat',
     copyMidiArticulations: (param): param is PayloadOf<'copyMidiArticulations'> =>
         isObj(param) &&
         hasExactKeys(param, ['sourceClipId', 'targetClipId']) &&

@@ -841,6 +841,30 @@ export const executableAppActionDescriptors = [
         },
     },
     {
+        actionType: 'createDrumPreviewBranches',
+        risk: 'broad-reversible',
+        description:
+            'Create exactly three app-owned preview branches for one admitted eight-bar drum section while preserving Kick and varying only Snare and Hi-Hat programming.',
+        intentPhrases: ['create three drum arrangement candidates', 'create drum preview branches'],
+        targetRules: [],
+        valueRules: [],
+        parameters: {
+            properties: {
+                sectionId: { type: 'string', description: 'Exact application-admitted eight-bar section ID' },
+                candidateCount: { type: 'number', enum: [3], description: 'Exactly three candidates' },
+                varyingRoles: {
+                    type: 'array',
+                    items: { type: 'string', enum: ['snare', 'hi-hat'] },
+                    minItems: 2,
+                    maxItems: 2,
+                    uniqueItems: true,
+                    description: 'Exact mutable drum roles, ordered Snare then Hi-Hat',
+                },
+            },
+            required: ['sectionId', 'candidateCount', 'varyingRoles'],
+        },
+    },
+    {
         actionType: 'copyMidiArticulations',
         risk: 'broad-reversible',
         description: 'Copy only per-note articulation between one exact pair of structurally matched MIDI clips.',

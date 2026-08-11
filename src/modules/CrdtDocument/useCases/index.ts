@@ -2,6 +2,10 @@ export { DOC_PREFIX_ROOT, DOC_BRANCHES } from './crdtDocumentTypes';
 
 export { compactProject } from './compactProject';
 export { captureProjectRevision } from './captureProjectRevision';
+export { captureActiveBranchReference } from './captureActiveBranchReference';
+export { getDrumPreviewBranchHandlers } from './getDrumPreviewBranchHandlers';
+export { isDrumPreviewBranchPlanApplied } from './crdtBranching/isDrumPreviewBranchPlanApplied';
+export { waitForCrdtDocumentTransition } from './waitForCrdtDocumentTransition';
 export { createCrdtProject } from './createCrdtProject';
 export { getPersistenceBackend } from './crdtProjectLifecycle';
 export { loadCrdtProject } from './loadCrdtProject';

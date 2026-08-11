@@ -18,12 +18,12 @@ describe('RuntimeAction', () => {
             }
         }
 
-        expect(RUNTIME_ACTION_TYPES).toHaveLength(246);
+        expect(RUNTIME_ACTION_TYPES).toHaveLength(247);
         expect(new Set(RUNTIME_ACTION_TYPES).size).toBe(RUNTIME_ACTION_TYPES.length);
         expect(RUNTIME_ACTION_TYPES).not.toContain('replayGeneratedMidi');
         expect(RUNTIME_ACTION_TYPES).toContain('automateSendRanges');
         expect(RUNTIME_ACTION_TYPES).toContain('renderProjectSections');
-        expect(digest >>> 0).toBe(2_795_759_651);
+        expect(digest >>> 0).toBe(1_069_799_157);
     });
 
     it('derives initiating payloads without exposing command-owned replay fields', () => {
@@ -47,6 +47,14 @@ describe('RuntimeAction', () => {
             {
                 type: 'copyMidiArticulations',
                 payload: { sourceClipId: 'clip-1', targetClipId: 'clip-2' },
+            },
+            {
+                type: 'createDrumPreviewBranches',
+                payload: {
+                    sectionId: 'section-eight-bars',
+                    candidateCount: 3,
+                    varyingRoles: ['snare', 'hi-hat'],
+                },
             },
             { type: 'transposeNotes', payload: { clipId: 'clip-1', semitones: 7 } },
             { type: 'scaleAutomation', payload: { laneId: 'lane-1', factor: 1.5 } },
@@ -89,6 +97,7 @@ describe('RuntimeAction', () => {
             'quantizeNotes',
             'removeShortMidiOverlaps',
             'copyMidiArticulations',
+            'createDrumPreviewBranches',
             'transposeNotes',
             'scaleAutomation',
             'stretchAutomation',
@@ -129,6 +138,8 @@ describe('RuntimeAction', () => {
         expectTypeOf<PayloadHasKey<'copyMidiArticulations', 'expectedTrackFrozen'>>().toEqualTypeOf<false>();
         expectTypeOf<PayloadHasKey<'copyMidiArticulations', 'expectedSourceClipLocked'>>().toEqualTypeOf<false>();
         expectTypeOf<PayloadHasKey<'copyMidiArticulations', 'expectedTargetClipLocked'>>().toEqualTypeOf<false>();
+        expectTypeOf<PayloadHasKey<'createDrumPreviewBranches', 'candidates'>>().toEqualTypeOf<false>();
+        expectTypeOf<PayloadHasKey<'createDrumPreviewBranches', 'expectedDocuments'>>().toEqualTypeOf<false>();
         expectTypeOf<PayloadHasKey<'scaleAutomation', 'anchor'>>().toEqualTypeOf<false>();
         expectTypeOf<PayloadHasKey<'stretchAutomation', 'anchorBeat'>>().toEqualTypeOf<false>();
         expectTypeOf<PayloadHasKey<'createVcaGroup', 'vcaGroupId'>>().toEqualTypeOf<false>();

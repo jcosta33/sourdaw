@@ -117,6 +117,7 @@ export { joinNotes } from './midiNoteTransforms/joinNotes';
 export { legatoNotes } from './midiNoteTransforms/legatoNotes';
 export { describeShortMidiOverlapRemoval } from './midiNoteTransforms/describeShortMidiOverlapRemoval';
 export { projectShortMidiOverlapRemoval } from './midiNoteTransforms/projectShortMidiOverlapRemoval';
+export { projectDrumPreviewCandidateNotes } from './midiNoteTransforms/projectDrumPreviewCandidateNotes';
 export { quantizeNoteLengths } from './midiNoteTransforms/quantizeNoteLengths';
 export { quantizeNotes } from './midiNoteTransforms/quantizeNotes';
 export { retrogradeNotes } from './midiNoteTransforms/retrogradeNotes';

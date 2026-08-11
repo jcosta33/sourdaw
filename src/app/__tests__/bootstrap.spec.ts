@@ -176,6 +176,7 @@ vi.mock('#/modules/BrowserAi/useCases', () => ({
 }));
 
 vi.mock('#/modules/Collaboration/useCases', () => ({
+    canMutateBranchMetadata: () => true,
     getCollaborationHandlers: sentinelHandlers('Collaboration'),
     leaveSession: noop,
 }));
@@ -204,6 +205,7 @@ vi.mock('#/modules/ControlSurface/useCases', () => ({
 vi.mock('#/modules/CrdtDocument/stores', () => ({ actionHistoryStore: actionHistoryStoreMock }));
 
 vi.mock('#/modules/CrdtDocument/useCases', () => ({
+    getDrumPreviewBranchHandlers: sentinelHandlers('DrumPreviewBranch'),
     initBranchState: initBranchStateMock,
     markActionHistoryEntryReverted: noop,
     recordActionHistoryEntry: noop,
@@ -396,6 +398,7 @@ describe('bootstrap', () => {
         'AiOrganization',
         'ChordTrack',
         'MidiNoteTransform',
+        'DrumPreviewBranch',
         'MidiGroove',
         'ControlSurface',
         'ScratchPad',

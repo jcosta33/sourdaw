@@ -420,6 +420,71 @@ export type GeneratedMidiStateGuard = {
     midiByClipIdJson: string;
 };
 
+export type DrumPreviewRecipe = 'ghost-note-pocket' | 'half-time-space' | 'syncopated-hats';
+
+export type DrumPreviewSourceClipSnapshot = {
+    readonly trackId: string;
+    readonly trackName: string;
+    readonly expectedTrackFrozen: boolean;
+    readonly clipId: string;
+    readonly clipName: string;
+    readonly expectedClipLocked: boolean;
+    readonly expectedNotes: readonly MidiClipNoteSnapshot[];
+};
+
+export type DrumPreviewCandidateSnapshot = {
+    readonly branchId: string;
+    readonly branchName: string;
+    readonly rootDocId: string;
+    readonly recipe: DrumPreviewRecipe;
+    readonly snareNotes: readonly MidiClipNoteSnapshot[];
+    readonly hiHatNotes: readonly MidiClipNoteSnapshot[];
+};
+
+export type DrumPreviewBranchPlanSnapshot = {
+    readonly ownerId: string;
+    readonly createdAt: number;
+    readonly expectedSourceBranchId: string;
+    readonly expectedSourceHeads: readonly string[];
+    readonly expectedDocuments: readonly {
+        readonly docId: string;
+        readonly heads: readonly string[];
+    }[];
+    readonly expectedBranchState: {
+        readonly activeBranchId: string;
+        readonly branches: readonly {
+            readonly branchId: string;
+            readonly name: string;
+            readonly rootDocId: string;
+            readonly sourceBranchId: string | null;
+            readonly createdAt: number;
+            readonly createdFromHeads: readonly string[];
+            readonly note: string;
+        }[];
+    };
+    readonly sectionId: string;
+    readonly sectionName: string;
+    readonly sectionStartBeat: number;
+    readonly sectionEndBeat: number;
+    readonly candidateCount: 3;
+    readonly varyingRoles: readonly ['snare', 'hi-hat'];
+    readonly kick: DrumPreviewSourceClipSnapshot;
+    readonly snare: DrumPreviewSourceClipSnapshot;
+    readonly hiHat: DrumPreviewSourceClipSnapshot;
+    readonly candidates: readonly DrumPreviewCandidateSnapshot[];
+};
+
+export type DeleteDrumPreviewBranchesSnapshot = {
+    readonly ownerId: string;
+    readonly expectedSourceBranchId: string;
+    readonly branches: readonly {
+        readonly branchId: string;
+        readonly branchName: string;
+        readonly rootDocId: string;
+        readonly expectedHeads: readonly string[];
+    }[];
+};
+
 type MidiGenerationClipReplaySnapshot = {
     id: string;
     trackId: string;
@@ -912,6 +977,15 @@ export type AppAction =
               expectedClipLocked: boolean;
               expectedNotes: readonly MidiClipNoteSnapshot[];
           };
+      }
+    | {
+          type: 'createDrumPreviewBranches';
+          payload: DrumPreviewBranchPlanSnapshot;
+      }
+    | {
+          /** Internal guarded inverse for `createDrumPreviewBranches`. */
+          type: 'deleteDrumPreviewBranches';
+          payload: DeleteDrumPreviewBranchesSnapshot;
       }
     | {
           type: 'copyMidiArticulations';

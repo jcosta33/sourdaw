@@ -6,4 +6,5 @@ export { leaveSession } from './collaboration/leaveSession';
 export { broadcastPresence } from './collaboration/broadcastPresence';
 export { onPresence } from './collaboration/onPresence';
 export { getAssetTransfer } from './collaboration/getAssetTransfer';
+export { canMutateBranchMetadata } from './collaboration/canMutateBranchMetadata';
 export { getCollaborationHandlers } from './getCollaborationHandlers';
