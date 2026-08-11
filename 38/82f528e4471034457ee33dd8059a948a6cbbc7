@@ -1,0 +1,21 @@
+src/modules/Arrangement/useCases/getAutomationParameterRange.ts
+  s_bc88af7d3b054c::t_fb2ba7d81e802b 13-22,36-42,49
+src/modules/Arrangement/useCases/__tests__/getAutomationParameterRange.spec.ts
+  s_bc88af7d3b054c::t_5fea7623213e5b 60-78
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "3882f528e4471034457ee33dd8059a948a6cbbc7",
+  "prompts": {},
+  "sessions": {
+    "s_bc88af7d3b054c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f9b4a-11a2-7f61-8dfb-76eed0eb2a9c",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
