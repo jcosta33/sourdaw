@@ -1,0 +1,19 @@
+crates/proof-chamber/tests/plate_shimmer_stability.rs
+  s_bc88af7d3b054c::t_2229bfccccd06c 15,86-90
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "6f7b8699d4f0f1402993a8909fd22b772cf4e16d",
+  "prompts": {},
+  "sessions": {
+    "s_bc88af7d3b054c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f9b4a-11a2-7f61-8dfb-76eed0eb2a9c",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
