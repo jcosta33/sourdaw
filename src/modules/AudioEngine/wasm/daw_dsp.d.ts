@@ -1,4 +1,4 @@
-// @wasm-bindgen-dts crate-source: sha256:2ba466adf0f793b57d87cf1c63dd6181192d3df2fbe451c3dd162920f672e531
+// @wasm-bindgen-dts crate-source: sha256:f5b4f7a3aa48f58df771214d1601f538fc9599484dd390863c15e54e7b7cd9d0
 /* tslint:disable */
 /* eslint-disable */
 
@@ -922,6 +922,7 @@ export interface InitOutput {
     readonly bacteriainstance_new: (a: number) => number;
     readonly bacteriainstance_process: (a: number, b: number) => number;
     readonly bacteriainstance_set_param: (a: number, b: number, c: number, d: number) => void;
+    readonly init_panic_hook: () => void;
     readonly __wbg_crumbsinstance_free: (a: number, b: number) => void;
     readonly __wbg_levaininstance_free: (a: number, b: number) => void;
     readonly __wbg_proofinstance_free: (a: number, b: number) => void;
@@ -939,7 +940,6 @@ export interface InitOutput {
     readonly crumbsinstance_set_active_sample: (a: number, b: number) => void;
     readonly crumbsinstance_set_mode: (a: number, b: number, c: number) => void;
     readonly crumbsinstance_set_param: (a: number, b: number, c: number, d: number) => void;
-    readonly init_panic_hook: () => void;
     readonly levaininstance_abort_sample_bank: (a: number) => void;
     readonly levaininstance_active_voices: (a: number) => number;
     readonly levaininstance_add_sample: (a: number, b: number, c: number, d: number, e: number, f: number) => number;

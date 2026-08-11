@@ -219,6 +219,54 @@ fn bacteria_process_does_not_allocate_with_codec_and_distortion_engaged() {
     );
 }
 
+#[test]
+fn bacteria_granular_process_does_not_allocate_with_grains_sounding() {
+    use daw_dsp::bacteria::BacteriaInstance;
+
+    let mut instance = BacteriaInstance::new(SAMPLE_RATE);
+    instance.set_param("bandCount", 1.0);
+    instance.set_param("band0_granularEnabled", 1.0);
+    instance.set_param("band0_grainSize", 80.0);
+    instance.set_param("band0_grainDensity", 100.0);
+    instance.set_param("band0_grainPosOffset", 0.0);
+    instance.set_param("band0_grainPitch", 0.0);
+    instance.set_param("band0_grainMix", 1.0);
+    instance.set_param("mix", 1.0);
+
+    for block in 0..8 {
+        unsafe {
+            fill_input(
+                instance.get_input_left_ptr(),
+                instance.get_input_right_ptr(),
+                BLOCK,
+                block * BLOCK,
+            );
+        }
+        instance.process(BLOCK as u32);
+    }
+
+    assert_no_alloc(|| {
+        for block in 8..8 + GUARDED_BLOCKS {
+            unsafe {
+                fill_input(
+                    instance.get_input_left_ptr(),
+                    instance.get_input_right_ptr(),
+                    BLOCK,
+                    block * BLOCK,
+                );
+            }
+            instance.process(BLOCK as u32);
+        }
+    });
+
+    let output = unsafe { read_output(instance.process(BLOCK as u32), BLOCK) };
+    assert_all_finite(&output, "bacteria granular");
+    assert!(
+        peak(&output) > 1e-4,
+        "Bacteria granular output was silent, so the allocation guard covered no sounding grain"
+    );
+}
+
 /// The Smudge distortion mode is the second transform in this engine that runs
 /// over a scratch frame — a 2048-point overlap-add STFT per channel, firing
 /// every 512 samples — and it is not reached by the test above, which leaves

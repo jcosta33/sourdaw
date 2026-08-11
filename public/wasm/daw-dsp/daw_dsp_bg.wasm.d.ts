@@ -1,4 +1,4 @@
-// @wasm-bindgen-dts crate-source: sha256:2ba466adf0f793b57d87cf1c63dd6181192d3df2fbe451c3dd162920f672e531
+// @wasm-bindgen-dts crate-source: sha256:f5b4f7a3aa48f58df771214d1601f538fc9599484dd390863c15e54e7b7cd9d0
 /* tslint:disable */
 /* eslint-disable */
 export const memory: WebAssembly.Memory;
@@ -126,6 +126,7 @@ export const bacteriainstance_get_right_ptr: (a: number) => number;
 export const bacteriainstance_new: (a: number) => number;
 export const bacteriainstance_process: (a: number, b: number) => number;
 export const bacteriainstance_set_param: (a: number, b: number, c: number, d: number) => void;
+export const init_panic_hook: () => void;
 export const __wbg_crumbsinstance_free: (a: number, b: number) => void;
 export const __wbg_levaininstance_free: (a: number, b: number) => void;
 export const __wbg_proofinstance_free: (a: number, b: number) => void;
@@ -143,7 +144,6 @@ export const crumbsinstance_process: (a: number, b: number) => number;
 export const crumbsinstance_set_active_sample: (a: number, b: number) => void;
 export const crumbsinstance_set_mode: (a: number, b: number, c: number) => void;
 export const crumbsinstance_set_param: (a: number, b: number, c: number, d: number) => void;
-export const init_panic_hook: () => void;
 export const levaininstance_abort_sample_bank: (a: number) => void;
 export const levaininstance_active_voices: (a: number) => number;
 export const levaininstance_add_sample: (a: number, b: number, c: number, d: number, e: number, f: number) => number;
