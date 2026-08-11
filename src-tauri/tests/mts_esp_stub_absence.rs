@@ -49,7 +49,10 @@ fn native_engine_exposes_no_mts_esp_stub_or_false_support_path() {
         collect_production_sources(&root, &mut production_sources);
     }
     production_sources.push(workspace_root.join("Cargo.toml"));
+    production_sources.push(workspace_root.join("package.json"));
     production_sources.push(tauri_root.join("Cargo.toml"));
+    production_sources.push(tauri_root.join("build.rs"));
+    production_sources.push(workspace_root.join("server/package.json"));
 
     assert!(!engine_root.join("src/mts_esp.rs").exists());
     for source_path in production_sources {
