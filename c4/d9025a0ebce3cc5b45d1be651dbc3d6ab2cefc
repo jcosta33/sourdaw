@@ -1,0 +1,26 @@
+src/modules/AiRuntime/useCases/agentReference/getDrumRoutingPromptScope.ts
+  s_a40848e8f8cca9::t_677c8ac3843901 8-9,92
+src/modules/AiRuntime/useCases/__tests__/bassProcessingCopyPromptWorkflow.spec.ts
+  s_a40848e8f8cca9::t_1d43658410fc29 608-653
+src/modules/AiRuntime/useCases/agentReference/getBassProcessingCopyPromptScope.ts
+  s_a40848e8f8cca9::t_5555388547f4a8 10-11,56-58
+  s_a40848e8f8cca9::t_02d6cdfda043e4 59
+src/modules/AiRuntime/useCases/agentReference/projectCanonicalTrackRole.ts
+  s_a40848e8f8cca9::t_080b0166d0c0c7 1-68
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "c4d9025a0ebce3cc5b45d1be651dbc3d6ab2cefc",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
