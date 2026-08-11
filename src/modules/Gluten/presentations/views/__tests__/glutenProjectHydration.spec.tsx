@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
 
 import { type Track, trackStore } from '#/modules/Arrangement/stores';
 
-import { glutenMeterStore, glutenStore } from '../../../stores/glutenStore';
+import { getGlutenState, glutenMeterStore, glutenStore } from '../../../stores/glutenStore';
 import { GlutenPanel } from '../GlutenPanel';
 
 const DEVICE_ID = 'gluten-project-device';
@@ -50,7 +50,17 @@ describe('GlutenPanel project hydration', () => {
         glutenStore.set({});
         glutenMeterStore.set({});
         trackStore.set({
-            tracks: [glutenTrack({ topology: 3, ratio: 20, attack: 0.02 })],
+            tracks: [
+                glutenTrack({
+                    topology: 3,
+                    ratio: 20,
+                    attack: 0.02,
+                    oversampling: 3,
+                    recovery: 4.9,
+                    vcaType: 1.9,
+                    mix: 2,
+                }),
+            ],
             selectedTrackId: 'track-1',
             ghostClips: [],
         });
@@ -64,5 +74,9 @@ describe('GlutenPanel project hydration', () => {
 
         expect(ratio.getAttribute('aria-valuemax')).toBe('6');
         expect(attack.getAttribute('aria-valuemin')).toBe('0.5');
+        expect(getGlutenState(DEVICE_ID).patch.oversampling).toBe(2);
+        expect(getGlutenState(DEVICE_ID).patch.recovery).toBe(4);
+        expect(getGlutenState(DEVICE_ID).patch.vcaType).toBe(1);
+        expect(getGlutenState(DEVICE_ID).patch.mix).toBe(1);
     });
 });
