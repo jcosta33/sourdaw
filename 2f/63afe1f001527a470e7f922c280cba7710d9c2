@@ -1,0 +1,31 @@
+src/modules/Project/useCases/demoProjects/nebulaDrift/__tests__/createNebulaDriftDemo.spec.ts
+  s_bc88af7d3b054c::t_cddbd02d68c8d7 52-56
+src/modules/Arrangement/useCases/device/addDevice.ts
+  s_bc88af7d3b054c::t_46033c700fca61 26-29,36-37,76-77
+src/modules/Arrangement/useCases/preset/__tests__/presetLoading.spec.ts
+  s_bc88af7d3b054c::t_f54700da2b9482 311,339,361
+  s_bc88af7d3b054c::t_46033c700fca61 256-283
+  s_bc88af7d3b054c::t_cddbd02d68c8d7 237-255
+src/modules/Project/useCases/demoProjects/nebulaDrift/createNebulaDriftDemo.ts
+  s_bc88af7d3b054c::t_46033c700fca61 283
+src/modules/Arrangement/useCases/preset/presetLoading.ts
+  s_bc88af7d3b054c::t_46033c700fca61 11,52-57,63-65
+src/modules/Arrangement/useCases/device/__tests__/addDevice.spec.ts
+  s_bc88af7d3b054c::t_46033c700fca61 172-188
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "2f63afe1f001527a470e7f922c280cba7710d9c2",
+  "prompts": {},
+  "sessions": {
+    "s_bc88af7d3b054c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f9b4a-11a2-7f61-8dfb-76eed0eb2a9c",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
