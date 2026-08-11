@@ -155,6 +155,65 @@ describe('projectOfflineYeastTrackNotes', () => {
         ]);
     });
 
+    it('inherits source expression when routed Yeast notes use generated identities', () => {
+        const sourceNote = {
+            id: 'source-note',
+            pitch: 60,
+            startBeat: 0.5,
+            duration: 0.5,
+            velocity: 100,
+            pressure: 91,
+            slide: 37,
+            pitchBend: 2048,
+            pitchBendRangeSemitones: 12,
+        };
+        const processYeastMidi = vi.fn<OfflineYeastMidiProcessor>(() => [
+            {
+                timeSamples: 50,
+                timePpq: 0.5,
+                trackId: 'offline-yeast:track-1:0',
+                noteInstanceId: 'generated-chord-note',
+                kind: { type: 'noteOn', channel: 0, note: 67, velocity: 90 },
+            },
+            {
+                timeSamples: 100,
+                timePpq: 1,
+                trackId: 'offline-yeast:track-1:0',
+                noteInstanceId: 'generated-chord-note',
+                kind: { type: 'noteOff', channel: 0, note: 67 },
+            },
+        ]);
+
+        const [note] = projectOfflineYeastTrackNotes({
+            trackId: 'track-1',
+            iterations: [
+                {
+                    sourceNotes: [sourceNote],
+                    clipId: 'clip-1',
+                    clipStartBeat: 0,
+                    clipEndBeat: 2,
+                    iterationStartBeat: 0,
+                    loopLengthBeats: 2,
+                    midiOffsetBeats: 0,
+                    loopEnabled: false,
+                },
+            ],
+            sampleRate: 100,
+            blockStartSamples: 0,
+            blockEndSamples: 200,
+            defaultTempo: 60,
+            changes: [],
+            projectMidiEvents: (input) => input.events,
+            projectPpqEndpoints,
+            processYeastMidi,
+            projectPitch: ({ pitch }) => pitch,
+        });
+
+        expect(note).toEqual(
+            expect.objectContaining({ pressure: 91, slide: 37, pitchBend: 2048, pitchBendRangeSemitones: 12 })
+        );
+    });
+
     it('anchors source-free generator notes to the active carrier clip chord', () => {
         const projectPitch = vi.fn(
             ({ pitch }: { pitch: number; referenceBeat: number; targetBeat: number }) => pitch + 1
