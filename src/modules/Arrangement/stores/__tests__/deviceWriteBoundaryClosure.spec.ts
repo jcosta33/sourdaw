@@ -53,6 +53,11 @@ const SINK_DEFINITIONS: Record<SinkFamily, SinkDefinition> = {
 const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
     'persistence-runtime': {
         'src/app/bootstrap.ts': 9,
+        // Count provenance: new file entry, measured 2 — the import and one
+        // direct engine restoration used only by Command abort cleanup. The
+        // Automerge transaction restores project truth separately; this sink
+        // returns the already-applied runtime parameter to its pre-batch value.
+        'src/modules/Arrangement/handlers/device/handleSetDeviceParameter.ts': 2,
         // Count provenance: new file entry, measured 1 — a single doc-comment
         // mention of `persistDeviceParam`, and no write. Measured with `grep -o`
         // over the four sink identifiers: persistDeviceParam 1, the other three

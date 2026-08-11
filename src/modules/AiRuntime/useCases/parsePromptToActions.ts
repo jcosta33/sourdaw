@@ -17,6 +17,7 @@ import {
 
 import { bridgeGroundedLlmToolCalls } from './agentReference/bridgeGroundedLlmToolCalls';
 import { getArticulationTransferPromptScope } from './agentReference/getArticulationTransferPromptScope';
+import { getBackingVocalPlatePromptScope } from './agentReference/getBackingVocalPlatePromptScope';
 import { getDrumRoutingPromptScope } from './agentReference/getDrumRoutingPromptScope';
 import { getSidechainRoutingPromptScope } from './agentReference/getSidechainRoutingPromptScope';
 import { getWholeProjectVibeMixScope } from './agentReference/getWholeProjectVibeMixScope';
@@ -119,11 +120,14 @@ export const parsePromptToActions = inject({ logger })(
             // sendChatMessage remains responsible for confirmation and execution.
             try {
                 const drumRoutingScope = getDrumRoutingPromptScope(prompt, context, projectRevision);
+                const backingVocalPlateScope = getBackingVocalPlatePromptScope(prompt, context, projectRevision);
                 const articulationTransferScope = getArticulationTransferPromptScope(prompt, context, projectRevision);
                 const articulationTransferCapability =
                     articulationTransferScope.status === 'request' ? articulationTransferScope.capability : undefined;
                 const drumRoutingCapability =
                     drumRoutingScope.status === 'request' ? drumRoutingScope.capability : undefined;
+                const backingVocalPlateCapability =
+                    backingVocalPlateScope.status === 'request' ? backingVocalPlateScope.capability : undefined;
                 const sidechainRoutingScope = getSidechainRoutingPromptScope(prompt, context, projectRevision);
                 const sidechainRoutingCapability =
                     sidechainRoutingScope.status === 'request' ? sidechainRoutingScope.capability : undefined;
@@ -139,6 +143,7 @@ export const parsePromptToActions = inject({ logger })(
                         context,
                         projectRevision,
                         articulationTransferCapability,
+                        backingVocalPlateCapability,
                         drumRoutingCapability,
                         sidechainRoutingCapability,
                         wholeProjectVibeMixCapability,
@@ -228,7 +233,9 @@ export const parsePromptToActions = inject({ logger })(
                         };
                     }
 
-                    const guarded = materializeActionStateGuards(materialized.actions, context);
+                    const guarded = materializeActionStateGuards(materialized.actions, context, {
+                        appOwnedRenderTailSeconds: bridged.appOwnedRenderTailSeconds,
+                    });
                     if (guarded.status === 'rejected') {
                         logger.warn(`[AI] Rejected LLM action batch because ${guarded.reason}`);
                         return {

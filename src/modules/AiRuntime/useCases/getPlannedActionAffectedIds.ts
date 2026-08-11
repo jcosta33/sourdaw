@@ -45,6 +45,24 @@ export function getPlannedActionAffectedIds(action: AppAction): string[] {
         }
         affectedIds.add(action.payload.sectionId);
     }
+    if (action.type === 'automateSendRanges' || action.type === 'removeSendAutomationRanges') {
+        affectedIds.add(action.payload.busId);
+        for (const trackId of action.payload.trackIds) {
+            affectedIds.add(trackId);
+            affectedIds.add(`auto-send-${encodeURIComponent(trackId)}-${encodeURIComponent(action.payload.busId)}`);
+        }
+        for (const sectionId of action.payload.sectionIds) {
+            affectedIds.add(sectionId);
+        }
+    }
+    if (action.type === 'renderProjectSections' || action.type === 'removeRenderedProjectSections') {
+        for (const sectionId of action.payload.sectionIds) {
+            affectedIds.add(sectionId);
+        }
+        for (const job of action.payload.jobs ?? []) {
+            affectedIds.add(job.jobId);
+        }
+    }
     if (action.type === 'copyMidiArticulations') {
         const changes = getMidiArticulationSemanticChanges({
             notePairs: action.payload.notePairs,

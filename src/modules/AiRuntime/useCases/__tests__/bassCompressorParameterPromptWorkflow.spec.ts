@@ -672,7 +672,7 @@ describe('Bass DI compressor parameter prompt workflow', () => {
         }
     );
 
-    it('reports persistent runtime compensation failure and permits explicit repair', async () => {
+    it('reports persistent runtime rollback failure as manual repair and permits explicit repair', async () => {
         runtimeMocks.failedRuntimeWrites.add('comp-threshold:-24');
 
         const result = await executeAppActionBatch(createGuardedActions(999), {
@@ -684,7 +684,8 @@ describe('Bass DI compressor parameter prompt workflow', () => {
         if (result.status !== 'failed') {
             throw new Error(`Expected a failed batch, received ${result.status}`);
         }
-        expect(result.reason).toContain('runtime compensation failed');
+        expect(result.reason).toContain('abort rollback failed');
+        expect(result.reason).toContain('manual repair is required');
         expect(getCompressor().parameterValues).toEqual(INITIAL_PARAMETERS);
         expect(runtimeMocks.runtimeParameterValues.get('comp-threshold')).toBe(-18);
         expect(undoStore.value?.past).toEqual([]);

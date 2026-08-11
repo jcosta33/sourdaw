@@ -16,6 +16,8 @@ import { MAX_LLM_ACTIONS_PER_BATCH } from '../../transformers/llmActionLimits';
 import { type ToolCallResult } from '../../transformers/toolCallParser';
 import { normalizeSafeProjectName } from '../../validators/normalizeSafeProjectName';
 
+import { type BatchLocalActionIdentity } from './BatchLocalActionIdentity';
+import { bridgeBackingVocalPlatePlan } from './bridgeBackingVocalPlatePlan';
 import { getArticulationTransferPromptScope } from './getArticulationTransferPromptScope';
 import { getBulkDeviceInsertionTrackScope } from './getBulkDeviceInsertionTrackScope';
 import { getDeviceParameterPromptScope } from './getDeviceParameterPromptScope';
@@ -57,17 +59,12 @@ type PromptClause = {
 type GroundingCatalog = ReturnType<typeof getExecutableAppActionGroundingCatalog>;
 type GroundingRules = NonNullable<ReturnType<typeof getExecutableAppActionGroundingRules>>;
 
-export type BatchLocalActionIdentity = {
-    actionOrdinal: number;
-    actionType: 'createBus';
-    busId: string;
-};
-
 type BridgeGroundedLlmToolCallsResult = LlmActionBridgeResult & {
+    appOwnedRenderTailSeconds?: number;
     batchLocalActionIdentities?: BatchLocalActionIdentity[];
 };
 
-type BatchLocalBusBinding = BatchLocalActionIdentity & {
+type BatchLocalBusBinding = Extract<BatchLocalActionIdentity, { actionType: 'createBus' }> & {
     binding: string;
     callIndex: number;
     name: string;
@@ -3886,6 +3883,18 @@ export function bridgeGroundedLlmToolCalls({
             projectPunchRegion: createPunchRegionPatch,
             sectionSignatures,
         });
+    }
+    const backingVocalPlatePlan = bridgeBackingVocalPlatePlan({ calls, context, prompt });
+    if (backingVocalPlatePlan.status === 'rejected') {
+        return { actions: [], rejections: [rejection(0, '<batch>', backingVocalPlatePlan.reason)] };
+    }
+    if (backingVocalPlatePlan.status === 'accepted') {
+        return {
+            actions: backingVocalPlatePlan.actions,
+            appOwnedRenderTailSeconds: backingVocalPlatePlan.renderTailSeconds,
+            batchLocalActionIdentities: backingVocalPlatePlan.identities,
+            rejections: [],
+        };
     }
     let effectiveCalls = calls;
     let sidechainRouteDeviceAdmissions: ReadonlyArray<{
