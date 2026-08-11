@@ -198,6 +198,9 @@ impl GlutenEngine {
     }
 
     pub fn set_param(&mut self, name: &str, value: f32) {
+        if !value.is_finite() {
+            return;
+        }
         match name {
             // Global controls
             "topology" => {

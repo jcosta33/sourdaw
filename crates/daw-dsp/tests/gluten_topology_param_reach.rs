@@ -343,6 +343,41 @@ fn nonfinite_blend_amount_does_not_poison_auto_gain() {
 }
 
 #[test]
+fn nonfinite_amount_is_ignored_and_the_next_write_recovers() {
+    let baseline = render(|i| {
+        base(TOPOLOGY_OPTO)(i);
+        i.set_param("auto_makeup", 1.0);
+    });
+    let after_nonfinite = render(|i| {
+        base(TOPOLOGY_OPTO)(i);
+        i.set_param("auto_makeup", 1.0);
+        i.set_param("amount", f32::NAN);
+    });
+    assert_eq!(
+        max_delta(&after_nonfinite, &baseline),
+        0.0,
+        "a non-finite Amount write must leave the current curve untouched"
+    );
+
+    let recovered = render(|i| {
+        base(TOPOLOGY_OPTO)(i);
+        i.set_param("auto_makeup", 1.0);
+        i.set_param("amount", f32::NAN);
+        i.set_param("amount", 100.0);
+    });
+    let expected = render(|i| {
+        base(TOPOLOGY_OPTO)(i);
+        i.set_param("auto_makeup", 1.0);
+        i.set_param("amount", 100.0);
+    });
+    assert_eq!(
+        max_delta(&recovered, &expected),
+        0.0,
+        "a rejected Amount write must not prevent the next finite write"
+    );
+}
+
+#[test]
 fn opto_auto_gain_uses_the_feedback_fixed_point() {
     let without_auto_gain = render(|i| {
         base(TOPOLOGY_OPTO)(i);
