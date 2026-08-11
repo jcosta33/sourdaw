@@ -241,6 +241,39 @@ describe('handleSetDeviceParameter', () => {
         });
     });
 
+    it('preserves an explicit expected value as a present-value redo guard before a batch-created device exists', () => {
+        mocks.getTrackStoreState.mockReturnValue({ tracks: [] });
+
+        const desc = handleSetDeviceParameter.describe({
+            type: 'setDeviceParameter',
+            payload: {
+                deviceId: 'd1',
+                paramId: 'filter-cutoff',
+                value: 250,
+                expectedTrackId: 't1',
+                expectedDeviceType: 'builtin-filter',
+                expectedDeviceIds: ['d1'],
+                expectedValue: 1_000,
+                expectedTrackFrozen: false,
+            },
+        });
+
+        expect(desc.redoAction).toEqual({
+            type: 'setDeviceParameter',
+            payload: {
+                deviceId: 'd1',
+                paramId: 'filter-cutoff',
+                value: 250,
+                expectedDeviceIds: ['d1'],
+                expectedDeviceType: 'builtin-filter',
+                expectedTrackFrozen: false,
+                expectedTrackId: 't1',
+                expectedValue: 1_000,
+                expectedValuePresent: true,
+            },
+        });
+    });
+
     it('detects an unchanged parameter value as a semantic no-op', () => {
         mocks.getTrackStoreState.mockReturnValue({
             tracks: [{ id: 't1', devices: [{ id: 'd1', parameterValues: { gain: 0.5 } }] }],

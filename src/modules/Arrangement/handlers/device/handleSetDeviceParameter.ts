@@ -193,7 +193,9 @@ export const handleSetDeviceParameter = createHandler<'setDeviceParameter'>({
             : undefined;
         const exactLabel = describeParameterOutcome(alpha.payload);
         const expectedPreviousValue = alpha.payload.expectedValue ?? previousValue ?? parameter?.defaultValue;
-        const expectedPreviousValuePresent = alpha.payload.expectedValuePresent ?? previousValuePresent;
+        const expectedPreviousValuePresent =
+            alpha.payload.expectedValuePresent ??
+            (alpha.payload.expectedValue === undefined ? previousValuePresent : true);
         const expectedTrackId = alpha.payload.expectedTrackId ?? owner?.id;
         const expectedDeviceType = alpha.payload.expectedDeviceType ?? prev?.type;
         const expectedDeviceIds = alpha.payload.expectedDeviceIds ?? owner?.devices.map((device) => device.id);
