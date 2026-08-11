@@ -22,4 +22,4 @@ Tauri 2 desktop shell (lib `sourdaw_lib`; `src/main.rs` → `sourdaw_lib::run()`
 - `#[specta::specta]` derives exist on a few commands (`plugins.rs`, `tuning.rs`), but **no binding-export call site exists** — TS payload types are hand-maintained. Keep both sides in sync manually.
 - `commands::audio_ipc` in the handler list is a commented-out TODO — the module does not exist yet.
 - Plugin scanning is policy-gated (`src/host/plugin_scan_policy.rs`): absolute paths only, symlinks rejected. CLAP descriptor extraction runs only in the bounded `plugin_scan_worker` child-process mode; the application process may enumerate authorized candidates but must never load their entry points during discovery.
-- `crates/daw-engine/src/mts_esp.rs` is a stub — no real MTS-ESP FFI linkage.
+- MTS-ESP host support is absent; do not add registration or publication until its ownership and distribution contracts are settled.
