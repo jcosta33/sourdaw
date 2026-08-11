@@ -297,6 +297,24 @@ describe('GlutenProcessor process paths', () => {
         }
     });
 
+    it('clears the sidechain buffers when a connected input disappears', async () => {
+        const proc = await loadProcessor();
+        send(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });
+        resetRecording();
+
+        proc.process([stereo(FRAMES, 0.4), stereo(FRAMES, 0.7)], [stereo(FRAMES, 0)]);
+        const scLeft = new RealFloat32Array(memory.buffer, SC_LEFT_PTR, FRAMES);
+        const scRight = new RealFloat32Array(memory.buffer, SC_RIGHT_PTR, FRAMES);
+        expect(scLeft[0]).toBeCloseTo(0.7, 6);
+        expect(scRight[0]).toBeCloseTo(0.7, 6);
+
+        proc.process([stereo(FRAMES, 0.4)], [stereo(FRAMES, 0)]);
+
+        const silence = Array.from({ length: FRAMES }, () => 0);
+        expect([...scLeft]).toEqual(silence);
+        expect([...scRight]).toEqual(silence);
+    });
+
     it('writes meter telemetry into the SAB every 8 rendered blocks', async () => {
         const proc = await loadProcessor();
         send(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });

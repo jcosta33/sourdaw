@@ -60,6 +60,27 @@ describe('GeneralSection', () => {
         expect(update).toHaveBeenCalledWith({ showMinimap: true });
     });
 
+    it('configures the autosave interval and explains that crash recovery remains active', () => {
+        const update = vi.fn();
+        render(
+            <GeneralSection
+                prefs={{ ...defaultPreferences, autoSave: true, autoSaveIntervalMs: 30_000 }}
+                update={update}
+            />
+        );
+
+        const policy = /crash-recovery data still updates/i;
+        const autoSaveToggle = screen.getByRole('switch', { name: 'Auto Save' });
+        const interval = screen.getByRole('combobox', { name: 'Auto-save interval' });
+        expect(autoSaveToggle).toHaveAccessibleDescription(policy);
+        expect(interval).toHaveAccessibleDescription(policy);
+        fireEvent.change(interval, {
+            target: { value: '60000' },
+        });
+
+        expect(update).toHaveBeenCalledWith({ autoSaveIntervalMs: 60_000 });
+    });
+
     it('hides the metronome volume slider when the metronome is disabled', () => {
         render(<GeneralSection prefs={{ ...defaultPreferences, metronomeEnabled: false }} update={vi.fn()} />);
 

@@ -46,6 +46,19 @@ export const AUDIO_LATENCY_PROFILE_OPTIONS: Array<{ value: AudioLatencyProfile; 
 
 export type SoloModePreference = 'sip' | 'afl' | 'pfl';
 
+export const AUTO_SAVE_INTERVAL_OPTIONS = [
+    { value: 30_000, label: '30 seconds' },
+    { value: 60_000, label: '1 minute' },
+    { value: 120_000, label: '2 minutes' },
+    { value: 300_000, label: '5 minutes' },
+] as const;
+
+export type AutoSaveIntervalMs = (typeof AUTO_SAVE_INTERVAL_OPTIONS)[number]['value'];
+
+export function isAutoSaveIntervalMs(value: unknown): value is AutoSaveIntervalMs {
+    return AUTO_SAVE_INTERVAL_OPTIONS.some((option) => option.value === value);
+}
+
 export const PREFERENCES_SCHEMA_VERSION = 2;
 
 export type Preferences = {
@@ -53,7 +66,7 @@ export type Preferences = {
     trackHeight: 'compact' | 'normal' | 'large';
     colorblindMode: boolean;
     autoSave: boolean;
-    autoSaveIntervalMs: number;
+    autoSaveIntervalMs: AutoSaveIntervalMs;
     snapToGrid: boolean;
     snapToZeroCrossing: boolean;
     gridSubdivision: GridSnapOption;
