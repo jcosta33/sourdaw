@@ -1,4 +1,4 @@
-// @wasm-bindgen-dts crate-source: sha256:782dab97f5a25593138dc6943107e5bdbabeb64b82826ade0bf05cc26ec84e5a
+// @wasm-bindgen-dts crate-source: sha256:a7ad1392f326eb2b2a86f416dff02304fcbc52cbc360889a6c02c23af1336e1a
 /* tslint:disable */
 /* eslint-disable */
 export const memory: WebAssembly.Memory;
@@ -153,6 +153,21 @@ export const toasterinstance_set_pad_dry_routed: (a: number, b: number, c: numbe
 export const toasterinstance_set_pad_param: (a: number, b: number, c: number, d: number, e: number) => void;
 export const toasterinstance_set_param: (a: number, b: number, c: number, d: number) => void;
 export const toasterinstance_set_param_by_id: (a: number, b: number, c: number) => void;
+export const __wbg_kneadinstance_free: (a: number, b: number) => void;
+export const kneadinstance_get_f0: (a: number) => number;
+export const kneadinstance_get_input_left_ptr: (a: number) => number;
+export const kneadinstance_get_input_right_ptr: (a: number) => number;
+export const kneadinstance_get_latency_samples: (a: number) => number;
+export const kneadinstance_get_nan_flush_count: (a: number) => number;
+export const kneadinstance_get_periodicity: (a: number) => number;
+export const kneadinstance_get_right_ptr: (a: number) => number;
+export const kneadinstance_is_voiced: (a: number) => number;
+export const kneadinstance_new: (a: number) => number;
+export const kneadinstance_process: (a: number, b: number) => number;
+export const kneadinstance_set_formant_preserve: (a: number, b: number) => void;
+export const kneadinstance_set_retune_speed_ms: (a: number, b: number) => void;
+export const kneadinstance_set_shift_semitones: (a: number, b: number) => void;
+export const init_panic_hook: () => void;
 export const __wbg_gluteninstance_free: (a: number, b: number) => void;
 export const gluteninstance_get_crest: (a: number) => number;
 export const gluteninstance_get_gr_db: (a: number) => number;
@@ -190,21 +205,6 @@ export const grandbouleinstance_set_sostenuto: (a: number, b: number) => void;
 export const grandbouleinstance_set_sustain: (a: number, b: number) => void;
 export const grandbouleinstance_set_temperament: (a: number, b: number) => void;
 export const grandbouleinstance_set_una_corda: (a: number, b: number) => void;
-export const init_panic_hook: () => void;
-export const __wbg_kneadinstance_free: (a: number, b: number) => void;
-export const kneadinstance_get_f0: (a: number) => number;
-export const kneadinstance_get_input_left_ptr: (a: number) => number;
-export const kneadinstance_get_input_right_ptr: (a: number) => number;
-export const kneadinstance_get_latency_samples: (a: number) => number;
-export const kneadinstance_get_nan_flush_count: (a: number) => number;
-export const kneadinstance_get_periodicity: (a: number) => number;
-export const kneadinstance_get_right_ptr: (a: number) => number;
-export const kneadinstance_is_voiced: (a: number) => number;
-export const kneadinstance_new: (a: number) => number;
-export const kneadinstance_process: (a: number, b: number) => number;
-export const kneadinstance_set_formant_preserve: (a: number, b: number) => void;
-export const kneadinstance_set_retune_speed_ms: (a: number, b: number) => void;
-export const kneadinstance_set_shift_semitones: (a: number, b: number) => void;
 export const __wbindgen_free: (a: number, b: number, c: number) => void;
 export const __wbindgen_malloc: (a: number, b: number) => number;
 export const __wbindgen_realloc: (a: number, b: number, c: number, d: number) => number;

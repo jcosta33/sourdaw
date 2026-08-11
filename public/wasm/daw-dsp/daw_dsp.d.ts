@@ -1,4 +1,4 @@
-// @wasm-bindgen-dts crate-source: sha256:782dab97f5a25593138dc6943107e5bdbabeb64b82826ade0bf05cc26ec84e5a
+// @wasm-bindgen-dts crate-source: sha256:a7ad1392f326eb2b2a86f416dff02304fcbc52cbc360889a6c02c23af1336e1a
 /* tslint:disable */
 /* eslint-disable */
 
@@ -949,6 +949,21 @@ export interface InitOutput {
     readonly toasterinstance_set_pad_param: (a: number, b: number, c: number, d: number, e: number) => void;
     readonly toasterinstance_set_param: (a: number, b: number, c: number, d: number) => void;
     readonly toasterinstance_set_param_by_id: (a: number, b: number, c: number) => void;
+    readonly __wbg_kneadinstance_free: (a: number, b: number) => void;
+    readonly kneadinstance_get_f0: (a: number) => number;
+    readonly kneadinstance_get_input_left_ptr: (a: number) => number;
+    readonly kneadinstance_get_input_right_ptr: (a: number) => number;
+    readonly kneadinstance_get_latency_samples: (a: number) => number;
+    readonly kneadinstance_get_nan_flush_count: (a: number) => number;
+    readonly kneadinstance_get_periodicity: (a: number) => number;
+    readonly kneadinstance_get_right_ptr: (a: number) => number;
+    readonly kneadinstance_is_voiced: (a: number) => number;
+    readonly kneadinstance_new: (a: number) => number;
+    readonly kneadinstance_process: (a: number, b: number) => number;
+    readonly kneadinstance_set_formant_preserve: (a: number, b: number) => void;
+    readonly kneadinstance_set_retune_speed_ms: (a: number, b: number) => void;
+    readonly kneadinstance_set_shift_semitones: (a: number, b: number) => void;
+    readonly init_panic_hook: () => void;
     readonly __wbg_gluteninstance_free: (a: number, b: number) => void;
     readonly gluteninstance_get_crest: (a: number) => number;
     readonly gluteninstance_get_gr_db: (a: number) => number;
@@ -986,21 +1001,6 @@ export interface InitOutput {
     readonly grandbouleinstance_set_sustain: (a: number, b: number) => void;
     readonly grandbouleinstance_set_temperament: (a: number, b: number) => void;
     readonly grandbouleinstance_set_una_corda: (a: number, b: number) => void;
-    readonly init_panic_hook: () => void;
-    readonly __wbg_kneadinstance_free: (a: number, b: number) => void;
-    readonly kneadinstance_get_f0: (a: number) => number;
-    readonly kneadinstance_get_input_left_ptr: (a: number) => number;
-    readonly kneadinstance_get_input_right_ptr: (a: number) => number;
-    readonly kneadinstance_get_latency_samples: (a: number) => number;
-    readonly kneadinstance_get_nan_flush_count: (a: number) => number;
-    readonly kneadinstance_get_periodicity: (a: number) => number;
-    readonly kneadinstance_get_right_ptr: (a: number) => number;
-    readonly kneadinstance_is_voiced: (a: number) => number;
-    readonly kneadinstance_new: (a: number) => number;
-    readonly kneadinstance_process: (a: number, b: number) => number;
-    readonly kneadinstance_set_formant_preserve: (a: number, b: number) => void;
-    readonly kneadinstance_set_retune_speed_ms: (a: number, b: number) => void;
-    readonly kneadinstance_set_shift_semitones: (a: number, b: number) => void;
     readonly __wbindgen_free: (a: number, b: number, c: number) => void;
     readonly __wbindgen_malloc: (a: number, b: number) => number;
     readonly __wbindgen_realloc: (a: number, b: number, c: number, d: number) => number;

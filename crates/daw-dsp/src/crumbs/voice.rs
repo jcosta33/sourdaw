@@ -44,9 +44,11 @@ pub struct CrumbsVoice {
     // Playback configuration
     playback_mode: PlaybackMode,
     loop_mode: LoopMode,
+    region_start: u32,
     loop_start: u32,
     loop_end: u32,
     loop_crossfade: u32,
+    has_looped: bool,
 
     // DSP components
     amp_envelope: AhdsrEnvelope,
@@ -95,9 +97,11 @@ impl CrumbsVoice {
             anti_alias_step_cos: -1.0,
             playback_mode: PlaybackMode::Sustain,
             loop_mode: LoopMode::Off,
+            region_start: 0,
             loop_start: 0,
             loop_end: 0,
             loop_crossfade: LOOP_CROSSFADE_DEFAULT,
+            has_looped: false,
             amp_envelope: AhdsrEnvelope::new(sample_rate),
             filter_l: TptSvf::new(sample_rate),
             filter_r: TptSvf::new(sample_rate),
@@ -127,9 +131,11 @@ impl CrumbsVoice {
         self.choke_group = params.choke_group;
         self.playback_mode = params.playback_mode;
         self.loop_mode = params.loop_mode;
+        self.region_start = params.start_frame;
         self.loop_start = params.loop_start;
         self.loop_end = params.loop_end;
         self.loop_crossfade = params.loop_crossfade;
+        self.has_looped = self.loop_mode == LoopMode::Reverse;
 
         // Calculate playback speed from pitch difference
         let semitone_diff =
@@ -268,6 +274,11 @@ impl CrumbsVoice {
                 self.anti_alias_cutoff,
                 self.anti_alias_step_sin,
                 self.anti_alias_step_cos,
+                self.region_start,
+                self.loop_start,
+                self.loop_end,
+                self.loop_mode,
+                self.has_looped,
             )
         } else {
             let left_samples = [
@@ -358,6 +369,7 @@ impl CrumbsVoice {
 
             LoopMode::Forward => {
                 if self.position >= end {
+                    self.has_looped = true;
                     let overshoot = self.position - end;
                     self.position = start + overshoot;
                 }
@@ -365,9 +377,11 @@ impl CrumbsVoice {
 
             LoopMode::PingPong => {
                 if self.direction > 0.0 && self.position >= end {
+                    self.has_looped = true;
                     self.direction = -1.0;
                     self.position = end - (self.position - end);
                 } else if self.direction < 0.0 && self.position <= start {
+                    self.has_looped = true;
                     self.direction = 1.0;
                     self.position = start + (start - self.position);
                 }
@@ -615,6 +629,11 @@ fn bandlimited_stereo_sample(
     cutoff_scale: f32,
     sinc_step_sin: f32,
     sinc_step_cos: f32,
+    region_start: u32,
+    loop_start: u32,
+    loop_end: u32,
+    loop_mode: LoopMode,
+    has_looped: bool,
 ) -> (f32, f32) {
     let mut output_left = 0.0;
     let mut output_right = 0.0;
@@ -624,6 +643,13 @@ fn bandlimited_stereo_sample(
     let mut distance = fraction + radius;
     let sinc_angle = core::f32::consts::PI * distance * cutoff_scale;
     let (mut sinc_sin, mut sinc_cos) = sinc_angle.sin_cos();
+    let region_start = region_start as usize;
+    let loop_start = loop_start as usize;
+    let region_end = if loop_end > 0 {
+        (loop_end as usize).min(sample.frame_count())
+    } else {
+        sample.frame_count()
+    };
 
     for tap in 0..BANDLIMITED_SINC_TAPS {
         let lowpass = if distance.abs() < f32::EPSILON {
@@ -632,12 +658,19 @@ fn bandlimited_stereo_sample(
             sinc_sin / (core::f32::consts::PI * distance)
         };
         let weight = lowpass * BANDLIMITED_SINC_WINDOW[tap];
-        let index = frame
-            .wrapping_add(tap)
-            .wrapping_sub(BANDLIMITED_SINC_TAPS / 2);
-        output_left += sample.read_left(index) * weight;
-        if stereo {
-            output_right += sample.read_right(index) * weight;
+        let raw_index = frame as i64 + tap as i64 - BANDLIMITED_SINC_TAPS as i64 / 2;
+        if let Some(index) = map_bandlimited_frame(
+            raw_index,
+            region_start,
+            loop_start,
+            region_end,
+            loop_mode,
+            has_looped,
+        ) {
+            output_left += sample.read_left(index) * weight;
+            if stereo {
+                output_right += sample.read_right(index) * weight;
+            }
         }
         weight_sum += weight;
 
@@ -655,6 +688,50 @@ fn bandlimited_stereo_sample(
         left
     };
     (left, right)
+}
+
+fn map_bandlimited_frame(
+    index: i64,
+    region_start: usize,
+    loop_start: usize,
+    region_end: usize,
+    loop_mode: LoopMode,
+    has_looped: bool,
+) -> Option<usize> {
+    if region_end <= region_start {
+        return None;
+    }
+
+    if loop_mode == LoopMode::Off {
+        return ((region_start as i64)..(region_end as i64))
+            .contains(&index)
+            .then_some(index as usize);
+    }
+
+    if loop_start >= region_end {
+        return None;
+    }
+
+    if !has_looped && index < region_start as i64 {
+        return None;
+    }
+    if !has_looped && index < region_end as i64 {
+        return Some(index as usize);
+    }
+
+    let start = loop_start as i64;
+    let length = region_end as i64 - start;
+    let relative = (index - start).rem_euclid(length);
+    if loop_mode != LoopMode::PingPong {
+        return Some((start + relative) as usize);
+    }
+
+    let reflected = (index - start).rem_euclid(length * 2);
+    if reflected < length {
+        Some((start + reflected) as usize)
+    } else {
+        Some((start + length * 2 - reflected - 1) as usize)
+    }
 }
 
 #[cfg(test)]
@@ -708,6 +785,52 @@ mod tests {
                 phase.sin()
             })
             .collect()
+    }
+
+    fn render_region_boundary(loop_mode: LoopMode, outside_value: f32) -> (f32, f32) {
+        let mut left = vec![outside_value; 256];
+        let mut right = vec![-outside_value; 256];
+        left[64..128].fill(0.25);
+        right[64..128].fill(-0.5);
+        let sample = SampleData::from_stereo(left, right, SAMPLE_RATE as u32);
+        let mut voice = CrumbsVoice::new(SAMPLE_RATE);
+        voice.trigger(&VoiceTriggerParams {
+            note: 72,
+            root_note: 60,
+            playback_mode: PlaybackMode::Sustain,
+            loop_mode,
+            loop_start: 64,
+            loop_end: 128,
+            start_frame: 64,
+            ..VoiceTriggerParams::default()
+        });
+
+        let mut output_left = 0.0;
+        let mut output_right = 0.0;
+        voice.render_sample(&sample, &mut output_left, &mut output_right);
+        (output_left, output_right)
+    }
+
+    #[test]
+    fn pitched_up_reader_does_not_cross_voice_region_boundaries() {
+        for loop_mode in [
+            LoopMode::Off,
+            LoopMode::Forward,
+            LoopMode::PingPong,
+            LoopMode::Reverse,
+        ] {
+            let clean = render_region_boundary(loop_mode, 0.0);
+            let poisoned = render_region_boundary(loop_mode, 8.0);
+
+            assert!(
+                clean.0 > 0.0 && clean.1 < 0.0,
+                "{loop_mode:?} must preserve stereo"
+            );
+            assert!(
+                (clean.0 - poisoned.0).abs() < 1.0e-6 && (clean.1 - poisoned.1).abs() < 1.0e-6,
+                "{loop_mode:?} mixed adjacent-region audio: clean {clean:?}, poisoned {poisoned:?}"
+            );
+        }
     }
 
     #[test]
