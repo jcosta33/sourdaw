@@ -271,23 +271,36 @@ class GrandBouleOfflineProcessor extends AudioWorkletProcessor {
         });
     }
 
-    _applyAutomation(instance: GrandBouleInstance, frame: number): void {
+    _applyAutomation(instance: GrandBouleInstance, frame: number, blockEndFrame: number): void {
         for (let slot = 0; slot < this._paramAutomation.length; slot++) {
             const schedules = this._paramAutomation[slot];
             if (!schedules) {
                 continue;
             }
-            for (const schedule of schedules) {
-                if (schedule.complete) {
+            let retainedCount = 0;
+            for (let scheduleIndex = 0; scheduleIndex < schedules.length; scheduleIndex++) {
+                const schedule = schedules[scheduleIndex];
+                if (!schedule) {
                     continue;
                 }
-                const next = automationValueAtFrame(schedule, frame);
+                let next = automationValueAtFrame(schedule, frame);
+                const upcomingStart = schedule.segments[schedule.segmentIndex]?.startFrame;
+                if (!next.active && upcomingStart !== undefined && upcomingStart < blockEndFrame) {
+                    next = automationValueAtFrame(schedule, upcomingStart);
+                }
                 if (!next.active) {
-                    continue;
+                    schedules[retainedCount] = schedule;
+                    retainedCount++;
+                } else {
+                    dispatch(instance, { type: 'param', name: schedule.name, value: next.value });
+                    schedule.complete = next.complete;
+                    if (!schedule.complete) {
+                        schedules[retainedCount] = schedule;
+                        retainedCount++;
+                    }
                 }
-                dispatch(instance, { type: 'param', name: schedule.name, value: next.value });
-                schedule.complete = next.complete;
             }
+            schedules.length = retainedCount;
         }
     }
 
@@ -312,7 +325,7 @@ class GrandBouleOfflineProcessor extends AudioWorkletProcessor {
         // Apply the block's parameter state before waking any note in it. The
         // sleeping engine snaps parameters; reversing this order creates an
         // audible 20 ms glide from defaults at the start of an offline part.
-        this._applyAutomation(instance, currentFrame);
+        this._applyAutomation(instance, currentFrame, currentFrame + frames);
 
         // Voice everything that belongs in the block about to be produced. The
         // engine has no sub-block note offset, so the block boundary is the only

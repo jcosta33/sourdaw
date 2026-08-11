@@ -179,6 +179,20 @@ function renderBlock(): void {
     harnessFrame += BLOCK_FRAMES;
 }
 
+function retainedAutomationScheduleCount(): number {
+    const slots: unknown = Reflect.get(liveProcessor ?? {}, '_paramAutomation');
+    if (!Array.isArray(slots)) {
+        return 0;
+    }
+    let count = 0;
+    for (const slot of slots) {
+        if (Array.isArray(slot)) {
+            count += slot.length;
+        }
+    }
+    return count;
+}
+
 async function buildGrandBouleStrategy(): Promise<NativeDspDeviceStrategy> {
     const factory = NATIVE_DSP_DEVICE_FACTORIES.find((candidate) => candidate.matches('grand-boule'));
     if (!factory) {
@@ -326,6 +340,25 @@ describe('offline Grand Boule scheduling reaches the engine at the scheduled fra
         expect(engineEvents).toEqual(['param:lid_position:0.25', 'note:60']);
     });
 
+    it('applies automation before a note that shares a non-aligned frame inside the quantum', async () => {
+        const strategy = await buildGrandBouleStrategy();
+        const binding = strategy.resolveOfflineAutomation('lidPosition');
+        if (!binding || binding.kind !== 'segments') {
+            throw new Error('Grand Boule did not expose lid automation to offline rendering');
+        }
+
+        binding.apply([{ startFrame: 200, endFrame: 200, startValue: 0.4, endValue: 0.4 }]);
+        schedulePendingSuspends(
+            { sampleRate: OFFLINE_SAMPLE_RATE } as unknown as OfflineAudioContext,
+            [noteOnEvent(0.2, 60, strategy)],
+            4
+        );
+        renderBlock();
+        renderBlock();
+
+        expect(engineEvents).toEqual(['param:lid_position:0.4', 'note:60']);
+    });
+
     it('leaves the current parameter untouched until a future clip lane starts', async () => {
         const strategy = await buildGrandBouleStrategy();
         const binding = strategy.resolveOfflineAutomation('lidPosition');
@@ -361,5 +394,19 @@ describe('offline Grand Boule scheduling reaches the engine at the scheduled fra
             { name: 'lid_position', value: 0.5, block: 2 },
             { name: 'lid_position', value: 0, block: 3 },
         ]);
+    });
+
+    it('retires completed clip-lane schedules from per-quantum work', async () => {
+        const strategy = await buildGrandBouleStrategy();
+        const binding = strategy.resolveOfflineAutomation('lidPosition');
+        if (!binding || binding.kind !== 'segments') {
+            throw new Error('Grand Boule did not expose lid automation to offline rendering');
+        }
+
+        binding.apply([{ startFrame: 0, endFrame: 0, startValue: 0.5, endValue: 0.5 }]);
+        expect(retainedAutomationScheduleCount()).toBe(1);
+
+        renderBlock();
+        expect(retainedAutomationScheduleCount()).toBe(0);
     });
 });
