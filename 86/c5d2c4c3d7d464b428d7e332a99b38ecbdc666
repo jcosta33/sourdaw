@@ -1,0 +1,132 @@
+src/modules/CrdtDocument/useCases/getDrumPreviewBranchHandlers.ts
+  s_a40848e8f8cca9::t_a19975b3e5144f 1-9
+src/modules/CrdtDocument/useCases/crdtBranching/runBranchLineageTransition.ts
+  s_a40848e8f8cca9::t_3416f7d837dba8 2,5,9
+  s_a40848e8f8cca9::t_597ca8ec117fd5 15,22-27
+src/modules/AiRuntime/useCases/agentReference/getDrumPreviewBranchesPromptScope.ts
+  s_a40848e8f8cca9::t_140cb2ce165848 24-36,179-180
+  s_a40848e8f8cca9::t_0f6b45f70a31a4 1-23,37-44,46-49,51-101,103-178,181-188
+  s_a40848e8f8cca9::t_e2b7d9b0cab843 50
+  s_a40848e8f8cca9::t_44bea67abfa396 45,102
+src/modules/MIDI/useCases/midiNoteTransforms/projectDrumPreviewCandidateNotes.ts
+  s_a40848e8f8cca9::t_c875990d3eaccf 1-37,42-123
+  s_a40848e8f8cca9::t_acbdfdca48d130 38-41
+src/modules/AiRuntime/useCases/materializeActionStateGuards.ts
+  s_a40848e8f8cca9::t_cc8e97338875f6 1,8,19,205-208,210-238,240-252,258-267
+  s_a40848e8f8cca9::t_140cb2ce165848 253-257
+  s_a40848e8f8cca9::t_44bea67abfa396 209,239
+  s_a40848e8f8cca9::t_694a11ae530e5e 268-270
+  s_a40848e8f8cca9::t_63e5ced63fab22 271
+src/modules/CrdtDocument/useCases/crdtBranching/runBranchDocumentTransition.ts
+  s_a40848e8f8cca9::t_3416f7d837dba8 1-23
+src/modules/CrdtDocument/useCases/crdtBranching/prepareDrumPreviewBranches.ts
+  s_a40848e8f8cca9::t_597ca8ec117fd5 1-24,45-46,57-65,67-69,72-75,77-78,80,122,128,134-138,144-172,174-193,220
+  s_a40848e8f8cca9::t_40968c6245473e 25-42,44
+  s_a40848e8f8cca9::t_65cb520ee6480f 49-50
+  s_a40848e8f8cca9::t_218903df580c3a 51-55,106,140-143,173
+  s_a40848e8f8cca9::t_44bea67abfa396 71
+  s_a40848e8f8cca9::t_481d6992610740 43,56,66,70,76
+  s_a40848e8f8cca9::t_bb4e36f72c9869 47-48,79,81-105,107-121,123-127,129-133,139,194-219
+  s_a40848e8f8cca9::t_0fb0fc8e1bb73f 221-222
+src/modules/CrdtDocument/useCases/crdtBranching/deleteDrumPreviewBranches.ts
+  s_a40848e8f8cca9::t_e15bfec624ae18 15-31,36-37,55,58
+  s_a40848e8f8cca9::t_597ca8ec117fd5 1-5,7-14,32-35,38-54,56-57,59-70
+  s_a40848e8f8cca9::t_3416f7d837dba8 6
+src/modules/AiRuntime/useCases/confirmPendingChatActions.ts
+  s_a40848e8f8cca9::t_44bea67abfa396 38,46-47,49-50
+  s_a40848e8f8cca9::t_b8802b2c780746 4,39-45,48,51-52,312
+src/modules/AiRuntime/useCases/describePendingActionConfirmation.ts
+  s_a40848e8f8cca9::t_acbdfdca48d130 13,151-153,189
+src/modules/AiRuntime/models/DrumPreviewBranchesCapability.ts
+  s_a40848e8f8cca9::t_0f6b45f70a31a4 1-30
+src/modules/CrdtDocument/useCases/captureActiveBranchReference.ts
+  s_a40848e8f8cca9::t_44bea67abfa396 14-20
+  s_a40848e8f8cca9::t_597ca8ec117fd5 1-12,21-23
+  s_a40848e8f8cca9::t_140cb2ce165848 13
+src/modules/AiRuntime/useCases/validateActionPayload.ts
+  s_a40848e8f8cca9::t_3acf2cea71a29d 403-411
+src/modules/Command/useCases/executableAppActionRegistry.ts
+  s_a40848e8f8cca9::t_c3de6158bfd963 844-866
+  s_a40848e8f8cca9::t_a9fc4579888bb6 843
+src/modules/AiRuntime/models/__tests__/RuntimeAction.spec.ts
+  s_a40848e8f8cca9::t_04e703b6b79a4c 26
+  s_a40848e8f8cca9::t_5f127072da6dbf 21,51-58,100,141-142
+src/modules/MIDI/useCases/index.ts
+  s_a40848e8f8cca9::t_c875990d3eaccf 120
+src/app/__tests__/bootstrap.spec.ts
+  s_a40848e8f8cca9::t_c99285969c3e98 201,394
+src/modules/AiRuntime/models/RuntimeAction.ts
+  s_a40848e8f8cca9::t_a5023c9a209dec 80,303,358
+src/modules/MIDI/useCases/midiNoteTransforms/__tests__/projectDrumPreviewCandidateNotes.spec.ts
+  s_a40848e8f8cca9::t_f3c547777b005c 1-53,58-76
+  s_a40848e8f8cca9::t_44bea67abfa396 54-57
+src/modules/AiRuntime/useCases/__tests__/drumPreviewBranchesPromptWorkflow.spec.ts
+  s_a40848e8f8cca9::t_833f741d2d391a 1-2,7,9,18,23-28,30-37,41-45,58-59,61-63,65-73,84,89-140,193-194,222-226,286-290,297,304-308,314-366,368-371,373-377,382,384,386-387,555,576,579,599-600
+  s_a40848e8f8cca9::t_9caf8e84857bd8 3-6,372
+  s_a40848e8f8cca9::t_e185a8c4298aca 8,10-17,19-22,29,39,46-57,60,64,74-83,141-144,146-176,178-188,190-192,195-221,227-285,291-296,298-303,309-313,367,378-381,383,385,388-554,556-575,577-578,580-582,588-598
+  s_a40848e8f8cca9::t_45785899252ffa 38,40
+  s_a40848e8f8cca9::t_82f76c459f3167 583-587
+  s_a40848e8f8cca9::t_44bea67abfa396 85-88,145,177,189
+src/utils/handlerContract.ts
+  s_a40848e8f8cca9::t_c875990d3eaccf 423-448,465-487,981-989
+  s_a40848e8f8cca9::t_140cb2ce165848 449-464
+src/modules/CrdtDocument/handlers/previewBranches/handleCreateDrumPreviewBranches.ts
+  s_a40848e8f8cca9::t_b8802b2c780746 7-22,40,43-46,48-50
+  s_a40848e8f8cca9::t_a19975b3e5144f 1-4,6,23-39,41-42,51-55
+  s_a40848e8f8cca9::t_4024b0453a02ab 5
+  s_a40848e8f8cca9::t_fc872d0ee7d84a 47
+src/modules/AiRuntime/useCases/describePlannedAction.ts
+  s_a40848e8f8cca9::t_acbdfdca48d130 235-243
+src/modules/CrdtDocument/useCases/crdtBranching/rollbackCreatedDrumPreviewBranches.ts
+  s_a40848e8f8cca9::t_4024b0453a02ab 1-22
+src/modules/AiRuntime/transformers/llmActionBridge.ts
+  s_a40848e8f8cca9::t_dacfa5615a7eb3 1342-1343,1345-1370
+  s_a40848e8f8cca9::t_df772eedc82b53 8,3136,3148,3159
+  s_a40848e8f8cca9::t_58fec82a7f7705 1344
+src/modules/CrdtDocument/useCases/index.ts
+  s_a40848e8f8cca9::t_1b4022b4d1a198 7
+  s_a40848e8f8cca9::t_a19975b3e5144f 5-6
+src/app/bootstrap.ts
+  s_a40848e8f8cca9::t_a19975b3e5144f 81,403
+src/modules/CrdtDocument/useCases/crdtBranching/isDrumPreviewBranchPlanApplied.ts
+  s_a40848e8f8cca9::t_1b4022b4d1a198 1-151
+src/modules/Command/useCases/__tests__/executableCommandRegistry.spec.ts
+  s_a40848e8f8cca9::t_6f4d42eddc2802 378-402
+  s_a40848e8f8cca9::t_a4b952a027dde7 6,1559-1563,2288
+  s_a40848e8f8cca9::t_0c0e426e277e85 377
+  s_a40848e8f8cca9::t_445577ccffa61d 1558
+src/modules/CrdtDocument/handlers/previewBranches/handleDeleteDrumPreviewBranches.ts
+  s_a40848e8f8cca9::t_a19975b3e5144f 1-14
+src/modules/CrdtDocument/useCases/crdtBranching/__tests__/runBranchDocumentTransition.spec.ts
+  s_a40848e8f8cca9::t_3416f7d837dba8 6
+  s_a40848e8f8cca9::t_e15bfec624ae18 1-5,7-78
+src/modules/AiRuntime/useCases/agentReference/bridgeGroundedLlmToolCalls.ts
+  s_a40848e8f8cca9::t_6b942d1440e00d 29-31,78,4046-4052,4062-4064,4066-4070,4072-4080,4340-4341,4446,4457
+  s_a40848e8f8cca9::t_44bea67abfa396 4053-4061,4065,4071
+  s_a40848e8f8cca9::t_c07ec1e765fff3 28
+src/modules/CrdtDocument/useCases/crdtBranching/runBranchTransition.ts
+  s_a40848e8f8cca9::t_3416f7d837dba8 1-122
+src/modules/CrdtDocument/useCases/crdtBranching/createDrumPreviewBranches.ts
+  s_a40848e8f8cca9::t_597ca8ec117fd5 1-4,6-28
+  s_a40848e8f8cca9::t_3416f7d837dba8 5
+src/modules/AiRuntime/useCases/parsePromptToActions.ts
+  s_a40848e8f8cca9::t_1dea8e1eaba723 22,126,135-136,161,255
+src/modules/AiRuntime/useCases/getPlannedActionAffectedIds.ts
+  s_a40848e8f8cca9::t_acbdfdca48d130 25-32
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "86c5d2c4c3d7d464b428d7e332a99b38ecbdc666",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
