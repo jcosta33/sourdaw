@@ -332,6 +332,15 @@ class AutomergeRepository {
         this.markDocumentIdentityMutation();
     }
 
+    /** Publish already-committed document identities/content to projections and peer sync. */
+    publishDocumentChanges(docIds: readonly DocId[]): void {
+        for (const docId of new Set(docIds)) {
+            if (this.docs.has(docId)) {
+                this.notifyListeners(docId);
+            }
+        }
+    }
+
     /**
      * Apply a mutation to a document.
      * This is the primary mutation entry point — all CRDT writes go through here.

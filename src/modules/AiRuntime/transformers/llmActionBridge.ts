@@ -5,6 +5,7 @@ import { wouldCreateRoutingCycle } from '#/utils/routingCycle';
 import { type ArticulationTransferCapability } from '../models/ArticulationTransferCapability';
 import { type BackingVocalPlateCapability } from '../models/BackingVocalPlateCapability';
 import { type BassProcessingCopyCapability } from '../models/BassProcessingCopyCapability';
+import { type DrumPreviewBranchesCapability } from '../models/DrumPreviewBranchesCapability';
 import { type DrumRoutingCapability } from '../models/DrumRoutingCapability';
 import { type MidiOverlapTransformCapability } from '../models/MidiOverlapTransformCapability';
 import { type ProjectContext } from '../models/ProjectContext';
@@ -1335,6 +1336,35 @@ function bridgeToolCall({
         return {
             type: 'removeShortMidiOverlaps',
             payload: { clipId: target.clip.id, maximumOverlapMs: args.maximumOverlapMs },
+        };
+    }
+
+    if (call.name === 'createDrumPreviewBranches') {
+        const varyingRoles = args.varyingRoles;
+        const sectionMatches = sectionSignatures.filter(({ sectionId }) => sectionId === args.sectionId);
+        if (
+            !hasExactKeys(args, ['sectionId', 'candidateCount', 'varyingRoles']) ||
+            typeof args.sectionId !== 'string' ||
+            sectionMatches.length !== 1 ||
+            args.candidateCount !== 3 ||
+            !Array.isArray(varyingRoles) ||
+            varyingRoles.length !== 2 ||
+            varyingRoles[0] !== 'snare' ||
+            varyingRoles[1] !== 'hi-hat'
+        ) {
+            return rejection(
+                index,
+                call.name,
+                'Expected one exact section, exactly three candidates, and ordered Snare then Hi-Hat variation roles'
+            );
+        }
+        return {
+            type: 'createDrumPreviewBranches',
+            payload: {
+                sectionId: args.sectionId,
+                candidateCount: 3,
+                varyingRoles: ['snare', 'hi-hat'],
+            },
         };
     }
 
@@ -3103,6 +3133,7 @@ export function buildLlmActionUserMessage({
     backingVocalPlateCapability,
     bassProcessingCopyCapability,
     drumRoutingCapability,
+    drumPreviewBranchesCapability,
     midiOverlapTransformCapability,
     sidechainRoutingCapability,
     wholeProjectVibeMixCapability,
@@ -3114,6 +3145,7 @@ export function buildLlmActionUserMessage({
     backingVocalPlateCapability?: BackingVocalPlateCapability;
     bassProcessingCopyCapability?: BassProcessingCopyCapability;
     drumRoutingCapability?: DrumRoutingCapability;
+    drumPreviewBranchesCapability?: DrumPreviewBranchesCapability;
     midiOverlapTransformCapability?: MidiOverlapTransformCapability;
     sidechainRoutingCapability?: SidechainRoutingCapability;
     wholeProjectVibeMixCapability?: WholeProjectVibeMixCapability;
@@ -3124,6 +3156,7 @@ export function buildLlmActionUserMessage({
         ...(backingVocalPlateCapability ? { backingVocalPlateCapability } : {}),
         ...(bassProcessingCopyCapability ? { bassProcessingCopyCapability } : {}),
         ...(drumRoutingCapability ? { drumRoutingCapability } : {}),
+        ...(drumPreviewBranchesCapability ? { drumPreviewBranchesCapability } : {}),
         ...(midiOverlapTransformCapability ? { midiOverlapTransformCapability } : {}),
         ...(sidechainRoutingCapability ? { sidechainRoutingCapability } : {}),
         ...(wholeProjectVibeMixCapability ? { wholeProjectVibeMixCapability } : {}),

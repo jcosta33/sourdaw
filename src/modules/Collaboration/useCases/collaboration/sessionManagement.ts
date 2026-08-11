@@ -15,6 +15,7 @@ import {
     preserveBranchStateForSession,
     replaceBranchState,
     restoreBranchStateAfterSession,
+    waitForCrdtDocumentTransition,
 } from '#/modules/CrdtDocument/useCases';
 import { transportStore } from '#/modules/Transport/stores';
 import { bytesToBase64 } from '#/utils/base64';
@@ -172,11 +173,28 @@ function startBranchSync(isHost: boolean): void {
         if (!hasCrdtDoc(DOC_BRANCHES)) {
             return;
         }
-        mutateCrdtDoc({
-            id: DOC_BRANCHES,
-            changeFn: (doc: Record<string, unknown>) => {
-                doc.branches = state.branches;
-            },
+        const branches = structuredClone(state.branches);
+        function writeBranchMetadata(): void {
+            if (!hasCrdtDoc(DOC_BRANCHES)) {
+                return;
+            }
+            mutateCrdtDoc({
+                id: DOC_BRANCHES,
+                changeFn: (doc: Record<string, unknown>) => {
+                    doc.branches = branches;
+                },
+            });
+        }
+        const transition = waitForCrdtDocumentTransition(DOC_BRANCHES);
+        if (!transition) {
+            writeBranchMetadata();
+            return;
+        }
+        void transition.then((outcome) => {
+            if (outcome === 'committed') {
+                writeBranchMetadata();
+            }
+            return undefined;
         });
     });
 

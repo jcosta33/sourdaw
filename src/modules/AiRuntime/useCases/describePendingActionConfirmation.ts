@@ -10,6 +10,7 @@ import { getBackingVocalPlatePromptScope } from './agentReference/getBackingVoca
 import { getBassProcessingCopyPromptScope } from './agentReference/getBassProcessingCopyPromptScope';
 import { getBulkDeviceInsertionTrackScope } from './agentReference/getBulkDeviceInsertionTrackScope';
 import { getDeviceParameterPromptScope } from './agentReference/getDeviceParameterPromptScope';
+import { getDrumPreviewBranchesPromptScope } from './agentReference/getDrumPreviewBranchesPromptScope';
 import { getDrumRoutingPromptScope } from './agentReference/getDrumRoutingPromptScope';
 import { getMidiOverlapTransformPromptScope } from './agentReference/getMidiOverlapTransformPromptScope';
 import { getMutedEmptyTrackDeletionScope } from './agentReference/getMutedEmptyTrackDeletionScope';
@@ -147,6 +148,9 @@ function getProtectedUnchangedTracks(
         drumRoutingScope.status === 'request'
             ? [{ id: drumRoutingScope.protectedReturnId, name: drumRoutingScope.protectedReturnName }]
             : [];
+    const drumPreviewBranchesScope = getDrumPreviewBranchesPromptScope(prompt, context);
+    const drumPreviewBranchProtections =
+        drumPreviewBranchesScope.status === 'request' ? drumPreviewBranchesScope.protectedObjects : [];
     const sidechainRoutingScope = getSidechainRoutingPromptScope(prompt, context);
     const sidechainRoutingProtections =
         sidechainRoutingScope.status === 'request'
@@ -182,6 +186,7 @@ function getProtectedUnchangedTracks(
         ...protectedParameters,
         ...planProtections,
         ...drumRoutingProtections,
+        ...drumPreviewBranchProtections,
         ...sidechainRoutingProtections,
         ...articulationProtections,
         ...backingVocalPlateProtections,

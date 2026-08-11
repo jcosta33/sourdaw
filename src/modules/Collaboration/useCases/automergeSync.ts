@@ -22,6 +22,7 @@ import {
     getCrdtDocIds,
     persistCrdtProject,
     sanitizeIncomingCrdtDocument,
+    waitForCrdtDocumentTransition,
     DOC_PREFIX_ROOT,
     DOC_BRANCHES,
 } from '#/modules/CrdtDocument/useCases';
@@ -250,6 +251,17 @@ export class AutomergeSync {
         // not be able to mutate the project via the sync channel.
         if (this.hooks.canApplySync && !this.hooks.canApplySync(peerId, docId)) {
             logger.warn('[AutomergeSync] Dropping sync rejected by canApplySync', peerId, docId);
+            return;
+        }
+
+        const transition = waitForCrdtDocumentTransition(docId);
+        if (transition) {
+            void transition.then((outcome) => {
+                if (outcome === 'committed') {
+                    this.receiveSync({ peerId, docId, syncMessageBase64 });
+                }
+                return undefined;
+            });
             return;
         }
 
