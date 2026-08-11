@@ -1,0 +1,29 @@
+src/modules/GrandBoule/useCases/normalizeGrandBoulePersistedParamValue.ts
+  s_bc88af7d3b054c::t_46aafd08f37a88 1-26
+src/modules/GrandBoule/presentations/views/__tests__/GrandBoulePanel.spec.tsx
+  s_bc88af7d3b054c::t_fd16a6a316e9ce 55-57,60-78
+  s_bc88af7d3b054c::t_4045b6d6af8c46 58
+  s_bc88af7d3b054c::t_f9cacf08a0af4f 1,32-44,54,59,79,121-126,132-135
+src/modules/GrandBoule/useCases/grandBouleParamBridge/helpers.ts
+  s_bc88af7d3b054c::t_46aafd08f37a88 8,42-46
+src/modules/GrandBoule/useCases/__tests__/grandBouleParameterPersistence.integration.spec.ts
+  s_bc88af7d3b054c::t_f9cacf08a0af4f 293-305
+src/modules/GrandBoule/useCases/hydrateGrandBouleConfigFromProject.ts
+  s_bc88af7d3b054c::t_46aafd08f37a88 7,47-51
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "aa059e1ed4fc4c93cea1e973892ceccf3b31cb91",
+  "prompts": {},
+  "sessions": {
+    "s_bc88af7d3b054c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f9b4a-11a2-7f61-8dfb-76eed0eb2a9c",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
