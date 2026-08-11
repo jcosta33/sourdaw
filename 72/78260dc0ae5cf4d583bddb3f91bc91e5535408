@@ -1,0 +1,25 @@
+server/collab-server.ts
+  s_bc88af7d3b054c::t_14c6ca0ff5cf53 90-95,402-403,405-413
+docs/architecture/06-crdt-collaboration.md
+  s_bc88af7d3b054c::t_14c6ca0ff5cf53 75
+server/__tests__/collab-server.spec.ts
+  s_bc88af7d3b054c::t_e6608effb19c5a 45,266-284
+  s_bc88af7d3b054c::t_387d8d0402431c 285
+  s_bc88af7d3b054c::t_e6ee0fc9c0fc95 286-287
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "7278260dc0ae5cf4d583bddb3f91bc91e5535408",
+  "prompts": {},
+  "sessions": {
+    "s_bc88af7d3b054c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f9b4a-11a2-7f61-8dfb-76eed0eb2a9c",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
