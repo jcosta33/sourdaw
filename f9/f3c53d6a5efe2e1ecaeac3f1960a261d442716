@@ -1,0 +1,23 @@
+src/modules/AiRuntime/useCases/__tests__/drumBusPromptWorkflow.spec.ts
+  s_a40848e8f8cca9::t_87ed56000c33b4 39,1283-1385
+  s_a40848e8f8cca9::t_a0357a097374d6 1386,1388-1449
+  s_a40848e8f8cca9::t_2503bc25acf441 1387
+src/modules/AiRuntime/useCases/agentReference/getSidechainRoutingPromptScope.ts
+  s_a40848e8f8cca9::t_11eb1acd04f466 24-27,59
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "f9f3c53d6a5efe2e1ecaeac3f1960a261d442716",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
