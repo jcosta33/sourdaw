@@ -2285,7 +2285,7 @@ describe('executable command registry', () => {
             getArrangementHandlers(),
             getAudioRenderingHandlers(),
             getAutomationHandlers(),
-            getDrumPreviewBranchHandlers(),
+            getDrumPreviewBranchHandlers({ canMutateBranchMetadata: () => true }),
             getMidiNoteTransformHandlers(),
             getTransportHandlers(),
         ];

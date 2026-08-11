@@ -170,6 +170,7 @@ vi.mock('#/modules/BrowserAi/useCases', () => ({
 }));
 
 vi.mock('#/modules/Collaboration/useCases', () => ({
+    canMutateBranchMetadata: () => true,
     getCollaborationHandlers: sentinelHandlers('Collaboration'),
     leaveSession: noop,
 }));

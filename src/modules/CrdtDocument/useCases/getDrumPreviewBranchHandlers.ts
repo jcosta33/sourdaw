@@ -1,9 +1,13 @@
-import { handleCreateDrumPreviewBranches } from '../handlers/previewBranches/handleCreateDrumPreviewBranches';
-import { handleDeleteDrumPreviewBranches } from '../handlers/previewBranches/handleDeleteDrumPreviewBranches';
+import { createDrumPreviewBranchesHandler } from '../handlers/previewBranches/handleCreateDrumPreviewBranches';
+import { createDeleteDrumPreviewBranchesHandler } from '../handlers/previewBranches/handleDeleteDrumPreviewBranches';
 
-export function getDrumPreviewBranchHandlers() {
+type GetDrumPreviewBranchHandlersInput = {
+    canMutateBranchMetadata: () => boolean;
+};
+
+export function getDrumPreviewBranchHandlers(input: GetDrumPreviewBranchHandlersInput) {
     return {
-        createDrumPreviewBranches: handleCreateDrumPreviewBranches,
-        deleteDrumPreviewBranches: handleDeleteDrumPreviewBranches,
+        createDrumPreviewBranches: createDrumPreviewBranchesHandler(input),
+        deleteDrumPreviewBranches: createDeleteDrumPreviewBranchesHandler(input),
     };
 }

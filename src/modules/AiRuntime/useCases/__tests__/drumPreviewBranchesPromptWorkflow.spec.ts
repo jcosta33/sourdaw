@@ -5,6 +5,8 @@ import {
     flushAutomergeStorageWrites,
 } from '#/infra/store/storage/createAutomergeStorage';
 import { markerStore, trackStore, type Clip, type Track } from '#/modules/Arrangement/stores';
+import { collaborationStore } from '#/modules/Collaboration/stores';
+import { canMutateBranchMetadata } from '#/modules/Collaboration/useCases';
 import { clearHandlerRegistry, registerHandlerMap, undoStore } from '#/modules/Command/stores';
 import {
     clearUndoHistory,
@@ -287,6 +289,20 @@ function expectedAffectedIds(action: CreatePreviewAction): string[] {
     ]);
 }
 
+function setCollaborationAuthority({ isEnabled, isHost }: { isEnabled: boolean; isHost: boolean }): void {
+    collaborationStore.set({
+        isEnabled,
+        sessionId: isEnabled ? 'session-ex05' : null,
+        localPeerId: isEnabled ? 'peer-ex05' : null,
+        localName: 'EX-05 Test',
+        localColor: '#ffffff',
+        isHost,
+        peers: [],
+        connectionStatus: isEnabled ? 'connected' : 'disconnected',
+        error: null,
+    });
+}
+
 describe('EX-05 drum preview-branch prompt workflow', () => {
     beforeEach(() => {
         vi.clearAllMocks();
@@ -309,10 +325,11 @@ describe('EX-05 drum preview-branch prompt workflow', () => {
         createCrdtDoc('root');
         registerCrdtStorageRuntime();
         clearHandlerRegistry();
-        registerHandlerMap(getDrumPreviewBranchHandlers());
+        registerHandlerMap(getDrumPreviewBranchHandlers({ canMutateBranchMetadata }));
         clearUndoHistory();
         resetActionReplayAuthority();
         setActionHistoryMetadataPort(noActionHistoryMetadataPort);
+        setCollaborationAuthority({ isEnabled: false, isHost: false });
         clearAiHistory();
         clearPendingActionConfirmations();
         trackStore.set({
@@ -576,7 +593,30 @@ describe('EX-05 drum preview-branch prompt workflow', () => {
         ).not.toContain('Outcome: committed');
     });
 
+    it('rejects preview-branch creation when the local collaboration peer is not the host', async () => {
+        setCollaborationAuthority({ isEnabled: true, isHost: false });
+        const sourceDocIdsBefore = getCrdtDocIds().toSorted();
+        const sourceBranchesBefore = structuredClone(branchStore.value);
+
+        await sendChatMessage(PROMPT);
+        const confirmationId = getConfirmationId();
+        const result = await confirmPendingChatActions({ confirmationId });
+
+        expect(result).toMatchObject({
+            status: 'failed',
+            reason: expect.stringContaining('Only the collaboration host may change preview-branch metadata'),
+        });
+        expect(getPendingActionConfirmation(confirmationId)?.status).toBe('failed');
+        expect(getCrdtDocIds().toSorted()).toEqual(sourceDocIdsBefore);
+        expect(branchStore.value).toEqual(sourceBranchesBefore);
+        expect(undoStore.value?.past).toHaveLength(0);
+        expect(
+            chatStore.value?.messages.find((message) => message.pendingActionConfirmationId === confirmationId)?.content
+        ).not.toContain('Outcome: committed');
+    });
+
     it('commits against the exact host-owned branch metadata delta during an active collaboration projection', async () => {
+        setCollaborationAuthority({ isEnabled: true, isHost: true });
         createCrdtDoc(DOC_BRANCHES);
         mutateCrdtDoc<{ branches?: unknown }>({
             id: DOC_BRANCHES,
@@ -635,6 +675,22 @@ describe('EX-05 drum preview-branch prompt workflow', () => {
         expect(branchStore.value).toEqual(branchStateBeforeUndo);
         expect(getCrdtDocIds().toSorted()).toEqual(docIdsBeforeUndo);
         expect(readPlainDoc(editedBranch.rootDocId)).toMatchObject({ collaboratorMarker: 'keep' });
+        expect(undoStore.value?.past).toHaveLength(1);
+        expect(undoStore.value?.future).toHaveLength(0);
+    });
+
+    it('keeps the committed candidates and whole history entry when a collaboration joiner attempts undo', async () => {
+        await sendChatMessage(PROMPT);
+        const confirmationId = getConfirmationId();
+        await confirmPendingChatActions({ confirmationId });
+        const branchStateBeforeUndo = structuredClone(branchStore.value);
+        const docIdsBeforeUndo = getCrdtDocIds().toSorted();
+        setCollaborationAuthority({ isEnabled: true, isHost: false });
+
+        await undo();
+
+        expect(branchStore.value).toEqual(branchStateBeforeUndo);
+        expect(getCrdtDocIds().toSorted()).toEqual(docIdsBeforeUndo);
         expect(undoStore.value?.past).toHaveLength(1);
         expect(undoStore.value?.future).toHaveLength(0);
     });

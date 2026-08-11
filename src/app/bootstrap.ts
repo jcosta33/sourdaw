@@ -59,7 +59,7 @@ import {
 } from '#/modules/Automation/useCases';
 import { updateBacteriaMeters } from '#/modules/Bacteria/stores';
 import { initBrowserAi, initRaveModels, getRaveHandlers } from '#/modules/BrowserAi/useCases';
-import { getCollaborationHandlers, leaveSession } from '#/modules/Collaboration/useCases';
+import { canMutateBranchMetadata, getCollaborationHandlers, leaveSession } from '#/modules/Collaboration/useCases';
 import { registerHandlerMap } from '#/modules/Command/stores';
 import {
     executeAppAction,
@@ -400,7 +400,7 @@ registerHandlerMap(getAiMidiHandlers());
 registerHandlerMap(getAiOrganizationHandlers());
 registerHandlerMap(getChordTrackHandlers());
 registerHandlerMap(getMidiNoteTransformHandlers());
-registerHandlerMap(getDrumPreviewBranchHandlers());
+registerHandlerMap(getDrumPreviewBranchHandlers({ canMutateBranchMetadata }));
 registerHandlerMap(getMidiGrooveHandlers());
 registerHandlerMap(getControlSurfaceHandlers());
 registerHandlerMap(getScratchPadHandlers());
