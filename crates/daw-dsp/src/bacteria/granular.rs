@@ -17,6 +17,7 @@ pub enum GrainWindow {
 struct Grain {
     active: bool,
     read_pos: f32,
+    samples_behind_write_head: f32,
     size_samples: usize,
     progress: usize,
     pitch_ratio: f32,
@@ -28,6 +29,7 @@ impl Grain {
         Self {
             active: false,
             read_pos: 0.0,
+            samples_behind_write_head: 0.0,
             size_samples: 0,
             progress: 0,
             pitch_ratio: 1.0,
@@ -118,6 +120,11 @@ impl GranularProcessor {
         if !self.freeze {
             self.buffer[self.write_pos] = input;
             self.write_pos = (self.write_pos + 1) % self.buffer_size;
+            for grain in &mut self.grains {
+                if grain.active {
+                    grain.samples_behind_write_head += 1.0;
+                }
+            }
         }
 
         // Spawn new grains based on density
@@ -133,13 +140,21 @@ impl GranularProcessor {
             if !grain.active {
                 continue;
             }
+            if grain.samples_behind_write_head < 0.0 {
+                grain.active = false;
+                continue;
+            }
 
             let win = grain.window_value();
-            let read_idx = grain.read_pos as usize % self.buffer_size;
-            let sample = self.buffer[read_idx];
+            let read_idx = grain.read_pos.floor() as usize % self.buffer_size;
+            let next_idx = (read_idx + 1) % self.buffer_size;
+            let fraction = grain.read_pos.fract();
+            let sample =
+                self.buffer[read_idx] + (self.buffer[next_idx] - self.buffer[read_idx]) * fraction;
             grain_sum += sample * win;
 
-            grain.read_pos += grain.pitch_ratio;
+            grain.read_pos = (grain.read_pos + grain.pitch_ratio) % self.buffer_size as f32;
+            grain.samples_behind_write_head -= grain.pitch_ratio;
             grain.progress += 1;
             if grain.progress >= grain.size_samples {
                 grain.active = false;
@@ -153,16 +168,29 @@ impl GranularProcessor {
     fn spawn_grain(&mut self) {
         let grain_size = (self.grain_size_ms * 0.001 * self.sample_rate) as usize;
         let offset = (self.pos_offset_ms * 0.001 * self.sample_rate) as usize;
+        let offset = offset.min(self.buffer_size - 1);
         let pitch_ratio = 2.0_f32.powf(self.pitch_semitones / 12.0);
 
         // Find inactive grain slot
         for grain in &mut self.grains {
             if !grain.active {
                 grain.active = true;
-                grain.size_samples = grain_size.max(1);
+                // Preserve Position as the exact start point. When the play
+                // head would catch the causal recording frontier, shorten the
+                // grain so its window still closes instead of reading old ring
+                // history or ending abruptly.
+                let max_causal_size = if self.freeze {
+                    ((offset as f32 / pitch_ratio).floor() as usize).saturating_add(1)
+                } else if pitch_ratio > 1.0 {
+                    ((offset as f32 / (pitch_ratio - 1.0)).floor() as usize).saturating_add(1)
+                } else {
+                    grain_size
+                };
+                grain.size_samples = grain_size.max(1).min(max_causal_size.max(1));
                 grain.progress = 0;
                 grain.pitch_ratio = pitch_ratio;
                 grain.window = self.window;
+                grain.samples_behind_write_head = offset as f32;
 
                 // Read position: `offset` samples back from the most recently
                 // written sample.
@@ -196,7 +224,6 @@ impl GranularProcessor {
                 // at `offset == buffer_size` the old branch reduced to
                 // `write_pos` for every `write_pos`, and so does this
                 // expression. Position 2000 ms renders what it always did.
-                let offset = offset.min(self.buffer_size - 1);
                 let start = (self.write_pos + self.buffer_size - 1 - offset) % self.buffer_size;
                 grain.read_pos = start as f32;
                 break;
@@ -420,6 +447,110 @@ mod tests {
             "the frozen grain rendered {energy} total magnitude across \
              {FROZEN_GRAIN_SAMPLES} samples of a ramp that reaches {newest}; it is not \
              replaying anything."
+        );
+    }
+
+    fn processor_with_poisoned_history(
+        recent_silence_samples: usize,
+        grain_size_ms: f32,
+        position_ms: f32,
+        pitch_semitones: f32,
+        freeze: bool,
+    ) -> GranularProcessor {
+        let mut processor = quiet_spawner();
+        processor.buffer.fill(1.0);
+        processor.set_param("grainMix", 1.0);
+        processor.set_param("grainSize", grain_size_ms);
+        processor.set_param("grainPosOffset", position_ms);
+        processor.set_param("grainPitch", pitch_semitones);
+        for _ in 0..recent_silence_samples {
+            processor.process_sample(0.0);
+        }
+        processor.set_param("grainFreeze", if freeze { 1.0 } else { 0.0 });
+        processor.spawn_grain();
+        processor
+    }
+
+    #[test]
+    fn a_pitched_live_grain_never_reads_ahead_into_old_ring_history() {
+        let mut processor = processor_with_poisoned_history(128, 200.0, 0.0, 0.1, false);
+        assert_eq!(processor.grains[0].size_samples, 1);
+        let peak = (0..9_600)
+            .map(|_| processor.process_sample(0.0).abs())
+            .fold(0.0_f32, f32::max);
+
+        assert!(
+            peak <= f32::EPSILON,
+            "a +0.1 semitone grain at Position 0 read poisoned ring history at peak {peak}"
+        );
+    }
+
+    #[test]
+    fn causal_room_preserves_the_requested_grain_size() {
+        let processor = processor_with_poisoned_history(4_801, 80.0, 100.0, 12.0, false);
+
+        assert_eq!(processor.grains[0].size_samples, 3_840);
+    }
+
+    #[test]
+    fn a_frozen_grain_never_reads_past_the_newest_captured_sample() {
+        let offset_samples = 960;
+        let mut processor =
+            processor_with_poisoned_history(offset_samples + 1, 40.0, 20.0, 0.0, true);
+        assert_eq!(processor.grains[0].size_samples, offset_samples + 1);
+        let peak = (0..1_920)
+            .map(|_| processor.process_sample(0.0).abs())
+            .fold(0.0_f32, f32::max);
+
+        assert!(
+            peak <= f32::EPSILON,
+            "a frozen grain read past its {offset_samples}-sample capture window at peak {peak}"
+        );
+    }
+
+    #[test]
+    fn freezing_an_active_grain_still_enforces_the_capture_frontier() {
+        let mut processor = processor_with_poisoned_history(961, 40.0, 20.0, 0.0, false);
+        assert_eq!(processor.grains[0].size_samples, 1_920);
+        processor.set_param("grainFreeze", 1.0);
+
+        let peak = (0..1_920)
+            .map(|_| processor.process_sample(0.0).abs())
+            .fold(0.0_f32, f32::max);
+
+        assert!(
+            peak <= f32::EPSILON,
+            "freezing an active grain let it read poisoned history at peak {peak}"
+        );
+    }
+
+    #[test]
+    fn a_fractional_pitched_grain_interpolates_between_ring_samples() {
+        let mut processor = quiet_spawner();
+        for (index, sample) in processor.buffer.iter_mut().enumerate() {
+            *sample = index as f32;
+        }
+        processor.write_pos = 4_000;
+        processor.set_param("grainMix", 1.0);
+        processor.set_param("grainSize", 20.0);
+        processor.set_param("grainPosOffset", 20.0);
+        processor.set_param("grainPitch", -12.0);
+        processor.set_param("grainFreeze", 1.0);
+        processor.spawn_grain();
+
+        let progress = 479;
+        let rendered = (0..=progress)
+            .map(|_| processor.process_sample(0.0))
+            .last()
+            .expect("the grain rendered no samples");
+        let phase = progress as f32 / FROZEN_GRAIN_SAMPLES as f32;
+        let window = 0.5 * (1.0 - (2.0 * PI * phase).cos());
+        let start = 4_000.0 - 1.0 - 960.0;
+        let expected = (start + progress as f32 * 0.5) * window;
+
+        assert!(
+            (rendered - expected).abs() <= 1e-3,
+            "fractional read rendered {rendered}; linear interpolation requires {expected}"
         );
     }
 }
