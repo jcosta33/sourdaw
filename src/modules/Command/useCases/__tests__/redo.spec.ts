@@ -87,13 +87,22 @@ describe('redo', () => {
         clearHandlerRegistry();
     });
 
-    it('replays the original action with normal macro-recording semantics and moves it back to past', async () => {
+    it('replays the original action without creating a second undo entry and records one macro action', async () => {
         const entry = actionEntry();
         mocks.undoStoreValue.value = { past: [], future: [entry] };
 
         await redo();
 
-        expect(mocks.executeAppAction).toHaveBeenCalledWith({ type: 'togglePlayback' });
+        expect(mocks.executeAppAction).toHaveBeenCalledWith(
+            { type: 'togglePlayback' },
+            {
+                skipUndo: true,
+                skipMacroRecording: true,
+                source: 'manual',
+            }
+        );
+        expect(mocks.recordAction).toHaveBeenCalledOnce();
+        expect(mocks.recordAction).toHaveBeenCalledWith(entry.action);
         expect(mocks.undoStoreSet).toHaveBeenCalledWith({
             past: [entry],
             future: [],
@@ -123,6 +132,7 @@ describe('redo', () => {
         await redo();
 
         expect(mocks.executeAppAction).toHaveBeenCalledWith(entry.action, {
+            skipUndo: true,
             skipMacroRecording: true,
             source: 'ai',
         });
@@ -211,7 +221,11 @@ describe('redo', () => {
 
         expect(mocks.executeAppActionBatch).not.toHaveBeenCalled();
         expect(mocks.executeAppAction).toHaveBeenCalledTimes(1);
-        expect(mocks.executeAppAction).toHaveBeenCalledWith(singleton.action);
+        expect(mocks.executeAppAction).toHaveBeenCalledWith(singleton.action, {
+            skipUndo: true,
+            skipMacroRecording: true,
+            source: 'manual',
+        });
         expect(mocks.undoStoreSet).toHaveBeenLastCalledWith({
             past: [expect.not.objectContaining({ groupId: 'legacy-group' })],
             future: [expect.not.objectContaining({ groupId: 'legacy-group' })],
@@ -295,7 +309,11 @@ describe('redo', () => {
 
         await redo();
 
-        expect(mocks.executeAppAction).toHaveBeenCalledWith(behind.action);
+        expect(mocks.executeAppAction).toHaveBeenCalledWith(behind.action, {
+            skipUndo: true,
+            skipMacroRecording: true,
+            source: 'manual',
+        });
         expect(mocks.undoStoreSet).toHaveBeenCalledWith({ past: [behind], future: [] });
         expect(mocks.undoTreeMoveTo).toHaveBeenCalledWith(behind.id);
     });

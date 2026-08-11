@@ -95,21 +95,12 @@ async function executeRedo(entry: UndoEntry): Promise<RedoOutcome> {
     }
 
     try {
-        if (entry.redoAction) {
-            await executeAppAction(entry.redoAction, {
-                skipUndo: true,
-                skipMacroRecording: true,
-                source: entry.source,
-            });
-            recordRedoAction(entry);
-        } else if (entry.source === 'ai') {
-            await executeAppAction(entry.action, {
-                skipMacroRecording: true,
-                source: 'ai',
-            });
-        } else {
-            await executeAppAction(entry.action);
-        }
+        await executeAppAction(entry.redoAction ?? entry.action, {
+            skipUndo: true,
+            skipMacroRecording: true,
+            source: entry.source,
+        });
+        recordRedoAction(entry);
         return { status: 'applied' };
     } catch (error) {
         if (error instanceof AppActionConflictError) {
