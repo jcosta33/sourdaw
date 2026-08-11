@@ -1,4 +1,6 @@
-import { WebSocketServer, WebSocket, type RawData } from 'ws';
+import { timingSafeEqual } from 'node:crypto';
+
+import { WebSocketServer, WebSocket, type RawData, type VerifyClientCallbackSync } from 'ws';
 
 type Peer = {
     ws: WebSocket;
@@ -45,10 +47,83 @@ type JsonObject = { [key: string]: unknown };
 const sessions = new Map<string, Session>();
 const peerToSession = new Map<WebSocket, Peer>();
 const socketLiveness = new Map<WebSocket, boolean>();
+const socketRateLimits = new Map<WebSocket, { count: number; startedAt: number }>();
 
-const PORT = parseInt(process.env.PORT ?? '8787', 10);
-const parsedHeartbeatMs = Number(process.env.COLLAB_HEARTBEAT_MS ?? '30000');
-const HEARTBEAT_MS = Number.isInteger(parsedHeartbeatMs) && parsedHeartbeatMs > 0 ? parsedHeartbeatMs : 30_000;
+function readIntegerEnv(input: { name: string; fallback: number; min: number; max: number }): number {
+    const rawValue = process.env[input.name];
+    if (rawValue === undefined) {
+        return input.fallback;
+    }
+
+    const value = Number(rawValue);
+    if (!Number.isInteger(value) || value < input.min || value > input.max) {
+        console.error(`Invalid ${input.name}: expected an integer from ${input.min} to ${input.max}`);
+        process.exit(1);
+    }
+
+    return value;
+}
+
+function readAuthToken(): string {
+    const token = process.env.COLLAB_AUTH_TOKEN;
+    if (token === undefined || !/^[A-Za-z0-9_-]{32,128}$/.test(token)) {
+        console.error('Invalid COLLAB_AUTH_TOKEN: expected 32-128 base64url characters');
+        process.exit(1);
+    }
+
+    return token;
+}
+
+const AUTH_TOKEN = readAuthToken();
+const HOST = process.env.COLLAB_HOST?.trim() || '127.0.0.1';
+const PORT = readIntegerEnv({ name: 'PORT', fallback: 8787, min: 1, max: 65_535 });
+const HEARTBEAT_MS = readIntegerEnv({ name: 'COLLAB_HEARTBEAT_MS', fallback: 30_000, min: 10, max: 300_000 });
+const MAX_PAYLOAD_BYTES = readIntegerEnv({
+    name: 'COLLAB_MAX_PAYLOAD_BYTES',
+    fallback: 16 * 1024 * 1024,
+    min: 1024,
+    max: 64 * 1024 * 1024,
+});
+const RATE_LIMIT_PER_SECOND = readIntegerEnv({
+    name: 'COLLAB_RATE_LIMIT_PER_SECOND',
+    fallback: 120,
+    min: 1,
+    max: 10_000,
+});
+
+function isAuthorized(protocolHeader: string | string[] | undefined): boolean {
+    if (typeof protocolHeader !== 'string') {
+        return false;
+    }
+
+    const protocols = protocolHeader.split(',').map((value) => value.trim());
+    if (protocols.length !== 2 || protocols[0] !== 'sourdaw') {
+        return false;
+    }
+
+    const providedToken = protocols[1];
+    const expected = Buffer.from(AUTH_TOKEN);
+    const provided = Buffer.from(providedToken);
+    return expected.length === provided.length && timingSafeEqual(expected, provided);
+}
+
+const verifyClient: VerifyClientCallbackSync = ({ req }) => isAuthorized(req.headers['sec-websocket-protocol']);
+
+function selectProtocol(protocols: Set<string>): string | false {
+    return protocols.has('sourdaw') ? 'sourdaw' : false;
+}
+
+function exceedsMessageRate(ws: WebSocket): boolean {
+    const now = Date.now();
+    const rate = socketRateLimits.get(ws);
+    if (!rate || now - rate.startedAt >= 1_000) {
+        socketRateLimits.set(ws, { count: 1, startedAt: now });
+        return false;
+    }
+
+    rate.count += 1;
+    return rate.count > RATE_LIMIT_PER_SECOND;
+}
 
 function is_json_object(value: unknown): value is JsonObject {
     if (typeof value !== 'object') {
@@ -491,21 +566,34 @@ function handleMessage(ws: WebSocket, raw: string): void {
     }
 }
 
-const wss = new WebSocketServer({ port: PORT });
+const wss = new WebSocketServer({
+    handleProtocols: selectProtocol,
+    host: HOST,
+    maxPayload: MAX_PAYLOAD_BYTES,
+    port: PORT,
+    verifyClient,
+});
 
 wss.on('connection', (ws) => {
     socketLiveness.set(ws, true);
+    socketRateLimits.set(ws, { count: 0, startedAt: Date.now() });
 
     ws.on('pong', () => {
         socketLiveness.set(ws, true);
     });
 
     ws.on('message', (data) => {
+        if (exceedsMessageRate(ws)) {
+            ws.close(1008, 'Message rate exceeded');
+            return;
+        }
+
         handleMessage(ws, rawDataToString(data));
     });
 
     ws.on('close', () => {
         socketLiveness.delete(ws);
+        socketRateLimits.delete(ws);
         const peer = peerToSession.get(ws);
         if (peer) {
             handleLeave(ws, peer.peerId, peer.sessionId);
@@ -514,6 +602,7 @@ wss.on('connection', (ws) => {
 
     ws.on('error', () => {
         socketLiveness.delete(ws);
+        socketRateLimits.delete(ws);
         const peer = peerToSession.get(ws);
         if (peer) {
             handleLeave(ws, peer.peerId, peer.sessionId);
@@ -541,4 +630,11 @@ wss.on('close', () => {
     clearInterval(heartbeat);
 });
 
-console.log(`Sourdaw Collaboration Server running on ws://localhost:${PORT}`);
+wss.on('error', (error: NodeJS.ErrnoException) => {
+    console.error(`Collaboration server failed to start: ${error.code ?? error.message}`);
+    process.exit(1);
+});
+
+wss.on('listening', () => {
+    console.log(`Sourdaw Collaboration Server running on ws://${HOST}:${PORT}`);
+});
