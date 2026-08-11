@@ -1,0 +1,21 @@
+src/modules/TimelineEditor/presentations/views/TempoEditor.tsx
+  s_bc88af7d3b054c::t_f4faf5c2ce2f1e 126-131,137-139
+src/modules/TimelineEditor/presentations/views/__tests__/TempoEditor.spec.tsx
+  s_bc88af7d3b054c::t_245485db21e73f 246-250,252,254-256
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "4d2d2c469f83e67cc18e20c25de75769ef6a67db",
+  "prompts": {},
+  "sessions": {
+    "s_bc88af7d3b054c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f9b4a-11a2-7f61-8dfb-76eed0eb2a9c",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
