@@ -57,4 +57,23 @@ describe('getAutomationParameterRange', () => {
             getAutomationParameterRange({ trackId: track.id, parameterTargetId: 'device-missing:high_cut' })
         ).toBeNull();
     });
+
+    it('resolves the descriptor range for a persisted legacy device name', () => {
+        const track = createTrack({ id: 'track-1', name: 'Track', kind: 'audio' });
+        track.devices.push({
+            id: 'device-crumbs',
+            name: 'Crumbs',
+            type: 'cRuMbS',
+            bypassed: false,
+            parameterValues: { masterGain: 0.8 },
+        });
+        vi.mocked(getTrackById).mockReturnValue(track);
+
+        expect(
+            getAutomationParameterRange({
+                trackId: track.id,
+                parameterTargetId: 'device-crumbs:masterGain',
+            })
+        ).toEqual({ minValue: 0, maxValue: 2 });
+    });
 });
