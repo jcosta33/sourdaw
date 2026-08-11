@@ -111,8 +111,6 @@ pub struct GlutenEngine {
     lr_product_accum: f32,
     l_sq_accum: f32,
     r_sq_accum: f32,
-    current_threshold: f32,
-    current_ratio: f32,
 }
 
 impl GlutenEngine {
@@ -164,8 +162,6 @@ impl GlutenEngine {
             lr_product_accum: 0.0,
             l_sq_accum: 0.0,
             r_sq_accum: 0.0,
-            current_threshold: -18.0,
-            current_ratio: 4.0,
         };
         // The topologies are constructed with their own detector defaults; push
         // the engine's declared ones down so a Gluten that is never sent a
@@ -202,6 +198,9 @@ impl GlutenEngine {
     }
 
     pub fn set_param(&mut self, name: &str, value: f32) {
+        if !value.is_finite() {
+            return;
+        }
         match name {
             // Global controls
             "topology" => {
@@ -339,11 +338,6 @@ impl GlutenEngine {
 
             // Forward all other params to active topology
             _ => {
-                if name == "threshold" {
-                    self.current_threshold = value;
-                } else if name == "ratio" {
-                    self.current_ratio = value;
-                }
                 self.vca.set_param(name, value);
                 self.opto.set_param(name, value);
                 self.fet.set_param(name, value);
@@ -611,15 +605,36 @@ impl GlutenEngine {
             self.sidechains[topo.index()].process(detector_source.0, detector_source.1);
 
         match topo {
-            Topology::Vca => self.vca.process_sample_with_detector(l, r, detector_l, detector_r),
-            Topology::Opto => self.opto.process_sample_with_detector(l, r, detector_l, detector_r),
-            Topology::Fet => self.fet.process_sample_with_detector(l, r, detector_l, detector_r),
-            Topology::Diode => self.diode.process_sample_with_detector(l, r, detector_l, detector_r),
+            Topology::Vca => self
+                .vca
+                .process_sample_with_detector(l, r, detector_l, detector_r),
+            Topology::Opto => self
+                .opto
+                .process_sample_with_detector(l, r, detector_l, detector_r),
+            Topology::Fet => self
+                .fet
+                .process_sample_with_detector(l, r, detector_l, detector_r),
+            Topology::Diode => self
+                .diode
+                .process_sample_with_detector(l, r, detector_l, detector_r),
         }
     }
 
     fn compute_auto_makeup(&self) -> f32 {
-        auto_makeup(self.current_threshold, self.current_ratio)
+        let primary = self.topology_auto_makeup(self.active_topology);
+        if !(self.blend_amount > 0.001) || self.blend_topology == self.active_topology {
+            return primary;
+        }
+        primary + self.topology_auto_makeup(self.blend_topology) * self.blend_amount
+    }
+
+    fn topology_auto_makeup(&self, topology: Topology) -> f32 {
+        match topology {
+            Topology::Vca => auto_makeup(self.vca.get_threshold(), self.vca.get_ratio()),
+            Topology::Opto => self.opto.auto_makeup_gain(),
+            Topology::Fet => auto_makeup(self.fet.get_threshold(), self.fet.get_ratio()),
+            Topology::Diode => auto_makeup(self.diode.get_threshold(), self.diode.get_ratio()),
+        }
     }
 
     pub fn current_gr_db(&self) -> f32 {

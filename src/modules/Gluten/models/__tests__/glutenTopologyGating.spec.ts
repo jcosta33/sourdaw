@@ -266,11 +266,11 @@ function readDetectorAwareTopologies(): Set<string> {
     const from = source.indexOf('fn process_topology');
     expect(from, 'engine.rs must dispatch to a topology').toBeGreaterThan(-1);
     const block = source.slice(from, source.indexOf('\n    fn ', from + 1));
+    const dispatch = block.slice(block.lastIndexOf('match topo {'));
 
-    // To end of line, not to the first comma: the arm that *does* take the
-    // sidechain is the one whose call has extra arguments, so a comma-bounded
-    // read truncates exactly the arm being looked for and finds nothing.
-    const arms = [...block.matchAll(/Topology::(\w+)\s*=>\s*(.+)$/gm)];
+    // Read through the next arm rather than the next line: rustfmt expands the
+    // method chain once it no longer fits on one line.
+    const arms = [...dispatch.matchAll(/Topology::(\w+)\s*=>\s*([\s\S]*?)(?=\n\s*Topology::\w+\s*=>|\n\s*}\n)/g)];
     return new Set(arms.filter((arm) => arm[2]!.includes('detector_l')).map((arm) => arm[1]!.toLowerCase()));
 }
 
@@ -493,7 +493,7 @@ describe('glutenControlGate', () => {
         expect(gate.isInert).toBe(true);
     });
 
-    it('refuses Ratio on Opto only while Auto gain is off', () => {
+    it('refuses Ratio on Opto even while Auto gain is on', () => {
         const opto: GlutenPatch = { ...DEFAULT_PATCH, topology: 'opto', autoMakeup: false };
 
         expect(glutenControlGate({ patch: opto, paramKey: 'ratio', controlLabel: 'Ratio' }).isInert).toBe(true);
@@ -503,7 +503,7 @@ describe('glutenControlGate', () => {
                 paramKey: 'ratio',
                 controlLabel: 'Ratio',
             }).isInert
-        ).toBe(false);
+        ).toBe(true);
     });
 
     it('says "yet" for an unbuilt row and not for a structural one', () => {

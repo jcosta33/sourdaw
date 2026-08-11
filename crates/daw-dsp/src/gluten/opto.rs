@@ -37,11 +37,12 @@ pub struct OptoCompressor {
     tau_memory_decay: f32,
     /// Compress vs Limit mode (LA-2A)
     limit_mode: bool,
+    auto_makeup_db: f32,
 }
 
 impl OptoCompressor {
     pub fn new(sample_rate: f32) -> Self {
-        Self {
+        let mut compressor = Self {
             sample_rate,
             threshold: -20.0,
             base_ratio: 3.0,
@@ -55,28 +56,60 @@ impl OptoCompressor {
             tau_memory_charge: 0.200,
             tau_memory_decay: 2.0,
             limit_mode: false,
-        }
+            auto_makeup_db: 0.0,
+        };
+        compressor.refresh_auto_makeup();
+        compressor
     }
 
     pub fn get_threshold(&self) -> f32 {
         self.threshold
     }
 
-    pub fn get_ratio(&self) -> f32 {
-        if self.limit_mode {
+    fn ratio_for_excess(&self, excess: f32) -> f32 {
+        let max_ratio = if self.limit_mode {
             10.0
         } else {
-            3.0
+            3.0 + self.base_ratio
+        };
+        self.base_ratio + (max_ratio - self.base_ratio) * (excess / 20.0).min(1.0)
+    }
+
+    pub fn auto_makeup_gain(&self) -> f32 {
+        self.auto_makeup_db
+    }
+
+    fn refresh_auto_makeup(&mut self) {
+        let mut low_gr = 0.0;
+        let mut high_gr = -self.threshold;
+        for _ in 0..32 {
+            let gr = (low_gr + high_gr) * 0.5;
+            let excess = (-gr - self.threshold).max(0.0);
+            let ratio = self.ratio_for_excess(excess);
+            let desired_gr = excess * (1.0 - 1.0 / ratio);
+            if gr < desired_gr {
+                low_gr = gr;
+            } else {
+                high_gr = gr;
+            }
         }
+        self.auto_makeup_db = (low_gr + high_gr) * 0.25;
     }
 
     pub fn set_param(&mut self, name: &str, value: f32) {
         match name {
-            "threshold" => self.threshold = value.clamp(-60.0, 0.0),
-            "limit_mode" => self.limit_mode = value > 0.5,
+            "threshold" => {
+                self.threshold = value.clamp(-60.0, 0.0);
+                self.refresh_auto_makeup();
+            }
+            "limit_mode" => {
+                self.limit_mode = value > 0.5;
+                self.refresh_auto_makeup();
+            }
             "peak_reduction" => {
                 // LA-2A style: maps 0-100 to threshold range
                 self.threshold = -(value.clamp(0.0, 100.0) * 0.5);
+                self.refresh_auto_makeup();
             }
             _ => {}
         }
@@ -102,13 +135,7 @@ impl OptoCompressor {
         let excess = (detect_db - self.threshold).max(0.0);
 
         // Program-dependent ratio: increases with excess
-        let max_ratio = if self.limit_mode {
-            10.0
-        } else {
-            3.0 + self.base_ratio
-        };
-        let effective_ratio =
-            self.base_ratio + (max_ratio - self.base_ratio) * (excess / 20.0).min(1.0);
+        let effective_ratio = self.ratio_for_excess(excess);
         let desired_gr_db = excess * (1.0 - 1.0 / effective_ratio);
 
         let sample_rate = self.sample_rate;
