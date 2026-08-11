@@ -1664,8 +1664,8 @@ describe('declared parameter range agrees with the knob that drives it', () => {
         //
         // compared = descriptor parameters on a bespoke-panel device that the
         // scanner bound to exactly one knob with two numeric bounds.
-        expect(CENSUS.compared.length).toBe(192);
-        expect(CENSUS.agree.length).toBe(191);
+        expect(CENSUS.compared.length).toBe(193);
+        expect(CENSUS.agree.length).toBe(192);
         expect(CENSUS.disagree.length).toBe(1);
         expect(CENSUS.ambiguous).toStrictEqual([]);
 
@@ -1750,13 +1750,10 @@ describe('declared parameter range agrees with the knob that drives it', () => {
             // per-processor controls that name none of them. The largest blind
             // spot in the file; see `unboundKnobs`.
             yeast: 0,
-            // GrandBoule encodes the parameter in the *function name* —
-            // `setGrandBouleMasterGain({ deviceId, engine, store, gain: value })`
-            // (`GrandBoulePanel.tsx:371-381`) — so there is no literal id to
-            // read, and inventing one from the function name would be guessing.
-            // Its three declared parameters include a `masterGain` on a shipped
-            // `max={2}` knob, i.e. exactly #1474's shape, uncovered.
-            'grand-boule': 0,
+            // The lid knob binds its literal descriptor id. Grand Boule's older
+            // controls still encode ids in function names, so they remain named
+            // below rather than being guessed by the scanner.
+            'grand-boule': 1,
         });
     });
 
@@ -2224,7 +2221,7 @@ describe('declared parameter range agrees with the knob that drives it', () => {
             ],
             // Including a `masterGain` on a shipped `max={2}` knob — #1474's
             // exact shape, uncovered, because the id is in the function name.
-            'grand-boule': ['masterGain', 'soundboardSend', 'sympatheticSend'],
+            'grand-boule': ['masterGain', 'micPosition', 'soundboardSend', 'sympatheticSend'],
         });
     });
 
@@ -2254,7 +2251,7 @@ describe('declared parameter range agrees with the knob that drives it', () => {
             // wide.
             yeast: 48,
             crust: 2,
-            'grand-boule': 10,
+            'grand-boule': 9,
         });
     });
 

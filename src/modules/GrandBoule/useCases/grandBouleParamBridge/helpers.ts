@@ -16,7 +16,13 @@ import { type GrandBouleState } from '../../stores/grandBouleStore';
  * The remaining knobs on the panel — Stretch, Bite, Velocity Curve, Morph — declare
  * no descriptor parameter and so have nowhere to be stored. See the PR body.
  */
-export const GRAND_BOULE_PERSISTED_PARAM_IDS = ['masterGain', 'soundboardSend', 'sympatheticSend'] as const;
+export const GRAND_BOULE_PERSISTED_PARAM_IDS = [
+    'masterGain',
+    'soundboardSend',
+    'sympatheticSend',
+    'lidPosition',
+    'micPosition',
+] as const;
 
 export type GrandBoulePersistedParamId = (typeof GRAND_BOULE_PERSISTED_PARAM_IDS)[number];
 
@@ -32,9 +38,9 @@ type DispatchGrandBouleParamInput = {
 };
 
 /**
- * Land one Grand Boule config knob, splitting the gesture from its commit.
+ * Land one persisted Grand Boule control, splitting the gesture from its commit.
  *
- * **The value was not persisted at all.** These three knobs wrote
+ * The first persisted controls wrote
  * `createGrandBouleStore(deviceId)` — a module-level `Map` of session stores that
  * `resetGrandBouleStores()` wipes on project teardown — and pushed the value at the
  * engine handle. Nothing wrote `Device.parameterValues`, so the store's own

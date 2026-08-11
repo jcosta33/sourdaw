@@ -1,14 +1,19 @@
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { Container } from '#/infra/di/Container';
 
+import { createGrandBouleStore, resetGrandBouleStores } from '../../../stores/grandBouleStore';
 import { setGrandBouleEventBus } from '../../../useCases/grandBouleEventBus';
 import { GrandBoulePanel } from '../GrandBoulePanel';
 
 vi.mock('#/infra/store/useStore', () => ({
     useStore: vi.fn((_store, defaultValue) => defaultValue),
 }));
+
+const executeAppAction = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
+
+vi.mock('#/modules/Command/useCases', () => ({ executeAppAction }));
 
 const mockEventBus = {
     emit: vi.fn().mockResolvedValue(undefined),
@@ -19,6 +24,7 @@ describe('GrandBoulePanel', () => {
     beforeEach(() => {
         Container.clear();
         setGrandBouleEventBus(mockEventBus);
+        resetGrandBouleStores();
         vi.clearAllMocks();
     });
 
@@ -40,9 +46,23 @@ describe('GrandBoulePanel', () => {
         expect(interactive).toBeGreaterThan(0);
     });
 
-    it('does not expose a cosmetic lid-position control', () => {
+    it('exposes the audible lid and microphone controls', () => {
         render(<GrandBoulePanel deviceId="dev-1" />);
-        expect(screen.queryByRole('slider', { name: 'Position' })).not.toBeInTheDocument();
+        expect(screen.getByRole('slider', { name: 'Lid position' })).toHaveValue(1);
+        expect(screen.getByRole('combobox', { name: 'Microphone position' })).toHaveValue('1');
+    });
+
+    it('routes microphone changes into the device-owned config', () => {
+        render(<GrandBoulePanel deviceId="dev-1" />);
+        fireEvent.change(screen.getByRole('combobox', { name: 'Microphone position' }), {
+            target: { value: '2' },
+        });
+
+        expect(createGrandBouleStore('dev-1').value?.config.micPosition).toBe(2);
+        expect(executeAppAction).toHaveBeenCalledWith({
+            type: 'setDeviceParameter',
+            payload: { deviceId: 'dev-1', paramId: 'micPosition', value: 2 },
+        });
     });
 
     it('emits events through the event bus when rendered (wiring check)', () => {

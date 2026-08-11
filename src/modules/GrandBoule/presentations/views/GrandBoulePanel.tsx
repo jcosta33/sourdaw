@@ -33,6 +33,7 @@ import { setGrandBouleMasterGain } from '../../useCases/setGrandBouleMasterGain'
 import { setGrandBouleMorphPosition } from '../../useCases/setGrandBouleMorphPosition';
 import { resetGrandBoulePerNoteParams } from '../../useCases/setGrandBoulePerNoteParam/resetGrandBoulePerNoteParams';
 import { setGrandBoulePerNoteParam } from '../../useCases/setGrandBoulePerNoteParam/setGrandBoulePerNoteParam';
+import { setGrandBouleRadiationParam } from '../../useCases/setGrandBouleRadiationParam';
 import { setGrandBouleSostenuto } from '../../useCases/setGrandBouleSostenuto';
 import { setGrandBouleSoundboardSend } from '../../useCases/setGrandBouleSoundboardSend';
 import { setGrandBouleStretchAmount } from '../../useCases/setGrandBouleStretchAmount';
@@ -148,6 +149,12 @@ const TEMPERAMENT_OPTIONS = [
     { value: 3 as TemperamentIndex, label: 'Vallotti' },
     { value: 4 as TemperamentIndex, label: 'Young II' },
     { value: 5 as TemperamentIndex, label: 'Meantone ¼' },
+] as const;
+
+const MICROPHONE_POSITIONS = [
+    { value: 0, label: 'Close' },
+    { value: 1, label: 'Player' },
+    { value: 2, label: 'Room' },
 ] as const;
 
 export const GrandBoulePanel = ({ deviceId }: { deviceId: string }): ReactElement => {
@@ -411,6 +418,52 @@ export const GrandBoulePanel = ({ deviceId }: { deviceId: string }): ReactElemen
                             />
                         </div>
                     </SectionCard>
+                    <SectionCard title="Radiation" detail="Audible lid transfer and microphone perspective.">
+                        <div className="grid grid-cols-2 items-end gap-3">
+                            <Knob
+                                value={config.lidPosition}
+                                onChange={(value, isTransient) =>
+                                    setGrandBouleRadiationParam({
+                                        deviceId,
+                                        engine,
+                                        store,
+                                        paramId: 'lidPosition',
+                                        value,
+                                        isTransient,
+                                    })
+                                }
+                                label="Lid position"
+                                min={0}
+                                max={1}
+                                step={0.01}
+                                defaultValue={1}
+                                readout={`${Math.round(config.lidPosition * 100)}% open`}
+                            />
+                            <label className="flex flex-col gap-1 text-[8px] uppercase tracking-[0.2em] text-muted-foreground/60">
+                                Microphone
+                                <select
+                                    aria-label="Microphone position"
+                                    className="grand-boule-window min-h-8 bg-black/20 px-2 font-mono text-[10px] text-foreground"
+                                    value={config.micPosition}
+                                    onChange={(event) =>
+                                        setGrandBouleRadiationParam({
+                                            deviceId,
+                                            engine,
+                                            store,
+                                            paramId: 'micPosition',
+                                            value: Number(event.currentTarget.value),
+                                        })
+                                    }
+                                >
+                                    {MICROPHONE_POSITIONS.map((position) => (
+                                        <option key={position.value} value={position.value}>
+                                            {position.label}
+                                        </option>
+                                    ))}
+                                </select>
+                            </label>
+                        </div>
+                    </SectionCard>
                     <SectionCard title="Realism" detail="Stretched tuning + attack bite (appendix §A6, §A8).">
                         <div className="grid grid-cols-2 gap-x-2 gap-y-3">
                             <Knob
@@ -517,7 +570,7 @@ export const GrandBoulePanel = ({ deviceId }: { deviceId: string }): ReactElemen
                         <PianoModel3D
                             activeNotes={activeNotes}
                             sustainPedal={pedals.sustain}
-                            lidPosition={1}
+                            lidPosition={config.lidPosition}
                             onNoteOn={handleNoteOn}
                             onNoteOff={handleNoteOff}
                             className="h-full w-full"

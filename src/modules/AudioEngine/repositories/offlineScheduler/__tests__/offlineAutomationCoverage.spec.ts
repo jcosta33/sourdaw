@@ -284,12 +284,10 @@ describe('offline device-param automation capability coverage', () => {
         // `Layer::portamento_time_for_note_on` and the generalised stereo
         // restoration in `Voice::render` now read them.
         expect(census.verdicts).toBe(109);
-        // 185, was 182: `builtin-crumbs` declared `stackCount`, `detuneSpread`
-        // and `stackSpread` as automatable parameters, and Crumbs is already
-        // exempt at the *device* level, so the three new pairs land in that
-        // class rather than in `uncovered`. A device-level number moving because
-        // a device gained parameters is the one legitimate way it moves.
-        expect(census.deviceLevelExemptions).toBe(185);
+        // 187, was 185: Grand Boule declared `lidPosition` and `micPosition`
+        // as automatable parameters. The device is already exempt at the device
+        // level, so both pairs land here rather than in `uncovered`.
+        expect(census.deviceLevelExemptions).toBe(187);
         // 17 → 23: #1539's six `decay_eq_*` bands on `dutch-oven`. They land in
         // this class rather than in `verdicts` because the Dutch Oven declares
         // exactly two offline ordinals (`mix`, `decay`) and always has — the
