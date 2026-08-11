@@ -162,6 +162,34 @@ export function recordPendingActionExecution(
     return clonePendingActionConfirmation(updated);
 }
 
+type ReplacePendingActionExecutionsInput = {
+    confirmationId: string;
+    executions: readonly PendingActionExecution[];
+};
+
+export function replacePendingActionExecutions(
+    input: ReplacePendingActionExecutionsInput
+): PendingAppActionConfirmation | null {
+    const state = pendingActionConfirmationStore.value;
+    if (!state) {
+        return null;
+    }
+    const current = state.confirmations.find((confirmation) => confirmation.id === input.confirmationId);
+    if (!current) {
+        return null;
+    }
+    const updated: PendingAppActionConfirmation = {
+        ...current,
+        executedActions: structuredClone([...input.executions]),
+    };
+    pendingActionConfirmationStore.set({
+        confirmations: state.confirmations.map((confirmation) =>
+            confirmation.id === input.confirmationId ? updated : confirmation
+        ),
+    });
+    return clonePendingActionConfirmation(updated);
+}
+
 type UpdatePendingActionConfirmationStatusInput = {
     confirmationId: string;
     status: ChatActionConfirmationStatus;

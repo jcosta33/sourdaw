@@ -766,6 +766,13 @@ describe('backing-vocal plate workflow', () => {
         expect(renderAffectedIds).toContain(successfulJob.jobId);
         expect(renderAffectedIds).not.toContain(failedJob.sectionId);
         expect(renderAffectedIds).not.toContain(failedJob.jobId);
+        const partialRenderExecution = getPendingActionConfirmation(confirmation.id)?.executedActions.find(
+            (execution) => execution.actionType === 'renderProjectSections'
+        );
+        expect(partialRenderExecution?.affectedIds).toContain(successfulJob.sectionId);
+        expect(partialRenderExecution?.affectedIds).toContain(successfulJob.jobId);
+        expect(partialRenderExecution?.affectedIds).not.toContain(failedJob.sectionId);
+        expect(partialRenderExecution?.affectedIds).not.toContain(failedJob.jobId);
         expect(undoStore.value?.past).toHaveLength(11);
 
         const committedTracks = structuredClone(trackStore.value?.tracks ?? []);
@@ -816,6 +823,11 @@ describe('backing-vocal plate workflow', () => {
         const completedRenderAffectedIds = completedReceiptLines[completedRenderReceiptIndex + 1];
         expect(completedRenderAffectedIds).toContain(failedJob.sectionId);
         expect(completedRenderAffectedIds).toContain(failedJob.jobId);
+        const completedRenderExecution = getPendingActionConfirmation(confirmation.id)?.executedActions.find(
+            (execution) => execution.actionType === 'renderProjectSections'
+        );
+        expect(completedRenderExecution?.affectedIds).toContain(failedJob.sectionId);
+        expect(completedRenderExecution?.affectedIds).toContain(failedJob.jobId);
         expect(completedReceipt?.content).not.toContain('Do not replay the confirmed project actions');
 
         await undo();
