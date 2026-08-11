@@ -1,0 +1,23 @@
+src/modules/AudioEngine/services/__tests__/glutenProcessor.spec.ts
+  s_bc88af7d3b054c::t_a1217265aa50f9 313-315
+  s_bc88af7d3b054c::t_886af397e05676 300-312,316-317
+src/modules/AudioEngine/services/glutenProcessor.ts
+  s_bc88af7d3b054c::t_3f1b4810aec3bc 182-183,185-187,189-191
+  s_bc88af7d3b054c::t_a1217265aa50f9 188
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "e2ed624ffe46331e21a7b122cc5a9dd2e8476533",
+  "prompts": {},
+  "sessions": {
+    "s_bc88af7d3b054c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f9b4a-11a2-7f61-8dfb-76eed0eb2a9c",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
