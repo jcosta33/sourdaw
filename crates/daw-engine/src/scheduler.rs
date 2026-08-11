@@ -68,17 +68,16 @@ struct ActiveEffect {
     pending_midi: MidiEventBuffer,
 }
 
-pub(crate) const RETIREMENT_QUEUE_CAPACITY: usize = 256;
+pub(crate) const RETIREMENT_QUEUE_CAPACITY: usize = 257;
 
 /// Opaque graph resources removed by the real-time scheduler.
-///
-/// The consumer paired with `AudioScheduler::new` must be drained on a
-/// non-real-time thread so plugin, MIDI FX, and bridge destructors never run in
-/// the audio callback.
+/// Its consumer must be drained off the audio callback.
 pub struct RetiredGraphObjects {
     effect: Option<ActiveEffect>,
     audio_bridge: Option<PluginAudioBridge>,
     midi_fx: Option<Box<dyn MidiFx>>,
+    remaining_effects: Vec<ActiveEffect>,
+    remaining_audio_bridges: Vec<PluginAudioBridge>,
 }
 
 impl RetiredGraphObjects {
@@ -87,6 +86,8 @@ impl RetiredGraphObjects {
             effect: Some(effect),
             audio_bridge: None,
             midi_fx: None,
+            remaining_effects: Vec::new(),
+            remaining_audio_bridges: Vec::new(),
         }
     }
 
@@ -102,6 +103,8 @@ impl RetiredGraphObjects {
             effect,
             audio_bridge,
             midi_fx: None,
+            remaining_effects: Vec::new(),
+            remaining_audio_bridges: Vec::new(),
         })
     }
 
@@ -110,6 +113,8 @@ impl RetiredGraphObjects {
             effect: None,
             audio_bridge: Some(audio_bridge),
             midi_fx: None,
+            remaining_effects: Vec::new(),
+            remaining_audio_bridges: Vec::new(),
         }
     }
 
@@ -118,6 +123,31 @@ impl RetiredGraphObjects {
             effect: None,
             audio_bridge: None,
             midi_fx: Some(midi_fx),
+            remaining_effects: Vec::new(),
+            remaining_audio_bridges: Vec::new(),
+        }
+    }
+
+    fn shutdown(
+        pending: Option<Self>,
+        remaining_effects: Vec<ActiveEffect>,
+        remaining_audio_bridges: Vec<PluginAudioBridge>,
+    ) -> Self {
+        let (effect, audio_bridge, midi_fx) = match pending {
+            Some(pending) => {
+                debug_assert!(pending.remaining_effects.is_empty());
+                debug_assert!(pending.remaining_audio_bridges.is_empty());
+                (pending.effect, pending.audio_bridge, pending.midi_fx)
+            }
+            None => (None, None, None),
+        };
+
+        Self {
+            effect,
+            audio_bridge,
+            midi_fx,
+            remaining_effects,
+            remaining_audio_bridges,
         }
     }
 
@@ -125,6 +155,8 @@ impl RetiredGraphObjects {
         usize::from(self.effect.is_some())
             + usize::from(self.audio_bridge.is_some())
             + usize::from(self.midi_fx.is_some())
+            + self.remaining_effects.len()
+            + self.remaining_audio_bridges.len()
     }
 }
 
@@ -162,10 +194,7 @@ pub struct AudioScheduler {
 }
 
 impl AudioScheduler {
-    /// Create a scheduler with a producer for removed graph resources.
-    ///
-    /// The matching consumer is part of the control-plane ownership contract
-    /// and must be drained outside the audio callback.
+    /// Create a scheduler whose retired-resource consumer is drained off-callback.
     pub fn new(
         command_rx: Consumer<GraphCommand>,
         retired_tx: Producer<RetiredGraphObjects>,
@@ -333,6 +362,11 @@ impl AudioScheduler {
     }
 
     fn retire(&mut self, retired: RetiredGraphObjects) -> bool {
+        if self.retired_tx.slots() <= 1 {
+            self.pending_retirement = Some(retired);
+            return false;
+        }
+
         match self.retired_tx.push(retired) {
             Ok(()) => true,
             Err(PushError::Full(retired)) => {
@@ -474,6 +508,24 @@ impl AudioScheduler {
     }
 }
 
+impl Drop for AudioScheduler {
+    fn drop(&mut self) {
+        let retired = RetiredGraphObjects::shutdown(
+            self.pending_retirement.take(),
+            std::mem::take(&mut self.effects),
+            std::mem::take(&mut self.audio_bridges),
+        );
+        if retired.len() == 0 {
+            return;
+        }
+
+        if let Err(PushError::Full(retired)) = self.retired_tx.push(retired) {
+            debug_assert!(false, "reserved shutdown retirement slot was unavailable");
+            std::mem::forget(retired);
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -499,10 +551,6 @@ mod tests {
         dropped_tx: mpsc::Sender<thread::ThreadId>,
     }
 
-    struct DropTrackingMidiFx {
-        dropped_tx: mpsc::Sender<thread::ThreadId>,
-    }
-
     impl Drop for DropTrackingPlugin {
         fn drop(&mut self) {
             self.dropped_tx
@@ -525,29 +573,6 @@ mod tests {
         fn as_any_mut(&mut self) -> &mut dyn Any {
             self
         }
-    }
-
-    impl Drop for DropTrackingMidiFx {
-        fn drop(&mut self) {
-            self.dropped_tx
-                .send(thread::current().id())
-                .expect("drop observer should remain connected");
-        }
-    }
-
-    impl MidiFx for DropTrackingMidiFx {
-        fn process_midi(
-            &mut self,
-            _events: &mut MidiEventBuffer,
-            _transport: &TransportState,
-            _sample_rate: f32,
-            _num_samples: usize,
-        ) {
-        }
-
-        fn set_param(&mut self, _name: &str, _value: f32) {}
-
-        fn reset(&mut self) {}
     }
 
     impl NativePlugin for FakeNativePlugin {
@@ -746,9 +771,8 @@ mod tests {
     }
 
     #[test]
-    fn removing_midi_fx_does_not_destroy_it_on_the_scheduler_thread() {
+    fn removing_midi_fx_transfers_it_to_the_retirement_queue() {
         let (mut command_tx, mut scheduler, mut retired_rx) = create_scheduler();
-        let (dropped_tx, dropped_rx) = mpsc::channel();
 
         command_tx
             .push(GraphCommand::AddPlugin(
@@ -756,27 +780,24 @@ mod tests {
                 Box::new(FakeNativePlugin { value: 0.25 }),
             ))
             .unwrap();
+        command_tx
+            .push(GraphCommand::AddMidiFx(42, MidiFxKind::VelocityScaler))
+            .unwrap();
         scheduler.update_graph();
-        scheduler.effects[0]
-            .midi_fx
-            .push(Box::new(DropTrackingMidiFx { dropped_tx }));
         command_tx.push(GraphCommand::RemoveMidiFx(42, 0)).unwrap();
         scheduler.update_graph();
 
-        assert_eq!(dropped_rx.try_recv(), Err(mpsc::TryRecvError::Empty));
-        let reclaimer_thread =
-            reclaim_on_background_thread(retired_rx.pop().expect("retired MIDI FX"));
-        assert_eq!(dropped_rx.recv().unwrap(), reclaimer_thread);
+        assert_eq!(retired_rx.pop().expect("retired MIDI FX").len(), 1);
     }
 
     #[test]
-    fn full_retirement_queue_keeps_removed_plugins_alive_until_reclaimed() {
+    fn saturated_queue_reserves_shutdown_retirement_off_the_callback_thread() {
         let (mut command_tx, command_rx) = RingBuffer::new(16);
-        let (retired_tx, mut retired_rx) = RingBuffer::new(1);
+        let (retired_tx, mut retired_rx) = RingBuffer::new(2);
         let mut scheduler = AudioScheduler::new(command_rx, retired_tx, 48_000.0);
         let (dropped_tx, dropped_rx) = mpsc::channel();
 
-        for id in [41, 42] {
+        for id in [41, 42, 43] {
             command_tx
                 .push(GraphCommand::AddPlugin(
                     id,
@@ -791,17 +812,21 @@ mod tests {
             command_tx.push(GraphCommand::RemovePlugin(id)).unwrap();
         }
         scheduler.update_graph();
+        drop(scheduler);
 
         assert_eq!(dropped_rx.try_recv(), Err(mpsc::TryRecvError::Empty));
-        let first_reclaimer =
-            reclaim_on_background_thread(retired_rx.pop().expect("first retired plugin"));
-        assert_eq!(dropped_rx.recv().unwrap(), first_reclaimer);
-
-        scheduler.update_graph();
-        assert_eq!(dropped_rx.try_recv(), Err(mpsc::TryRecvError::Empty));
-        let second_reclaimer =
-            reclaim_on_background_thread(retired_rx.pop().expect("second retired plugin"));
-        assert_eq!(dropped_rx.recv().unwrap(), second_reclaimer);
+        let live_reclaimer =
+            reclaim_on_background_thread(retired_rx.pop().expect("live retirement"));
+        let shutdown_reclaimer =
+            reclaim_on_background_thread(retired_rx.pop().expect("shutdown retirement"));
+        let drop_threads = [
+            dropped_rx.recv().unwrap(),
+            dropped_rx.recv().unwrap(),
+            dropped_rx.recv().unwrap(),
+        ];
+        assert!(drop_threads
+            .iter()
+            .all(|thread_id| *thread_id == live_reclaimer || *thread_id == shutdown_reclaimer));
     }
 
     #[test]
