@@ -1,0 +1,20 @@
+crates/daw-dsp/src/grand_boule/radiation.rs
+  s_bc88af7d3b054c::t_9853b98056f491 155-167
+  s_bc88af7d3b054c::t_17aa6a4743b7dc 112-114
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "5362629ac22fc6b2b8e91f92f1210e1a2059ec65",
+  "prompts": {},
+  "sessions": {
+    "s_bc88af7d3b054c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f9b4a-11a2-7f61-8dfb-76eed0eb2a9c",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
