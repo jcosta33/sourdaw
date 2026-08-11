@@ -322,6 +322,15 @@ const validators = {
         isNonEmptyString(param.busId) &&
         isNonEmptyString(param.sectionName) &&
         isInRange(param.reductionDb, Number.MIN_VALUE, 60),
+    automateSendRanges: (param): param is PayloadOf<'automateSendRanges'> =>
+        isObj(param) &&
+        hasExactKeys(param, ['trackIds', 'busId', 'sectionIds', 'tailBars', 'targetLevelDb']) &&
+        isUniqueNonEmptyStringArray(param.trackIds) &&
+        isNonEmptyString(param.busId) &&
+        isUniqueNonEmptyStringArray(param.sectionIds) &&
+        isInRange(param.tailBars, 1, 16) &&
+        Number.isInteger(param.tailBars) &&
+        isInRange(param.targetLevelDb, -60, 0),
     automateTrackGainRange: (param): param is PayloadOf<'automateTrackGainRange'> =>
         isObj(param) &&
         hasExactKeys(param, ['trackIds', 'sectionName', 'gainDb']) &&
@@ -331,6 +340,11 @@ const validators = {
         new Set(param.trackIds).size === param.trackIds.length &&
         isNonEmptyString(param.sectionName) &&
         isInRange(param.gainDb, Number.MIN_VALUE, 6),
+    renderProjectSections: (param): param is PayloadOf<'renderProjectSections'> =>
+        isObj(param) &&
+        hasExactKeys(param, ['sectionIds']) &&
+        isUniqueNonEmptyStringArray(param.sectionIds) &&
+        param.sectionIds.length <= 16,
     addAutomationPoint: (param): param is PayloadOf<'addAutomationPoint'> =>
         isObj(param) &&
         hasOnlyKeys(param, ['laneId', 'beat', 'value', 'curve', 'tension', 'stairSteps', 'cp1', 'cp2']) &&

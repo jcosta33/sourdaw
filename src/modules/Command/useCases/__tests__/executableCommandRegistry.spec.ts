@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { getArrangementHandlers } from '#/modules/Arrangement/useCases';
+import { getAudioRenderingHandlers } from '#/modules/AudioRendering/useCases';
 import { getAutomationHandlers } from '#/modules/Automation/useCases';
 import { getMidiNoteTransformHandlers } from '#/modules/MIDI/useCases';
 import { getTransportHandlers } from '#/modules/Transport/useCases';
@@ -831,6 +832,7 @@ const EXPECTED_COMMANDS = [
             trackId: { type: 'string' },
             busId: { type: 'string' },
             level: { type: 'number', description: 'Send level 0.0–1.0' },
+            preFader: { type: 'boolean', description: 'False for a post-fader send; true for pre-fader' },
         },
         ['trackId', 'busId', 'level'],
         'authority-sensitive',
@@ -931,6 +933,48 @@ const EXPECTED_COMMANDS = [
         },
         ['trackIds', 'sectionName', 'gainDb'],
         'authority-sensitive',
+        true
+    ),
+    expectedCommand(
+        'automateSendRanges',
+        'Ramp an exact set of sends to one bounded absolute dB level across the tail of exact arrangement sections.',
+        {
+            trackIds: {
+                type: 'array',
+                items: { type: 'string' },
+                minItems: 1,
+                uniqueItems: true,
+                description: 'Exact app-grounded source track IDs',
+            },
+            busId: { type: 'string', description: 'Earlier batch-local destination bus binding' },
+            sectionIds: {
+                type: 'array',
+                items: { type: 'string' },
+                minItems: 1,
+                uniqueItems: true,
+                description: 'Every exact app-grounded chorus section ID',
+            },
+            tailBars: { type: 'number', minimum: 1, maximum: 16 },
+            targetLevelDb: { type: 'number', minimum: -60, maximum: 0 },
+        },
+        ['trackIds', 'busId', 'sectionIds', 'tailBars', 'targetLevelDb'],
+        'authority-sensitive',
+        true
+    ),
+    expectedCommand(
+        'renderProjectSections',
+        'Render exact arrangement sections to owner-local audio objects after project commit.',
+        {
+            sectionIds: {
+                type: 'array',
+                items: { type: 'string' },
+                minItems: 1,
+                uniqueItems: true,
+                description: 'Every exact app-grounded arrangement section ID to render',
+            },
+        },
+        ['sectionIds'],
+        'external-effect',
         true
     ),
     expectedCommand(
@@ -1993,6 +2037,18 @@ const EXPECTED_GROUNDING = [
         valueRules: [],
     },
     {
+        actionType: 'automateSendRanges',
+        intentPhrases: ['automate them to', 'final four bars of every chorus'],
+        targetRules: [],
+        valueRules: [],
+    },
+    {
+        actionType: 'renderProjectSections',
+        intentPhrases: ['render each chorus', 'render chorus', 'render section'],
+        targetRules: [],
+        valueRules: [],
+    },
+    {
         actionType: 'addAutomationLane',
         intentPhrases: [
             'add automation lane',
@@ -2144,6 +2200,7 @@ describe('executable command registry', () => {
     it('maps every provider-executable action to exactly one production handler with executable metadata', () => {
         const handlerMaps: readonly Record<string, unknown>[] = [
             getArrangementHandlers(),
+            getAudioRenderingHandlers(),
             getAutomationHandlers(),
             getMidiNoteTransformHandlers(),
             getTransportHandlers(),
