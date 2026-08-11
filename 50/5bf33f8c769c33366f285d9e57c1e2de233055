@@ -1,0 +1,34 @@
+src/modules/SampleLibrary/repositories/libraryPersistence/restoreLibrary.ts
+  s_bc88af7d3b054c::t_42210cdb1da34e 17-20
+  s_bc88af7d3b054c::t_8eba759742f4d6 12-16,21-43,97,168-175
+src/modules/SampleLibrary/presentations/views/__tests__/LibraryBrowser.spec.tsx
+  s_bc88af7d3b054c::t_eaa2133dbe6e56 271-284
+src/modules/SampleLibrary/useCases/__tests__/restoreLibrary.spec.ts
+  s_bc88af7d3b054c::t_208b56913bbeed 25
+src/modules/SampleLibrary/repositories/libraryPersistence/__tests__/libraryPersistence.spec.ts
+  s_bc88af7d3b054c::t_7c0ff4504d9efe 419-420,422-424,426
+  s_bc88af7d3b054c::t_b28716d3df85b7 414
+  s_bc88af7d3b054c::t_57d1828c543905 7
+  s_bc88af7d3b054c::t_86bd11432dd34f 418,421,425,427
+  s_bc88af7d3b054c::t_eaa2133dbe6e56 383-413,415,417
+  s_bc88af7d3b054c::t_ab1f75ba8b04e2 416
+  s_bc88af7d3b054c::t_0339da90805f48 428-429
+src/modules/SampleLibrary/useCases/restoreLibrary.ts
+  s_bc88af7d3b054c::t_8eba759742f4d6 1-2,15
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "505bf33f8c769c33366f285d9e57c1e2de233055",
+  "prompts": {},
+  "sessions": {
+    "s_bc88af7d3b054c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f9b4a-11a2-7f61-8dfb-76eed0eb2a9c",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
