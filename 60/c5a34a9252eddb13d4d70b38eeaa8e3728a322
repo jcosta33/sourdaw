@@ -1,0 +1,22 @@
+src/modules/Command/useCases/__tests__/executableCommandRegistry.spec.ts
+  s_a40848e8f8cca9::t_76c5587d3b348b 892-905
+  s_a40848e8f8cca9::t_3957d6b2adbe0f 2031-2035
+  s_a40848e8f8cca9::t_ff73472f43b4bb 891
+  s_a40848e8f8cca9::t_d9d225bdc25605 2030
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "60c5a34a9252eddb13d4d70b38eeaa8e3728a322",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
