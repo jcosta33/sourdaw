@@ -1,0 +1,36 @@
+crates/proof-chamber/src/lib.rs
+  s_bc88af7d3b054c::t_449e065e656175 349-353
+  s_bc88af7d3b054c::t_39af467b15b894 631-643
+public/wasm/manifest.json
+  s_a40848e8f8cca9::t_89bfda08497a67 26,30-32,35
+public/wasm/proof-chamber/proof_chamber.d.ts
+  s_a40848e8f8cca9::t_129183a65e2d75 1
+public/wasm/proof-chamber/proof_chamber_bg.wasm.d.ts
+  s_a40848e8f8cca9::t_65c1f50c81b9d9 1
+src/modules/AudioEngine/wasm/proof_chamber.d.ts
+  s_a40848e8f8cca9::t_7409f1153f6163 1
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "3355e480a289444e4076a2cb8cd58046ee340f47",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_bc88af7d3b054c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f9b4a-11a2-7f61-8dfb-76eed0eb2a9c",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
