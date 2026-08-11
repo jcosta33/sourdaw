@@ -16,7 +16,13 @@ import { MAX_LLM_ACTIONS_PER_BATCH } from '../../transformers/llmActionLimits';
 import { type ToolCallResult } from '../../transformers/toolCallParser';
 import { normalizeSafeProjectName } from '../../validators/normalizeSafeProjectName';
 
+import { type BatchLocalActionIdentity } from './BatchLocalActionIdentity';
+import { bridgeBackingVocalPlatePlan } from './bridgeBackingVocalPlatePlan';
 import { getArticulationTransferPromptScope } from './getArticulationTransferPromptScope';
+import {
+    getBassProcessingCopyPromptScope,
+    type BassProcessingCopyRequestScope,
+} from './getBassProcessingCopyPromptScope';
 import { getBulkDeviceInsertionTrackScope } from './getBulkDeviceInsertionTrackScope';
 import { getDeviceParameterPromptScope } from './getDeviceParameterPromptScope';
 import { getDrumRoutingPromptScope } from './getDrumRoutingPromptScope';
@@ -57,17 +63,13 @@ type PromptClause = {
 type GroundingCatalog = ReturnType<typeof getExecutableAppActionGroundingCatalog>;
 type GroundingRules = NonNullable<ReturnType<typeof getExecutableAppActionGroundingRules>>;
 
-export type BatchLocalActionIdentity = {
-    actionOrdinal: number;
-    actionType: 'createBus';
-    busId: string;
-};
-
 type BridgeGroundedLlmToolCallsResult = LlmActionBridgeResult & {
+    appOwnedRenderTailSeconds?: number;
+    bassProcessingCopyScope?: BassProcessingCopyRequestScope;
     batchLocalActionIdentities?: BatchLocalActionIdentity[];
 };
 
-type BatchLocalBusBinding = BatchLocalActionIdentity & {
+type BatchLocalBusBinding = Extract<BatchLocalActionIdentity, { actionType: 'createBus' }> & {
     binding: string;
     callIndex: number;
     name: string;
@@ -3887,7 +3889,69 @@ export function bridgeGroundedLlmToolCalls({
             sectionSignatures,
         });
     }
+    const backingVocalPlatePlan = bridgeBackingVocalPlatePlan({ calls, context, prompt });
+    if (backingVocalPlatePlan.status === 'rejected') {
+        return { actions: [], rejections: [rejection(0, '<batch>', backingVocalPlatePlan.reason)] };
+    }
+    if (backingVocalPlatePlan.status === 'accepted') {
+        return {
+            actions: backingVocalPlatePlan.actions,
+            appOwnedRenderTailSeconds: backingVocalPlatePlan.renderTailSeconds,
+            batchLocalActionIdentities: backingVocalPlatePlan.identities,
+            rejections: [],
+        };
+    }
     let effectiveCalls = calls;
+    const bassProcessingCopyScope = getBassProcessingCopyPromptScope(prompt, context);
+    const providerBassProcessingCalls = calls.filter((call) => call.name === 'addAdjustmentRegion');
+    if (bassProcessingCopyScope.status === 'invalid') {
+        return { actions: [], rejections: [rejection(0, '<batch>', bassProcessingCopyScope.reason)] };
+    }
+    if (bassProcessingCopyScope.status === 'none' && providerBassProcessingCalls.length > 0) {
+        return {
+            actions: [],
+            rejections: [rejection(0, '<batch>', 'Adjustment-region planning requires the exact EX-03 capability')],
+        };
+    }
+    if (bassProcessingCopyScope.status === 'request') {
+        const expectedPlan = bassProcessingCopyScope.capability.exactPlan;
+        const providerPlanMatches =
+            providerBassProcessingCalls.length === calls.length &&
+            providerBassProcessingCalls.length === expectedPlan.length &&
+            expectedPlan.every((expected) =>
+                providerBassProcessingCalls.some(
+                    (call) =>
+                        call.arguments.layerId === expected.layerId &&
+                        call.arguments.startBeat === expected.startBeat &&
+                        call.arguments.endBeat === expected.endBeat &&
+                        call.arguments.blend === expected.blend &&
+                        call.arguments.fadeInBeats === expected.fadeInBeats &&
+                        call.arguments.fadeOutBeats === expected.fadeOutBeats
+                )
+            ) &&
+            new Set(providerBassProcessingCalls.map((call) => JSON.stringify(call.arguments))).size ===
+                providerBassProcessingCalls.length;
+        if (!providerPlanMatches) {
+            return {
+                actions: [],
+                rejections: [
+                    rejection(0, '<batch>', 'Provider plan does not match the complete EX-03 processing copy'),
+                ],
+            };
+        }
+        effectiveCalls = expectedPlan.flatMap((expected) => {
+            const matchingCall = providerBassProcessingCalls.find(
+                (call) =>
+                    call.arguments.layerId === expected.layerId &&
+                    call.arguments.startBeat === expected.startBeat &&
+                    call.arguments.endBeat === expected.endBeat &&
+                    call.arguments.blend === expected.blend &&
+                    call.arguments.fadeInBeats === expected.fadeInBeats &&
+                    call.arguments.fadeOutBeats === expected.fadeOutBeats
+            );
+            return matchingCall ? [matchingCall] : [];
+        });
+    }
     let sidechainRouteDeviceAdmissions: ReadonlyArray<{
         sourceTrackId: string;
         targetDeviceId: string;
@@ -4192,21 +4256,26 @@ export function bridgeGroundedLlmToolCalls({
         const actionOrdinal = effectiveCalls.slice(0, index).filter((candidate) => candidate.name === call.name).length;
         const sameActionCalls = effectiveCalls.filter((candidate) => candidate.name === call.name);
         const sameActionCallCount = sameActionCalls.length;
-        const grounded = groundToolCall({
-            actionOrdinal,
-            batchLocalBusBindings: visibleBindings,
-            call,
-            catalog,
-            context: prospectiveContext,
-            declaredBatchLocalBusBindings: collectedBindings.bindingsByName,
-            index,
-            prompt,
-            plannedActionNames: effectiveCalls.map((candidate) => candidate.name),
-            sameActionAssertedArguments: sameActionCalls.map((candidate) => candidate.arguments),
-            sameActionCallCount,
-            visibleGroundedCalls: acceptedGroundedCalls,
-            visiblePlannedTrackCreations,
-        });
+        let grounded: ToolCallResult | LlmActionRejection;
+        if (bassProcessingCopyScope.status === 'request' && call.name === 'addAdjustmentRegion') {
+            grounded = call;
+        } else {
+            grounded = groundToolCall({
+                actionOrdinal,
+                batchLocalBusBindings: visibleBindings,
+                call,
+                catalog,
+                context: prospectiveContext,
+                declaredBatchLocalBusBindings: collectedBindings.bindingsByName,
+                index,
+                prompt,
+                plannedActionNames: effectiveCalls.map((candidate) => candidate.name),
+                sameActionAssertedArguments: sameActionCalls.map((candidate) => candidate.arguments),
+                sameActionCallCount,
+                visibleGroundedCalls: acceptedGroundedCalls,
+                visiblePlannedTrackCreations,
+            });
+        }
         if ('reason' in grounded) {
             groundingRejections.set(index, grounded);
             groundedCalls.push({ name: '<rejected-target-reference>', arguments: {} });
@@ -4288,10 +4357,19 @@ export function bridgeGroundedLlmToolCalls({
         return { actions: [], rejections };
     }
     if (rejections.length > 0 || collectedBindings.bindingsByName.size === 0) {
-        return { actions: bridged.actions, rejections };
+        return {
+            actions: bridged.actions,
+            ...(bassProcessingCopyScope.status === 'request' ? { bassProcessingCopyScope } : {}),
+            rejections,
+        };
     }
     const batchLocalActionIdentities = [...collectedBindings.bindingsByName.values()].map(
         ({ actionOrdinal, actionType, busId }) => ({ actionOrdinal, actionType, busId })
     );
-    return { actions: bridged.actions, batchLocalActionIdentities, rejections };
+    return {
+        actions: bridged.actions,
+        ...(bassProcessingCopyScope.status === 'request' ? { bassProcessingCopyScope } : {}),
+        batchLocalActionIdentities,
+        rejections,
+    };
 }

@@ -3,6 +3,8 @@ export type ChatRole = 'user' | 'assistant' | 'system';
 export type ChatActionConfirmationStatus =
     'proposed' | 'accepted' | 'executed' | 'failed' | 'cancelled' | 'invalidated';
 
+export type ChatActionFollowUpStatus = 'retryable' | 'running' | 'complete' | 'failed';
+
 export type ChatMessage = {
     id: string;
     role: ChatRole;
@@ -17,6 +19,7 @@ export type ChatMessage = {
     /** Pending prompt-action confirmation owned by AiRuntime. */
     pendingActionConfirmationId?: string;
     pendingActionConfirmationStatus?: ChatActionConfirmationStatus;
+    pendingActionFollowUpStatus?: ChatActionFollowUpStatus;
 };
 
 export type ChatState = {

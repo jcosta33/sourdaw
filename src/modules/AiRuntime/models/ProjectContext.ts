@@ -13,6 +13,7 @@ export type ProjectContext = {
     metronomeVolume: number;
     masterGain: number;
     availableDeviceTypes?: ProjectContextAvailableDeviceType[];
+    adjustmentLayers?: ProjectContextAdjustmentLayer[];
     automationLanes?: ProjectContextAutomationLane[];
     sidechainRoutes?: ProjectContextSidechainRoute[];
     sections?: ProjectContextSection[];
@@ -24,6 +25,34 @@ export type ProjectContext = {
     glueEligibleClipPairs?: Array<[string, string]>;
     activeView: 'arrange' | 'automation' | 'clip' | 'mix';
     playheadPosition: number;
+};
+
+export type ProjectContextAdjustmentRegion = {
+    id: string;
+    startBeat: number;
+    endBeat: number;
+    blend: number;
+    fadeInBeats: number;
+    fadeOutBeats: number;
+};
+
+export type ProjectContextAdjustmentLayer = {
+    id: string;
+    name: string;
+    effectType: 'eq' | 'compressor' | 'reverb' | 'delay' | 'saturation' | 'filter' | 'stereo-width' | 'volume' | 'pan';
+    parameters: Array<{
+        name: string;
+        value: number;
+        min: number;
+        max: number;
+        unit: string;
+    }>;
+    affectedTrackIds: string[];
+    insertionIndex: number;
+    regions: ProjectContextAdjustmentRegion[];
+    enabled: boolean;
+    mix: number;
+    color: string;
 };
 
 export type ProjectContextSection = {

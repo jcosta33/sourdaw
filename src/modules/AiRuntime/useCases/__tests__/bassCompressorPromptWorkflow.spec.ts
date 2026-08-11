@@ -294,7 +294,7 @@ describe('bass compressor prompt workflow', () => {
             (message) => message.pendingActionConfirmationId === confirmation?.id
         );
         expect(proposal?.content).toContain(
-            'Insert "Compressor" (device-ai-track-bass-di-builtin-compressor) on track "Bass DI" (track-bass-di) after "EQ" (device-bass-di-eq)'
+            'Insert "Compressor" (device-ai-track-bass-di-builtin-compressor, builtin-compressor) on "Bass DI" (track-bass-di) after "EQ" (device-bass-di-eq)'
         );
         expect(proposal?.content).toContain('Protected unchanged: "Bass Frozen" (track-bass-frozen)');
         expect(undoStore.value?.past).toEqual([]);
@@ -398,7 +398,7 @@ describe('bass compressor prompt workflow', () => {
             (message) => message.pendingActionConfirmationId === confirmation?.id
         );
         expect(receipt?.content).toContain(
-            'Insert "Compressor" (device-ai-track-bass-amp-builtin-compressor) on track "Bass Amp" (track-bass-amp) after "EQ" (device-bass-amp-eq)'
+            'Insert "Compressor" (device-ai-track-bass-amp-builtin-compressor, builtin-compressor) on "Bass Amp" (track-bass-amp) after "EQ" (device-bass-amp-eq)'
         );
         expect(receipt?.content).toContain('Protected unchanged: "Bass Frozen" (track-bass-frozen)');
     });

@@ -1,14 +1,84 @@
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { Container } from '#/infra/di/Container';
 
+import { createGrandBouleStore, resetGrandBouleStores } from '../../../stores/grandBouleStore';
 import { setGrandBouleEventBus } from '../../../useCases/grandBouleEventBus';
 import { GrandBoulePanel } from '../GrandBoulePanel';
 
-vi.mock('#/infra/store/useStore', () => ({
-    useStore: vi.fn((_store, defaultValue) => defaultValue),
+const projectTrackState = vi.hoisted(() => ({
+    current: null as null | {
+        tracks: { id: string; devices: { id: string; parameterValues: Record<string, number> }[] }[];
+        selectedTrackId: string | null;
+        ghostClips: never[];
+    },
 }));
+
+vi.mock('#/infra/store/useStore', () => ({
+    useStore: vi.fn((store: { value?: unknown }, defaultValue: unknown) => {
+        if (
+            projectTrackState.current !== null &&
+            defaultValue !== null &&
+            typeof defaultValue === 'object' &&
+            'tracks' in defaultValue
+        ) {
+            return projectTrackState.current;
+        }
+        return store.value ?? defaultValue;
+    }),
+}));
+
+vi.mock('#/modules/Arrangement/stores', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('#/modules/Arrangement/stores')>();
+    return {
+        ...actual,
+        trackStore: {
+            ...actual.trackStore,
+            get value() {
+                return projectTrackState.current;
+            },
+        },
+    };
+});
+
+vi.mock('#/modules/AudioEngine/useCases', () => ({
+    ensureTrackStrip: () => ({ deviceNodes: [], analyserNode: null }),
+    getAudioSampleRate: () => 44100,
+}));
+
+const hydrateGrandBouleConfigFromProject = vi.hoisted(() => vi.fn());
+
+vi.mock('../../../useCases/hydrateGrandBouleConfigFromProject', () => ({ hydrateGrandBouleConfigFromProject }));
+
+const executeAppAction = vi.hoisted(() =>
+    vi.fn((action: { type: string; payload: { deviceId: string; paramId: string; value: number } }): Promise<void> => {
+        const state = projectTrackState.current;
+        if (state === null || action.type !== 'setDeviceParameter') {
+            return Promise.resolve();
+        }
+        projectTrackState.current = {
+            ...state,
+            tracks: state.tracks.map((track) => ({
+                ...track,
+                devices: track.devices.map((device) =>
+                    device.id === action.payload.deviceId
+                        ? {
+                              ...device,
+                              parameterValues: {
+                                  ...device.parameterValues,
+                                  [action.payload.paramId]: action.payload.value,
+                              },
+                          }
+                        : device
+                ),
+            })),
+        };
+        return Promise.resolve();
+    })
+);
+
+vi.mock('#/modules/Command/useCases', () => ({ executeAppAction }));
 
 const mockEventBus = {
     emit: vi.fn().mockResolvedValue(undefined),
@@ -19,6 +89,8 @@ describe('GrandBoulePanel', () => {
     beforeEach(() => {
         Container.clear();
         setGrandBouleEventBus(mockEventBus);
+        resetGrandBouleStores();
+        projectTrackState.current = null;
         vi.clearAllMocks();
     });
 
@@ -40,9 +112,51 @@ describe('GrandBoulePanel', () => {
         expect(interactive).toBeGreaterThan(0);
     });
 
-    it('does not expose a cosmetic lid-position control', () => {
+    it('exposes the audible lid and microphone controls', () => {
         render(<GrandBoulePanel deviceId="dev-1" />);
-        expect(screen.queryByRole('slider', { name: 'Position' })).not.toBeInTheDocument();
+        expect(screen.getByRole('slider', { name: 'Lid position' })).toHaveValue(1);
+        expect(screen.getByRole('combobox', { name: 'Microphone position' })).toHaveValue('1');
+    });
+
+    it('routes microphone changes through authoritative project truth into the device-owned config', async () => {
+        projectTrackState.current = {
+            tracks: [{ id: 'track-1', devices: [{ id: 'dev-1', parameterValues: { micPosition: 1 } }] }],
+            selectedTrackId: 'track-1',
+            ghostClips: [],
+        };
+        render(<GrandBoulePanel deviceId="dev-1" />);
+        fireEvent.change(screen.getByRole('combobox', { name: 'Microphone position' }), {
+            target: { value: '2' },
+        });
+
+        await waitFor(() => {
+            expect(createGrandBouleStore('dev-1').value?.config.micPosition).toBe(2);
+        });
+        expect(projectTrackState.current.tracks[0]?.devices[0]?.parameterValues.micPosition).toBe(2);
+        expect(executeAppAction).toHaveBeenCalledWith({
+            type: 'setDeviceParameter',
+            payload: { deviceId: 'dev-1', paramId: 'micPosition', value: 2 },
+        });
+    });
+
+    it('rehydrates the controls when undo changes project parameter values', () => {
+        projectTrackState.current = {
+            tracks: [{ id: 'track-1', devices: [{ id: 'dev-1', parameterValues: { lidPosition: 0.25 } }] }],
+            selectedTrackId: 'track-1',
+            ghostClips: [],
+        };
+        const { rerender } = render(<GrandBoulePanel deviceId="dev-1" />);
+        expect(hydrateGrandBouleConfigFromProject).toHaveBeenCalledOnce();
+        hydrateGrandBouleConfigFromProject.mockClear();
+
+        projectTrackState.current = {
+            tracks: [{ id: 'track-1', devices: [{ id: 'dev-1', parameterValues: { lidPosition: 0.8 } }] }],
+            selectedTrackId: 'track-1',
+            ghostClips: [],
+        };
+        rerender(<GrandBoulePanel deviceId="dev-1" />);
+
+        expect(hydrateGrandBouleConfigFromProject).toHaveBeenCalledWith('dev-1');
     });
 
     it('emits events through the event bus when rendered (wiring check)', () => {

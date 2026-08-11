@@ -322,6 +322,15 @@ const validators = {
         isNonEmptyString(param.busId) &&
         isNonEmptyString(param.sectionName) &&
         isInRange(param.reductionDb, Number.MIN_VALUE, 60),
+    automateSendRanges: (param): param is PayloadOf<'automateSendRanges'> =>
+        isObj(param) &&
+        hasExactKeys(param, ['trackIds', 'busId', 'sectionIds', 'tailBars', 'targetLevelDb']) &&
+        isUniqueNonEmptyStringArray(param.trackIds) &&
+        isNonEmptyString(param.busId) &&
+        isUniqueNonEmptyStringArray(param.sectionIds) &&
+        isInRange(param.tailBars, 1, 16) &&
+        Number.isInteger(param.tailBars) &&
+        isInRange(param.targetLevelDb, -60, 0),
     automateTrackGainRange: (param): param is PayloadOf<'automateTrackGainRange'> =>
         isObj(param) &&
         hasExactKeys(param, ['trackIds', 'sectionName', 'gainDb']) &&
@@ -331,6 +340,11 @@ const validators = {
         new Set(param.trackIds).size === param.trackIds.length &&
         isNonEmptyString(param.sectionName) &&
         isInRange(param.gainDb, Number.MIN_VALUE, 6),
+    renderProjectSections: (param): param is PayloadOf<'renderProjectSections'> =>
+        isObj(param) &&
+        hasExactKeys(param, ['sectionIds']) &&
+        isUniqueNonEmptyStringArray(param.sectionIds) &&
+        param.sectionIds.length <= 16,
     addAutomationPoint: (param): param is PayloadOf<'addAutomationPoint'> =>
         isObj(param) &&
         hasOnlyKeys(param, ['laneId', 'beat', 'value', 'curve', 'tension', 'stairSteps', 'cp1', 'cp2']) &&
@@ -730,6 +744,17 @@ const validators = {
         normalizeSafeProjectName(param.name) !== null,
     addTimeSignatureChange: 'unchecked',
     createAdjustmentLayer: 'unchecked',
+    addAdjustmentRegion: (param): param is PayloadOf<'addAdjustmentRegion'> =>
+        isObj(param) &&
+        hasExactKeys(param, ['layerId', 'startBeat', 'endBeat', 'blend', 'fadeInBeats', 'fadeOutBeats']) &&
+        isNonEmptyString(param.layerId) &&
+        isNonNegativeNumber(param.startBeat) &&
+        isNumber(param.endBeat) &&
+        param.endBeat > param.startBeat &&
+        isInRange(param.blend, 0, 1) &&
+        isNonNegativeNumber(param.fadeInBeats) &&
+        isNonNegativeNumber(param.fadeOutBeats) &&
+        param.fadeInBeats + param.fadeOutBeats <= param.endBeat - param.startBeat,
 
     // MIDI-note ops (non-destructive enough: they're scoped by clipId on the handler)
     humanizeNotes: 'unchecked',

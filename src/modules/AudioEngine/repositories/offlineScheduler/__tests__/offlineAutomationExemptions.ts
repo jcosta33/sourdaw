@@ -117,8 +117,6 @@ export const DEVICE_LEVEL_OFFLINE_AUTOMATION_EXEMPTIONS: Readonly<Record<string,
     levain: 'LevainNode supplies no scheduleParam — device-level class, SPEC-offline-live-collapse Phase 2 AC-4',
     'builtin-crumbs':
         'CrumbsNode supplies no scheduleParam — device-level class, SPEC-parameter-automation-coverage §8 (out of scope, reasoned exemption)',
-    'grand-boule':
-        'GrandBouleNode supplies no scheduleParam — device-level class, SPEC-parameter-automation-coverage §8 (out of scope, reasoned exemption)',
     gluten: 'GlutenNode supplies no scheduleParam — device-level class, SPEC-offline-live-collapse Phase 2 AC-4',
     crust: 'CrustNode supplies no scheduleParam — device-level class, SPEC-parameter-automation-coverage §8 (out of scope, reasoned exemption)',
     bacteria: 'BacteriaNode supplies no scheduleParam — device-level class, SPEC-offline-live-collapse Phase 2 AC-4',

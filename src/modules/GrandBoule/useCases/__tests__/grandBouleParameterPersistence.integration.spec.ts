@@ -6,6 +6,7 @@ import { getArrangementHandlers, getPluginById } from '#/modules/Arrangement/use
 import { clearHandlerRegistry, macroStore, registerHandlerMap, undoStore } from '#/modules/Command/stores';
 import {
     clearUndoHistory,
+    redo,
     resetActionReplayAuthority,
     setActionHistoryMetadataPort,
     undo,
@@ -26,6 +27,7 @@ import { createGrandBouleStore, resetGrandBouleStores } from '../../stores/grand
 import { GRAND_BOULE_PERSISTED_PARAM_IDS, type GrandBoulePersistedParamId } from '../grandBouleParamBridge/helpers';
 import { hydrateGrandBouleConfigFromProject } from '../hydrateGrandBouleConfigFromProject';
 import { setGrandBouleMasterGain } from '../setGrandBouleMasterGain';
+import { setGrandBouleRadiationParam } from '../setGrandBouleRadiationParam';
 import { setGrandBouleSoundboardSend } from '../setGrandBouleSoundboardSend';
 import { setGrandBouleSympatheticSend } from '../setGrandBouleSympatheticSend';
 
@@ -86,12 +88,16 @@ const COMMITTED: Readonly<Record<GrandBoulePersistedParamId, number>> = {
     masterGain: 1.45,
     soundboardSend: 0.18,
     sympatheticSend: 0.83,
+    lidPosition: 0.35,
+    micPosition: 2,
 };
 
 const CONSTRUCTED: Readonly<Record<GrandBoulePersistedParamId, number>> = {
     masterGain: 0.32,
     soundboardSend: 0.91,
     sympatheticSend: 0.07,
+    lidPosition: 0.82,
+    micPosition: 0,
 };
 
 const SETTERS: Readonly<Record<GrandBoulePersistedParamId, (value: number, isTransient?: boolean) => void>> = {
@@ -117,6 +123,24 @@ const SETTERS: Readonly<Record<GrandBoulePersistedParamId, (value: number, isTra
             engine: recordingEngine(),
             store: createGrandBouleStore(DEVICE_ID),
             amount: value,
+            isTransient,
+        }),
+    lidPosition: (value, isTransient) =>
+        setGrandBouleRadiationParam({
+            deviceId: DEVICE_ID,
+            engine: recordingEngine(),
+            store: createGrandBouleStore(DEVICE_ID),
+            paramId: 'lidPosition',
+            value,
+            isTransient,
+        }),
+    micPosition: (value, isTransient) =>
+        setGrandBouleRadiationParam({
+            deviceId: DEVICE_ID,
+            engine: recordingEngine(),
+            store: createGrandBouleStore(DEVICE_ID),
+            paramId: 'micPosition',
+            value,
             isTransient,
         }),
 };
@@ -262,6 +286,87 @@ describe('Grand Boule knob values survive a reload', () => {
         expect(sessionConfig('masterGain')).toBe(1.9);
         expect(sessionConfig('soundboardSend')).toBe(defaults.soundboardSend);
         expect(sessionConfig('sympatheticSend')).toBe(defaults.sympatheticSend);
+        expect(sessionConfig('lidPosition')).toBe(defaults.lidPosition);
+        expect(sessionConfig('micPosition')).toBe(defaults.micPosition);
+    });
+
+    it('normalizes finite corrupt persisted radiation values before they reach the session controls', () => {
+        trackStore.set({
+            tracks: [grandBouleTrack({ lidPosition: -1e308, micPosition: 1.5 })],
+            selectedTrackId: TRACK_ID,
+            ghostClips: [],
+        });
+
+        simulateReload();
+
+        expect(sessionConfig('lidPosition')).toBe(0);
+        expect(sessionConfig('micPosition')).toBe(2);
+    });
+
+    it('restores the default control value when project truth has no stored value', () => {
+        trackStore.set({
+            tracks: [grandBouleTrack({})],
+            selectedTrackId: TRACK_ID,
+            ghostClips: [],
+        });
+        resetGrandBouleStores();
+
+        SETTERS.lidPosition(0.25, true);
+        expect(sessionConfig('lidPosition')).toBe(0.25);
+
+        hydrateGrandBouleConfigFromProject(DEVICE_ID);
+
+        expect(sessionConfig('lidPosition')).toBe(createDefaultGrandBouleConfig().lidPosition);
+    });
+
+    it('undoes and redoes the first legacy-project radiation edit exactly', async () => {
+        const legacyValues: Record<string, number> = { ...CONSTRUCTED };
+        delete legacyValues.lidPosition;
+        trackStore.set({
+            tracks: [grandBouleTrack(legacyValues)],
+            selectedTrackId: TRACK_ID,
+            ghostClips: [],
+        });
+        resetGrandBouleStores();
+
+        SETTERS.lidPosition(0.35);
+        await vi.waitFor(() => {
+            expect(stored('lidPosition')).toBe(0.35);
+        });
+        expect(undoDepth()).toBe(1);
+
+        await undo();
+        const afterUndo = trackStore.value?.tracks[0]?.devices[0]?.parameterValues ?? {};
+        expect(Object.hasOwn(afterUndo, 'lidPosition')).toBe(false);
+        hydrateGrandBouleConfigFromProject(DEVICE_ID);
+        expect(sessionConfig('lidPosition')).toBe(createDefaultGrandBouleConfig().lidPosition);
+
+        await redo();
+        expect(stored('lidPosition')).toBe(0.35);
+    });
+
+    it('reconciles transient UI and audio when the device disappears before commit', async () => {
+        resetGrandBouleStores();
+        hydrateGrandBouleConfigFromProject(DEVICE_ID);
+
+        SETTERS.lidPosition(0.25, true);
+        expect(sessionConfig('lidPosition')).toBe(0.25);
+        trackStore.set({
+            tracks: [{ ...grandBouleTrack({ ...CONSTRUCTED }), devices: [] }],
+            selectedTrackId: TRACK_ID,
+            ghostClips: [],
+        });
+        SETTERS.lidPosition(0.25);
+
+        await vi.waitFor(() => {
+            expect(sessionConfig('lidPosition')).toBe(createDefaultGrandBouleConfig().lidPosition);
+        });
+        expect(stored('lidPosition')).toBeUndefined();
+        expect(handleWrites).toEqual([
+            { name: 'lidPosition', value: 0.25 },
+            { name: 'lidPosition', value: createDefaultGrandBouleConfig().lidPosition },
+        ]);
+        expect(undoDepth()).toBe(0);
     });
 
     it('spends exactly one undo entry on a drag, whatever it passes through on the way', async () => {

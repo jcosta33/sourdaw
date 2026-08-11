@@ -91,14 +91,49 @@ function withFreezeStaleness<Action extends AdjustmentLayerMutationAction>(
     };
 }
 
+const addAdjustmentRegionWithFreezeStaleness = withFreezeStaleness(handleAddAdjustmentRegion);
+const removeAdjustmentRegionWithFreezeStaleness = withFreezeStaleness(handleRemoveAdjustmentRegion);
+
+const addAdjustmentRegionHandler: ActionHandler<Extract<AppAction, { type: 'addAdjustmentRegion' }>> = {
+    undoable: true,
+    describe: (action) => {
+        if (action.payload.expectedLayer && action.payload.regionId) {
+            return handleAddAdjustmentRegion.describe(action);
+        }
+        return addAdjustmentRegionWithFreezeStaleness.describe(action);
+    },
+    execute: (action) => {
+        if (action.payload.expectedLayer && action.payload.regionId) {
+            return handleAddAdjustmentRegion.execute(action);
+        }
+        return addAdjustmentRegionWithFreezeStaleness.execute(action);
+    },
+};
+
+const removeAdjustmentRegionHandler: ActionHandler<Extract<AppAction, { type: 'removeAdjustmentRegion' }>> = {
+    undoable: true,
+    describe: (action) => {
+        if (action.payload.expectedRegion) {
+            return handleRemoveAdjustmentRegion.describe(action);
+        }
+        return removeAdjustmentRegionWithFreezeStaleness.describe(action);
+    },
+    execute: (action) => {
+        if (action.payload.expectedRegion) {
+            return handleRemoveAdjustmentRegion.execute(action);
+        }
+        return removeAdjustmentRegionWithFreezeStaleness.execute(action);
+    },
+};
+
 export const adjustmentLayerHandlers = {
     createAdjustmentLayer: withFreezeStaleness(handleCreateAdjustmentLayer),
     removeAdjustmentLayer: withFreezeStaleness(handleRemoveAdjustmentLayer),
     toggleAdjustmentLayer: withFreezeStaleness(handleToggleAdjustmentLayer),
     setLayerParameter: withFreezeStaleness(handleSetLayerParameter),
     setLayerMix: withFreezeStaleness(handleSetLayerMix),
-    addAdjustmentRegion: withFreezeStaleness(handleAddAdjustmentRegion),
-    removeAdjustmentRegion: withFreezeStaleness(handleRemoveAdjustmentRegion),
+    addAdjustmentRegion: addAdjustmentRegionHandler,
+    removeAdjustmentRegion: removeAdjustmentRegionHandler,
     moveAdjustmentRegion: withFreezeStaleness(handleMoveAdjustmentRegion),
     setLayerFades: withFreezeStaleness(handleSetLayerFades),
     setLayerAffectedTracks: withFreezeStaleness(handleSetLayerAffectedTracks),

@@ -3,12 +3,14 @@ import { type ActionHandler, type AppAction } from '#/utils/handlerContract';
 import { handleAddAutomationLane } from '../handlers/automation/handleAddAutomationLane';
 import { handleAddAutomationPoint } from '../handlers/automation/handleAddAutomationPoint';
 import { handleAutomateSendRange } from '../handlers/automation/handleAutomateSendRange';
+import { handleAutomateSendRanges } from '../handlers/automation/handleAutomateSendRanges';
 import { handleAutomateTrackGainRange } from '../handlers/automation/handleAutomateTrackGainRange';
 import { handleInvertAutomation } from '../handlers/automation/handleInvertAutomation';
 import { handleQuantizeAutomation } from '../handlers/automation/handleQuantizeAutomation';
 import { handleRemoveAutomationLane } from '../handlers/automation/handleRemoveAutomationLane';
 import { handleRemoveAutomationPoint } from '../handlers/automation/handleRemoveAutomationPoint';
 import { handleRemoveSendAutomationRange } from '../handlers/automation/handleRemoveSendAutomationRange';
+import { handleRemoveSendAutomationRanges } from '../handlers/automation/handleRemoveSendAutomationRanges';
 import { handleRemoveTrackGainAutomationRange } from '../handlers/automation/handleRemoveTrackGainAutomationRange';
 import { handleRestoreAutomationLanePoints } from '../handlers/automation/handleRestoreAutomationLanePoints';
 import { handleReverseAutomation } from '../handlers/automation/handleReverseAutomation';
@@ -23,8 +25,10 @@ type AutomationAction =
     | Extract<AppAction, { type: 'setAutomationLaneEnabled' }>
     | Extract<AppAction, { type: 'addAutomationPoint' }>
     | Extract<AppAction, { type: 'automateSendRange' }>
+    | Extract<AppAction, { type: 'automateSendRanges' }>
     | Extract<AppAction, { type: 'automateTrackGainRange' }>
     | Extract<AppAction, { type: 'removeSendAutomationRange' }>
+    | Extract<AppAction, { type: 'removeSendAutomationRanges' }>
     | Extract<AppAction, { type: 'removeTrackGainAutomationRange' }>
     | Extract<AppAction, { type: 'removeAutomationPoint' }>
     | Extract<AppAction, { type: 'scaleAutomation' }>
@@ -49,8 +53,10 @@ export function getAutomationHandlers(): AutomationHandlersMap {
         setAutomationLaneEnabled: handleSetAutomationLaneEnabled,
         addAutomationPoint: handleAddAutomationPoint,
         automateSendRange: handleAutomateSendRange,
+        automateSendRanges: handleAutomateSendRanges,
         automateTrackGainRange: handleAutomateTrackGainRange,
         removeSendAutomationRange: handleRemoveSendAutomationRange,
+        removeSendAutomationRanges: handleRemoveSendAutomationRanges,
         removeTrackGainAutomationRange: handleRemoveTrackGainAutomationRange,
         removeAutomationPoint: handleRemoveAutomationPoint,
         scaleAutomation: handleScaleAutomation,

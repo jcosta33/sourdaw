@@ -10,7 +10,16 @@ import { type AutomationMode } from '../../../stores/trackStore';
 
 const RECORDING_MODES: ReadonlySet<AutomationMode> = new Set(['write', 'touch', 'latch']);
 
-export function setDeviceParameter(deviceId: string, paramId: string, value: number): boolean {
+type SetDeviceParameterOptions = {
+    deleteParameter?: boolean;
+};
+
+export function setDeviceParameter(
+    deviceId: string,
+    paramId: string,
+    value: number,
+    options: SetDeviceParameterOptions = {}
+): boolean {
     // Guard against invalid values that could crash the audio engine
     if (!Number.isFinite(value)) {
         return false;
@@ -55,9 +64,16 @@ export function setDeviceParameter(deviceId: string, paramId: string, value: num
                 return device;
             }
 
+            const parameterValues = { ...device.parameterValues };
+            if (options.deleteParameter) {
+                delete parameterValues[paramId];
+            } else {
+                parameterValues[paramId] = clamped;
+            }
+
             return {
                 ...device,
-                parameterValues: { ...device.parameterValues, [paramId]: clamped },
+                parameterValues,
             };
         }),
     }));

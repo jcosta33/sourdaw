@@ -50,12 +50,12 @@ describe('setGrandBouleSoundboardSend', () => {
         expect(dispatched).toEqual([]);
     });
 
-    it('commits through setDeviceParameter and leaves the engine to the action', () => {
+    it('commits through setDeviceParameter and waits for project truth before changing the session', () => {
         const store = seededStore();
 
         setGrandBouleSoundboardSend({ deviceId: 'gb-1', engine: engine(), store, amount: 0.42 });
 
-        expect(store.value?.config.soundboardSend).toBe(0.42);
+        expect(store.value?.config.soundboardSend).toBe(0.05);
         expect(dispatched).toEqual([
             { type: 'setDeviceParameter', payload: { deviceId: 'gb-1', paramId: 'soundboardSend', value: 0.42 } },
         ]);
@@ -66,10 +66,14 @@ describe('setGrandBouleSoundboardSend', () => {
         const store = seededStore();
 
         setGrandBouleSoundboardSend({ deviceId: 'gb-1', engine: engine(), store, amount: 4 });
-        expect(store.value?.config.soundboardSend).toBe(1);
+        expect(dispatched).toEqual([
+            { type: 'setDeviceParameter', payload: { deviceId: 'gb-1', paramId: 'soundboardSend', value: 1 } },
+        ]);
+        expect(store.value?.config.soundboardSend).toBe(0.05);
 
-        setGrandBouleSoundboardSend({ deviceId: 'gb-1', engine: engine(), store, amount: -0.5 });
+        setGrandBouleSoundboardSend({ deviceId: 'gb-1', engine: engine(), store, amount: -0.5, isTransient: true });
         expect(store.value?.config.soundboardSend).toBe(0);
+        expect(engineWrites).toEqual([{ name: 'soundboardSend', value: 0 }]);
     });
 
     it('leaves every other config field alone', () => {
