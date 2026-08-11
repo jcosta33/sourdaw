@@ -1,0 +1,24 @@
+src/modules/AiRuntime/useCases/__tests__/backingVocalPlateWorkflow.spec.ts
+  s_a40848e8f8cca9::t_55ab9988b55d4c 765,767,816-818
+  s_a40848e8f8cca9::t_59faebe52df689 762-764,766,768,812-815
+  s_a40848e8f8cca9::t_a8880e5a1dfbd4 731-735,750
+src/modules/AiRuntime/useCases/confirmPendingChatActions.ts
+  s_a40848e8f8cca9::t_56fba029d4491f 77-80,82-97,99-104,108-109,113
+  s_a40848e8f8cca9::t_60d574f4892a78 81,98,105
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "6eed932847941217c5359bda690df71a3960b4c1",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
