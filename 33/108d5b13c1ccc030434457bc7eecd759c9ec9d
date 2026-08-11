@@ -1,0 +1,40 @@
+src/modules/Collaboration/useCases/__tests__/automergeSync.spec.ts
+  s_a40848e8f8cca9::t_817e95a1cd9174 31,157-158,172,179-199
+  s_a40848e8f8cca9::t_6b075b65e592f9 200-201
+src/modules/CrdtDocument/useCases/crdtBranching/branchDocumentTransitionFence.ts
+  s_a40848e8f8cca9::t_b8f9680b34236f 1-2,4,7,17-18,25,31,37,39
+src/modules/Collaboration/useCases/collaboration/__tests__/sessionManagement.spec.ts
+  s_a40848e8f8cca9::t_817e95a1cd9174 172,319,680-730
+  s_a40848e8f8cca9::t_ce3a87b818ef3f 77
+  s_a40848e8f8cca9::t_e49d5c71aef75c 731
+src/modules/CrdtDocument/useCases/crdtBranching/__tests__/runBranchDocumentTransition.spec.ts
+  s_a40848e8f8cca9::t_817e95a1cd9174 121-122,125
+src/modules/CrdtDocument/useCases/crdtBranching/rollbackCreatedDrumPreviewBranches.ts
+  s_a40848e8f8cca9::t_b8f9680b34236f 25
+src/modules/Collaboration/useCases/collaboration/sessionManagement.ts
+  s_a40848e8f8cca9::t_b8f9680b34236f 18,176,178-186,188-196
+  s_a40848e8f8cca9::t_ce3a87b818ef3f 177,187,197
+src/modules/CrdtDocument/useCases/crdtBranching/createDrumPreviewBranches.ts
+  s_a40848e8f8cca9::t_55475a957f19a4 1
+  s_a40848e8f8cca9::t_b8f9680b34236f 15-16,19,36,47,49
+src/modules/CrdtDocument/useCases/waitForCrdtDocumentTransition.ts
+  s_a40848e8f8cca9::t_b8f9680b34236f 1-4,6
+src/modules/Collaboration/useCases/automergeSync.ts
+  s_a40848e8f8cca9::t_eaa8b97cf35a22 259-262
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "33108d5b13c1ccc030434457bc7eecd759c9ec9d",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
