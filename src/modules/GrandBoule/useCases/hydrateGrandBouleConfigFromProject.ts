@@ -1,8 +1,10 @@
 import { trackStore } from '#/modules/Arrangement/stores';
 
+import { createDefaultGrandBouleConfig } from '../models/GrandBouleConfig';
 import { createGrandBouleStore } from '../stores/grandBouleStore';
 
 import { GRAND_BOULE_PERSISTED_PARAM_IDS } from './grandBouleParamBridge/helpers';
+import { normalizeGrandBoulePersistedParamValue } from './normalizeGrandBoulePersistedParamValue';
 
 /**
  * Seed a device's session config from the knob values project truth holds.
@@ -14,10 +16,9 @@ import { GRAND_BOULE_PERSISTED_PARAM_IDS } from './grandBouleParamBridge/helpers
  * first touch of any Mix knob would push that stale default back over the saved
  * value, silently discarding it.
  *
- * Idempotent and default-only. A parameter absent from `parameterValues` leaves the
- * store field alone: absence is the normal state for a device nobody has touched
- * and for any project saved before knobs were persisted at all, and neither is a
- * reason to overwrite what the store holds.
+ * Idempotent and project-authoritative. A parameter absent from
+ * `parameterValues` restores its module default, so undo of a first write and
+ * legacy-project hydration cannot retain a transient value from newer state.
  *
  * Runs against the store rather than returning a state because
  * `createGrandBouleStore` is a per-device `createStore` held in a module `Map` — the
@@ -40,15 +41,18 @@ export function hydrateGrandBouleConfigFromProject(deviceId: string): void {
         return;
     }
 
+    const defaults = createDefaultGrandBouleConfig();
     const restored: Record<string, number> = {};
     for (const paramId of GRAND_BOULE_PERSISTED_PARAM_IDS) {
-        const stored = device.parameterValues[paramId];
-        if (typeof stored === 'number' && Number.isFinite(stored)) {
-            restored[paramId] = stored;
-        }
+        restored[paramId] = normalizeGrandBoulePersistedParamValue({
+            defaultValue: defaults[paramId],
+            paramId,
+            value: device.parameterValues[paramId],
+        });
     }
 
-    if (Object.keys(restored).length === 0) {
+    const unchanged = GRAND_BOULE_PERSISTED_PARAM_IDS.every((paramId) => state.config[paramId] === restored[paramId]);
+    if (unchanged) {
         return;
     }
 

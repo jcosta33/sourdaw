@@ -605,11 +605,13 @@ describe('executeAppActionBatch', () => {
                 },
             }),
         });
+        const actions = [
+            { type: 'setEditingTool' as const, payload: { tool: 'marquee' as const } },
+            { type: 'setSnapValue' as const, payload: { value: 0.5 } },
+        ];
+        const onCommitted = vi.fn();
 
-        const result = await executeAppActionBatch([
-            { type: 'setEditingTool', payload: { tool: 'marquee' } },
-            { type: 'setSnapValue', payload: { value: 0.5 } },
-        ]);
+        const result = await executeAppActionBatch(actions, { onCommitted });
 
         expect(result).toEqual({
             status: 'ambiguous',
@@ -625,6 +627,7 @@ describe('executeAppActionBatch', () => {
         ]);
         expect(mocks.recordAction).not.toHaveBeenCalled();
         expect(mocks.commitUndoEntry).not.toHaveBeenCalled();
+        expect(onCommitted).not.toHaveBeenCalled();
     });
 
     it('treats a first-document failure after mutation as ambiguous and reconciles runtime from durable truth', async () => {
@@ -927,11 +930,15 @@ describe('executeAppActionBatch', () => {
                 isNoop: () => true,
             }),
         });
+        const onCommitted = vi.fn();
 
-        const result = await executeAppActionBatch([{ type: 'setEditingTool', payload: { tool: 'marquee' } }]);
+        const result = await executeAppActionBatch([{ type: 'setEditingTool', payload: { tool: 'marquee' } }], {
+            onCommitted,
+        });
 
         expect(result).toEqual({ status: 'no-op', actions: [] });
         expect(mocks.recordActionHistoryMetadata).not.toHaveBeenCalled();
         expect(mocks.commitUndoEntry).not.toHaveBeenCalled();
+        expect(onCommitted).not.toHaveBeenCalled();
     });
 });

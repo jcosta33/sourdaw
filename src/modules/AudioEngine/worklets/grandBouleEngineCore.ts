@@ -57,6 +57,8 @@ export const PARAM_MAP: Record<string, string> = {
     masterGain: 'master_gain',
     soundboardSend: 'soundboard_send',
     sympatheticSend: 'sympathetic_send',
+    lidPosition: 'lid_position',
+    micPosition: 'mic_position',
     stretchAmount: 'stretch_amount',
     attackBite: 'attack_bite',
     velocityCurve: 'velocity_curve',

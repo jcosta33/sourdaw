@@ -33,6 +33,7 @@ import { setGrandBouleMasterGain } from '../../useCases/setGrandBouleMasterGain'
 import { setGrandBouleMorphPosition } from '../../useCases/setGrandBouleMorphPosition';
 import { resetGrandBoulePerNoteParams } from '../../useCases/setGrandBoulePerNoteParam/resetGrandBoulePerNoteParams';
 import { setGrandBoulePerNoteParam } from '../../useCases/setGrandBoulePerNoteParam/setGrandBoulePerNoteParam';
+import { setGrandBouleRadiationParam } from '../../useCases/setGrandBouleRadiationParam';
 import { setGrandBouleSostenuto } from '../../useCases/setGrandBouleSostenuto';
 import { setGrandBouleSoundboardSend } from '../../useCases/setGrandBouleSoundboardSend';
 import { setGrandBouleStretchAmount } from '../../useCases/setGrandBouleStretchAmount';
@@ -150,12 +151,21 @@ const TEMPERAMENT_OPTIONS = [
     { value: 5 as TemperamentIndex, label: 'Meantone ¼' },
 ] as const;
 
+const MICROPHONE_POSITIONS = [
+    { value: 0, label: 'Close' },
+    { value: 1, label: 'Player' },
+    { value: 2, label: 'Room' },
+] as const;
+
 export const GrandBoulePanel = ({ deviceId }: { deviceId: string }): ReactElement => {
     // §52.1 — Derive the engine handle from a subscribed track list so the
     // React Compiler can memoize this across the many per-note re-renders
     // (setActiveNotes fires on every MIDI noteOn). Previously: full
     // getAllTracks().find() scan per render.
     const trackState = useStore(trackStore, defaultTrackState);
+    const projectParameterValues = trackState.tracks
+        .flatMap((track) => track.devices)
+        .find((device) => device.id === deviceId)?.parameterValues;
     const engine: ResolvedGrandBouleEngine = resolveGrandBouleEngine({ deviceId, tracks: trackState.tracks });
     // §209.1 — Typed default instead of non-null assertion on live value.
     const store = createGrandBouleStore(deviceId);
@@ -169,9 +179,11 @@ export const GrandBoulePanel = ({ deviceId }: { deviceId: string }): ReactElemen
     // `*.current` inside the long-lived subscription rather than closing over a
     // stale value.
     const engineRef = useRef(engine);
-    engineRef.current = engine;
     const storeRef = useRef(store);
-    storeRef.current = store;
+    useEffect(() => {
+        engineRef.current = engine;
+        storeRef.current = store;
+    }, [engine, store]);
 
     // Seed the session config from project truth before the user can touch a Mix
     // knob. `projectTrackToLiveStrip` restores the engine from the same values on
@@ -179,7 +191,14 @@ export const GrandBoulePanel = ({ deviceId }: { deviceId: string }): ReactElemen
     // correctly-restored piano and the first knob move would persist the default.
     useEffect(() => {
         hydrateGrandBouleConfigFromProject(deviceId);
-    }, [deviceId]);
+    }, [
+        deviceId,
+        projectParameterValues?.lidPosition,
+        projectParameterValues?.masterGain,
+        projectParameterValues?.micPosition,
+        projectParameterValues?.soundboardSend,
+        projectParameterValues?.sympatheticSend,
+    ]);
 
     // Subscribe to external MIDI note events so the visual keyboard reflects
     // notes played on a physical controller (e.g. Akai). Re-subscribe when the
@@ -243,13 +262,13 @@ export const GrandBoulePanel = ({ deviceId }: { deviceId: string }): ReactElemen
         if (!engineReady) {
             return;
         }
-        setGrandBouleMorphPosition({ engine, store, morphPosition: 0 });
+        setGrandBouleMorphPosition({ engine: engineRef.current, store: storeRef.current, morphPosition: 0 });
         // The two engine-consumed calibration values live on the store, which
         // outlives any one engine instance (`storesByDevice` is a module Map).
         // A device node rebuilt underneath a calibrated panel comes up on the
         // DSP defaults, so re-push them rather than leaving the readout
         // describing a piano that is not playing.
-        syncMidiCalibrationToEngine({ engine, store });
+        syncMidiCalibrationToEngine({ engine: engineRef.current, store: storeRef.current });
     }, [engineReady]);
 
     // Read FFT data from the track's AnalyserNode for the spectral waterfall,
@@ -258,11 +277,7 @@ export const GrandBoulePanel = ({ deviceId }: { deviceId: string }): ReactElemen
     const analyser = engineReady ? engine.getAnalyserNode() : null;
     const engineSampleRate = engineReady ? engine.sampleRate() : undefined;
 
-    const liveState = state ?? store.value;
-    if (liveState === null) {
-        return <div className="h-full" />;
-    }
-
+    const liveState = state;
     const { config, parameters, pedals, morph, temperament } = liveState;
     const presets = listGrandBoulePresets();
 
@@ -411,6 +426,52 @@ export const GrandBoulePanel = ({ deviceId }: { deviceId: string }): ReactElemen
                             />
                         </div>
                     </SectionCard>
+                    <SectionCard title="Radiation" detail="Audible lid transfer and microphone perspective.">
+                        <div className="grid grid-cols-2 items-end gap-3">
+                            <Knob
+                                value={config.lidPosition}
+                                onChange={(value, isTransient) =>
+                                    setGrandBouleRadiationParam({
+                                        deviceId,
+                                        engine,
+                                        store,
+                                        paramId: 'lidPosition',
+                                        value,
+                                        isTransient,
+                                    })
+                                }
+                                label="Lid position"
+                                min={0}
+                                max={1}
+                                step={0.01}
+                                defaultValue={1}
+                                readout={`${Math.round(config.lidPosition * 100)}% open`}
+                            />
+                            <label className="flex flex-col gap-1 text-[8px] uppercase tracking-[0.2em] text-muted-foreground/60">
+                                Microphone
+                                <select
+                                    aria-label="Microphone position"
+                                    className="grand-boule-window min-h-8 bg-black/20 px-2 font-mono text-[10px] text-foreground"
+                                    value={config.micPosition}
+                                    onChange={(event) =>
+                                        setGrandBouleRadiationParam({
+                                            deviceId,
+                                            engine,
+                                            store,
+                                            paramId: 'micPosition',
+                                            value: Number(event.currentTarget.value),
+                                        })
+                                    }
+                                >
+                                    {MICROPHONE_POSITIONS.map((position) => (
+                                        <option key={position.value} value={position.value}>
+                                            {position.label}
+                                        </option>
+                                    ))}
+                                </select>
+                            </label>
+                        </div>
+                    </SectionCard>
                     <SectionCard title="Realism" detail="Stretched tuning + attack bite (appendix §A6, §A8).">
                         <div className="grid grid-cols-2 gap-x-2 gap-y-3">
                             <Knob
@@ -517,7 +578,7 @@ export const GrandBoulePanel = ({ deviceId }: { deviceId: string }): ReactElemen
                         <PianoModel3D
                             activeNotes={activeNotes}
                             sustainPedal={pedals.sustain}
-                            lidPosition={1}
+                            lidPosition={config.lidPosition}
                             onNoteOn={handleNoteOn}
                             onNoteOff={handleNoteOff}
                             className="h-full w-full"

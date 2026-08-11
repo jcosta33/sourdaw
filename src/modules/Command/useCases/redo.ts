@@ -44,9 +44,21 @@ type RedoOutcome =
     | { readonly status: 'conflict' }
     | { readonly status: 'committed'; readonly error: AppActionCommittedError };
 
-function recordRedoAction(entry: Extract<UndoEntry, { kind: 'action' }>): void {
-    if (entry.source !== 'ai') {
+function recordCommittedGroupActions(entries: readonly UndoEntry[], committedActions: readonly object[]): void {
+    let committedIndex = 0;
+    for (const entry of entries) {
+        if (!isActionEntry(entry)) {
+            continue;
+        }
+        const replayAction = entry.redoAction ?? entry.action;
+        if (committedActions[committedIndex] !== replayAction) {
+            continue;
+        }
         recordAction(entry.action);
+        committedIndex += 1;
+    }
+    if (committedIndex !== committedActions.length) {
+        throw new Error('Committed redo actions did not match their history entries');
     }
 }
 
@@ -56,11 +68,17 @@ async function executeActionGroupRedo(entries: readonly UndoEntry[]): Promise<Re
     }
 
     const actions = entries.map((entry) => entry.redoAction ?? entry.action);
-    const result = await executeAppActionBatch(actions, {
+    const options: NonNullable<Parameters<typeof executeAppActionBatch>[1]> = {
         skipUndo: true,
         skipMacroRecording: true,
         source: entries[0]?.source,
-    });
+    };
+    if (entries[0]?.source !== 'ai') {
+        options.onCommitted = (committedActions) => {
+            recordCommittedGroupActions(entries, committedActions);
+        };
+    }
+    const result = await executeAppActionBatch(actions, options);
     if (result.status === 'conflicted' || result.status === 'cancelled') {
         return { status: 'conflict' };
     }
@@ -68,9 +86,6 @@ async function executeActionGroupRedo(entries: readonly UndoEntry[]): Promise<Re
         throw new Error(`Grouped redo failed: ${result.reason}`);
     }
 
-    for (const entry of entries) {
-        recordRedoAction(entry);
-    }
     if (result.status === 'ambiguous') {
         return {
             status: 'committed',
@@ -94,22 +109,19 @@ async function executeRedo(entry: UndoEntry): Promise<RedoOutcome> {
         return { status: 'applied' };
     }
 
+    const options: NonNullable<Parameters<typeof executeAppAction>[1]> = {
+        skipUndo: true,
+        skipMacroRecording: true,
+        source: entry.source,
+    };
+    if (entry.source !== 'ai') {
+        options.onCommitted = () => {
+            recordAction(entry.action);
+        };
+    }
+
     try {
-        if (entry.redoAction) {
-            await executeAppAction(entry.redoAction, {
-                skipUndo: true,
-                skipMacroRecording: true,
-                source: entry.source,
-            });
-            recordRedoAction(entry);
-        } else if (entry.source === 'ai') {
-            await executeAppAction(entry.action, {
-                skipMacroRecording: true,
-                source: 'ai',
-            });
-        } else {
-            await executeAppAction(entry.action);
-        }
+        await executeAppAction(entry.redoAction ?? entry.action, options);
         return { status: 'applied' };
     } catch (error) {
         if (error instanceof AppActionConflictError) {

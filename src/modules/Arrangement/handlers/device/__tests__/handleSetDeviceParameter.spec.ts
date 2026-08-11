@@ -133,6 +133,7 @@ describe('handleSetDeviceParameter', () => {
                 expectedDeviceType: 'compressor',
                 expectedDeviceIds: ['d1'],
                 expectedValue: 0.5,
+                expectedValuePresent: true,
             },
         });
     });
@@ -193,17 +194,84 @@ describe('handleSetDeviceParameter', () => {
         expect(mocks.setDeviceParameter).not.toHaveBeenCalled();
     });
 
-    it('describes a null inverse when the parameter has no stored value to restore', () => {
+    it('describes presence-aware undo and redo when a declared parameter is absent', () => {
         mocks.getTrackStoreState.mockReturnValue({
-            tracks: [{ id: 't1', devices: [{ id: 'd1', parameterValues: {} }] }],
+            tracks: [
+                {
+                    id: 't1',
+                    frozen: false,
+                    devices: [{ id: 'd1', type: 'grand-boule', parameterValues: {} }],
+                },
+            ],
         });
 
         const desc = handleSetDeviceParameter.describe({
             type: 'setDeviceParameter',
-            payload: { deviceId: 'd1', paramId: 'gain', value: 0.5 },
+            payload: { deviceId: 'd1', paramId: 'lidPosition', value: 0.5 },
         });
 
-        expect(desc.inverseAction).toBeNull();
+        expect(desc.inverseAction).toEqual({
+            type: 'setDeviceParameter',
+            payload: {
+                deviceId: 'd1',
+                paramId: 'lidPosition',
+                value: 1,
+                deleteParameter: true,
+                expectedDeviceIds: ['d1'],
+                expectedDeviceType: 'grand-boule',
+                expectedTrackFrozen: false,
+                expectedTrackId: 't1',
+                expectedValue: 0.5,
+                expectedValuePresent: true,
+            },
+        });
+        expect(desc.redoAction).toEqual({
+            type: 'setDeviceParameter',
+            payload: {
+                deviceId: 'd1',
+                paramId: 'lidPosition',
+                value: 0.5,
+                expectedDeviceIds: ['d1'],
+                expectedDeviceType: 'grand-boule',
+                expectedTrackFrozen: false,
+                expectedTrackId: 't1',
+                expectedValue: undefined,
+                expectedValuePresent: false,
+            },
+        });
+    });
+
+    it('preserves an explicit expected value as a present-value redo guard before a batch-created device exists', () => {
+        mocks.getTrackStoreState.mockReturnValue({ tracks: [] });
+
+        const desc = handleSetDeviceParameter.describe({
+            type: 'setDeviceParameter',
+            payload: {
+                deviceId: 'd1',
+                paramId: 'filter-cutoff',
+                value: 250,
+                expectedTrackId: 't1',
+                expectedDeviceType: 'builtin-filter',
+                expectedDeviceIds: ['d1'],
+                expectedValue: 1_000,
+                expectedTrackFrozen: false,
+            },
+        });
+
+        expect(desc.redoAction).toEqual({
+            type: 'setDeviceParameter',
+            payload: {
+                deviceId: 'd1',
+                paramId: 'filter-cutoff',
+                value: 250,
+                expectedDeviceIds: ['d1'],
+                expectedDeviceType: 'builtin-filter',
+                expectedTrackFrozen: false,
+                expectedTrackId: 't1',
+                expectedValue: 1_000,
+                expectedValuePresent: true,
+            },
+        });
     });
 
     it('detects an unchanged parameter value as a semantic no-op', () => {

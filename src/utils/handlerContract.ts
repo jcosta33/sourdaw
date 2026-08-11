@@ -703,7 +703,10 @@ export type AppAction =
               expectedDeviceType?: string;
               expectedDeviceIds?: readonly string[];
               expectedValue?: number;
+              expectedValuePresent?: boolean;
               expectedTrackFrozen?: boolean;
+              /** Internal replay flag: restore the parameter map to an absent property. */
+              deleteParameter?: boolean;
           };
       }
     | { type: 'setExternalPluginState'; payload: { deviceId: string; stateChunk: string } }

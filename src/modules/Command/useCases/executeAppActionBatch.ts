@@ -42,6 +42,7 @@ type ExecuteAppActionBatchResult =
 
 type ExecuteAppActionBatchOptions = ExecuteOptions & {
     requireCompensation?: boolean;
+    onCommitted?: (actions: readonly AppAction[]) => void;
 };
 
 type ExecuteAppActionBatch = (
@@ -493,6 +494,8 @@ export const executeAppActionBatch: ExecuteAppActionBatch = inject({ logger })(
                 return { status: 'cancelled', reason: failureReason(error), actions: [] };
             }
 
+            const committedActions = executedActions.map(({ action }) => action);
+
             try {
                 storageTransaction.commit();
             } catch (error) {
@@ -530,6 +533,14 @@ export const executeAppActionBatch: ExecuteAppActionBatch = inject({ logger })(
             if (semanticCleanupWarning) {
                 logger.error(new Error('Action batch semantic context cleanup failed'));
                 warnings.push(semanticCleanupWarning);
+            }
+
+            try {
+                options?.onCommitted?.(committedActions);
+            } catch (error) {
+                const warning = `Committed observer failed: ${failureReason(error)}`;
+                logger.error(new Error(warning, { cause: error }));
+                warnings.push(warning);
             }
 
             try {

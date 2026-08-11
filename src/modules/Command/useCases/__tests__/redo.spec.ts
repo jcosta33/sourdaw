@@ -79,26 +79,89 @@ describe('redo', () => {
             mocks.undoStoreValue.value = state;
         });
         mocks.executeAppAction.mockReset();
+        mocks.executeAppAction.mockImplementation((action, options) => {
+            try {
+                options?.onCommitted?.();
+            } catch (error) {
+                return Promise.reject(new AppActionCommittedError(action.type, error));
+            }
+            return Promise.resolve();
+        });
         mocks.executeAppActionBatch.mockReset();
-        mocks.executeAppActionBatch.mockResolvedValue({ status: 'committed', actions: [] });
+        mocks.executeAppActionBatch.mockImplementation((actions, options) => {
+            try {
+                options?.onCommitted?.(actions);
+            } catch (error) {
+                return Promise.resolve({ status: 'committed-with-warning', actions: [], warning: String(error) });
+            }
+            return Promise.resolve({
+                status: 'committed',
+                actions: actions.map((action) => ({ action, label: action.type })),
+            });
+        });
         mocks.recordAction.mockReset();
         mocks.undoTreeMoveTo.mockReset();
         mocks.undoStoreValue.value = { past: [], future: [] };
         clearHandlerRegistry();
     });
 
-    it('replays the original action with normal macro-recording semantics and moves it back to past', async () => {
+    it('delegates manual macro recording to the execution owner without creating a second undo entry', async () => {
         const entry = actionEntry();
         mocks.undoStoreValue.value = { past: [], future: [entry] };
 
         await redo();
 
-        expect(mocks.executeAppAction).toHaveBeenCalledWith({ type: 'togglePlayback' });
+        const [executedAction, options] = mocks.executeAppAction.mock.calls[0]!;
+        expect(executedAction).toEqual({ type: 'togglePlayback' });
+        expect(options).toMatchObject({ skipUndo: true, skipMacroRecording: true, source: 'manual' });
+        expect(typeof options?.onCommitted).toBe('function');
+        expect(mocks.recordAction).toHaveBeenCalledOnce();
+        expect(mocks.recordAction).toHaveBeenCalledWith(entry.action);
         expect(mocks.undoStoreSet).toHaveBeenCalledWith({
             past: [entry],
             future: [],
         });
         expect(mocks.undoTreeMoveTo).toHaveBeenCalledWith('e1');
+    });
+
+    it('records and advances a redo whose action committed with a post-commit warning', async () => {
+        const entry = actionEntry();
+        const committedError = new AppActionCommittedError('togglePlayback', new Error('runtime warning'));
+        mocks.undoStoreValue.value = { past: [], future: [entry] };
+        mocks.executeAppAction.mockImplementation((_action, options) => {
+            options?.onCommitted?.();
+            return Promise.reject(committedError);
+        });
+
+        await expect(redo()).rejects.toBe(committedError);
+
+        const [executedAction, options] = mocks.executeAppAction.mock.calls[0]!;
+        expect(executedAction).toEqual(entry.action);
+        expect(options).toMatchObject({ skipUndo: true, skipMacroRecording: true, source: 'manual' });
+        expect(typeof options?.onCommitted).toBe('function');
+        expect(mocks.recordAction).toHaveBeenCalledOnce();
+        expect(mocks.recordAction).toHaveBeenCalledWith(entry.action);
+        expect(mocks.undoStoreSet).toHaveBeenCalledWith({ past: [entry], future: [] });
+        expect(mocks.undoTreeMoveTo).toHaveBeenCalledWith(entry.id);
+    });
+
+    it('advances committed history when macro recording fails so the action cannot replay twice', async () => {
+        const entry = actionEntry();
+        const macroError = new Error('macro recording failed');
+        mocks.undoStoreValue.value = { past: [], future: [entry] };
+        mocks.recordAction.mockImplementation(() => {
+            throw macroError;
+        });
+
+        await expect(redo()).rejects.toBeInstanceOf(AppActionCommittedError);
+
+        expect(mocks.executeAppAction).toHaveBeenCalledOnce();
+        expect(mocks.recordAction).toHaveBeenCalledOnce();
+        expect(mocks.undoStoreSet).toHaveBeenCalledWith({ past: [entry], future: [] });
+        expect(mocks.undoTreeMoveTo).toHaveBeenCalledWith(entry.id);
+
+        await redo();
+        expect(mocks.executeAppAction).toHaveBeenCalledOnce();
     });
 
     it('uses a guarded redo action when recomputing the original action would be unsafe', async () => {
@@ -116,6 +179,32 @@ describe('redo', () => {
         expect(mocks.undoStoreSet).toHaveBeenCalledWith({ past: [entry], future: [] });
     });
 
+    it('records the original manual action instead of its guarded replay payload', async () => {
+        const guardedRedo = { type: 'stopPlayback' as const };
+        const entry = actionEntry({ redoAction: guardedRedo });
+        mocks.undoStoreValue.value = { past: [], future: [entry] };
+
+        await redo();
+
+        expect(mocks.executeAppAction).toHaveBeenCalledWith(
+            guardedRedo,
+            expect.objectContaining({ skipMacroRecording: true, source: 'manual' })
+        );
+        expect(mocks.recordAction).toHaveBeenCalledOnce();
+        expect(mocks.recordAction).toHaveBeenCalledWith(entry.action);
+    });
+
+    it('does not record a manual redo when execution reports no committed write', async () => {
+        const entry = actionEntry();
+        mocks.undoStoreValue.value = { past: [], future: [entry] };
+        mocks.executeAppAction.mockResolvedValue(undefined);
+
+        await redo();
+
+        expect(mocks.recordAction).not.toHaveBeenCalled();
+        expect(mocks.undoStoreSet).toHaveBeenCalledWith({ past: [entry], future: [] });
+    });
+
     it('does not record an ungrouped AI redo into a user macro', async () => {
         const entry = actionEntry({ source: 'ai' });
         mocks.undoStoreValue.value = { past: [], future: [entry] };
@@ -123,6 +212,7 @@ describe('redo', () => {
         await redo();
 
         expect(mocks.executeAppAction).toHaveBeenCalledWith(entry.action, {
+            skipUndo: true,
             skipMacroRecording: true,
             source: 'ai',
         });
@@ -182,6 +272,37 @@ describe('redo', () => {
         expect(mocks.undoTreeMoveTo).toHaveBeenCalledWith('notes-entry');
     });
 
+    it('delegates a manual action group to batch-owned macro recording', async () => {
+        const first = actionEntry({ id: 'group-1', groupId: 'group' });
+        const second = actionEntry({ id: 'group-2', groupId: 'group' });
+        mocks.undoStoreValue.value = { past: [], future: [first, second] };
+
+        await redo();
+
+        const [executedActions, options] = mocks.executeAppActionBatch.mock.calls[0]!;
+        expect(executedActions).toEqual([first.action, second.action]);
+        expect(options).toMatchObject({ skipUndo: true, skipMacroRecording: true, source: 'manual' });
+        expect(typeof options?.onCommitted).toBe('function');
+        expect(mocks.recordAction).toHaveBeenCalledTimes(2);
+        expect(mocks.recordAction).toHaveBeenNthCalledWith(1, first.action);
+        expect(mocks.recordAction).toHaveBeenNthCalledWith(2, second.action);
+        expect(mocks.undoStoreSet).toHaveBeenCalledWith({ past: [first, second], future: [] });
+    });
+
+    it('advances an ambiguous committed group without recording unproven macro actions', async () => {
+        const first = actionEntry({ id: 'group-1', groupId: 'group', redoAction: { type: 'stopPlayback' } });
+        const second = actionEntry({ id: 'group-2', groupId: 'group', redoAction: { type: 'toggleRecording' } });
+        mocks.undoStoreValue.value = { past: [], future: [first, second] };
+        mocks.executeAppActionBatch.mockImplementation(() => {
+            return Promise.resolve({ status: 'ambiguous', reason: 'partial storage commit', actions: [] });
+        });
+
+        await expect(redo()).rejects.toBeInstanceOf(AppActionCommittedError);
+
+        expect(mocks.recordAction).not.toHaveBeenCalled();
+        expect(mocks.undoStoreSet).toHaveBeenCalledWith({ past: [first, second], future: [] });
+    });
+
     it('de-groups legacy mixed singleton history before redoing only the first entry', async () => {
         registerHandlerMap({
             setEditingTool: {
@@ -211,7 +332,10 @@ describe('redo', () => {
 
         expect(mocks.executeAppActionBatch).not.toHaveBeenCalled();
         expect(mocks.executeAppAction).toHaveBeenCalledTimes(1);
-        expect(mocks.executeAppAction).toHaveBeenCalledWith(singleton.action);
+        const [executedAction, options] = mocks.executeAppAction.mock.calls[0]!;
+        expect(executedAction).toEqual(singleton.action);
+        expect(options).toMatchObject({ skipUndo: true, skipMacroRecording: true, source: 'manual' });
+        expect(typeof options?.onCommitted).toBe('function');
         expect(mocks.undoStoreSet).toHaveBeenLastCalledWith({
             past: [expect.not.objectContaining({ groupId: 'legacy-group' })],
             future: [expect.not.objectContaining({ groupId: 'legacy-group' })],
@@ -295,7 +419,10 @@ describe('redo', () => {
 
         await redo();
 
-        expect(mocks.executeAppAction).toHaveBeenCalledWith(behind.action);
+        const [executedAction, options] = mocks.executeAppAction.mock.calls[0]!;
+        expect(executedAction).toEqual(behind.action);
+        expect(options).toMatchObject({ skipUndo: true, skipMacroRecording: true, source: 'manual' });
+        expect(typeof options?.onCommitted).toBe('function');
         expect(mocks.undoStoreSet).toHaveBeenCalledWith({ past: [behind], future: [] });
         expect(mocks.undoTreeMoveTo).toHaveBeenCalledWith(behind.id);
     });

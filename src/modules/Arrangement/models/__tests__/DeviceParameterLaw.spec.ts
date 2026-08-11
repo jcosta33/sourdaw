@@ -293,10 +293,11 @@ describe('quantiseDeviceParameterValue', () => {
         const steppedDevices = BUILTIN_PLUGINS.filter((plugin) =>
             plugin.parameters.some((parameter) => parameter.type !== 'float')
         );
-        // 28 since `builtin-crumbs` declared `stackCount` as an `int`; it was 27.
-        expect(steppedDevices.length).toBe(28);
+        // 29 since Grand Boule declared `micPosition` as an `int`; it was 28.
+        expect(steppedDevices.length).toBe(29);
         expect(steppedDevices.map((plugin) => plugin.id)).toContain('crust');
         expect(steppedDevices.map((plugin) => plugin.id)).toContain('builtin-crumbs');
+        expect(steppedDevices.map((plugin) => plugin.id)).toContain('grand-boule');
     });
 
     it('declares no logarithmic parameter stepped', () => {
