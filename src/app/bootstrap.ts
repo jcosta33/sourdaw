@@ -47,6 +47,7 @@ import {
     configureOfflineYeastMidiProcessing,
     stopAllScheduled,
 } from '#/modules/AudioEngine/useCases';
+import { getAudioRenderingHandlers } from '#/modules/AudioRendering/useCases';
 import {
     getAutomationHandlers,
     getAutomationValueAtBeat,
@@ -389,6 +390,7 @@ registerHandlerMap(getSetlistHandlers());
 registerHandlerMap(getPunchRecordingHandlers());
 registerHandlerMap(getWorkspaceHandlers());
 registerHandlerMap(getAutomationHandlers());
+registerHandlerMap(getAudioRenderingHandlers());
 registerHandlerMap(getGenerationHandlers());
 registerHandlerMap(getAnalysisHandlers());
 registerHandlerMap(getCollaborationHandlers());

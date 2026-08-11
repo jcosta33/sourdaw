@@ -4,14 +4,43 @@ import { type AppAction } from '#/utils/handlerContract';
 import { type MaterializableRuntimeAction } from '../models/ExecutableRuntimeAction';
 import { projectMidiArticulationTransfer } from '../transformers/projectMidiArticulationTransfer';
 
-import { type ProjectContext } from './getProjectContext';
+import { type ProjectContext, type ProjectContextTrack } from './getProjectContext';
 
 type MaterializeActionStateGuardsResult =
     { status: 'accepted'; actions: AppAction[] } | { status: 'rejected'; reason: string };
 
+type MaterializeActionStateGuardsOptions = {
+    appOwnedRenderTailSeconds?: number;
+};
+
+function createProjectedBus(busId: string, name: string): ProjectContextTrack {
+    return {
+        id: busId,
+        name,
+        kind: 'bus',
+        muted: false,
+        soloed: false,
+        soloSafe: false,
+        armed: false,
+        frozen: false,
+        gain: 1,
+        pan: 0,
+        automationMode: 'read',
+        vcaGroupId: null,
+        outputId: 'master',
+        clipCount: 0,
+        alternativeClipIds: [],
+        deviceCount: 0,
+        clips: [],
+        devices: [],
+        sends: [],
+    };
+}
+
 export function materializeActionStateGuards(
     actions: readonly MaterializableRuntimeAction[],
-    context: ProjectContext
+    context: ProjectContext,
+    options: MaterializeActionStateGuardsOptions = {}
 ): MaterializeActionStateGuardsResult {
     const tracksById = new Map(context.tracks.map((track) => [track.id, track]));
     const frozenByTrack = new Map(context.tracks.map((track) => [track.id, track.frozen] as const));
@@ -114,12 +143,19 @@ export function materializeActionStateGuards(
             if (!expectedDeviceIds) {
                 return { status: 'rejected', reason: `Track is unavailable: ${action.payload.trackId}` };
             }
-            const baseDeviceId = `device-ai-${action.payload.trackId}-${action.payload.deviceType}`;
-            let deviceId = baseDeviceId;
-            let suffix = 2;
-            while (reservedDeviceIds.has(deviceId)) {
-                deviceId = `${baseDeviceId}-${String(suffix)}`;
-                suffix += 1;
+            let deviceId = action.payload.deviceId;
+            if (deviceId) {
+                if (reservedDeviceIds.has(deviceId)) {
+                    return { status: 'rejected', reason: `Device identity is already in use: ${deviceId}` };
+                }
+            } else {
+                const baseDeviceId = `device-ai-${action.payload.trackId}-${action.payload.deviceType}`;
+                deviceId = baseDeviceId;
+                let suffix = 2;
+                while (reservedDeviceIds.has(deviceId)) {
+                    deviceId = `${baseDeviceId}-${String(suffix)}`;
+                    suffix += 1;
+                }
             }
             reservedDeviceIds.add(deviceId);
             const nextDeviceIds = [...expectedDeviceIds];
@@ -136,6 +172,22 @@ export function materializeActionStateGuards(
             }
             nextDeviceIds.splice(insertionIndex, 0, deviceId);
             deviceIdsByTrack.set(action.payload.trackId, nextDeviceIds);
+            const projectedTrack = tracksById.get(action.payload.trackId);
+            if (!projectedTrack) {
+                return { status: 'rejected', reason: `Track is unavailable: ${action.payload.trackId}` };
+            }
+            const projectedDevices = [...projectedTrack.devices];
+            projectedDevices.splice(insertionIndex, 0, {
+                id: deviceId,
+                type: action.payload.deviceType,
+                bypassed: false,
+                parameters: [],
+            });
+            tracksById.set(action.payload.trackId, {
+                ...projectedTrack,
+                deviceCount: projectedDevices.length,
+                devices: projectedDevices,
+            });
             materialized.push({
                 type: 'addDevice',
                 payload: {
@@ -148,8 +200,41 @@ export function materializeActionStateGuards(
             continue;
         }
         if (action.type === 'createBus' && action.payload.busId) {
+            if (tracksById.has(action.payload.busId)) {
+                return { status: 'rejected', reason: `Bus identity is already in use: ${action.payload.busId}` };
+            }
+            tracksById.set(action.payload.busId, createProjectedBus(action.payload.busId, action.payload.name));
             deviceIdsByTrack.set(action.payload.busId, []);
             frozenByTrack.set(action.payload.busId, false);
+            materialized.push(action);
+            continue;
+        }
+        if (action.type === 'addSend') {
+            const sourceTrack = tracksById.get(action.payload.trackId);
+            const destinationBus = tracksById.get(action.payload.busId);
+            if (!sourceTrack || destinationBus?.kind !== 'bus') {
+                return {
+                    status: 'rejected',
+                    reason: `Send endpoints are unavailable: ${action.payload.trackId} -> ${action.payload.busId}`,
+                };
+            }
+            if (sourceTrack.sends?.some((send) => send.busId === action.payload.busId)) {
+                return {
+                    status: 'rejected',
+                    reason: `Send already exists: ${action.payload.trackId} -> ${action.payload.busId}`,
+                };
+            }
+            const projectedSends = [
+                ...(sourceTrack.sends ?? []),
+                {
+                    busId: action.payload.busId,
+                    level: action.payload.level,
+                    preFader: action.payload.preFader ?? false,
+                },
+            ];
+            tracksById.set(action.payload.trackId, { ...sourceTrack, sends: projectedSends });
+            materialized.push(action);
+            continue;
         }
         if (action.type === 'automateSendRange') {
             const bus = tracksById.get(action.payload.busId);
@@ -242,6 +327,100 @@ export function materializeActionStateGuards(
                     },
                 },
             });
+            continue;
+        }
+        if (action.type === 'automateSendRanges') {
+            const bus = tracksById.get(action.payload.busId);
+            if (!bus || bus.kind !== 'bus') {
+                return { status: 'rejected', reason: `Bus is unavailable: ${action.payload.busId}` };
+            }
+            const [numerator, denominator] = context.timeSignature;
+            const beatsPerBar = numerator * (4 / denominator);
+            const automationLengthBeats = beatsPerBar * action.payload.tailBars;
+            if (!Number.isFinite(automationLengthBeats) || automationLengthBeats <= 0) {
+                return { status: 'rejected', reason: 'Send automation requires a finite positive time signature' };
+            }
+            const sectionsById = new Map((context.sections ?? []).map((section) => [section.id, section]));
+            const ranges = [];
+            for (const sectionId of action.payload.sectionIds) {
+                const section = sectionsById.get(sectionId);
+                if (!section || section.endBeat - section.startBeat < automationLengthBeats) {
+                    return { status: 'rejected', reason: `Section cannot accept send automation: ${sectionId}` };
+                }
+                ranges.push({
+                    sectionId,
+                    sectionName: section.name,
+                    startBeat: section.startBeat,
+                    endBeat: section.endBeat,
+                    automationStartBeat: section.endBeat - automationLengthBeats,
+                });
+            }
+            const expectedTracks = [];
+            for (const trackId of action.payload.trackIds) {
+                const track = tracksById.get(trackId);
+                const send = track?.sends?.find((candidate) => candidate.busId === action.payload.busId);
+                const laneId = `auto-send-${encodeURIComponent(trackId)}-${encodeURIComponent(action.payload.busId)}`;
+                if (
+                    !track ||
+                    track.frozen === true ||
+                    track.automationMode === 'off' ||
+                    !send ||
+                    send.preFader ||
+                    !Number.isFinite(send.level) ||
+                    (context.automationLanes ?? []).some(
+                        (lane) =>
+                            lane.id === laneId ||
+                            (!lane.clipId &&
+                                lane.trackId === trackId &&
+                                lane.parameterId === `send:${action.payload.busId}`)
+                    )
+                ) {
+                    return { status: 'rejected', reason: `Track cannot accept send automation: ${trackId}` };
+                }
+                expectedTracks.push({
+                    trackId,
+                    trackName: track.name,
+                    frozen: track.frozen ?? false,
+                    automationMode: track.automationMode,
+                    sendLevel: send.level,
+                    sendPreFader: send.preFader,
+                });
+            }
+            materialized.push({
+                type: 'automateSendRanges',
+                payload: {
+                    ...action.payload,
+                    busName: bus.name,
+                    expectedTimeSignature: [numerator, denominator],
+                    ranges,
+                    expectedTracks,
+                },
+            });
+            continue;
+        }
+        if (action.type === 'renderProjectSections') {
+            const tailSeconds = options.appOwnedRenderTailSeconds;
+            if (tailSeconds === undefined || !Number.isFinite(tailSeconds) || tailSeconds <= 0) {
+                return { status: 'rejected', reason: 'Section render tail was not materialized by the application' };
+            }
+            const sectionsById = new Map((context.sections ?? []).map((section) => [section.id, section]));
+            const jobs = [];
+            for (const sectionId of action.payload.sectionIds) {
+                const section = sectionsById.get(sectionId);
+                if (!section || !Number.isFinite(section.startBeat) || section.endBeat <= section.startBeat) {
+                    return { status: 'rejected', reason: `Section cannot be rendered: ${sectionId}` };
+                }
+                jobs.push({
+                    jobId: `render-job-ai-${crypto.randomUUID()}`,
+                    sectionId,
+                    sectionName: section.name,
+                    startBeat: section.startBeat,
+                    endBeat: section.endBeat,
+                    sampleRate: 44_100,
+                    tailSeconds,
+                });
+            }
+            materialized.push({ type: 'renderProjectSections', payload: { ...action.payload, jobs } });
             continue;
         }
         materialized.push(action);

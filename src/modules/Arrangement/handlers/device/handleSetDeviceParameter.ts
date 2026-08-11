@@ -1,5 +1,7 @@
+import { updateDeviceParam } from '#/modules/AudioEngine/useCases';
 import { captureAutomationRecordingRollback } from '#/modules/Automation/useCases';
 import { createHandler } from '#/utils/createHandler';
+import { runAllEffects } from '#/utils/runEffects';
 
 import { getPluginById } from '../../models/DeviceParameter';
 import { clampDeviceParameterValue } from '../../models/DeviceParameterLaw';
@@ -100,8 +102,47 @@ function describeParameterOutcome(input: { deviceId: string; paramId: string; va
     return `Set "${owner.name}" (${owner.id}) device "${device.name}" (${device.id}, ${device.type}) parameter "${parameter.name}" (${parameter.id}) from ${formatParameterValue(previousValue, parameter.unit)} to ${formatParameterValue(committedValue, parameter.unit)}`;
 }
 
+function createRuntimeParameterRollbackFailure(input: {
+    deviceId: string;
+    error: unknown;
+    paramId: string;
+    trackId: string;
+}): Error {
+    const detail = input.error instanceof Error ? input.error.message : String(input.error);
+    return new Error(
+        `Runtime parameter rollback failed for ${input.trackId}/${input.deviceId}/${input.paramId}; manual repair is required: ${detail}`,
+        { cause: input.error }
+    );
+}
+
 export const handleSetDeviceParameter = createHandler<'setDeviceParameter'>({
-    prepareAbort: () => captureAutomationRecordingRollback(),
+    prepareAbort: (action) => {
+        const rollbackAutomationRecording = captureAutomationRecordingRollback();
+        const owner = getTrackStoreState()?.tracks.find((track) =>
+            track.devices.some((device) => device.id === action.payload.deviceId)
+        );
+        const previousValue = owner?.devices.find((device) => device.id === action.payload.deviceId)?.parameterValues[
+            action.payload.paramId
+        ];
+        return () => {
+            const effects: Array<() => void> = [rollbackAutomationRecording];
+            if (owner && previousValue !== undefined) {
+                effects.unshift(() => {
+                    try {
+                        updateDeviceParam(owner.id, action.payload.deviceId, action.payload.paramId, previousValue);
+                    } catch (error) {
+                        throw createRuntimeParameterRollbackFailure({
+                            deviceId: action.payload.deviceId,
+                            error,
+                            paramId: action.payload.paramId,
+                            trackId: owner.id,
+                        });
+                    }
+                });
+            }
+            runAllEffects(effects);
+        };
+    },
     execute: (alpha) => handleGuardedSetDeviceParameter(alpha),
     isNoop: (action) => {
         if (!executionGuardsMatch(action)) {
@@ -122,31 +163,41 @@ export const handleSetDeviceParameter = createHandler<'setDeviceParameter'>({
         const prev = owner?.devices.find((device) => device.id === alpha.payload.deviceId);
         const previousValue = prev?.parameterValues[alpha.payload.paramId];
         const exactLabel = describeParameterOutcome(alpha.payload);
+        const expectedPreviousValue = alpha.payload.expectedValue ?? previousValue;
+        const expectedTrackId = alpha.payload.expectedTrackId ?? owner?.id;
+        const expectedDeviceType = alpha.payload.expectedDeviceType ?? prev?.type;
+        const expectedDeviceIds = alpha.payload.expectedDeviceIds ?? owner?.devices.map((device) => device.id);
+        const committedValue = expectedDeviceType
+            ? clampDeviceParameterValue({
+                  deviceType: expectedDeviceType,
+                  paramId: alpha.payload.paramId,
+                  value: alpha.payload.value,
+              })
+            : undefined;
         return {
             label: exactLabel ?? `Set ${alpha.payload.paramId}`,
-            // A param absent from the store cannot be restored to "absent" —
-            // only snapshot real previous values.
             inverseAction:
-                prev && typeof previousValue === 'number'
+                expectedTrackId &&
+                expectedDeviceType &&
+                expectedDeviceIds &&
+                expectedPreviousValue !== undefined &&
+                committedValue !== undefined
                     ? {
                           type: 'setDeviceParameter',
                           payload: {
-                              deviceId: prev.id,
+                              deviceId: alpha.payload.deviceId,
                               paramId: alpha.payload.paramId,
-                              value: previousValue,
-                              expectedTrackId: owner?.id,
-                              expectedDeviceType: prev.type,
-                              expectedDeviceIds: owner?.devices.map((device) => device.id),
-                              expectedValue: clampDeviceParameterValue({
-                                  deviceType: prev.type,
-                                  paramId: alpha.payload.paramId,
-                                  value: alpha.payload.value,
-                              }),
-                              expectedTrackFrozen: owner?.frozen,
+                              value: expectedPreviousValue,
+                              expectedTrackId,
+                              expectedDeviceType,
+                              expectedDeviceIds: [...expectedDeviceIds],
+                              expectedValue: committedValue,
+                              expectedTrackFrozen: alpha.payload.expectedTrackFrozen ?? owner?.frozen,
                           },
                       }
                     : null,
         };
     },
     undoable: true,
+    requiresAbortCompensation: false,
 });

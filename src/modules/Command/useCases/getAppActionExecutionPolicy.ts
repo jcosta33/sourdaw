@@ -53,18 +53,19 @@ const authoritySensitivePolicy: AppActionExecutionPolicy = {
     reason: 'This action changes project-wide timing, gain, recording, or signal routing.',
 };
 
-const executablePolicyByRisk: Record<ExecutableAppActionRisk, AppActionExecutionPolicy> = {
-    'bounded-reversible': boundedPolicy,
-    'broad-reversible': broadPolicy,
-    'destructive-reversible': destructivePolicy,
-    'authority-sensitive': authoritySensitivePolicy,
-};
-
 const externalEffectPolicy: AppActionExecutionPolicy = {
     classification: 'explicit',
     risk: 'external-effect',
     requiresConfirmation: true,
     reason: 'This action affects resources or sessions outside the current project.',
+};
+
+const executablePolicyByRisk: Record<ExecutableAppActionRisk, AppActionExecutionPolicy> = {
+    'bounded-reversible': boundedPolicy,
+    'broad-reversible': broadPolicy,
+    'destructive-reversible': destructivePolicy,
+    'authority-sensitive': authoritySensitivePolicy,
+    'external-effect': externalEffectPolicy,
 };
 
 const defaultPolicy: AppActionExecutionPolicy = {

@@ -1,6 +1,6 @@
 import { createStore } from '#/infra/store/createStore';
 
-import { type ChatActionConfirmationStatus } from '../models/Chat';
+import { type ChatActionConfirmationStatus, type ChatActionFollowUpStatus } from '../models/Chat';
 import { type ExecutableRuntimeAction } from '../models/ExecutableRuntimeAction';
 
 export type PendingActionExecution = {
@@ -38,6 +38,8 @@ type PendingActionConfirmationBase = {
     executedActions: PendingActionExecution[];
     status: ChatActionConfirmationStatus;
     error: string | null;
+    followUpProjectRevision: string | null;
+    followUpStatus: ChatActionFollowUpStatus | null;
     createdAt: number;
     resolvedAt: number | null;
 };
@@ -105,6 +107,8 @@ export function proposePendingActionConfirmation(
         executedActions: [],
         status: 'proposed',
         error: null,
+        followUpProjectRevision: null,
+        followUpStatus: null,
         createdAt: Date.now(),
         resolvedAt: null,
         projectRevision: input.projectRevision,
@@ -158,6 +162,34 @@ export function recordPendingActionExecution(
     return clonePendingActionConfirmation(updated);
 }
 
+type ReplacePendingActionExecutionsInput = {
+    confirmationId: string;
+    executions: readonly PendingActionExecution[];
+};
+
+export function replacePendingActionExecutions(
+    input: ReplacePendingActionExecutionsInput
+): PendingAppActionConfirmation | null {
+    const state = pendingActionConfirmationStore.value;
+    if (!state) {
+        return null;
+    }
+    const current = state.confirmations.find((confirmation) => confirmation.id === input.confirmationId);
+    if (!current) {
+        return null;
+    }
+    const updated: PendingAppActionConfirmation = {
+        ...current,
+        executedActions: structuredClone([...input.executions]),
+    };
+    pendingActionConfirmationStore.set({
+        confirmations: state.confirmations.map((confirmation) =>
+            confirmation.id === input.confirmationId ? updated : confirmation
+        ),
+    });
+    return clonePendingActionConfirmation(updated);
+}
+
 type UpdatePendingActionConfirmationStatusInput = {
     confirmationId: string;
     status: ChatActionConfirmationStatus;
@@ -192,6 +224,38 @@ export function updatePendingActionConfirmationStatus(
     });
 
     pendingActionConfirmationStore.set({ confirmations });
+    return clonePendingActionConfirmation(updated);
+}
+
+type UpdatePendingActionFollowUpInput = {
+    confirmationId: string;
+    error?: string | null;
+    projectRevision?: string;
+    status: ChatActionFollowUpStatus;
+};
+
+export function updatePendingActionFollowUp(
+    input: UpdatePendingActionFollowUpInput
+): PendingAppActionConfirmation | null {
+    const state = pendingActionConfirmationStore.value;
+    if (!state) {
+        return null;
+    }
+    const current = state.confirmations.find((confirmation) => confirmation.id === input.confirmationId);
+    if (!current) {
+        return null;
+    }
+    const updated: PendingAppActionConfirmation = {
+        ...current,
+        error: input.error === undefined ? current.error : input.error,
+        followUpProjectRevision: input.projectRevision ?? current.followUpProjectRevision,
+        followUpStatus: input.status,
+    };
+    pendingActionConfirmationStore.set({
+        confirmations: state.confirmations.map((confirmation) =>
+            confirmation.id === input.confirmationId ? updated : confirmation
+        ),
+    });
     return clonePendingActionConfirmation(updated);
 }
 
