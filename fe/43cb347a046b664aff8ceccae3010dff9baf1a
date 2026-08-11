@@ -1,0 +1,20 @@
+src-tauri/tests/mts_esp_stub_absence.rs
+  s_bc88af7d3b054c::t_ba07d15091cbb3 15-20,28,44,47,51-52
+  s_bc88af7d3b054c::t_1a57fe1fae8a4e 65
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "fe43cb347a046b664aff8ceccae3010dff9baf1a",
+  "prompts": {},
+  "sessions": {
+    "s_bc88af7d3b054c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f9b4a-11a2-7f61-8dfb-76eed0eb2a9c",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
