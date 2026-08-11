@@ -1,4 +1,4 @@
-import { WebSocketServer, WebSocket } from 'ws';
+import { WebSocketServer, WebSocket, type RawData } from 'ws';
 
 type Peer = {
     ws: WebSocket;
@@ -44,8 +44,11 @@ type JsonObject = { [key: string]: unknown };
 
 const sessions = new Map<string, Session>();
 const peerToSession = new Map<WebSocket, Peer>();
+const socketLiveness = new Map<WebSocket, boolean>();
 
 const PORT = parseInt(process.env.PORT ?? '8787', 10);
+const parsedHeartbeatMs = Number(process.env.COLLAB_HEARTBEAT_MS ?? '30000');
+const HEARTBEAT_MS = Number.isInteger(parsedHeartbeatMs) && parsedHeartbeatMs > 0 ? parsedHeartbeatMs : 30_000;
 
 function is_json_object(value: unknown): value is JsonObject {
     if (typeof value !== 'object') {
@@ -265,6 +268,18 @@ function sendTo(ws: WebSocket, msg: ServerMessage): void {
     }
 }
 
+function rawDataToString(data: RawData): string {
+    if (data instanceof ArrayBuffer) {
+        return Buffer.from(data).toString();
+    }
+
+    if (Array.isArray(data)) {
+        return Buffer.concat(data).toString();
+    }
+
+    return data.toString();
+}
+
 function broadcastToOthers(session: Session, senderPeerId: string, msg: ServerMessage): void {
     for (const [id, peer] of session.peers) {
         if (id !== senderPeerId) {
@@ -282,7 +297,17 @@ function getPeerList(session: Session): Array<{ id: string; name: string; isHost
 }
 
 function handleJoin(ws: WebSocket, msg: Extract<ClientMessage, { type: 'join' }>): void {
+    if (peerToSession.has(ws)) {
+        sendTo(ws, { type: 'error', message: 'Peer already joined' });
+        return;
+    }
+
     let session = sessions.get(msg.sessionId);
+    if (session?.peers.has(msg.peerId)) {
+        sendTo(ws, { type: 'error', message: 'Peer ID already in use' });
+        return;
+    }
+
     const isHost = !session;
 
     if (!session) {
@@ -321,13 +346,17 @@ function handleJoin(ws: WebSocket, msg: Extract<ClientMessage, { type: 'join' }>
 }
 
 function handleLeave(ws: WebSocket, peerId: string, sessionId: string): void {
+    peerToSession.delete(ws);
     const session = sessions.get(sessionId);
     if (!session) {
         return;
     }
 
+    if (session.peers.get(peerId)?.ws !== ws) {
+        return;
+    }
+
     session.peers.delete(peerId);
-    peerToSession.delete(ws);
 
     if (session.peers.size === 0) {
         sessions.delete(sessionId);
@@ -374,12 +403,26 @@ function handleCursor(session: Session, msg: Extract<ClientMessage, { type: 'cur
 
 function handleSyncRequest(session: Session, msg: Extract<ClientMessage, { type: 'sync-request' }>): void {
     const host = session.peers.get(session.hostId);
-    if (host) {
-        sendTo(host.ws, { type: 'sync-request', peerId: msg.peerId });
+    if (!host || host.ws.readyState !== WebSocket.OPEN) {
+        const requester = session.peers.get(msg.peerId);
+        if (requester) {
+            sendTo(requester.ws, { type: 'error', message: 'Session host unavailable' });
+        }
+        return;
     }
+
+    sendTo(host.ws, { type: 'sync-request', peerId: msg.peerId });
 }
 
 function handleSyncResponse(session: Session, msg: Extract<ClientMessage, { type: 'sync-response' }>): void {
+    if (msg.peerId !== session.hostId) {
+        const sender = session.peers.get(msg.peerId);
+        if (sender) {
+            sendTo(sender.ws, { type: 'error', message: 'Only the host may send sync responses' });
+        }
+        return;
+    }
+
     const target = session.peers.get(msg.targetPeerId);
     if (target) {
         sendTo(target.ws, { type: 'sync-response', peerId: msg.peerId, state: msg.state });
@@ -451,11 +494,18 @@ function handleMessage(ws: WebSocket, raw: string): void {
 const wss = new WebSocketServer({ port: PORT });
 
 wss.on('connection', (ws) => {
+    socketLiveness.set(ws, true);
+
+    ws.on('pong', () => {
+        socketLiveness.set(ws, true);
+    });
+
     ws.on('message', (data) => {
-        handleMessage(ws, data.toString());
+        handleMessage(ws, rawDataToString(data));
     });
 
     ws.on('close', () => {
+        socketLiveness.delete(ws);
         const peer = peerToSession.get(ws);
         if (peer) {
             handleLeave(ws, peer.peerId, peer.sessionId);
@@ -463,11 +513,32 @@ wss.on('connection', (ws) => {
     });
 
     ws.on('error', () => {
+        socketLiveness.delete(ws);
         const peer = peerToSession.get(ws);
         if (peer) {
             handleLeave(ws, peer.peerId, peer.sessionId);
         }
     });
+});
+
+const heartbeat = setInterval(() => {
+    for (const ws of wss.clients) {
+        if (socketLiveness.get(ws) === false) {
+            const peer = peerToSession.get(ws);
+            if (peer) {
+                handleLeave(ws, peer.peerId, peer.sessionId);
+            }
+            ws.terminate();
+            continue;
+        }
+
+        socketLiveness.set(ws, false);
+        ws.ping();
+    }
+}, HEARTBEAT_MS);
+
+wss.on('close', () => {
+    clearInterval(heartbeat);
 });
 
 console.log(`Sourdaw Collaboration Server running on ws://localhost:${PORT}`);
