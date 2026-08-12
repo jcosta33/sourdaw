@@ -51,30 +51,30 @@ struct Character {
 const EXPECTED: [[Character; 4]; 2] = [
     [
         Character {
-            peak: 0.283_691_53,
-            rms: 0.033_485_048,
+            peak: 0.283_370_8,
+            rms: 0.033_512_4,
             active_span_ms: 3_984.467,
-            late_energy_ratio: 0.053_339_72,
-            high_frequency_ratio: 0.152_466_43,
+            late_energy_ratio: 0.053_320_955,
+            high_frequency_ratio: 0.152_888_6,
         },
         Character {
-            peak: 0.407_612_44,
-            rms: 0.028_446_795,
+            peak: 0.409_014_6,
+            rms: 0.028_448_26,
             active_span_ms: 3_984.467,
-            late_energy_ratio: 0.049_159_41,
-            high_frequency_ratio: 0.211_066_65,
+            late_energy_ratio: 0.049_054_224,
+            high_frequency_ratio: 0.210_988_37,
         },
         Character {
             peak: 0.481_467_52,
-            rms: 0.023_791_64,
-            active_span_ms: 965.283,
+            rms: 0.023_802_584,
+            active_span_ms: 963.946,
             late_energy_ratio: 0.000_000_106,
-            high_frequency_ratio: 0.170_845_78,
+            high_frequency_ratio: 0.170_458_42,
         },
         Character {
-            peak: 0.277_696_37,
-            rms: 0.011_217_877,
-            active_span_ms: 1_003.175,
+            peak: 0.305_436_2,
+            rms: 0.011_507_511,
+            active_span_ms: 102.517,
             late_energy_ratio: 0.0,
             high_frequency_ratio: 0.270_421_24,
         },
@@ -134,10 +134,15 @@ fn render(algorithm: Algorithm, sample_rate: f32) -> Vec<f32> {
     chamber.set_param("damping", 0.3);
     chamber.set_param("size", 0.0);
 
-    // Settle the wet-only mix ramp before the fixed stimulus starts.
+    // Settle the wet-only mix ramp for exactly one second. Processing only
+    // whole blocks would leave 44.1 and 48 kHz at different Reverse grain
+    // phases and make their character measurements incomparable.
     let silence = [0.0_f32; BLOCK];
-    for _ in 0..(sample_rate as usize / BLOCK) {
-        chamber.process(&silence, &silence, BLOCK as u32);
+    let mut settling_frames = sample_rate as usize;
+    while settling_frames > 0 {
+        let frames = settling_frames.min(BLOCK);
+        chamber.process(&silence[..frames], &silence[..frames], frames as u32);
+        settling_frames -= frames;
     }
 
     let render_frames = (RENDER_SECONDS * sample_rate) as usize;
@@ -149,13 +154,11 @@ fn render(algorithm: Algorithm, sample_rate: f32) -> Vec<f32> {
             *sample = stimulus(frame + offset, sample_rate);
         }
 
-        let left = chamber.process(&input, &input, BLOCK as u32);
+        let frames = (render_frames - frame).min(BLOCK);
+        let left = chamber.process(&input[..frames], &input[..frames], frames as u32);
         let right = chamber.get_right_ptr();
         assert!(!left.is_null(), "{} returned a null buffer", algorithm.name);
-        for offset in 0..BLOCK {
-            if frame + offset >= render_frames {
-                break;
-            }
+        for offset in 0..frames {
             let left_sample = unsafe { *left.add(offset) };
             let right_sample = unsafe { *right.add(offset) };
             assert!(
@@ -167,7 +170,7 @@ fn render(algorithm: Algorithm, sample_rate: f32) -> Vec<f32> {
             output.push(left_sample);
             output.push(right_sample);
         }
-        frame += BLOCK;
+        frame += frames;
     }
     output
 }
