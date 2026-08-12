@@ -1,0 +1,28 @@
+src/modules/Grinder/useCases/grinderParamBridge/syncGrinderPatchToAudio.ts
+  s_bc88af7d3b054c::t_93f00141cc2a3e 286-288
+  s_bc88af7d3b054c::t_f0af963f3a867b 291
+src/modules/Grinder/models/__tests__/GrinderProjectParameterMap.spec.ts
+  s_bc88af7d3b054c::t_12d64ffedd92bc 14-15,22
+  s_bc88af7d3b054c::t_93f00141cc2a3e 18-19
+src/modules/Grinder/models/GrinderProjectParameterMap.ts
+  s_bc88af7d3b054c::t_93f00141cc2a3e 26,73,76,87,126
+  s_bc88af7d3b054c::t_12d64ffedd92bc 125
+  s_bc88af7d3b054c::t_966e3787babdd5 127
+  s_bc88af7d3b054c::t_e6fe6d523a0387 140
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "f8f68b0499481c7ea3c97a7578173798ca63f936",
+  "prompts": {},
+  "sessions": {
+    "s_bc88af7d3b054c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f9b4a-11a2-7f61-8dfb-76eed0eb2a9c",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
