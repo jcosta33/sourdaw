@@ -313,6 +313,8 @@ export function getSharedVocalFxBusesPromptScope(
             track.devices.at(-1)?.id !== source?.device.id ||
             track.pan !== 0 ||
             track.outputId !== 'master' ||
+            track.gain > 1 ||
+            (track.vcaGroupId !== null && track.vcaGroupId !== undefined) ||
             (track.sends?.length ?? 0) > 0
         );
     });
@@ -322,7 +324,7 @@ export function getSharedVocalFxBusesPromptScope(
     if (hasUnsafeSignalTopology || hasVocalAutomation) {
         return {
             status: 'invalid',
-            reason: 'EX-08 can preserve balance only for centered master-routed vocals with one tail effect and no existing sends or automation',
+            reason: 'EX-08 can preserve balance only for centered, non-VCA, unity-or-lower master-routed vocals with one tail effect and no existing sends or automation',
         };
     }
     const delayGroup = buildEffectGroup('delay', sources);
