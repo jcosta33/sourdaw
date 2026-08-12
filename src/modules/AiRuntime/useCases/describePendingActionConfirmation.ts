@@ -248,7 +248,8 @@ function describeExactAction(action: AppAction, actions: readonly AppAction[], c
         }
     }
     if (action.type === 'createBus' && action.payload.busId) {
-        return `Create bus "${action.payload.name}" (${action.payload.busId})`;
+        const gain = action.payload.initialGain === 1 ? ' at unity gain' : '';
+        return `Create bus "${action.payload.name}" (${action.payload.busId})${gain}`;
     }
     if (action.type === 'addDevice' && action.payload.deviceId) {
         const trackName = resolveActionTrackName(action.payload.trackId, actions, context);

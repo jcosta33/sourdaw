@@ -1613,8 +1613,8 @@ describe('backing-vocal plate workflow', () => {
             expect.arrayContaining([
                 'Remove device "Lead Delay" (device-lead-delay, builtin-delay) from "Lead Vocal" (track-lead-vocal)',
                 'Set track "Lead Vocal" (track-lead-vocal) gain to 0.656',
-                `Create bus "Vocal Delay" (${delayBusId})`,
-                `Create bus "Vocal Reverb" (${reverbBusId})`,
+                `Create bus "Vocal Delay" (${delayBusId}) at unity gain`,
+                `Create bus "Vocal Reverb" (${reverbBusId}) at unity gain`,
                 `Create post-fader send from "Lead Vocal" (track-lead-vocal) to "Vocal Delay" (${delayBusId}) at -12.04 dB`,
                 `Create post-fader send from "Backing Vocal High" (track-bgv-high) to "Vocal Reverb" (${reverbBusId}) at -3.52 dB`,
             ])
