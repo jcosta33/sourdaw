@@ -1,0 +1,53 @@
+src/modules/AiRuntime/models/ProjectContext.ts
+  s_a40848e8f8cca9::t_5c804ada0e99b3 83
+src/modules/Project/useCases/acceptCreativeIntent.ts
+  s_a40848e8f8cca9::t_5c804ada0e99b3 26-29
+src/modules/AiRuntime/useCases/__tests__/getProjectContext.spec.ts
+  s_a40848e8f8cca9::t_c60cd82c1568ce 170
+src/modules/Command/useCases/executeAppAction.ts
+  s_a40848e8f8cca9::t_1a53b67697469f 23,106-107
+  s_a40848e8f8cca9::t_a71c25559d46ce 108-109
+src/modules/Project/useCases/doesProductionBriefAllowActionBatch.ts
+  s_a40848e8f8cca9::t_41a754c37cdfbc 1,94-116,138-141,158,161-162,165-173
+src/modules/Project/models/ProductionBrief.ts
+  s_a40848e8f8cca9::t_5c804ada0e99b3 62-67,81,269-276,286,309
+src/modules/Project/useCases/__tests__/productionBrief.spec.ts
+  s_a40848e8f8cca9::t_c715ded77bf919 228-230,233,448-450
+  s_a40848e8f8cca9::t_b883f67c07bb3c 4,45,364,367-388,415-421,425-430,432
+  s_a40848e8f8cca9::t_658e9dbe525fc4 46-54,133-139,422-424,431,433-447
+  s_a40848e8f8cca9::t_7f0eadb0f60425 6,36,58,296-320,366
+  s_a40848e8f8cca9::t_8ef0d235e1d5de 140
+  s_a40848e8f8cca9::t_5bd774bba6e835 321-322
+  s_a40848e8f8cca9::t_145167db636585 365
+src/modules/Project/stores/productionBriefReplayAuthority.ts
+  s_a40848e8f8cca9::t_c1f05cce0d95dc 1-14
+src/modules/Project/useCases/projectPersistence/fileIO/__tests__/buildProjectData.spec.ts
+  s_a40848e8f8cca9::t_c60cd82c1568ce 56
+src/modules/Project/useCases/projectPersistence/helpers/__tests__/replaceProjectData.spec.ts
+  s_a40848e8f8cca9::t_c60cd82c1568ce 251
+src/modules/Command/useCases/__tests__/executeAppAction.spec.ts
+  s_a40848e8f8cca9::t_b883f67c07bb3c 20,118,146-154
+  s_a40848e8f8cca9::t_f830cdfa480162 155-156
+src/modules/AiRuntime/transformers/__tests__/llmActionBridge.spec.ts
+  s_a40848e8f8cca9::t_c60cd82c1568ce 3488
+src/modules/Project/handlers/project/handleSetProductionBrief.ts
+  s_a40848e8f8cca9::t_1a53b67697469f 4-7,69,93,99-100,106,109
+src/modules/Project/stores/__tests__/productionBriefCollaboration.spec.ts
+  s_a40848e8f8cca9::t_658e9dbe525fc4 1-79
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "443df5aacd8ee0ae7c830b173f99d6dfc732410a",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
