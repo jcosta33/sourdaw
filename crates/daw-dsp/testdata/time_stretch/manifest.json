@@ -13,7 +13,7 @@
     "reference_os_version": "26.5.2",
     "reference_cpu": "Apple M4 Pro",
     "non_reference_verification": "checked-in-sha256-plus-finite-shape-and-sample-tolerance",
-    "non_reference_max_abs_diff": 0.00035
+    "non_reference_max_abs_diff": 0.00005
   },
   "fixtures": [
     {
@@ -68,7 +68,8 @@
       "channels": 1,
       "frames": 4608,
       "construction": "Current Crumbs PhaseVocoder::process output for crumbs_input_4096.f32le at its inverse output-duration ratio 1.25 (canonical playback-rate ratio 0.8). Bounded characterization only; not a realtime or product-acceptance fixture.",
-      "sha256": "bb8849bba547dbd115b978b9574a93032f78e117a50d9d4a345ac0e708f2ca2c"
+      "sha256": "bb8849bba547dbd115b978b9574a93032f78e117a50d9d4a345ac0e708f2ca2c",
+      "non_reference_max_abs_diff": 0.00035
     },
     {
       "path": "characterization/wsola_duration_ratio_1_25.f32le",
