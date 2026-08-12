@@ -113,6 +113,7 @@ vi.mock('#/modules/Arrangement/useCases', () => ({
     clampDeviceParameterValue: noop,
     isDeviceParameterAutomatable: noop,
     quantiseDeviceParameterValue: noop,
+    reserveNextTrackColorForCommand: () => 'oklch(0.40 0.08 250)',
     getAllTracks: noop,
     getAutomationParameterRange: getAutomationParameterRangeMock,
     getPluginById: noop,
@@ -194,6 +195,7 @@ vi.mock('#/modules/Command/useCases', () => ({
     },
     setActionHistoryMetadataPort: noop,
     commandProjectRevisionPort: { setProvider: noop },
+    commandTrackDefaultsPort: { setTrackColorProvider: noop },
     setCommandEventBus: noop,
     syncActionReplayMetadata: noop,
 }));

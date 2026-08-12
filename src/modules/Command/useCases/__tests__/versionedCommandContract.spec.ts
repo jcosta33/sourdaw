@@ -10,6 +10,7 @@ import { type AppAction } from '#/utils/handlerContract';
 
 import { clearHandlerRegistry, registerHandlerMap } from '../../stores/handlerRegistry';
 import { commandProjectRevisionPort } from '../commandProjectRevisionPort';
+import { commandTrackDefaultsPort } from '../commandTrackDefaultsPort';
 import { createExecutionCommandEnvelope } from '../createExecutionCommandEnvelope';
 import { createVersionedCommandEnvelope } from '../createVersionedCommandEnvelope';
 import { createVersionedCommandReceipt } from '../createVersionedCommandReceipt';
@@ -26,6 +27,7 @@ describe('versioned command contract', () => {
         clearHandlerRegistry();
         configureAutomergeStoragePort(null);
         commandProjectRevisionPort.setProvider(captureProjectRevision);
+        commandTrackDefaultsPort.setTrackColorProvider(() => 'oklch(0.40 0.08 250)');
     });
 
     afterEach(() => {
@@ -33,6 +35,7 @@ describe('versioned command contract', () => {
         flushAutomergeStorageWrites();
         configureAutomergeStoragePort(null);
         commandProjectRevisionPort.setProvider(null);
+        commandTrackDefaultsPort.setTrackColorProvider(null);
         vi.restoreAllMocks();
     });
 
@@ -182,6 +185,7 @@ describe('versioned command contract', () => {
             payload: {
                 id: 'track-command-aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
                 initialAlternativeId: 'alternative-command-bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+                color: 'oklch(0.40 0.08 250)',
                 name: 'Lead Vocal',
                 kind: 'audio',
             },
@@ -199,6 +203,11 @@ describe('versioned command contract', () => {
             { field: 'objectId', value: 'track-command-aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa' },
             { field: 'objectId', value: 'alternative-command-bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb' },
         ]);
+        expect(
+            parseVersionedCommandEnvelope(
+                serializeVersionedCommandEnvelope({ ...command.envelope, applicationAssignedIds: [] })
+            ).status
+        ).toBe('invalid');
     });
 
     it('materializes every nested identity for MIDI tracks and buses', () => {
@@ -214,6 +223,7 @@ describe('versioned command contract', () => {
         expect(midiTrack.action.payload.id).toMatch(/^track-command-/);
         expect(midiTrack.action.payload.initialAlternativeId).toMatch(/^alternative-command-/);
         expect(midiTrack.action.payload.initialDeviceId).toMatch(/^device-command-/);
+        expect(midiTrack.action.payload.color).toMatch(/^oklch\(/);
         expect(midiTrack.envelope.applicationAssignedIds.map((entry) => entry.argument)).toEqual([
             'id',
             'initialAlternativeId',
@@ -294,6 +304,25 @@ describe('versioned command contract', () => {
             status: 'valid',
             envelope: command.envelope,
         });
+        expect(
+            parseVersionedCommandEnvelope(
+                serializeVersionedCommandEnvelope({
+                    ...command.envelope,
+                    applicationAssignedIds: command.envelope.applicationAssignedIds.slice(1),
+                })
+            ).status
+        ).toBe('invalid');
+        expect(
+            parseVersionedCommandEnvelope(
+                serializeVersionedCommandEnvelope({
+                    ...command.envelope,
+                    applicationAssignedIds: [
+                        ...command.envelope.applicationAssignedIds,
+                        { argument: 'clipId', value: 'clip-1' },
+                    ],
+                })
+            ).status
+        ).toBe('invalid');
         expect(createVersionedCommandReceipt({ envelope: command.envelope }).applicationAssigned.ids).toEqual([
             { field: 'commandId', value: '33333333-cccc-4ccc-8ccc-cccccccccccc' },
             { field: 'objectId', value: 'note-command-11111111-aaaa-4aaa-8aaa-aaaaaaaaaaaa' },

@@ -9,6 +9,7 @@ import {
 
 import { executableAppActionDescriptorByType } from './executableAppActionRegistry';
 import { getVersionedCommandArgumentsDigest } from './getVersionedCommandArgumentsDigest';
+import { COMMAND_APPLICATION_ID_RULES } from './materializeCommandApplicationIds';
 import { validateVersionedCommandArguments } from './versionedCommandArgumentKeys';
 
 type ParseVersionedCommandEnvelopeResult =
@@ -157,13 +158,47 @@ function isDeterministicSerializedOperation(operation: string, value: unknown): 
         return (
             isNonEmptyString(value.id) &&
             isNonEmptyString(value.initialAlternativeId) &&
+            isNonEmptyString(value.color) &&
             (value.kind !== 'midi' || isNonEmptyString(value.initialDeviceId))
         );
     }
     if (operation === 'createBus') {
-        return isNonEmptyString(value.busId) && isNonEmptyString(value.initialAlternativeId);
+        return (
+            isNonEmptyString(value.busId) &&
+            isNonEmptyString(value.initialAlternativeId) &&
+            isNonEmptyString(value.color)
+        );
     }
     return true;
+}
+
+function getRequiredApplicationAssignedIdArguments(
+    operation: string,
+    argumentsValue: Record<string, unknown>
+): string[] {
+    if (operation === 'addNotes') {
+        const notes = argumentsValue.notes;
+        if (!Array.isArray(notes)) {
+            return [];
+        }
+        return notes.map((_, index) => `notes[${String(index)}].id`);
+    }
+    if (operation === 'addTrack') {
+        return argumentsValue.kind === 'midi'
+            ? ['id', 'initialAlternativeId', 'initialDeviceId']
+            : ['id', 'initialAlternativeId'];
+    }
+    if (operation === 'createBus') {
+        return ['busId', 'initialAlternativeId'];
+    }
+    if (operation === 'armTrack') {
+        return typeof argumentsValue.midiInputOwnerId === 'string' ? ['midiInputOwnerId'] : [];
+    }
+    const rule = COMMAND_APPLICATION_ID_RULES[operation as keyof typeof COMMAND_APPLICATION_ID_RULES];
+    if (!rule || typeof argumentsValue[rule.argument] !== 'string') {
+        return [];
+    }
+    return [rule.argument];
 }
 
 function hasCompleteReferenceMetadata(
@@ -279,12 +314,21 @@ function validateEnvelope(value: unknown): ParseVersionedCommandEnvelopeResult {
         return { status: 'invalid', reason: 'Available device versions are invalid' };
     }
     const argumentsValue = value.arguments;
+    const applicationAssignedIds = value.applicationAssignedIds;
+    const requiredApplicationAssignedIdArguments = isRecord(argumentsValue)
+        ? getRequiredApplicationAssignedIdArguments(value.operation, argumentsValue)
+        : [];
     if (
-        !Array.isArray(value.applicationAssignedIds) ||
-        !value.applicationAssignedIds.every(isApplicationAssignedId) ||
+        !Array.isArray(applicationAssignedIds) ||
+        !applicationAssignedIds.every(isApplicationAssignedId) ||
         !isRecord(argumentsValue) ||
-        value.applicationAssignedIds.some(
+        new Set(applicationAssignedIds.map(({ argument }) => argument)).size !== applicationAssignedIds.length ||
+        applicationAssignedIds.some(({ argument }) => !requiredApplicationAssignedIdArguments.includes(argument)) ||
+        applicationAssignedIds.some(
             ({ argument, value: assignedValue }) => getArgumentPathValue(argumentsValue, argument) !== assignedValue
+        ) ||
+        requiredApplicationAssignedIdArguments.some(
+            (argument) => applicationAssignedIds.filter((entry) => entry.argument === argument).length !== 1
         )
     ) {
         return { status: 'invalid', reason: 'Application-assigned command IDs are invalid' };
