@@ -1,0 +1,40 @@
+src/modules/SessionLauncher/useCases/loopStation/__tests__/toggleRecord.spec.ts
+  s_62e9c3dc3ba52a::t_6622977779c56d 166,169-173,182,185-216
+  s_62e9c3dc3ba52a::t_fc8c5321ffff4a 217
+src/modules/Setlist/presentations/views/SetlistPanel.tsx
+  s_62e9c3dc3ba52a::t_7af623f112b7de 369,375,378
+src/modules/SessionLauncher/presentations/views/LoopStationPanel.tsx
+  s_62e9c3dc3ba52a::t_cef2b74d34d1c7 148-152
+  s_62e9c3dc3ba52a::t_bf44b6263fca5d 273-278
+  s_62e9c3dc3ba52a::t_9d5ecb31c91977 449-450
+  s_62e9c3dc3ba52a::t_67d0dc11cc0b1a 1
+  s_62e9c3dc3ba52a::t_fbbd871d3059c8 291-304,309,319
+  s_62e9c3dc3ba52a::t_7d783230147225 97-147,153-157,163-164,172-173
+src/modules/SessionLauncher/presentations/views/__tests__/LoopStationPanel.spec.tsx
+  s_62e9c3dc3ba52a::t_0ce9bfe57b6e73 4,7
+  s_62e9c3dc3ba52a::t_14cc1ec42854b0 73-84
+  s_62e9c3dc3ba52a::t_cfd4838c59fc0f 1-2
+  s_62e9c3dc3ba52a::t_d9b1fcb9d65ac0 217-296
+  s_62e9c3dc3ba52a::t_353297315ec37b 6
+src/modules/SessionLauncher/useCases/loopStation/toggleRecord.ts
+  s_62e9c3dc3ba52a::t_f9d0fa89603c94 49-55,57
+src/modules/Setlist/presentations/views/__tests__/SetlistPanel.spec.tsx
+  s_62e9c3dc3ba52a::t_8b238c2b91f869 401,409,417,430-441
+  s_62e9c3dc3ba52a::t_5b3263e7d8a1e7 442
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "0328ece545e4afcf5c7556078343305a960a0535",
+  "prompts": {},
+  "sessions": {
+    "s_62e9c3dc3ba52a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "92e0a2e7-8660-41e2-be8b-b2d644c6d0b7",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
