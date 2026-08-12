@@ -1,0 +1,19 @@
+tests/e2e/crustReleaseAutoTestId.spec.ts
+  s_7f07ef1b90b879::t_c1c8820ef671b6 1-58
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "16da67410a46f161ae4b35d36df9a94faa8cd3ce",
+  "prompts": {},
+  "sessions": {
+    "s_7f07ef1b90b879": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019ff4aa-4c12-7a92-b4ba-d90398bf536d",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
