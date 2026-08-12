@@ -11,7 +11,7 @@
  * - Audio buffers transferred via Transferable (zero-copy)
  */
 
-import type { WorkerRequest, WorkerResponse, TensorData } from '../models/InferenceRequest';
+import type { OnnxExecutionProvider, WorkerRequest, WorkerResponse, TensorData } from '../models/InferenceRequest';
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -47,6 +47,7 @@ type OrtModule = {
 type SessionEntry = {
     session: OrtInferenceSession;
     modelId: string;
+    executionProviders: OnnxExecutionProvider[];
     sizeBytes: number;
     lastUsedAt: number;
 };
@@ -89,7 +90,7 @@ function getOrt(): Promise<OrtModule> {
     return ortPromise;
 }
 
-function selectExecutionProviders(): string[] {
+function selectExecutionProviders(): OnnxExecutionProvider[] {
     if (typeof navigator !== 'undefined' && 'gpu' in navigator) {
         return ['webgpu', 'wasm'];
     }
@@ -119,11 +120,11 @@ async function evictLru(): Promise<void> {
     }
 }
 
-async function getOrCreateSession(modelId: string, modelData: ArrayBuffer): Promise<OrtInferenceSession> {
+async function getOrCreateSession(modelId: string, modelData: ArrayBuffer): Promise<SessionEntry> {
     const cached = sessionCache.get(modelId);
     if (cached) {
         cached.lastUsedAt = Date.now();
-        return cached.session;
+        return cached;
     }
 
     const ort = await getOrt();
@@ -139,6 +140,7 @@ async function getOrCreateSession(modelId: string, modelData: ArrayBuffer): Prom
     const entry: SessionEntry = {
         session,
         modelId,
+        executionProviders: providers,
         sizeBytes,
         lastUsedAt: Date.now(),
     };
@@ -146,7 +148,7 @@ async function getOrCreateSession(modelId: string, modelData: ArrayBuffer): Prom
     totalMemoryBytes += sizeBytes;
 
     await evictLru();
-    return session;
+    return entry;
 }
 
 // ── Tensor helpers ─────────────────────────────────────────────────────────
@@ -446,11 +448,12 @@ self.onmessage = async (event: MessageEvent<WorkerRequest>): Promise<void> => {
 
     if (req.type === 'create-session') {
         try {
-            await getOrCreateSession(req.modelId, req.modelData);
+            const entry = await getOrCreateSession(req.modelId, req.modelData);
             const response: WorkerResponse = {
                 type: 'session-created',
                 requestId: req.requestId,
                 modelId: req.modelId,
+                executionProviders: entry.executionProviders,
             };
             self.postMessage(response);
         } catch (error) {

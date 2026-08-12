@@ -80,14 +80,6 @@ const PROBE_STYLE_VALUE = 0.05;
  */
 const PROBE_TEXT = 'the quick brown fox jumps over the lazy dog while the sun sets behind the hills';
 
-/**
- * The execution providers this measurement is taken under. Mirrors
- * `selectExecutionProviders()` in `onnxInferenceWorker` — the worker picks them
- * itself, so this is recorded for the report rather than passed in. If that
- * function's preference order changes, change this with it.
- */
-const WEBGPU_EXECUTION_PROVIDERS = ['webgpu', 'wasm'];
-
 function hasWebGpu(): boolean {
     return typeof navigator !== 'undefined' && 'gpu' in navigator;
 }
@@ -106,6 +98,7 @@ export const measureInferenceThroughput = inject({ logger, readModel })(
             }
 
             let modelData: ArrayBuffer | null;
+            let executionProviders: string[];
             try {
                 modelData = await readModel({ family: PROBE_MODEL_FAMILY, modelId: PROBE_MODEL_ID });
             } catch (error) {
@@ -124,7 +117,10 @@ export const measureInferenceThroughput = inject({ logger, readModel })(
             try {
                 // Session creation is outside the timed window on purpose — see the
                 // header. `loadOnnxSession` is idempotent; the worker caches by modelId.
-                await inferenceWorkerBridge.loadOnnxSession({ modelId: PROBE_MODEL_ID, modelData });
+                executionProviders = await inferenceWorkerBridge.loadOnnxSession({
+                    modelId: PROBE_MODEL_ID,
+                    modelData,
+                });
             } catch (error) {
                 logger.warn(`[BrowserAi] Throughput probe could not create a session: ${String(error)}`);
                 return { status: 'not-measured', reason: 'runtime-unavailable' };
@@ -171,7 +167,7 @@ export const measureInferenceThroughput = inject({ logger, readModel })(
             return {
                 status: 'measured',
                 modelId: PROBE_MODEL_ID,
-                executionProviders: WEBGPU_EXECUTION_PROVIDERS,
+                executionProviders,
                 audioSeconds,
                 elapsedSeconds,
                 realtimeFactor,

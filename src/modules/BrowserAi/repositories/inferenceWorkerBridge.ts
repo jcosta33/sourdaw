@@ -162,12 +162,16 @@ type RunDdspInput = Extract<WorkerRequest, { type: 'run-ddsp-inference' }>;
  * Module-level singleton — not injectable because it owns worker lifecycle state.
  */
 export const inferenceWorkerBridge = {
-    async loadOnnxSession({ modelId, modelData }: LoadSessionInput): Promise<void> {
+    async loadOnnxSession({ modelId, modelData }: LoadSessionInput): Promise<string[]> {
         logger.info(`[WorkerBridge] Loading ONNX session: ${modelId}`);
         const worker = await getOnnxWorker();
         const requestId = crypto.randomUUID();
         const request: WorkerRequest = { type: 'create-session', requestId, modelId, modelData, options: {} };
-        await sendRequest(worker, workerState.onnx, request, [modelData]);
+        const response = await sendRequest(worker, workerState.onnx, request, [modelData]);
+        if (response.type !== 'session-created' || !response.executionProviders) {
+            throw new Error(`Unexpected ONNX session response: ${response.type}`);
+        }
+        return response.executionProviders;
     },
 
     /**

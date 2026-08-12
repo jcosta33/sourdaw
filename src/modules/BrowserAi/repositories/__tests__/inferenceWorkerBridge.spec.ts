@@ -141,21 +141,36 @@ describe('inferenceWorkerBridge — ONNX session lifecycle', () => {
         expect(request).toMatchObject({ type: 'create-session', modelId: 'kokoro-82m-q8', modelData, options: {} });
         expect(transfer).toEqual([modelData]);
 
-        reply(worker, { type: 'session-created', requestId: lastRequestId(worker), modelId: 'kokoro-82m-q8' });
-        await expect(promise).resolves.toBeUndefined();
+        reply(worker, {
+            type: 'session-created',
+            requestId: lastRequestId(worker),
+            modelId: 'kokoro-82m-q8',
+            executionProviders: ['wasm'],
+        });
+        await expect(promise).resolves.toEqual(['wasm']);
     });
 
     it('reuses the existing ONNX worker for a second session load', async () => {
         const first = inferenceWorkerBridge.loadOnnxSession({ modelId: 'm1', modelData: new ArrayBuffer(4) });
         await flush();
-        reply(onnxWorker(), { type: 'session-created', requestId: lastRequestId(onnxWorker()), modelId: 'm1' });
+        reply(onnxWorker(), {
+            type: 'session-created',
+            requestId: lastRequestId(onnxWorker()),
+            modelId: 'm1',
+            executionProviders: ['webgpu', 'wasm'],
+        });
         await first;
 
         const second = inferenceWorkerBridge.loadOnnxSession({ modelId: 'm2', modelData: new ArrayBuffer(4) });
         await flush();
         expect(installedWorkers).toHaveLength(1);
-        reply(onnxWorker(), { type: 'session-created', requestId: lastRequestId(onnxWorker()), modelId: 'm2' });
-        await expect(second).resolves.toBeUndefined();
+        reply(onnxWorker(), {
+            type: 'session-created',
+            requestId: lastRequestId(onnxWorker()),
+            modelId: 'm2',
+            executionProviders: ['webgpu', 'wasm'],
+        });
+        await expect(second).resolves.toEqual(['webgpu', 'wasm']);
     });
 
     it('rejects with the worker error message when the ONNX worker reports an error', async () => {
@@ -333,7 +348,12 @@ describe('inferenceWorkerBridge — releaseOnnxSession / releaseDdspSession', ()
         const load = inferenceWorkerBridge.loadOnnxSession({ modelId: 'm1', modelData: new ArrayBuffer(4) });
         await flush();
         const worker = onnxWorker();
-        reply(worker, { type: 'session-created', requestId: lastRequestId(worker), modelId: 'm1' });
+        reply(worker, {
+            type: 'session-created',
+            requestId: lastRequestId(worker),
+            modelId: 'm1',
+            executionProviders: ['webgpu', 'wasm'],
+        });
         await load;
         worker.postMessage.mockClear();
 
