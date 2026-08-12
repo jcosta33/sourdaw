@@ -1,0 +1,27 @@
+src/modules/PluginHost/useCases/pluginScan/getExternalPluginContractVersionForCommand.ts
+  s_a40848e8f8cca9::t_e2f505747c3336 1-17
+src/modules/PluginHost/useCases/index.ts
+  s_a40848e8f8cca9::t_e2f505747c3336 26
+src/app/bootstrap.ts
+  s_a40848e8f8cca9::t_e2f505747c3336 124,193-196
+src/modules/PluginHost/useCases/pluginScan/__tests__/getExternalPluginContractVersionForCommand.spec.ts
+  s_a40848e8f8cca9::t_e2f505747c3336 1-37
+src/app/__tests__/bootstrap.spec.ts
+  s_a40848e8f8cca9::t_e2f505747c3336 278
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "eecaa04bc16608701cef74c731543797d070ab9e",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
