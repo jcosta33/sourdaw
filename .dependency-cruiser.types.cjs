@@ -47,7 +47,7 @@ const TYPE_ONLY_RULE_NAMES = new Set([
     'react-only-in-presentation',
     'react-dom-only-in-presentation',
     'tauri-ipc-only-in-repositories',
-    'application-to-modules-public-surface-only',
+    'app-to-modules-public-surface-only',
     'shared-no-module-imports',
     'helpers-no-module-imports',
     'utils-no-module-imports',
