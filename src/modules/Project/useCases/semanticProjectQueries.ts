@@ -415,6 +415,7 @@ function resetRetentionForProject(snapshot: SemanticProjectIndexSnapshot): void 
 function createDiffItems(
     snapshot: SemanticProjectIndexSnapshot,
     sinceRevision: string | undefined,
+    filters: SemanticProjectQueryFilters | undefined,
     warnings: string[]
 ): SemanticQueryItem[] {
     if (!sinceRevision) {
@@ -425,10 +426,15 @@ function createDiffItems(
         warnings.push('The requested revision is outside the retained semantic diff window.');
         return [];
     }
-    const current = new Map(snapshot.entities.map((entity) => [`${entity.kind}:${entity.id}`, entity]));
+    const current = new Map(
+        snapshot.entities
+            .filter((entity) => entityMatchesFilters(entity, filters))
+            .map((entity) => [`${entity.kind}:${entity.id}`, entity])
+    );
+    const filteredBefore = new Map([...before].filter(([, previous]) => entityMatchesFilters(previous.item, filters)));
     const changes: SemanticQueryItem[] = [];
     for (const [key, entity] of current) {
-        const previous = before.get(key);
+        const previous = filteredBefore.get(key);
         if (!previous) {
             changes.push({ id: entity.id, kind: entity.kind, change: 'added' });
             continue;
@@ -437,7 +443,7 @@ function createDiffItems(
             changes.push({ id: entity.id, kind: entity.kind, change: 'updated' });
         }
     }
-    for (const [key, previous] of before) {
+    for (const [key, previous] of filteredBefore) {
         if (!current.has(key)) {
             changes.push({ id: previous.item.id, kind: previous.item.kind, change: 'removed' });
         }
@@ -480,7 +486,7 @@ function selectItems(
             .map((entity) => toQueryItem(entity));
     }
     if (input.type === 'diff') {
-        return createDiffItems(snapshot, input.sinceRevision, warnings);
+        return createDiffItems(snapshot, input.sinceRevision, input.filters, warnings);
     }
     return snapshot.entities
         .filter(

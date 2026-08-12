@@ -300,10 +300,20 @@ describe('semantic project queries', () => {
         );
         setTrackStoreState({ ...trackStore.value!, tracks });
 
-        const diff = querySemanticProject({ type: 'diff', sinceRevision: before.revisionToken });
+        const diff = querySemanticProject({
+            type: 'diff',
+            sinceRevision: before.revisionToken,
+            filters: { stableId: 'track-bass', kind: 'track' },
+        });
+        const unrelatedDiff = querySemanticProject({
+            type: 'diff',
+            sinceRevision: before.revisionToken,
+            filters: { stableId: 'track-drums' },
+        });
         const afterDiagnostics = getSemanticProjectIndexDiagnostics();
 
         expect(diff.items).toEqual([expect.objectContaining({ id: 'track-bass', change: 'updated', kind: 'track' })]);
+        expect(unrelatedDiff.items).toEqual([]);
         expect(afterDiagnostics.tracks).toBe(initialDiagnostics.tracks + 1);
         expect(afterDiagnostics.sections).toBe(initialDiagnostics.sections);
         expect(afterDiagnostics.routing).toBe(initialDiagnostics.routing);
