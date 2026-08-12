@@ -1,0 +1,14 @@
+docs/manual/02-concepts.md
+  h_1228e573df1f42 136
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "948c1c9896fc98e3afa6eedd587c6cdeeb2e0129",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
