@@ -1,0 +1,20 @@
+crates/proof-chamber/tests/vintage_character.rs
+  s_bc88af7d3b054c::t_9d501372cc0fef 9,15-33,86,93-108
+  s_bc88af7d3b054c::t_27418e59bb01dd 1-8,10-14,34-85,87-92,109-111
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "32b49a186e77c4d05f080a8344130ee0d9a1e789",
+  "prompts": {},
+  "sessions": {
+    "s_bc88af7d3b054c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f9b4a-11a2-7f61-8dfb-76eed0eb2a9c",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
