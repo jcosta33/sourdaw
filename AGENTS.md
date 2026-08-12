@@ -25,7 +25,7 @@ After cross-module moves or bulk import changes, re-run `pnpm deps:validate` bef
 - **`src/components/`** — shared UI design system (shadcn/Radix `ui/`, `layout/`, DAW `daw/` family). No direct store/use-case imports.
 - **`src-tauri/`** + 9 workspace crates (`daw-core`, `daw-collab`, `daw-engine`, `daw-dsp`, `daw-io`, `daw-wasm-decoder`, `daw-plugin-host`, `proof-chamber`, `scoring`) — thin Tauri bridge and RT/native audio. Commands live only in `src-tauri`.
 - **`.agents/skills/`** — domain agent skills (architecture, web-audio-engine, …).
-- **`.agents/worktrees/<name>/`** — isolated lanes for parallel work (gitignored). Create from `origin/main`; lock with `git worktree lock --reason active:<owner> <path>` while assigned. Operate only inside that lane. For campaign lanes, record every merged PR in the campaign issue before closing it; after every process exits, unlock the lane and run `pnpm lane:remove <path>` elsewhere. Other lanes remain owner-managed.
+- **`.agents/worktrees/<name>/`** — isolated lanes for parallel work (gitignored). Create from `origin/main`; lock with `git worktree lock --reason active:<owner> <path>` while assigned. Operate only inside that lane. Each campaign PR links its issue; record every merged PR in that issue before closing it. After every process exits, unlock the lane and run `pnpm lane:remove <path>` elsewhere. Other lanes remain owner-managed.
 - **Nested `AGENTS.md`** — subtree-specific guidance (with `CLAUDE.md`/`GEMINI.md` symlinks) lives in `src-tauri/`, `crates/daw-dsp/`, `src/components/`, `src/modules/AudioEngine/`, `src/modules/Collaboration/`. Read the local file when working in those subtrees.
 
 ## Device naming key (bakery metaphor)
