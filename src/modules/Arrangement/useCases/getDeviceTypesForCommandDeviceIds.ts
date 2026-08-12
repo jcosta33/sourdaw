@@ -10,7 +10,7 @@ export function getDeviceTypesForCommandDeviceIds(input: {
     for (const track of getTrackStoreState()?.tracks ?? []) {
         for (const device of track.devices) {
             if (requestedIds.has(device.id)) {
-                resolved[device.id] = device.type;
+                resolved[device.id] = device.externalPluginId ?? device.type;
             }
         }
     }
