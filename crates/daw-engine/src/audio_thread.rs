@@ -159,6 +159,24 @@ pub(crate) fn spawn_audio_thread_with_diagnostics(
     })
 }
 
+/// The native chain only ever computes and interleaves stereo pairs
+/// (`chunk.len() / 2`, `chunks_exact_mut(2)`). Building a stream on a device
+/// whose config reports any other channel count would silently miscount and
+/// mispair samples — garbled or half-silent audio, no panic, no signal. We
+/// reject rather than de/interleave generically: nothing today produces more
+/// than a stereo pair (the native chain renders silence except bridged
+/// plugins, which are themselves stereo-only), so generic N-channel handling
+/// would be unused complexity on the RT path for no current caller.
+fn require_stereo_output(channels: u16) -> Result<(), String> {
+    if channels != 2 {
+        return Err(format!(
+            "Unsupported audio output device: expected 2 (stereo) channels, found {channels}. \
+             The native engine only supports stereo output devices."
+        ));
+    }
+    Ok(())
+}
+
 fn build_audio_stream(
     command_rx: Consumer<GraphCommand>,
     retired_tx: rtrb::Producer<RetiredGraphObjects>,
@@ -172,6 +190,8 @@ fn build_audio_stream(
     let config = device
         .default_output_config()
         .map_err(|e| format!("Failed to get default output config: {}", e))?;
+
+    require_stereo_output(config.channels())?;
 
     let sample_rate = config.sample_rate() as f32;
     let mut scheduler = AudioScheduler::with_midi_rt_diagnostics(
@@ -296,6 +316,29 @@ mod tests {
             let _ = self.entered_tx.send(thread_name);
             let _ = self.release_rx.recv();
         }
+    }
+
+    #[test]
+    fn a_stereo_device_config_is_accepted() {
+        assert!(super::require_stereo_output(2).is_ok());
+    }
+
+    #[test]
+    fn a_mono_device_config_is_rejected_with_a_surfaced_error_naming_the_count() {
+        let error = super::require_stereo_output(1).expect_err("mono must be rejected");
+        assert!(
+            error.contains('1'),
+            "error should name the actual channel count: {error}"
+        );
+    }
+
+    #[test]
+    fn a_multichannel_device_config_is_rejected_with_a_surfaced_error_naming_the_count() {
+        let error = super::require_stereo_output(6).expect_err("6-channel must be rejected");
+        assert!(
+            error.contains('6'),
+            "error should name the actual channel count: {error}"
+        );
     }
 
     #[test]
