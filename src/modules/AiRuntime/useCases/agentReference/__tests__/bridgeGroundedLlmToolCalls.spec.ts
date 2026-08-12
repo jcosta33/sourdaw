@@ -2304,7 +2304,9 @@ describe('bridgeGroundedLlmToolCalls', () => {
         );
 
         expect(result.actions).toEqual([]);
-        expect(result.rejections[0]?.reason).toContain('not unambiguously grounded');
+        expect(result.rejections[0]?.reason).toContain('REFERENCE_RESOLUTION:{"kind":"clarification"');
+        expect(result.rejections[0]?.reason).toContain('"id":"master"');
+        expect(result.rejections[0]?.reason).toContain('"evidence":[{"kind":"tag","value":"bus"}]');
     });
 
     it('rejects ambiguous, mismatched, and ungrounded provider targets', () => {

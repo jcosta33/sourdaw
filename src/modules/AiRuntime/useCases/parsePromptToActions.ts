@@ -49,6 +49,78 @@ type CreateFastPathResultInput = {
     prompt: string;
 };
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+    return typeof value === 'object' && value !== null;
+}
+
+function parseReferenceResolutionRequest(reason: string): IntentResult['referenceResolutionRequest'] | null {
+    const prefix = 'REFERENCE_RESOLUTION:';
+    if (!reason.startsWith(prefix)) {
+        return null;
+    }
+    try {
+        const value: unknown = JSON.parse(reason.slice(prefix.length));
+        if (!isRecord(value)) {
+            return null;
+        }
+        const record = value;
+        if (
+            (record.kind !== 'clarification' && record.kind !== 'preview') ||
+            typeof record.argument !== 'string' ||
+            !Array.isArray(record.candidates)
+        ) {
+            return null;
+        }
+        const candidates = record.candidates.flatMap((candidate) => {
+            if (!isRecord(candidate)) {
+                return [];
+            }
+            const candidateRecord = candidate;
+            if (
+                typeof candidateRecord.id !== 'string' ||
+                typeof candidateRecord.confidence !== 'number' ||
+                !Number.isFinite(candidateRecord.confidence) ||
+                candidateRecord.confidence < 0 ||
+                candidateRecord.confidence > 1 ||
+                !Array.isArray(candidateRecord.evidence)
+            ) {
+                return [];
+            }
+            const evidence = candidateRecord.evidence.flatMap((item) => {
+                if (!isRecord(item)) {
+                    return [];
+                }
+                const evidenceRecord = item;
+                if (typeof evidenceRecord.kind !== 'string' || typeof evidenceRecord.value !== 'string') {
+                    return [];
+                }
+                return [{ kind: evidenceRecord.kind, value: evidenceRecord.value }];
+            });
+            return [{ id: candidateRecord.id, confidence: candidateRecord.confidence, evidence }];
+        });
+        if (candidates.length !== record.candidates.length) {
+            return null;
+        }
+        return { kind: record.kind, argument: record.argument, candidates };
+    } catch {
+        return null;
+    }
+}
+
+function formatReferenceResolutionRejection(request: NonNullable<IntentResult['referenceResolutionRequest']>): string {
+    const heading = request.kind === 'clarification' ? 'Reference clarification required' : 'Explicit preview required';
+    const candidates = request.candidates.map((candidate) => {
+        const confidence = Math.round(candidate.confidence * 100);
+        const evidence = candidate.evidence.map((item) => `${item.kind}: ${item.value}`).join(', ');
+        return `- ${candidate.id} — ${confidence}% confidence (${evidence})`;
+    });
+    const response =
+        request.kind === 'preview'
+            ? 'Reply with the intended stable ID and request a preview.'
+            : 'Reply with the intended stable ID.';
+    return `${heading} for ${request.argument} before any command can run.\n${candidates.join('\n')}\n${response}`;
+}
+
 function createFastPathResult(input: CreateFastPathResultInput): IntentResult {
     const validated = validateActions(input.actions);
     if (validated.length !== input.actions.length) {
@@ -333,14 +405,22 @@ export const parsePromptToActions = inject({ logger })(
                 }
 
                 if (bridged.rejections.length > 0) {
+                    const referenceResolutionRequest = bridged.rejections
+                        .map((rejection) => parseReferenceResolutionRequest(rejection.reason))
+                        .find((request) => request !== null);
                     const reason = bridged.rejections
                         .map((rejection) => `${rejection.name}: ${rejection.reason}`)
                         .join('; ');
+                    let rejectionReason = `Provider action rejected: ${reason}`;
+                    if (referenceResolutionRequest) {
+                        rejectionReason = formatReferenceResolutionRejection(referenceResolutionRequest);
+                    }
                     return {
                         actions: [],
                         rawText: prompt,
                         requiresConfirmation: false,
-                        rejectionReason: `Provider action rejected: ${reason}`,
+                        ...(referenceResolutionRequest ? { referenceResolutionRequest } : {}),
+                        rejectionReason,
                     };
                 }
 

@@ -26,22 +26,75 @@ type ResolveAgentReferenceInput = {
     context: ProjectContext;
     dependencyId?: string;
     excludedIds?: readonly string[];
+    effectRisk?:
+        | 'bounded-reversible'
+        | 'broad-reversible'
+        | 'destructive-reversible'
+        | 'authority-sensitive'
+        | 'external-effect';
+    mode?: 'execute' | 'preview';
 };
 
 type ReferenceCandidate = {
     id: string;
     name: string;
+    track?: ProjectContext['tracks'][number];
 };
 
-type AgentReferenceEvidence = 'literal-id' | 'exact-name' | 'selection';
+type AgentReferenceEvidence =
+    | 'literal-id'
+    | 'exact-name'
+    | 'selection'
+    | 'role'
+    | 'section'
+    | 'tag'
+    | 'recency'
+    | 'fuzzy-name'
+    | 'inferred-property';
+
+type AgentReferenceEvidenceReceipt = {
+    kind: AgentReferenceEvidence;
+    value: string;
+};
 
 type ResolveAgentReferenceResult =
-    | { status: 'resolved'; id: string; evidence: AgentReferenceEvidence }
+    | {
+          status: 'resolved';
+          id: string;
+          evidence: AgentReferenceEvidence;
+          confidence: number;
+          evidenceReceipt: AgentReferenceEvidenceReceipt[];
+      }
     | {
           status: 'rejected';
-          reason: 'ungrounded-target' | 'ambiguous-target' | 'asserted-target-mismatch';
+          reason:
+              | 'ungrounded-target'
+              | 'ambiguous-target'
+              | 'asserted-target-mismatch'
+              | 'clarification-required'
+              | 'preview-required';
           candidateIds?: string[];
+          candidates?: Array<{ id: string; confidence: number; evidence: AgentReferenceEvidenceReceipt[] }>;
       };
+
+const confidenceByEvidence: Record<AgentReferenceEvidence, number> = {
+    'literal-id': 1,
+    'exact-name': 1,
+    selection: 1,
+    role: 0.95,
+    section: 0.9,
+    tag: 0.9,
+    recency: 0.85,
+    'fuzzy-name': 0.75,
+    'inferred-property': 0.8,
+};
+
+const riskyEffectLevels = new Set([
+    'broad-reversible',
+    'destructive-reversible',
+    'authority-sensitive',
+    'external-effect',
+]);
 
 const duplicableTrackKinds: ReadonlySet<string> = new Set(['audio', 'midi', 'bus', 'folder']);
 const routableTrackKinds: ReadonlySet<string> = new Set(['audio', 'midi', 'bus']);
@@ -191,31 +244,45 @@ function getTrackCandidates(
     context: ProjectContext
 ): ReferenceCandidate[] | null {
     if (capability === 'track') {
-        return context.tracks;
+        return context.tracks.map((track) => ({ id: track.id, name: track.name, track }));
     }
     if (capability === 'armable-track') {
-        return context.tracks.filter((track) => track.kind !== 'vca');
+        return context.tracks
+            .filter((track) => track.kind !== 'vca')
+            .map((track) => ({ id: track.id, name: track.name, track }));
     }
     if (capability === 'duplicable-track') {
-        return context.tracks.filter((track) => duplicableTrackKinds.has(track.kind));
+        return context.tracks
+            .filter((track) => duplicableTrackKinds.has(track.kind))
+            .map((track) => ({ id: track.id, name: track.name, track }));
     }
     if (capability === 'removable-track') {
-        return context.tracks;
+        return context.tracks.map((track) => ({ id: track.id, name: track.name, track }));
     }
     if (capability === 'routable-source') {
-        return context.tracks.filter((track) => routableTrackKinds.has(track.kind));
+        return context.tracks
+            .filter((track) => routableTrackKinds.has(track.kind))
+            .map((track) => ({ id: track.id, name: track.name, track }));
     }
     if (capability === 'bus') {
-        return context.tracks.filter((track) => track.kind === 'bus');
+        return context.tracks
+            .filter((track) => track.kind === 'bus')
+            .map((track) => ({ id: track.id, name: track.name, track }));
     }
     if (capability === 'output') {
-        return context.tracks.filter((track) => track.kind === 'bus' || track.kind === 'master');
+        return context.tracks
+            .filter((track) => track.kind === 'bus' || track.kind === 'master')
+            .map((track) => ({ id: track.id, name: track.name, track }));
     }
     if (capability === 'device-host-track') {
-        return context.tracks.filter((track) => track.kind !== 'vca');
+        return context.tracks
+            .filter((track) => track.kind !== 'vca')
+            .map((track) => ({ id: track.id, name: track.name, track }));
     }
     if (capability === 'vca-member-track') {
-        return context.tracks.filter((track) => vcaMemberTrackKinds.has(track.kind));
+        return context.tracks
+            .filter((track) => vcaMemberTrackKinds.has(track.kind))
+            .map((track) => ({ id: track.id, name: track.name, track }));
     }
     return null;
 }
@@ -325,6 +392,120 @@ function removeOverlappedExactNameEvidence(
     }
 }
 
+function fuzzyNameConfidence(prompt: string, name: string): number {
+    const normalizedPrompt = normalizeReferenceText(prompt);
+    const normalizedName = normalizeReferenceText(name);
+    if (normalizedName.length < 3) {
+        return 0;
+    }
+    const words = normalizedPrompt.split(' ');
+    let best = 0;
+    for (const word of words) {
+        if (word.length < 3) {
+            continue;
+        }
+        const distance = editDistance(word, normalizedName);
+        best = Math.max(best, 1 - distance / Math.max(word.length, normalizedName.length));
+    }
+    return best;
+}
+
+function editDistance(left: string, right: string): number {
+    const previous = Array.from({ length: right.length + 1 }, (_, index) => index);
+    for (let leftIndex = 1; leftIndex <= left.length; leftIndex++) {
+        const current = [leftIndex];
+        for (let rightIndex = 1; rightIndex <= right.length; rightIndex++) {
+            const substitution = previous[rightIndex - 1]! + (left[leftIndex - 1] === right[rightIndex - 1] ? 0 : 1);
+            current[rightIndex] = Math.min(previous[rightIndex]! + 1, current[rightIndex - 1]! + 1, substitution);
+        }
+        previous.splice(0, previous.length, ...current);
+    }
+    return previous[right.length] ?? 0;
+}
+
+function containsSectionReference(
+    prompt: string,
+    track: ProjectContext['tracks'][number],
+    context: ProjectContext
+): string | null {
+    const section = (context.sections ?? []).find((candidate) => containsExactPhrase(prompt, candidate.name));
+    if (!section) {
+        return null;
+    }
+    const overlaps = track.clips.some((clip) => clip.startBeat < section.endBeat && clip.endBeat > section.startBeat);
+    return overlaps ? section.name : null;
+}
+
+function getTrackRoleEvidence(prompt: string, trackId: string, context: ProjectContext): string | null {
+    const roles = context.productionBrief?.trackRoles.filter((role) => role.trackId === trackId) ?? [];
+    return roles.find((role) => containsExactPhrase(prompt, role.role))?.role ?? null;
+}
+
+function getTrackTagEvidence(prompt: string, track: ProjectContext['tracks'][number]): string | null {
+    const tags = [track.kind, track.muted ? 'muted' : null, track.soloed ? 'soloed' : null].filter(
+        (value): value is string => value !== null
+    );
+    return tags.find((tag) => containsExactPhrase(prompt, tag)) ?? null;
+}
+
+function getMostRecentTrackId(context: ProjectContext): string | null {
+    const decisions = context.productionBrief?.decisions ?? [];
+    const trackDecision = decisions
+        .filter((decision) => decision.scope.kind === 'track')
+        .toSorted((left, right) => right.createdAt - left.createdAt)[0];
+    return trackDecision?.scope.kind === 'track' ? trackDecision.scope.trackId : null;
+}
+
+function getInferredPropertyCandidateIds(prompt: string, candidates: readonly ReferenceCandidate[]): string[] {
+    const normalized = normalizeReferenceText(prompt);
+    const tracks = candidates.filter((candidate) => candidate.track !== undefined);
+    function extrema(read: (track: ProjectContext['tracks'][number]) => number, highest: boolean): string[] {
+        if (tracks.length === 0) {
+            return [];
+        }
+        const values = tracks.map((candidate) => read(candidate.track!));
+        const target = highest ? Math.max(...values) : Math.min(...values);
+        return tracks.filter((candidate) => read(candidate.track!) === target).map((candidate) => candidate.id);
+    }
+    if (/\b(?:loudest|highest volume|highest gain) track\b/u.test(normalized)) {
+        return extrema((track) => track.gain, true);
+    }
+    if (/\b(?:quietest|lowest volume|lowest gain) track\b/u.test(normalized)) {
+        return extrema((track) => track.gain, false);
+    }
+    if (/\btrack with (?:the )?most clips\b/u.test(normalized)) {
+        return extrema((track) => track.clipCount, true);
+    }
+    if (/\btrack with (?:the )?most devices\b/u.test(normalized)) {
+        return extrema((track) => track.deviceCount, true);
+    }
+    return [];
+}
+
+function getEvidenceValue(
+    evidence: AgentReferenceEvidence,
+    candidate: ReferenceCandidate,
+    prompt: string,
+    context: ProjectContext
+): string {
+    if (evidence === 'literal-id' || evidence === 'selection') {
+        return candidate.id;
+    }
+    if (evidence === 'exact-name' || evidence === 'fuzzy-name') {
+        return candidate.name;
+    }
+    if (evidence === 'role') {
+        return getTrackRoleEvidence(prompt, candidate.id, context) ?? candidate.id;
+    }
+    if (evidence === 'section' && candidate.track) {
+        return containsSectionReference(prompt, candidate.track, context) ?? candidate.id;
+    }
+    if (evidence === 'tag' && candidate.track) {
+        return getTrackTagEvidence(prompt, candidate.track) ?? candidate.id;
+    }
+    return candidate.id;
+}
+
 export function resolveAgentReference(input: ResolveAgentReferenceInput): ResolveAgentReferenceResult {
     const excludedIds = new Set(input.excludedIds ?? []);
     const trackCandidates = getTrackCandidates(input.capability, input.context);
@@ -386,6 +567,47 @@ export function resolveAgentReference(input: ResolveAgentReferenceInput): Resolv
         }
     }
 
+    const trackReferenceCandidates = candidates.filter((candidate) => candidate.track !== undefined);
+    if (trackReferenceCandidates.length > 0) {
+        const mostRecentTrackId = /\b(?:most recently referenced|most recent) track\b/u.test(
+            normalizeReferenceText(input.prompt)
+        )
+            ? getMostRecentTrackId(input.context)
+            : null;
+        const inferredPropertyIds = new Set(getInferredPropertyCandidateIds(input.prompt, trackReferenceCandidates));
+        for (const candidate of trackReferenceCandidates) {
+            if (evidenceById.has(candidate.id)) {
+                continue;
+            }
+            if (getTrackRoleEvidence(input.prompt, candidate.id, input.context) !== null) {
+                evidenceById.set(candidate.id, 'role');
+                continue;
+            }
+            if (candidate.track && containsSectionReference(input.prompt, candidate.track, input.context) !== null) {
+                evidenceById.set(candidate.id, 'section');
+                continue;
+            }
+            if (candidate.track && getTrackTagEvidence(input.prompt, candidate.track) !== null) {
+                evidenceById.set(candidate.id, 'tag');
+                continue;
+            }
+            if (candidate.id === mostRecentTrackId) {
+                evidenceById.set(candidate.id, 'recency');
+                continue;
+            }
+            if (inferredPropertyIds.has(candidate.id)) {
+                evidenceById.set(candidate.id, 'inferred-property');
+                continue;
+            }
+        }
+    }
+
+    for (const candidate of candidates) {
+        if (!evidenceById.has(candidate.id) && fuzzyNameConfidence(input.prompt, candidate.name) >= 0.7) {
+            evidenceById.set(candidate.id, 'fuzzy-name');
+        }
+    }
+
     if (
         input.capability === 'automation-lane' &&
         [...evidenceById.values()].some((evidence) => evidence === 'literal-id')
@@ -399,11 +621,26 @@ export function resolveAgentReference(input: ResolveAgentReferenceInput): Resolv
 
     removeOverlappedExactNameEvidence(candidates, evidenceById);
 
+    const candidateReceipts = [...evidenceById].map(([id, evidence]) => {
+        const candidate = candidates.find((item) => item.id === id)!;
+        return {
+            id,
+            confidence: confidenceByEvidence[evidence],
+            evidence: [{ kind: evidence, value: getEvidenceValue(evidence, candidate, input.prompt, input.context) }],
+        };
+    });
+
     if (evidenceById.size === 0) {
         return { status: 'rejected', reason: 'ungrounded-target' };
     }
     if (evidenceById.size > 1) {
-        return { status: 'rejected', reason: 'ambiguous-target', candidateIds: [...evidenceById.keys()] };
+        const risky = input.effectRisk !== undefined && riskyEffectLevels.has(input.effectRisk);
+        return {
+            status: 'rejected',
+            reason: risky ? 'clarification-required' : 'ambiguous-target',
+            candidateIds: [...evidenceById.keys()],
+            candidates: candidateReceipts,
+        };
     }
     if (typeof input.assertedId !== 'string' || !evidenceById.has(input.assertedId)) {
         return { status: 'rejected', reason: 'asserted-target-mismatch' };
@@ -456,6 +693,20 @@ export function resolveAgentReference(input: ResolveAgentReferenceInput): Resolv
     }
 
     const evidence = evidenceById.get(input.assertedId) ?? 'exact-name';
+    const candidate = candidates.find((item) => item.id === input.assertedId)!;
+    const confidence = confidenceByEvidence[evidence];
+    const evidenceReceipt = [
+        { kind: evidence, value: getEvidenceValue(evidence, candidate, input.prompt, input.context) },
+    ];
+    const risky = input.effectRisk !== undefined && riskyEffectLevels.has(input.effectRisk);
+    if (risky && confidence < 0.9 && input.mode !== 'preview') {
+        return {
+            status: 'rejected',
+            reason: 'preview-required',
+            candidateIds: [input.assertedId],
+            candidates: [{ id: input.assertedId, confidence, evidence: evidenceReceipt }],
+        };
+    }
 
-    return { status: 'resolved', id: input.assertedId, evidence };
+    return { status: 'resolved', id: input.assertedId, evidence, confidence, evidenceReceipt };
 }

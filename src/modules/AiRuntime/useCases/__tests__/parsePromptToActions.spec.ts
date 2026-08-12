@@ -336,6 +336,104 @@ describe('parsePromptToActions', () => {
         expect(result.executionMode).toBe('atomic');
     });
 
+    it('returns stable-ID evidence when a destructive provider target requires clarification', async () => {
+        mockBridgeGroundedLlmToolCalls.mockImplementation(actualBridge.bridgeGroundedLlmToolCalls);
+        const context = createMixerContext();
+        context.tracks[1] = { ...context.tracks[1]!, id: 'track-bass', name: 'Bass' };
+        context.productionBrief = {
+            schemaVersion: 1,
+            id: 'production-brief',
+            revision: 1,
+            vision: null,
+            references: [],
+            hardConstraints: [],
+            preferences: [],
+            sectionGoals: [],
+            trackRoles: [{ id: 'role-vocals-bass', trackId: 'track-vocals', role: 'bass', createdAt: 100 }],
+            locks: [],
+            decisions: [],
+            unresolvedQuestions: [],
+            sourceRunLinks: [],
+            supersedesBriefId: null,
+            supersededByBriefId: null,
+            createdAt: 100,
+            updatedAt: 100,
+        };
+        vi.mocked(generateToolCalls).mockResolvedValue(
+            completePlan([{ name: 'removeTrack', arguments: { trackId: 'track-bass' } }])
+        );
+
+        const result = await parsePromptToActions('delete the bass track', context);
+
+        expect(result.actions).toEqual([]);
+        expect(result.requiresConfirmation).toBe(false);
+        expect(result.rejectionReason).toBe(
+            'Reference clarification required for trackId before any command can run.\n' +
+                '- track-bass — 100% confidence (exact-name: Bass)\n' +
+                '- track-vocals — 95% confidence (role: bass)\n' +
+                'Reply with the intended stable ID.'
+        );
+        const request = result.referenceResolutionRequest;
+        expect(request).toBeDefined();
+        if (!request) {
+            throw new Error('Expected a reference clarification request');
+        }
+        expect(request.kind).toBe('clarification');
+        expect(request.argument).toBe('trackId');
+        expect(request.candidates).toContainEqual({
+            id: 'track-bass',
+            confidence: 1,
+            evidence: [{ kind: 'exact-name', value: 'Bass' }],
+        });
+        expect(request.candidates).toContainEqual({
+            id: 'track-vocals',
+            confidence: 0.95,
+            evidence: [{ kind: 'role', value: 'bass' }],
+        });
+    });
+
+    it('requires an explicit preview before proposing a low-confidence destructive target', async () => {
+        mockBridgeGroundedLlmToolCalls.mockImplementation(actualBridge.bridgeGroundedLlmToolCalls);
+        const context = createMixerContext();
+        vi.mocked(generateToolCalls).mockResolvedValue(
+            completePlan([{ name: 'removeTrack', arguments: { trackId: 'track-vocals' } }])
+        );
+
+        const rejected = await parsePromptToActions('delete Vocls', context);
+
+        expect(rejected.actions).toEqual([]);
+        expect(rejected.requiresConfirmation).toBe(false);
+        expect(rejected.referenceResolutionRequest).toEqual({
+            kind: 'preview',
+            argument: 'trackId',
+            candidates: [
+                {
+                    id: 'track-vocals',
+                    confidence: 0.75,
+                    evidence: [{ kind: 'fuzzy-name', value: 'Vocals' }],
+                },
+            ],
+        });
+        expect(rejected.rejectionReason).toBe(
+            'Explicit preview required for trackId before any command can run.\n' +
+                '- track-vocals — 75% confidence (fuzzy-name: Vocals)\n' +
+                'Reply with the intended stable ID and request a preview.'
+        );
+
+        const preview = await parsePromptToActions('preview delete Vocls', context);
+
+        expect(preview.rejectionReason).toBeUndefined();
+        expect(preview.actions).toHaveLength(1);
+        const previewAction = preview.actions[0];
+        expect(previewAction?.type).toBe('removeTrack');
+        if (previewAction?.type !== 'removeTrack') {
+            throw new Error('Expected a removeTrack preview action');
+        }
+        expect(previewAction.payload.trackId).toBe('track-vocals');
+        expect(preview.requiresConfirmation).toBe(true);
+        expect(preview.referenceResolutionRequest).toBeUndefined();
+    });
+
     it('rejects a provider plan before confirmation when it conflicts with locked production intent', async () => {
         vi.mocked(generateToolCalls).mockResolvedValue(completePlan([{ name: 'setTempo', arguments: { bpm: 128 } }]));
         mockBridgeGroundedLlmToolCalls.mockReturnValue({

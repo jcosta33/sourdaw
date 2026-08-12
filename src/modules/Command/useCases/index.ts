@@ -9,6 +9,7 @@ export { getAppActionExecutionPolicy } from './getAppActionExecutionPolicy';
 export { getExecutableAppActionToolSchemas } from './getExecutableAppActionToolSchemas';
 export { getExecutableAppActionGroundingCatalog } from './getExecutableAppActionGroundingCatalog';
 export { getExecutableAppActionGroundingRules } from './getExecutableAppActionGroundingRules';
+export { getExecutableAppActionRisk } from './getExecutableAppActionRisk';
 export { requiresAppActionConfirmation } from './requiresAppActionConfirmation';
 export { selectExecutableAppActionToolSchemasForPrompt } from './selectExecutableAppActionToolSchemasForPrompt';
 export { createUndoEntry } from './createUndoEntry';

@@ -53,6 +53,84 @@ function resolveTrack(prompt: string, assertedId: string, project = createProjec
     return resolveAgentReference({ prompt, assertedId, capability: 'track', context: project });
 }
 
+function createSemanticReferenceProjectState(): ProjectContext {
+    const project = createProjectState();
+    const vocals = project.tracks[0]!;
+    const bass = project.tracks[1]!;
+    vocals.gain = 0.9;
+    vocals.clips = [
+        {
+            id: 'clip-vocals-verse',
+            name: 'Verse Vocal',
+            type: 'audio',
+            startBeat: 0,
+            endBeat: 16,
+            noteCount: 0,
+        },
+    ];
+    bass.kind = 'midi';
+    bass.gain = 0.4;
+    bass.clips = [
+        {
+            id: 'clip-bass-chorus',
+            name: 'Chorus Bass',
+            type: 'midi',
+            startBeat: 16,
+            endBeat: 32,
+            noteCount: 12,
+        },
+    ];
+    return {
+        ...project,
+        sections: [
+            { id: 'section-verse', name: 'Verse One', startBeat: 0, endBeat: 16 },
+            { id: 'section-chorus', name: 'Chorus One', startBeat: 16, endBeat: 32 },
+        ],
+        productionBrief: {
+            schemaVersion: 1,
+            id: 'production-brief',
+            revision: 1,
+            vision: null,
+            references: [],
+            hardConstraints: [],
+            preferences: [],
+            sectionGoals: [],
+            trackRoles: [{ id: 'role-bass', trackId: bass.id, role: 'low end', createdAt: 100 }],
+            locks: [],
+            decisions: [
+                {
+                    id: 'decision-vocals',
+                    scope: { kind: 'track', trackId: vocals.id },
+                    statement: 'Keep vocals forward',
+                    rationale: null,
+                    status: 'accepted',
+                    sourceRunId: null,
+                    relatedBatchId: null,
+                    supersededByDecisionId: null,
+                    createdAt: 200,
+                },
+                {
+                    id: 'decision-bass',
+                    scope: { kind: 'track', trackId: bass.id },
+                    statement: 'Keep bass controlled',
+                    rationale: null,
+                    status: 'accepted',
+                    sourceRunId: null,
+                    relatedBatchId: null,
+                    supersededByDecisionId: null,
+                    createdAt: 300,
+                },
+            ],
+            unresolvedQuestions: [],
+            sourceRunLinks: [],
+            supersedesBriefId: null,
+            supersededByBriefId: null,
+            createdAt: 100,
+            updatedAt: 300,
+        },
+    };
+}
+
 function createClipProjectState(): ProjectContext {
     const project = createProjectState();
     const vocals = project.tracks[0];
@@ -142,6 +220,103 @@ function resolveAutomationLane(prompt: string, assertedId: string, project = cre
 }
 
 describe('resolveAgentReference', () => {
+    it('returns stable-ID confidence and evidence receipts for exact and selected targets', () => {
+        expect(resolveTrack('mute Vocals', 'track-vocals')).toMatchObject({
+            status: 'resolved',
+            id: 'track-vocals',
+            confidence: 1,
+            evidenceReceipt: [{ kind: 'exact-name', value: 'Vocals' }],
+        });
+        expect(resolveTrack('mute the selected track', 'track-vocals')).toMatchObject({
+            status: 'resolved',
+            id: 'track-vocals',
+            confidence: 1,
+            evidenceReceipt: [{ kind: 'selection', value: 'track-vocals' }],
+        });
+    });
+
+    it('resolves role, section, tag, recency, fuzzy-text, and inferred-property references', () => {
+        const project = createSemanticReferenceProjectState();
+
+        expect(resolveTrack('mute the low end track', 'track-bass', project)).toMatchObject({
+            status: 'resolved',
+            id: 'track-bass',
+            confidence: 0.95,
+            evidence: 'role',
+        });
+        expect(resolveTrack('mute the MIDI track', 'track-bass', project)).toMatchObject({
+            status: 'resolved',
+            id: 'track-bass',
+            evidence: 'tag',
+        });
+        expect(resolveTrack('mute the track in Chorus One', 'track-bass', project)).toMatchObject({
+            status: 'resolved',
+            id: 'track-bass',
+            evidence: 'section',
+        });
+        expect(resolveTrack('mute the most recently referenced track', 'track-bass', project)).toMatchObject({
+            status: 'resolved',
+            id: 'track-bass',
+            evidence: 'recency',
+        });
+        expect(resolveTrack('mute Vocls', 'track-vocals', project)).toMatchObject({
+            status: 'resolved',
+            id: 'track-vocals',
+            evidence: 'fuzzy-name',
+        });
+        expect(resolveTrack('mute the loudest track', 'track-vocals', project)).toMatchObject({
+            status: 'resolved',
+            id: 'track-vocals',
+            evidence: 'inferred-property',
+        });
+    });
+
+    it('requires clarification or explicit preview for risky ambiguous and low-confidence targets', () => {
+        const project = createSemanticReferenceProjectState();
+        project.productionBrief!.trackRoles.push({
+            id: 'role-vocals-bass',
+            trackId: 'track-vocals',
+            role: 'bass',
+            createdAt: 400,
+        });
+
+        const ambiguous = resolveAgentReference({
+            prompt: 'delete the bass track',
+            assertedId: 'track-bass',
+            capability: 'removable-track',
+            context: project,
+            effectRisk: 'destructive-reversible',
+        });
+        expect(ambiguous).toMatchObject({
+            status: 'rejected',
+            reason: 'clarification-required',
+        });
+        expect(ambiguous.status === 'rejected' ? ambiguous.candidateIds : []).toEqual(
+            expect.arrayContaining(['track-vocals', 'track-bass'])
+        );
+
+        const uniqueProject = createSemanticReferenceProjectState();
+        expect(
+            resolveAgentReference({
+                prompt: 'delete Vocls',
+                assertedId: 'track-vocals',
+                capability: 'removable-track',
+                context: uniqueProject,
+                effectRisk: 'destructive-reversible',
+            })
+        ).toMatchObject({ status: 'rejected', reason: 'preview-required', candidateIds: ['track-vocals'] });
+        expect(
+            resolveAgentReference({
+                prompt: 'preview deleting Vocls',
+                assertedId: 'track-vocals',
+                capability: 'removable-track',
+                context: uniqueProject,
+                effectRisk: 'destructive-reversible',
+                mode: 'preview',
+            })
+        ).toMatchObject({ status: 'resolved', id: 'track-vocals', evidence: 'fuzzy-name' });
+    });
+
     it('grounds devices from canonical descriptors instead of mutable display names', () => {
         const project = createProjectState();
         const bass = project.tracks.find((track) => track.id === 'track-bass');
@@ -157,15 +332,14 @@ describe('resolveAgentReference', () => {
             { id: 'builtin-saturator', name: 'Saturator' },
         ];
 
-        expect(
-            resolveAgentReference({
-                prompt: 'insert Compressor after EQ',
-                assertedId: 'device-eq',
-                capability: 'device',
-                context: project,
-                dependencyId: bass.id,
-            })
-        ).toEqual({ status: 'resolved', id: 'device-eq', evidence: 'exact-name' });
+        const exactDevice = resolveAgentReference({
+            prompt: 'insert Compressor after EQ',
+            assertedId: 'device-eq',
+            capability: 'device',
+            context: project,
+            dependencyId: bass.id,
+        });
+        expect(exactDevice).toMatchObject({ status: 'resolved', id: 'device-eq', evidence: 'exact-name' });
         expect(
             resolveAgentReference({
                 prompt: 'insert Compressor after EQ',
@@ -178,12 +352,12 @@ describe('resolveAgentReference', () => {
     });
 
     it('resolves unique exact names and explicit selection language', () => {
-        expect(resolveTrack('mute Vocals', 'track-vocals')).toEqual({
+        expect(resolveTrack('mute Vocals', 'track-vocals')).toMatchObject({
             status: 'resolved',
             id: 'track-vocals',
             evidence: 'exact-name',
         });
-        expect(resolveTrack('mute the selected track', 'track-vocals')).toEqual({
+        expect(resolveTrack('mute the selected track', 'track-vocals')).toMatchObject({
             status: 'resolved',
             id: 'track-vocals',
             evidence: 'selection',
@@ -224,7 +398,7 @@ describe('resolveAgentReference', () => {
             status: 'rejected',
             reason: 'asserted-target-mismatch',
         });
-        expect(resolveTrack('mute Lead Vox', 'track-lead-vox', overlappingContext)).toEqual({
+        expect(resolveTrack('mute Lead Vox', 'track-lead-vox', overlappingContext)).toMatchObject({
             status: 'resolved',
             id: 'track-lead-vox',
             evidence: 'exact-name',
@@ -236,17 +410,17 @@ describe('resolveAgentReference', () => {
     });
 
     it('resolves editable clips by literal ID, unique exact name, and one explicit selection', () => {
-        expect(resolveClip('trim clip-intro start to beat 2', 'clip-intro')).toEqual({
+        expect(resolveClip('trim clip-intro start to beat 2', 'clip-intro')).toMatchObject({
             status: 'resolved',
             id: 'clip-intro',
             evidence: 'literal-id',
         });
-        expect(resolveClip('rename Intro to Opening', 'clip-intro')).toEqual({
+        expect(resolveClip('rename Intro to Opening', 'clip-intro')).toMatchObject({
             status: 'resolved',
             id: 'clip-intro',
             evidence: 'exact-name',
         });
-        expect(resolveClip('nudge the selected clip by 2 beats', 'clip-intro')).toEqual({
+        expect(resolveClip('nudge the selected clip by 2 beats', 'clip-intro')).toMatchObject({
             status: 'resolved',
             id: 'clip-intro',
             evidence: 'selection',
@@ -254,12 +428,12 @@ describe('resolveAgentReference', () => {
     });
 
     it('uses an exact track qualifier to disambiguate duplicate clip names', () => {
-        expect(resolveClip('rename Verse on Vocals to Lead Verse', 'clip-vocals-verse')).toEqual({
+        expect(resolveClip('rename Verse on Vocals to Lead Verse', 'clip-vocals-verse')).toMatchObject({
             status: 'resolved',
             id: 'clip-vocals-verse',
             evidence: 'exact-name',
         });
-        expect(resolveClip('rename Verse on Bass to Bass Verse', 'clip-bass-verse')).toEqual({
+        expect(resolveClip('rename Verse on Bass to Bass Verse', 'clip-bass-verse')).toMatchObject({
             status: 'resolved',
             id: 'clip-bass-verse',
             evidence: 'exact-name',
@@ -312,7 +486,7 @@ describe('resolveAgentReference', () => {
             ),
         };
 
-        expect(resolveMidiClip('quantize notes in Piano MIDI', 'clip-midi')).toEqual({
+        expect(resolveMidiClip('quantize notes in Piano MIDI', 'clip-midi')).toMatchObject({
             status: 'resolved',
             id: 'clip-midi',
             evidence: 'exact-name',
@@ -336,7 +510,7 @@ describe('resolveAgentReference', () => {
     });
 
     it('resolves only unlocked audio clips for audio processing', () => {
-        expect(resolveAudioClip('normalize the Intro clip', 'clip-intro')).toEqual({
+        expect(resolveAudioClip('normalize the Intro clip', 'clip-intro')).toMatchObject({
             status: 'resolved',
             id: 'clip-intro',
             evidence: 'exact-name',
@@ -367,12 +541,12 @@ describe('resolveAgentReference', () => {
     });
 
     it('scopes duplicate automation-lane names by their owner track', () => {
-        expect(resolveAutomationLane('disable Gain automation on Vocals', 'lane-vocals-gain')).toEqual({
+        expect(resolveAutomationLane('disable Gain automation on Vocals', 'lane-vocals-gain')).toMatchObject({
             status: 'resolved',
             id: 'lane-vocals-gain',
             evidence: 'exact-name',
         });
-        expect(resolveAutomationLane('enable Gain automation on Bass', 'lane-bass-gain')).toEqual({
+        expect(resolveAutomationLane('enable Gain automation on Bass', 'lane-bass-gain')).toMatchObject({
             status: 'resolved',
             id: 'lane-bass-gain',
             evidence: 'exact-name',
@@ -384,12 +558,12 @@ describe('resolveAgentReference', () => {
     });
 
     it('supports literal lane IDs and selected-track owner scoping without inventing a lane selection', () => {
-        expect(resolveAutomationLane('disable lane-vocals-gain', 'lane-vocals-gain')).toEqual({
+        expect(resolveAutomationLane('disable lane-vocals-gain', 'lane-vocals-gain')).toMatchObject({
             status: 'resolved',
             id: 'lane-vocals-gain',
             evidence: 'literal-id',
         });
-        expect(resolveAutomationLane('disable Pan automation on the selected track', 'lane-vocals-pan')).toEqual({
+        expect(resolveAutomationLane('disable Pan automation on the selected track', 'lane-vocals-pan')).toMatchObject({
             status: 'resolved',
             id: 'lane-vocals-pan',
             evidence: 'exact-name',

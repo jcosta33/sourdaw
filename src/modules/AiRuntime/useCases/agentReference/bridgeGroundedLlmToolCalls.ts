@@ -1,6 +1,7 @@
 import {
     getExecutableAppActionGroundingCatalog,
     getExecutableAppActionGroundingRules,
+    getExecutableAppActionRisk,
 } from '#/modules/Command/useCases';
 import { createPunchRegionPatch } from '#/modules/Transport/useCases';
 
@@ -3461,13 +3462,19 @@ function groundToolCall({
     if (!groundingRules) {
         return call;
     }
+    const isReferencePreviewRequest =
+        call.name !== 'createDrumPreviewBranches' && /^\s*preview(?:\s+of)?\s+/iu.test(prompt);
+    let groundingPrompt = prompt;
+    if (isReferencePreviewRequest) {
+        groundingPrompt = prompt.replace(/^\s*preview(?:\s+of)?\s+/iu, '');
+    }
     const actionScope = resolveActionPromptScope({
         actionName: call.name,
         actionOrdinal,
         assertedArguments: call.arguments,
         catalog,
         context,
-        prompt,
+        prompt: groundingPrompt,
         plannedActionNames,
         sameActionAssertedArguments,
         sameActionCallCount,
@@ -3681,14 +3688,27 @@ function groundToolCall({
                   })
                 : [];
         const result = resolveAgentReference({
-            prompt: targetPrompt,
+            prompt: isReferencePreviewRequest ? prompt : targetPrompt,
             assertedId: assertedValue,
             capability: targetRule.capability,
             context,
             dependencyId: typeof dependencyValue === 'string' ? dependencyValue : undefined,
             excludedIds: [...(typeof distinctValue === 'string' ? [distinctValue] : []), ...bulkSiblingTargetIds],
+            effectRisk: getExecutableAppActionRisk(call.name) ?? undefined,
+            mode: isReferencePreviewRequest ? 'preview' : 'execute',
         });
         if (result.status === 'rejected') {
+            if (result.reason === 'clarification-required' || result.reason === 'preview-required') {
+                return rejection(
+                    index,
+                    call.name,
+                    `REFERENCE_RESOLUTION:${JSON.stringify({
+                        kind: result.reason === 'clarification-required' ? 'clarification' : 'preview',
+                        argument: targetRule.argument,
+                        candidates: result.candidates ?? [],
+                    })}`
+                );
+            }
             if (result.reason === 'ambiguous-target') {
                 return rejection(index, call.name, `Target ${targetRule.argument} is ambiguous in the user request`);
             }
@@ -3739,6 +3759,7 @@ function groundToolCall({
     if (
         call.name === 'removeTrack' &&
         !bulkMutedEmptyTrackDeletionTargetIds?.includes(String(groundedArguments.trackId)) &&
+        !isReferencePreviewRequest &&
         !isExplicitTrackDeletionScope({
             context,
             text: actionScope.text,
@@ -3749,6 +3770,7 @@ function groundToolCall({
     }
     if (
         call.name === 'removeClip' &&
+        !isReferencePreviewRequest &&
         !isExplicitClipDeletionScope({
             context,
             text: actionScope.text,
