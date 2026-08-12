@@ -9,6 +9,12 @@ import { discardPreparedStemImportResources } from './discardPreparedStemImportR
 
 const EXACT_PROMPT =
     'import stems align them to project tempo name and group them classify likely instrument roles and create a sensible starting mix';
+const MAX_SOURCE_BYTES_PER_STEM = 256 * 1024 * 1024;
+const MAX_TOTAL_SOURCE_BYTES = 1024 * 1024 * 1024;
+const MAX_DECODED_BYTES_PER_STEM = 256 * 1024 * 1024;
+const MAX_TOTAL_DECODED_BYTES = 1024 * 1024 * 1024;
+const MAX_DURATION_SECONDS_PER_STEM = 60 * 60;
+const MAX_TOTAL_DURATION_SECONDS = 4 * 60 * 60;
 
 const STEM_ROLES = [
     'kick',
@@ -28,10 +34,19 @@ const STEM_ROLES = [
 ] as const;
 
 function normalize(value: string): string {
-    return value.toLocaleLowerCase().replaceAll(/[^\p{L}\p{N}]+/gu, ' ').trim();
+    return value
+        .toLocaleLowerCase()
+        .replaceAll(/[^\p{L}\p{N}]+/gu, ' ')
+        .trim();
 }
 
-export async function prepareStemImport(prompt: string) {
+function throwIfAborted(signal?: AbortSignal): void {
+    if (signal?.aborted === true) {
+        throw new DOMException('Stem import preparation was cancelled.', 'AbortError');
+    }
+}
+
+export async function prepareStemImport(prompt: string, signal?: AbortSignal) {
     if (normalize(prompt) !== EXACT_PROMPT) {
         return null;
     }
@@ -49,6 +64,13 @@ export async function prepareStemImport(prompt: string) {
     if (new Set(files.map((file) => normalize(file.name))).size !== files.length) {
         throw new Error('Selected stem filenames must be unique.');
     }
+    const totalSourceBytes = files.reduce((sum, file) => sum + file.size, 0);
+    if (files.some((file) => file.size > MAX_SOURCE_BYTES_PER_STEM)) {
+        throw new Error('Each selected stem must be 256 MiB or smaller.');
+    }
+    if (totalSourceBytes > MAX_TOTAL_SOURCE_BYTES) {
+        throw new Error('The selected stem set must total 1 GiB or less.');
+    }
 
     const projectTempo = transportStore.value?.tempo ?? 120;
     if (!Number.isFinite(projectTempo) || projectTempo < 20 || projectTempo > 999) {
@@ -64,9 +86,31 @@ export async function prepareStemImport(prompt: string) {
         assetHash?: string;
         stagedAssetOwned?: boolean;
     }> = [];
+    let totalDecodedBytes = 0;
+    let totalDurationSeconds = 0;
     try {
         for (const file of files) {
+            throwIfAborted(signal);
             const decoded = await decodeAudioFile(file);
+            if (signal?.aborted === true) {
+                releasePreviewAudioBuffer(decoded.id);
+                throwIfAborted(signal);
+            }
+            const decodedBytes =
+                decoded.buffer.length * decoded.buffer.numberOfChannels * Float32Array.BYTES_PER_ELEMENT;
+            totalDecodedBytes += decodedBytes;
+            totalDurationSeconds += decoded.buffer.duration;
+            if (decodedBytes > MAX_DECODED_BYTES_PER_STEM || totalDecodedBytes > MAX_TOTAL_DECODED_BYTES) {
+                releasePreviewAudioBuffer(decoded.id);
+                throw new Error('Decoded stem audio must stay within 256 MiB per stem and 1 GiB total.');
+            }
+            if (
+                decoded.buffer.duration > MAX_DURATION_SECONDS_PER_STEM ||
+                totalDurationSeconds > MAX_TOTAL_DURATION_SECONDS
+            ) {
+                releasePreviewAudioBuffer(decoded.id);
+                throw new Error('Stem duration must stay within 1 hour per stem and 4 hours total.');
+            }
             const sourceTempo = detectTempo(decoded.id);
             if (sourceTempo === null || !Number.isFinite(sourceTempo) || sourceTempo < 20 || sourceTempo > 999) {
                 releasePreviewAudioBuffer(decoded.id);
@@ -87,6 +131,7 @@ export async function prepareStemImport(prompt: string) {
                     stagedAssetOwned: stagedAsset.owned,
                 });
             }
+            throwIfAborted(signal);
         }
     } catch (error) {
         discardPreparedStemImportResources(prepared);

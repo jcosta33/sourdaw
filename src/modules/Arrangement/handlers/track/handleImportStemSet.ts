@@ -4,14 +4,17 @@ import { type GeneratedMidiStateGuard } from '#/utils/handlerContract';
 import { runAllAsyncEffects } from '#/utils/runEffects';
 
 import { getTrackStoreState } from '../../useCases/getTrackStoreState';
-import { importStemSetToProject } from '../../useCases/stemImport/importStemSetToProject';
 import { projectTrackToLiveStrip } from '../../useCases/projectTrackToLiveStrip';
 import { publishTrackAdded } from '../../useCases/publishTrackAdded';
 import { publishTrackRemoved } from '../../useCases/publishTrackRemoved';
 import { removeTrack } from '../../useCases/removeTrack';
+import { importStemSetToProject } from '../../useCases/stemImport/importStemSetToProject';
 import { isGeneratedMidiStateCurrent } from '../isGeneratedMidiStateCurrent';
 
-const pendingGuards = new WeakMap<object, Array<{ trackId: string; generatedMidiStateGuard: GeneratedMidiStateGuard }>>();
+const pendingGuards = new WeakMap<
+    object,
+    Array<{ trackId: string; generatedMidiStateGuard: GeneratedMidiStateGuard }>
+>();
 
 function getFailureDetail(error: unknown): string {
     if (error instanceof AggregateError) {
@@ -43,7 +46,8 @@ export const handleImportStemSet = createHandler<'importStemSet'>({
         const guards = pendingGuards.get(action);
         if (guards) {
             for (const entry of guards) {
-                const created = entry.trackId === folder.id ? folder : importedTracks.find((track) => track.id === entry.trackId);
+                const created =
+                    entry.trackId === folder.id ? folder : importedTracks.find((track) => track.id === entry.trackId);
                 if (created) {
                     entry.generatedMidiStateGuard.entityJson = JSON.stringify(created);
                     entry.generatedMidiStateGuard.midiByClipIdJson = serializeMidiStateForClips(
@@ -109,9 +113,7 @@ export const handleDiscardImportedStemSet = createHandler<'discardImportedStemSe
                 entityId: entry.trackId,
                 entityType: 'track',
                 guard: entry.generatedMidiStateGuard,
-                ...(entry.trackId === action.payload.folderId
-                    ? { allowedReferencingTrackIds: allowedChildren }
-                    : {}),
+                ...(entry.trackId === action.payload.folderId ? { allowedReferencingTrackIds: allowedChildren } : {}),
             })
         );
         if (!guardsValid) {

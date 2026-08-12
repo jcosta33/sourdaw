@@ -22,7 +22,7 @@ import { defaultTransportState, transportStore } from '#/modules/Transport/store
 
 import { cloudSession } from '../../repositories/cloudLlm/cloudSession';
 import { clearAiHistory } from '../../stores/aiActionHistoryStore';
-import { chatStore } from '../../stores/chatStore';
+import { chatStore, stopGenerating } from '../../stores/chatStore';
 import {
     clearPendingActionConfirmations,
     getPendingActionConfirmation,
@@ -312,7 +312,7 @@ describe('stem import and starting mix workflow', () => {
         await sendChatMessage(PROMPT);
 
         const confirmation = getPendingActionConfirmation(confirmationId());
-        expect(confirmation).toBeDefined();
+        expect(confirmation).not.toBeNull();
         expect(confirmation?.actions).toHaveLength(1);
         expect(confirmation?.actionLabels).toEqual([
             'Import 6 stems into folder "Imported Stems" at 100 BPM: Kick (kick, 0.8 gain, center), Snare (snare, 0.7 gain, center), Bass DI (bass, 0.72 gain, center), Guitar L (guitar-left, 0.62 gain, -20 pan), Guitar R (guitar-right, 0.62 gain, +20 pan), Lead Vocal (lead-vocal, 0.7 gain, center); time-stretch every 120 BPM source to 100 BPM',
@@ -403,6 +403,74 @@ describe('stem import and starting mix workflow', () => {
         expect(trackStore.value?.tracks).toEqual(originalTracks);
         expect(mocks.releasePreviewAudioBuffer).not.toHaveBeenCalled();
         expect(mocks.removeLocalAsset).not.toHaveBeenCalled();
+    });
+
+    it('stops sequential preparation between expensive stems and releases staged resources', async () => {
+        let resolveFirstDecode: ((value: { id: string; buffer: AudioBuffer }) => void) | undefined;
+        mocks.decodeAudioFile.mockImplementationOnce(
+            () =>
+                new Promise((resolve) => {
+                    resolveFirstDecode = resolve;
+                })
+        );
+
+        const sending = sendChatMessage(PROMPT);
+        await vi.waitFor(() => expect(mocks.decodeAudioFile).toHaveBeenCalledTimes(1));
+        stopGenerating();
+        resolveFirstDecode?.({ id: 'buffer-Kick_120.wav', buffer: audioBuffer() });
+        await sending;
+
+        expect(mocks.decodeAudioFile).toHaveBeenCalledTimes(1);
+        expect(mocks.generateWebLlmCompletion).not.toHaveBeenCalled();
+        expect(confirmationId()).toBe('');
+        expect(mocks.releasePreviewAudioBuffer).toHaveBeenCalledWith('buffer-Kick_120.wav');
+        expect(mocks.removeLocalAsset).not.toHaveBeenCalled();
+    });
+
+    it('preserves numbered stem names instead of collapsing them to ambiguous tracks', async () => {
+        mocks.pickFiles.mockResolvedValue([
+            new File(['vocal-one'], 'Backing_Vocal_01.wav', { type: 'audio/wav' }),
+            new File(['vocal-two'], 'Backing_Vocal_02.wav', { type: 'audio/wav' }),
+        ]);
+        mocks.transformPlan.value = (plan) => {
+            const call = plan[0];
+            const stems = call?.arguments.stems;
+            if (!call || !Array.isArray(stems)) {
+                return plan;
+            }
+            return [
+                {
+                    ...call,
+                    arguments: {
+                        ...call.arguments,
+                        stems: stems.map((stem) => ({ ...(isRecord(stem) ? stem : {}), role: 'backing-vocal' })),
+                    },
+                },
+            ];
+        };
+
+        await sendChatMessage(PROMPT);
+
+        const confirmation = getPendingActionConfirmation(confirmationId());
+        const action = confirmation?.actions[0];
+        expect(action?.type).toBe('importStemSet');
+        if (action?.type !== 'importStemSet') {
+            throw new TypeError('Expected stem import action');
+        }
+        expect(action.payload.stems.map((stem) => stem.trackName)).toEqual(['Backing Vocal 01', 'Backing Vocal 02']);
+    });
+
+    it('rejects an oversized selected stem before decode or provider planning', async () => {
+        const oversized = new File(['small fixture'], 'Oversized.wav', { type: 'audio/wav' });
+        Object.defineProperty(oversized, 'size', { value: 256 * 1024 * 1024 + 1 });
+        mocks.pickFiles.mockResolvedValue([oversized, new File(['other'], 'Other.wav', { type: 'audio/wav' })]);
+
+        await sendChatMessage(PROMPT);
+
+        expect(mocks.decodeAudioFile).not.toHaveBeenCalled();
+        expect(mocks.generateWebLlmCompletion).not.toHaveBeenCalled();
+        expect(confirmationId()).toBe('');
+        expect(trackStore.value?.tracks).toEqual([createTrack('track-guide', 'Guide Mix')]);
     });
 
     it('cleans decoded resources and rejects an undetectable source tempo before provider planning', async () => {

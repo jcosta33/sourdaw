@@ -6,8 +6,7 @@ import { type StemImportPromptScope, type StemImportProviderCall } from '../../m
 import { getStemImportMix } from './getStemImportMix';
 
 type BridgeStemImportPlanResult =
-    | { status: 'accepted'; providerAction: RuntimeAction; action: AppAction }
-    | { status: 'rejected'; reason: string };
+    { status: 'accepted'; providerAction: RuntimeAction; action: AppAction } | { status: 'rejected'; reason: string };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
     return typeof value === 'object' && value !== null && !Array.isArray(value);

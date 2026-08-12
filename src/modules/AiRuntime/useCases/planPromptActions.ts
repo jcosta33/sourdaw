@@ -17,7 +17,7 @@ type PlanPromptActionsInput = {
 export async function planPromptActions(input: PlanPromptActionsInput) {
     const projectRevision = captureProjectRevision();
     const context = getProjectContext();
-    const preparedStemImport = await prepareStemImport(input.prompt);
+    const preparedStemImport = await prepareStemImport(input.prompt, input.signal);
     if (preparedStemImport?.status === 'cancelled') {
         return {
             context,
