@@ -815,6 +815,57 @@ describe('versioned command contract', () => {
         expect(observed).toEqual([]);
     });
 
+    it('executes an internally consistent revision in a standalone Command harness', async () => {
+        commandProjectRevisionPort.setProvider(null);
+        const observed: boolean[] = [];
+        registerHandlerMap({
+            setPlayback: {
+                describe: () => ({ label: 'Start playback' }),
+                execute: (action: Extract<AppAction, { type: 'setPlayback' }>) => {
+                    observed.push(action.payload.playing);
+                    return { status: 'written' };
+                },
+                executionKind: 'runtime',
+                undoable: false,
+            },
+        });
+        const envelope = createVersionedCommandEnvelope({
+            action: { type: 'setPlayback', payload: { playing: true } },
+            availableDeviceVersions: {},
+            expectedEffect: 'Playback is running.',
+            normalizedProjectRevision: 'revision-from-caller',
+            objectReferences: [],
+            parameterUnits: [],
+            reason: 'Start transport playback.',
+            time: [],
+        });
+
+        const result = await executeVersionedCommandBatch({
+            commands: [serializeVersionedCommandEnvelope(envelope)],
+            normalizedProjectRevision: 'revision-from-caller',
+            options: { skipUndo: true },
+        });
+
+        expect(result.status).toBe('executed');
+        expect(observed).toEqual([true]);
+    });
+
+    it('leaves device versions empty when a standalone Command harness has no application resolver', () => {
+        commandDeviceVersionsPort.setDeviceTypeResolver(null);
+        commandDeviceVersionsPort.setResolver(null);
+
+        const command = createExecutionCommandEnvelope({
+            action: {
+                type: 'setDeviceParameter',
+                payload: { deviceId: 'device-existing', paramId: 'threshold', value: -18 },
+            },
+            expectedEffect: 'Set threshold.',
+            normalizedProjectRevision: 'revision-from-caller',
+        });
+
+        expect(command.envelope.availableDeviceVersions).toEqual({});
+    });
+
     it('captures an application-resolved type for a device-ID-only command', () => {
         const command = createExecutionCommandEnvelope({
             action: {

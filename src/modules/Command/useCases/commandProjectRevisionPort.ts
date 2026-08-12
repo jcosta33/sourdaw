@@ -7,12 +7,17 @@ function captureUnconfiguredProjectRevision(): string {
 }
 
 let provider: CommandProjectRevisionProvider = captureUnconfiguredProjectRevision;
+let providerConfigured = false;
 
 export const commandProjectRevisionPort = {
     capture(): string {
         return provider();
     },
+    isConfigured(): boolean {
+        return providerConfigured;
+    },
     setProvider(nextProvider: CommandProjectRevisionProvider | null): void {
         provider = nextProvider ?? captureUnconfiguredProjectRevision;
+        providerConfigured = nextProvider !== null;
     },
 };

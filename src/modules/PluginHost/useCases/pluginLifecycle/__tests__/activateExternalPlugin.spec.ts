@@ -19,7 +19,7 @@ import type { PluginLatencyChange } from '../../../repositories/pluginBridge/typ
 const mocks = vi.hoisted(() => ({
     loadPluginRepo: vi.fn<(pluginId: string, instanceId: string) => Promise<unknown>>(),
     setPluginStateRepo: vi.fn<(instanceId: string, state: Uint8Array) => Promise<void>>(),
-    unloadPluginRepo: vi.fn<(instanceId: string) => Promise<void>>(),
+    unloadPluginRepo: vi.fn<(instanceId: string) => Promise<[string[], string[]]>>(),
     subscribe: vi.fn<(handler: (change: PluginLatencyChange) => void) => Promise<() => void>>(),
     warn: vi.fn(),
 }));
@@ -68,6 +68,7 @@ describe('activateExternalPlugin', () => {
         externalPluginActivationStore.set(defaultExternalPluginActivationState);
         mocks.loadPluginRepo.mockResolvedValue({ instance_id: 'inst-1' });
         mocks.setPluginStateRepo.mockResolvedValue(undefined);
+        mocks.unloadPluginRepo.mockResolvedValue([[], []]);
     });
 
     it('loads and restores exactly once across repeated activations (repeated ensureTrackStrips)', async () => {
@@ -191,7 +192,7 @@ describe('activateExternalPlugin', () => {
 
     it('stops routing changes for an unloaded instance', async () => {
         mocks.loadPluginRepo.mockResolvedValueOnce({ instance_id: 'inst-1', latency_samples: 0, latency_ms: 4 });
-        mocks.unloadPluginRepo.mockResolvedValue(undefined);
+        mocks.unloadPluginRepo.mockResolvedValue([['inst-1'], []]);
         const onLatencyMs = vi.fn<(latencyMs: number) => void>();
 
         activateExternalPlugin({ pluginId: 'p', instanceId: 'inst-1', onLatencyMs });

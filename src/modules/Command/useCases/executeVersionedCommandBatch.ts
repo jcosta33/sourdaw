@@ -29,13 +29,12 @@ export async function executeVersionedCommandBatch(input: ExecuteVersionedComman
     if (new Set(commandIds).size !== commandIds.length) {
         return { status: 'rejected' as const, reason: 'Command IDs must be unique within a batch', actions: [] as [] };
     }
+    const batchRevision = input.normalizedProjectRevision ?? envelopes[0]?.normalizedProjectRevision;
     const currentRevision = commandProjectRevisionPort.capture();
     if (
-        (input.normalizedProjectRevision !== undefined && input.normalizedProjectRevision !== currentRevision) ||
-        envelopes.some(
-            (envelope) =>
-                envelope.normalizedProjectRevision !== currentRevision || !hasCurrentCommandDeviceVersions(envelope)
-        )
+        envelopes.some((envelope) => envelope.normalizedProjectRevision !== batchRevision) ||
+        (commandProjectRevisionPort.isConfigured() && batchRevision !== currentRevision) ||
+        envelopes.some((envelope) => !hasCurrentCommandDeviceVersions(envelope))
     ) {
         return {
             status: 'conflicted' as const,
