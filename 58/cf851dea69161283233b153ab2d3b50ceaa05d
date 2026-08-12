@@ -1,0 +1,19 @@
+tests/e2e/metronomeVolumeSliderTestId.spec.ts
+  s_900c50df865d68::t_3a742213e6476a 1-46
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "58cf851dea69161283233b153ab2d3b50ceaa05d",
+  "prompts": {},
+  "sessions": {
+    "s_900c50df865d68": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fee96-2466-72b1-bad3-41d50fb09428",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
