@@ -137,7 +137,7 @@ function collectEffectSources(vocalTracks: readonly ProjectContextTrack[]): {
 function buildEffectGroup(kind: EffectKind, allSources: readonly EffectSource[]): SharedVocalFxEffectGroup | null {
     const config = EFFECT_CONFIG[kind];
     const sources = allSources.filter((source) => classifySupportedEffect(source.device) === kind);
-    if (sources.length === 0) {
+    if (sources.length < 2) {
         return null;
     }
     if (
@@ -175,7 +175,13 @@ function buildEffectGroup(kind: EffectKind, allSources: readonly EffectSource[])
     }
     const projectedSources = sources.flatMap((source) => {
         const mix = source.parameters.find((parameter) => parameter.id === config.mixParameterId);
-        if (!mix || !Number.isFinite(mix.value) || mix.value < 0 || mix.value > 1) {
+        if (!mix || !Number.isFinite(mix.value) || mix.value < 0 || mix.value > 0.5) {
+            return [];
+        }
+        const dryScale = 1 - mix.value;
+        const targetGain = source.track.gain * dryScale;
+        const sendLevel = mix.value / dryScale;
+        if (!Number.isFinite(targetGain) || !Number.isFinite(sendLevel) || sendLevel < 0 || sendLevel > 1) {
             return [];
         }
         return [
@@ -184,7 +190,10 @@ function buildEffectGroup(kind: EffectKind, allSources: readonly EffectSource[])
                 trackName: source.track.name,
                 deviceId: source.device.id,
                 deviceName: source.device.name ?? source.device.type,
-                sendLevel: mix.value,
+                originalGain: source.track.gain,
+                targetGain,
+                originalMix: mix.value,
+                sendLevel,
                 preFader: false as const,
             },
         ];
@@ -222,7 +231,6 @@ function getProtectedObjects(
             protections.push({ id: track.id, name: track.name });
         } else {
             protections.push(
-                { id: `${track.id}:gain`, name: `${track.name} gain ${String(track.gain)}` },
                 { id: `${track.id}:pan`, name: `${track.name} pan ${String(track.pan)}` },
                 { id: `${track.id}:output`, name: `${track.name} output ${track.outputId ?? 'master'}` },
                 { id: `${track.id}:mute`, name: `${track.name} muted ${String(track.muted)}` },
@@ -294,6 +302,29 @@ export function getSharedVocalFxBusesPromptScope(
             reason: `EX-08 cannot preserve unsupported, bypassed, or incomplete vocal effects: ${unsupportedNames.join(', ')}`,
         };
     }
+    const sourceCountByTrack = new Map<string, number>();
+    for (const source of sources) {
+        sourceCountByTrack.set(source.track.id, (sourceCountByTrack.get(source.track.id) ?? 0) + 1);
+    }
+    const hasUnsafeSignalTopology = vocalTracks.some((track) => {
+        const source = sources.find((candidate) => candidate.track.id === track.id);
+        return (
+            sourceCountByTrack.get(track.id) !== 1 ||
+            track.devices.at(-1)?.id !== source?.device.id ||
+            track.pan !== 0 ||
+            track.outputId !== 'master' ||
+            (track.sends?.length ?? 0) > 0
+        );
+    });
+    const hasVocalAutomation = (context.automationLanes ?? []).some((lane) =>
+        vocalTracks.some((track) => track.id === lane.trackId)
+    );
+    if (hasUnsafeSignalTopology || hasVocalAutomation) {
+        return {
+            status: 'invalid',
+            reason: 'EX-08 can preserve balance only for centered master-routed vocals with one tail effect and no existing sends or automation',
+        };
+    }
     const delayGroup = buildEffectGroup('delay', sources);
     const reverbGroup = buildEffectGroup('reverb', sources);
     if (!delayGroup || !reverbGroup) {
@@ -305,7 +336,21 @@ export function getSharedVocalFxBusesPromptScope(
     const removedDeviceIds = new Set(sources.map((source) => source.device.id));
     const protectedObjects = getProtectedObjects(context, vocalTracks, removedDeviceIds);
     const orderedToolPlan: SharedVocalFxBusesCapability['orderedToolPlan'] = [
-        ...sources.map((source) => ({ name: 'removeDevice', arguments: { deviceId: source.device.id } })),
+        ...sources.flatMap((source) => {
+            const kind = classifySupportedEffect(source.device);
+            const group = kind ? [delayGroup, reverbGroup].find((candidate) => candidate.kind === kind) : undefined;
+            const projected = group?.sources.find((candidate) => candidate.deviceId === source.device.id);
+            if (!projected) {
+                return [];
+            }
+            return [
+                { name: 'removeDevice', arguments: { deviceId: source.device.id } },
+                {
+                    name: 'setTrackGain',
+                    arguments: { trackId: source.track.id, gain: projected.targetGain },
+                },
+            ];
+        }),
         ...[delayGroup, reverbGroup].flatMap((group) => [
             { name: 'createBus', arguments: { name: group.busName, binding: group.binding } },
             { name: 'addDevice', arguments: { trackId: `$${group.binding}`, deviceType: group.deviceType } },

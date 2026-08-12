@@ -20,6 +20,9 @@ export type SharedVocalFxEffectGroup = {
         trackName: string;
         deviceId: string;
         deviceName: string;
+        originalGain: number;
+        targetGain: number;
+        originalMix: number;
         sendLevel: number;
         preFader: false;
     }>;

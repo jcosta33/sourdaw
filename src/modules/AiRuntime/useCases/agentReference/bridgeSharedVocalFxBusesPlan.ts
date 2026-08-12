@@ -73,38 +73,50 @@ export function bridgeSharedVocalFxBusesPlan({
     const remainingDeviceIdsByTrack = new Map(
         context.tracks.map((track) => [track.id, track.devices.map((device) => device.id)] as const)
     );
-    const removalCalls = scope.capability.orderedToolPlan.filter((call) => call.name === 'removeDevice');
-    const removalActions = removalCalls.flatMap((call) => {
-        const deviceId = call.arguments.deviceId;
-        if (typeof deviceId !== 'string') {
-            return [];
-        }
-        const owners = context.tracks.filter((track) => track.devices.some((device) => device.id === deviceId));
-        const owner = owners.length === 1 ? owners[0] : undefined;
-        const expectedDeviceIds = owner ? remainingDeviceIdsByTrack.get(owner.id) : undefined;
-        if (!owner || !expectedDeviceIds || !expectedDeviceIds.includes(deviceId)) {
-            return [];
-        }
-        remainingDeviceIdsByTrack.set(
-            owner.id,
-            expectedDeviceIds.filter((candidate) => candidate !== deviceId)
-        );
-        return [
-            {
-                type: 'removeDevice' as const,
-                payload: {
-                    deviceId,
-                    expectedTrackId: owner.id,
-                    expectedDeviceIds,
+    const sourceActions = scope.capability.effectGroups.flatMap((group) =>
+        group.sources.flatMap((source) => {
+            const owners = context.tracks.filter((track) =>
+                track.devices.some((device) => device.id === source.deviceId)
+            );
+            const owner = owners.length === 1 ? owners[0] : undefined;
+            const expectedDeviceIds = owner ? remainingDeviceIdsByTrack.get(owner.id) : undefined;
+            if (
+                !owner ||
+                owner.id !== source.trackId ||
+                owner.gain !== source.originalGain ||
+                !expectedDeviceIds?.includes(source.deviceId)
+            ) {
+                return [];
+            }
+            remainingDeviceIdsByTrack.set(
+                owner.id,
+                expectedDeviceIds.filter((candidate) => candidate !== source.deviceId)
+            );
+            return [
+                {
+                    type: 'removeDevice' as const,
+                    payload: {
+                        deviceId: source.deviceId,
+                        expectedTrackId: owner.id,
+                        expectedDeviceIds,
+                    },
                 },
-            },
-        ];
-    });
-    if (removalActions.length !== removalCalls.length) {
+                {
+                    type: 'setTrackGain' as const,
+                    payload: { trackId: owner.id, gain: source.targetGain },
+                },
+            ];
+        })
+    );
+    const expectedSourceActionCount = scope.capability.effectGroups.reduce(
+        (count, group) => count + group.sources.length * 2,
+        0
+    );
+    if (sourceActions.length !== expectedSourceActionCount) {
         return { status: 'rejected', reason: 'EX-08 removal targets are not uniquely owned by the current project' };
     }
     const actions: RuntimeAction[] = [
-        ...removalActions,
+        ...sourceActions,
         ...groupIdentities.flatMap(({ group, busId, deviceId }) => {
             const descriptor = getPluginById(group.deviceType);
             if (!descriptor) {
@@ -167,7 +179,7 @@ export function bridgeSharedVocalFxBusesPlan({
         ),
     ];
     const expectedActionCount =
-        removalActions.length +
+        sourceActions.length +
         scope.capability.effectGroups.reduce((count, group) => {
             const descriptor = getPluginById(group.deviceType);
             if (!descriptor) {

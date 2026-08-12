@@ -107,28 +107,47 @@ const providerPlan = [
 
 const sharedVocalFxProviderPlan = [
     { name: 'removeDevice', arguments: { deviceId: 'device-lead-delay' } },
-    { name: 'removeDevice', arguments: { deviceId: 'device-lead-reverb' } },
-    { name: 'removeDevice', arguments: { deviceId: 'device-bgv-delay' } },
+    { name: 'setTrackGain', arguments: { trackId: 'track-lead-vocal', gain: 0.656 } },
+    { name: 'removeDevice', arguments: { deviceId: 'device-lead-double-delay' } },
+    { name: 'setTrackGain', arguments: { trackId: 'track-lead-double', gain: 0.518 } },
     { name: 'removeDevice', arguments: { deviceId: 'device-bgv-reverb' } },
+    { name: 'setTrackGain', arguments: { trackId: 'track-bgv-high', gain: 0.402 } },
+    { name: 'removeDevice', arguments: { deviceId: 'device-bgv-low-reverb' } },
+    { name: 'setTrackGain', arguments: { trackId: 'track-bgv-low', gain: 0.427 } },
     { name: 'createBus', arguments: { name: 'Vocal Delay', binding: 'vocal-delay' } },
     { name: 'addDevice', arguments: { trackId: '$vocal-delay', deviceType: 'builtin-delay' } },
     { name: 'createBus', arguments: { name: 'Vocal Reverb', binding: 'vocal-reverb' } },
     { name: 'addDevice', arguments: { trackId: '$vocal-reverb', deviceType: 'builtin-reverb' } },
     {
         name: 'addSend',
-        arguments: { trackId: 'track-lead-vocal', busId: '$vocal-delay', level: 0.2, preFader: false },
+        arguments: { trackId: 'track-lead-vocal', busId: '$vocal-delay', level: 0.25, preFader: false },
     },
     {
         name: 'addSend',
-        arguments: { trackId: 'track-bgv-high', busId: '$vocal-delay', level: 0.35, preFader: false },
+        arguments: {
+            trackId: 'track-lead-double',
+            busId: '$vocal-delay',
+            level: 0.4285714285714286,
+            preFader: false,
+        },
     },
     {
         name: 'addSend',
-        arguments: { trackId: 'track-lead-vocal', busId: '$vocal-reverb', level: 0.25, preFader: false },
+        arguments: {
+            trackId: 'track-bgv-high',
+            busId: '$vocal-reverb',
+            level: 0.6666666666666667,
+            preFader: false,
+        },
     },
     {
         name: 'addSend',
-        arguments: { trackId: 'track-bgv-high', busId: '$vocal-reverb', level: 0.4, preFader: false },
+        arguments: {
+            trackId: 'track-bgv-low',
+            busId: '$vocal-reverb',
+            level: 0.4285714285714286,
+            preFader: false,
+        },
     },
 ] as const satisfies readonly ProviderPlanCall[];
 
@@ -392,10 +411,17 @@ function addConfiguredDevice({
     track.devices.push({ id, type, name, bypassed: false, parameterValues });
 }
 
-function installSharedVocalFxFixture(): { lead: Track; backing: Track; drums: Track; parallel: Track } {
+function installSharedVocalFxFixture(): {
+    lead: Track;
+    leadDouble: Track;
+    backing: Track;
+    backingLow: Track;
+    drums: Track;
+    parallel: Track;
+} {
     const lead = createTrack('track-lead-vocal', 'Lead Vocal');
     lead.gain = 0.82;
-    lead.pan = -0.08;
+    lead.pan = 0;
     addDevice(lead, 'device-lead-eq', 'builtin-eq', 'Lead EQ');
     addConfiguredDevice({
         track: lead,
@@ -410,36 +436,24 @@ function installSharedVocalFxFixture(): { lead: Track; backing: Track; drums: Tr
             'delay-mix': 0.2,
         },
     });
+    const leadDouble = createTrack('track-lead-double', 'Lead Vocal Double');
+    leadDouble.gain = 0.74;
     addConfiguredDevice({
-        track: lead,
-        id: 'device-lead-reverb',
-        type: 'builtin-reverb',
-        name: 'Lead Reverb',
-        parameterValues: {
-            'rev-size': 0.65,
-            'rev-decay': 2.5,
-            'rev-damping': 0.4,
-            'rev-predelay': 20,
-            'rev-lowcut': 180,
-            'rev-mix': 0.25,
-        },
-    });
-    const backing = createTrack('track-bgv-high', 'Backing Vocal High');
-    backing.gain = 0.67;
-    backing.pan = 0.18;
-    addConfiguredDevice({
-        track: backing,
-        id: 'device-bgv-delay',
+        track: leadDouble,
+        id: 'device-lead-double-delay',
         type: 'builtin-delay',
-        name: 'Backing Delay',
+        name: 'Double Delay',
         parameterValues: {
             'delay-time': 375,
             'delay-feedback': 0.35,
             'delay-lowcut': 120,
             'delay-highcut': 8_000,
-            'delay-mix': 0.35,
+            'delay-mix': 0.3,
         },
     });
+    const backing = createTrack('track-bgv-high', 'Backing Vocal High');
+    backing.gain = 0.67;
+    backing.pan = 0;
     addConfiguredDevice({
         track: backing,
         id: 'device-bgv-reverb',
@@ -454,11 +468,30 @@ function installSharedVocalFxFixture(): { lead: Track; backing: Track; drums: Tr
             'rev-mix': 0.4,
         },
     });
+    const backingLow = createTrack('track-bgv-low', 'BGV Low');
+    backingLow.gain = 0.61;
+    addConfiguredDevice({
+        track: backingLow,
+        id: 'device-bgv-low-reverb',
+        type: 'builtin-reverb',
+        name: 'Low Reverb',
+        parameterValues: {
+            'rev-size': 0.65,
+            'rev-decay': 2.5,
+            'rev-damping': 0.4,
+            'rev-predelay': 20,
+            'rev-lowcut': 180,
+            'rev-mix': 0.3,
+        },
+    });
     const drums = createTrack('track-drums', 'Drums');
     const parallel = createTrack('bus-vocal-parallel', 'Vocal Parallel', 'bus');
-    lead.sends.push({ busId: parallel.id, level: 0.1, preFader: true });
-    trackStore.set({ tracks: [lead, backing, drums, parallel], selectedTrackId: null, ghostClips: [] });
-    return { lead, backing, drums, parallel };
+    trackStore.set({
+        tracks: [lead, leadDouble, backing, backingLow, drums, parallel],
+        selectedTrackId: null,
+        ghostClips: [],
+    });
+    return { lead, leadDouble, backing, backingLow, drums, parallel };
 }
 
 function getConfirmationId(): string {
@@ -1311,37 +1344,18 @@ describe('backing-vocal plate workflow', () => {
         await sendChatMessage(SHARED_VOCAL_FX_PROMPT);
 
         const confirmation = getPendingActionConfirmation(getConfirmationId());
-        expect(createSharedVocalFxProviderPlanFromUserMessage(getWebLlmUserMessage())).toEqual([
-            { name: 'removeDevice', arguments: { deviceId: 'device-lead-delay' } },
-            { name: 'removeDevice', arguments: { deviceId: 'device-lead-reverb' } },
-            { name: 'removeDevice', arguments: { deviceId: 'device-bgv-delay' } },
-            { name: 'removeDevice', arguments: { deviceId: 'device-bgv-reverb' } },
-            { name: 'createBus', arguments: { name: 'Vocal Delay', binding: 'vocal-delay' } },
-            { name: 'addDevice', arguments: { trackId: '$vocal-delay', deviceType: 'builtin-delay' } },
-            { name: 'createBus', arguments: { name: 'Vocal Reverb', binding: 'vocal-reverb' } },
-            { name: 'addDevice', arguments: { trackId: '$vocal-reverb', deviceType: 'builtin-reverb' } },
-            {
-                name: 'addSend',
-                arguments: { trackId: 'track-lead-vocal', busId: '$vocal-delay', level: 0.2, preFader: false },
-            },
-            {
-                name: 'addSend',
-                arguments: { trackId: 'track-bgv-high', busId: '$vocal-delay', level: 0.35, preFader: false },
-            },
-            {
-                name: 'addSend',
-                arguments: { trackId: 'track-lead-vocal', busId: '$vocal-reverb', level: 0.25, preFader: false },
-            },
-            {
-                name: 'addSend',
-                arguments: { trackId: 'track-bgv-high', busId: '$vocal-reverb', level: 0.4, preFader: false },
-            },
-        ]);
+        expect(createSharedVocalFxProviderPlanFromUserMessage(getWebLlmUserMessage())).toEqual(
+            sharedVocalFxProviderPlan
+        );
         expect(confirmation?.actions.map((action) => action.type)).toEqual([
             'removeDevice',
+            'setTrackGain',
             'removeDevice',
+            'setTrackGain',
             'removeDevice',
+            'setTrackGain',
             'removeDevice',
+            'setTrackGain',
             'createBus',
             'addDevice',
             'setDeviceParameter',
@@ -1362,30 +1376,30 @@ describe('backing-vocal plate workflow', () => {
             'addSend',
             'addSend',
         ]);
-        expect(confirmation?.actions.slice(0, 4)).toEqual([
+        expect(confirmation?.actions.slice(0, 8)).toEqual([
             {
                 type: 'removeDevice',
                 payload: {
                     deviceId: 'device-lead-delay',
                     expectedTrackId: 'track-lead-vocal',
-                    expectedDeviceIds: ['device-lead-eq', 'device-lead-delay', 'device-lead-reverb'],
+                    expectedDeviceIds: ['device-lead-eq', 'device-lead-delay'],
                 },
+            },
+            {
+                type: 'setTrackGain',
+                payload: { trackId: 'track-lead-vocal', gain: 0.656, expectedGain: 0.82 },
             },
             {
                 type: 'removeDevice',
                 payload: {
-                    deviceId: 'device-lead-reverb',
-                    expectedTrackId: 'track-lead-vocal',
-                    expectedDeviceIds: ['device-lead-eq', 'device-lead-reverb'],
+                    deviceId: 'device-lead-double-delay',
+                    expectedTrackId: 'track-lead-double',
+                    expectedDeviceIds: ['device-lead-double-delay'],
                 },
             },
             {
-                type: 'removeDevice',
-                payload: {
-                    deviceId: 'device-bgv-delay',
-                    expectedTrackId: 'track-bgv-high',
-                    expectedDeviceIds: ['device-bgv-delay', 'device-bgv-reverb'],
-                },
+                type: 'setTrackGain',
+                payload: { trackId: 'track-lead-double', gain: 0.518, expectedGain: 0.74 },
             },
             {
                 type: 'removeDevice',
@@ -1395,20 +1409,30 @@ describe('backing-vocal plate workflow', () => {
                     expectedDeviceIds: ['device-bgv-reverb'],
                 },
             },
+            {
+                type: 'setTrackGain',
+                payload: { trackId: 'track-bgv-high', gain: 0.402, expectedGain: 0.67 },
+            },
+            {
+                type: 'removeDevice',
+                payload: {
+                    deviceId: 'device-bgv-low-reverb',
+                    expectedTrackId: 'track-bgv-low',
+                    expectedDeviceIds: ['device-bgv-low-reverb'],
+                },
+            },
+            {
+                type: 'setTrackGain',
+                payload: { trackId: 'track-bgv-low', gain: 0.427, expectedGain: 0.61 },
+            },
         ]);
         expect(confirmation?.protectedUnchanged).toEqual(
             expect.arrayContaining([
-                { id: 'track-lead-vocal:gain', name: 'Lead Vocal gain 0.82' },
-                { id: 'track-lead-vocal:pan', name: 'Lead Vocal pan -0.08' },
-                { id: 'track-bgv-high:gain', name: 'Backing Vocal High gain 0.67' },
-                { id: 'track-bgv-high:pan', name: 'Backing Vocal High pan 0.18' },
+                { id: 'track-lead-vocal:pan', name: 'Lead Vocal pan 0' },
+                { id: 'track-bgv-high:pan', name: 'Backing Vocal High pan 0' },
                 { id: 'track-drums', name: 'Drums' },
                 { id: 'bus-vocal-parallel', name: 'Vocal Parallel' },
                 { id: 'device-lead-eq', name: 'Lead Vocal Lead EQ' },
-                {
-                    id: 'track-lead-vocal:send:bus-vocal-parallel',
-                    name: 'Lead Vocal send bus-vocal-parallel level 0.1 pre-fader',
-                },
             ])
         );
         expect(confirmation?.risk?.level).toBe('authority-sensitive');
@@ -1427,7 +1451,7 @@ describe('backing-vocal plate workflow', () => {
         expect(createSharedVocalFxProviderPlanFromUserMessage(getHostedUserMessage(requestBody))).toEqual(
             sharedVocalFxProviderPlan
         );
-        expect(getPendingActionConfirmation(getConfirmationId())?.actions).toHaveLength(23);
+        expect(getPendingActionConfirmation(getConfirmationId())?.actions).toHaveLength(27);
     });
 
     it.each([
@@ -1472,12 +1496,13 @@ describe('backing-vocal plate workflow', () => {
             installSharedVocalFxFixture();
             const tracks = structuredClone(trackStore.value?.tracks ?? []);
             const backing = tracks.find((track) => track.id === 'track-bgv-high');
+            const leadDouble = tracks.find((track) => track.id === 'track-lead-double');
             const lead = tracks.find((track) => track.id === 'track-lead-vocal');
-            if (!backing || !lead) {
+            if (!backing || !lead || !leadDouble) {
                 throw new Error('Expected EX-08 fixture tracks');
             }
             if (condition === 'mismatched delay settings') {
-                const delay = backing.devices.find((device) => device.id === 'device-bgv-delay');
+                const delay = leadDouble.devices.find((device) => device.id === 'device-lead-double-delay');
                 if (delay) {
                     delay.parameterValues['delay-time'] = 500;
                 }
@@ -1503,6 +1528,35 @@ describe('backing-vocal plate workflow', () => {
             expect(undoStore.value?.past).toEqual([]);
         }
     );
+
+    it('rejects serial inline delay into reverb because parallel shared buses cannot preserve that balance', async () => {
+        const { lead } = installSharedVocalFxFixture();
+        addConfiguredDevice({
+            track: lead,
+            id: 'device-lead-reverb',
+            type: 'builtin-reverb',
+            name: 'Lead Reverb',
+            parameterValues: {
+                'rev-size': 0.65,
+                'rev-decay': 2.5,
+                'rev-damping': 0.4,
+                'rev-predelay': 20,
+                'rev-lowcut': 180,
+                'rev-mix': 0.25,
+            },
+        });
+        trackStore.set({
+            tracks: structuredClone(trackStore.value?.tracks ?? []),
+            selectedTrackId: null,
+            ghostClips: [],
+        });
+        useWebSharedVocalFxFixture();
+
+        await sendChatMessage(SHARED_VOCAL_FX_PROMPT);
+
+        expect(getConfirmationId()).toBe('');
+        expect(undoStore.value?.past).toEqual([]);
+    });
 
     it('atomically moves both effects, receipts exact balance, and groups undo and redo', async () => {
         installSharedVocalFxFixture();
@@ -1542,24 +1596,27 @@ describe('backing-vocal plate workflow', () => {
         expect(confirmation.affectedIds).toEqual(
             expect.arrayContaining([
                 'device-lead-delay',
-                'device-lead-reverb',
-                'device-bgv-delay',
+                'device-lead-double-delay',
                 'device-bgv-reverb',
+                'device-bgv-low-reverb',
                 delayBusId,
                 reverbBusId,
                 delayDeviceAction.payload.deviceId,
                 reverbDeviceAction.payload.deviceId,
                 'track-lead-vocal',
+                'track-lead-double',
                 'track-bgv-high',
+                'track-bgv-low',
             ])
         );
         expect(confirmation.actionLabels).toEqual(
             expect.arrayContaining([
                 'Remove device "Lead Delay" (device-lead-delay, builtin-delay) from "Lead Vocal" (track-lead-vocal)',
+                'Set track "Lead Vocal" (track-lead-vocal) gain to 0.656',
                 `Create bus "Vocal Delay" (${delayBusId})`,
                 `Create bus "Vocal Reverb" (${reverbBusId})`,
-                `Create post-fader send from "Lead Vocal" (track-lead-vocal) to "Vocal Delay" (${delayBusId}) at -13.98 dB`,
-                `Create post-fader send from "Backing Vocal High" (track-bgv-high) to "Vocal Reverb" (${reverbBusId}) at -7.96 dB`,
+                `Create post-fader send from "Lead Vocal" (track-lead-vocal) to "Vocal Delay" (${delayBusId}) at -12.04 dB`,
+                `Create post-fader send from "Backing Vocal High" (track-bgv-high) to "Vocal Reverb" (${reverbBusId}) at -3.52 dB`,
             ])
         );
 
@@ -1569,22 +1626,33 @@ describe('backing-vocal plate workflow', () => {
 
         const committedTracks = structuredClone(trackStore.value?.tracks ?? []);
         const committedLead = committedTracks.find((track) => track.id === 'track-lead-vocal');
+        const committedLeadDouble = committedTracks.find((track) => track.id === 'track-lead-double');
         const committedBacking = committedTracks.find((track) => track.id === 'track-bgv-high');
+        const committedBackingLow = committedTracks.find((track) => track.id === 'track-bgv-low');
         const delayBus = committedTracks.find((track) => track.id === delayBusId);
         const reverbBus = committedTracks.find((track) => track.id === reverbBusId);
-        expect(committedLead).toMatchObject({ gain: 0.82, pan: -0.08, outputId: 'master' });
+        expect(committedLead).toMatchObject({ gain: 0.656, pan: 0, outputId: 'master' });
         expect(committedLead?.devices.map((device) => device.id)).toEqual(['device-lead-eq']);
-        expect(committedLead?.sends).toEqual([
-            { busId: 'bus-vocal-parallel', level: 0.1, preFader: true },
-            { busId: delayBusId, level: 0.2, preFader: false },
-            { busId: reverbBusId, level: 0.25, preFader: false },
-        ]);
-        expect(committedBacking).toMatchObject({ gain: 0.67, pan: 0.18, outputId: 'master' });
+        expect(committedLead?.sends).toEqual([{ busId: delayBusId, level: 0.25, preFader: false }]);
+        expect(committedLeadDouble).toMatchObject({ gain: 0.518, pan: 0, outputId: 'master', devices: [] });
+        expect(committedLeadDouble?.sends).toEqual([{ busId: delayBusId, level: 0.4285714285714286, preFader: false }]);
+        expect(committedBacking).toMatchObject({ gain: 0.402, pan: 0, outputId: 'master' });
         expect(committedBacking?.devices).toEqual([]);
-        expect(committedBacking?.sends).toEqual([
-            { busId: delayBusId, level: 0.35, preFader: false },
-            { busId: reverbBusId, level: 0.4, preFader: false },
+        expect(committedBacking?.sends).toEqual([{ busId: reverbBusId, level: 0.6666666666666667, preFader: false }]);
+        expect(committedBackingLow).toMatchObject({ gain: 0.427, pan: 0, outputId: 'master', devices: [] });
+        expect(committedBackingLow?.sends).toEqual([
+            { busId: reverbBusId, level: 0.4285714285714286, preFader: false },
         ]);
+        for (const balance of [
+            { originalGain: 0.82, mix: 0.2, track: committedLead, busId: delayBusId },
+            { originalGain: 0.74, mix: 0.3, track: committedLeadDouble, busId: delayBusId },
+            { originalGain: 0.67, mix: 0.4, track: committedBacking, busId: reverbBusId },
+            { originalGain: 0.61, mix: 0.3, track: committedBackingLow, busId: reverbBusId },
+        ]) {
+            const send = balance.track?.sends.find((candidate) => candidate.busId === balance.busId);
+            expect(balance.track?.gain).toBeCloseTo(balance.originalGain * (1 - balance.mix), 12);
+            expect((balance.track?.gain ?? 0) * (send?.level ?? 0)).toBeCloseTo(balance.originalGain * balance.mix, 12);
+        }
         expect(delayBus?.devices[0]).toMatchObject({
             id: delayDeviceAction.payload.deviceId,
             type: 'builtin-delay',
@@ -1608,23 +1676,23 @@ describe('backing-vocal plate workflow', () => {
                 'rev-mix': 1,
             },
         });
-        expect(committedTracks.find((track) => track.id === 'track-drums')).toEqual(originalTracks[2]);
-        expect(committedTracks.find((track) => track.id === 'bus-vocal-parallel')).toEqual(originalTracks[3]);
+        expect(committedTracks.find((track) => track.id === 'track-drums')).toEqual(originalTracks[4]);
+        expect(committedTracks.find((track) => track.id === 'bus-vocal-parallel')).toEqual(originalTracks[5]);
         const receipt = chatStore.value?.messages.find(
             (message) => message.pendingActionConfirmationId === confirmation.id
         );
         for (const label of confirmation.actionLabels) {
             expect(receipt?.content).toContain(label);
         }
-        expect(undoStore.value?.past).toHaveLength(23);
+        expect(undoStore.value?.past).toHaveLength(27);
 
         await undo();
         expect(trackStore.value?.tracks).toEqual(originalTracks);
-        expect(undoStore.value?.future).toHaveLength(23);
+        expect(undoStore.value?.future).toHaveLength(27);
 
         await redo();
         expect(trackStore.value?.tracks).toEqual(committedTracks);
-        expect(undoStore.value?.past).toHaveLength(23);
+        expect(undoStore.value?.past).toHaveLength(27);
         expect(undoStore.value?.future).toEqual([]);
     });
 
@@ -1672,7 +1740,7 @@ describe('backing-vocal plate workflow', () => {
                     trackId: 'track-lead-vocal',
                     busId: delayBus.id,
                     level: 0.5,
-                    expectedLevel: 0.2,
+                    expectedLevel: 0.25,
                     expectedPreFader: false,
                 },
             },
@@ -1685,7 +1753,7 @@ describe('backing-vocal plate workflow', () => {
 
         expect(trackStore.value?.tracks).toEqual(collaboratedTracks);
         expect(runtimeMocks.removeSend).toHaveBeenCalledTimes(runtimeRemoveSendCount);
-        expect(undoStore.value?.past).toHaveLength(23);
+        expect(undoStore.value?.past).toHaveLength(27);
         expect(undoStore.value?.future).toEqual([]);
 
         await executeAppAction(
@@ -1694,7 +1762,7 @@ describe('backing-vocal plate workflow', () => {
                 payload: {
                     trackId: 'track-lead-vocal',
                     busId: delayBus.id,
-                    level: 0.2,
+                    level: 0.25,
                     expectedLevel: 0.5,
                     expectedPreFader: false,
                 },
@@ -1722,7 +1790,7 @@ describe('backing-vocal plate workflow', () => {
         expect(trackStore.value?.tracks).toEqual(collaboratedOriginal);
         expect(runtimeMocks.removeDeviceFromStrip).toHaveBeenCalledTimes(runtimeRemoveDeviceCount);
         expect(undoStore.value?.past).toEqual([]);
-        expect(undoStore.value?.future).toHaveLength(23);
+        expect(undoStore.value?.future).toHaveLength(27);
 
         await executeAppAction(
             { type: 'removeDevice', payload: { deviceId: 'device-collaborator-compressor' } },
@@ -1730,7 +1798,7 @@ describe('backing-vocal plate workflow', () => {
         );
         await redo();
         expect(trackStore.value?.tracks).toEqual(committedTracks);
-        expect(undoStore.value?.past).toHaveLength(23);
+        expect(undoStore.value?.past).toHaveLength(27);
         expect(undoStore.value?.future).toEqual([]);
     });
 });
