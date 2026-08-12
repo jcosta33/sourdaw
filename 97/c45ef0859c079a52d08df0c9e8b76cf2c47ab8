@@ -1,0 +1,51 @@
+crates/daw-dsp/src/fermenter/layer.rs
+  s_bc88af7d3b054c::t_920a59ce9f9251 375
+  s_bc88af7d3b054c::t_34fd089a0ffd7a 9
+crates/daw-dsp/src/fermenter/physical.rs
+  s_bc88af7d3b054c::t_1f56baf9ea1add 42-43
+  s_bc88af7d3b054c::t_4e713a7c5966f2 39
+  s_bc88af7d3b054c::t_920a59ce9f9251 40-41,47-51,53,58,65,71
+src/modules/Fermenter/repositories/__tests__/fermenterPresets.spec.ts
+  s_bc88af7d3b054c::t_7275be9cf0643c 94-102
+crates/daw-dsp/tests/device_process_rt.rs
+  s_bc88af7d3b054c::t_9f85a497d684b1 766-798
+crates/daw-dsp/src/fermenter/voice.rs
+  s_bc88af7d3b054c::t_67c9342102f5f9 700,704
+  s_bc88af7d3b054c::t_920a59ce9f9251 334,336,701-703,705
+crates/daw-dsp/tests/fermenter_karplus_glide.rs
+  s_bc88af7d3b054c::t_d6d2fa4063e205 1-43,46,48-79,84-93
+  s_bc88af7d3b054c::t_4e713a7c5966f2 80-83
+  s_bc88af7d3b054c::t_3fba0084448334 44-45,47
+public/wasm/daw-dsp/daw_dsp.d.ts
+  s_a40848e8f8cca9::t_4c50ee55c34227 1,801-840,975-1003
+public/wasm/daw-dsp/daw_dsp_bg.wasm.d.ts
+  s_a40848e8f8cca9::t_34d2fcaf629f00 1,5-44,179-207
+public/wasm/manifest.json
+  s_a40848e8f8cca9::t_76cce290ed3a70 12,16-18,21
+src/modules/AudioEngine/wasm/daw_dsp.d.ts
+  s_a40848e8f8cca9::t_38770405cf91f7 1,801-840,975-1003
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "97c45ef0859c079a52d08df0c9e8b76cf2c47ab8",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_bc88af7d3b054c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f9b4a-11a2-7f61-8dfb-76eed0eb2a9c",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
