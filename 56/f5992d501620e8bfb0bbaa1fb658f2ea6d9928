@@ -1,0 +1,49 @@
+src/modules/AudioEngine/useCases/__tests__/exportStems.spec.ts
+  s_bc88af7d3b054c::t_f44a9b787ee347 756
+  s_bc88af7d3b054c::t_e4f1656bbbce2e 742-743,758
+src/modules/AudioEngine/useCases/offlineRender/resolveHistoryAwareRenderContext.ts
+  s_bc88af7d3b054c::t_d6458a9dd4ae14 1-2,19,21,23,31-37,39-42,45-46
+  s_bc88af7d3b054c::t_9df92628a5bf0a 3-18,20,22,24-30,38,43-44,47-48
+src/modules/AudioEngine/useCases/offlineRender/__tests__/renderTrackSubgraphOffline.spec.ts
+  s_bc88af7d3b054c::t_6f80a0900d874a 94-125,221-226,351
+  s_bc88af7d3b054c::t_404056075a69cd 315-344,426-449,451-465,469-471
+  s_bc88af7d3b054c::t_b452f9d093e82e 472
+  s_bc88af7d3b054c::t_d6458a9dd4ae14 450,466-468,473
+  s_bc88af7d3b054c::t_b85121ee0d7405 474-475
+src/modules/AudioEngine/useCases/offlineRender/scheduleTrackClips.ts
+  s_bc88af7d3b054c::t_6f80a0900d874a 252
+  s_bc88af7d3b054c::t_9df92628a5bf0a 225-226,310-312,620,923-925
+src/modules/AudioEngine/useCases/exportStems.ts
+  s_bc88af7d3b054c::t_9df92628a5bf0a 27,143-148,162,357,393,428
+  s_bc88af7d3b054c::t_412481e41ab6dc 21
+src/modules/Arrangement/useCases/freezeBounce/__tests__/bounceSelection.spec.ts
+  s_bc88af7d3b054c::t_404056075a69cd 398
+src/modules/AudioEngine/useCases/offlineRender/renderTrackSubgraphOffline.ts
+  s_bc88af7d3b054c::t_412481e41ab6dc 14
+  s_bc88af7d3b054c::t_9df92628a5bf0a 19,135,141,306-307,358
+src/modules/AudioEngine/useCases/renderOffline.ts
+  s_bc88af7d3b054c::t_9df92628a5bf0a 16,23,71-76,91,309,347
+src/modules/AudioEngine/useCases/offlineRender/cropHistoryFromRenderedBuffer.ts
+  s_bc88af7d3b054c::t_9df92628a5bf0a 1-33
+src/modules/Arrangement/useCases/freezeBounce/bounceSelection.ts
+  s_bc88af7d3b054c::t_6f80a0900d874a 11
+  s_bc88af7d3b054c::t_9df92628a5bf0a 73,85-87,89
+src/modules/AudioEngine/useCases/__tests__/renderOffline.spec.ts
+  s_bc88af7d3b054c::t_e347b3353476fb 167-202
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "56f5992d501620e8bfb0bbaa1fb658f2ea6d9928",
+  "prompts": {},
+  "sessions": {
+    "s_bc88af7d3b054c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f9b4a-11a2-7f61-8dfb-76eed0eb2a9c",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
