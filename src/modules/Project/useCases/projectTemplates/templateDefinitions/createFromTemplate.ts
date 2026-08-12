@@ -8,12 +8,16 @@ import {
     resetCrdtProjectAuthority,
     startCrdtAutoSave,
 } from '#/modules/CrdtDocument/useCases';
+import { unloadPlugin as unloadLoadedExternalPlugins } from '#/modules/PluginHost/useCases';
 import { ensureTrackStrips, stopPlayback } from '#/modules/Transport/useCases';
 
 import { projectStore } from '../../../stores/projectStore';
 import { setAutoSaveHandle } from '../../projectPersistence/helpers/autoSaveHandle';
 import { resetModuleStoresToDefault } from '../../projectPersistence/helpers/resetModuleStoresToDefault';
-import { runProjectLoadTransaction } from '../../projectPersistence/helpers/runProjectLoadTransaction';
+import {
+    projectLoadEpoch,
+    runProjectLoadTransaction,
+} from '../../projectPersistence/helpers/runProjectLoadTransaction';
 import { stopActiveAutoSave } from '../../projectPersistence/helpers/stopActiveAutoSave';
 
 import { templates } from './helpers';
@@ -57,6 +61,7 @@ export async function createFromTemplate(templateId: string): Promise<boolean> {
     const transaction = runProjectLoadTransaction();
     let graphWasReset = false;
     let persistenceStopped = false;
+    let releaseRuntimeTransition: (() => void) | null = null;
     try {
         const prepared = await transaction.prepare();
         const activated = prepared ? transaction.activate() : false;
@@ -70,17 +75,24 @@ export async function createFromTemplate(templateId: string): Promise<boolean> {
             );
             return false;
         }
+        releaseRuntimeTransition = await projectLoadEpoch.acquireRuntimeTransition();
         await stopPlayback();
         if (!transaction.isCurrent()) {
             logger.info(`[createFromTemplate] superseded during stopPlayback for "${templateId}"`);
-            // Superseded mid-flight: the successor transition owns the project
-            // now — no teardown, no persistence touch (mirror newProject).
+            releaseRuntimeTransition();
             return false;
         }
         stopActiveAutoSave();
         persistenceStopped = true;
         graphWasReset = true;
         resetAudioGraph();
+        await unloadLoadedExternalPlugins();
+        if (!transaction.isCurrent()) {
+            restoreAudioGraph(templateId);
+            restorePersistence();
+            releaseRuntimeTransition();
+            return false;
+        }
         resetCrdtProjectAuthority(template.name);
         projectActionHistoryToStore();
         resetModuleStoresToDefault({ createNewMidiProbabilitySeed: true });
@@ -100,8 +112,7 @@ export async function createFromTemplate(templateId: string): Promise<boolean> {
         );
         if (!transaction.isCurrent()) {
             logger.info(`[createFromTemplate] superseded during the template action for "${templateId}"`);
-            // Superseded while the template action ran: the successor owns
-            // persistence — do not restart autosave or compact here.
+            releaseRuntimeTransition();
             return false;
         }
         // The template's project writes — tracks, selection, metadata — are now
@@ -116,6 +127,7 @@ export async function createFromTemplate(templateId: string): Promise<boolean> {
         }
         restorePersistence();
         await compactProject();
+        releaseRuntimeTransition();
         return true;
     } catch (error) {
         if (graphWasReset) {
@@ -124,6 +136,7 @@ export async function createFromTemplate(templateId: string): Promise<boolean> {
         if (persistenceStopped) {
             restorePersistence();
         }
+        releaseRuntimeTransition?.();
         if (isAppActionCommittedError(error)) {
             logger.warn(`[createFromTemplate] Template "${templateId}" committed with recovery errors:`, error);
             return true;

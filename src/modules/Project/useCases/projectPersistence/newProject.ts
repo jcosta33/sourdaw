@@ -8,6 +8,7 @@ import {
     resetCrdtProjectAuthority,
     startCrdtAutoSave,
 } from '#/modules/CrdtDocument/useCases';
+import { unloadPlugin as unloadLoadedExternalPlugins } from '#/modules/PluginHost/useCases';
 import { ensureTrackStrips, stopPlayback } from '#/modules/Transport/useCases';
 
 import { removeProjectJson } from '../../repositories/project/removeProjectJson';
@@ -16,7 +17,11 @@ import { projectStore, type ProjectStoreState } from '../../stores/projectStore'
 
 import { setAutoSaveHandle } from './helpers/autoSaveHandle';
 import { resetModuleStoresToDefault } from './helpers/resetModuleStoresToDefault';
-import { type ProjectLoadTransaction, runProjectLoadTransaction } from './helpers/runProjectLoadTransaction';
+import {
+    projectLoadEpoch,
+    type ProjectLoadTransaction,
+    runProjectLoadTransaction,
+} from './helpers/runProjectLoadTransaction';
 import { stopActiveAutoSave } from './helpers/stopActiveAutoSave';
 
 type ActivateNewProjectInput = {
@@ -63,15 +68,25 @@ async function activateNewProject({
             return failNewProjectActivation({ previousTransientState, transaction });
         }
 
-        await stopPlayback();
-        if (!transaction.isCurrent()) {
-            return failNewProjectActivation({ previousTransientState, transaction });
+        const releaseRuntimeTransition = await projectLoadEpoch.acquireRuntimeTransition();
+        try {
+            await stopPlayback();
+            if (!transaction.isCurrent()) {
+                return failNewProjectActivation({ previousTransientState, transaction });
+            }
+            stopActiveAutoSave();
+            previousPersistenceStopped = true;
+            graphTeardownStarted = true;
+            resetAudioGraph();
+            await unloadLoadedExternalPlugins();
+            if (!transaction.isCurrent()) {
+                restorePreviousProjectRuntime();
+                return failNewProjectActivation({ previousTransientState, transaction });
+            }
+            resetCrdtProjectAuthority(name);
+        } finally {
+            releaseRuntimeTransition();
         }
-        stopActiveAutoSave();
-        previousPersistenceStopped = true;
-        graphTeardownStarted = true;
-        resetAudioGraph();
-        resetCrdtProjectAuthority(name);
     } catch (error) {
         logger.warn('[newProject] Failed to activate project:', error);
         if (graphTeardownStarted || previousPersistenceStopped) {
