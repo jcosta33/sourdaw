@@ -7,6 +7,7 @@ import { projectMidiArticulationTransfer } from '../transformers/projectMidiArti
 import { type BassProcessingCopyRequestScope } from './agentReference/getBassProcessingCopyPromptScope';
 import { type DrumPreviewBranchesRequestScope } from './agentReference/getDrumPreviewBranchesPromptScope';
 import { type MidiOverlapTransformRequestScope } from './agentReference/getMidiOverlapTransformPromptScope';
+import { type SyncopatedArpeggioRequestScope } from './agentReference/getSyncopatedArpeggioPromptScope';
 import { type ProjectContext, type ProjectContextAdjustmentLayer, type ProjectContextTrack } from './getProjectContext';
 
 type MaterializeActionStateGuardsResult =
@@ -17,6 +18,7 @@ type MaterializeActionStateGuardsOptions = {
     bassProcessingCopyScope?: BassProcessingCopyRequestScope;
     midiOverlapTransformScope?: MidiOverlapTransformRequestScope;
     drumPreviewBranchesScope?: DrumPreviewBranchesRequestScope;
+    syncopatedArpeggioScope?: SyncopatedArpeggioRequestScope;
 };
 
 function createProjectedBus(busId: string, name: string): ProjectContextTrack {
@@ -198,6 +200,39 @@ export function materializeActionStateGuards(
                     clipName: entry.clipName,
                     expectedClipLocked: entry.expectedClipLocked,
                     expectedNotes: entry.expectedNotes.map((note) => ({ ...note })),
+                },
+            });
+            continue;
+        }
+        if (action.type === 'arpeggiate') {
+            const scope = options.syncopatedArpeggioScope;
+            if (!scope || action.payload.clipId !== scope.clipId) {
+                return { status: 'rejected', reason: 'EX-07 syncopated arpeggio scope is unavailable' };
+            }
+            const reservedNoteIds = new Set(scope.expectedNotes.map((note) => note.id));
+            const addedNotes = scope.addedNotes.map((note) => {
+                let id = `arp-${crypto.randomUUID()}`;
+                while (reservedNoteIds.has(id)) {
+                    id = `arp-${crypto.randomUUID()}`;
+                }
+                reservedNoteIds.add(id);
+                return { id, ...note };
+            });
+            materialized.push({
+                type: 'arpeggiate',
+                payload: {
+                    clipId: scope.clipId,
+                    pattern: 'up',
+                    rate: 8,
+                    octaves: 1,
+                    gate: 50,
+                    expectedTrackId: scope.trackId,
+                    trackName: scope.trackName,
+                    expectedTrackFrozen: scope.expectedTrackFrozen,
+                    clipName: scope.clipName,
+                    expectedClipLocked: scope.expectedClipLocked,
+                    expectedNotes: scope.expectedNotes.map((note) => ({ ...note })),
+                    addedNotes,
                 },
             });
             continue;

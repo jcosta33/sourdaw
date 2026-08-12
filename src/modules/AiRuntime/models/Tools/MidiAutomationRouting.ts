@@ -75,10 +75,10 @@ export const midiTools: readonly ToolSchema[] = [
         'Convert chords into an arpeggiated pattern.',
         {
             clipId: { type: 'string' },
-            pattern: { type: 'string', description: '"up", "down", "updown", "random"' },
-            rate: { type: 'number', description: 'Note rate: 0.25=16th, 0.5=8th, 1=quarter' },
+            pattern: { type: 'string', enum: ['up', 'down', 'updown', 'downup', 'random'] },
+            rate: { type: 'number', enum: [4, 8, 16, 32], description: 'Notes per whole note: 8=eighths' },
             octaves: { type: 'number', description: 'Number of octaves to span (1–4)' },
-            gate: { type: 'number', description: 'Note length as fraction of step (0.5=staccato, 1.0=legato)' },
+            gate: { type: 'number', description: 'Note length as percent of step (50=staccato, 100=legato)' },
         },
         ['clipId']
     ),

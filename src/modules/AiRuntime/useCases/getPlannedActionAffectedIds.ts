@@ -22,6 +22,13 @@ export function getPlannedActionAffectedIds(action: AppAction): string[] {
             affectedIds.add(shortened.noteId);
         }
     }
+    if (action.type === 'arpeggiate' && action.payload.expectedTrackId && action.payload.addedNotes) {
+        affectedIds.add(action.payload.expectedTrackId);
+        affectedIds.add(action.payload.clipId);
+        for (const note of action.payload.addedNotes) {
+            affectedIds.add(note.id);
+        }
+    }
     if (action.type === 'createDrumPreviewBranches') {
         for (const candidate of action.payload.candidates) {
             affectedIds.add(candidate.branchId);
@@ -54,8 +61,13 @@ export function getPlannedActionAffectedIds(action: AppAction): string[] {
     if (action.type === 'addDevice' && action.payload.deviceId) {
         affectedIds.add(action.payload.deviceId);
     }
-    if (action.type === 'addSidechainRoute' && action.payload.targetDeviceId) {
-        affectedIds.add(action.payload.targetDeviceId);
+    if (action.type === 'addSidechainRoute') {
+        if (action.payload.targetDeviceId) {
+            affectedIds.add(action.payload.targetDeviceId);
+        }
+        if (action.payload.routeId) {
+            affectedIds.add(action.payload.routeId);
+        }
     }
     if (action.type === 'addAdjustmentRegion') {
         affectedIds.add(action.payload.layerId);

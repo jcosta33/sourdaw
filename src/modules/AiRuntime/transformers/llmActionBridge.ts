@@ -11,6 +11,7 @@ import { type MidiOverlapTransformCapability } from '../models/MidiOverlapTransf
 import { type ProjectContext } from '../models/ProjectContext';
 import { type RuntimeAction } from '../models/RuntimeAction';
 import { type SidechainRoutingCapability } from '../models/SidechainRoutingCapability';
+import { type SyncopatedArpeggioCapability } from '../models/SyncopatedArpeggioCapability';
 import { type WholeProjectVibeMixCapability } from '../models/WholeProjectVibeMixPlan';
 import { normalizeSafeProjectName } from '../validators/normalizeSafeProjectName';
 
@@ -1336,6 +1337,28 @@ function bridgeToolCall({
         return {
             type: 'removeShortMidiOverlaps',
             payload: { clipId: target.clip.id, maximumOverlapMs: args.maximumOverlapMs },
+        };
+    }
+
+    if (call.name === 'arpeggiate') {
+        const target = findEditableMidiClip(context, args.clipId);
+        if (
+            !hasExactKeys(args, ['clipId', 'pattern', 'rate', 'octaves', 'gate']) ||
+            !target ||
+            args.pattern !== 'up' ||
+            args.rate !== 8 ||
+            args.octaves !== 1 ||
+            args.gate !== 50
+        ) {
+            return rejection(
+                index,
+                call.name,
+                'Expected the exact application-admitted selected MIDI clip and EX-07 arpeggio settings'
+            );
+        }
+        return {
+            type: 'arpeggiate',
+            payload: { clipId: target.clip.id, pattern: 'up', rate: 8, octaves: 1, gate: 50 },
         };
     }
 
@@ -3136,6 +3159,7 @@ export function buildLlmActionUserMessage({
     drumPreviewBranchesCapability,
     midiOverlapTransformCapability,
     sidechainRoutingCapability,
+    syncopatedArpeggioCapability,
     wholeProjectVibeMixCapability,
 }: {
     prompt: string;
@@ -3148,6 +3172,7 @@ export function buildLlmActionUserMessage({
     drumPreviewBranchesCapability?: DrumPreviewBranchesCapability;
     midiOverlapTransformCapability?: MidiOverlapTransformCapability;
     sidechainRoutingCapability?: SidechainRoutingCapability;
+    syncopatedArpeggioCapability?: SyncopatedArpeggioCapability;
     wholeProjectVibeMixCapability?: WholeProjectVibeMixCapability;
 }): string {
     const commandContext = {
@@ -3159,6 +3184,7 @@ export function buildLlmActionUserMessage({
         ...(drumPreviewBranchesCapability ? { drumPreviewBranchesCapability } : {}),
         ...(midiOverlapTransformCapability ? { midiOverlapTransformCapability } : {}),
         ...(sidechainRoutingCapability ? { sidechainRoutingCapability } : {}),
+        ...(syncopatedArpeggioCapability ? { syncopatedArpeggioCapability } : {}),
         ...(wholeProjectVibeMixCapability ? { wholeProjectVibeMixCapability } : {}),
         tempo: context.tempo,
         timeSignature: context.timeSignature,

@@ -36,6 +36,10 @@ import {
 } from './getMidiOverlapTransformPromptScope';
 import { getMutedEmptyTrackDeletionScope } from './getMutedEmptyTrackDeletionScope';
 import { getSidechainRoutingPromptScope } from './getSidechainRoutingPromptScope';
+import {
+    getSyncopatedArpeggioPromptScope,
+    type SyncopatedArpeggioRequestScope,
+} from './getSyncopatedArpeggioPromptScope';
 import { getWholeProjectVibeMixScope } from './getWholeProjectVibeMixScope';
 import { resolveAgentReference } from './resolveAgentReference';
 
@@ -76,6 +80,7 @@ type BridgeGroundedLlmToolCallsResult = LlmActionBridgeResult & {
     bassProcessingCopyScope?: BassProcessingCopyRequestScope;
     midiOverlapTransformScope?: MidiOverlapTransformRequestScope;
     drumPreviewBranchesScope?: DrumPreviewBranchesRequestScope;
+    syncopatedArpeggioScope?: SyncopatedArpeggioRequestScope;
     batchLocalActionIdentities?: BatchLocalActionIdentity[];
 };
 
@@ -4043,6 +4048,36 @@ export function bridgeGroundedLlmToolCalls({
             return providerTransform ? [providerTransform] : [];
         });
     }
+    const syncopatedArpeggioScope = getSyncopatedArpeggioPromptScope(prompt, context);
+    const providerArpeggioCalls = calls.filter((call) => call.name === 'arpeggiate');
+    if (syncopatedArpeggioScope.status === 'invalid') {
+        return { actions: [], rejections: [rejection(0, '<batch>', syncopatedArpeggioScope.reason)] };
+    }
+    if (syncopatedArpeggioScope.status === 'none' && providerArpeggioCalls.length > 0) {
+        return {
+            actions: [],
+            rejections: [rejection(0, '<batch>', 'Arpeggio planning requires the exact EX-07 capability')],
+        };
+    }
+    if (syncopatedArpeggioScope.status === 'request') {
+        const providerAction = providerArpeggioCalls[0];
+        const providerPlanMatches =
+            calls.length === 1 &&
+            providerArpeggioCalls.length === 1 &&
+            providerAction !== undefined &&
+            providerAction.arguments.clipId === syncopatedArpeggioScope.clipId &&
+            providerAction.arguments.pattern === 'up' &&
+            providerAction.arguments.rate === 8 &&
+            providerAction.arguments.octaves === 1 &&
+            providerAction.arguments.gate === 50;
+        if (!providerPlanMatches) {
+            return {
+                actions: [],
+                rejections: [rejection(0, '<batch>', 'Provider plan does not match the exact EX-07 arpeggio scope')],
+            };
+        }
+        effectiveCalls = [providerAction];
+    }
     const drumPreviewBranchesScope = getDrumPreviewBranchesPromptScope(prompt, context);
     if (drumPreviewBranchesScope.status === 'invalid') {
         return { actions: [], rejections: [rejection(0, '<batch>', drumPreviewBranchesScope.reason)] };
@@ -4338,6 +4373,7 @@ export function bridgeGroundedLlmToolCalls({
         if (
             (bassProcessingCopyScope.status === 'request' && call.name === 'addAdjustmentRegion') ||
             (midiOverlapTransformScope.status === 'request' && call.name === 'removeShortMidiOverlaps') ||
+            (syncopatedArpeggioScope.status === 'request' && call.name === 'arpeggiate') ||
             (drumPreviewBranchesScope.status === 'request' && call.name === 'createDrumPreviewBranches')
         ) {
             grounded = call;
@@ -4444,6 +4480,7 @@ export function bridgeGroundedLlmToolCalls({
             ...(bassProcessingCopyScope.status === 'request' ? { bassProcessingCopyScope } : {}),
             ...(midiOverlapTransformScope.status === 'request' ? { midiOverlapTransformScope } : {}),
             ...(drumPreviewBranchesScope.status === 'request' ? { drumPreviewBranchesScope } : {}),
+            ...(syncopatedArpeggioScope.status === 'request' ? { syncopatedArpeggioScope } : {}),
             rejections,
         };
     }
@@ -4455,6 +4492,7 @@ export function bridgeGroundedLlmToolCalls({
         ...(bassProcessingCopyScope.status === 'request' ? { bassProcessingCopyScope } : {}),
         ...(midiOverlapTransformScope.status === 'request' ? { midiOverlapTransformScope } : {}),
         ...(drumPreviewBranchesScope.status === 'request' ? { drumPreviewBranchesScope } : {}),
+        ...(syncopatedArpeggioScope.status === 'request' ? { syncopatedArpeggioScope } : {}),
         batchLocalActionIdentities,
         rejections,
     };

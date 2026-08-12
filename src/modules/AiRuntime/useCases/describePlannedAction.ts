@@ -232,6 +232,16 @@ export function describePlannedAction({ action, context }: DescribePlannedAction
             });
         }
     }
+    if (
+        action.type === 'arpeggiate' &&
+        action.payload.expectedTrackId &&
+        action.payload.trackName &&
+        action.payload.clipName &&
+        action.payload.expectedNotes &&
+        action.payload.addedNotes
+    ) {
+        return `Track "${action.payload.trackName}" (${action.payload.expectedTrackId}), clip "${action.payload.clipName}" (${action.payload.clipId}): add ${String(action.payload.addedNotes.length)} syncopated offbeat eighth-note arpeggio notes; preserve ${String(action.payload.expectedNotes.length)} source notes, absolute voicing, velocities, expression, and harmonic boundaries`;
+    }
     if (action.type === 'createDrumPreviewBranches') {
         const candidates = action.payload.candidates
             .map(
