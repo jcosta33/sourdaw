@@ -1,0 +1,19 @@
+src-tauri/src/commands/plugins.rs
+  s_bc88af7d3b054c::t_eeae3329c66b5e 458-461,1120,1123
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "52eb1756123917216153a4c06d49f1ba9aef23fe",
+  "prompts": {},
+  "sessions": {
+    "s_bc88af7d3b054c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f9b4a-11a2-7f61-8dfb-76eed0eb2a9c",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
