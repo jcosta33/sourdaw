@@ -590,7 +590,8 @@ module.exports = {
                 'Use cases, repositories, stores, handlers, and presentations must not import module worklet internals. ' +
                 'The engine-owned AudioWorkletNode is the only application entrypoint for a worklet module.',
             from: {
-                path: '^src/modules/(?:Common/|Supporting/)?[^/]+/(useCases|repositories|stores|handlers|presentations)/.+' +
+                path:
+                    '^src/modules/(?:Common/|Supporting/)?[^/]+/(useCases|repositories|stores|handlers|presentations)/.+' +
                     SOURCE_FILE_RE,
             },
             to: {
@@ -633,7 +634,8 @@ module.exports = {
                 'Use cases, repositories, stores, handlers, and presentations must not import Worker internals. ' +
                 'The engine-owned Worker client is the only application entrypoint for a Worker module.',
             from: {
-                path: '^src/modules/(?:Common/|Supporting/)?[^/]+/(useCases|repositories|stores|handlers|presentations)/.+' +
+                path:
+                    '^src/modules/(?:Common/|Supporting/)?[^/]+/(useCases|repositories|stores|handlers|presentations)/.+' +
                     SOURCE_FILE_RE,
             },
             to: {
@@ -733,13 +735,13 @@ module.exports = {
         TAURI_IPC_ONLY_IN_REPOSITORIES,
 
         {
-            name: 'application-to-modules-public-surface-only',
+            name: 'app-to-modules-public-surface-only',
             severity: 'error',
             comment:
-                'application/ may only depend on module contract-folder barrels, src/shared/, and src/helpers/. ' +
+                'src/app/ may only depend on module contract-folder barrels, src/shared/, and src/helpers/. ' +
                 'Migration complete: module-root index.ts is no longer accepted.',
             from: {
-                path: '^application/',
+                path: '^src/app/',
             },
             to: {
                 path: '^src/modules/',
@@ -890,11 +892,9 @@ module.exports = {
         },
         {
             name: 'no-orphans',
-            // WARN pending a dead-module cleanup pass. The raw orphan count (107)
-            // is mostly false positives: type-only modules whose only consumers
-            // are excluded spec files, plus barrels/entry points. The pathNot list
-            // trims those well-known non-orphan shapes; the remainder is a genuine
-            // dead-module backlog, so this stays 'warn' until that pass lands.
+            // Specs are excluded from the main graph, so helpers owned by __tests__
+            // must be excluded as well. Every remaining row is a production orphan
+            // and stays visible until it is integrated or removed.
             severity: 'warn',
             comment:
                 'Module is not imported by anything and is not an entry point (orphan). Likely dead code. ' +
@@ -908,6 +908,7 @@ module.exports = {
                     '/events/',
                     '/types\\.ts$',
                     '/testing/',
+                    '/__tests__/',
                     'src/main',
                     'src/setupTests',
                     'vite-env',
@@ -918,18 +919,6 @@ module.exports = {
                     '^src/modules/MIDI/workers/midiImportWorker\\.ts$',
                     '^src/modules/BrowserAi/workers/tfjsInferenceWorker\\.ts$',
                     '^src/modules/AudioEngine/workers/recordingWorker\\.ts$',
-                    // Module-root shared test fixtures imported only from spec
-                    // files, which dependency-cruiser excludes from this graph.
-                    '^src/modules/SampleLibrary/__tests__/createTestSample\\.ts$',
-                    '^src/modules/Arrangement/__tests__/TrackDummy\\.ts$',
-                    '^src/modules/Arrangement/__tests__/PluginDummy\\.ts$',
-                    '^src/modules/Arrangement/__tests__/ClipDummy\\.ts$',
-                    // Shared AU-1 automation curve-conformance case table,
-                    // imported only from the live/offline conformance specs.
-                    '^src/utils/__tests__/automationCurveCases\\.ts$',
-                    // Shared reproduction of Tauri's IPC serializer, imported
-                    // only from the binary-IPC payload-size specs.
-                    '^src/utils/__tests__/serializeLikeTauri\\.ts$',
                     // Reachable type/helper files imported by runtime code, but
                     // currently invisible to dependency-cruiser's orphan graph.
                     '^src/utils/DOM/GestureEvent\\.ts$',
