@@ -45,7 +45,6 @@
         "scripts/generate-missing-use-case-specs.ts",
         "scripts/__tests__/check-dependency-boundaries.spec.ts",
         "scripts/layoutPrimitivesCensus.ts",
-        "scripts/verify-remove-inject-output.ts",
         "scripts/generate-view-tests.ts"
     ],
     "rules": {
