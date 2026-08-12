@@ -904,9 +904,6 @@ module.exports = {
                 pathNot: [
                     '\\.d\\.ts$',
                     '(^|/)index\\.ts$',
-                    '/models/',
-                    '/events/',
-                    '/types\\.ts$',
                     '/testing/',
                     '/__tests__/',
                     'src/main',

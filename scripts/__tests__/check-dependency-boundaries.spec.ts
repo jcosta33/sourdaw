@@ -283,6 +283,9 @@ describe('check-dependency-boundaries', () => {
         expect(
             isExcluded('src/modules/AudioEngine/repositories/offlineScheduler/__tests__/offlineAutomationExemptions.ts')
         ).toBe(true);
+        expect(isExcluded('src/modules/Transport/models/DeadModel.ts')).toBe(false);
+        expect(isExcluded('src/modules/Transport/events/DeadEvent.ts')).toBe(false);
+        expect(isExcluded('src/modules/Transport/types.ts')).toBe(false);
         expect(isExcluded('src/modules/ControlSurface/repositories/pushMidiCodec.ts')).toBe(false);
     });
 
