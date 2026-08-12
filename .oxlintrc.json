@@ -44,9 +44,7 @@
         "scripts/download-levain-samples.ts",
         "scripts/generate-missing-use-case-specs.ts",
         "scripts/__tests__/check-dependency-boundaries.spec.ts",
-        "scripts/layoutPrimitivesCensus.ts",
-        "scripts/verify-remove-inject-output.ts",
-        "scripts/generate-view-tests.ts"
+        "scripts/layoutPrimitivesCensus.ts"
     ],
     "rules": {
         // ── ESLint core (from eslint.config.mjs explicit config) ────────────
