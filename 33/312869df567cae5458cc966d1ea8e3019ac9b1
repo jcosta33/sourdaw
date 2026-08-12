@@ -1,0 +1,36 @@
+src/modules/Project/useCases/projectPersistence/helpers/runProjectLoadTransaction.ts
+  s_bc88af7d3b054c::t_df8cb78321f241 26,148
+src-tauri/src/commands/plugins.rs
+  s_bc88af7d3b054c::t_17e2b83307b432 17,44-86,268,451,1094-1095
+  s_bc88af7d3b054c::t_eca97002c01944 1093,1097-1099,1101-1104
+src/modules/Project/useCases/projectPersistence/newProject.ts
+  s_bc88af7d3b054c::t_df8cb78321f241 77-79
+src/modules/Project/useCases/projectPersistence/helpers/__tests__/replaceProjectData.spec.ts
+  s_bc88af7d3b054c::t_1436649b552bdc 264
+src/modules/Project/useCases/projectPersistence/helpers/replaceProjectData.ts
+  s_bc88af7d3b054c::t_df8cb78321f241 235-237
+src/modules/Project/useCases/projectTemplates/templateDefinitions/createFromTemplate.ts
+  s_bc88af7d3b054c::t_df8cb78321f241 87-90
+src/modules/Project/useCases/projectPersistence/__tests__/newProject.spec.ts
+  s_bc88af7d3b054c::t_1436649b552bdc 167-168
+  s_bc88af7d3b054c::t_df8cb78321f241 185,187-190,192-198
+  s_bc88af7d3b054c::t_09f96271fa5d73 186,191
+src/modules/Project/useCases/projectTemplates/templateDefinitions/__tests__/createFromTemplate.spec.ts
+  s_bc88af7d3b054c::t_1436649b552bdc 283-284
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "33312869df567cae5458cc966d1ea8e3019ac9b1",
+  "prompts": {},
+  "sessions": {
+    "s_bc88af7d3b054c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f9b4a-11a2-7f61-8dfb-76eed0eb2a9c",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
