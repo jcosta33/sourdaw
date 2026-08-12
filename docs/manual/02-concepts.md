@@ -122,7 +122,7 @@ many notes it touched.
 > | Device          | Direct changes that add undo entries                                                                                         |
 > | --------------- | ---------------------------------------------------------------------------------------------------------------------------- |
 > | **Bacteria**    | None of its panel controls.                                                                                                  |
-> | **Crumbs**      | Parameter gestures after release, plus sample and operating-mode changes.                                                    |
+> | **Crumbs**      | Parameter gestures after release. Sample and operating-mode changes save and sync but are not undoable.                      |
 > | **Crust**       | None of its panel controls.                                                                                                  |
 > | **CvGate**      | None of its panel controls.                                                                                                  |
 > | **Fermenter**   | None of its panel controls.                                                                                                  |
@@ -130,10 +130,10 @@ many notes it touched.
 > | **Grand Boule** | Master gain, soundboard send, sympathetic send, lid position, and mic position. Other panel controls are not recorded.       |
 > | **Grinder**     | None: knobs, presets, imported models, and snapshot recalls are not recorded.                                                |
 > | **Knead**       | Committing a pitch edit records the clip edit; its device controls are not recorded.                                         |
-> | **Levain**      | Changing the selected instrument or articulation.                                                                            |
+> | **Levain**      | None. Instrument and articulation selections save and sync but are not undoable.                                             |
 > | **Proof**       | None of its panel controls.                                                                                                  |
-> | **Dutch Oven**  | Individual controls and algorithms; loading a Space is one grouped entry.                                                    |
-> | **Toaster**     | Changes to the kit.                                                                                                          |
+> | **Dutch Oven**  | Individual controls and algorithms; loading a Space creates grouped parameter entries that undo together.                    |
+> | **Toaster**     | None. Kit changes save and sync but are not undoable.                                                                        |
 > | **Tuner**       | A completed Concert A reference gesture.                                                                                     |
 > | **Yeast**       | Selecting, creating, renaming, or deleting a groove template, plus Groove Amount; other processor controls are not recorded. |
 >
