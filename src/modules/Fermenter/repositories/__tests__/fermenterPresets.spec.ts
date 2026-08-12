@@ -91,6 +91,15 @@ describe('FERMENTER_PRESETS', () => {
         });
     });
 
+    it('keeps the shipped Karplus sitar on the audible glide path', () => {
+        const sitar = FERMENTER_PRESETS.find((preset) => preset.id === 'fermenter-sitar-deep');
+
+        expect(sitar?.devices[0]?.parameterValues).toMatchObject({
+            oscEngine: 3,
+            portamentoTime: 0.06,
+        });
+    });
+
     it('should only use known sound preset categories', () => {
         const categories = new Set([
             'synth',

@@ -763,6 +763,39 @@ fn fermenter_process_does_not_allocate_with_voices_sounding() {
     );
 }
 
+#[test]
+fn fermenter_karplus_glide_does_not_allocate_while_sounding() {
+    use daw_dsp::fermenter::FermenterInstance;
+
+    let mut instance = FermenterInstance::new(SAMPLE_RATE, 8);
+    instance.set_param("engine", 3.0);
+    instance.set_param("ks_brightness", 0.8);
+    instance.set_param("ks_damping", 0.5);
+    instance.set_param("portamento_mode", 0.0);
+    instance.set_param("portamento", 0.0);
+    instance.note_on(48, 127);
+    instance.process(BLOCK as u32);
+    instance.note_off(48);
+    for _ in 0..64 {
+        instance.process(BLOCK as u32);
+    }
+    instance.set_param("portamento", 2.0);
+    instance.note_on(72, 127);
+
+    assert_no_alloc(|| {
+        for _ in 0..GUARDED_BLOCKS {
+            instance.process(BLOCK as u32);
+        }
+    });
+
+    let out = unsafe { read_output(instance.process(BLOCK as u32), BLOCK) };
+    assert_all_finite(&out, "fermenter Karplus glide");
+    assert!(
+        peak(&out) > 1e-4,
+        "Karplus glide fell silent, so the guarded region did not exercise the moving delay"
+    );
+}
+
 /// The scheduled-note path: events are drained into a per-block list and the
 /// render splits at each offset. Draining into a list is exactly where a `Vec`
 /// creeps back in, so the guard covers the pushes *and* the split render — the

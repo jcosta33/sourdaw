@@ -6,7 +6,7 @@ use super::filter::FilterMode;
 use super::modulation::ModMatrix;
 use super::oscillator::Wavetable;
 use super::params::SmoothedParam;
-use super::voice::{note_frequency, Voice, VoiceParams};
+use super::voice::{Voice, VoiceParams};
 
 const MAX_VOICES_PER_LAYER: usize = 16;
 const MAX_SCRATCH_FRAMES: usize = 4096;
@@ -290,8 +290,6 @@ impl Layer {
         // displaced voice out of `self.voices` into a steal tail, so asking
         // after it would be asking a pool the new note has already altered.
         let portamento_time = self.portamento_time_for_note_on();
-        let destination_freq = note_frequency(note);
-
         // Find a free voice, or steal the quietest
         let mut target = None;
 
@@ -374,7 +372,7 @@ impl Layer {
             );
             // Excite Karplus-Strong at note-on time (after note_on reset)
             if self.engine == 3 {
-                voice.excite_ks(destination_freq, self.sample_rate, self.ks_brightness);
+                voice.excite_ks(self.sample_rate, self.ks_brightness);
             }
             // Trigger sampler at note-on time
             if self.engine == 6 {
