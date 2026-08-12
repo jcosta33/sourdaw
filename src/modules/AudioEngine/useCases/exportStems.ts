@@ -18,12 +18,13 @@ import { collectDeviceRuntimeFailures } from './offlineRender/collectDeviceRunti
 import { connectOfflineToasterPadRoutes } from './offlineRender/connectOfflineToasterPadRoutes';
 import { MIN_RENDER_TIMEOUT_MS, RENDER_TIMEOUT_MULTIPLIER } from './offlineRender/constants';
 import { createOfflineTrackStrip } from './offlineRender/createOfflineTrackStrip';
+import { cropHistoryFromRenderedBuffer } from './offlineRender/cropHistoryFromRenderedBuffer';
 import { destroyOfflineDeviceStrategies } from './offlineRender/destroyOfflineDeviceStrategies';
 import { isCancelRequested } from './offlineRender/isCancelRequested';
 import { prepareOfflineContext } from './offlineRender/prepareOfflineContext';
 import { renderInSegments } from './offlineRender/renderInSegments';
 import { resetCancelFlag } from './offlineRender/resetCancelFlag';
-import { resolveRenderContext } from './offlineRender/resolveRenderContext';
+import { resolveHistoryAwareRenderContext } from './offlineRender/resolveHistoryAwareRenderContext';
 import { schedulePendingSuspends } from './offlineRender/schedulePendingSuspends';
 import { scheduleTrackClips } from './offlineRender/scheduleTrackClips';
 import { type OfflineRenderOptions, type OfflineTrackStrip, type PendingWorkletEvent } from './offlineRender/types';
@@ -139,6 +140,12 @@ export const exportStems: ExportStemsFn = async function exportStems(
             throw createExportError(`Invalid export duration: ${durationBeats} beats.`);
         }
 
+        const { renderContext, historySeconds, outputDurationSeconds } = resolveHistoryAwareRenderContext({
+            durationBeats,
+            startBeat,
+            tailSeconds,
+            sampleRate,
+        });
         const {
             tracks,
             midi,
@@ -152,12 +159,7 @@ export const exportStems: ExportStemsFn = async function exportStems(
             projectChordPitch,
             evaluateAutomationValue,
             resolveArticulationId,
-        } = resolveRenderContext({
-            durationBeats,
-            startBeat,
-            tailSeconds,
-            sampleRate,
-        });
+        } = renderContext;
         const stems = new Map<string, AudioBuffer>();
         // FX-9 — read once; each stem then plans only the routes that key a device
         // it actually renders.
@@ -352,7 +354,7 @@ export const exportStems: ExportStemsFn = async function exportStems(
                         allTracks: groupedTopology,
                         deviceEntriesByTrack,
                         honorMuted: false,
-                        regionStartBeat: startBeat,
+                        regionStartBeat: 0,
                         vcaMultiplier: deriveVcaMultiplier({ vcaGroupId: groupedTrack.vcaGroupId, groups: vcaGroups }),
                     });
                 }
@@ -388,7 +390,7 @@ export const exportStems: ExportStemsFn = async function exportStems(
                         allTracks: tracks.tracks,
                         deviceEntriesByTrack,
                         honorMuted: false,
-                        regionStartBeat: startBeat,
+                        regionStartBeat: 0,
                         vcaMultiplier: deriveVcaMultiplier({
                             vcaGroupId: keySourceTrack.vcaGroupId,
                             groups: vcaGroups,
@@ -423,7 +425,7 @@ export const exportStems: ExportStemsFn = async function exportStems(
                         : undefined,
                 });
 
-                stems.set(track.id, buffer);
+                stems.set(track.id, cropHistoryFromRenderedBuffer({ buffer, historySeconds, outputDurationSeconds }));
                 done++;
                 onProgress?.(done / eligible.length);
             } finally {

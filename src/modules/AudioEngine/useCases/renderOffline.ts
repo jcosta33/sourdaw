@@ -13,13 +13,14 @@ import { clampRenderFrameCount } from './offlineRender/clampRenderFrameCount';
 import { collectDeviceRuntimeFailures } from './offlineRender/collectDeviceRuntimeFailures';
 import { connectOfflineToasterPadRoutes } from './offlineRender/connectOfflineToasterPadRoutes';
 import { MIN_RENDER_TIMEOUT_MS, RENDER_TIMEOUT_MULTIPLIER } from './offlineRender/constants';
+import { cropHistoryFromRenderedBuffer } from './offlineRender/cropHistoryFromRenderedBuffer';
 import { createOfflineBusStrip } from './offlineRender/createOfflineBusStrip';
 import { createOfflineTrackStrip } from './offlineRender/createOfflineTrackStrip';
 import { destroyOfflineDeviceStrategies } from './offlineRender/destroyOfflineDeviceStrategies';
 import { prepareOfflineContext } from './offlineRender/prepareOfflineContext';
 import { renderInSegments } from './offlineRender/renderInSegments';
 import { resetCancelFlag } from './offlineRender/resetCancelFlag';
-import { resolveRenderContext } from './offlineRender/resolveRenderContext';
+import { resolveHistoryAwareRenderContext } from './offlineRender/resolveHistoryAwareRenderContext';
 import { schedulePendingSuspends } from './offlineRender/schedulePendingSuspends';
 import { scheduleTrackClips } from './offlineRender/scheduleTrackClips';
 import { shouldCreateOfflineStrip } from './offlineRender/shouldCreateOfflineStrip';
@@ -67,6 +68,12 @@ export const renderOffline: RenderOfflineFn = async function renderOffline(
             );
         }
 
+        const { renderContext, historySeconds, outputDurationSeconds } = resolveHistoryAwareRenderContext({
+            durationBeats,
+            startBeat,
+            tailSeconds,
+            sampleRate,
+        });
         const {
             tracks,
             midi,
@@ -81,12 +88,7 @@ export const renderOffline: RenderOfflineFn = async function renderOffline(
             projectChordPitch,
             evaluateAutomationValue,
             resolveArticulationId,
-        } = resolveRenderContext({
-            durationBeats,
-            startBeat,
-            tailSeconds,
-            sampleRate,
-        });
+        } = renderContext;
         if (!projectMidiEvents || !selectMidiEventProbability || !projectPpqEndpoints || !projectChordPitch) {
             throw new Error('Offline musical projection is not configured');
         }
@@ -304,7 +306,7 @@ export const renderOffline: RenderOfflineFn = async function renderOffline(
                 // scheduler skips inaudible children only after indexing.
                 allTracks: tracks?.tracks ?? [],
                 deviceEntriesByTrack,
-                regionStartBeat: startBeat,
+                regionStartBeat: 0,
                 // Same multiplier the strip was seeded with, so a gain lane on a
                 // VCA-member track rides its group instead of nullifying it.
                 vcaMultiplier: deriveVcaMultiplier({ vcaGroupId: track.vcaGroupId, groups: vcaGroups }),
@@ -342,7 +344,7 @@ export const renderOffline: RenderOfflineFn = async function renderOffline(
         });
 
         onProgress?.(1);
-        return buffer;
+        return cropHistoryFromRenderedBuffer({ buffer, historySeconds, outputDurationSeconds });
     } finally {
         destroyOfflineDeviceStrategies(deviceEntriesByTrack);
         releaseLock();

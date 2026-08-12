@@ -739,8 +739,8 @@ describe('exportStems — option parsing, validation & control flow', () => {
     it('parses the OfflineRenderOptions object form (sampleRate, startBeat, tailSeconds, callbacks)', async () => {
         const onProgress = vi.fn();
         const onWarning = vi.fn();
-        // Empty tracks → returns early after parsing; assert resolveRenderContext
-        // received the parsed values derived from the object form.
+        // Empty tracks → returns early after parsing; the bounded request still
+        // resolves from timeline zero so any real stem would receive history.
         const stems = await exportStems({
             durationBeats: 8,
             sampleRate: 48_000,
@@ -753,9 +753,9 @@ describe('exportStems — option parsing, validation & control flow', () => {
         expect(stems.size).toBe(0);
         expect(offlineRenderMocks.resolveRenderContext).toHaveBeenCalledWith(
             expect.objectContaining({
-                durationBeats: 8,
+                durationBeats: 10,
                 sampleRate: 48_000,
-                startBeat: 2,
+                startBeat: 0,
                 tailSeconds: 1.5,
             })
         );

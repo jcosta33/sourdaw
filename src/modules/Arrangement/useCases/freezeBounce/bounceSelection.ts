@@ -8,7 +8,7 @@ import {
 } from '#/modules/MIDI/useCases';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
-import { type Clip, type Track } from '../../models/Track';
+import { type Clip } from '../../models/Track';
 import { resolveEligibleClipWriteTarget } from '../../stores/resolveEligibleClipWriteTarget';
 import { trackStore } from '../../stores/trackStore';
 
@@ -69,17 +69,8 @@ export async function bounceSelection(trackId: string, startBeat: number, endBea
         return false;
     }
 
-    const virtualTrack: Track = {
-        ...track,
-        clips: clipsInRange.map((context) => ({
-            ...context,
-            startBeat: Math.max(context.startBeat, startBeat),
-            endBeat: Math.min(context.endBeat, endBeat),
-        })),
-    };
-
     let scheduleTally: RenderScheduleTally = { scheduledNotes: 0, scheduledBuffers: [] };
-    const renderedBuffer = await renderTrackOffline(virtualTrack, startBeat, endBeat, {
+    const renderedBuffer = await renderTrackOffline(track, startBeat, endBeat, {
         onScheduled: (tally) => {
             scheduleTally = tally;
         },
@@ -91,11 +82,11 @@ export async function bounceSelection(trackId: string, startBeat: number, endBea
 
     // The most destructive of the four bake paths: it replaces clips *and*
     // calls `removeMidiClipData`, so the notes are gone from the MIDI store
-    // outright rather than merely detached from the track. The virtual track is
-    // already clipped to the selection, so the tally observes exactly what this
-    // range scheduled.
+    // outright rather than merely detached from the track. The renderer keeps
+    // the original track so stateful devices receive pre-region history; its
+    // tally boundary still observes only sources reaching the returned range.
     const silentBake = detectSilentBake({
-        track: virtualTrack,
+        track,
         buffer: renderedBuffer,
         tally: scheduleTally,
         // Defaults: `targetMixer: 'bake'` with automation included, so the

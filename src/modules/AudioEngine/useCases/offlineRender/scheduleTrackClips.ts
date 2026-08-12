@@ -222,6 +222,10 @@ export type ScheduleTrackClipsInput = {
      * need the observation. See `OfflineScheduleTally`.
      */
     tally?: OfflineScheduleTally;
+    /** Render-time boundary after which scheduled sources belong to the returned buffer. */
+    tallyStartSeconds?: number;
+    /** Caller-owned cancellation for freeze/bounce scheduling. */
+    abortSignal?: AbortSignal;
 };
 
 export async function scheduleTrackClips({
@@ -247,7 +251,21 @@ export async function scheduleTrackClips({
     vcaMultiplier = 1,
     includeMixerAutomation = true,
     tally,
+    tallyStartSeconds = 0,
+    abortSignal,
 }: ScheduleTrackClipsInput): Promise<void> {
+    function checkScheduleCancel(): void {
+        checkCancel();
+        checkCallerAbort();
+    }
+
+    function checkCallerAbort(): void {
+        if (abortSignal?.aborted) {
+            throw new Error('Render aborted');
+        }
+    }
+
+    checkCallerAbort();
     const {
         evaluateAutomationValue,
         projectChordPitch,
@@ -304,7 +322,9 @@ export async function scheduleTrackClips({
                 source.buffer = frozenBuf;
                 source.connect(trackGainNode); // Skip trackInputNode to bypass device chain processing, but keep fader/pan
                 source.start(when, bufferOffset, remaining);
-                tally?.scheduledBuffers.push(frozenBuf);
+                if (when + remaining > tallyStartSeconds) {
+                    tally?.scheduledBuffers.push(frozenBuf);
+                }
             }
         } else {
             onWarning?.(
@@ -525,7 +545,7 @@ export async function scheduleTrackClips({
 
     async function scheduleMidiNoteBatch(notes: readonly ScheduledMidiNote[]): Promise<void> {
         for (const note of notes) {
-            checkCancel();
+            checkScheduleCancel();
             if (note.endSamples <= regionStartSec * offlineCtx.sampleRate) {
                 continue;
             }
@@ -612,7 +632,7 @@ export async function scheduleTrackClips({
             // Counted here, past every `continue` above, so this is the number
             // of notes an instrument was actually asked to play — not the
             // number the store holds.
-            if (tally) {
+            if (tally && rawEndSec > tallyStartSeconds) {
                 tally.scheduledNotes++;
             }
             if (noteCount % YIELD_EVERY_N_NOTES === 0) {
@@ -630,6 +650,7 @@ export async function scheduleTrackClips({
         }
     }
     for (const yeastSourceTrack of yeastSourceTracks.values()) {
+        checkCallerAbort();
         if (!processYeastMidi) {
             break;
         }
@@ -660,6 +681,7 @@ export async function scheduleTrackClips({
             });
             const iterationCount = loopProjection.iterationCount;
             for (let iteration = 0; iteration < iterationCount; iteration++) {
+                checkCallerAbort();
                 const absoluteOccurrenceIndex = sourceOccurrenceOffset + iteration;
                 iterations.push({
                     sourceNotes: sourceNotes.filter((note) =>
@@ -714,6 +736,7 @@ export async function scheduleTrackClips({
     }
 
     for (const { clip, padIndex: toasterPadIndex, sourceTrack } of clipsToProcess) {
+        checkCallerAbort();
         // Skip muted clips — they should not render audio.
         if (clip.muted) {
             continue;
@@ -757,6 +780,7 @@ export async function scheduleTrackClips({
             }
 
             for (let iter = 0; iter < maxIterations; iter++) {
+                checkCallerAbort();
                 const absoluteOccurrenceIndex = sourceOccurrenceOffset + iter;
                 const iterOffset = iter * loopLen;
                 const iterationStartBeat = clip.startBeat + iterOffset;
@@ -825,6 +849,7 @@ export async function scheduleTrackClips({
             const clipGainValue = clip.gain;
 
             for (let iter = 0; iter < maxIterations; iter++) {
+                checkCallerAbort();
                 const iterStartBeat = clip.startBeat + iter * loopLen;
                 if (iterStartBeat >= clip.endBeat) {
                     break;
@@ -915,7 +940,9 @@ export async function scheduleTrackClips({
 
                 // duration arg is destination-timeline seconds — NOT buffer-time scaled by playbackRate.
                 source.start(startSec, bufferOffsetSec, playDuration);
-                tally?.scheduledBuffers.push(buffer);
+                if (rawIterEndSec > tallyStartSeconds) {
+                    tally?.scheduledBuffers.push(buffer);
+                }
             }
         }
     }
