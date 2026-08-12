@@ -544,15 +544,23 @@ impl AudioScheduler {
             // followers and delay lines) and emit its output on a second,
             // uncontrolled path straight into the CPAL device buffer.
             //
-            // `pending_midi` is cleared rather than left alone: the bridge path
-            // skips its own clear on the bypassed branch, so dropping through
-            // without clearing here would let events accumulate unboundedly.
+            // `pending_midi` is deliberately left untouched here: ownership of
+            // clearing it belongs entirely to `process_audio_bridges`, which
+            // already ran earlier in this same callback and already decided
+            // whether to clear (a block was processed) or not (the input ring
+            // was empty this cycle, or the effect is bypassed). Clearing again
+            // here would wipe out exactly the events `process_audio_bridges`
+            // just chose to keep for the next cycle, undoing that fix within
+            // the same callback. Accumulation while bypassed or unfed is
+            // bounded by the fixed 128-slot buffer itself — `try_push` refuses
+            // once full and records `scheduler_event_buffer_overflows` — so
+            // leaving it alone is a deliberate, observable tradeoff, not an
+            // unbounded leak.
             if self
                 .audio_bridges
                 .iter()
                 .any(|bridge| bridge.plugin_id == effect.id)
             {
-                effect.pending_midi.clear();
                 continue;
             }
 
@@ -881,17 +889,27 @@ mod tests {
             .unwrap();
         scheduler.update_graph();
 
-        // The CPAL callback beats the worklet's input push: the bridge's input
-        // ring is empty, so try_process's closure never runs this cycle.
+        let mut left = [0.0; 4];
+        let mut right = [0.0; 4];
+
+        // Drive both calls in sequence, the way audio_thread.rs's CPAL
+        // callback does every cycle: process_audio_bridges() first, then
+        // process_block() over the standalone chain's zeroed scratch. The
+        // CPAL callback beats the worklet's input push here — the bridge's
+        // input ring is empty, so try_process's closure never runs this
+        // cycle — and process_block must not wipe the note that
+        // process_audio_bridges deliberately left queued for next cycle.
         scheduler.process_audio_bridges();
+        scheduler.process_block(&mut left, &mut right, 4);
         assert_eq!(received_event_count.load(Ordering::Relaxed), 0);
 
         // A later callback: the worklet's audio has now arrived. The note
         // queued on the earlier, empty-ring cycle must still be delivered —
-        // an unconditional `pending_midi.clear()` after `try_process` would
-        // have discarded it forever on the first cycle.
+        // an unconditional clear in either process_audio_bridges or
+        // process_block would have discarded it forever on the first cycle.
         assert!(handle.push_input(&[0.0; 4], &[0.0; 4]));
         scheduler.process_audio_bridges();
+        scheduler.process_block(&mut left, &mut right, 4);
         assert_eq!(received_event_count.load(Ordering::Relaxed), 1);
     }
 
