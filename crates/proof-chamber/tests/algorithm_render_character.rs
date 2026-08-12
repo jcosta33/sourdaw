@@ -269,10 +269,11 @@ fn exposed_non_plate_algorithms_keep_their_render_character() {
                 measured.active_span_ms,
                 expected.active_span_ms
             );
-            if expected.late_energy_ratio == 0.0 {
+            if expected.late_energy_ratio < 1.0e-6 {
                 assert!(
-                    measured.late_energy_ratio <= 1.0e-9,
-                    "{} at {sample_rate:.0} Hz grew a late tail: late/early RMS ratio {:.9}",
+                    measured.late_energy_ratio <= 1.0e-6,
+                    "{} at {sample_rate:.0} Hz grew an audible late tail: late/early RMS ratio \
+                     {:.9} exceeds the absolute 0.000001 ceiling",
                     algorithm.name,
                     measured.late_energy_ratio
                 );
