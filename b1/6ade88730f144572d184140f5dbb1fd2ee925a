@@ -1,0 +1,54 @@
+src/modules/AiRuntime/useCases/agentReference/bridgeDrumRenderComparisonPlan.ts
+  s_a40848e8f8cca9::t_2ce6805dd5c397 72-76
+  s_a40848e8f8cca9::t_a31df2860d1463 1-71,77-106
+src/modules/AiRuntime/models/WorkflowCapability.ts
+  s_a40848e8f8cca9::t_fae24d3bc8d817 5,39-40
+src/modules/AiRuntime/transformers/llmActionBridge.ts
+  s_a40848e8f8cca9::t_fae24d3bc8d817 9,3162,3178,3193
+src/modules/AiRuntime/useCases/parsePromptToActions.ts
+  s_a40848e8f8cca9::t_fae24d3bc8d817 32,139,149-150,183
+src/modules/AiRuntime/useCases/agentReference/bridgeGroundedLlmToolCalls.ts
+  s_a40848e8f8cca9::t_fae24d3bc8d817 22,3937-3949,3952
+  s_a40848e8f8cca9::t_5ac22fe5d2ead9 3950-3951
+src/modules/Arrangement/handlers/device/handleAddSend.ts
+  s_a40848e8f8cca9::t_4ea27e93e16e7e 44,47
+src/modules/AiRuntime/useCases/describePendingActionConfirmation.ts
+  s_a40848e8f8cca9::t_fae24d3bc8d817 15,158-161,216
+  s_a40848e8f8cca9::t_f106aa44d26cb6 339-346
+src/modules/Arrangement/handlers/device/__tests__/handleAddSend.spec.ts
+  s_a40848e8f8cca9::t_4620941188ecbe 86-108
+src/modules/AiRuntime/useCases/materializeActionStateGuards.ts
+  s_a40848e8f8cca9::t_fae24d3bc8d817 609
+src/modules/Arrangement/handlers/track/__tests__/handleSetTrackGain.spec.ts
+  s_a40848e8f8cca9::t_4620941188ecbe 66,74-81
+src/modules/Arrangement/handlers/track/handleSetTrackGain.ts
+  s_a40848e8f8cca9::t_bae43ea391623e 23,26-41
+src/modules/AiRuntime/useCases/__tests__/drumBusPromptWorkflow.spec.ts
+  s_a40848e8f8cca9::t_adebc622ff871e 4,6-7,9-10,49-50,70-72,76-78,80-81,106-110,112,121-122,231-272,309-329,591,597,601,624,626,634-636,639-655,808
+  s_a40848e8f8cca9::t_a4d9e98ef31dbc 890,892-1006
+  s_a40848e8f8cca9::t_f9656a31db54d5 273-308,746-754,810-887,889
+  s_a40848e8f8cca9::t_095ec760eb5b70 8,168-184,557,637-638,656-745,755-807,809
+  s_a40848e8f8cca9::t_f471e4e21f2c0f 888
+  s_a40848e8f8cca9::t_11b813fe5fb4bf 891
+src/modules/AiRuntime/useCases/agentReference/getDrumRenderComparisonPromptScope.ts
+  s_a40848e8f8cca9::t_6e80dda082163c 76,89-94,123,148
+  s_a40848e8f8cca9::t_a31df2860d1463 1-75,77-88,95-122,124-147,149-174
+src/modules/AiRuntime/models/DrumRenderComparisonCapability.ts
+  s_a40848e8f8cca9::t_a31df2860d1463 1-44
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "b16ade88730f144572d184140f5dbb1fd2ee925a",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
