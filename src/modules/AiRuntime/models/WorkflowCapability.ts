@@ -2,6 +2,7 @@ import { type ToolSchema } from './ToolDefinitions';
 
 export const WORKFLOW_CAPABILITY_IDS = [
     'drum-routing',
+    'drum-render-comparison',
     'backing-vocal-plate',
     'articulation-transfer',
     'bass-processing-copy',
@@ -35,6 +36,8 @@ export const WORKFLOW_CAPABILITY_ACTION_TOOL_NAMES = [
 
 const workflowCapabilityDescriptions: Readonly<Record<WorkflowCapabilityId, string>> = {
     'drum-routing': 'Route the complete semantic drum set to its existing drum bus while preserving its return.',
+    'drum-render-comparison':
+        'Build the bounded drum and parallel-compression routing graph, preserve the room route, apply the fixed gain change, and render the comparison sections.',
     'backing-vocal-plate':
         'Consolidate backing-vocal reverbs on one filtered plate bus with chorus automation and renders.',
     'articulation-transfer':

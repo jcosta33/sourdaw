@@ -606,7 +606,7 @@ export function materializeActionStateGuards(
         }
         if (action.type === 'renderProjectSections') {
             const tailSeconds = options.appOwnedRenderTailSeconds;
-            if (tailSeconds === undefined || !Number.isFinite(tailSeconds) || tailSeconds <= 0) {
+            if (tailSeconds === undefined || !Number.isFinite(tailSeconds) || tailSeconds < 0) {
                 return { status: 'rejected', reason: 'Section render tail was not materialized by the application' };
             }
             const sectionsById = new Map((context.sections ?? []).map((section) => [section.id, section]));

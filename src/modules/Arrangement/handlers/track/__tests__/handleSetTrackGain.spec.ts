@@ -63,7 +63,7 @@ describe('handleSetTrackGain', () => {
             });
         });
 
-        it('returns null inverse action if track not found', () => {
+        it('uses the app-owned expected gain when the track is created earlier in the batch', () => {
             mocks.getTrackStoreState.mockReturnValue({ tracks: [] });
 
             const desc = handleSetTrackGain.describe({
@@ -71,7 +71,14 @@ describe('handleSetTrackGain', () => {
                 payload: { trackId: 't1', gain: 0.5, expectedGain: 1 },
             });
 
-            expect(desc.inverseAction).toBeNull();
+            expect(desc.inverseAction).toEqual({
+                type: 'setTrackGain',
+                payload: { trackId: 't1', gain: 1, expectedGain: 0.5 },
+            });
+            expect(desc.redoAction).toEqual({
+                type: 'setTrackGain',
+                payload: { trackId: 't1', gain: 0.5, expectedGain: 1 },
+            });
         });
     });
 
