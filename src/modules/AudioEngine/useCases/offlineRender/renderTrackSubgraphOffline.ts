@@ -321,6 +321,7 @@ export async function renderTrackSubgraphOffline({
                     groups: vcaGroups,
                 }),
                 tally,
+                abortSignal,
             });
         }
 

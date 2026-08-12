@@ -473,6 +473,53 @@ describe('renderTrackSubgraphOffline', () => {
         expect(scheduleTally.scheduledNotes).toBe(1);
     });
 
+    it('stops history scheduling as soon as the caller aborts', async () => {
+        const abortController = new AbortController();
+        const track = TrackDummy.create({
+            id: 'track-1',
+            kind: 'midi',
+            clips: [midiClip({ endBeat: 8 })],
+            devices: [
+                { id: 'fermenter-1', name: 'Fermenter', type: 'fermenter', bypassed: false, parameterValues: {} },
+            ],
+        });
+        const { midiStore } = await import('#/modules/MIDI/stores');
+        midiStore.set({
+            probabilitySeed: 1,
+            notesByClipId: {
+                'clip-1': [
+                    { id: 'history-1', pitch: 48, startBeat: 0, duration: 0.5, velocity: 100 },
+                    { id: 'history-2', pitch: 60, startBeat: 1, duration: 0.5, velocity: 100 },
+                    { id: 'region', pitch: 72, startBeat: 4, duration: 0.5, velocity: 100 },
+                ],
+            },
+            ccByClipId: {},
+            pitchBendByClipId: {},
+        });
+        const { configureOfflineMidiEventProjection } = await import('../../configureOfflineMidiEventProjection');
+        configureOfflineMidiEventProjection({
+            createProjector: () => (input) => {
+                abortController.abort();
+                return input.events;
+            },
+            selectProbability: () => true,
+            createChordPitchProjector: () => (input) => input.pitch,
+            evaluateAutomationValue: () => 0,
+        });
+        mocks.buildDeviceChain.mockResolvedValue([createInstrumentEntry('fermenter-1', 'fermenter')]);
+
+        await expect(
+            renderTrackSubgraphOffline({
+                targetTrackId: track.id,
+                renderTracks: [track],
+                startBeat: 4,
+                endBeat: 8,
+                abortSignal: abortController.signal,
+            })
+        ).rejects.toThrow('Render aborted');
+        expect(mocks.instrumentNoteOn).not.toHaveBeenCalled();
+    });
+
     it('includes muted Toaster child content in a deliverable subgraph render', async () => {
         const parent = TrackDummy.create({
             id: 'toaster-parent',
@@ -1131,6 +1178,20 @@ describe('renderTrackSubgraphOffline', () => {
             });
 
             expect(onWarning).toHaveBeenCalledWith(expect.stringContaining('Export truncated to'));
+        });
+
+        it('rejects a bounded range beyond the frame cap before allocating a context', async () => {
+            const track = TrackDummy.create({ id: 'track-1', kind: 'audio' });
+
+            await expect(
+                renderTrackSubgraphOffline({
+                    targetTrackId: track.id,
+                    renderTracks: [track],
+                    startBeat: 100_000,
+                    endBeat: 100_004,
+                })
+            ).rejects.toThrow('requested region exceeds');
+            expect(requestedFrameCounts).toEqual([]);
         });
 
         /**

@@ -1,5 +1,6 @@
 import { beatToSeconds } from '../../services/beatConversion';
 
+import { MAX_OFFLINE_FRAMES } from './constants';
 import { resolveRenderContext, type ResolveRenderContextInput } from './resolveRenderContext';
 
 type HistoryAwareRenderContext = {
@@ -29,11 +30,15 @@ export function resolveHistoryAwareRenderContext(input: ResolveRenderContextInpu
         durationBeats: startBeat + input.durationBeats,
         startBeat: 0,
     });
+    const sampleRate = input.sampleRate ?? 44_100;
+    if (Math.ceil(renderContext.durationSeconds * sampleRate) > MAX_OFFLINE_FRAMES) {
+        throw new Error('The requested region exceeds the renderer frame limit when its timeline history is included');
+    }
     const historyProjection = renderContext.projectPpqEndpoints?.({
         startPpq: 0,
         endPpq: startBeat,
         defaultTempo: renderContext.defaultTempo,
-        sampleRate: input.sampleRate ?? 44_100,
+        sampleRate,
         changes: renderContext.changes,
     });
     const legacyHistorySeconds =
