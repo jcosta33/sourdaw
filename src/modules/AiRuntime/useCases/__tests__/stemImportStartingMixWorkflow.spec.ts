@@ -40,9 +40,7 @@ const mocks = vi.hoisted(() => {
     const backend: { value: 'cloud' | 'webllm' } = { value: 'webllm' };
     return {
         backend,
-        stageLocalAsset: vi.fn<
-            (file: File, name: string) => Promise<{ hash: string; owned: boolean }>
-        >(),
+        stageLocalAsset: vi.fn<(file: File, name: string) => Promise<{ hash: string; owned: boolean }>>(),
         decodeAudioFile: vi.fn(),
         detectTempo: vi.fn<() => number | null>(() => 120),
         ensureTrackStrip: vi.fn(),
@@ -378,7 +376,11 @@ describe('stem import and starting mix workflow', () => {
                     projectTempo: 100,
                     stems: expect.arrayContaining([
                         expect.objectContaining({ sourceName: 'Kick_120.wav', role: 'kick', trackGain: 0.8 }),
-                        expect.objectContaining({ sourceName: 'Lead_Vocal_120.wav', role: 'lead-vocal', trackGain: 0.7 }),
+                        expect.objectContaining({
+                            sourceName: 'Lead_Vocal_120.wav',
+                            role: 'lead-vocal',
+                            trackGain: 0.7,
+                        }),
                     ]),
                 }),
             }),
