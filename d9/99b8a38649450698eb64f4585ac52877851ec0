@@ -1,0 +1,25 @@
+src/modules/ControlSurface/repositories/pushHardwareTransport.ts
+  s_bc88af7d3b054c::t_33976a87f21e62 133
+  s_bc88af7d3b054c::t_9c4535ec2c3d8c 217
+  s_bc88af7d3b054c::t_6e14bbbed043b6 17,66-67
+  s_bc88af7d3b054c::t_51002fb70349e5 130-132,134-135,148-154
+src/modules/ControlSurface/repositories/__tests__/pushHardwareTransport.spec.ts
+  s_bc88af7d3b054c::t_9c4535ec2c3d8c 78-81,85,90,97-100
+  s_bc88af7d3b054c::t_acb6c95abcf977 91-96
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "d999b8a38649450698eb64f4585ac52877851ec0",
+  "prompts": {},
+  "sessions": {
+    "s_bc88af7d3b054c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f9b4a-11a2-7f61-8dfb-76eed0eb2a9c",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
