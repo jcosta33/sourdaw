@@ -32,7 +32,7 @@ The frozen base has no test, fixture directory, checked-in asset, generated asse
 | `characterization/phase_vocoder_duration_ratio_1_25.f32le` | 18432 | `bb8849bba547dbd115b978b9574a93032f78e117a50d9d4a345ac0e708f2ca2c` |
 | `characterization/wsola_duration_ratio_1_25.f32le` | 20480 | `8a0679ff8613be3d7c121010162ee5e99dd1ba4d39b042ce2ad7e9a280e80654` |
 
-Encoding is raw frame-interleaved IEEE-754 `f32` little-endian. `manifest.json` records every sample rate, channel count, frame count, formula, role, digest, and verification policy. Every target verifies the seven checked-in byte streams against their manifest SHA-256 digests, frame/channel shapes, finite samples, and generated samples within a maximum absolute difference of `0.00005`.
+Encoding is raw frame-interleaved IEEE-754 `f32` little-endian. `manifest.json` records every sample rate, channel count, frame count, formula, role, digest, and verification policy. Every target verifies the seven checked-in byte streams against their manifest SHA-256 digests, frame/channel shapes, finite samples, and generated samples within a maximum absolute difference of `0.00035`. The bound includes the measured `0.00029724836` phase-vocoder delta between debug and optimized release builds on the reference target.
 
 Exact-byte regeneration is deliberately narrower because Rust does not promise bit-portable results for the `f32` transcendental functions used by the synthetic formulas and the frozen Crumbs seeds. The sole reference-generation environment is `aarch64-apple-darwin`, `rustc 1.97.0-nightly` commit `17584a181979f04f2aaad867332c22db1caa511a`, macOS `26.5.2`, Apple M4 Pro. The ordinary test performs two independent generations only when all six environment fields match, then requires both byte streams and digests to match each other, the manifest, and the checked-in corpus. The ignored `regenerate_time_stretch_fixtures` test hard-fails before writing on every other environment; non-reference targets never claim exact regeneration.
 
@@ -44,10 +44,10 @@ One hardware-labelled observation was captured solely to expose the seed cost; i
 
 ```text
 hardware=Apple M4 Pro; macOS 26.5.2; arm64
-cargo profile=test (unoptimized + debuginfo)
-input_frames=4096; inverse_duration_ratio=1.25; runs=5
-phase_vocoder_median_us=433088
-wsola_median_us=14542
+cargo profile=release (optimized; LTO disabled)
+input_frames=4096; duration_ratio=1.25; runs=5
+phase_vocoder_median_us=96797
+wsola_median_us=1230
 ```
 
 The ignored `time_stretch_crumbs_characterization_cpu` test produced the observation. No warmup/run policy or acceptance threshold is asserted here; those remain exclusively owned by `SPEC-performance-contracts-and-profiling.md`.

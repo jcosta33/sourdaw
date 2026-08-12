@@ -13,7 +13,7 @@
     "reference_os_version": "26.5.2",
     "reference_cpu": "Apple M4 Pro",
     "non_reference_verification": "checked-in-sha256-plus-finite-shape-and-sample-tolerance",
-    "non_reference_max_abs_diff": 0.00005
+    "non_reference_max_abs_diff": 0.00035
   },
   "fixtures": [
     {
