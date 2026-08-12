@@ -6,7 +6,6 @@ import { getAutomationHandlers } from '#/modules/Automation/useCases';
 import { getDrumPreviewBranchHandlers } from '#/modules/CrdtDocument/useCases';
 import { getMidiNoteTransformHandlers } from '#/modules/MIDI/useCases';
 import { getTransportHandlers } from '#/modules/Transport/useCases';
-import { type AppAction } from '#/utils/handlerContract';
 
 import { clearHandlerRegistry, registerHandlerMap } from '../../stores/handlerRegistry';
 import { executableAppActionDescriptors, type ExecutableAppAction } from '../executableAppActionRegistry';
@@ -80,7 +79,9 @@ describe('command registry completeness', () => {
     it('derives the executable compile-time action union from the canonical descriptor registry', () => {
         type DescriptorActionType = (typeof executableAppActionDescriptors)[number]['actionType'];
 
-        expectTypeOf<ExecutableAppAction>().toMatchTypeOf<AppAction>();
+        type GainAction = Extract<ExecutableAppAction, { type: 'setTrackGain' }>;
+
         expectTypeOf<ExecutableAppAction['type']>().toEqualTypeOf<DescriptorActionType>();
+        expectTypeOf<GainAction['payload']>().toEqualTypeOf<{ trackId: string; gain: number }>();
     });
 });

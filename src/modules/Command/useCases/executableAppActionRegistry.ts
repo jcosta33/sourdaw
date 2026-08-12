@@ -1,4 +1,4 @@
-import { type AppAction, type AppActionType } from '#/utils/handlerContract';
+import { type AppActionType } from '#/utils/handlerContract';
 import { getMarkerColorNames } from '#/utils/markerColorPalette';
 
 export type ExecutableAppActionRisk =
@@ -2265,8 +2265,47 @@ export const executableAppActionDescriptors = [
     },
 ] as const satisfies readonly ExecutableAppActionDescriptor[];
 
+type Simplify<Value> = { [Key in keyof Value]: Value[Key] };
+
+type RequiredSchemaKey<Schema extends { properties: Record<string, unknown> }> = Extract<
+    Schema extends { required: readonly (infer Required)[] } ? Required : never,
+    keyof Schema['properties']
+>;
+
+type OptionalSchemaKey<Schema extends { properties: Record<string, unknown> }> = Exclude<
+    keyof Schema['properties'],
+    RequiredSchemaKey<Schema>
+>;
+
+type InferJsonSchemaObject<Schema extends { properties: Record<string, unknown> }> = Simplify<
+    { [Key in RequiredSchemaKey<Schema>]-?: InferJsonSchema<Schema['properties'][Key]> } & {
+        [Key in OptionalSchemaKey<Schema>]?: InferJsonSchema<Schema['properties'][Key]>;
+    }
+>;
+
+type InferJsonSchema<Schema> = Schema extends { enum: readonly (infer Value)[] }
+    ? Value
+    : Schema extends { type: 'string' }
+      ? string
+      : Schema extends { type: 'number' | 'integer' }
+        ? number
+        : Schema extends { type: 'boolean' }
+          ? boolean
+          : Schema extends { type: 'array'; items: infer Item }
+            ? InferJsonSchema<Item>[]
+            : Schema extends { type: 'object'; properties: infer Properties extends Record<string, unknown> }
+              ? InferJsonSchemaObject<Schema & { properties: Properties }>
+              : never;
+
+type DescriptorAction<Descriptor> = Descriptor extends {
+    actionType: infer ActionType extends AppActionType;
+    parameters: infer Parameters extends { properties: Record<string, unknown> };
+}
+    ? { type: ActionType; payload: InferJsonSchemaObject<Parameters> }
+    : never;
+
 export type ExecutableAppActionType = (typeof executableAppActionDescriptors)[number]['actionType'];
-export type ExecutableAppAction = Extract<AppAction, { type: ExecutableAppActionType }>;
+export type ExecutableAppAction = DescriptorAction<(typeof executableAppActionDescriptors)[number]>;
 
 export const executableAppActionDescriptorByType: ReadonlyMap<string, (typeof executableAppActionDescriptors)[number]> =
     new Map(executableAppActionDescriptors.map((descriptor) => [descriptor.actionType, descriptor]));
