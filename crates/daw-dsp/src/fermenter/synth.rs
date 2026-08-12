@@ -40,8 +40,19 @@ pub struct MidiEvent {
 
 const MAX_LAYERS: usize = 4;
 const MAX_VOICE_CEILING: usize = 64;
+const DEFAULT_SAMPLE_RATE: f32 = 48_000.0;
+const MIN_SAMPLE_RATE: f32 = 8_000.0;
+const MAX_SAMPLE_RATE: f32 = 384_000.0;
 const OUTPUT_QUIET_THRESHOLD: f32 = 3.162_277_6e-8;
 const RENDER_QUANTUM_FRAMES: u64 = 128;
+
+fn bounded_sample_rate(sample_rate: f32) -> f32 {
+    if !sample_rate.is_finite() || sample_rate <= 0.0 {
+        return DEFAULT_SAMPLE_RATE;
+    }
+
+    sample_rate.clamp(MIN_SAMPLE_RATE, MAX_SAMPLE_RATE)
+}
 
 pub struct MasterSynth {
     layers: [Layer; MAX_LAYERS],
@@ -195,6 +206,7 @@ impl MasterSynth {
     /// budget is at most `max_voices * 16`; bounded de-click tails may overlap
     /// briefly when a voice is stolen.
     pub fn new(sample_rate: f32, max_voices: usize) -> Self {
+        let sample_rate = bounded_sample_rate(sample_rate);
         let max_voices = max_voices.clamp(1, MAX_VOICE_CEILING);
         // Pre-compute band-limited wavetables
         let tables = vec![
@@ -1038,6 +1050,14 @@ mod tests {
             .zip(right.iter())
             .map(|(left_sample, right_sample)| (left_sample - right_sample).abs())
             .sum::<f32>()
+    }
+
+    #[test]
+    fn constructor_bounds_sample_rate_before_preallocating_voices() {
+        assert_eq!(MasterSynth::new(f32::NAN, 1).sample_rate, 48_000.0);
+        assert_eq!(MasterSynth::new(-1.0, 1).sample_rate, 48_000.0);
+        assert_eq!(MasterSynth::new(1.0, 1).sample_rate, 8_000.0);
+        assert_eq!(MasterSynth::new(1_000_000.0, 1).sample_rate, 384_000.0);
     }
 
     fn render_note_for_engine(engine: u8) -> ([f32; 256], [f32; 256]) {
