@@ -15,6 +15,7 @@ import { getDrumRoutingPromptScope } from './agentReference/getDrumRoutingPrompt
 import { getMidiOverlapTransformPromptScope } from './agentReference/getMidiOverlapTransformPromptScope';
 import { getMutedEmptyTrackDeletionScope } from './agentReference/getMutedEmptyTrackDeletionScope';
 import { getSidechainRoutingPromptScope } from './agentReference/getSidechainRoutingPromptScope';
+import { getSyncopatedArpeggioPromptScope } from './agentReference/getSyncopatedArpeggioPromptScope';
 import { describePlannedAction } from './describePlannedAction';
 import { getPlannedActionAffectedIds } from './getPlannedActionAffectedIds';
 
@@ -181,6 +182,9 @@ function getProtectedUnchangedTracks(
     const midiOverlapTransformScope = getMidiOverlapTransformPromptScope(prompt, context);
     const midiOverlapTransformProtections =
         midiOverlapTransformScope.status === 'request' ? midiOverlapTransformScope.protectedObjects : [];
+    const syncopatedArpeggioScope = getSyncopatedArpeggioPromptScope(prompt, context);
+    const syncopatedArpeggioProtections =
+        syncopatedArpeggioScope.status === 'request' ? syncopatedArpeggioScope.protectedObjects : [];
     const protections = [
         ...protectedTracks.map(({ id, name }) => ({ id, name })),
         ...protectedParameters,
@@ -192,6 +196,7 @@ function getProtectedUnchangedTracks(
         ...backingVocalPlateProtections,
         ...bassProcessingCopyProtections,
         ...midiOverlapTransformProtections,
+        ...syncopatedArpeggioProtections,
     ];
     return [...new Map(protections.map((protection) => [protection.id, protection])).values()];
 }

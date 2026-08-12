@@ -841,6 +841,25 @@ export const executableAppActionDescriptors = [
         },
     },
     {
+        actionType: 'arpeggiate',
+        risk: 'broad-reversible',
+        description:
+            'Add one application-projected offbeat arpeggio to an exact selected chord clip while preserving its source notes and chord boundaries.',
+        intentPhrases: ['add a syncopated arpeggio'],
+        targetRules: editableMidiClipTargetRules,
+        valueRules: [],
+        parameters: {
+            properties: {
+                clipId: { type: 'string', description: 'Application-admitted selected MIDI chord clip ID' },
+                pattern: { type: 'string', enum: ['up'] },
+                rate: { type: 'number', enum: [8], description: 'Exact eighth-note rate' },
+                octaves: { type: 'number', enum: [1], description: 'Preserve the absolute source voicing' },
+                gate: { type: 'number', enum: [50], description: 'Half-step gate percentage' },
+            },
+            required: ['clipId', 'pattern', 'rate', 'octaves', 'gate'],
+        },
+    },
+    {
         actionType: 'createDrumPreviewBranches',
         risk: 'broad-reversible',
         description:

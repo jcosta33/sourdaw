@@ -375,6 +375,20 @@ const EXPECTED_COMMANDS = [
         true
     ),
     expectedCommand(
+        'arpeggiate',
+        'Add one application-projected offbeat arpeggio to an exact selected chord clip while preserving its source notes and chord boundaries.',
+        {
+            clipId: { type: 'string', description: 'Application-admitted selected MIDI chord clip ID' },
+            pattern: { type: 'string', enum: ['up'] },
+            rate: { type: 'number', enum: [8], description: 'Exact eighth-note rate' },
+            octaves: { type: 'number', enum: [1], description: 'Preserve the absolute source voicing' },
+            gate: { type: 'number', enum: [50], description: 'Half-step gate percentage' },
+        },
+        ['clipId', 'pattern', 'rate', 'octaves', 'gate'],
+        'broad-reversible',
+        true
+    ),
+    expectedCommand(
         'createDrumPreviewBranches',
         'Create exactly three app-owned preview branches for one admitted eight-bar drum section while preserving Kick and varying only Snare and Hi-Hat programming.',
         {
@@ -1554,6 +1568,12 @@ const EXPECTED_GROUNDING = [
                 match: 'exact',
             },
         ],
+    },
+    {
+        actionType: 'arpeggiate',
+        intentPhrases: ['add a syncopated arpeggio'],
+        targetRules: [{ argument: 'clipId', capability: 'editable-midi-clip' }],
+        valueRules: [],
     },
     {
         actionType: 'createDrumPreviewBranches',

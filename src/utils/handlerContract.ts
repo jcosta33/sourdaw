@@ -1337,7 +1337,21 @@ export type AppAction =
     | { type: 'consolidateAllTracks'; payload?: undefined }
     | {
           type: 'arpeggiate';
-          payload: { clipId: string; pattern?: string; rate?: number; octaves?: number; gate?: number };
+          payload: {
+              clipId: string;
+              pattern?: string;
+              rate?: number;
+              octaves?: number;
+              gate?: number;
+              /** Application-owned EX-07 scope and compare-and-swap state. Provider payloads cannot carry these. */
+              expectedTrackId?: string;
+              trackName?: string;
+              expectedTrackFrozen?: boolean;
+              clipName?: string;
+              expectedClipLocked?: boolean;
+              expectedNotes?: readonly MidiClipNoteSnapshot[];
+              addedNotes?: readonly MidiClipNoteSnapshot[];
+          };
       }
     | {
           type: 'addSidechainRoute';

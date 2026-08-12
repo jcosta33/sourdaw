@@ -22,6 +22,13 @@ export function getPlannedActionAffectedIds(action: AppAction): string[] {
             affectedIds.add(shortened.noteId);
         }
     }
+    if (action.type === 'arpeggiate' && action.payload.expectedTrackId && action.payload.addedNotes) {
+        affectedIds.add(action.payload.expectedTrackId);
+        affectedIds.add(action.payload.clipId);
+        for (const note of action.payload.addedNotes) {
+            affectedIds.add(note.id);
+        }
+    }
     if (action.type === 'createDrumPreviewBranches') {
         for (const candidate of action.payload.candidates) {
             affectedIds.add(candidate.branchId);
