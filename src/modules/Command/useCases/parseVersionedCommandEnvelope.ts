@@ -28,9 +28,11 @@ const STOCHASTIC_OPERATIONS = new Set([
 const NONDETERMINISTIC_SERIALIZED_OPERATIONS = new Set([
     'completeMidi',
     'createPatternInstance',
+    'deleteTime',
     'duplicateClip',
     'duplicateClipToNextBar',
     'duplicateTrack',
+    'duplicateTimeRange',
     'generateAudio',
     'generateBassline',
     'generateChordProgression',
