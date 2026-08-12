@@ -1,0 +1,19 @@
+crates/daw-dsp/tests/time_stretch_contract.rs
+  s_bc88af7d3b054c::t_2a16e2e058bc06 1361,1371-1377
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "4ea6e6709492e015afa410409f819a23d649d38b",
+  "prompts": {},
+  "sessions": {
+    "s_bc88af7d3b054c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f9b4a-11a2-7f61-8dfb-76eed0eb2a9c",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
