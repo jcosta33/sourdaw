@@ -36,35 +36,39 @@ impl KarplusStrong {
         (self.seed as f32 / u32::MAX as f32) * 2.0 - 1.0
     }
 
-    pub fn excite(&mut self, freq: f32, sample_rate: f32, brightness: f32) {
-        self.delay_samples = sample_rate / freq.max(20.0);
-        let delay_len = (self.delay_samples as usize).min(self.buffer.len());
+    pub fn excite(&mut self, start_freq: f32, target_freq: f32, sample_rate: f32, brightness: f32) {
+        self.delay_samples = sample_rate / start_freq.max(20.0);
+        let target_delay_samples = sample_rate / target_freq.max(20.0);
+        let excitation_len =
+            (self.delay_samples.max(target_delay_samples) as usize).min(self.buffer.len());
         let brightness = brightness.clamp(0.1, 1.0);
         let buf_len = self.buffer.len();
 
-        // Fill the delay line with shaped excitation noise.
-        // Write starting at current write_pos so the read position
-        // (write_pos - delay) immediately sees the excitation data.
+        // Seed every delay length the monotonic glide can visit. Advancing by
+        // the longest delay leaves the start-frequency tap inside this seeded
+        // interval; as the tap moves in either direction it never enters stale
+        // storage. With no glide, start and target are equal and this is the
+        // original one-delay excitation.
         let mut lp_state = 0.0f32;
-        for i in 0..delay_len {
+        for i in 0..excitation_len {
             let white = self.next_noise();
             lp_state += brightness * (white - lp_state);
             self.buffer[(self.write_pos + i) % buf_len] = lp_state;
         }
-        // Advance write_pos past the excitation so tick() reads from the start of it
-        self.write_pos = (self.write_pos + delay_len) % buf_len;
+        self.write_pos = (self.write_pos + excitation_len) % buf_len;
 
         self.filter_state = 0.0;
         self.active = true;
     }
 
     #[inline]
-    pub fn tick(&mut self) -> f32 {
+    pub fn tick(&mut self, freq: f32, sample_rate: f32) -> f32 {
         if !self.active {
             return 0.0;
         }
 
         let buf_len = self.buffer.len();
+        self.delay_samples = (sample_rate / freq.max(20.0)).min((buf_len - 1) as f32);
         let int_delay = self.delay_samples as usize;
         let frac = self.delay_samples - int_delay as f32;
 

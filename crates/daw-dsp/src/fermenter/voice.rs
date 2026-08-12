@@ -274,7 +274,7 @@ impl Voice {
 
     /// Set portamento time in seconds. 0 = no portamento.
     pub fn set_portamento(&mut self, time_s: f32, sample_rate: f32) {
-        if time_s <= 0.001 {
+        if !time_s.is_finite() || time_s <= 0.001 {
             self.glide_coeff = 1.0;
         } else {
             self.glide_coeff = 1.0 - (-std::f32::consts::TAU / (time_s * sample_rate)).exp();
@@ -331,9 +331,9 @@ impl Voice {
     }
 
     /// Excite the Karplus-Strong engine (call at note-on time).
-    pub fn excite_ks(&mut self, freq: f32, sample_rate: f32, brightness: f32) {
+    pub fn excite_ks(&mut self, sample_rate: f32, brightness: f32) {
         if let Some(ks) = &mut self.ks_engine {
-            ks.excite(freq, sample_rate, brightness);
+            ks.excite(self.current_freq, self.target_freq, sample_rate, brightness);
         }
     }
 
@@ -697,7 +697,12 @@ impl Voice {
             // bit-crusher into a random panner.
             let (mut osc_l, mut osc_r, osc_is_stereo) = if self.engine == 3 {
                 // Karplus-Strong: one string, one signal.
-                let s = self.ks_engine.as_mut().map(|ks| ks.tick()).unwrap_or(0.0);
+                let string_freq = self.current_freq;
+                let s = self
+                    .ks_engine
+                    .as_mut()
+                    .map(|ks| ks.tick(string_freq, p.sample_rate))
+                    .unwrap_or(0.0);
                 (s, s, false)
             } else if self.engine == 4 {
                 // Granular: `GranularEngine::tick` pans every grain across the
