@@ -1,6 +1,8 @@
-import { markerStore, trackStore } from '#/modules/Arrangement/stores';
+import { adjustmentLayerStore, markerStore, trackStore } from '#/modules/Arrangement/stores';
 import { automationStore } from '#/modules/Automation/stores';
 import { chordTrackStore } from '#/modules/MIDI/stores';
+import { transportStore } from '#/modules/Transport/stores';
+import { workspaceStore } from '#/modules/WorkspaceShell/stores';
 import { type AppAction } from '#/utils/handlerContract';
 
 import { type ProductionBriefScope } from '../models/ProductionBrief';
@@ -68,6 +70,16 @@ function intervalOverlapsRange(
     scope: Extract<ProductionBriefScope, { kind: 'range' }>
 ): boolean {
     return endBeat > startBeat && startBeat < scope.endBeat && endBeat > scope.startBeat;
+}
+
+function adjustmentLayerOverlapsRange(
+    layer: { readonly regions: readonly { readonly startBeat: number; readonly endBeat: number }[] },
+    scope: Extract<ProductionBriefScope, { kind: 'range' }>
+): boolean {
+    return (
+        layer.regions.length === 0 ||
+        layer.regions.some((region) => intervalOverlapsRange(region.startBeat, region.endBeat, scope))
+    );
 }
 
 function projectedClipOverlapsRange(
@@ -203,6 +215,128 @@ function chordActionOverlapsRange(action: AppAction, scope: Extract<ProductionBr
     return false;
 }
 
+function adjustmentLayerActionOverlapsRange(
+    action: AppAction,
+    scope: Extract<ProductionBriefScope, { kind: 'range' }>
+): boolean {
+    const layers = adjustmentLayerStore.value?.layers ?? [];
+    if (action.type === 'restoreAdjustmentLayerMutation') {
+        const currentOverlap = layers.some((layer) => adjustmentLayerOverlapsRange(layer, scope));
+        const replacementOverlap = action.payload.layers.some((layer) => adjustmentLayerOverlapsRange(layer, scope));
+        return currentOverlap || replacementOverlap;
+    }
+    if (
+        action.type === 'removeAdjustmentRegion' ||
+        action.type === 'moveAdjustmentRegion' ||
+        action.type === 'setLayerFades'
+    ) {
+        const region = layers
+            .flatMap((layer) => layer.regions)
+            .find((candidate) => candidate.id === action.payload.regionId);
+        return Boolean(region && intervalOverlapsRange(region.startBeat, region.endBeat, scope));
+    }
+    if (
+        action.type !== 'removeAdjustmentLayer' &&
+        action.type !== 'toggleAdjustmentLayer' &&
+        action.type !== 'setLayerParameter' &&
+        action.type !== 'setLayerMix' &&
+        action.type !== 'setLayerAffectedTracks' &&
+        action.type !== 'setLayerInsertionIndex'
+    ) {
+        return false;
+    }
+    const layer = layers.find((candidate) => candidate.id === action.payload.layerId);
+    return Boolean(layer && adjustmentLayerOverlapsRange(layer, scope));
+}
+
+function duplicateClipProjectionOverlapsRange(
+    action: AppAction,
+    scope: Extract<ProductionBriefScope, { kind: 'range' }>
+): boolean {
+    if (action.type !== 'duplicateClip' && action.type !== 'duplicateClipToNextBar') {
+        return false;
+    }
+    const clip = findClip(action.payload.clipId);
+    if (!clip) {
+        return false;
+    }
+    const duration = clip.endBeat - clip.startBeat;
+    let startBeat = clip.endBeat;
+    if (action.type === 'duplicateClipToNextBar') {
+        const beatsPerBar = transportStore.value?.timeSignatureNumerator ?? 4;
+        startBeat = Math.ceil(clip.endBeat / beatsPerBar) * beatsPerBar;
+    }
+    return intervalOverlapsRange(startBeat, startBeat + duration, scope);
+}
+
+function trackContainerOverlapsRange(
+    action: AppAction,
+    scope: Extract<ProductionBriefScope, { kind: 'range' }>
+): boolean {
+    if (action.type !== 'removeTrack' && action.type !== 'duplicateTrack') {
+        return false;
+    }
+    const track = trackStore.value?.tracks.find((candidate) => candidate.id === action.payload.trackId);
+    return Boolean(
+        track &&
+        [...track.clips, ...track.alternatives.flatMap((alternative) => alternative.clips)].some((clip) =>
+            intervalOverlapsRange(clip.startBeat, clip.endBeat, scope)
+        )
+    );
+}
+
+function rippleDeleteOverlapsRange(
+    action: AppAction,
+    scope: Extract<ProductionBriefScope, { kind: 'range' }>
+): boolean {
+    if (action.type !== 'removeClip' || !workspaceStore.value?.rippleEditing) {
+        return false;
+    }
+    const track = trackStore.value?.tracks.find((candidate) =>
+        candidate.clips.some((clip) => clip.id === action.payload.clipId)
+    );
+    const removed = track?.clips.find((clip) => clip.id === action.payload.clipId);
+    if (!track || !removed) {
+        return false;
+    }
+    const gap = removed.endBeat - removed.startBeat;
+    return track.clips.some((clip) => {
+        if (clip.id === removed.id || clip.startBeat < removed.endBeat) {
+            return false;
+        }
+        if (
+            intervalOverlapsRange(clip.startBeat, clip.endBeat, scope) ||
+            intervalOverlapsRange(clip.startBeat - gap, clip.endBeat - gap, scope)
+        ) {
+            return true;
+        }
+        return (
+            automationStore.value?.lanes.some(
+                (lane) =>
+                    lane.clipId === clip.id &&
+                    [...lane.points, ...(lane.trimPoints ?? []), ...(lane.ghostPoints ?? [])].some(
+                        (point) =>
+                            (point.beat >= scope.startBeat && point.beat < scope.endBeat) ||
+                            (point.beat - gap >= scope.startBeat && point.beat - gap < scope.endBeat)
+                    )
+            ) ?? false
+        );
+    });
+}
+
+function globalTimeActionOverlapsRange(
+    action: AppAction,
+    scope: Extract<ProductionBriefScope, { kind: 'range' }>
+): boolean {
+    if (action.type === 'insertTime') {
+        return action.payload.atBeat < scope.endBeat;
+    }
+    if (action.type === 'deleteTime') {
+        return action.payload.startBeat < scope.endBeat;
+    }
+    return false;
+}
+
 function actionOverlapsRange(action: AppAction, scope: Extract<ProductionBriefScope, { kind: 'range' }>): boolean {
     return (
         valueOverlapsRange(action.payload, scope) ||
@@ -210,7 +344,12 @@ function actionOverlapsRange(action: AppAction, scope: Extract<ProductionBriefSc
         projectedClipOverlapsRange(action, scope) ||
         referencedAutomationOverlapsRange(action, scope) ||
         referencedMarkerOrSectionOverlapsRange(action, scope) ||
-        chordActionOverlapsRange(action, scope)
+        chordActionOverlapsRange(action, scope) ||
+        adjustmentLayerActionOverlapsRange(action, scope) ||
+        duplicateClipProjectionOverlapsRange(action, scope) ||
+        trackContainerOverlapsRange(action, scope) ||
+        rippleDeleteOverlapsRange(action, scope) ||
+        globalTimeActionOverlapsRange(action, scope)
     );
 }
 

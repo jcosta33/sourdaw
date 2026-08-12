@@ -60,4 +60,5 @@ export { TOOL_SHORTCUTS } from './workspaceQueries/helpers';
 
 // ── Workspace State ───────────────────────────────────────────────────────────
 
+export { toggleRippleEditing } from './rippleEditing';
 export { updateWorkspaceState } from './workspaceState';

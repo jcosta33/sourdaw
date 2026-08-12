@@ -1,11 +1,20 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { defaultTrackState } from '#/modules/Arrangement/stores';
-import { addClip, addMarker, addSection, createTrack, setTrackStoreState } from '#/modules/Arrangement/useCases';
+import {
+    addClip,
+    addMarker,
+    addSection,
+    createTrack,
+    restoreAdjustmentLayerSnapshot,
+    setTrackStoreState,
+} from '#/modules/Arrangement/useCases';
 import { addAutomationLane, addAutomationPoint } from '#/modules/Automation/useCases';
 import { clearHandlerRegistry, registerHandlerMap } from '#/modules/Command/stores';
 import { clearUndoHistory, executeAppAction, redo, undo } from '#/modules/Command/useCases';
 import { addChordEvent, clearChordTrack } from '#/modules/MIDI/useCases';
+import { workspaceStore } from '#/modules/WorkspaceShell/stores';
+import { toggleRippleEditing } from '#/modules/WorkspaceShell/useCases';
 
 import { handleSetProductionBrief } from '../../handlers/project/handleSetProductionBrief';
 import { createDefaultProductionBrief, isProductionBrief, type ProductionBrief } from '../../models/ProductionBrief';
@@ -52,11 +61,55 @@ describe('production brief', () => {
             startBeat: 50,
             endBeat: 60,
         });
+        addClip({
+            id: 'clip-prechorus',
+            trackId: 'track-guitar',
+            name: 'Pre-chorus guitar',
+            type: 'audio',
+            startBeat: 24,
+            endBeat: 32,
+        });
+        addClip({
+            id: 'clip-chorus',
+            trackId: 'track-guitar',
+            name: 'Chorus guitar',
+            type: 'audio',
+            startBeat: 36,
+            endBeat: 40,
+        });
         addSection(32, 48, 'Chorus One', 'section-chorus');
         addSection(64, 80, 'Outro', 'section-outro');
         addMarker(40, 'Chorus hit', 'marker-chorus');
         clearChordTrack();
         addChordEvent(38, 0, 'major', 4, 'chord-chorus');
+        restoreAdjustmentLayerSnapshot({
+            layers: [
+                {
+                    id: 'layer-chorus',
+                    name: 'Chorus lift',
+                    effectType: 'volume',
+                    parameters: [],
+                    affectedTrackIds: ['track-guitar'],
+                    insertionIndex: 0,
+                    regions: [
+                        {
+                            id: 'region-chorus',
+                            startBeat: 36,
+                            endBeat: 44,
+                            blend: 1,
+                            fadeInBeats: 0,
+                            fadeOutBeats: 0,
+                        },
+                    ],
+                    enabled: true,
+                    mix: 1,
+                    color: '#ffffff',
+                },
+            ],
+        });
+        if (workspaceStore.value?.rippleEditing) {
+            toggleRippleEditing();
+        }
         addClip({
             id: 'clip-3',
             trackId: 'track-guitar',
@@ -68,6 +121,9 @@ describe('production brief', () => {
     });
 
     afterEach(() => {
+        if (workspaceStore.value?.rippleEditing) {
+            toggleRippleEditing();
+        }
         clearUndoHistory();
         clearHandlerRegistry();
     });
@@ -485,6 +541,41 @@ describe('production brief', () => {
             doesProductionBriefAllowActionBatch([
                 { type: 'moveChordEvent', payload: { eventId: 'chord-chorus', beat: 60 } },
             ])
+        ).toBe(false);
+        expect(
+            doesProductionBriefAllowActionBatch([
+                { type: 'removeAdjustmentLayer', payload: { layerId: 'layer-chorus' } },
+            ])
+        ).toBe(false);
+        expect(
+            doesProductionBriefAllowActionBatch([
+                { type: 'moveAdjustmentRegion', payload: { regionId: 'region-chorus', startBeat: 60, endBeat: 68 } },
+            ])
+        ).toBe(false);
+        expect(
+            doesProductionBriefAllowActionBatch([{ type: 'removeTrack', payload: { trackId: 'track-guitar' } }])
+        ).toBe(false);
+        expect(
+            doesProductionBriefAllowActionBatch([{ type: 'duplicateTrack', payload: { trackId: 'track-guitar' } }])
+        ).toBe(false);
+        expect(
+            doesProductionBriefAllowActionBatch([{ type: 'duplicateClip', payload: { clipId: 'clip-prechorus' } }])
+        ).toBe(false);
+        expect(
+            doesProductionBriefAllowActionBatch([
+                { type: 'duplicateClipToNextBar', payload: { clipId: 'clip-prechorus' } },
+            ])
+        ).toBe(false);
+        toggleRippleEditing();
+        expect(
+            doesProductionBriefAllowActionBatch([{ type: 'removeClip', payload: { clipId: 'clip-prechorus' } }])
+        ).toBe(false);
+        toggleRippleEditing();
+        expect(
+            doesProductionBriefAllowActionBatch([{ type: 'insertTime', payload: { atBeat: 16, durationBeats: 4 } }])
+        ).toBe(false);
+        expect(
+            doesProductionBriefAllowActionBatch([{ type: 'deleteTime', payload: { startBeat: 16, endBeat: 20 } }])
         ).toBe(false);
         expect(
             doesProductionBriefAllowActionBatch([
