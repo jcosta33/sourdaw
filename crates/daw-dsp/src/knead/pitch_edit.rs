@@ -1,5 +1,7 @@
 use serde::{Deserialize, Serialize};
 
+pub const PITCH_DETECTION_ALGORITHM: &str = "yin";
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PitchPoint {
     pub time_ms: f32,
@@ -155,7 +157,7 @@ pub fn analyze_pitch_wasm(samples: &[f32], sample_rate: f32) -> String {
         points,
         sample_rate: sample_rate as u32,
         hop_size: hop_size as u32,
-        algorithm: "pyin".to_string(),
+        algorithm: PITCH_DETECTION_ALGORITHM.to_string(),
     };
 
     serde_json::to_string(&contour).unwrap_or_else(|_| "{}".to_string())
@@ -174,7 +176,7 @@ pub fn commit_pitch_edit_wasm(
             points: vec![],
             sample_rate: sample_rate as u32,
             hop_size: 256,
-            algorithm: "pyin".to_string(),
+            algorithm: PITCH_DETECTION_ALGORITHM.to_string(),
         });
 
     let map = CompiledDeltaMap::compile(&segments, sample_rate, samples.len(), 256);
@@ -239,6 +241,13 @@ pub fn commit_pitch_edit_wasm(
 mod tests {
     use super::*;
     use std::f32::consts::TAU;
+
+    #[test]
+    fn pitch_analysis_reports_the_algorithm_it_runs() {
+        let contour: PitchContour =
+            serde_json::from_str(&analyze_pitch_wasm(&[], 44_100.0)).unwrap();
+        assert_eq!(contour.algorithm, "yin");
+    }
 
     /// Harmonically rich periodic signal (see engine tests: PSOLA needs
     /// epochs; a pure sine is pathological TD-PSOLA input).
