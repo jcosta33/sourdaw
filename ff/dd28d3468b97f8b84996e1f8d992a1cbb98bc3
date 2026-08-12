@@ -1,0 +1,21 @@
+crates/daw-dsp/tests/time_stretch_contract.rs
+  s_bc88af7d3b054c::t_0dcf039909af7c 17,1404-1453,1478,1500-1501
+crates/daw-dsp/testdata/time_stretch/BASELINE.md
+  s_bc88af7d3b054c::t_0dcf039909af7c 46
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "ffdd28d3468b97f8b84996e1f8d992a1cbb98bc3",
+  "prompts": {},
+  "sessions": {
+    "s_bc88af7d3b054c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f9b4a-11a2-7f61-8dfb-76eed0eb2a9c",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
