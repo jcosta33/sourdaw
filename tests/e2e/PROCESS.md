@@ -30,14 +30,17 @@ works through the full PR lifecycle below.
 Each batch follows this exact sequence:
 
 ### 1. Branch
+
 ```bash
-git checkout main
-git pull origin main
-git checkout -b e2e/batch-NN-<slug>
+git fetch origin
+git worktree add .agents/worktrees/e2e-batch-NN -b e2e/batch-NN-<slug> origin/main
+git worktree lock --reason active:e2e-batch-NN .agents/worktrees/e2e-batch-NN
 ```
-Example: `e2e/batch-01-launch-project-flows`
+
+Work inside the lane. Example branch: `e2e/batch-01-launch-project-flows`.
 
 ### 2. Write specs
+
 - Create `.spec.ts` file(s) in `tests/e2e/`.
 - Follow existing spec conventions (imports from `./e2eUtils`, `beforeEach`
   setup, `test.describe` blocks with clear names).
@@ -46,9 +49,11 @@ Example: `e2e/batch-01-launch-project-flows`
   not just check that elements exist.
 
 ### 3. Run and verify
+
 ```bash
 pnpm test:e2e -- --grep "<spec name or describe block>"
 ```
+
 - Every test must pass locally before proceeding.
 - If a test reveals a **bug**: fix the bug in the same branch (see Bug Fix
   Policy below).
@@ -56,61 +61,42 @@ pnpm test:e2e -- --grep "<spec name or describe block>"
   tracked issue note in COVERAGE.md).
 
 ### 4. Commit
+
 ```bash
 git add tests/e2e/<spec>.spec.ts [src/path/to/fix.ts]
 git commit -m "test(e2e): <batch description>"
 ```
+
 - If bug fixes are included, add a second commit:
   `fix(<area>): <fix description>`
 
 ### 5. Push and open PR
+
 ```bash
 git push -u origin e2e/batch-NN-<slug>
-gh pr create --title "test(e2e): <batch>" --body "<description>"
+gh pr create --title "test(e2e): <batch>" --body-file <completed-template>
 ```
-- PR body should list what's covered and any bugs fixed.
 
-### 6. Revolver review (subagent-driven)
-Spawn reviewer subagents one at a time, each with a distinct adversarial
-stance from the rotation below. After each reviewer:
-1. Collect findings.
-2. Accept findings with concrete evidence; reject refuted ones with a reason.
-3. Apply accepted fixes.
-4. Commit fixes.
-5. The next reviewer sees the revised code.
+- Fill `.github/pull_request_template.md`. Link the campaign issue.
 
-**Stance pool (minimum 6, rotate one per round):**
-1. **Requirement coverage** — does each test verify a real user journey end-to-end?
-2. **Flakiness/realism** — will these tests pass reliably in CI? Timeouts,
-   races, selector fragility, missing `waitFor`?
-3. **Selector robustness** — are locators accessible and stable? Brittle CSS
-   paths, positional selectors, text that may change?
-4. **Assertion quality** — do tests assert actual behavior, not just
-   existence? Are wait conditions meaningful?
-5. **Test isolation** — does each test start from clean state? Cross-test
-   contamination? localStorage/session pollution?
-6. **Bug fix correctness** — if fixes were included, are they correct,
-   complete, and don't introduce regressions?
+### 6. Review
 
-Additional stances by risk:
-- **Accessibility** — does the test surface verify a11y properties correctly?
-- **Architecture** — do any fixes respect module boundaries?
-
-**Cycle rules:**
-- One full rotation (all 6 stances) is the minimum.
-- Repeat up to 3 cycles.
-- Stop when a full rotation surfaces no new accepted findings.
+Follow `AGENTS.md`. Put findings on the relevant diff lines. Fix accepted findings and resolve their threads.
 
 ### 7. Address findings & merge
+
 - Apply all accepted fixes from the review cycle.
 - Push final state.
-- Merge the PR:
+- Deliver the PR from its clean lane:
+
 ```bash
-gh pr merge --squash --delete-branch
+pnpm deliver <pr-number> --e2e tests/e2e/<spec>.spec.ts
 ```
-- Return to `main` and pull.
+
+- Reuse the lane until the campaign ends. Then close its issue, exit every process using the lane, unlock it, and run `pnpm lane:remove <path>` elsewhere.
 
 ### 8. Update COVERAGE.md
+
 - Mark completed items in the checklist.
 - Note any deferred/skipped items with reason.
 - Record bugs found and fixed.
@@ -129,10 +115,10 @@ When a test surfaces a real bug:
    `pnpm deps:validate` if source files changed.
 5. **Document in COVERAGE.md.** Under the batch entry, note: bug description,
    root cause, fix summary.
-6. **Flag in PR description.** Reviewer subagents scrutinize fixes with the
-   "Bug fix correctness" stance.
+6. **Review the fix.** Require the reproduced failure to pass without unrelated change.
 
 **Do NOT fix:**
+
 - Pre-existing architecture issues unrelated to the test surface.
 - Cosmetic issues (naming, formatting) — note in COVERAGE.md instead.
 - Tauri-only issues (can't test browser-side).
@@ -145,8 +131,8 @@ When resuming in a new session:
 
 1. Read `tests/e2e/PROCESS.md` (this file).
 2. Read `tests/e2e/COVERAGE.md` — find the first batch with unchecked items.
-3. Check git state: `git status`, `git branch`, confirm on `main` and clean.
-4. If a previous batch's branch is unmerged, finish it first (review → merge).
+3. Reconcile the campaign issue, open PRs, assigned lanes, and `origin/main`.
+4. Finish the oldest open batch before starting another.
 5. Start the next batch from step 1 of the Batch lifecycle.
 
 **Current session state** is tracked at the bottom of `COVERAGE.md` in the
@@ -157,11 +143,13 @@ When resuming in a new session:
 ## Conventions reference
 
 ### Test file naming
+
 ```
 tests/e2e/<featureArea>.spec.ts
 ```
 
 ### Standard test structure
+
 ```typescript
 import { test, expect } from '@playwright/test';
 import { setupWorkspace, launch_new_project, wait_for_workspace_ready } from './e2eUtils';
@@ -180,6 +168,7 @@ test.describe('Feature Area Name', () => {
 ```
 
 ### Template-based tests (when pre-populated tracks are needed)
+
 ```typescript
 test.beforeEach(async ({ page }) => {
     await setupWorkspace(page);
@@ -188,6 +177,7 @@ test.beforeEach(async ({ page }) => {
 ```
 
 ### Keyboard shortcuts
+
 ```typescript
 // Mod key = Meta on macOS, Control on others
 const mod = process.platform === 'darwin' ? 'Meta' : 'Control';
