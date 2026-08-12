@@ -14,31 +14,9 @@ const FERMENTER_PARAMS: readonly PluginParamDef[] = [
     { id: 'oscWaveform', label: 'Waveform', min: 0, max: 3, default: 1, unit: '', step: 1 },
     { id: 'oscLevel', label: 'Osc Level', min: 0, max: 1, default: 0.8, unit: '' },
     { id: 'oscCoarse', label: 'Coarse', min: -24, max: 24, default: 0, unit: 'st', step: 1 },
-    // No `step`. `step` is read only by the descriptor builder at the bottom of
-    // this file, which turns it into the `int`/`float` write contract, so this
-    // governs **delivery** — automation, modulation and model actions — and
-    // nothing else. It is not the Fermenter panel: `OscillatorSection.tsx`
-    // hard-codes `step={1}` on the Fine knob, which still moves in whole cents.
-    //
-    // Cents are the sub-semitone half of a coarse/fine pair, and a 1 ct
-    // delivery grid quantises away most of what that half is for. The engine
-    // takes the value as a continuous `f32` (`layer.rs`:
-    // `"osc_fine" => self.osc_fine = value.clamp(-100.0, 100.0)`), and the
-    // sibling `unisonDetune` below already declares the same unit and the same
-    // magnitude with no step.
-    //
-    // Coarse above keeps its `step: 1`, and the honest claim for that is
-    // defensible status quo, not settled law. Vital declares `transpose`
-    // `kIndexed` and rounds it in its host bridge (`src/plugin/value_bridge.h`)
-    // while `tune` is `kLinear` and passes through unrounded — a shipping
-    // product making this exact split at this exact layer with this exact
-    // operation. It is a majority, not a universal: Serum 2 documents CRS as
-    // continuous semitones so it can be modulated, Repro-1 ships no stepped
-    // semitone control, and Massive X collapses coarse and fine into a single
-    // continuous ±64.000. The engine does not settle it either — `layer.rs`
-    // clamps `osc_coarse` as the same continuous `f32` one line above
-    // `osc_fine`. Leaving coarse stepped is a product choice this change
-    // deliberately does not reopen.
+    // ADR 0025: fine tune is continuous while coarse tune remains stepped.
+    // `fermenterParamMetadataWeld.spec.ts` keeps this duplicated descriptor
+    // aligned with the Fermenter-owned parameter table.
     { id: 'oscFine', label: 'Fine', min: -100, max: 100, default: 0, unit: 'ct' },
     { id: 'pulseWidth', label: 'Pulse Width', min: 0.05, max: 0.95, default: 0.5, unit: '' },
 

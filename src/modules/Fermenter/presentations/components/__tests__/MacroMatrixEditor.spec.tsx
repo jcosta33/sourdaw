@@ -193,6 +193,12 @@ describe('MacroMatrixEditor', () => {
     });
 
     describe('target param selection', () => {
+        it('offers continuous fine tune as a macro destination', () => {
+            render(<MacroMatrixEditor mappings={DEFAULT_PATCH.macroMappings} onChange={vi.fn()} />);
+
+            expect(screen.getByRole('option', { name: 'Fine' })).toHaveValue('oscFine');
+        });
+
         it('derives an exponential curve when selecting a log-scaled param (filterCutoff)', () => {
             const onChange = vi.fn();
             render(<MacroMatrixEditor mappings={DEFAULT_PATCH.macroMappings} onChange={onChange} />);

@@ -38,6 +38,7 @@ ADR numbers 0001 and 0002 are reserved and must not be reused.
 | [0022](0022-no-comparative-realism-claims.md)     | Describe mechanisms, not resemblance: no comparative realism claims — **status: proposed** |
 | [0023](0023-allpass-fractional-delay-in-the-string-loop.md) | Allpass fractional delay in the Karplus-Strong loop, offset off zero — **status: proposed** |
 | [0024](0024-warp-modes-are-named-by-material.md)  | Warp modes are named by material, over three closed executors — **status: proposed** |
+| [0025](0025-fermenter-fine-tune-is-continuous.md) | Fermenter fine tune is continuous; coarse tune remains stepped |
 
 Genuinely open decisions that are not yet ADRs live in the
 [open-decision docket](open-decision-docket.md).
