@@ -1,0 +1,22 @@
+src/modules/WorkspaceShell/presentations/views/__tests__/AppShell.spec.tsx
+  s_bc88af7d3b054c::t_0f2ee800e85610 284,324,338,387-391,393-394,396,398
+  s_bc88af7d3b054c::t_952d6576687f74 318-321
+  s_bc88af7d3b054c::t_fee0bb7894a0e9 325-337,392,395,397
+  s_bc88af7d3b054c::t_706ad17e7bcfa0 399-400
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "f8d912b042a992f614d683a52b733a891cb5191f",
+  "prompts": {},
+  "sessions": {
+    "s_bc88af7d3b054c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f9b4a-11a2-7f61-8dfb-76eed0eb2a9c",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
