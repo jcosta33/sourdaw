@@ -193,6 +193,7 @@ vi.mock('#/modules/Command/useCases', () => ({
         setGuard: noop,
     },
     setActionHistoryMetadataPort: noop,
+    commandProjectRevisionPort: { setProvider: noop },
     setCommandEventBus: noop,
     syncActionReplayMetadata: noop,
 }));
@@ -209,6 +210,7 @@ vi.mock('#/modules/ControlSurface/useCases', () => ({
 vi.mock('#/modules/CrdtDocument/stores', () => ({ actionHistoryStore: actionHistoryStoreMock }));
 
 vi.mock('#/modules/CrdtDocument/useCases', () => ({
+    captureProjectRevision: () => 'revision-1',
     getDrumPreviewBranchHandlers: sentinelHandlers('DrumPreviewBranch'),
     initBranchState: initBranchStateMock,
     markActionHistoryEntryReverted: noop,

@@ -62,6 +62,7 @@ export type GenerateDrumPatternOptions = {
     density?: number;
     swing?: number;
     timeSignature?: [number, number];
+    seed?: number;
 };
 
 type GeneratedNote = {
@@ -510,7 +511,7 @@ function clampVelocity(value: number): number {
     return Math.max(1, Math.min(127, Math.round(value)));
 }
 
-export function generateDrumPattern(options: GenerateDrumPatternOptions & { seed?: number }): {
+export function generateDrumPattern(options: GenerateDrumPatternOptions): {
     notes: GeneratedNote[];
     seed: number;
 } {

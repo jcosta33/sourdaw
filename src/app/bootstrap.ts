@@ -70,6 +70,7 @@ import {
     getUndoTreeHandlers,
     productionBriefAdmissionPort,
     setActionHistoryMetadataPort,
+    commandProjectRevisionPort,
     setCommandEventBus,
     syncActionReplayMetadata,
 } from '#/modules/Command/useCases';
@@ -78,6 +79,7 @@ import { getControlSurfaceHandlers, setMidiLearnDependencies } from '#/modules/C
 import { actionHistoryStore } from '#/modules/CrdtDocument/stores';
 import {
     initBranchState,
+    captureProjectRevision,
     markActionHistoryEntryReverted,
     recordActionHistoryEntry,
     clearActionHistory as clearCrdtActionHistory,
@@ -181,6 +183,7 @@ setActionHistoryMetadataPort({
     clear: clearCrdtActionHistory,
 });
 productionBriefAdmissionPort.setGuard(doesProductionBriefAllowActionBatch);
+commandProjectRevisionPort.setProvider(captureProjectRevision);
 syncActionReplayMetadata(actionHistoryStore.value?.entries ?? []);
 actionHistoryStore.subscribe((state) => {
     syncActionReplayMetadata(state?.entries ?? []);

@@ -1286,7 +1286,14 @@ export type AppAction =
     | { type: 'savePreset'; payload: { trackId: string; name: string; category: string } }
     | {
           type: 'generateDrumPattern';
-          payload: { style: string; trackId?: string; bars?: number; density?: number; startBeat?: number };
+          payload: {
+              style: string;
+              trackId?: string;
+              bars?: number;
+              density?: number;
+              startBeat?: number;
+              seed?: number;
+          };
       }
     | {
           type: 'generateMelody';
@@ -1299,6 +1306,7 @@ export type AppAction =
               octave?: number;
               density?: number;
               startBeat?: number;
+              seed?: number;
           };
       }
     | {
@@ -1311,6 +1319,7 @@ export type AppAction =
               bars?: number;
               voicing?: string;
               startBeat?: number;
+              seed?: number;
           };
       }
     | { type: 'setClipLoop'; payload: { clipId: string; enabled: boolean } }

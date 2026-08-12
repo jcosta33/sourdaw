@@ -24,6 +24,7 @@ export const handleGenerateMelody = createGenerationHandler<'generateMelody'>({
                 bars: action.payload.bars,
                 octave: action.payload.octave,
                 density: action.payload.density,
+                seed: action.payload.seed,
             },
             playheadBeat
         );

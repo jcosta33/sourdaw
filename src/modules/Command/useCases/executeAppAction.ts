@@ -13,17 +13,21 @@ import {
     AppActionConflictError,
     AppActionNotDispatchedError,
 } from '../errors/AppActionExecutionError';
+import { type VersionedCommandEnvelope } from '../models/VersionedCommandEnvelope';
 import { registerActionReplayCapability, revokeActionReplayCapability } from '../stores/actionReplayCapabilities';
 import { getHandler } from '../stores/handlerRegistry';
 
 import { actionHistoryMetadataPort } from './actionHistoryMetadataPort';
 import { commitUndoEntry } from './commitUndoEntry';
+import { createExecutionCommandEnvelope } from './createExecutionCommandEnvelope';
 import { createUndoEntry } from './createUndoEntry';
+import { getVersionedCommandArgumentsDigest } from './getVersionedCommandArgumentsDigest';
 import { recordAction } from './macro/recording/recordAction';
 import { productionBriefAdmissionPort } from './productionBriefAdmissionPort';
 import { traceAppAction } from './traceAppAction';
 
 type ExecuteAppActionOptions = ExecuteOptions & {
+    commandEnvelope?: VersionedCommandEnvelope;
     onCommitted?: () => void;
 };
 
@@ -49,6 +53,17 @@ export const executeAppAction: ExecuteAppAction = inject({ logger })(
             }
             const historyGroupId = handler.batchExecution === 'singleton' ? undefined : options?.groupId;
             const historyGroupLabel = historyGroupId ? options?.groupLabel : undefined;
+            if (
+                options?.commandEnvelope &&
+                (options.commandEnvelope.operation !== action.type ||
+                    options.commandEnvelope.argumentsDigest !==
+                        getVersionedCommandArgumentsDigest({
+                            operation: action.type,
+                            arguments: action.payload ?? {},
+                        }))
+            ) {
+                throw new Error(`Command envelope does not match action ${action.type}`);
+            }
 
             if (handler.executionKind === 'runtime') {
                 if (options?.shouldExecute && !options.shouldExecute()) {
@@ -58,6 +73,15 @@ export const executeAppAction: ExecuteAppAction = inject({ logger })(
                 if (handler.isNoop?.(action)) {
                     return;
                 }
+
+                const command = options?.commandEnvelope
+                    ? { action, envelope: options.commandEnvelope }
+                    : createExecutionCommandEnvelope({
+                          action,
+                          expectedEffect: action.type,
+                          options,
+                      });
+                action = command.action;
 
                 let runtime_result: HandlerExecutionResult | void;
                 try {
@@ -121,6 +145,15 @@ export const executeAppAction: ExecuteAppAction = inject({ logger })(
             if (handler.undoable) {
                 undoResult = handler.describe(action);
             }
+
+            const command = options?.commandEnvelope
+                ? { action, envelope: options.commandEnvelope }
+                : createExecutionCommandEnvelope({
+                      action,
+                      expectedEffect: undoResult?.label ?? action.type,
+                      options,
+                  });
+            action = command.action;
 
             // Set semantic context so AutomergeStorage attaches a message to the CRDT change.
             // This makes `Automerge.getHistory()` return readable change descriptions.
@@ -228,14 +261,14 @@ export const executeAppAction: ExecuteAppAction = inject({ logger })(
                 if (!options?.skipUndo) {
                     // Record undoable actions to global history (skip UI-only actions like panel toggles)
                     if (handler.undoable) {
-                        const entry_id = crypto.randomUUID();
+                        const entry_id = command.envelope.commandId;
                         const inverse_action = undoResult?.inverseAction ?? null;
                         const metadata = {
                             id: entry_id,
                             label,
                             actionKind: action.type,
                             source: options?.source ?? 'manual',
-                            timestamp: Date.now(),
+                            timestamp: command.envelope.issuedAt,
                             groupId: historyGroupId,
                             groupLabel: historyGroupLabel,
                             reverted: false,

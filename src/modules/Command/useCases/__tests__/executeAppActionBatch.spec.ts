@@ -377,7 +377,7 @@ describe('executeAppActionBatch', () => {
 
         const result = await executeAppActionBatch([{ type: 'setEditingTool', payload: { tool: 'marquee' } }]);
 
-        expect(result).toEqual({
+        expect(result).toMatchObject({
             status: 'committed-with-warning',
             actions: [
                 {
@@ -791,7 +791,7 @@ describe('executeAppActionBatch', () => {
             source: 'prompt',
         });
 
-        expect(result).toEqual({
+        expect(result).toMatchObject({
             status: 'executed',
             actions: [{ action: { type: 'setPlayback', payload: { playing: true } }, label: 'Start playback' }],
         });
@@ -869,7 +869,7 @@ describe('executeAppActionBatch', () => {
 
         const result = await executeAppActionBatch([{ type: 'setPlayback', payload: { playing: true } }]);
 
-        expect(result).toEqual({
+        expect(result).toMatchObject({
             status: 'executed-with-warning',
             actions: [{ action: { type: 'setPlayback', payload: { playing: true } }, label: 'Batch action' }],
             warning: 'setPlayback follow-up effect failed: event unavailable',
@@ -915,7 +915,7 @@ describe('executeAppActionBatch', () => {
         }
         rejectTeardown(teardownFailure);
 
-        await expect(pending).resolves.toEqual({
+        await expect(pending).resolves.toMatchObject({
             status: 'executed-with-warning',
             actions: [{ action: { type: 'stopPlayback' }, label: 'Batch action' }],
             warning: 'stopPlayback follow-up effect failed: recording flush failed',
@@ -936,7 +936,7 @@ describe('executeAppActionBatch', () => {
 
         const result = await executeAppActionBatch([{ type: 'setPlayback', payload: { playing: true } }]);
 
-        expect(result).toEqual({
+        expect(result).toMatchObject({
             status: 'executed-with-warning',
             actions: [{ action: { type: 'setPlayback', payload: { playing: true } }, label: 'Batch action' }],
             warning: 'setPlayback follow-up effect failed: event unavailable',

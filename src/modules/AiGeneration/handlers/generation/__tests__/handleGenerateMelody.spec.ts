@@ -49,12 +49,13 @@ describe('handleGenerateMelody', () => {
                 scale: 'minor',
                 key: 5,
                 bars: 4,
+                seed: 456,
             },
         });
 
         expect(mocks.applyMelodyToTrack).toHaveBeenCalledWith(
             't1',
-            { style: 'arpeggiated', scale: 'minor', key: 5, bars: 4 },
+            { style: 'arpeggiated', scale: 'minor', key: 5, bars: 4, seed: 456 },
             0
         );
     });

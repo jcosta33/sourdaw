@@ -48,6 +48,7 @@ export type GenerateMelodyOptions = {
     bars?: number;
     density?: number;
     range?: number;
+    seed?: number;
 };
 
 type GeneratedNote = {
@@ -274,7 +275,7 @@ function velocityForStyle(style: MelodyStyle, beatPosition: number, rng: () => n
     }
 }
 
-export function generateMelody(options: GenerateMelodyOptions & { seed?: number }): {
+export function generateMelody(options: GenerateMelodyOptions): {
     notes: GeneratedNote[];
     seed: number;
 } {

@@ -5,9 +5,15 @@ import { type ExecutableRuntimeAction } from '../models/ExecutableRuntimeAction'
 
 export type PendingActionExecution = {
     actionType: string;
+    commandId?: string;
+    commandSchemaVersion?: number;
     label: string;
     executionKind: 'project' | 'runtime';
     affectedIds: string[];
+    applicationAssigned?: {
+        ids: Array<{ field: string; value: string }>;
+        timestamps: Array<{ field: string; value: number }>;
+    };
     outcome: 'committed' | 'committed-with-warning' | 'executed' | 'executed-with-warning';
 };
 
@@ -24,6 +30,7 @@ type PendingActionProtectedObject = {
 type PendingActionApprovalSnapshot = {
     actions: ExecutableRuntimeAction[];
     actionLabels: string[];
+    commandEnvelopes?: string[];
     protectedUnchanged: PendingActionProtectedObject[];
 };
 
@@ -50,6 +57,8 @@ export type PendingAppActionConfirmation = PendingActionConfirmationBase & {
     actions: ExecutableRuntimeAction[];
     approvalSnapshot: PendingActionApprovalSnapshot;
     executionMode: 'atomic' | undefined;
+    groupId?: string;
+    groupLabel?: string;
 };
 
 export type PendingActionConfirmationState = {
@@ -89,10 +98,13 @@ type ProposePendingActionConfirmationInput = {
     assistantMessageId: string;
     actions: ExecutableRuntimeAction[];
     actionLabels: string[];
+    commandEnvelopes?: string[];
     affectedIds?: string[];
     protectedUnchanged?: PendingActionProtectedObject[];
     risk?: PendingActionRisk;
     executionMode?: 'atomic';
+    groupId?: string;
+    groupLabel?: string;
     projectRevision: string;
     resourceLease?: PendingActionResourceLease;
 };
@@ -123,6 +135,7 @@ export function proposePendingActionConfirmation(
     const approvalSnapshot: PendingActionApprovalSnapshot = {
         actions: structuredClone(input.actions),
         actionLabels: structuredClone(input.actionLabels),
+        commandEnvelopes: input.commandEnvelopes ? [...input.commandEnvelopes] : undefined,
         protectedUnchanged: structuredClone(input.protectedUnchanged ?? []),
     };
     const confirmation: PendingAppActionConfirmation = {
@@ -133,6 +146,8 @@ export function proposePendingActionConfirmation(
         actions: structuredClone(approvalSnapshot.actions),
         approvalSnapshot,
         executionMode: input.executionMode,
+        groupId: input.groupId,
+        groupLabel: input.groupLabel,
         actionLabels: structuredClone(approvalSnapshot.actionLabels),
         affectedIds: [...(input.affectedIds ?? [])],
         protectedUnchanged: structuredClone(approvalSnapshot.protectedUnchanged),

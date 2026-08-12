@@ -1,0 +1,36 @@
+import { type AppAction, type ExecuteOptions } from '#/utils/handlerContract';
+
+import { AppActionConflictError } from '../errors/AppActionExecutionError';
+
+import { commandProjectRevisionPort } from './commandProjectRevisionPort';
+import { createVersionedCommandReceipt } from './createVersionedCommandReceipt';
+import { executeAppAction } from './executeAppAction';
+import { parseVersionedCommandEnvelope } from './parseVersionedCommandEnvelope';
+
+export async function executeVersionedCommandEnvelope(
+    serialized: string,
+    options?: ExecuteOptions
+): Promise<ReturnType<typeof createVersionedCommandReceipt>> {
+    const parsed = parseVersionedCommandEnvelope(serialized);
+    if (parsed.status === 'invalid') {
+        throw new Error(parsed.reason);
+    }
+    if (commandProjectRevisionPort.capture() !== parsed.envelope.normalizedProjectRevision) {
+        throw new AppActionConflictError(parsed.envelope.operation);
+    }
+    if (parsed.envelope.dependencyIds.length > 0) {
+        throw new Error('A dependent command must execute inside its declared batch');
+    }
+    // parseVersionedCommandEnvelope has already allowlisted the discriminant and
+    // strictly validated the serialized arguments at this trust boundary.
+    const action = {
+        type: parsed.envelope.operation,
+        payload: parsed.envelope.arguments,
+    } as AppAction;
+    await executeAppAction(action, {
+        ...options,
+        commandEnvelope: parsed.envelope,
+        groupId: parsed.envelope.groupId,
+    });
+    return createVersionedCommandReceipt({ envelope: parsed.envelope });
+}
