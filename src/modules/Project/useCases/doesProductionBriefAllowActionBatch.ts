@@ -410,9 +410,8 @@ function actionIndirectlyMutatesObject(action: AppAction, objectId: string): boo
             return marker.beat >= boundary;
         }
         const section = markerStore.value?.sections.find((candidate) => candidate.id === objectId);
-        if (section) {
-            const boundary = action.type === 'insertTime' ? action.payload.atBeat : action.payload.startBeat;
-            return section.endBeat > boundary;
+        if (section && action.type === 'deleteTime') {
+            return section.endBeat > action.payload.startBeat;
         }
     }
     if (action.type !== 'removeClip' || !workspaceStore.value?.rippleEditing) {

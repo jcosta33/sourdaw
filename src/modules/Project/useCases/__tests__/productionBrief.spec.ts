@@ -738,6 +738,17 @@ describe('production brief', () => {
                         statement: 'Keep the chorus marker fixed',
                         createdAt: 122,
                     },
+                ],
+            },
+        });
+        expect(
+            doesProductionBriefAllowActionBatch([{ type: 'insertTime', payload: { atBeat: 16, durationBeats: 4 } }])
+        ).toBe(false);
+        projectStore.set({
+            ...projectStore.value!,
+            productionBrief: {
+                ...projectStore.value!.productionBrief,
+                locks: [
                     {
                         id: 'lock-chorus-section',
                         scope: { kind: 'object', objectType: 'section', objectId: 'section-chorus' },
@@ -747,6 +758,9 @@ describe('production brief', () => {
                 ],
             },
         });
+        expect(
+            doesProductionBriefAllowActionBatch([{ type: 'insertTime', payload: { atBeat: 16, durationBeats: 4 } }])
+        ).toBe(true);
         expect(
             doesProductionBriefAllowActionBatch([{ type: 'deleteTime', payload: { startBeat: 16, endBeat: 20 } }])
         ).toBe(false);
