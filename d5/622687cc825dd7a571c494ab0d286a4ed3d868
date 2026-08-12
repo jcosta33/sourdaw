@@ -1,0 +1,24 @@
+src/modules/ControlSurface/repositories/pushMidiCodec.ts
+  s_bc88af7d3b054c::t_db52e1f02336c9 802
+  s_bc88af7d3b054c::t_eb7d02ed1c2b12 128,143,162-163,673-693,697,708-713,729-734,760,776-782,810-814,821
+src/modules/ControlSurface/repositories/__tests__/pushMidiCodec.spec.ts
+  s_bc88af7d3b054c::t_71869ac6fa76d1 523,532-540,558-566,581-596
+  s_bc88af7d3b054c::t_810188444e76e3 393,486
+  s_bc88af7d3b054c::t_eae2c3c4755a6e 597
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "d5622687cc825dd7a571c494ab0d286a4ed3d868",
+  "prompts": {},
+  "sessions": {
+    "s_bc88af7d3b054c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f9b4a-11a2-7f61-8dfb-76eed0eb2a9c",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
