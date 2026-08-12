@@ -1,0 +1,178 @@
+src/modules/Command/useCases/executeVersionedCommandBatch.ts
+  s_a40848e8f8cca9::t_804bd5c46b3b53 5
+  s_a40848e8f8cca9::t_6cd59e27564546 1-3,6-10,12-30,32-48,56-67
+  s_a40848e8f8cca9::t_569380e215528e 51-55
+  s_a40848e8f8cca9::t_a7e9b0c447004f 4
+  s_a40848e8f8cca9::t_b3aad38308d860 11,31
+  s_a40848e8f8cca9::t_b773e24940592e 49-50
+src/modules/AiGeneration/handlers/generation/handleGenerateDrumPattern.ts
+  s_a40848e8f8cca9::t_b98a39fe4b2bdb 15-20
+src/modules/AiGeneration/useCases/generateDrumPattern/algorithm.ts
+  s_a40848e8f8cca9::t_8c3b43ff2e3e50 514
+  s_a40848e8f8cca9::t_b98a39fe4b2bdb 65
+src/modules/Command/useCases/index.ts
+  s_a40848e8f8cca9::t_8cd91b7744afbd 18
+  s_a40848e8f8cca9::t_d7919e0a6f95f1 28
+  s_a40848e8f8cca9::t_d1fabf412dad9b 9-10,15,17,21
+  s_a40848e8f8cca9::t_6cd59e27564546 29
+  s_a40848e8f8cca9::t_804bd5c46b3b53 7
+  s_a40848e8f8cca9::t_9993ad4282b7ef 16
+src/modules/Command/useCases/executeVersionedCommandEnvelope.ts
+  s_a40848e8f8cca9::t_a7e9b0c447004f 4,7
+  s_a40848e8f8cca9::t_bcb3b339251c56 35
+  s_a40848e8f8cca9::t_d7919e0a6f95f1 1-3,8-9,14-17,19-20,24-29,36
+  s_a40848e8f8cca9::t_804bd5c46b3b53 5,18
+  s_a40848e8f8cca9::t_74313e912f4159 6,10-13
+  s_a40848e8f8cca9::t_b773e24940592e 21-23,30-34
+src/modules/AiRuntime/useCases/__tests__/confirmPendingChatActions.spec.ts
+  s_a40848e8f8cca9::t_9a895e45f1a6b3 149-153
+  s_a40848e8f8cca9::t_c7ebd745dac576 10-12,14,143-148,154-182
+  s_a40848e8f8cca9::t_804bd5c46b3b53 13,47,70
+  s_a40848e8f8cca9::t_99b7ddcdc2c2e0 9
+  s_a40848e8f8cca9::t_fabd7e5e402ed5 183
+src/modules/AiRuntime/useCases/__tests__/stemImportStartingMixWorkflow.spec.ts
+  s_a40848e8f8cca9::t_da2b76e0626848 79-84
+src/modules/Command/useCases/getVersionedCommandSemanticFingerprint.ts
+  s_a40848e8f8cca9::t_ad6cb6cdea04d5 1-28
+src/modules/AiGeneration/handlers/generation/handleGenerateMelody.ts
+  s_a40848e8f8cca9::t_b98a39fe4b2bdb 27
+src/modules/AiRuntime/stores/pendingActionConfirmationStore.ts
+  s_a40848e8f8cca9::t_ef2ffef1d7e82c 14-16
+  s_a40848e8f8cca9::t_3f511ef1f90f5c 33,60-61,101,106-107,138,149-150
+  s_a40848e8f8cca9::t_a37516808b5225 8-9,13
+src/modules/Command/useCases/__tests__/versionedCommandContract.spec.ts
+  s_a40848e8f8cca9::t_708af673ee73f0 150-166,180-181
+  s_a40848e8f8cca9::t_2bd6355b4d9cfb 253-256
+  s_a40848e8f8cca9::t_83fa685fe5c4f0 2,22-23,38-52,57-66,71-76,82-100,102-107,109-120,123,137-149,182-209,218-224,346-347
+  s_a40848e8f8cca9::t_89fd579e60a0d8 124-136
+  s_a40848e8f8cca9::t_804bd5c46b3b53 12,27,34
+  s_a40848e8f8cca9::t_bcb3b339251c56 272
+  s_a40848e8f8cca9::t_7dafc452ee1b2b 101,167-179
+  s_a40848e8f8cca9::t_efb116fa98cc81 1,9-11,24-25,28-31,35-37,225-252,257-262,270-271,273-274
+  s_a40848e8f8cca9::t_8cd91b7744afbd 19,263-269
+  s_a40848e8f8cca9::t_d02da2f0d68197 13-14,18,20-21
+  s_a40848e8f8cca9::t_d2b592b23a3ecd 121-122,210-217,344
+  s_a40848e8f8cca9::t_e8e1aaf1f17d9f 81
+  s_a40848e8f8cca9::t_80d9221a8f71fd 3-7,26,32-33,275-343,345
+  s_a40848e8f8cca9::t_a7e9b0c447004f 8,15-17
+  s_a40848e8f8cca9::t_1b48ef1d0286df 53-56,77-80
+  s_a40848e8f8cca9::t_e4adadc186d512 67-70,108
+src/modules/Command/useCases/executeAppAction.ts
+  s_a40848e8f8cca9::t_a7e9b0c447004f 16
+  s_a40848e8f8cca9::t_c6e66881f5edda 81
+  s_a40848e8f8cca9::t_4d48bd4f9eecf8 24,56-66
+  s_a40848e8f8cca9::t_d7919e0a6f95f1 30,77-80,82-83,149-155
+  s_a40848e8f8cca9::t_be7ea0049b1f5e 22,84-85,156-157,264,271
+src/modules/Command/useCases/getVersionedCommandArgumentsDigest.ts
+  s_a40848e8f8cca9::t_9993ad4282b7ef 1-23
+src/modules/Command/models/VersionedCommandEnvelope.ts
+  s_a40848e8f8cca9::t_923c1938a0043c 28
+  s_a40848e8f8cca9::t_751c39a8768f4e 46-47
+  s_a40848e8f8cca9::t_9993ad4282b7ef 29
+  s_a40848e8f8cca9::t_ad6cb6cdea04d5 1-27,30-45,48-49
+src/modules/Command/useCases/parseVersionedCommandEnvelope.ts
+  s_a40848e8f8cca9::t_89fd579e60a0d8 77-123,128-147,186-193,202-207
+  s_a40848e8f8cca9::t_43d3ad1641c754 124-127
+  s_a40848e8f8cca9::t_a7e9b0c447004f 8,13
+  s_a40848e8f8cca9::t_7dafc452ee1b2b 185,194-201,244-245,312-316
+  s_a40848e8f8cca9::t_9993ad4282b7ef 10,28,262-268
+  s_a40848e8f8cca9::t_ad6cb6cdea04d5 1-7,9,11-12,14-27,29-74,148-182,230,248-261,269-286,294-311,317-330
+  s_a40848e8f8cca9::t_1b48ef1d0286df 75-76,183-184,208-229,231-243,246-247,287-293
+src/modules/AiRuntime/useCases/__tests__/compilePendingActionCommandEnvelopes.spec.ts
+  s_a40848e8f8cca9::t_ff968a2c365314 1-45
+src/modules/AiGeneration/handlers/generation/__tests__/handleGenerateMelody.spec.ts
+  s_a40848e8f8cca9::t_7b7b49ec301fd4 52,58
+src/modules/Command/useCases/createVersionedCommandEnvelope.ts
+  s_a40848e8f8cca9::t_a7e9b0c447004f 10
+  s_a40848e8f8cca9::t_923c1938a0043c 35
+  s_a40848e8f8cca9::t_ad6cb6cdea04d5 1-9,12-26,31-34,37-41,47-58
+  s_a40848e8f8cca9::t_9993ad4282b7ef 11,42-46
+  s_a40848e8f8cca9::t_78935c85d24102 27-30,36
+src/app/__tests__/bootstrap.spec.ts
+  s_a40848e8f8cca9::t_804bd5c46b3b53 196
+  s_a40848e8f8cca9::t_9498a56878ca93 213
+src/modules/AiGeneration/useCases/generateMelody/algorithm.ts
+  s_a40848e8f8cca9::t_b98a39fe4b2bdb 51
+  s_a40848e8f8cca9::t_8c3b43ff2e3e50 278
+src/modules/AiGeneration/handlers/generation/__tests__/handleGenerateChordProgression.spec.ts
+  s_a40848e8f8cca9::t_7b7b49ec301fd4 53,59
+src/modules/Command/useCases/serializeVersionedCommandEnvelope.ts
+  s_a40848e8f8cca9::t_ad6cb6cdea04d5 1-5
+src/modules/Command/useCases/createVersionedCommandReceipt.ts
+  s_a40848e8f8cca9::t_ad6cb6cdea04d5 1-24
+src/modules/Command/useCases/executeAppActionBatch.ts
+  s_a40848e8f8cca9::t_a7e9b0c447004f 19
+  s_a40848e8f8cca9::t_5f9f999f227f98 25,27,68,315,323,360,487,494
+  s_a40848e8f8cca9::t_23f0339393a0ed 37
+  s_a40848e8f8cca9::t_c6e66881f5edda 85,90-91,93-94,133,627
+  s_a40848e8f8cca9::t_67bbba7a441c64 86-89,92,402-406
+  s_a40848e8f8cca9::t_b678bd6c61aeb9 252-260
+  s_a40848e8f8cca9::t_4d48bd4f9eecf8 29,422-428,465-471
+  s_a40848e8f8cca9::t_6cd59e27564546 50,401,407,429,462-464,472-485
+src/modules/Command/useCases/createExecutionCommandEnvelope.ts
+  s_a40848e8f8cca9::t_950a25ae57bbdf 46-52,54-55,58,88,143,150
+  s_a40848e8f8cca9::t_b678bd6c61aeb9 11,167
+  s_a40848e8f8cca9::t_a7e9b0c447004f 2,5,158-161
+  s_a40848e8f8cca9::t_1a1b325b75fc89 45,53
+  s_a40848e8f8cca9::t_55d9c981074253 164,177
+  s_a40848e8f8cca9::t_814608121b492e 28,33,35,41-42
+  s_a40848e8f8cca9::t_2bd6355b4d9cfb 13
+  s_a40848e8f8cca9::t_804bd5c46b3b53 6,170
+  s_a40848e8f8cca9::t_b98a39fe4b2bdb 1,3-4,7-10,12,14-24,27,43-44,56-57,59-87,89-142,144-149,151-157,162-163,165-166,168-169,171-176,178
+  s_a40848e8f8cca9::t_c4f209fd48bc2c 25-26,29-32,34,36-40
+src/modules/Command/useCases/__tests__/executeAppActionBatch.spec.ts
+  s_a40848e8f8cca9::t_c99ba003439924 380,918,939
+  s_a40848e8f8cca9::t_d0f554e57f825e 794,872
+src/modules/AiRuntime/useCases/sendChatMessage.ts
+  s_a40848e8f8cca9::t_ff968a2c365314 2,32,121-126
+  s_a40848e8f8cca9::t_402bf7b74b08d0 120,133,138-139
+src/utils/handlerContract.ts
+  s_a40848e8f8cca9::t_b98a39fe4b2bdb 1289
+  s_a40848e8f8cca9::t_d7a90588270a8e 1290-1292
+  s_a40848e8f8cca9::t_287d3f32e2f6e1 1293-1296,1309,1322
+src/modules/AiRuntime/useCases/confirmPendingChatActions.ts
+  s_a40848e8f8cca9::t_7377ab45110398 3,317-319,325,327,330-332,338-340
+  s_a40848e8f8cca9::t_9520958d83dc9b 78-83
+  s_a40848e8f8cca9::t_a37516808b5225 164,167
+  s_a40848e8f8cca9::t_ef2ffef1d7e82c 165-166,168-169
+  s_a40848e8f8cca9::t_bec2851c01d70b 170-173
+  s_a40848e8f8cca9::t_b3aad38308d860 333-337,378-401
+src/modules/Command/useCases/migrateLegacyAppActionToVersionedCommandEnvelope.ts
+  s_a40848e8f8cca9::t_8cd91b7744afbd 1-4,6-7,19,21-22,27-28
+  s_a40848e8f8cca9::t_a7e9b0c447004f 5
+  s_a40848e8f8cca9::t_2bd6355b4d9cfb 8-18,20,23-26
+src/modules/AiRuntime/stores/__tests__/pendingActionConfirmationStore.spec.ts
+  s_a40848e8f8cca9::t_7d6f34b891f212 52,59,74,87
+src/modules/Command/useCases/commandProjectRevisionPort.ts
+  s_a40848e8f8cca9::t_569380e215528e 1-4,7-8
+  s_a40848e8f8cca9::t_804bd5c46b3b53 5-6,9-18
+src/app/bootstrap.ts
+  s_a40848e8f8cca9::t_804bd5c46b3b53 73,186
+  s_a40848e8f8cca9::t_569380e215528e 82
+src/modules/AiGeneration/useCases/generateChordProgression/algorithm.ts
+  s_a40848e8f8cca9::t_8c3b43ff2e3e50 213
+  s_a40848e8f8cca9::t_b98a39fe4b2bdb 31
+src/modules/AiGeneration/handlers/generation/handleGenerateChordProgression.ts
+  s_a40848e8f8cca9::t_a7e9b0c447004f 22-29
+src/modules/AiRuntime/useCases/compilePendingActionCommandEnvelopes.ts
+  s_a40848e8f8cca9::t_1e9327acb8daca 16
+  s_a40848e8f8cca9::t_ff968a2c365314 1-15,17-25
+src/modules/AiGeneration/handlers/generation/__tests__/handleGenerateDrumPattern.spec.ts
+  s_a40848e8f8cca9::t_7b7b49ec301fd4 51,55-59
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "5f81995425e6cee74cf06c1e9ed8546a13638884",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
