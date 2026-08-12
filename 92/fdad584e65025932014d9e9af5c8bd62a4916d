@@ -1,0 +1,19 @@
+tests/e2e/pianoRollZoomKeyboardTestId.spec.ts
+  s_9649e26e16b263::t_6cb053d23102d0 1-49
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "92fdad584e65025932014d9e9af5c8bd62a4916d",
+  "prompts": {},
+  "sessions": {
+    "s_9649e26e16b263": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019ff737-6869-7c72-ab61-72affdb16d5f",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
