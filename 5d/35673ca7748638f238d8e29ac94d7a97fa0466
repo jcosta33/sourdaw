@@ -1,0 +1,119 @@
+src/modules/AiRuntime/useCases/agentReference/getDrumRoutingPromptScope.ts
+  s_a40848e8f8cca9::t_7e8971911a6a93 46
+src/modules/AiRuntime/useCases/describePendingActionConfirmation.ts
+  s_a40848e8f8cca9::t_af2071b1dae92d 7,29,122-123,152,154,157-158,160,166-167,169-171,173,187-188,190-192,194-196,198-200,202,374,397-403
+src/modules/AiRuntime/useCases/agentReference/getMidiOverlapTransformPromptScope.ts
+  s_a40848e8f8cca9::t_ecc7d5d55e467c 34
+src/modules/AiRuntime/useCases/__tests__/articulationTransferPromptWorkflow.spec.ts
+  s_a40848e8f8cca9::t_35e0f832161b1a 32,233-236,270-277
+  s_a40848e8f8cca9::t_d05a41d38c1bda 35-36,346-348
+  s_a40848e8f8cca9::t_a7259b45383ca5 33
+  s_a40848e8f8cca9::t_76912ff79e4966 349-350
+src/modules/AiRuntime/useCases/__tests__/stemImportStartingMixWorkflow.spec.ts
+  s_a40848e8f8cca9::t_45d1beda462609 194-196
+  s_a40848e8f8cca9::t_35e0f832161b1a 34,247-250,322-329
+  s_a40848e8f8cca9::t_647d1f9f9f04a1 38-39,347-349
+  s_a40848e8f8cca9::t_b28dbb0cd62c0e 433,439,445,469,530,541
+  s_a40848e8f8cca9::t_838d2f1ef14814 35
+  s_a40848e8f8cca9::t_96a8ce6741ca35 350-351
+src/modules/AiRuntime/useCases/__tests__/bassProcessingCopyPromptWorkflow.spec.ts
+  s_a40848e8f8cca9::t_d05a41d38c1bda 44-45,436-438
+  s_a40848e8f8cca9::t_35e0f832161b1a 40,175-177,294-299
+  s_a40848e8f8cca9::t_3b09d26b0d1671 41
+  s_a40848e8f8cca9::t_2c2605fbefdc4b 439-440
+src/modules/AiRuntime/useCases/agentReference/bridgeGroundedLlmToolCalls.ts
+  s_a40848e8f8cca9::t_372893f052124e 8,54,71,129,1488,1525-1526,1540-1541,3447,3473,3522-3525,3527-3529,3910,3921-3925,3936-3940,3953-3956,4011-4014,4057-4060,4093-4096,4126-4129,4164-4165,4444
+src/modules/AiRuntime/useCases/agentReference/getBassProcessingCopyPromptScope.ts
+  s_a40848e8f8cca9::t_7e8971911a6a93 29
+src/modules/AiRuntime/useCases/agentReference/prepareStemImport.ts
+  s_a40848e8f8cca9::t_f4448e16235d20 47
+src/modules/AiRuntime/useCases/agentReference/getDrumPreviewBranchesPromptScope.ts
+  s_a40848e8f8cca9::t_ecc7d5d55e467c 45
+src/modules/AiRuntime/useCases/__tests__/backingVocalPlateWorkflow.spec.ts
+  s_a40848e8f8cca9::t_35e0f832161b1a 43,250
+  s_a40848e8f8cca9::t_d05a41d38c1bda 47-48
+  s_a40848e8f8cca9::t_90e4d859879e7f 44
+  s_a40848e8f8cca9::t_4ea05e4e4abc62 251-253
+  s_a40848e8f8cca9::t_0a787453f0fdd4 369-376,457-461,617-619
+src/modules/AiRuntime/useCases/parsePromptToActions.ts
+  s_a40848e8f8cca9::t_7c5c924b5be813 10-13,15-16,137-142,158,161,170,187,189-190,207-220,229-233,235-261,284,377
+  s_a40848e8f8cca9::t_43c91f55d1bcac 221-228
+  s_a40848e8f8cca9::t_21d7c3810827f2 14,188,234
+  s_a40848e8f8cca9::t_f0bb1c5df6593d 305
+src/modules/AiRuntime/useCases/agentReference/bridgeSharedVocalFxBusesPlan.ts
+  s_a40848e8f8cca9::t_037327efec3f3e 11-12,52,54,57,64
+src/modules/AiRuntime/useCases/__tests__/midiOverlapPromptWorkflow.spec.ts
+  s_a40848e8f8cca9::t_d05a41d38c1bda 43-44,331-333
+  s_a40848e8f8cca9::t_35e0f832161b1a 39,203-206,248-255
+  s_a40848e8f8cca9::t_b2ac14d281fe37 40
+  s_a40848e8f8cca9::t_f8138233284b66 334-335
+src/modules/AiRuntime/useCases/agentReference/getSyncopatedArpeggioPromptScope.ts
+  s_a40848e8f8cca9::t_ecc7d5d55e467c 21
+src/modules/AiRuntime/useCases/__tests__/drumPreviewBranchesPromptWorkflow.spec.ts
+  s_a40848e8f8cca9::t_35e0f832161b1a 47,209-212,319-326
+  s_a40848e8f8cca9::t_fe3704ec44867b 432
+  s_a40848e8f8cca9::t_647d1f9f9f04a1 51-52,421-423
+  s_a40848e8f8cca9::t_1d63b43b2a0394 48
+  s_a40848e8f8cca9::t_8e7818a158ea45 424-425
+src/modules/AiRuntime/useCases/agentReference/bridgeBackingVocalPlatePlan.ts
+  s_a40848e8f8cca9::t_037327efec3f3e 11-12,63,65,70,75,82
+src/modules/AiRuntime/useCases/__tests__/workflowCapabilitySelectionFixture.ts
+  s_a40848e8f8cca9::t_3a99f2053073d1 1-13
+src/modules/AiRuntime/useCases/llmOrchestration/__tests__/inference.spec.ts
+  s_a40848e8f8cca9::t_33743fe0f6bcfb 10,313-326
+  s_a40848e8f8cca9::t_befbc5f9161cd9 327-328
+src/modules/AiRuntime/useCases/__tests__/drumBusPromptWorkflow.spec.ts
+  s_a40848e8f8cca9::t_64409f697631c8 243-244
+  s_a40848e8f8cca9::t_54bbd7b600adec 36,250-254,274
+  s_a40848e8f8cca9::t_1c66e01ef3f553 40-41,652-656
+  s_a40848e8f8cca9::t_45d1beda462609 777-779,869-871,926-928,942-944,983-985,1029-1031,1068-1070
+  s_a40848e8f8cca9::t_b34d2d9a5e33ba 37
+  s_a40848e8f8cca9::t_2fcf3f41562f89 657-658
+src/modules/AiRuntime/models/WorkflowCapability.ts
+  s_a40848e8f8cca9::t_5996f6826f7b08 19-30,49-52
+  s_a40848e8f8cca9::t_30f009057e86ef 1-18,31-48,53-61
+  s_a40848e8f8cca9::t_19691023b2e3b3 62-64
+src/modules/AiRuntime/useCases/planPromptActions.ts
+  s_a40848e8f8cca9::t_5b4e6f4f048c58 4,21
+  s_a40848e8f8cca9::t_56fe85305d76eb 24-36
+src/modules/AiRuntime/useCases/__tests__/sharedVocalFxBusesWorkflow.spec.ts
+  s_a40848e8f8cca9::t_1d2aee89ccf4e1 36-37,604-611
+  s_a40848e8f8cca9::t_675a05b7a3e5c7 250-254,256-259,266-271,444-449
+  s_a40848e8f8cca9::t_fa18cfd6d7bd29 612
+  s_a40848e8f8cca9::t_77ae6bf7d898e6 615-627
+  s_a40848e8f8cca9::t_6263f0eb47e461 613-614
+src/modules/AiRuntime/useCases/llmOrchestration/inference.ts
+  s_a40848e8f8cca9::t_7e8971911a6a93 12
+  s_a40848e8f8cca9::t_a93083153f71d6 212-219,222
+src/modules/AiRuntime/useCases/sendChatMessage.ts
+  s_a40848e8f8cca9::t_af2071b1dae92d 116
+src/modules/AiRuntime/useCases/__tests__/syncopatedArpeggioPromptWorkflow.spec.ts
+  s_a40848e8f8cca9::t_7e8971911a6a93 43-44
+  s_a40848e8f8cca9::t_647d1f9f9f04a1 305-307
+  s_a40848e8f8cca9::t_35e0f832161b1a 40,191-194,240-247
+  s_a40848e8f8cca9::t_b843102b8068f3 41
+  s_a40848e8f8cca9::t_b6f63706810077 308-309
+src/modules/AiRuntime/models/IntentResult.ts
+  s_a40848e8f8cca9::t_af2071b1dae92d 3,16
+  s_a40848e8f8cca9::t_30f009057e86ef 15
+src/modules/AiRuntime/useCases/__tests__/parsePromptToActions.spec.ts
+  s_a40848e8f8cca9::t_06943b90079d42 288,290-295,401,403-408
+src/modules/AiRuntime/useCases/agentReference/__tests__/bridgeBackingVocalPlatePlan.spec.ts
+  s_a40848e8f8cca9::t_2203402d60e9bc 30,48,50
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "5d35673ca7748638f238d8e29ac94d7a97fa0466",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
