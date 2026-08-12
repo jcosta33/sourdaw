@@ -9,6 +9,7 @@ import { getWholeProjectVibeMixScope } from './agentReference/getWholeProjectVib
 import { prepareStemImport } from './agentReference/prepareStemImport';
 import { getProjectContext } from './getProjectContext';
 import { parsePromptToActions } from './parsePromptToActions';
+import { recordResolvedAgentReferences } from './recordResolvedAgentReferences';
 
 type PlanPromptActionsInput = {
     prompt: string;
@@ -58,6 +59,13 @@ export async function planPromptActions(input: PlanPromptActionsInput) {
             discardPreparedStemImportResources(stemImportScope.actionSeed.stems);
         }
         throw new AiProposalInvalidatedError();
+    }
+
+    if (input.signal?.aborted !== true && result.actions.length > 0) {
+        recordResolvedAgentReferences({
+            projectCreatedAt: context.projectCreatedAt ?? null,
+            references: result.resolvedAgentReferences ?? [],
+        });
     }
 
     return { context, result, projectRevision };

@@ -4,6 +4,10 @@ export const ACTION_PLANNING_MODE_TOOL_NAME = 'selectActionPlanningMode';
 
 export type ActionPlanningMode = 'execute' | 'preview';
 
+export function getRequestedActionPlanningMode(prompt: string): ActionPlanningMode {
+    return /\bpreview\b/iu.test(prompt.normalize('NFKC')) ? 'preview' : 'execute';
+}
+
 export function createActionPlanningModeToolSchema(): ToolSchema {
     return {
         type: 'function',

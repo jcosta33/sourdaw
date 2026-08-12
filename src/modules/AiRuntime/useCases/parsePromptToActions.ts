@@ -9,6 +9,7 @@ import {
     ACTION_PLANNING_MODE_TOOL_NAME,
     type ActionPlanningMode,
     createActionPlanningModeToolSchema,
+    getRequestedActionPlanningMode,
 } from '../models/ActionPlanningMode';
 import { type IntentResult } from '../models/IntentResult';
 import { type RuntimeAction } from '../models/RuntimeAction';
@@ -46,7 +47,6 @@ import { materializeBatchLocalActionIdentities } from './agentReference/material
 import { type ProjectContext } from './getProjectContext';
 import { generateToolPlanningOutcome } from './llmOrchestration/inference';
 import { materializeActionStateGuards } from './materializeActionStateGuards';
-import { recordResolvedAgentReferences } from './recordResolvedAgentReferences';
 import { validateActions } from './validateActions';
 
 type CreateFastPathResultInput = {
@@ -311,6 +311,14 @@ export const parsePromptToActions = inject({ logger })(
                 let actionPlanningMode: ActionPlanningMode = 'execute';
                 const planningModeCall = planningModeCalls[0];
                 if (planningModeCall) {
+                    if (getRequestedActionPlanningMode(prompt) !== 'preview') {
+                        return {
+                            actions: [],
+                            rawText: prompt,
+                            requiresConfirmation: false,
+                            rejectionReason: 'Provider selected preview mode without an explicit user preview request.',
+                        };
+                    }
                     const firstExecutableCallIndex = planningOutcome.toolCalls.findIndex(
                         (call) =>
                             call.name !== ACTION_PLANNING_MODE_TOOL_NAME && call.name !== WORKFLOW_CAPABILITY_TOOL_NAME
@@ -526,16 +534,14 @@ export const parsePromptToActions = inject({ logger })(
                         };
                     }
 
-                    recordResolvedAgentReferences({
-                        projectCreatedAt: context.projectCreatedAt ?? null,
-                        references: bridged.resolvedReferences ?? [],
-                    });
                     return {
                         actions: guarded.actions,
                         rawText: prompt,
-                        requiresConfirmation: requiresAppActionConfirmation(guarded.actions),
+                        requiresConfirmation:
+                            actionPlanningMode === 'preview' || requiresAppActionConfirmation(guarded.actions),
                         executionMode: 'atomic',
                         workflowCapabilityId,
+                        ...(bridged.resolvedReferences ? { resolvedAgentReferences: bridged.resolvedReferences } : {}),
                     };
                 }
 

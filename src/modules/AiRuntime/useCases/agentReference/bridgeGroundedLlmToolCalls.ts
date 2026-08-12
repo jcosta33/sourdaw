@@ -3697,7 +3697,7 @@ function groundToolCall({
                   })
                 : [];
         const result = resolveAgentReference({
-            prompt: referenceResolutionMode === 'preview' ? prompt : targetPrompt,
+            prompt: targetPrompt,
             assertedId: assertedValue,
             capability: targetRule.capability,
             context,

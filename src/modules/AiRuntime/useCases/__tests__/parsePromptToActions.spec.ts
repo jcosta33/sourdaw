@@ -461,6 +461,51 @@ describe('parsePromptToActions', () => {
         expect(result.rejectionReason).toContain('not grounded in the user request');
     });
 
+    it('rejects provider-authored preview mode when the user did not request a preview', async () => {
+        vi.mocked(generateToolCalls).mockResolvedValue(
+            completePlan([
+                { name: 'selectActionPlanningMode', arguments: { mode: 'preview' } },
+                { name: 'removeTrack', arguments: { trackId: 'track-vocals' } },
+            ])
+        );
+
+        const result = await parsePromptToActions('delete Vocls', createMixerContext());
+
+        expect(result.actions).toEqual([]);
+        expect(result.rejectionReason).toBe('Provider selected preview mode without an explicit user preview request.');
+    });
+
+    it('forces confirmation for bounded actions requested as a preview', async () => {
+        mockBridgeGroundedLlmToolCalls.mockImplementation(actualBridge.bridgeGroundedLlmToolCalls);
+        vi.mocked(generateToolCalls).mockResolvedValue(
+            completePlan([
+                { name: 'selectActionPlanningMode', arguments: { mode: 'preview' } },
+                { name: 'muteTrack', arguments: { trackId: 'track-vocals', muted: true } },
+            ])
+        );
+
+        const result = await parsePromptToActions('preview mute Vocals', createMixerContext());
+
+        expect(result.actions).toHaveLength(1);
+        expect(result.requiresConfirmation).toBe(true);
+    });
+
+    it('does not borrow a target from an unrelated preview clause', async () => {
+        mockBridgeGroundedLlmToolCalls.mockImplementation(actualBridge.bridgeGroundedLlmToolCalls);
+        vi.mocked(generateToolCalls).mockResolvedValue(
+            completePlan([
+                { name: 'selectActionPlanningMode', arguments: { mode: 'preview' } },
+                { name: 'removeTrack', arguments: { trackId: 'track-vocals' } },
+                { name: 'muteTrack', arguments: { trackId: 'track-vocals', muted: true } },
+            ])
+        );
+
+        const result = await parsePromptToActions('preview deleting the track; mute Vocals', createMixerContext());
+
+        expect(result.actions).toEqual([]);
+        expect(result.rejectionReason).toContain('removeTrack');
+    });
+
     it('resolves recency from prior successful reference receipts rather than production decisions', async () => {
         mockBridgeGroundedLlmToolCalls.mockImplementation(actualBridge.bridgeGroundedLlmToolCalls);
         const context = createMixerContext();
@@ -473,13 +518,15 @@ describe('parsePromptToActions', () => {
             );
 
         const first = await parsePromptToActions('mute Vocals', context);
+        const firstReceipt = first.resolvedAgentReferences?.[0];
         const recentContext = {
             ...context,
-            agentReferenceHistory: structuredClone(agentReferenceHistoryStore.value?.entries ?? []),
+            agentReferenceHistory: firstReceipt ? [{ ...firstReceipt, referencedAt: 100 }] : [],
         };
         const second = await parsePromptToActions('solo the most recently referenced track', recentContext);
 
         expect(first.actions).toHaveLength(1);
+        expect(agentReferenceHistoryStore.value?.entries).toEqual([]);
         expect(recentContext.agentReferenceHistory).toHaveLength(1);
         expect(recentContext.agentReferenceHistory[0]?.id).toBe('track-vocals');
         expect(recentContext.agentReferenceHistory[0]?.confidence).toBe(1);
