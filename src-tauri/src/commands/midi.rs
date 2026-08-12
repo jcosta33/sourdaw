@@ -2,7 +2,7 @@ use crate::commands::binary_ipc::raw_body_bytes;
 use midir::{MidiInput, MidiInputConnection, MidiOutput, MidiOutputConnection};
 use rusb::{Context, DeviceHandle, UsbContext};
 use serde::Serialize;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use tauri::{AppHandle, Emitter};
 
@@ -69,13 +69,13 @@ struct PushConnection {
 }
 
 pub struct PushState {
-    connection: Mutex<Option<PushConnection>>,
+    connection: Arc<Mutex<Option<PushConnection>>>,
 }
 
 impl Default for PushState {
     fn default() -> Self {
         Self {
-            connection: Mutex::new(None),
+            connection: Arc::new(Mutex::new(None)),
         }
     }
 }
@@ -166,6 +166,16 @@ fn close_push_connection(active: PushConnection) {
     }
 }
 
+async fn run_push_transport_task<Task, Output>(task: Task) -> Result<Output, String>
+where
+    Task: FnOnce() -> Output + Send + 'static,
+    Output: Send + 'static,
+{
+    tauri::async_runtime::spawn_blocking(task)
+        .await
+        .map_err(|error| format!("Push transport task failed: {error}"))
+}
+
 fn push2_midi_payload(port: &str, timestamp: u64, message: &[u8]) -> Option<MidiMessagePayload> {
     if message.is_empty() || message.len() > PUSH2_MAX_MIDI_BYTES {
         return None;
@@ -177,17 +187,15 @@ fn push2_midi_payload(port: &str, timestamp: u64, message: &[u8]) -> Option<Midi
     })
 }
 
-#[tauri::command]
-pub fn open_push_transport(
+fn open_push_transport_blocking(
     model: String,
     app: AppHandle,
-    push_state: tauri::State<'_, PushState>,
+    connection: Arc<Mutex<Option<PushConnection>>>,
 ) -> Result<(), String> {
     if model != "push2" && model != "push3" {
         return Err("Unsupported Ableton Push model".to_owned());
     }
-    let mut connection = push_state
-        .connection
+    let mut connection = connection
         .lock()
         .map_err(|error| format!("Push 2 lock error: {error}"))?;
     if let Some(active) = connection.as_ref() {
@@ -254,17 +262,21 @@ pub fn open_push_transport(
 }
 
 #[tauri::command]
-pub fn send_push_midi(
-    request: tauri::ipc::Request<'_>,
+pub async fn open_push_transport(
+    model: String,
     app: AppHandle,
     push_state: tauri::State<'_, PushState>,
 ) -> Result<(), String> {
-    let bytes = raw_body_bytes(&request, "send_push_midi")?;
-    if bytes.is_empty() || bytes.len() > PUSH2_MAX_MIDI_BYTES {
-        return Err("Push MIDI payload has an invalid size".to_owned());
-    }
-    let mut connection = push_state
-        .connection
+    let connection = Arc::clone(&push_state.connection);
+    run_push_transport_task(move || open_push_transport_blocking(model, app, connection)).await?
+}
+
+fn send_push_midi_blocking(
+    bytes: Vec<u8>,
+    app: AppHandle,
+    connection: Arc<Mutex<Option<PushConnection>>>,
+) -> Result<(), String> {
+    let mut connection = connection
         .lock()
         .map_err(|error| format!("Push 2 lock error: {error}"))?;
     let active = connection
@@ -272,7 +284,7 @@ pub fn send_push_midi(
         .ok_or_else(|| "Ableton Push is not connected".to_owned())?;
     let result = active
         .midi_output
-        .send(bytes)
+        .send(&bytes)
         .map_err(|error| format!("Failed to send Push MIDI: {error}"));
     if result.is_err() {
         let model = active.model.clone();
@@ -285,17 +297,26 @@ pub fn send_push_midi(
 }
 
 #[tauri::command]
-pub fn write_push2_display(
+pub async fn send_push_midi(
     request: tauri::ipc::Request<'_>,
     app: AppHandle,
     push_state: tauri::State<'_, PushState>,
 ) -> Result<(), String> {
-    let bytes = raw_body_bytes(&request, "write_push2_display")?;
-    if !is_push2_display_payload_size(bytes.len()) {
-        return Err("Push 2 display payload has an invalid size".to_owned());
+    let bytes = raw_body_bytes(&request, "send_push_midi")?;
+    if bytes.is_empty() || bytes.len() > PUSH2_MAX_MIDI_BYTES {
+        return Err("Push MIDI payload has an invalid size".to_owned());
     }
-    let mut connection = push_state
-        .connection
+    let bytes = bytes.to_vec();
+    let connection = Arc::clone(&push_state.connection);
+    run_push_transport_task(move || send_push_midi_blocking(bytes, app, connection)).await?
+}
+
+fn write_push2_display_blocking(
+    bytes: Vec<u8>,
+    app: AppHandle,
+    connection: Arc<Mutex<Option<PushConnection>>>,
+) -> Result<(), String> {
+    let mut connection = connection
         .lock()
         .map_err(|error| format!("Push 2 lock error: {error}"))?;
     let active = connection
@@ -306,7 +327,7 @@ pub fn write_push2_display(
         .as_ref()
         .ok_or_else(|| "The connected Push model has no host-writable display".to_owned())?;
     let result = display
-        .write_bulk(PUSH2_DISPLAY_ENDPOINT, bytes, PUSH2_USB_TIMEOUT)
+        .write_bulk(PUSH2_DISPLAY_ENDPOINT, &bytes, PUSH2_USB_TIMEOUT)
         .map_err(|error| format!("Failed to write Push 2 display: {error}"))
         .and_then(|written| {
             if written == bytes.len() {
@@ -328,15 +349,36 @@ pub fn write_push2_display(
 }
 
 #[tauri::command]
-pub fn close_push_transport(push_state: tauri::State<'_, PushState>) -> Result<(), String> {
-    let mut connection = push_state
-        .connection
+pub async fn write_push2_display(
+    request: tauri::ipc::Request<'_>,
+    app: AppHandle,
+    push_state: tauri::State<'_, PushState>,
+) -> Result<(), String> {
+    let bytes = raw_body_bytes(&request, "write_push2_display")?;
+    if !is_push2_display_payload_size(bytes.len()) {
+        return Err("Push 2 display payload has an invalid size".to_owned());
+    }
+    let bytes = bytes.to_vec();
+    let connection = Arc::clone(&push_state.connection);
+    run_push_transport_task(move || write_push2_display_blocking(bytes, app, connection)).await?
+}
+
+fn close_push_transport_blocking(
+    connection: Arc<Mutex<Option<PushConnection>>>,
+) -> Result<(), String> {
+    let mut connection = connection
         .lock()
         .map_err(|error| format!("Push 2 lock error: {error}"))?;
     if let Some(active) = connection.take() {
         close_push_connection(active);
     }
     Ok(())
+}
+
+#[tauri::command]
+pub async fn close_push_transport(push_state: tauri::State<'_, PushState>) -> Result<(), String> {
+    let connection = Arc::clone(&push_state.connection);
+    run_push_transport_task(move || close_push_transport_blocking(connection)).await?
 }
 
 /// List all available MIDI input ports.
@@ -484,5 +526,14 @@ mod tests {
         assert!(!is_push2_display_payload_size(0));
         assert!(!is_push2_display_payload_size(17));
         assert!(!is_push2_display_payload_size(160 * 2_048 + 1));
+    }
+
+    #[test]
+    fn push_transport_tasks_leave_the_calling_thread() {
+        let caller = std::thread::current().id();
+        let worker =
+            tauri::async_runtime::block_on(run_push_transport_task(|| std::thread::current().id()))
+                .unwrap();
+        assert_ne!(worker, caller);
     }
 }
