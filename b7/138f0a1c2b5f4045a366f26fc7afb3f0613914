@@ -1,0 +1,61 @@
+src/modules/Command/useCases/index.ts
+  s_a40848e8f8cca9::t_20ef2b24a4c660 8
+src/modules/Command/useCases/executeVersionedCommandBatch.ts
+  s_a40848e8f8cca9::t_2bd46f5ef778fc 7,35-38
+package.json
+  s_a40848e8f8cca9::t_b22ee639ba91b6 16
+src/modules/Command/useCases/createExecutionCommandEnvelope.ts
+  s_a40848e8f8cca9::t_20ef2b24a4c660 6-7,10,50-51,54-56,58,70-71,75,80
+  s_a40848e8f8cca9::t_2ee9c8a29d4271 81
+src/app/__tests__/bootstrap.spec.ts
+  s_a40848e8f8cca9::t_8fdbe0feb8d657 116,199
+scripts/test-health-gate-scripts.sh
+  s_a40848e8f8cca9::t_b22ee639ba91b6 31-33,106,151,174
+  s_a40848e8f8cca9::t_bc203b12faff39 114-132
+src/modules/Command/useCases/hasCurrentCommandDeviceVersions.ts
+  s_a40848e8f8cca9::t_2bd46f5ef778fc 1-9
+  s_a40848e8f8cca9::t_46704b5c095610 10-12
+src/modules/Command/useCases/getCommandDeviceTypes.ts
+  s_a40848e8f8cca9::t_28fed2e7ebeb65 1-23
+src/modules/Arrangement/useCases/getDeviceContractVersionForCommand.ts
+  s_a40848e8f8cca9::t_28fed2e7ebeb65 1-32
+src/modules/Command/useCases/__tests__/versionedCommandContract.spec.ts
+  s_a40848e8f8cca9::t_836c2642300df6 745-746
+  s_a40848e8f8cca9::t_64ad3e7812e997 31,40
+  s_a40848e8f8cca9::t_12753c89f71e9b 324-325,801-828
+  s_a40848e8f8cca9::t_b3e33c49a51eaa 321-323
+  s_a40848e8f8cca9::t_430e3710435fa3 326
+  s_a40848e8f8cca9::t_13b8be85f7391d 829-831
+src/modules/Command/useCases/commandDeviceVersionsPort.ts
+  s_a40848e8f8cca9::t_28fed2e7ebeb65 1-24
+src/modules/Command/useCases/executeVersionedCommandEnvelope.ts
+  s_a40848e8f8cca9::t_2bd46f5ef778fc 8,19-22
+src/modules/Command/useCases/commandArgumentMetadata.ts
+  s_a40848e8f8cca9::t_28fed2e7ebeb65 1-114
+src/app/bootstrap.ts
+  s_a40848e8f8cca9::t_8fdbe0feb8d657 33,76,191
+src/modules/Arrangement/useCases/__tests__/getDeviceContractVersionForCommand.spec.ts
+  s_a40848e8f8cca9::t_64ad3e7812e997 1-14
+scripts/health-gates-web.sh
+  s_a40848e8f8cca9::t_b22ee639ba91b6 43
+src/modules/Command/useCases/parseVersionedCommandEnvelope.ts
+  s_a40848e8f8cca9::t_308f4ab3e72f5d 205,207,211-216,262
+src/modules/Arrangement/useCases/index.ts
+  s_a40848e8f8cca9::t_20ef2b24a4c660 14
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "b7138f0a1c2b5f4045a366f26fc7afb3f0613914",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
