@@ -1,9 +1,12 @@
 import {
     DEFAULT_MACRO_MAPPINGS,
+    FERMENTER_PARAMS,
     type FermenterMacroMapping,
     type FermenterMacroTarget,
     type FermenterPatch,
 } from '../models/FermenterPatch';
+
+const PARAMETER_RANGE_BY_ID = new Map(FERMENTER_PARAMS.map((parameter) => [parameter.id, parameter]));
 
 type ApplyFermenterMacroMappingInput = {
     patch: FermenterPatch;
@@ -13,7 +16,9 @@ type ApplyFermenterMacroMappingInput = {
 
 type ApplyFermenterMacroMappingOutput = FermenterPatch;
 
-const clamp01 = (value: number): number => Math.min(1, Math.max(0, value));
+function clamp01(value: number): number {
+    return Math.min(1, Math.max(0, value));
+}
 
 function clamp({ value, min, max }: { value: number; min: number; max: number }): number {
     return Math.min(max, Math.max(min, value));
@@ -42,11 +47,17 @@ function applyMacroTarget({
     value: number;
     target: FermenterMacroTarget;
 }): void {
-    if (typeof patch[target.target] !== 'number') {
+    const parameter = PARAMETER_RANGE_BY_ID.get(target.target);
+    if (!parameter) {
         return;
     }
 
-    (patch as Record<keyof FermenterPatch, unknown>)[target.target] = shapedBipolarValue({ value, target });
+    const mappedValue = shapedBipolarValue({ value, target });
+    (patch as Record<keyof FermenterPatch, unknown>)[target.target] = clamp({
+        value: mappedValue,
+        min: parameter.min,
+        max: parameter.max,
+    });
 }
 
 export function applyFermenterMacroMapping(input: ApplyFermenterMacroMappingInput): ApplyFermenterMacroMappingOutput {
