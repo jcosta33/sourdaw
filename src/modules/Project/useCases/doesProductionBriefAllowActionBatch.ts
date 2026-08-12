@@ -102,6 +102,28 @@ function projectedClipOverlapsRange(
         const clip = findClip(action.payload.clipId);
         return clip ? intervalOverlapsRange(clip.startBeat, action.payload.newEndBeat, scope) : false;
     }
+    if (action.type === 'nudgeClip') {
+        const clip = findClip(action.payload.clipId);
+        if (!clip) {
+            return false;
+        }
+        const startBeat = Math.max(0, clip.startBeat + action.payload.beats);
+        return intervalOverlapsRange(startBeat, startBeat + (clip.endBeat - clip.startBeat), scope);
+    }
+    if (action.type === 'glueClips') {
+        const clips = action.payload.clipIds.flatMap((clipId) => {
+            const clip = findClip(clipId);
+            return clip ? [clip] : [];
+        });
+        if (clips.length !== action.payload.clipIds.length) {
+            return false;
+        }
+        return intervalOverlapsRange(
+            Math.min(...clips.map((clip) => clip.startBeat)),
+            Math.max(...clips.map((clip) => clip.endBeat)),
+            scope
+        );
+    }
     return false;
 }
 
@@ -220,6 +242,17 @@ function adjustmentLayerActionOverlapsRange(
     scope: Extract<ProductionBriefScope, { kind: 'range' }>
 ): boolean {
     const layers = adjustmentLayerStore.value?.layers ?? [];
+    if (action.type === 'createAdjustmentLayer') {
+        return true;
+    }
+    if (action.type === 'addAdjustmentRegion') {
+        const layer = layers.find((candidate) => candidate.id === action.payload.layerId);
+        return Boolean(
+            layer &&
+            (adjustmentLayerOverlapsRange(layer, scope) ||
+                intervalOverlapsRange(action.payload.startBeat, action.payload.endBeat, scope))
+        );
+    }
     if (action.type === 'restoreAdjustmentLayerMutation') {
         const currentOverlap = layers.some((layer) => adjustmentLayerOverlapsRange(layer, scope));
         const replacementOverlap = action.payload.layers.some((layer) => adjustmentLayerOverlapsRange(layer, scope));
@@ -277,12 +310,17 @@ function trackContainerOverlapsRange(
         return false;
     }
     const track = trackStore.value?.tracks.find((candidate) => candidate.id === action.payload.trackId);
-    return Boolean(
-        track &&
-        [...track.clips, ...track.alternatives.flatMap((alternative) => alternative.clips)].some((clip) =>
-            intervalOverlapsRange(clip.startBeat, clip.endBeat, scope)
-        )
+    if (!track) {
+        return false;
+    }
+    const clipOverlap = [...track.clips, ...track.alternatives.flatMap((alternative) => alternative.clips)].some(
+        (clip) => intervalOverlapsRange(clip.startBeat, clip.endBeat, scope)
     );
+    const automationOverlap =
+        automationStore.value?.lanes.some(
+            (lane) => lane.trackId === track.id && automationLaneOverlapsRange(lane, scope)
+        ) ?? false;
+    return clipOverlap || automationOverlap;
 }
 
 function rippleDeleteOverlapsRange(
@@ -359,6 +397,10 @@ function trackOwnedIds(trackId: string): Set<string> {
         return new Set([trackId]);
     }
     const automationLanes = automationStore.value?.lanes.filter((lane) => lane.trackId === trackId) ?? [];
+    const adjustmentLayers =
+        adjustmentLayerStore.value?.layers.filter(
+            (layer) => layer.affectedTrackIds.length === 0 || layer.affectedTrackIds.includes(trackId)
+        ) ?? [];
     return new Set([
         track.id,
         ...track.clips.map((clip) => clip.id),
@@ -369,6 +411,8 @@ function trackOwnedIds(trackId: string): Set<string> {
         ...automationLanes.map((lane) => lane.id),
         ...automationLanes.flatMap((lane) => lane.points.flatMap((point) => (point.id ? [point.id] : []))),
         ...automationLanes.flatMap((lane) => lane.objects.map((object) => object.id)),
+        ...adjustmentLayers.map((layer) => layer.id),
+        ...adjustmentLayers.flatMap((layer) => layer.regions.map((region) => region.id)),
     ]);
 }
 
@@ -407,6 +451,12 @@ export function doesProductionBriefAllowActionBatch(actions: readonly AppAction[
         ...brief.locks.map((lock) => lock.scope),
         ...brief.decisions.filter((decision) => decision.status === 'locked').map((decision) => decision.scope),
     ];
+    if (
+        protectedScopes.length > 0 &&
+        projectActions.some((action) => action.type === 'cutClip' || action.type === 'pasteClip')
+    ) {
+        return false;
+    }
 
     return protectedScopes.every((scope) => {
         if (scope.kind === 'project') {
@@ -416,6 +466,9 @@ export function doesProductionBriefAllowActionBatch(actions: readonly AppAction[
             return projectActions.every((action) => !actionOverlapsRange(action, scope));
         }
         if (scope.kind === 'track') {
+            if (projectActions.some((action) => action.type === 'createAdjustmentLayer')) {
+                return false;
+            }
             const ownedIds = trackOwnedIds(scope.trackId);
             return [...ownedIds].every((id) => !actionStrings.has(id));
         }

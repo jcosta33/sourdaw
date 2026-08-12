@@ -105,6 +105,18 @@ describe('production brief', () => {
                     mix: 1,
                     color: '#ffffff',
                 },
+                {
+                    id: 'layer-global',
+                    name: 'Global color',
+                    effectType: 'saturation',
+                    parameters: [],
+                    affectedTrackIds: [],
+                    insertionIndex: 1,
+                    regions: [],
+                    enabled: true,
+                    mix: 1,
+                    color: '#eeeeee',
+                },
             ],
         });
         if (workspaceStore.value?.rippleEditing) {
@@ -553,13 +565,39 @@ describe('production brief', () => {
             ])
         ).toBe(false);
         expect(
+            doesProductionBriefAllowActionBatch([
+                { type: 'createAdjustmentLayer', payload: { name: 'New global layer', effectType: 'volume' } },
+            ])
+        ).toBe(false);
+        expect(
+            doesProductionBriefAllowActionBatch([
+                {
+                    type: 'addAdjustmentRegion',
+                    payload: { layerId: 'layer-global', startBeat: 60, endBeat: 68 },
+                },
+            ])
+        ).toBe(false);
+        expect(
             doesProductionBriefAllowActionBatch([{ type: 'removeTrack', payload: { trackId: 'track-guitar' } }])
+        ).toBe(false);
+        expect(
+            doesProductionBriefAllowActionBatch([{ type: 'removeTrack', payload: { trackId: 'track-drums' } }])
         ).toBe(false);
         expect(
             doesProductionBriefAllowActionBatch([{ type: 'duplicateTrack', payload: { trackId: 'track-guitar' } }])
         ).toBe(false);
         expect(
             doesProductionBriefAllowActionBatch([{ type: 'duplicateClip', payload: { clipId: 'clip-prechorus' } }])
+        ).toBe(false);
+        expect(
+            doesProductionBriefAllowActionBatch([
+                { type: 'nudgeClip', payload: { clipId: 'clip-prechorus', beats: 8 } },
+            ])
+        ).toBe(false);
+        expect(
+            doesProductionBriefAllowActionBatch([
+                { type: 'glueClips', payload: { clipIds: ['clip-prechorus', 'clip-2'] } },
+            ])
         ).toBe(false);
         expect(
             doesProductionBriefAllowActionBatch([
@@ -577,6 +615,8 @@ describe('production brief', () => {
         expect(
             doesProductionBriefAllowActionBatch([{ type: 'deleteTime', payload: { startBeat: 16, endBeat: 20 } }])
         ).toBe(false);
+        expect(doesProductionBriefAllowActionBatch([{ type: 'cutClip', payload: undefined }])).toBe(false);
+        expect(doesProductionBriefAllowActionBatch([{ type: 'pasteClip', payload: undefined }])).toBe(false);
         expect(
             doesProductionBriefAllowActionBatch([
                 {
@@ -642,6 +682,11 @@ describe('production brief', () => {
         expect(
             doesProductionBriefAllowActionBatch([
                 { type: 'setAutomationLaneEnabled', payload: { laneId: 'lane-drums-gain', enabled: false } },
+            ])
+        ).toBe(false);
+        expect(
+            doesProductionBriefAllowActionBatch([
+                { type: 'setLayerMix', payload: { layerId: 'layer-global', mix: 0.5 } },
             ])
         ).toBe(false);
         expect(
