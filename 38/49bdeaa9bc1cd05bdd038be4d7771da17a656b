@@ -1,0 +1,37 @@
+src/modules/Project/useCases/doesProductionBriefAllowActionBatch.ts
+  s_a40848e8f8cca9::t_b5a22ba0a9f626 1,43-47,51-58,60-65,88-90
+  s_a40848e8f8cca9::t_8b3bbf94c084f2 59
+src/modules/Project/handlers/project/handleSetProductionBrief.ts
+  s_a40848e8f8cca9::t_70ae70f7cdce63 30-33,83-85
+  s_a40848e8f8cca9::t_fd8776d7d5379e 10-29,34-40,49,79-81
+  s_a40848e8f8cca9::t_dfde2cd315b729 88
+  s_a40848e8f8cca9::t_392dfe5a07aa1e 82,86
+src/modules/Project/useCases/__tests__/productionBrief.spec.ts
+  s_a40848e8f8cca9::t_cc39a5e55ab7d3 1,8,10,20-23,169-171,173-179,181-197
+  s_a40848e8f8cca9::t_92121b98338ce0 97-135,168,172,180,198-199,299-313
+  s_a40848e8f8cca9::t_a973a3385e3c57 136-167
+  s_a40848e8f8cca9::t_8b563da9f08f57 2-3
+src/modules/Project/useCases/index.ts
+  s_a40848e8f8cca9::t_cc39a5e55ab7d3 22
+src/modules/Project/models/ProductionBrief.ts
+  s_a40848e8f8cca9::t_c568188e133c1e 273-283,295
+src/modules/Project/useCases/acceptCreativeIntent.ts
+  s_a40848e8f8cca9::t_8b563da9f08f57 26
+  s_a40848e8f8cca9::t_cc39a5e55ab7d3 1-25,27-53
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "3849bdeaa9bc1cd05bdd038be4d7771da17a656b",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
