@@ -5,7 +5,9 @@ export const ACTION_PLANNING_MODE_TOOL_NAME = 'selectActionPlanningMode';
 export type ActionPlanningMode = 'execute' | 'preview';
 
 export function getRequestedActionPlanningMode(prompt: string): ActionPlanningMode {
-    return /\bpreview\b/iu.test(prompt.normalize('NFKC')) ? 'preview' : 'execute';
+    const normalized = prompt.normalize('NFKC').toLocaleLowerCase();
+    const previewIsNegated = /\b(?:do not|don't|dont|never|without)\s+(?:\w+\s+){0,2}preview\b/u.test(normalized);
+    return !previewIsNegated && /\bpreview\b/u.test(normalized) ? 'preview' : 'execute';
 }
 
 export function createActionPlanningModeToolSchema(): ToolSchema {
