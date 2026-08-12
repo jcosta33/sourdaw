@@ -15,12 +15,12 @@ boundary rule, check it against every row below.
 `pnpm deps:validate` (`scripts/check-dependency-boundaries.mjs`) runs four cruises, each with its
 own exact known-violations baseline (repaired debt cannot stay silently authorized):
 
-| Cruise       | Config                                 | Sees                                       |
-| ------------ | -------------------------------------- | ------------------------------------------ |
-| main         | `.dependency-cruiser.cjs`              | value edges                                |
-| reachability | `.dependency-cruiser.reachability.cjs` | transitive causal edges                    |
-| types        | `.dependency-cruiser.types.cjs`        | `type-only` edges (`tsPreCompilationDeps`) |
-| tests        | `.dependency-cruiser.tests.cjs`        | test-inclusive barrel boundaries           |
+| Cruise       | Config                                 | Sees                                                    |
+| ------------ | -------------------------------------- | ------------------------------------------------------- |
+| main         | `.dependency-cruiser.cjs`              | value + tagged type-only edges (`tsPreCompilationDeps`) |
+| reachability | `.dependency-cruiser.reachability.cjs` | transitive causal edges                                 |
+| types        | `.dependency-cruiser.types.cjs`        | type-only-specific duplicate boundary rules             |
+| tests        | `.dependency-cruiser.tests.cjs`        | test-inclusive barrel boundaries                        |
 
 ## The six laundering patterns
 

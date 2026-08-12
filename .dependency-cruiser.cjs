@@ -5,7 +5,7 @@
 // `pnpm deps:validate` runs scripts/check-dependency-boundaries.mjs. The script
 // executes every cruise with --no-cache and compares current error evidence to
 // its exact baseline, rejecting both new and stale rows:
-//   1) this main cruise (value edges; warnings remain visible)
+//   1) this main cruise (value + tagged type-only edges; warnings remain visible)
 //   2) .dependency-cruiser.reachability.cjs (causal component → useCases edges)
 //   3) .dependency-cruiser.types.cjs (type-only boundary edges)
 //   4) .dependency-cruiser.tests.cjs (test-inclusive barrel boundaries)
