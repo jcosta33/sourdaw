@@ -17,6 +17,8 @@ export type SessionOptions = {
     memoryBudgetBytes?: number;
 };
 
+export type OnnxExecutionProvider = NonNullable<SessionOptions['executionProviders']>[number];
+
 // Main thread → Worker
 export type WorkerRequest =
     | {
@@ -98,7 +100,12 @@ export type WorkerRequest =
 
 // Worker → Main thread
 export type WorkerResponse =
-    | { type: 'session-created'; requestId: string; modelId: string }
+    | {
+          type: 'session-created';
+          requestId: string;
+          modelId: string;
+          executionProviders?: OnnxExecutionProvider[];
+      }
     | {
           type: 'inference-result';
           requestId: string;

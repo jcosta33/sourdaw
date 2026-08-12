@@ -12,7 +12,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { injectDependencies } from '#/infra/di/testing/injectDependencies';
 
 const loadOnnxSession = vi.hoisted(() =>
-    vi.fn<(input: { modelId: string; modelData: ArrayBuffer }) => Promise<void>>()
+    vi.fn<(input: { modelId: string; modelData: ArrayBuffer }) => Promise<string[]>>()
 );
 const runKokoroTts = vi.hoisted(() =>
     vi.fn<(input: unknown) => Promise<{ type: 'tts-result'; audio: Float32Array; samplingRate: number }>>()
@@ -80,7 +80,7 @@ function resolve_audio(sampleCount: number): void {
 describe('measureInferenceThroughput', () => {
     beforeEach(() => {
         vi.restoreAllMocks();
-        loadOnnxSession.mockReset().mockResolvedValue(undefined);
+        loadOnnxSession.mockReset().mockResolvedValue(['webgpu', 'wasm']);
         runKokoroTts.mockReset();
         install_webgpu();
         install_read_model();
@@ -103,6 +103,17 @@ describe('measureInferenceThroughput', () => {
         });
     });
 
+    it('refuses to publish a WebGPU measurement when the worker used only WASM', async () => {
+        loadOnnxSession.mockResolvedValue(['wasm']);
+        resolve_audio(ONE_SECOND_OF_AUDIO);
+        pin_elapsed_ms(1000);
+
+        const throughput = await measureInferenceThroughput();
+
+        expect(throughput).toEqual({ status: 'not-measured', reason: 'runtime-unavailable' });
+        expect(runKokoroTts).not.toHaveBeenCalled();
+    });
+
     it('should report a factor below one when the render is slower than real time', async () => {
         // 1 s of audio produced in 8 s of wall clock is 0.125x real time.
         resolve_audio(ONE_SECOND_OF_AUDIO);
@@ -119,7 +130,7 @@ describe('measureInferenceThroughput', () => {
         const clock = vi.spyOn(performance, 'now');
         loadOnnxSession.mockImplementation(() => {
             clock.mockReturnValueOnce(5000).mockReturnValueOnce(6000);
-            return Promise.resolve();
+            return Promise.resolve(['webgpu', 'wasm']);
         });
         clock.mockReturnValue(0);
         resolve_audio(2 * ONE_SECOND_OF_AUDIO);
