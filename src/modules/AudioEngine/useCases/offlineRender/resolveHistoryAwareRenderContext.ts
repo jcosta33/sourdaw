@@ -31,9 +31,6 @@ export function resolveHistoryAwareRenderContext(input: ResolveRenderContextInpu
         startBeat: 0,
     });
     const sampleRate = input.sampleRate ?? 44_100;
-    if (Math.ceil(renderContext.durationSeconds * sampleRate) > MAX_OFFLINE_FRAMES) {
-        throw new Error('The requested region exceeds the renderer frame limit when its timeline history is included');
-    }
     const historyProjection = renderContext.projectPpqEndpoints?.({
         startPpq: 0,
         endPpq: startBeat,
@@ -45,9 +42,15 @@ export function resolveHistoryAwareRenderContext(input: ResolveRenderContextInpu
         beatToSeconds(startBeat, renderContext.defaultTempo, renderContext.changes) -
         beatToSeconds(0, renderContext.defaultTempo, renderContext.changes);
     const historySeconds = Math.max(0, historyProjection?.durationSeconds ?? legacyHistorySeconds);
+    const outputDurationSeconds = Math.max(0, renderContext.durationSeconds - historySeconds);
+    const retainedFrameCount =
+        Math.ceil(renderContext.durationSeconds * sampleRate) + Math.ceil(outputDurationSeconds * sampleRate);
+    if (retainedFrameCount > MAX_OFFLINE_FRAMES) {
+        throw new Error('The requested region exceeds the renderer frame limit when its timeline history is included');
+    }
     return {
         renderContext,
         historySeconds,
-        outputDurationSeconds: Math.max(0, renderContext.durationSeconds - historySeconds),
+        outputDurationSeconds,
     };
 }

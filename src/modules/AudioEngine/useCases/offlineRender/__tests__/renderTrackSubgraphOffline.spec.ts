@@ -1194,6 +1194,20 @@ describe('renderTrackSubgraphOffline', () => {
             expect(requestedFrameCounts).toEqual([]);
         });
 
+        it('budgets the retained history buffer and cropped output before allocating a context', async () => {
+            const track = TrackDummy.create({ id: 'track-1', kind: 'audio' });
+
+            await expect(
+                renderTrackSubgraphOffline({
+                    targetTrackId: track.id,
+                    renderTracks: [track],
+                    startBeat: 48_691,
+                    endBeat: 48_695,
+                })
+            ).rejects.toThrow();
+            expect(requestedFrameCounts).toEqual([]);
+        });
+
         /**
          * AC-1. The freeze/bounce path builds a bare context and registers
          * neither out-of-band module, so freezing a sidechained track bakes
