@@ -1,0 +1,27 @@
+src/modules/ControlSurface/useCases/pushIntegration/__tests__/disconnectPush.spec.ts
+  s_bc88af7d3b054c::t_ebf550661c866b 42,46-47
+src/modules/ControlSurface/repositories/__tests__/pushHardwareTransport.spec.ts
+  s_bc88af7d3b054c::t_cee59581315d14 72
+src/modules/ControlSurface/useCases/pushIntegration/disconnectPush.ts
+  s_bc88af7d3b054c::t_ae1d289e723b5b 16
+  s_bc88af7d3b054c::t_ebf550661c866b 5-10,12-15
+src/modules/ControlSurface/useCases/pushIntegration/connectPush.ts
+  s_bc88af7d3b054c::t_cf938b2c264480 8
+  s_bc88af7d3b054c::t_48bd804c5a8b24 10
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "9798fc40a434c3ca728b15b5b3108c43da6ba2c8",
+  "prompts": {},
+  "sessions": {
+    "s_bc88af7d3b054c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f9b4a-11a2-7f61-8dfb-76eed0eb2a9c",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
