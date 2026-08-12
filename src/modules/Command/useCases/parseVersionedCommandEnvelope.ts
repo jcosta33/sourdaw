@@ -7,9 +7,8 @@ import {
     type VersionedCommandEnvelope,
 } from '../models/VersionedCommandEnvelope';
 
-import { executableAppActionDescriptorByType } from './executableAppActionRegistry';
 import { getVersionedCommandArgumentsDigest } from './getVersionedCommandArgumentsDigest';
-import { versionedCommandArgumentKeys } from './versionedCommandArgumentKeys';
+import { validateVersionedCommandArguments } from './versionedCommandArgumentKeys';
 
 type ParseVersionedCommandEnvelopeResult =
     { status: 'valid'; envelope: VersionedCommandEnvelope } | { status: 'invalid'; reason: string };
@@ -41,61 +40,6 @@ const ENVELOPE_KEYS = [
     'applicationAssignedIds',
 ] as const;
 
-const IMPORT_STEM_SET_ARGUMENT_SCHEMA = {
-    type: 'object',
-    properties: {
-        selectionId: { type: 'string' },
-        groupName: { type: 'string', minLength: 1, maxLength: 80 },
-        projectTempo: { type: 'number' },
-        folderId: { type: 'string' },
-        folderColor: { type: 'string' },
-        folderAlternativeId: { type: 'string' },
-        stems: {
-            type: 'array',
-            minItems: 2,
-            maxItems: 32,
-            items: {
-                type: 'object',
-                properties: {
-                    stemId: { type: 'string' },
-                    sourceName: { type: 'string' },
-                    role: { type: 'string' },
-                    sourceTempo: { type: 'number' },
-                    durationSeconds: { type: 'number' },
-                    sourceBytes: { type: 'number' },
-                    decodedBytes: { type: 'number' },
-                    audioBufferId: { type: 'string' },
-                    assetHash: { type: 'string' },
-                    assetLeaseId: { type: 'string' },
-                    trackId: { type: 'string' },
-                    trackName: { type: 'string' },
-                    trackGain: { type: 'number' },
-                    trackPan: { type: 'number' },
-                    trackColor: { type: 'string' },
-                    trackAlternativeId: { type: 'string' },
-                    clipId: { type: 'string' },
-                },
-                required: [
-                    'stemId',
-                    'sourceName',
-                    'role',
-                    'sourceTempo',
-                    'durationSeconds',
-                    'sourceBytes',
-                    'decodedBytes',
-                    'audioBufferId',
-                    'trackId',
-                    'trackName',
-                    'trackGain',
-                    'trackPan',
-                    'clipId',
-                ],
-            },
-        },
-    },
-    required: ['selectionId', 'groupName', 'projectTempo', 'folderId', 'stems'],
-} as const;
-
 function isRecord(value: unknown): value is Record<string, unknown> {
     return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
@@ -114,96 +58,6 @@ function isFiniteNumber(value: unknown): value is number {
 
 function isUniqueStringArray(value: unknown): value is string[] {
     return Array.isArray(value) && value.every(isNonEmptyString) && new Set(value).size === value.length;
-}
-
-function isJsonSafe(value: unknown): boolean {
-    if (value === null || typeof value === 'string' || typeof value === 'boolean') {
-        return true;
-    }
-    if (typeof value === 'number') {
-        return Number.isFinite(value);
-    }
-    if (Array.isArray(value)) {
-        return value.every(isJsonSafe);
-    }
-    if (!isRecord(value) || Object.getPrototypeOf(value) !== Object.prototype) {
-        return false;
-    }
-    return Object.values(value).every(isJsonSafe);
-}
-
-function matchesJsonSchema(value: unknown, schemaValue: unknown): boolean {
-    if (!isRecord(schemaValue)) {
-        return false;
-    }
-    if (Array.isArray(schemaValue.enum) && !schemaValue.enum.some((candidate) => Object.is(candidate, value))) {
-        return false;
-    }
-    if (schemaValue.type === 'string') {
-        if (typeof value !== 'string') {
-            return false;
-        }
-        if (typeof schemaValue.minLength === 'number' && value.length < schemaValue.minLength) {
-            return false;
-        }
-        if (typeof schemaValue.maxLength === 'number' && value.length > schemaValue.maxLength) {
-            return false;
-        }
-        if (typeof schemaValue.pattern === 'string' && !new RegExp(schemaValue.pattern).test(value)) {
-            return false;
-        }
-        return true;
-    }
-    if (schemaValue.type === 'number' || schemaValue.type === 'integer') {
-        if (!isFiniteNumber(value) || (schemaValue.type === 'integer' && !Number.isInteger(value))) {
-            return false;
-        }
-        if (typeof schemaValue.minimum === 'number' && value < schemaValue.minimum) {
-            return false;
-        }
-        if (typeof schemaValue.maximum === 'number' && value > schemaValue.maximum) {
-            return false;
-        }
-        return true;
-    }
-    if (schemaValue.type === 'boolean') {
-        return typeof value === 'boolean';
-    }
-    if (schemaValue.type === 'array') {
-        if (!Array.isArray(value)) {
-            return false;
-        }
-        if (typeof schemaValue.minItems === 'number' && value.length < schemaValue.minItems) {
-            return false;
-        }
-        if (typeof schemaValue.maxItems === 'number' && value.length > schemaValue.maxItems) {
-            return false;
-        }
-        if (
-            schemaValue.uniqueItems === true &&
-            new Set(value.map((item) => JSON.stringify(item))).size !== value.length
-        ) {
-            return false;
-        }
-        return schemaValue.items === undefined || value.every((item) => matchesJsonSchema(item, schemaValue.items));
-    }
-    if (schemaValue.type === 'object') {
-        if (!isRecord(value)) {
-            return false;
-        }
-        const properties = isRecord(schemaValue.properties) ? schemaValue.properties : {};
-        if (!hasOnlyKeys(value, Object.keys(properties))) {
-            return false;
-        }
-        const required = Array.isArray(schemaValue.required) ? schemaValue.required : [];
-        if (!required.every((key) => typeof key === 'string' && Object.hasOwn(value, key))) {
-            return false;
-        }
-        return Object.entries(properties).every(
-            ([key, propertySchema]) => !Object.hasOwn(value, key) || matchesJsonSchema(value[key], propertySchema)
-        );
-    }
-    return false;
 }
 
 function isObjectReference(value: unknown): value is CommandObjectReference {
@@ -248,40 +102,29 @@ function isApplicationAssignedId(value: unknown): value is CommandApplicationAss
     );
 }
 
+function getArgumentPathValue(argumentsValue: Record<string, unknown>, argument: string): unknown {
+    let current: unknown = argumentsValue;
+    for (const part of argument.split('.')) {
+        const match = /^([A-Za-z_][A-Za-z0-9_]*)(?:\[(\d+)\])?$/.exec(part);
+        if (!match || !isRecord(current) || !Object.hasOwn(current, match[1]!)) {
+            return undefined;
+        }
+        current = current[match[1]!];
+        if (match[2] !== undefined) {
+            if (!Array.isArray(current)) {
+                return undefined;
+            }
+            current = current[Number(match[2])];
+        }
+    }
+    return current;
+}
+
 function hasValidArguments(operation: string, value: unknown): boolean {
-    if (!isRecord(value) || !isJsonSafe(value)) {
+    if (!isRecord(value)) {
         return false;
     }
-    if (operation === 'humanizeNotes') {
-        const allowedKeys = ['clipId', 'amount', 'velocityAmount', 'seed'];
-        return (
-            hasOnlyKeys(value, allowedKeys) &&
-            isNonEmptyString(value.clipId) &&
-            isFiniteNumber(value.amount) &&
-            (value.velocityAmount === undefined || isFiniteNumber(value.velocityAmount)) &&
-            (value.seed === undefined || isFiniteNumber(value.seed))
-        );
-    }
-    if (operation === 'importStemSet') {
-        return matchesJsonSchema(value, IMPORT_STEM_SET_ARGUMENT_SCHEMA);
-    }
-    const descriptor = executableAppActionDescriptorByType.get(operation);
-    if (!descriptor) {
-        return false;
-    }
-    const allowedKeys = versionedCommandArgumentKeys[descriptor.actionType];
-    if (!hasOnlyKeys(value, allowedKeys)) {
-        return false;
-    }
-    if (Object.keys(descriptor.parameters.properties).length === 0) {
-        return Object.keys(value).length === 0;
-    }
-    if (!descriptor.parameters.required.every((argument) => Object.hasOwn(value, argument))) {
-        return false;
-    }
-    return Object.entries(descriptor.parameters.properties).every(
-        ([argument, schema]) => !Object.hasOwn(value, argument) || matchesJsonSchema(value[argument], schema)
-    );
+    return validateVersionedCommandArguments(operation, value);
 }
 
 function hasCompleteReferenceMetadata(
@@ -399,7 +242,7 @@ function validateEnvelope(value: unknown): ParseVersionedCommandEnvelopeResult {
         !value.applicationAssignedIds.every(isApplicationAssignedId) ||
         !isRecord(argumentsValue) ||
         value.applicationAssignedIds.some(
-            ({ argument, value: assignedValue }) => argumentsValue[argument] !== assignedValue
+            ({ argument, value: assignedValue }) => getArgumentPathValue(argumentsValue, argument) !== assignedValue
         )
     ) {
         return { status: 'invalid', reason: 'Application-assigned command IDs are invalid' };

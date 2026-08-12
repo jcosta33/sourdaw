@@ -37,7 +37,29 @@ function isRecord(value: unknown): value is Record<string, unknown> {
     return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
+function materializeNestedNoteIds(action: Extract<AppAction, { type: 'addNotes' }>): MaterializedCommandApplicationIds {
+    if (action.payload.notes.every((note) => typeof note.id === 'string' && note.id !== '')) {
+        return { action, applicationAssignedIds: [] };
+    }
+
+    const cloned = structuredClone(action);
+    const applicationAssignedIds: CommandApplicationAssignedId[] = [];
+    for (const [index, note] of cloned.payload.notes.entries()) {
+        if (typeof note.id === 'string' && note.id !== '') {
+            continue;
+        }
+        const value = `note-command-${crypto.randomUUID()}`;
+        note.id = value;
+        applicationAssignedIds.push({ argument: `notes[${String(index)}].id`, value });
+    }
+    return { action: cloned, applicationAssignedIds };
+}
+
 export function materializeCommandApplicationIds(action: AppAction): MaterializedCommandApplicationIds {
+    if (action.type === 'addNotes') {
+        return materializeNestedNoteIds(action);
+    }
+
     const rule = APPLICATION_ID_RULES[action.type];
     const payload: unknown = 'payload' in action ? action.payload : undefined;
     if (!rule || !isRecord(payload)) {

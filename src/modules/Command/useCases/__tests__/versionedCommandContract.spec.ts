@@ -194,6 +194,139 @@ describe('versioned command contract', () => {
         ]);
     });
 
+    it('materializes nested note identities before digesting and receipts every assignment', () => {
+        vi.spyOn(crypto, 'randomUUID')
+            .mockReturnValueOnce('11111111-aaaa-4aaa-8aaa-aaaaaaaaaaaa')
+            .mockReturnValueOnce('22222222-bbbb-4bbb-8bbb-bbbbbbbbbbbb')
+            .mockReturnValueOnce('33333333-cccc-4ccc-8ccc-cccccccccccc');
+
+        const command = createExecutionCommandEnvelope({
+            action: {
+                type: 'addNotes',
+                payload: {
+                    clipId: 'clip-1',
+                    notes: [
+                        { pitch: 60, startBeat: 0, duration: 1 },
+                        { pitch: 64, startBeat: 1, duration: 1, velocity: 96 },
+                    ],
+                },
+            },
+            expectedEffect: 'Add two MIDI notes.',
+            normalizedProjectRevision: 'revision-1',
+        });
+
+        expect(command.action).toEqual({
+            type: 'addNotes',
+            payload: {
+                clipId: 'clip-1',
+                notes: [
+                    {
+                        id: 'note-command-11111111-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+                        pitch: 60,
+                        startBeat: 0,
+                        duration: 1,
+                    },
+                    {
+                        id: 'note-command-22222222-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+                        pitch: 64,
+                        startBeat: 1,
+                        duration: 1,
+                        velocity: 96,
+                    },
+                ],
+            },
+        });
+        expect(command.envelope.arguments).toEqual(command.action.payload);
+        expect(command.envelope.applicationAssignedIds).toEqual([
+            {
+                argument: 'notes[0].id',
+                value: 'note-command-11111111-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+            },
+            {
+                argument: 'notes[1].id',
+                value: 'note-command-22222222-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+            },
+        ]);
+        expect(parseVersionedCommandEnvelope(serializeVersionedCommandEnvelope(command.envelope))).toEqual({
+            status: 'valid',
+            envelope: command.envelope,
+        });
+        expect(createVersionedCommandReceipt({ envelope: command.envelope }).applicationAssigned.ids).toEqual([
+            { field: 'commandId', value: '33333333-cccc-4ccc-8ccc-cccccccccccc' },
+            { field: 'objectId', value: 'note-command-11111111-aaaa-4aaa-8aaa-aaaaaaaaaaaa' },
+            { field: 'objectId', value: 'note-command-22222222-bbbb-4bbb-8bbb-bbbbbbbbbbbb' },
+        ]);
+    });
+
+    it('rejects recomputed canonical arguments with invalid application-owned field types', () => {
+        const command = createExecutionCommandEnvelope({
+            action: {
+                type: 'addTrack',
+                payload: {
+                    id: 'track-1',
+                    initialAlternativeId: 'alternative-1',
+                    name: 'Lead',
+                    kind: 'audio',
+                    color: '#fff',
+                    select: true,
+                },
+            },
+            expectedEffect: 'Add the Lead track.',
+            normalizedProjectRevision: 'revision-1',
+        });
+
+        for (const invalidArguments of [
+            { ...command.envelope.arguments, id: 1 },
+            { ...command.envelope.arguments, initialAlternativeId: false },
+            { ...command.envelope.arguments, color: 12 },
+            { ...command.envelope.arguments, select: 'yes' },
+        ]) {
+            expect(
+                parseVersionedCommandEnvelope(
+                    JSON.stringify({
+                        ...command.envelope,
+                        arguments: invalidArguments,
+                        argumentsDigest: getVersionedCommandArgumentsDigest({
+                            operation: command.envelope.operation,
+                            arguments: invalidArguments,
+                        }),
+                    })
+                ).status
+            ).toBe('invalid');
+        }
+    });
+
+    it('rejects recomputed nested canonical arguments with invalid field types', () => {
+        const command = createExecutionCommandEnvelope({
+            action: {
+                type: 'addNotes',
+                payload: {
+                    clipId: 'clip-1',
+                    notes: [{ id: 'note-1', pitch: 60, startBeat: 0, duration: 1 }],
+                },
+            },
+            expectedEffect: 'Add one MIDI note.',
+            normalizedProjectRevision: 'revision-1',
+        });
+        const invalidArguments = {
+            ...command.envelope.arguments,
+            notes: [{ id: 'note-1', pitch: 'C4', startBeat: 0, duration: 1 }],
+        };
+
+        expect(
+            parseVersionedCommandEnvelope(
+                JSON.stringify({
+                    ...command.envelope,
+                    arguments: invalidArguments,
+                    argumentsDigest: getVersionedCommandArgumentsDigest({
+                        operation: command.envelope.operation,
+                        arguments: invalidArguments,
+                    }),
+                })
+            ).status
+        ).toBe('invalid');
+    });
+
     it('rejects recomputed nested argument extensions outside the canonical command shape', () => {
         const stem = {
             stemId: 'stem-kick',
