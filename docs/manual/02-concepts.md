@@ -30,13 +30,13 @@ Switching tabs never changes what is playing or what is recorded. They are views
 
 A track is a lane that carries one kind of material and one signal path. Five kinds exist:
 
-| Kind | Carries | Use it for |
-|---|---|---|
-| **Audio** | Recorded or imported sound | Vocals, guitars, samples, stems |
-| **MIDI** | Notes and controller data | Anything played by an instrument device |
-| **Bus** | No material of its own | Grouping several tracks under one fader and one device chain |
-| **Folder** | No material of its own | Tidying the track list without changing the signal path |
-| **Master** | The final mix | The last stage before export |
+| Kind       | Carries                    | Use it for                                                   |
+| ---------- | -------------------------- | ------------------------------------------------------------ |
+| **Audio**  | Recorded or imported sound | Vocals, guitars, samples, stems                              |
+| **MIDI**   | Notes and controller data  | Anything played by an instrument device                      |
+| **Bus**    | No material of its own     | Grouping several tracks under one fader and one device chain |
+| **Folder** | No material of its own     | Tidying the track list without changing the signal path      |
+| **Master** | The final mix              | The last stage before export                                 |
 
 The distinction that matters: a **bus** changes the audio path — everything fed into it is summed
 and processed together. A **folder** changes only the view. Collapsing a folder hides tracks; it does
@@ -98,7 +98,7 @@ many notes it touched.
 > devices is uneven. The channel strip's level controls record: riding a fader or a pan control goes
 > on the stack as one step per gesture rather than one per twitch, and removing a channel puts the
 > track back with its clips and its devices. Its buttons do not, on purpose — muting, soloing and
-> solo-safing a channel are things you do *while* listening, dozens of times a pass, and the history
+> solo-safing a channel are things you do _while_ listening, dozens of times a pass, and the history
 > is shared with everyone in the session, so those toggles are left out of it rather than spending
 > your collaborators' history on them. They still apply, save, and sync like anything else; they are
 > simply not something ⌘Z walks back. The device chain below the strip is not covered at all: adding
@@ -114,23 +114,32 @@ many notes it touched.
 > to it in the same moment. Take a branch before anything you would be unhappy to lose in a shared
 > session.
 >
-> Whether a device records anything is decided device by device, so the device page is the
-> authority where there is one. Gluten is the furthest along: moving a control and releasing it is
-> one undo step, while loading a preset or pressing a Quick move is not recorded at all. Grinder
-> records nothing you do by hand — knobs, presets, and snapshot recalls alike. Dutch Oven records a
-> loaded space as one grouped step, so a single press of undo restores the whole space.
+> Device history is decided by the control surface you use, not merely by the device. The table
+> below is the complete authority for direct changes in the built-in device panels today. A
+> generic parameter control in the Inspector applies and saves its value but does not add an undo
+> entry unless the table names that change explicitly.
 >
-> What undo restores is the project and the sound, not the panel. Every device draws its controls
-> from its own session state, and undo writes project truth and the audio engine without writing
-> back into that state — so after undoing a device change the control still shows the value you set
-> while you hear the value undo restored. **This is a defect and is being fixed**, not a decision
-> about how devices should behave; do not build a habit around it.
+> | Device          | Direct changes that add undo entries                                                                                         |
+> | --------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+> | **Bacteria**    | None of its panel controls.                                                                                                  |
+> | **Crumbs**      | Parameter gestures after release. Sample and operating-mode changes save and sync but are not undoable.                      |
+> | **Crust**       | None of its panel controls.                                                                                                  |
+> | **CvGate**      | None of its panel controls.                                                                                                  |
+> | **Fermenter**   | None of its panel controls.                                                                                                  |
+> | **Gluten**      | Individual control gestures after release. Preset loads and Quick moves are not recorded.                                    |
+> | **Grand Boule** | Master gain, soundboard send, sympathetic send, lid position, and mic position. Other panel controls are not recorded.       |
+> | **Grinder**     | None: knobs, presets, imported models, and snapshot recalls are not recorded.                                                |
+> | **Knead**       | Committing a pitch edit records the clip edit; its device controls are not recorded.                                         |
+> | **Levain**      | None. Instrument and articulation selections save and sync but are not undoable.                                             |
+> | **Proof**       | None of its panel controls.                                                                                                  |
+> | **Dutch Oven**  | Individual controls and algorithms; loading a Space creates grouped parameter entries that undo together.                    |
+> | **Toaster**     | Pattern groove-template selection and committed groove amount. Kit changes save and sync but are not undoable.               |
+> | **Tuner**       | A completed Concert A reference gesture.                                                                                     |
+> | **Yeast**       | Selecting, creating, renaming, or deleting a groove template, plus Groove Amount; other processor controls are not recorded. |
 >
-> Whether reopening the device clears it depends on the device, and for the two documented here it
-> does not. Dutch Oven and Grand Boule re-read the project when their panel opens, so closing and
-> reopening them resyncs the controls. Gluten and Grinder never read the project at all: their
-> session state is written only by their own panels, and it survives the panel being closed. Once
-> those two disagree, they disagree for the rest of the session.
+> A recorded device entry restores project truth, the running sound, and the mounted controls that
+> expose that value. Where the table describes a gesture after release, the movement you hear while
+> dragging is only a preview and the release creates the single entry.
 >
 > Save a preset or duplicate the track before you experiment with a device.
 
@@ -151,7 +160,7 @@ Most operations are available three ways:
 
 The three are not yet equivalent, and the difference shows up in undo. What decides whether a change
 is recorded is the surface you touched, not who asked for it. The command list and the assistant
-record most of what they do, and direct manipulation is the uneven one — but *most* is the honest
+record most of what they do, and direct manipulation is the uneven one — but _most_ is the honest
 word for all three. Some operations are not recorded from any route at all: importing a MIDI or
 audio file, converting audio to MIDI, detecting song structure, clearing MIDI mappings, and the
 assistant's automatic mix fix are unrecorded however you reach them.
