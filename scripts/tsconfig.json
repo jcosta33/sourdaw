@@ -18,8 +18,8 @@
     // Node's globals, and `--experimental-strip-types` resolves imports by their
     // on-disk `.ts` name.
     //
-    // The plain-JS tooling here (`check-dependency-boundaries.mjs`,
-    // `generate-view-tests.cjs`) is deliberately left out. Pulling it in with
+    // The plain-JS tooling here (`check-dependency-boundaries.mjs`) is
+    // deliberately left out. Pulling it in with
     // `allowJs` does not help: it is untyped by construction, so type-aware lint
     // then reports thousands of real-but-useless `any` violations instead of the
     // resolution artifacts. It is excluded from the lint globs for the same

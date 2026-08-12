@@ -105,7 +105,6 @@
         "eslint-plugin-prettier": "^5.5.6",
         "eslint-plugin-promise": "^7.3.0",
         "eslint-plugin-react-hooks": "^7.1.1",
-        "glob": "^13.0.6",
         "globals": "^17.7.0",
         "jsdom": "^29.1.1",
         "knip": "^6.27.0",
