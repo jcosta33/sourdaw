@@ -53,6 +53,7 @@ describe('cancelPendingChatActions', () => {
             status: 'proposed',
             assistantMessageId: 'msg-2',
             actionLabels: ['Add track', 'Set tempo'],
+            approvalSnapshot: { actions: [] },
         });
 
         const result = cancelPendingChatActions({ confirmationId: 'conf-2' });
@@ -70,6 +71,7 @@ describe('cancelPendingChatActions', () => {
             status: 'proposed',
             assistantMessageId: 'msg-3',
             actionLabels: ['Add track', 'Set tempo to 120'],
+            approvalSnapshot: { actions: [] },
         });
 
         cancelPendingChatActions({ confirmationId: 'conf-3' });
@@ -90,6 +92,7 @@ describe('cancelPendingChatActions', () => {
             status: 'proposed',
             assistantMessageId: 'msg-4',
             actionLabels: ['Solo track 1'],
+            approvalSnapshot: { actions: [] },
         });
 
         cancelPendingChatActions({ confirmationId: 'conf-4' });

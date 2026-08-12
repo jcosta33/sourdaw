@@ -9,7 +9,10 @@ import { publishTrackAdded } from '../../useCases/publishTrackAdded';
 import { publishTrackRemoved } from '../../useCases/publishTrackRemoved';
 import { removeTrack } from '../../useCases/removeTrack';
 import { importStemSetToProject } from '../../useCases/stemImport/importStemSetToProject';
+import { isImportedStemSetApplied } from '../../useCases/stemImport/isImportedStemSetApplied';
 import { isGeneratedMidiStateCurrent } from '../isGeneratedMidiStateCurrent';
+
+import type { Track } from '../../stores/trackStore';
 
 const pendingGuards = new WeakMap<
     object,
@@ -23,12 +26,40 @@ function getFailureDetail(error: unknown): string {
     return error instanceof Error ? error.message : String(error);
 }
 
-async function reconcileImportedTracks(trackIds: readonly string[]): Promise<void> {
+type ReconcileImportedStemEffectsInput = {
+    addedTracks: readonly Track[];
+    importedTracks: readonly Track[];
+    projectedTrackIds: Set<string>;
+    publishedTrackIds: Set<string>;
+    committedTrackIds?: ReadonlySet<string>;
+};
+
+async function reconcileImportedStemEffects({
+    addedTracks,
+    importedTracks,
+    projectedTrackIds,
+    publishedTrackIds,
+    committedTrackIds,
+}: ReconcileImportedStemEffectsInput): Promise<void> {
+    const isCommitted = (trackId: string) => !committedTrackIds || committedTrackIds.has(trackId);
     try {
-        await runAllAsyncEffects(trackIds.map((trackId) => () => projectTrackToLiveStrip({ trackId })));
+        await runAllAsyncEffects([
+            ...importedTracks
+                .filter((track) => isCommitted(track.id) && !projectedTrackIds.has(track.id))
+                .map((track) => () => {
+                    projectTrackToLiveStrip({ trackId: track.id });
+                    projectedTrackIds.add(track.id);
+                }),
+            ...addedTracks
+                .filter((track) => isCommitted(track.id) && !publishedTrackIds.has(track.id))
+                .map((track) => async () => {
+                    await publishTrackAdded({ trackId: track.id, name: track.name, kind: track.kind });
+                    publishedTrackIds.add(track.id);
+                }),
+        ]);
     } catch (error) {
         throw new Error(
-            `Imported stem live-strip projection remains incomplete: ${getFailureDetail(error)}. Manual repair required.`,
+            `Imported stem runtime reconciliation remains incomplete: ${getFailureDetail(error)}. Manual repair required.`,
             { cause: error }
         );
     }
@@ -59,20 +90,22 @@ export const handleImportStemSet = createHandler<'importStemSet'>({
         pendingGuards.delete(action);
 
         const addedTracks = [folder, ...importedTracks];
+        const projectedTrackIds = new Set<string>();
+        const publishedTrackIds = new Set<string>();
+        const reconcile = (committedTrackIds?: ReadonlySet<string>) =>
+            reconcileImportedStemEffects({
+                addedTracks,
+                importedTracks,
+                projectedTrackIds,
+                publishedTrackIds,
+                committedTrackIds,
+            });
         return {
             status: 'written',
-            afterCommit: () =>
-                runAllAsyncEffects([
-                    ...importedTracks.map((track) => () => projectTrackToLiveStrip({ trackId: track.id })),
-                    ...addedTracks.map(
-                        (track) => () => publishTrackAdded({ trackId: track.id, name: track.name, kind: track.kind })
-                    ),
-                ]),
+            afterCommit: () => reconcile(),
             afterAmbiguousCommit: () => {
                 const committedIds = new Set(getTrackStoreState()?.tracks.map((track) => track.id) ?? []);
-                return reconcileImportedTracks(
-                    importedTracks.filter((track) => committedIds.has(track.id)).map((track) => track.id)
-                );
+                return reconcile(committedIds);
             },
         };
     },
@@ -97,10 +130,7 @@ export const handleImportStemSet = createHandler<'importStemSet'>({
             redoAction: action,
         };
     },
-    isNoop: (action) => {
-        const ids = new Set([action.payload.folderId, ...action.payload.stems.map((stem) => stem.trackId)]);
-        return ids.size > 0 && [...ids].every((id) => getTrackStoreState()?.tracks.some((track) => track.id === id));
-    },
+    isNoop: isImportedStemSetApplied,
     requiresAbortCompensation: false,
     undoable: true,
 });

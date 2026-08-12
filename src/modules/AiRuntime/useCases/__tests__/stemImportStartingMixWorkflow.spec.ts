@@ -44,6 +44,8 @@ const mocks = vi.hoisted(() => {
         decodeAudioFile: vi.fn(),
         detectTempo: vi.fn<() => number | null>(() => 120),
         ensureTrackStrip: vi.fn(),
+        arrangementEventEmit: vi.fn(() => Promise.resolve()),
+        executeBatchError: { value: null as Error | null },
         fetch: vi.fn<typeof fetch>(),
         generateWebLlmCompletion: vi.fn(),
         pickFiles: vi.fn<() => Promise<File[] | null>>(),
@@ -56,6 +58,19 @@ const mocks = vi.hoisted(() => {
         setTrackPan: vi.fn(),
         setTrackSoloGate: vi.fn(),
         transformPlan: { value: (plan: ProviderCall[]) => plan },
+    };
+});
+
+vi.mock('#/modules/Command/useCases', async (importOriginal) => {
+    const original = await importOriginal<typeof import('#/modules/Command/useCases')>();
+    return {
+        ...original,
+        executeAppActionBatch: (...args: Parameters<typeof original.executeAppActionBatch>) => {
+            if (mocks.executeBatchError.value) {
+                return Promise.reject(mocks.executeBatchError.value);
+            }
+            return original.executeAppActionBatch(...args);
+        },
     };
 });
 
@@ -242,6 +257,7 @@ describe('stem import and starting mix workflow', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         mocks.backend.value = 'webllm';
+        mocks.executeBatchError.value = null;
         mocks.transformPlan.value = (plan) => plan;
         vi.stubGlobal('fetch', mocks.fetch);
         cloudSession.clear();
@@ -267,7 +283,7 @@ describe('stem import and starting mix workflow', () => {
         });
         clearAiHistory();
         clearPendingActionConfirmations();
-        setArrangementEventBus({ emit: () => Promise.resolve() });
+        setArrangementEventBus({ emit: mocks.arrangementEventEmit });
         trackStore.set({ tracks: [createTrack('track-guide', 'Guide Mix')], selectedTrackId: null, ghostClips: [] });
         transportStore.set({ ...defaultTransportState, tempo: 100 });
         chatStore.set({ messages: [], isGenerating: false, enableReasoning: true, chatMode: 'prompt' });
@@ -486,6 +502,18 @@ describe('stem import and starting mix workflow', () => {
         expect(mocks.stageLocalAsset).not.toHaveBeenCalled();
     });
 
+    it('releases the current decoded buffer when tempo analysis throws', async () => {
+        mocks.detectTempo.mockImplementationOnce(() => {
+            throw new Error('tempo analyzer failed');
+        });
+
+        await sendChatMessage(PROMPT);
+
+        expect(confirmationId()).toBe('');
+        expect(mocks.releasePreviewAudioBuffer).toHaveBeenCalledWith('buffer-Kick_120.wav');
+        expect(mocks.stageLocalAsset).not.toHaveBeenCalled();
+    });
+
     it('rejects provider omission and releases only preparation-owned resources', async () => {
         const originalTracks = structuredClone(trackStore.value?.tracks ?? []);
         mocks.stageLocalAsset.mockImplementation((_file, name) =>
@@ -585,6 +613,28 @@ describe('stem import and starting mix workflow', () => {
         expect(undoStore.value?.future).toHaveLength(1);
     });
 
+    it('does not consume redo when a collaborator reuses every generated track identity with different state', async () => {
+        await sendChatMessage(PROMPT);
+        const confirmation = getPendingActionConfirmation(confirmationId());
+        const action = confirmation?.actions[0];
+        if (!confirmation || action?.type !== 'importStemSet') {
+            throw new TypeError('Expected materialized stem import action');
+        }
+        await confirmPendingChatActions({ confirmationId: confirmation.id });
+        await undo();
+        const reused = [action.payload.folderId, ...action.payload.stems.map((stem) => stem.trackId)].map((id, index) =>
+            createTrack(id, `Collaborator ${String(index)}`)
+        );
+        trackStore.set({ ...trackStore.value!, tracks: [createTrack('track-guide', 'Guide Mix'), ...reused] });
+        const beforeRedo = structuredClone(trackStore.value?.tracks ?? []);
+
+        await redo();
+
+        expect(trackStore.value?.tracks).toEqual(beforeRedo);
+        expect(undoStore.value?.past).toHaveLength(0);
+        expect(undoStore.value?.future).toHaveLength(1);
+    });
+
     it('reconciles a transient live-strip projection failure after the atomic project commit', async () => {
         mocks.ensureTrackStrip.mockImplementationOnce(() => {
             throw new Error('transient strip projection failure');
@@ -597,11 +647,42 @@ describe('stem import and starting mix workflow', () => {
         });
 
         expect(trackStore.value?.tracks).toHaveLength(8);
-        expect(mocks.ensureTrackStrip).toHaveBeenCalledTimes(12);
+        expect(mocks.ensureTrackStrip).toHaveBeenCalledTimes(7);
         const receipt = chatStore.value?.messages.find(
             (message) => message.pendingActionConfirmationId === confirmation?.id
         );
         expect(receipt?.content).not.toContain('manual repair required');
+    });
+
+    it('reconciles a transient track-added event failure before reporting a clean commit', async () => {
+        mocks.arrangementEventEmit.mockRejectedValueOnce(new Error('transient track-added event failure'));
+        await sendChatMessage(PROMPT);
+        const confirmation = getPendingActionConfirmation(confirmationId());
+
+        await expect(confirmPendingChatActions({ confirmationId: confirmation!.id })).resolves.toEqual({
+            status: 'executed',
+        });
+
+        expect(mocks.arrangementEventEmit).toHaveBeenCalledTimes(8);
+        const receipt = chatStore.value?.messages.find(
+            (message) => message.pendingActionConfirmationId === confirmation?.id
+        );
+        expect(receipt?.content).not.toContain('follow-up warning');
+    });
+
+    it('cleans staged resources when Command rejects unexpectedly before a status result', async () => {
+        await sendChatMessage(PROMPT);
+        const confirmation = getPendingActionConfirmation(confirmationId());
+        mocks.executeBatchError.value = new Error('unexpected command rejection');
+
+        await expect(confirmPendingChatActions({ confirmationId: confirmation!.id })).resolves.toEqual({
+            status: 'failed',
+            reason: 'unexpected command rejection',
+        });
+
+        expect(mocks.releasePreviewAudioBuffer).toHaveBeenCalledTimes(6);
+        expect(mocks.removeLocalAsset).toHaveBeenCalledTimes(6);
+        expect(trackStore.value?.tracks).toEqual([createTrack('track-guide', 'Guide Mix')]);
     });
 
     it('reports persistent live-strip projection failure as committed with a manual-repair warning', async () => {

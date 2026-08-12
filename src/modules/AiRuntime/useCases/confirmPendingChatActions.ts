@@ -324,6 +324,7 @@ export async function confirmPendingChatActions(
             error: reason,
             content: `Failed to execute confirmed actions atomically:\n\n${reason}`,
         });
+        discardStemImportResources(confirmation);
         return { status: 'failed', reason };
     } finally {
         setActiveAborter(null);

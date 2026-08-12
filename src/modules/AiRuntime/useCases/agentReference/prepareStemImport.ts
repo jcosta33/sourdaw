@@ -111,7 +111,13 @@ export async function prepareStemImport(prompt: string, signal?: AbortSignal) {
                 releasePreviewAudioBuffer(decoded.id);
                 throw new Error('Stem duration must stay within 1 hour per stem and 4 hours total.');
             }
-            const sourceTempo = detectTempo(decoded.id);
+            let sourceTempo: number | null;
+            try {
+                sourceTempo = detectTempo(decoded.id);
+            } catch (error) {
+                releasePreviewAudioBuffer(decoded.id);
+                throw error;
+            }
             if (sourceTempo === null || !Number.isFinite(sourceTempo) || sourceTempo < 20 || sourceTempo > 999) {
                 releasePreviewAudioBuffer(decoded.id);
                 throw new Error(`Could not determine a safe source tempo for "${file.name}".`);
