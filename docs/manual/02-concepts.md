@@ -133,7 +133,7 @@ many notes it touched.
 > | **Levain**      | None. Instrument and articulation selections save and sync but are not undoable.                                             |
 > | **Proof**       | None of its panel controls.                                                                                                  |
 > | **Dutch Oven**  | Individual controls and algorithms; loading a Space creates grouped parameter entries that undo together.                    |
-> | **Toaster**     | None. Kit changes save and sync but are not undoable.                                                                        |
+> | **Toaster**     | Pattern groove-template selection and committed groove amount. Kit changes save and sync but are not undoable.               |
 > | **Tuner**       | A completed Concert A reference gesture.                                                                                     |
 > | **Yeast**       | Selecting, creating, renaming, or deleting a groove template, plus Groove Amount; other processor controls are not recorded. |
 >
