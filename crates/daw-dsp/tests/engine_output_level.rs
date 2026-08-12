@@ -328,11 +328,16 @@ fn grinder_fat_switch_increases_low_register_body_across_models_and_levels() {
                 let fat = grinder_sine_level(model, true, frequency_hz, amplitude);
                 let ratio = fat.rms / neutral.rms.max(f32::EPSILON);
                 assert!(
-                    fat.rms > neutral.rms,
+                    ratio >= 1.005,
                     "Grinder {name} Fat must increase low-register body at {frequency_hz} Hz / {amplitude} input (off RMS={}, on RMS={}, ratio={})",
                     neutral.rms,
                     fat.rms,
                     ratio
+                );
+                assert!(
+                    fat.peak < GRINDER_LIMITER_THRESHOLD,
+                    "Grinder {name} Fat peaks at {}, at or above the -0.3 dB safety limiter threshold {GRINDER_LIMITER_THRESHOLD} at {frequency_hz} Hz / {amplitude} input",
+                    fat.peak
                 );
             }
         }
