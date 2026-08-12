@@ -1,4 +1,5 @@
 import { markerStore, trackStore } from '#/modules/Arrangement/stores';
+import { automationStore } from '#/modules/Automation/stores';
 import { type AppAction } from '#/utils/handlerContract';
 
 import { type ProductionBriefScope } from '../models/ProductionBrief';
@@ -104,6 +105,7 @@ function trackOwnedIds(trackId: string): Set<string> {
     if (!track) {
         return new Set([trackId]);
     }
+    const automationLanes = automationStore.value?.lanes.filter((lane) => lane.trackId === trackId) ?? [];
     return new Set([
         track.id,
         ...track.clips.map((clip) => clip.id),
@@ -111,6 +113,9 @@ function trackOwnedIds(trackId: string): Set<string> {
         ...track.alternatives.flatMap((alternative) => alternative.clips.map((clip) => clip.id)),
         ...track.devices.map((device) => device.id),
         ...track.midiFx.map((device) => device.id),
+        ...automationLanes.map((lane) => lane.id),
+        ...automationLanes.flatMap((lane) => lane.points.flatMap((point) => (point.id ? [point.id] : []))),
+        ...automationLanes.flatMap((lane) => lane.objects.map((object) => object.id)),
     ]);
 }
 

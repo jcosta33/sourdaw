@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { defaultTrackState } from '#/modules/Arrangement/stores';
 import { addClip, addSection, createTrack, setTrackStoreState } from '#/modules/Arrangement/useCases';
+import { addAutomationLane } from '#/modules/Automation/useCases';
 import { clearHandlerRegistry, registerHandlerMap } from '#/modules/Command/stores';
 import { clearUndoHistory, executeAppAction, redo, undo } from '#/modules/Command/useCases';
 
@@ -33,6 +34,7 @@ describe('production brief', () => {
             startBeat: 0,
             endBeat: 8,
         });
+        addAutomationLane('track-drums', 'gain', 'Gain', 'lane-drums-gain');
         clearUndoHistory();
         addClip({
             id: 'clip-2',
@@ -448,6 +450,11 @@ describe('production brief', () => {
         expect(doesProductionBriefAllowActionBatch([{ type: 'removeClip', payload: { clipId: 'clip-1' } }])).toBe(
             false
         );
+        expect(
+            doesProductionBriefAllowActionBatch([
+                { type: 'setAutomationLaneEnabled', payload: { laneId: 'lane-drums-gain', enabled: false } },
+            ])
+        ).toBe(false);
         expect(
             doesProductionBriefAllowActionBatch([
                 { type: 'setTrackGain', payload: { trackId: 'track-guitar', gain: 0.7, expectedGain: 1 } },
