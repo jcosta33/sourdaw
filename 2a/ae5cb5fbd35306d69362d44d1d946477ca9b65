@@ -1,0 +1,22 @@
+src/modules/AudioEngine/useCases/offlineRender/__tests__/renderTrackSubgraphOffline.spec.ts
+  s_bc88af7d3b054c::t_392c2ee3eed9b9 1197-1206,1208-1210
+  s_bc88af7d3b054c::t_eb90fa8941104a 1207
+src/modules/AudioEngine/useCases/offlineRender/resolveHistoryAwareRenderContext.ts
+  s_bc88af7d3b054c::t_b64bbf8dea1a1d 45-50,54
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "2aae5cb5fbd35306d69362d44d1d946477ca9b65",
+  "prompts": {},
+  "sessions": {
+    "s_bc88af7d3b054c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f9b4a-11a2-7f61-8dfb-76eed0eb2a9c",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
