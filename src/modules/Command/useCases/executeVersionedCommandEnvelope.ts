@@ -17,7 +17,8 @@ export async function executeVersionedCommandEnvelope(
         throw new Error(parsed.reason);
     }
     if (
-        commandProjectRevisionPort.capture() !== parsed.envelope.normalizedProjectRevision ||
+        (commandProjectRevisionPort.isConfigured() &&
+            commandProjectRevisionPort.capture() !== parsed.envelope.normalizedProjectRevision) ||
         !hasCurrentCommandDeviceVersions(parsed.envelope)
     ) {
         throw new AppActionConflictError(parsed.envelope.operation);

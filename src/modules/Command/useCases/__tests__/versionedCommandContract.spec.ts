@@ -850,6 +850,39 @@ describe('versioned command contract', () => {
         expect(observed).toEqual([true]);
     });
 
+    it('executes one caller-revision envelope in a standalone Command harness', async () => {
+        commandProjectRevisionPort.setProvider(null);
+        const observed: boolean[] = [];
+        registerHandlerMap({
+            setPlayback: {
+                describe: () => ({ label: 'Start playback' }),
+                execute: (action: Extract<AppAction, { type: 'setPlayback' }>) => {
+                    observed.push(action.payload.playing);
+                    return { status: 'written' };
+                },
+                executionKind: 'runtime',
+                undoable: false,
+            },
+        });
+        const envelope = createVersionedCommandEnvelope({
+            action: { type: 'setPlayback', payload: { playing: true } },
+            availableDeviceVersions: {},
+            expectedEffect: 'Playback is running.',
+            normalizedProjectRevision: 'revision-from-caller',
+            objectReferences: [],
+            parameterUnits: [],
+            reason: 'Start transport playback.',
+            time: [],
+        });
+
+        const receipt = await executeVersionedCommandEnvelope(serializeVersionedCommandEnvelope(envelope), {
+            skipUndo: true,
+        });
+
+        expect(receipt.commandId).toBe(envelope.commandId);
+        expect(observed).toEqual([true]);
+    });
+
     it('leaves device versions empty when a standalone Command harness has no application resolver', () => {
         commandDeviceVersionsPort.setDeviceTypeResolver(null);
         commandDeviceVersionsPort.setResolver(null);
