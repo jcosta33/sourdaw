@@ -1,0 +1,25 @@
+AGENTS.md
+  s_0a3429e31e555d::t_66c641420b9720 119-120,141
+  s_0a3429e31e555d::t_5fb16743975e77 28
+  s_0a3429e31e555d::t_869b37cfc26328 142
+tests/e2e/PROCESS.md
+  s_0a3429e31e555d::t_a056c6aadbc7c4 96,118,134-135
+  s_0a3429e31e555d::t_66c641420b9720 35-37,40,77,80-82,84,90,93
+  s_0a3429e31e555d::t_1d907a2daeacdf 33,39,43,52,56,64,69,74,79,83,87,91,95,99,121,146,152,171,180
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "82c662acdc8ff253c1a5c3e7835757d2aab8c2ef",
+  "prompts": {},
+  "sessions": {
+    "s_0a3429e31e555d": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f1568-8dda-7540-97a5-9da760eadac4",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
