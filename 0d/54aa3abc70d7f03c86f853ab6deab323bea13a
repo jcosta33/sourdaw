@@ -1,0 +1,46 @@
+src-tauri/src/commands/plugins.rs
+  s_bc88af7d3b054c::t_c7c8ec7c42d8c7 1133-1134,1136
+src/modules/Project/useCases/projectPersistence/saveProject/__tests__/interruptedProjectLoadDirtyTracking.integration.spec.ts
+  s_bc88af7d3b054c::t_bbc5c08d1a5de9 117
+src/modules/Project/useCases/projectTemplates/templateDefinitions/createFromTemplate.ts
+  s_bc88af7d3b054c::t_fa49e313bcd20c 11
+src/modules/Project/useCases/projectTemplates/templateDefinitions/__tests__/createFromTemplate.spec.ts
+  s_bc88af7d3b054c::t_bbc5c08d1a5de9 15,37,104,132,273,277
+src/modules/Project/useCases/projectPersistence/newProject.ts
+  s_bc88af7d3b054c::t_fa49e313bcd20c 11
+src/modules/PluginHost/useCases/index.ts
+  s_bc88af7d3b054c::t_fa49e313bcd20c 15,22
+src/modules/PluginHost/repositories/pluginBridge/__tests__/pluginBridge.spec.ts
+  s_bc88af7d3b054c::t_c7c8ec7c42d8c7 47
+src/modules/PluginHost/useCases/pluginLifecycle/__tests__/lifecycle.spec.ts
+  s_bc88af7d3b054c::t_c7c8ec7c42d8c7 54,56-58
+src/modules/Project/useCases/projectPersistence/__tests__/newProject.spec.ts
+  s_bc88af7d3b054c::t_bbc5c08d1a5de9 28,92,108,145,147,156
+src/modules/Project/useCases/projectPersistence/helpers/__tests__/replaceProjectData.spec.ts
+  s_bc88af7d3b054c::t_bbc5c08d1a5de9 80
+src/modules/Project/useCases/projectPersistence/helpers/replaceProjectData.ts
+  s_bc88af7d3b054c::t_fa49e313bcd20c 17
+src/modules/PluginHost/useCases/pluginLifecycle/unloadPlugin.ts
+  s_bc88af7d3b054c::t_c7c8ec7c42d8c7 26,29
+  s_bc88af7d3b054c::t_496776919a3adf 21-25
+  s_bc88af7d3b054c::t_11f132f7d58258 27-28
+  s_bc88af7d3b054c::t_f7dd97e9b16e0f 46
+src/modules/Project/useCases/projectPersistence/saveProject/__tests__/projectLoadDirtyTracking.integration.spec.ts
+  s_bc88af7d3b054c::t_bbc5c08d1a5de9 67
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "0d54aa3abc70d7f03c86f853ab6deab323bea13a",
+  "prompts": {},
+  "sessions": {
+    "s_bc88af7d3b054c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f9b4a-11a2-7f61-8dfb-76eed0eb2a9c",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
