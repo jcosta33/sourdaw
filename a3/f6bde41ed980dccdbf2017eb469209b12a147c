@@ -1,0 +1,58 @@
+src/modules/Command/useCases/versionedCommandArgumentKeys.ts
+  s_a40848e8f8cca9::t_02068d31a6bb23 214-313
+  s_a40848e8f8cca9::t_a80e1038c18aba 1-213,314
+  s_a40848e8f8cca9::t_f8e34c4803f5e5 315-317
+  s_a40848e8f8cca9::t_31e1e8e6ae56bb 318-536
+src/modules/Command/useCases/createVersionedCommandEnvelope.ts
+  s_a40848e8f8cca9::t_a2bcea9fa72af6 59
+  s_a40848e8f8cca9::t_4fa218815f4bf1 5,16
+src/modules/Command/useCases/createVersionedCommandReceipt.ts
+  s_a40848e8f8cca9::t_4fa218815f4bf1 19
+src/modules/Command/useCases/executeAppAction.ts
+  s_a40848e8f8cca9::t_f0a75a54f97f1e 26
+  s_a40848e8f8cca9::t_edbdf3cbca303a 47-50,86,159
+src/modules/Command/useCases/migrateLegacyAppActionToVersionedCommandEnvelope.ts
+  s_a40848e8f8cca9::t_70bf454404226f 7,19-20,25-27
+src/modules/Command/useCases/executeAppActionBatch.ts
+  s_a40848e8f8cca9::t_f0a75a54f97f1e 31
+  s_a40848e8f8cca9::t_c80d43ac5988d1 430-435,488
+src/modules/Command/useCases/parseVersionedCommandEnvelope.ts
+  s_a40848e8f8cca9::t_cc9f58f1c9211f 44-98,265-266
+  s_a40848e8f8cca9::t_78d5d6fdfd835a 396,400,402
+  s_a40848e8f8cca9::t_f06266dbee316d 3,41,242-250,397-399,401,403-405
+  s_a40848e8f8cca9::t_5e5f0c80b50953 12,195-197,272-273
+  s_a40848e8f8cca9::t_e063ec735a076b 267
+  s_a40848e8f8cca9::t_bb8b8bd500be2f 274-275
+  s_a40848e8f8cca9::t_e5a1cda8b6aea3 406
+src/modules/Command/useCases/materializeCommandApplicationIds.ts
+  s_a40848e8f8cca9::t_66c540bc433a42 42-43,46,51-52,56
+  s_a40848e8f8cca9::t_b25304ce47a987 2-9,38-40,50,54,61
+  s_a40848e8f8cca9::t_1ec564f2cae5df 1,10-37,41,44-45,47-49,53,55,57-60
+src/modules/Command/useCases/__tests__/versionedCommandContract.spec.ts
+  s_a40848e8f8cca9::t_6d07c56b82f799 195,197-245
+  s_a40848e8f8cca9::t_b52bfebf1e51eb 13,49,120,128-140,167-194
+  s_a40848e8f8cca9::t_b2b5915c1182b5 86
+  s_a40848e8f8cca9::t_cd8994653646d3 196
+  s_a40848e8f8cca9::t_8ee1fdcdd1be54 246-248
+src/modules/Command/useCases/createExecutionCommandEnvelope.ts
+  s_a40848e8f8cca9::t_f0a75a54f97f1e 4
+  s_a40848e8f8cca9::t_6f99f017c51598 8,12,164-167,171
+src/modules/Command/models/VersionedCommandEnvelope.ts
+  s_a40848e8f8cca9::t_4fa218815f4bf1 23-27,45
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "a3f6bde41ed980dccdbf2017eb469209b12a147c",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
