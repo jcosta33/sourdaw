@@ -119,6 +119,8 @@ export type PushMidiReplyRequest =
 export type PushMidiBeginRequestResult =
     | Readonly<{
           status: 'started';
+          /** Local capability token; bind it to this request's reply handler. It is not sent over MIDI. */
+          requestId: number;
           bytes: Uint8Array;
       }>
     | Readonly<{
@@ -133,23 +135,40 @@ export type PushMidiAcceptReplyResult =
       }>
     | Readonly<{
           status: 'rejected';
-          reason: PushMidiDecodeRejectionReason | 'not-a-reply' | 'reply-mismatch' | 'unsolicited-reply';
+          reason:
+              | PushMidiDecodeRejectionReason
+              | 'not-a-reply'
+              | 'reply-mismatch'
+              | 'request-mismatch'
+              | 'unsolicited-reply';
+      }>;
+
+export type PushMidiCancelRequestResult =
+    | Readonly<{
+          status: 'cancelled';
+      }>
+    | Readonly<{
+          status: 'rejected';
+          reason: 'no-reply-pending' | 'request-mismatch';
       }>;
 
 export type PushMidiCodec = Readonly<{
     decode(bytes: PushMidiBytes): PushMidiDecodeResult;
     encode(command: PushMidiOutputCommand): PushMidiEncodeResult;
     beginRequest(request: PushMidiReplyRequest): PushMidiBeginRequestResult;
-    acceptReply(bytes: PushMidiBytes): PushMidiAcceptReplyResult;
+    cancelRequest(requestId: number): PushMidiCancelRequestResult;
+    acceptReply(requestId: number, bytes: PushMidiBytes): PushMidiAcceptReplyResult;
 }>;
 
 type PendingReply =
     | Readonly<{
           kind: 'identity';
+          requestId: number;
       }>
     | Readonly<{
           kind: 'midi-mode';
           mode: number;
+          requestId: number;
       }>;
 
 const PAD_NOTE_MINIMUM = 36;
@@ -627,9 +646,10 @@ function encode(command: PushMidiOutputCommand): PushMidiEncodeResult {
     return encoded([...PUSH_VENDOR_PREFIX, AFTERTOUCH_MODE_COMMAND, command.mode, 0xf7]);
 }
 
-function started(bytes: readonly number[]): PushMidiBeginRequestResult {
+function started(requestId: number, bytes: readonly number[]): PushMidiBeginRequestResult {
     return {
         status: 'started',
+        requestId,
         bytes: new Uint8Array(bytes),
     };
 }
@@ -649,6 +669,7 @@ function pendingMatchesReply(pending: PendingReply, reply: PushMidiReply): boole
 
 export function createPushMidiCodec(): PushMidiCodec {
     let pendingReply: PendingReply | undefined;
+    let nextRequestId = 1;
 
     function beginRequest(request: PushMidiReplyRequest): PushMidiBeginRequestResult {
         if (pendingReply) {
@@ -659,10 +680,13 @@ export function createPushMidiCodec(): PushMidiCodec {
         }
 
         if (request.kind === 'identity') {
+            const requestId = nextRequestId;
+            nextRequestId += 1;
             pendingReply = {
                 kind: 'identity',
+                requestId,
             };
-            return started(IDENTITY_REQUEST);
+            return started(requestId, IDENTITY_REQUEST);
         }
 
         if (!isIntegerInRange(request.mode, 0, 2)) {
@@ -672,14 +696,35 @@ export function createPushMidiCodec(): PushMidiCodec {
             };
         }
 
+        const requestId = nextRequestId;
+        nextRequestId += 1;
         pendingReply = {
             kind: 'midi-mode',
             mode: request.mode,
+            requestId,
         };
-        return started([...PUSH_VENDOR_PREFIX, MIDI_MODE_COMMAND, request.mode, 0xf7]);
+        return started(requestId, [...PUSH_VENDOR_PREFIX, MIDI_MODE_COMMAND, request.mode, 0xf7]);
     }
 
-    function acceptReply(bytes: PushMidiBytes): PushMidiAcceptReplyResult {
+    function cancelRequest(requestId: number): PushMidiCancelRequestResult {
+        if (!pendingReply) {
+            return {
+                status: 'rejected',
+                reason: 'no-reply-pending',
+            };
+        }
+        if (pendingReply.requestId !== requestId) {
+            return {
+                status: 'rejected',
+                reason: 'request-mismatch',
+            };
+        }
+
+        pendingReply = undefined;
+        return { status: 'cancelled' };
+    }
+
+    function acceptReply(requestId: number, bytes: PushMidiBytes): PushMidiAcceptReplyResult {
         const decoded = decode(bytes);
         if (decoded.status === 'rejected') {
             return decoded;
@@ -694,6 +739,12 @@ export function createPushMidiCodec(): PushMidiCodec {
             return {
                 status: 'rejected',
                 reason: 'unsolicited-reply',
+            };
+        }
+        if (pendingReply.requestId !== requestId) {
+            return {
+                status: 'rejected',
+                reason: 'request-mismatch',
             };
         }
         if (!pendingMatchesReply(pendingReply, decoded.reply)) {
@@ -714,6 +765,7 @@ export function createPushMidiCodec(): PushMidiCodec {
         decode,
         encode,
         beginRequest,
+        cancelRequest,
         acceptReply,
     });
 }

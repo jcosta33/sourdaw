@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest';
 
-import { createPushMidiCodec, type PushMidiDecodeResult, type PushMidiInputEvent } from '../pushMidiCodec';
+import {
+    createPushMidiCodec,
+    type PushMidiBeginRequestResult,
+    type PushMidiDecodeResult,
+    type PushMidiInputEvent,
+} from '../pushMidiCodec';
 
 const IDENTITY_REPLY = [
     0xf0, 0x7e, 0x01, 0x06, 0x02, 0x00, 0x21, 0x1d, 0x67, 0x32, 0x02, 0x00, 0x01, 0x00, 0x2f, 0x00, 0x73, 0x4d, 0x1f,
@@ -32,6 +37,14 @@ function expectRejected(result: PushMidiDecodeResult, reason: string): void {
 
 function bytesOf(result: Readonly<{ bytes: Uint8Array }>): number[] {
     return [...result.bytes];
+}
+
+function requestIdOf(result: PushMidiBeginRequestResult): number {
+    expect(result.status).toBe('started');
+    if (result.status !== 'started') {
+        throw new Error('Expected a Push MIDI request to start');
+    }
+    return result.requestId;
 }
 
 describe('createPushMidiCodec', () => {
@@ -203,6 +216,11 @@ describe('createPushMidiCodec', () => {
         expectRejected(codec.decode([0x90, 36, 128]), 'invalid-data-byte');
         expectRejected(codec.decode([0x90, -1, 1]), 'invalid-byte');
         expectRejected(codec.decode([0x90, 36, 1.5]), 'invalid-byte');
+        expectRejected(codec.decode([0x90, 36, 256]), 'invalid-byte');
+        const sparseMessage = Array<number>(3);
+        sparseMessage[0] = 0x90;
+        sparseMessage[2] = 1;
+        expectRejected(codec.decode(sparseMessage), 'invalid-byte');
         expectRejected(codec.decode([0xc0, 1]), 'unsupported-status');
         expectRejected(codec.decode([0xf8]), 'reserved-message');
         expectRejected(codec.decode([0xf0, 0x00, 0x21, 0x1d, 0x01, 0x01, 0x1a, 0xf7]), 'reserved-message');
@@ -323,6 +341,10 @@ describe('createPushMidiCodec', () => {
         const unboundedSerial: number[] = [...IDENTITY_REPLY];
         unboundedSerial[20] = 0x10;
         expectRejected(codec.decode(unboundedSerial), 'invalid-value');
+
+        const nonDataFirmwareByte: number[] = [...IDENTITY_REPLY];
+        nonDataFirmwareByte[12] = 0x80;
+        expectRejected(codec.decode(nonDataFirmwareByte), 'invalid-data-byte');
     });
 
     it('serializes identity and MIDI-mode requests and preserves pending state on bad replies', () => {
@@ -338,11 +360,13 @@ describe('createPushMidiCodec', () => {
             reason: 'reply-pending',
         });
 
-        expect(codec.acceptReply([0xf0, 0x00, 0x21, 0x1d, 0x01, 0x01, 0x0a, 0x01, 0xf7])).toEqual({
+        expect(
+            codec.acceptReply(requestIdOf(identity), [0xf0, 0x00, 0x21, 0x1d, 0x01, 0x01, 0x0a, 0x01, 0xf7])
+        ).toEqual({
             status: 'rejected',
             reason: 'reply-mismatch',
         });
-        expect(codec.acceptReply(IDENTITY_REPLY.slice(0, -1))).toEqual({
+        expect(codec.acceptReply(requestIdOf(identity), IDENTITY_REPLY.slice(0, -1))).toEqual({
             status: 'rejected',
             reason: 'invalid-length',
         });
@@ -351,7 +375,7 @@ describe('createPushMidiCodec', () => {
             reason: 'reply-pending',
         });
 
-        expect(codec.acceptReply(IDENTITY_REPLY)).toEqual({
+        expect(codec.acceptReply(requestIdOf(identity), IDENTITY_REPLY)).toEqual({
             status: 'accepted',
             reply: {
                 kind: 'identity',
@@ -364,7 +388,7 @@ describe('createPushMidiCodec', () => {
                 boardRevision: 1,
             },
         });
-        expect(codec.acceptReply(IDENTITY_REPLY)).toEqual({
+        expect(codec.acceptReply(requestIdOf(identity), IDENTITY_REPLY)).toEqual({
             status: 'rejected',
             reason: 'unsolicited-reply',
         });
@@ -382,12 +406,48 @@ describe('createPushMidiCodec', () => {
             expect(bytesOf(request)).toEqual([0xf0, 0x00, 0x21, 0x1d, 0x01, 0x01, 0x0a, 0x00, 0xf7]);
         }
 
-        expect(codec.acceptReply([0xf0, 0x00, 0x21, 0x1d, 0x01, 0x01, 0x0a, 0x00, 0xf7])).toEqual({
+        expect(codec.acceptReply(requestIdOf(request), [0xf0, 0x00, 0x21, 0x1d, 0x01, 0x01, 0x0a, 0x00, 0xf7])).toEqual(
+            {
+                status: 'accepted',
+                reply: {
+                    kind: 'midi-mode',
+                    mode: 0,
+                },
+            }
+        );
+    });
+
+    it('rejects malformed mode replies and channel events without clearing the pending request', () => {
+        const codec = createPushMidiCodec();
+        const request = codec.beginRequest({ kind: 'midi-mode', mode: 1 });
+        const requestId = requestIdOf(request);
+
+        expect(codec.acceptReply(requestId, [0xf0, 0x00, 0x21, 0x1d, 0x01, 0x01, 0x0a, 0xf7])).toEqual({
+            status: 'rejected',
+            reason: 'invalid-length',
+        });
+        expect(codec.acceptReply(requestId, [0xf0, 0x00, 0x21, 0x1d, 0x01, 0x01, 0x0a, 0x01, 0x00])).toEqual({
+            status: 'rejected',
+            reason: 'invalid-value',
+        });
+        expect(codec.acceptReply(requestId, [0xf0, 0x00, 0x21, 0x1d, 0x01, 0x01, 0x0a, 0x80, 0xf7])).toEqual({
+            status: 'rejected',
+            reason: 'invalid-data-byte',
+        });
+        expect(codec.acceptReply(requestId, [0xf0, 0x00, 0x21, 0x1d, 0x01, 0x01, 0x0a, 0x03, 0xf7])).toEqual({
+            status: 'rejected',
+            reason: 'invalid-value',
+        });
+        expect(codec.acceptReply(requestId, [0x90, 36, 127])).toEqual({
+            status: 'rejected',
+            reason: 'not-a-reply',
+        });
+        expect(codec.beginRequest({ kind: 'identity' })).toEqual({
+            status: 'rejected',
+            reason: 'reply-pending',
+        });
+        expect(codec.acceptReply(requestId, [0xf0, 0x00, 0x21, 0x1d, 0x01, 0x01, 0x0a, 0x01, 0xf7])).toMatchObject({
             status: 'accepted',
-            reply: {
-                kind: 'midi-mode',
-                mode: 0,
-            },
         });
     });
 
@@ -401,11 +461,13 @@ describe('createPushMidiCodec', () => {
             expect(bytesOf(modeRequest)).toEqual(modeOneReply);
         }
 
-        expect(codec.acceptReply([0xf0, 0x00, 0x21, 0x1d, 0x01, 0x01, 0x0a, 0x02, 0xf7])).toEqual({
+        expect(
+            codec.acceptReply(requestIdOf(modeRequest), [0xf0, 0x00, 0x21, 0x1d, 0x01, 0x01, 0x0a, 0x02, 0xf7])
+        ).toEqual({
             status: 'rejected',
             reason: 'reply-mismatch',
         });
-        expect(codec.acceptReply(modeOneReply)).toEqual({
+        expect(codec.acceptReply(requestIdOf(modeRequest), modeOneReply)).toEqual({
             status: 'accepted',
             reply: {
                 kind: 'midi-mode',
@@ -419,7 +481,7 @@ describe('createPushMidiCodec', () => {
             // The mode byte must reach the wire, not just the pending-reply slot.
             expect(bytesOf(secondRequest)).toEqual([0xf0, 0x00, 0x21, 0x1d, 0x01, 0x01, 0x0a, 0x02, 0xf7]);
         }
-        expect(codec.acceptReply(modeOneReply)).toEqual({
+        expect(codec.acceptReply(requestIdOf(secondRequest), modeOneReply)).toEqual({
             status: 'rejected',
             reason: 'reply-mismatch',
         });
@@ -427,7 +489,9 @@ describe('createPushMidiCodec', () => {
             status: 'rejected',
             reason: 'reply-pending',
         });
-        expect(codec.acceptReply([0xf0, 0x00, 0x21, 0x1d, 0x01, 0x01, 0x0a, 0x02, 0xf7])).toEqual({
+        expect(
+            codec.acceptReply(requestIdOf(secondRequest), [0xf0, 0x00, 0x21, 0x1d, 0x01, 0x01, 0x0a, 0x02, 0xf7])
+        ).toEqual({
             status: 'accepted',
             reply: {
                 kind: 'midi-mode',
@@ -443,16 +507,62 @@ describe('createPushMidiCodec', () => {
             status: 'rejected',
             reason: 'invalid-value',
         });
-        expect(codec.acceptReply(IDENTITY_REPLY)).toEqual({
+        expect(codec.acceptReply(0, IDENTITY_REPLY)).toEqual({
             status: 'rejected',
             reason: 'unsolicited-reply',
         });
-        expect(codec.acceptReply([0x90, 36, 127])).toEqual({
+        expect(codec.acceptReply(0, [0x90, 36, 127])).toEqual({
             status: 'rejected',
             reason: 'not-a-reply',
         });
 
         const identity = codec.beginRequest({ kind: 'identity' });
         expect(identity.status).toBe('started');
+    });
+
+    it('cancels only the matching pending request and allows a later request to complete', () => {
+        const codec = createPushMidiCodec();
+        const first = codec.beginRequest({ kind: 'identity' });
+        expect(first).toMatchObject({ status: 'started', requestId: 1 });
+        if (first.status !== 'started') {
+            throw new Error('Expected the first request to start');
+        }
+
+        expect(codec.cancelRequest(first.requestId)).toEqual({ status: 'cancelled' });
+        const second = codec.beginRequest({ kind: 'identity' });
+        expect(second).toMatchObject({ status: 'started', requestId: 2 });
+        if (second.status !== 'started') {
+            throw new Error('Expected the second request to start');
+        }
+
+        expect(codec.cancelRequest(first.requestId)).toEqual({
+            status: 'rejected',
+            reason: 'request-mismatch',
+        });
+        expect(codec.acceptReply(second.requestId, IDENTITY_REPLY)).toMatchObject({ status: 'accepted' });
+    });
+
+    it('does not let a duplicate reply from a consumed request clear an identical later request', () => {
+        const codec = createPushMidiCodec();
+        const modeOneReply = [0xf0, 0x00, 0x21, 0x1d, 0x01, 0x01, 0x0a, 0x01, 0xf7] as const;
+        const first = codec.beginRequest({ kind: 'midi-mode', mode: 1 });
+        if (first.status !== 'started') {
+            throw new Error('Expected the first request to start');
+        }
+        expect(codec.acceptReply(first.requestId, modeOneReply)).toMatchObject({ status: 'accepted' });
+
+        const second = codec.beginRequest({ kind: 'midi-mode', mode: 1 });
+        if (second.status !== 'started') {
+            throw new Error('Expected the second request to start');
+        }
+        expect(codec.acceptReply(first.requestId, modeOneReply)).toEqual({
+            status: 'rejected',
+            reason: 'request-mismatch',
+        });
+        expect(codec.beginRequest({ kind: 'identity' })).toEqual({
+            status: 'rejected',
+            reason: 'reply-pending',
+        });
+        expect(codec.acceptReply(second.requestId, modeOneReply)).toMatchObject({ status: 'accepted' });
     });
 });
