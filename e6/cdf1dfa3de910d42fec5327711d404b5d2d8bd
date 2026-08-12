@@ -1,0 +1,74 @@
+src/modules/AiRuntime/models/ActionPlanningMode.ts
+  s_a40848e8f8cca9::t_2e52bb38d4cdb5 1-28
+src/modules/AiRuntime/useCases/getProjectContext.ts
+  s_a40848e8f8cca9::t_dcc05ce0de38a8 18,55,70,89,107,281
+  s_a40848e8f8cca9::t_7405326ebf2a08 118
+  s_a40848e8f8cca9::t_be5056d4d5cff6 30
+src/modules/AiRuntime/useCases/__tests__/getProjectContext.spec.ts
+  s_a40848e8f8cca9::t_259a9f9b61e1a6 3
+  s_a40848e8f8cca9::t_be5056d4d5cff6 138,158-173
+  s_a40848e8f8cca9::t_493ab0bb9f446c 174-176
+src/modules/AiRuntime/useCases/parsePromptToActions.ts
+  s_a40848e8f8cca9::t_87c9f365ffc304 49,529
+  s_a40848e8f8cca9::t_873a7546138a60 8-12,261,281,300-337,374-375,445
+src/modules/AiRuntime/useCases/llmOrchestration/__tests__/inference.spec.ts
+  s_a40848e8f8cca9::t_c2d47b2a4acdc8 9,317,323,331-335
+src/modules/AiRuntime/stores/agentReferenceHistoryStore.ts
+  s_a40848e8f8cca9::t_e87138c6997585 1-7
+src/modules/AiRuntime/useCases/agentReference/__tests__/bridgeGroundedLlmToolCalls.spec.ts
+  s_a40848e8f8cca9::t_2cd83c6948d1dd 1808,1823
+  s_a40848e8f8cca9::t_9d20b0410b5ed5 1696,1799,4071
+src/modules/AiRuntime/useCases/__tests__/recordResolvedAgentReferences.spec.ts
+  s_a40848e8f8cca9::t_a3106315a2a158 1-52
+src/modules/AiRuntime/useCases/llmOrchestration/inference.ts
+  s_a40848e8f8cca9::t_259a9f9b61e1a6 9
+  s_a40848e8f8cca9::t_13a55e8248b0c5 216-218,220-222,234-236,243
+src/modules/AiRuntime/useCases/agentReference/__tests__/resolveAgentReference.spec.ts
+  s_a40848e8f8cca9::t_52b9db10a95736 276-281
+  s_a40848e8f8cca9::t_d23469419ffc15 85-92,114,118,269
+src/modules/AiRuntime/useCases/agentReference/resolveAgentReference.ts
+  s_a40848e8f8cca9::t_637c8387d5386a 402-408,410-412
+  s_a40848e8f8cca9::t_d6f6a3888ae547 459-463
+  s_a40848e8f8cca9::t_b83f65237e03b6 517-535,671
+  s_a40848e8f8cca9::t_ce1400adb6db2c 605-610
+  s_a40848e8f8cca9::t_32bec1542bc376 464-466
+  s_a40848e8f8cca9::t_a3656316bf629a 536-538
+  s_a40848e8f8cca9::t_05df963c01d696 611-613
+  s_a40848e8f8cca9::t_d3128b8b47d768 668-670
+src/modules/AiRuntime/useCases/recordResolvedAgentReferences.ts
+  s_a40848e8f8cca9::t_e87138c6997585 1-13,15-18
+  s_a40848e8f8cca9::t_7405326ebf2a08 14
+src/modules/AiRuntime/useCases/agentReference/bridgeGroundedLlmToolCalls.ts
+  s_a40848e8f8cca9::t_259a9f9b61e1a6 9
+  s_a40848e8f8cca9::t_578d3400ee2225 8,57,70,3474-3475,3697,3704,3773,3784,3944,4491
+  s_a40848e8f8cca9::t_f9dd2e3108e513 3451
+  s_a40848e8f8cca9::t_5e8c51d38279fe 4588,4602
+  s_a40848e8f8cca9::t_857ad199d5b878 3346
+  s_a40848e8f8cca9::t_51be67fa972866 3450
+  s_a40848e8f8cca9::t_5b75ceffd197a4 71,87,96,3731-3735,4464,4492
+src/modules/AiRuntime/models/ProjectContext.ts
+  s_a40848e8f8cca9::t_c1e2738846b4bf 2,32-36
+  s_a40848e8f8cca9::t_2849cc01d6ff29 37-38
+src/modules/AiRuntime/useCases/__tests__/parsePromptToActions.spec.ts
+  s_a40848e8f8cca9::t_059906dec73a7f 7,211,448-466,471-472
+  s_a40848e8f8cca9::t_bd65e5c8f0705e 321-323
+  s_a40848e8f8cca9::t_18b44c507a24d3 339,404-411,434
+  s_a40848e8f8cca9::t_a8bdae09b6f3d7 467-470
+  s_a40848e8f8cca9::t_abaa70b5a97192 473-474
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "e6cdf1dfa3de910d42fec5327711d404b5d2d8bd",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
