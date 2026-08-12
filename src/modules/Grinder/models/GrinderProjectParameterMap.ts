@@ -6,7 +6,6 @@ import {
     type GrinderMic,
     type GrinderPatch,
     type GrinderPedal,
-    type GrinderSupportedChainPedalType,
 } from './GrinderPatch';
 
 const INDEXED_VALUES: Partial<Record<keyof GrinderPatch, readonly string[]>> = {
@@ -21,11 +20,10 @@ const INDEXED_VALUES: Partial<Record<keyof GrinderPatch, readonly string[]>> = {
     neuralTier: ['standard', 'lite', 'nano', 'recurrent'],
     routingMode: ['serial', 'parallel', 'wet-dry-wet', 'dual-amp'],
 };
-const TRANSIENT_KEYS = new Set<keyof GrinderPatch>(['neuralWarmupProgress', 'activeSnapshot']);
 export const GRINDER_PROJECT_PARAM_KEYS = (Object.keys(DEFAULT_PATCH) as Array<keyof GrinderPatch>).filter((key) => {
     const value = DEFAULT_PATCH[key];
     return (
-        !TRANSIENT_KEYS.has(key) &&
+        !['neuralWarmupProgress', 'activeSnapshot'].includes(key) &&
         (typeof value === 'number' || typeof value === 'boolean' || INDEXED_VALUES[key] !== undefined)
     );
 });
@@ -37,7 +35,6 @@ const PEDAL_DEFAULTS = {
     fuzz: { id: 'fuzz1', params: { fuzz: 6.8, tone: 4.8, level: 6.4 } },
 } as const;
 const PROJECT_PEDAL_TYPES = new Set(['compressor', 'overdrive', 'boost', 'distortion', 'fuzz']);
-type ProjectPedal = GrinderPedal & { type: GrinderSupportedChainPedalType | 'boost' };
 function readNumber(values: Readonly<Record<string, unknown>>, key: string, fallback: number): number {
     const raw = values[key];
     return typeof raw === 'number' && Number.isFinite(raw) ? raw : fallback;
@@ -73,10 +70,10 @@ function projectMic(micIndex: 1 | 2, parameterValues: Readonly<Record<string, un
         enabled: readNumber(parameterValues, `${prefix}Enabled`, fallback.enabled ? 1 : 0) > 0.5,
     };
 }
-function pedalLabel(type: GrinderSupportedChainPedalType): string {
+function pedalLabel(type: string): string {
     return type.charAt(0).toUpperCase() + type.slice(1);
 }
-function pedalOrder(pedal: ProjectPedal, prefix: string, parameterValues: Readonly<Record<string, unknown>>): number {
+function pedalOrder(pedal: GrinderPedal, prefix: string, parameterValues: Readonly<Record<string, unknown>>): number {
     const type = pedal.type === 'boost' ? 'overdrive' : pedal.type;
     return readNumber(parameterValues, `${prefix}${pedalLabel(type)}Order`, 0);
 }
@@ -87,7 +84,7 @@ function projectPedals(
 ): GrinderPedal[] {
     const prefix = isPost ? 'post' : 'pre';
     const retained = current.filter((pedal) => !PROJECT_PEDAL_TYPES.has(pedal.type));
-    const projected: ProjectPedal[] = SUPPORTED_GRINDER_CHAIN_PEDAL_TYPES.flatMap((type) => {
+    const projected: GrinderPedal[] = SUPPORTED_GRINDER_CHAIN_PEDAL_TYPES.flatMap((type) => {
         const label = `${prefix}${pedalLabel(type)}`;
         const defaults = PEDAL_DEFAULTS[type].params;
         const existing = current.find(
@@ -125,7 +122,9 @@ export function applyGrinderProjectParameters(
 ): GrinderPatch {
     const cabSlot = Math.round(readNumber(parameterValues, 'cabIrSlot', 0));
     const neuralSlot = Math.round(readNumber(parameterValues, 'neuralModelSlot', -1));
-    const neuralModel = GRINDER_NEURAL_LIBRARY[neuralSlot];
+    const importedModel =
+        readNumber(parameterValues, 'neuralModelMode', Number(patch.neuralModelSource === 'imported')) > 0.5;
+    const neuralModel = importedModel ? undefined : GRINDER_NEURAL_LIBRARY[neuralSlot];
     const next: GrinderPatch = {
         ...patch,
         cabIrId: GRINDER_CAB_LIBRARY[cabSlot]?.id ?? DEFAULT_PATCH.cabIrId,
@@ -138,8 +137,7 @@ export function applyGrinderProjectParameters(
         next.neuralModelId = neuralModel.id;
         next.neuralModelName = neuralModel.name;
         next.neuralModelFamily = neuralModel.family;
-        next.neuralModelSource = 'builtin';
-        next.neuralModelProfile = null;
+        Object.assign(next, { neuralModelSource: 'builtin', neuralModelProfile: null });
     }
     for (const key of GRINDER_PROJECT_PARAM_KEYS) {
         const raw = parameterValues[key];

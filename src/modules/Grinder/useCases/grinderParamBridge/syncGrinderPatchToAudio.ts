@@ -283,10 +283,12 @@ export function syncGrinderPatchToAudio(input: SyncGrinderPatchToAudioInput): vo
         sendNumericParamToDevice(input, entry.key, entry.value);
     }
 
-    if (patch.neuralModelSource === 'imported' && patch.neuralModelProfile) {
+    const importedModel = patch.neuralModelSource === 'imported' && patch.neuralModelProfile;
+    sendNumericParamToDevice(input, 'neuralModelMode', importedModel ? 1 : 0);
+    if (importedModel) {
         sendPatchToDevice(input, {
             neuralModelMode: 'imported',
-            profile: patch.neuralModelProfile,
+            profile: importedModel,
         });
     } else {
         sendPatchToDevice(input, { neuralModelMode: 'builtin' });
