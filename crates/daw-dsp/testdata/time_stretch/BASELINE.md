@@ -40,10 +40,10 @@ All samples are original in-house synthetic signals produced from the recorded f
 
 ## Nonbinding characterization timing
 
-One hardware-labelled observation was captured solely to expose the seed cost; it is not a realtime claim, hardware matrix, promotion threshold, or substitute for the performance specification:
+One hardware-labelled observation was captured solely to expose the seed cost; it uses the workspace release opt-level and codegen-unit settings with LTO explicitly disabled, as recorded below. It is not a realtime claim, hardware matrix, promotion threshold, or substitute for the performance specification:
 
 ```text
-{"duration_ratio":1.25,"hardware":"Apple M4 Pro; macOS 26.5.2; arm64","input_frames":4096,"phase_vocoder_median_us":96797,"profile":"release","runs":5,"wsola_median_us":1230}
+{"codegen_units":16,"duration_ratio":1.25,"hardware":"Apple M4 Pro; macOS 26.5.2; arm64","input_frames":4096,"lto":false,"phase_vocoder_median_us":99222,"profile":"release","runs":5,"wsola_median_us":1272}
 ```
 
 The ignored `time_stretch_crumbs_characterization_cpu` test produced the observation. No warmup/run policy or acceptance threshold is asserted here; those remain exclusively owned by `SPEC-performance-contracts-and-profiling.md`.

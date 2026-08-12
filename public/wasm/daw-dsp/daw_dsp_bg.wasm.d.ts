@@ -1,4 +1,4 @@
-// @wasm-bindgen-dts crate-source: sha256:12b56dd0ab30fae0bdc5719f6ca00ba49bba60ba19e19103e21c3ba9b3213c1d
+// @wasm-bindgen-dts crate-source: sha256:1cb6015e2e91bc3ac097707597e8560490512ed13a43f5132389a1a572c513c0
 /* tslint:disable */
 /* eslint-disable */
 export const memory: WebAssembly.Memory;
@@ -39,6 +39,7 @@ export const grandbouleinstance_set_sostenuto: (a: number, b: number) => void;
 export const grandbouleinstance_set_sustain: (a: number, b: number) => void;
 export const grandbouleinstance_set_temperament: (a: number, b: number) => void;
 export const grandbouleinstance_set_una_corda: (a: number, b: number) => void;
+export const init_panic_hook: () => void;
 export const __wbg_kneadinstance_free: (a: number, b: number) => void;
 export const kneadinstance_get_f0: (a: number) => number;
 export const kneadinstance_get_input_left_ptr: (a: number) => number;
@@ -70,7 +71,6 @@ export const crumbsinstance_process: (a: number, b: number) => number;
 export const crumbsinstance_set_active_sample: (a: number, b: number) => void;
 export const crumbsinstance_set_mode: (a: number, b: number, c: number) => void;
 export const crumbsinstance_set_param: (a: number, b: number, c: number, d: number) => void;
-export const init_panic_hook: () => void;
 export const levaininstance_abort_sample_bank: (a: number) => void;
 export const levaininstance_active_voices: (a: number) => number;
 export const levaininstance_add_sample: (a: number, b: number, c: number, d: number, e: number, f: number) => number;

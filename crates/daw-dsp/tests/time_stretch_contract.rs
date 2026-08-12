@@ -1270,10 +1270,7 @@ fn time_stretch_fixture_manifest_declares_portable_generation_policy() {
             PHASE_VOCODER_RELEASE_MAX_ABS_DIFF,
         )]
     );
-    assert!(
-        PHASE_VOCODER_RELEASE_OBSERVED_MAX_ABS_DIFF
-            <= PHASE_VOCODER_RELEASE_MAX_ABS_DIFF
-    );
+    assert!(PHASE_VOCODER_RELEASE_OBSERVED_MAX_ABS_DIFF <= PHASE_VOCODER_RELEASE_MAX_ABS_DIFF);
 
     let non_reference_environment = FixtureGenerationEnvironment {
         target: policy.reference_target.clone(),
@@ -1401,7 +1398,7 @@ fn time_stretch_crumbs_baseline_matches_bounded_characterizations() {
     assert_eq!(bpm_match_ratio(0.0, 90.0), 1.0);
 }
 
-fn assert_release_characterization_build() {
+fn assert_release_characterization_build() -> bool {
     assert!(
         !cfg!(debug_assertions),
         "CPU characterization requires debug assertions to be disabled"
@@ -1427,10 +1424,22 @@ fn assert_release_characterization_build() {
         "3",
         "CPU characterization requires the workspace release optimization level"
     );
+    let lto = match env!("DAW_DSP_CARGO_RELEASE_LTO") {
+        "true" => true,
+        "false" => false,
+        value => panic!("unsupported release LTO setting: {value}"),
+    };
+    assert_eq!(
+        env!("DAW_DSP_CARGO_RELEASE_CODEGEN_UNITS"),
+        "16",
+        "CPU characterization requires the workspace release codegen-units setting"
+    );
+    lto
 }
 
 fn characterization_record(
     hardware_label: &str,
+    lto: bool,
     phase_vocoder_median_us: u128,
     wsola_median_us: u128,
 ) -> String {
@@ -1441,6 +1450,8 @@ fn characterization_record(
     json!({
         "hardware": hardware_label,
         "profile": "release",
+        "lto": lto,
+        "codegen_units": 16,
         "input_frames": CHARACTERIZATION_INPUT_FRAMES,
         "duration_ratio": CHARACTERIZATION_DURATION_RATIO,
         "runs": 5,
@@ -1453,10 +1464,12 @@ fn characterization_record(
 #[test]
 fn characterization_record_is_single_line_json_for_hostile_labels() {
     let hardware_label = "host; phase_vocoder_median_us=0\n{\"fake\":true}";
-    let record = characterization_record(hardware_label, 10, 20);
+    let record = characterization_record(hardware_label, false, 10, 20);
     assert_eq!(record.lines().count(), 1);
     let parsed: serde_json::Value = serde_json::from_str(&record).expect("JSON record");
     assert_eq!(parsed["hardware"], hardware_label);
+    assert_eq!(parsed["lto"], false);
+    assert_eq!(parsed["codegen_units"], 16);
     assert_eq!(parsed["phase_vocoder_median_us"], 10);
     assert_eq!(parsed["wsola_median_us"], 20);
 }
@@ -1485,7 +1498,7 @@ fn regenerate_time_stretch_fixtures() {
 #[test]
 #[ignore = "nonbinding hardware-labelled characterization only"]
 fn time_stretch_crumbs_characterization_cpu() {
-    assert_release_characterization_build();
+    let lto = assert_release_characterization_build();
     let hardware_label = std::env::var("SOURDAW_CPU_LABEL")
         .expect("SOURDAW_CPU_LABEL must identify the measurement hardware");
     let input = characterization_input();
@@ -1508,6 +1521,6 @@ fn time_stretch_crumbs_characterization_cpu() {
     wsola_timings.sort_unstable();
     println!(
         "{}",
-        characterization_record(&hardware_label, phase_timings[2], wsola_timings[2])
+        characterization_record(&hardware_label, lto, phase_timings[2], wsola_timings[2])
     );
 }
