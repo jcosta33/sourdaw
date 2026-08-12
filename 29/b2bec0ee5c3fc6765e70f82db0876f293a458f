@@ -1,0 +1,22 @@
+src/modules/AiRuntime/useCases/__tests__/parsePromptToActions.spec.ts
+  s_a40848e8f8cca9::t_b971d1514ffd27 514-517
+  s_a40848e8f8cca9::t_072453b0774f0c 506-513,518-522
+src/modules/AiRuntime/models/ActionPlanningMode.ts
+  s_a40848e8f8cca9::t_a99ce167fa07bd 8-11
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "29b2bec0ee5c3fc6765e70f82db0876f293a458f",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
