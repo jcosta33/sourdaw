@@ -24,6 +24,49 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 const EXPECTED_COMMANDS = [
     expectedCommand(
+        'importStemSet',
+        'Classify one exact application-selected stem set for application-owned tempo alignment, naming, grouping, and starting mix.',
+        {
+            selectionId: { type: 'string', description: 'Exact application-owned selected-file set ID' },
+            groupName: { type: 'string', minLength: 1, maxLength: 80 },
+            stems: {
+                type: 'array',
+                minItems: 2,
+                maxItems: 32,
+                items: {
+                    type: 'object',
+                    additionalProperties: false,
+                    properties: {
+                        stemId: { type: 'string' },
+                        role: {
+                            type: 'string',
+                            enum: [
+                                'kick',
+                                'snare',
+                                'hi-hat',
+                                'tom',
+                                'percussion',
+                                'bass',
+                                'guitar-left',
+                                'guitar-right',
+                                'keys',
+                                'synth',
+                                'lead-vocal',
+                                'backing-vocal',
+                                'fx',
+                                'other',
+                            ],
+                        },
+                    },
+                    required: ['stemId', 'role'],
+                },
+            },
+        },
+        ['selectionId', 'groupName', 'stems'],
+        'broad-reversible',
+        true
+    ),
+    expectedCommand(
         'addTrack',
         'Create a new track in the session.',
         {
@@ -1170,6 +1213,12 @@ const EXPECTED_COMMANDS = [
 
 const EXPECTED_GROUNDING = [
     {
+        actionType: 'importStemSet',
+        intentPhrases: ['import stems and create a starting mix'],
+        targetRules: [],
+        valueRules: [],
+    },
+    {
         actionType: 'addTrack',
         intentPhrases: [
             'add track',
@@ -2279,19 +2328,24 @@ describe('executable command registry', () => {
     });
 
     it('isolates nested schema data between generated provider surfaces', () => {
-        const firstProperties = getExecutableAppActionToolSchemas()[0]?.function.parameters.properties;
-        if (!firstProperties) {
+        const addTrackProperties = getExecutableAppActionToolSchemas().find(
+            (schema) => schema.function.name === 'addTrack'
+        )?.function.parameters.properties;
+        if (!addTrackProperties) {
             throw new Error('addTrack schema is unavailable');
         }
-        const originalProperties = structuredClone(firstProperties);
-        const firstNameProperty: unknown = Reflect.get(firstProperties, 'name');
+        const originalProperties = structuredClone(addTrackProperties);
+        const firstNameProperty: unknown = Reflect.get(addTrackProperties, 'name');
         if (!isRecord(firstNameProperty)) {
             throw new Error('addTrack name schema is unavailable');
         }
 
         firstNameProperty.description = 'mutated by provider adapter';
 
-        expect(getExecutableAppActionToolSchemas()[0]?.function.parameters.properties).toEqual(originalProperties);
+        expect(
+            getExecutableAppActionToolSchemas().find((schema) => schema.function.name === 'addTrack')?.function
+                .parameters.properties
+        ).toEqual(originalProperties);
     });
 
     it('pins the complete intent, target, and value grounding map', () => {

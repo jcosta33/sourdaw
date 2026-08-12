@@ -26,6 +26,13 @@ type AssetTransferCallbacks = {
     onProgress: (hash: string, receivedChunks: number, totalChunks: number) => void;
 };
 
+type LocalAssetEntry = {
+    blob: Blob;
+    name: string;
+    durable: boolean;
+    stagingLeaseIds: Set<string>;
+};
+
 /**
  * Content-addressed asset transfer over WebRTC data channels.
  *
@@ -36,8 +43,9 @@ export class AssetTransfer {
     private peerManager: PeerConnectionManager;
     private callbacks: AssetTransferCallbacks;
 
-    /** Local content store: hash → { blob, name } */
-    private localAssets = new Map<string, { blob: Blob; name: string }>();
+    /** Local content store with durable and pending-staging ownership. */
+    private localAssets = new Map<string, LocalAssetEntry>();
+    private stagingLeaseHashById = new Map<string, string>();
 
     /** In-flight incoming transfers: hash → { chunks, received bitmap } */
     private incomingTransfers = new Map<
@@ -66,8 +74,59 @@ export class AssetTransfer {
     /** Register a local asset (e.g. after recording or importing). */
     async addLocalAsset(blob: Blob, name: string): Promise<string> {
         const hash = await hashBlob(blob);
-        this.localAssets.set(hash, { blob, name });
+        const existing = this.localAssets.get(hash);
+        if (existing) {
+            existing.durable = true;
+        } else {
+            this.localAssets.set(hash, { blob, name, durable: true, stagingLeaseIds: new Set() });
+        }
         return hash;
+    }
+
+    /** Stage an import asset under a unique lease until project commit or cancellation. */
+    async stageLocalAsset(blob: Blob, name: string): Promise<{ hash: string; leaseId: string }> {
+        const hash = await hashBlob(blob);
+        const leaseId = `asset-stage-${crypto.randomUUID()}`;
+        const existing = this.localAssets.get(hash);
+        if (existing) {
+            existing.stagingLeaseIds.add(leaseId);
+        } else {
+            this.localAssets.set(hash, { blob, name, durable: false, stagingLeaseIds: new Set([leaseId]) });
+        }
+        this.stagingLeaseHashById.set(leaseId, hash);
+        return { hash, leaseId };
+    }
+
+    /** Release one unresolved staging reference, deleting only uncommitted unshared data. */
+    releaseStagedAsset(leaseId: string): void {
+        const hash = this.stagingLeaseHashById.get(leaseId);
+        if (!hash) {
+            return;
+        }
+        this.stagingLeaseHashById.delete(leaseId);
+        const entry = this.localAssets.get(hash);
+        if (!entry) {
+            return;
+        }
+        entry.stagingLeaseIds.delete(leaseId);
+        if (!entry.durable && entry.stagingLeaseIds.size === 0) {
+            this.localAssets.delete(hash);
+        }
+    }
+
+    /** Promote one staging reference to durable project-owned availability. */
+    promoteStagedAsset(leaseId: string): void {
+        const hash = this.stagingLeaseHashById.get(leaseId);
+        if (!hash) {
+            return;
+        }
+        this.stagingLeaseHashById.delete(leaseId);
+        const entry = this.localAssets.get(hash);
+        if (!entry) {
+            throw new Error(`Cannot promote missing staged asset lease: ${leaseId}`);
+        }
+        entry.stagingLeaseIds.delete(leaseId);
+        entry.durable = true;
     }
 
     /** Check if an asset is available locally. */
@@ -300,7 +359,12 @@ export class AssetTransfer {
             return;
         }
 
-        this.localAssets.set(hash, { blob, name: transfer.manifest.name });
+        this.localAssets.set(hash, {
+            blob,
+            name: transfer.manifest.name,
+            durable: true,
+            stagingLeaseIds: new Set(),
+        });
         this.incomingTransfers.delete(hash);
         this.callbacks.onAssetAvailable(hash);
     }

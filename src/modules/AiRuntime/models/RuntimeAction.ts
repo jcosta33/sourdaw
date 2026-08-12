@@ -1,6 +1,7 @@
 import type { AppAction, AppActionType } from '#/utils/handlerContract';
 
 export const RUNTIME_ACTION_TYPES = [
+    'importStemSet',
     'addTrack',
     'removeTrack',
     'removeAllTracks',
@@ -257,6 +258,7 @@ type AppActionPayload<ActionType extends AppActionType> =
     AppActionOf<ActionType> extends { payload: infer Payload } ? Payload : never;
 
 export const RUNTIME_ACTION_OVERRIDE_PAYLOAD_KEYS = {
+    importStemSet: ['selectionId', 'groupName', 'stems'],
     addTrack: ['name', 'kind', 'select'],
     muteTrack: ['trackId', 'muted'],
     setTrackGain: ['trackId', 'gain'],
@@ -324,6 +326,7 @@ export const RUNTIME_ACTION_OVERRIDE_PAYLOAD_KEYS = {
 } as const satisfies Partial<Record<RuntimeActionType, readonly string[]>>;
 
 export const RUNTIME_ACTION_OVERRIDE_REQUIRED_PAYLOAD_KEYS = {
+    importStemSet: ['selectionId', 'groupName', 'stems'],
     addTrack: ['name', 'kind'],
     muteTrack: ['trackId', 'muted'],
     setTrackGain: ['trackId', 'gain'],
@@ -401,17 +404,22 @@ type RuntimeAddNotesPayload = {
     clipId: AppActionPayload<'addNotes'>['clipId'];
     notes: Array<Omit<AppActionPayload<'addNotes'>['notes'][number], 'id'>>;
 };
+type RuntimeImportStemSetPayload = Pick<AppActionPayload<'importStemSet'>, 'selectionId' | 'groupName'> & {
+    stems: Array<Pick<AppActionPayload<'importStemSet'>['stems'][number], 'stemId' | 'role'>>;
+};
 type RuntimeActionWithPayload<ActionType extends RuntimePayloadOverrideType> = ActionType extends 'addNotes'
     ? Omit<AppActionOf<ActionType>, 'payload'> & { payload: RuntimeAddNotesPayload }
-    : Omit<AppActionOf<ActionType>, 'payload'> & {
-          payload: RuntimePayloadOverride<ActionType> &
-              Required<
-                  Pick<
-                      AppActionPayload<ActionType>,
-                      Extract<RuntimeRequiredPayloadKey<ActionType>, keyof AppActionPayload<ActionType>>
-                  >
-              >;
-      };
+    : ActionType extends 'importStemSet'
+      ? Omit<AppActionOf<ActionType>, 'payload'> & { payload: RuntimeImportStemSetPayload }
+      : Omit<AppActionOf<ActionType>, 'payload'> & {
+            payload: RuntimePayloadOverride<ActionType> &
+                Required<
+                    Pick<
+                        AppActionPayload<ActionType>,
+                        Extract<RuntimeRequiredPayloadKey<ActionType>, keyof AppActionPayload<ActionType>>
+                    >
+                >;
+        };
 
 type CanonicalRuntimeAction = Exclude<
     Extract<AppAction, { type: RuntimeActionType }>,

@@ -12,6 +12,7 @@ import { type ProjectContext } from '../models/ProjectContext';
 import { type RuntimeAction } from '../models/RuntimeAction';
 import { type SharedVocalFxBusesCapability } from '../models/SharedVocalFxBusesCapability';
 import { type SidechainRoutingCapability } from '../models/SidechainRoutingCapability';
+import { type StemImportCapability } from '../models/StemImportCapability';
 import { type SyncopatedArpeggioCapability } from '../models/SyncopatedArpeggioCapability';
 import { type WholeProjectVibeMixCapability } from '../models/WholeProjectVibeMixPlan';
 import { normalizeSafeProjectName } from '../validators/normalizeSafeProjectName';
@@ -3161,6 +3162,7 @@ export function buildLlmActionUserMessage({
     midiOverlapTransformCapability,
     sidechainRoutingCapability,
     sharedVocalFxBusesCapability,
+    stemImportCapability,
     syncopatedArpeggioCapability,
     wholeProjectVibeMixCapability,
 }: {
@@ -3175,6 +3177,7 @@ export function buildLlmActionUserMessage({
     midiOverlapTransformCapability?: MidiOverlapTransformCapability;
     sidechainRoutingCapability?: SidechainRoutingCapability;
     sharedVocalFxBusesCapability?: SharedVocalFxBusesCapability;
+    stemImportCapability?: StemImportCapability;
     syncopatedArpeggioCapability?: SyncopatedArpeggioCapability;
     wholeProjectVibeMixCapability?: WholeProjectVibeMixCapability;
 }): string {
@@ -3188,6 +3191,7 @@ export function buildLlmActionUserMessage({
         ...(midiOverlapTransformCapability ? { midiOverlapTransformCapability } : {}),
         ...(sidechainRoutingCapability ? { sidechainRoutingCapability } : {}),
         ...(sharedVocalFxBusesCapability ? { sharedVocalFxBusesCapability } : {}),
+        ...(stemImportCapability ? { stemImportCapability } : {}),
         ...(syncopatedArpeggioCapability ? { syncopatedArpeggioCapability } : {}),
         ...(wholeProjectVibeMixCapability ? { wholeProjectVibeMixCapability } : {}),
         tempo: context.tempo,

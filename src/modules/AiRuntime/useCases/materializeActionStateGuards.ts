@@ -629,6 +629,9 @@ export function materializeActionStateGuards(
             materialized.push({ type: 'renderProjectSections', payload: { ...action.payload, jobs } });
             continue;
         }
+        if (action.type === 'importStemSet') {
+            return { status: 'rejected', reason: 'Stem imports require application-owned file materialization' };
+        }
         materialized.push(action);
     }
 

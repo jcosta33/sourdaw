@@ -27,6 +27,7 @@ import {
 import { llmStatusStore } from '../stores/llmStatusStore';
 import { proposePendingActionConfirmation } from '../stores/pendingActionConfirmationStore';
 
+import { createStemImportConfirmationResourceLease } from './agentReference/createStemImportConfirmationResourceLease';
 import { createThinkBlockParser } from './createThinkBlockParser';
 import { describePendingActionConfirmation } from './describePendingActionConfirmation';
 import { executePlannedActions } from './executePlannedActions';
@@ -113,7 +114,7 @@ export async function sendChatMessage(userText: string): Promise<void> {
                         prompt: userText,
                         wholeProjectVibeMixPlan: result.wholeProjectVibeMixPlan,
                     });
-                    proposePendingActionConfirmation({
+                    const confirmation = proposePendingActionConfirmation({
                         id: confirmationId,
                         prompt: userText,
                         assistantMessageId: assistantMsgId,
@@ -124,7 +125,18 @@ export async function sendChatMessage(userText: string): Promise<void> {
                         risk: confirmationDescription.risk,
                         executionMode: result.executionMode,
                         projectRevision,
+                        resourceLease: createStemImportConfirmationResourceLease(result.actions),
                     });
+                    if (!confirmation) {
+                        updateChatMessage(assistantMsgId, {
+                            isStreaming: false,
+                            pendingActionConfirmationStatus: 'failed',
+                            error: 'Prepared action resources exceed the live confirmation limit.',
+                            content:
+                                'This proposal was not retained because pending prepared resources reached their safe limit. Resolve or cancel an earlier proposal, then try again.',
+                        });
+                        return;
+                    }
 
                     updateChatMessage(assistantMsgId, {
                         isStreaming: false,

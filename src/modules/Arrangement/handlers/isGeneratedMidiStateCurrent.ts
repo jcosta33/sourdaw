@@ -14,6 +14,7 @@ type IsGeneratedMidiStateCurrentInput = {
     entityId: string;
     entityType: 'clip' | 'track';
     guard: GeneratedMidiStateGuard;
+    allowedReferencingTrackIds?: readonly string[];
 };
 
 function hasClipSatelliteState(clipIds: readonly string[]): boolean {
@@ -28,6 +29,7 @@ export function isGeneratedMidiStateCurrent({
     entityId,
     entityType,
     guard,
+    allowedReferencingTrackIds = [],
 }: IsGeneratedMidiStateCurrentInput): boolean {
     const state = getTrackStoreState();
     if (!state) {
@@ -71,9 +73,11 @@ export function isGeneratedMidiStateCurrent({
         return true;
     }
 
+    const allowedReferences = new Set(allowedReferencingTrackIds);
     const referencedByTrack = state.tracks.some(
         (track) =>
             track.id !== entityId &&
+            !allowedReferences.has(track.id) &&
             (track.parentId === entityId ||
                 track.outputId === entityId ||
                 track.midiOutputTrackId === entityId ||
