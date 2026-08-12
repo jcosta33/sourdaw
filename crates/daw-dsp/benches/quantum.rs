@@ -446,9 +446,9 @@ fn bench_grand_boule_saturated_steal(criterion: &mut Criterion) {
 /// the way `engine_output_level.rs` drives it, so the ladder and the modulation
 /// path are doing work rather than idling at a default that short-circuits.
 ///
-/// Above 16 voices the load has to be built by stacking layers, because a
-/// layer's pool is fixed at 16. `layers × notes` is chosen to hit `sounding`
-/// exactly, keeping the notes distinct within a layer.
+/// Multi-layer rows distribute the instance-wide ceiling across layers.
+/// `layers × notes` is chosen to hit `sounding` exactly, keeping the notes
+/// distinct within each layer.
 fn fermenter_instance(sounding: usize) -> FermenterInstance {
     let layers = sounding
         .div_ceil(PRODUCTION_FERMENTER_VOICE_CEILING)
@@ -483,8 +483,8 @@ fn verify_fermenter_voices_stay_sounding() {
     const LONG_RUN_BLOCKS: usize = 3_750;
 
     eprintln!(
-        "\n[verify] Fermenter (constructed with max_voices={FERMENTER_POOL}, which the synth \
-         ignores), held notes never released"
+        "\n[verify] Fermenter (production max_voices={FERMENTER_POOL}; synthetic rows raise \
+         the enforced instance-wide ceiling as needed), held notes never released"
     );
     eprintln!("[verify]  requested | active after warm-up | active after 10 s");
     for sounding in FERMENTER_VOICE_COUNTS {
