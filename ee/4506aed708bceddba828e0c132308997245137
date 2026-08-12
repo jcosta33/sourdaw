@@ -1,0 +1,24 @@
+src/modules/BrowserAi/repositories/inferenceWorkerBridge.ts
+  s_bc88af7d3b054c::t_414b41e0a949fa 160-167,179
+src/modules/BrowserAi/repositories/__tests__/inferenceWorkerBridge.spec.ts
+  s_bc88af7d3b054c::t_65e594faf5d932 184,189,191-203
+  s_bc88af7d3b054c::t_cf10c51ae3766b 185-188,190
+src/modules/BrowserAi/workers/__tests__/onnxInferenceWorker.spec.ts
+  s_bc88af7d3b054c::t_414b41e0a949fa 1-58
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "ee4506aed708bceddba828e0c132308997245137",
+  "prompts": {},
+  "sessions": {
+    "s_bc88af7d3b054c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f9b4a-11a2-7f61-8dfb-76eed0eb2a9c",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
