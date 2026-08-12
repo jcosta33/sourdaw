@@ -506,6 +506,8 @@ describe('parsePromptToActions', () => {
     it.each([
         'rename Bass to "Drums and Preview Mix"; delete Vocls',
         'rename Bass to "Drums; Preview Mix"; delete Vocls',
+        "rename Bass to 'Drums; Preview Mix'; delete Vocls",
+        'rename Bass to ‘Drums; Preview Mix’; delete Vocls',
     ])('does not treat preview text inside a quoted name as preview authority', async (prompt) => {
         vi.mocked(generateToolCalls).mockResolvedValue(
             completePlan([
