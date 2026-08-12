@@ -366,16 +366,16 @@ export const SetlistPanel = (): ReactElement => {
                                                         : 'text-muted-foreground hover:text-foreground'
                                                 )}
                                                 aria-pressed={item.autoStop}
-                                                aria-label={`Auto-stop: ${item.autoStop ? 'on' : 'off'}`}
+                                                aria-label={`AS: Auto-stop ${item.autoStop ? 'on' : 'off'}`}
                                                 onClick={(event) => {
                                                     event.stopPropagation();
                                                     updateSetlistItem(item.id, { autoStop: !item.autoStop });
                                                 }}
                                             >
-                                                CI
+                                                AS
                                             </button>
                                         </TooltipTrigger>
-                                        <TooltipContent>Count-in / auto-stop before this item</TooltipContent>
+                                        <TooltipContent>Auto-stop after this item finishes</TooltipContent>
                                     </Tooltip>
 
                                     <div className="flex shrink-0 items-center gap-0.5 opacity-0 group-hover:opacity-100">

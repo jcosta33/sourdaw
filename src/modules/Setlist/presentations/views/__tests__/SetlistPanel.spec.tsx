@@ -398,7 +398,7 @@ describe('SetlistPanel', () => {
         it('reflects autoStop off via aria-pressed false and muted styling class', () => {
             seed({ items: [makeItem({ id: 'a', name: 'Opener', autoStop: false })] });
             render(<SetlistPanel />);
-            const toggle = screen.getByRole('button', { name: 'Auto-stop: off' });
+            const toggle = screen.getByRole('button', { name: 'AS: Auto-stop off' });
             expect(toggle.getAttribute('aria-pressed')).toBe('false');
             expect(toggle.className).not.toContain('accent-mint');
         });
@@ -406,7 +406,7 @@ describe('SetlistPanel', () => {
         it('reflects autoStop on via aria-pressed true and mint styling class', () => {
             seed({ items: [makeItem({ id: 'a', name: 'Opener', autoStop: true })] });
             render(<SetlistPanel />);
-            const toggle = screen.getByRole('button', { name: 'Auto-stop: on' });
+            const toggle = screen.getByRole('button', { name: 'AS: Auto-stop on' });
             expect(toggle.getAttribute('aria-pressed')).toBe('true');
             expect(toggle.className).toContain('accent-mint');
         });
@@ -414,7 +414,7 @@ describe('SetlistPanel', () => {
         it('flips autoStop through updateSetlistItem when clicked', () => {
             seed({ items: [makeItem({ id: 'a', name: 'Opener', autoStop: false })] });
             render(<SetlistPanel />);
-            fireEvent.click(screen.getByRole('button', { name: 'Auto-stop: off' }));
+            fireEvent.click(screen.getByRole('button', { name: 'AS: Auto-stop off' }));
             expect(updateSetlistItem).toHaveBeenCalledWith('a', { autoStop: true });
         });
 
@@ -426,6 +426,19 @@ describe('SetlistPanel', () => {
             seed({ items: [makeItem({ id: 'a', name: 'Opener', autoStop: false })] });
             render(<SetlistPanel />);
             expect(screen.queryByRole('button', { name: /Count-in before/i })).toBeNull();
+        });
+
+        it('keeps the visible glyph a literal substring of the accessible name (F9, WCAG 2.5.3)', () => {
+            // Regression: the visible glyph read "CI" (count-in) while the
+            // aria-label already said "Auto-stop" — sighted users were misled
+            // by the exact thing the label named, and voice-control users
+            // saying "click AS" would not have matched an accessible name that
+            // never contained the visible label text.
+            seed({ items: [makeItem({ id: 'a', name: 'Opener', autoStop: false })] });
+            render(<SetlistPanel />);
+            const toggle = screen.getByRole('button', { name: 'AS: Auto-stop off' });
+            expect(toggle.textContent).toBe('AS');
+            expect(toggle.getAttribute('aria-label')).toContain(toggle.textContent);
         });
     });
 

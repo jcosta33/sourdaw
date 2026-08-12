@@ -1,7 +1,10 @@
-import { render, screen, fireEvent } from '@testing-library/react';
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { act, render, screen, fireEvent } from '@testing-library/react';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
+import { Button } from '#/components/ui/button';
 import { TooltipProvider } from '#/components/ui/tooltip';
+import { playheadPositionRef } from '#/modules/Transport/stores';
+import { cn } from '#/utils/Styles/cn';
 
 import { LoopStationPanel } from '../LoopStationPanel';
 
@@ -66,6 +69,18 @@ vi.mock('#/modules/Transport/stores', () => ({
     transportStore: { __id: 'transport' },
     playheadPositionRef: { current: 0 },
 }));
+
+// Wrap (not replace) the real Button/cn so the rest of the suite keeps
+// exercising real rendering, while the F10 regression test below can assert
+// call counts to prove a per-frame tick no longer re-invokes the cell body.
+vi.mock('#/components/ui/button', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('#/components/ui/button')>();
+    return { ...actual, Button: vi.fn(actual.Button) };
+});
+vi.mock('#/utils/Styles/cn', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('#/utils/Styles/cn')>();
+    return { cn: vi.fn(actual.cn) };
+});
 
 vi.mock('#/modules/Arrangement/stores', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/Arrangement/stores')>()),
@@ -198,5 +213,85 @@ describe('LoopStationPanel', () => {
         renderPanel();
         const syncLabel = screen.getByText(/Bar\s1\.1|Free/i);
         expect(syncLabel).toHaveAttribute('aria-live', 'polite');
+    });
+
+    describe('per-frame ticking isolation (F10)', () => {
+        // Regression: LoopStationSlotCell used to receive the ticking
+        // playhead position as a prop (`positionBeats`), which made every
+        // occupied cell's element depend on a value that changes every
+        // animation frame — invalidating that reactive scope and re-invoking
+        // the whole cell body (its five Buttons, its cn() calls) once per
+        // frame, for every occupied cell, active or not. The fix isolates
+        // the ticking readout into its own leaf (`LoopSlotProgressReadout`)
+        // that writes straight to its own DOM node. This test drives real
+        // rAF ticks with a genuinely changing playhead value (confirmed via
+        // the progress text itself) and asserts the cell body's Button/cn
+        // calls do not grow — the discriminating signal a flat call count
+        // against the *unmodified* component could not have shown, since
+        // those spies were never wired to the changing prop in the first
+        // place.
+        let rafCallbacks: FrameRequestCallback[];
+
+        beforeEach(() => {
+            rafCallbacks = [];
+            vi.spyOn(window, 'requestAnimationFrame').mockImplementation((cb: FrameRequestCallback) => {
+                rafCallbacks.push(cb);
+                return rafCallbacks.length;
+            });
+            vi.spyOn(window, 'cancelAnimationFrame').mockImplementation(() => {});
+        });
+
+        afterEach(() => {
+            vi.restoreAllMocks();
+        });
+
+        const tick = (): void => {
+            const pending = rafCallbacks;
+            rafCallbacks = [];
+            act(() => {
+                for (const cb of pending) {
+                    cb(performance.now());
+                }
+            });
+        };
+
+        it('does not re-invoke the occupied cell body on a genuinely ticking playhead', () => {
+            mocks.trackState.tracks = [{ id: 't1', name: 'Drums', color: null }];
+            mocks.loopState.slots = [
+                {
+                    id: 'slot-1',
+                    trackId: 't1',
+                    row: 0,
+                    column: 0,
+                    state: 'playing',
+                    lengthBeats: 4,
+                    layers: [{ id: 'layer-1', layerIndex: 0, recordedAt: '', muted: false, volume: 1 }],
+                    loopCount: 0,
+                    volume: 1,
+                    quantize: true,
+                    fadeBeats: 0,
+                },
+            ];
+            playheadPositionRef.current = 0;
+
+            renderPanel();
+
+            const progressNode = screen.getByTestId('loop-slot-progress');
+            const initialProgressText = progressNode.textContent;
+            const callsAtMount = vi.mocked(Button).mock.calls.length;
+            const cnCallsAtMount = vi.mocked(cn).mock.calls.length;
+
+            // Drive several real ticks with a genuinely changing value —
+            // this is the part the earlier (refuted) probe skipped, which
+            // is why it could not tell a fixed grid from a broken one.
+            for (let i = 1; i <= 5; i += 1) {
+                playheadPositionRef.current = i * 0.5;
+                tick();
+            }
+
+            expect(progressNode.textContent).not.toBe(initialProgressText);
+            expect(vi.mocked(Button).mock.calls.length).toBe(callsAtMount);
+            expect(vi.mocked(cn).mock.calls.length).toBe(cnCallsAtMount);
+        });
     });
 });
