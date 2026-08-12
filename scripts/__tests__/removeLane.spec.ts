@@ -59,6 +59,8 @@ function campaign(overrides: Partial<CampaignIssue> = {}): CampaignIssue {
 type FakeInput = {
     lane?: Worktree;
     currentDirectory?: string;
+    active?: boolean;
+    alive?: boolean;
     dirty?: boolean;
     ignored?: string[];
     operation?: string;
@@ -76,6 +78,8 @@ function fakePort(input: FakeInput = {}) {
         repository: () => 'jcosta33/sourdaw',
         currentDirectory: () => input.currentDirectory ?? root,
         worktrees: () => [worktree({ path: root, branch: 'main' }), { ...lane, locked }],
+        active: () => input.active ?? false,
+        processAlive: () => input.alive ?? true,
         dirty: () => input.dirty ?? false,
         ignored: () => input.ignored ?? [],
         operation: () => input.operation,
@@ -122,6 +126,7 @@ describe('lane removal', () => {
         ],
         ['outside', '/tmp/feature', { lane: worktree({ path: '/tmp/feature' }) }, /not an agent worktree/],
         ['active', target, { currentDirectory: `${target}/scripts` }, /active worktree/],
+        ['other process', target, { active: true }, /active in another process/],
         ['locked', target, { lane: worktree({ locked: true }) }, /locked or shared/],
         ['detached', target, { lane: worktree({ branch: undefined, detached: true }) }, /ownership is unknown/],
         ['dirty', target, { dirty: true }, /dirty/],
@@ -144,6 +149,28 @@ describe('lane removal', () => {
         expect(() => removeLane(path, port)).toThrow(message);
         expect(calls.some((call) => call.startsWith('remove:'))).toBe(false);
     });
+
+    it('recovers only its own stale PID lock', () => {
+        const { port, calls } = fakePort({
+            lane: worktree({ locked: true, lockReason: 'lane-remove:2147483647' }),
+            alive: false,
+        });
+
+        removeLane(target, port);
+
+        expect(calls).toEqual(['fetch', `unlock:${target}`, `lock:${target}`, `unlock:${target}`, `remove:${target}`]);
+    });
+
+    it.each(['Part of (#7).', 'Part of https://github.com/jcosta33/sourdaw/issues/7.'])(
+        'accepts campaign reference form: %s',
+        (body) => {
+            const { port, calls } = fakePort({ pullRequests: [pullRequest({ body })] });
+
+            removeLane(target, port);
+
+            expect(calls).toContain(`remove:${target}`);
+        }
+    );
 });
 
 describe('worktree parser', () => {
@@ -155,7 +182,7 @@ describe('worktree parser', () => {
 
         expect(parseWorktrees(`${value}\0\0`)).toEqual([
             worktree({ path: root, head: 'root', branch: 'main' }),
-            worktree({ branch: undefined, detached: true, locked: true }),
+            worktree({ branch: undefined, detached: true, locked: true, lockReason: 'shared' }),
         ]);
     });
 });
@@ -167,6 +194,9 @@ describe('lane-removal shell boundary', () => {
         const shell: ShellRunner = {
             capture: (command, args) => {
                 captures.push({ command, args });
+                if (command === 'lsof') {
+                    return `p999\nfcwd\nn${target}`;
+                }
                 if (args.includes('nameWithOwner')) {
                     return 'jcosta33/sourdaw';
                 }
@@ -199,6 +229,7 @@ describe('lane-removal shell boundary', () => {
 
         expect(port.pullRequests('feat/work')).toEqual([pullRequest()]);
         expect(port.remoteHead('feat/work')).toBeUndefined();
+        expect(port.active(target)).toBe(true);
         port.lock(target);
         port.unlock(target);
         port.remove(target);
@@ -237,6 +268,8 @@ describe('lane-removal shell boundary', () => {
                 repository: () => 'jcosta33/sourdaw',
                 currentDirectory: () => repository,
                 worktrees: () => parseWorktrees(git(['worktree', 'list', '--porcelain', '-z'])),
+                active: () => false,
+                processAlive: () => true,
                 dirty: (path) => git(['status', '--porcelain=v1', '--untracked-files=all'], path) !== '',
                 ignored: (path) =>
                     git(['ls-files', '--others', '--ignored', '--exclude-standard', '--directory'], path)

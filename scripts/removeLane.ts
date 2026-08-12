@@ -12,6 +12,7 @@ export type Worktree = {
     bare: boolean;
     detached: boolean;
     locked: boolean;
+    lockReason?: string;
     prunable: boolean;
 };
 
@@ -38,6 +39,8 @@ export type LaneRemovalPort = {
     repository: () => string;
     currentDirectory: () => string;
     worktrees: () => Worktree[];
+    active: (path: string) => boolean;
+    processAlive: (pid: number) => boolean;
     dirty: (path: string) => boolean;
     ignored: (path: string) => string[];
     operation: (path: string) => string | undefined;
@@ -67,7 +70,7 @@ function issueReferences(body: string | null): number[] {
     if (body === null) {
         return [];
     }
-    const references = [...body.matchAll(/(?:^|\s)#(\d+)\b/g)].map((match) => Number(match[1]));
+    const references = [...body.matchAll(/#(\d+)\b|\/issues\/(\d+)\b/g)].map((match) => Number(match[1] ?? match[2]));
     return [...new Set(references.filter((number) => Number.isSafeInteger(number) && number > 0))];
 }
 
@@ -97,13 +100,15 @@ export function parseWorktrees(value: string): Worktree[] {
                 fail('git returned malformed worktree state');
             }
             const branch = fields.find((field) => field.startsWith('branch '))?.slice('branch refs/heads/'.length);
+            const locked = fields.find((field) => field === 'locked' || field.startsWith('locked '));
             return {
                 path: worktree,
                 head,
                 branch,
                 bare: fields.includes('bare'),
                 detached: fields.includes('detached'),
-                locked: fields.some((field) => field === 'locked' || field.startsWith('locked ')),
+                locked: locked !== undefined,
+                lockReason: locked?.slice('locked '.length) || undefined,
                 prunable: fields.some((field) => field === 'prunable' || field.startsWith('prunable ')),
             };
         });
@@ -129,16 +134,38 @@ function identifyLane(target: string, port: LaneRemovalPort): Worktree {
     if (inside(target, port.currentDirectory())) {
         fail('refusing to remove the active worktree');
     }
+    if (port.active(target)) {
+        fail('worktree is active in another process');
+    }
     if (lane.bare || lane.detached || lane.branch === undefined || lane.prunable) {
         fail('worktree ownership is unknown');
     }
     if (lane.locked) {
+        const stalePid = /^lane-remove:(\d+)$/.exec(lane.lockReason ?? '')?.[1];
+        if (stalePid !== undefined && !port.processAlive(Number(stalePid))) {
+            port.unlock(target);
+            return identifyLane(target, port);
+        }
         fail('worktree is locked or shared');
     }
     return lane;
 }
 
-function validateOwnership(target: string, expected: Worktree, repository: string, port: LaneRemovalPort): void {
+type OwnershipSnapshot = {
+    head: string;
+    branch: string;
+    ignored: string[];
+    pullRequest: number;
+    campaign: number;
+    remoteHead?: string;
+};
+
+function validateOwnership(
+    target: string,
+    expected: Worktree,
+    repository: string,
+    port: LaneRemovalPort
+): OwnershipSnapshot {
     const current = port.worktrees().find((worktree) => worktree.path === target);
     if (
         current === undefined ||
@@ -154,7 +181,11 @@ function validateOwnership(target: string, expected: Worktree, repository: strin
     if (port.dirty(target)) {
         fail('worktree is dirty');
     }
-    const unsafeIgnored = port.ignored(target).filter((path) => !disposableIgnored(path));
+    if (port.active(target)) {
+        fail('worktree is active in another process');
+    }
+    const ignored = port.ignored(target);
+    const unsafeIgnored = ignored.filter((path) => !disposableIgnored(path));
     if (unsafeIgnored.length > 0) {
         fail(`worktree contains ignored data: ${unsafeIgnored.slice(0, 3).join(', ')}`);
     }
@@ -192,6 +223,10 @@ function validateOwnership(target: string, expected: Worktree, repository: strin
     if (campaigns.length !== 1) {
         fail(`PR #${pullRequest.number} has no closed campaign authority`);
     }
+    const campaign = campaigns[0];
+    if (campaign === undefined) {
+        fail(`PR #${pullRequest.number} has no closed campaign authority`);
+    }
     const remoteHead = port.remoteHead(branch);
     if (
         pullRequest.headRefName !== branch ||
@@ -200,6 +235,17 @@ function validateOwnership(target: string, expected: Worktree, repository: strin
     ) {
         fail(`branch ${branch} head ownership is unproven`);
     }
+    if (port.dirty(target) || port.active(target)) {
+        fail('worktree changed during removal');
+    }
+    return {
+        head: current.head,
+        branch,
+        ignored: [...ignored].sort(),
+        pullRequest: pullRequest.number,
+        campaign: campaign.number,
+        remoteHead,
+    };
 }
 
 export function removeLane(target: string, port: LaneRemovalPort): void {
@@ -209,8 +255,11 @@ export function removeLane(target: string, port: LaneRemovalPort): void {
     port.lock(target);
     let locked = true;
     try {
-        validateOwnership(target, lane, repository, port);
-        validateOwnership(target, lane, repository, port);
+        const initial = validateOwnership(target, lane, repository, port);
+        const final = validateOwnership(target, lane, repository, port);
+        if (JSON.stringify(initial) !== JSON.stringify(final)) {
+            fail('worktree authority changed during removal');
+        }
         port.unlock(target);
         locked = false;
         port.remove(target);
@@ -261,6 +310,27 @@ export function shellPort(shell: ShellRunner = { capture, run }): LaneRemovalPor
         repository,
         currentDirectory: () => realpathSync(process.cwd()),
         worktrees: () => parseWorktrees(shell.capture('git', ['worktree', 'list', '--porcelain', '-z'])),
+        active: (path) => {
+            let pid: number | undefined;
+            for (const line of shell.capture('lsof', ['-a', '-d', 'cwd', '-F', 'pn']).split('\n')) {
+                if (line.startsWith('p')) {
+                    pid = Number(line.slice(1));
+                    continue;
+                }
+                if (line.startsWith('n') && pid !== process.pid && inside(path, line.slice(1))) {
+                    return true;
+                }
+            }
+            return false;
+        },
+        processAlive: (pid) => {
+            try {
+                process.kill(pid, 0);
+                return true;
+            } catch (error) {
+                return error instanceof Error && 'code' in error && error.code !== 'ESRCH';
+            }
+        },
         dirty: (path) => shell.capture('git', ['-C', path, 'status', '--porcelain=v1', '--untracked-files=all']) !== '',
         ignored: (path) =>
             shell
