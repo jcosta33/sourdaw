@@ -191,6 +191,7 @@ export async function buildProjectData({
             keyRoot: project.keyRoot,
             scaleName: project.scaleName,
             tuning: project.tuning,
+            productionBrief: structuredClone(project.productionBrief),
         },
         transport: {
             tempo: transport.tempo,

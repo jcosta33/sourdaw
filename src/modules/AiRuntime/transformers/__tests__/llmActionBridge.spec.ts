@@ -3472,6 +3472,25 @@ describe('bridgeLlmToolCalls', () => {
             prompt: 'mute the vocals',
             context: {
                 ...projectContext,
+                productionBrief: {
+                    schemaVersion: 1,
+                    id: 'production-brief',
+                    revision: 3,
+                    vision: 'Intimate verses, explosive choruses',
+                    references: [],
+                    hardConstraints: [],
+                    preferences: [],
+                    sectionGoals: [],
+                    trackRoles: [],
+                    locks: [],
+                    decisions: [],
+                    unresolvedQuestions: [],
+                    sourceRunLinks: ['run-3'],
+                    supersedesBriefId: null,
+                    supersededByBriefId: null,
+                    createdAt: 100,
+                    updatedAt: 120,
+                },
                 sidechainRoutes: [
                     {
                         id: 'route-kick-bass',
@@ -3505,6 +3524,9 @@ describe('bridgeLlmToolCalls', () => {
         expect(userMessage).toContain('"metronomeEnabled":false');
         expect(userMessage).toContain('"metronomeVolume":0.5');
         expect(userMessage).toContain('"masterGain":0.8');
+        expect(userMessage).toContain('"productionBrief":{');
+        expect(userMessage).toContain('"revision":3');
+        expect(userMessage).toContain('"vision":"Intimate verses, explosive choruses"');
         expect(userMessage).toContain(
             '"vcaGroups":[{"id":"vca-drums","name":"Drum VCA","gain":0.75,"muted":false,"trackIds":["track-vocals"]}]'
         );

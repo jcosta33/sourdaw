@@ -38,6 +38,7 @@ import {
     ensureTrackStrips,
 } from '#/modules/Transport/useCases';
 
+import { createDefaultProductionBrief } from '../../../models/ProductionBrief';
 import { projectStore } from '../../../stores/projectStore';
 import { applyPreset } from '../demoUtils/applyPreset';
 import { createMidiClip } from '../demoUtils/createMidiClip';
@@ -2340,10 +2341,11 @@ export async function demo5_NebulaDrift(): Promise<void> {
     setTrackPan(toasterFolder.id, toasterFolder.pan);
     setTrackMute(toasterFolder.id, toasterFolder.muted);
 
+    const createdAt = Date.now();
     projectStore.set({
         name: 'Nebula Drift (Demo)',
-        createdAt: Date.now(),
-        updatedAt: Date.now(),
+        createdAt,
+        updatedAt: createdAt,
         dirty: false,
         loading: true,
         // Ready is NOT latched here — same seam as initProject. This demo runs as
@@ -2358,6 +2360,7 @@ export async function demo5_NebulaDrift(): Promise<void> {
             name: 'Equal Temperament',
             frequencies: Array.from({ length: 128 }, (_, index) => 440 * 2 ** ((index - 69) / 12)),
         },
+        productionBrief: createDefaultProductionBrief(createdAt),
     });
 
     ensureTrackStrips();

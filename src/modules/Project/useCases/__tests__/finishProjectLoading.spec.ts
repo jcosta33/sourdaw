@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { createDefaultProductionBrief } from '../../models/ProductionBrief';
 import { type ProjectStoreState } from '../../stores/projectStore';
 import { finishProjectLoading } from '../finishProjectLoading';
 
@@ -38,6 +39,7 @@ function createProjectState(overrides: Partial<ProjectStoreState> = {}): Project
         },
         initialized: true,
         ...overrides,
+        productionBrief: overrides.productionBrief ?? createDefaultProductionBrief(1),
     };
 }
 

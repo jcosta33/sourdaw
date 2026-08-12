@@ -2,6 +2,7 @@ import { inject } from '#/infra/di/inject';
 import { logger } from '#/infra/logger/appLogger';
 import { markerStore } from '#/modules/Arrangement/stores';
 import { getExecutableAppActionToolSchemas, requiresAppActionConfirmation } from '#/modules/Command/useCases';
+import { doesProductionBriefAllowActionBatch } from '#/modules/Project/useCases';
 
 import { isAiRuntimeConfigurationChangedError } from '../errors/AiRuntimeConfigurationChangedError';
 import { type IntentResult } from '../models/IntentResult';
@@ -70,6 +71,14 @@ function createFastPathResult(input: CreateFastPathResultInput): IntentResult {
             rawText: input.prompt,
             requiresConfirmation: false,
             rejectionReason: `Recognized command could not bind current project state: ${materialized.reason}`,
+        };
+    }
+    if (!doesProductionBriefAllowActionBatch(materialized.actions)) {
+        return {
+            actions: [],
+            rawText: input.prompt,
+            requiresConfirmation: false,
+            rejectionReason: 'Recognized command conflicts with locked production intent.',
         };
     }
 
@@ -281,6 +290,14 @@ export const parsePromptToActions = inject({ logger })(
                             rejectionReason: 'Provider action failed runtime validation: importStemSet',
                         };
                     }
+                    if (!doesProductionBriefAllowActionBatch([stemImport.action])) {
+                        return {
+                            actions: [],
+                            rawText: prompt,
+                            requiresConfirmation: false,
+                            rejectionReason: 'Provider action conflicts with locked production intent.',
+                        };
+                    }
                     return {
                         actions: [stemImport.action],
                         rawText: prompt,
@@ -371,6 +388,14 @@ export const parsePromptToActions = inject({ logger })(
                             rawText: prompt,
                             requiresConfirmation: false,
                             rejectionReason: `Provider action state binding rejected: ${guarded.reason}`,
+                        };
+                    }
+                    if (!doesProductionBriefAllowActionBatch(guarded.actions)) {
+                        return {
+                            actions: [],
+                            rawText: prompt,
+                            requiresConfirmation: false,
+                            rejectionReason: 'Provider action conflicts with locked production intent.',
                         };
                     }
 

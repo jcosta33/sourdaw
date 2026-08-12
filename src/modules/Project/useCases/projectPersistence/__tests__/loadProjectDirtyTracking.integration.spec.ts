@@ -67,7 +67,7 @@ vi.mock('../helpers/verifyAudioBufferReferences', () => ({
 
 import { defaultTrackState, trackStore } from '#/modules/Arrangement/stores';
 
-import { projectStore } from '../../../stores/projectStore';
+import { defaultProjectStoreState, projectStore } from '../../../stores/projectStore';
 import { loadProject } from '../loadProject';
 import { setProjectIdentityTransitionDependencies } from '../projectIdentityTransitionDependencies';
 import { initProjectDirtyTracking } from '../saveProject/initProjectDirtyTracking';
@@ -83,6 +83,7 @@ describe('cold-start project restore dirty tracking (audit M-011)', () => {
         setProjectIdentityTransitionDependencies({ leaveCollaborationSession: () => Promise.resolve() });
         trackStore.set(structuredClone(defaultTrackState));
         projectStore.set({
+            ...structuredClone(defaultProjectStoreState),
             name: 'Restored Project',
             createdAt: 1,
             updatedAt: 2,

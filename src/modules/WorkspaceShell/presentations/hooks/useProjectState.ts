@@ -7,24 +7,11 @@
  * reaches this consumer automatically.
  */
 import { useStore } from '#/infra/store/useStore';
-import { projectStore } from '#/modules/Project/stores';
+import { defaultProjectStoreState, projectStore } from '#/modules/Project/stores';
 
 import type { ProjectStoreState } from '#/modules/Project/stores';
 
-const defaultState: ProjectStoreState = {
-    name: 'Untitled Project',
-    createdAt: Date.now(),
-    updatedAt: Date.now(),
-    dirty: false,
-    loading: true,
-    keyRoot: 0,
-    scaleName: 'chromatic',
-    tuning: {
-        name: 'Equal Temperament',
-        frequencies: Array.from({ length: 128 }, (_, index) => 440 * 2 ** ((index - 69) / 12)),
-    },
-    initialized: false,
-};
+const defaultState: ProjectStoreState = structuredClone(defaultProjectStoreState);
 
 export const useProjectState = (): ProjectStoreState => {
     return useStore(projectStore, defaultState);

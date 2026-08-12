@@ -11,6 +11,7 @@ import {
 import { unloadPlugin as unloadLoadedExternalPlugins } from '#/modules/PluginHost/useCases';
 import { ensureTrackStrips, stopPlayback } from '#/modules/Transport/useCases';
 
+import { createDefaultProductionBrief } from '../../models/ProductionBrief';
 import { removeProjectJson } from '../../repositories/project/removeProjectJson';
 import { arrangementStore, defaultArrangementStoreState } from '../../stores/arrangementStore';
 import { projectStore, type ProjectStoreState } from '../../stores/projectStore';
@@ -110,10 +111,11 @@ async function activateNewProject({
     runCommittedStep('arrangement reset', () => arrangementStore.set(structuredClone(defaultArrangementStoreState)));
     runCommittedStep('master track creation', () => addTrack({ name: 'Master', kind: 'master', select: false }));
     runCommittedStep('project metadata publication', () => {
+        const createdAt = Date.now();
         projectStore.set({
             name,
-            createdAt: Date.now(),
-            updatedAt: Date.now(),
+            createdAt,
+            updatedAt: createdAt,
             dirty: false,
             loading: false,
             keyRoot: 0,
@@ -122,6 +124,7 @@ async function activateNewProject({
                 name: 'Equal Temperament',
                 frequencies: Array.from({ length: 128 }, (_, index) => 440 * 2 ** ((index - 69) / 12)),
             },
+            productionBrief: createDefaultProductionBrief(createdAt),
             initialized: true,
         });
     });

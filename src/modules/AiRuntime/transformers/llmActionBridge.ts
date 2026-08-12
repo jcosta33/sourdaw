@@ -3186,6 +3186,7 @@ export function buildLlmActionUserMessage({
 }): string {
     const commandContext = {
         ...(projectRevision ? { projectRevision } : {}),
+        ...(context.productionBrief ? { productionBrief: context.productionBrief } : {}),
         ...(articulationTransferCapability ? { articulationTransferCapability } : {}),
         ...(backingVocalPlateCapability ? { backingVocalPlateCapability } : {}),
         ...(bassProcessingCopyCapability ? { bassProcessingCopyCapability } : {}),

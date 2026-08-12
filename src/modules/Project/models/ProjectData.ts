@@ -6,6 +6,8 @@
  * everything is a plain object with no class methods or engine refs.
  */
 
+import { type ProductionBrief } from './ProductionBrief';
+
 /**
  * The schema version written into every new `.sourdaw` file by the current
  * build. Bump this whenever the serialized shape changes in a way that older
@@ -124,6 +126,7 @@ export type ProjectMeta = {
         name: string;
         frequencies: number[];
     };
+    productionBrief?: ProductionBrief;
 };
 
 export type ProjectTransport = {

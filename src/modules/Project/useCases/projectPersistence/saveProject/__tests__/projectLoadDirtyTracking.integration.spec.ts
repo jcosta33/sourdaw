@@ -75,7 +75,7 @@ vi.mock('../../helpers/stopActiveAutoSave', () => ({ stopActiveAutoSave: mockSto
 
 import { defaultTrackState, trackStore } from '#/modules/Arrangement/stores';
 
-import { projectStore } from '../../../../stores/projectStore';
+import { defaultProjectStoreState, projectStore } from '../../../../stores/projectStore';
 import { replaceProjectData } from '../../helpers/replaceProjectData';
 import { initProjectDirtyTracking } from '../initProjectDirtyTracking';
 
@@ -127,6 +127,7 @@ describe('project load dirty tracking (audit M-011)', () => {
         stopDirtyTracking();
         trackStore.set(structuredClone(defaultTrackState));
         projectStore.set({
+            ...structuredClone(defaultProjectStoreState),
             name: 'Previous Project',
             createdAt: 1,
             updatedAt: 2,

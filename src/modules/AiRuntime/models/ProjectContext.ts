@@ -1,4 +1,5 @@
 export type ProjectContext = {
+    productionBrief?: ProjectContextProductionBrief;
     tempo: number;
     timeSignature: [number, number];
     isPlaying: boolean;
@@ -25,6 +26,65 @@ export type ProjectContext = {
     glueEligibleClipPairs?: Array<[string, string]>;
     activeView: 'arrange' | 'automation' | 'clip' | 'mix';
     playheadPosition: number;
+};
+
+export type ProjectContextProductionBriefScope =
+    | { kind: 'project' }
+    | { kind: 'track'; trackId: string }
+    | { kind: 'section'; sectionId: string }
+    | { kind: 'object'; objectType: string; objectId: string }
+    | { kind: 'range'; startBeat: number; endBeat: number }
+    | { kind: 'decision'; decisionId: string };
+
+export type ProjectContextProductionBrief = {
+    schemaVersion: number;
+    id: string;
+    revision: number;
+    vision: string | null;
+    references: Array<{
+        id: string;
+        label: string;
+        uri: string | null;
+        assetHash: string | null;
+        createdAt: number;
+    }>;
+    hardConstraints: Array<{
+        id: string;
+        scope: ProjectContextProductionBriefScope;
+        statement: string;
+        createdAt: number;
+    }>;
+    preferences: Array<{
+        id: string;
+        scope: ProjectContextProductionBriefScope;
+        statement: string;
+        createdAt: number;
+    }>;
+    sectionGoals: Array<{ id: string; sectionId: string; statement: string; createdAt: number }>;
+    trackRoles: Array<{ id: string; trackId: string; role: string; createdAt: number }>;
+    locks: Array<{
+        id: string;
+        scope: ProjectContextProductionBriefScope;
+        statement: string;
+        createdAt: number;
+    }>;
+    decisions: Array<{
+        id: string;
+        scope: ProjectContextProductionBriefScope;
+        statement: string;
+        rationale: string | null;
+        status: 'accepted' | 'locked' | 'rejected' | 'superseded';
+        sourceRunId: string | null;
+        relatedBatchId: string | null;
+        supersededByDecisionId: string | null;
+        createdAt: number;
+    }>;
+    unresolvedQuestions: Array<{ id: string; statement: string; createdAt: number }>;
+    sourceRunLinks: string[];
+    supersedesBriefId: string | null;
+    supersededByBriefId: string | null;
+    createdAt: number;
+    updatedAt: number;
 };
 
 export type ProjectContextAdjustmentRegion = {

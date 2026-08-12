@@ -18,6 +18,7 @@ import { unloadPlugin as unloadLoadedExternalPlugins } from '#/modules/PluginHos
 import { ensureTrackStrips, stopPlayback } from '#/modules/Transport/useCases';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
+import { createDefaultProductionBrief } from '../../../models/ProductionBrief';
 import { projectLoadFailureStore } from '../../../stores/projectLoadFailureStore';
 import { projectStore } from '../../../stores/projectStore';
 import { finishProjectLoading } from '../../finishProjectLoading';
@@ -313,6 +314,7 @@ export async function replaceProjectData({
                     keyRoot: data.meta.keyRoot,
                     scaleName: data.meta.scaleName,
                     tuning: data.meta.tuning,
+                    productionBrief: data.meta.productionBrief ?? createDefaultProductionBrief(data.meta.createdAt),
                     dirty: false,
                     // Still loading: `batchStoreUpdates` defers subscriber
                     // notification to the end of the batch, so the hydration

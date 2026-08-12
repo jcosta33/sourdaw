@@ -12,7 +12,7 @@ type TestPort = NonNullable<Parameters<typeof configureAutomergeStoragePort>[0]>
 
 type DurableProjectMeta = Pick<
     ProjectStoreState,
-    'name' | 'createdAt' | 'updatedAt' | 'keyRoot' | 'scaleName' | 'tuning'
+    'name' | 'createdAt' | 'updatedAt' | 'keyRoot' | 'scaleName' | 'tuning' | 'productionBrief'
 >;
 
 const fake_doc: TestDoc = {};
@@ -65,6 +65,7 @@ function create_valid_meta(): DurableProjectMeta {
         keyRoot: 7,
         scaleName: 'dorian',
         tuning: create_valid_tuning(),
+        productionBrief: structuredClone(defaultProjectStoreState.productionBrief),
     };
 }
 
@@ -157,6 +158,7 @@ describe('projectStore', () => {
             keyRoot: 99,
             scaleName: valid_meta.scaleName,
             tuning: valid_meta.tuning,
+            productionBrief: valid_meta.productionBrief,
         };
 
         projectStore.hydrate();
@@ -170,6 +172,7 @@ describe('projectStore', () => {
             keyRoot: defaultProjectStoreState.keyRoot,
             scaleName: valid_meta.scaleName,
             tuning: valid_meta.tuning,
+            productionBrief: valid_meta.productionBrief,
             initialized: false,
         });
     });
@@ -230,5 +233,21 @@ describe('projectStore', () => {
             initialized: false,
         });
         expect(mutation_count).toBe(0);
+    });
+
+    it('writes production brief revisions through the collaborative project document', async () => {
+        const state = create_default_state();
+        const productionBrief = {
+            ...state.productionBrief,
+            revision: 1,
+            vision: 'Intimate verses',
+            updatedAt: state.updatedAt + 1,
+        };
+
+        projectStore.set({ ...state, productionBrief });
+        await flush_pending_frame();
+
+        expect(fake_doc.projectMeta).toEqual(expect.objectContaining({ productionBrief }));
+        expect(mutation_count).toBe(1);
     });
 });
