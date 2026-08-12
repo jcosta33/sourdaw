@@ -11,6 +11,9 @@ import { serializePluginLifecycle } from './serializePluginLifecycle';
 /** Unload a plugin instance by its instance ID. */
 export function unloadPlugin(instanceId: string): ReturnType<typeof unloadPluginRepo> {
     return serializePluginLifecycle(instanceId, async () => {
+        if (!loadedExternalInstances.has(instanceId)) {
+            return;
+        }
         await unloadPluginRepo(instanceId);
         loadedExternalInstances.delete(instanceId);
         externalPluginActivationStore.update((state) => {

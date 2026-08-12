@@ -146,6 +146,26 @@ describe('newProject injectable', () => {
         expect(resetCrdtProjectAuthority).toHaveBeenCalledWith('Test');
     });
 
+    it('does not replace authority when superseded during native teardown', async () => {
+        const unloading = createDeferred<void>();
+        let isCurrent = true;
+        vi.mocked(runProjectLoadTransaction).mockReturnValueOnce({
+            prepare: vi.fn().mockResolvedValue(true),
+            activate: vi.fn().mockReturnValue(true),
+            canActivate: () => isCurrent,
+            isCurrent: () => isCurrent,
+        });
+        pluginHostMocks.unloadLoadedExternalPlugins.mockReturnValueOnce(unloading.promise);
+
+        const activation = newProject('Older Project');
+        await vi.waitFor(() => expect(pluginHostMocks.unloadLoadedExternalPlugins).toHaveBeenCalledOnce());
+        isCurrent = false;
+        unloading.resolve(undefined);
+
+        await expect(activation).resolves.toBe(false);
+        expect(resetCrdtProjectAuthority).not.toHaveBeenCalled();
+    });
+
     it('keeps previous authority and restores its graph when native plugin teardown fails', async () => {
         pluginHostMocks.unloadLoadedExternalPlugins.mockRejectedValueOnce(new Error('native teardown failed'));
 

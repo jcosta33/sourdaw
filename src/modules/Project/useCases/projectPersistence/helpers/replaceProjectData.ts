@@ -231,6 +231,9 @@ export async function replaceProjectData({
         }
         resetAudioGraph();
         await unloadLoadedExternalPlugins();
+        if (!transaction.isCurrent()) {
+            return abortProjectReplacement();
+        }
     } catch (error) {
         logPreparationFailure(context, error);
         restorePreviousAudioGraph(context);

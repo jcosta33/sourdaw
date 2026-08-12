@@ -73,6 +73,9 @@ async function activateNewProject({
         graphTeardownStarted = true;
         resetAudioGraph();
         await unloadLoadedExternalPlugins();
+        if (!transaction.isCurrent()) {
+            return failNewProjectActivation({ previousTransientState, transaction });
+        }
         resetCrdtProjectAuthority(name);
     } catch (error) {
         logger.warn('[newProject] Failed to activate project:', error);

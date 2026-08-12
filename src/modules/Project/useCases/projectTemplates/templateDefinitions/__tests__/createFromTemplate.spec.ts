@@ -268,8 +268,22 @@ describe('createFromTemplate', () => {
         expect(mocks.compactProject).not.toHaveBeenCalled();
     });
 
-    it('skips autosave restart and compaction when superseded during the template action', async () => {
+    it('does not replace authority when superseded during native teardown', async () => {
+        const unloading = Promise.withResolvers<void>();
+        mocks.unloadLoadedExternalPlugins.mockReturnValueOnce(unloading.promise);
         mocks.transactionIsCurrent.mockReturnValueOnce(true).mockReturnValueOnce(false);
+
+        const creation = createFromTemplate('pop-song');
+        await vi.waitFor(() => expect(mocks.unloadLoadedExternalPlugins).toHaveBeenCalledOnce());
+        unloading.resolve();
+
+        await expect(creation).resolves.toBe(false);
+        expect(mocks.resetCrdtProjectAuthority).not.toHaveBeenCalled();
+        expect(mocks.executeAppAction).not.toHaveBeenCalled();
+    });
+
+    it('skips autosave restart and compaction when superseded during the template action', async () => {
+        mocks.transactionIsCurrent.mockReturnValueOnce(true).mockReturnValueOnce(true).mockReturnValueOnce(false);
 
         await expect(createFromTemplate('pop-song')).resolves.toBe(false);
 

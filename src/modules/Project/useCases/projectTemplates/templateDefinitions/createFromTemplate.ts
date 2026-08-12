@@ -83,6 +83,9 @@ export async function createFromTemplate(templateId: string): Promise<boolean> {
         graphWasReset = true;
         resetAudioGraph();
         await unloadLoadedExternalPlugins();
+        if (!transaction.isCurrent()) {
+            return false;
+        }
         resetCrdtProjectAuthority(template.name);
         projectActionHistoryToStore();
         resetModuleStoresToDefault({ createNewMidiProbabilitySeed: true });

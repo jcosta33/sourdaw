@@ -51,8 +51,23 @@ describe('Plugin Lifecycle Use Cases', () => {
     });
 
     it('unloadPlugin delegates to repository', async () => {
+        loadedExternalInstances.add('inst1');
         await unloadPlugin('inst1');
         expect(mocks.unloadPluginRepo).toHaveBeenCalledWith('inst1');
+    });
+
+    it('coalesces two unloads that snapshot the same owned instance', async () => {
+        const unloading = Promise.withResolvers<void>();
+        loadedExternalInstances.add('inst1');
+        mocks.unloadPluginRepo.mockReturnValueOnce(unloading.promise);
+
+        const first = unloadPlugin('inst1');
+        const second = unloadPlugin('inst1');
+        await Promise.resolve();
+        unloading.resolve();
+
+        await expect(Promise.all([first, second])).resolves.toEqual([undefined, undefined]);
+        expect(mocks.unloadPluginRepo).toHaveBeenCalledTimes(1);
     });
 
     it('keeps runtime ownership published until native unload succeeds', async () => {
@@ -100,6 +115,7 @@ describe('Plugin Lifecycle Use Cases', () => {
         const unloading = Promise.withResolvers<void>();
         mocks.unloadPluginRepo.mockReturnValueOnce(unloading.promise);
         mocks.loadPluginRepo.mockResolvedValueOnce(pluginInstance);
+        loadedExternalInstances.add('ordered-instance');
 
         const unloadResult = unloadPlugin('ordered-instance');
         const loadResult = loadPlugin('p1', 'ordered-instance');
@@ -130,6 +146,7 @@ describe('Plugin Lifecycle Use Cases', () => {
             order.push('nested-run');
             return Promise.resolve(pluginInstance);
         });
+        loadedExternalInstances.add('reentrant-instance');
 
         const outerResult = unloadPlugin('reentrant-instance');
         await Promise.resolve();
@@ -148,6 +165,7 @@ describe('Plugin Lifecycle Use Cases', () => {
         const failure = new Error('unload failed');
         mocks.unloadPluginRepo.mockReturnValueOnce(unloading.promise);
         mocks.loadPluginRepo.mockResolvedValueOnce(pluginInstance);
+        loadedExternalInstances.add('blocked-instance');
 
         const unloadResult = unloadPlugin('blocked-instance');
         const loadResult = loadPlugin('p1', 'independent-instance');
@@ -165,6 +183,7 @@ describe('Plugin Lifecycle Use Cases', () => {
         const failure = new Error('unload failed');
         mocks.unloadPluginRepo.mockReturnValueOnce(unloading.promise);
         mocks.loadPluginRepo.mockResolvedValueOnce(pluginInstance);
+        loadedExternalInstances.add('recovering-instance');
 
         const failedUnload = unloadPlugin('recovering-instance');
         const recoveredLoad = loadPlugin('p1', 'recovering-instance');

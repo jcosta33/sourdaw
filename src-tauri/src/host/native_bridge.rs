@@ -250,6 +250,15 @@ impl PluginRuntimeLifecycle {
         );
     }
 
+    fn cancel_unload(&self) {
+        let _ = self.state.compare_exchange(
+            PLUGIN_LIFECYCLE_UNLOADING,
+            PLUGIN_LIFECYCLE_ACTIVE,
+            Ordering::AcqRel,
+            Ordering::Acquire,
+        );
+    }
+
     fn retire(&self) {
         self.state
             .store(PLUGIN_LIFECYCLE_RETIRED, Ordering::Release);
@@ -389,6 +398,11 @@ impl SharedClapPlugin {
         // scheduler until the unload finishes, so those blocks do arrive.
         self.processing.request_stop();
         self.lifecycle.begin_unload();
+    }
+
+    pub fn cancel_unload(&self) {
+        self.lifecycle.cancel_unload();
+        self.processing.request_start();
     }
 
     pub fn retire(&self) {
@@ -980,6 +994,17 @@ mod tests {
             Err("Engine-owned plugin instance 'fixture' is unloading".to_string())
         );
         assert!(!lifecycle.allows_process());
+    }
+
+    #[test]
+    fn cancelled_unload_restores_public_control_and_processing_eligibility() {
+        let lifecycle = PluginRuntimeLifecycle::new();
+        lifecycle.begin_unload();
+
+        lifecycle.cancel_unload();
+
+        assert!(lifecycle.ensure_public_control_allowed("fixture").is_ok());
+        assert!(lifecycle.allows_process());
     }
 
     /// Build a slot the way create_crumbs wires it in production: handoff

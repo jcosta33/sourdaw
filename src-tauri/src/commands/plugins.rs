@@ -12,9 +12,9 @@ use daw_engine::EngineHandle;
 use daw_plugin_host::scanner::{self, ScanResult, ScannedPlugin};
 use daw_plugin_host::{AudioPlugin, ClapWrapper};
 use serde::{Deserialize, Serialize};
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, LazyLock, Mutex};
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tauri::Manager;
 
@@ -41,8 +41,7 @@ pub struct PluginInstance {
     pub engine_plugin_id: Option<usize>,
 }
 
-static PLUGIN_LOAD_RESERVATIONS: LazyLock<Mutex<HashSet<String>>> =
-    LazyLock::new(|| Mutex::new(HashSet::new()));
+static PLUGIN_LIFECYCLE_GATE: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
 
 fn remove_engine_plugin_record_after_scheduler_removal<EnginePluginRecord>(
     engine_plugins: &mut HashMap<String, EnginePluginRecord>,
@@ -224,7 +223,8 @@ pub async fn load_plugin(
     instance_id: PluginInstanceId,
     state: tauri::State<'_, AppState>,
 ) -> Result<PluginInstance, String> {
-    let _load_reservation = reserve_plugin_instance_load(&state, &instance_id.0)?;
+    let _lifecycle_guard = PLUGIN_LIFECYCLE_GATE.lock().await;
+    ensure_plugin_instance_id_available(&state, &instance_id.0)?;
     let entry = {
         let registry = state
             .plugin_registry
@@ -375,26 +375,7 @@ pub async fn load_plugin(
     }
 }
 
-struct PluginLoadReservation {
-    instance_id: String,
-    loading_instances: &'static Mutex<HashSet<String>>,
-}
-
-impl Drop for PluginLoadReservation {
-    fn drop(&mut self) {
-        if let Ok(mut loading_instances) = self.loading_instances.lock() {
-            loading_instances.remove(&self.instance_id);
-        }
-    }
-}
-
-fn reserve_plugin_instance_load(
-    state: &AppState,
-    instance_id: &str,
-) -> Result<PluginLoadReservation, String> {
-    let mut loading_instances = PLUGIN_LOAD_RESERVATIONS
-        .lock()
-        .map_err(|error| format!("Failed to lock loading_plugin_instances: {error}"))?;
+fn ensure_plugin_instance_id_available(state: &AppState, instance_id: &str) -> Result<(), String> {
     let plugins = state
         .plugins
         .lock()
@@ -404,18 +385,10 @@ fn reserve_plugin_instance_load(
         .lock()
         .map_err(|error| format!("Failed to lock engine_plugins: {error}"))?;
 
-    if loading_instances.contains(instance_id)
-        || plugins.contains_key(instance_id)
-        || engine_plugins.contains_key(instance_id)
-    {
+    if plugins.contains_key(instance_id) || engine_plugins.contains_key(instance_id) {
         return Err(format!("Plugin instance already exists: {instance_id}"));
     }
-
-    loading_instances.insert(instance_id.to_string());
-    Ok(PluginLoadReservation {
-        instance_id: instance_id.to_string(),
-        loading_instances: &PLUGIN_LOAD_RESERVATIONS,
-    })
+    Ok(())
 }
 
 #[tauri::command]
@@ -425,13 +398,22 @@ pub async fn unload_plugin(
     app: tauri::AppHandle,
     state: tauri::State<'_, AppState>,
 ) -> Result<(), String> {
+    unload_plugin_runtime(&instance_id.0, Some(&app), state.inner()).await
+}
+
+async fn unload_plugin_runtime(
+    instance_id: &str,
+    app: Option<&tauri::AppHandle>,
+    state: &AppState,
+) -> Result<(), String> {
+    let _lifecycle_guard = PLUGIN_LIFECYCLE_GATE.lock().await;
     {
         let mut plugins = state
             .plugins
             .lock()
             .map_err(|e| format!("Failed to lock plugins: {}", e))?;
 
-        if plugins.remove(&instance_id.0).is_some() {
+        if plugins.remove(instance_id).is_some() {
             return Ok(());
         }
     }
@@ -441,7 +423,7 @@ pub async fn unload_plugin(
             .engine_plugins
             .lock()
             .map_err(|e| format!("Failed to lock engine_plugins: {}", e))?;
-        let engine_plugin = engine_plugins.get(&instance_id.0);
+        let engine_plugin = engine_plugins.get(instance_id);
         if let Some(instance) = engine_plugin {
             instance.runtime.begin_unload();
         }
@@ -449,67 +431,76 @@ pub async fn unload_plugin(
     };
 
     if let Some((engine_plugin_id, runtime)) = engine_plugin {
-        state
-            .inner()
-            .retain_retired_engine_plugin(Arc::clone(&runtime));
+        let scheduler_removal_result = {
+            let engine_guard = state
+                .engine
+                .lock()
+                .map_err(|e| format!("Failed to lock engine: {}", e));
+            match engine_guard {
+                Ok(mut engine_guard) => match engine_guard.as_mut() {
+                    Some(engine) => engine.remove_plugin(engine_plugin_id),
+                    None => Err("Native engine not running".to_string()),
+                },
+                Err(error) => Err(error),
+            }
+        };
+        if let Err(error) = scheduler_removal_result {
+            runtime.cancel_unload();
+            return Err(error);
+        }
 
-        let close_result =
+        state.retain_retired_engine_plugin(Arc::clone(&runtime));
+
+        if let Err(error) =
             runtime.with_unload_control(std::time::Duration::from_secs(2), |plugin| {
                 plugin.close_gui();
                 Ok(())
-            });
+            })
+        {
+            eprintln!("[Plugin] GUI cleanup failed during unload: {error}");
+        }
 
-        let window_label = {
-            let mut windows = state
-                .plugin_windows
-                .lock()
-                .map_err(|e| format!("Failed to lock plugin_windows: {}", e))?;
-            windows.remove(&instance_id.0)
+        let window_label = match state.plugin_windows.lock() {
+            Ok(mut windows) => windows.remove(instance_id),
+            Err(poisoned) => poisoned.into_inner().remove(instance_id),
         };
-
-        if let Some(label) = window_label {
+        if let (Some(app), Some(label)) = (app, window_label) {
             if let Some(window) = app.get_window(&label) {
                 let _ = window.destroy();
             }
         }
 
-        let scheduler_removal_result = {
-            let mut engine_guard = state
-                .engine
-                .lock()
-                .map_err(|e| format!("Failed to lock engine: {}", e))?;
-            let engine = engine_guard.as_mut().ok_or("Native engine not running")?;
-            engine.remove_plugin(engine_plugin_id)
-        };
-
-        {
-            let mut engine_plugins = state
-                .engine_plugins
-                .lock()
-                .map_err(|e| format!("Failed to lock engine_plugins: {}", e))?;
-            let _removed_engine_plugin = remove_engine_plugin_record_after_scheduler_removal(
-                &mut engine_plugins,
-                &instance_id.0,
-                scheduler_removal_result,
-            )?;
+        match state.engine_plugins.lock() {
+            Ok(mut engine_plugins) => {
+                let _ = remove_engine_plugin_record_after_scheduler_removal(
+                    &mut engine_plugins,
+                    instance_id,
+                    Ok(()),
+                );
+            }
+            Err(poisoned) => {
+                let mut engine_plugins = poisoned.into_inner();
+                let _ = remove_engine_plugin_record_after_scheduler_removal(
+                    &mut engine_plugins,
+                    instance_id,
+                    Ok(()),
+                );
+            }
         }
-
         runtime.retire();
 
-        let mut bridges = state
-            .audio_bridges
-            .lock()
-            .map_err(|e| format!("Failed to lock audio_bridges: {}", e))?;
-        bridges.remove(&engine_plugin_id);
-
-        close_result?;
+        match state.audio_bridges.lock() {
+            Ok(mut bridges) => {
+                bridges.remove(&engine_plugin_id);
+            }
+            Err(poisoned) => {
+                poisoned.into_inner().remove(&engine_plugin_id);
+            }
+        }
         return Ok(());
     }
 
-    Err(format!(
-        "No plugin instance found with id: {}",
-        instance_id.0
-    ))
+    Err(format!("No plugin instance found with id: {}", instance_id))
 }
 
 // ── Parameter commands ──────────────────────────────────────────────────
@@ -1055,19 +1046,44 @@ mod tests {
     }
 
     #[test]
-    fn plugin_load_reservation_rejects_concurrent_duplicate_and_releases_after_drop() {
-        let state = AppState::default();
-        let first = reserve_plugin_instance_load(&state, "loading-instance")
-            .expect("first load should reserve the instance id");
+    fn plugin_lifecycle_gate_serializes_load_and_unload_commands() {
+        tauri::async_runtime::block_on(async {
+            let first = PLUGIN_LIFECYCLE_GATE.lock().await;
 
-        assert!(matches!(
-            reserve_plugin_instance_load(&state, "loading-instance"),
-            Err(error) if error == "Plugin instance already exists: loading-instance"
+            assert!(PLUGIN_LIFECYCLE_GATE.try_lock().is_err());
+
+            drop(first);
+            assert!(PLUGIN_LIFECYCLE_GATE.try_lock().is_ok());
+        });
+    }
+
+    #[test]
+    fn failed_scheduler_unload_restores_the_engine_runtime_to_active() {
+        let app = command_test_app();
+        let state = app.state::<AppState>();
+        insert_engine_owned_fixture(&state, "active-instance", vec![1, 2, 3]);
+        let runtime = {
+            let engine_plugins = state
+                .engine_plugins
+                .lock()
+                .expect("engine_plugins lock should be available");
+            Arc::clone(&engine_plugins["active-instance"].runtime)
+        };
+
+        let result = tauri::async_runtime::block_on(unload_plugin_runtime(
+            "active-instance",
+            None,
+            state.inner(),
         ));
 
-        drop(first);
-
-        assert!(reserve_plugin_instance_load(&state, "loading-instance").is_ok());
+        assert_eq!(result, Err("Native engine not running".to_string()));
+        assert!(runtime.ensure_public_control_allowed().is_ok());
+        assert!(app
+            .state::<AppState>()
+            .engine_plugins
+            .lock()
+            .expect("engine_plugins lock should be available")
+            .contains_key("active-instance"));
     }
 
     /// Unwrap a command's `tauri::ipc::Response` into the bytes it will actually

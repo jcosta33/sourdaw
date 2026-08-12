@@ -245,6 +245,24 @@ describe('replaceProjectData', () => {
         );
     });
 
+    it('does not replace authority when superseded during native teardown', async () => {
+        const unloading = Promise.withResolvers<void>();
+        let isCurrent = true;
+        mockUnloadLoadedExternalPlugins.mockReturnValueOnce(unloading.promise);
+
+        const replacement = replaceProjectData({
+            context: 'loadRecentProject',
+            data: makeData(),
+            transaction: makeTransaction({ isCurrent: () => isCurrent }),
+        });
+        await vi.waitFor(() => expect(mockUnloadLoadedExternalPlugins).toHaveBeenCalledOnce());
+        isCurrent = false;
+        unloading.resolve();
+
+        await expect(replacement).resolves.toEqual({ status: 'aborted' });
+        expect(mockResetCrdtProjectAuthority).not.toHaveBeenCalled();
+    });
+
     it('returns degraded=true when a committed step fails', async () => {
         mockHydrateArrangement.mockImplementation(() => {
             throw new Error('hydrate failed');

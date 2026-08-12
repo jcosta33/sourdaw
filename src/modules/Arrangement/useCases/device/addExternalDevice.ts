@@ -28,7 +28,7 @@ export function addExternalDevice(trackId: string, pluginId: string, pluginName:
         return null;
     }
 
-    const instanceId = `${pluginId}-${crypto.randomUUID()}`;
+    const instanceId = `${pluginId}-${String(Date.now())}`;
 
     const device: Device = {
         id: nextDeviceIdStr(),
