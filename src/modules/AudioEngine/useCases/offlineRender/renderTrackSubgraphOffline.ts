@@ -11,11 +11,12 @@ import { collectDeviceRuntimeFailures } from './collectDeviceRuntimeFailures';
 import { connectOfflineToasterPadRoutes } from './connectOfflineToasterPadRoutes';
 import { MIN_RENDER_TIMEOUT_MS, RENDER_TIMEOUT_MULTIPLIER } from './constants';
 import { createOfflineTrackStrip } from './createOfflineTrackStrip';
+import { cropHistoryFromRenderedBuffer } from './cropHistoryFromRenderedBuffer';
 import { destroyOfflineDeviceStrategies } from './destroyOfflineDeviceStrategies';
 import { prepareOfflineContext } from './prepareOfflineContext';
 import { projectStripTrack, type TargetMixerDisposition } from './projectStripTrack';
 import { renderInSegments } from './renderInSegments';
-import { resolveRenderContext } from './resolveRenderContext';
+import { resolveHistoryAwareRenderContext } from './resolveHistoryAwareRenderContext';
 import { schedulePendingSuspends } from './schedulePendingSuspends';
 import { scheduleTrackClips } from './scheduleTrackClips';
 import { type OfflineScheduleTally, type OfflineTrackStrip, type PendingWorkletEvent } from './types';
@@ -131,12 +132,13 @@ export async function renderTrackSubgraphOffline({
     }
 
     const sampleRate = getAudioContext().sampleRate;
-    const { midi, defaultTempo, changes, durationSeconds, ...projections } = resolveRenderContext({
+    const { renderContext, historySeconds, outputDurationSeconds } = resolveHistoryAwareRenderContext({
         durationBeats,
         startBeat,
         tailSeconds,
         sampleRate,
     });
+    const { midi, defaultTempo, changes, durationSeconds, ...projections } = renderContext;
     const { projectMidiEvents, projectPpqEndpoints, selectMidiEventProbability, projectChordPitch } = projections;
     if (!projectMidiEvents || !projectPpqEndpoints || !selectMidiEventProbability || !projectChordPitch) {
         throw new Error('Offline musical projection is not configured');
@@ -301,7 +303,8 @@ export async function renderTrackSubgraphOffline({
                 allTracks: renderTracks,
                 deviceEntriesByTrack,
                 honorMuted: false,
-                regionStartBeat: startBeat,
+                regionStartBeat: 0,
+                tallyStartSeconds: historySeconds,
                 includeAutomation: track.id === targetTrackId ? includeAutomation : true,
                 // Same rule as the strip seed: a `gain` or `pan` lane drives the very
                 // nodes the frozen buffer is replayed through, and live
@@ -352,7 +355,7 @@ export async function renderTrackSubgraphOffline({
         });
 
         onProgress?.(1);
-        return buffer;
+        return cropHistoryFromRenderedBuffer({ buffer, historySeconds, outputDurationSeconds });
     } finally {
         destroyOfflineDeviceStrategies(deviceEntriesByTrack);
     }

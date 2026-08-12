@@ -395,7 +395,7 @@ describe('bounceSelection', () => {
         const expectedBufferId = 'bounce-sel-track-1-1234567890';
         expect(mocks.renderTrackOffline).toHaveBeenCalledWith(
             expect.objectContaining({
-                clips: [expect.objectContaining({ id: 'clip-selected', startBeat: 2, endBeat: 6 })],
+                clips: [beforeClip, selectedClip, afterClip],
             }),
             2,
             6,

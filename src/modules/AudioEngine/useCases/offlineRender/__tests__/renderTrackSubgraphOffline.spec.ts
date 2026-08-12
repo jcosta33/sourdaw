@@ -91,6 +91,38 @@ type Contribution = {
 const contributions: Contribution[] = [];
 const createdGains: { gain: { value: number } }[] = [];
 
+class RenderHarnessBuffer {
+    readonly duration: number;
+    readonly numberOfChannels: number;
+    readonly sampleRate: number;
+    readonly length: number;
+    private readonly channels: Float32Array[];
+
+    constructor({
+        length,
+        numberOfChannels,
+        sampleRate,
+    }: {
+        length: number;
+        numberOfChannels: number;
+        sampleRate: number;
+    }) {
+        this.duration = length / sampleRate;
+        this.length = length;
+        this.numberOfChannels = numberOfChannels;
+        this.sampleRate = sampleRate;
+        this.channels = Array.from({ length: numberOfChannels }, () => new Float32Array(length));
+    }
+
+    getChannelData(channel: number): Float32Array {
+        return this.channels[channel]!;
+    }
+
+    copyToChannel(source: Float32Array, channel: number, startInChannel = 0): void {
+        this.channels[channel]!.set(source, startInChannel);
+    }
+}
+
 function triangleSample(frequency: number, frame: number): number {
     const phase = ((frequency * frame) / SAMPLE_RATE) % 1;
     return 4 * Math.abs(phase - 0.5) - 1;
@@ -186,22 +218,18 @@ class RenderHarnessContext {
     }
 
     startRendering(): Promise<AudioBuffer> {
-        const channel = new Float32Array(this.length);
+        const buffer = new RenderHarnessBuffer({
+            length: this.length,
+            numberOfChannels: this.numberOfChannels,
+            sampleRate: this.sampleRate,
+        });
+        const channel = buffer.getChannelData(0);
         for (const contribution of contributions) {
             const end = Math.min(this.length, contribution.endFrame);
             for (let frame = Math.max(0, contribution.startFrame); frame < end; frame++) {
                 channel[frame] = channel[frame]! + contribution.sample(frame);
             }
         }
-        const buffer = {
-            duration: this.length / this.sampleRate,
-            length: this.length,
-            numberOfChannels: 1,
-            sampleRate: this.sampleRate,
-            getChannelData: () => channel,
-            copyFromChannel: vi.fn(),
-            copyToChannel: vi.fn(),
-        };
         return Promise.resolve(buffer as unknown as AudioBuffer);
     }
 }
@@ -284,12 +312,43 @@ function createInstrumentEntry(deviceId: string, deviceType: string): DeviceNode
     };
 }
 
+function createHistorySensitiveInstrumentEntry(deviceId: string): DeviceNodeEntry {
+    let previousPitch: number | null = null;
+    const heldNotes = new Map<number, { startFrame: number; amplitude: number }>();
+    return {
+        deviceId,
+        deviceType: 'fermenter',
+        node: {} as DeviceNodeEntry['node'],
+        strategy: {} as DeviceNodeEntry['strategy'],
+        instrumentControls: {
+            noteOn: ({ noteOrPad: note, sampleFrame }) => {
+                const amplitude = previousPitch === null ? 0.25 : previousPitch / 100;
+                previousPitch = note;
+                heldNotes.set(note, { startFrame: sampleFrame ?? 0, amplitude });
+            },
+            noteOff: ({ noteOrPad: note, sampleFrame }) => {
+                const held = heldNotes.get(note);
+                if (!held) {
+                    return;
+                }
+                heldNotes.delete(note);
+                contributions.push({
+                    startFrame: held.startFrame,
+                    endFrame: sampleFrame ?? held.startFrame,
+                    sample: (frame) => held.amplitude * sineSample(midiFrequency(note), frame),
+                });
+            },
+        },
+    };
+}
+
 describe('renderTrackSubgraphOffline', () => {
     beforeEach(async () => {
         vi.clearAllMocks();
         contributions.length = 0;
         createdGains.length = 0;
         vi.stubGlobal('OfflineAudioContext', RenderHarnessContext);
+        vi.stubGlobal('AudioBuffer', RenderHarnessBuffer);
         mocks.getAudioContext.mockReturnValue({ sampleRate: SAMPLE_RATE });
         mocks.buildDeviceChain.mockResolvedValue([]);
 
@@ -362,6 +421,56 @@ describe('renderTrackSubgraphOffline', () => {
         expect(thirdHarmonic / fundamental).toBeLessThan(0.02);
         expect(mocks.instrumentNoteOn).toHaveBeenCalledWith(69, 100, undefined, 0);
         expect(mocks.instrumentNoteOff).toHaveBeenCalledWith(69, Math.round(0.5 * SAMPLE_RATE));
+    });
+
+    it('returns the requested region with the same instrument history as a full playthrough', async () => {
+        const track = TrackDummy.create({
+            id: 'track-1',
+            kind: 'midi',
+            clips: [midiClip({ endBeat: 8 })],
+            devices: [
+                { id: 'fermenter-1', name: 'Fermenter', type: 'fermenter', bypassed: false, parameterValues: {} },
+            ],
+        });
+        const { midiStore } = await import('#/modules/MIDI/stores');
+        midiStore.set({
+            probabilitySeed: 1,
+            notesByClipId: {
+                'clip-1': [
+                    { id: 'origin', pitch: 48, startBeat: 0, duration: 1, velocity: 100 },
+                    { id: 'region', pitch: 72, startBeat: 4, duration: 1, velocity: 100 },
+                ],
+            },
+            ccByClipId: {},
+            pitchBendByClipId: {},
+        });
+        mocks.buildDeviceChain.mockImplementation(() =>
+            Promise.resolve([createHistorySensitiveInstrumentEntry('fermenter-1')])
+        );
+        let scheduleTally = { scheduledNotes: 0, scheduledBuffers: [] as AudioBuffer[] };
+
+        const full = await renderTrackSubgraphOffline({
+            targetTrackId: track.id,
+            renderTracks: [track],
+            startBeat: 0,
+            endBeat: 8,
+        });
+        const expected = full!.getChannelData(0).slice(2 * SAMPLE_RATE, 4 * SAMPLE_RATE);
+        contributions.length = 0;
+
+        const region = await renderTrackSubgraphOffline({
+            targetTrackId: track.id,
+            renderTracks: [track],
+            startBeat: 4,
+            endBeat: 8,
+            onScheduled: (tally) => {
+                scheduleTally = tally;
+            },
+        });
+
+        expect(region!.length).toBe(expected.length);
+        expect(region!.getChannelData(0).subarray(0, 2048)).toEqual(expected.subarray(0, 2048));
+        expect(scheduleTally.scheduledNotes).toBe(1);
     });
 
     it('includes muted Toaster child content in a deliverable subgraph render', async () => {

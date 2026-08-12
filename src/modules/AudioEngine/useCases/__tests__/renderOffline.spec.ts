@@ -164,6 +164,42 @@ describe('renderOffline', () => {
         expect(result).toBe(rendered);
         expect(offlineRenderMocks.createOfflineTrackStrip).not.toHaveBeenCalled();
     });
+
+    it('resolves a bounded mixdown from timeline zero before rendering', async () => {
+        offlineRenderMocks.resolveRenderContext.mockReturnValue({
+            tracks: null,
+            midi: null,
+            transport: null,
+            defaultTempo: 120,
+            changes: [],
+            durationSeconds: 5,
+            projectMidiEvents: vi.fn(),
+            selectMidiEventProbability: vi.fn(() => true),
+            projectChordPitch: ({ pitch }: { pitch: number }) => pitch,
+            projectPpqEndpoints: vi.fn(() => ({ durationSeconds: 0 })),
+            processYeastMidi: vi.fn(),
+        });
+        const rendered = { sampleRate: 44_100 };
+        offlineRenderMocks.renderWithTimeout.mockResolvedValue(rendered);
+        class TestOfflineAudioContext {
+            readonly destination = {};
+
+            createGain() {
+                return { gain: { value: 0 }, connect: vi.fn() };
+            }
+        }
+        vi.stubGlobal('OfflineAudioContext', TestOfflineAudioContext);
+
+        const result = await renderOffline({ durationBeats: 8, startBeat: 2, sampleRate: 48_000 });
+
+        expect(result).toBe(rendered);
+        expect(offlineRenderMocks.resolveRenderContext).toHaveBeenCalledWith({
+            durationBeats: 10,
+            startBeat: 0,
+            tailSeconds: 0,
+            sampleRate: 48_000,
+        });
+    });
 });
 
 describe('renderOffline effective audibility (OE-4)', () => {
