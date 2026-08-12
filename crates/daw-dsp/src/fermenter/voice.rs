@@ -274,7 +274,7 @@ impl Voice {
 
     /// Set portamento time in seconds. 0 = no portamento.
     pub fn set_portamento(&mut self, time_s: f32, sample_rate: f32) {
-        if time_s <= 0.001 {
+        if !time_s.is_finite() || time_s <= 0.001 {
             self.glide_coeff = 1.0;
         } else {
             self.glide_coeff = 1.0 - (-std::f32::consts::TAU / (time_s * sample_rate)).exp();
