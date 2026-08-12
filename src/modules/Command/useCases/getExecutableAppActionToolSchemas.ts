@@ -1,15 +1,15 @@
-import { executableAppActionDescriptors } from './executableAppActionRegistry';
+import { getExecutableCommandRegistrations } from './getExecutableCommandRegistrations';
 
 export function getExecutableAppActionToolSchemas() {
-    return executableAppActionDescriptors.map((descriptor) => ({
+    return getExecutableCommandRegistrations().map((registration) => ({
         type: 'function' as const,
         function: {
-            name: descriptor.actionType,
-            description: descriptor.description,
+            name: registration.actionType,
+            description: registration.toolDescription,
             parameters: {
                 type: 'object' as const,
-                properties: structuredClone(descriptor.parameters.properties),
-                required: [...descriptor.parameters.required],
+                properties: structuredClone(registration.providerSchema.properties),
+                required: [...registration.providerSchema.required],
                 additionalProperties: false,
             },
         },

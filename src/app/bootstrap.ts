@@ -65,11 +65,10 @@ import {
 import { updateBacteriaMeters } from '#/modules/Bacteria/stores';
 import { initBrowserAi, initRaveModels, getRaveHandlers } from '#/modules/BrowserAi/useCases';
 import { canMutateBranchMetadata, getCollaborationHandlers, leaveSession } from '#/modules/Collaboration/useCases';
-import { registerHandlerMap } from '#/modules/Command/stores';
 import {
     executeAppAction,
     getMacroHandlers,
-    getExecutableCommandRegistrations,
+    registerProductionCommandHandlers,
     getUndoRedoHandlers,
     getUndoTreeHandlers,
     productionBriefAdmissionPort,
@@ -406,41 +405,42 @@ configureAudioDeviceRuntimeSink({
     updateTunerTelemetry,
 });
 
-registerHandlerMap(getArrangementHandlers());
-registerHandlerMap(getTransportHandlers());
-registerHandlerMap(getSessionLauncherHandlers());
-registerHandlerMap(getSetlistHandlers());
-registerHandlerMap(getPunchRecordingHandlers());
-registerHandlerMap(getWorkspaceHandlers());
-registerHandlerMap(getAutomationHandlers());
-registerHandlerMap(getAudioRenderingHandlers());
-registerHandlerMap(getGenerationHandlers());
-registerHandlerMap(getAnalysisHandlers());
-registerHandlerMap(getCollaborationHandlers());
-registerHandlerMap(getPluginHostHandlers());
-registerHandlerMap(getAiMidiHandlers());
-registerHandlerMap(getAiOrganizationHandlers());
-registerHandlerMap(getChordTrackHandlers());
-registerHandlerMap(getMidiNoteTransformHandlers());
-registerHandlerMap(getDrumPreviewBranchHandlers({ canMutateBranchMetadata }));
-registerHandlerMap(getMidiGrooveHandlers());
-registerHandlerMap(getControlSurfaceHandlers());
-registerHandlerMap(getScratchPadHandlers());
-registerHandlerMap(getPatternInstanceHandlers());
-registerHandlerMap(getMacroHandlers());
-registerHandlerMap(getUndoRedoHandlers());
-registerHandlerMap(getUndoTreeHandlers());
-registerHandlerMap(getPitchHandlers());
-registerHandlerMap(getSongStructureHandlers());
-registerHandlerMap(getProjectHandlers());
-registerHandlerMap(getVersionControlHandlers());
-registerHandlerMap(getDawProjectHandlers());
-registerHandlerMap(getFinalFeatureHandlers());
-registerHandlerMap(getNodeViewHandlers());
-registerHandlerMap(getWebMidiInputHandlers());
-registerHandlerMap(getRaveHandlers());
-registerHandlerMap(getControlRoomHandlers());
-getExecutableCommandRegistrations();
+registerProductionCommandHandlers([
+    getArrangementHandlers(),
+    getTransportHandlers(),
+    getSessionLauncherHandlers(),
+    getSetlistHandlers(),
+    getPunchRecordingHandlers(),
+    getWorkspaceHandlers(),
+    getAutomationHandlers(),
+    getAudioRenderingHandlers(),
+    getGenerationHandlers(),
+    getAnalysisHandlers(),
+    getCollaborationHandlers(),
+    getPluginHostHandlers(),
+    getAiMidiHandlers(),
+    getAiOrganizationHandlers(),
+    getChordTrackHandlers(),
+    getMidiNoteTransformHandlers(),
+    getDrumPreviewBranchHandlers({ canMutateBranchMetadata }),
+    getMidiGrooveHandlers(),
+    getControlSurfaceHandlers(),
+    getScratchPadHandlers(),
+    getPatternInstanceHandlers(),
+    getMacroHandlers(),
+    getUndoRedoHandlers(),
+    getUndoTreeHandlers(),
+    getPitchHandlers(),
+    getSongStructureHandlers(),
+    getProjectHandlers(),
+    getVersionControlHandlers(),
+    getDawProjectHandlers(),
+    getFinalFeatureHandlers(),
+    getNodeViewHandlers(),
+    getWebMidiInputHandlers(),
+    getRaveHandlers(),
+    getControlRoomHandlers(),
+]);
 
 initToasterSubscribers({ eventBus, logger });
 // Registered after the lifecycle subscriber so a device's first appearance is

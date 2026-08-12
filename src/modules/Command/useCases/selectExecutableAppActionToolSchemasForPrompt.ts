@@ -1,4 +1,5 @@
-import { executableAppActionDescriptorByType } from './executableAppActionRegistry';
+import { isExecutableAppActionType } from './executableAppActionRegistry';
+import { getExecutableCommandRegistration } from './getExecutableCommandRegistration';
 
 const MAX_WEB_LLM_TOOLS = 30;
 const ignoredSelectionTerms: ReadonlySet<string> = new Set([
@@ -65,14 +66,13 @@ function scoreToolForPrompt(
         }
     }
 
-    const descriptor = executableAppActionDescriptorByType.get(toolSchema.function.name);
-    if (!descriptor) {
+    if (!isExecutableAppActionType(toolSchema.function.name)) {
         return score;
     }
+    const registration = getExecutableCommandRegistration(toolSchema.function.name);
 
     const matchedIntentTerms = new Set<string>();
-    const selectionPhrases = 'selectionPhrases' in descriptor ? descriptor.selectionPhrases : [];
-    for (const phrase of [...descriptor.intentPhrases, ...selectionPhrases]) {
+    for (const phrase of [...registration.intentPhrases, ...registration.selectionPhrases]) {
         const normalizedPhrase = phrase.toLowerCase();
         if (normalizedPrompt.includes(normalizedPhrase)) {
             score = Math.max(score, 1_000 + normalizedPhrase.length);
@@ -86,7 +86,7 @@ function scoreToolForPrompt(
     }
     score += matchedIntentTerms.size * 10;
 
-    for (const term of selectionTerms(descriptor.description)) {
+    for (const term of selectionTerms(registration.toolDescription)) {
         if (promptTerms.has(term)) {
             score += 1;
         }

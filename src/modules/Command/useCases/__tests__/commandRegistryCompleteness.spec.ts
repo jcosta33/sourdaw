@@ -7,20 +7,23 @@ import { getDrumPreviewBranchHandlers } from '#/modules/CrdtDocument/useCases';
 import { getMidiNoteTransformHandlers } from '#/modules/MIDI/useCases';
 import { getTransportHandlers } from '#/modules/Transport/useCases';
 
-import { clearHandlerRegistry, registerHandlerMap } from '../../stores/handlerRegistry';
+import { clearHandlerRegistry } from '../../stores/handlerRegistry';
 import { executableAppActionDescriptors, type ExecutableAppAction } from '../executableAppActionRegistry';
 import { getCommandHandler } from '../getCommandHandler';
 import { getExecutableCommandRegistrations } from '../getExecutableCommandRegistrations';
+import { registerProductionCommandHandlers } from '../registerProductionCommandHandlers';
 
 describe('command registry completeness', () => {
     beforeEach(() => {
         clearHandlerRegistry();
-        registerHandlerMap(getArrangementHandlers());
-        registerHandlerMap(getAudioRenderingHandlers());
-        registerHandlerMap(getAutomationHandlers());
-        registerHandlerMap(getDrumPreviewBranchHandlers({ canMutateBranchMetadata: () => true }));
-        registerHandlerMap(getMidiNoteTransformHandlers());
-        registerHandlerMap(getTransportHandlers());
+        registerProductionCommandHandlers([
+            getArrangementHandlers(),
+            getAudioRenderingHandlers(),
+            getAutomationHandlers(),
+            getDrumPreviewBranchHandlers({ canMutateBranchMetadata: () => true }),
+            getMidiNoteTransformHandlers(),
+            getTransportHandlers(),
+        ]);
     });
 
     afterEach(() => {
@@ -39,11 +42,11 @@ describe('command registry completeness', () => {
                 (candidate) => candidate.actionType === registration.actionType
             );
             expect(registration).toMatchObject({
-                runtimeSchema: descriptor?.parameters,
                 toolDescription: descriptor?.description,
                 targetChecks: descriptor?.targetRules,
                 risk: descriptor?.risk,
             });
+            expect(registration.providerSchema).toBe(descriptor?.parameters);
             expect(registration.handler.execute).toBeTypeOf('function');
             expect(registration.receiptDescription).toBe(registration.handler.describe);
             expect(registration.confirmation.required).toBe(registration.risk !== 'bounded-reversible');
@@ -54,6 +57,11 @@ describe('command registry completeness', () => {
                 registration.handler.requiresAbortCompensation ?? true
             );
         }
+        const gainRegistration = registrations.find((registration) => registration.actionType === 'setTrackGain');
+        expect(gainRegistration?.runtimeSchema.validate({ trackId: 'track-vocal', gain: 0.7, expectedGain: 1 })).toBe(
+            true
+        );
+        expect(gainRegistration?.runtimeSchema.validate({ trackId: 'track-vocal', gain: 0.7 })).toBe(false);
         expect(registrations.some((registration) => registration.noOpDetector !== undefined)).toBe(true);
         expect(registrations.some((registration) => registration.inverseOrCompensation.undoable)).toBe(true);
         expect(
@@ -71,9 +79,10 @@ describe('command registry completeness', () => {
 
     it('fails closed when an executable descriptor has no production handler registration', () => {
         clearHandlerRegistry();
-        registerHandlerMap(getArrangementHandlers());
 
-        expect(() => getExecutableCommandRegistrations()).toThrow('Executable command is not completely registered');
+        expect(() => registerProductionCommandHandlers([getArrangementHandlers()])).toThrow(
+            'Executable command is not completely registered'
+        );
     });
 
     it('derives the executable compile-time action union from the canonical descriptor registry', () => {

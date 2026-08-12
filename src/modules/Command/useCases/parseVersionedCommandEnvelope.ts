@@ -8,7 +8,8 @@ import {
 } from '../models/VersionedCommandEnvelope';
 
 import { compileCommandArgumentMetadata } from './commandArgumentMetadata';
-import { executableAppActionDescriptorByType } from './executableAppActionRegistry';
+import { isExecutableAppActionType } from './executableAppActionRegistry';
+import { getExecutableCommandRegistration } from './getExecutableCommandRegistration';
 import { getVersionedCommandArgumentsDigest } from './getVersionedCommandArgumentsDigest';
 import { COMMAND_APPLICATION_ID_RULES } from './materializeCommandApplicationIds';
 import { validateVersionedCommandArguments } from './versionedCommandArgumentKeys';
@@ -142,12 +143,15 @@ function hasValidArguments(operation: string, value: unknown): boolean {
     if (!isRecord(value)) {
         return false;
     }
+    if (isExecutableAppActionType(operation)) {
+        return getExecutableCommandRegistration(operation).runtimeSchema.validate(value);
+    }
     return validateVersionedCommandArguments(operation, value);
 }
 
 function isDeterministicSerializedOperation(operation: string, value: unknown): boolean {
     if (
-        (!executableAppActionDescriptorByType.has(operation) && !ADDITIONAL_SERIALIZED_OPERATIONS.has(operation)) ||
+        (!isExecutableAppActionType(operation) && !ADDITIONAL_SERIALIZED_OPERATIONS.has(operation)) ||
         NONDETERMINISTIC_EXECUTABLE_OPERATIONS.has(operation)
     ) {
         return false;
