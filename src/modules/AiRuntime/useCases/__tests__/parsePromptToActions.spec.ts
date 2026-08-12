@@ -544,6 +544,24 @@ describe('parsePromptToActions', () => {
         expect(result.requiresConfirmation).toBe(true);
     });
 
+    it('grounds a preview request from a later punctuation-delimited clause', async () => {
+        mockBridgeGroundedLlmToolCalls.mockImplementation(actualBridge.bridgeGroundedLlmToolCalls);
+        vi.mocked(generateToolCalls).mockResolvedValue(
+            completePlan([
+                { name: 'selectActionPlanningMode', arguments: { mode: 'preview' } },
+                { name: 'muteTrack', arguments: { trackId: 'track-vocals', muted: true } },
+            ])
+        );
+
+        const result = await parsePromptToActions(
+            'the transport is stopped; preview mute Vocals',
+            createMixerContext()
+        );
+
+        expect(result.actions).toHaveLength(1);
+        expect(result.requiresConfirmation).toBe(true);
+    });
+
     it('forces confirmation for bounded actions requested as a preview', async () => {
         mockBridgeGroundedLlmToolCalls.mockImplementation(actualBridge.bridgeGroundedLlmToolCalls);
         vi.mocked(generateToolCalls).mockResolvedValue(

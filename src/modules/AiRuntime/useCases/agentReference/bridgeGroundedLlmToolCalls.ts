@@ -5,7 +5,7 @@ import {
 } from '#/modules/Command/useCases';
 import { createPunchRegionPatch } from '#/modules/Transport/useCases';
 
-import { type ActionPlanningMode } from '../../models/ActionPlanningMode';
+import { type ActionPlanningMode, stripRequestedActionPlanningModeCarrier } from '../../models/ActionPlanningMode';
 import { type ProjectContext, type ProjectContextAgentReferenceHistoryEntry } from '../../models/ProjectContext';
 import { type WorkflowCapabilityId } from '../../models/WorkflowCapability';
 import {
@@ -649,13 +649,6 @@ function isExplicitCommandClause(maskedText: string, catalog: GroundingCatalog):
             const suffix = commandText.slice(normalizedPhrase.length).trim();
             return !/^(?:is|means|seems|sounds|was|were)\b/u.test(suffix);
         })
-    );
-}
-
-function stripPreviewCarrier(prompt: string): string {
-    return prompt.replace(
-        /^\s*(?:please\s+)?(?:(?:show|give)\s+(?:me\s+)?(?:a\s+)?preview\s+(?:of\s+)?|preview\s+(?:of\s+)?)/iu,
-        ''
     );
 }
 
@@ -3483,7 +3476,7 @@ function groundToolCall({
         assertedArguments: call.arguments,
         catalog,
         context,
-        prompt: referenceResolutionMode === 'preview' ? stripPreviewCarrier(prompt) : prompt,
+        prompt: referenceResolutionMode === 'preview' ? stripRequestedActionPlanningModeCarrier(prompt) : prompt,
         plannedActionNames,
         sameActionAssertedArguments,
         sameActionCallCount,
