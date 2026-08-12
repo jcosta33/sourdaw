@@ -1,0 +1,33 @@
+src/modules/Grinder/presentations/views/__tests__/GrinderPanel.spec.tsx
+  s_bc88af7d3b054c::t_79d523690ed743 401,403
+  s_bc88af7d3b054c::t_41d64c27d4cd81 406-408,410-412
+  s_bc88af7d3b054c::t_7ecd7e1268755a 409
+src/modules/Grinder/models/__tests__/GrinderProjectParameterMap.spec.ts
+  s_bc88af7d3b054c::t_fd109a4913933f 11
+  s_bc88af7d3b054c::t_7ecd7e1268755a 14-18
+  s_bc88af7d3b054c::t_41d64c27d4cd81 13
+src/modules/Grinder/models/GrinderProjectParameterMap.ts
+  s_bc88af7d3b054c::t_7ecd7e1268755a 76-87,93-95,108-109,111-115
+  s_bc88af7d3b054c::t_cd4beef7d451be 40
+  s_bc88af7d3b054c::t_ab9a9962da6153 117-119
+  s_bc88af7d3b054c::t_e2f4b945cd17eb 34-38,90,92,110
+  s_bc88af7d3b054c::t_34a5a2ac976bde 24,27-30
+  s_bc88af7d3b054c::t_bc004fbf8b8561 1-10,12-22,25-26,31-33,41-46,64-75,88,91,96-107,116,120-121,126-136
+  s_bc88af7d3b054c::t_a3bfc107b1b846 39,63,89,137-143
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "80e1b9fcfdec5cdfd76f8006fd2d0d4ad87a522b",
+  "prompts": {},
+  "sessions": {
+    "s_bc88af7d3b054c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f9b4a-11a2-7f61-8dfb-76eed0eb2a9c",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
