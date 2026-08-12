@@ -13,6 +13,7 @@ pub fn run() {
         .manage(commands::collab::CollabState::default())
         .manage(commands::link::LinkState::default())
         .manage(commands::midi::MidiState::default())
+        .manage(commands::midi::PushState::default())
         .manage(commands::native_llm::NativeLlmState::default())
         .manage(commands::speech::DictationState::default())
         .manage(commands::audio_gen::AudioGenState::default())
@@ -75,6 +76,10 @@ pub fn run() {
             commands::midi::list_midi_inputs,
             commands::midi::open_midi_input,
             commands::midi::close_midi_input,
+            commands::midi::open_push_transport,
+            commands::midi::send_push_midi,
+            commands::midi::write_push2_display,
+            commands::midi::close_push_transport,
             // Ableton Link bridge
             commands::link::enable_link,
             commands::link::disable_link,

@@ -423,6 +423,12 @@
           "markdownDescription": "Enables the close_plugin_gui command without any pre-configured scope."
         },
         {
+          "description": "Enables the close_push_transport command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-close-push-transport",
+          "markdownDescription": "Enables the close_push_transport command without any pre-configured scope."
+        },
+        {
           "description": "Enables the collab_apply_change command without any pre-configured scope.",
           "type": "string",
           "const": "allow-collab-apply-change",
@@ -717,6 +723,12 @@
           "markdownDescription": "Enables the open_plugin_gui command without any pre-configured scope."
         },
         {
+          "description": "Enables the open_push_transport command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-open-push-transport",
+          "markdownDescription": "Enables the open_push_transport command without any pre-configured scope."
+        },
+        {
           "description": "Enables the parse_scl command without any pre-configured scope.",
           "type": "string",
           "const": "allow-parse-scl",
@@ -763,6 +775,12 @@
           "type": "string",
           "const": "allow-send-plugin-midi",
           "markdownDescription": "Enables the send_plugin_midi command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the send_push_midi command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-send-push-midi",
+          "markdownDescription": "Enables the send_push_midi command without any pre-configured scope."
         },
         {
           "description": "Enables the separate_stems command without any pre-configured scope.",
@@ -891,6 +909,12 @@
           "markdownDescription": "Enables the write_file_bytes command without any pre-configured scope."
         },
         {
+          "description": "Enables the write_push2_display command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-write-push2-display",
+          "markdownDescription": "Enables the write_push2_display command without any pre-configured scope."
+        },
+        {
           "description": "Denies the analyze_pitch command without any pre-configured scope.",
           "type": "string",
           "const": "deny-analyze-pitch",
@@ -925,6 +949,12 @@
           "type": "string",
           "const": "deny-close-plugin-gui",
           "markdownDescription": "Denies the close_plugin_gui command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the close_push_transport command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-close-push-transport",
+          "markdownDescription": "Denies the close_push_transport command without any pre-configured scope."
         },
         {
           "description": "Denies the collab_apply_change command without any pre-configured scope.",
@@ -1221,6 +1251,12 @@
           "markdownDescription": "Denies the open_plugin_gui command without any pre-configured scope."
         },
         {
+          "description": "Denies the open_push_transport command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-open-push-transport",
+          "markdownDescription": "Denies the open_push_transport command without any pre-configured scope."
+        },
+        {
           "description": "Denies the parse_scl command without any pre-configured scope.",
           "type": "string",
           "const": "deny-parse-scl",
@@ -1267,6 +1303,12 @@
           "type": "string",
           "const": "deny-send-plugin-midi",
           "markdownDescription": "Denies the send_plugin_midi command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the send_push_midi command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-send-push-midi",
+          "markdownDescription": "Denies the send_push_midi command without any pre-configured scope."
         },
         {
           "description": "Denies the separate_stems command without any pre-configured scope.",
@@ -1387,6 +1429,12 @@
           "type": "string",
           "const": "deny-write-file-bytes",
           "markdownDescription": "Denies the write_file_bytes command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the write_push2_display command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-write-push2-display",
+          "markdownDescription": "Denies the write_push2_display command without any pre-configured scope."
         },
         {
           "description": "Default core plugins set.\n#### This default permission set includes:\n\n- `core:path:default`\n- `core:event:default`\n- `core:window:default`\n- `core:webview:default`\n- `core:app:default`\n- `core:image:default`\n- `core:resources:default`\n- `core:menu:default`\n- `core:tray:default`",
