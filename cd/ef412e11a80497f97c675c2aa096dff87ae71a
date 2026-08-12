@@ -1,0 +1,107 @@
+src/modules/Arrangement/handlers/isGeneratedMidiStateCurrent.ts
+  s_a40848e8f8cca9::t_c5c5033b959170 17,32,76,80
+src/modules/Arrangement/useCases/stemImport/importStemSetToProject.ts
+  s_a40848e8f8cca9::t_a09910a98de20a 1-81
+src/modules/AiRuntime/useCases/cancelPendingChatActions.ts
+  s_a40848e8f8cca9::t_6124e32da41c1e 29,33
+  s_a40848e8f8cca9::t_827bca81248703 8,30-32
+  s_a40848e8f8cca9::t_052fb1d37d6d64 9
+src/modules/AiRuntime/useCases/getPlannedActionAffectedIds.ts
+  s_a40848e8f8cca9::t_4d33f2b2d0dbca 10-16
+src/modules/Collaboration/useCases/__tests__/assetTransfer.spec.ts
+  s_a40848e8f8cca9::t_3453c01f09fb0d 72-82
+src/modules/AiRuntime/useCases/validateActionPayload.ts
+  s_a40848e8f8cca9::t_87d45a075e4915 170-196,199-208
+src/modules/AiRuntime/useCases/materializeActionStateGuards.ts
+  s_a40848e8f8cca9::t_dfd1d9b431bd70 632-634
+src/modules/AiRuntime/models/RuntimeAction.ts
+  s_a40848e8f8cca9::t_3231ae64f6b02f 4,261,329,407-409,412-413
+  s_a40848e8f8cca9::t_26094f0948cfeb 414-422
+src/modules/AiRuntime/useCases/agentReference/discardPreparedStemImportResources.ts
+  s_a40848e8f8cca9::t_827bca81248703 1-18
+src/modules/AiRuntime/useCases/agentReference/getStemImportMix.ts
+  s_a40848e8f8cca9::t_f39bd5ab943a8d 1-22
+src/modules/AiRuntime/useCases/agentReference/prepareStemImport.ts
+  s_a40848e8f8cca9::t_827bca81248703 1-103
+src/modules/AiRuntime/useCases/agentReference/createStemImportPromptScope.ts
+  s_a40848e8f8cca9::t_39e2803a4e2375 1-4,7-62,65-69,74-78
+  s_a40848e8f8cca9::t_dfd1d9b431bd70 63-64,72-73
+  s_a40848e8f8cca9::t_f39bd5ab943a8d 5-6,70-71
+src/modules/AiRuntime/useCases/parsePromptToActions.ts
+  s_a40848e8f8cca9::t_6c70769cbd0790 9,20,89-90,176,198-222
+src/modules/Command/useCases/executableAppActionRegistry.ts
+  s_a40848e8f8cca9::t_673d0ffdf755c3 156-202
+  s_a40848e8f8cca9::t_4ece6901e2ae9a 155
+src/modules/AiRuntime/useCases/__tests__/stemImportStartingMixWorkflow.spec.ts
+  s_a40848e8f8cca9::t_617723ae6aa923 23,30,37-38,40,47,58,62,66
+  s_a40848e8f8cca9::t_105396be0a8c1d 516-518,535-537
+  s_a40848e8f8cca9::t_474fa32c98de0d 77
+  s_a40848e8f8cca9::t_63616ba8cad676 158-239,243-252,289-291,296
+  s_a40848e8f8cca9::t_97c1e707f75727 1-8,10-22,24-29,31-36,39,44,46,48-49,51,53,56,59-61,63-65,67-76,78-83,85,88,90-93,95-157,240-242,253-285,292-295,297-352,355-357,359-360,553-554
+  s_a40848e8f8cca9::t_5d7e328da998a5 491-494,496-514
+  s_a40848e8f8cca9::t_9f2b84224eabc4 495
+  s_a40848e8f8cca9::t_e5837c0cb5887c 384-386,416,418-420,435-436,489-490,515,519-534,538-550,552
+  s_a40848e8f8cca9::t_dd9a743c0e2629 9,454-457,462
+  s_a40848e8f8cca9::t_c8dcc8779ba0fc 50
+  s_a40848e8f8cca9::t_ba9b46da61a965 41-43,94,286-288
+  s_a40848e8f8cca9::t_1523cecc3bd14a 353-354,358,361-383,387-415,417,421-434,437-453,458-461,463-488
+  s_a40848e8f8cca9::t_4d4c526f9abf3e 45
+  s_a40848e8f8cca9::t_bda38e4f56db51 52,54-55,57,84,86-87,89
+  s_a40848e8f8cca9::t_5c62e3b3ffea92 551
+src/modules/AiRuntime/useCases/confirmPendingChatActions.ts
+  s_a40848e8f8cca9::t_6124e32da41c1e 484,488-489,493-495,510,527,541
+  s_a40848e8f8cca9::t_ffed5808edafb5 20
+  s_a40848e8f8cca9::t_30358b8d273ac9 490-492
+src/modules/Collaboration/useCases/assetTransfer.ts
+  s_a40848e8f8cca9::t_619a1aaa4caaf8 83-87
+  s_a40848e8f8cca9::t_220731ae4c3475 73-82
+src/utils/handlerContract.ts
+  s_a40848e8f8cca9::t_175f8e650e7d26 430-444
+  s_a40848e8f8cca9::t_251a71451e8e05 445-453,455-463,567-587
+  s_a40848e8f8cca9::t_220731ae4c3475 454
+src/modules/Arrangement/handlers/track/handleImportStemSet.ts
+  s_a40848e8f8cca9::t_dfd1d9b431bd70 122-125,129-138,141-142
+  s_a40848e8f8cca9::t_e223c7043908c9 3
+  s_a40848e8f8cca9::t_a09910a98de20a 7,36-37,41
+  s_a40848e8f8cca9::t_abb993e745535b 1,49-51
+  s_a40848e8f8cca9::t_c5c5033b959170 2,4-6,8-15,34-35,38-40,42-48,52-68,71-121,126-128,139-140,143-148
+  s_a40848e8f8cca9::t_8d5fc660b7fc12 16-33,69-70
+src/modules/AiRuntime/useCases/planPromptActions.ts
+  s_a40848e8f8cca9::t_e9d0a75867fcc5 21-27,55,57
+  s_a40848e8f8cca9::t_26094f0948cfeb 28-31
+  s_a40848e8f8cca9::t_6c70769cbd0790 5,20,32-36,38-41,43
+  s_a40848e8f8cca9::t_ffed5808edafb5 6
+  s_a40848e8f8cca9::t_827bca81248703 8,37,42,56
+src/modules/AiRuntime/transformers/llmActionBridge.ts
+  s_a40848e8f8cca9::t_26094f0948cfeb 15
+  s_a40848e8f8cca9::t_52d0a4410fe2f0 3165,3180,3194
+src/modules/AiRuntime/useCases/describePendingActionConfirmation.ts
+  s_a40848e8f8cca9::t_4d33f2b2d0dbca 119,194-196,228-246,386
+src/modules/AiRuntime/models/StemImportCapability.ts
+  s_a40848e8f8cca9::t_39e2803a4e2375 1-32
+src/modules/Arrangement/useCases/getArrangementHandlers.ts
+  s_a40848e8f8cca9::t_26094f0948cfeb 53
+  s_a40848e8f8cca9::t_c5c5033b959170 96-97
+src/modules/AiRuntime/useCases/agentReference/bridgeStemImportPlan.ts
+  s_a40848e8f8cca9::t_ba9b46da61a965 60-68,86
+  s_a40848e8f8cca9::t_368608f2a5475b 2,9,70-74,76-77,80
+  s_a40848e8f8cca9::t_39e2803a4e2375 3-5,7-8,10-15,20-40,43-49,51-53,55-59,69,78-79,81-85,87-90
+  s_a40848e8f8cca9::t_220731ae4c3475 1,16-19,41-42,50,54,75
+  s_a40848e8f8cca9::t_f39bd5ab943a8d 6
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "cdef412e11a80497f97c675c2aa096dff87ae71a",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
