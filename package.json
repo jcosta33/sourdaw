@@ -16,6 +16,7 @@
         "test:barrel-mocks": "node --experimental-strip-types scripts/checkBarrelMockCoverage.ts",
         "test:generate-usecase-specs": "node --experimental-strip-types scripts/generate-missing-use-case-specs.ts",
         "test:e2e": "playwright test",
+        "deliver": "node --experimental-strip-types scripts/deliverPullRequest.ts",
         "verify:change": "node --experimental-strip-types scripts/verifyChange.ts",
         "audio:deadline": "node --experimental-strip-types scripts/measureRenderDeadline.ts",
         "transport:clock": "node --experimental-strip-types scripts/measureTransportClock.ts",
