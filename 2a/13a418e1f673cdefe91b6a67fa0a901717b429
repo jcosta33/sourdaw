@@ -1,0 +1,25 @@
+scripts/__tests__/removeLane.spec.ts
+  s_0a3429e31e555d::t_c095d9ca56bd1f 62-63,81-82,129,152-173
+  s_0a3429e31e555d::t_3bff1eecc43992 185,197-199,232,271-272
+scripts/removeLane.ts
+  s_0a3429e31e555d::t_a4e3fe1cb3c024 73,187-188,244
+  s_0a3429e31e555d::t_6f3e1b648be971 313-333
+  s_0a3429e31e555d::t_9184a62af70895 15,42-43,103,110-111
+  s_0a3429e31e555d::t_c380e56134c19e 137-139,144-148,154-168,184-186,226-229,238-243,245-248,258-262
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "2a13a418e1f673cdefe91b6a67fa0a901717b429",
+  "prompts": {},
+  "sessions": {
+    "s_0a3429e31e555d": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f1568-8dda-7540-97a5-9da760eadac4",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
