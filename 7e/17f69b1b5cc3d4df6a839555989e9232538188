@@ -1,0 +1,34 @@
+src/modules/AiRuntime/useCases/agentReference/bridgeSharedVocalFxBusesPlan.ts
+  s_a40848e8f8cca9::t_17e11c56cb0601 76-106,108-115,119,182
+src/modules/AiRuntime/useCases/agentReference/getSharedVocalFxBusesPromptScope.ts
+  s_a40848e8f8cca9::t_66b73b0ee02418 315
+  s_a40848e8f8cca9::t_17e11c56cb0601 140,178-184,193-196,305-314,316-327,339-353
+src/modules/AiRuntime/useCases/__tests__/backingVocalPlateWorkflow.spec.ts
+  s_a40848e8f8cca9::t_0e8c3a0ad26c32 1347-1349,1352,1354,1356,1358,1379,1385,1388-1391,1395-1397,1400-1403,1407,1409,1412-1415,1419-1421,1424-1427,1431-1432,1454
+  s_a40848e8f8cca9::t_de1cb65eef0139 1499,1501,1505,1533-1552,1679
+  s_a40848e8f8cca9::t_b5ec57fa0637fe 1532,1553-1560
+  s_a40848e8f8cca9::t_46c05d61293994 1599,1601,1607,1609,1618-1619,1634,1636,1643,1680
+  s_a40848e8f8cca9::t_76907f5cef9e08 1615
+  s_a40848e8f8cca9::t_0fd81045500ac5 110-112,114-116,123,127-132,136-141,145-150,414-421,424,439-440,442-443,445,451,454-456,471-486,489-494
+  s_a40848e8f8cca9::t_246153b2ffcc34 1629,1631,1637-1639,1644,1646-1655
+  s_a40848e8f8cca9::t_911f0a9c6b17b8 1641-1642
+  s_a40848e8f8cca9::t_bcdba58d67a207 1687,1691,1695,1743,1756,1765,1793,1801
+src/modules/AiRuntime/models/SharedVocalFxBusesCapability.ts
+  s_a40848e8f8cca9::t_17e11c56cb0601 23-25
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "7e17f69b1b5cc3d4df6a839555989e9232538188",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
