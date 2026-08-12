@@ -12,7 +12,7 @@ use daw_engine::EngineHandle;
 use daw_plugin_host::scanner::{self, ScanResult, ScannedPlugin};
 use daw_plugin_host::{AudioPlugin, ClapWrapper};
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::{BTreeSet, HashMap};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, LazyLock, Mutex};
 use std::time::{Duration, Instant};
@@ -448,11 +448,49 @@ fn remove_plugin_window(instance_id: &str, app: Option<&tauri::AppHandle>, state
 #[tauri::command]
 #[specta::specta]
 pub async fn unload_plugin(
-    instance_id: PluginInstanceId,
+    instance_id: Option<PluginInstanceId>,
     app: tauri::AppHandle,
     state: tauri::State<'_, AppState>,
 ) -> Result<(), String> {
-    unload_plugin_runtime(&instance_id.0, Some(&app), state.inner()).await
+    match instance_id {
+        Some(instance_id) => unload_plugin_runtime(&instance_id.0, Some(&app), state.inner()).await,
+        None => unload_all_plugin_runtimes(Some(&app), state.inner()).await,
+    }
+}
+
+async fn unload_all_plugin_runtimes(
+    app: Option<&tauri::AppHandle>,
+    state: &AppState,
+) -> Result<(), String> {
+    let instance_ids = {
+        let plugins = state
+            .plugins
+            .lock()
+            .map_err(|error| format!("Failed to lock plugins: {error}"))?;
+        let engine_plugins = state
+            .engine_plugins
+            .lock()
+            .map_err(|error| format!("Failed to lock engine_plugins: {error}"))?;
+        plugins
+            .keys()
+            .chain(engine_plugins.keys())
+            .cloned()
+            .collect::<BTreeSet<_>>()
+    };
+    let mut errors = Vec::new();
+    for instance_id in instance_ids {
+        if let Err(error) = unload_plugin_runtime(&instance_id, app, state).await {
+            errors.push(error);
+        }
+    }
+    if errors.is_empty() {
+        Ok(())
+    } else {
+        Err(format!(
+            "Failed to unload all plugin instances: {}",
+            errors.join("; ")
+        ))
+    }
 }
 
 async fn unload_plugin_runtime(
@@ -475,7 +513,7 @@ async fn unload_plugin_runtime(
     }
 
     let engine_plugin = {
-        let mut engine_plugins = state
+        let engine_plugins = state
             .engine_plugins
             .lock()
             .map_err(|e| format!("Failed to lock engine_plugins: {}", e))?;
@@ -1096,12 +1134,14 @@ mod tests {
             state.inner(),
         ));
         assert_eq!(result, Err("Native engine not running".to_string()));
-        let engine_plugins = state
-            .engine_plugins
-            .lock()
-            .expect("engine_plugins lock should be available");
-        let runtime = &engine_plugins["active-instance"].runtime;
-        assert!(runtime.ensure_public_control_allowed().is_ok());
+        {
+            let engine_plugins = state
+                .engine_plugins
+                .lock()
+                .expect("engine_plugins lock should be available");
+            let runtime = &engine_plugins["active-instance"].runtime;
+            assert!(runtime.ensure_public_control_allowed().is_ok());
+        }
         let wrapper =
             ClapWrapper::new_engine_owned_command_fixture("Command Fixture", vec![], true);
         let instance = PluginInstanceData {
@@ -1117,12 +1157,12 @@ mod tests {
             .lock()
             .expect("plugin_windows lock")
             .insert("command-instance".into(), "command-window".into());
-        tauri::async_runtime::block_on(unload_plugin_runtime(
-            "command-instance",
-            None,
-            state.inner(),
-        ))
-        .expect("command-owned unload should succeed");
+        let unload_all =
+            tauri::async_runtime::block_on(unload_all_plugin_runtimes(None, state.inner()));
+        assert_eq!(
+            unload_all,
+            Err("Failed to unload all plugin instances: Native engine not running".into())
+        );
         let windows = state.plugin_windows.lock().expect("plugin_windows lock");
         assert!(windows.is_empty());
     }

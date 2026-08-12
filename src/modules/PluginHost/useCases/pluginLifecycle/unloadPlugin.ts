@@ -8,8 +8,16 @@ import { externalLatencyReporters } from './externalLatencyReporters';
 import { loadedExternalInstances } from './loadedExternalInstances';
 import { serializePluginLifecycle } from './serializePluginLifecycle';
 
+function clearRendererPluginOwnership(): void {
+    loadedExternalInstances.clear();
+    externalLatencyReporters.clear();
+    externalPluginActivationStore.set(defaultExternalPluginActivationState);
+}
 /** Unload a plugin instance by its instance ID. */
-export function unloadPlugin(instanceId: string): ReturnType<typeof unloadPluginRepo> {
+export function unloadPlugin(instanceId?: string): ReturnType<typeof unloadPluginRepo> {
+    if (instanceId === undefined) {
+        return unloadPluginRepo().then(clearRendererPluginOwnership);
+    }
     return serializePluginLifecycle(instanceId, async () => {
         if (!loadedExternalInstances.has(instanceId)) {
             return;

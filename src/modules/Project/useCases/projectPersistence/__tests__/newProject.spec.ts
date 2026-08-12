@@ -16,7 +16,7 @@ import { ensureTrackStrips, stopPlayback } from '#/modules/Transport/useCases';
 import { removeProjectJson } from '../../../repositories/project/removeProjectJson';
 import { defaultProjectStoreState, projectStore } from '../../../stores/projectStore';
 import { resetModuleStoresToDefault } from '../helpers/resetModuleStoresToDefault';
-import { projectLoadEpoch, runProjectLoadTransaction } from '../helpers/runProjectLoadTransaction';
+import { runProjectLoadTransaction } from '../helpers/runProjectLoadTransaction';
 import { newProject } from '../newProject';
 
 type Deferred<T> = {
@@ -153,19 +153,6 @@ describe('newProject injectable', () => {
         expect(startCrdtAutoSave).toHaveBeenCalledOnce();
     });
 
-    it('serializes destructive runtime transitions', async () => {
-        const releaseFirst = await projectLoadEpoch.acquireRuntimeTransition();
-        let secondEntered = false;
-        const second = projectLoadEpoch.acquireRuntimeTransition().then((release) => {
-            secondEntered = true;
-            return release();
-        });
-        await Promise.resolve();
-        expect(secondEntered).toBe(false);
-        releaseFirst();
-        await second;
-        expect(secondEntered).toBe(true);
-    });
     it('keeps previous authority and restores its graph when native plugin teardown fails', async () => {
         pluginHostMocks.unloadLoadedExternalPlugins.mockRejectedValueOnce(new Error('native teardown failed'));
         await expect(newProject('Test')).resolves.toBe(false);

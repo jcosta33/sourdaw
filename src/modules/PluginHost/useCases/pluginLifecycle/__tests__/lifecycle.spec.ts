@@ -7,7 +7,6 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { loadedExternalInstances } from '../loadedExternalInstances';
 import { loadPlugin } from '../loadPlugin';
 import { openPluginGui } from '../openPluginGui';
-import { unloadLoadedExternalPlugins } from '../unloadLoadedExternalPlugins';
 import { unloadPlugin } from '../unloadPlugin';
 
 const mocks = vi.hoisted(() => ({
@@ -56,29 +55,18 @@ describe('Plugin Lifecycle Use Cases', () => {
         expect(mocks.unloadPluginRepo).toHaveBeenCalledWith('inst1');
     });
 
-    it('coalesces two unloads that snapshot the same owned instance', async () => {
+    it('coalesces unloads while ownership remains published until native success', async () => {
         const unloading = Promise.withResolvers<void>();
         loadedExternalInstances.add('inst1');
         mocks.unloadPluginRepo.mockReturnValueOnce(unloading.promise);
         const first = unloadPlugin('inst1');
         const second = unloadPlugin('inst1');
         await Promise.resolve();
+        expect(loadedExternalInstances.has('inst1')).toBe(true);
         unloading.resolve();
         await expect(Promise.all([first, second])).resolves.toEqual([undefined, undefined]);
         expect(mocks.unloadPluginRepo).toHaveBeenCalledTimes(1);
-    });
-
-    it('keeps runtime ownership published until native unload succeeds', async () => {
-        const unloading = Promise.withResolvers<void>();
-        mocks.unloadPluginRepo.mockReturnValueOnce(unloading.promise);
-        loadedExternalInstances.add('owned-instance');
-        const result = unloadPlugin('owned-instance');
-        await Promise.resolve();
-        const ownershipWhilePending = loadedExternalInstances.has('owned-instance');
-        unloading.resolve();
-        await result;
-        expect(ownershipWhilePending).toBe(true);
-        expect(loadedExternalInstances.has('owned-instance')).toBe(false);
+        expect(loadedExternalInstances.has('inst1')).toBe(false);
     });
 
     it('retains runtime ownership when native unload fails', async () => {
@@ -89,16 +77,9 @@ describe('Plugin Lifecycle Use Cases', () => {
         expect(loadedExternalInstances.has('owned-instance')).toBe(true);
     });
 
-    it('attempts every owned native unload before reporting aggregate failure', async () => {
-        const failure = new Error('first unload failed');
-        loadedExternalInstances.add('first-instance');
-        loadedExternalInstances.add('second-instance');
-        mocks.unloadPluginRepo.mockRejectedValueOnce(failure).mockResolvedValueOnce(undefined);
-        await expect(unloadLoadedExternalPlugins()).rejects.toThrow('Failed to unload all external plugin instances');
-        expect(mocks.unloadPluginRepo).toHaveBeenCalledWith('first-instance');
-        expect(mocks.unloadPluginRepo).toHaveBeenCalledWith('second-instance');
-        expect(loadedExternalInstances.has('first-instance')).toBe(true);
-        expect(loadedExternalInstances.has('second-instance')).toBe(false);
+    it('delegates unload-all to native after renderer ownership is lost', async () => {
+        await unloadPlugin();
+        expect(mocks.unloadPluginRepo).toHaveBeenCalledWith();
     });
     it('serializes unload then load for the same instance', async () => {
         const unloading = Promise.withResolvers<void>();

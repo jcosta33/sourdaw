@@ -12,8 +12,7 @@ export { isFaustInstrumentModule } from './faustEngine/isFaustInstrumentModule';
 export { getPluginHostHandlers } from './getPluginHostHandlers';
 
 export { loadPlugin } from './pluginLifecycle/loadPlugin';
-export { unloadPlugin } from './pluginLifecycle/unloadPlugin';
-export { unloadLoadedExternalPlugins } from './pluginLifecycle/unloadLoadedExternalPlugins';
+export { unloadPlugin, unloadPlugin as unloadLoadedExternalPlugins } from './pluginLifecycle/unloadPlugin';
 export { openPluginGui } from './pluginLifecycle/openPluginGui';
 export { processAudioIPC } from './pluginLifecycle/processAudioIPC';
 export { setPluginParameter } from './pluginLifecycle/setPluginParameter';
