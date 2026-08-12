@@ -1,0 +1,24 @@
+src-tauri/src/commands/midi.rs
+  s_bc88af7d3b054c::t_0b681fe992beb7 65,103-117,132,141-149,162-165
+  s_bc88af7d3b054c::t_0c178fa4d4ef6f 193-200,205-211,213,218-224,226,228-232,235,248,258-259,262,273,275-284,290,297,302,308,310-325,476
+  s_bc88af7d3b054c::t_f43cdae171a389 465-475
+  s_bc88af7d3b054c::t_57f0d69c9aea1e 166-168
+  s_bc88af7d3b054c::t_c71f08cdfb3318 477
+  s_bc88af7d3b054c::t_2987d40ab8cc3d 327,337
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "9799b3ff376545e611cd1b183b4096d7b6a62490",
+  "prompts": {},
+  "sessions": {
+    "s_bc88af7d3b054c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f9b4a-11a2-7f61-8dfb-76eed0eb2a9c",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
