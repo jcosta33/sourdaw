@@ -27,3 +27,8 @@ test-results/
 
 # Generated agent UI screenshots
 .agents/ui-scripts/*.png
+
+# Local command captures
+/*.out
+/cw.txt
+/fmt-files.txt
