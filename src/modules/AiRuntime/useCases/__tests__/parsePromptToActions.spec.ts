@@ -522,6 +522,27 @@ describe('parsePromptToActions', () => {
         expect(result.rejectionReason).toBe('Provider selected preview mode without an explicit user preview request.');
     });
 
+    it('keeps an explicit preview clause visible between contractions', async () => {
+        mockBridgeGroundedLlmToolCalls.mockReturnValue({
+            actions: [{ type: 'muteTrack', payload: { trackId: 'track-vocals', muted: true } }],
+            rejections: [],
+        });
+        vi.mocked(generateToolCalls).mockResolvedValue(
+            completePlan([
+                { name: 'selectActionPlanningMode', arguments: { mode: 'preview' } },
+                { name: 'muteTrack', arguments: { trackId: 'track-vocals', muted: true } },
+            ])
+        );
+
+        const result = await parsePromptToActions(
+            "don't execute; preview mute Vocals; it's only a proposal",
+            createMixerContext()
+        );
+
+        expect(result.actions).toHaveLength(1);
+        expect(result.requiresConfirmation).toBe(true);
+    });
+
     it('forces confirmation for bounded actions requested as a preview', async () => {
         mockBridgeGroundedLlmToolCalls.mockImplementation(actualBridge.bridgeGroundedLlmToolCalls);
         vi.mocked(generateToolCalls).mockResolvedValue(
