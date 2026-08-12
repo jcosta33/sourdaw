@@ -449,9 +449,11 @@ export type StemImportTrackSnapshot = {
     readonly role: StemImportRole;
     readonly sourceTempo: number;
     readonly durationSeconds: number;
+    readonly sourceBytes: number;
+    readonly decodedBytes: number;
     readonly audioBufferId: string;
     readonly assetHash?: string;
-    readonly stagedAssetOwned?: boolean;
+    readonly assetLeaseId?: string;
     readonly trackId: string;
     readonly trackName: string;
     readonly trackGain: number;

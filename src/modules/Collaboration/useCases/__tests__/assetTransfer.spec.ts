@@ -76,8 +76,19 @@ describe('AssetTransfer', () => {
 
         const staged = await transfer.stageLocalAsset(duplicate, 'duplicate.txt');
 
-        expect(staged).toEqual({ hash: existingHash, owned: false });
+        expect(staged).toEqual({ hash: existingHash, leaseId: expect.stringMatching(/^asset-stage-/u) });
         expect(transfer.getAsset(existingHash)).toBe(existing);
+    });
+
+    it('does not delete a committed duplicate when an earlier staging owner is cancelled', async () => {
+        const first = await transfer.stageLocalAsset(new Blob(['same-content']), 'first.wav');
+        const second = await transfer.stageLocalAsset(new Blob(['same-content']), 'second.wav');
+        expect(second.hash).toBe(first.hash);
+
+        transfer.promoteStagedAsset(second.leaseId);
+        transfer.releaseStagedAsset(first.leaseId);
+
+        expect(transfer.hasAsset(second.hash)).toBe(true);
     });
 
     it('requestAsset broadcasts an asset.request message', () => {

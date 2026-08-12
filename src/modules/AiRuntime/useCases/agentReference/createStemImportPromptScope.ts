@@ -13,9 +13,11 @@ type PreparedStemImport = {
         sourceName: string;
         sourceTempo: number;
         durationSeconds: number;
+        sourceBytes: number;
+        decodedBytes: number;
         audioBufferId: string;
         assetHash?: string;
-        stagedAssetOwned?: boolean;
+        assetLeaseId?: string;
     }>;
 };
 

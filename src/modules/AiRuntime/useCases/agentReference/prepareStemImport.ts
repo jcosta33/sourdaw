@@ -82,9 +82,11 @@ export async function prepareStemImport(prompt: string, signal?: AbortSignal) {
         sourceName: string;
         sourceTempo: number;
         durationSeconds: number;
+        sourceBytes: number;
+        decodedBytes: number;
         audioBufferId: string;
         assetHash?: string;
-        stagedAssetOwned?: boolean;
+        assetLeaseId?: string;
     }> = [];
     let totalDecodedBytes = 0;
     let totalDurationSeconds = 0;
@@ -127,6 +129,8 @@ export async function prepareStemImport(prompt: string, signal?: AbortSignal) {
                 sourceName: file.name,
                 sourceTempo,
                 durationSeconds: decoded.buffer.duration,
+                sourceBytes: file.size,
+                decodedBytes,
                 audioBufferId: decoded.id,
             };
             prepared.push(pendingStem);
@@ -134,7 +138,7 @@ export async function prepareStemImport(prompt: string, signal?: AbortSignal) {
             if (stagedAsset) {
                 Object.assign(pendingStem, {
                     assetHash: stagedAsset.hash,
-                    stagedAssetOwned: stagedAsset.owned,
+                    assetLeaseId: stagedAsset.leaseId,
                 });
             }
             throwIfAborted(signal);

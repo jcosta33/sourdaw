@@ -1,3 +1,4 @@
+import { getAssetTransfer } from '#/modules/Collaboration/useCases';
 import { serializeMidiStateForClips } from '#/modules/MIDI/useCases';
 import { createHandler } from '#/utils/createHandler';
 import { type GeneratedMidiStateGuard } from '#/utils/handlerContract';
@@ -31,6 +32,8 @@ type ReconcileImportedStemEffectsInput = {
     importedTracks: readonly Track[];
     projectedTrackIds: Set<string>;
     publishedTrackIds: Set<string>;
+    assetLeaseIds: readonly string[];
+    promotedAssetLeaseIds: Set<string>;
     committedTrackIds?: ReadonlySet<string>;
 };
 
@@ -39,11 +42,23 @@ async function reconcileImportedStemEffects({
     importedTracks,
     projectedTrackIds,
     publishedTrackIds,
+    assetLeaseIds,
+    promotedAssetLeaseIds,
     committedTrackIds,
 }: ReconcileImportedStemEffectsInput): Promise<void> {
     const isCommitted = (trackId: string) => !committedTrackIds || committedTrackIds.has(trackId);
     try {
         await runAllAsyncEffects([
+            ...assetLeaseIds
+                .filter((leaseId) => !promotedAssetLeaseIds.has(leaseId))
+                .map((leaseId) => () => {
+                    const transfer = getAssetTransfer();
+                    if (!transfer) {
+                        throw new Error(`Asset transfer is unavailable for staged lease: ${leaseId}`);
+                    }
+                    transfer.promoteStagedAsset(leaseId);
+                    promotedAssetLeaseIds.add(leaseId);
+                }),
             ...importedTracks
                 .filter((track) => isCommitted(track.id) && !projectedTrackIds.has(track.id))
                 .map((track) => () => {
@@ -90,14 +105,18 @@ export const handleImportStemSet = createHandler<'importStemSet'>({
         pendingGuards.delete(action);
 
         const addedTracks = [folder, ...importedTracks];
+        const assetLeaseIds = action.payload.stems.flatMap((stem) => (stem.assetLeaseId ? [stem.assetLeaseId] : []));
         const projectedTrackIds = new Set<string>();
         const publishedTrackIds = new Set<string>();
+        const promotedAssetLeaseIds = new Set<string>();
         const reconcile = (committedTrackIds?: ReadonlySet<string>) =>
             reconcileImportedStemEffects({
                 addedTracks,
                 importedTracks,
                 projectedTrackIds,
                 publishedTrackIds,
+                assetLeaseIds,
+                promotedAssetLeaseIds,
                 committedTrackIds,
             });
         return {

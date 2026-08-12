@@ -2,10 +2,9 @@ import { type ChatActionConfirmationStatus } from '../models/Chat';
 import { updateChatMessage } from '../stores/chatStore';
 import {
     getPendingActionConfirmation,
+    settlePendingActionResourceLease,
     updatePendingActionConfirmationStatus,
 } from '../stores/pendingActionConfirmationStore';
-
-import { discardPreparedStemImportResources } from './agentReference/discardPreparedStemImportResources';
 
 type CancelPendingChatActionsInput = {
     confirmationId: string;
@@ -26,11 +25,7 @@ export function cancelPendingChatActions(input: CancelPendingChatActionsInput): 
     }
 
     updatePendingActionConfirmationStatus({ confirmationId: confirmation.id, status: 'cancelled' });
-    for (const action of confirmation.approvalSnapshot.actions) {
-        if (action.type === 'importStemSet') {
-            discardPreparedStemImportResources(action.payload.stems);
-        }
-    }
+    settlePendingActionResourceLease({ confirmationId: confirmation.id, disposition: 'discard' });
     updateChatMessage(confirmation.assistantMessageId, {
         pendingActionConfirmationStatus: 'cancelled',
         content: `Cancelled pending actions:\n\n${confirmation.actionLabels.map((label) => `- ${label}`).join('\n')}`,

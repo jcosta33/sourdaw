@@ -2,6 +2,7 @@ import { type AppAction, type StemImportRole } from '#/utils/handlerContract';
 
 import { type RuntimeAction } from '../../models/RuntimeAction';
 import { type StemImportPromptScope, type StemImportProviderCall } from '../../models/StemImportCapability';
+import { normalizeSafeProjectName } from '../../validators/normalizeSafeProjectName';
 
 import { getStemImportMix } from './getStemImportMix';
 
@@ -24,13 +25,8 @@ export function bridgeStemImportPlan(
         return { status: 'rejected', reason: 'The provider must return exactly one importStemSet plan.' };
     }
     const args = calls[0].arguments;
-    if (
-        args.selectionId !== scope.capability.selectionId ||
-        typeof args.groupName !== 'string' ||
-        args.groupName.trim().length === 0 ||
-        args.groupName.length > 80 ||
-        !Array.isArray(args.stems)
-    ) {
+    const groupName = normalizeSafeProjectName(args.groupName);
+    if (args.selectionId !== scope.capability.selectionId || !groupName || !Array.isArray(args.stems)) {
         return { status: 'rejected', reason: 'The stem-import plan has invalid selection or group metadata.' };
     }
     const assignments = args.stems;
@@ -70,7 +66,7 @@ export function bridgeStemImportPlan(
         type: 'importStemSet',
         payload: {
             selectionId: args.selectionId,
-            groupName: args.groupName.trim(),
+            groupName,
             stems: validatedAssignments,
         },
     };
@@ -81,7 +77,7 @@ export function bridgeStemImportPlan(
             type: 'importStemSet',
             payload: {
                 ...scope.actionSeed,
-                groupName: args.groupName.trim(),
+                groupName,
                 stems: materializedStems,
             },
         },
