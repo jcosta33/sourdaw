@@ -81,6 +81,42 @@ describe('applyFermenterMacroMapping', () => {
         expect(patch.reverbMix).toBe(0);
     });
 
+    it('applies fractional-cent fine-tune macro targets without quantizing them', () => {
+        const patch = applyFermenterMacroMapping({
+            patch: {
+                ...DEFAULT_PATCH,
+                macroMappings: [
+                    {
+                        targets: [{ target: 'oscFine', center: 0, depth: 12.5, min: -100, max: 100, curve: 'linear' }],
+                    },
+                ],
+            },
+            index: 0,
+            value: 0.75,
+        });
+
+        expect(patch.oscFine).toBe(6.25);
+    });
+
+    it('clamps custom macro results to the authoritative parameter range', () => {
+        const patch = applyFermenterMacroMapping({
+            patch: {
+                ...DEFAULT_PATCH,
+                macroMappings: [
+                    {
+                        targets: [
+                            { target: 'oscFine', center: 500, depth: 0, min: -1_000, max: 1_000, curve: 'linear' },
+                        ],
+                    },
+                ],
+            },
+            index: 0,
+            value: 0.5,
+        });
+
+        expect(patch.oscFine).toBe(100);
+    });
+
     it('ignores macro targets that are not numeric patch parameters', () => {
         const patch = applyFermenterMacroMapping({
             patch: {

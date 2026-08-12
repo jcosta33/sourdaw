@@ -12,10 +12,12 @@ import { OscillatorSection } from '../OscillatorSection';
 function TestKnob({
     paramId,
     value,
+    step,
     onChange,
 }: {
     paramId?: string;
     value: number;
+    step?: number;
     onChange: (v: number) => void;
 }): ReactElement {
     return (
@@ -24,6 +26,7 @@ function TestKnob({
             data-testid="knob"
             data-paramid={paramId}
             data-value={value}
+            data-step={step}
             onClick={() => onChange(0.9)}
         >
             knob
@@ -117,6 +120,17 @@ describe('OscillatorSection', () => {
     });
 
     describe('knob routing', () => {
+        it('keeps coarse tune stepped while fine tune accepts fractional cents', () => {
+            render(<OscillatorSection {...defaultProps()} />);
+
+            const knobs = screen.getAllByTestId('knob');
+            const coarse = knobs.find((candidate) => candidate.dataset.paramid === 'oscCoarse');
+            const fine = knobs.find((candidate) => candidate.dataset.paramid === 'oscFine');
+
+            expect(coarse).toHaveAttribute('data-step', '1');
+            expect(fine).toHaveAttribute('data-step', '0.1');
+        });
+
         it('routes Level/Coarse/Fine knobs to their callbacks in order', () => {
             const onLevelChange = vi.fn();
             const onCoarseChange = vi.fn();

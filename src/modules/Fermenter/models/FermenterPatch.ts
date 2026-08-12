@@ -375,7 +375,7 @@ export const FERMENTER_PARAMS: readonly FermenterParamDef[] = [
     { id: 'oscWaveform', label: 'Waveform', min: 0, max: 3, default: 1, unit: '', step: 1, group: 'osc' },
     { id: 'oscLevel', label: 'Osc Level', min: 0, max: 1, default: 0.8, unit: '', group: 'osc' },
     { id: 'oscCoarse', label: 'Coarse', min: -24, max: 24, default: 0, unit: 'st', step: 1, group: 'osc' },
-    { id: 'oscFine', label: 'Fine', min: -100, max: 100, default: 0, unit: 'ct', step: 1, group: 'osc' },
+    { id: 'oscFine', label: 'Fine', min: -100, max: 100, default: 0, unit: 'ct', group: 'osc' },
     { id: 'pulseWidth', label: 'Pulse Width', min: 0.05, max: 0.95, default: 0.5, unit: '', group: 'osc' },
 
     // Unison
