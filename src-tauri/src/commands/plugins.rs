@@ -455,7 +455,10 @@ pub async fn unload_plugin(
     state: tauri::State<'_, AppState>,
 ) -> Result<(), String> {
     match instance_id {
-        Some(instance_id) => unload_plugin_runtime(&instance_id.0, Some(&app), state.inner()).await,
+        Some(instance_id) => {
+            let _runtime_guard = PLUGIN_RUNTIME_GATE.read().await;
+            unload_plugin_runtime(&instance_id.0, Some(&app), state.inner()).await
+        }
         None => unload_all_plugin_runtimes(Some(&app), state.inner()).await,
     }
 }
@@ -1114,10 +1117,10 @@ mod tests {
     }
 
     #[test]
-    fn bulk_unload_waits_for_inflight_load_access() {
+    fn bulk_unload_waits_for_inflight_load_or_unload_access() {
         tauri::async_runtime::block_on(async {
-            let _runtime_operation = PLUGIN_RUNTIME_GATE.read().await;
             let app = command_test_app();
+            let _runtime_operation = PLUGIN_RUNTIME_GATE.read().await;
             assert!(tokio::time::timeout(
                 Duration::from_millis(10),
                 unload_all_plugin_runtimes(None, app.state::<AppState>().inner())
