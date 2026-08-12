@@ -86,7 +86,12 @@ export function getProjectContext(): ProjectContext {
     const markerState = markerStore.value;
     const vcaState = vcaGroupStore.value;
     const projectState = projectStore.value;
-    const referenceHistory = agentReferenceHistoryStore.value;
+    const referenceHistoryState = agentReferenceHistoryStore.value;
+    const projectCreatedAt = projectState?.createdAt;
+    const referenceHistory =
+        referenceHistoryState !== null && referenceHistoryState.projectCreatedAt === projectCreatedAt
+            ? referenceHistoryState.entries
+            : [];
     const notesByClipId = midiState?.notesByClipId;
     const glueEligibleClipPairs = getGlueEligibleClipPairs();
     const glueEligibilitySignature = JSON.stringify(glueEligibleClipPairs);
@@ -104,7 +109,7 @@ export function getProjectContext(): ProjectContext {
         contextCache.marker === markerState &&
         contextCache.vca === vcaState &&
         contextCache.project === projectState &&
-        contextCache.referenceHistory === referenceHistory &&
+        contextCache.referenceHistory === referenceHistoryState &&
         contextCache.glueEligibilitySignature === glueEligibilitySignature
     ) {
         return contextCache.context;
@@ -115,7 +120,8 @@ export function getProjectContext(): ProjectContext {
     const selectedClipIds = selectionState?.selectedClipIds ?? [];
 
     const built: ProjectContext = {
-        agentReferenceHistory: structuredClone(referenceHistory ?? []),
+        agentReferenceHistory: structuredClone(referenceHistory),
+        ...(projectCreatedAt === undefined ? {} : { projectCreatedAt }),
         ...(projectState ? { productionBrief: structuredClone(projectState.productionBrief) } : {}),
         tempo: transportState?.tempo ?? 120,
         timeSignature: [transportState?.timeSignatureNumerator ?? 4, transportState?.timeSignatureDenominator ?? 4],
@@ -278,7 +284,7 @@ export function getProjectContext(): ProjectContext {
     contextCache.marker = markerState;
     contextCache.vca = vcaState;
     contextCache.project = projectState;
-    contextCache.referenceHistory = referenceHistory;
+    contextCache.referenceHistory = referenceHistoryState;
     contextCache.glueEligibilitySignature = glueEligibilitySignature;
     contextCache.context = built;
     return built;

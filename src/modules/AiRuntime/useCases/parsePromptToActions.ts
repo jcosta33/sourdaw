@@ -526,7 +526,10 @@ export const parsePromptToActions = inject({ logger })(
                         };
                     }
 
-                    recordResolvedAgentReferences(bridged.resolvedReferences ?? []);
+                    recordResolvedAgentReferences({
+                        projectCreatedAt: context.projectCreatedAt ?? null,
+                        references: bridged.resolvedReferences ?? [],
+                    });
                     return {
                         actions: guarded.actions,
                         rawText: prompt,

@@ -652,6 +652,13 @@ function isExplicitCommandClause(maskedText: string, catalog: GroundingCatalog):
     );
 }
 
+function stripPreviewCarrier(prompt: string): string {
+    return prompt.replace(
+        /^\s*(?:please\s+)?(?:(?:show|give)\s+(?:me\s+)?(?:a\s+)?preview\s+(?:of\s+)?|preview\s+(?:of\s+)?)/iu,
+        ''
+    );
+}
+
 function resolveClauseActionIntent(
     maskedText: string,
     catalog: GroundingCatalog,
@@ -3470,17 +3477,13 @@ function groundToolCall({
     if (!groundingRules) {
         return call;
     }
-    let groundingPrompt = prompt;
-    if (referenceResolutionMode === 'preview') {
-        groundingPrompt = `${groundingRules.intentPhrases[0] ?? call.name} ${prompt}`;
-    }
     const actionScope = resolveActionPromptScope({
         actionName: call.name,
         actionOrdinal,
         assertedArguments: call.arguments,
         catalog,
         context,
-        prompt: groundingPrompt,
+        prompt: referenceResolutionMode === 'preview' ? stripPreviewCarrier(prompt) : prompt,
         plannedActionNames,
         sameActionAssertedArguments,
         sameActionCallCount,

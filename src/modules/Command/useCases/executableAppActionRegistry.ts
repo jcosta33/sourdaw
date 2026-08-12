@@ -268,7 +268,7 @@ export const executableAppActionDescriptors = [
         actionType: 'removeTrack',
         risk: 'destructive-reversible',
         description: 'Delete a track and its project-owned contents.',
-        intentPhrases: ['delete track', 'remove track', 'delete', 'remove'],
+        intentPhrases: ['delete track', 'remove track', 'deleting', 'removing', 'delete', 'remove'],
         targetRules: [{ argument: 'trackId', capability: 'removable-track' }],
         parameters: {
             properties: { trackId: { type: 'string', description: 'Existing non-master track ID' } },

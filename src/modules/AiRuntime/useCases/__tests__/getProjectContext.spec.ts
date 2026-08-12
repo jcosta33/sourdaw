@@ -135,7 +135,7 @@ describe('getProjectContext', () => {
         mocks.markerStoreValue.value = null;
         mocks.vcaStoreValue.value = null;
         mocks.projectStoreValue.value = null;
-        agentReferenceHistoryStore.set([]);
+        agentReferenceHistoryStore.set({ projectCreatedAt: null, entries: [] });
         mocks.getPluginById.mockReturnValue(undefined);
         mocks.getGlueEligibleClipPairs.mockReturnValue([]);
         mocks.getPlatformPlugins.mockReturnValue([
@@ -156,6 +156,7 @@ describe('getProjectContext', () => {
     });
 
     it('projects agent reference history and invalidates the cache when it changes', () => {
+        mocks.projectStoreValue.value = { createdAt: 10, productionBrief: undefined };
         const first = getProjectContext();
         const history = [
             {
@@ -166,12 +167,22 @@ describe('getProjectContext', () => {
             },
         ];
 
-        agentReferenceHistoryStore.set(history);
+        agentReferenceHistoryStore.set({ projectCreatedAt: 10, entries: history });
         const second = getProjectContext();
 
         expect(first.agentReferenceHistory).toEqual([]);
         expect(second.agentReferenceHistory).toEqual(history);
         expect(second).not.toBe(first);
+    });
+
+    it('does not project reference history recorded for another project identity', () => {
+        agentReferenceHistoryStore.set({
+            projectCreatedAt: 10,
+            entries: [{ id: 'track-vocals', referencedAt: 100, confidence: 1, evidence: [] }],
+        });
+        mocks.projectStoreValue.value = { createdAt: 20, productionBrief: undefined };
+
+        expect(getProjectContext().agentReferenceHistory).toEqual([]);
     });
 
     it('projects the current production brief and invalidates the cache when its revision changes', () => {

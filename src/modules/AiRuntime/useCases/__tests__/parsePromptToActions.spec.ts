@@ -208,7 +208,7 @@ describe('parsePromptToActions', () => {
         mockBuildLlmActionUserMessage.mockClear();
         mockDoesProductionBriefAllowActionBatch.mockReturnValue(true);
         markerStoreValue.value = { markers: [], sections: [] };
-        agentReferenceHistoryStore.set([]);
+        agentReferenceHistoryStore.set({ projectCreatedAt: null, entries: [] });
     });
 
     it.each([
@@ -445,6 +445,22 @@ describe('parsePromptToActions', () => {
         expect(preview.referenceResolutionRequest).toBeUndefined();
     });
 
+    it('does not let typed preview mode invent an action absent from the user request', async () => {
+        mockBridgeGroundedLlmToolCalls.mockImplementation(actualBridge.bridgeGroundedLlmToolCalls);
+        vi.mocked(generateToolCalls).mockResolvedValue(
+            completePlan([
+                { name: 'selectActionPlanningMode', arguments: { mode: 'preview' } },
+                { name: 'removeTrack', arguments: { trackId: 'track-vocals' } },
+            ])
+        );
+
+        const result = await parsePromptToActions('show me a preview of Vocls', createMixerContext());
+
+        expect(result.actions).toEqual([]);
+        expect(result.referenceResolutionRequest).toBeUndefined();
+        expect(result.rejectionReason).toContain('not grounded in the user request');
+    });
+
     it('resolves recency from prior successful reference receipts rather than production decisions', async () => {
         mockBridgeGroundedLlmToolCalls.mockImplementation(actualBridge.bridgeGroundedLlmToolCalls);
         const context = createMixerContext();
@@ -459,7 +475,7 @@ describe('parsePromptToActions', () => {
         const first = await parsePromptToActions('mute Vocals', context);
         const recentContext = {
             ...context,
-            agentReferenceHistory: structuredClone(agentReferenceHistoryStore.value ?? []),
+            agentReferenceHistory: structuredClone(agentReferenceHistoryStore.value?.entries ?? []),
         };
         const second = await parsePromptToActions('solo the most recently referenced track', recentContext);
 

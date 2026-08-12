@@ -1,5 +1,6 @@
 export type ProjectContext = {
     agentReferenceHistory?: ProjectContextAgentReferenceHistoryEntry[];
+    projectCreatedAt?: number;
     productionBrief?: ProjectContextProductionBrief;
     tempo: number;
     timeSignature: [number, number];
