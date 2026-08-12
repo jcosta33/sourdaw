@@ -18,6 +18,7 @@ import { normalizeSafeProjectName } from '../../validators/normalizeSafeProjectN
 
 import { type BatchLocalActionIdentity } from './BatchLocalActionIdentity';
 import { bridgeBackingVocalPlatePlan } from './bridgeBackingVocalPlatePlan';
+import { bridgeSharedVocalFxBusesPlan } from './bridgeSharedVocalFxBusesPlan';
 import { getArticulationTransferPromptScope } from './getArticulationTransferPromptScope';
 import {
     getBassProcessingCopyPromptScope,
@@ -3903,6 +3904,17 @@ export function bridgeGroundedLlmToolCalls({
             projectPunchRegion: createPunchRegionPatch,
             sectionSignatures,
         });
+    }
+    const sharedVocalFxBusesPlan = bridgeSharedVocalFxBusesPlan({ calls, context, prompt });
+    if (sharedVocalFxBusesPlan.status === 'rejected') {
+        return { actions: [], rejections: [rejection(0, '<batch>', sharedVocalFxBusesPlan.reason)] };
+    }
+    if (sharedVocalFxBusesPlan.status === 'accepted') {
+        return {
+            actions: sharedVocalFxBusesPlan.actions,
+            batchLocalActionIdentities: sharedVocalFxBusesPlan.identities,
+            rejections: [],
+        };
     }
     const backingVocalPlatePlan = bridgeBackingVocalPlatePlan({ calls, context, prompt });
     if (backingVocalPlatePlan.status === 'rejected') {

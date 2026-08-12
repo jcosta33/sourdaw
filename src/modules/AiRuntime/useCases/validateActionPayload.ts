@@ -53,6 +53,9 @@ function isString(value: unknown): value is string {
 function isNonEmptyString(value: unknown): value is string {
     return isString(value) && value.trim().length > 0;
 }
+function isNonEmptyStringArray(value: unknown): value is string[] {
+    return Array.isArray(value) && value.every(isNonEmptyString);
+}
 function isSafeTrackColor(value: unknown): value is string {
     return isString(value) && /^#[\dA-Fa-f]{6}$/.test(value);
 }
@@ -245,7 +248,11 @@ const validators = {
         isNonEmptyString(param.deviceType) &&
         isOptional(param.afterDeviceId, isNonEmptyString),
     removeDevice: (param): param is PayloadOf<'removeDevice'> =>
-        isObj(param) && hasExactKeys(param, ['deviceId']) && isNonEmptyString(param.deviceId),
+        isObj(param) &&
+        hasOnlyKeys(param, ['deviceId', 'expectedTrackId', 'expectedDeviceIds']) &&
+        isNonEmptyString(param.deviceId) &&
+        isOptional(param.expectedTrackId, isNonEmptyString) &&
+        isOptional(param.expectedDeviceIds, isNonEmptyStringArray),
     setDeviceParameter: (param): param is PayloadOf<'setDeviceParameter'> =>
         isObj(param) &&
         hasOnlyKeys(param, [

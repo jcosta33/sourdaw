@@ -23,6 +23,20 @@ describe('createTrack', () => {
         expect(time.devices[0]!.type).toBe('builtin-synth');
         expect(time.devices[0]!.name).toBe('Synth');
     });
+
+    it('preserves application-owned replay color and alternative identity', () => {
+        const track = createTrack({
+            id: 'bus-1',
+            name: 'Vocal Reverb',
+            kind: 'bus',
+            color: '#123456',
+            initialAlternativeId: 'bus-1-alt-default',
+        });
+
+        expect(track.color).toBe('#123456');
+        expect(track.activeAlternativeId).toBe('bus-1-alt-default');
+        expect(track.alternatives).toEqual([{ id: 'bus-1-alt-default', name: 'Alternative 1', clips: [] }]);
+    });
 });
 
 describe('normalizeTrack', () => {

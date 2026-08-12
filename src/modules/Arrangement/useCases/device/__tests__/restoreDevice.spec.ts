@@ -2,9 +2,11 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { restoreDevice } from '../restoreDevice';
 
+type TrackUpdater = (track: { devices: unknown[] }) => { devices: unknown[] };
+
 const mocks = vi.hoisted(() => ({
     getTrackState: vi.fn(),
-    updateTrack: vi.fn(),
+    updateTrack: vi.fn<(trackId: string, updater: TrackUpdater) => void>(),
     projectTrackToLiveStrip: vi.fn(),
 }));
 
@@ -38,6 +40,9 @@ describe('restoreDevice', () => {
 
         const outcome = restoreDevice({ trackId: track.id, deviceSnapshot: snapshot, deviceIndex: 1 });
         const updater = mocks.updateTrack.mock.calls[0]?.[1];
+        if (!updater) {
+            throw new Error('Expected restoreDevice to update the owning track');
+        }
         const updated = updater(track);
 
         expect(outcome).toBe('written');
@@ -62,5 +67,39 @@ describe('restoreDevice', () => {
 
         expect(restoreDevice({ trackId: 'track-1', deviceSnapshot: snapshot, deviceIndex: 0 })).toBe('conflict');
         expect(mocks.updateTrack).not.toHaveBeenCalled();
+    });
+
+    it('defers live-strip projection until the project transaction commits', () => {
+        const track = {
+            id: 'track-1',
+            kind: 'audio',
+            parentId: null,
+            devices: [{ id: 'before', type: 'builtin-gain' }],
+        };
+        const snapshot = {
+            id: 'restored',
+            name: 'Delay',
+            type: 'builtin-delay',
+            bypassed: false,
+            parameterValues: { mix: 0.2 },
+        };
+        mocks.getTrackState.mockReturnValue({ tracks: [track] });
+
+        const outcome = restoreDevice(
+            { trackId: track.id, deviceSnapshot: snapshot, deviceIndex: 1 },
+            { deferRuntimeEffects: true }
+        );
+
+        expect(outcome).not.toBe('conflict');
+        expect(mocks.projectTrackToLiveStrip).not.toHaveBeenCalled();
+        if (outcome === 'conflict') {
+            throw new Error('Expected deferred restore result');
+        }
+        mocks.getTrackState.mockReturnValue({ tracks: [{ ...track, devices: [...track.devices, snapshot] }] });
+        outcome.afterCommit();
+        expect(mocks.projectTrackToLiveStrip).toHaveBeenCalledWith({
+            trackId: track.id,
+            activateDormantExternalPlugins: true,
+        });
     });
 });

@@ -12,7 +12,21 @@ type RestoreDeviceInput = {
     deviceIndex: number;
 };
 
-export function restoreDevice({ trackId, deviceSnapshot, deviceIndex }: RestoreDeviceInput): 'written' | 'conflict' {
+type DeferredRestoreDeviceOutput = {
+    outcome: 'written';
+    afterCommit: () => void;
+    afterAmbiguousCommit: () => void;
+};
+
+export function restoreDevice(input: RestoreDeviceInput): 'written' | 'conflict';
+export function restoreDevice(
+    input: RestoreDeviceInput,
+    options: { deferRuntimeEffects: true }
+): DeferredRestoreDeviceOutput | 'conflict';
+export function restoreDevice(
+    { trackId, deviceSnapshot, deviceIndex }: RestoreDeviceInput,
+    options?: { deferRuntimeEffects?: boolean }
+): DeferredRestoreDeviceOutput | 'written' | 'conflict' {
     const state = getTrackState();
     if (!state || !Number.isInteger(deviceIndex)) {
         return 'conflict';
@@ -55,6 +69,39 @@ export function restoreDevice({ trackId, deviceSnapshot, deviceIndex }: RestoreD
         return { ...current, devices };
     });
 
+    function reconcileRuntime(): void {
+        const committedState = getTrackState();
+        const committedTrack = committedState?.tracks.find((candidate) => candidate.id === trackId);
+        if (
+            !committedState ||
+            !committedTrack ||
+            !committedTrack.devices.some((candidate) => candidate.id === device.id)
+        ) {
+            return;
+        }
+        const isLive = shouldCreateLiveTrackStrip(committedTrack);
+        const activatesCommittedFolderStrip =
+            !isLive &&
+            committedTrack.kind === 'folder' &&
+            committedTrack.devices.some((candidate) => candidate.type === 'toaster');
+        if (isLive || activatesCommittedFolderStrip) {
+            projectTrackToLiveStrip({ trackId, activateDormantExternalPlugins: true });
+        }
+        if (activatesCommittedFolderStrip) {
+            for (const child of committedState.tracks) {
+                if (child.parentId === trackId && shouldCreateLiveTrackStrip(child)) {
+                    projectTrackToLiveStrip({ trackId: child.id, activateDormantExternalPlugins: true });
+                }
+            }
+        }
+    }
+    if (options?.deferRuntimeEffects) {
+        return {
+            outcome: 'written',
+            afterCommit: reconcileRuntime,
+            afterAmbiguousCommit: reconcileRuntime,
+        };
+    }
     if (wasLive || activatesFolderStrip) {
         projectTrackToLiveStrip({ trackId, activateDormantExternalPlugins: true });
     }

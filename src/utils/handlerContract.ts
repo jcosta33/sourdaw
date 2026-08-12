@@ -32,6 +32,11 @@ export type DeviceSnapshot = {
     readonly externalStateChunk?: string;
     readonly deviceState?: DeviceStateChunkSnapshot;
 };
+export type BatchRestoreDeviceSnapshot = {
+    readonly trackId: string;
+    readonly deviceId: string;
+    readonly deviceIndex: number;
+};
 export type TrackSnapshot = { readonly id: string };
 export type BatchRestoreTrackSnapshot = {
     readonly trackId: string;
@@ -525,7 +530,19 @@ type GeneratedMidiReplayOperation =
       };
 
 export type AppAction =
-    | { type: 'addTrack'; payload: { id?: string; name: string; kind: TrackKind; select?: boolean } }
+    | {
+          type: 'addTrack';
+          payload: {
+              id?: string;
+              name: string;
+              kind: TrackKind;
+              select?: boolean;
+              /** Internal replay metadata; provider payloads cannot set this field. */
+              color?: string;
+              /** Internal replay metadata; provider payloads cannot set this field. */
+              initialAlternativeId?: string;
+          };
+      }
     | {
           type: 'removeTrack';
           payload: {
@@ -756,6 +773,8 @@ export type AppAction =
               deviceSnapshot: DeviceSnapshot;
               deviceIndex: number;
               expectedDeviceIds?: readonly string[];
+              /** Internal grouped-history context for compositionally restoring sibling devices. */
+              batchRestoreDevices?: readonly BatchRestoreDeviceSnapshot[];
           };
       }
     | {
@@ -776,7 +795,15 @@ export type AppAction =
       }
     | { type: 'setExternalPluginState'; payload: { deviceId: string; stateChunk: string } }
     | { type: 'setDeviceState'; payload: { deviceId: string; state: DeviceStateChunkSnapshot } }
-    | { type: 'createBus'; payload: { name: string; /** Internal replay identity. */ busId?: string } }
+    | {
+          type: 'createBus';
+          payload: {
+              name: string;
+              /** Internal replay identity. */ busId?: string;
+              /** Internal replay metadata captured from the first committed bus. */ color?: string;
+              /** Internal replay metadata captured from the first committed bus. */ initialAlternativeId?: string;
+          };
+      }
     | { type: 'createFolder'; payload: { name: string } }
     | {
           type: 'setSend';

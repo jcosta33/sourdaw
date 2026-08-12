@@ -1,9 +1,26 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+type AddTrackAction = {
+    type: 'addTrack';
+    payload: {
+        color?: string;
+        id?: string;
+        initialAlternativeId?: string;
+        kind: string;
+        name: string;
+    };
+};
+
+type AddTrackDescription = {
+    label: string;
+    inverseAction: { type: 'discardCreatedTrack'; payload: { trackId: string } };
+};
+
 const mocks = vi.hoisted(() => ({
-    execute: vi.fn(),
-    describe: vi.fn(),
-    isNoop: vi.fn(),
+    execute: vi.fn<(action: AddTrackAction) => unknown>(),
+    describe: vi.fn<(action: AddTrackAction) => AddTrackDescription>(),
+    getTrackStoreState: vi.fn(),
+    isNoop: vi.fn<(action: AddTrackAction) => boolean>(),
 }));
 
 vi.mock('../handleAddTrack', () => ({
@@ -12,6 +29,10 @@ vi.mock('../handleAddTrack', () => ({
         describe: mocks.describe,
         isNoop: mocks.isNoop,
     },
+}));
+
+vi.mock('../../../useCases/getTrackStoreState', () => ({
+    getTrackStoreState: mocks.getTrackStoreState,
 }));
 
 import { handleCreateBus } from '../handleCreateBus';
@@ -29,6 +50,15 @@ describe('handleCreateBus', () => {
     it('executes through the canonical add-track handler with a stable bus identity', async () => {
         const deferredEffects = { status: 'written' as const, afterCommit: vi.fn(), afterAmbiguousCommit: vi.fn() };
         mocks.execute.mockReturnValue(deferredEffects);
+        mocks.getTrackStoreState.mockReturnValue({
+            tracks: [
+                {
+                    id: 'bus-1',
+                    color: 'oklch(0.7 0.1 200)',
+                    activeAlternativeId: 'alt-created',
+                },
+            ],
+        });
         const action = {
             type: 'createBus' as const,
             payload: { name: 'Reverb Bus', busId: 'bus-1' },
@@ -36,11 +66,35 @@ describe('handleCreateBus', () => {
 
         const result = await handleCreateBus.execute(action);
 
-        expect(mocks.execute).toHaveBeenCalledWith({
+        const delegatedAction = mocks.execute.mock.calls[0]?.[0];
+        expect(delegatedAction).toEqual({
             type: 'addTrack',
-            payload: { id: 'bus-1', name: 'Reverb Bus', kind: 'bus' },
+            payload: {
+                id: 'bus-1',
+                name: 'Reverb Bus',
+                kind: 'bus',
+            },
+        });
+        expect(action.payload).toEqual({
+            name: 'Reverb Bus',
+            busId: 'bus-1',
+            color: 'oklch(0.7 0.1 200)',
+            initialAlternativeId: 'alt-created',
         });
         expect(result).toBe(deferredEffects);
+
+        mocks.execute.mockClear();
+        await handleCreateBus.execute(action);
+        expect(mocks.execute).toHaveBeenCalledWith({
+            type: 'addTrack',
+            payload: {
+                id: 'bus-1',
+                name: 'Reverb Bus',
+                kind: 'bus',
+                color: 'oklch(0.7 0.1 200)',
+                initialAlternativeId: 'alt-created',
+            },
+        });
     });
 
     it('prepares one replay identity and preserves the add-track inverse', () => {
@@ -56,9 +110,14 @@ describe('handleCreateBus', () => {
         }
 
         expect(busId).toMatch(/^bus-ai-/);
-        expect(mocks.describe).toHaveBeenCalledWith({
+        const delegatedAction = mocks.describe.mock.calls[0]?.[0];
+        expect(delegatedAction).toEqual({
             type: 'addTrack',
-            payload: { id: busId, name: 'Drum Bus', kind: 'bus' },
+            payload: {
+                id: busId,
+                name: 'Drum Bus',
+                kind: 'bus',
+            },
         });
         expect(description).toEqual({
             label: 'Create bus "Drum Bus"',
@@ -74,9 +133,14 @@ describe('handleCreateBus', () => {
         };
 
         expect(handleCreateBus.isNoop?.(action)).toBe(true);
-        expect(mocks.isNoop).toHaveBeenCalledWith({
+        const delegatedAction = mocks.isNoop.mock.calls[0]?.[0];
+        expect(delegatedAction).toEqual({
             type: 'addTrack',
-            payload: { id: 'bus-existing', name: 'Parallel Bus', kind: 'bus' },
+            payload: {
+                id: 'bus-existing',
+                name: 'Parallel Bus',
+                kind: 'bus',
+            },
         });
     });
 

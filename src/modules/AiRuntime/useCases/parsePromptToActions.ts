@@ -22,6 +22,7 @@ import { getBassProcessingCopyPromptScope } from './agentReference/getBassProces
 import { getDrumPreviewBranchesPromptScope } from './agentReference/getDrumPreviewBranchesPromptScope';
 import { getDrumRoutingPromptScope } from './agentReference/getDrumRoutingPromptScope';
 import { getMidiOverlapTransformPromptScope } from './agentReference/getMidiOverlapTransformPromptScope';
+import { getSharedVocalFxBusesPromptScope } from './agentReference/getSharedVocalFxBusesPromptScope';
 import { getSidechainRoutingPromptScope } from './agentReference/getSidechainRoutingPromptScope';
 import { getSyncopatedArpeggioPromptScope } from './agentReference/getSyncopatedArpeggioPromptScope';
 import { getWholeProjectVibeMixScope } from './agentReference/getWholeProjectVibeMixScope';
@@ -144,6 +145,9 @@ export const parsePromptToActions = inject({ logger })(
                 const sidechainRoutingScope = getSidechainRoutingPromptScope(prompt, context, projectRevision);
                 const sidechainRoutingCapability =
                     sidechainRoutingScope.status === 'request' ? sidechainRoutingScope.capability : undefined;
+                const sharedVocalFxBusesScope = getSharedVocalFxBusesPromptScope(prompt, context, projectRevision);
+                const sharedVocalFxBusesCapability =
+                    sharedVocalFxBusesScope.status === 'request' ? sharedVocalFxBusesScope.capability : undefined;
                 const syncopatedArpeggioScope = getSyncopatedArpeggioPromptScope(prompt, context, projectRevision);
                 const syncopatedArpeggioCapability =
                     syncopatedArpeggioScope.status === 'request' ? syncopatedArpeggioScope.capability : undefined;
@@ -165,6 +169,7 @@ export const parsePromptToActions = inject({ logger })(
                         drumPreviewBranchesCapability,
                         midiOverlapTransformCapability,
                         sidechainRoutingCapability,
+                        sharedVocalFxBusesCapability,
                         syncopatedArpeggioCapability,
                         wholeProjectVibeMixCapability,
                     }),

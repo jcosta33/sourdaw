@@ -217,9 +217,17 @@ export type Send = {
 
 let trackColorCounter = 0;
 
-export function createTrack(input: { id?: string; name: string; kind: TrackKind; parentId?: string }): Track {
-    const color = TRACK_COLOR_PALETTE[trackColorCounter % TRACK_COLOR_PALETTE.length]!;
+export function createTrack(input: {
+    color?: string;
+    id?: string;
+    initialAlternativeId?: string;
+    name: string;
+    kind: TrackKind;
+    parentId?: string;
+}): Track {
+    const defaultColor = TRACK_COLOR_PALETTE[trackColorCounter % TRACK_COLOR_PALETTE.length]!;
     trackColorCounter++;
+    const color = input.color ?? defaultColor;
 
     const defaultDevices: Device[] =
         input.kind === 'midi'
@@ -234,7 +242,7 @@ export function createTrack(input: { id?: string; name: string; kind: TrackKind;
               ]
             : [];
 
-    const initialAltId = `alt-${crypto.randomUUID().slice(0, 8)}`;
+    const initialAltId = input.initialAlternativeId ?? `alt-${crypto.randomUUID().slice(0, 8)}`;
     return {
         id: input.id ?? (input.kind === 'master' ? 'master' : `track-${crypto.randomUUID().slice(0, 8)}`),
         name: input.name,

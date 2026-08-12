@@ -14,6 +14,7 @@ import { getDrumPreviewBranchesPromptScope } from './agentReference/getDrumPrevi
 import { getDrumRoutingPromptScope } from './agentReference/getDrumRoutingPromptScope';
 import { getMidiOverlapTransformPromptScope } from './agentReference/getMidiOverlapTransformPromptScope';
 import { getMutedEmptyTrackDeletionScope } from './agentReference/getMutedEmptyTrackDeletionScope';
+import { getSharedVocalFxBusesPromptScope } from './agentReference/getSharedVocalFxBusesPromptScope';
 import { getSidechainRoutingPromptScope } from './agentReference/getSidechainRoutingPromptScope';
 import { getSyncopatedArpeggioPromptScope } from './agentReference/getSyncopatedArpeggioPromptScope';
 import { describePlannedAction } from './describePlannedAction';
@@ -157,6 +158,9 @@ function getProtectedUnchangedTracks(
         sidechainRoutingScope.status === 'request'
             ? sidechainRoutingScope.protectedTargets.map(({ id, name }) => ({ id, name }))
             : [];
+    const sharedVocalFxBusesScope = getSharedVocalFxBusesPromptScope(prompt, context);
+    const sharedVocalFxBusesProtections =
+        sharedVocalFxBusesScope.status === 'request' ? sharedVocalFxBusesScope.protectedObjects : [];
     const articulationTransferScope = getArticulationTransferPromptScope(prompt, context);
     const articulationProtections =
         articulationTransferScope.status === 'request'
@@ -192,6 +196,7 @@ function getProtectedUnchangedTracks(
         ...drumRoutingProtections,
         ...drumPreviewBranchProtections,
         ...sidechainRoutingProtections,
+        ...sharedVocalFxBusesProtections,
         ...articulationProtections,
         ...backingVocalPlateProtections,
         ...bassProcessingCopyProtections,

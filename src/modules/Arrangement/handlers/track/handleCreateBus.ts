@@ -1,8 +1,17 @@
 import { createHandler } from '#/utils/createHandler';
 
+import { getTrackStoreState } from '../../useCases/getTrackStoreState';
+
 import { handleAddTrack } from './handleAddTrack';
 
-type CreateBusAction = { payload: { busId?: string; name: string } };
+type CreateBusAction = {
+    payload: {
+        busId?: string;
+        color?: string;
+        initialAlternativeId?: string;
+        name: string;
+    };
+};
 
 function ensureBusId(action: CreateBusAction): string {
     if (action.payload.busId) {
@@ -14,18 +23,35 @@ function ensureBusId(action: CreateBusAction): string {
 }
 
 function toAddTrackAction(action: CreateBusAction): Parameters<typeof handleAddTrack.execute>[0] {
+    const busId = ensureBusId(action);
     return {
         type: 'addTrack',
         payload: {
-            id: ensureBusId(action),
+            id: busId,
             name: action.payload.name,
             kind: 'bus',
+            ...(action.payload.color !== undefined ? { color: action.payload.color } : {}),
+            ...(action.payload.initialAlternativeId !== undefined
+                ? { initialAlternativeId: action.payload.initialAlternativeId }
+                : {}),
         },
     };
 }
 
 export const handleCreateBus = createHandler<'createBus'>({
-    execute: (action) => handleAddTrack.execute(toAddTrackAction(action)),
+    execute: async (action) => {
+        const result = await handleAddTrack.execute(toAddTrackAction(action));
+        if (result?.status !== 'written') {
+            return result;
+        }
+        const busId = action.payload.busId;
+        const createdBus = getTrackStoreState()?.tracks.find((track) => track.id === busId);
+        if (createdBus) {
+            action.payload.color = createdBus.color;
+            action.payload.initialAlternativeId = createdBus.activeAlternativeId;
+        }
+        return result;
+    },
     describe: (action) => {
         const description = handleAddTrack.describe(toAddTrackAction(action));
         return {

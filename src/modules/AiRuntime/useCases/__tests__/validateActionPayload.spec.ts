@@ -150,6 +150,21 @@ const guardedPayloadContractCases = [
         ],
     }),
     guardedPayloadCase({
+        actionType: 'removeDevice',
+        validPayload: {
+            deviceId: 'device-1',
+            expectedTrackId: 'track-1',
+            expectedDeviceIds: ['eq-1', 'device-1'],
+        },
+        invalidPayloads: [
+            { deviceId: '' },
+            { deviceId: 'device-1', expectedTrackId: '' },
+            { deviceId: 'device-1', expectedDeviceIds: [''] },
+            { deviceId: 'device-1', expectedDeviceIds: [1] },
+            { deviceId: 'device-1', extra: true },
+        ],
+    }),
+    guardedPayloadCase({
         actionType: 'setSend',
         validPayload: {
             trackId: 'track-1',
