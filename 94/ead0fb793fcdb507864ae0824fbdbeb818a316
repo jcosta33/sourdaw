@@ -1,0 +1,135 @@
+src/modules/AiRuntime/transformers/llmActionBridge.ts
+  s_a40848e8f8cca9::t_299ddd12d41807 3189
+src/modules/Command/useCases/executeAppActionBatch.ts
+  s_a40848e8f8cca9::t_ed4bafa31535f7 27,382-387
+  s_a40848e8f8cca9::t_9136fb4a979c05 388
+src/modules/Project/stores/index.ts
+  s_a40848e8f8cca9::t_ea26ce80f34368 8
+src/modules/Project/useCases/projectPersistence/helpers/__tests__/replaceProjectData.spec.ts
+  s_a40848e8f8cca9::t_1adae690520fed 264
+  s_a40848e8f8cca9::t_99636904ed0566 246-263
+  s_a40848e8f8cca9::t_b9b9074b69c710 100
+  s_a40848e8f8cca9::t_8de610bb6b950a 265-266
+src/modules/Project/useCases/projectPersistence/saveProject/__tests__/saveProject.recentRoundTrip.spec.ts
+  s_a40848e8f8cca9::t_b9b9074b69c710 4
+  s_a40848e8f8cca9::t_8bef2b43976425 104
+src/modules/Project/useCases/projectPersistence/saveProject/__tests__/projectLoadDirtyTracking.integration.spec.ts
+  s_a40848e8f8cca9::t_8bef2b43976425 78,130
+src/modules/Project/useCases/__tests__/setProjectScaleName.spec.ts
+  s_a40848e8f8cca9::t_8bef2b43976425 3,41
+src/modules/AiRuntime/useCases/parsePromptToActions.ts
+  s_a40848e8f8cca9::t_1b647909f8f25f 5,76-83,293-300,393-398
+  s_a40848e8f8cca9::t_b2a7bc9013eba5 399-400
+src/modules/Project/useCases/getProjectHandlers.ts
+  s_a40848e8f8cca9::t_0b77ee66630262 3,6,13-16
+src/modules/Project/useCases/__tests__/productionBrief.spec.ts
+  s_a40848e8f8cca9::t_4800d31fb5f3c5 180,182-183
+  s_a40848e8f8cca9::t_5012e8848b9ec8 18-43
+  s_a40848e8f8cca9::t_b9b9074b69c710 4
+  s_a40848e8f8cca9::t_299ddd12d41807 16-17
+  s_a40848e8f8cca9::t_3ea0359f3f07c7 174,190
+  s_a40848e8f8cca9::t_3c5e7bff31257c 156-168,175-179,181,184-185
+  s_a40848e8f8cca9::t_0948f4199926d4 136
+  s_a40848e8f8cca9::t_cdaf214a0c8e04 117-120,126-129
+  s_a40848e8f8cca9::t_f6ccbd67e8e5b6 1,3,5-6,9-15,44-88,137-155,169-173,186-189,191-192
+  s_a40848e8f8cca9::t_ebf112e601731e 2,7-8,193-194
+  s_a40848e8f8cca9::t_b7aa2a0a974e3e 89-116,121-125,130-135
+src/utils/handlerContract.ts
+  s_a40848e8f8cca9::t_a22169169d14ea 1475-1481
+  s_a40848e8f8cca9::t_ac0c546584938f 1474
+src/modules/Project/useCases/projectPersistence/fileIO/buildProjectData.ts
+  s_a40848e8f8cca9::t_bd979cd59cbbe5 194
+src/modules/Project/useCases/projectPersistence/helpers/replaceProjectData.ts
+  s_a40848e8f8cca9::t_b9b9074b69c710 21
+  s_a40848e8f8cca9::t_1adae690520fed 317
+src/modules/Project/useCases/demoProjects/nebulaDrift/createNebulaDriftDemo.ts
+  s_a40848e8f8cca9::t_ea26ce80f34368 41,2344,2347-2348,2363
+src/modules/Project/stores/__tests__/projectStore.spec.ts
+  s_a40848e8f8cca9::t_ce9f57e61db5ea 237-249,251-252
+  s_a40848e8f8cca9::t_08dfbd7731730d 15,68,161,175
+  s_a40848e8f8cca9::t_1adae690520fed 250
+src/modules/Project/handlers/project/handleSetProductionBrief.ts
+  s_a40848e8f8cca9::t_11b6a29a8af863 1-75
+src/modules/Project/useCases/__tests__/finishProjectLoading.spec.ts
+  s_a40848e8f8cca9::t_8bef2b43976425 3,42
+src/modules/Command/useCases/__tests__/executeAppActionBatch.spec.ts
+  s_a40848e8f8cca9::t_1adae690520fed 1002
+  s_a40848e8f8cca9::t_8a57fbf5114390 13,123,129,995-1001,1003-1010
+  s_a40848e8f8cca9::t_4567068d260123 1011-1012
+src/modules/Project/useCases/projectPersistence/saveProject/__tests__/interruptedProjectLoadDirtyTracking.integration.spec.ts
+  s_a40848e8f8cca9::t_8bef2b43976425 129,353
+src/modules/AiRuntime/useCases/__tests__/getProjectContext.spec.ts
+  s_a40848e8f8cca9::t_8fd6d22cceff33 22,34,99-106,136,156-186
+  s_a40848e8f8cca9::t_f225d7ede48070 187-189
+src/app/bootstrap.ts
+  s_a40848e8f8cca9::t_32b9a78e2012f4 71,119,183
+src/modules/AiRuntime/useCases/getProjectContext.ts
+  s_a40848e8f8cca9::t_299ddd12d41807 11,52,66,84,101,112,273
+src/modules/Project/useCases/__tests__/setProjectKeyRoot.spec.ts
+  s_a40848e8f8cca9::t_8bef2b43976425 3,41
+src/modules/WorkspaceShell/presentations/hooks/useProjectState.ts
+  s_a40848e8f8cca9::t_ea26ce80f34368 10,14
+src/modules/Project/useCases/projectPersistence/helpers/isHydratableProjectData.ts
+  s_a40848e8f8cca9::t_b9b9074b69c710 3
+  s_a40848e8f8cca9::t_2685a1f91a1337 195-196
+src/modules/Command/useCases/index.ts
+  s_a40848e8f8cca9::t_4ef7db293b9e80 20
+src/modules/WorkspaceShell/presentations/views/__tests__/AppShell.spec.tsx
+  s_a40848e8f8cca9::t_8bef2b43976425 16-20,223
+src/modules/AiRuntime/transformers/__tests__/llmActionBridge.spec.ts
+  s_a40848e8f8cca9::t_ac6a4a8269f6b3 3527-3529
+  s_a40848e8f8cca9::t_d00f85658d8b7b 3475-3493
+src/modules/AiRuntime/useCases/__tests__/parsePromptToActions.spec.ts
+  s_a40848e8f8cca9::t_5141056531dd13 17,29,42-46,208,252-268,339-357
+  s_a40848e8f8cca9::t_6d0c0e0995874d 358-359
+src/modules/Project/models/ProductionBrief.ts
+  s_a40848e8f8cca9::t_c85a71e7aa8949 96-99,143,145,177,186,204-205,217-219,226-228,245,247,259-260,283
+  s_a40848e8f8cca9::t_a079f9bf6ff095 2-81,288-308
+  s_a40848e8f8cca9::t_25f46e86676f44 82-95,105-109,111-112,114-115,117-118,124-125,127-129,131-141,144,146-156,176,178-185,187-202,206-215,220-224,229-233,246,248-257,261-282,284-287
+  s_a40848e8f8cca9::t_299ddd12d41807 1
+  s_a40848e8f8cca9::t_69a3b671ff0352 100-104,110,113,116,119-123,126,130,142,157-175,203,216,225,234-244,258
+src/modules/Project/useCases/projectTemplates/templateHelpers/initProject.ts
+  s_a40848e8f8cca9::t_ea26ce80f34368 5,36,39-40,57
+src/modules/Project/stores/projectStore.ts
+  s_a40848e8f8cca9::t_b9b9074b69c710 5
+  s_a40848e8f8cca9::t_3c5d440af3b37b 6,24,43,47-55,96,220-226,263,315,322
+src/modules/Project/useCases/__tests__/importSclFile.spec.ts
+  s_a40848e8f8cca9::t_8bef2b43976425 3,67
+src/modules/Project/useCases/index.ts
+  s_a40848e8f8cca9::t_4ef7db293b9e80 21
+src/modules/Project/useCases/projectPersistence/newProject.ts
+  s_a40848e8f8cca9::t_bd979cd59cbbe5 14,114,117-118,127
+src/modules/Project/useCases/doesProductionBriefAllowActionBatch.ts
+  s_a40848e8f8cca9::t_ee2eed0b2bdee1 1-24,30-31,33-38,43-50,52,54-55,61,63-66,68-80
+  s_a40848e8f8cca9::t_1adae690520fed 59
+  s_a40848e8f8cca9::t_8a57fbf5114390 25-29,32,39-42,51,53,56-58,60,62,67
+src/modules/Project/models/ProjectData.ts
+  s_a40848e8f8cca9::t_bd979cd59cbbe5 9-10,129
+src/app/__tests__/bootstrap.spec.ts
+  s_a40848e8f8cca9::t_e83ce43a5f417b 191-194,275
+src/modules/Project/useCases/projectPersistence/__tests__/loadProjectDirtyTracking.integration.spec.ts
+  s_a40848e8f8cca9::t_8bef2b43976425 70,86
+src/modules/Project/useCases/projectPersistence/fileIO/__tests__/buildProjectData.spec.ts
+  s_a40848e8f8cca9::t_1891131c035129 43-61,70,111-112
+src/modules/AiRuntime/models/ProjectContext.ts
+  s_a40848e8f8cca9::t_299ddd12d41807 2,31-87
+  s_a40848e8f8cca9::t_a09fe5142bfaad 88-89
+src/modules/Command/useCases/productionBriefAdmissionPort.ts
+  s_a40848e8f8cca9::t_4ef7db293b9e80 1-14
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "94ead0fb793fcdb507864ae0824fbdbeb818a316",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
