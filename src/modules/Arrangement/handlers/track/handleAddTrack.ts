@@ -10,6 +10,7 @@ type AddTrackAction = {
         gain?: number;
         id?: string;
         initialAlternativeId?: string;
+        initialDeviceId?: string;
         name: string;
         kind: string;
         select?: boolean;

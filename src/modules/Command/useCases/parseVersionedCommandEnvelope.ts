@@ -7,6 +7,7 @@ import {
     type VersionedCommandEnvelope,
 } from '../models/VersionedCommandEnvelope';
 
+import { executableAppActionDescriptorByType } from './executableAppActionRegistry';
 import { getVersionedCommandArgumentsDigest } from './getVersionedCommandArgumentsDigest';
 import { validateVersionedCommandArguments } from './versionedCommandArgumentKeys';
 
@@ -25,22 +26,15 @@ const STOCHASTIC_OPERATIONS = new Set([
 // available through their owning in-process workflows, but are not admitted at
 // the replayable serialized-command boundary until those results are fully
 // materialized into the command contract.
-const NONDETERMINISTIC_SERIALIZED_OPERATIONS = new Set([
-    'completeMidi',
-    'createPatternInstance',
-    'deleteTime',
+const NONDETERMINISTIC_EXECUTABLE_OPERATIONS = new Set([
     'duplicateClip',
     'duplicateClipToNextBar',
     'duplicateTrack',
-    'duplicateTimeRange',
-    'generateAudio',
-    'generateBassline',
-    'generateChordProgression',
-    'generateDrumPattern',
-    'generateMelody',
+    'glueClips',
     'splitClip',
-    'variationMidi',
 ]);
+
+const ADDITIONAL_SERIALIZED_OPERATIONS = new Set(['addNotes']);
 
 const ENVELOPE_KEYS = [
     'schemaVersion',
@@ -150,11 +144,24 @@ function hasValidArguments(operation: string, value: unknown): boolean {
 }
 
 function isDeterministicSerializedOperation(operation: string, value: unknown): boolean {
-    if (NONDETERMINISTIC_SERIALIZED_OPERATIONS.has(operation)) {
+    if (
+        (!executableAppActionDescriptorByType.has(operation) && !ADDITIONAL_SERIALIZED_OPERATIONS.has(operation)) ||
+        NONDETERMINISTIC_EXECUTABLE_OPERATIONS.has(operation)
+    ) {
         return false;
     }
-    if (operation === 'createTrackAlternative' && isRecord(value) && value.duplicateActive === true) {
+    if (!isRecord(value)) {
         return false;
+    }
+    if (operation === 'addTrack') {
+        return (
+            isNonEmptyString(value.id) &&
+            isNonEmptyString(value.initialAlternativeId) &&
+            (value.kind !== 'midi' || isNonEmptyString(value.initialDeviceId))
+        );
+    }
+    if (operation === 'createBus') {
+        return isNonEmptyString(value.busId) && isNonEmptyString(value.initialAlternativeId);
     }
     return true;
 }

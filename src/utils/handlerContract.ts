@@ -598,6 +598,8 @@ export type AppAction =
               color?: string;
               /** Internal replay metadata; provider payloads cannot set this field. */
               initialAlternativeId?: string;
+              /** Internal replay metadata; provider payloads cannot set this field. */
+              initialDeviceId?: string;
           };
       }
     | {

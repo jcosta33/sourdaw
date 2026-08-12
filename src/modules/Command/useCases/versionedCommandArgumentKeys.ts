@@ -220,6 +220,7 @@ const schemaDefinitions = [
             select: 33,
             color: 0,
             initialAlternativeId: 0,
+            initialDeviceId: 0,
         },
         required: ['name', 'kind'],
         additionalProperties: false,

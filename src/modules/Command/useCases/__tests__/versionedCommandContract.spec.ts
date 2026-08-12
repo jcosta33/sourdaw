@@ -167,7 +167,8 @@ describe('versioned command contract', () => {
     it('materializes application-owned object identities before digesting and receipts them', () => {
         vi.spyOn(crypto, 'randomUUID')
             .mockReturnValueOnce('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa')
-            .mockReturnValueOnce('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb');
+            .mockReturnValueOnce('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb')
+            .mockReturnValueOnce('cccccccc-cccc-4ccc-8ccc-cccccccccccc');
         vi.spyOn(Date, 'now').mockReturnValue(1_786_435_200_003);
 
         const command = createExecutionCommandEnvelope({
@@ -180,6 +181,7 @@ describe('versioned command contract', () => {
             type: 'addTrack',
             payload: {
                 id: 'track-command-aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+                initialAlternativeId: 'alternative-command-bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
                 name: 'Lead Vocal',
                 kind: 'audio',
             },
@@ -187,11 +189,52 @@ describe('versioned command contract', () => {
         expect(command.envelope.arguments).toEqual(command.action.payload);
         expect(command.envelope.applicationAssignedIds).toEqual([
             { argument: 'id', value: 'track-command-aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa' },
+            {
+                argument: 'initialAlternativeId',
+                value: 'alternative-command-bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+            },
         ]);
         expect(createVersionedCommandReceipt({ envelope: command.envelope }).applicationAssigned.ids).toEqual([
-            { field: 'commandId', value: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb' },
+            { field: 'commandId', value: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc' },
             { field: 'objectId', value: 'track-command-aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa' },
+            { field: 'objectId', value: 'alternative-command-bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb' },
         ]);
+    });
+
+    it('materializes every nested identity for MIDI tracks and buses', () => {
+        const midiTrack = createExecutionCommandEnvelope({
+            action: { type: 'addTrack', payload: { name: 'Keys', kind: 'midi' } },
+            expectedEffect: 'Add MIDI track.',
+            normalizedProjectRevision: 'revision-1',
+        });
+        expect(midiTrack.action.type).toBe('addTrack');
+        if (midiTrack.action.type !== 'addTrack') {
+            throw new Error('Expected addTrack materialization');
+        }
+        expect(midiTrack.action.payload.id).toMatch(/^track-command-/);
+        expect(midiTrack.action.payload.initialAlternativeId).toMatch(/^alternative-command-/);
+        expect(midiTrack.action.payload.initialDeviceId).toMatch(/^device-command-/);
+        expect(midiTrack.envelope.applicationAssignedIds.map((entry) => entry.argument)).toEqual([
+            'id',
+            'initialAlternativeId',
+            'initialDeviceId',
+        ]);
+        expect(parseVersionedCommandEnvelope(serializeVersionedCommandEnvelope(midiTrack.envelope)).status).toBe(
+            'valid'
+        );
+
+        const bus = createExecutionCommandEnvelope({
+            action: { type: 'createBus', payload: { name: 'Drum Bus' } },
+            expectedEffect: 'Create Drum Bus.',
+            normalizedProjectRevision: 'revision-1',
+        });
+        expect(bus.action.type).toBe('createBus');
+        if (bus.action.type !== 'createBus') {
+            throw new Error('Expected createBus materialization');
+        }
+        expect(bus.action.payload.busId).toMatch(/^bus-command-/);
+        expect(bus.action.payload.initialAlternativeId).toMatch(/^alternative-command-/);
+        expect(parseVersionedCommandEnvelope(serializeVersionedCommandEnvelope(bus.envelope)).status).toBe('valid');
     });
 
     it('materializes nested note identities before digesting and receipts every assignment', () => {

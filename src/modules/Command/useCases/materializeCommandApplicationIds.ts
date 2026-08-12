@@ -70,12 +70,64 @@ function materializeMidiInputOwnerId(
     };
 }
 
+function materializeTrackCreationIds(
+    action: Extract<AppAction, { type: 'addTrack' }>
+): MaterializedCommandApplicationIds {
+    const cloned = structuredClone(action);
+    const applicationAssignedIds: CommandApplicationAssignedId[] = [];
+    if (!cloned.payload.id) {
+        cloned.payload.id = `track-command-${crypto.randomUUID()}`;
+        applicationAssignedIds.push({ argument: 'id', value: cloned.payload.id });
+    }
+    if (!cloned.payload.initialAlternativeId) {
+        cloned.payload.initialAlternativeId = `alternative-command-${crypto.randomUUID()}`;
+        applicationAssignedIds.push({
+            argument: 'initialAlternativeId',
+            value: cloned.payload.initialAlternativeId,
+        });
+    }
+    if (cloned.payload.kind === 'midi' && !cloned.payload.initialDeviceId) {
+        cloned.payload.initialDeviceId = `device-command-${crypto.randomUUID()}`;
+        applicationAssignedIds.push({ argument: 'initialDeviceId', value: cloned.payload.initialDeviceId });
+    }
+    return applicationAssignedIds.length === 0
+        ? { action, applicationAssignedIds }
+        : { action: cloned, applicationAssignedIds };
+}
+
+function materializeBusCreationIds(
+    action: Extract<AppAction, { type: 'createBus' }>
+): MaterializedCommandApplicationIds {
+    const cloned = structuredClone(action);
+    const applicationAssignedIds: CommandApplicationAssignedId[] = [];
+    if (!cloned.payload.busId) {
+        cloned.payload.busId = `bus-command-${crypto.randomUUID()}`;
+        applicationAssignedIds.push({ argument: 'busId', value: cloned.payload.busId });
+    }
+    if (!cloned.payload.initialAlternativeId) {
+        cloned.payload.initialAlternativeId = `alternative-command-${crypto.randomUUID()}`;
+        applicationAssignedIds.push({
+            argument: 'initialAlternativeId',
+            value: cloned.payload.initialAlternativeId,
+        });
+    }
+    return applicationAssignedIds.length === 0
+        ? { action, applicationAssignedIds }
+        : { action: cloned, applicationAssignedIds };
+}
+
 export function materializeCommandApplicationIds(action: AppAction): MaterializedCommandApplicationIds {
     if (action.type === 'addNotes') {
         return materializeNestedNoteIds(action);
     }
     if (action.type === 'armTrack') {
         return materializeMidiInputOwnerId(action);
+    }
+    if (action.type === 'addTrack') {
+        return materializeTrackCreationIds(action);
+    }
+    if (action.type === 'createBus') {
+        return materializeBusCreationIds(action);
     }
 
     const rule = APPLICATION_ID_RULES[action.type];

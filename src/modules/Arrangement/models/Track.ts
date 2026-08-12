@@ -222,6 +222,7 @@ export function createTrack(input: {
     gain?: number;
     id?: string;
     initialAlternativeId?: string;
+    initialDeviceId?: string;
     name: string;
     kind: TrackKind;
     parentId?: string;
@@ -234,7 +235,7 @@ export function createTrack(input: {
         input.kind === 'midi'
             ? [
                   {
-                      id: `dev-synth-${crypto.randomUUID().slice(0, 8)}`,
+                      id: input.initialDeviceId ?? `dev-synth-${crypto.randomUUID().slice(0, 8)}`,
                       name: 'Synth',
                       type: 'builtin-synth',
                       bypassed: false,

@@ -24,6 +24,19 @@ describe('createTrack', () => {
         expect(time.devices[0]!.name).toBe('Synth');
     });
 
+    it('preserves an application-owned MIDI device identity', () => {
+        const track = createTrack({
+            id: 'midi-1',
+            initialAlternativeId: 'alternative-1',
+            initialDeviceId: 'device-1',
+            name: 'Keys',
+            kind: 'midi',
+        });
+
+        expect(track.activeAlternativeId).toBe('alternative-1');
+        expect(track.devices[0]?.id).toBe('device-1');
+    });
+
     it('preserves application-owned replay color and alternative identity', () => {
         const track = createTrack({
             id: 'bus-1',
