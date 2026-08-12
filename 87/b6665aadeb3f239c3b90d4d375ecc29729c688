@@ -1,0 +1,25 @@
+src-tauri/src/commands/plugins.rs
+  s_a40848e8f8cca9::t_33a07a5d6d1e84 44-45,458,462-467,476,493,495-497,500,1125,1127,1129-1130,1140-1144,1158-1160
+src/modules/PluginHost/repositories/pluginBridge/unloadPlugin.ts
+  s_a40848e8f8cca9::t_38cba66cd22754 3-16,18,20
+src/modules/PluginHost/useCases/pluginLifecycle/__tests__/lifecycle.spec.ts
+  s_a40848e8f8cca9::t_d07312f12dd9cd 44-46,60-65,68-69,75,82-83,85,99,120,139
+src/modules/PluginHost/useCases/pluginLifecycle/unloadPlugin.ts
+  s_a40848e8f8cca9::t_2dc2e225f0995e 11-27,29-30,32,38
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "87b6665aadeb3f239c3b90d4d375ecc29729c688",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
