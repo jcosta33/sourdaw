@@ -39,12 +39,12 @@ describe('disconnectPush', () => {
         expect(pushStore.value?.model).toBeNull();
     });
 
-    it('preserves connected state when transport cleanup rejects', async () => {
+    it('clears connection truth while surfacing a transport cleanup failure', async () => {
         vi.mocked(pushHardwareTransport.disconnect).mockRejectedValue(new Error('close failed'));
 
         await expect(disconnectPush()).rejects.toThrow('close failed');
-        expect(pushStore.value?.connected).toBe(true);
-        expect(pushStore.value?.model).toBe('push2');
+        expect(pushStore.value?.connected).toBe(false);
+        expect(pushStore.value?.model).toBeNull();
     });
 
     it('should not mutate when push store is null', async () => {

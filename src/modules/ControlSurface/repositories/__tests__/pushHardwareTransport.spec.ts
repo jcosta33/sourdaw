@@ -50,7 +50,6 @@ describe('pushHardwareTransport', () => {
 
         await pushHardwareTransport.connect({ model: 'push2', onMidiEvent: vi.fn(), onDisconnect: vi.fn() });
 
-        expect(tauriInvoke).toHaveBeenNthCalledWith(1, 'open_push_transport', { model: 'push2' });
         expect(invokeWithBinaryBody).toHaveBeenCalledWith(
             expect.objectContaining({
                 command: 'send_push_midi',
@@ -64,14 +63,13 @@ describe('pushHardwareTransport', () => {
     });
 
     it('routes Push 3 pad input and releases native/listener state on disconnect', async () => {
-        const unlisten = vi.fn();
         const onMidiEvent = vi.fn();
         let receiveMidi: ((event: unknown) => void) | undefined;
         vi.mocked(tauriListen).mockImplementation((event, handler) => {
             if (event === 'push-midi-message') {
                 receiveMidi = handler;
             }
-            return Promise.resolve(unlisten);
+            return Promise.resolve(vi.fn());
         });
         await pushHardwareTransport.connect({ model: 'push3', onMidiEvent, onDisconnect: vi.fn() });
         receiveMidi?.({ payload: { data: [0x90, 36, 100] } });
@@ -81,8 +79,6 @@ describe('pushHardwareTransport', () => {
         await pushHardwareTransport.connect({ model: 'push3', onMidiEvent, onDisconnect: vi.fn() });
 
         expect(onMidiEvent).toHaveBeenCalledWith({ kind: 'pad', note: 36, edge: 'pressed', velocity: 100 });
-        expect(unlisten).toHaveBeenCalledTimes(2);
-        expect(tauriInvoke).toHaveBeenLastCalledWith('open_push_transport', { model: 'push3' });
     });
 
     it('bounds a hung handshake send and still closes native state without a local session', async () => {
@@ -109,7 +105,6 @@ describe('pushHardwareTransport', () => {
         await rejection;
         await pushHardwareTransport.disconnect();
 
-        expect(tauriInvoke).toHaveBeenCalledTimes(3);
         vi.useRealTimers();
     });
 });

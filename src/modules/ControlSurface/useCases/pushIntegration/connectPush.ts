@@ -5,13 +5,9 @@ import { handlePadPress } from './handlePadPress';
 import { handlePadRelease } from './handlePadRelease';
 import { setEncoderValue } from './setEncoderValue';
 
-type PushMidiEvent = Parameters<typeof pushHardwareTransport.connect>[0]['onMidiEvent'] extends (
-    event: infer Event
-) => void
-    ? Event
-    : never;
+import type { PushMidiInputEvent } from '../../repositories/pushMidiCodec';
 
-function applyPushMidiEvent(event: PushMidiEvent): void {
+function applyPushMidiEvent(event: PushMidiInputEvent): void {
     if (event.kind === 'pad') {
         const padIndex = event.note - 36;
         if (event.edge === 'pressed') {

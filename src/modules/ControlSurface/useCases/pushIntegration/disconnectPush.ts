@@ -2,10 +2,17 @@ import { pushHardwareTransport } from '../../repositories/pushHardwareTransport'
 import { pushStore } from '../../stores/push';
 
 export async function disconnectPush(): Promise<void> {
-    await pushHardwareTransport.disconnect();
-    const state = pushStore.value;
-    if (!state) {
-        return;
+    let closeError: unknown;
+    try {
+        await pushHardwareTransport.disconnect();
+    } catch (error) {
+        closeError = error;
     }
-    pushStore.set({ ...state, connected: false, model: null });
+    const state = pushStore.value;
+    if (state) {
+        pushStore.set({ ...state, connected: false, model: null });
+    }
+    if (closeError) {
+        throw closeError instanceof Error ? closeError : new Error('Failed to close Ableton Push transport');
+    }
 }
