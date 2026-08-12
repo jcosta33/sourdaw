@@ -1,0 +1,14 @@
+tests/e2e/toasterKitGainPanTestId.spec.ts
+  h_1228e573df1f42 1-51
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "dbbd9ccd5b7aa8c1c75a923c34550de1e1d5b29c",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
