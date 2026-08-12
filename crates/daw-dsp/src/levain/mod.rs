@@ -237,6 +237,38 @@ impl LevainInstance {
         self.engine.add_zone(zone);
     }
 
+    /// Register a recorded true-legato transition sample (audit F7). Bank
+    /// loading calls this once per authored transition; the engine looks
+    /// these up by (interval, dynamic, transition type) when a note-on
+    /// overlaps a held note closely enough to classify as legato.
+    #[allow(clippy::too_many_arguments)]
+    pub fn add_legato_transition(
+        &mut self,
+        interval: i8,
+        transition_type: u8,
+        dynamic: u8,
+        sample_id: u32,
+        crossfade_in_ms: f32,
+        crossfade_out_ms: f32,
+    ) {
+        use self::types::{Dynamic, LegatoTransition, TransitionType};
+        let transition_type = match transition_type {
+            1 => TransitionType::Portamento,
+            2 => TransitionType::Run,
+            3 => TransitionType::Rip,
+            4 => TransitionType::Fall,
+            _ => TransitionType::Slurred,
+        };
+        self.engine.add_legato_transition(LegatoTransition {
+            interval,
+            transition_type,
+            dynamic: Dynamic::from_index(dynamic),
+            sample_id,
+            crossfade_in_ms,
+            crossfade_out_ms,
+        });
+    }
+
     /// Build the zone lookup table after all zones and samples are loaded.
     pub fn build_zone_map(&mut self, num_articulations: u32, num_mics: u32) -> bool {
         self.engine

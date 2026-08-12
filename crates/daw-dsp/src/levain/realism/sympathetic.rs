@@ -2,9 +2,10 @@
 //!
 //! Spec §9 — when one string sounds, the open strings vibrate sympathetically
 //! at their resonant frequencies. Implemented as a small bank of very narrow
-//! bandpass filters (Q ≈ 500–2000 in spec; we use ~150–400 to avoid runaway
-//! at typical sample rates while keeping perceptually-correct ringing) excited
-//! by the bridge mono signal.
+//! bandpass filters (Q ≈ 500–2000 in spec; we use 600, at the low end of that
+//! range, to stay clear of single-precision biquad coefficient round-off at
+//! typical sample rates while keeping perceptually-correct ringing — see the
+//! rationale on `Q` in `set_preset`) excited by the bridge mono signal.
 
 use super::biquad::Biquad;
 

@@ -74,8 +74,13 @@ impl LegatoTransitionStore {
         }
     }
 
+    /// Add a transition sample reference. Loading-time only (called from bank
+    /// loading, never the audio thread), but still bounded at
+    /// `MAX_TRANSITIONS` so a malformed bank can't grow this without limit.
     pub fn add(&mut self, transition: LegatoTransition) {
-        self.transitions.push(transition);
+        if self.transitions.len() < MAX_TRANSITIONS {
+            self.transitions.push(transition);
+        }
     }
 
     /// Find the best matching transition for an interval and dynamic.
