@@ -1,0 +1,19 @@
+tests/e2e/grandBouleBitePositionTestId.spec.ts
+  s_7f07ef1b90b879::t_fe11cd20e580e9 1-61
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "795baf8323c7b35076f72b655ff1eae356857e03",
+  "prompts": {},
+  "sessions": {
+    "s_7f07ef1b90b879": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019ff4aa-4c12-7a92-b4ba-d90398bf536d",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
