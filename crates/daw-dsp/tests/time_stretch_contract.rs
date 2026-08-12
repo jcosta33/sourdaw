@@ -1417,6 +1417,16 @@ fn assert_release_characterization_build() {
         Some("release"),
         "CPU characterization requires Cargo's release profile"
     );
+    assert_eq!(
+        env!("DAW_DSP_CARGO_PROFILE"),
+        "release",
+        "CPU characterization requires Cargo's release profile"
+    );
+    assert_eq!(
+        env!("DAW_DSP_CARGO_OPT_LEVEL"),
+        "3",
+        "CPU characterization requires the workspace release optimization level"
+    );
 }
 
 fn characterization_record(
