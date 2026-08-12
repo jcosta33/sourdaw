@@ -36,27 +36,30 @@ const PROMPT =
 
 type ProviderCall = { name: string; arguments: Record<string, unknown> };
 
-const mocks = vi.hoisted(() => ({
-    backend: { value: 'webllm' as 'cloud' | 'webllm' },
-    stageLocalAsset: vi.fn<
-        (file: File, name: string) => Promise<{ hash: string; owned: boolean }>
-    >(),
-    decodeAudioFile: vi.fn(),
-    detectTempo: vi.fn<() => number | null>(() => 120),
-    ensureTrackStrip: vi.fn(),
-    fetch: vi.fn<typeof fetch>(),
-    generateWebLlmCompletion: vi.fn(),
-    pickFiles: vi.fn<() => Promise<File[] | null>>(),
-    removeLocalAsset: vi.fn(),
-    releasePreviewAudioBuffer: vi.fn(),
-    removeTrackStrip: vi.fn(),
-    setTrackGain: vi.fn(),
-    setTrackMute: vi.fn(),
-    setTrackOutput: vi.fn(),
-    setTrackPan: vi.fn(),
-    setTrackSoloGate: vi.fn(),
-    transformPlan: { value: (plan: ProviderCall[]) => plan },
-}));
+const mocks = vi.hoisted(() => {
+    const backend: { value: 'cloud' | 'webllm' } = { value: 'webllm' };
+    return {
+        backend,
+        stageLocalAsset: vi.fn<
+            (file: File, name: string) => Promise<{ hash: string; owned: boolean }>
+        >(),
+        decodeAudioFile: vi.fn(),
+        detectTempo: vi.fn<() => number | null>(() => 120),
+        ensureTrackStrip: vi.fn(),
+        fetch: vi.fn<typeof fetch>(),
+        generateWebLlmCompletion: vi.fn(),
+        pickFiles: vi.fn<() => Promise<File[] | null>>(),
+        removeLocalAsset: vi.fn(),
+        releasePreviewAudioBuffer: vi.fn(),
+        removeTrackStrip: vi.fn(),
+        setTrackGain: vi.fn(),
+        setTrackMute: vi.fn(),
+        setTrackOutput: vi.fn(),
+        setTrackPan: vi.fn(),
+        setTrackSoloGate: vi.fn(),
+        transformPlan: { value: (plan: ProviderCall[]) => plan },
+    };
+});
 
 vi.mock('../llmOrchestration/backendResolution/getBackendChain', () => ({
     getBackendChain: () => [mocks.backend.value],
