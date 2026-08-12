@@ -10,6 +10,7 @@ import { type DrumRoutingCapability } from '../models/DrumRoutingCapability';
 import { type MidiOverlapTransformCapability } from '../models/MidiOverlapTransformCapability';
 import { type ProjectContext } from '../models/ProjectContext';
 import { type RuntimeAction } from '../models/RuntimeAction';
+import { type SharedVocalFxBusesCapability } from '../models/SharedVocalFxBusesCapability';
 import { type SidechainRoutingCapability } from '../models/SidechainRoutingCapability';
 import { type SyncopatedArpeggioCapability } from '../models/SyncopatedArpeggioCapability';
 import { type WholeProjectVibeMixCapability } from '../models/WholeProjectVibeMixPlan';
@@ -3159,6 +3160,7 @@ export function buildLlmActionUserMessage({
     drumPreviewBranchesCapability,
     midiOverlapTransformCapability,
     sidechainRoutingCapability,
+    sharedVocalFxBusesCapability,
     syncopatedArpeggioCapability,
     wholeProjectVibeMixCapability,
 }: {
@@ -3172,6 +3174,7 @@ export function buildLlmActionUserMessage({
     drumPreviewBranchesCapability?: DrumPreviewBranchesCapability;
     midiOverlapTransformCapability?: MidiOverlapTransformCapability;
     sidechainRoutingCapability?: SidechainRoutingCapability;
+    sharedVocalFxBusesCapability?: SharedVocalFxBusesCapability;
     syncopatedArpeggioCapability?: SyncopatedArpeggioCapability;
     wholeProjectVibeMixCapability?: WholeProjectVibeMixCapability;
 }): string {
@@ -3184,6 +3187,7 @@ export function buildLlmActionUserMessage({
         ...(drumPreviewBranchesCapability ? { drumPreviewBranchesCapability } : {}),
         ...(midiOverlapTransformCapability ? { midiOverlapTransformCapability } : {}),
         ...(sidechainRoutingCapability ? { sidechainRoutingCapability } : {}),
+        ...(sharedVocalFxBusesCapability ? { sharedVocalFxBusesCapability } : {}),
         ...(syncopatedArpeggioCapability ? { syncopatedArpeggioCapability } : {}),
         ...(wholeProjectVibeMixCapability ? { wholeProjectVibeMixCapability } : {}),
         tempo: context.tempo,

@@ -1,9 +1,33 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+type AddTrackAction = {
+    type: 'addTrack';
+    payload: {
+        color?: string;
+        gain?: number;
+        id?: string;
+        initialAlternativeId?: string;
+        kind: string;
+        name: string;
+    };
+};
+
+type AddTrackDescription = {
+    label: string;
+    inverseAction: {
+        type: 'discardCreatedTrack';
+        payload: {
+            trackId: string;
+            generatedMidiStateGuard?: { entityJson: string; midiByClipIdJson: string };
+        };
+    };
+};
+
 const mocks = vi.hoisted(() => ({
-    execute: vi.fn(),
-    describe: vi.fn(),
-    isNoop: vi.fn(),
+    execute: vi.fn<(action: AddTrackAction) => unknown>(),
+    describe: vi.fn<(action: AddTrackAction) => AddTrackDescription>(),
+    getTrackStoreState: vi.fn(),
+    isNoop: vi.fn<(action: AddTrackAction) => boolean>(),
 }));
 
 vi.mock('../handleAddTrack', () => ({
@@ -12,6 +36,10 @@ vi.mock('../handleAddTrack', () => ({
         describe: mocks.describe,
         isNoop: mocks.isNoop,
     },
+}));
+
+vi.mock('../../../useCases/getTrackStoreState', () => ({
+    getTrackStoreState: mocks.getTrackStoreState,
 }));
 
 import { handleCreateBus } from '../handleCreateBus';
@@ -29,18 +57,54 @@ describe('handleCreateBus', () => {
     it('executes through the canonical add-track handler with a stable bus identity', async () => {
         const deferredEffects = { status: 'written' as const, afterCommit: vi.fn(), afterAmbiguousCommit: vi.fn() };
         mocks.execute.mockReturnValue(deferredEffects);
+        mocks.getTrackStoreState.mockReturnValue({
+            tracks: [
+                {
+                    id: 'bus-1',
+                    color: 'oklch(0.7 0.1 200)',
+                    activeAlternativeId: 'alt-created',
+                },
+            ],
+        });
         const action = {
             type: 'createBus' as const,
-            payload: { name: 'Reverb Bus', busId: 'bus-1' },
+            payload: { name: 'Reverb Bus', busId: 'bus-1', initialGain: 1 },
         };
 
         const result = await handleCreateBus.execute(action);
 
-        expect(mocks.execute).toHaveBeenCalledWith({
+        const delegatedAction = mocks.execute.mock.calls[0]?.[0];
+        expect(delegatedAction).toEqual({
             type: 'addTrack',
-            payload: { id: 'bus-1', name: 'Reverb Bus', kind: 'bus' },
+            payload: {
+                id: 'bus-1',
+                name: 'Reverb Bus',
+                kind: 'bus',
+                gain: 1,
+            },
+        });
+        expect(action.payload).toEqual({
+            name: 'Reverb Bus',
+            busId: 'bus-1',
+            initialGain: 1,
+            color: 'oklch(0.7 0.1 200)',
+            initialAlternativeId: 'alt-created',
         });
         expect(result).toBe(deferredEffects);
+
+        mocks.execute.mockClear();
+        await handleCreateBus.execute(action);
+        expect(mocks.execute).toHaveBeenCalledWith({
+            type: 'addTrack',
+            payload: {
+                id: 'bus-1',
+                name: 'Reverb Bus',
+                kind: 'bus',
+                gain: 1,
+                color: 'oklch(0.7 0.1 200)',
+                initialAlternativeId: 'alt-created',
+            },
+        });
     });
 
     it('prepares one replay identity and preserves the add-track inverse', () => {
@@ -56,14 +120,70 @@ describe('handleCreateBus', () => {
         }
 
         expect(busId).toMatch(/^bus-ai-/);
-        expect(mocks.describe).toHaveBeenCalledWith({
+        const delegatedAction = mocks.describe.mock.calls[0]?.[0];
+        expect(delegatedAction).toEqual({
             type: 'addTrack',
-            payload: { id: busId, name: 'Drum Bus', kind: 'bus' },
+            payload: {
+                id: busId,
+                name: 'Drum Bus',
+                kind: 'bus',
+            },
         });
         expect(description).toEqual({
             label: 'Create bus "Drum Bus"',
-            inverseAction: { type: 'discardCreatedTrack', payload: { trackId: 'bus-1' } },
+            inverseAction: {
+                type: 'discardCreatedTrack',
+                payload: {
+                    trackId: 'bus-1',
+                    generatedMidiStateGuard: { entityJson: '', midiByClipIdJson: '{}' },
+                },
+            },
         });
+    });
+
+    it('captures the exact created bus snapshot into the discard inverse', async () => {
+        const createdBus = {
+            id: 'bus-1',
+            name: 'Reverb Bus',
+            kind: 'bus',
+            gain: 1,
+            color: 'oklch(0.7 0.1 200)',
+            activeAlternativeId: 'alt-created',
+            clips: [],
+            devices: [],
+            sends: [],
+        };
+        mocks.execute.mockReturnValue({ status: 'written' });
+        mocks.getTrackStoreState.mockReturnValue({ tracks: [createdBus] });
+        const action: Parameters<typeof handleCreateBus.describe>[0] = {
+            type: 'createBus',
+            payload: { name: 'Reverb Bus', busId: 'bus-1', initialGain: 1 },
+        };
+        const description = handleCreateBus.describe(action);
+
+        await handleCreateBus.execute(action);
+
+        expect(description.inverseAction).toEqual({
+            type: 'discardCreatedTrack',
+            payload: {
+                trackId: 'bus-1',
+                generatedMidiStateGuard: {
+                    entityJson: JSON.stringify(createdBus),
+                    midiByClipIdJson: '{}',
+                },
+            },
+        });
+    });
+
+    it('conflicts when a written add-track result has no committed bus snapshot', async () => {
+        mocks.execute.mockReturnValue({ status: 'written' });
+        mocks.getTrackStoreState.mockReturnValue({ tracks: [] });
+        const action = {
+            type: 'createBus' as const,
+            payload: { name: 'Missing Bus', busId: 'bus-1' },
+        };
+
+        expect(await handleCreateBus.execute(action)).toEqual({ status: 'conflict' });
     });
 
     it('delegates no-op detection for retry-safe receipts', () => {
@@ -74,9 +194,14 @@ describe('handleCreateBus', () => {
         };
 
         expect(handleCreateBus.isNoop?.(action)).toBe(true);
-        expect(mocks.isNoop).toHaveBeenCalledWith({
+        const delegatedAction = mocks.isNoop.mock.calls[0]?.[0];
+        expect(delegatedAction).toEqual({
             type: 'addTrack',
-            payload: { id: 'bus-existing', name: 'Parallel Bus', kind: 'bus' },
+            payload: {
+                id: 'bus-existing',
+                name: 'Parallel Bus',
+                kind: 'bus',
+            },
         });
     });
 

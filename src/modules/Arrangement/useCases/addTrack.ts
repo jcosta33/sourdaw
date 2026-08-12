@@ -8,7 +8,10 @@ import { type Track, type TrackKind } from '../stores/trackStore';
 import { ArrangementEventBus } from './arrangementEventBus';
 
 type AddTrackInput = {
+    color?: string;
+    gain?: number;
     id?: string;
+    initialAlternativeId?: string;
     name: string;
     kind: TrackKind;
     select?: boolean;

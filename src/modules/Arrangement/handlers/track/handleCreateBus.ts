@@ -1,8 +1,21 @@
 import { createHandler } from '#/utils/createHandler';
+import { type GeneratedMidiStateGuard } from '#/utils/handlerContract';
+
+import { getTrackStoreState } from '../../useCases/getTrackStoreState';
 
 import { handleAddTrack } from './handleAddTrack';
 
-type CreateBusAction = { payload: { busId?: string; name: string } };
+type CreateBusAction = {
+    payload: {
+        busId?: string;
+        color?: string;
+        initialGain?: number;
+        initialAlternativeId?: string;
+        name: string;
+    };
+};
+
+const pendingCreatedBusGuards = new WeakMap<CreateBusAction, GeneratedMidiStateGuard>();
 
 function ensureBusId(action: CreateBusAction): string {
     if (action.payload.busId) {
@@ -14,23 +27,62 @@ function ensureBusId(action: CreateBusAction): string {
 }
 
 function toAddTrackAction(action: CreateBusAction): Parameters<typeof handleAddTrack.execute>[0] {
+    const busId = ensureBusId(action);
     return {
         type: 'addTrack',
         payload: {
-            id: ensureBusId(action),
+            id: busId,
             name: action.payload.name,
             kind: 'bus',
+            ...(action.payload.color !== undefined ? { color: action.payload.color } : {}),
+            ...(action.payload.initialGain !== undefined ? { gain: action.payload.initialGain } : {}),
+            ...(action.payload.initialAlternativeId !== undefined
+                ? { initialAlternativeId: action.payload.initialAlternativeId }
+                : {}),
         },
     };
 }
 
 export const handleCreateBus = createHandler<'createBus'>({
-    execute: (action) => handleAddTrack.execute(toAddTrackAction(action)),
+    execute: async (action) => {
+        const result = await handleAddTrack.execute(toAddTrackAction(action));
+        if (result?.status !== 'written') {
+            pendingCreatedBusGuards.delete(action);
+            return result;
+        }
+        const busId = action.payload.busId;
+        const createdBus = getTrackStoreState()?.tracks.find((track) => track.id === busId);
+        if (!createdBus) {
+            pendingCreatedBusGuards.delete(action);
+            return { status: 'conflict' };
+        }
+        action.payload.color = createdBus.color;
+        action.payload.initialAlternativeId = createdBus.activeAlternativeId;
+        const guard = pendingCreatedBusGuards.get(action);
+        if (guard) {
+            guard.entityJson = JSON.stringify(createdBus);
+        }
+        pendingCreatedBusGuards.delete(action);
+        return result;
+    },
     describe: (action) => {
         const description = handleAddTrack.describe(toAddTrackAction(action));
+        const generatedMidiStateGuard = {
+            entityJson: '',
+            midiByClipIdJson: JSON.stringify({}),
+        };
+        pendingCreatedBusGuards.set(action, generatedMidiStateGuard);
+        const inverseAction = description.inverseAction;
         return {
             ...description,
             label: `Create bus "${action.payload.name}"`,
+            inverseAction:
+                inverseAction?.type === 'discardCreatedTrack'
+                    ? {
+                          ...inverseAction,
+                          payload: { ...inverseAction.payload, generatedMidiStateGuard },
+                      }
+                    : inverseAction,
         };
     },
     isNoop: (action) => handleAddTrack.isNoop?.(toAddTrackAction(action)) ?? false,

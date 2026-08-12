@@ -4,7 +4,17 @@ import { addTrack } from '../../useCases/addTrack';
 import { getTrackStoreState } from '../../useCases/getTrackStoreState';
 import { publishTrackAdded } from '../../useCases/publishTrackAdded';
 
-type AddTrackAction = { payload: { id?: string; name: string; kind: string; select?: boolean } };
+type AddTrackAction = {
+    payload: {
+        color?: string;
+        gain?: number;
+        id?: string;
+        initialAlternativeId?: string;
+        name: string;
+        kind: string;
+        select?: boolean;
+    };
+};
 
 function ensureTrackId(action: AddTrackAction): string {
     if (action.payload.id) {

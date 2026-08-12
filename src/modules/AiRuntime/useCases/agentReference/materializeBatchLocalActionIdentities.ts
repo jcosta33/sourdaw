@@ -22,11 +22,16 @@ export function materializeBatchLocalActionIdentities(
             identity.actionType === 'createBus'
                 ? GENERATED_BUS_ID_PATTERN.test(identityId)
                 : GENERATED_DEVICE_ID_PATTERN.test(identityId);
+        const hasValidInitialGain =
+            identity.actionType !== 'createBus' ||
+            identity.initialGain === undefined ||
+            (Number.isFinite(identity.initialGain) && identity.initialGain >= 0 && identity.initialGain <= 2);
         const identityKey = `${identity.actionType}:${String(identity.actionOrdinal)}`;
         if (
             !Number.isSafeInteger(identity.actionOrdinal) ||
             identity.actionOrdinal < 0 ||
             !hasValidId ||
+            !hasValidInitialGain ||
             identitiesByKey.has(identityKey) ||
             busIds.has(identityId) ||
             deviceIds.has(identityId)
@@ -55,7 +60,11 @@ export function materializeBatchLocalActionIdentities(
             consumedKeys.add(identityKey);
             return {
                 type: 'createBus',
-                payload: { ...action.payload, busId: identity.busId },
+                payload: {
+                    ...action.payload,
+                    busId: identity.busId,
+                    ...(identity.initialGain !== undefined ? { initialGain: identity.initialGain } : {}),
+                },
             };
         }
         if (action.type !== 'addDevice') {
