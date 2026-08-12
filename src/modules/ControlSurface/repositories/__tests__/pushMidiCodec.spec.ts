@@ -390,7 +390,7 @@ describe('createPushMidiCodec', () => {
         });
         expect(codec.acceptReply(requestIdOf(identity), IDENTITY_REPLY)).toEqual({
             status: 'rejected',
-            reason: 'unsolicited-reply',
+            reason: 'stale-reply',
         });
     });
 
@@ -483,7 +483,7 @@ describe('createPushMidiCodec', () => {
         }
         expect(codec.acceptReply(requestIdOf(secondRequest), modeOneReply)).toEqual({
             status: 'rejected',
-            reason: 'reply-mismatch',
+            reason: 'stale-reply',
         });
         expect(codec.beginRequest({ kind: 'identity' })).toEqual({
             status: 'rejected',
@@ -520,7 +520,7 @@ describe('createPushMidiCodec', () => {
         expect(identity.status).toBe('started');
     });
 
-    it('cancels only the matching pending request and allows a later request to complete', () => {
+    it('quarantines a cancelled correlation until its late reply is drained', () => {
         const codec = createPushMidiCodec();
         const first = codec.beginRequest({ kind: 'identity' });
         expect(first).toMatchObject({ status: 'started', requestId: 1 });
@@ -529,16 +529,20 @@ describe('createPushMidiCodec', () => {
         }
 
         expect(codec.cancelRequest(first.requestId)).toEqual({ status: 'cancelled' });
+        expect(codec.beginRequest({ kind: 'identity' })).toEqual({
+            status: 'rejected',
+            reason: 'reply-draining',
+        });
+        expect(codec.acceptReply(first.requestId, IDENTITY_REPLY)).toEqual({
+            status: 'rejected',
+            reason: 'stale-reply',
+        });
+
         const second = codec.beginRequest({ kind: 'identity' });
         expect(second).toMatchObject({ status: 'started', requestId: 2 });
         if (second.status !== 'started') {
             throw new Error('Expected the second request to start');
         }
-
-        expect(codec.cancelRequest(first.requestId)).toEqual({
-            status: 'rejected',
-            reason: 'request-mismatch',
-        });
         expect(codec.acceptReply(second.requestId, IDENTITY_REPLY)).toMatchObject({ status: 'accepted' });
     });
 
@@ -550,6 +554,15 @@ describe('createPushMidiCodec', () => {
             throw new Error('Expected the first request to start');
         }
         expect(codec.acceptReply(first.requestId, modeOneReply)).toMatchObject({ status: 'accepted' });
+
+        expect(codec.beginRequest({ kind: 'midi-mode', mode: 1 })).toEqual({
+            status: 'rejected',
+            reason: 'reply-draining',
+        });
+        expect(codec.acceptReply(first.requestId, modeOneReply)).toEqual({
+            status: 'rejected',
+            reason: 'stale-reply',
+        });
 
         const second = codec.beginRequest({ kind: 'midi-mode', mode: 1 });
         if (second.status !== 'started') {
@@ -564,5 +577,22 @@ describe('createPushMidiCodec', () => {
             reason: 'reply-pending',
         });
         expect(codec.acceptReply(second.requestId, modeOneReply)).toMatchObject({ status: 'accepted' });
+    });
+
+    it('allows a transport replacement to clear quarantined correlations without reusing capabilities', () => {
+        const codec = createPushMidiCodec();
+        const first = codec.beginRequest({ kind: 'identity' });
+        const firstRequestId = requestIdOf(first);
+        expect(codec.cancelRequest(firstRequestId)).toEqual({ status: 'cancelled' });
+
+        codec.resetSession();
+
+        const replacement = codec.beginRequest({ kind: 'identity' });
+        expect(replacement).toMatchObject({ status: 'started', requestId: 2 });
+        expect(codec.acceptReply(firstRequestId, IDENTITY_REPLY)).toEqual({
+            status: 'rejected',
+            reason: 'request-mismatch',
+        });
+        expect(codec.acceptReply(requestIdOf(replacement), IDENTITY_REPLY)).toMatchObject({ status: 'accepted' });
     });
 });

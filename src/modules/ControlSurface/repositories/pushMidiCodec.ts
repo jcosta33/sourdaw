@@ -125,7 +125,7 @@ export type PushMidiBeginRequestResult =
       }>
     | Readonly<{
           status: 'rejected';
-          reason: 'invalid-value' | 'reply-pending';
+          reason: 'invalid-value' | 'reply-draining' | 'reply-pending';
       }>;
 
 export type PushMidiAcceptReplyResult =
@@ -140,6 +140,7 @@ export type PushMidiAcceptReplyResult =
               | 'not-a-reply'
               | 'reply-mismatch'
               | 'request-mismatch'
+              | 'stale-reply'
               | 'unsolicited-reply';
       }>;
 
@@ -158,6 +159,8 @@ export type PushMidiCodec = Readonly<{
     beginRequest(request: PushMidiReplyRequest): PushMidiBeginRequestResult;
     cancelRequest(requestId: number): PushMidiCancelRequestResult;
     acceptReply(requestId: number, bytes: PushMidiBytes): PushMidiAcceptReplyResult;
+    /** Clears request state only after the owning transport has closed or flushed its input. */
+    resetSession(): void;
 }>;
 
 type PendingReply =
@@ -667,9 +670,31 @@ function pendingMatchesReply(pending: PendingReply, reply: PushMidiReply): boole
     return pending.mode === reply.mode;
 }
 
+function pendingReplyKey(pending: PendingReply): string {
+    if (pending.kind === 'identity') {
+        return pending.kind;
+    }
+    return `${pending.kind}:${pending.mode}`;
+}
+
+function requestKey(request: PushMidiReplyRequest): string {
+    if (request.kind === 'identity') {
+        return request.kind;
+    }
+    return `${request.kind}:${request.mode}`;
+}
+
+function replyKey(reply: PushMidiReply): string {
+    if (reply.kind === 'identity') {
+        return reply.kind;
+    }
+    return `${reply.kind}:${reply.mode}`;
+}
+
 export function createPushMidiCodec(): PushMidiCodec {
     let pendingReply: PendingReply | undefined;
     let nextRequestId = 1;
+    const retiredReplies = new Map<string, PendingReply>();
 
     function beginRequest(request: PushMidiReplyRequest): PushMidiBeginRequestResult {
         if (pendingReply) {
@@ -680,6 +705,12 @@ export function createPushMidiCodec(): PushMidiCodec {
         }
 
         if (request.kind === 'identity') {
+            if (retiredReplies.has(requestKey(request))) {
+                return {
+                    status: 'rejected',
+                    reason: 'reply-draining',
+                };
+            }
             const requestId = nextRequestId;
             nextRequestId += 1;
             pendingReply = {
@@ -693,6 +724,12 @@ export function createPushMidiCodec(): PushMidiCodec {
             return {
                 status: 'rejected',
                 reason: 'invalid-value',
+            };
+        }
+        if (retiredReplies.has(requestKey(request))) {
+            return {
+                status: 'rejected',
+                reason: 'reply-draining',
             };
         }
 
@@ -720,6 +757,7 @@ export function createPushMidiCodec(): PushMidiCodec {
             };
         }
 
+        retiredReplies.set(pendingReplyKey(pendingReply), pendingReply);
         pendingReply = undefined;
         return { status: 'cancelled' };
     }
@@ -733,6 +771,13 @@ export function createPushMidiCodec(): PushMidiCodec {
             return {
                 status: 'rejected',
                 reason: 'not-a-reply',
+            };
+        }
+        const staleReplyKey = replyKey(decoded.reply);
+        if (retiredReplies.delete(staleReplyKey)) {
+            return {
+                status: 'rejected',
+                reason: 'stale-reply',
             };
         }
         if (!pendingReply) {
@@ -754,11 +799,17 @@ export function createPushMidiCodec(): PushMidiCodec {
             };
         }
 
+        retiredReplies.set(pendingReplyKey(pendingReply), pendingReply);
         pendingReply = undefined;
         return {
             status: 'accepted',
             reply: decoded.reply,
         };
+    }
+
+    function resetSession(): void {
+        pendingReply = undefined;
+        retiredReplies.clear();
     }
 
     return Object.freeze({
@@ -767,5 +818,6 @@ export function createPushMidiCodec(): PushMidiCodec {
         beginRequest,
         cancelRequest,
         acceptReply,
+        resetSession,
     });
 }
