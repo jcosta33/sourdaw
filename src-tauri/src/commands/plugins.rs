@@ -12,9 +12,9 @@ use daw_engine::EngineHandle;
 use daw_plugin_host::scanner::{self, ScanResult, ScannedPlugin};
 use daw_plugin_host::{AudioPlugin, ClapWrapper};
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
+use std::sync::{Arc, LazyLock, Mutex};
 use std::time::{Duration, Instant};
 use tauri::Manager;
 
@@ -40,6 +40,9 @@ pub struct PluginInstance {
     pub latency_ms: f64,
     pub engine_plugin_id: Option<usize>,
 }
+
+static PLUGIN_LOAD_RESERVATIONS: LazyLock<Mutex<HashSet<String>>> =
+    LazyLock::new(|| Mutex::new(HashSet::new()));
 
 fn remove_engine_plugin_record_after_scheduler_removal<EnginePluginRecord>(
     engine_plugins: &mut HashMap<String, EnginePluginRecord>,
@@ -221,6 +224,7 @@ pub async fn load_plugin(
     instance_id: PluginInstanceId,
     state: tauri::State<'_, AppState>,
 ) -> Result<PluginInstance, String> {
+    let _load_reservation = reserve_plugin_instance_load(&state, &instance_id.0)?;
     let entry = {
         let registry = state
             .plugin_registry
@@ -369,6 +373,49 @@ pub async fn load_plugin(
         ),
         _ => Err(format!("Unknown plugin format: {}", entry.format)),
     }
+}
+
+struct PluginLoadReservation {
+    instance_id: String,
+    loading_instances: &'static Mutex<HashSet<String>>,
+}
+
+impl Drop for PluginLoadReservation {
+    fn drop(&mut self) {
+        if let Ok(mut loading_instances) = self.loading_instances.lock() {
+            loading_instances.remove(&self.instance_id);
+        }
+    }
+}
+
+fn reserve_plugin_instance_load(
+    state: &AppState,
+    instance_id: &str,
+) -> Result<PluginLoadReservation, String> {
+    let mut loading_instances = PLUGIN_LOAD_RESERVATIONS
+        .lock()
+        .map_err(|error| format!("Failed to lock loading_plugin_instances: {error}"))?;
+    let plugins = state
+        .plugins
+        .lock()
+        .map_err(|error| format!("Failed to lock plugins: {error}"))?;
+    let engine_plugins = state
+        .engine_plugins
+        .lock()
+        .map_err(|error| format!("Failed to lock engine_plugins: {error}"))?;
+
+    if loading_instances.contains(instance_id)
+        || plugins.contains_key(instance_id)
+        || engine_plugins.contains_key(instance_id)
+    {
+        return Err(format!("Plugin instance already exists: {instance_id}"));
+    }
+
+    loading_instances.insert(instance_id.to_string());
+    Ok(PluginLoadReservation {
+        instance_id: instance_id.to_string(),
+        loading_instances: &PLUGIN_LOAD_RESERVATIONS,
+    })
 }
 
 #[tauri::command]
@@ -974,6 +1021,53 @@ mod tests {
             ),
             Ok(instance) => panic!("unsupported VST3 unexpectedly loaded: {instance:?}"),
         }
+    }
+
+    #[test]
+    fn load_plugin_rejects_an_instance_id_already_owned_by_the_engine() {
+        let app = command_test_app();
+        let state = app.state::<AppState>();
+        insert_engine_owned_fixture(&state, "occupied-instance", vec![1, 2, 3]);
+        state
+            .plugin_registry
+            .lock()
+            .expect("plugin registry lock should be available")
+            .insert(
+                "vst3-fixture".to_string(),
+                PluginRegistryEntry {
+                    path: "/plugins/should-not-be-loaded.vst3".to_string(),
+                    clap_id: String::new(),
+                    format: "vst3".to_string(),
+                    name: "Unsupported VST3".to_string(),
+                },
+            );
+
+        let result = tauri::async_runtime::block_on(load_plugin(
+            PluginId("vst3-fixture".to_string()),
+            PluginInstanceId("occupied-instance".to_string()),
+            state,
+        ));
+
+        match result {
+            Err(error) => assert_eq!(error, "Plugin instance already exists: occupied-instance"),
+            Ok(instance) => panic!("duplicate instance unexpectedly loaded: {instance:?}"),
+        }
+    }
+
+    #[test]
+    fn plugin_load_reservation_rejects_concurrent_duplicate_and_releases_after_drop() {
+        let state = AppState::default();
+        let first = reserve_plugin_instance_load(&state, "loading-instance")
+            .expect("first load should reserve the instance id");
+
+        assert!(matches!(
+            reserve_plugin_instance_load(&state, "loading-instance"),
+            Err(error) if error == "Plugin instance already exists: loading-instance"
+        ));
+
+        drop(first);
+
+        assert!(reserve_plugin_instance_load(&state, "loading-instance").is_ok());
     }
 
     /// Unwrap a command's `tauri::ipc::Response` into the bytes it will actually

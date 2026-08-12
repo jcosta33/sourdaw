@@ -14,7 +14,7 @@ import {
     resetCrdtProjectAuthority,
     startCrdtAutoSave,
 } from '#/modules/CrdtDocument/useCases';
-import { clearLoadedExternalPlugins } from '#/modules/PluginHost/useCases';
+import { unloadLoadedExternalPlugins } from '#/modules/PluginHost/useCases';
 import { ensureTrackStrips, stopPlayback } from '#/modules/Transport/useCases';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
@@ -229,10 +229,8 @@ export async function replaceProjectData({
         if (!transaction.isCurrent()) {
             return abortProjectReplacement();
         }
-        // Tear down the previous graph's native-plugin activation guards so the
-        // incoming project re-activates its own instances on the next rebuild.
-        clearLoadedExternalPlugins();
         resetAudioGraph();
+        await unloadLoadedExternalPlugins();
     } catch (error) {
         logPreparationFailure(context, error);
         restorePreviousAudioGraph(context);

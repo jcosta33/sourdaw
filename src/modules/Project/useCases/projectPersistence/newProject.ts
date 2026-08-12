@@ -8,6 +8,7 @@ import {
     resetCrdtProjectAuthority,
     startCrdtAutoSave,
 } from '#/modules/CrdtDocument/useCases';
+import { unloadLoadedExternalPlugins } from '#/modules/PluginHost/useCases';
 import { ensureTrackStrips, stopPlayback } from '#/modules/Transport/useCases';
 
 import { removeProjectJson } from '../../repositories/project/removeProjectJson';
@@ -71,6 +72,7 @@ async function activateNewProject({
         previousPersistenceStopped = true;
         graphTeardownStarted = true;
         resetAudioGraph();
+        await unloadLoadedExternalPlugins();
         resetCrdtProjectAuthority(name);
     } catch (error) {
         logger.warn('[newProject] Failed to activate project:', error);

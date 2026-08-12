@@ -10,15 +10,17 @@ import { serializePluginLifecycle } from './serializePluginLifecycle';
 
 /** Unload a plugin instance by its instance ID. */
 export function unloadPlugin(instanceId: string): ReturnType<typeof unloadPluginRepo> {
-    loadedExternalInstances.delete(instanceId);
-    externalPluginActivationStore.update((state) => {
-        const current = state ?? defaultExternalPluginActivationState;
-        const byInstanceId = { ...current.byInstanceId };
-        delete byInstanceId[instanceId];
-        return { ...current, byInstanceId };
+    return serializePluginLifecycle(instanceId, async () => {
+        await unloadPluginRepo(instanceId);
+        loadedExternalInstances.delete(instanceId);
+        externalPluginActivationStore.update((state) => {
+            const current = state ?? defaultExternalPluginActivationState;
+            const byInstanceId = { ...current.byInstanceId };
+            delete byInstanceId[instanceId];
+            return { ...current, byInstanceId };
+        });
+        // The instance has stopped processing, so its latency sink must stop
+        // receiving. Until native unload succeeds, these owners remain truthful.
+        externalLatencyReporters.delete(instanceId);
     });
-    // The instance stops processing, so its latency sink must stop receiving —
-    // a late push must not revive compensation for an unloaded plugin.
-    externalLatencyReporters.delete(instanceId);
-    return serializePluginLifecycle(instanceId, () => unloadPluginRepo(instanceId));
 }

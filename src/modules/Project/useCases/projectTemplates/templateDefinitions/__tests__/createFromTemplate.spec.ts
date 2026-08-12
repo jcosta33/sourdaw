@@ -11,6 +11,7 @@ const mocks = vi.hoisted(() => ({
     isAppActionCommittedError: vi.fn(),
     flushAutomergeStorageWrites: vi.fn(),
     newProject: vi.fn(),
+    unloadLoadedExternalPlugins: vi.fn(),
     projectActionHistoryToStore: vi.fn(),
     projectSet: vi.fn(),
     resetAudioGraph: vi.fn(),
@@ -29,6 +30,10 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock('#/modules/AudioEngine/useCases', () => ({
     resetAudioGraph: mocks.resetAudioGraph,
+}));
+
+vi.mock('#/modules/PluginHost/useCases', () => ({
+    unloadLoadedExternalPlugins: mocks.unloadLoadedExternalPlugins,
 }));
 
 vi.mock('#/modules/Command/useCases', () => ({
@@ -94,6 +99,7 @@ describe('createFromTemplate', () => {
         mocks.executeAppAction.mockResolvedValue(undefined);
         mocks.isAppActionCommittedError.mockReturnValue(false);
         mocks.newProject.mockResolvedValue(true);
+        mocks.unloadLoadedExternalPlugins.mockResolvedValue(undefined);
         mocks.compactProject.mockResolvedValue(undefined);
         mocks.startCrdtAutoSave.mockReturnValue({});
         mocks.transactionPrepare.mockResolvedValue(true);
@@ -120,6 +126,7 @@ describe('createFromTemplate', () => {
 
         expect(mocks.stopPlayback).toHaveBeenCalledOnce();
         expect(mocks.resetAudioGraph).toHaveBeenCalledOnce();
+        expect(mocks.unloadLoadedExternalPlugins).toHaveBeenCalledOnce();
         expect(mocks.executeAppAction).toHaveBeenCalledWith(
             { type: 'createProjectFromTemplate', payload: { templateId: 'pop-song' } },
             { skipMacroRecording: true }
@@ -204,6 +211,9 @@ describe('createFromTemplate', () => {
         expect(mocks.transactionActivate).toHaveBeenCalledOnce();
         expect(mocks.stopActiveAutoSave).toHaveBeenCalledOnce();
         expect(mocks.resetCrdtProjectAuthority).toHaveBeenCalledWith('Pop Song');
+        expect(mocks.unloadLoadedExternalPlugins.mock.invocationCallOrder[0]).toBeLessThan(
+            mocks.resetCrdtProjectAuthority.mock.invocationCallOrder[0]!
+        );
         expect(mocks.projectActionHistoryToStore).toHaveBeenCalledOnce();
         expect(mocks.resetModuleStoresToDefault).toHaveBeenCalledOnce();
         expect(mocks.clearUndoHistory).toHaveBeenCalledOnce();

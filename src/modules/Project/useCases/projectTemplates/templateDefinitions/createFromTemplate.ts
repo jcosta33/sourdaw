@@ -8,6 +8,7 @@ import {
     resetCrdtProjectAuthority,
     startCrdtAutoSave,
 } from '#/modules/CrdtDocument/useCases';
+import { unloadLoadedExternalPlugins } from '#/modules/PluginHost/useCases';
 import { ensureTrackStrips, stopPlayback } from '#/modules/Transport/useCases';
 
 import { projectStore } from '../../../stores/projectStore';
@@ -81,6 +82,7 @@ export async function createFromTemplate(templateId: string): Promise<boolean> {
         persistenceStopped = true;
         graphWasReset = true;
         resetAudioGraph();
+        await unloadLoadedExternalPlugins();
         resetCrdtProjectAuthority(template.name);
         projectActionHistoryToStore();
         resetModuleStoresToDefault({ createNewMidiProbabilitySeed: true });

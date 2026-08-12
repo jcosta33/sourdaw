@@ -103,6 +103,19 @@ describe('addExternalDevice', () => {
         );
     });
 
+    it('gives same-tick plugin instances distinct generation identities', () => {
+        vi.spyOn(crypto, 'randomUUID')
+            .mockReturnValueOnce('11111111-1111-4111-8111-111111111111')
+            .mockReturnValueOnce('22222222-2222-4222-8222-222222222222')
+            .mockReturnValueOnce('33333333-3333-4333-8333-333333333333')
+            .mockReturnValueOnce('44444444-4444-4444-8444-444444444444');
+
+        const first = addExternalDevice('audio-1', 'plugin-1', 'Plugin');
+        const second = addExternalDevice('audio-1', 'plugin-1', 'Plugin');
+
+        expect(first?.externalInstanceId).not.toBe(second?.externalInstanceId);
+    });
+
     it('routes the injected latency sink to the registry under this device id', () => {
         const device = addExternalDevice('audio-1', 'plugin-1', 'Plugin');
 

@@ -13,13 +13,13 @@ export { getPluginHostHandlers } from './getPluginHostHandlers';
 
 export { loadPlugin } from './pluginLifecycle/loadPlugin';
 export { unloadPlugin } from './pluginLifecycle/unloadPlugin';
+export { unloadLoadedExternalPlugins } from './pluginLifecycle/unloadLoadedExternalPlugins';
 export { openPluginGui } from './pluginLifecycle/openPluginGui';
 export { processAudioIPC } from './pluginLifecycle/processAudioIPC';
 export { setPluginParameter } from './pluginLifecycle/setPluginParameter';
 export { readPluginState } from './pluginLifecycle/readPluginState';
 export { restorePluginState } from './pluginLifecycle/restorePluginState';
 export { activateExternalPlugin } from './pluginLifecycle/activateExternalPlugin';
-export { clearLoadedExternalPlugins } from './pluginLifecycle/clearLoadedExternalPlugins';
 
 export { findPluginByName } from './pluginScan/queries';
 export { findSupportedPlugin } from './pluginScan/findSupportedPlugin';
