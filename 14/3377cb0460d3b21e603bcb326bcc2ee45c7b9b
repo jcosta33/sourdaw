@@ -1,0 +1,19 @@
+tests/e2e/automationModeSelectTestId.spec.ts
+  s_bc88af7d3b054c::t_5219f563b147ab 1-47
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "143377cb0460d3b21e603bcb326bcc2ee45c7b9b",
+  "prompts": {},
+  "sessions": {
+    "s_bc88af7d3b054c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f9b4a-11a2-7f61-8dfb-76eed0eb2a9c",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
