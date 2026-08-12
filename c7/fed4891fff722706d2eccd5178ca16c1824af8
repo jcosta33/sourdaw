@@ -1,0 +1,19 @@
+tests/e2e/crustAttackAutoTestId.spec.ts
+  s_1103aa2fb88d6d::t_c1b20e13a9d281 1-61
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "c7fed4891fff722706d2eccd5178ca16c1824af8",
+  "prompts": {},
+  "sessions": {
+    "s_1103aa2fb88d6d": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fed98-adb9-73b2-b7d7-ff357c28de5b",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
