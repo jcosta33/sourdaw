@@ -1,0 +1,42 @@
+src/modules/Command/useCases/materializeCommandApplicationIds.ts
+  s_a40848e8f8cca9::t_fd70376ab93d39 73-118,126-127
+  s_a40848e8f8cca9::t_fa3cda704ea02e 128-130
+  s_a40848e8f8cca9::t_2bc16c46d03212 131
+src/modules/Arrangement/useCases/addTrack.ts
+  s_a40848e8f8cca9::t_cca1b9b9d30201 15
+src/modules/Command/useCases/parseVersionedCommandEnvelope.ts
+  s_a40848e8f8cca9::t_bc776c071362c7 37-38,147-150
+  s_a40848e8f8cca9::t_1577998cb6686d 10,29,33,153,156-165
+src/modules/Arrangement/handlers/track/handleAddTrack.ts
+  s_a40848e8f8cca9::t_cca1b9b9d30201 13
+src/modules/Arrangement/models/__tests__/Track.spec.ts
+  s_a40848e8f8cca9::t_60c69d513b989d 27-39
+src/modules/Command/useCases/__tests__/versionedCommandContract.spec.ts
+  s_a40848e8f8cca9::t_b232830285cbb5 210-216,231-236
+  s_a40848e8f8cca9::t_55f688aaecb0e3 204-209,217-230,237-239
+  s_a40848e8f8cca9::t_bc776c071362c7 170-171,184,192-195,198,200
+src/modules/Arrangement/models/Track.ts
+  s_a40848e8f8cca9::t_cca1b9b9d30201 225,238
+src/utils/handlerContract.ts
+  s_a40848e8f8cca9::t_cca1b9b9d30201 601-602
+src/modules/Arrangement/useCases/createTrack.ts
+  s_a40848e8f8cca9::t_cca1b9b9d30201 3-10
+src/modules/Command/useCases/versionedCommandArgumentKeys.ts
+  s_a40848e8f8cca9::t_e17f859fb88744 223
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "6628a14a3439a36480b0a7b779bc01fcb9103c24",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
