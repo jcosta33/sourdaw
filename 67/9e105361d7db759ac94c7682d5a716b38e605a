@@ -1,0 +1,74 @@
+crates/daw-dsp/src/levain/legato.rs
+  s_62e9c3dc3ba52a::t_3c8f9eaec95328 77-79,81-83
+crates/daw-dsp/src/levain/realism/sympathetic.rs
+  s_62e9c3dc3ba52a::t_d41ce447e76fff 5-8
+crates/daw-dsp/src/levain/engine.rs
+  s_62e9c3dc3ba52a::t_4477e355697850 157-158
+  s_62e9c3dc3ba52a::t_a2ae62ff71e00e 120-125
+  s_62e9c3dc3ba52a::t_e6eaaffda2dcee 936
+  s_62e9c3dc3ba52a::t_0e9d024df9d565 605
+  s_62e9c3dc3ba52a::t_1f9e579cc4d009 590,593,595,599-604,606-612
+  s_62e9c3dc3ba52a::t_c29c6eee12df9a 172-176
+  s_62e9c3dc3ba52a::t_47d6cbd41af2b0 740-756
+  s_62e9c3dc3ba52a::t_bc47d29a7d3e5e 1687-1912,1917,1919-1980,1986-2025
+  s_62e9c3dc3ba52a::t_65277c509b2434 788-799
+  s_62e9c3dc3ba52a::t_3669bdd92f50ce 290-302
+  s_62e9c3dc3ba52a::t_e195fadc148f3c 30-33,41-44,56
+  s_62e9c3dc3ba52a::t_9e292ab83e27cf 525-526
+  s_62e9c3dc3ba52a::t_43d9256161f7f6 1913-1916,1918
+  s_62e9c3dc3ba52a::t_e2579a778ee550 1981-1985
+  s_62e9c3dc3ba52a::t_b687c5bb28dbb3 426,430-431,434-437,445-463,465
+  s_62e9c3dc3ba52a::t_3ef072edc2101b 846-935,937-983
+  s_62e9c3dc3ba52a::t_6af9fca9075279 15
+  s_62e9c3dc3ba52a::t_dc9942e378cd86 270-273
+  s_62e9c3dc3ba52a::t_663acc635e5a29 1013-1014
+crates/daw-dsp/src/levain/mod.rs
+  s_62e9c3dc3ba52a::t_4f5a4e1b65db0c 240-271
+crates/daw-dsp/src/levain/voice.rs
+  s_62e9c3dc3ba52a::t_3aed023490ec05 522-527
+  s_62e9c3dc3ba52a::t_ffd89bc94c27e4 26-31
+  s_62e9c3dc3ba52a::t_caad28799fc730 346-366
+  s_62e9c3dc3ba52a::t_0a9282235c77c8 431-432,439-451
+  s_62e9c3dc3ba52a::t_d74eaaa54f0c8b 571,574-577
+  s_62e9c3dc3ba52a::t_66d63183ec2ea1 636-641,650-690
+  s_62e9c3dc3ba52a::t_4d7e2350490d67 770,788-794
+  s_62e9c3dc3ba52a::t_754bdd3056ea5f 452
+  s_62e9c3dc3ba52a::t_279d7accd6e98e 691
+  s_62e9c3dc3ba52a::t_f2ac4d39850689 795
+public/wasm/daw-dsp/daw_dsp.d.ts
+  s_46a88146b11934::t_f3c261bd23a3b0 1,574-580,832,892-919,921,960-1016
+public/wasm/daw-dsp/daw_dsp.js
+  s_46a88146b11934::t_2f88327eb852e8 1301-1315
+public/wasm/daw-dsp/daw_dsp_bg.wasm.d.ts
+  s_46a88146b11934::t_9891a2c2a63f63 1,24,84-111,113,152-208
+public/wasm/manifest.json
+  s_46a88146b11934::t_22a3e6f8bb0888 12,15-18,20-21
+src/modules/AudioEngine/wasm/daw_dsp.d.ts
+  s_46a88146b11934::t_20d7d57d490f42 1,574-580,832,892-919,921,960-1016
+src/modules/AudioEngine/wasm/daw_dsp.js
+  s_46a88146b11934::t_f99496d97e8d75 1478-1492
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "679e105361d7db759ac94c7682d5a716b38e605a",
+  "prompts": {},
+  "sessions": {
+    "s_46a88146b11934": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-a99fdf6dbec61cfab",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_62e9c3dc3ba52a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "92e0a2e7-8660-41e2-be8b-b2d644c6d0b7",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
