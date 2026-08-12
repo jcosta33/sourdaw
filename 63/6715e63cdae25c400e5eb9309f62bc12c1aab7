@@ -1,0 +1,20 @@
+.agents/decisions/open-decision-docket.md
+  s_bc88af7d3b054c::t_2d3b0625c5c831 161,235-240,380-384
+  s_bc88af7d3b054c::t_c0a316821f3403 158,160
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "636715e63cdae25c400e5eb9309f62bc12c1aab7",
+  "prompts": {},
+  "sessions": {
+    "s_bc88af7d3b054c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f9b4a-11a2-7f61-8dfb-76eed0eb2a9c",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
