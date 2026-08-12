@@ -57,8 +57,8 @@ Tests live in **`__tests__/`** subfolders **inside** the folder that owns the co
 **Knip** includes test files in the default project graph. Its Vitest plugin
 registers `*.spec.*` and `*.test.*` files as entry points automatically, so do
 not exclude them from `project`. The shipped `src` patterns in `knip.json`
-end with `!` for production mode; the unsuffixed `scripts` and `codemods`
-patterns remain comprehensive-only. Run `pnpm exec knip` for the full graph
+end with `!` for production mode; the unsuffixed `scripts` pattern remains
+comprehensive-only. Run `pnpm exec knip` for the full graph
 and `pnpm exec knip --production` for a production-only graph; install both
 dependency sets from the [README setup](../README.md) first.
 

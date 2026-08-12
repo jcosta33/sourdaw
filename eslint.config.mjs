@@ -2359,7 +2359,6 @@ export default defineConfig(
             'src/modules/AudioEngine/wasm/*.js',
             'src/modules/AudioEngine/wasm/*.d.ts',
             'test-debug.mjs',
-            'test-jscodeshift.js',
             'test-manual-fix.mjs',
             'test-manual-fix.ts',
             '**/*.md',

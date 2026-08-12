@@ -6,7 +6,7 @@
     "ignoreBinaries": ["wasm-pack"],
     "workspaces": {
         ".": {
-            "entry": ["src/routes/**/*.tsx!", "scripts/*.ts", "codemods/*.ts"],
+            "entry": ["src/routes/**/*.tsx!", "scripts/*.ts"],
             "project": [
                 "src/**/*.{ts,tsx}!",
                 "!src/setupTests.ts!",

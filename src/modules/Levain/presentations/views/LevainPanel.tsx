@@ -319,6 +319,7 @@ export const LevainPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
                                             defaultValue={0.8}
                                             size="md"
                                             tone="amber"
+                                            aria-label="Master"
                                         />
                                         <span className="text-[8px] uppercase tracking-[0.2em] text-muted-foreground/60">
                                             Master
