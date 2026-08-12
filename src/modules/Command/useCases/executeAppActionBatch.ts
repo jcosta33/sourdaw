@@ -263,6 +263,7 @@ function recordCommittedBatch(
         stableHistoryGroupId = firstHistoryGroupId;
     }
     const batchRestoreTracks: Array<{ trackId: string; trackIndex: number }> = [];
+    const batchRestoreDevices: Array<{ trackId: string; deviceId: string; deviceIndex: number }> = [];
     for (const prepared of stableHistoryGroupId ? historyActions : []) {
         const inverseAction = prepared.description?.inverseAction;
         if (
@@ -272,6 +273,16 @@ function recordCommittedBatch(
             batchRestoreTracks.push({
                 trackId: inverseAction.payload.trackId,
                 trackIndex: inverseAction.payload.trackIndex,
+            });
+        }
+        if (
+            inverseAction?.type === 'restoreDevice' &&
+            !batchRestoreDevices.some((candidate) => candidate.deviceId === inverseAction.payload.deviceSnapshot.id)
+        ) {
+            batchRestoreDevices.push({
+                trackId: inverseAction.payload.trackId,
+                deviceId: inverseAction.payload.deviceSnapshot.id,
+                deviceIndex: inverseAction.payload.deviceIndex,
             });
         }
     }
@@ -299,6 +310,21 @@ function recordCommittedBatch(
                     batchRestoreTracks,
                 },
             };
+        }
+        if (inverseAction?.type === 'restoreDevice' && historyGroupId === stableHistoryGroupId) {
+            const restoreDeviceTrackId = inverseAction.payload.trackId;
+            const siblingDevices = batchRestoreDevices.filter(
+                (candidate) => candidate.trackId === restoreDeviceTrackId
+            );
+            if (siblingDevices.length > 1) {
+                inverseAction = {
+                    ...inverseAction,
+                    payload: {
+                        ...inverseAction.payload,
+                        batchRestoreDevices: siblingDevices,
+                    },
+                };
+            }
         }
         const historyGroupLabel = historyGroupId ? options?.groupLabel : undefined;
         const metadata = {

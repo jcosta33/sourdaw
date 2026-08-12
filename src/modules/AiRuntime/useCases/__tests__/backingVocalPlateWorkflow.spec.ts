@@ -37,12 +37,20 @@ import {
     getPendingActionConfirmation,
 } from '../../stores/pendingActionConfirmationStore';
 import { confirmPendingChatActions } from '../confirmPendingChatActions';
+import { getPlannedActionAffectedIds } from '../getPlannedActionAffectedIds';
 import { sendChatMessage } from '../sendChatMessage';
 
 const PROMPT =
     'Remove reverbs from all backing vocals, create one shared plate bus with EQ before plate reverb and a 250 Hz high-pass, create post-fader sends at -18 dB, automate them to -10 dB over the final four bars of every chorus, protect the lead vocal, render each chorus, and receipt every created, removed, routed, automated, and rendered object.';
 
 type ProviderPlanCall = { name: string; arguments: Record<string, unknown> };
+type RenderOfflineMock = (options: {
+    durationBeats: number;
+    onWarning?: (message: string) => void;
+    sampleRate?: number;
+    startBeat?: number;
+    tailSeconds?: number;
+}) => Promise<AudioBuffer>;
 
 const providerPlan = [
     { name: 'removeDevice', arguments: { deviceId: 'device-bgv-high-reverb' } },
@@ -108,7 +116,7 @@ const runtimeMocks = vi.hoisted(() => {
         getAllSidechainRoutes: vi.fn(() => []),
         removeDeviceFromStrip: vi.fn(),
         removeSend: vi.fn(),
-        renderOffline: vi.fn(),
+        renderOffline: vi.fn<RenderOfflineMock>(),
         resolveToasterPadBinding: vi.fn(() => null),
         setSend: vi.fn(),
         setTrackGain: vi.fn(),
@@ -121,7 +129,6 @@ const runtimeMocks = vi.hoisted(() => {
         wireSidechainRoutes: vi.fn(),
     };
 });
-
 vi.mock('../llmOrchestration/backendResolution/getBackendChain', () => ({
     getBackendChain: () => [runtimeMocks.backend.value],
 }));
@@ -230,13 +237,13 @@ function getHostedUserMessage(requestBody: string): string {
     return userMessage.content;
 }
 
-function useHostedFixture(): void {
+function useHostedProviderFixture(createPlan: (userMessage: string) => ProviderPlanCall[]): void {
     runtimeMocks.backend.value = 'cloud';
     runtimeMocks.fetch.mockImplementation((_input, init) => {
         if (typeof init?.body !== 'string') {
             throw new TypeError('Expected hosted provider request body');
         }
-        const plan = createProviderPlanFromUserMessage(getHostedUserMessage(init.body));
+        const plan = createPlan(getHostedUserMessage(init.body));
         return Promise.resolve(
             new Response(
                 JSON.stringify({
@@ -255,6 +262,10 @@ function useHostedFixture(): void {
             )
         );
     });
+}
+
+function useHostedFixture(): void {
+    useHostedProviderFixture(createProviderPlanFromUserMessage);
 }
 
 function createTrack(id: string, name: string, kind: Track['kind'] = 'audio'): Track {
@@ -1054,19 +1065,21 @@ describe('backing-vocal plate workflow', () => {
             }),
         ]);
         expect(runtimeMocks.renderOffline).toHaveBeenCalledTimes(2);
-        expect(runtimeMocks.renderOffline).toHaveBeenNthCalledWith(1, {
+        const firstRenderInput = runtimeMocks.renderOffline.mock.calls[0]?.[0];
+        const secondRenderInput = runtimeMocks.renderOffline.mock.calls[1]?.[0];
+        expect(typeof firstRenderInput?.onWarning).toBe('function');
+        expect(typeof secondRenderInput?.onWarning).toBe('function');
+        expect(firstRenderInput).toMatchObject({
             durationBeats: 32,
             startBeat: 16,
             sampleRate: 44_100,
             tailSeconds: expectedRenderTailSeconds,
-            onWarning: expect.any(Function),
         });
-        expect(runtimeMocks.renderOffline).toHaveBeenNthCalledWith(2, {
+        expect(secondRenderInput).toMatchObject({
             durationBeats: 32,
             startBeat: 64,
             sampleRate: 44_100,
             tailSeconds: expectedRenderTailSeconds,
-            onWarning: expect.any(Function),
         });
         expect(getAgentSectionRenderArtifacts()).toEqual([
             expect.objectContaining({
@@ -1099,7 +1112,7 @@ describe('backing-vocal plate workflow', () => {
                 actionType: action.type,
                 label: confirmation.actionLabels[index],
                 executionKind: 'project',
-                affectedIds: expect.any(Array),
+                affectedIds: getPlannedActionAffectedIds(action),
                 outcome: 'committed',
             });
         }

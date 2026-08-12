@@ -14,6 +14,7 @@ import { getDrumPreviewBranchesPromptScope } from './agentReference/getDrumPrevi
 import { getDrumRoutingPromptScope } from './agentReference/getDrumRoutingPromptScope';
 import { getMidiOverlapTransformPromptScope } from './agentReference/getMidiOverlapTransformPromptScope';
 import { getMutedEmptyTrackDeletionScope } from './agentReference/getMutedEmptyTrackDeletionScope';
+import { getSharedVocalFxBusesPromptScope } from './agentReference/getSharedVocalFxBusesPromptScope';
 import { getSidechainRoutingPromptScope } from './agentReference/getSidechainRoutingPromptScope';
 import { getSyncopatedArpeggioPromptScope } from './agentReference/getSyncopatedArpeggioPromptScope';
 import { describePlannedAction } from './describePlannedAction';
@@ -157,6 +158,9 @@ function getProtectedUnchangedTracks(
         sidechainRoutingScope.status === 'request'
             ? sidechainRoutingScope.protectedTargets.map(({ id, name }) => ({ id, name }))
             : [];
+    const sharedVocalFxBusesScope = getSharedVocalFxBusesPromptScope(prompt, context);
+    const sharedVocalFxBusesProtections =
+        sharedVocalFxBusesScope.status === 'request' ? sharedVocalFxBusesScope.protectedObjects : [];
     const articulationTransferScope = getArticulationTransferPromptScope(prompt, context);
     const articulationProtections =
         articulationTransferScope.status === 'request'
@@ -192,6 +196,7 @@ function getProtectedUnchangedTracks(
         ...drumRoutingProtections,
         ...drumPreviewBranchProtections,
         ...sidechainRoutingProtections,
+        ...sharedVocalFxBusesProtections,
         ...articulationProtections,
         ...backingVocalPlateProtections,
         ...bassProcessingCopyProtections,
@@ -243,7 +248,8 @@ function describeExactAction(action: AppAction, actions: readonly AppAction[], c
         }
     }
     if (action.type === 'createBus' && action.payload.busId) {
-        return `Create bus "${action.payload.name}" (${action.payload.busId})`;
+        const gain = action.payload.initialGain === 1 ? ' at unity gain' : '';
+        return `Create bus "${action.payload.name}" (${action.payload.busId})${gain}`;
     }
     if (action.type === 'addDevice' && action.payload.deviceId) {
         const trackName = resolveActionTrackName(action.payload.trackId, actions, context);
