@@ -2,7 +2,10 @@ import { captureProjectRevision } from '#/modules/CrdtDocument/useCases';
 
 import { AiProposalInvalidatedError } from '../errors/AiProposalInvalidatedError';
 
+import { createStemImportPromptScope } from './agentReference/createStemImportPromptScope';
+import { discardPreparedStemImportResources } from './agentReference/discardPreparedStemImportResources';
 import { getWholeProjectVibeMixScope } from './agentReference/getWholeProjectVibeMixScope';
+import { prepareStemImport } from './agentReference/prepareStemImport';
 import { getProjectContext } from './getProjectContext';
 import { parsePromptToActions } from './parsePromptToActions';
 
@@ -14,7 +17,30 @@ type PlanPromptActionsInput = {
 export async function planPromptActions(input: PlanPromptActionsInput) {
     const projectRevision = captureProjectRevision();
     const context = getProjectContext();
-    const result = await parsePromptToActions(input.prompt, context, input.signal, projectRevision);
+    const preparedStemImport = await prepareStemImport(input.prompt);
+    if (preparedStemImport?.status === 'cancelled') {
+        return {
+            context,
+            result: { actions: [], rawText: input.prompt, requiresConfirmation: false },
+            projectRevision,
+        };
+    }
+    const stemImportScope =
+        preparedStemImport?.status === 'prepared'
+            ? createStemImportPromptScope(preparedStemImport, projectRevision)
+            : undefined;
+    let result;
+    try {
+        result = await parsePromptToActions(input.prompt, context, input.signal, projectRevision, stemImportScope);
+    } catch (error) {
+        if (stemImportScope) {
+            discardPreparedStemImportResources(stemImportScope.actionSeed.stems);
+        }
+        throw error;
+    }
+    if (stemImportScope && !result.actions.some((action) => action.type === 'importStemSet')) {
+        discardPreparedStemImportResources(stemImportScope.actionSeed.stems);
+    }
 
     const wholeProjectVibeMixScope = getWholeProjectVibeMixScope(input.prompt, context, projectRevision);
     const wholeProjectVibeMixAction = result.actions.find((action) => action.type === 'automateTrackGainRange');
@@ -26,6 +52,9 @@ export async function planPromptActions(input: PlanPromptActionsInput) {
     }
 
     if (input.signal?.aborted !== true && result.actions.length > 0 && captureProjectRevision() !== projectRevision) {
+        if (stemImportScope) {
+            discardPreparedStemImportResources(stemImportScope.actionSeed.stems);
+        }
         throw new AiProposalInvalidatedError();
     }
 

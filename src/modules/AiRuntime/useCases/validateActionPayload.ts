@@ -167,8 +167,45 @@ function isAddNotesNote(param: unknown): param is PayloadOf<'addNotes'>['notes']
     );
 }
 
+const STEM_IMPORT_ROLES = new Set([
+    'kick',
+    'snare',
+    'hi-hat',
+    'tom',
+    'percussion',
+    'bass',
+    'guitar-left',
+    'guitar-right',
+    'keys',
+    'synth',
+    'lead-vocal',
+    'backing-vocal',
+    'fx',
+    'other',
+]);
+
+function isStemImportAssignment(value: unknown): boolean {
+    return (
+        isObj(value) &&
+        hasExactKeys(value, ['stemId', 'role']) &&
+        isNonEmptyString(value.stemId) &&
+        isNonEmptyString(value.role) &&
+        STEM_IMPORT_ROLES.has(value.role)
+    );
+}
+
 const validators = {
     // Track lifecycle
+    importStemSet: (param): param is PayloadOf<'importStemSet'> =>
+        isObj(param) &&
+        hasExactKeys(param, ['selectionId', 'groupName', 'stems']) &&
+        isNonEmptyString(param.selectionId) &&
+        isNonEmptyString(param.groupName) &&
+        param.groupName.length <= 80 &&
+        Array.isArray(param.stems) &&
+        param.stems.length >= 2 &&
+        param.stems.length <= 32 &&
+        param.stems.every(isStemImportAssignment),
     addTrack: (param): param is PayloadOf<'addTrack'> => isObj(param) && isString(param.name) && isString(param.kind),
     removeTrack: (param): param is PayloadOf<'removeTrack'> =>
         isObj(param) &&

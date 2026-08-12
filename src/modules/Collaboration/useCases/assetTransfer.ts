@@ -70,6 +70,21 @@ export class AssetTransfer {
         return hash;
     }
 
+    /** Stage an import asset without taking ownership of an identical existing asset. */
+    async stageLocalAsset(blob: Blob, name: string): Promise<{ hash: string; owned: boolean }> {
+        const hash = await hashBlob(blob);
+        const owned = !this.localAssets.has(hash);
+        if (owned) {
+            this.localAssets.set(hash, { blob, name });
+        }
+        return { hash, owned };
+    }
+
+    /** Remove an application-staged asset that never became project truth. */
+    removeLocalAsset(hash: string): void {
+        this.localAssets.delete(hash);
+    }
+
     /** Check if an asset is available locally. */
     hasAsset(hash: string): boolean {
         return this.localAssets.has(hash);

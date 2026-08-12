@@ -69,6 +69,17 @@ describe('AssetTransfer', () => {
         expect(transfer.getAsset(hash)).toBe(blob);
     });
 
+    it('stages duplicate content without claiming ownership of the existing asset', async () => {
+        const existing = new Blob(['same-content'], { type: 'text/plain' });
+        const duplicate = new Blob(['same-content'], { type: 'text/plain' });
+        const existingHash = await transfer.addLocalAsset(existing, 'existing.txt');
+
+        const staged = await transfer.stageLocalAsset(duplicate, 'duplicate.txt');
+
+        expect(staged).toEqual({ hash: existingHash, owned: false });
+        expect(transfer.getAsset(existingHash)).toBe(existing);
+    });
+
     it('requestAsset broadcasts an asset.request message', () => {
         transfer.requestAsset('sha256:abc');
         expect(peer.broadcastCrdtSync).toHaveBeenCalledWith(

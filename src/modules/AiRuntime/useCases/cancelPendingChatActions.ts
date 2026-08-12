@@ -5,6 +5,8 @@ import {
     updatePendingActionConfirmationStatus,
 } from '../stores/pendingActionConfirmationStore';
 
+import { discardPreparedStemImportResources } from './agentReference/discardPreparedStemImportResources';
+
 type CancelPendingChatActionsInput = {
     confirmationId: string;
 };
@@ -24,6 +26,11 @@ export function cancelPendingChatActions(input: CancelPendingChatActionsInput): 
     }
 
     updatePendingActionConfirmationStatus({ confirmationId: confirmation.id, status: 'cancelled' });
+    for (const action of confirmation.approvalSnapshot.actions) {
+        if (action.type === 'importStemSet') {
+            discardPreparedStemImportResources(action.payload.stems);
+        }
+    }
     updateChatMessage(confirmation.assistantMessageId, {
         pendingActionConfirmationStatus: 'cancelled',
         content: `Cancelled pending actions:\n\n${confirmation.actionLabels.map((label) => `- ${label}`).join('\n')}`,

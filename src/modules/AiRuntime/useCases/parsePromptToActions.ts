@@ -6,6 +6,7 @@ import { getExecutableAppActionToolSchemas, requiresAppActionConfirmation } from
 import { isAiRuntimeConfigurationChangedError } from '../errors/AiRuntimeConfigurationChangedError';
 import { type IntentResult } from '../models/IntentResult';
 import { type RuntimeAction } from '../models/RuntimeAction';
+import { type StemImportPromptScope } from '../models/StemImportCapability';
 import { buildLlmActionSystemPrompt, buildLlmActionUserMessage } from '../transformers/llmActionBridge';
 import { findDeniedPromptIntent } from '../transformers/promptParser/findDeniedPromptIntent';
 import {
@@ -16,6 +17,7 @@ import {
 } from '../transformers/promptParser/parsing';
 
 import { bridgeGroundedLlmToolCalls } from './agentReference/bridgeGroundedLlmToolCalls';
+import { bridgeStemImportPlan } from './agentReference/bridgeStemImportPlan';
 import { getArticulationTransferPromptScope } from './agentReference/getArticulationTransferPromptScope';
 import { getBackingVocalPlatePromptScope } from './agentReference/getBackingVocalPlatePromptScope';
 import { getBassProcessingCopyPromptScope } from './agentReference/getBassProcessingCopyPromptScope';
@@ -84,7 +86,8 @@ export const parsePromptToActions = inject({ logger })(
             prompt: string,
             context: ProjectContext,
             signal?: AbortSignal,
-            projectRevision?: string
+            projectRevision?: string,
+            stemImportScope?: StemImportPromptScope
         ): Promise<IntentResult> {
             const normalized = prompt.toLowerCase().trim();
 
@@ -170,6 +173,7 @@ export const parsePromptToActions = inject({ logger })(
                         midiOverlapTransformCapability,
                         sidechainRoutingCapability,
                         sharedVocalFxBusesCapability,
+                        stemImportCapability: stemImportScope?.capability,
                         syncopatedArpeggioCapability,
                         wholeProjectVibeMixCapability,
                     }),
@@ -191,6 +195,31 @@ export const parsePromptToActions = inject({ logger })(
                     };
                 }
                 const toolCalls = planningOutcome.toolCalls;
+                if (stemImportScope) {
+                    const stemImport = bridgeStemImportPlan(toolCalls, stemImportScope);
+                    if (stemImport.status === 'rejected') {
+                        return {
+                            actions: [],
+                            rawText: prompt,
+                            requiresConfirmation: false,
+                            rejectionReason: `Provider action rejected: importStemSet: ${stemImport.reason}`,
+                        };
+                    }
+                    if (validateActions([stemImport.providerAction]).length !== 1) {
+                        return {
+                            actions: [],
+                            rawText: prompt,
+                            requiresConfirmation: false,
+                            rejectionReason: 'Provider action failed runtime validation: importStemSet',
+                        };
+                    }
+                    return {
+                        actions: [stemImport.action],
+                        rawText: prompt,
+                        requiresConfirmation: true,
+                        executionMode: 'atomic',
+                    };
+                }
                 const markerSignatures = (markerStore.value?.markers ?? []).map((marker) => ({
                     beat: marker.beat,
                     color: marker.color,

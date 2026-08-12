@@ -427,6 +427,40 @@ export type GeneratedMidiStateGuard = {
 
 export type DrumPreviewRecipe = 'ghost-note-pocket' | 'half-time-space' | 'syncopated-hats';
 
+export type StemImportRole =
+    | 'kick'
+    | 'snare'
+    | 'hi-hat'
+    | 'tom'
+    | 'percussion'
+    | 'bass'
+    | 'guitar-left'
+    | 'guitar-right'
+    | 'keys'
+    | 'synth'
+    | 'lead-vocal'
+    | 'backing-vocal'
+    | 'fx'
+    | 'other';
+
+export type StemImportTrackSnapshot = {
+    readonly stemId: string;
+    readonly sourceName: string;
+    readonly role: StemImportRole;
+    readonly sourceTempo: number;
+    readonly durationSeconds: number;
+    readonly audioBufferId: string;
+    readonly assetHash?: string;
+    readonly stagedAssetOwned?: boolean;
+    readonly trackId: string;
+    readonly trackName: string;
+    readonly trackGain: number;
+    readonly trackPan: number;
+    readonly trackColor?: string;
+    readonly trackAlternativeId?: string;
+    readonly clipId: string;
+};
+
 export type DrumPreviewSourceClipSnapshot = {
     readonly trackId: string;
     readonly trackName: string;
@@ -530,6 +564,27 @@ type GeneratedMidiReplayOperation =
       };
 
 export type AppAction =
+    | {
+          type: 'importStemSet';
+          payload: {
+              selectionId: string;
+              groupName: string;
+              projectTempo: number;
+              folderId: string;
+              folderColor?: string;
+              folderAlternativeId?: string;
+              stems: StemImportTrackSnapshot[];
+          };
+      }
+    | {
+          /** Guarded inverse of one atomic stem-set import. */
+          type: 'discardImportedStemSet';
+          payload: {
+              folderId: string;
+              stemTrackIds: string[];
+              guards: Array<{ trackId: string; generatedMidiStateGuard: GeneratedMidiStateGuard }>;
+          };
+      }
     | {
           type: 'addTrack';
           payload: {

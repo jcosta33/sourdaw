@@ -17,6 +17,7 @@ import {
     updatePendingActionConfirmationStatus,
 } from '../stores/pendingActionConfirmationStore';
 
+import { discardPreparedStemImportResources } from './agentReference/discardPreparedStemImportResources';
 import { getPlannedActionAffectedIds } from './getPlannedActionAffectedIds';
 import { notifyAiChange } from './notifyAiChange';
 
@@ -480,7 +481,16 @@ export async function confirmPendingChatActions(
         error: batchResult.reason,
         content: `Failed to execute confirmed actions atomically:\n\n${batchResult.reason}`,
     });
+    discardStemImportResources(confirmation);
     return { status: 'failed', reason: batchResult.reason };
+}
+
+function discardStemImportResources(confirmation: PendingAppActionConfirmation): void {
+    for (const action of confirmation.approvalSnapshot.actions) {
+        if (action.type === 'importStemSet') {
+            discardPreparedStemImportResources(action.payload.stems);
+        }
+    }
 }
 
 function failApprovalPreflight(
@@ -497,6 +507,7 @@ function failApprovalPreflight(
         error: reason,
         content: `The confirmed command was rejected before execution: ${reason}`,
     });
+    discardStemImportResources(confirmation);
     return { status: 'failed', reason };
 }
 
@@ -513,6 +524,7 @@ function invalidatePendingConfirmation(confirmation: PendingAppActionConfirmatio
         content:
             'This proposal was not executed because the project changed after it was created. Review the current project and submit the command again.',
     });
+    discardStemImportResources(confirmation);
     return { status: 'invalidated', reason };
 }
 
@@ -526,5 +538,6 @@ function cancelAcceptedConfirmation(confirmation: PendingAppActionConfirmation):
         error: undefined,
         content: 'Command cancelled before it committed. No project changes were applied.',
     });
+    discardStemImportResources(confirmation);
     return { status: 'cancelled' };
 }
