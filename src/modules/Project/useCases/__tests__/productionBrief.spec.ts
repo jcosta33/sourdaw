@@ -1,10 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { defaultTrackState } from '#/modules/Arrangement/stores';
-import { addClip, addSection, createTrack, setTrackStoreState } from '#/modules/Arrangement/useCases';
+import { addClip, addMarker, addSection, createTrack, setTrackStoreState } from '#/modules/Arrangement/useCases';
 import { addAutomationLane, addAutomationPoint } from '#/modules/Automation/useCases';
 import { clearHandlerRegistry, registerHandlerMap } from '#/modules/Command/stores';
 import { clearUndoHistory, executeAppAction, redo, undo } from '#/modules/Command/useCases';
+import { addChordEvent, clearChordTrack } from '#/modules/MIDI/useCases';
 
 import { handleSetProductionBrief } from '../../handlers/project/handleSetProductionBrief';
 import { createDefaultProductionBrief, isProductionBrief, type ProductionBrief } from '../../models/ProductionBrief';
@@ -53,6 +54,9 @@ describe('production brief', () => {
         });
         addSection(32, 48, 'Chorus One', 'section-chorus');
         addSection(64, 80, 'Outro', 'section-outro');
+        addMarker(40, 'Chorus hit', 'marker-chorus');
+        clearChordTrack();
+        addChordEvent(38, 0, 'major', 4, 'chord-chorus');
         addClip({
             id: 'clip-3',
             trackId: 'track-guitar',
@@ -461,6 +465,25 @@ describe('production brief', () => {
         expect(
             doesProductionBriefAllowActionBatch([
                 { type: 'setAutomationLaneEnabled', payload: { laneId: 'lane-drums-gain', enabled: false } },
+            ])
+        ).toBe(false);
+        expect(
+            doesProductionBriefAllowActionBatch([
+                { type: 'removeAutomationPoint', payload: { laneId: 'lane-drums-gain', pointIndex: 0 } },
+            ])
+        ).toBe(false);
+        expect(
+            doesProductionBriefAllowActionBatch([{ type: 'removeMarker', payload: { markerId: 'marker-chorus' } }])
+        ).toBe(false);
+        expect(
+            doesProductionBriefAllowActionBatch([{ type: 'removeSection', payload: { sectionId: 'section-chorus' } }])
+        ).toBe(false);
+        expect(
+            doesProductionBriefAllowActionBatch([{ type: 'removeChordEvent', payload: { eventId: 'chord-chorus' } }])
+        ).toBe(false);
+        expect(
+            doesProductionBriefAllowActionBatch([
+                { type: 'moveChordEvent', payload: { eventId: 'chord-chorus', beat: 60 } },
             ])
         ).toBe(false);
         expect(

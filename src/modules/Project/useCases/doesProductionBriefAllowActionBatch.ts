@@ -1,5 +1,6 @@
 import { markerStore, trackStore } from '#/modules/Arrangement/stores';
 import { automationStore } from '#/modules/Automation/stores';
+import { chordTrackStore } from '#/modules/MIDI/stores';
 import { type AppAction } from '#/utils/handlerContract';
 
 import { type ProductionBriefScope } from '../models/ProductionBrief';
@@ -111,6 +112,12 @@ function referencedAutomationOverlapsRange(
     collectActionStrings(action.payload, identifiers);
     return (
         automationStore.value?.lanes.some((lane) => {
+            if (action.type === 'removeAutomationPoint' && action.payload.laneId === lane.id) {
+                const target = action.payload.pointId
+                    ? lane.points.find((point) => point.id === action.payload.pointId)
+                    : lane.points[action.payload.pointIndex];
+                return Boolean(target && target.beat >= scope.startBeat && target.beat < scope.endBeat);
+            }
             const referencedPoints = [...lane.points, ...(lane.trimPoints ?? []), ...(lane.ghostPoints ?? [])].filter(
                 (point) => point.id && identifiers.has(point.id)
             );
@@ -133,12 +140,77 @@ function referencedAutomationOverlapsRange(
     );
 }
 
+function referencedMarkerOrSectionOverlapsRange(
+    action: AppAction,
+    scope: Extract<ProductionBriefScope, { kind: 'range' }>
+): boolean {
+    const identifiers = new Set<string>();
+    collectActionStrings(action.payload, identifiers);
+    return Boolean(
+        markerStore.value?.markers.some(
+            (marker) => identifiers.has(marker.id) && marker.beat >= scope.startBeat && marker.beat < scope.endBeat
+        ) ||
+        markerStore.value?.sections.some(
+            (section) => identifiers.has(section.id) && intervalOverlapsRange(section.startBeat, section.endBeat, scope)
+        )
+    );
+}
+
+function chordEventOverlapsRange(
+    event: { beat: number; duration: number },
+    scope: Extract<ProductionBriefScope, { kind: 'range' }>
+): boolean {
+    return intervalOverlapsRange(event.beat, event.beat + event.duration, scope);
+}
+
+function chordActionOverlapsRange(action: AppAction, scope: Extract<ProductionBriefScope, { kind: 'range' }>): boolean {
+    const currentEvents = chordTrackStore.value?.events ?? [];
+    if (
+        action.type === 'clearChordTrack' ||
+        action.type === 'toggleChordTrack' ||
+        action.type === 'restoreChordTrackState'
+    ) {
+        if (currentEvents.some((event) => chordEventOverlapsRange(event, scope))) {
+            return true;
+        }
+        if (action.type === 'restoreChordTrackState') {
+            return action.payload.replacement.events.some((event) => chordEventOverlapsRange(event, scope));
+        }
+        return false;
+    }
+    if (action.type === 'addChordEvent') {
+        return chordEventOverlapsRange(
+            { beat: Math.max(0, action.payload.beat), duration: action.payload.duration ?? 4 },
+            scope
+        );
+    }
+    if (action.type !== 'moveChordEvent' && action.type !== 'updateChordEvent' && action.type !== 'removeChordEvent') {
+        return false;
+    }
+    const current = currentEvents.find((event) => event.id === action.payload.eventId);
+    if (!current) {
+        return false;
+    }
+    if (chordEventOverlapsRange(current, scope)) {
+        return true;
+    }
+    if (action.type === 'moveChordEvent') {
+        return chordEventOverlapsRange({ ...current, beat: Math.max(0, action.payload.beat) }, scope);
+    }
+    if (action.type === 'updateChordEvent' && action.payload.duration !== undefined) {
+        return chordEventOverlapsRange({ ...current, duration: action.payload.duration }, scope);
+    }
+    return false;
+}
+
 function actionOverlapsRange(action: AppAction, scope: Extract<ProductionBriefScope, { kind: 'range' }>): boolean {
     return (
         valueOverlapsRange(action.payload, scope) ||
         referencedClipOverlapsRange(action, scope) ||
         projectedClipOverlapsRange(action, scope) ||
-        referencedAutomationOverlapsRange(action, scope)
+        referencedAutomationOverlapsRange(action, scope) ||
+        referencedMarkerOrSectionOverlapsRange(action, scope) ||
+        chordActionOverlapsRange(action, scope)
     );
 }
 
