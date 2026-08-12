@@ -507,6 +507,9 @@ export class FermenterInstance {
         return ret >>> 0;
     }
     /**
+     * `max_voices` is the instance-wide playable note-voice ceiling, clamped
+     * to 1..=64 across all layers. Each voice can render up to 16 unison
+     * oscillators; bounded steal tails overlap only for de-clicking.
      * @param {number} sample_rate
      * @param {number} max_voices
      */

@@ -540,11 +540,10 @@ export function buildDevices({ dsp, chamber, scoring, ring, readBlockAcquire, on
     }
 
     // -- Fermenter — flagship hybrid synth ---------------------------------
-    // `fermenterProcessor.ts:170` asks for 32 voices and does not get them:
-    // `MasterSynth::new` discards the argument and a layer's pool is a fixed
-    // 16, so one layer — the shipped patch — tops out at 16 sounding voices.
+    // Production asks for an instance-wide ceiling of 32 voices. The shipped
+    // one-layer patch can use that whole ceiling.
     if (wanted('fermenter')) {
-        const struck = 16;
+        const struck = 32;
         const instance = new dsp.FermenterInstance(SAMPLE_RATE, 32);
         instance.set_param('cutoff', 4000);
         instance.set_param('resonance', 0.4);
@@ -554,12 +553,12 @@ export function buildDevices({ dsp, chamber, scoring, ring, readBlockAcquire, on
         devices.push(
             heldInstrument({
                 id: 'fermenter',
-                label: 'Fermenter (16 sounding voices, 1 layer)',
-                note: 'fermenterProcessor.ts:170 constructs 32; one layer can hold 16, which is production',
+                label: 'Fermenter (32 sounding voices, 1 layer)',
+                note: 'fermenterProcessor.ts constructs an instance-wide ceiling of 32 voices',
                 instance,
                 module: dsp,
                 struck,
-                expectSounding: 16,
+                expectSounding: 32,
                 activeVoices: () => instance.active_voices(),
             })
         );
