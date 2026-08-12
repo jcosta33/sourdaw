@@ -21,8 +21,16 @@ export type PullRequest = {
     isDraft: boolean;
     headRefName: string;
     headRefOid: string;
-    headRepositoryOwner: { login: string } | null;
+    headRepository: string | null;
     mergedAt: string | null;
+    body: string | null;
+};
+
+export type CampaignIssue = {
+    number: number;
+    state: string;
+    body: string;
+    labels: Array<{ name: string }>;
 };
 
 export type LaneRemovalPort = {
@@ -31,9 +39,13 @@ export type LaneRemovalPort = {
     currentDirectory: () => string;
     worktrees: () => Worktree[];
     dirty: (path: string) => boolean;
+    ignored: (path: string) => string[];
     operation: (path: string) => string | undefined;
-    remoteHead: (branch: string) => string;
+    remoteHead: (branch: string) => string | undefined;
     pullRequests: (branch: string) => PullRequest[];
+    campaignIssues: (numbers: number[]) => CampaignIssue[];
+    lock: (path: string) => void;
+    unlock: (path: string) => void;
     remove: (path: string) => void;
 };
 
@@ -51,30 +63,53 @@ function inside(parent: string, candidate: string): boolean {
     return path === '' || (!path.startsWith('..') && !isAbsolute(path));
 }
 
-export function parseWorktrees(value: string): Worktree[] {
-    const records = value.split('\0\0').filter((record) => record !== '');
-    return records.map((record) => {
-        const fields = record.split('\0');
-        const worktree = fields.find((field) => field.startsWith('worktree '))?.slice('worktree '.length);
-        const head = fields.find((field) => field.startsWith('HEAD '))?.slice('HEAD '.length);
-        if (worktree === undefined || head === undefined) {
-            fail('git returned malformed worktree state');
-        }
-        const branch = fields.find((field) => field.startsWith('branch '))?.slice('branch refs/heads/'.length);
-        return {
-            path: worktree,
-            head,
-            branch,
-            bare: fields.includes('bare'),
-            detached: fields.includes('detached'),
-            locked: fields.some((field) => field === 'locked' || field.startsWith('locked ')),
-            prunable: fields.some((field) => field === 'prunable' || field.startsWith('prunable ')),
-        };
-    });
+function issueReferences(body: string | null): number[] {
+    if (body === null) {
+        return [];
+    }
+    const references = [...body.matchAll(/(?:^|\s)#(\d+)\b/g)].map((match) => Number(match[1]));
+    return [...new Set(references.filter((number) => Number.isSafeInteger(number) && number > 0))];
 }
 
-export function removeLane(target: string, port: LaneRemovalPort): void {
-    port.fetch();
+function mentions(body: string, number: number): boolean {
+    return new RegExp(`(?:^|\\D)#${number}(?!\\d)`).test(body);
+}
+
+function disposableIgnored(path: string): boolean {
+    const normalized = path.replaceAll('\\', '/');
+    return (
+        normalized === '.DS_Store' ||
+        normalized.endsWith('/.DS_Store') ||
+        /(?:^|\/)(?:node_modules|dist|coverage|target|playwright-report|test-results)(?:\/|$)/.test(normalized) ||
+        /^\.agents\/ui-scripts\/[^/]+\.png$/.test(normalized)
+    );
+}
+
+export function parseWorktrees(value: string): Worktree[] {
+    return value
+        .split('\0\0')
+        .filter((record) => record !== '')
+        .map((record) => {
+            const fields = record.split('\0');
+            const worktree = fields.find((field) => field.startsWith('worktree '))?.slice('worktree '.length);
+            const head = fields.find((field) => field.startsWith('HEAD '))?.slice('HEAD '.length);
+            if (worktree === undefined || head === undefined) {
+                fail('git returned malformed worktree state');
+            }
+            const branch = fields.find((field) => field.startsWith('branch '))?.slice('branch refs/heads/'.length);
+            return {
+                path: worktree,
+                head,
+                branch,
+                bare: fields.includes('bare'),
+                detached: fields.includes('detached'),
+                locked: fields.some((field) => field === 'locked' || field.startsWith('locked ')),
+                prunable: fields.some((field) => field === 'prunable' || field.startsWith('prunable ')),
+            };
+        });
+}
+
+function identifyLane(target: string, port: LaneRemovalPort): Worktree {
     const worktrees = port.worktrees();
     const root = worktrees[0];
     if (root === undefined) {
@@ -87,7 +122,8 @@ export function removeLane(target: string, port: LaneRemovalPort): void {
     if (target === root.path) {
         fail('refusing to remove the primary worktree');
     }
-    if (!inside(join(root.path, '.agents', 'worktrees'), target)) {
+    const agentRoot = join(root.path, '.agents', 'worktrees');
+    if (target === agentRoot || !inside(agentRoot, target)) {
         fail(`${target} is not an agent worktree`);
     }
     if (inside(target, port.currentDirectory())) {
@@ -99,38 +135,90 @@ export function removeLane(target: string, port: LaneRemovalPort): void {
     if (lane.locked) {
         fail('worktree is locked or shared');
     }
+    return lane;
+}
+
+function validateOwnership(target: string, expected: Worktree, repository: string, port: LaneRemovalPort): void {
+    const current = port.worktrees().find((worktree) => worktree.path === target);
+    if (
+        current === undefined ||
+        current.head !== expected.head ||
+        current.branch !== expected.branch ||
+        current.bare ||
+        current.detached ||
+        current.prunable ||
+        !current.locked
+    ) {
+        fail('worktree identity changed during removal');
+    }
     if (port.dirty(target)) {
         fail('worktree is dirty');
+    }
+    const unsafeIgnored = port.ignored(target).filter((path) => !disposableIgnored(path));
+    if (unsafeIgnored.length > 0) {
+        fail(`worktree contains ignored data: ${unsafeIgnored.slice(0, 3).join(', ')}`);
     }
     const operation = port.operation(target);
     if (operation !== undefined) {
         fail(`worktree has an active ${operation}`);
     }
 
-    const [owner] = port.repository().split('/');
-    if (owner === undefined || owner === '') {
-        fail('cannot identify the repository owner');
+    const branch = expected.branch;
+    if (branch === undefined) {
+        fail('worktree ownership is unknown');
     }
-    const pullRequests = port.pullRequests(lane.branch);
+    const pullRequests = port.pullRequests(branch);
     if (pullRequests.length !== 1) {
-        fail(`branch ${lane.branch} does not identify one pull request`);
+        fail(`branch ${branch} does not identify one pull request`);
     }
     const pullRequest = pullRequests[0];
     if (pullRequest === undefined) {
-        fail(`branch ${lane.branch} has no pull request`);
+        fail(`branch ${branch} has no pull request`);
     }
-    if (pullRequest.headRepositoryOwner?.login !== owner) {
+    if (pullRequest.headRepository?.toLowerCase() !== repository.toLowerCase()) {
         fail(`PR #${pullRequest.number} is foreign`);
     }
     if (pullRequest.state !== 'MERGED' || pullRequest.mergedAt === null || pullRequest.isDraft) {
         fail(`PR #${pullRequest.number} is still active`);
     }
-    const remoteHead = port.remoteHead(lane.branch);
-    if (pullRequest.headRefName !== lane.branch || pullRequest.headRefOid !== lane.head || remoteHead !== lane.head) {
-        fail(`branch ${lane.branch} head ownership is unproven`);
+    const campaigns = port
+        .campaignIssues(issueReferences(pullRequest.body))
+        .filter(
+            (issue) =>
+                issue.state === 'CLOSED' &&
+                issue.labels.some((label) => label.name === 'epic') &&
+                mentions(issue.body, pullRequest.number)
+        );
+    if (campaigns.length !== 1) {
+        fail(`PR #${pullRequest.number} has no closed campaign authority`);
     }
+    const remoteHead = port.remoteHead(branch);
+    if (
+        pullRequest.headRefName !== branch ||
+        pullRequest.headRefOid !== expected.head ||
+        (remoteHead !== undefined && remoteHead !== expected.head)
+    ) {
+        fail(`branch ${branch} head ownership is unproven`);
+    }
+}
 
-    port.remove(target);
+export function removeLane(target: string, port: LaneRemovalPort): void {
+    port.fetch();
+    const repository = port.repository();
+    const lane = identifyLane(target, port);
+    port.lock(target);
+    let locked = true;
+    try {
+        validateOwnership(target, lane, repository, port);
+        validateOwnership(target, lane, repository, port);
+        port.unlock(target);
+        locked = false;
+        port.remove(target);
+    } finally {
+        if (locked) {
+            port.unlock(target);
+        }
+    }
 }
 
 function capture(command: string, args: string[]): string {
@@ -163,13 +251,22 @@ function parseJson<Value>(value: string, label: string): Value {
 }
 
 export function shellPort(shell: ShellRunner = { capture, run }): LaneRemovalPort {
-    const repository = () => shell.capture('gh', ['repo', 'view', '--json', 'nameWithOwner', '--jq', '.nameWithOwner']);
+    let cachedRepository: string | undefined;
+    const repository = () => {
+        cachedRepository ??= shell.capture('gh', ['repo', 'view', '--json', 'nameWithOwner', '--jq', '.nameWithOwner']);
+        return cachedRepository;
+    };
     return {
         fetch: () => shell.run('git', ['fetch', '--prune', 'origin']),
         repository,
         currentDirectory: () => realpathSync(process.cwd()),
         worktrees: () => parseWorktrees(shell.capture('git', ['worktree', 'list', '--porcelain', '-z'])),
         dirty: (path) => shell.capture('git', ['-C', path, 'status', '--porcelain=v1', '--untracked-files=all']) !== '',
+        ignored: (path) =>
+            shell
+                .capture('git', ['-C', path, 'ls-files', '--others', '--ignored', '--exclude-standard', '--directory'])
+                .split('\n')
+                .filter((candidate) => candidate !== ''),
         operation: (path) => {
             const candidates = [
                 ['merge', 'MERGE_HEAD'],
@@ -181,13 +278,21 @@ export function shellPort(shell: ShellRunner = { capture, run }): LaneRemovalPor
             ] as const;
             for (const [name, marker] of candidates) {
                 const markerPath = shell.capture('git', ['-C', path, 'rev-parse', '--git-path', marker]);
-                if (existsSync(markerPath)) {
+                const absoluteMarker = isAbsolute(markerPath) ? markerPath : resolve(path, markerPath);
+                if (existsSync(absoluteMarker)) {
                     return name;
                 }
             }
             return undefined;
         },
-        remoteHead: (branch) => shell.capture('git', ['rev-parse', '--verify', `refs/remotes/origin/${branch}`]),
+        remoteHead: (branch) => {
+            const head = shell.capture('git', [
+                'for-each-ref',
+                '--format=%(objectname)',
+                `refs/remotes/origin/${branch}`,
+            ]);
+            return head === '' ? undefined : head;
+        },
         pullRequests: (branch) => {
             const nameWithOwner = repository();
             const [owner] = nameWithOwner.split('/');
@@ -200,8 +305,9 @@ export function shellPort(shell: ShellRunner = { capture, run }): LaneRemovalPor
                         number: number;
                         state: string;
                         draft: boolean;
-                        head: { ref: string; sha: string; repo: { owner: { login: string } } | null };
+                        head: { ref: string; sha: string; repo: { full_name: string } | null };
                         merged_at: string | null;
+                        body: string | null;
                     }>
                 >
             >(
@@ -219,10 +325,20 @@ export function shellPort(shell: ShellRunner = { capture, run }): LaneRemovalPor
                 isDraft: pullRequest.draft,
                 headRefName: pullRequest.head.ref,
                 headRefOid: pullRequest.head.sha,
-                headRepositoryOwner: pullRequest.head.repo?.owner ?? null,
+                headRepository: pullRequest.head.repo?.full_name ?? null,
                 mergedAt: pullRequest.merged_at,
+                body: pullRequest.body,
             }));
         },
+        campaignIssues: (numbers) =>
+            numbers.map((number) =>
+                parseJson<CampaignIssue>(
+                    shell.capture('gh', ['issue', 'view', String(number), '--json', 'number,state,body,labels']),
+                    `issue #${number}`
+                )
+            ),
+        lock: (path) => shell.run('git', ['worktree', 'lock', '--reason', `lane-remove:${process.pid}`, path]),
+        unlock: (path) => shell.run('git', ['worktree', 'unlock', path]),
         remove: (path) => shell.run('git', ['worktree', 'remove', path]),
     };
 }
@@ -237,8 +353,7 @@ function main(): number {
         if (args.length !== 1 || args[0] === undefined || args[0].startsWith('--')) {
             fail('usage: pnpm lane:remove <worktree-path>');
         }
-        const target = realpathSync(resolve(process.cwd(), args[0]));
-        removeLane(target, shellPort());
+        removeLane(realpathSync(resolve(process.cwd(), args[0])), shellPort());
         return 0;
     } catch (error) {
         console.error(error instanceof Error ? error.message : error);
