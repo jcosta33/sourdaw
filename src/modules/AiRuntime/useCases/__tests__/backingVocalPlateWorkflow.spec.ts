@@ -1650,8 +1650,12 @@ describe('backing-vocal plate workflow', () => {
             { originalGain: 0.61, mix: 0.3, track: committedBackingLow, busId: reverbBusId },
         ]) {
             const send = balance.track?.sends.find((candidate) => candidate.busId === balance.busId);
+            const bus = committedTracks.find((track) => track.id === balance.busId);
             expect(balance.track?.gain).toBeCloseTo(balance.originalGain * (1 - balance.mix), 12);
-            expect((balance.track?.gain ?? 0) * (send?.level ?? 0)).toBeCloseTo(balance.originalGain * balance.mix, 12);
+            expect((balance.track?.gain ?? 0) * (send?.level ?? 0) * (bus?.gain ?? 0)).toBeCloseTo(
+                balance.originalGain * balance.mix,
+                12
+            );
         }
         expect(delayBus?.devices[0]).toMatchObject({
             id: delayDeviceAction.payload.deviceId,
@@ -1664,6 +1668,7 @@ describe('backing-vocal plate workflow', () => {
                 'delay-mix': 1,
             },
         });
+        expect(delayBus?.gain).toBe(1);
         expect(reverbBus?.devices[0]).toMatchObject({
             id: reverbDeviceAction.payload.deviceId,
             type: 'builtin-reverb',
@@ -1676,6 +1681,7 @@ describe('backing-vocal plate workflow', () => {
                 'rev-mix': 1,
             },
         });
+        expect(reverbBus?.gain).toBe(1);
         expect(committedTracks.find((track) => track.id === 'track-drums')).toEqual(originalTracks[4]);
         expect(committedTracks.find((track) => track.id === 'bus-vocal-parallel')).toEqual(originalTracks[5]);
         const receipt = chatStore.value?.messages.find(

@@ -7,6 +7,7 @@ import { publishTrackAdded } from '../../useCases/publishTrackAdded';
 type AddTrackAction = {
     payload: {
         color?: string;
+        gain?: number;
         id?: string;
         initialAlternativeId?: string;
         name: string;

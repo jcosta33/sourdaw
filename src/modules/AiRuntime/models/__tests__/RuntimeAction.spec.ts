@@ -114,6 +114,10 @@ describe('RuntimeAction', () => {
             'automateTrackGainRange',
         ]);
         expectTypeOf<PayloadHasKey<'duplicateClip', 'targetClipId'>>().toEqualTypeOf<false>();
+        expectTypeOf<PayloadHasKey<'addTrack', 'id'>>().toEqualTypeOf<false>();
+        expectTypeOf<PayloadHasKey<'addTrack', 'color'>>().toEqualTypeOf<false>();
+        expectTypeOf<PayloadHasKey<'addTrack', 'initialAlternativeId'>>().toEqualTypeOf<false>();
+        expectTypeOf<PayloadHasKey<'addTrack', 'gain'>>().toEqualTypeOf<false>();
         expectTypeOf<PayloadHasKey<'addAutomationLane', 'laneId'>>().toEqualTypeOf<false>();
         expectTypeOf<PayloadHasKey<'addAutomationPoint', 'pointId'>>().toEqualTypeOf<false>();
         expectTypeOf<PayloadHasKey<'removeAutomationPoint', 'pointId'>>().toEqualTypeOf<false>();

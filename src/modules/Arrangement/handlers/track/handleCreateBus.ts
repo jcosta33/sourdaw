@@ -8,6 +8,7 @@ type CreateBusAction = {
     payload: {
         busId?: string;
         color?: string;
+        initialGain?: number;
         initialAlternativeId?: string;
         name: string;
     };
@@ -31,6 +32,7 @@ function toAddTrackAction(action: CreateBusAction): Parameters<typeof handleAddT
             name: action.payload.name,
             kind: 'bus',
             ...(action.payload.color !== undefined ? { color: action.payload.color } : {}),
+            ...(action.payload.initialGain !== undefined ? { gain: action.payload.initialGain } : {}),
             ...(action.payload.initialAlternativeId !== undefined
                 ? { initialAlternativeId: action.payload.initialAlternativeId }
                 : {}),

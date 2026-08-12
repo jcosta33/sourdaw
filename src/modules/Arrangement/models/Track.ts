@@ -219,6 +219,7 @@ let trackColorCounter = 0;
 
 export function createTrack(input: {
     color?: string;
+    gain?: number;
     id?: string;
     initialAlternativeId?: string;
     name: string;
@@ -250,7 +251,7 @@ export function createTrack(input: {
         muted: false,
         soloed: false,
         armed: false,
-        gain: 0.8,
+        gain: input.gain ?? 0.8,
         pan: 0,
         color,
         clips: [],

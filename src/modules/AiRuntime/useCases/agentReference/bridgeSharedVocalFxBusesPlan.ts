@@ -202,7 +202,7 @@ export function bridgeSharedVocalFxBusesPlan({
         status: 'accepted',
         actions,
         identities: groupIdentities.flatMap(({ busId, deviceId }, index) => [
-            { actionType: 'createBus' as const, actionOrdinal: index, busId },
+            { actionType: 'createBus' as const, actionOrdinal: index, busId, initialGain: 1 },
             { actionType: 'addDevice' as const, actionOrdinal: index, deviceId },
         ]),
     };

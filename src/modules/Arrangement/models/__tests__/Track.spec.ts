@@ -37,6 +37,12 @@ describe('createTrack', () => {
         expect(track.activeAlternativeId).toBe('bus-1-alt-default');
         expect(track.alternatives).toEqual([{ id: 'bus-1-alt-default', name: 'Alternative 1', clips: [] }]);
     });
+
+    it('uses an application-owned initial gain when creating a track', () => {
+        const track = createTrack({ name: 'Unity Bus', kind: 'bus', gain: 1 });
+
+        expect(track.gain).toBe(1);
+    });
 });
 
 describe('normalizeTrack', () => {

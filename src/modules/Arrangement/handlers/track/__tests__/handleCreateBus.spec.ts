@@ -4,6 +4,7 @@ type AddTrackAction = {
     type: 'addTrack';
     payload: {
         color?: string;
+        gain?: number;
         id?: string;
         initialAlternativeId?: string;
         kind: string;
@@ -61,7 +62,7 @@ describe('handleCreateBus', () => {
         });
         const action = {
             type: 'createBus' as const,
-            payload: { name: 'Reverb Bus', busId: 'bus-1' },
+            payload: { name: 'Reverb Bus', busId: 'bus-1', initialGain: 1 },
         };
 
         const result = await handleCreateBus.execute(action);
@@ -73,11 +74,13 @@ describe('handleCreateBus', () => {
                 id: 'bus-1',
                 name: 'Reverb Bus',
                 kind: 'bus',
+                gain: 1,
             },
         });
         expect(action.payload).toEqual({
             name: 'Reverb Bus',
             busId: 'bus-1',
+            initialGain: 1,
             color: 'oklch(0.7 0.1 200)',
             initialAlternativeId: 'alt-created',
         });
@@ -91,6 +94,7 @@ describe('handleCreateBus', () => {
                 id: 'bus-1',
                 name: 'Reverb Bus',
                 kind: 'bus',
+                gain: 1,
                 color: 'oklch(0.7 0.1 200)',
                 initialAlternativeId: 'alt-created',
             },

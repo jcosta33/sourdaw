@@ -24,6 +24,18 @@ describe('materializeBatchLocalActionIdentities', () => {
         });
     });
 
+    it('adds an application-owned initial bus gain without exposing it to the provider action', () => {
+        const result = materializeBatchLocalActionIdentities(
+            [{ type: 'createBus', payload: { name: 'Vocal Delay' } }],
+            [{ actionType: 'createBus', actionOrdinal: 0, busId, initialGain: 1 }]
+        );
+
+        expect(result).toEqual({
+            status: 'accepted',
+            actions: [{ type: 'createBus', payload: { name: 'Vocal Delay', busId, initialGain: 1 } }],
+        });
+    });
+
     it('adds an application-owned device ID only after the matching provider action is validated', () => {
         const result = materializeBatchLocalActionIdentities(
             [{ type: 'addDevice', payload: { trackId: busId, deviceType: 'builtin-reverb' } }],
@@ -49,6 +61,10 @@ describe('materializeBatchLocalActionIdentities', () => {
         {
             identity: { actionType: 'createBus' as const, actionOrdinal: 2, busId },
             reason: 'Batch-local action identity has no validated createBus action',
+        },
+        {
+            identity: { actionType: 'createBus' as const, actionOrdinal: 0, busId, initialGain: 3 },
+            reason: 'Invalid or duplicate batch-local action identity',
         },
     ])('rejects identity metadata that cannot correspond to a validated createBus action', ({ identity, reason }) => {
         const result = materializeBatchLocalActionIdentities(

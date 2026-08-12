@@ -802,6 +802,7 @@ export type AppAction =
               /** Internal replay identity. */ busId?: string;
               /** Internal replay metadata captured from the first committed bus. */ color?: string;
               /** Internal replay metadata captured from the first committed bus. */ initialAlternativeId?: string;
+              /** Application-owned initial fader value; provider payloads cannot set this field. */ initialGain?: number;
           };
       }
     | { type: 'createFolder'; payload: { name: string } }

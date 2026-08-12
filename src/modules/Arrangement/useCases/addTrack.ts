@@ -9,6 +9,7 @@ import { ArrangementEventBus } from './arrangementEventBus';
 
 type AddTrackInput = {
     color?: string;
+    gain?: number;
     id?: string;
     initialAlternativeId?: string;
     name: string;
