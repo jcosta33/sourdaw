@@ -1,0 +1,48 @@
+src/app/bootstrap.ts
+  s_a40848e8f8cca9::t_9299956ec26fff 72,443
+src/modules/Command/useCases/executeVersionedCommandBatch.ts
+  s_a40848e8f8cca9::t_b043b27f9dff19 6,66-68
+  s_a40848e8f8cca9::t_9299956ec26fff 8,65
+  s_a40848e8f8cca9::t_e465ecd5dbc34e 69
+src/app/__tests__/bootstrap.spec.ts
+  s_a40848e8f8cca9::t_22cd553b17355a 37,67,193,451
+src/modules/Command/useCases/index.ts
+  s_a40848e8f8cca9::t_9299956ec26fff 17
+src/modules/Command/useCases/__tests__/commandRegistryCompleteness.spec.ts
+  s_a40848e8f8cca9::t_7fa393c34f701c 12
+  s_a40848e8f8cca9::t_215e4105a30fef 51-59
+  s_a40848e8f8cca9::t_9ddc35433b08dd 1-11,13-35,37-50,61-70
+  s_a40848e8f8cca9::t_af10623576d09a 36,60
+  s_a40848e8f8cca9::t_90c7cef2497e0b 71-73
+src/modules/Command/useCases/executeVersionedCommandEnvelope.ts
+  s_a40848e8f8cca9::t_9299956ec26fff 9
+  s_a40848e8f8cca9::t_b043b27f9dff19 7,31-33
+src/modules/Command/useCases/getExecutableCommandRegistrations.ts
+  s_a40848e8f8cca9::t_7fa393c34f701c 5
+  s_a40848e8f8cca9::t_9299956ec26fff 1-4,6
+  s_a40848e8f8cca9::t_3b4771299024fb 7-9
+src/modules/Command/useCases/executableAppActionRegistry.ts
+  s_a40848e8f8cca9::t_b043b27f9dff19 2273-2276
+  s_a40848e8f8cca9::t_9299956ec26fff 1,2268-2270
+src/modules/Command/useCases/getExecutableCommandRegistration.ts
+  s_a40848e8f8cca9::t_9299956ec26fff 1-2,4-5,7,13-38
+  s_a40848e8f8cca9::t_b043b27f9dff19 6
+  s_a40848e8f8cca9::t_526719af4f8aff 8-12
+  s_a40848e8f8cca9::t_7fa393c34f701c 3
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "d72afe103788eb3ea558bb4f7aa3ded7308d8a3e",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
