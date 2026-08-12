@@ -1,6 +1,8 @@
+import { pushHardwareTransport } from '../../repositories/pushHardwareTransport';
 import { pushStore } from '../../stores/push';
 
-export function disconnectPush(): void {
+export async function disconnectPush(): Promise<void> {
+    await pushHardwareTransport.disconnect();
     const state = pushStore.value;
     if (!state) {
         return;
