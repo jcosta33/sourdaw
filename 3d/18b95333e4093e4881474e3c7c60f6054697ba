@@ -1,0 +1,19 @@
+tests/e2e/crustReleaseLookaheadTestId.spec.ts
+  s_883dbdc9a2e00b::t_87e24c4142fba3 1-88
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "3d18b95333e4093e4881474e3c7c60f6054697ba",
+  "prompts": {},
+  "sessions": {
+    "s_883dbdc9a2e00b": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019ff4b8-a383-74c1-a3ed-fd10897cca41",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
