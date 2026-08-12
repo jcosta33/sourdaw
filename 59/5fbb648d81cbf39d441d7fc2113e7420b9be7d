@@ -1,0 +1,21 @@
+knip.json
+  s_bc88af7d3b054c::t_84b04b657ad010 9
+docs/06-testing.md
+  s_bc88af7d3b054c::t_84b04b657ad010 60-61
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "595fbb648d81cbf39d441d7fc2113e7420b9be7d",
+  "prompts": {},
+  "sessions": {
+    "s_bc88af7d3b054c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f9b4a-11a2-7f61-8dfb-76eed0eb2a9c",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
