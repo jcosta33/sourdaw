@@ -270,6 +270,17 @@ export function isProductionBrief(value: unknown): value is ProductionBrief {
         ...decisions,
         ...unresolvedQuestions,
     ];
+    const decisionIds = new Set(decisions.map((decision) => decision.id));
+    const decisionsHaveValidSupersession = decisions.every((decision) => {
+        if (decision.status !== 'superseded') {
+            return decision.supersededByDecisionId === null;
+        }
+        return (
+            decision.supersededByDecisionId !== null &&
+            decision.supersededByDecisionId !== decision.id &&
+            decisionIds.has(decision.supersededByDecisionId)
+        );
+    });
 
     return (
         references.length === value.references.length &&
@@ -281,6 +292,7 @@ export function isProductionBrief(value: unknown): value is ProductionBrief {
         decisions.length === value.decisions.length &&
         unresolvedQuestions.length === value.unresolvedQuestions.length &&
         value.sourceRunLinks.every(isNonEmptyString) &&
+        decisionsHaveValidSupersession &&
         hasUniqueIds(identified)
     );
 }

@@ -1,3 +1,4 @@
+import { trackStore } from '#/modules/Arrangement/stores';
 import { type AppAction } from '#/utils/handlerContract';
 
 import { type ProductionBriefScope } from '../models/ProductionBrief';
@@ -39,7 +40,27 @@ function valueOverlapsRange(value: unknown, scope: Extract<ProductionBriefScope,
     if (typeof beat === 'number' && beat >= scope.startBeat && beat < scope.endBeat) {
         return true;
     }
+    for (const [key, item] of Object.entries(values)) {
+        if (key.endsWith('Beat') && typeof item === 'number' && item >= scope.startBeat && item < scope.endBeat) {
+            return true;
+        }
+    }
     return Object.values(values).some((item) => valueOverlapsRange(item, scope));
+}
+
+function referencedClipOverlapsRange(
+    action: AppAction,
+    scope: Extract<ProductionBriefScope, { kind: 'range' }>
+): boolean {
+    const identifiers = new Set<string>();
+    collectActionStrings(action.payload, identifiers);
+    return (
+        trackStore.value?.tracks.some((track) =>
+            [...track.clips, ...track.alternatives.flatMap((alternative) => alternative.clips)].some(
+                (clip) => identifiers.has(clip.id) && clip.startBeat < scope.endBeat && clip.endBeat > scope.startBeat
+            )
+        ) ?? false
+    );
 }
 
 export function doesProductionBriefAllowActionBatch(actions: readonly AppAction[]): boolean {
@@ -64,7 +85,9 @@ export function doesProductionBriefAllowActionBatch(actions: readonly AppAction[
             return false;
         }
         if (scope.kind === 'range') {
-            return projectActions.every((action) => !valueOverlapsRange(action.payload, scope));
+            return projectActions.every(
+                (action) => !valueOverlapsRange(action.payload, scope) && !referencedClipOverlapsRange(action, scope)
+            );
         }
         if (scope.kind === 'track') {
             return !actionStrings.has(scope.trackId);
