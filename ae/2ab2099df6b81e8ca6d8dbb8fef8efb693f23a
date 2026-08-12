@@ -1,0 +1,21 @@
+src/modules/Arrangement/useCases/device/__tests__/addExternalDevice.spec.ts
+  s_bc88af7d3b054c::t_9e1bcf803d4692 106-115
+src/modules/Arrangement/useCases/device/addExternalDevice.ts
+  s_bc88af7d3b054c::t_460cf9784386d4 31
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "ae2ab2099df6b81e8ca6d8dbb8fef8efb693f23a",
+  "prompts": {},
+  "sessions": {
+    "s_bc88af7d3b054c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f9b4a-11a2-7f61-8dfb-76eed0eb2a9c",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
