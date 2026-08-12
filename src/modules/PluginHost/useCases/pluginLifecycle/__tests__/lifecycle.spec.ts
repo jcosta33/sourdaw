@@ -69,14 +69,6 @@ describe('Plugin Lifecycle Use Cases', () => {
         expect(loadedExternalInstances.has('inst1')).toBe(false);
     });
 
-    it('retains runtime ownership when native unload fails', async () => {
-        const failure = new Error('native unload failed');
-        mocks.unloadPluginRepo.mockRejectedValueOnce(failure);
-        loadedExternalInstances.add('owned-instance');
-        await expect(unloadPlugin('owned-instance')).rejects.toBe(failure);
-        expect(loadedExternalInstances.has('owned-instance')).toBe(true);
-    });
-
     it('delegates unload-all to native after renderer ownership is lost', async () => {
         await unloadPlugin();
         expect(mocks.unloadPluginRepo).toHaveBeenCalledWith();
@@ -145,6 +137,7 @@ describe('Plugin Lifecycle Use Cases', () => {
 
         unloading.reject(failure);
         await expect(unloadResult).rejects.toBe(failure);
+        expect(loadedExternalInstances.has('blocked-instance')).toBe(true);
         await expect(loadResult).resolves.toBe(pluginInstance);
     });
 

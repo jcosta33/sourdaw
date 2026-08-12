@@ -43,6 +43,7 @@ pub struct PluginInstance {
 
 static PLUGIN_LIFECYCLE_GATES: LazyLock<Mutex<HashMap<String, Arc<tokio::sync::Mutex<()>>>>> =
     LazyLock::new(|| Mutex::new(HashMap::new()));
+static PLUGIN_RUNTIME_GATE: tokio::sync::RwLock<()> = tokio::sync::RwLock::const_new(());
 
 struct PluginLifecycleLease {
     instance_id: String,
@@ -265,6 +266,7 @@ pub async fn load_plugin(
     instance_id: PluginInstanceId,
     state: tauri::State<'_, AppState>,
 ) -> Result<PluginInstance, String> {
+    let _runtime_guard = PLUGIN_RUNTIME_GATE.read().await;
     let _lifecycle_guard = lock_plugin_lifecycle(&instance_id.0).await;
     ensure_plugin_instance_id_available(&state, &instance_id.0)?;
     let entry = {
@@ -462,6 +464,7 @@ async fn unload_all_plugin_runtimes(
     app: Option<&tauri::AppHandle>,
     state: &AppState,
 ) -> Result<(), String> {
+    let _runtime_guard = PLUGIN_RUNTIME_GATE.write().await;
     let instance_ids = {
         let plugins = state
             .plugins
@@ -1111,15 +1114,16 @@ mod tests {
     }
 
     #[test]
-    fn plugin_lifecycle_gate_serializes_load_and_unload_commands() {
+    fn bulk_unload_waits_for_inflight_load_access() {
         tauri::async_runtime::block_on(async {
-            let first = lock_plugin_lifecycle("same-instance").await;
-            assert!(plugin_lifecycle_gate("same-instance").try_lock().is_err());
-            let unrelated = lock_plugin_lifecycle("unrelated-instance").await;
-            drop(unrelated);
-            drop(first);
-            let gates = PLUGIN_LIFECYCLE_GATES.lock().expect("lifecycle gate map");
-            assert!(gates.is_empty());
+            let _runtime_operation = PLUGIN_RUNTIME_GATE.read().await;
+            let app = command_test_app();
+            assert!(tokio::time::timeout(
+                Duration::from_millis(10),
+                unload_all_plugin_runtimes(None, app.state::<AppState>().inner())
+            )
+            .await
+            .is_err());
         });
     }
 
