@@ -489,6 +489,20 @@ describe('parsePromptToActions', () => {
         expect(result.rejectionReason).toBe('Provider selected preview mode without an explicit user preview request.');
     });
 
+    it('does not treat an unrelated preview noun as preview authority', async () => {
+        vi.mocked(generateToolCalls).mockResolvedValue(
+            completePlan([
+                { name: 'selectActionPlanningMode', arguments: { mode: 'preview' } },
+                { name: 'removeTrack', arguments: { trackId: 'track-vocals' } },
+            ])
+        );
+
+        const result = await parsePromptToActions('delete Vocls after the audio preview ends', createMixerContext());
+
+        expect(result.actions).toEqual([]);
+        expect(result.rejectionReason).toBe('Provider selected preview mode without an explicit user preview request.');
+    });
+
     it('forces confirmation for bounded actions requested as a preview', async () => {
         mockBridgeGroundedLlmToolCalls.mockImplementation(actualBridge.bridgeGroundedLlmToolCalls);
         vi.mocked(generateToolCalls).mockResolvedValue(
