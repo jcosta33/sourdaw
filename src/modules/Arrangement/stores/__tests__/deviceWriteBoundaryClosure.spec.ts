@@ -452,6 +452,11 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         // `quantiseDeviceParameterValue` is a separate function: rounding inside
         // the clamp would dead-zone both recurrences. The model holds no write.
         'src/modules/Arrangement/models/DeviceParameterLaw.ts': 1,
+        // Count provenance: the versioned-command preview compiler and its two
+        // chat-planning call sites create immutable Command envelopes only; they
+        // neither hydrate a device nor write engine state.
+        'src/modules/AiRuntime/useCases/compilePendingActionCommandEnvelopes.ts': 1,
+        'src/modules/AiRuntime/useCases/sendChatMessage.ts': 3,
         // Count provenance: doc-comment cross-reference to `compileAutomationEvents`
         // in the editor-readout evaluator's AU-1 delegation note (#747) — the
         // transformer computes curve values only, holds no device writes.
