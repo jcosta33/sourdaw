@@ -153,6 +153,54 @@ const sidechainTargetRules = [
 
 export const executableAppActionDescriptors = [
     {
+        actionType: 'importStemSet',
+        risk: 'broad-reversible',
+        description:
+            'Classify one exact application-selected stem set for application-owned tempo alignment, naming, grouping, and starting mix.',
+        intentPhrases: ['import stems and create a starting mix'],
+        targetRules: [],
+        valueRules: [],
+        parameters: {
+            properties: {
+                selectionId: { type: 'string', description: 'Exact application-owned selected-file set ID' },
+                groupName: { type: 'string', minLength: 1, maxLength: 80 },
+                stems: {
+                    type: 'array',
+                    minItems: 2,
+                    maxItems: 32,
+                    items: {
+                        type: 'object',
+                        additionalProperties: false,
+                        properties: {
+                            stemId: { type: 'string' },
+                            role: {
+                                type: 'string',
+                                enum: [
+                                    'kick',
+                                    'snare',
+                                    'hi-hat',
+                                    'tom',
+                                    'percussion',
+                                    'bass',
+                                    'guitar-left',
+                                    'guitar-right',
+                                    'keys',
+                                    'synth',
+                                    'lead-vocal',
+                                    'backing-vocal',
+                                    'fx',
+                                    'other',
+                                ],
+                            },
+                        },
+                        required: ['stemId', 'role'],
+                    },
+                },
+            },
+            required: ['selectionId', 'groupName', 'stems'],
+        },
+    },
+    {
         actionType: 'addTrack',
         risk: 'bounded-reversible',
         description: 'Create a new track in the session.',

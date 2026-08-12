@@ -61,6 +61,23 @@ export const pendingActionConfirmationStore = createStore<PendingActionConfirmat
 });
 
 const MAX_CONFIRMATIONS = 20;
+const MAX_PREPARED_RESOURCE_BYTES = 2 * 1024 * 1024 * 1024;
+
+type PendingActionResourceLease = {
+    bytes: number;
+    release: () => void;
+};
+
+const pendingActionResourceLeases = new Map<string, PendingActionResourceLease>();
+
+function releasePendingActionResourceLease(confirmationId: string): void {
+    const lease = pendingActionResourceLeases.get(confirmationId);
+    if (!lease) {
+        return;
+    }
+    pendingActionResourceLeases.delete(confirmationId);
+    lease.release();
+}
 
 function clonePendingActionConfirmation(confirmation: PendingAppActionConfirmation): PendingAppActionConfirmation {
     return structuredClone(confirmation);
@@ -77,6 +94,7 @@ type ProposePendingActionConfirmationInput = {
     risk?: PendingActionRisk;
     executionMode?: 'atomic';
     projectRevision: string;
+    resourceLease?: PendingActionResourceLease;
 };
 
 export function proposePendingActionConfirmation(
@@ -84,6 +102,21 @@ export function proposePendingActionConfirmation(
 ): PendingAppActionConfirmation | null {
     const state = pendingActionConfirmationStore.value;
     if (!state) {
+        input.resourceLease?.release();
+        return null;
+    }
+
+    const preparedResourceBytes = [...pendingActionResourceLeases.values()].reduce(
+        (total, lease) => total + lease.bytes,
+        0
+    );
+    if (
+        input.resourceLease &&
+        (!Number.isSafeInteger(input.resourceLease.bytes) ||
+            input.resourceLease.bytes < 0 ||
+            preparedResourceBytes + input.resourceLease.bytes > MAX_PREPARED_RESOURCE_BYTES)
+    ) {
+        input.resourceLease.release();
         return null;
     }
 
@@ -114,9 +147,18 @@ export function proposePendingActionConfirmation(
         projectRevision: input.projectRevision,
     };
 
-    pendingActionConfirmationStore.set({
-        confirmations: [...state.confirmations, confirmation].slice(-MAX_CONFIRMATIONS),
-    });
+    if (input.resourceLease) {
+        pendingActionResourceLeases.set(confirmation.id, input.resourceLease);
+    }
+    const confirmationsWithNewEntry = [...state.confirmations, confirmation];
+    const confirmations = confirmationsWithNewEntry.slice(-MAX_CONFIRMATIONS);
+    const retainedIds = new Set(confirmations.map((entry) => entry.id));
+    for (const evicted of confirmationsWithNewEntry) {
+        if (!retainedIds.has(evicted.id)) {
+            releasePendingActionResourceLease(evicted.id);
+        }
+    }
+    pendingActionConfirmationStore.set({ confirmations });
 
     return clonePendingActionConfirmation(confirmation);
 }
@@ -260,5 +302,21 @@ export function updatePendingActionFollowUp(
 }
 
 export function clearPendingActionConfirmations(): void {
+    for (const confirmationId of pendingActionResourceLeases.keys()) {
+        releasePendingActionResourceLease(confirmationId);
+    }
     pendingActionConfirmationStore.set({ confirmations: [] });
+}
+
+type SettlePendingActionResourceLeaseInput = {
+    confirmationId: string;
+    disposition: 'discard' | 'retain';
+};
+
+export function settlePendingActionResourceLease(input: SettlePendingActionResourceLeaseInput): void {
+    if (input.disposition === 'discard') {
+        releasePendingActionResourceLease(input.confirmationId);
+        return;
+    }
+    pendingActionResourceLeases.delete(input.confirmationId);
 }

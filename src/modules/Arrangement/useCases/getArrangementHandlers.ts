@@ -50,6 +50,7 @@ import { handleAddTrack } from '../handlers/track/handleAddTrack';
 import { handleClearMidiOutput } from '../handlers/track/handleClearMidiOutput';
 import { handleConsolidateAllTracks } from '../handlers/track/handleConsolidateAllTracks';
 import { handleCreateBus } from '../handlers/track/handleCreateBus';
+import { handleDiscardImportedStemSet, handleImportStemSet } from '../handlers/track/handleImportStemSet';
 import { handleRemoveAllTracks } from '../handlers/track/handleRemoveAllTracks';
 import { handleRemoveTrack } from '../handlers/track/handleRemoveTrack';
 import { handleSetMidiOutput } from '../handlers/track/handleSetMidiOutput';
@@ -92,6 +93,8 @@ import { handleSetVcaGain } from '../handlers/vca/handleSetVcaGain';
  */
 export function getArrangementHandlers() {
     return {
+        importStemSet: handleImportStemSet,
+        discardImportedStemSet: handleDiscardImportedStemSet,
         addTrack: handleAddTrack,
         removeTrack: handleRemoveTrack,
         removeAllTracks: handleRemoveAllTracks,

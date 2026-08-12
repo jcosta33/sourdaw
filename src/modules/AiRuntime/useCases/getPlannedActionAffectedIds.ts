@@ -7,6 +7,13 @@ import { getMidiArticulationSemanticChanges } from '../transformers/getMidiArtic
 export function getPlannedActionAffectedIds(action: AppAction): string[] {
     const affectedIds = new Set<string>();
     const payload: Readonly<Record<string, unknown>> = action.payload ?? {};
+    if (action.type === 'importStemSet') {
+        affectedIds.add(action.payload.folderId);
+        for (const stem of action.payload.stems) {
+            affectedIds.add(stem.trackId);
+            affectedIds.add(stem.clipId);
+        }
+    }
     if (action.type === 'copyMidiArticulations') {
         affectedIds.add(action.payload.trackId);
     }

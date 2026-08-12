@@ -116,6 +116,7 @@ function describeDeviceParameterAction(
 function getProtectedUnchangedTracks(
     prompt: string,
     context: ProjectContext,
+    actions: readonly AppAction[],
     wholeProjectVibeMixPlan?: WholeProjectVibeMixPlan
 ): Array<{ id: string; name: string }> {
     const protectedScopes = [
@@ -190,6 +191,9 @@ function getProtectedUnchangedTracks(
     const syncopatedArpeggioProtections =
         syncopatedArpeggioScope.status === 'request' ? syncopatedArpeggioScope.protectedObjects : [];
     const protections = [
+        ...(actions.some((action) => action.type === 'importStemSet')
+            ? context.tracks.map(({ id, name }) => ({ id, name }))
+            : []),
         ...protectedTracks.map(({ id, name }) => ({ id, name })),
         ...protectedParameters,
         ...planProtections,
@@ -221,6 +225,25 @@ function describeWholeProjectVibeMixPlan(plan: WholeProjectVibeMixPlan): string 
 }
 
 function describeExactAction(action: AppAction, actions: readonly AppAction[], context: ProjectContext): string {
+    if (action.type === 'importStemSet') {
+        const stems = action.payload.stems
+            .map((stem) => {
+                let pan = 'center';
+                if (stem.trackPan < 0) {
+                    pan = `${String(stem.trackPan)} pan`;
+                } else if (stem.trackPan > 0) {
+                    pan = `+${String(stem.trackPan)} pan`;
+                }
+                return `${stem.trackName} (${stem.role}, ${String(stem.trackGain)} gain, ${pan})`;
+            })
+            .join(', ');
+        const sourceTempos = [...new Set(action.payload.stems.map((stem) => stem.sourceTempo))];
+        const tempoSource =
+            sourceTempos.length === 1
+                ? `every ${String(sourceTempos[0])} BPM source`
+                : `sources at ${sourceTempos.map(String).join('/')} BPM`;
+        return `Import ${String(action.payload.stems.length)} stems into folder "${action.payload.groupName}" at ${String(action.payload.projectTempo)} BPM: ${stems}; time-stretch ${tempoSource} to ${String(action.payload.projectTempo)} BPM`;
+    }
     if (
         action.type === 'addAdjustmentRegion' &&
         action.payload.expectedLayer &&
@@ -360,7 +383,7 @@ export function describePendingActionConfirmation({
             reason: 'This applies the same change to multiple project targets.',
         };
     }
-    const protectedUnchanged = getProtectedUnchangedTracks(prompt, context, wholeProjectVibeMixPlan);
+    const protectedUnchanged = getProtectedUnchangedTracks(prompt, context, actions, wholeProjectVibeMixPlan);
     const intendedChanges = actions
         .map((action, index) => `- **${action.type}**: ${actionLabels[index] ?? action.type}`)
         .join('\n');

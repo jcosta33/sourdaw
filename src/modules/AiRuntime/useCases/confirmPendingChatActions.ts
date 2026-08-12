@@ -11,6 +11,7 @@ import {
     getPendingActionConfirmation,
     recordPendingActionExecution,
     replacePendingActionExecutions,
+    settlePendingActionResourceLease,
     type PendingActionExecution,
     type PendingAppActionConfirmation,
     updatePendingActionFollowUp,
@@ -323,6 +324,7 @@ export async function confirmPendingChatActions(
             error: reason,
             content: `Failed to execute confirmed actions atomically:\n\n${reason}`,
         });
+        settlePendingActionResourceLease({ confirmationId: confirmation.id, disposition: 'discard' });
         return { status: 'failed', reason };
     } finally {
         setActiveAborter(null);
@@ -342,6 +344,7 @@ export async function confirmPendingChatActions(
         batchResult.status === 'executed' ||
         batchResult.status === 'executed-with-warning'
     ) {
+        settlePendingActionResourceLease({ confirmationId: confirmation.id, disposition: 'retain' });
         let executionKind: 'project' | 'runtime' = 'project';
         if (batchResult.status === 'executed' || batchResult.status === 'executed-with-warning') {
             executionKind = 'runtime';
@@ -448,6 +451,7 @@ export async function confirmPendingChatActions(
     }
 
     if (batchResult.status === 'no-op') {
+        settlePendingActionResourceLease({ confirmationId: confirmation.id, disposition: 'retain' });
         updatePendingActionConfirmationStatus({ confirmationId: confirmation.id, status: 'executed' });
         updateChatMessage(confirmation.assistantMessageId, {
             pendingActionConfirmationStatus: 'executed',
@@ -457,6 +461,7 @@ export async function confirmPendingChatActions(
     }
 
     if (batchResult.status === 'ambiguous') {
+        settlePendingActionResourceLease({ confirmationId: confirmation.id, disposition: 'retain' });
         updatePendingActionConfirmationStatus({
             confirmationId: confirmation.id,
             status: 'failed',
@@ -480,6 +485,7 @@ export async function confirmPendingChatActions(
         error: batchResult.reason,
         content: `Failed to execute confirmed actions atomically:\n\n${batchResult.reason}`,
     });
+    settlePendingActionResourceLease({ confirmationId: confirmation.id, disposition: 'discard' });
     return { status: 'failed', reason: batchResult.reason };
 }
 
@@ -497,6 +503,7 @@ function failApprovalPreflight(
         error: reason,
         content: `The confirmed command was rejected before execution: ${reason}`,
     });
+    settlePendingActionResourceLease({ confirmationId: confirmation.id, disposition: 'discard' });
     return { status: 'failed', reason };
 }
 
@@ -513,6 +520,7 @@ function invalidatePendingConfirmation(confirmation: PendingAppActionConfirmatio
         content:
             'This proposal was not executed because the project changed after it was created. Review the current project and submit the command again.',
     });
+    settlePendingActionResourceLease({ confirmationId: confirmation.id, disposition: 'discard' });
     return { status: 'invalidated', reason };
 }
 
@@ -526,5 +534,6 @@ function cancelAcceptedConfirmation(confirmation: PendingAppActionConfirmation):
         error: undefined,
         content: 'Command cancelled before it committed. No project changes were applied.',
     });
+    settlePendingActionResourceLease({ confirmationId: confirmation.id, disposition: 'discard' });
     return { status: 'cancelled' };
 }

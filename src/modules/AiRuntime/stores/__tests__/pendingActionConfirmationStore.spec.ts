@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
     clearPendingActionConfirmations,
@@ -83,5 +83,68 @@ describe('pendingActionConfirmationStore', () => {
             actionLabels: ['Create Drum Bus'],
             protectedUnchanged: [{ id: 'track-parallel', name: 'Parallel Compression' }],
         });
+    });
+
+    it('releases prepared resources when their confirmation is evicted or the store is cleared', () => {
+        const evictedRelease = vi.fn();
+        const firstInput = {
+            id: 'confirmation-evicted',
+            prompt: 'first',
+            assistantMessageId: 'message-evicted',
+            actions: [{ type: 'createBus' as const, payload: { name: 'First', busId: 'bus-first' } }],
+            actionLabels: ['First'],
+            projectRevision: 'revision-evicted',
+            resourceLease: { bytes: 1, release: evictedRelease },
+        };
+        proposePendingActionConfirmation(firstInput);
+        for (let index = 0; index < 20; index++) {
+            proposePendingActionConfirmation({
+                id: `confirmation-${String(index)}`,
+                prompt: `prompt-${String(index)}`,
+                assistantMessageId: `message-${String(index)}`,
+                actions: [
+                    { type: 'createBus', payload: { name: `Bus ${String(index)}`, busId: `bus-${String(index)}` } },
+                ],
+                actionLabels: [`Bus ${String(index)}`],
+                projectRevision: `revision-${String(index)}`,
+            });
+        }
+        expect(evictedRelease).toHaveBeenCalledTimes(1);
+
+        const clearedRelease = vi.fn();
+        const clearInput = {
+            id: 'confirmation-cleared',
+            prompt: 'clear me',
+            assistantMessageId: 'message-cleared',
+            actions: [{ type: 'createBus' as const, payload: { name: 'Clear', busId: 'bus-clear' } }],
+            actionLabels: ['Clear'],
+            projectRevision: 'revision-cleared',
+            resourceLease: { bytes: 1, release: clearedRelease },
+        };
+        proposePendingActionConfirmation(clearInput);
+        clearPendingActionConfirmations();
+
+        expect(clearedRelease).toHaveBeenCalledTimes(1);
+    });
+
+    it('rejects prepared confirmations above the aggregate live-resource ceiling', () => {
+        const firstRelease = vi.fn();
+        const rejectedRelease = vi.fn();
+        function createInput(id: string, release: () => void) {
+            return {
+                id,
+                prompt: id,
+                assistantMessageId: `message-${id}`,
+                actions: [{ type: 'createBus' as const, payload: { name: id, busId: `bus-${id}` } }],
+                actionLabels: [id],
+                projectRevision: `revision-${id}`,
+                resourceLease: { bytes: 1100 * 1024 * 1024, release },
+            };
+        }
+
+        expect(proposePendingActionConfirmation(createInput('first', firstRelease))).not.toBeNull();
+        expect(proposePendingActionConfirmation(createInput('second', rejectedRelease))).toBeNull();
+        expect(firstRelease).not.toHaveBeenCalled();
+        expect(rejectedRelease).toHaveBeenCalledTimes(1);
     });
 });
