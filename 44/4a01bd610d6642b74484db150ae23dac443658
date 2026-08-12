@@ -1,0 +1,21 @@
+docs/manual/02-concepts.md
+  s_bc88af7d3b054c::t_6c36d793cbe1d6 117-120,130,140
+  s_bc88af7d3b054c::t_0b641608ca935a 122-129,131-138
+  s_bc88af7d3b054c::t_8a8c49f0164785 141-142
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "444a01bd610d6642b74484db150ae23dac443658",
+  "prompts": {},
+  "sessions": {
+    "s_bc88af7d3b054c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f9b4a-11a2-7f61-8dfb-76eed0eb2a9c",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
