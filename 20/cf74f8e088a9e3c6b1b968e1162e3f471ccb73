@@ -1,0 +1,121 @@
+src/modules/Arrangement/stores/timelineViewStore.ts
+  s_62e9c3dc3ba52a::t_f60965da264e40 76-82,85-90,95-97
+  s_62e9c3dc3ba52a::t_098258cb841396 84,102
+  s_62e9c3dc3ba52a::t_6a2b1ea7d2af98 10-12,21,31
+  s_62e9c3dc3ba52a::t_13c2f9aca09b7d 13-20,22
+  s_62e9c3dc3ba52a::t_a6e802d2274366 83
+src/modules/Arrangement/presentations/views/TimelineSurface.tsx
+  s_62e9c3dc3ba52a::t_6bec7eaa6cab5a 165
+  s_62e9c3dc3ba52a::t_0e7708410650aa 191
+src/modules/Arrangement/models/__tests__/ScratchPadSection.spec.ts
+  s_62e9c3dc3ba52a::t_df71ccfb336c05 5-10,20
+src/modules/Arrangement/models/TakeLane.ts
+  s_62e9c3dc3ba52a::t_9b4236f930fb6a 26,37
+src/modules/Arrangement/models/ScratchPadSection.ts
+  s_62e9c3dc3ba52a::t_4e9847c5b45952 27
+src/modules/Arrangement/models/DeviceParameter.ts
+  s_62e9c3dc3ba52a::t_7c8e06e1857f12 41-51
+  s_62e9c3dc3ba52a::t_c7abd1aae70550 110-117
+src/modules/Arrangement/stores/trackStore.ts
+  s_62e9c3dc3ba52a::t_37e14f68fa9129 772-780,783
+src/modules/Arrangement/stores/__tests__/scratchPadStore.spec.ts
+  s_62e9c3dc3ba52a::t_70909516d29547 1-61
+src/modules/Arrangement/models/Marker.ts
+  s_62e9c3dc3ba52a::t_28296b867d1e9a 1-2,20-23,26-27,33,37
+src/modules/Arrangement/stores/__tests__/timelineViewStore.spec.ts
+  s_62e9c3dc3ba52a::t_01d45af246bfd4 11,22,63-70,77-78,82-83,87-92,117,138-139,152-153,160-161,177,181
+src/modules/Arrangement/presentations/helpers/__tests__/timelineMouse.spec.ts
+  s_62e9c3dc3ba52a::t_cc22425b33d72a 85
+src/modules/Arrangement/models/__tests__/Marker.spec.ts
+  s_62e9c3dc3ba52a::t_987a229b3ca893 6-8
+  s_62e9c3dc3ba52a::t_9f59889dde55d4 3,9,16-20,32-35
+  s_62e9c3dc3ba52a::t_e596bfd1028da0 21
+  s_62e9c3dc3ba52a::t_c2e312d2a88012 36
+src/modules/Arrangement/models/__tests__/WarpMarker.spec.ts
+  s_62e9c3dc3ba52a::t_6acfbd81f7811f 5-11,19
+src/modules/Arrangement/stores/__tests__/mixerSnapshotStore.spec.ts
+  s_62e9c3dc3ba52a::t_9a52901016ca0c 1-75
+src/modules/Arrangement/models/__tests__/Track.spec.ts
+  s_62e9c3dc3ba52a::t_9b568cf28b1f33 5-10,26-35,41
+src/modules/Arrangement/stores/scratchPadStore.ts
+  s_62e9c3dc3ba52a::t_5435d8a6c41f5d 1-11,13-14,18-19,24-129
+src/modules/Arrangement/stores/mixerSnapshotStore.ts
+  s_62e9c3dc3ba52a::t_d3a6215128692d 1-10,12-13,15-17,23-156
+src/modules/Arrangement/repositories/presets/__tests__/faustInstrumentPresets.spec.ts
+  s_62e9c3dc3ba52a::t_306c70e7c91842 3
+  s_62e9c3dc3ba52a::t_36a72c6a05455c 54-94
+src/modules/Arrangement/stores/__tests__/groupComping.spec.ts
+  s_62e9c3dc3ba52a::t_c4365f94e74bfa 9-10,14-24
+  s_62e9c3dc3ba52a::t_901eefa26b2728 87-115
+  s_62e9c3dc3ba52a::t_eb36e12bdbc4c5 25
+src/modules/Arrangement/presentations/views/TrackListView.tsx
+  s_62e9c3dc3ba52a::t_17d2dd072eec52 104-106
+  s_62e9c3dc3ba52a::t_1c8dbf7b0995c4 34
+src/modules/Arrangement/stores/__tests__/grooveStore.spec.ts
+  s_62e9c3dc3ba52a::t_22c8f6c0cba9b8 1-73
+src/modules/Arrangement/stores/__tests__/trackStoreTransientState.spec.ts
+  s_62e9c3dc3ba52a::t_7eef41843b99dc 125,133-139
+src/modules/Arrangement/models/WarpMarker.ts
+  s_62e9c3dc3ba52a::t_baeaf376c09e3f 29
+src/modules/Arrangement/stores/__tests__/updateClipInStore.spec.ts
+  s_62e9c3dc3ba52a::t_e970ab2229dc28 1-90
+src/modules/Arrangement/stores/groupComping.ts
+  s_62e9c3dc3ba52a::t_17ec225f723be5 227-229
+  s_62e9c3dc3ba52a::t_546cbd60300f0c 105-109,116-117,119-121
+  s_62e9c3dc3ba52a::t_95ca3b8450294d 4-9,12-15,49-104,110-115,118,122-226,230-242
+src/modules/Arrangement/stores/markerStore.ts
+  s_62e9c3dc3ba52a::t_025e4095da147f 4,6,8-11
+src/modules/Arrangement/models/__tests__/TakeLane.spec.ts
+  s_62e9c3dc3ba52a::t_0812857b95f241 5-10,18,29
+src/modules/Arrangement/stores/index.ts
+  s_62e9c3dc3ba52a::t_57743f2dc34eaa 23
+src/modules/Arrangement/presentations/hooks/useTimelineGestures.ts
+  s_62e9c3dc3ba52a::t_7405755fdec614 11
+  s_62e9c3dc3ba52a::t_50c491571041bf 55-57,59-60
+src/modules/Arrangement/presentations/views/__tests__/TrackListView.spec.tsx
+  s_62e9c3dc3ba52a::t_5c14ef2c3491bc 113
+src/modules/Arrangement/stores/grooveStore.ts
+  s_62e9c3dc3ba52a::t_7c360aa25adae6 1-11,13-16,37-59,65-172
+  s_62e9c3dc3ba52a::t_038987d9cf15ef 60-64
+src/modules/Arrangement/models/Track.ts
+  s_62e9c3dc3ba52a::t_0c1e510001ce07 237
+  s_62e9c3dc3ba52a::t_8e3d1f919c374f 246,248
+src/modules/Arrangement/presentations/hooks/__tests__/useTimelineGestures.spec.tsx
+  s_62e9c3dc3ba52a::t_8a5ec9deac9501 123-128
+  s_62e9c3dc3ba52a::t_6de863f12f3a81 24
+  s_62e9c3dc3ba52a::t_74eed38594a964 13
+src/modules/Arrangement/stores/__tests__/trackStore.spec.ts
+  s_62e9c3dc3ba52a::t_37e9fde516461c 98-101,104,109-126
+  s_62e9c3dc3ba52a::t_5b520cd9b99800 245-248,254,267
+  s_62e9c3dc3ba52a::t_268210a793efed 127-128
+src/modules/Arrangement/useCases/adjustmentLayer/__tests__/createAdjustmentLayer.spec.ts
+  s_62e9c3dc3ba52a::t_89061194afe860 72-100
+src/modules/Arrangement/models/__tests__/DeviceParameter.spec.ts
+  s_62e9c3dc3ba52a::t_e8bbdfc4d5ce10 75-77
+  s_62e9c3dc3ba52a::t_48457e738877bb 56-58
+  s_62e9c3dc3ba52a::t_dea4645840be7b 1
+  s_62e9c3dc3ba52a::t_28c571a1ba5fd8 41-55,59-74,78-86
+src/modules/Arrangement/repositories/track/updateClip.ts
+  s_62e9c3dc3ba52a::t_a95ac1d71a08df 1-2,7-13,16
+src/modules/Arrangement/repositories/presets/faustInstrumentPresets.ts
+  s_62e9c3dc3ba52a::t_097aa821fd1667 50-53,62-66
+  s_62e9c3dc3ba52a::t_54b7eb3d810b49 131,164,196,227,259-260,284,305-309,311,331,353,373-374,404-405,433,460-461,488-489,516,543,568,591-592,616,639,664,690-691,715,738-739,763,786-787,814-815,839-840,864,889-890,915,938-939,961-962,986,1008,1010-1011,1032-1033,1056-1058,1078,1080,1100-1102
+src/modules/Arrangement/useCases/adjustmentLayer/createAdjustmentLayer.ts
+  s_62e9c3dc3ba52a::t_a17d8cc572bc6b 27-31
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "20cf74f8e088a9e3c6b1b968e1162e3f471ccb73",
+  "prompts": {},
+  "sessions": {
+    "s_62e9c3dc3ba52a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "92e0a2e7-8660-41e2-be8b-b2d644c6d0b7",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
