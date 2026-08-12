@@ -508,6 +508,7 @@ describe('parsePromptToActions', () => {
         'rename Bass to "Drums; Preview Mix"; delete Vocls',
         "rename Bass to 'Drums; Preview Mix'; delete Vocls",
         'rename Bass to ‘Drums; Preview Mix’; delete Vocls',
+        "delete Vocls after track '#1; Preview Mix' ends",
     ])('does not treat preview text inside a quoted name as preview authority', async (prompt) => {
         vi.mocked(generateToolCalls).mockResolvedValue(
             completePlan([

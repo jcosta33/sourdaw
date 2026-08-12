@@ -15,6 +15,10 @@ function isWordCharacter(value: string | undefined): boolean {
     return value !== undefined && /[\p{L}\p{N}_]/u.test(value);
 }
 
+function isWhitespace(value: string | undefined): boolean {
+    return value !== undefined && /\s/u.test(value);
+}
+
 function isEscaped(characters: string[], index: number): boolean {
     let slashCount = 0;
     for (let cursor = index - 1; cursor >= 0 && characters[cursor] === '\\'; cursor -= 1) {
@@ -35,7 +39,8 @@ function maskQuotedValues(value: string): string {
             const closesStraightSingleQuote =
                 closingQuote === "'" &&
                 character === "'" &&
-                isWordCharacter(characters[index - 1]) &&
+                characters[index - 1] !== undefined &&
+                !isWhitespace(characters[index - 1]) &&
                 !isWordCharacter(characters[index + 1]);
             const closesOtherQuote =
                 closingQuote !== "'" && character === closingQuote && !isEscaped(characters, index);
@@ -54,7 +59,8 @@ function maskQuotedValues(value: string): string {
         } else if (
             character === "'" &&
             !isWordCharacter(characters[index - 1]) &&
-            isWordCharacter(characters[index + 1])
+            characters[index + 1] !== undefined &&
+            !isWhitespace(characters[index + 1])
         ) {
             closingQuote = "'";
         }
