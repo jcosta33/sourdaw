@@ -1,0 +1,48 @@
+src/modules/AiRuntime/useCases/__tests__/backingVocalPlateWorkflow.spec.ts
+  s_a40848e8f8cca9::t_246153b2ffcc34 1656-1658
+  s_a40848e8f8cca9::t_a1604af777920e 1653,1655,1671,1684
+src/modules/AiRuntime/useCases/agentReference/materializeBatchLocalActionIdentities.ts
+  s_a40848e8f8cca9::t_0865011342d8eb 25-28,34
+  s_a40848e8f8cca9::t_8c0dc6ea24df82 63-67
+src/modules/Arrangement/handlers/track/handleCreateBus.ts
+  s_a40848e8f8cca9::t_8c0dc6ea24df82 11,35
+src/modules/AiRuntime/models/RuntimeAction.ts
+  s_a40848e8f8cca9::t_0865011342d8eb 260,327
+src/modules/Arrangement/handlers/track/handleAddTrack.ts
+  s_a40848e8f8cca9::t_8c0dc6ea24df82 10
+src/modules/Arrangement/models/__tests__/Track.spec.ts
+  s_a40848e8f8cca9::t_76d88863f038e1 40-45
+src/modules/Arrangement/handlers/track/__tests__/handleCreateBus.spec.ts
+  s_a40848e8f8cca9::t_76d88863f038e1 7,65,77,83,97
+src/modules/Arrangement/models/Track.ts
+  s_a40848e8f8cca9::t_8c0dc6ea24df82 222,254
+src/modules/Arrangement/useCases/addTrack.ts
+  s_a40848e8f8cca9::t_8c0dc6ea24df82 12
+src/modules/AiRuntime/useCases/agentReference/bridgeSharedVocalFxBusesPlan.ts
+  s_a40848e8f8cca9::t_8c0dc6ea24df82 205
+src/modules/AiRuntime/useCases/agentReference/__tests__/materializeBatchLocalActionIdentities.spec.ts
+  s_a40848e8f8cca9::t_76d88863f038e1 27-38,65-67
+  s_a40848e8f8cca9::t_ca1c9d3050cc5c 68
+src/modules/AiRuntime/models/__tests__/RuntimeAction.spec.ts
+  s_a40848e8f8cca9::t_76d88863f038e1 117-120
+src/modules/AiRuntime/useCases/agentReference/BatchLocalActionIdentity.ts
+  s_a40848e8f8cca9::t_8c0dc6ea24df82 6-7
+src/utils/handlerContract.ts
+  s_a40848e8f8cca9::t_28cd361fec2a3c 805
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "0884085f8c7e955f5cc6bdeb28f7bbe916a0c55f",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
