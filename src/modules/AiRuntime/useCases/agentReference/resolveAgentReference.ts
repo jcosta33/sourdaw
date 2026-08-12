@@ -399,13 +399,21 @@ function fuzzyNameConfidence(prompt: string, name: string): number {
         return 0;
     }
     const words = normalizedPrompt.split(' ');
+    const nameWordCount = normalizedName.split(' ').length;
+    if (words.length < nameWordCount) {
+        return (
+            1 -
+            editDistance(normalizedPrompt, normalizedName) / Math.max(normalizedPrompt.length, normalizedName.length)
+        );
+    }
     let best = 0;
-    for (const word of words) {
-        if (word.length < 3) {
+    for (let index = 0; index <= words.length - nameWordCount; index++) {
+        const phrase = words.slice(index, index + nameWordCount).join(' ');
+        if (phrase.length < 3) {
             continue;
         }
-        const distance = editDistance(word, normalizedName);
-        best = Math.max(best, 1 - distance / Math.max(word.length, normalizedName.length));
+        const distance = editDistance(phrase, normalizedName);
+        best = Math.max(best, 1 - distance / Math.max(phrase.length, normalizedName.length));
     }
     return best;
 }
@@ -448,12 +456,14 @@ function getTrackTagEvidence(prompt: string, track: ProjectContext['tracks'][num
     return tags.find((tag) => containsExactPhrase(prompt, tag)) ?? null;
 }
 
-function getMostRecentTrackId(context: ProjectContext): string | null {
-    const decisions = context.productionBrief?.decisions ?? [];
-    const trackDecision = decisions
-        .filter((decision) => decision.scope.kind === 'track')
-        .toSorted((left, right) => right.createdAt - left.createdAt)[0];
-    return trackDecision?.scope.kind === 'track' ? trackDecision.scope.trackId : null;
+function getMostRecentTrackIds(context: ProjectContext, candidateIds: readonly string[]): string[] {
+    const eligibleIds = new Set(candidateIds);
+    const history = (context.agentReferenceHistory ?? []).filter((entry) => eligibleIds.has(entry.id));
+    if (history.length === 0) {
+        return [];
+    }
+    const latestTimestamp = Math.max(...history.map((entry) => entry.referencedAt));
+    return [...new Set(history.filter((entry) => entry.referencedAt === latestTimestamp).map((entry) => entry.id))];
 }
 
 function getInferredPropertyCandidateIds(prompt: string, candidates: readonly ReferenceCandidate[]): string[] {
@@ -486,7 +496,8 @@ function getEvidenceValue(
     evidence: AgentReferenceEvidence,
     candidate: ReferenceCandidate,
     prompt: string,
-    context: ProjectContext
+    context: ProjectContext,
+    candidates: readonly ReferenceCandidate[]
 ): string {
     if (evidence === 'literal-id' || evidence === 'selection') {
         return candidate.id;
@@ -502,6 +513,28 @@ function getEvidenceValue(
     }
     if (evidence === 'tag' && candidate.track) {
         return getTrackTagEvidence(prompt, candidate.track) ?? candidate.id;
+    }
+    if (evidence === 'recency') {
+        const reference = (context.agentReferenceHistory ?? [])
+            .filter((entry) => entry.id === candidate.id)
+            .toSorted((left, right) => right.referencedAt - left.referencedAt)[0];
+        return reference ? `referencedAt=${String(reference.referencedAt)}` : candidate.id;
+    }
+    if (evidence === 'inferred-property' && candidate.track) {
+        const normalized = normalizeReferenceText(prompt);
+        const eligibleTrackCount = candidates.filter((item) => item.track !== undefined).length;
+        if (/\b(?:loudest|highest volume|highest gain) track\b/u.test(normalized)) {
+            return `gain=${String(candidate.track.gain)}; maximum among ${String(eligibleTrackCount)} eligible tracks`;
+        }
+        if (/\b(?:quietest|lowest volume|lowest gain) track\b/u.test(normalized)) {
+            return `gain=${String(candidate.track.gain)}; minimum among ${String(eligibleTrackCount)} eligible tracks`;
+        }
+        if (/\btrack with (?:the )?most clips\b/u.test(normalized)) {
+            return `clipCount=${String(candidate.track.clipCount)}; maximum among ${String(eligibleTrackCount)} eligible tracks`;
+        }
+        if (/\btrack with (?:the )?most devices\b/u.test(normalized)) {
+            return `deviceCount=${String(candidate.track.deviceCount)}; maximum among ${String(eligibleTrackCount)} eligible tracks`;
+        }
     }
     return candidate.id;
 }
@@ -569,11 +602,15 @@ export function resolveAgentReference(input: ResolveAgentReferenceInput): Resolv
 
     const trackReferenceCandidates = candidates.filter((candidate) => candidate.track !== undefined);
     if (trackReferenceCandidates.length > 0) {
-        const mostRecentTrackId = /\b(?:most recently referenced|most recent) track\b/u.test(
-            normalizeReferenceText(input.prompt)
-        )
-            ? getMostRecentTrackId(input.context)
-            : null;
+        let mostRecentTrackIds = new Set<string>();
+        if (/\b(?:most recently referenced|most recent) track\b/u.test(normalizeReferenceText(input.prompt))) {
+            mostRecentTrackIds = new Set(
+                getMostRecentTrackIds(
+                    input.context,
+                    trackReferenceCandidates.map((candidate) => candidate.id)
+                )
+            );
+        }
         const inferredPropertyIds = new Set(getInferredPropertyCandidateIds(input.prompt, trackReferenceCandidates));
         for (const candidate of trackReferenceCandidates) {
             if (evidenceById.has(candidate.id)) {
@@ -591,7 +628,7 @@ export function resolveAgentReference(input: ResolveAgentReferenceInput): Resolv
                 evidenceById.set(candidate.id, 'tag');
                 continue;
             }
-            if (candidate.id === mostRecentTrackId) {
+            if (mostRecentTrackIds.has(candidate.id)) {
                 evidenceById.set(candidate.id, 'recency');
                 continue;
             }
@@ -626,7 +663,12 @@ export function resolveAgentReference(input: ResolveAgentReferenceInput): Resolv
         return {
             id,
             confidence: confidenceByEvidence[evidence],
-            evidence: [{ kind: evidence, value: getEvidenceValue(evidence, candidate, input.prompt, input.context) }],
+            evidence: [
+                {
+                    kind: evidence,
+                    value: getEvidenceValue(evidence, candidate, input.prompt, input.context, candidates),
+                },
+            ],
         };
     });
 
@@ -696,7 +738,7 @@ export function resolveAgentReference(input: ResolveAgentReferenceInput): Resolv
     const candidate = candidates.find((item) => item.id === input.assertedId)!;
     const confidence = confidenceByEvidence[evidence];
     const evidenceReceipt = [
-        { kind: evidence, value: getEvidenceValue(evidence, candidate, input.prompt, input.context) },
+        { kind: evidence, value: getEvidenceValue(evidence, candidate, input.prompt, input.context, candidates) },
     ];
     const risky = input.effectRisk !== undefined && riskyEffectLevels.has(input.effectRisk);
     if (risky && confidence < 0.9 && input.mode !== 'preview') {

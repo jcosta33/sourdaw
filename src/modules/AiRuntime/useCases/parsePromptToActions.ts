@@ -5,6 +5,11 @@ import { getExecutableAppActionToolSchemas, requiresAppActionConfirmation } from
 import { doesProductionBriefAllowActionBatch } from '#/modules/Project/useCases';
 
 import { isAiRuntimeConfigurationChangedError } from '../errors/AiRuntimeConfigurationChangedError';
+import {
+    ACTION_PLANNING_MODE_TOOL_NAME,
+    type ActionPlanningMode,
+    createActionPlanningModeToolSchema,
+} from '../models/ActionPlanningMode';
 import { type IntentResult } from '../models/IntentResult';
 import { type RuntimeAction } from '../models/RuntimeAction';
 import { type StemImportPromptScope } from '../models/StemImportCapability';
@@ -41,6 +46,7 @@ import { materializeBatchLocalActionIdentities } from './agentReference/material
 import { type ProjectContext } from './getProjectContext';
 import { generateToolPlanningOutcome } from './llmOrchestration/inference';
 import { materializeActionStateGuards } from './materializeActionStateGuards';
+import { recordResolvedAgentReferences } from './recordResolvedAgentReferences';
 import { validateActions } from './validateActions';
 
 type CreateFastPathResultInput = {
@@ -252,7 +258,7 @@ export const parsePromptToActions = inject({ logger })(
                     projectRevision
                 )?.capability;
                 const planningOutcome = await generateToolPlanningOutcome(
-                    `${buildLlmActionSystemPrompt()}\nWhen a supplied specialized workflow semantically covers the complete request, call selectWorkflowCapability once before returning its ordered action plan. Match meaning rather than wording. Do not select a workflow for generic, partial, unrelated, or ambiguous requests.`,
+                    `${buildLlmActionSystemPrompt()}\nWhen a supplied specialized workflow semantically covers the complete request, call selectWorkflowCapability once before returning its ordered action plan. Match meaning rather than wording. Do not select a workflow for generic, partial, unrelated, or ambiguous requests. When the user explicitly asks to preview or inspect a proposed action before deciding, call selectActionPlanningMode with mode preview before executable action tools.`,
                     buildLlmActionUserMessage({
                         prompt,
                         context,
@@ -272,6 +278,7 @@ export const parsePromptToActions = inject({ logger })(
                     }),
                     [
                         createWorkflowCapabilityToolSchema(WORKFLOW_CAPABILITY_IDS),
+                        createActionPlanningModeToolSchema(),
                         ...getExecutableAppActionToolSchemas(),
                     ],
                     signal,
@@ -289,6 +296,44 @@ export const parsePromptToActions = inject({ logger })(
                         requiresConfirmation: false,
                         rejectionReason: `Provider planning rejected: ${planningOutcome.reason}`,
                     };
+                }
+                const planningModeCalls = planningOutcome.toolCalls.filter(
+                    (call) => call.name === ACTION_PLANNING_MODE_TOOL_NAME
+                );
+                if (planningModeCalls.length > 1) {
+                    return {
+                        actions: [],
+                        rawText: prompt,
+                        requiresConfirmation: false,
+                        rejectionReason: 'Provider selected more than one action planning mode.',
+                    };
+                }
+                let actionPlanningMode: ActionPlanningMode = 'execute';
+                const planningModeCall = planningModeCalls[0];
+                if (planningModeCall) {
+                    const firstExecutableCallIndex = planningOutcome.toolCalls.findIndex(
+                        (call) =>
+                            call.name !== ACTION_PLANNING_MODE_TOOL_NAME && call.name !== WORKFLOW_CAPABILITY_TOOL_NAME
+                    );
+                    const planningModeCallIndex = planningOutcome.toolCalls.indexOf(planningModeCall);
+                    if (firstExecutableCallIndex !== -1 && planningModeCallIndex > firstExecutableCallIndex) {
+                        return {
+                            actions: [],
+                            rawText: prompt,
+                            requiresConfirmation: false,
+                            rejectionReason: 'Provider must select preview mode before proposing actions.',
+                        };
+                    }
+                    const keys = Object.keys(planningModeCall.arguments);
+                    if (keys.length !== 1 || keys[0] !== 'mode' || planningModeCall.arguments.mode !== 'preview') {
+                        return {
+                            actions: [],
+                            rawText: prompt,
+                            requiresConfirmation: false,
+                            rejectionReason: 'Provider selected an unavailable action planning mode.',
+                        };
+                    }
+                    actionPlanningMode = 'preview';
                 }
                 const workflowSelectionCalls = planningOutcome.toolCalls.filter(
                     (call) => call.name === WORKFLOW_CAPABILITY_TOOL_NAME
@@ -326,7 +371,8 @@ export const parsePromptToActions = inject({ logger })(
                     workflowCapabilityId = capabilityId;
                 }
                 const toolCalls = planningOutcome.toolCalls.filter(
-                    (call) => call.name !== WORKFLOW_CAPABILITY_TOOL_NAME
+                    (call) =>
+                        call.name !== WORKFLOW_CAPABILITY_TOOL_NAME && call.name !== ACTION_PLANNING_MODE_TOOL_NAME
                 );
                 if (workflowCapabilityId === 'stem-import-starting-mix' && !stemImportScope) {
                     if (toolCalls.length > 0) {
@@ -396,6 +442,7 @@ export const parsePromptToActions = inject({ logger })(
                     markerSignatures,
                     sectionSignatures,
                     prompt,
+                    referenceResolutionMode: actionPlanningMode,
                     workflowCapabilityId,
                 });
                 for (const rejected of bridged.rejections) {
@@ -479,6 +526,7 @@ export const parsePromptToActions = inject({ logger })(
                         };
                     }
 
+                    recordResolvedAgentReferences(bridged.resolvedReferences ?? []);
                     return {
                         actions: guarded.actions,
                         rawText: prompt,

@@ -82,6 +82,14 @@ function createSemanticReferenceProjectState(): ProjectContext {
     ];
     return {
         ...project,
+        agentReferenceHistory: [
+            {
+                id: bass.id,
+                referencedAt: 400,
+                confidence: 1,
+                evidence: [{ kind: 'exact-name', value: 'Bass' }],
+            },
+        ],
         sections: [
             { id: 'section-verse', name: 'Verse One', startBeat: 0, endBeat: 16 },
             { id: 'section-chorus', name: 'Chorus One', startBeat: 16, endBeat: 32 },
@@ -103,11 +111,11 @@ function createSemanticReferenceProjectState(): ProjectContext {
                     scope: { kind: 'track', trackId: vocals.id },
                     statement: 'Keep vocals forward',
                     rationale: null,
-                    status: 'accepted',
+                    status: 'rejected',
                     sourceRunId: null,
                     relatedBatchId: null,
                     supersededByDecisionId: null,
-                    createdAt: 200,
+                    createdAt: 500,
                 },
                 {
                     id: 'decision-bass',
@@ -258,8 +266,15 @@ describe('resolveAgentReference', () => {
             status: 'resolved',
             id: 'track-bass',
             evidence: 'recency',
+            evidenceReceipt: [{ kind: 'recency', value: 'referencedAt=400' }],
         });
         expect(resolveTrack('mute Vocls', 'track-vocals', project)).toMatchObject({
+            status: 'resolved',
+            id: 'track-vocals',
+            evidence: 'fuzzy-name',
+        });
+        project.tracks[0]!.name = 'Lead Vocals';
+        expect(resolveTrack('mute Lead Vocls', 'track-vocals', project)).toMatchObject({
             status: 'resolved',
             id: 'track-vocals',
             evidence: 'fuzzy-name',
@@ -268,6 +283,7 @@ describe('resolveAgentReference', () => {
             status: 'resolved',
             id: 'track-vocals',
             evidence: 'inferred-property',
+            evidenceReceipt: [{ kind: 'inferred-property', value: 'gain=0.9; maximum among 2 eligible tracks' }],
         });
     });
 

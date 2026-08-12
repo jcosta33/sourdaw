@@ -15,6 +15,7 @@ import { workspaceStore } from '#/modules/WorkspaceShell/stores';
 import { MIN_CLIP_LOOP_LENGTH_BEATS, projectClipLoopExpansion } from '#/utils/clipLoopProjection';
 
 import { type ProjectContext } from '../models/ProjectContext';
+import { agentReferenceHistoryStore } from '../stores/agentReferenceHistoryStore';
 
 export type {
     ProjectContext,
@@ -26,6 +27,7 @@ export type {
     ProjectContextClip,
     ProjectContextDevice,
     ProjectContextDeviceParameter,
+    ProjectContextAgentReferenceHistoryEntry,
     ProjectContextSend,
     ProjectContextSection,
     ProjectContextSidechainRoute,
@@ -50,6 +52,7 @@ const contextCache: {
     marker: unknown;
     vca: unknown;
     project: unknown;
+    referenceHistory: unknown;
     glueEligibilitySignature: string;
     context: ProjectContext | null;
 } = {
@@ -64,6 +67,7 @@ const contextCache: {
     marker: null,
     vca: null,
     project: null,
+    referenceHistory: null,
     glueEligibilitySignature: '',
     context: null,
 };
@@ -82,6 +86,7 @@ export function getProjectContext(): ProjectContext {
     const markerState = markerStore.value;
     const vcaState = vcaGroupStore.value;
     const projectState = projectStore.value;
+    const referenceHistory = agentReferenceHistoryStore.value;
     const notesByClipId = midiState?.notesByClipId;
     const glueEligibleClipPairs = getGlueEligibleClipPairs();
     const glueEligibilitySignature = JSON.stringify(glueEligibleClipPairs);
@@ -99,6 +104,7 @@ export function getProjectContext(): ProjectContext {
         contextCache.marker === markerState &&
         contextCache.vca === vcaState &&
         contextCache.project === projectState &&
+        contextCache.referenceHistory === referenceHistory &&
         contextCache.glueEligibilitySignature === glueEligibilitySignature
     ) {
         return contextCache.context;
@@ -109,6 +115,7 @@ export function getProjectContext(): ProjectContext {
     const selectedClipIds = selectionState?.selectedClipIds ?? [];
 
     const built: ProjectContext = {
+        agentReferenceHistory: structuredClone(referenceHistory ?? []),
         ...(projectState ? { productionBrief: structuredClone(projectState.productionBrief) } : {}),
         tempo: transportState?.tempo ?? 120,
         timeSignature: [transportState?.timeSignatureNumerator ?? 4, transportState?.timeSignatureDenominator ?? 4],
@@ -271,6 +278,7 @@ export function getProjectContext(): ProjectContext {
     contextCache.marker = markerState;
     contextCache.vca = vcaState;
     contextCache.project = projectState;
+    contextCache.referenceHistory = referenceHistory;
     contextCache.glueEligibilitySignature = glueEligibilitySignature;
     contextCache.context = built;
     return built;

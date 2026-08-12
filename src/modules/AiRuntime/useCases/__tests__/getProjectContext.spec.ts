@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+import { agentReferenceHistoryStore } from '../../stores/agentReferenceHistoryStore';
 import {
     getProjectContext,
     type ProjectContextAdjustmentLayer,
@@ -134,6 +135,7 @@ describe('getProjectContext', () => {
         mocks.markerStoreValue.value = null;
         mocks.vcaStoreValue.value = null;
         mocks.projectStoreValue.value = null;
+        agentReferenceHistoryStore.set([]);
         mocks.getPluginById.mockReturnValue(undefined);
         mocks.getGlueEligibleClipPairs.mockReturnValue([]);
         mocks.getPlatformPlugins.mockReturnValue([
@@ -150,6 +152,25 @@ describe('getProjectContext', () => {
 
         expect(first.glueEligibleClipPairs).toEqual([]);
         expect(second.glueEligibleClipPairs).toEqual([['clip-a', 'clip-b']]);
+        expect(second).not.toBe(first);
+    });
+
+    it('projects agent reference history and invalidates the cache when it changes', () => {
+        const first = getProjectContext();
+        const history = [
+            {
+                id: 'track-vocals',
+                referencedAt: 100,
+                confidence: 1,
+                evidence: [{ kind: 'exact-name' as const, value: 'Vocals' }],
+            },
+        ];
+
+        agentReferenceHistoryStore.set(history);
+        const second = getProjectContext();
+
+        expect(first.agentReferenceHistory).toEqual([]);
+        expect(second.agentReferenceHistory).toEqual(history);
         expect(second).not.toBe(first);
     });
 

@@ -1693,7 +1693,7 @@ describe('bridgeGroundedLlmToolCalls', () => {
             bridge([call], 'split automation on the Intro clip at beat 4', context),
         ];
 
-        expect(accepted).toEqual({
+        expect(accepted).toMatchObject({
             actions: [{ type: 'splitClip', payload: { clipId: 'clip-intro', beat: 4 } }],
             rejections: [],
         });
@@ -1796,7 +1796,7 @@ describe('bridgeGroundedLlmToolCalls', () => {
             bridge([call], 'create an audio clip named Verse on Keys from beat 8 to beat 16', context),
         ];
 
-        expect(accepted).toEqual({
+        expect(accepted).toMatchObject({
             actions: [
                 {
                     type: 'addClip',
@@ -1805,7 +1805,7 @@ describe('bridgeGroundedLlmToolCalls', () => {
             ],
             rejections: [],
         });
-        expect(quotedName).toEqual({
+        expect(quotedName).toMatchObject({
             actions: [
                 {
                     type: 'addClip',
@@ -1820,7 +1820,7 @@ describe('bridgeGroundedLlmToolCalls', () => {
             ],
             rejections: [],
         });
-        expect(quotedConjunctionName).toEqual({
+        expect(quotedConjunctionName).toMatchObject({
             actions: [
                 {
                     type: 'addClip',
@@ -4068,7 +4068,7 @@ describe('bridgeGroundedLlmToolCalls', () => {
 
         for (const testCase of cases) {
             const result = bridge([testCase.call], testCase.prompt, context);
-            expect.soft(result).toEqual({ actions: [testCase.action], rejections: [] });
+            expect.soft(result).toMatchObject({ actions: [testCase.action], rejections: [] });
         }
     });
 

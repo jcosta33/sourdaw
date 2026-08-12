@@ -1,4 +1,5 @@
 export type ProjectContext = {
+    agentReferenceHistory?: ProjectContextAgentReferenceHistoryEntry[];
     productionBrief?: ProjectContextProductionBrief;
     tempo: number;
     timeSignature: [number, number];
@@ -26,6 +27,13 @@ export type ProjectContext = {
     glueEligibleClipPairs?: Array<[string, string]>;
     activeView: 'arrange' | 'automation' | 'clip' | 'mix';
     playheadPosition: number;
+};
+
+export type ProjectContextAgentReferenceHistoryEntry = {
+    id: string;
+    referencedAt: number;
+    confidence: number;
+    evidence: Array<{ kind: string; value: string }>;
 };
 
 export type ProjectContextProductionBriefScope =

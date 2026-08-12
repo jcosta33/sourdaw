@@ -6,6 +6,7 @@ import { isAiRuntimeConfigurationChangedError } from '../../errors/AiRuntimeConf
 import { createAiRuntimeError } from '../../errors/AiRuntimeError';
 import { isNativeToolCallingProtocolError } from '../../errors/NativeToolCallingProtocolError';
 import { isToolPlanningRejectedError } from '../../errors/ToolPlanningRejectedError';
+import { ACTION_PLANNING_MODE_TOOL_NAME } from '../../models/ActionPlanningMode';
 import { type RunnableAiBackend } from '../../models/LlmOrchestrationTypes';
 import { WEBLLM_MODEL_ID } from '../../models/ModelInfo';
 import { DAW_TOOL_SCHEMAS, type ToolSchema } from '../../models/ToolDefinitions';
@@ -212,8 +213,13 @@ export const generateToolPlanningOutcome = inject({ logger })(({ logger }) => {
                     const workflowSelectionTools = availableTools.filter(
                         (tool) => tool.function.name === WORKFLOW_CAPABILITY_TOOL_NAME
                     );
+                    const planningModeTools = availableTools.filter(
+                        (tool) => tool.function.name === ACTION_PLANNING_MODE_TOOL_NAME
+                    );
                     const actionTools = availableTools.filter(
-                        (tool) => tool.function.name !== WORKFLOW_CAPABILITY_TOOL_NAME
+                        (tool) =>
+                            tool.function.name !== WORKFLOW_CAPABILITY_TOOL_NAME &&
+                            tool.function.name !== ACTION_PLANNING_MODE_TOOL_NAME
                     );
                     const selectedActionTools = selectExecutableAppActionToolSchemasForPrompt({
                         toolSchemas: actionTools,
@@ -225,13 +231,16 @@ export const generateToolPlanningOutcome = inject({ logger })(({ logger }) => {
                             ? actionTools.filter((tool) => workflowActionToolNames.has(tool.function.name))
                             : [];
                     const mandatoryToolNames = new Set(
-                        [...workflowSelectionTools, ...workflowActionTools].map((tool) => tool.function.name)
+                        [...workflowSelectionTools, ...planningModeTools, ...workflowActionTools].map(
+                            (tool) => tool.function.name
+                        )
                     );
                     const promptActionTools = selectedActionTools.filter(
                         (tool) => !mandatoryToolNames.has(tool.function.name)
                     );
                     const relevantTools = [
                         ...workflowSelectionTools,
+                        ...planningModeTools,
                         ...workflowActionTools,
                         ...promptActionTools,
                     ].slice(0, 30);

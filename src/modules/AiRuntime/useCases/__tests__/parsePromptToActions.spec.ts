@@ -4,6 +4,7 @@ import { getExecutableAppActionToolSchemas } from '#/modules/Command/useCases';
 
 import { AiRuntimeConfigurationChangedError } from '../../errors/AiRuntimeConfigurationChangedError';
 import { type ProjectContext } from '../../models/ProjectContext';
+import { agentReferenceHistoryStore } from '../../stores/agentReferenceHistoryStore';
 import { tryPresetMatch, tryParameterizedPath, tryCompoundFastPath } from '../../transformers/promptParser/parsing';
 import { getProjectContext } from '../getProjectContext';
 import { generateToolPlanningOutcome as generateToolCalls } from '../llmOrchestration/inference';
@@ -207,6 +208,7 @@ describe('parsePromptToActions', () => {
         mockBuildLlmActionUserMessage.mockClear();
         mockDoesProductionBriefAllowActionBatch.mockReturnValue(true);
         markerStoreValue.value = { markers: [], sections: [] };
+        agentReferenceHistoryStore.set([]);
     });
 
     it.each([
@@ -316,6 +318,9 @@ describe('parsePromptToActions', () => {
                 expect.objectContaining({
                     function: expect.objectContaining({ name: 'selectWorkflowCapability' }),
                 }),
+                expect.objectContaining({
+                    function: expect.objectContaining({ name: 'selectActionPlanningMode' }),
+                }),
                 ...getExecutableAppActionToolSchemas(),
             ]),
             undefined,
@@ -331,6 +336,7 @@ describe('parsePromptToActions', () => {
             markerSignatures: [],
             sectionSignatures: [],
             prompt: 'make the project faster',
+            referenceResolutionMode: 'execute',
         });
         expect(result.actions).toEqual([{ type: 'setTempo', payload: { bpm: 128 } }]);
         expect(result.executionMode).toBe('atomic');
@@ -395,9 +401,14 @@ describe('parsePromptToActions', () => {
     it('requires an explicit preview before proposing a low-confidence destructive target', async () => {
         mockBridgeGroundedLlmToolCalls.mockImplementation(actualBridge.bridgeGroundedLlmToolCalls);
         const context = createMixerContext();
-        vi.mocked(generateToolCalls).mockResolvedValue(
-            completePlan([{ name: 'removeTrack', arguments: { trackId: 'track-vocals' } }])
-        );
+        vi.mocked(generateToolCalls)
+            .mockResolvedValueOnce(completePlan([{ name: 'removeTrack', arguments: { trackId: 'track-vocals' } }]))
+            .mockResolvedValueOnce(
+                completePlan([
+                    { name: 'selectActionPlanningMode', arguments: { mode: 'preview' } },
+                    { name: 'removeTrack', arguments: { trackId: 'track-vocals' } },
+                ])
+            );
 
         const rejected = await parsePromptToActions('delete Vocls', context);
 
@@ -420,7 +431,7 @@ describe('parsePromptToActions', () => {
                 'Reply with the intended stable ID and request a preview.'
         );
 
-        const preview = await parsePromptToActions('preview delete Vocls', context);
+        const preview = await parsePromptToActions('show me a preview of deleting Vocls', context);
 
         expect(preview.rejectionReason).toBeUndefined();
         expect(preview.actions).toHaveLength(1);
@@ -432,6 +443,33 @@ describe('parsePromptToActions', () => {
         expect(previewAction.payload.trackId).toBe('track-vocals');
         expect(preview.requiresConfirmation).toBe(true);
         expect(preview.referenceResolutionRequest).toBeUndefined();
+    });
+
+    it('resolves recency from prior successful reference receipts rather than production decisions', async () => {
+        mockBridgeGroundedLlmToolCalls.mockImplementation(actualBridge.bridgeGroundedLlmToolCalls);
+        const context = createMixerContext();
+        vi.mocked(generateToolCalls)
+            .mockResolvedValueOnce(
+                completePlan([{ name: 'muteTrack', arguments: { trackId: 'track-vocals', muted: true } }])
+            )
+            .mockResolvedValueOnce(
+                completePlan([{ name: 'soloTrack', arguments: { trackId: 'track-vocals', soloed: true } }])
+            );
+
+        const first = await parsePromptToActions('mute Vocals', context);
+        const recentContext = {
+            ...context,
+            agentReferenceHistory: structuredClone(agentReferenceHistoryStore.value ?? []),
+        };
+        const second = await parsePromptToActions('solo the most recently referenced track', recentContext);
+
+        expect(first.actions).toHaveLength(1);
+        expect(recentContext.agentReferenceHistory).toHaveLength(1);
+        expect(recentContext.agentReferenceHistory[0]?.id).toBe('track-vocals');
+        expect(recentContext.agentReferenceHistory[0]?.confidence).toBe(1);
+        expect(recentContext.agentReferenceHistory[0]?.evidence).toEqual([{ kind: 'exact-name', value: 'Vocals' }]);
+        expect(second.actions).toHaveLength(1);
+        expect(second.actions[0]?.type).toBe('soloTrack');
     });
 
     it('rejects a provider plan before confirmation when it conflicts with locked production intent', async () => {

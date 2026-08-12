@@ -6,6 +6,7 @@ import { AiRuntimeConfigurationChangedError } from '../../../errors/AiRuntimeCon
 import { HostedToolCallingProtocolError } from '../../../errors/HostedToolCallingProtocolError';
 import { NativeToolCallingProtocolError } from '../../../errors/NativeToolCallingProtocolError';
 import { ToolPlanningRejectedError } from '../../../errors/ToolPlanningRejectedError';
+import { createActionPlanningModeToolSchema } from '../../../models/ActionPlanningMode';
 import { type ToolSchema } from '../../../models/ToolDefinitions';
 import {
     createWorkflowCapabilityToolSchema,
@@ -313,12 +314,13 @@ describe('generateToolPlanningOutcome', () => {
         expect(toolNames).toEqual(expect.arrayContaining(['createBus', 'addSend', 'setTrackOutput']));
     });
 
-    it('always retains semantic workflow selection inside the bounded WebLLM tool set', async () => {
+    it('always retains semantic workflow and preview selection inside the bounded WebLLM tool set', async () => {
         mocks.backendChain.value = ['webllm'];
         mocks.isWebLlmLoaded.mockReturnValue(true);
         mocks.generateWebLlmToolCalls.mockResolvedValue(completePlan([]));
         const tools = [
             createWorkflowCapabilityToolSchema(['shared-vocal-fx-buses']),
+            createActionPlanningModeToolSchema(),
             ...getExecutableAppActionToolSchemas(),
         ];
 
@@ -326,7 +328,11 @@ describe('generateToolPlanningOutcome', () => {
 
         const selectedTools = mocks.generateWebLlmToolCalls.mock.calls[0]?.[2] as ToolSchema[] | undefined;
         expect(selectedTools?.map((tool) => tool.function.name)).toEqual(
-            expect.arrayContaining(['selectWorkflowCapability', ...WORKFLOW_CAPABILITY_ACTION_TOOL_NAMES])
+            expect.arrayContaining([
+                'selectWorkflowCapability',
+                'selectActionPlanningMode',
+                ...WORKFLOW_CAPABILITY_ACTION_TOOL_NAMES,
+            ])
         );
         expect(selectedTools?.length).toBeLessThanOrEqual(30);
     });

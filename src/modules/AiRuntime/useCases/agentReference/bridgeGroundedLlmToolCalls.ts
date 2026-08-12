@@ -5,7 +5,8 @@ import {
 } from '#/modules/Command/useCases';
 import { createPunchRegionPatch } from '#/modules/Transport/useCases';
 
-import { type ProjectContext } from '../../models/ProjectContext';
+import { type ActionPlanningMode } from '../../models/ActionPlanningMode';
+import { type ProjectContext, type ProjectContextAgentReferenceHistoryEntry } from '../../models/ProjectContext';
 import { type WorkflowCapabilityId } from '../../models/WorkflowCapability';
 import {
     bridgeLlmToolCalls,
@@ -53,6 +54,7 @@ type BridgeGroundedLlmToolCallsInput = {
     markerSignatures?: readonly MarkerPlanningSignature[];
     sectionSignatures?: readonly SectionPlanningSignature[];
     prompt: string;
+    referenceResolutionMode?: ActionPlanningMode;
     workflowCapabilityId?: WorkflowCapabilityId;
 };
 
@@ -65,6 +67,8 @@ type GroundToolCallInput = {
     declaredBatchLocalBusBindings: ReadonlyMap<string, BatchLocalBusBinding>;
     index: number;
     prompt: string;
+    referenceResolutionMode: ActionPlanningMode;
+    resolvedReferences: ResolvedAgentReference[];
     plannedActionNames: readonly string[];
     sameActionAssertedArguments: readonly Readonly<Record<string, unknown>>[];
     sameActionCallCount: number;
@@ -80,6 +84,7 @@ type PromptClause = {
 
 type GroundingCatalog = ReturnType<typeof getExecutableAppActionGroundingCatalog>;
 type GroundingRules = NonNullable<ReturnType<typeof getExecutableAppActionGroundingRules>>;
+type ResolvedAgentReference = Omit<ProjectContextAgentReferenceHistoryEntry, 'referencedAt'>;
 
 type BridgeGroundedLlmToolCallsResult = LlmActionBridgeResult & {
     appOwnedRenderTailSeconds?: number;
@@ -88,6 +93,7 @@ type BridgeGroundedLlmToolCallsResult = LlmActionBridgeResult & {
     drumPreviewBranchesScope?: DrumPreviewBranchesRequestScope;
     syncopatedArpeggioScope?: SyncopatedArpeggioRequestScope;
     batchLocalActionIdentities?: BatchLocalActionIdentity[];
+    resolvedReferences?: ResolvedAgentReference[];
 };
 
 type BatchLocalBusBinding = Extract<BatchLocalActionIdentity, { actionType: 'createBus' }> & {
@@ -3337,7 +3343,7 @@ function resolveAgentReferenceArray({
             context,
             excludedIds: candidates.filter((other) => other.id !== candidate.id).map((other) => other.id),
         });
-        if (result.status !== 'resolved') {
+        if (result.status !== 'resolved' || result.evidence === 'fuzzy-name') {
             return [];
         }
         return [{ candidate, evidence: result.evidence }];
@@ -3441,6 +3447,8 @@ function groundToolCall({
     declaredBatchLocalBusBindings,
     index,
     prompt,
+    referenceResolutionMode,
+    resolvedReferences,
     plannedActionNames,
     sameActionAssertedArguments,
     sameActionCallCount,
@@ -3462,11 +3470,9 @@ function groundToolCall({
     if (!groundingRules) {
         return call;
     }
-    const isReferencePreviewRequest =
-        call.name !== 'createDrumPreviewBranches' && /^\s*preview(?:\s+of)?\s+/iu.test(prompt);
     let groundingPrompt = prompt;
-    if (isReferencePreviewRequest) {
-        groundingPrompt = prompt.replace(/^\s*preview(?:\s+of)?\s+/iu, '');
+    if (referenceResolutionMode === 'preview') {
+        groundingPrompt = `${groundingRules.intentPhrases[0] ?? call.name} ${prompt}`;
     }
     const actionScope = resolveActionPromptScope({
         actionName: call.name,
@@ -3688,14 +3694,14 @@ function groundToolCall({
                   })
                 : [];
         const result = resolveAgentReference({
-            prompt: isReferencePreviewRequest ? prompt : targetPrompt,
+            prompt: referenceResolutionMode === 'preview' ? prompt : targetPrompt,
             assertedId: assertedValue,
             capability: targetRule.capability,
             context,
             dependencyId: typeof dependencyValue === 'string' ? dependencyValue : undefined,
             excludedIds: [...(typeof distinctValue === 'string' ? [distinctValue] : []), ...bulkSiblingTargetIds],
             effectRisk: getExecutableAppActionRisk(call.name) ?? undefined,
-            mode: isReferencePreviewRequest ? 'preview' : 'execute',
+            mode: referenceResolutionMode,
         });
         if (result.status === 'rejected') {
             if (result.reason === 'clarification-required' || result.reason === 'preview-required') {
@@ -3722,6 +3728,11 @@ function groundToolCall({
             return rejection(index, call.name, `Target ${targetRule.argument} is not grounded in the user request`);
         }
 
+        resolvedReferences.push({
+            id: result.id,
+            confidence: result.confidence,
+            evidence: result.evidenceReceipt,
+        });
         groundedArguments[targetRule.argument] = result.id;
     }
     if (call.name === 'moveClip' && !isDirectMoveClipDestination(actionScope, groundedArguments.trackId, context)) {
@@ -3759,7 +3770,7 @@ function groundToolCall({
     if (
         call.name === 'removeTrack' &&
         !bulkMutedEmptyTrackDeletionTargetIds?.includes(String(groundedArguments.trackId)) &&
-        !isReferencePreviewRequest &&
+        referenceResolutionMode !== 'preview' &&
         !isExplicitTrackDeletionScope({
             context,
             text: actionScope.text,
@@ -3770,7 +3781,7 @@ function groundToolCall({
     }
     if (
         call.name === 'removeClip' &&
-        !isReferencePreviewRequest &&
+        referenceResolutionMode !== 'preview' &&
         !isExplicitClipDeletionScope({
             context,
             text: actionScope.text,
@@ -3930,6 +3941,7 @@ export function bridgeGroundedLlmToolCalls({
     markerSignatures = [],
     sectionSignatures = [],
     prompt,
+    referenceResolutionMode = 'execute',
     workflowCapabilityId,
 }: BridgeGroundedLlmToolCallsInput): BridgeGroundedLlmToolCallsResult {
     if (calls.length > MAX_LLM_ACTIONS_PER_BATCH) {
@@ -4449,6 +4461,7 @@ export function bridgeGroundedLlmToolCalls({
     const groundingRejections = new Map<number, LlmActionRejection>();
     const groundedCalls: ToolCallResult[] = [];
     const acceptedGroundedCalls: ToolCallResult[] = [];
+    const resolvedReferences: ResolvedAgentReference[] = [];
     const visibleBindings = new Map<string, BatchLocalBusBinding>();
     const visiblePlannedTrackCreations: ToolCallResult[] = [];
     let prospectiveContext = context;
@@ -4475,6 +4488,8 @@ export function bridgeGroundedLlmToolCalls({
                 declaredBatchLocalBusBindings: collectedBindings.bindingsByName,
                 index,
                 prompt,
+                referenceResolutionMode,
+                resolvedReferences,
                 plannedActionNames: effectiveCalls.map((candidate) => candidate.name),
                 sameActionAssertedArguments: sameActionCalls.map((candidate) => candidate.arguments),
                 sameActionCallCount,
@@ -4570,6 +4585,7 @@ export function bridgeGroundedLlmToolCalls({
             ...(midiOverlapTransformScope.status === 'request' ? { midiOverlapTransformScope } : {}),
             ...(drumPreviewBranchesScope.status === 'request' ? { drumPreviewBranchesScope } : {}),
             ...(syncopatedArpeggioScope.status === 'request' ? { syncopatedArpeggioScope } : {}),
+            ...(resolvedReferences.length > 0 ? { resolvedReferences } : {}),
             rejections,
         };
     }
@@ -4583,6 +4599,7 @@ export function bridgeGroundedLlmToolCalls({
         ...(drumPreviewBranchesScope.status === 'request' ? { drumPreviewBranchesScope } : {}),
         ...(syncopatedArpeggioScope.status === 'request' ? { syncopatedArpeggioScope } : {}),
         batchLocalActionIdentities,
+        ...(resolvedReferences.length > 0 ? { resolvedReferences } : {}),
         rejections,
     };
 }
