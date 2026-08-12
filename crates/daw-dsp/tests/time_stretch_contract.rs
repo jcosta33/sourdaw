@@ -1358,6 +1358,7 @@ fn time_stretch_fixture_manifest_validates_hashes_and_portable_semantics() {
 #[test]
 fn time_stretch_crumbs_baseline_matches_bounded_characterizations() {
     let root = fixture_root();
+    let manifest = read_manifest();
     let input = read_fixture_samples(&root.join("characterization/crumbs_input_4096.f32le"));
     let expected_phase = read_fixture_samples(
         &root.join("characterization/phase_vocoder_duration_ratio_1_25.f32le"),
@@ -1367,7 +1368,13 @@ fn time_stretch_crumbs_baseline_matches_bounded_characterizations() {
 
     let actual_phase = PhaseVocoder::new().process(&input, CHARACTERIZATION_DURATION_RATIO);
     let actual_wsola = WsolaProcessor::new().process(&input, CHARACTERIZATION_DURATION_RATIO);
-    if !cfg!(debug_assertions) {
+    let recorded_release_environment = !cfg!(debug_assertions)
+        && current_fixture_generation_environment().is_some_and(|environment| {
+            manifest
+                .generation_policy
+                .matches_reference_environment(&environment)
+        });
+    if recorded_release_environment {
         assert_eq!(
             observed_max_abs_diff(&actual_phase, &expected_phase, "Crumbs phase vocoder"),
             PHASE_VOCODER_RELEASE_OBSERVED_MAX_ABS_DIFF
