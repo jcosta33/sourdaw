@@ -157,6 +157,25 @@ describe('handleArpeggiate', () => {
         expect(handleArpeggiate.describe(action).label).toContain('Track "" (track-chords), clip "" (clip-chords)');
     });
 
+    it('rejects an incomplete app-owned guard bundle without invoking legacy arpeggiation', () => {
+        const result = handleArpeggiate.execute({
+            type: 'arpeggiate',
+            payload: {
+                clipId: 'clip-chords',
+                pattern: 'up',
+                rate: 8,
+                octaves: 1,
+                gate: 50,
+                expectedTrackId: 'track-chords',
+                expectedTrackFrozen: false,
+            },
+        });
+
+        expect(result).toEqual({ status: 'conflict' });
+        expect(mocks.restoreMidiClipNotes).not.toHaveBeenCalled();
+        expect(mocks.arpeggiate).not.toHaveBeenCalled();
+    });
+
     it('is undoable', () => {
         expect(handleArpeggiate.undoable).toBe(true);
         expect(handleArpeggiate.requiresAbortCompensation).toBe(false);

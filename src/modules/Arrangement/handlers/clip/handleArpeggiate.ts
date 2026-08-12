@@ -10,16 +10,27 @@ type ArpeggiateAction = Extract<AppAction, { type: 'arpeggiate' }>;
 function getGuardedArpeggio(action: ArpeggiateAction) {
     const { addedNotes, clipName, expectedClipLocked, expectedNotes, expectedTrackFrozen, expectedTrackId, trackName } =
         action.payload;
+    const hasAnyGuardField =
+        addedNotes !== undefined ||
+        clipName !== undefined ||
+        expectedClipLocked !== undefined ||
+        expectedNotes !== undefined ||
+        expectedTrackFrozen !== undefined ||
+        expectedTrackId !== undefined ||
+        trackName !== undefined;
+    if (!hasAnyGuardField) {
+        return { status: 'legacy' } as const;
+    }
     if (
-        !addedNotes ||
+        addedNotes === undefined ||
         clipName === undefined ||
         expectedClipLocked === undefined ||
-        !expectedNotes ||
+        expectedNotes === undefined ||
         expectedTrackFrozen === undefined ||
-        !expectedTrackId ||
+        expectedTrackId === undefined ||
         trackName === undefined
     ) {
-        return null;
+        return { status: 'invalid' } as const;
     }
     const replacementNotes = [...expectedNotes, ...addedNotes];
     const replayGuard = {
@@ -27,13 +38,24 @@ function getGuardedArpeggio(action: ArpeggiateAction) {
         expectedTrackFrozen,
         expectedClipLocked,
     };
-    return { addedNotes, clipName, expectedNotes, replacementNotes, replayGuard, trackName };
+    return {
+        status: 'guarded',
+        addedNotes,
+        clipName,
+        expectedNotes,
+        replacementNotes,
+        replayGuard,
+        trackName,
+    } as const;
 }
 
 export const handleArpeggiate = createHandler<'arpeggiate'>({
     execute: (alpha) => {
         const guarded = getGuardedArpeggio(alpha);
-        if (guarded) {
+        if (guarded.status === 'invalid') {
+            return { status: 'conflict' };
+        }
+        if (guarded.status === 'guarded') {
             return {
                 status: restoreMidiClipNotes({
                     clipId: alpha.payload.clipId,
@@ -54,7 +76,7 @@ export const handleArpeggiate = createHandler<'arpeggiate'>({
     },
     describe: (alpha) => {
         const guarded = getGuardedArpeggio(alpha);
-        if (!guarded) {
+        if (guarded.status !== 'guarded') {
             return { label: `Arpeggiate (${alpha.payload.pattern ?? 'up'})` };
         }
         const label = `Track "${guarded.trackName}" (${guarded.replayGuard.trackId}), clip "${guarded.clipName}" (${alpha.payload.clipId}): add ${String(guarded.addedNotes.length)} syncopated offbeat eighth-note arpeggio notes; preserve ${String(guarded.expectedNotes.length)} source notes, absolute voicing, velocities, expression, and harmonic boundaries`;
