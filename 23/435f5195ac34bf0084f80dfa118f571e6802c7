@@ -1,0 +1,57 @@
+src/modules/AiRuntime/useCases/agentReference/discardPreparedStemImportResources.ts
+  s_a40848e8f8cca9::t_2c8683336debad 6,13-14
+src/modules/AiRuntime/useCases/agentReference/createStemImportPromptScope.ts
+  s_a40848e8f8cca9::t_2c8683336debad 16-17,20
+src/modules/AiRuntime/useCases/confirmPendingChatActions.ts
+  s_a40848e8f8cca9::t_8add6d39c99e37 14,327,347,454,464,488,506,523,537
+src/modules/AiRuntime/useCases/agentReference/bridgeStemImportPlan.ts
+  s_a40848e8f8cca9::t_7fedeaf4c46c61 29
+  s_a40848e8f8cca9::t_2c8683336debad 5,28,69,80
+src/modules/AiRuntime/stores/pendingActionConfirmationStore.ts
+  s_a40848e8f8cca9::t_7f763dd972467f 64-80,97,105-119,150-161,305-307,310-322
+src/modules/Arrangement/handlers/track/handleImportStemSet.ts
+  s_a40848e8f8cca9::t_d76fb6ff6f7cc3 1,35-36,45-46,52-61,108,111,118-119
+src/modules/AiRuntime/useCases/agentReference/createStemImportConfirmationResourceLease.ts
+  s_a40848e8f8cca9::t_7f763dd972467f 1-22
+src/modules/AiRuntime/useCases/__tests__/stemImportStartingMixWorkflow.spec.ts
+  s_a40848e8f8cca9::t_784fc8573a8607 486-496,498-499
+  s_a40848e8f8cca9::t_4c58bd2d565049 43,52-53,111-115,309
+  s_a40848e8f8cca9::t_1fbb702d066572 346-347
+  s_a40848e8f8cca9::t_78f49066f64d00 428,450,497,538,541,557,568,585,704
+src/modules/Collaboration/useCases/__tests__/assetTransfer.spec.ts
+  s_a40848e8f8cca9::t_784fc8573a8607 83-85,87,90-93
+  s_a40848e8f8cca9::t_4a17ec3b4bfb1d 79,86,88-89
+src/modules/AiRuntime/useCases/__tests__/cancelPendingChatActions.spec.ts
+  s_a40848e8f8cca9::t_0cdcca1d32d9b0 5,12
+src/modules/AiRuntime/useCases/cancelPendingChatActions.ts
+  s_a40848e8f8cca9::t_8add6d39c99e37 5,28
+src/utils/handlerContract.ts
+  s_a40848e8f8cca9::t_2c8683336debad 452-453,456
+src/modules/AiRuntime/useCases/agentReference/prepareStemImport.ts
+  s_a40848e8f8cca9::t_2c8683336debad 85-86,89,132-133,141
+src/modules/AiRuntime/stores/__tests__/pendingActionConfirmationStore.spec.ts
+  s_a40848e8f8cca9::t_784fc8573a8607 1,87-130,142-147
+  s_a40848e8f8cca9::t_7fedeaf4c46c61 131-141
+  s_a40848e8f8cca9::t_6a69df1be66701 148-149
+src/modules/AiRuntime/useCases/sendChatMessage.ts
+  s_a40848e8f8cca9::t_8add6d39c99e37 30,117,128,130-139
+src/modules/Collaboration/useCases/assetTransfer.ts
+  s_a40848e8f8cca9::t_7fedeaf4c46c61 362-367
+  s_a40848e8f8cca9::t_2c8683336debad 29-35,46-48,77-82,86-87,89-94,96-97,100-129
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "23435f5195ac34bf0084f80dfa118f571e6802c7",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
