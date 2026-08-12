@@ -9,6 +9,10 @@ describe('Fermenter parameter metadata weld', () => {
         const moduleParams = new Map(FERMENTER_PARAMS.map((param) => [param.id, param]));
         const descriptorParams = new Map(FERMENTER_DESCRIPTOR.parameters.map((param) => [param.id, param]));
 
+        expect(FERMENTER_PARAMS.length).toBeGreaterThan(0);
+        expect(FERMENTER_PARAMS).toHaveLength(moduleParams.size);
+        expect(FERMENTER_DESCRIPTOR.parameters.length).toBeGreaterThan(0);
+        expect(FERMENTER_DESCRIPTOR.parameters).toHaveLength(descriptorParams.size);
         expect([...moduleParams.keys()]).toEqual([...descriptorParams.keys()]);
         expect(
             [...moduleParams.values()].map((param) => ({

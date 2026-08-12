@@ -128,7 +128,7 @@ describe('OscillatorSection', () => {
             const fine = knobs.find((candidate) => candidate.dataset.paramid === 'oscFine');
 
             expect(coarse).toHaveAttribute('data-step', '1');
-            expect(fine).not.toHaveAttribute('data-step');
+            expect(fine).toHaveAttribute('data-step', '0.1');
         });
 
         it('routes Level/Coarse/Fine knobs to their callbacks in order', () => {
