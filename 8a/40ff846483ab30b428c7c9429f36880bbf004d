@@ -1,0 +1,23 @@
+src/modules/Fermenter/useCases/applyFermenterMacroMapping.ts
+  s_bc88af7d3b054c::t_a47ca60bcf2258 19-21
+  s_bc88af7d3b054c::t_c11d99d7febf87 3,9-10,50-51,55-60
+src/modules/Fermenter/useCases/__tests__/applyFermenterMacroMapping.spec.ts
+  s_bc88af7d3b054c::t_9421752860932a 101-117,119
+  s_bc88af7d3b054c::t_0d42ca17c54553 118
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "8a40ff846483ab30b428c7c9429f36880bbf004d",
+  "prompts": {},
+  "sessions": {
+    "s_bc88af7d3b054c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f9b4a-11a2-7f61-8dfb-76eed0eb2a9c",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
