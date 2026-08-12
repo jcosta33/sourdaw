@@ -8,7 +8,7 @@ use super::oscillator::Wavetable;
 use super::params::SmoothedParam;
 use super::voice::{Voice, VoiceParams};
 
-const MAX_VOICES_PER_LAYER: usize = 16;
+const MAX_STEAL_TAILS_PER_LAYER: usize = 16;
 const MAX_SCRATCH_FRAMES: usize = 4096;
 
 pub struct Layer {
@@ -140,18 +140,21 @@ pub struct Layer {
 }
 
 impl Layer {
-    pub fn new(sample_rate: f32) -> Self {
-        let mut voices = Vec::with_capacity(MAX_VOICES_PER_LAYER);
-        let mut steal_tails = Vec::with_capacity(MAX_VOICES_PER_LAYER);
-        for _ in 0..MAX_VOICES_PER_LAYER {
+    pub fn new(sample_rate: f32, voice_capacity: usize) -> Self {
+        let mut voices = Vec::with_capacity(voice_capacity);
+        let steal_tail_capacity = voice_capacity.min(MAX_STEAL_TAILS_PER_LAYER);
+        let mut steal_tails = Vec::with_capacity(steal_tail_capacity);
+        for _ in 0..voice_capacity {
             voices.push(Voice::new(sample_rate));
+        }
+        for _ in 0..steal_tail_capacity {
             steal_tails.push(Voice::new(sample_rate));
         }
 
         Self {
             voices,
             steal_tails,
-            active_steal_tails: Vec::with_capacity(MAX_VOICES_PER_LAYER),
+            active_steal_tails: Vec::with_capacity(steal_tail_capacity),
             mod_matrix: ModMatrix::new(),
             engine: 0,
             osc_waveform: 1, // Saw
@@ -278,13 +281,7 @@ impl Layer {
     /// layer that derived the origin itself would be answering "what was *this
     /// layer* last audible for?" when the question is "what did the *player*
     /// last play?".
-    pub fn note_on_with_channel(
-        &mut self,
-        note: u8,
-        velocity: u8,
-        channel: u8,
-        glide_origin: f32,
-    ) {
+    pub fn note_on_with_channel(&mut self, note: u8, velocity: u8, channel: u8, glide_origin: f32) {
         let vel = velocity as f32 / 127.0;
         // Read before any voice is touched: voice stealing below swaps the
         // displaced voice out of `self.voices` into a steal tail, so asking
@@ -389,10 +386,10 @@ impl Layer {
     /// The tails are a pool, not a per-voice pairing: pairing tail `i` with
     /// voice `i` would truncate an unrelated fade whenever the same slot is
     /// stolen twice in quick succession while other tails sit idle.
-    fn move_voice_to_steal_tail(&mut self, index: usize) {
+    pub(super) fn move_voice_to_steal_tail(&mut self, index: usize) {
         let (tail_index, tail_was_idle) = self.select_steal_tail_slot();
         if !tail_was_idle {
-            // Reached only when all 16 fades are in flight at once, i.e. the
+            // Reached only when every fade slot is in flight at once, i.e. the
             // whole pool was displaced inside one 10 ms fade. Cutting the
             // quietest of them is the least audible bounded loss available.
             self.steal_tails[tail_index].kill();
@@ -402,6 +399,15 @@ impl Layer {
         if tail_was_idle {
             self.active_steal_tails.push(tail_index);
         }
+    }
+
+    pub(super) fn quietest_active_voice(&self) -> Option<(usize, f32)> {
+        self.voices
+            .iter()
+            .enumerate()
+            .filter(|(_, voice)| voice.is_active())
+            .map(|(index, voice)| (index, voice.get_amp_level()))
+            .min_by(|(_, left), (_, right)| left.total_cmp(right))
     }
 
     /// Pick a crossfade slot: an idle one if there is one, otherwise the fade
@@ -811,11 +817,12 @@ impl Layer {
 
 #[cfg(test)]
 mod tests {
-    use super::{note_frequency, Layer};
+    use super::{Layer, MAX_STEAL_TAILS_PER_LAYER};
+    use crate::fermenter::voice::note_frequency;
 
     #[test]
     fn mapped_oscillator_and_filter_params_update_layer_state() {
-        let mut layer = Layer::new(48_000.0);
+        let mut layer = Layer::new(48_000.0, MAX_STEAL_TAILS_PER_LAYER);
 
         layer.set_param("engine", 6.0);
         layer.set_param("osc_waveform", 3.0);
@@ -840,7 +847,7 @@ mod tests {
 
     #[test]
     fn mapped_engine_specific_params_update_layer_state() {
-        let mut layer = Layer::new(48_000.0);
+        let mut layer = Layer::new(48_000.0, MAX_STEAL_TAILS_PER_LAYER);
 
         layer.set_param("ks_damping", 0.9);
         layer.set_param("grain_density", 40.0);
@@ -891,7 +898,7 @@ mod tests {
 
     #[test]
     fn expression_skips_a_still_ringing_voice_at_the_same_pitch() {
-        let mut layer = Layer::new(48_000.0);
+        let mut layer = Layer::new(48_000.0, MAX_STEAL_TAILS_PER_LAYER);
         // Long release so the first voice is unambiguously still active.
         layer.set_param("release", 2.0);
         layer.note_on(60, 100, note_frequency(60));
@@ -918,7 +925,7 @@ mod tests {
 
     #[test]
     fn expression_does_not_cross_mpe_member_channels_at_one_pitch() {
-        let mut layer = Layer::new(48_000.0);
+        let mut layer = Layer::new(48_000.0, MAX_STEAL_TAILS_PER_LAYER);
         // Two member channels holding the same pitch — ordinary MPE.
         layer.note_on_with_channel(60, 100, 2, note_frequency(60));
         layer.note_on_with_channel(60, 100, 3, note_frequency(60));
@@ -944,7 +951,7 @@ mod tests {
 
     #[test]
     fn note_off_can_be_narrowed_to_one_member_channel() {
-        let mut layer = Layer::new(48_000.0);
+        let mut layer = Layer::new(48_000.0, MAX_STEAL_TAILS_PER_LAYER);
         layer.note_on_with_channel(60, 100, 2, note_frequency(60));
         layer.note_on_with_channel(60, 100, 3, note_frequency(60));
 
@@ -965,7 +972,7 @@ mod tests {
 
     #[test]
     fn channel_agnostic_note_off_still_releases_every_voice_at_the_pitch() {
-        let mut layer = Layer::new(48_000.0);
+        let mut layer = Layer::new(48_000.0, MAX_STEAL_TAILS_PER_LAYER);
         layer.note_on_with_channel(60, 100, 2, note_frequency(60));
         layer.note_on_with_channel(60, 100, 3, note_frequency(60));
 

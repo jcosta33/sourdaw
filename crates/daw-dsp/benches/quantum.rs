@@ -186,9 +186,9 @@
 //!
 //! Two things the setups turned up, both recorded rather than smoothed over:
 //!
-//! * **Fermenter's constructed 32 voices cannot exceed 16.** `MasterSynth::new`
-//!   discards its `max_voices` argument and a `Layer` owns a fixed 16-voice
-//!   pool, so the shipped single-layer patch tops out at 16.
+//! * **Fermenter's constructed 32 voices are now reachable.** `MasterSynth::new`
+//!   enforces the instance-wide ceiling across layers, so the shipped
+//!   single-layer patch can use all 32 voices it requests.
 //! * **Levain's constructed 64 voices settle at 32.** Legato ships enabled and
 //!   collapses any note within 12 semitones of a held one onto the held voice,
 //!   so 64 notes spread over 88 keys become 32 sounding voices.
@@ -219,25 +219,14 @@ const GRAND_BOULE_POOL: usize = 64;
 
 /// What `fermenterProcessor.ts:170` asks for: `new FermenterInstance(sampleRate, 32)`.
 ///
-/// It does not get it. `MasterSynth::new(sample_rate, _max_voices)` discards the
-/// argument, and each `Layer` owns a fixed `MAX_VOICES_PER_LAYER = 16` pool, so
-/// the shipped single-layer patch tops out at 16 sounding voices no matter what
-/// number the processor passes. This constant is kept at the production value
-/// so the call site here matches production; the achievable counts below are
-/// the real ones.
+/// `MasterSynth` enforces this as an instance-wide ceiling across every active
+/// layer. The shipped single-layer patch can therefore sound all 32 voices.
 const FERMENTER_POOL: u32 = 32;
 
-/// Layers stacked to reach a given sounding-voice count. `MasterSynth::note_on`
-/// fans one note out to every active layer, and each layer holds 16 voices, so
-/// 64 sounding Fermenter voices means 4 layers × 16 held notes — the only way
-/// to put a 64-voice load on this synth at all.
-///
-/// Read the comparison off the **16-voice** row, not the 64-voice one, when the
-/// question is production-vs-production. Production Fermenter is one layer, so
-/// 16 is its real ceiling; the stacked rows are a charitable control that gives
-/// Grand Boule the benefit of a load Fermenter never actually carries, and they
-/// make the gap look four times smaller than it is.
-const MAX_VOICES_PER_LAYER: usize = 16;
+/// Production's configured instance-wide ceiling. Higher synthetic rows raise
+/// the constructor ceiling explicitly rather than relying on hidden layer
+/// capacity.
+const PRODUCTION_FERMENTER_VOICE_CEILING: usize = FERMENTER_POOL as usize;
 
 /// Blocks rendered before any timed region, to get past note-on transients
 /// (Grand Boule's 80 ms pitch glide, the mechanical-noise bursts, Fermenter's
@@ -461,15 +450,18 @@ fn bench_grand_boule_saturated_steal(criterion: &mut Criterion) {
 /// layer's pool is fixed at 16. `layers × notes` is chosen to hit `sounding`
 /// exactly, keeping the notes distinct within a layer.
 fn fermenter_instance(sounding: usize) -> FermenterInstance {
-    let layers = sounding.div_ceil(MAX_VOICES_PER_LAYER).clamp(1, 4);
+    let layers = sounding
+        .div_ceil(PRODUCTION_FERMENTER_VOICE_CEILING)
+        .clamp(1, 4);
     let notes_per_layer = sounding / layers;
     assert_eq!(
         notes_per_layer * layers,
         sounding,
-        "{sounding} Fermenter voices does not divide into {layers} layers of 16"
+        "{sounding} Fermenter voices does not divide evenly into {layers} layers"
     );
 
-    let mut instance = FermenterInstance::new(SAMPLE_RATE, FERMENTER_POOL);
+    let voice_ceiling = sounding.max(PRODUCTION_FERMENTER_VOICE_CEILING) as u32;
+    let mut instance = FermenterInstance::new(SAMPLE_RATE, voice_ceiling);
     instance.set_param("num_layers", layers as f32);
     for layer in 0..layers {
         instance.set_param("active_layer", layer as f32);
@@ -1064,7 +1056,7 @@ fn row_grinder() -> Row {
 }
 
 fn row_fermenter() -> Row {
-    let struck = 16;
+    let struck = PRODUCTION_FERMENTER_VOICE_CEILING;
     let mut instance = fermenter_instance(struck);
     let samples = sample_quanta(&mut instance, &mut |_, _| {}, &mut |device| {
         device.process(QUANTUM as u32)
@@ -1072,8 +1064,8 @@ fn row_fermenter() -> Row {
     let active = instance.active_voices();
     Row {
         id: "fermenter",
-        label: "Fermenter (16 sounding voices, 1 layer)",
-        load: "fermenterProcessor.ts:170 constructs 32; one layer holds 16, which is production",
+        label: "Fermenter (32 sounding voices, 1 layer)",
+        load: "fermenterProcessor.ts constructs an instance-wide ceiling of 32 voices",
         distribution: summarise(samples),
         occupancy: format!("active_voices() = {active}, expected {struck}"),
         occupancy_ok: active as usize == struck,

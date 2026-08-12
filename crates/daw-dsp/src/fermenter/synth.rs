@@ -6,8 +6,8 @@ use super::effects::{
 };
 use super::layer::Layer;
 use super::oscillator::Wavetable;
-use super::voice::note_frequency;
 use super::params::SmoothedParam;
+use super::voice::note_frequency;
 use crate::primitives::{ProcessLifecycle, TailLength};
 
 /// `MidiEvent::kind` — release voices at the pitch.
@@ -39,6 +39,7 @@ pub struct MidiEvent {
 }
 
 const MAX_LAYERS: usize = 4;
+const MAX_VOICE_CEILING: usize = 64;
 const OUTPUT_QUIET_THRESHOLD: f32 = 3.162_277_6e-8;
 const RENDER_QUANTUM_FRAMES: u64 = 128;
 
@@ -46,6 +47,7 @@ pub struct MasterSynth {
     layers: [Layer; MAX_LAYERS],
     num_active_layers: usize, // 1-4
     active_layer: usize,      // which layer receives MIDI and param changes (0-3)
+    max_voices: usize,
 
     /// The pitch the next glide starts from: the frequency of the last note the
     /// **player** played, or `None` when none has been played.
@@ -186,7 +188,14 @@ pub struct MasterSynth {
 }
 
 impl MasterSynth {
-    pub fn new(sample_rate: f32, _max_voices: usize) -> Self {
+    /// Build a synth with an instance-wide playable note-voice ceiling.
+    ///
+    /// The ceiling is clamped to 1..=64 and shared by every layer. Each note
+    /// voice can render up to 16 unison oscillators, so the sustained oscillator
+    /// budget is at most `max_voices * 16`; bounded de-click tails may overlap
+    /// briefly when a voice is stolen.
+    pub fn new(sample_rate: f32, max_voices: usize) -> Self {
+        let max_voices = max_voices.clamp(1, MAX_VOICE_CEILING);
         // Pre-compute band-limited wavetables
         let tables = vec![
             Wavetable::sine(),
@@ -196,16 +205,17 @@ impl MasterSynth {
         ];
 
         let layers = [
-            Layer::new(sample_rate),
-            Layer::new(sample_rate),
-            Layer::new(sample_rate),
-            Layer::new(sample_rate),
+            Layer::new(sample_rate, max_voices),
+            Layer::new(sample_rate, max_voices),
+            Layer::new(sample_rate, max_voices),
+            Layer::new(sample_rate, max_voices),
         ];
 
         Self {
             layers,
             num_active_layers: 1,
             active_layer: 0,
+            max_voices,
             tables,
             reverb: PlateReverb::new(sample_rate),
             fdn_reverb: FdnReverb::new(sample_rate),
@@ -814,14 +824,52 @@ impl MasterSynth {
         self.last_played_freq = Some(destination_freq);
 
         let any_solo = self.layers[..self.num_active_layers].iter().any(|l| l.solo);
-        for layer in &mut self.layers[..self.num_active_layers] {
+        let mut playable_layers = [0; MAX_LAYERS];
+        let mut playable_count = 0;
+        for (index, layer) in self.layers[..self.num_active_layers].iter().enumerate() {
             if layer.muted {
                 continue;
             }
             if any_solo && !layer.solo {
                 continue;
             }
-            layer.note_on_with_channel(note, velocity, channel, glide_origin);
+            if playable_count == self.max_voices {
+                break;
+            }
+            playable_layers[playable_count] = index;
+            playable_count += 1;
+        }
+
+        self.make_voice_capacity_available(playable_count);
+        for layer_index in playable_layers.into_iter().take(playable_count) {
+            self.layers[layer_index].note_on_with_channel(note, velocity, channel, glide_origin);
+        }
+    }
+
+    fn make_voice_capacity_available(&mut self, incoming_voices: usize) {
+        let active_voices = self
+            .layers
+            .iter()
+            .map(Layer::active_voice_count)
+            .sum::<usize>();
+        let voices_to_retire = active_voices
+            .saturating_add(incoming_voices)
+            .saturating_sub(self.max_voices);
+
+        for _ in 0..voices_to_retire {
+            let mut target = None;
+            for (layer_index, layer) in self.layers.iter().enumerate() {
+                let Some((voice_index, amplitude)) = layer.quietest_active_voice() else {
+                    continue;
+                };
+                if target.is_none_or(|(_, _, lowest_amplitude)| amplitude < lowest_amplitude) {
+                    target = Some((layer_index, voice_index, amplitude));
+                }
+            }
+            let Some((layer_index, voice_index, _)) = target else {
+                break;
+            };
+            self.layers[layer_index].move_voice_to_steal_tail(voice_index);
         }
     }
 

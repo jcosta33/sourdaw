@@ -34,8 +34,8 @@ use daw_dsp::primitives::ProcessLifecycle;
 
 const SAMPLE_RATE: f32 = 48_000.0;
 const BLOCK: usize = 128;
-/// `Layer::MAX_VOICES_PER_LAYER`. One layer is active by default, so this is
-/// the whole pool.
+/// Constructor ceiling used by this regression. One layer is active by default,
+/// so this is the whole pool.
 const POOL: usize = 16;
 /// ~170 ms: long past the 1 ms attack, so every held voice sits at sustain.
 const WARMUP_BLOCKS: usize = 64;
