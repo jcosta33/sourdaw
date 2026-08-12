@@ -7,7 +7,6 @@ import { compileCommandArgumentMetadata } from './commandArgumentMetadata';
 import { commandDeviceVersionsPort } from './commandDeviceVersionsPort';
 import { commandProjectRevisionPort } from './commandProjectRevisionPort';
 import { createVersionedCommandEnvelope } from './createVersionedCommandEnvelope';
-import { getCommandDeviceTypes } from './getCommandDeviceTypes';
 import { materializeCommandApplicationIds } from './materializeCommandApplicationIds';
 
 type CreateExecutionCommandEnvelopeInput = {
@@ -72,7 +71,10 @@ export function createExecutionCommandEnvelope(input: CreateExecutionCommandEnve
     const envelope = createVersionedCommandEnvelope({
         action: materialized.action,
         applicationAssignedIds: identityMaterialized.applicationAssignedIds,
-        availableDeviceVersions: commandDeviceVersionsPort.capture(getCommandDeviceTypes(argumentsValue)),
+        availableDeviceVersions: commandDeviceVersionsPort.capture({
+            argumentsValue,
+            operation: materialized.action.type,
+        }),
         dependencyIds: input.dependencyIds,
         expectedEffect: input.expectedEffect,
         groupId: input.options?.groupId,

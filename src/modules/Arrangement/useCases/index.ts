@@ -12,6 +12,7 @@ export { removeTrack } from './removeTrack';
 export { renameTrack } from './renameTrack';
 export { reserveNextTrackColorForCommand } from './reserveNextTrackColorForCommand';
 export { getDeviceContractVersionForCommand } from './getDeviceContractVersionForCommand';
+export { getDeviceTypesForCommandDeviceIds } from './getDeviceTypesForCommandDeviceIds';
 export { duplicateTrack } from './duplicateTrack';
 export { updateTrack } from './updateTrack';
 export { getAllTracks } from './getAllTracks';

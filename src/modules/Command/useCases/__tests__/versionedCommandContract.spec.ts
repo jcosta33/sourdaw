@@ -28,6 +28,21 @@ describe('versioned command contract', () => {
         clearHandlerRegistry();
         configureAutomergeStoragePort(null);
         commandProjectRevisionPort.setProvider(captureProjectRevision);
+        commandDeviceVersionsPort.setDeviceTypeResolver(({ argumentsValue, deviceIds, operation }) => {
+            const resolved = Object.fromEntries(
+                deviceIds
+                    .filter((deviceId) => deviceId === 'device-existing')
+                    .map((deviceId) => [deviceId, 'builtin-compressor'])
+            );
+            if (
+                operation === 'addTrack' &&
+                argumentsValue.kind === 'midi' &&
+                typeof argumentsValue.initialDeviceId === 'string'
+            ) {
+                resolved[argumentsValue.initialDeviceId] = 'builtin-synth';
+            }
+            return resolved;
+        });
         commandDeviceVersionsPort.setResolver((deviceType) => `descriptor-v1:${deviceType}`);
         commandTrackDefaultsPort.setTrackColorProvider(() => 'oklch(0.40 0.08 250)');
     });
@@ -37,6 +52,7 @@ describe('versioned command contract', () => {
         flushAutomergeStorageWrites();
         configureAutomergeStoragePort(null);
         commandProjectRevisionPort.setProvider(null);
+        commandDeviceVersionsPort.setDeviceTypeResolver(null);
         commandDeviceVersionsPort.setResolver(null);
         commandTrackDefaultsPort.setTrackColorProvider(null);
         vi.restoreAllMocks();
@@ -797,6 +813,42 @@ describe('versioned command contract', () => {
             reason: 'Command batch base revision does not match current project state',
         });
         expect(observed).toEqual([]);
+    });
+
+    it('captures an application-resolved type for a device-ID-only command', () => {
+        const command = createExecutionCommandEnvelope({
+            action: {
+                type: 'setDeviceParameter',
+                payload: {
+                    deviceId: 'device-existing',
+                    paramId: 'threshold',
+                    value: -18,
+                },
+            },
+            expectedEffect: 'Set threshold.',
+            normalizedProjectRevision: 'revision-live',
+        });
+
+        expect(command.envelope.availableDeviceVersions).toEqual({
+            'builtin-compressor': 'descriptor-v1:builtin-compressor',
+        });
+    });
+
+    it('rejects a device-ID-only command whose device version cannot be resolved', () => {
+        expect(() =>
+            createExecutionCommandEnvelope({
+                action: {
+                    type: 'setDeviceParameter',
+                    payload: {
+                        deviceId: 'device-missing',
+                        paramId: 'threshold',
+                        value: -18,
+                    },
+                },
+                expectedEffect: 'Set threshold.',
+                normalizedProjectRevision: 'revision-live',
+            })
+        ).toThrow('Device version is unavailable for command setDeviceParameter');
     });
 
     it('rejects execution after an application-owned device contract changes', async () => {

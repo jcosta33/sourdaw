@@ -31,6 +31,7 @@ import {
     setVcaRuntimeProjectionDependencies,
     getSongStructureHandlers,
     getDeviceContractVersionForCommand,
+    getDeviceTypesForCommandDeviceIds,
     reserveNextTrackColorForCommand,
 } from '#/modules/Arrangement/useCases';
 import { getAnalysisHandlers, setMixAnalysisDisplayLifecycle } from '#/modules/AudioAnalysis/useCases';
@@ -188,6 +189,7 @@ setActionHistoryMetadataPort({
 });
 productionBriefAdmissionPort.setGuard(doesProductionBriefAllowActionBatch);
 commandProjectRevisionPort.setProvider(captureProjectRevision);
+commandDeviceVersionsPort.setDeviceTypeResolver(getDeviceTypesForCommandDeviceIds);
 commandDeviceVersionsPort.setResolver(getDeviceContractVersionForCommand);
 commandTrackDefaultsPort.setTrackColorProvider(reserveNextTrackColorForCommand);
 syncActionReplayMetadata(actionHistoryStore.value?.entries ?? []);
