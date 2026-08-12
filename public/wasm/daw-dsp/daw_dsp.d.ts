@@ -1,4 +1,4 @@
-// @wasm-bindgen-dts crate-source: sha256:12b56dd0ab30fae0bdc5719f6ca00ba49bba60ba19e19103e21c3ba9b3213c1d
+// @wasm-bindgen-dts crate-source: sha256:1cb6015e2e91bc3ac097707597e8560490512ed13a43f5132389a1a572c513c0
 /* tslint:disable */
 /* eslint-disable */
 
@@ -840,6 +840,7 @@ export interface InitOutput {
     readonly grandbouleinstance_set_sustain: (a: number, b: number) => void;
     readonly grandbouleinstance_set_temperament: (a: number, b: number) => void;
     readonly grandbouleinstance_set_una_corda: (a: number, b: number) => void;
+    readonly init_panic_hook: () => void;
     readonly __wbg_kneadinstance_free: (a: number, b: number) => void;
     readonly kneadinstance_get_f0: (a: number) => number;
     readonly kneadinstance_get_input_left_ptr: (a: number) => number;
@@ -871,7 +872,6 @@ export interface InitOutput {
     readonly crumbsinstance_set_active_sample: (a: number, b: number) => void;
     readonly crumbsinstance_set_mode: (a: number, b: number, c: number) => void;
     readonly crumbsinstance_set_param: (a: number, b: number, c: number, d: number) => void;
-    readonly init_panic_hook: () => void;
     readonly levaininstance_abort_sample_bank: (a: number) => void;
     readonly levaininstance_active_voices: (a: number) => number;
     readonly levaininstance_add_sample: (a: number, b: number, c: number, d: number, e: number, f: number) => number;
