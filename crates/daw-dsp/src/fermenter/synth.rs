@@ -857,6 +857,30 @@ impl MasterSynth {
             .saturating_sub(self.max_voices);
 
         for _ in 0..voices_to_retire {
+            let any_solo = self.layers[..self.num_active_layers]
+                .iter()
+                .any(|layer| layer.solo);
+            let mut hidden_target = None;
+            for (layer_index, layer) in self.layers.iter().enumerate() {
+                let renderable = layer_index < self.num_active_layers
+                    && !layer.muted
+                    && (!any_solo || layer.solo);
+                if renderable {
+                    continue;
+                }
+                let Some((voice_index, amplitude)) = layer.quietest_active_voice() else {
+                    continue;
+                };
+                if hidden_target.is_none_or(|(_, _, lowest_amplitude)| amplitude < lowest_amplitude)
+                {
+                    hidden_target = Some((layer_index, voice_index, amplitude));
+                }
+            }
+            if let Some((layer_index, voice_index, _)) = hidden_target {
+                self.layers[layer_index].kill_voice(voice_index);
+                continue;
+            }
+
             let mut target = None;
             for (layer_index, layer) in self.layers.iter().enumerate() {
                 let Some((voice_index, amplitude)) = layer.quietest_active_voice() else {
@@ -1503,6 +1527,27 @@ mod tests {
         synth.note_on(60, 100);
 
         assert_eq!(synth.active_voice_count(), 1);
+    }
+
+    #[test]
+    fn global_ceiling_retires_hidden_voices_before_audible_ones() {
+        let mut synth = MasterSynth::new(48_000.0, 2);
+        synth.set_param("num_layers", 2.0);
+        synth.note_on(60, 100);
+
+        synth.set_param("active_layer", 1.0);
+        synth.set_param("layer_mute", 1.0);
+        synth.note_on(61, 100);
+
+        let audible_notes: Vec<u8> = synth.layers[0]
+            .voices
+            .iter()
+            .filter(|voice| voice.is_active())
+            .map(|voice| voice.note)
+            .collect();
+        assert_eq!(audible_notes, vec![60, 61]);
+        assert_eq!(synth.layers[1].active_voice_count(), 0);
+        assert_eq!(synth.layers[1].fading_steal_tail_count(), 0);
     }
 
     #[test]

@@ -401,6 +401,10 @@ impl Layer {
         }
     }
 
+    pub(super) fn kill_voice(&mut self, index: usize) {
+        self.voices[index].kill();
+    }
+
     pub(super) fn quietest_active_voice(&self) -> Option<(usize, f32)> {
         self.voices
             .iter()
