@@ -1,0 +1,19 @@
+tests/e2e/toasterLevelPanTestId.spec.ts
+  s_1103aa2fb88d6d::t_4da1b2f6d30b4a 1-66
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "dbdb402aca36fc65b1e306558a42351c55bbf148",
+  "prompts": {},
+  "sessions": {
+    "s_1103aa2fb88d6d": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fed98-adb9-73b2-b7d7-ff357c28de5b",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
