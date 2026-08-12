@@ -15,6 +15,7 @@ import { clearUndoHistory, executeAppAction, redo, undo } from '#/modules/Comman
 import { addChordEvent, clearChordTrack } from '#/modules/MIDI/useCases';
 import { workspaceStore } from '#/modules/WorkspaceShell/stores';
 import { toggleRippleEditing } from '#/modules/WorkspaceShell/useCases';
+import { type AppAction } from '#/utils/handlerContract';
 
 import { handleSetProductionBrief } from '../../handlers/project/handleSetProductionBrief';
 import { createDefaultProductionBrief, isProductionBrief, type ProductionBrief } from '../../models/ProductionBrief';
@@ -643,6 +644,36 @@ describe('production brief', () => {
                 { type: 'trimClipEnd', payload: { clipId: 'clip-1', newEndBeat: 50 } },
             ])
         ).toBe(false);
+        function importStemSet(durationSeconds: number): AppAction {
+            return {
+                type: 'importStemSet',
+                payload: {
+                    selectionId: 'selection-1',
+                    groupName: 'Imported Stems',
+                    projectTempo: 120,
+                    folderId: 'folder-imported',
+                    stems: [
+                        {
+                            stemId: 'stem-1',
+                            sourceName: 'Guitar.wav',
+                            role: 'guitar-left',
+                            sourceTempo: 120,
+                            durationSeconds,
+                            sourceBytes: 1024,
+                            decodedBytes: 4096,
+                            audioBufferId: 'buffer-1',
+                            trackId: 'track-imported',
+                            trackName: 'Guitar',
+                            trackGain: 1,
+                            trackPan: 0,
+                            clipId: 'clip-imported',
+                        },
+                    ],
+                },
+            };
+        }
+        expect(doesProductionBriefAllowActionBatch([importStemSet(10)])).toBe(true);
+        expect(doesProductionBriefAllowActionBatch([importStemSet(20)])).toBe(false);
         projectStore.set({
             ...projectStore.value!,
             productionBrief: {

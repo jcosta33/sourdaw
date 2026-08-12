@@ -375,6 +375,18 @@ function globalTimeActionOverlapsRange(
     return false;
 }
 
+function importedStemSetOverlapsRange(
+    action: AppAction,
+    scope: Extract<ProductionBriefScope, { kind: 'range' }>
+): boolean {
+    if (action.type !== 'importStemSet') {
+        return false;
+    }
+    return action.payload.stems.some((stem) =>
+        intervalOverlapsRange(0, (stem.durationSeconds * stem.sourceTempo) / 60, scope)
+    );
+}
+
 function globalTimeActionMutatesTrack(action: AppAction): boolean {
     return action.type === 'insertTime' || action.type === 'deleteTime';
 }
@@ -440,6 +452,7 @@ function actionOverlapsRange(action: AppAction, scope: Extract<ProductionBriefSc
         duplicateClipProjectionOverlapsRange(action, scope) ||
         trackContainerOverlapsRange(action, scope) ||
         rippleDeleteOverlapsRange(action, scope) ||
+        importedStemSetOverlapsRange(action, scope) ||
         globalTimeActionOverlapsRange(action, scope)
     );
 }
