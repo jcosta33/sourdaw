@@ -1197,7 +1197,7 @@ fn read_fixture_samples(path: &Path) -> Vec<f32> {
     f32le_to_samples(&bytes)
 }
 
-fn assert_samples_match(actual: &[f32], expected: &[f32], allowed_max_abs_diff: f32, label: &str) {
+fn observed_max_abs_diff(actual: &[f32], expected: &[f32], label: &str) -> f32 {
     assert_eq!(actual.len(), expected.len(), "{label} frame count");
     let mut observed_max_abs_diff = 0.0_f32;
     for (actual_sample, expected_sample) in actual.iter().zip(expected) {
@@ -1211,6 +1211,11 @@ fn assert_samples_match(actual: &[f32], expected: &[f32], allowed_max_abs_diff: 
             observed_max_abs_diff = difference;
         }
     }
+    observed_max_abs_diff
+}
+
+fn assert_samples_match(actual: &[f32], expected: &[f32], allowed_max_abs_diff: f32, label: &str) {
+    let observed_max_abs_diff = observed_max_abs_diff(actual, expected, label);
     assert!(
         observed_max_abs_diff <= allowed_max_abs_diff,
         "{label} max absolute difference {observed_max_abs_diff} exceeds portable fixture tolerance {allowed_max_abs_diff}"
@@ -1362,6 +1367,12 @@ fn time_stretch_crumbs_baseline_matches_bounded_characterizations() {
 
     let actual_phase = PhaseVocoder::new().process(&input, CHARACTERIZATION_DURATION_RATIO);
     let actual_wsola = WsolaProcessor::new().process(&input, CHARACTERIZATION_DURATION_RATIO);
+    if !cfg!(debug_assertions) {
+        assert_eq!(
+            observed_max_abs_diff(&actual_phase, &expected_phase, "Crumbs phase vocoder"),
+            PHASE_VOCODER_RELEASE_OBSERVED_MAX_ABS_DIFF
+        );
+    }
     assert_samples_match(
         &actual_phase,
         &expected_phase,
