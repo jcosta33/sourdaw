@@ -1,0 +1,14 @@
+tests/e2e/clipDetectStripTestId.spec.ts
+  h_1228e573df1f42 1-88
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "3702fdc405a7fe2b58cde33407f0ba85165acfd2",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
