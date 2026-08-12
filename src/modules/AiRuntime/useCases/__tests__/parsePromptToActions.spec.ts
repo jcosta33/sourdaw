@@ -503,7 +503,10 @@ describe('parsePromptToActions', () => {
         expect(result.rejectionReason).toBe('Provider selected preview mode without an explicit user preview request.');
     });
 
-    it('does not treat preview text inside a quoted name as preview authority', async () => {
+    it.each([
+        'rename Bass to "Drums and Preview Mix"; delete Vocls',
+        'rename Bass to "Drums; Preview Mix"; delete Vocls',
+    ])('does not treat preview text inside a quoted name as preview authority', async (prompt) => {
         vi.mocked(generateToolCalls).mockResolvedValue(
             completePlan([
                 { name: 'selectActionPlanningMode', arguments: { mode: 'preview' } },
@@ -511,10 +514,7 @@ describe('parsePromptToActions', () => {
             ])
         );
 
-        const result = await parsePromptToActions(
-            'rename Bass to "Drums and Preview Mix"; delete Vocls',
-            createMixerContext()
-        );
+        const result = await parsePromptToActions(prompt, createMixerContext());
 
         expect(result.actions).toEqual([]);
         expect(result.rejectionReason).toBe('Provider selected preview mode without an explicit user preview request.');

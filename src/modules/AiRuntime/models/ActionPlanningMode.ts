@@ -13,7 +13,8 @@ const AFFIRMATIVE_PREVIEW_REQUESTS = [
 
 export function getRequestedActionPlanningMode(prompt: string): ActionPlanningMode {
     const normalized = prompt.normalize('NFKC').toLocaleLowerCase();
-    return AFFIRMATIVE_PREVIEW_REQUESTS.some((pattern) => pattern.test(normalized)) ? 'preview' : 'execute';
+    const withoutQuotedValues = normalized.replaceAll(/"(?:\\.|[^"\\])*"|“[^”]*”/gu, ' ');
+    return AFFIRMATIVE_PREVIEW_REQUESTS.some((pattern) => pattern.test(withoutQuotedValues)) ? 'preview' : 'execute';
 }
 
 export function createActionPlanningModeToolSchema(): ToolSchema {
