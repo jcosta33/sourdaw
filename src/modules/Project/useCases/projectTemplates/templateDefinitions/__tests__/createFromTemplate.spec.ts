@@ -280,6 +280,8 @@ describe('createFromTemplate', () => {
         await expect(creation).resolves.toBe(false);
         expect(mocks.resetCrdtProjectAuthority).not.toHaveBeenCalled();
         expect(mocks.executeAppAction).not.toHaveBeenCalled();
+        expect(mocks.ensureTrackStrips).toHaveBeenCalledOnce();
+        expect(mocks.startCrdtAutoSave).toHaveBeenCalledOnce();
     });
 
     it('skips autosave restart and compaction when superseded during the template action', async () => {

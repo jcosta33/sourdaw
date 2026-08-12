@@ -232,6 +232,9 @@ export async function replaceProjectData({
         resetAudioGraph();
         await unloadLoadedExternalPlugins();
         if (!transaction.isCurrent()) {
+            if (!transaction.hasActivatedSuccessor?.()) {
+                restorePreviousAudioGraph(context);
+            }
             return abortProjectReplacement();
         }
     } catch (error) {

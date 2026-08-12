@@ -164,6 +164,8 @@ describe('newProject injectable', () => {
 
         await expect(activation).resolves.toBe(false);
         expect(resetCrdtProjectAuthority).not.toHaveBeenCalled();
+        expect(ensureTrackStrips).toHaveBeenCalledOnce();
+        expect(startCrdtAutoSave).toHaveBeenCalledOnce();
     });
 
     it('keeps previous authority and restores its graph when native plugin teardown fails', async () => {
@@ -178,6 +180,20 @@ describe('newProject injectable', () => {
             loading: false,
             initialized: true,
         });
+    });
+
+    it('does not restore the old graph after a successor activates', async () => {
+        const isCurrent = vi.fn().mockReturnValueOnce(true).mockReturnValue(false);
+        vi.mocked(runProjectLoadTransaction).mockReturnValueOnce({
+            prepare: vi.fn().mockResolvedValue(true),
+            activate: vi.fn().mockReturnValue(true),
+            canActivate: () => false,
+            isCurrent,
+            hasActivatedSuccessor: () => true,
+        });
+
+        await expect(newProject('Older Project')).resolves.toBe(false);
+        expect(ensureTrackStrips).not.toHaveBeenCalled();
     });
 
     it('restores the previous project when authority reset fails before commit', async () => {

@@ -261,6 +261,7 @@ describe('replaceProjectData', () => {
 
         await expect(replacement).resolves.toEqual({ status: 'aborted' });
         expect(mockResetCrdtProjectAuthority).not.toHaveBeenCalled();
+        expect(mockEnsureTrackStrips).toHaveBeenCalledOnce();
     });
 
     it('returns degraded=true when a committed step fails', async () => {

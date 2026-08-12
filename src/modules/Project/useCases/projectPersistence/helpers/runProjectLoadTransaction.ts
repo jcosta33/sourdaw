@@ -23,6 +23,7 @@ export type ProjectLoadTransaction = {
     activate: () => boolean;
     canActivate: () => boolean;
     isCurrent: () => boolean;
+    hasActivatedSuccessor?: () => boolean;
 };
 
 export const projectLoadEpoch = {
@@ -144,5 +145,6 @@ export function runProjectLoadTransaction({
             activated &&
             transitionId === activeProjectTransitionId &&
             transitionId === latestPreparedProjectTransitionId,
+        hasActivatedSuccessor: () => activeProjectTransitionId > transitionId,
     };
 }

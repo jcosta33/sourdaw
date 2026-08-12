@@ -74,6 +74,9 @@ async function activateNewProject({
         resetAudioGraph();
         await unloadLoadedExternalPlugins();
         if (!transaction.isCurrent()) {
+            if (!transaction.hasActivatedSuccessor?.()) {
+                restorePreviousProjectRuntime();
+            }
             return failNewProjectActivation({ previousTransientState, transaction });
         }
         resetCrdtProjectAuthority(name);

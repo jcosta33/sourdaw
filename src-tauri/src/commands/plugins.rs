@@ -14,7 +14,7 @@ use daw_plugin_host::{AudioPlugin, ClapWrapper};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
+use std::sync::{Arc, LazyLock, Mutex};
 use std::time::{Duration, Instant};
 use tauri::Manager;
 
@@ -41,7 +41,49 @@ pub struct PluginInstance {
     pub engine_plugin_id: Option<usize>,
 }
 
-static PLUGIN_LIFECYCLE_GATE: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+static PLUGIN_LIFECYCLE_GATES: LazyLock<Mutex<HashMap<String, Arc<tokio::sync::Mutex<()>>>>> =
+    LazyLock::new(|| Mutex::new(HashMap::new()));
+
+struct PluginLifecycleLease {
+    instance_id: String,
+    gate: Arc<tokio::sync::Mutex<()>>,
+    _guard: tokio::sync::OwnedMutexGuard<()>,
+}
+
+impl Drop for PluginLifecycleLease {
+    fn drop(&mut self) {
+        let mut gates = PLUGIN_LIFECYCLE_GATES
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let is_current_gate = gates
+            .get(&self.instance_id)
+            .is_some_and(|current| Arc::ptr_eq(current, &self.gate));
+        if is_current_gate && Arc::strong_count(&self.gate) == 3 {
+            gates.remove(&self.instance_id);
+        }
+    }
+}
+
+fn plugin_lifecycle_gate(instance_id: &str) -> Arc<tokio::sync::Mutex<()>> {
+    let mut gates = PLUGIN_LIFECYCLE_GATES
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    Arc::clone(
+        gates
+            .entry(instance_id.to_string())
+            .or_insert_with(|| Arc::new(tokio::sync::Mutex::new(()))),
+    )
+}
+
+async fn lock_plugin_lifecycle(instance_id: &str) -> PluginLifecycleLease {
+    let gate = plugin_lifecycle_gate(instance_id);
+    let guard = Arc::clone(&gate).lock_owned().await;
+    PluginLifecycleLease {
+        instance_id: instance_id.to_string(),
+        gate,
+        _guard: guard,
+    }
+}
 
 fn remove_engine_plugin_record_after_scheduler_removal<EnginePluginRecord>(
     engine_plugins: &mut HashMap<String, EnginePluginRecord>,
@@ -223,7 +265,7 @@ pub async fn load_plugin(
     instance_id: PluginInstanceId,
     state: tauri::State<'_, AppState>,
 ) -> Result<PluginInstance, String> {
-    let _lifecycle_guard = PLUGIN_LIFECYCLE_GATE.lock().await;
+    let _lifecycle_guard = lock_plugin_lifecycle(&instance_id.0).await;
     ensure_plugin_instance_id_available(&state, &instance_id.0)?;
     let entry = {
         let registry = state
@@ -406,7 +448,7 @@ async fn unload_plugin_runtime(
     app: Option<&tauri::AppHandle>,
     state: &AppState,
 ) -> Result<(), String> {
-    let _lifecycle_guard = PLUGIN_LIFECYCLE_GATE.lock().await;
+    let _lifecycle_guard = lock_plugin_lifecycle(instance_id).await;
     {
         let mut plugins = state
             .plugins
@@ -1048,12 +1090,18 @@ mod tests {
     #[test]
     fn plugin_lifecycle_gate_serializes_load_and_unload_commands() {
         tauri::async_runtime::block_on(async {
-            let first = PLUGIN_LIFECYCLE_GATE.lock().await;
+            let first = lock_plugin_lifecycle("same-instance").await;
+            let same_gate = plugin_lifecycle_gate("same-instance");
+            assert!(same_gate.try_lock().is_err());
 
-            assert!(PLUGIN_LIFECYCLE_GATE.try_lock().is_err());
-
+            let unrelated = lock_plugin_lifecycle("unrelated-instance").await;
+            drop(unrelated);
+            drop(same_gate);
             drop(first);
-            assert!(PLUGIN_LIFECYCLE_GATE.try_lock().is_ok());
+
+            let gates = PLUGIN_LIFECYCLE_GATES.lock().expect("lifecycle gate map");
+            assert!(!gates.contains_key("same-instance"));
+            assert!(!gates.contains_key("unrelated-instance"));
         });
     }
 

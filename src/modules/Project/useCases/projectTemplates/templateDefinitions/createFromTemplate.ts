@@ -84,6 +84,10 @@ export async function createFromTemplate(templateId: string): Promise<boolean> {
         resetAudioGraph();
         await unloadLoadedExternalPlugins();
         if (!transaction.isCurrent()) {
+            if (!transaction.hasActivatedSuccessor?.()) {
+                restoreAudioGraph(templateId);
+                restorePersistence();
+            }
             return false;
         }
         resetCrdtProjectAuthority(template.name);
