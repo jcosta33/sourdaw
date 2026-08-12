@@ -1,0 +1,35 @@
+src/modules/ControlSurface/repositories/pushMidiCodec.ts
+  s_bc88af7d3b054c::t_c8e777347de1d4 123,138-152,159-160,166,171,649,652,672,683-684,687,689,699-700,704,706,709-727,744-749,768
+  s_bc88af7d3b054c::t_b74539a556e71a 122
+src/modules/ControlSurface/repositories/__tests__/pushMidiCodec.spec.ts
+  s_bc88af7d3b054c::t_19c7cffaaf59b7 3-8,42-49,363,465
+  s_bc88af7d3b054c::t_7c8f5ba9127edc 364,413-414,417,422,470,484,492-493,514,522-559
+  s_bc88af7d3b054c::t_978a533d63f6c3 219-223,369,423-448
+  s_bc88af7d3b054c::t_2df97688d1cd4f 344-347
+  s_bc88af7d3b054c::t_4f5d2f4a8e0607 365
+  s_bc88af7d3b054c::t_c46209df58395c 410-412
+  s_bc88af7d3b054c::t_f94bc5f09b3eca 415-416
+  s_bc88af7d3b054c::t_58f9e830a0302b 418-421
+  s_bc88af7d3b054c::t_b439b7fb017887 449
+  s_bc88af7d3b054c::t_9a29a669000ea2 464
+  s_bc88af7d3b054c::t_9dc0ad9b090dd8 466
+  s_bc88af7d3b054c::t_a1c92e9d76102a 494
+  s_bc88af7d3b054c::t_3d2c36cd864c50 560-562
+  s_bc88af7d3b054c::t_1747d4973d2a66 378,391,409,510,563-567
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "5a29278207334ea7ac30491cc5e4016dcc53054a",
+  "prompts": {},
+  "sessions": {
+    "s_bc88af7d3b054c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f9b4a-11a2-7f61-8dfb-76eed0eb2a9c",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
