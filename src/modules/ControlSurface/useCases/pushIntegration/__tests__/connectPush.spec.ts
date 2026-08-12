@@ -65,7 +65,8 @@ describe('connectPush', () => {
 
     it('should not mutate when push store is null', async () => {
         pushStore.set(null);
-        await connectPush('push2');
+        await expect(connectPush('push2')).rejects.toThrow('session state is unavailable');
         expect(pushStore.value).toBeNull();
+        expect(pushHardwareTransport.disconnect).toHaveBeenCalledOnce();
     });
 });

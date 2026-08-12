@@ -57,7 +57,7 @@ export async function connectPush(model: 'push2' | 'push3'): Promise<void> {
     const state = pushStore.value;
     if (!state) {
         await pushHardwareTransport.disconnect();
-        return;
+        throw new Error('Ableton Push session state is unavailable');
     }
     pushStore.set({ ...state, connected: true, model });
 }

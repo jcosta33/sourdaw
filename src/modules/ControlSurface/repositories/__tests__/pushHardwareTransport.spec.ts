@@ -64,7 +64,7 @@ describe('pushHardwareTransport', () => {
         );
     });
 
-    it('routes decoded pad input and releases native/listener/protocol state on disconnect', async () => {
+    it('routes Push 3 pad input and releases native/listener state on disconnect', async () => {
         const unlisten = vi.fn();
         const onMidiEvent = vi.fn();
         let receiveMidi: ((event: unknown) => void) | undefined;
@@ -74,19 +74,7 @@ describe('pushHardwareTransport', () => {
             }
             return Promise.resolve(unlisten);
         });
-        vi.mocked(invokeWithBinaryBody).mockImplementation((input) => {
-            if (input.command === 'send_push_midi') {
-                const bytes = [...input.bytes];
-                queueMicrotask(() =>
-                    receiveMidi?.({
-                        payload: { data: Array.isArray(bytes) && bytes[1] === 0x7e ? IDENTITY_REPLY : MODE_REPLY },
-                    })
-                );
-            }
-            return Promise.resolve();
-        });
-
-        await pushHardwareTransport.connect({ model: 'push2', onMidiEvent, onDisconnect: vi.fn() });
+        await pushHardwareTransport.connect({ model: 'push3', onMidiEvent, onDisconnect: vi.fn() });
         receiveMidi?.({ payload: { data: [0x90, 36, 100] } });
         await pushHardwareTransport.disconnect();
 
@@ -95,9 +83,21 @@ describe('pushHardwareTransport', () => {
         expect(tauriInvoke).toHaveBeenLastCalledWith('close_push_transport');
     });
 
-    it('connects Push 3 through its User MIDI port without Push 2 display IPC', async () => {
-        await pushHardwareTransport.connect({ model: 'push3', onMidiEvent: vi.fn(), onDisconnect: vi.fn() });
-        expect(tauriInvoke).toHaveBeenCalledWith('open_push_transport', { model: 'push3' });
-        expect(invokeWithBinaryBody).not.toHaveBeenCalled();
+    it('bounds a hung handshake send and still closes native state without a local session', async () => {
+        vi.useFakeTimers();
+        vi.mocked(invokeWithBinaryBody).mockReturnValue(new Promise(() => undefined));
+
+        const connection = pushHardwareTransport.connect({
+            model: 'push2',
+            onMidiEvent: vi.fn(),
+            onDisconnect: vi.fn(),
+        });
+        const rejection = expect(connection).rejects.toThrow('reply timed out');
+        await vi.advanceTimersByTimeAsync(2_000);
+        await rejection;
+        await pushHardwareTransport.disconnect();
+
+        expect(tauriInvoke).toHaveBeenCalledTimes(3);
+        vi.useRealTimers();
     });
 });

@@ -144,23 +144,20 @@ async function connect({ model, onMidiEvent, onDisconnect }: ConnectPushHardware
                 }, REPLY_TIMEOUT_MS);
                 pendingReply = { requestId: started.requestId, resolve, reject, timeout };
             });
+            const send = invokeWithBinaryBody({
+                command: 'send_push_midi',
+                bytes: started.bytes,
+                headers: {},
+                maxBytes: 23,
+            });
             try {
-                await invokeWithBinaryBody({
-                    command: 'send_push_midi',
-                    bytes: started.bytes,
-                    headers: {},
-                    maxBytes: 23,
-                });
+                await Promise.race([send.then(() => reply), reply]);
             } catch (error) {
-                const failed = pendingReply;
+                clearTimeout(pendingReply?.timeout);
+                codec.cancelRequest(started.requestId);
                 pendingReply = undefined;
-                if (failed) {
-                    clearTimeout(failed.timeout);
-                    codec.cancelRequest(failed.requestId);
-                    failed.reject(error instanceof Error ? error : new Error('Push 2 MIDI send failed'));
-                }
+                throw error;
             }
-            await reply;
         }
 
         try {
@@ -221,9 +218,6 @@ async function connect({ model, onMidiEvent, onDisconnect }: ConnectPushHardware
 
 async function disconnect(): Promise<void> {
     return serialize(async () => {
-        if (!activeSession) {
-            return;
-        }
         const session = activeSession;
         await closeSession(session);
         activeSession = undefined;
