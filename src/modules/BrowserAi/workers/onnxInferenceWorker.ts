@@ -99,6 +99,30 @@ function selectExecutionProviders(): OnnxExecutionProvider[] {
     return ['wasm'];
 }
 
+async function createSessionWithProviderTruth(
+    ort: OrtModule,
+    modelData: ArrayBuffer
+): Promise<Pick<SessionEntry, 'session' | 'executionProviders'>> {
+    const candidates = selectExecutionProviders();
+    let lastError: unknown;
+
+    // ONNX Runtime filters unavailable providers from a multi-provider request
+    // internally, but its public session object does not expose the filtered list.
+    // Request one provider at a time so a successful create is decisive evidence
+    // for the provider identity reported across the worker boundary.
+    for (const provider of candidates) {
+        try {
+            const session = await ort.InferenceSession.create(modelData, { executionProviders: [provider] });
+            return { session, executionProviders: [provider] };
+        } catch (error) {
+            lastError = error;
+            console.warn(`[OnnxWorker] ${provider} session creation failed: ${String(error)}`);
+        }
+    }
+
+    throw new Error(`No ONNX execution provider could create the session: ${String(lastError)}`);
+}
+
 async function evictLru(): Promise<void> {
     while (totalMemoryBytes > SESSION_MEMORY_BUDGET && sessionCache.size > 0) {
         let oldest: [string, SessionEntry] | null = null;
@@ -128,19 +152,17 @@ async function getOrCreateSession(modelId: string, modelData: ArrayBuffer): Prom
     }
 
     const ort = await getOrt();
-    const providers = selectExecutionProviders();
-
     // Capture the model weight BEFORE create(): onnxruntime-web may consume or
     // detach the ArrayBuffer during session creation, after which byteLength reads
     // 0. Reading it afterwards would leave totalMemoryBytes near 0 and evictLru
     // would never fire, defeating the 1 GB budget.
     const sizeBytes = modelData.byteLength;
-    const session = await ort.InferenceSession.create(modelData, { executionProviders: providers });
+    const { session, executionProviders } = await createSessionWithProviderTruth(ort, modelData);
 
     const entry: SessionEntry = {
         session,
         modelId,
-        executionProviders: providers,
+        executionProviders,
         sizeBytes,
         lastUsedAt: Date.now(),
     };

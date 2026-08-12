@@ -55,4 +55,37 @@ describe('onnxInferenceWorker session provider reporting', () => {
             executionProviders: ['wasm'],
         } satisfies WorkerResponse);
     });
+
+    it('reports only the provider whose single-provider session creation succeeded', async () => {
+        vi.resetModules();
+        installNavigator({ gpu: {} });
+        createSession
+            .mockReset()
+            .mockImplementation((_modelData: ArrayBuffer, options?: { executionProviders?: string[] }) => {
+                if (options?.executionProviders?.includes('webgpu')) {
+                    return Promise.reject(new Error('webgpu backend unavailable'));
+                }
+                return Promise.resolve({ run: vi.fn(), release: vi.fn() });
+            });
+        self.postMessage = vi.fn();
+        await import('../onnxInferenceWorker');
+
+        const request: WorkerRequest = {
+            type: 'create-session',
+            requestId: 'fallback',
+            modelId: 'model-fallback',
+            modelData: new ArrayBuffer(8),
+            options: {},
+        };
+        await (self.onmessage as WorkerMessageHandler)({ data: request } as MessageEvent<WorkerRequest>);
+
+        expect(createSession).toHaveBeenNthCalledWith(1, request.modelData, { executionProviders: ['webgpu'] });
+        expect(createSession).toHaveBeenNthCalledWith(2, request.modelData, { executionProviders: ['wasm'] });
+        expect(self.postMessage).toHaveBeenCalledWith({
+            type: 'session-created',
+            requestId: 'fallback',
+            modelId: 'model-fallback',
+            executionProviders: ['wasm'],
+        } satisfies WorkerResponse);
+    });
 });
