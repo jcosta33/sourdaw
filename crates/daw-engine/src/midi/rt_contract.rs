@@ -213,6 +213,9 @@ fn active_runtime_diagnostic_aggregation_saturates_both_counters() {
     let maximum = ActiveMidiRtDiagnosticsSnapshot {
         scheduler_event_buffer_overflows: u64::MAX,
         arpeggiator_active_note_exhaustions: u64::MAX,
+        effect_id_collisions: 0,
+        unsupported_effect_additions: 0,
+        unmapped_set_param_calls: 0,
     };
     let mut diagnostics = ActiveMidiRtDiagnostics::new();
 
