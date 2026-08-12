@@ -28,8 +28,11 @@ export async function executeVersionedCommandBatch(input: ExecuteVersionedComman
     if (new Set(commandIds).size !== commandIds.length) {
         return { status: 'rejected' as const, reason: 'Command IDs must be unique within a batch', actions: [] as [] };
     }
-    const revision = input.normalizedProjectRevision ?? commandProjectRevisionPort.capture();
-    if (envelopes.some((envelope) => envelope.normalizedProjectRevision !== revision)) {
+    const currentRevision = commandProjectRevisionPort.capture();
+    if (
+        (input.normalizedProjectRevision !== undefined && input.normalizedProjectRevision !== currentRevision) ||
+        envelopes.some((envelope) => envelope.normalizedProjectRevision !== currentRevision)
+    ) {
         return {
             status: 'conflicted' as const,
             reason: 'Command batch base revision does not match current project state',

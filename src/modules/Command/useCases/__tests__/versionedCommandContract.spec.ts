@@ -726,4 +726,42 @@ describe('versioned command contract', () => {
             expect(result.actions.map((entry) => entry.receipt?.commandId)).toEqual([tempo.commandId, meter.commandId]);
         }
     });
+
+    it('rejects a stale batch even when its caller repeats the stale revision', async () => {
+        const observed: boolean[] = [];
+        commandProjectRevisionPort.setProvider(() => 'revision-live');
+        registerHandlerMap({
+            setPlayback: {
+                describe: () => ({ label: 'Start playback' }),
+                execute: (action: Extract<AppAction, { type: 'setPlayback' }>) => {
+                    observed.push(action.payload.playing);
+                    return { status: 'written' };
+                },
+                executionKind: 'runtime',
+                undoable: false,
+            },
+        });
+        const envelope = createVersionedCommandEnvelope({
+            action: { type: 'setPlayback', payload: { playing: true } },
+            availableDeviceVersions: {},
+            expectedEffect: 'Playback is running.',
+            normalizedProjectRevision: 'revision-stale',
+            objectReferences: [],
+            parameterUnits: [],
+            reason: 'Start transport playback.',
+            time: [],
+        });
+
+        const result = await executeVersionedCommandBatch({
+            commands: [serializeVersionedCommandEnvelope(envelope)],
+            normalizedProjectRevision: 'revision-stale',
+            options: { skipUndo: true },
+        });
+
+        expect(result).toMatchObject({
+            status: 'conflicted',
+            reason: 'Command batch base revision does not match current project state',
+        });
+        expect(observed).toEqual([]);
+    });
 });
