@@ -1,0 +1,25 @@
+src/modules/Project/useCases/doesProductionBriefAllowActionBatch.ts
+  s_a40848e8f8cca9::t_8ed11d107dd8c6 121,124-128
+  s_a40848e8f8cca9::t_56140809e16d25 95-120,122-123,129-135,140-141
+src/modules/Project/handlers/project/handleSetProductionBrief.ts
+  s_a40848e8f8cca9::t_56140809e16d25 14-18,29-31,54-56,63
+src/modules/Project/useCases/__tests__/productionBrief.spec.ts
+  s_a40848e8f8cca9::t_2cb7c7bb792cac 5,38-44,225-287,461-463
+  s_a40848e8f8cca9::t_1967f67356c0b3 464-465
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "5f3f6c6c1366b00d91408410a9f78df42d7a14f8",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
