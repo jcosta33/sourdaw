@@ -210,6 +210,39 @@ fn grinder_level(amp_model: f32) -> Level {
     measure(&rendered)
 }
 
+fn grinder_sine_level(amp_model: f32, fat: bool, frequency_hz: f32, amplitude: f32) -> Level {
+    use daw_dsp::grinder::GrinderInstance;
+
+    let mut instance = GrinderInstance::new(SAMPLE_RATE);
+    instance.set_param("ampModel", amp_model);
+    instance.set_param("channel", 2.0);
+    instance.set_param("gain", GRINDER_GAIN);
+    instance.set_param("master", 8.0);
+    instance.set_param("bass", 5.0);
+    instance.set_param("mid", 5.0);
+    instance.set_param("treble", 5.0);
+    instance.set_param("fat", if fat { 1.0 } else { 0.0 });
+
+    let mut rendered = Vec::with_capacity(MEASURED_BLOCKS * BLOCK);
+    for block in 0..(WARMUP_BLOCKS + MEASURED_BLOCKS) {
+        for frame in 0..BLOCK {
+            let sample_index = block * BLOCK + frame;
+            let phase = sample_index as f32 * frequency_hz * std::f32::consts::TAU / SAMPLE_RATE;
+            let sample = phase.sin() * amplitude;
+            unsafe {
+                *instance.get_input_left_ptr().add(frame) = sample;
+                *instance.get_input_right_ptr().add(frame) = sample;
+            }
+        }
+        let output = unsafe { read_output(instance.process(BLOCK as u32), BLOCK) };
+        if block >= WARMUP_BLOCKS {
+            rendered.extend_from_slice(&output);
+        }
+    }
+
+    measure(&rendered)
+}
+
 /// Peak and RMS for each amp model at the fixed operating point above.
 const GRINDER_EXPECTED: [(&str, f32, f32, f32); 6] = [
     ("Clean Twin", CLEAN_TWIN, 0.26114, 0.07575),
@@ -281,6 +314,29 @@ fn grinder_separates_its_clean_and_high_gain_models_at_the_engine_output() {
         3.2568,
         2.0,
     );
+}
+
+#[test]
+fn grinder_fat_switch_increases_low_register_body_across_models_and_levels() {
+    const FREQUENCIES_HZ: [f32; 3] = [82.41, 110.0, 146.83];
+    const AMPLITUDES: [f32; 3] = [0.06, 0.12, 0.28];
+
+    for (name, model, _, _) in GRINDER_EXPECTED {
+        for frequency_hz in FREQUENCIES_HZ {
+            for amplitude in AMPLITUDES {
+                let neutral = grinder_sine_level(model, false, frequency_hz, amplitude);
+                let fat = grinder_sine_level(model, true, frequency_hz, amplitude);
+                let ratio = fat.rms / neutral.rms.max(f32::EPSILON);
+                assert!(
+                    fat.rms > neutral.rms,
+                    "Grinder {name} Fat must increase low-register body at {frequency_hz} Hz / {amplitude} input (off RMS={}, on RMS={}, ratio={})",
+                    neutral.rms,
+                    fat.rms,
+                    ratio
+                );
+            }
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------

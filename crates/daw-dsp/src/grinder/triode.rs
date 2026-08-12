@@ -259,11 +259,10 @@ pub struct Preamp {
     dc_initialized: bool,
     gain: f32,
     bright: bool,
-    fat: bool,
     amp_model: AmpModel,
     model_drive_state: f32,
     bright_cap_state: f32,
-    fat_low_state: f32,
+    model_low_state: f32,
     channel: u32,
     sample_rate: f32,
 }
@@ -281,11 +280,10 @@ impl Preamp {
             dc_initialized: false,
             gain: 5.0,
             bright: false,
-            fat: false,
             amp_model: AmpModel::CrunchJcm,
             model_drive_state: 0.0,
             bright_cap_state: 0.0,
-            fat_low_state: 0.0,
+            model_low_state: 0.0,
             channel: 1,
             sample_rate,
         }
@@ -295,7 +293,6 @@ impl Preamp {
         match name {
             "gain" => self.gain = value,
             "bright" => self.bright = value > 0.5,
-            "fat" => self.fat = value > 0.5,
             "ampModel" => self.amp_model = AmpModel::from_index(value as u32),
             "channel" => self.channel = value as u32,
             _ => {
@@ -359,12 +356,11 @@ impl Preamp {
             signal += hp * bright_amount;
         }
 
-        if self.fat || model_low_end.abs() > 0.01 {
+        if model_low_end.abs() > 0.01 {
             let dt = 1.0 / self.sample_rate;
             let low_coeff = (2.0 * std::f32::consts::PI * 180.0 * dt).min(0.35);
-            self.fat_low_state += low_coeff * (signal - self.fat_low_state);
-            let fat_amount = (if self.fat { 0.22 } else { 0.0 }) + model_low_end;
-            signal += self.fat_low_state * fat_amount;
+            self.model_low_state += low_coeff * (signal - self.model_low_state);
+            signal += self.model_low_state * model_low_end;
         }
 
         if model_compression > 0.0 {
@@ -431,7 +427,7 @@ impl Preamp {
         }
         self.model_drive_state = 0.0;
         self.bright_cap_state = 0.0;
-        self.fat_low_state = 0.0;
+        self.model_low_state = 0.0;
         self.dc_x.fill(0.0);
         self.dc_y.fill(0.0);
         self.dc_initialized = false;
@@ -667,7 +663,7 @@ mod tests {
     }
 
     #[test]
-    fn amp_model_and_fat_change_the_preamp_voice() {
+    fn amp_model_changes_the_preamp_voice() {
         let total = 4096;
 
         let mut clean = Preamp::new(48_000.0);
@@ -676,7 +672,6 @@ mod tests {
 
         let mut recto = Preamp::new(48_000.0);
         recto.set_param("ampModel", 4.0);
-        recto.set_param("fat", 1.0);
         recto.set_param("gain", 5.0);
 
         let mut diff_sum = 0.0_f32;
@@ -691,7 +686,7 @@ mod tests {
         let average_diff = diff_sum / total as f32;
         assert!(
             average_diff > 1.0e-3,
-            "amp model and fat controls should audibly change preamp voicing, got diff {average_diff}"
+            "amp models should audibly change preamp voicing, got diff {average_diff}"
         );
     }
 

@@ -1190,6 +1190,7 @@ fn grinder_process_and_automated_process_do_not_allocate() {
     instance.set_param("mid", 0.4);
     instance.set_param("treble", 0.7);
     instance.set_param("masterVolume", 0.8);
+    instance.set_param("fat", 1.0);
 
     unsafe {
         fill_input(
