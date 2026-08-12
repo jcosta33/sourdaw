@@ -1,0 +1,27 @@
+src/modules/AiRuntime/useCases/llmOrchestration/__tests__/inference.spec.ts
+  s_a40848e8f8cca9::t_29090d9767b120 328,330
+  s_a40848e8f8cca9::t_8f8a6b21a692df 10-13,329
+src/modules/AiRuntime/models/WorkflowCapability.ts
+  s_a40848e8f8cca9::t_33c94dcb168b2b 19-35
+src/modules/AiRuntime/useCases/llmOrchestration/inference.ts
+  s_a40848e8f8cca9::t_f0cbbc3b6c0e98 12
+  s_a40848e8f8cca9::t_3735c1bd675d8a 222
+  s_a40848e8f8cca9::t_ffb239e84bbd69 223-226
+  s_a40848e8f8cca9::t_33c94dcb168b2b 227-237
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "551ea005a87d3177d26faaf1a2fd1abda246148f",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
