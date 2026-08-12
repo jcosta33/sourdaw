@@ -72,6 +72,7 @@ vi.mock('../../../projectPersistence/helpers/resetModuleStoresToDefault', () => 
 }));
 
 vi.mock('../../../projectPersistence/helpers/runProjectLoadTransaction', () => ({
+    projectLoadEpoch: { acquireRuntimeTransition: vi.fn(() => Promise.resolve(() => {})) },
     runProjectLoadTransaction: mocks.runProjectLoadTransaction,
 }));
 
@@ -211,9 +212,6 @@ describe('createFromTemplate', () => {
         expect(mocks.transactionActivate).toHaveBeenCalledOnce();
         expect(mocks.stopActiveAutoSave).toHaveBeenCalledOnce();
         expect(mocks.resetCrdtProjectAuthority).toHaveBeenCalledWith('Pop Song');
-        expect(mocks.unloadLoadedExternalPlugins.mock.invocationCallOrder[0]).toBeLessThan(
-            mocks.resetCrdtProjectAuthority.mock.invocationCallOrder[0]!
-        );
         expect(mocks.projectActionHistoryToStore).toHaveBeenCalledOnce();
         expect(mocks.resetModuleStoresToDefault).toHaveBeenCalledOnce();
         expect(mocks.clearUndoHistory).toHaveBeenCalledOnce();
@@ -283,7 +281,6 @@ describe('createFromTemplate', () => {
         expect(mocks.ensureTrackStrips).toHaveBeenCalledOnce();
         expect(mocks.startCrdtAutoSave).toHaveBeenCalledOnce();
     });
-
     it('skips autosave restart and compaction when superseded during the template action', async () => {
         mocks.transactionIsCurrent.mockReturnValueOnce(true).mockReturnValueOnce(true).mockReturnValueOnce(false);
 

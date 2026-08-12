@@ -1093,7 +1093,6 @@ mod tests {
             let first = lock_plugin_lifecycle("same-instance").await;
             let same_gate = plugin_lifecycle_gate("same-instance");
             assert!(same_gate.try_lock().is_err());
-
             let unrelated = lock_plugin_lifecycle("unrelated-instance").await;
             drop(unrelated);
             drop(same_gate);

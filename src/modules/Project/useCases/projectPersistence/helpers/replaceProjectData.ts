@@ -27,11 +27,11 @@ import { collectProjectAudioBufferIds } from './collectProjectAudioBufferIds';
 import { hydrateArrangementStoreFromProjectData } from './hydrateArrangementStoreFromProjectData';
 import { hydrateModuleStoresFromProjectData } from './hydrateModuleStoresFromProjectData';
 import { resetModuleStoresToDefault } from './resetModuleStoresToDefault';
+import { projectLoadEpoch, type ProjectLoadTransaction } from './runProjectLoadTransaction';
 import { stopActiveAutoSave } from './stopActiveAutoSave';
 import { verifyAudioBufferReferences } from './verifyAudioBufferReferences';
 
 import type { HydratableProjectData } from './isHydratableProjectData';
-import type { ProjectLoadTransaction } from './runProjectLoadTransaction';
 
 type ReplaceProjectDataInput = {
     // May be async: post-commit persistence is an observed IndexedDB
@@ -224,22 +224,24 @@ export async function replaceProjectData({
         return abortProjectReplacement();
     }
 
+    const releaseRuntimeTransition = await projectLoadEpoch.acquireRuntimeTransition();
     try {
         await stopPlayback();
         if (!transaction.isCurrent()) {
+            releaseRuntimeTransition();
             return abortProjectReplacement();
         }
         resetAudioGraph();
         await unloadLoadedExternalPlugins();
         if (!transaction.isCurrent()) {
-            if (!transaction.hasActivatedSuccessor?.()) {
-                restorePreviousAudioGraph(context);
-            }
+            restorePreviousAudioGraph(context);
+            releaseRuntimeTransition();
             return abortProjectReplacement();
         }
     } catch (error) {
         logPreparationFailure(context, error);
         restorePreviousAudioGraph(context);
+        releaseRuntimeTransition();
         return abortProjectReplacement();
     }
 
@@ -270,6 +272,8 @@ export async function replaceProjectData({
             }
         }
         return abortProjectReplacement();
+    } finally {
+        releaseRuntimeTransition();
     }
 
     let degraded = false;

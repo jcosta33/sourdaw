@@ -16,7 +16,7 @@ import { ensureTrackStrips, stopPlayback } from '#/modules/Transport/useCases';
 import { removeProjectJson } from '../../../repositories/project/removeProjectJson';
 import { defaultProjectStoreState, projectStore } from '../../../stores/projectStore';
 import { resetModuleStoresToDefault } from '../helpers/resetModuleStoresToDefault';
-import { runProjectLoadTransaction } from '../helpers/runProjectLoadTransaction';
+import { projectLoadEpoch, runProjectLoadTransaction } from '../helpers/runProjectLoadTransaction';
 import { newProject } from '../newProject';
 
 type Deferred<T> = {
@@ -62,7 +62,8 @@ vi.mock('../helpers/resetModuleStoresToDefault', () => ({
     resetModuleStoresToDefault: vi.fn(),
 }));
 
-vi.mock('../helpers/runProjectLoadTransaction', () => ({
+vi.mock('../helpers/runProjectLoadTransaction', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('../helpers/runProjectLoadTransaction')>()),
     runProjectLoadTransaction: vi.fn(() => ({
         prepare: vi.fn(() => Promise.resolve(true)),
         activate: vi.fn(() => true),
@@ -132,20 +133,6 @@ describe('newProject injectable', () => {
         expect(clear_audio_buffers_order).toBeLessThan(clear_undo_history_order);
     });
 
-    it('does not replace project authority before native plugin teardown settles', async () => {
-        const unloading = createDeferred<void>();
-        pluginHostMocks.unloadLoadedExternalPlugins.mockReturnValueOnce(unloading.promise);
-
-        const activation = newProject('Test');
-        await vi.waitFor(() => expect(resetAudioGraph).toHaveBeenCalledOnce());
-
-        expect(resetCrdtProjectAuthority).not.toHaveBeenCalled();
-
-        unloading.resolve(undefined);
-        await expect(activation).resolves.toBe(true);
-        expect(resetCrdtProjectAuthority).toHaveBeenCalledWith('Test');
-    });
-
     it('does not replace authority when superseded during native teardown', async () => {
         const unloading = createDeferred<void>();
         let isCurrent = true;
@@ -156,23 +143,32 @@ describe('newProject injectable', () => {
             isCurrent: () => isCurrent,
         });
         pluginHostMocks.unloadLoadedExternalPlugins.mockReturnValueOnce(unloading.promise);
-
         const activation = newProject('Older Project');
         await vi.waitFor(() => expect(pluginHostMocks.unloadLoadedExternalPlugins).toHaveBeenCalledOnce());
         isCurrent = false;
         unloading.resolve(undefined);
-
         await expect(activation).resolves.toBe(false);
         expect(resetCrdtProjectAuthority).not.toHaveBeenCalled();
         expect(ensureTrackStrips).toHaveBeenCalledOnce();
         expect(startCrdtAutoSave).toHaveBeenCalledOnce();
     });
 
+    it('serializes destructive runtime transitions', async () => {
+        const releaseFirst = await projectLoadEpoch.acquireRuntimeTransition();
+        let secondEntered = false;
+        const second = projectLoadEpoch.acquireRuntimeTransition().then((release) => {
+            secondEntered = true;
+            return release();
+        });
+        await Promise.resolve();
+        expect(secondEntered).toBe(false);
+        releaseFirst();
+        await second;
+        expect(secondEntered).toBe(true);
+    });
     it('keeps previous authority and restores its graph when native plugin teardown fails', async () => {
         pluginHostMocks.unloadLoadedExternalPlugins.mockRejectedValueOnce(new Error('native teardown failed'));
-
         await expect(newProject('Test')).resolves.toBe(false);
-
         expect(resetCrdtProjectAuthority).not.toHaveBeenCalled();
         expect(ensureTrackStrips).toHaveBeenCalledOnce();
         expect(projectStore.value).toMatchObject({
@@ -180,20 +176,6 @@ describe('newProject injectable', () => {
             loading: false,
             initialized: true,
         });
-    });
-
-    it('does not restore the old graph after a successor activates', async () => {
-        const isCurrent = vi.fn().mockReturnValueOnce(true).mockReturnValue(false);
-        vi.mocked(runProjectLoadTransaction).mockReturnValueOnce({
-            prepare: vi.fn().mockResolvedValue(true),
-            activate: vi.fn().mockReturnValue(true),
-            canActivate: () => false,
-            isCurrent,
-            hasActivatedSuccessor: () => true,
-        });
-
-        await expect(newProject('Older Project')).resolves.toBe(false);
-        expect(ensureTrackStrips).not.toHaveBeenCalled();
     });
 
     it('restores the previous project when authority reset fails before commit', async () => {

@@ -14,7 +14,10 @@ import { ensureTrackStrips, stopPlayback } from '#/modules/Transport/useCases';
 import { projectStore } from '../../../stores/projectStore';
 import { setAutoSaveHandle } from '../../projectPersistence/helpers/autoSaveHandle';
 import { resetModuleStoresToDefault } from '../../projectPersistence/helpers/resetModuleStoresToDefault';
-import { runProjectLoadTransaction } from '../../projectPersistence/helpers/runProjectLoadTransaction';
+import {
+    projectLoadEpoch,
+    runProjectLoadTransaction,
+} from '../../projectPersistence/helpers/runProjectLoadTransaction';
 import { stopActiveAutoSave } from '../../projectPersistence/helpers/stopActiveAutoSave';
 
 import { templates } from './helpers';
@@ -71,26 +74,27 @@ export async function createFromTemplate(templateId: string): Promise<boolean> {
             );
             return false;
         }
-        await stopPlayback();
-        if (!transaction.isCurrent()) {
-            logger.info(`[createFromTemplate] superseded during stopPlayback for "${templateId}"`);
-            // Superseded mid-flight: the successor transition owns the project
-            // now — no teardown, no persistence touch (mirror newProject).
-            return false;
-        }
-        stopActiveAutoSave();
-        persistenceStopped = true;
-        graphWasReset = true;
-        resetAudioGraph();
-        await unloadLoadedExternalPlugins();
-        if (!transaction.isCurrent()) {
-            if (!transaction.hasActivatedSuccessor?.()) {
+        const releaseRuntimeTransition = await projectLoadEpoch.acquireRuntimeTransition();
+        try {
+            await stopPlayback();
+            if (!transaction.isCurrent()) {
+                logger.info(`[createFromTemplate] superseded during stopPlayback for "${templateId}"`);
+                return false;
+            }
+            stopActiveAutoSave();
+            persistenceStopped = true;
+            graphWasReset = true;
+            resetAudioGraph();
+            await unloadLoadedExternalPlugins();
+            if (!transaction.isCurrent()) {
                 restoreAudioGraph(templateId);
                 restorePersistence();
+                return false;
             }
-            return false;
+            resetCrdtProjectAuthority(template.name);
+        } finally {
+            releaseRuntimeTransition();
         }
-        resetCrdtProjectAuthority(template.name);
         projectActionHistoryToStore();
         resetModuleStoresToDefault({ createNewMidiProbabilitySeed: true });
         // Commit the teardown baseline before the async rebuild action runs.

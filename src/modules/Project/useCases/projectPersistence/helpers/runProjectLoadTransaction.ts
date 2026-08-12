@@ -17,16 +17,23 @@ let activeProjectTransitionHasExplicitAuthority = false;
 // decrements it, so a failed transition never strands the machinery in a
 // permanent "mid-flight" state.
 let preparingProjectTransitionCount = 0;
+let runtimeTransitionTail = Promise.resolve();
 
 export type ProjectLoadTransaction = {
     prepare: () => Promise<boolean>;
     activate: () => boolean;
     canActivate: () => boolean;
     isCurrent: () => boolean;
-    hasActivatedSuccessor?: () => boolean;
 };
 
 export const projectLoadEpoch = {
+    async acquireRuntimeTransition(): Promise<() => void> {
+        const predecessor = runtimeTransitionTail;
+        const next = Promise.withResolvers<void>();
+        runtimeTransitionTail = next.promise;
+        await predecessor;
+        return next.resolve;
+    },
     get current(): number {
         return activeProjectTransitionId;
     },
@@ -145,6 +152,5 @@ export function runProjectLoadTransaction({
             activated &&
             transitionId === activeProjectTransitionId &&
             transitionId === latestPreparedProjectTransitionId,
-        hasActivatedSuccessor: () => activeProjectTransitionId > transitionId,
     };
 }

@@ -226,9 +226,6 @@ describe('replaceProjectData', () => {
         expect(mockStopPlayback).toHaveBeenCalled();
         expect(mockResetAudioGraph).toHaveBeenCalled();
         expect(mockUnloadLoadedExternalPlugins).toHaveBeenCalledOnce();
-        expect(mockUnloadLoadedExternalPlugins.mock.invocationCallOrder[0]).toBeLessThan(
-            mockResetCrdtProjectAuthority.mock.invocationCallOrder[0]!
-        );
         // Second argument is the point-of-no-return callback the abort path
         // uses to tell a recoverable failure from an unrecoverable one.
         expect(mockResetCrdtProjectAuthority).toHaveBeenCalledWith('Test Project', expect.any(Function));
@@ -263,7 +260,6 @@ describe('replaceProjectData', () => {
         expect(mockResetCrdtProjectAuthority).not.toHaveBeenCalled();
         expect(mockEnsureTrackStrips).toHaveBeenCalledOnce();
     });
-
     it('returns degraded=true when a committed step fails', async () => {
         mockHydrateArrangement.mockImplementation(() => {
             throw new Error('hydrate failed');

@@ -60,12 +60,10 @@ describe('Plugin Lifecycle Use Cases', () => {
         const unloading = Promise.withResolvers<void>();
         loadedExternalInstances.add('inst1');
         mocks.unloadPluginRepo.mockReturnValueOnce(unloading.promise);
-
         const first = unloadPlugin('inst1');
         const second = unloadPlugin('inst1');
         await Promise.resolve();
         unloading.resolve();
-
         await expect(Promise.all([first, second])).resolves.toEqual([undefined, undefined]);
         expect(mocks.unloadPluginRepo).toHaveBeenCalledTimes(1);
     });
@@ -74,15 +72,11 @@ describe('Plugin Lifecycle Use Cases', () => {
         const unloading = Promise.withResolvers<void>();
         mocks.unloadPluginRepo.mockReturnValueOnce(unloading.promise);
         loadedExternalInstances.add('owned-instance');
-
         const result = unloadPlugin('owned-instance');
         await Promise.resolve();
-
         const ownershipWhilePending = loadedExternalInstances.has('owned-instance');
-
         unloading.resolve();
         await result;
-
         expect(ownershipWhilePending).toBe(true);
         expect(loadedExternalInstances.has('owned-instance')).toBe(false);
     });
@@ -91,9 +85,7 @@ describe('Plugin Lifecycle Use Cases', () => {
         const failure = new Error('native unload failed');
         mocks.unloadPluginRepo.mockRejectedValueOnce(failure);
         loadedExternalInstances.add('owned-instance');
-
         await expect(unloadPlugin('owned-instance')).rejects.toBe(failure);
-
         expect(loadedExternalInstances.has('owned-instance')).toBe(true);
     });
 
@@ -102,15 +94,12 @@ describe('Plugin Lifecycle Use Cases', () => {
         loadedExternalInstances.add('first-instance');
         loadedExternalInstances.add('second-instance');
         mocks.unloadPluginRepo.mockRejectedValueOnce(failure).mockResolvedValueOnce(undefined);
-
         await expect(unloadLoadedExternalPlugins()).rejects.toThrow('Failed to unload all external plugin instances');
-
         expect(mocks.unloadPluginRepo).toHaveBeenCalledWith('first-instance');
         expect(mocks.unloadPluginRepo).toHaveBeenCalledWith('second-instance');
         expect(loadedExternalInstances.has('first-instance')).toBe(true);
         expect(loadedExternalInstances.has('second-instance')).toBe(false);
     });
-
     it('serializes unload then load for the same instance', async () => {
         const unloading = Promise.withResolvers<void>();
         mocks.unloadPluginRepo.mockReturnValueOnce(unloading.promise);
