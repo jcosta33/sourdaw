@@ -34,6 +34,7 @@ const {
     noop,
     sentinelHandlers,
     registerHandlerMapMock,
+    getExecutableCommandRegistrationsMock,
     initBrowserAiMock,
     initRaveModelsMock,
     registerGlobalErrorHandlersMock,
@@ -63,6 +64,7 @@ const {
         noop,
         sentinelHandlers,
         registerHandlerMapMock: vi.fn<(map: HandlerMapSentinel) => void>(),
+        getExecutableCommandRegistrationsMock: vi.fn(() => []),
         initBrowserAiMock: vi.fn(() => Promise.resolve()),
         initRaveModelsMock: vi.fn(() => Promise.resolve()),
         registerGlobalErrorHandlersMock: vi.fn(() => vi.fn()),
@@ -188,6 +190,7 @@ vi.mock('#/modules/Command/stores', () => ({ registerHandlerMap: registerHandler
 
 vi.mock('#/modules/Command/useCases', () => ({
     executeAppAction: noop,
+    getExecutableCommandRegistrations: getExecutableCommandRegistrationsMock,
     getMacroHandlers: sentinelHandlers('Macro'),
     getUndoRedoHandlers: sentinelHandlers('UndoRedo'),
     getUndoTreeHandlers: sentinelHandlers('UndoTree'),
@@ -445,6 +448,7 @@ describe('bootstrap', () => {
         // more than once — deduping the recorded module ids must not drop any.
         const registeredModuleIds = registerHandlerMapMock.mock.calls.map((call) => call[0].moduleId);
         expect(new Set(registeredModuleIds).size).toBe(expectedRegistrationOrder.length);
+        expect(getExecutableCommandRegistrationsMock).toHaveBeenCalledExactlyOnceWith();
     });
 
     it('wires global error handlers to the app runtime logger', () => {

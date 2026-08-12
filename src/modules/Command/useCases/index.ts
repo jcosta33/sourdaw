@@ -14,6 +14,7 @@ export { getAppActionExecutionPolicy } from './getAppActionExecutionPolicy';
 export { getExecutableAppActionToolSchemas } from './getExecutableAppActionToolSchemas';
 export { getExecutableAppActionGroundingCatalog } from './getExecutableAppActionGroundingCatalog';
 export { getExecutableAppActionGroundingRules } from './getExecutableAppActionGroundingRules';
+export { getExecutableCommandRegistrations } from './getExecutableCommandRegistrations';
 export { getVersionedCommandSemanticFingerprint } from './getVersionedCommandSemanticFingerprint';
 export { getVersionedCommandArgumentsDigest } from './getVersionedCommandArgumentsDigest';
 export { parseVersionedCommandEnvelope } from './parseVersionedCommandEnvelope';

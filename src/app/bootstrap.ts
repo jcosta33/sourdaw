@@ -69,6 +69,7 @@ import { registerHandlerMap } from '#/modules/Command/stores';
 import {
     executeAppAction,
     getMacroHandlers,
+    getExecutableCommandRegistrations,
     getUndoRedoHandlers,
     getUndoTreeHandlers,
     productionBriefAdmissionPort,
@@ -439,6 +440,7 @@ registerHandlerMap(getNodeViewHandlers());
 registerHandlerMap(getWebMidiInputHandlers());
 registerHandlerMap(getRaveHandlers());
 registerHandlerMap(getControlRoomHandlers());
+getExecutableCommandRegistrations();
 
 initToasterSubscribers({ eventBus, logger });
 // Registered after the lifecycle subscriber so a device's first appearance is

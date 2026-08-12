@@ -1,4 +1,4 @@
-import { type AppActionType } from '#/utils/handlerContract';
+import { type AppAction, type AppActionType } from '#/utils/handlerContract';
 import { getMarkerColorNames } from '#/utils/markerColorPalette';
 
 export type ExecutableAppActionRisk =
@@ -2265,5 +2265,12 @@ export const executableAppActionDescriptors = [
     },
 ] as const satisfies readonly ExecutableAppActionDescriptor[];
 
+export type ExecutableAppActionType = (typeof executableAppActionDescriptors)[number]['actionType'];
+export type ExecutableAppAction = Extract<AppAction, { type: ExecutableAppActionType }>;
+
 export const executableAppActionDescriptorByType: ReadonlyMap<string, (typeof executableAppActionDescriptors)[number]> =
     new Map(executableAppActionDescriptors.map((descriptor) => [descriptor.actionType, descriptor]));
+
+export function isExecutableAppActionType(actionType: string): actionType is ExecutableAppActionType {
+    return executableAppActionDescriptorByType.has(actionType);
+}
