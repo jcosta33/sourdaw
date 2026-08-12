@@ -20,28 +20,25 @@ export const handleSetTrackGain = createHandler<'setTrackGain'>({
     },
     describe: (alpha) => {
         const prev = getTrackStoreState()?.tracks.find((time) => time.id === alpha.payload.trackId);
+        const previousGain = prev?.gain ?? alpha.payload.expectedGain;
         return {
             label: 'Set track gain',
-            inverseAction: prev
-                ? {
-                      type: 'setTrackGain',
-                      payload: {
-                          trackId: alpha.payload.trackId,
-                          gain: prev.gain,
-                          expectedGain: alpha.payload.gain,
-                      },
-                  }
-                : null,
-            redoAction: prev
-                ? {
-                      type: 'setTrackGain',
-                      payload: {
-                          trackId: alpha.payload.trackId,
-                          gain: alpha.payload.gain,
-                          expectedGain: prev.gain,
-                      },
-                  }
-                : undefined,
+            inverseAction: {
+                type: 'setTrackGain',
+                payload: {
+                    trackId: alpha.payload.trackId,
+                    gain: previousGain,
+                    expectedGain: alpha.payload.gain,
+                },
+            },
+            redoAction: {
+                type: 'setTrackGain',
+                payload: {
+                    trackId: alpha.payload.trackId,
+                    gain: alpha.payload.gain,
+                    expectedGain: previousGain,
+                },
+            },
         };
     },
     undoable: true,

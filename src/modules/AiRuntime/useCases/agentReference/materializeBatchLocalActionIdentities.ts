@@ -64,6 +64,12 @@ export function materializeBatchLocalActionIdentities(
                     ...action.payload,
                     busId: identity.busId,
                     ...(identity.initialGain !== undefined ? { initialGain: identity.initialGain } : {}),
+                    ...(identity.expectedAbsentTrackNames !== undefined
+                        ? { expectedAbsentTrackNames: identity.expectedAbsentTrackNames }
+                        : {}),
+                    ...(identity.expectedTrackOutputs !== undefined
+                        ? { expectedTrackOutputs: identity.expectedTrackOutputs }
+                        : {}),
                 },
             };
         }

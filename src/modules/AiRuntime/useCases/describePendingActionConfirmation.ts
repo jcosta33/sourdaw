@@ -12,6 +12,7 @@ import { getBassProcessingCopyPromptScope } from './agentReference/getBassProces
 import { getBulkDeviceInsertionTrackScope } from './agentReference/getBulkDeviceInsertionTrackScope';
 import { getDeviceParameterPromptScope } from './agentReference/getDeviceParameterPromptScope';
 import { getDrumPreviewBranchesPromptScope } from './agentReference/getDrumPreviewBranchesPromptScope';
+import { getDrumRenderComparisonPromptScope } from './agentReference/getDrumRenderComparisonPromptScope';
 import { getDrumRoutingPromptScope } from './agentReference/getDrumRoutingPromptScope';
 import { getMidiOverlapTransformPromptScope } from './agentReference/getMidiOverlapTransformPromptScope';
 import { getMutedEmptyTrackDeletionScope } from './agentReference/getMutedEmptyTrackDeletionScope';
@@ -154,6 +155,10 @@ function getProtectedUnchangedTracks(
         drumRoutingScope?.status === 'request'
             ? [{ id: drumRoutingScope.protectedReturnId, name: drumRoutingScope.protectedReturnName }]
             : [];
+    const drumRenderComparisonScope =
+        workflowCapabilityId === 'drum-render-comparison' ? getDrumRenderComparisonPromptScope(context) : null;
+    const drumRenderComparisonProtections =
+        drumRenderComparisonScope?.status === 'request' ? drumRenderComparisonScope.protectedObjects : [];
     const drumPreviewBranchesScope =
         workflowCapabilityId === 'drum-preview-branches' ? getDrumPreviewBranchesPromptScope(context) : null;
     const drumPreviewBranchProtections =
@@ -208,6 +213,7 @@ function getProtectedUnchangedTracks(
         ...protectedParameters,
         ...planProtections,
         ...drumRoutingProtections,
+        ...drumRenderComparisonProtections,
         ...drumPreviewBranchProtections,
         ...sidechainRoutingProtections,
         ...sharedVocalFxBusesProtections,
@@ -329,6 +335,14 @@ function describeExactAction(action: AppAction, actions: readonly AppAction[], c
         const busName = resolveActionTrackName(action.payload.busId, actions, context);
         const tap = action.payload.preFader === true ? 'pre-fader' : 'post-fader';
         return `Create ${tap} send from "${sourceName}" (${action.payload.trackId}) to "${busName}" (${action.payload.busId}) at ${formatDecibelsFromGain(action.payload.level)}`;
+    }
+    if (action.type === 'setTrackGain') {
+        const createdTrack = actions.find(
+            (candidate) => candidate.type === 'createBus' && candidate.payload.busId === action.payload.trackId
+        );
+        if (createdTrack?.type === 'createBus') {
+            return `Set "${createdTrack.payload.name}" (${action.payload.trackId}) fader from ${formatDecibelsFromGain(action.payload.expectedGain)} to ${formatDecibelsFromGain(action.payload.gain)}`;
+        }
     }
     if (action.type === 'automateSendRanges' && action.payload.ranges && action.payload.expectedTracks) {
         const targets = action.payload.expectedTracks

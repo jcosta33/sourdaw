@@ -1,8 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { configureAutomergeStoragePort } from '#/infra/store/storage/createAutomergeStorage';
-import { trackStore, type Track } from '#/modules/Arrangement/stores';
+import { markerStore, trackStore, type Track } from '#/modules/Arrangement/stores';
 import { getArrangementHandlers, setArrangementEventBus } from '#/modules/Arrangement/useCases';
+import {
+    clearAgentSectionRenderArtifacts,
+    getAgentSectionRenderArtifacts,
+    getAudioRenderingHandlers,
+} from '#/modules/AudioRendering/useCases';
 import { clearHandlerRegistry, macroStore, registerHandlerMap, undoStore } from '#/modules/Command/stores';
 import {
     clearUndoHistory,
@@ -41,6 +46,8 @@ const MF01_PARAPHRASE =
     'Send the complete drum kit to the existing Drum Bus, but leave its parallel compression return routed as it is.';
 const MF06_PROMPT = 'Create a sidechain from the kick to every bass compressor that supports sidechain input.';
 const EX06_PROMPT = 'Reduce kick/bass masking without replacing either basic sound.';
+const EX11_PROMPT =
+    'Create a Drum Bus for Kick, Snare, and Hats, create a parallel-compression bus fed post-fader from the Drum Bus at -12 dB, keep Drum Room routed directly to Master, lower the parallel-compression bus by 1.5 dB, and render Verse One and Chorus One for comparison.';
 
 const providerPlan = [
     { name: 'createBus', arguments: { name: 'Drum Bus', binding: 'drum-bus' } },
@@ -60,10 +67,18 @@ const runtimeMocks = vi.hoisted(() => {
     const backend: { value: 'cloud' | 'webllm' } = { value: 'webllm' };
     return {
         backend,
+        addDeviceToStrip: vi.fn(),
+        clearReportedLatency: vi.fn(),
+        ensureTrackStrip: vi.fn(),
         fetch: vi.fn<typeof fetch>(),
         generateWebLlmCompletion: vi.fn<(systemPrompt: string, userMessage: string) => Promise<string>>(),
         getAllSidechainRoutes: vi.fn(() => []),
+        removeDeviceFromStrip: vi.fn(),
+        removeSend: vi.fn(),
+        renderOffline: vi.fn(),
         resolveToasterPadBinding: vi.fn(() => null),
+        setSend: vi.fn(),
+        setTrackGain: vi.fn(),
         setTrackOutput: vi.fn(),
         unwireSidechainRoute: vi.fn(),
         wireSidechainRoute: vi.fn(),
@@ -88,7 +103,13 @@ vi.mock('../../repositories/webLlm/isWebLlmLoaded', () => ({
 
 vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/AudioEngine/useCases')>()),
+    addDeviceToStrip: runtimeMocks.addDeviceToStrip,
+    clearReportedLatency: runtimeMocks.clearReportedLatency,
+    ensureTrackStrip: runtimeMocks.ensureTrackStrip,
+    removeDeviceFromStrip: runtimeMocks.removeDeviceFromStrip,
+    renderOffline: runtimeMocks.renderOffline,
     resolveToasterPadBinding: runtimeMocks.resolveToasterPadBinding,
+    setTrackGain: runtimeMocks.setTrackGain,
     setTrackOutput: runtimeMocks.setTrackOutput,
     unwireSidechainRoute: runtimeMocks.unwireSidechainRoute,
     wireSidechainRoute: runtimeMocks.wireSidechainRoute,
@@ -97,6 +118,8 @@ vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
 vi.mock('#/modules/Routing/useCases', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/Routing/useCases')>()),
     getAllSidechainRoutes: runtimeMocks.getAllSidechainRoutes,
+    removeSend: runtimeMocks.removeSend,
+    setSend: runtimeMocks.setSend,
 }));
 
 const noActionHistoryMetadataPort = {
@@ -139,6 +162,23 @@ function createTrack(id: string, name: string, kind: Track['kind'] = 'audio'): T
         vcaGroupId: null,
         midiOutputTrackId: null,
         followChordTrack: false,
+    };
+}
+
+function createTestAudioBuffer(sampleRate = 44_100): AudioBuffer {
+    const channelData = new Float32Array(sampleRate);
+    return {
+        copyFromChannel(destination: Float32Array, _channelNumber: number, bufferOffset = 0) {
+            destination.set(channelData.subarray(bufferOffset, bufferOffset + destination.length));
+        },
+        copyToChannel(source: Float32Array, _channelNumber: number, bufferOffset = 0) {
+            channelData.set(source, bufferOffset);
+        },
+        duration: 1,
+        getChannelData: () => channelData,
+        length: channelData.length,
+        numberOfChannels: 2,
+        sampleRate,
     };
 }
 
@@ -186,6 +226,105 @@ function getHostedUserMessage(requestBody: string): string {
         }
     }
     throw new TypeError('Expected one hosted provider user message');
+}
+
+function getProviderContext(userMessage: string): Record<string, unknown> {
+    const match = /<project_context>\n(?<contextJson>.+)\n<\/project_context>/u.exec(userMessage);
+    const contextJson = match?.groups?.contextJson;
+    if (!contextJson) {
+        throw new TypeError('Expected serialized project context in provider request');
+    }
+    const context: unknown = JSON.parse(contextJson);
+    if (!isRecord(context)) {
+        throw new TypeError('Expected object-shaped project context');
+    }
+    return context;
+}
+
+function createEx11ProviderPlanFromUserMessage(userMessage: string) {
+    const context = getProviderContext(userMessage);
+    const capability = context.drumRenderComparisonCapability;
+    if (
+        !isRecord(capability) ||
+        capability.baseRevision !== context.projectRevision ||
+        !Array.isArray(capability.orderedToolPlan)
+    ) {
+        throw new TypeError('Expected revision-bound EX-11 capability');
+    }
+    return capability.orderedToolPlan.map((call) => {
+        if (!isRecord(call) || typeof call.name !== 'string' || !isRecord(call.arguments)) {
+            throw new TypeError('Expected complete EX-11 ordered provider plan');
+        }
+        return { name: call.name, arguments: call.arguments };
+    });
+}
+
+function useEx11WebLlmFixture(): void {
+    runtimeMocks.generateWebLlmCompletion.mockImplementation((_systemPrompt, userMessage) =>
+        Promise.resolve(
+            JSON.stringify([
+                { name: 'selectWorkflowCapability', arguments: { capabilityId: 'drum-render-comparison' } },
+                ...createEx11ProviderPlanFromUserMessage(userMessage),
+            ])
+        )
+    );
+}
+
+function useEx11HostedFixture(
+    transformPlan: (plan: Array<{ name: string; arguments: Record<string, unknown> }>) => Array<{
+        name: string;
+        arguments: Record<string, unknown>;
+    }> = (plan) => plan
+): void {
+    runtimeMocks.backend.value = 'cloud';
+    runtimeMocks.fetch.mockImplementation((_input, init) => {
+        if (typeof init?.body !== 'string') {
+            throw new TypeError('Expected hosted provider request body');
+        }
+        const plan = transformPlan(createEx11ProviderPlanFromUserMessage(getHostedUserMessage(init.body)));
+        const calls = [
+            { name: 'selectWorkflowCapability', arguments: { capabilityId: 'drum-render-comparison' } },
+            ...plan,
+        ];
+        return Promise.resolve(
+            new Response(
+                JSON.stringify({
+                    choices: [
+                        {
+                            finish_reason: 'tool_calls',
+                            message: {
+                                tool_calls: calls.map((call) => ({
+                                    function: { name: call.name, arguments: JSON.stringify(call.arguments) },
+                                })),
+                            },
+                        },
+                    ],
+                }),
+                { status: 200, headers: { 'Content-Type': 'application/json' } }
+            )
+        );
+    });
+}
+
+function setEx11Project(): void {
+    trackStore.set({
+        tracks: [
+            createTrack('track-kick', 'Kick'),
+            createTrack('track-snare', 'Snare'),
+            createTrack('track-hats', 'Hats'),
+            createTrack('track-room', 'Drum Room'),
+            createTrack('track-bass', 'Bass DI'),
+        ],
+        selectedTrackId: null,
+        ghostClips: [],
+    });
+    markerStore.set({
+        markers: [],
+        sections: [
+            { id: 'section-verse-one', name: 'Verse One', startBeat: 0, endBeat: 16, color: '#ffffff' },
+            { id: 'section-chorus-one', name: 'Chorus One', startBeat: 16, endBeat: 48, color: '#ffffff' },
+        ],
+    });
 }
 
 function createMf01ProviderPlanFromUserMessage(userMessage: string) {
@@ -415,6 +554,7 @@ describe('drum bus prompt workflow', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         runtimeMocks.backend.value = 'webllm';
+        runtimeMocks.renderOffline.mockResolvedValue(createTestAudioBuffer());
         runtimeMocks.generateWebLlmCompletion.mockResolvedValue(JSON.stringify(providerPlan));
         runtimeMocks.fetch.mockResolvedValue(
             new Response(
@@ -448,14 +588,17 @@ describe('drum bus prompt workflow', () => {
         registerCrdtStorageRuntime();
         clearHandlerRegistry();
         registerHandlerMap(getArrangementHandlers());
+        registerHandlerMap(getAudioRenderingHandlers());
         clearUndoHistory();
         resetActionReplayAuthority();
         setActionHistoryMetadataPort(noActionHistoryMetadataPort);
         clearAiHistory();
         clearPendingActionConfirmations();
+        clearAgentSectionRenderArtifacts();
         setArrangementEventBus({ emit: () => Promise.resolve() });
         macroStore.set({ macros: [], recording: false, currentRecording: [] });
         sidechainStore.set({ routes: [] });
+        markerStore.set({ markers: [], sections: [] });
         const tracks = [
             createTrack('track-kick', 'Kick'),
             createTrack('track-snare', 'Snare'),
@@ -478,12 +621,457 @@ describe('drum bus prompt workflow', () => {
         clearHandlerRegistry();
         clearAiHistory();
         clearPendingActionConfirmations();
+        clearAgentSectionRenderArtifacts();
         trackStore.set({ tracks: [], selectedTrackId: null, ghostClips: [] });
+        markerStore.set({ markers: [], sections: [] });
         sidechainStore.set({ routes: [] });
         configureAutomergeStoragePort(null);
         cloudSession.clear();
         removeCrdtDoc('root');
         vi.unstubAllGlobals();
+    });
+
+    it('grounds EX-11 into the dependency-ordered drum, parallel, gain, and render batch', async () => {
+        setEx11Project();
+        useEx11WebLlmFixture();
+        const roomBefore = structuredClone(getTrack('track-room'));
+        const bassBefore = structuredClone(getTrack('track-bass'));
+
+        await sendChatMessage(EX11_PROMPT);
+
+        const confirmation = getPendingActionConfirmation(
+            chatStore.value?.messages.find((message) => message.pendingActionConfirmationId)
+                ?.pendingActionConfirmationId ?? ''
+        );
+        expect(confirmation?.actions.map((action) => action.type)).toEqual([
+            'createBus',
+            'setTrackOutput',
+            'setTrackOutput',
+            'setTrackOutput',
+            'createBus',
+            'addDevice',
+            'addSend',
+            'setTrackGain',
+            'renderProjectSections',
+        ]);
+        const drumBusAction = confirmation?.actions[0];
+        const parallelBusAction = confirmation?.actions[4];
+        const compressorAction = confirmation?.actions[5];
+        if (
+            drumBusAction?.type !== 'createBus' ||
+            !drumBusAction.payload.busId ||
+            parallelBusAction?.type !== 'createBus' ||
+            !parallelBusAction.payload.busId ||
+            compressorAction?.type !== 'addDevice' ||
+            !compressorAction.payload.deviceId
+        ) {
+            throw new Error('Expected application-owned EX-11 bus and device identities');
+        }
+        const drumBusId = drumBusAction.payload.busId;
+        const parallelBusId = parallelBusAction.payload.busId;
+        const compressorDeviceId = compressorAction.payload.deviceId;
+        const targetGain = 10 ** (-1.5 / 20);
+        const sendLevel = 10 ** (-12 / 20);
+        expect(confirmation?.actions).toEqual([
+            {
+                type: 'createBus',
+                payload: {
+                    name: 'Drum Bus',
+                    busId: drumBusId,
+                    initialGain: 1,
+                    expectedAbsentTrackNames: ['Drum Bus', 'Parallel Compression'],
+                    expectedTrackOutputs: [{ trackId: 'track-room', outputId: 'master' }],
+                },
+            },
+            {
+                type: 'setTrackOutput',
+                payload: { trackId: 'track-kick', outputId: drumBusId, expectedOutputId: 'master' },
+            },
+            {
+                type: 'setTrackOutput',
+                payload: { trackId: 'track-snare', outputId: drumBusId, expectedOutputId: 'master' },
+            },
+            {
+                type: 'setTrackOutput',
+                payload: { trackId: 'track-hats', outputId: drumBusId, expectedOutputId: 'master' },
+            },
+            {
+                type: 'createBus',
+                payload: { name: 'Parallel Compression', busId: parallelBusId, initialGain: 1 },
+            },
+            {
+                type: 'addDevice',
+                payload: {
+                    trackId: parallelBusId,
+                    deviceType: 'builtin-compressor',
+                    deviceId: compressorDeviceId,
+                    expectedDeviceIds: [],
+                    expectedFrozen: false,
+                },
+            },
+            {
+                type: 'addSend',
+                payload: {
+                    trackId: drumBusId,
+                    busId: parallelBusId,
+                    level: sendLevel,
+                    preFader: false,
+                    expectedAbsent: true,
+                },
+            },
+            {
+                type: 'setTrackGain',
+                payload: { trackId: parallelBusId, gain: targetGain, expectedGain: 1 },
+            },
+            {
+                type: 'renderProjectSections',
+                payload: {
+                    sectionIds: ['section-verse-one', 'section-chorus-one'],
+                    jobs: [
+                        expect.objectContaining({
+                            sectionId: 'section-verse-one',
+                            sectionName: 'Verse One',
+                            startBeat: 0,
+                            endBeat: 16,
+                            sampleRate: 44_100,
+                            tailSeconds: 0,
+                        }),
+                        expect.objectContaining({
+                            sectionId: 'section-chorus-one',
+                            sectionName: 'Chorus One',
+                            startBeat: 16,
+                            endBeat: 48,
+                            sampleRate: 44_100,
+                            tailSeconds: 0,
+                        }),
+                    ],
+                },
+            },
+        ]);
+        expect(confirmation?.protectedUnchanged).toContainEqual({
+            id: 'track-room',
+            name: 'Drum Room direct-to-Master route',
+        });
+        const proposal = chatStore.value?.messages.find(
+            (message) => message.pendingActionConfirmationId === confirmation?.id
+        );
+        expect(proposal?.content).toContain(`Create bus "Drum Bus" (${drumBusId}) at unity gain`);
+        expect(proposal?.content).toContain(`Create post-fader send from "Drum Bus" (${drumBusId})`);
+        expect(proposal?.content).toContain(`Set "Parallel Compression" (${parallelBusId}) fader from 0 dB to -1.5 dB`);
+        expect(proposal?.content).toContain('Render "Verse One" (section-verse-one)');
+
+        await expect(confirmPendingChatActions({ confirmationId: confirmation?.id ?? '' })).resolves.toEqual({
+            status: 'executed',
+        });
+
+        expect(['track-kick', 'track-snare', 'track-hats'].map((id) => getTrack(id).outputId)).toEqual([
+            drumBusId,
+            drumBusId,
+            drumBusId,
+        ]);
+        expect(getTrack(drumBusId).sends).toEqual([{ busId: parallelBusId, level: sendLevel, preFader: false }]);
+        expect(getTrack(parallelBusId)).toMatchObject({
+            gain: targetGain,
+            devices: [{ id: compressorDeviceId, type: 'builtin-compressor' }],
+        });
+        expect(getTrack('track-room')).toEqual(roomBefore);
+        expect(getTrack('track-bass')).toEqual(bassBefore);
+        expect(getAgentSectionRenderArtifacts().map((artifact) => artifact.sectionId)).toEqual([
+            'section-verse-one',
+            'section-chorus-one',
+        ]);
+        expect(runtimeMocks.renderOffline).toHaveBeenCalledTimes(2);
+
+        const receipt = chatStore.value?.messages.find(
+            (message) => message.pendingActionConfirmationId === confirmation?.id
+        );
+        expect(receipt?.content).toContain(`Create post-fader send from "Drum Bus" (${drumBusId})`);
+        expect(receipt?.content).toContain('Render "Verse One" (section-verse-one)');
+        expect(receipt?.content).toContain('Protected unchanged: "Drum Room direct-to-Master route" (track-room)');
+        expect(receipt?.content).toContain('Outcome: committed');
+
+        await undo();
+        expect(trackStore.value?.tracks.some((track) => track.id === drumBusId || track.id === parallelBusId)).toBe(
+            false
+        );
+        expect(['track-kick', 'track-snare', 'track-hats'].map((id) => getTrack(id).outputId)).toEqual([
+            'master',
+            'master',
+            'master',
+        ]);
+        expect(getAgentSectionRenderArtifacts()).toEqual([]);
+        expect(getTrack('track-room')).toEqual(roomBefore);
+
+        await redo();
+        expect(['track-kick', 'track-snare', 'track-hats'].map((id) => getTrack(id).outputId)).toEqual([
+            drumBusId,
+            drumBusId,
+            drumBusId,
+        ]);
+        expect(getTrack(parallelBusId).gain).toBe(targetGain);
+        expect(getAgentSectionRenderArtifacts().map((artifact) => artifact.sectionId)).toEqual([
+            'section-verse-one',
+            'section-chorus-one',
+        ]);
+        expect(getTrack('track-room')).toEqual(roomBefore);
+    });
+
+    it('normalizes the hosted provider to the same semantic EX-11 batch', async () => {
+        setEx11Project();
+        useEx11HostedFixture();
+
+        await sendChatMessage(
+            'Build the close-drum and parallel buses, keep the room direct, trim the parallel return 1.5 dB, then render the first verse and chorus as a comparison.'
+        );
+
+        const hostedMessage = getHostedUserMessage(getHostedRequestBody());
+        expect(hostedMessage).toContain('drumRenderComparisonCapability');
+        expect(hostedMessage).toContain('track-room');
+        const confirmation = getPendingActionConfirmation(
+            chatStore.value?.messages.find((message) => message.pendingActionConfirmationId)
+                ?.pendingActionConfirmationId ?? ''
+        );
+        expect(confirmation?.actions.map((action) => action.type)).toEqual([
+            'createBus',
+            'setTrackOutput',
+            'setTrackOutput',
+            'setTrackOutput',
+            'createBus',
+            'addDevice',
+            'addSend',
+            'setTrackGain',
+            'renderProjectSections',
+        ]);
+
+        await expect(confirmPendingChatActions({ confirmationId: confirmation?.id ?? '' })).resolves.toEqual({
+            status: 'executed',
+        });
+        expect(getAgentSectionRenderArtifacts().map((artifact) => artifact.sectionId)).toEqual([
+            'section-verse-one',
+            'section-chorus-one',
+        ]);
+        expect(getTrack('track-room').outputId).toBe('master');
+    });
+
+    it('keeps grouped redo retryable when the protected room route changes after undo', async () => {
+        setEx11Project();
+        useEx11WebLlmFixture();
+        await sendChatMessage(EX11_PROMPT);
+        const confirmation = getPendingActionConfirmation(
+            chatStore.value?.messages.find((message) => message.pendingActionConfirmationId)
+                ?.pendingActionConfirmationId ?? ''
+        );
+        if (!confirmation) {
+            throw new Error('Expected EX-11 confirmation');
+        }
+        await confirmPendingChatActions({ confirmationId: confirmation.id });
+        await undo();
+        trackStore.set({
+            tracks: (trackStore.value?.tracks ?? []).map((track) =>
+                track.id === 'track-room' ? { ...track, outputId: 'track-bass' } : track
+            ),
+            selectedTrackId: null,
+            ghostClips: [],
+        });
+        const collaboratorState = structuredClone(trackStore.value?.tracks ?? []);
+        const futureBefore = structuredClone(undoStore.value?.future ?? []);
+
+        await redo();
+
+        expect(trackStore.value?.tracks).toEqual(collaboratorState);
+        expect(getAgentSectionRenderArtifacts()).toEqual([]);
+        expect(runtimeMocks.renderOffline).toHaveBeenCalledTimes(2);
+        expect(undoStore.value?.future).toEqual(futureBefore);
+    });
+
+    it('keeps grouped redo retryable when a collaborator claims a reserved bus name after undo', async () => {
+        setEx11Project();
+        useEx11WebLlmFixture();
+        await sendChatMessage(EX11_PROMPT);
+        const confirmation = getPendingActionConfirmation(
+            chatStore.value?.messages.find((message) => message.pendingActionConfirmationId)
+                ?.pendingActionConfirmationId ?? ''
+        );
+        if (!confirmation) {
+            throw new Error('Expected EX-11 confirmation');
+        }
+        await confirmPendingChatActions({ confirmationId: confirmation.id });
+        await undo();
+        const collaboratorBus = createTrack('track-collaborator-drum-bus', 'Drum Bus');
+        trackStore.set({
+            tracks: [...(trackStore.value?.tracks ?? []), collaboratorBus],
+            selectedTrackId: null,
+            ghostClips: [],
+        });
+        const collaboratorState = structuredClone(trackStore.value?.tracks ?? []);
+        const futureBefore = structuredClone(undoStore.value?.future ?? []);
+
+        await redo();
+
+        expect(trackStore.value?.tracks).toEqual(collaboratorState);
+        expect(getAgentSectionRenderArtifacts()).toEqual([]);
+        expect(runtimeMocks.renderOffline).toHaveBeenCalledTimes(2);
+        expect(undoStore.value?.future).toEqual(futureBefore);
+    });
+
+    it('rejects provider omission and target enlargement before confirmation', async () => {
+        setEx11Project();
+        useEx11HostedFixture((plan) => plan.filter((call) => call.name !== 'setTrackGain'));
+
+        await sendChatMessage(EX11_PROMPT);
+
+        expect(chatStore.value?.messages.some((message) => message.pendingActionConfirmationId)).toBe(false);
+        expect(trackStore.value?.tracks.some((track) => track.name === 'Drum Bus')).toBe(false);
+        expect(getAgentSectionRenderArtifacts()).toEqual([]);
+
+        clearAiHistory();
+        clearPendingActionConfirmations();
+        chatStore.set({ messages: [], isGenerating: false, enableReasoning: true, chatMode: 'prompt' });
+        useEx11HostedFixture((plan) => [
+            ...plan,
+            { name: 'setTrackOutput', arguments: { trackId: 'track-bass', outputId: '$drum-bus' } },
+        ]);
+
+        await sendChatMessage(EX11_PROMPT);
+
+        expect(chatStore.value?.messages.some((message) => message.pendingActionConfirmationId)).toBe(false);
+        expect(getTrack('track-bass').outputId).toBe('master');
+    });
+
+    it('rejects unavailable room and section scope before the provider can propose a write', async () => {
+        setEx11Project();
+        const room = getTrack('track-room');
+        trackStore.set({
+            tracks: (trackStore.value?.tracks ?? []).map((track) =>
+                track.id === room.id ? { ...track, outputId: 'track-bass' } : track
+            ),
+            selectedTrackId: null,
+            ghostClips: [],
+        });
+        useEx11WebLlmFixture();
+
+        await sendChatMessage(EX11_PROMPT);
+
+        expect(chatStore.value?.messages.some((message) => message.pendingActionConfirmationId)).toBe(false);
+        expect(getTrack('track-room').outputId).toBe('track-bass');
+        expect(getAgentSectionRenderArtifacts()).toEqual([]);
+    });
+
+    it('aborts the whole EX-11 batch when a routed target changes after confirmation', async () => {
+        setEx11Project();
+        useEx11WebLlmFixture();
+        await sendChatMessage(EX11_PROMPT);
+        const confirmation = getPendingActionConfirmation(
+            chatStore.value?.messages.find((message) => message.pendingActionConfirmationId)
+                ?.pendingActionConfirmationId ?? ''
+        );
+        if (!confirmation) {
+            throw new Error('Expected EX-11 confirmation');
+        }
+        trackStore.set({
+            tracks: (trackStore.value?.tracks ?? []).map((track) =>
+                track.id === 'track-snare' ? { ...track, outputId: 'track-bass' } : track
+            ),
+            selectedTrackId: null,
+            ghostClips: [],
+        });
+        const collaboratorState = structuredClone(trackStore.value?.tracks ?? []);
+
+        const result = await confirmPendingChatActions({ confirmationId: confirmation.id });
+
+        expect(result.status).toBe('failed');
+        expect(trackStore.value?.tracks).toEqual(collaboratorState);
+        expect(trackStore.value?.tracks.some((track) => track.name === 'Drum Bus')).toBe(false);
+        expect(getAgentSectionRenderArtifacts()).toEqual([]);
+        expect(runtimeMocks.renderOffline).not.toHaveBeenCalled();
+        expect(undoStore.value?.past).toEqual([]);
+    });
+
+    it('receipts a partial comparison render as committed with warning and keeps the group undoable', async () => {
+        setEx11Project();
+        useEx11WebLlmFixture();
+        await sendChatMessage(EX11_PROMPT);
+        const confirmation = getPendingActionConfirmation(
+            chatStore.value?.messages.find((message) => message.pendingActionConfirmationId)
+                ?.pendingActionConfirmationId ?? ''
+        );
+        if (!confirmation) {
+            throw new Error('Expected EX-11 confirmation');
+        }
+        runtimeMocks.renderOffline.mockImplementation((options: { startBeat?: number }) => {
+            if (options.startBeat === 16) {
+                return Promise.reject(new Error('comparison renderer unavailable'));
+            }
+            return Promise.resolve(createTestAudioBuffer());
+        });
+
+        await expect(confirmPendingChatActions({ confirmationId: confirmation.id })).resolves.toEqual({
+            status: 'executed',
+        });
+
+        expect(getAgentSectionRenderArtifacts()).toEqual([expect.objectContaining({ sectionId: 'section-verse-one' })]);
+        expect(runtimeMocks.renderOffline).toHaveBeenCalledTimes(3);
+        const receipt = chatStore.value?.messages.find(
+            (message) => message.pendingActionConfirmationId === confirmation.id
+        );
+        expect(receipt?.content).toContain('The project change committed with a follow-up warning');
+        expect(receipt?.content).toContain('comparison renderer unavailable');
+        expect(receipt?.content).toContain('Do not replay the confirmed project actions');
+        expect(undoStore.value?.past).toHaveLength(9);
+
+        await undo();
+
+        expect(trackStore.value?.tracks.some((track) => track.name === 'Drum Bus')).toBe(false);
+        expect(trackStore.value?.tracks.some((track) => track.name === 'Parallel Compression')).toBe(false);
+        expect(getAgentSectionRenderArtifacts()).toEqual([]);
+    });
+
+    it('keeps grouped undo retryable when a collaborator changes the parallel fader', async () => {
+        setEx11Project();
+        useEx11WebLlmFixture();
+        await sendChatMessage(EX11_PROMPT);
+        const confirmation = getPendingActionConfirmation(
+            chatStore.value?.messages.find((message) => message.pendingActionConfirmationId)
+                ?.pendingActionConfirmationId ?? ''
+        );
+        if (!confirmation) {
+            throw new Error('Expected EX-11 confirmation');
+        }
+        await confirmPendingChatActions({ confirmationId: confirmation.id });
+        const parallelAction = confirmation.actions.find(
+            (action) => action.type === 'createBus' && action.payload.name === 'Parallel Compression'
+        );
+        if (parallelAction?.type !== 'createBus' || !parallelAction.payload.busId) {
+            throw new Error('Expected EX-11 Parallel Compression identity');
+        }
+        const parallelBusId = parallelAction.payload.busId;
+        trackStore.set({
+            tracks: (trackStore.value?.tracks ?? []).map((track) =>
+                track.id === parallelBusId ? { ...track, gain: 0.42 } : track
+            ),
+            selectedTrackId: null,
+            ghostClips: [],
+        });
+        const collaboratorState = structuredClone(trackStore.value?.tracks ?? []);
+        const artifactIds = getAgentSectionRenderArtifacts().map((artifact) => artifact.jobId);
+
+        await undo();
+
+        expect(trackStore.value?.tracks).toEqual(collaboratorState);
+        expect(getAgentSectionRenderArtifacts().map((artifact) => artifact.jobId)).toEqual(artifactIds);
+        expect(undoStore.value?.past).toHaveLength(9);
+        expect(undoStore.value?.future).toEqual([]);
+
+        trackStore.set({
+            tracks: (trackStore.value?.tracks ?? []).map((track) =>
+                track.id === parallelBusId ? { ...track, gain: 10 ** (-1.5 / 20) } : track
+            ),
+            selectedTrackId: null,
+            ghostClips: [],
+        });
+        await undo();
+        expect(trackStore.value?.tracks.some((track) => track.id === parallelBusId)).toBe(false);
+        expect(getAgentSectionRenderArtifacts()).toEqual([]);
     });
 
     it('grounds, confirms, commits, receipts, undoes, and redoes the exact protected routing request', async () => {

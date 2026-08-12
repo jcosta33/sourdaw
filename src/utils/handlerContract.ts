@@ -860,6 +860,10 @@ export type AppAction =
               /** Internal replay metadata captured from the first committed bus. */ color?: string;
               /** Internal replay metadata captured from the first committed bus. */ initialAlternativeId?: string;
               /** Application-owned initial fader value; provider payloads cannot set this field. */ initialGain?: number;
+              /** Application-owned replay guard for names that must remain unclaimed. */
+              expectedAbsentTrackNames?: readonly string[];
+              /** Application-owned replay guard for protected routes outside the mutation set. */
+              expectedTrackOutputs?: readonly { trackId: string; outputId: string }[];
           };
       }
     | { type: 'createFolder'; payload: { name: string } }

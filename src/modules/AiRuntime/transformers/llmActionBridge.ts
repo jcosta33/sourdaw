@@ -6,6 +6,7 @@ import { type ArticulationTransferCapability } from '../models/ArticulationTrans
 import { type BackingVocalPlateCapability } from '../models/BackingVocalPlateCapability';
 import { type BassProcessingCopyCapability } from '../models/BassProcessingCopyCapability';
 import { type DrumPreviewBranchesCapability } from '../models/DrumPreviewBranchesCapability';
+import { type DrumRenderComparisonCapability } from '../models/DrumRenderComparisonCapability';
 import { type DrumRoutingCapability } from '../models/DrumRoutingCapability';
 import { type MidiOverlapTransformCapability } from '../models/MidiOverlapTransformCapability';
 import { type ProjectContext } from '../models/ProjectContext';
@@ -3158,6 +3159,7 @@ export function buildLlmActionUserMessage({
     backingVocalPlateCapability,
     bassProcessingCopyCapability,
     drumRoutingCapability,
+    drumRenderComparisonCapability,
     drumPreviewBranchesCapability,
     midiOverlapTransformCapability,
     sidechainRoutingCapability,
@@ -3173,6 +3175,7 @@ export function buildLlmActionUserMessage({
     backingVocalPlateCapability?: BackingVocalPlateCapability;
     bassProcessingCopyCapability?: BassProcessingCopyCapability;
     drumRoutingCapability?: DrumRoutingCapability;
+    drumRenderComparisonCapability?: DrumRenderComparisonCapability;
     drumPreviewBranchesCapability?: DrumPreviewBranchesCapability;
     midiOverlapTransformCapability?: MidiOverlapTransformCapability;
     sidechainRoutingCapability?: SidechainRoutingCapability;
@@ -3187,6 +3190,7 @@ export function buildLlmActionUserMessage({
         ...(backingVocalPlateCapability ? { backingVocalPlateCapability } : {}),
         ...(bassProcessingCopyCapability ? { bassProcessingCopyCapability } : {}),
         ...(drumRoutingCapability ? { drumRoutingCapability } : {}),
+        ...(drumRenderComparisonCapability ? { drumRenderComparisonCapability } : {}),
         ...(drumPreviewBranchesCapability ? { drumPreviewBranchesCapability } : {}),
         ...(midiOverlapTransformCapability ? { midiOverlapTransformCapability } : {}),
         ...(sidechainRoutingCapability ? { sidechainRoutingCapability } : {}),

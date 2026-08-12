@@ -35,7 +35,7 @@ const mocks = vi.hoisted(() => {
         appendChatMessage: vi.fn<(message: ChatMessage) => void>(),
         updateChatMessage: vi.fn<(messageId: string, updates: Partial<ChatMessage>) => void>(),
         setActiveAborter: vi.fn<(aborter: AbortController | null) => void>(),
-        proposePendingActionConfirmation: vi.fn(),
+        proposePendingActionConfirmation: vi.fn<(input: { id: string }) => { id: string } | null>(),
         nativeEngineReady: { value: true },
         backend,
         cloudAvailable: { value: false },
@@ -124,6 +124,7 @@ vi.mock('../../stores/aiActionHistoryStore', () => ({
 describe('sendChatMessage injectables', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        mocks.proposePendingActionConfirmation.mockImplementation(({ id }) => ({ id }));
         mocks.chatStoreValue.value = null;
         mocks.nativeEngineReady.value = true;
         mocks.backend.value = 'native';
