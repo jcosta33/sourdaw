@@ -22,8 +22,6 @@ export function unloadPlugin(instanceId: string): ReturnType<typeof unloadPlugin
             delete byInstanceId[instanceId];
             return { ...current, byInstanceId };
         });
-        // The instance has stopped processing, so its latency sink must stop
-        // receiving. Until native unload succeeds, these owners remain truthful.
         externalLatencyReporters.delete(instanceId);
     });
 }

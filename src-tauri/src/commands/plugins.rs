@@ -433,6 +433,18 @@ fn ensure_plugin_instance_id_available(state: &AppState, instance_id: &str) -> R
     Ok(())
 }
 
+fn remove_plugin_window(instance_id: &str, app: Option<&tauri::AppHandle>, state: &AppState) {
+    let window_label = match state.plugin_windows.lock() {
+        Ok(mut windows) => windows.remove(instance_id),
+        Err(poisoned) => poisoned.into_inner().remove(instance_id),
+    };
+    if let (Some(app), Some(label)) = (app, window_label) {
+        if let Some(window) = app.get_window(&label) {
+            let _ = window.destroy();
+        }
+    }
+}
+
 #[tauri::command]
 #[specta::specta]
 pub async fn unload_plugin(
@@ -449,15 +461,17 @@ async fn unload_plugin_runtime(
     state: &AppState,
 ) -> Result<(), String> {
     let _lifecycle_guard = lock_plugin_lifecycle(instance_id).await;
-    {
+    let command_plugin = {
         let mut plugins = state
             .plugins
             .lock()
             .map_err(|e| format!("Failed to lock plugins: {}", e))?;
-
-        if plugins.remove(instance_id).is_some() {
-            return Ok(());
-        }
+        plugins.remove(instance_id)
+    };
+    if let Some(mut instance) = command_plugin {
+        instance.close_gui();
+        remove_plugin_window(instance_id, app, state);
+        return Ok(());
     }
 
     let engine_plugin = {
@@ -502,15 +516,7 @@ async fn unload_plugin_runtime(
             eprintln!("[Plugin] GUI cleanup failed during unload: {error}");
         }
 
-        let window_label = match state.plugin_windows.lock() {
-            Ok(mut windows) => windows.remove(instance_id),
-            Err(poisoned) => poisoned.into_inner().remove(instance_id),
-        };
-        if let (Some(app), Some(label)) = (app, window_label) {
-            if let Some(window) = app.get_window(&label) {
-                let _ = window.destroy();
-            }
-        }
+        remove_plugin_window(instance_id, app, state);
 
         match state.engine_plugins.lock() {
             Ok(mut engine_plugins) => {
@@ -1044,7 +1050,7 @@ mod tests {
         let result = tauri::async_runtime::block_on(load_plugin(
             PluginId("vst3-fixture".to_string()),
             PluginInstanceId("vst3-instance".to_string()),
-            state,
+            state.clone(),
         ));
 
         match result {
@@ -1054,83 +1060,71 @@ mod tests {
             ),
             Ok(instance) => panic!("unsupported VST3 unexpectedly loaded: {instance:?}"),
         }
-    }
-
-    #[test]
-    fn load_plugin_rejects_an_instance_id_already_owned_by_the_engine() {
-        let app = command_test_app();
-        let state = app.state::<AppState>();
-        insert_engine_owned_fixture(&state, "occupied-instance", vec![1, 2, 3]);
-        state
-            .plugin_registry
-            .lock()
-            .expect("plugin registry lock should be available")
-            .insert(
-                "vst3-fixture".to_string(),
-                PluginRegistryEntry {
-                    path: "/plugins/should-not-be-loaded.vst3".to_string(),
-                    clap_id: String::new(),
-                    format: "vst3".to_string(),
-                    name: "Unsupported VST3".to_string(),
-                },
-            );
-
-        let result = tauri::async_runtime::block_on(load_plugin(
+        insert_engine_owned_fixture(&state, "vst3-instance", vec![1, 2, 3]);
+        let duplicate = tauri::async_runtime::block_on(load_plugin(
             PluginId("vst3-fixture".to_string()),
-            PluginInstanceId("occupied-instance".to_string()),
+            PluginInstanceId("vst3-instance".to_string()),
             state,
         ));
-
-        match result {
-            Err(error) => assert_eq!(error, "Plugin instance already exists: occupied-instance"),
-            Ok(instance) => panic!("duplicate instance unexpectedly loaded: {instance:?}"),
-        }
+        assert_eq!(
+            duplicate.unwrap_err(),
+            "Plugin instance already exists: vst3-instance"
+        );
     }
 
     #[test]
     fn plugin_lifecycle_gate_serializes_load_and_unload_commands() {
         tauri::async_runtime::block_on(async {
             let first = lock_plugin_lifecycle("same-instance").await;
-            let same_gate = plugin_lifecycle_gate("same-instance");
-            assert!(same_gate.try_lock().is_err());
+            assert!(plugin_lifecycle_gate("same-instance").try_lock().is_err());
             let unrelated = lock_plugin_lifecycle("unrelated-instance").await;
             drop(unrelated);
-            drop(same_gate);
             drop(first);
-
             let gates = PLUGIN_LIFECYCLE_GATES.lock().expect("lifecycle gate map");
-            assert!(!gates.contains_key("same-instance"));
-            assert!(!gates.contains_key("unrelated-instance"));
+            assert!(gates.is_empty());
         });
     }
 
     #[test]
-    fn failed_scheduler_unload_restores_the_engine_runtime_to_active() {
+    fn unload_preserves_failed_engine_owner_and_cleans_command_owner() {
         let app = command_test_app();
         let state = app.state::<AppState>();
         insert_engine_owned_fixture(&state, "active-instance", vec![1, 2, 3]);
-        let runtime = {
-            let engine_plugins = state
-                .engine_plugins
-                .lock()
-                .expect("engine_plugins lock should be available");
-            Arc::clone(&engine_plugins["active-instance"].runtime)
-        };
-
         let result = tauri::async_runtime::block_on(unload_plugin_runtime(
             "active-instance",
             None,
             state.inner(),
         ));
-
         assert_eq!(result, Err("Native engine not running".to_string()));
-        assert!(runtime.ensure_public_control_allowed().is_ok());
-        assert!(app
-            .state::<AppState>()
+        let engine_plugins = state
             .engine_plugins
             .lock()
-            .expect("engine_plugins lock should be available")
-            .contains_key("active-instance"));
+            .expect("engine_plugins lock should be available");
+        let runtime = &engine_plugins["active-instance"].runtime;
+        assert!(runtime.ensure_public_control_allowed().is_ok());
+        let wrapper =
+            ClapWrapper::new_engine_owned_command_fixture("Command Fixture", vec![], true);
+        let instance = PluginInstanceData {
+            plugin: Box::new(wrapper),
+        };
+        state
+            .plugins
+            .lock()
+            .expect("plugins lock")
+            .insert("command-instance".into(), instance);
+        state
+            .plugin_windows
+            .lock()
+            .expect("plugin_windows lock")
+            .insert("command-instance".into(), "command-window".into());
+        tauri::async_runtime::block_on(unload_plugin_runtime(
+            "command-instance",
+            None,
+            state.inner(),
+        ))
+        .expect("command-owned unload should succeed");
+        let windows = state.plugin_windows.lock().expect("plugin_windows lock");
+        assert!(windows.is_empty());
     }
 
     /// Unwrap a command's `tauri::ipc::Response` into the bytes it will actually

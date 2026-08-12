@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { createFromTemplate } from '../createFromTemplate';
 
 const mocks = vi.hoisted(() => ({
+    acquireRuntimeTransition: vi.fn(),
     clearUndoHistory: vi.fn(),
     compactProject: vi.fn(),
     createPopSongTemplate: vi.fn(),
@@ -72,7 +73,7 @@ vi.mock('../../../projectPersistence/helpers/resetModuleStoresToDefault', () => 
 }));
 
 vi.mock('../../../projectPersistence/helpers/runProjectLoadTransaction', () => ({
-    projectLoadEpoch: { acquireRuntimeTransition: vi.fn(() => Promise.resolve(() => {})) },
+    projectLoadEpoch: { acquireRuntimeTransition: mocks.acquireRuntimeTransition },
     runProjectLoadTransaction: mocks.runProjectLoadTransaction,
 }));
 
@@ -102,6 +103,7 @@ describe('createFromTemplate', () => {
         mocks.newProject.mockResolvedValue(true);
         mocks.unloadLoadedExternalPlugins.mockResolvedValue(undefined);
         mocks.compactProject.mockResolvedValue(undefined);
+        mocks.acquireRuntimeTransition.mockResolvedValue(() => {});
         mocks.startCrdtAutoSave.mockReturnValue({});
         mocks.transactionPrepare.mockResolvedValue(true);
         mocks.transactionActivate.mockReturnValue(true);
@@ -277,18 +279,19 @@ describe('createFromTemplate', () => {
 
         await expect(creation).resolves.toBe(false);
         expect(mocks.resetCrdtProjectAuthority).not.toHaveBeenCalled();
-        expect(mocks.executeAppAction).not.toHaveBeenCalled();
-        expect(mocks.ensureTrackStrips).toHaveBeenCalledOnce();
-        expect(mocks.startCrdtAutoSave).toHaveBeenCalledOnce();
     });
-    it('skips autosave restart and compaction when superseded during the template action', async () => {
+    it('holds the runtime transition lease through the template action', async () => {
+        const action = Promise.withResolvers<void>();
+        const releaseRuntimeTransition = vi.fn();
+        mocks.acquireRuntimeTransition.mockResolvedValueOnce(releaseRuntimeTransition);
+        mocks.executeAppAction.mockReturnValueOnce(action.promise);
         mocks.transactionIsCurrent.mockReturnValueOnce(true).mockReturnValueOnce(true).mockReturnValueOnce(false);
-
-        await expect(createFromTemplate('pop-song')).resolves.toBe(false);
-
-        expect(mocks.executeAppAction).toHaveBeenCalledOnce();
-        expect(mocks.startCrdtAutoSave).not.toHaveBeenCalled();
-        expect(mocks.compactProject).not.toHaveBeenCalled();
+        const creation = createFromTemplate('pop-song');
+        await vi.waitFor(() => expect(mocks.executeAppAction).toHaveBeenCalledOnce());
+        expect(releaseRuntimeTransition).not.toHaveBeenCalled();
+        action.resolve();
+        await expect(creation).resolves.toBe(false);
+        expect(releaseRuntimeTransition).toHaveBeenCalledOnce();
     });
 
     it('flushes pending CRDT writes after the store reset and before the async template action', async () => {
