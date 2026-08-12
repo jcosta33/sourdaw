@@ -181,6 +181,26 @@ describe('inferenceWorkerBridge — ONNX session lifecycle', () => {
 
         await expect(promise).rejects.toThrow('session init failed');
     });
+
+    it.each([
+        { executionProviders: [] as Array<'webgpu' | 'wasm'> },
+        { executionProviders: ['wasm', 'wasm'] as Array<'webgpu' | 'wasm'> },
+    ])('rejects a non-authoritative provider list %#', async ({ executionProviders }) => {
+        const promise = inferenceWorkerBridge.loadOnnxSession({
+            modelId: 'bad-providers',
+            modelData: new ArrayBuffer(4),
+        });
+        await flush();
+        const worker = onnxWorker();
+        reply(worker, {
+            type: 'session-created',
+            requestId: lastRequestId(worker),
+            modelId: 'bad-providers',
+            executionProviders,
+        });
+
+        await expect(promise).rejects.toThrow('Unexpected ONNX session response');
+    });
 });
 
 describe('inferenceWorkerBridge — getLoadedOnnxSessions', () => {

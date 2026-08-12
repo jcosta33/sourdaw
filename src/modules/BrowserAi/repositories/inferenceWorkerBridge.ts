@@ -157,6 +157,14 @@ type RunDiffSingerInput = Extract<WorkerRequest, { type: 'run-diffsinger-phrase'
 
 type RunDdspInput = Extract<WorkerRequest, { type: 'run-ddsp-inference' }>;
 
+function isOnnxExecutionProviderList(value: unknown): value is Array<'webgpu' | 'wasm'> {
+    if (!Array.isArray(value) || value.length === 0) {
+        return false;
+    }
+    const providers = new Set(value);
+    return providers.size === value.length && value.every((provider) => provider === 'webgpu' || provider === 'wasm');
+}
+
 /**
  * Singleton bridge object for routing inference requests to the correct worker.
  * Module-level singleton — not injectable because it owns worker lifecycle state.
@@ -168,7 +176,7 @@ export const inferenceWorkerBridge = {
         const requestId = crypto.randomUUID();
         const request: WorkerRequest = { type: 'create-session', requestId, modelId, modelData, options: {} };
         const response = await sendRequest(worker, workerState.onnx, request, [modelData]);
-        if (response.type !== 'session-created' || !response.executionProviders) {
+        if (response.type !== 'session-created' || !isOnnxExecutionProviderList(response.executionProviders)) {
             throw new Error(`Unexpected ONNX session response: ${response.type}`);
         }
         return response.executionProviders;
