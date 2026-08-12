@@ -64,7 +64,7 @@ vi.mock('#/modules/CrdtDocument/useCases', () => ({
     resetCrdtProjectAuthority: mockResetCrdtProjectAuthority,
     startCrdtAutoSave: mockStartCrdtAutoSave,
 }));
-vi.mock('#/modules/PluginHost/useCases', () => ({ unloadLoadedExternalPlugins: mockUnloadLoadedExternalPlugins }));
+vi.mock('#/modules/PluginHost/useCases', () => ({ unloadPlugin: mockUnloadLoadedExternalPlugins }));
 vi.mock('#/modules/Transport/useCases', () => ({
     ensureTrackStrips: mockEnsureTrackStrips,
     stopPlayback: mockStopPlayback,

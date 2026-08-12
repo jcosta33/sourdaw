@@ -77,7 +77,7 @@ vi.mock('#/modules/CrdtDocument/useCases', () => ({
     startCrdtAutoSave: mockStartCrdtAutoSave,
 }));
 vi.mock('#/modules/PluginHost/useCases', () => ({
-    unloadLoadedExternalPlugins: mockUnloadLoadedExternalPlugins,
+    unloadPlugin: mockUnloadLoadedExternalPlugins,
 }));
 vi.mock('#/modules/Transport/useCases', () => ({
     ensureTrackStrips: mockEnsureTrackStrips,

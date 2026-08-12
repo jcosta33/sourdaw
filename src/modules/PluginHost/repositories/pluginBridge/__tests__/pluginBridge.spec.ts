@@ -44,6 +44,7 @@ describe('pluginBridge repository', () => {
     describe('unloadPlugin', () => {
         it('should invoke tauri in desktop', async () => {
             vi.mocked(isTauri).mockReturnValue(true);
+            vi.mocked(tauriInvoke).mockResolvedValue([['i1'], []]);
             await unloadPlugin('i1');
             expect(tauriInvoke).toHaveBeenCalledWith('unload_plugin', { instanceId: 'i1' });
         });

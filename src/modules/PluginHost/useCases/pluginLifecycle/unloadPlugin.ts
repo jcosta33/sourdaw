@@ -18,7 +18,15 @@ function forgetPluginInstance(instanceId: string): void {
     });
 }
 
-function reconcileUnloadResult(result: Awaited<ReturnType<typeof unloadPluginRepo>>): void {
+function reconcileUnloadResult(
+    result: Awaited<ReturnType<typeof unloadPluginRepo>>,
+    expectedInstanceId?: string
+): void {
+    const mismatchedSuccess = expectedInstanceId !== undefined && result[0].some((id) => id !== expectedInstanceId);
+    const missingOutcome = expectedInstanceId !== undefined && result[0].length === 0 && result[1].length === 0;
+    if (mismatchedSuccess || missingOutcome) {
+        throw new Error('Invalid keyed unload_plugin response');
+    }
     for (const instanceId of result[0]) {
         forgetPluginInstance(instanceId);
     }
@@ -35,6 +43,6 @@ export function unloadPlugin(instanceId?: string): Promise<void> {
         if (!loadedExternalInstances.has(instanceId)) {
             return;
         }
-        reconcileUnloadResult(await unloadPluginRepo(instanceId));
+        reconcileUnloadResult(await unloadPluginRepo(instanceId), instanceId);
     });
 }

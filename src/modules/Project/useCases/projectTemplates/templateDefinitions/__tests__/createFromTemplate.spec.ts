@@ -12,7 +12,7 @@ const mocks = vi.hoisted(() => ({
     isAppActionCommittedError: vi.fn(),
     flushAutomergeStorageWrites: vi.fn(),
     newProject: vi.fn(),
-    unloadLoadedExternalPlugins: vi.fn(),
+    unloadPlugin: vi.fn(),
     projectActionHistoryToStore: vi.fn(),
     projectSet: vi.fn(),
     resetAudioGraph: vi.fn(),
@@ -34,7 +34,7 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
 }));
 
 vi.mock('#/modules/PluginHost/useCases', () => ({
-    unloadLoadedExternalPlugins: mocks.unloadLoadedExternalPlugins,
+    unloadPlugin: mocks.unloadPlugin,
 }));
 
 vi.mock('#/modules/Command/useCases', () => ({
@@ -101,7 +101,7 @@ describe('createFromTemplate', () => {
         mocks.executeAppAction.mockResolvedValue(undefined);
         mocks.isAppActionCommittedError.mockReturnValue(false);
         mocks.newProject.mockResolvedValue(true);
-        mocks.unloadLoadedExternalPlugins.mockResolvedValue(undefined);
+        mocks.unloadPlugin.mockResolvedValue(undefined);
         mocks.compactProject.mockResolvedValue(undefined);
         mocks.acquireRuntimeTransition.mockResolvedValue(() => {});
         mocks.startCrdtAutoSave.mockReturnValue({});
@@ -129,7 +129,7 @@ describe('createFromTemplate', () => {
 
         expect(mocks.stopPlayback).toHaveBeenCalledOnce();
         expect(mocks.resetAudioGraph).toHaveBeenCalledOnce();
-        expect(mocks.unloadLoadedExternalPlugins).toHaveBeenCalledOnce();
+        expect(mocks.unloadPlugin).toHaveBeenCalledOnce();
         expect(mocks.executeAppAction).toHaveBeenCalledWith(
             { type: 'createProjectFromTemplate', payload: { templateId: 'pop-song' } },
             { skipMacroRecording: true }
@@ -270,11 +270,11 @@ describe('createFromTemplate', () => {
 
     it('does not replace authority when superseded during native teardown', async () => {
         const unloading = Promise.withResolvers<void>();
-        mocks.unloadLoadedExternalPlugins.mockReturnValueOnce(unloading.promise);
+        mocks.unloadPlugin.mockReturnValueOnce(unloading.promise);
         mocks.transactionIsCurrent.mockReturnValueOnce(true).mockReturnValueOnce(false);
 
         const creation = createFromTemplate('pop-song');
-        await vi.waitFor(() => expect(mocks.unloadLoadedExternalPlugins).toHaveBeenCalledOnce());
+        await vi.waitFor(() => expect(mocks.unloadPlugin).toHaveBeenCalledOnce());
         unloading.resolve();
 
         await expect(creation).resolves.toBe(false);

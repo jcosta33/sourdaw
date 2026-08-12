@@ -42,17 +42,14 @@ pub struct PluginInstance {
 }
 
 pub type PluginUnloadResult = (Vec<String>, Vec<String>);
-
 static PLUGIN_LIFECYCLE_GATES: LazyLock<Mutex<HashMap<String, Arc<tokio::sync::Mutex<()>>>>> =
     LazyLock::new(|| Mutex::new(HashMap::new()));
 static PLUGIN_RUNTIME_GATE: tokio::sync::RwLock<()> = tokio::sync::RwLock::const_new(());
-
 struct PluginLifecycleLease {
     instance_id: String,
     gate: Arc<tokio::sync::Mutex<()>>,
     _guard: tokio::sync::OwnedMutexGuard<()>,
 }
-
 impl Drop for PluginLifecycleLease {
     fn drop(&mut self) {
         let mut gates = PLUGIN_LIFECYCLE_GATES
@@ -66,7 +63,6 @@ impl Drop for PluginLifecycleLease {
         }
     }
 }
-
 fn plugin_lifecycle_gate(instance_id: &str) -> Arc<tokio::sync::Mutex<()>> {
     let mut gates = PLUGIN_LIFECYCLE_GATES
         .lock()
@@ -77,7 +73,6 @@ fn plugin_lifecycle_gate(instance_id: &str) -> Arc<tokio::sync::Mutex<()>> {
             .or_insert_with(|| Arc::new(tokio::sync::Mutex::new(()))),
     )
 }
-
 async fn lock_plugin_lifecycle(instance_id: &str) -> PluginLifecycleLease {
     let gate = plugin_lifecycle_gate(instance_id);
     let guard = Arc::clone(&gate).lock_owned().await;
@@ -87,7 +82,6 @@ async fn lock_plugin_lifecycle(instance_id: &str) -> PluginLifecycleLease {
         _guard: guard,
     }
 }
-
 fn remove_engine_plugin_record_after_scheduler_removal<EnginePluginRecord>(
     engine_plugins: &mut HashMap<String, EnginePluginRecord>,
     instance_id: &str,
@@ -1136,12 +1130,10 @@ mod tests {
         let app = command_test_app();
         let state = app.state::<AppState>();
         insert_engine_owned_fixture(&state, "active-instance", vec![1, 2, 3]);
+        let wrapper =
+            ClapWrapper::new_engine_owned_command_fixture("Command Fixture", vec![], true);
         let instance = PluginInstanceData {
-            plugin: Box::new(ClapWrapper::new_engine_owned_command_fixture(
-                "Command Fixture",
-                vec![],
-                true,
-            )),
+            plugin: Box::new(wrapper),
         };
         state
             .plugins

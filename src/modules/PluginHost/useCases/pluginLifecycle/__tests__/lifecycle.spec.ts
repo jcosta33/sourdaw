@@ -51,10 +51,11 @@ describe('Plugin Lifecycle Use Cases', () => {
         expect(mocks.loadPluginRepo).toHaveBeenCalledWith('p1', 'inst1');
     });
 
-    it('unloadPlugin delegates to repository', async () => {
+    it('rejects mismatched keyed unload ownership', async () => {
         loadedExternalInstances.add('inst1');
-        await unloadPlugin('inst1');
-        expect(mocks.unloadPluginRepo).toHaveBeenCalledWith('inst1');
+        mocks.unloadPluginRepo.mockResolvedValueOnce([['other'], []]);
+        await expect(unloadPlugin('inst1')).rejects.toThrow('Invalid keyed unload_plugin response');
+        expect([...loadedExternalInstances]).toEqual(['inst1']);
     });
 
     it('reconciles partial native bulk unload before rejecting', async () => {

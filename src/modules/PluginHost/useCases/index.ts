@@ -12,13 +12,14 @@ export { isFaustInstrumentModule } from './faustEngine/isFaustInstrumentModule';
 export { getPluginHostHandlers } from './getPluginHostHandlers';
 
 export { loadPlugin } from './pluginLifecycle/loadPlugin';
-export { unloadPlugin, unloadPlugin as unloadLoadedExternalPlugins } from './pluginLifecycle/unloadPlugin';
+export { unloadPlugin } from './pluginLifecycle/unloadPlugin';
 export { openPluginGui } from './pluginLifecycle/openPluginGui';
 export { processAudioIPC } from './pluginLifecycle/processAudioIPC';
 export { setPluginParameter } from './pluginLifecycle/setPluginParameter';
 export { readPluginState } from './pluginLifecycle/readPluginState';
 export { restorePluginState } from './pluginLifecycle/restorePluginState';
 export { activateExternalPlugin } from './pluginLifecycle/activateExternalPlugin';
+export { clearLoadedExternalPlugins } from './pluginLifecycle/clearLoadedExternalPlugins';
 
 export { findPluginByName } from './pluginScan/queries';
 export { findSupportedPlugin } from './pluginScan/findSupportedPlugin';

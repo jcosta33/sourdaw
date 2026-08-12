@@ -25,7 +25,7 @@ type Deferred<T> = {
 };
 
 const pluginHostMocks = vi.hoisted(() => ({
-    unloadLoadedExternalPlugins: vi.fn(() => Promise.resolve()),
+    unloadPlugin: vi.fn(() => Promise.resolve()),
 }));
 
 function createDeferred<T>(): Deferred<T> {
@@ -89,7 +89,7 @@ describe('newProject injectable', () => {
     beforeEach(() => {
         Container.clear();
         vi.clearAllMocks();
-        pluginHostMocks.unloadLoadedExternalPlugins.mockResolvedValue(undefined);
+        pluginHostMocks.unloadPlugin.mockResolvedValue(undefined);
         projectStore.set({
             ...structuredClone(defaultProjectStoreState),
             name: 'Existing Project',
@@ -105,7 +105,7 @@ describe('newProject injectable', () => {
         expect(runProjectLoadTransaction).toHaveBeenCalledTimes(1);
         expect(stopPlayback).toHaveBeenCalledTimes(1);
         expect(resetAudioGraph).toHaveBeenCalledTimes(1);
-        expect(pluginHostMocks.unloadLoadedExternalPlugins).toHaveBeenCalledTimes(1);
+        expect(pluginHostMocks.unloadPlugin).toHaveBeenCalledTimes(1);
         expect(resetModuleStoresToDefault).toHaveBeenCalledTimes(1);
         expect(resetModuleStoresToDefault).toHaveBeenCalledWith({ createNewMidiProbabilitySeed: true });
         expect(resetCrdtProjectAuthority).toHaveBeenCalledWith('Test');
@@ -142,9 +142,9 @@ describe('newProject injectable', () => {
             canActivate: () => isCurrent,
             isCurrent: () => isCurrent,
         });
-        pluginHostMocks.unloadLoadedExternalPlugins.mockReturnValueOnce(unloading.promise);
+        pluginHostMocks.unloadPlugin.mockReturnValueOnce(unloading.promise);
         const activation = newProject('Older Project');
-        await vi.waitFor(() => expect(pluginHostMocks.unloadLoadedExternalPlugins).toHaveBeenCalledOnce());
+        await vi.waitFor(() => expect(pluginHostMocks.unloadPlugin).toHaveBeenCalledOnce());
         isCurrent = false;
         unloading.resolve(undefined);
         await expect(activation).resolves.toBe(false);
@@ -153,7 +153,7 @@ describe('newProject injectable', () => {
     });
 
     it('keeps previous authority and restores its graph when native plugin teardown fails', async () => {
-        pluginHostMocks.unloadLoadedExternalPlugins.mockRejectedValueOnce(new Error('native teardown failed'));
+        pluginHostMocks.unloadPlugin.mockRejectedValueOnce(new Error('native teardown failed'));
         await expect(newProject('Test')).resolves.toBe(false);
         expect(ensureTrackStrips).toHaveBeenCalledOnce();
     });
