@@ -5,10 +5,10 @@ export const ACTION_PLANNING_MODE_TOOL_NAME = 'selectActionPlanningMode';
 export type ActionPlanningMode = 'execute' | 'preview';
 
 const AFFIRMATIVE_PREVIEW_REQUESTS = [
-    /(?:^|[.!?;]\s*|\b(?:and|then)\s+)(?:please\s+)?preview\s+\S/u,
-    /(?:^|[.!?;]\s*|\b(?:and|then)\s+)(?:please\s+)?(?:show|give)\s+(?:me\s+)?(?:an?\s+)?preview\s+of\s+\S/u,
-    /(?:^|[.!?;]\s*|\b(?:and|then)\s+)(?:can|could|would|will)\s+you\s+preview\s+\S/u,
-    /(?:^|[.!?;]\s*|\b(?:and|then)\s+)i\s+(?:want|need|would\s+like)\s+(?:an?\s+)?preview\s+of\s+\S/u,
+    /(?:^|[.!?;]\s*)(?:please\s+)?preview\s+\S/u,
+    /(?:^|[.!?;]\s*)(?:please\s+)?(?:show|give)\s+(?:me\s+)?(?:an?\s+)?preview\s+of\s+\S/u,
+    /(?:^|[.!?;]\s*)(?:can|could|would|will)\s+you\s+preview\s+\S/u,
+    /(?:^|[.!?;]\s*)i\s+(?:want|need|would\s+like)\s+(?:an?\s+)?preview\s+of\s+\S/u,
 ];
 
 export function getRequestedActionPlanningMode(prompt: string): ActionPlanningMode {

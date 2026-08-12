@@ -503,6 +503,23 @@ describe('parsePromptToActions', () => {
         expect(result.rejectionReason).toBe('Provider selected preview mode without an explicit user preview request.');
     });
 
+    it('does not treat preview text inside a quoted name as preview authority', async () => {
+        vi.mocked(generateToolCalls).mockResolvedValue(
+            completePlan([
+                { name: 'selectActionPlanningMode', arguments: { mode: 'preview' } },
+                { name: 'removeTrack', arguments: { trackId: 'track-vocals' } },
+            ])
+        );
+
+        const result = await parsePromptToActions(
+            'rename Bass to "Drums and Preview Mix"; delete Vocls',
+            createMixerContext()
+        );
+
+        expect(result.actions).toEqual([]);
+        expect(result.rejectionReason).toBe('Provider selected preview mode without an explicit user preview request.');
+    });
+
     it('forces confirmation for bounded actions requested as a preview', async () => {
         mockBridgeGroundedLlmToolCalls.mockImplementation(actualBridge.bridgeGroundedLlmToolCalls);
         vi.mocked(generateToolCalls).mockResolvedValue(
