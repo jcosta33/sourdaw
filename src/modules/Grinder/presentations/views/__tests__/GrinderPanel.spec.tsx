@@ -398,15 +398,18 @@ describe('GrinderPanel', () => {
         });
         expect(gain).toHaveAttribute('aria-valuenow', '8');
 
+        const nestedProjectValues = { cabIrSlot: 1, neuralModelSlot: 2, mic1PositionX: 0.8, preCompressorEnabled: 1 };
         act(() => {
-            setProjectTracks([grinderTrack({ gain: 99, channel: 1.5 })]);
+            setProjectTracks([grinderTrack({ gain: 99, channel: 1.5, ...nestedProjectValues })]);
         });
         await waitFor(() => expect(gain).toHaveAttribute('aria-valuenow', '10'));
-        expect(
-            screen
-                .getAllByRole('button', { name: 'Crunch' })
-                .some((button) => button.getAttribute('aria-pressed') === 'true')
-        ).toBe(true);
+        expect(grinderStore.value?.[device_id]?.patch).toMatchObject({
+            channel: 1,
+            cabIrId: '2x12-open',
+            neuralModelId: 'vintage-stack-c',
+            mic1: { positionX: 0.8 },
+            prePedals: [{ type: 'compressor', enabled: true }],
+        });
 
         act(() => setProjectTracks([grinderTrack({})]));
         await waitFor(() => expect(gain).toHaveAttribute('aria-valuenow', String(DEFAULT_PATCH.gain)));
