@@ -1,0 +1,19 @@
+tests/e2e/grandBouleBoardSympTestId.spec.ts
+  s_bc88af7d3b054c::t_20177940fd1b19 1-48
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "0c74b2ae5eadf407897480711a14c0ce47085efb",
+  "prompts": {},
+  "sessions": {
+    "s_bc88af7d3b054c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f9b4a-11a2-7f61-8dfb-76eed0eb2a9c",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
