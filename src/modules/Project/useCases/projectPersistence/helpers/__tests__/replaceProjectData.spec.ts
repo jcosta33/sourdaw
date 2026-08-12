@@ -97,6 +97,7 @@ vi.mock('../hydrateModuleStoresFromProjectData', () => ({
 vi.mock('../resetModuleStoresToDefault', () => ({ resetModuleStoresToDefault: mockResetModuleStores }));
 vi.mock('../verifyAudioBufferReferences', () => ({ verifyAudioBufferReferences: mockVerifyAudioBufferReferences }));
 
+import { createDefaultProductionBrief } from '../../../../models/ProductionBrief';
 import { replaceProjectData } from '../replaceProjectData';
 
 import type { HydratableProjectData, HydratableProjectTrack } from '../isHydratableProjectData';
@@ -240,6 +241,27 @@ describe('replaceProjectData', () => {
         expect(mockClearRuntimeCachedAudioBuffers.mock.invocationCallOrder[0]).toBeLessThan(
             embeddedPublish.mock.invocationCallOrder[0]!
         );
+    });
+
+    it('hydrates the saved production brief as project truth', async () => {
+        const productionBrief = {
+            ...createDefaultProductionBrief(1),
+            revision: 2,
+            vision: 'Intimate verses',
+            sourceRunLinks: [{ id: 'source-link-2', sourceRunId: 'run-2', createdAt: 102 }],
+            updatedAt: 2,
+        };
+        const data = makeData();
+        data.meta.productionBrief = productionBrief;
+
+        const result = await replaceProjectData({
+            context: 'loadRecentProject',
+            data,
+            transaction: makeTransaction(),
+        });
+
+        expect(result.status).toBe('committed');
+        expect(mockProjectStore.set).toHaveBeenCalledWith(expect.objectContaining({ productionBrief }));
     });
 
     it('does not replace authority when superseded during native teardown', async () => {

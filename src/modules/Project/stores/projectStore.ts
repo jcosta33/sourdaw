@@ -2,6 +2,8 @@ import { createStore } from '#/infra/store/createStore';
 import { createAutomergeStorage } from '#/infra/store/storage/createAutomergeStorage';
 import { SCALE_PATTERNS } from '#/utils/Music/MusicalScale';
 
+import { createDefaultProductionBrief, isProductionBrief, type ProductionBrief } from '../models/ProductionBrief';
+
 const DOC_PREFIX_ROOT = 'root';
 const TUNING_FREQUENCY_COUNT = 128;
 
@@ -19,6 +21,7 @@ export type ProjectStoreState = {
         name: string;
         frequencies: number[];
     };
+    productionBrief: ProductionBrief;
     /** True once the user has explicitly started or loaded a project session.
      *  Ephemeral — not written to CRDT. Resets to false on every cold start.
      *  Controls whether the full-screen LaunchScreen is shown. */
@@ -37,10 +40,19 @@ export const defaultProjectStoreState: ProjectStoreState = {
         name: 'Equal Temperament',
         frequencies: Array.from({ length: TUNING_FREQUENCY_COUNT }, (_, index) => 440 * 2 ** ((index - 69) / 12)),
     },
+    productionBrief: createDefaultProductionBrief(),
     initialized: false,
 };
 
-const DURABLE_PROJECT_META_KEYS = ['name', 'createdAt', 'updatedAt', 'keyRoot', 'scaleName', 'tuning'] as const;
+const DURABLE_PROJECT_META_KEYS = [
+    'name',
+    'createdAt',
+    'updatedAt',
+    'keyRoot',
+    'scaleName',
+    'tuning',
+    'productionBrief',
+] as const;
 const TRANSIENT_PROJECT_META_KEYS = ['dirty', 'loading', 'initialized'] as const;
 const PROJECT_STORE_STATE_KEYS = [...DURABLE_PROJECT_META_KEYS, ...TRANSIENT_PROJECT_META_KEYS] as const;
 const TUNING_KEYS = ['name', 'frequencies'] as const;
@@ -81,6 +93,7 @@ function create_default_project_store_state(): ProjectStoreState {
             ...defaultProjectStoreState.tuning,
             frequencies: [...defaultProjectStoreState.tuning.frequencies],
         },
+        productionBrief: structuredClone(defaultProjectStoreState.productionBrief),
     };
 }
 
@@ -204,6 +217,13 @@ function apply_tuning(source: object, next_state: ProjectStoreState): void {
     }
 }
 
+function apply_production_brief(source: object, next_state: ProjectStoreState): void {
+    const property = get_own_value({ value: source, key: 'productionBrief' });
+    if (property.found && isProductionBrief(property.value)) {
+        next_state.productionBrief = structuredClone(property.value);
+    }
+}
+
 function get_valid_transient_state(value: unknown): ProjectTransientState | null {
     if (!is_plain_object(value)) {
         return null;
@@ -240,6 +260,7 @@ function normalize_project_store_state(
     apply_key_root(value, next_state);
     apply_scale_name(value, next_state);
     apply_tuning(value, next_state);
+    apply_production_brief(value, next_state);
 
     return next_state;
 }
@@ -291,13 +312,14 @@ function sanitize_project_store_state(value: unknown): ProjectStoreState {
 
 export const projectStore = createStore<ProjectStoreState>({
     storage: createAutomergeStorage(DOC_PREFIX_ROOT, 'projectMeta', {
-        toCrdt: ({ name, createdAt, updatedAt, keyRoot, scaleName, tuning }) => ({
+        toCrdt: ({ name, createdAt, updatedAt, keyRoot, scaleName, tuning, productionBrief }) => ({
             name,
             createdAt,
             updatedAt,
             keyRoot,
             scaleName,
             tuning,
+            productionBrief,
         }),
         fromCrdt: normalize_project_meta_from_crdt,
         // Audit CC-2 — projection default for a document without this slot, so

@@ -1,5 +1,6 @@
 import { isChordTrackState, isGrooveTemplateState } from '#/modules/MIDI/stores';
 
+import { isProductionBrief } from '../../../models/ProductionBrief';
 import {
     isSupportedProjectVersion,
     type ProjectAdjustmentLayers,
@@ -191,7 +192,8 @@ function isMeta(value: unknown): value is ProjectMeta {
         typeof value.scaleName === 'string' &&
         isRecord(value.tuning) &&
         typeof value.tuning.name === 'string' &&
-        hasOnlyNumbers(value.tuning.frequencies)
+        hasOnlyNumbers(value.tuning.frequencies) &&
+        (value.productionBrief === undefined || isProductionBrief(value.productionBrief))
     );
 }
 

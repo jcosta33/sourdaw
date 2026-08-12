@@ -1472,6 +1472,13 @@ export type AppAction =
     | { type: 'deleteTrackTemplate'; payload: { templateId: string } }
     | { type: 'createProjectFromTemplate'; payload: { templateId: string } }
     | {
+          type: 'setProductionBrief';
+          payload: {
+              expectedRevision: number;
+              brief: unknown;
+          };
+      }
+    | {
           type: 'createVcaGroup';
           payload: {
               name: string;

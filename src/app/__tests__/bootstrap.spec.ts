@@ -188,6 +188,10 @@ vi.mock('#/modules/Command/useCases', () => ({
     getMacroHandlers: sentinelHandlers('Macro'),
     getUndoRedoHandlers: sentinelHandlers('UndoRedo'),
     getUndoTreeHandlers: sentinelHandlers('UndoTree'),
+    productionBriefAdmissionPort: {
+        allows: () => true,
+        setGuard: noop,
+    },
     setActionHistoryMetadataPort: noop,
     setCommandEventBus: noop,
     syncActionReplayMetadata: noop,
@@ -268,6 +272,7 @@ vi.mock('#/modules/PluginHost/useCases', () => ({
 }));
 
 vi.mock('#/modules/Project/useCases', () => ({
+    doesProductionBriefAllowActionBatch: () => true,
     getProjectHandlers: sentinelHandlers('Project'),
     initGrooveTemplateDirtyTracking: noop,
     initProjectDirtyTracking: noop,

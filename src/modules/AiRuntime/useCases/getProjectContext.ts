@@ -8,6 +8,7 @@ import {
 import { getGlueEligibleClipPairs, getPlatformPlugins, getPluginById } from '#/modules/Arrangement/useCases';
 import { automationStore } from '#/modules/Automation/stores';
 import { midiStore } from '#/modules/MIDI/stores';
+import { projectStore } from '#/modules/Project/stores';
 import { sidechainStore } from '#/modules/Routing/stores';
 import { transportStore } from '#/modules/Transport/stores';
 import { workspaceStore } from '#/modules/WorkspaceShell/stores';
@@ -48,6 +49,7 @@ const contextCache: {
     sidechain: unknown;
     marker: unknown;
     vca: unknown;
+    project: unknown;
     glueEligibilitySignature: string;
     context: ProjectContext | null;
 } = {
@@ -61,6 +63,7 @@ const contextCache: {
     sidechain: null,
     marker: null,
     vca: null,
+    project: null,
     glueEligibilitySignature: '',
     context: null,
 };
@@ -78,6 +81,7 @@ export function getProjectContext(): ProjectContext {
     const sidechainState = sidechainStore.value;
     const markerState = markerStore.value;
     const vcaState = vcaGroupStore.value;
+    const projectState = projectStore.value;
     const notesByClipId = midiState?.notesByClipId;
     const glueEligibleClipPairs = getGlueEligibleClipPairs();
     const glueEligibilitySignature = JSON.stringify(glueEligibleClipPairs);
@@ -94,6 +98,7 @@ export function getProjectContext(): ProjectContext {
         contextCache.sidechain === sidechainState &&
         contextCache.marker === markerState &&
         contextCache.vca === vcaState &&
+        contextCache.project === projectState &&
         contextCache.glueEligibilitySignature === glueEligibilitySignature
     ) {
         return contextCache.context;
@@ -104,6 +109,7 @@ export function getProjectContext(): ProjectContext {
     const selectedClipIds = selectionState?.selectedClipIds ?? [];
 
     const built: ProjectContext = {
+        ...(projectState ? { productionBrief: structuredClone(projectState.productionBrief) } : {}),
         tempo: transportState?.tempo ?? 120,
         timeSignature: [transportState?.timeSignatureNumerator ?? 4, transportState?.timeSignatureDenominator ?? 4],
         isPlaying: transportState?.isPlaying ?? false,
@@ -264,6 +270,7 @@ export function getProjectContext(): ProjectContext {
     contextCache.sidechain = sidechainState;
     contextCache.marker = markerState;
     contextCache.vca = vcaState;
+    contextCache.project = projectState;
     contextCache.glueEligibilitySignature = glueEligibilitySignature;
     contextCache.context = built;
     return built;

@@ -2,6 +2,7 @@ import { createTrack, resetArrangementStoresForProject } from '#/modules/Arrange
 import { hydrateGrooveTemplates, replaceChordTrackState } from '#/modules/MIDI/useCases';
 import { transportStore, defaultTransportState } from '#/modules/Transport/stores';
 
+import { createDefaultProductionBrief } from '../../../models/ProductionBrief';
 import { projectStore } from '../../../stores/projectStore';
 
 import type { Track } from '#/modules/Arrangement/stores';
@@ -32,10 +33,11 @@ export function initProject(input: InitProjectInput): Track {
         isLooping: true,
     });
 
+    const createdAt = Date.now();
     projectStore.set({
         name: input.name,
-        createdAt: Date.now(),
-        updatedAt: Date.now(),
+        createdAt,
+        updatedAt: createdAt,
         dirty: false,
         loading: true,
         // Ready is NOT latched here. initProject runs at the START of an async
@@ -52,6 +54,7 @@ export function initProject(input: InitProjectInput): Track {
             name: 'Equal Temperament',
             frequencies: Array.from({ length: 128 }, (_, noteIndex) => 440 * 2 ** ((noteIndex - 69) / 12)),
         },
+        productionBrief: createDefaultProductionBrief(createdAt),
     });
 
     return createTrack({ name: 'Master', kind: 'master' });

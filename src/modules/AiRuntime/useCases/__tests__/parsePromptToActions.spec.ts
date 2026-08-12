@@ -14,6 +14,7 @@ const {
     mockBridgeGroundedLlmToolCalls,
     mockBuildLlmActionSystemPrompt,
     mockBuildLlmActionUserMessage,
+    mockDoesProductionBriefAllowActionBatch,
     markerStoreValue,
 } = vi.hoisted(() => ({
     mockLogger: {
@@ -25,6 +26,7 @@ const {
     mockBridgeGroundedLlmToolCalls: vi.fn(),
     mockBuildLlmActionSystemPrompt: vi.fn(() => 'command system prompt'),
     mockBuildLlmActionUserMessage: vi.fn(() => 'command user message'),
+    mockDoesProductionBriefAllowActionBatch: vi.fn(() => true),
     markerStoreValue: {
         value: {
             markers: [] as { id: string; beat: number; color: string; name: string }[],
@@ -35,6 +37,11 @@ const {
 
 vi.mock('#/infra/logger/appLogger', () => ({
     logger: mockLogger,
+}));
+
+vi.mock('#/modules/Project/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Project/useCases')>()),
+    doesProductionBriefAllowActionBatch: mockDoesProductionBriefAllowActionBatch,
 }));
 
 vi.mock('#/modules/Arrangement/stores', async () => {
@@ -198,6 +205,7 @@ describe('parsePromptToActions', () => {
         mockBridgeGroundedLlmToolCalls.mockReset();
         mockBuildLlmActionSystemPrompt.mockClear();
         mockBuildLlmActionUserMessage.mockClear();
+        mockDoesProductionBriefAllowActionBatch.mockReturnValue(true);
         markerStoreValue.value = { markers: [], sections: [] };
     });
 
@@ -239,6 +247,23 @@ describe('parsePromptToActions', () => {
             { type: 'setTrackGain', payload: { trackId: 'track-guitar', gain: 0.6, expectedGain: 0.8 } },
         ]);
         expect(result.requiresConfirmation).toBe(true);
+    });
+
+    it('rejects a fast-path plan before confirmation when it conflicts with locked production intent', async () => {
+        vi.mocked(tryParameterizedPath).mockReturnValue([{ type: 'setTempo', payload: { bpm: 128 } }]);
+        mockDoesProductionBriefAllowActionBatch.mockReturnValue(false);
+
+        const result = await parsePromptToActions('set tempo to 128', baseContext);
+
+        expect(mockDoesProductionBriefAllowActionBatch).toHaveBeenCalledWith([
+            { type: 'setTempo', payload: { bpm: 128 } },
+        ]);
+        expect(result).toEqual({
+            actions: [],
+            rawText: 'set tempo to 128',
+            requiresConfirmation: false,
+            rejectionReason: 'Recognized command conflicts with locked production intent.',
+        });
     });
 
     it('should return empty intent when signal is aborted before LLM path', async () => {
@@ -309,6 +334,27 @@ describe('parsePromptToActions', () => {
         });
         expect(result.actions).toEqual([{ type: 'setTempo', payload: { bpm: 128 } }]);
         expect(result.executionMode).toBe('atomic');
+    });
+
+    it('rejects a provider plan before confirmation when it conflicts with locked production intent', async () => {
+        vi.mocked(generateToolCalls).mockResolvedValue(completePlan([{ name: 'setTempo', arguments: { bpm: 128 } }]));
+        mockBridgeGroundedLlmToolCalls.mockReturnValue({
+            actions: [{ type: 'setTempo', payload: { bpm: 128 } }],
+            rejections: [],
+        });
+        mockDoesProductionBriefAllowActionBatch.mockReturnValue(false);
+
+        const result = await parsePromptToActions('make the project faster', baseContext);
+
+        expect(mockDoesProductionBriefAllowActionBatch).toHaveBeenCalledWith([
+            { type: 'setTempo', payload: { bpm: 128 } },
+        ]);
+        expect(result).toEqual({
+            actions: [],
+            rawText: 'make the project faster',
+            requiresConfirmation: false,
+            rejectionReason: 'Provider action conflicts with locked production intent.',
+        });
     });
 
     it('proposes an explicit provider time-signature command as one confirmable atomic action', async () => {

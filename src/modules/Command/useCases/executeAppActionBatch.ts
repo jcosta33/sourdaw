@@ -24,6 +24,7 @@ import { commitUndoEntry } from './commitUndoEntry';
 import { createUndoEntry } from './createUndoEntry';
 import { findSingletonBatchAction } from './findSingletonBatchAction';
 import { recordAction } from './macro/recording/recordAction';
+import { productionBriefAdmissionPort } from './productionBriefAdmissionPort';
 import { traceAppAction } from './traceAppAction';
 
 type ExecutedBatchAction = {
@@ -377,6 +378,13 @@ export const executeAppActionBatch: ExecuteAppActionBatch = inject({ logger })(
             await waitForAutomergeSnapshotTransaction(options?.snapshotTransaction);
             if (options?.shouldExecute && !options.shouldExecute()) {
                 return { status: 'cancelled', reason: 'Batch execution authority was revoked', actions: [] };
+            }
+            if (!productionBriefAdmissionPort.allows(actions)) {
+                return {
+                    status: 'conflicted',
+                    reason: 'Action batch conflicts with locked production intent',
+                    actions: [],
+                };
             }
 
             const preparedActions: PreparedBatchAction[] = [];

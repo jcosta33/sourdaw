@@ -19,6 +19,7 @@ const mocks = vi.hoisted(() => {
     const sidechainStoreValue: { value: { routes: ProjectContextSidechainRoute[] } | null } = { value: null };
     const markerStoreValue: { value: { sections: ProjectContextSection[] } | null } = { value: null };
     const vcaStoreValue: { value: { groups: ProjectContextVcaGroup[] } | null } = { value: null };
+    const projectStoreValue: { value: unknown } = { value: null };
     return {
         trackStoreValue,
         midiStoreValue,
@@ -30,6 +31,7 @@ const mocks = vi.hoisted(() => {
         sidechainStoreValue,
         markerStoreValue,
         vcaStoreValue,
+        projectStoreValue,
         getPluginById: vi.fn(),
         getPlatformPlugins: vi.fn(),
         getGlueEligibleClipPairs: vi.fn(),
@@ -94,6 +96,14 @@ vi.mock('#/modules/MIDI/stores', () => ({
     },
 }));
 
+vi.mock('#/modules/Project/stores', () => ({
+    projectStore: {
+        get value() {
+            return mocks.projectStoreValue.value;
+        },
+    },
+}));
+
 vi.mock('#/modules/Transport/stores', () => ({
     transportStore: {
         get value() {
@@ -123,6 +133,7 @@ describe('getProjectContext', () => {
         mocks.sidechainStoreValue.value = null;
         mocks.markerStoreValue.value = null;
         mocks.vcaStoreValue.value = null;
+        mocks.projectStoreValue.value = null;
         mocks.getPluginById.mockReturnValue(undefined);
         mocks.getGlueEligibleClipPairs.mockReturnValue([]);
         mocks.getPlatformPlugins.mockReturnValue([
@@ -139,6 +150,40 @@ describe('getProjectContext', () => {
 
         expect(first.glueEligibleClipPairs).toEqual([]);
         expect(second.glueEligibleClipPairs).toEqual([['clip-a', 'clip-b']]);
+        expect(second).not.toBe(first);
+    });
+
+    it('projects the current production brief and invalidates the cache when its revision changes', () => {
+        const productionBrief = {
+            schemaVersion: 1,
+            id: 'production-brief',
+            revision: 3,
+            vision: 'Intimate verses, explosive choruses',
+            references: [],
+            hardConstraints: [],
+            preferences: [],
+            sectionGoals: [],
+            trackRoles: [],
+            locks: [],
+            decisions: [],
+            unresolvedQuestions: [],
+            sourceRunLinks: [{ id: 'source-link-3', sourceRunId: 'run-3', createdAt: 102 }],
+            supersedesBriefId: null,
+            supersededByBriefId: null,
+            createdAt: 100,
+            updatedAt: 120,
+        };
+        mocks.projectStoreValue.value = { productionBrief };
+
+        const first = getProjectContext();
+        expect(first.productionBrief).toEqual(productionBrief);
+
+        mocks.projectStoreValue.value = {
+            productionBrief: { ...productionBrief, revision: 4, updatedAt: 130 },
+        };
+        const second = getProjectContext();
+
+        expect(second.productionBrief?.revision).toBe(4);
         expect(second).not.toBe(first);
     });
 

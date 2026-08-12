@@ -17,6 +17,7 @@ export { generateGroupId } from './generateGroupId';
 
 export { executeAppAction } from './executeAppAction';
 export { executeAppActionBatch } from './executeAppActionBatch';
+export { productionBriefAdmissionPort } from './productionBriefAdmissionPort';
 export { createAppActionCommittedError } from './createAppActionCommittedError';
 export { isAppActionCommittedError } from './isAppActionCommittedError';
 

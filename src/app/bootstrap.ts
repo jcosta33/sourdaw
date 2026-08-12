@@ -68,6 +68,7 @@ import {
     getMacroHandlers,
     getUndoRedoHandlers,
     getUndoTreeHandlers,
+    productionBriefAdmissionPort,
     setActionHistoryMetadataPort,
     setCommandEventBus,
     syncActionReplayMetadata,
@@ -115,6 +116,7 @@ import {
 } from '#/modules/MIDI/useCases';
 import { getPluginHostHandlers } from '#/modules/PluginHost/useCases';
 import {
+    doesProductionBriefAllowActionBatch,
     getProjectHandlers,
     initGrooveTemplateDirtyTracking,
     initProjectDirtyTracking,
@@ -178,6 +180,7 @@ setActionHistoryMetadataPort({
     markReverted: markActionHistoryEntryReverted,
     clear: clearCrdtActionHistory,
 });
+productionBriefAdmissionPort.setGuard(doesProductionBriefAllowActionBatch);
 syncActionReplayMetadata(actionHistoryStore.value?.entries ?? []);
 actionHistoryStore.subscribe((state) => {
     syncActionReplayMetadata(state?.entries ?? []);

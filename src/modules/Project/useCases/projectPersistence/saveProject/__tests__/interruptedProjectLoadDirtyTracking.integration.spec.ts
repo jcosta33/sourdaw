@@ -126,7 +126,7 @@ vi.mock('../../helpers/stopActiveAutoSave', () => ({ stopActiveAutoSave: mockSto
 import { defaultTrackState, trackStore } from '#/modules/Arrangement/stores';
 
 import { projectLoadFailureStore } from '../../../../stores/projectLoadFailureStore';
-import { projectStore } from '../../../../stores/projectStore';
+import { defaultProjectStoreState, projectStore } from '../../../../stores/projectStore';
 import { replaceProjectData } from '../../helpers/replaceProjectData';
 import { initProjectDirtyTracking } from '../initProjectDirtyTracking';
 
@@ -350,6 +350,7 @@ describe('interrupted project load dirty tracking', () => {
         mockStartCrdtAutoSave.mockReturnValue(() => {});
         trackStore.set(structuredClone(defaultTrackState));
         projectStore.set({
+            ...structuredClone(defaultProjectStoreState),
             name: 'Cold Start',
             createdAt: 1,
             updatedAt: 2,

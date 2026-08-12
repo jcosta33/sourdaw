@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { installFakeIndexedDb } from '../../../../__tests__/fakeIndexedDb';
+import { createDefaultProductionBrief } from '../../../../models/ProductionBrief';
 import { CURRENT_PROJECT_VERSION, type ProjectData } from '../../../../models/ProjectData';
 import { getRecentProjects } from '../../../recentProjects/helpers';
 import { loadRecentProject } from '../../../recentProjects/loadRecentProject';
@@ -100,6 +101,7 @@ function makeProjectState(): ProjectStoreState {
         dirty: true,
         loading: false,
         initialized: true,
+        productionBrief: createDefaultProductionBrief(CREATED_AT),
     };
 }
 

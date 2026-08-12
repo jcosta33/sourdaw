@@ -17,6 +17,7 @@ import { clearHandlerRegistry, registerHandlerMap } from '../../stores/handlerRe
 import { createAppActionCommittedError } from '../createAppActionCommittedError';
 import { executeAppAction } from '../executeAppAction';
 import { isAppActionCommittedError } from '../isAppActionCommittedError';
+import { productionBriefAdmissionPort } from '../productionBriefAdmissionPort';
 
 import type { ActionHandler, AppAction, HandlerDescribeResult, HandlerExecutionResult } from '#/utils/handlerContract';
 import type { ActionHistoryMetadata } from '../actionHistoryMetadataPort';
@@ -114,6 +115,7 @@ describe('executeAppAction', () => {
         clearActionReplayCapabilities();
         mocks.recordActionHistoryMetadata.mockReturnValue([]);
         configureAutomergeStoragePort(null);
+        productionBriefAdmissionPort.setGuard(() => true);
     });
 
     afterEach(() => {
@@ -139,6 +141,17 @@ describe('executeAppAction', () => {
 
         expect(runtimeResult.status).toBe('written');
         expect(invalidProjectResult.status).toBe('written');
+    });
+
+    it('rejects a singleton project write when current production intent denies it', async () => {
+        const action: SetEditingToolAction = { type: 'setEditingTool', payload: { tool: 'marquee' } };
+        const handler = create_mock_handler<SetEditingToolAction>();
+        registerHandlerMap({ [action.type]: handler });
+        productionBriefAdmissionPort.setGuard(() => false);
+
+        await expect(executeAppAction(action)).rejects.toBeInstanceOf(AppActionConflictError);
+        expect(handler.execute).not.toHaveBeenCalled();
+        expect(mocks.commitUndoEntry).not.toHaveBeenCalled();
     });
 
     it('should reject as not dispatched and log when no handler is found', async () => {

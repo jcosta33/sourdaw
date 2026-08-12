@@ -18,6 +18,8 @@ export { createFromTemplate } from './projectTemplates/templateDefinitions/creat
 export { getTemplates } from './projectTemplates/templateDefinitions/getTemplates';
 export { getPreviewLoop } from './projectTemplates/templatePreviews/previewLoops';
 export { getProjectHandlers } from './getProjectHandlers';
+export { doesProductionBriefAllowActionBatch } from './doesProductionBriefAllowActionBatch';
+export { acceptCreativeIntent } from './acceptCreativeIntent';
 
 export { exportProjectFile } from './projectPersistence/fileIO/exportProjectFile';
 export { pickAndImportProjectFile } from './projectPersistence/fileIO/pickAndImportProjectFile';

@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { createDefaultProductionBrief } from '../../models/ProductionBrief';
 import { type ProjectStoreState } from '../../stores/projectStore';
 import { importSclFile } from '../importSclFile';
 
@@ -63,6 +64,7 @@ function createProjectState(): ProjectStoreState {
             frequencies: [440],
         },
         initialized: true,
+        productionBrief: createDefaultProductionBrief(1),
     };
 }
 

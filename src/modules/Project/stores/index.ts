@@ -5,7 +5,7 @@ export type { MissingMediaItem, MissingMediaKind, MissingMediaStoreState } from 
 export { defaultMissingMediaStoreState, missingMediaStore } from './missingMediaStore';
 
 export type { ProjectStoreState } from './projectStore';
-export { projectStore } from './projectStore';
+export { defaultProjectStoreState, projectStore } from './projectStore';
 
 export type { ProjectLoadFailureState } from './projectLoadFailureStore';
 export { projectLoadFailureStore } from './projectLoadFailureStore';

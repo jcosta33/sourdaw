@@ -14,7 +14,11 @@ import {
 } from '#/modules/Arrangement/stores';
 import { actionReplayRevisionStore } from '#/modules/Command/stores';
 import { setWebMidiRuntimeEventBus } from '#/modules/MIDI/useCases';
-import { projectLoadFailureStore, type ProjectLoadFailureState } from '#/modules/Project/stores';
+import {
+    defaultProjectStoreState,
+    projectLoadFailureStore,
+    type ProjectLoadFailureState,
+} from '#/modules/Project/stores';
 import { setNotificationEventBus } from '#/utils/Notification/notificationEventBus';
 
 import { defaultWorkspaceState, type WorkspaceState } from '../../../models/WorkspaceState';
@@ -217,6 +221,7 @@ const createProjectState = (overrides: Partial<ProjectState> = {}): ProjectState
     },
     initialized: true,
     ...overrides,
+    productionBrief: overrides.productionBrief ?? structuredClone(defaultProjectStoreState.productionBrief),
 });
 
 const createWorkspaceState = (overrides: Partial<WorkspaceState> = {}): WorkspaceState => ({

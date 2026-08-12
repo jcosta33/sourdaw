@@ -40,6 +40,25 @@ vi.mock('#/modules/Transport/stores', () => ({
 }));
 const yeastStoreMock = vi.hoisted((): { value: unknown } => ({ value: { processors: [], uiLevel: 1 } }));
 vi.mock('#/modules/Yeast/stores', () => ({ yeastStore: yeastStoreMock }));
+const productionBriefFixture = vi.hoisted(() => ({
+    schemaVersion: 1 as const,
+    id: 'production-brief',
+    revision: 2,
+    vision: 'Intimate verses',
+    references: [],
+    hardConstraints: [],
+    preferences: [],
+    sectionGoals: [],
+    trackRoles: [],
+    locks: [],
+    decisions: [],
+    unresolvedQuestions: [],
+    sourceRunLinks: [{ id: 'source-link-2', sourceRunId: 'run-2', createdAt: 102 }],
+    supersedesBriefId: null,
+    supersededByBriefId: null,
+    createdAt: 1,
+    updatedAt: 2,
+}));
 vi.mock('../../../../stores/projectStore', () => ({
     projectStore: {
         value: {
@@ -48,6 +67,7 @@ vi.mock('../../../../stores/projectStore', () => ({
             keyRoot: 0,
             scaleName: 'major',
             tuning: { name: '12-TET', frequencies: [] },
+            productionBrief: productionBriefFixture,
         },
     },
 }));
@@ -88,6 +108,8 @@ describe('buildProjectData', () => {
         expect(exportCachedAudioBuffersMock).not.toHaveBeenCalled();
         expect(built?.data.audioBuffers).toBeUndefined();
         expect(built?.missingBufferCount).toBe(0);
+        expect(built?.data.meta.productionBrief).toEqual(productionBriefFixture);
+        expect(built?.data.meta.productionBrief).not.toBe(productionBriefFixture);
     });
 
     // Presence pin for the assertion above (ADR 0015 rule 4): the opt-in shape

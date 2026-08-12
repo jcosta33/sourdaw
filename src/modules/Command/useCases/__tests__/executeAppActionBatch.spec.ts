@@ -10,6 +10,7 @@ import { type ActionHandler, type AppAction } from '#/utils/handlerContract';
 
 import { clearHandlerRegistry, registerHandlerMap } from '../../stores/handlerRegistry';
 import { executeAppActionBatch } from '../executeAppActionBatch';
+import { productionBriefAdmissionPort } from '../productionBriefAdmissionPort';
 
 type SetEditingToolAction = Extract<AppAction, { type: 'setEditingTool' }>;
 type SetSnapValueAction = Extract<AppAction, { type: 'setSnapValue' }>;
@@ -119,11 +120,13 @@ describe('executeAppActionBatch', () => {
         vi.clearAllMocks();
         clearHandlerRegistry();
         configureAutomergeStoragePort(null);
+        productionBriefAdmissionPort.setGuard(() => true);
     });
 
     afterEach(() => {
         flushAutomergeStorageWrites();
         configureAutomergeStoragePort(null);
+        productionBriefAdmissionPort.setGuard(() => true);
     });
 
     it('commits every action as one project document mutation', async () => {
@@ -987,6 +990,24 @@ describe('executeAppActionBatch', () => {
 
         expect(result.status).toBe('rejected');
         expect(execute).not.toHaveBeenCalled();
+    });
+
+    it('rejects a batch before dispatch when the current production brief protects its target', async () => {
+        const execute = vi.fn();
+        registerHandlerMap({
+            setEditingTool: createHandler<SetEditingToolAction>({ execute }),
+        });
+        productionBriefAdmissionPort.setGuard(() => false);
+
+        const result = await executeAppActionBatch([{ type: 'setEditingTool', payload: { tool: 'marquee' } }]);
+
+        expect(result).toEqual({
+            status: 'conflicted',
+            reason: 'Action batch conflicts with locked production intent',
+            actions: [],
+        });
+        expect(execute).not.toHaveBeenCalled();
+        expect(mocks.commitUndoEntry).not.toHaveBeenCalled();
     });
 
     it('returns a typed no-op without history when every action already matches project truth', async () => {
