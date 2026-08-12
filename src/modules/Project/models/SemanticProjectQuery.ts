@@ -114,6 +114,7 @@ export type SemanticProjectIndexSnapshot = {
     automation: SemanticIndexEntity[];
     tempo: SemanticIndexEntity[];
     history: SemanticIndexEntity[];
+    selection: SemanticIndexEntity[];
     revisionToken: string;
     revision: SemanticProjectRevision;
 };

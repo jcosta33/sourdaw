@@ -315,11 +315,24 @@ function buildHistoryEntities(): SemanticIndexEntity[] {
 }
 
 function buildBriefEntities(): SemanticIndexEntity[] {
-    const brief = projectStore.value?.productionBrief;
-    if (!brief) {
+    const project = projectStore.value;
+    if (!project) {
         return [];
     }
+    const brief = project.productionBrief;
     return [
+        {
+            ...emptyEntity({ id: String(project.createdAt), kind: 'project-metadata' }),
+            name: project.name,
+            createdAt: project.createdAt,
+            keyRoot: project.keyRoot,
+            scaleName: project.scaleName,
+        },
+        {
+            ...emptyEntity({ id: brief.id, kind: 'production-brief' }),
+            name: 'Production brief',
+            brief: structuredClone(brief),
+        },
         ...brief.trackRoles.map((role): SemanticIndexEntity => ({
             ...emptyEntity({ id: role.id, kind: 'track-role' }),
             name: role.role,
@@ -343,6 +356,23 @@ function buildBriefEntities(): SemanticIndexEntity[] {
             sourceRunId: decision.sourceRunId,
             relatedBatchId: decision.relatedBatchId,
         })),
+    ];
+}
+
+function buildSelectionEntities(): SemanticIndexEntity[] {
+    const selection = clipSelectionStore.value;
+    const selectedClipIds = [
+        ...new Set([
+            ...(selection?.selectedClipIds ?? []),
+            ...(selection?.selectedClipId ? [selection.selectedClipId] : []),
+        ]),
+    ];
+    return [
+        {
+            ...emptyEntity({ id: 'project-selection', kind: 'selection' }),
+            selectedTrackId: trackStore.value?.selectedTrackId ?? null,
+            selectedClipIds,
+        },
     ];
 }
 
@@ -461,14 +491,38 @@ function readIndexOnce(projectRevisionToken: string): SemanticProjectIndexSnapsh
         trackState?.tracks.map((track) => ({ id: track.id, outputId: track.outputId, sends: track.sends })) ?? []
     );
 
-    const rawTracks = refreshPartition('tracks', [trackState], buildTrackEntities);
+    const rawTracks = refreshPartition('tracks', [trackState?.tracks], buildTrackEntities);
     const sections = refreshPartition('sections', [markerState], buildSectionEntities);
     const automation = refreshPartition('automation', [automationState], buildAutomationEntities);
     const routing = refreshPartition('routing', [routingTrackProjection, sidechainState], buildRoutingEntities);
-    const tempo = refreshPartition('tempo', [transportState, tempoMapState, meterMapState], buildTempoEntities);
+    const tempo = refreshPartition(
+        'tempo',
+        [
+            transportState?.tempo,
+            transportState?.timeSignatureNumerator,
+            transportState?.timeSignatureDenominator,
+            tempoMapState?.changes,
+            meterMapState?.changes,
+        ],
+        buildTempoEntities
+    );
     const history = refreshPartition('history', [historyState], buildHistoryEntities);
-    const brief = refreshPartition('brief', [projectState?.productionBrief], buildBriefEntities);
-    refreshPartition('selection', [trackState?.selectedTrackId, selectionState], () => []);
+    const brief = refreshPartition(
+        'brief',
+        [
+            projectState?.name,
+            projectState?.createdAt,
+            projectState?.keyRoot,
+            projectState?.scaleName,
+            projectState?.productionBrief,
+        ],
+        buildBriefEntities
+    );
+    const selection = refreshPartition(
+        'selection',
+        [trackState?.selectedTrackId, selectionState?.selectedClipId, selectionState?.selectedClipIds],
+        buildSelectionEntities
+    );
 
     const tracks = decorateEntities(rawTracks, automation, routing);
     const decoratedSections = decorateEntities(sections, automation, routing);
@@ -478,14 +532,6 @@ function readIndexOnce(projectRevisionToken: string): SemanticProjectIndexSnapsh
     const revisionToken = createBoundedRevisionToken(
         projectRevisionToken,
         JSON.stringify([
-            {
-                name: projectState?.name,
-                createdAt: projectState?.createdAt,
-                updatedAt: projectState?.updatedAt,
-                keyRoot: projectState?.keyRoot,
-                scaleName: projectState?.scaleName,
-                productionBrief: projectState?.productionBrief,
-            },
             tracks.map((entity) => entity.signature),
             decoratedSections.map((entity) => entity.signature),
             decoratedAutomation.map((entity) => entity.signature),
@@ -493,6 +539,7 @@ function readIndexOnce(projectRevisionToken: string): SemanticProjectIndexSnapsh
             tempo.map((entity) => entity.signature),
             history.map((entity) => entity.signature),
             decoratedBrief.map((entity) => entity.signature),
+            selection.map((entity) => entity.signature),
         ])
     );
     return {
@@ -504,6 +551,7 @@ function readIndexOnce(projectRevisionToken: string): SemanticProjectIndexSnapsh
             ...tempo,
             ...history,
             ...decoratedBrief,
+            ...selection,
         ],
         tracks,
         sections: decoratedSections,
@@ -511,6 +559,7 @@ function readIndexOnce(projectRevisionToken: string): SemanticProjectIndexSnapsh
         automation: decoratedAutomation,
         tempo,
         history,
+        selection,
         revisionToken,
         revision,
     };

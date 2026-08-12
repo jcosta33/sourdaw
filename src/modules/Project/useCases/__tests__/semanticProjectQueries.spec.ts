@@ -320,6 +320,70 @@ describe('semantic project queries', () => {
         expect(afterDiagnostics.history).toBe(initialDiagnostics.history);
     });
 
+    it('indexes project and selection changes without rebuilding unrelated partitions', () => {
+        const before = querySemanticProject({ type: 'project-summary' });
+        const initialDiagnostics = getSemanticProjectIndexDiagnostics();
+
+        clipSelectionStore.set({
+            selectedClipId: 'stale-clip-id',
+            selectedClipIds: ['stale-clip-id'],
+            marqueeSelection: null,
+        });
+        transportStore.set({ ...transportStore.value!, playheadPosition: 4 });
+        const selectionReceipt = querySemanticProject({ type: 'project-summary' });
+        const selectionDiff = querySemanticProject({ type: 'diff', sinceRevision: before.revisionToken });
+        const selectionDiagnostics = getSemanticProjectIndexDiagnostics();
+
+        expect(selectionReceipt.revisionToken).not.toBe(before.revisionToken);
+        expect(selectionDiff.items).toEqual(
+            expect.arrayContaining([
+                expect.objectContaining({ id: 'project-selection', kind: 'selection', change: 'updated' }),
+                expect.objectContaining({ id: 'clip-drums-verse', kind: 'clip', change: 'updated' }),
+            ])
+        );
+        expect(selectionDiagnostics.selection).toBe(initialDiagnostics.selection + 1);
+        expect(selectionDiagnostics.tracks).toBe(initialDiagnostics.tracks);
+        expect(selectionDiagnostics.tempo).toBe(initialDiagnostics.tempo);
+
+        clipSelectionStore.set({
+            selectedClipId: 'another-stale-clip-id',
+            selectedClipIds: ['another-stale-clip-id'],
+            marqueeSelection: null,
+        });
+        const staleSelectionReceipt = querySemanticProject({ type: 'project-summary' });
+        const staleSelectionDiff = querySemanticProject({
+            type: 'diff',
+            sinceRevision: selectionReceipt.revisionToken,
+        });
+        expect(staleSelectionReceipt.revisionToken).not.toBe(selectionReceipt.revisionToken);
+        expect(staleSelectionDiff.items).toEqual([
+            expect.objectContaining({ id: 'project-selection', kind: 'selection', change: 'updated' }),
+        ]);
+
+        const project = projectStore.value!;
+        projectStore.set({
+            ...project,
+            name: 'Renamed Semantic Project',
+            productionBrief: {
+                ...project.productionBrief,
+                unresolvedQuestions: [
+                    ...project.productionBrief.unresolvedQuestions,
+                    { id: 'question-2', statement: 'Confirm the ending', createdAt: 220 },
+                ],
+            },
+        });
+        const projectDiff = querySemanticProject({
+            type: 'diff',
+            sinceRevision: staleSelectionReceipt.revisionToken,
+        });
+        expect(projectDiff.items).toEqual(
+            expect.arrayContaining([
+                expect.objectContaining({ id: '42', kind: 'project-metadata', change: 'updated' }),
+                expect.objectContaining({ id: 'production-brief', kind: 'production-brief', change: 'updated' }),
+            ])
+        );
+    });
+
     it('bounds nested values and clears retained diffs across project identities', async () => {
         const current = projectStore.value!;
         projectStore.set({
