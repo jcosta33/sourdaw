@@ -1,0 +1,14 @@
+tests/e2e/proofAbCompareTestId.spec.ts
+  h_1228e573df1f42 1-55
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "a7fc3534ac26ed80385204414fd3b71b2b51537d",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
