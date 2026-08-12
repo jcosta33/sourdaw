@@ -285,9 +285,14 @@ describe('parsePromptToActions', () => {
         const result = await parsePromptToActions('make the project faster', baseContext);
 
         expect(generateToolCalls).toHaveBeenCalledWith(
-            'command system prompt',
+            expect.stringContaining('command system prompt'),
             'command user message',
-            getExecutableAppActionToolSchemas(),
+            expect.arrayContaining([
+                expect.objectContaining({
+                    function: expect.objectContaining({ name: 'selectWorkflowCapability' }),
+                }),
+                ...getExecutableAppActionToolSchemas(),
+            ]),
             undefined,
             'make the project faster'
         );
@@ -393,9 +398,14 @@ describe('parsePromptToActions', () => {
         expect(result.requiresConfirmation).toBe(true);
         expect(result.executionMode).toBe('atomic');
         expect(generateToolCalls).toHaveBeenCalledWith(
-            'command system prompt',
+            expect.stringContaining('command system prompt'),
             'command user message',
-            getExecutableAppActionToolSchemas(),
+            expect.arrayContaining([
+                expect.objectContaining({
+                    function: expect.objectContaining({ name: 'selectWorkflowCapability' }),
+                }),
+                ...getExecutableAppActionToolSchemas(),
+            ]),
             undefined,
             'enable punch in/out'
         );

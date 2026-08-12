@@ -1,6 +1,7 @@
 import { captureProjectRevision } from '#/modules/CrdtDocument/useCases';
 
 import { AiProposalInvalidatedError } from '../errors/AiProposalInvalidatedError';
+import { type StemImportPromptScope } from '../models/StemImportCapability';
 
 import { createStemImportPromptScope } from './agentReference/createStemImportPromptScope';
 import { discardPreparedStemImportResources } from './agentReference/discardPreparedStemImportResources';
@@ -17,21 +18,22 @@ type PlanPromptActionsInput = {
 export async function planPromptActions(input: PlanPromptActionsInput) {
     const projectRevision = captureProjectRevision();
     const context = getProjectContext();
-    const preparedStemImport = await prepareStemImport(input.prompt, input.signal);
-    if (preparedStemImport?.status === 'cancelled') {
-        return {
-            context,
-            result: { actions: [], rawText: input.prompt, requiresConfirmation: false },
-            projectRevision,
-        };
-    }
-    const stemImportScope =
-        preparedStemImport?.status === 'prepared'
-            ? createStemImportPromptScope(preparedStemImport, projectRevision)
-            : undefined;
+    let stemImportScope: StemImportPromptScope | undefined;
     let result;
     try {
-        result = await parsePromptToActions(input.prompt, context, input.signal, projectRevision, stemImportScope);
+        result = await parsePromptToActions(input.prompt, context, input.signal, projectRevision);
+        if (result.preparationRequest === 'stem-import') {
+            const preparedStemImport = await prepareStemImport(input.signal);
+            if (preparedStemImport.status === 'cancelled') {
+                return {
+                    context,
+                    result: { actions: [], rawText: input.prompt, requiresConfirmation: false },
+                    projectRevision,
+                };
+            }
+            stemImportScope = createStemImportPromptScope(preparedStemImport, projectRevision);
+            result = await parsePromptToActions(input.prompt, context, input.signal, projectRevision, stemImportScope);
+        }
     } catch (error) {
         if (stemImportScope) {
             discardPreparedStemImportResources(stemImportScope.actionSeed.stems);

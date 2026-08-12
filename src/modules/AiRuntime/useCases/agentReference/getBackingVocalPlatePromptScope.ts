@@ -24,7 +24,6 @@ const REVERB_DEVICE_TYPES = new Set([
 ]);
 
 type BackingVocalPlatePromptScope =
-    | { status: 'none' }
     | { status: 'invalid'; reason: string }
     | {
           status: 'request';
@@ -39,13 +38,6 @@ function normalizeText(value: string): string {
         .toLocaleLowerCase()
         .replaceAll(/[^\p{L}\p{N}]+/gu, ' ')
         .trim();
-}
-
-function isExactRequest(prompt: string): boolean {
-    return (
-        normalizeText(prompt) ===
-        'remove reverbs from all backing vocals create one shared plate bus with eq before plate reverb and a 250 hz high pass create post fader sends at 18 db automate them to 10 db over the final four bars of every chorus protect the lead vocal render each chorus and receipt every created removed routed automated and rendered object'
-    );
 }
 
 function isBackingVocal(track: ProjectContextTrack): boolean {
@@ -141,14 +133,9 @@ function getPlateRenderTailSeconds(): number | null {
 }
 
 export function getBackingVocalPlatePromptScope(
-    prompt: string,
     context: ProjectContext,
     baseRevision = 'unbound'
 ): BackingVocalPlatePromptScope {
-    if (!isExactRequest(prompt)) {
-        return { status: 'none' };
-    }
-
     const backingVocals = context.tracks.filter(isBackingVocal);
     const leadVocals = context.tracks.filter(isLeadVocal);
     const ambiguousVocals = context.tracks.filter(

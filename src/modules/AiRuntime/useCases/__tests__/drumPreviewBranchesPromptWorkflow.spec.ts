@@ -44,8 +44,12 @@ import { confirmPendingChatActions } from '../confirmPendingChatActions';
 import { getProjectContext } from '../getProjectContext';
 import { sendChatMessage } from '../sendChatMessage';
 
+import { withWorkflowCapabilitySelection } from './workflowCapabilitySelectionFixture';
+
 const PROMPT =
     'For one eight-bar section, create three drum-arrangement candidates on separate preview branches while preserving the kick pattern and varying only snare and hi-hat programming.';
+const PARAPHRASE =
+    'Make three alternate eight-bar drum previews on isolated branches; keep the kick identical and change only snare and hats.';
 
 type ProviderCall = { name: string; arguments: Record<string, unknown> };
 type CreatePreviewAction = Extract<AppAction, { type: 'createDrumPreviewBranches' }>;
@@ -202,7 +206,10 @@ function useHostedFixture(): void {
         if (typeof init?.body !== 'string') {
             throw new TypeError('Expected hosted provider request body');
         }
-        const plan = runtimeMocks.transformPlan.value(createProviderPlan(getProviderUserMessage(init.body)));
+        const plan = withWorkflowCapabilitySelection(
+            'drum-preview-branches',
+            runtimeMocks.transformPlan.value(createProviderPlan(getProviderUserMessage(init.body)))
+        );
         return Promise.resolve(
             new Response(
                 JSON.stringify({
@@ -309,7 +316,14 @@ describe('EX-05 drum preview-branch prompt workflow', () => {
         runtimeMocks.backend.value = 'webllm';
         runtimeMocks.transformPlan.value = (plan) => plan;
         runtimeMocks.generateWebLlmCompletion.mockImplementation((_systemPrompt, userMessage) =>
-            Promise.resolve(JSON.stringify(runtimeMocks.transformPlan.value(createProviderPlan(userMessage))))
+            Promise.resolve(
+                JSON.stringify(
+                    withWorkflowCapabilitySelection(
+                        'drum-preview-branches',
+                        runtimeMocks.transformPlan.value(createProviderPlan(userMessage))
+                    )
+                )
+            )
         );
         vi.stubGlobal('fetch', runtimeMocks.fetch);
         cloudSession.clear();
@@ -404,13 +418,18 @@ describe('EX-05 drum preview-branch prompt workflow', () => {
         vi.unstubAllGlobals();
     });
 
+    it('routes a semantic paraphrase to the drum-preview capability', async () => {
+        await sendChatMessage(PARAPHRASE);
+        expect(getConfirmationId()).not.toBe('');
+    });
+
     it.each(['webllm', 'hosted'] as const)(
         'creates three isolated app-owned candidates through the %s provider and round-trips one guarded history entry',
         async (provider) => {
             if (provider === 'hosted') {
                 useHostedFixture();
             }
-            const scope = getDrumPreviewBranchesPromptScope(PROMPT, getProjectContext(), 'revision-test');
+            const scope = getDrumPreviewBranchesPromptScope(getProjectContext(), 'revision-test');
             expect(scope).toMatchObject({
                 status: 'request',
                 capability: {

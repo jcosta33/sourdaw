@@ -7,6 +7,13 @@ import { isAiRuntimeConfigurationChangedError } from '../errors/AiRuntimeConfigu
 import { type IntentResult } from '../models/IntentResult';
 import { type RuntimeAction } from '../models/RuntimeAction';
 import { type StemImportPromptScope } from '../models/StemImportCapability';
+import {
+    createWorkflowCapabilityToolSchema,
+    isWorkflowCapabilityId,
+    WORKFLOW_CAPABILITY_TOOL_NAME,
+    WORKFLOW_CAPABILITY_IDS,
+    type WorkflowCapabilityId,
+} from '../models/WorkflowCapability';
 import { buildLlmActionSystemPrompt, buildLlmActionUserMessage } from '../transformers/llmActionBridge';
 import { findDeniedPromptIntent } from '../transformers/promptParser/findDeniedPromptIntent';
 import {
@@ -127,12 +134,12 @@ export const parsePromptToActions = inject({ logger })(
             // 5. Provider-neutral LLM path. This only proposes typed actions;
             // sendChatMessage remains responsible for confirmation and execution.
             try {
-                const drumRoutingScope = getDrumRoutingPromptScope(prompt, context, projectRevision);
-                const drumPreviewBranchesScope = getDrumPreviewBranchesPromptScope(prompt, context, projectRevision);
-                const midiOverlapTransformScope = getMidiOverlapTransformPromptScope(prompt, context, projectRevision);
-                const backingVocalPlateScope = getBackingVocalPlatePromptScope(prompt, context, projectRevision);
-                const bassProcessingCopyScope = getBassProcessingCopyPromptScope(prompt, context, projectRevision);
-                const articulationTransferScope = getArticulationTransferPromptScope(prompt, context, projectRevision);
+                const drumRoutingScope = getDrumRoutingPromptScope(context, projectRevision);
+                const drumPreviewBranchesScope = getDrumPreviewBranchesPromptScope(context, projectRevision);
+                const midiOverlapTransformScope = getMidiOverlapTransformPromptScope(context, projectRevision);
+                const backingVocalPlateScope = getBackingVocalPlatePromptScope(context, projectRevision);
+                const bassProcessingCopyScope = getBassProcessingCopyPromptScope(context, projectRevision);
+                const articulationTransferScope = getArticulationTransferPromptScope(context, projectRevision);
                 const articulationTransferCapability =
                     articulationTransferScope.status === 'request' ? articulationTransferScope.capability : undefined;
                 const drumRoutingCapability =
@@ -148,10 +155,10 @@ export const parsePromptToActions = inject({ logger })(
                 const sidechainRoutingScope = getSidechainRoutingPromptScope(prompt, context, projectRevision);
                 const sidechainRoutingCapability =
                     sidechainRoutingScope.status === 'request' ? sidechainRoutingScope.capability : undefined;
-                const sharedVocalFxBusesScope = getSharedVocalFxBusesPromptScope(prompt, context, projectRevision);
+                const sharedVocalFxBusesScope = getSharedVocalFxBusesPromptScope(context, projectRevision);
                 const sharedVocalFxBusesCapability =
                     sharedVocalFxBusesScope.status === 'request' ? sharedVocalFxBusesScope.capability : undefined;
-                const syncopatedArpeggioScope = getSyncopatedArpeggioPromptScope(prompt, context, projectRevision);
+                const syncopatedArpeggioScope = getSyncopatedArpeggioPromptScope(context, projectRevision);
                 const syncopatedArpeggioCapability =
                     syncopatedArpeggioScope.status === 'request' ? syncopatedArpeggioScope.capability : undefined;
                 const wholeProjectVibeMixCapability = getWholeProjectVibeMixScope(
@@ -160,7 +167,7 @@ export const parsePromptToActions = inject({ logger })(
                     projectRevision
                 )?.capability;
                 const planningOutcome = await generateToolPlanningOutcome(
-                    buildLlmActionSystemPrompt(),
+                    `${buildLlmActionSystemPrompt()}\nWhen a supplied specialized workflow semantically covers the complete request, call selectWorkflowCapability once before returning its ordered action plan. Match meaning rather than wording. Do not select a workflow for generic, partial, unrelated, or ambiguous requests.`,
                     buildLlmActionUserMessage({
                         prompt,
                         context,
@@ -177,7 +184,10 @@ export const parsePromptToActions = inject({ logger })(
                         syncopatedArpeggioCapability,
                         wholeProjectVibeMixCapability,
                     }),
-                    getExecutableAppActionToolSchemas(),
+                    [
+                        createWorkflowCapabilityToolSchema(WORKFLOW_CAPABILITY_IDS),
+                        ...getExecutableAppActionToolSchemas(),
+                    ],
                     signal,
                     prompt
                 );
@@ -194,8 +204,61 @@ export const parsePromptToActions = inject({ logger })(
                         rejectionReason: `Provider planning rejected: ${planningOutcome.reason}`,
                     };
                 }
-                const toolCalls = planningOutcome.toolCalls;
-                if (stemImportScope) {
+                const workflowSelectionCalls = planningOutcome.toolCalls.filter(
+                    (call) => call.name === WORKFLOW_CAPABILITY_TOOL_NAME
+                );
+                if (workflowSelectionCalls.length > 1) {
+                    return {
+                        actions: [],
+                        rawText: prompt,
+                        requiresConfirmation: false,
+                        rejectionReason: 'Provider selected more than one specialized workflow.',
+                    };
+                }
+                let workflowCapabilityId: WorkflowCapabilityId | undefined;
+                const workflowSelectionCall = workflowSelectionCalls[0];
+                if (workflowSelectionCall) {
+                    if (planningOutcome.toolCalls[0] !== workflowSelectionCall) {
+                        return {
+                            actions: [],
+                            rawText: prompt,
+                            requiresConfirmation: false,
+                            rejectionReason:
+                                'Provider must select a specialized workflow before proposing its actions.',
+                        };
+                    }
+                    const keys = Object.keys(workflowSelectionCall.arguments);
+                    const capabilityId = workflowSelectionCall.arguments.capabilityId;
+                    if (keys.length !== 1 || keys[0] !== 'capabilityId' || !isWorkflowCapabilityId(capabilityId)) {
+                        return {
+                            actions: [],
+                            rawText: prompt,
+                            requiresConfirmation: false,
+                            rejectionReason: 'Provider selected an unavailable specialized workflow.',
+                        };
+                    }
+                    workflowCapabilityId = capabilityId;
+                }
+                const toolCalls = planningOutcome.toolCalls.filter(
+                    (call) => call.name !== WORKFLOW_CAPABILITY_TOOL_NAME
+                );
+                if (workflowCapabilityId === 'stem-import-starting-mix' && !stemImportScope) {
+                    if (toolCalls.length > 0) {
+                        return {
+                            actions: [],
+                            rawText: prompt,
+                            requiresConfirmation: false,
+                            rejectionReason: 'Stem files must be selected before the provider can plan their import.',
+                        };
+                    }
+                    return {
+                        actions: [],
+                        rawText: prompt,
+                        requiresConfirmation: false,
+                        preparationRequest: 'stem-import',
+                    };
+                }
+                if (stemImportScope && workflowCapabilityId === 'stem-import-starting-mix') {
                     const stemImport = bridgeStemImportPlan(toolCalls, stemImportScope);
                     if (stemImport.status === 'rejected') {
                         return {
@@ -218,6 +281,7 @@ export const parsePromptToActions = inject({ logger })(
                         rawText: prompt,
                         requiresConfirmation: true,
                         executionMode: 'atomic',
+                        workflowCapabilityId,
                     };
                 }
                 const markerSignatures = (markerStore.value?.markers ?? []).map((marker) => ({
@@ -238,6 +302,7 @@ export const parsePromptToActions = inject({ logger })(
                     markerSignatures,
                     sectionSignatures,
                     prompt,
+                    workflowCapabilityId,
                 });
                 for (const rejected of bridged.rejections) {
                     logger.warn(
@@ -309,6 +374,7 @@ export const parsePromptToActions = inject({ logger })(
                         rawText: prompt,
                         requiresConfirmation: requiresAppActionConfirmation(guarded.actions),
                         executionMode: 'atomic',
+                        workflowCapabilityId,
                     };
                 }
 

@@ -37,8 +37,12 @@ import {
 import { confirmPendingChatActions } from '../confirmPendingChatActions';
 import { sendChatMessage } from '../sendChatMessage';
 
+import { withWorkflowCapabilitySelection } from './workflowCapabilitySelectionFixture';
+
 const PROMPT =
     "Copy the bass processing from chorus one to chorus two while preserving chorus two's existing distortion automation.";
+const PARAPHRASE =
+    'Bring the first chorus bass-processing layers into the second chorus but keep its distortion automation untouched.';
 
 const providerPlan = [
     {
@@ -168,8 +172,9 @@ function useHostedFixture(): void {
         if (typeof init?.body !== 'string') {
             throw new TypeError('Expected hosted provider request body');
         }
-        const plan = runtimeMocks.transformPlan.value(
-            createProviderPlanFromUserMessage(getHostedUserMessage(init.body))
+        const plan = withWorkflowCapabilitySelection(
+            'bass-processing-copy',
+            runtimeMocks.transformPlan.value(createProviderPlanFromUserMessage(getHostedUserMessage(init.body)))
         );
         return Promise.resolve(
             new Response(
@@ -286,7 +291,12 @@ describe('bass-processing section copy workflow', () => {
         runtimeMocks.transformPlan.value = (plan) => plan;
         runtimeMocks.generateWebLlmCompletion.mockImplementation((_systemPrompt, userMessage) =>
             Promise.resolve(
-                JSON.stringify(runtimeMocks.transformPlan.value(createProviderPlanFromUserMessage(userMessage)))
+                JSON.stringify(
+                    withWorkflowCapabilitySelection(
+                        'bass-processing-copy',
+                        runtimeMocks.transformPlan.value(createProviderPlanFromUserMessage(userMessage))
+                    )
+                )
             )
         );
         vi.stubGlobal('fetch', runtimeMocks.fetch);
@@ -421,6 +431,11 @@ describe('bass-processing section copy workflow', () => {
         vi.restoreAllMocks();
         vi.unstubAllGlobals();
         removeCrdtDoc('root');
+    });
+
+    it('routes a semantic paraphrase to the bass-processing copy capability', async () => {
+        await sendChatMessage(PARAPHRASE);
+        expect(getConfirmationId()).not.toBe('');
     });
 
     it('copies the exact bass processing through confirmation, receipt, runtime scheduling, undo, and redo', async () => {

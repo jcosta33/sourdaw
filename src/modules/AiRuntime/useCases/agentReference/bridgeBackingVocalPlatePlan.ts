@@ -8,8 +8,8 @@ import { getBackingVocalPlatePromptScope } from './getBackingVocalPlatePromptSco
 
 type BridgeBackingVocalPlatePlanInput = {
     calls: readonly ToolCallResult[];
-    context: Parameters<typeof getBackingVocalPlatePromptScope>[1];
-    prompt: string;
+    context: Parameters<typeof getBackingVocalPlatePromptScope>[0];
+    selected: boolean;
 };
 
 type BridgeBackingVocalPlatePlanResult =
@@ -60,26 +60,26 @@ function getDefaultParameterValue(deviceType: string, parameterId: string): numb
 export function bridgeBackingVocalPlatePlan({
     calls,
     context,
-    prompt,
+    selected,
 }: BridgeBackingVocalPlatePlanInput): BridgeBackingVocalPlatePlanResult {
-    const scope = getBackingVocalPlatePromptScope(prompt, context);
-    if (scope.status === 'none') {
+    if (!selected) {
         const restrictedCall = calls.find((call) => EX_01_ONLY_TOOL_NAMES.has(call.name));
         if (restrictedCall) {
             return {
                 status: 'rejected',
-                reason: `${restrictedCall.name} is available only through the exact EX-01 backing-vocal plate workflow`,
+                reason: `${restrictedCall.name} is available only through the selected backing-vocal plate workflow`,
             };
         }
         return { status: 'none' };
     }
+    const scope = getBackingVocalPlatePromptScope(context);
     if (scope.status === 'invalid') {
         return { status: 'rejected', reason: scope.reason };
     }
     if (!valuesEqual(calls, scope.capability.orderedToolPlan)) {
         return {
             status: 'rejected',
-            reason: 'Provider plan does not match the complete EX-01 backing-vocal plate workflow',
+            reason: 'Provider plan does not match the selected backing-vocal plate workflow',
         };
     }
 

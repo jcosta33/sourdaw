@@ -31,8 +31,12 @@ import { cancelPendingChatActions } from '../cancelPendingChatActions';
 import { confirmPendingChatActions } from '../confirmPendingChatActions';
 import { sendChatMessage } from '../sendChatMessage';
 
+import { withWorkflowCapabilitySelection } from './workflowCapabilitySelectionFixture';
+
 const PROMPT =
     'Import stems, align them to project tempo, name and group them, classify likely instrument roles, and create a sensible starting mix.';
+const PARAPHRASE =
+    'Bring in this stem set, tempo-align and organize it by likely instrument, then establish a practical initial balance.';
 
 type ProviderCall = { name: string; arguments: Record<string, unknown> };
 
@@ -187,6 +191,9 @@ function createProviderPlan(userMessage: string): ProviderCall[] {
         throw new TypeError('Expected revision-bound project context');
     }
     const capability = context.stemImportCapability;
+    if (capability === undefined) {
+        return [];
+    }
     if (
         !isRecord(capability) ||
         capability.baseRevision !== context.projectRevision ||
@@ -237,7 +244,10 @@ function useHostedFixture(): void {
         if (typeof init?.body !== 'string') {
             throw new TypeError('Expected hosted provider request body');
         }
-        const plan = mocks.transformPlan.value(createProviderPlan(getHostedUserMessage(init.body)));
+        const plan = withWorkflowCapabilitySelection(
+            'stem-import-starting-mix',
+            mocks.transformPlan.value(createProviderPlan(getHostedUserMessage(init.body)))
+        );
         return Promise.resolve(
             new Response(
                 JSON.stringify({
@@ -309,7 +319,14 @@ describe('stem import and starting mix workflow', () => {
             Promise.resolve({ hash: `hash-${name}`, leaseId: `lease-${name}` })
         );
         mocks.generateWebLlmCompletion.mockImplementation((_systemPrompt: string, userMessage: string) =>
-            Promise.resolve(JSON.stringify(mocks.transformPlan.value(createProviderPlan(userMessage))))
+            Promise.resolve(
+                JSON.stringify(
+                    withWorkflowCapabilitySelection(
+                        'stem-import-starting-mix',
+                        mocks.transformPlan.value(createProviderPlan(userMessage))
+                    )
+                )
+            )
         );
     });
 
@@ -325,6 +342,11 @@ describe('stem import and starting mix workflow', () => {
         configureAutomergeStoragePort(null);
         removeCrdtDoc('root');
         vi.unstubAllGlobals();
+    });
+
+    it('routes a semantic paraphrase to the stem-import capability before opening the picker', async () => {
+        await sendChatMessage(PARAPHRASE);
+        expect(confirmationId()).not.toBe('');
     });
 
     it('imports, aligns, classifies, groups, mixes, receipts, and replays the exact selected stem set', async () => {
@@ -408,19 +430,19 @@ describe('stem import and starting mix workflow', () => {
                 }),
             }),
         ]);
-        expect(mocks.fetch).toHaveBeenCalledOnce();
+        expect(mocks.fetch).toHaveBeenCalledTimes(2);
         await expect(confirmPendingChatActions({ confirmationId: confirmation!.id })).resolves.toEqual({
             status: 'executed',
         });
     });
 
-    it('treats closing the picker as cancellation without provider planning or project writes', async () => {
+    it('treats closing the picker as cancellation after semantic selection without project writes', async () => {
         const originalTracks = structuredClone(trackStore.value?.tracks ?? []);
         mocks.pickFiles.mockResolvedValue(null);
 
         await sendChatMessage(PROMPT);
 
-        expect(mocks.generateWebLlmCompletion).not.toHaveBeenCalled();
+        expect(mocks.generateWebLlmCompletion).toHaveBeenCalledOnce();
         expect(mocks.fetch).not.toHaveBeenCalled();
         expect(confirmationId()).toBe('');
         expect(trackStore.value?.tracks).toEqual(originalTracks);
@@ -444,7 +466,7 @@ describe('stem import and starting mix workflow', () => {
         await sending;
 
         expect(mocks.decodeAudioFile).toHaveBeenCalledTimes(1);
-        expect(mocks.generateWebLlmCompletion).not.toHaveBeenCalled();
+        expect(mocks.generateWebLlmCompletion).toHaveBeenCalledOnce();
         expect(confirmationId()).toBe('');
         expect(mocks.releasePreviewAudioBuffer).toHaveBeenCalledWith('buffer-Kick_120.wav');
         expect(mocks.releaseStagedAsset).not.toHaveBeenCalled();
@@ -505,7 +527,7 @@ describe('stem import and starting mix workflow', () => {
         await sendChatMessage(PROMPT);
 
         expect(mocks.decodeAudioFile).not.toHaveBeenCalled();
-        expect(mocks.generateWebLlmCompletion).not.toHaveBeenCalled();
+        expect(mocks.generateWebLlmCompletion).toHaveBeenCalledOnce();
         expect(confirmationId()).toBe('');
         expect(trackStore.value?.tracks).toEqual([createTrack('track-guide', 'Guide Mix')]);
     });
@@ -516,7 +538,7 @@ describe('stem import and starting mix workflow', () => {
 
         await sendChatMessage(PROMPT);
 
-        expect(mocks.generateWebLlmCompletion).not.toHaveBeenCalled();
+        expect(mocks.generateWebLlmCompletion).toHaveBeenCalledOnce();
         expect(confirmationId()).toBe('');
         expect(trackStore.value?.tracks).toEqual(originalTracks);
         expect(mocks.releasePreviewAudioBuffer).toHaveBeenCalledWith('buffer-Kick_120.wav');

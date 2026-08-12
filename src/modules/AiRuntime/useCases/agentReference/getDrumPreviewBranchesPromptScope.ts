@@ -42,15 +42,7 @@ export type DrumPreviewBranchesRequestScope = {
     capability?: DrumPreviewBranchesCapability;
 };
 
-type DrumPreviewBranchesPromptScope =
-    { status: 'none' } | { status: 'invalid'; reason: string } | DrumPreviewBranchesRequestScope;
-
-function normalizeText(value: string): string {
-    return value
-        .toLowerCase()
-        .replaceAll(/[^\p{L}\p{N}]+/gu, ' ')
-        .trim();
-}
+type DrumPreviewBranchesPromptScope = { status: 'invalid'; reason: string } | DrumPreviewBranchesRequestScope;
 
 function getRoleEntry(
     tracks: readonly ProjectContextTrack[],
@@ -88,16 +80,9 @@ function getRoleEntry(
 }
 
 export function getDrumPreviewBranchesPromptScope(
-    prompt: string,
     context: ProjectContext,
     projectRevision?: string
 ): DrumPreviewBranchesPromptScope {
-    if (
-        normalizeText(prompt) !==
-        'for one eight bar section create three drum arrangement candidates on separate preview branches while preserving the kick pattern and varying only snare and hi hat programming'
-    ) {
-        return { status: 'none' };
-    }
     const [numerator, denominator] = context.timeSignature;
     if (!Number.isFinite(numerator) || !Number.isFinite(denominator) || numerator <= 0 || denominator <= 0) {
         return { status: 'invalid', reason: 'EX-05 requires one valid project time signature' };

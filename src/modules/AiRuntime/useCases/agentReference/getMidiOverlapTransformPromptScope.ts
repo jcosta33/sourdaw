@@ -31,27 +31,12 @@ export type MidiOverlapTransformRequestScope = {
     capability?: MidiOverlapTransformCapability;
 };
 
-type MidiOverlapTransformPromptScope =
-    { status: 'none' } | { status: 'invalid'; reason: string } | MidiOverlapTransformRequestScope;
-
-function normalizeText(value: string): string {
-    return value
-        .toLowerCase()
-        .replaceAll(/[^\p{L}\p{N}]+/gu, ' ')
-        .trim();
-}
+type MidiOverlapTransformPromptScope = { status: 'invalid'; reason: string } | MidiOverlapTransformRequestScope;
 
 export function getMidiOverlapTransformPromptScope(
-    prompt: string,
     context: ProjectContext,
     projectRevision?: string
 ): MidiOverlapTransformPromptScope {
-    if (
-        normalizeText(prompt) !==
-        'on every selected midi clip shorten only overlaps strictly below 30 ms and leave overlaps exactly at or above 30 ms unchanged'
-    ) {
-        return { status: 'none' };
-    }
     if (!Number.isFinite(context.tempo) || context.tempo <= 0) {
         return { status: 'invalid', reason: 'EX-04 requires one finite positive project tempo' };
     }

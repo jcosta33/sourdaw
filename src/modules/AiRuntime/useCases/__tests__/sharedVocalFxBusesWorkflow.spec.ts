@@ -33,6 +33,8 @@ import { confirmPendingChatActions } from '../confirmPendingChatActions';
 import { sendChatMessage } from '../sendChatMessage';
 
 const SHARED_VOCAL_FX_PROMPT = 'Move vocal delays and reverbs to shared buses while preserving balance.';
+const SHARED_VOCAL_FX_PARAPHRASE =
+    'Put the vocal delay and reverb effects on shared buses, keeping the current wet and dry balance intact.';
 
 type ProviderPlanCall = { name: string; arguments: Record<string, unknown> };
 type RenderOfflineMock = (options: {
@@ -245,15 +247,28 @@ function useHostedProviderFixture(createPlan: (userMessage: string) => ProviderP
     });
 }
 
+const sharedVocalFxWorkflowSelection = {
+    name: 'selectWorkflowCapability',
+    arguments: { capabilityId: 'shared-vocal-fx-buses' },
+};
+
 function useHostedSharedVocalFxFixture(): void {
-    useHostedProviderFixture(createSharedVocalFxProviderPlanFromUserMessage);
+    useHostedProviderFixture((userMessage) => [
+        sharedVocalFxWorkflowSelection,
+        ...createSharedVocalFxProviderPlanFromUserMessage(userMessage),
+    ]);
 }
 
 function useWebSharedVocalFxFixture(
     transform: (plan: ProviderPlanCall[]) => ProviderPlanCall[] = (plan) => plan
 ): void {
     runtimeMocks.generateWebLlmCompletion.mockImplementation((_systemPrompt: string, userMessage: string) =>
-        Promise.resolve(JSON.stringify(transform(createSharedVocalFxProviderPlanFromUserMessage(userMessage))))
+        Promise.resolve(
+            JSON.stringify([
+                sharedVocalFxWorkflowSelection,
+                ...transform(createSharedVocalFxProviderPlanFromUserMessage(userMessage)),
+            ])
+        )
     );
 }
 
@@ -426,7 +441,12 @@ describe('shared vocal FX buses workflow', () => {
         vi.clearAllMocks();
         runtimeMocks.backend.value = 'webllm';
         runtimeMocks.generateWebLlmCompletion.mockImplementation((_systemPrompt: string, userMessage: string) =>
-            Promise.resolve(JSON.stringify(createSharedVocalFxProviderPlanFromUserMessage(userMessage)))
+            Promise.resolve(
+                JSON.stringify([
+                    sharedVocalFxWorkflowSelection,
+                    ...createSharedVocalFxProviderPlanFromUserMessage(userMessage),
+                ])
+            )
         );
         vi.stubGlobal('fetch', runtimeMocks.fetch);
         cloudSession.clear();
@@ -579,6 +599,30 @@ describe('shared vocal FX buses workflow', () => {
             ])
         );
         expect(confirmation?.risk?.level).toBe('authority-sensitive');
+    });
+
+    it('routes a semantic paraphrase through the same bounded shared-vocal-effects capability', async () => {
+        installSharedVocalFxFixture();
+        useWebSharedVocalFxFixture();
+
+        await sendChatMessage(SHARED_VOCAL_FX_PARAPHRASE);
+
+        const confirmationId = getConfirmationId();
+        expect(confirmationId).not.toBe('');
+        expect(getPendingActionConfirmation(confirmationId)?.actions).toHaveLength(27);
+    });
+
+    it('rejects specialized actions when the provider omits or delays semantic capability selection', async () => {
+        installSharedVocalFxFixture();
+        runtimeMocks.generateWebLlmCompletion
+            .mockResolvedValueOnce(JSON.stringify(sharedVocalFxProviderPlan))
+            .mockResolvedValueOnce(JSON.stringify([...sharedVocalFxProviderPlan, sharedVocalFxWorkflowSelection]));
+
+        await sendChatMessage(SHARED_VOCAL_FX_PARAPHRASE);
+        expect(getConfirmationId()).toBe('');
+
+        await sendChatMessage(SHARED_VOCAL_FX_PARAPHRASE);
+        expect(getConfirmationId()).toBe('');
     });
 
     it('normalizes the hosted EX-08 plan from the same revision-bound capability', async () => {

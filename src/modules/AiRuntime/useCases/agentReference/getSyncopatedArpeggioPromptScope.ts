@@ -18,24 +18,12 @@ export type SyncopatedArpeggioRequestScope = {
     capability?: SyncopatedArpeggioCapability;
 };
 
-type SyncopatedArpeggioPromptScope =
-    { status: 'none' } | { status: 'invalid'; reason: string } | SyncopatedArpeggioRequestScope;
-
-function normalizeText(value: string): string {
-    return value
-        .toLowerCase()
-        .replaceAll(/[^\p{L}\p{N}]+/gu, ' ')
-        .trim();
-}
+type SyncopatedArpeggioPromptScope = { status: 'invalid'; reason: string } | SyncopatedArpeggioRequestScope;
 
 export function getSyncopatedArpeggioPromptScope(
-    prompt: string,
     context: ProjectContext,
     projectRevision?: string
 ): SyncopatedArpeggioPromptScope {
-    if (normalizeText(prompt) !== 'add a syncopated arpeggio while preserving voicing and harmonic rhythm') {
-        return { status: 'none' };
-    }
     if (context.selectedClipIds.length !== 1 || context.selectedClipId !== context.selectedClipIds[0]) {
         return { status: 'invalid', reason: 'EX-07 requires exactly one selected MIDI clip' };
     }
