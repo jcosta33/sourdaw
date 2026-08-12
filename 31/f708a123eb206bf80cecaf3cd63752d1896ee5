@@ -1,0 +1,27 @@
+src/modules/AiRuntime/models/ActionPlanningMode.ts
+  s_a40848e8f8cca9::t_edec8adea1a68c 8-11,14-18,43,74,81-103,105-115
+src/modules/AiRuntime/useCases/agentReference/bridgeGroundedLlmToolCalls.ts
+  s_a40848e8f8cca9::t_8db72725736128 8
+  s_a40848e8f8cca9::t_edec8adea1a68c 3479
+src/modules/AiRuntime/useCases/__tests__/parsePromptToActions.spec.ts
+  s_a40848e8f8cca9::t_abf8eef88edf38 547-555
+  s_a40848e8f8cca9::t_f97452614f9a2a 556-559
+  s_a40848e8f8cca9::t_083466170a86de 560-562
+  s_a40848e8f8cca9::t_a3838eac330826 563-564
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "31f708a123eb206bf80cecaf3cd63752d1896ee5",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
