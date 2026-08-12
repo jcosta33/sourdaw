@@ -1,5 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
+import { defaultTrackState } from '#/modules/Arrangement/stores';
+import { addClip, createTrack, setTrackStoreState } from '#/modules/Arrangement/useCases';
 import { clearHandlerRegistry, registerHandlerMap } from '#/modules/Command/stores';
 
 import { handleSetProductionBrief } from '../../handlers/project/handleSetProductionBrief';
@@ -14,6 +16,29 @@ describe('production brief', () => {
         projectStore.set({
             ...structuredClone(defaultProjectStoreState),
             productionBrief: createDefaultProductionBrief(100),
+        });
+        setTrackStoreState({
+            ...structuredClone(defaultTrackState),
+            tracks: [
+                createTrack({ id: 'track-drums', name: 'Drums', kind: 'audio' }),
+                createTrack({ id: 'track-guitar', name: 'Guitar', kind: 'audio' }),
+            ],
+        });
+        addClip({
+            id: 'clip-1',
+            trackId: 'track-drums',
+            name: 'Verse drums',
+            type: 'audio',
+            startBeat: 0,
+            endBeat: 8,
+        });
+        addClip({
+            id: 'clip-2',
+            trackId: 'track-guitar',
+            name: 'Outro guitar',
+            type: 'audio',
+            startBeat: 50,
+            endBeat: 60,
         });
     });
 
@@ -298,17 +323,17 @@ describe('production brief', () => {
         ).toBe(false);
         expect(
             doesProductionBriefAllowActionBatch([
-                { type: 'moveClip', payload: { clipId: 'clip-1', trackId: 'track-drums', startBeat: 40 } },
+                { type: 'moveClip', payload: { clipId: 'clip-1', trackId: 'track-drums', startBeat: 30 } },
             ])
         ).toBe(false);
         expect(
             doesProductionBriefAllowActionBatch([
-                { type: 'trimClipStart', payload: { clipId: 'clip-1', newStartBeat: 40 } },
+                { type: 'trimClipStart', payload: { clipId: 'clip-2', newStartBeat: 30 } },
             ])
         ).toBe(false);
         expect(
             doesProductionBriefAllowActionBatch([
-                { type: 'trimClipEnd', payload: { clipId: 'clip-1', newEndBeat: 40 } },
+                { type: 'trimClipEnd', payload: { clipId: 'clip-1', newEndBeat: 50 } },
             ])
         ).toBe(false);
         expect(

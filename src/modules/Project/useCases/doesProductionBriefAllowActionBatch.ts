@@ -48,6 +48,49 @@ function valueOverlapsRange(value: unknown, scope: Extract<ProductionBriefScope,
     return Object.values(values).some((item) => valueOverlapsRange(item, scope));
 }
 
+function findClip(clipId: string) {
+    for (const track of trackStore.value?.tracks ?? []) {
+        const clip = [...track.clips, ...track.alternatives.flatMap((alternative) => alternative.clips)].find(
+            (candidate) => candidate.id === clipId
+        );
+        if (clip) {
+            return clip;
+        }
+    }
+    return undefined;
+}
+
+function intervalOverlapsRange(
+    startBeat: number,
+    endBeat: number,
+    scope: Extract<ProductionBriefScope, { kind: 'range' }>
+): boolean {
+    return endBeat > startBeat && startBeat < scope.endBeat && endBeat > scope.startBeat;
+}
+
+function projectedClipOverlapsRange(
+    action: AppAction,
+    scope: Extract<ProductionBriefScope, { kind: 'range' }>
+): boolean {
+    if (action.type === 'moveClip') {
+        const clip = findClip(action.payload.clipId);
+        if (!clip) {
+            return false;
+        }
+        const endBeat = action.payload.startBeat + (clip.endBeat - clip.startBeat);
+        return intervalOverlapsRange(action.payload.startBeat, endBeat, scope);
+    }
+    if (action.type === 'trimClipStart') {
+        const clip = findClip(action.payload.clipId);
+        return clip ? intervalOverlapsRange(action.payload.newStartBeat, clip.endBeat, scope) : false;
+    }
+    if (action.type === 'trimClipEnd') {
+        const clip = findClip(action.payload.clipId);
+        return clip ? intervalOverlapsRange(clip.startBeat, action.payload.newEndBeat, scope) : false;
+    }
+    return false;
+}
+
 function referencedClipOverlapsRange(
     action: AppAction,
     scope: Extract<ProductionBriefScope, { kind: 'range' }>
@@ -86,7 +129,10 @@ export function doesProductionBriefAllowActionBatch(actions: readonly AppAction[
         }
         if (scope.kind === 'range') {
             return projectActions.every(
-                (action) => !valueOverlapsRange(action.payload, scope) && !referencedClipOverlapsRange(action, scope)
+                (action) =>
+                    !valueOverlapsRange(action.payload, scope) &&
+                    !referencedClipOverlapsRange(action, scope) &&
+                    !projectedClipOverlapsRange(action, scope)
             );
         }
         if (scope.kind === 'track') {
