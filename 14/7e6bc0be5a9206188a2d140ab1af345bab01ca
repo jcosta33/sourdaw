@@ -1,0 +1,38 @@
+src/app/__tests__/bootstrap.spec.ts
+  h_1228e573df1f42 6,36,65,189,434-436,438,443-446
+src/app/bootstrap.ts
+  h_1228e573df1f42 71,408-443
+src/modules/Command/useCases/__tests__/commandRegistryCompleteness.spec.ts
+  h_1228e573df1f42 10,14,19-26,49,60-64,83-85
+src/modules/Command/useCases/getAppActionExecutionPolicy.ts
+  h_1228e573df1f42 3-4,166-173
+src/modules/Command/useCases/getExecutableAppActionGroundingCatalog.ts
+  h_1228e573df1f42 1,4-6
+src/modules/Command/useCases/getExecutableAppActionGroundingRules.ts
+  h_1228e573df1f42 2,7,18,21,23-26,28-29
+src/modules/Command/useCases/getExecutableAppActionToolSchemas.ts
+  h_1228e573df1f42 1,4,7-8,11-12
+src/modules/Command/useCases/getExecutableCommandConfirmation.ts
+  h_1228e573df1f42 1-30
+src/modules/Command/useCases/getExecutableCommandRegistration.ts
+  h_1228e573df1f42 4-5,12-18,23-26,28-30,33,35-49,51-52
+src/modules/Command/useCases/index.ts
+  h_1228e573df1f42 18
+src/modules/Command/useCases/parseVersionedCommandEnvelope.ts
+  h_1228e573df1f42 11-12,146-148,154
+src/modules/Command/useCases/registerProductionCommandHandlers.ts
+  h_1228e573df1f42 1-14
+src/modules/Command/useCases/selectExecutableAppActionToolSchemasForPrompt.ts
+  h_1228e573df1f42 1-2,69,72,75,89
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "147e6bc0be5a9206188a2d140ab1af345bab01ca",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
