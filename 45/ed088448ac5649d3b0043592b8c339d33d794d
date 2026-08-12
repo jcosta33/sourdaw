@@ -1,0 +1,38 @@
+crates/daw-engine/src/midi/rt_contract.rs
+  s_62e9c3dc3ba52a::t_f1408bed0ba882 216-218
+crates/daw-engine/src/scheduler.rs
+  s_62e9c3dc3ba52a::t_24b2b028c76a4b 60-81
+  s_62e9c3dc3ba52a::t_cb3b8e9b2b1eb4 492,523-530
+  s_62e9c3dc3ba52a::t_abe8bfdb5901d2 847,958-1072,1074
+  s_62e9c3dc3ba52a::t_c7cd25c2dc8f8f 848-897,1075-1076
+  s_62e9c3dc3ba52a::t_60e91d87078a6f 427-430
+  s_62e9c3dc3ba52a::t_89597dd9fceccf 289-293,296-304,316-330,341-351,354-365
+  s_62e9c3dc3ba52a::t_5de83c25ab1768 1073,1077
+crates/daw-engine/src/audio_thread.rs
+  s_62e9c3dc3ba52a::t_ae8d7ca6d4a9a6 321-343
+  s_62e9c3dc3ba52a::t_73f69e04898eae 162-179,194
+  s_62e9c3dc3ba52a::t_927b08c95dce96 195
+crates/daw-engine/src/midi/diagnostics.rs
+  s_62e9c3dc3ba52a::t_0de3fa9c51e9e1 49-51,73-89
+  s_62e9c3dc3ba52a::t_f3ce29db77918c 7-18
+crates/daw-engine/src/midi_fx.rs
+  s_62e9c3dc3ba52a::t_8c12ba2dbc30b2 555-589
+  s_62e9c3dc3ba52a::t_59e3c1c6ae9d23 220-223,225-236
+  s_62e9c3dc3ba52a::t_764b9863b4d42b 554
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "45ed088448ac5649d3b0043592b8c339d33d794d",
+  "prompts": {},
+  "sessions": {
+    "s_62e9c3dc3ba52a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "92e0a2e7-8660-41e2-be8b-b2d644c6d0b7",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
