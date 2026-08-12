@@ -62,6 +62,7 @@ impl Default for MidiState {
 }
 
 struct PushConnection {
+    model: String,
     midi_input: MidiInputConnection<()>,
     midi_output: MidiOutputConnection,
     display: Option<DeviceHandle<Context>>,
@@ -99,6 +100,21 @@ fn is_push_port(name: &str, model: &str) -> bool {
     false
 }
 
+fn unique_push_port_index(names: &[String], model: &str) -> Result<usize, String> {
+    let matching = names
+        .iter()
+        .enumerate()
+        .filter_map(|(index, name)| is_push_port(name, model).then_some(index))
+        .collect::<Vec<_>>();
+    match matching.as_slice() {
+        [index] => Ok(*index),
+        [] => Err(format!("Ableton {model} MIDI port was not found")),
+        _ => Err(format!(
+            "Multiple Ableton {model} MIDI ports were found; connect one device"
+        )),
+    }
+}
+
 fn is_push2_usb_device(vendor_id: u16, product_id: u16) -> bool {
     vendor_id == PUSH2_VENDOR_ID && product_id == PUSH2_PRODUCT_ID
 }
@@ -113,6 +129,7 @@ fn open_push2_display() -> Result<DeviceHandle<Context>, String> {
         .devices()
         .map_err(|error| format!("Failed to enumerate USB devices: {error}"))?;
 
+    let mut matched_device = None;
     for device in devices.iter() {
         let descriptor = device
             .device_descriptor()
@@ -121,6 +138,15 @@ fn open_push2_display() -> Result<DeviceHandle<Context>, String> {
             continue;
         }
 
+        if matched_device.is_some() {
+            return Err(
+                "Multiple Ableton Push 2 USB displays were found; connect one device".to_owned(),
+            );
+        }
+        matched_device = Some(device);
+    }
+
+    if let Some(device) = matched_device {
         let handle = device
             .open()
             .map_err(|error| format!("Failed to open Push 2 USB display: {error}"))?;
@@ -131,6 +157,13 @@ fn open_push2_display() -> Result<DeviceHandle<Context>, String> {
     }
 
     Err("Ableton Push 2 USB display was not found".to_owned())
+}
+
+fn close_push_connection(active: PushConnection) {
+    active.midi_input.close();
+    if let Some(display) = active.display {
+        let _ = display.release_interface(PUSH2_DISPLAY_INTERFACE);
+    }
 }
 
 fn push2_midi_payload(port: &str, timestamp: u64, message: &[u8]) -> Option<MidiMessagePayload> {
@@ -157,47 +190,49 @@ pub fn open_push_transport(
         .connection
         .lock()
         .map_err(|error| format!("Push 2 lock error: {error}"))?;
-    if connection.is_some() {
-        return Ok(());
+    if let Some(active) = connection.as_ref() {
+        if active.model == model {
+            return Ok(());
+        }
+        return Err(format!(
+            "Ableton {} is already connected; disconnect it before opening {model}",
+            active.model
+        ));
     }
 
+    let midi_output = MidiOutput::new("sourdaw-push-output")
+        .map_err(|error| format!("Failed to create Push MIDI output: {error}"))?;
+    let output_ports = midi_output.ports();
+    let output_names = output_ports
+        .iter()
+        .map(|port| midi_output.port_name(port).unwrap_or_default())
+        .collect::<Vec<_>>();
+    let output_index = unique_push_port_index(&output_names, &model)?;
+    let output_port = &output_ports[output_index];
+    let midi_output = midi_output
+        .connect(output_port, "sourdaw-push-output")
+        .map_err(|error| format!("Failed to open Push MIDI output: {error}"))?;
+
+    let midi_input = MidiInput::new("sourdaw-push-input")
+        .map_err(|error| format!("Failed to create Push MIDI input: {error}"))?;
+    let input_ports = midi_input.ports();
+    let input_names = input_ports
+        .iter()
+        .map(|port| midi_input.port_name(port).unwrap_or_default())
+        .collect::<Vec<_>>();
+    let input_index = unique_push_port_index(&input_names, &model)?;
+    let input_port = &input_ports[input_index];
+    let port_name = midi_input
+        .port_name(input_port)
+        .unwrap_or_else(|_| format!("Ableton {model}"));
     let display = if model == "push2" {
         Some(open_push2_display()?)
     } else {
         None
     };
-    let midi_output = MidiOutput::new("sourdaw-push-output")
-        .map_err(|error| format!("Failed to create Push MIDI output: {error}"))?;
-    let output_port = midi_output
-        .ports()
-        .into_iter()
-        .find(|port| {
-            midi_output
-                .port_name(port)
-                .is_ok_and(|name| is_push_port(&name, &model))
-        })
-        .ok_or_else(|| format!("Ableton {model} MIDI output was not found"))?;
-    let midi_output = midi_output
-        .connect(&output_port, "sourdaw-push-output")
-        .map_err(|error| format!("Failed to open Push MIDI output: {error}"))?;
-
-    let midi_input = MidiInput::new("sourdaw-push-input")
-        .map_err(|error| format!("Failed to create Push MIDI input: {error}"))?;
-    let input_port = midi_input
-        .ports()
-        .into_iter()
-        .find(|port| {
-            midi_input
-                .port_name(port)
-                .is_ok_and(|name| is_push_port(&name, &model))
-        })
-        .ok_or_else(|| format!("Ableton {model} MIDI input was not found"))?;
-    let port_name = midi_input
-        .port_name(&input_port)
-        .unwrap_or_else(|_| format!("Ableton {model}"));
     let midi_input = midi_input
         .connect(
-            &input_port,
+            input_port,
             "sourdaw-push-input",
             move |timestamp, message, _| {
                 let Some(payload) = push2_midi_payload(&port_name, timestamp, message) else {
@@ -210,6 +245,7 @@ pub fn open_push_transport(
         .map_err(|error| format!("Failed to open Push MIDI input: {error}"))?;
 
     *connection = Some(PushConnection {
+        model,
         midi_input,
         midi_output,
         display,
@@ -219,9 +255,11 @@ pub fn open_push_transport(
 
 #[tauri::command]
 pub fn send_push_midi(
-    bytes: Vec<u8>,
+    request: tauri::ipc::Request<'_>,
+    app: AppHandle,
     push_state: tauri::State<'_, PushState>,
 ) -> Result<(), String> {
+    let bytes = raw_body_bytes(&request, "send_push_midi")?;
     if bytes.is_empty() || bytes.len() > PUSH2_MAX_MIDI_BYTES {
         return Err("Push MIDI payload has an invalid size".to_owned());
     }
@@ -232,42 +270,61 @@ pub fn send_push_midi(
     let active = connection
         .as_mut()
         .ok_or_else(|| "Ableton Push is not connected".to_owned())?;
-    active
+    let result = active
         .midi_output
-        .send(&bytes)
-        .map_err(|error| format!("Failed to send Push MIDI: {error}"))
+        .send(bytes)
+        .map_err(|error| format!("Failed to send Push MIDI: {error}"));
+    if result.is_err() {
+        let model = active.model.clone();
+        if let Some(active) = connection.take() {
+            close_push_connection(active);
+        }
+        let _ = app.emit("push-disconnected", model);
+    }
+    result
 }
 
 #[tauri::command]
 pub fn write_push2_display(
     request: tauri::ipc::Request<'_>,
+    app: AppHandle,
     push_state: tauri::State<'_, PushState>,
 ) -> Result<(), String> {
     let bytes = raw_body_bytes(&request, "write_push2_display")?;
     if !is_push2_display_payload_size(bytes.len()) {
         return Err("Push 2 display payload has an invalid size".to_owned());
     }
-    let connection = push_state
+    let mut connection = push_state
         .connection
         .lock()
         .map_err(|error| format!("Push 2 lock error: {error}"))?;
     let active = connection
-        .as_ref()
+        .as_mut()
         .ok_or_else(|| "Ableton Push 2 is not connected".to_owned())?;
     let display = active
         .display
         .as_ref()
         .ok_or_else(|| "The connected Push model has no host-writable display".to_owned())?;
-    let written = display
+    let result = display
         .write_bulk(PUSH2_DISPLAY_ENDPOINT, bytes, PUSH2_USB_TIMEOUT)
-        .map_err(|error| format!("Failed to write Push 2 display: {error}"))?;
-    if written != bytes.len() {
-        return Err(format!(
-            "Push 2 display wrote {written} of {} bytes",
-            bytes.len()
-        ));
+        .map_err(|error| format!("Failed to write Push 2 display: {error}"))
+        .and_then(|written| {
+            if written == bytes.len() {
+                return Ok(());
+            }
+            Err(format!(
+                "Push 2 display wrote {written} of {} bytes",
+                bytes.len()
+            ))
+        });
+    if result.is_err() {
+        let model = active.model.clone();
+        if let Some(active) = connection.take() {
+            close_push_connection(active);
+        }
+        let _ = app.emit("push-disconnected", model);
     }
-    Ok(())
+    result
 }
 
 #[tauri::command]
@@ -277,10 +334,7 @@ pub fn close_push_transport(push_state: tauri::State<'_, PushState>) -> Result<(
         .lock()
         .map_err(|error| format!("Push 2 lock error: {error}"))?;
     if let Some(active) = connection.take() {
-        active.midi_input.close();
-        if let Some(display) = active.display {
-            let _ = display.release_interface(PUSH2_DISPLAY_INTERFACE);
-        }
+        close_push_connection(active);
     }
     Ok(())
 }
@@ -408,6 +462,19 @@ mod tests {
         assert!(is_push2_usb_device(0x2982, 0x1967));
         assert!(!is_push2_usb_device(0x2982, 0x1968));
         assert!(!is_push2_usb_device(0x1234, 0x1967));
+
+        let unique = vec![
+            "Other Controller".to_owned(),
+            "Ableton Push 2 Live Port".to_owned(),
+        ];
+        assert_eq!(unique_push_port_index(&unique, "push2").unwrap(), 1);
+        let ambiguous = vec![
+            "Ableton Push 2 Live Port".to_owned(),
+            "Ableton Push 2".to_owned(),
+        ];
+        assert!(unique_push_port_index(&ambiguous, "push2")
+            .unwrap_err()
+            .contains("Multiple"));
     }
 
     #[test]
