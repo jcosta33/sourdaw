@@ -24,6 +24,10 @@ type Deferred<T> = {
     resolve: (value: T) => void;
 };
 
+const pluginHostMocks = vi.hoisted(() => ({
+    unloadPlugin: vi.fn(() => Promise.resolve()),
+}));
+
 function createDeferred<T>(): Deferred<T> {
     let resolveDeferred!: (value: T) => void;
     const promise = new Promise<T>((resolve) => {
@@ -44,6 +48,8 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     resetAudioGraph: vi.fn(),
 }));
 
+vi.mock('#/modules/PluginHost/useCases', () => pluginHostMocks);
+
 vi.mock('#/modules/CrdtDocument/useCases', () => ({
     compactProject: vi.fn().mockResolvedValue(undefined),
     createCrdtProject: vi.fn().mockResolvedValue(undefined),
@@ -56,7 +62,8 @@ vi.mock('../helpers/resetModuleStoresToDefault', () => ({
     resetModuleStoresToDefault: vi.fn(),
 }));
 
-vi.mock('../helpers/runProjectLoadTransaction', () => ({
+vi.mock('../helpers/runProjectLoadTransaction', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('../helpers/runProjectLoadTransaction')>()),
     runProjectLoadTransaction: vi.fn(() => ({
         prepare: vi.fn(() => Promise.resolve(true)),
         activate: vi.fn(() => true),
@@ -82,6 +89,7 @@ describe('newProject injectable', () => {
     beforeEach(() => {
         Container.clear();
         vi.clearAllMocks();
+        pluginHostMocks.unloadPlugin.mockResolvedValue(undefined);
         projectStore.set({
             ...structuredClone(defaultProjectStoreState),
             name: 'Existing Project',
@@ -97,6 +105,7 @@ describe('newProject injectable', () => {
         expect(runProjectLoadTransaction).toHaveBeenCalledTimes(1);
         expect(stopPlayback).toHaveBeenCalledTimes(1);
         expect(resetAudioGraph).toHaveBeenCalledTimes(1);
+        expect(pluginHostMocks.unloadPlugin).toHaveBeenCalledTimes(1);
         expect(resetModuleStoresToDefault).toHaveBeenCalledTimes(1);
         expect(resetModuleStoresToDefault).toHaveBeenCalledWith({ createNewMidiProbabilitySeed: true });
         expect(resetCrdtProjectAuthority).toHaveBeenCalledWith('Test');
@@ -122,6 +131,31 @@ describe('newProject injectable', () => {
 
         expect(clear_audio_buffers_order).toBeGreaterThan(remove_project_json_order);
         expect(clear_audio_buffers_order).toBeLessThan(clear_undo_history_order);
+    });
+
+    it('does not replace authority when superseded during native teardown', async () => {
+        const unloading = createDeferred<void>();
+        let isCurrent = true;
+        vi.mocked(runProjectLoadTransaction).mockReturnValueOnce({
+            prepare: vi.fn().mockResolvedValue(true),
+            activate: vi.fn().mockReturnValue(true),
+            canActivate: () => isCurrent,
+            isCurrent: () => isCurrent,
+        });
+        pluginHostMocks.unloadPlugin.mockReturnValueOnce(unloading.promise);
+        const activation = newProject('Older Project');
+        await vi.waitFor(() => expect(pluginHostMocks.unloadPlugin).toHaveBeenCalledOnce());
+        isCurrent = false;
+        unloading.resolve(undefined);
+        await expect(activation).resolves.toBe(false);
+        expect(resetCrdtProjectAuthority).not.toHaveBeenCalled();
+        expect(ensureTrackStrips).toHaveBeenCalledOnce();
+    });
+
+    it('keeps previous authority and restores its graph when native plugin teardown fails', async () => {
+        pluginHostMocks.unloadPlugin.mockRejectedValueOnce(new Error('native teardown failed'));
+        await expect(newProject('Test')).resolves.toBe(false);
+        expect(ensureTrackStrips).toHaveBeenCalledOnce();
     });
 
     it('restores the previous project when authority reset fails before commit', async () => {

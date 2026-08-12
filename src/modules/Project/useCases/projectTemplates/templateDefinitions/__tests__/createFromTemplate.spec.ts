@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { createFromTemplate } from '../createFromTemplate';
 
 const mocks = vi.hoisted(() => ({
+    acquireRuntimeTransition: vi.fn(),
     clearUndoHistory: vi.fn(),
     compactProject: vi.fn(),
     createPopSongTemplate: vi.fn(),
@@ -11,6 +12,7 @@ const mocks = vi.hoisted(() => ({
     isAppActionCommittedError: vi.fn(),
     flushAutomergeStorageWrites: vi.fn(),
     newProject: vi.fn(),
+    unloadPlugin: vi.fn(),
     projectActionHistoryToStore: vi.fn(),
     projectSet: vi.fn(),
     resetAudioGraph: vi.fn(),
@@ -29,6 +31,10 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock('#/modules/AudioEngine/useCases', () => ({
     resetAudioGraph: mocks.resetAudioGraph,
+}));
+
+vi.mock('#/modules/PluginHost/useCases', () => ({
+    unloadPlugin: mocks.unloadPlugin,
 }));
 
 vi.mock('#/modules/Command/useCases', () => ({
@@ -67,6 +73,7 @@ vi.mock('../../../projectPersistence/helpers/resetModuleStoresToDefault', () => 
 }));
 
 vi.mock('../../../projectPersistence/helpers/runProjectLoadTransaction', () => ({
+    projectLoadEpoch: { acquireRuntimeTransition: mocks.acquireRuntimeTransition },
     runProjectLoadTransaction: mocks.runProjectLoadTransaction,
 }));
 
@@ -94,7 +101,9 @@ describe('createFromTemplate', () => {
         mocks.executeAppAction.mockResolvedValue(undefined);
         mocks.isAppActionCommittedError.mockReturnValue(false);
         mocks.newProject.mockResolvedValue(true);
+        mocks.unloadPlugin.mockResolvedValue(undefined);
         mocks.compactProject.mockResolvedValue(undefined);
+        mocks.acquireRuntimeTransition.mockResolvedValue(() => {});
         mocks.startCrdtAutoSave.mockReturnValue({});
         mocks.transactionPrepare.mockResolvedValue(true);
         mocks.transactionActivate.mockReturnValue(true);
@@ -120,6 +129,7 @@ describe('createFromTemplate', () => {
 
         expect(mocks.stopPlayback).toHaveBeenCalledOnce();
         expect(mocks.resetAudioGraph).toHaveBeenCalledOnce();
+        expect(mocks.unloadPlugin).toHaveBeenCalledOnce();
         expect(mocks.executeAppAction).toHaveBeenCalledWith(
             { type: 'createProjectFromTemplate', payload: { templateId: 'pop-song' } },
             { skipMacroRecording: true }
@@ -258,14 +268,30 @@ describe('createFromTemplate', () => {
         expect(mocks.compactProject).not.toHaveBeenCalled();
     });
 
-    it('skips autosave restart and compaction when superseded during the template action', async () => {
+    it('does not replace authority when superseded during native teardown', async () => {
+        const unloading = Promise.withResolvers<void>();
+        mocks.unloadPlugin.mockReturnValueOnce(unloading.promise);
         mocks.transactionIsCurrent.mockReturnValueOnce(true).mockReturnValueOnce(false);
 
-        await expect(createFromTemplate('pop-song')).resolves.toBe(false);
+        const creation = createFromTemplate('pop-song');
+        await vi.waitFor(() => expect(mocks.unloadPlugin).toHaveBeenCalledOnce());
+        unloading.resolve();
 
-        expect(mocks.executeAppAction).toHaveBeenCalledOnce();
-        expect(mocks.startCrdtAutoSave).not.toHaveBeenCalled();
-        expect(mocks.compactProject).not.toHaveBeenCalled();
+        await expect(creation).resolves.toBe(false);
+        expect(mocks.resetCrdtProjectAuthority).not.toHaveBeenCalled();
+    });
+    it('holds the runtime transition lease through the template action', async () => {
+        const action = Promise.withResolvers<void>();
+        const releaseRuntimeTransition = vi.fn();
+        mocks.acquireRuntimeTransition.mockResolvedValueOnce(releaseRuntimeTransition);
+        mocks.executeAppAction.mockReturnValueOnce(action.promise);
+        mocks.transactionIsCurrent.mockReturnValueOnce(true).mockReturnValueOnce(true).mockReturnValueOnce(false);
+        const creation = createFromTemplate('pop-song');
+        await vi.waitFor(() => expect(mocks.executeAppAction).toHaveBeenCalledOnce());
+        expect(releaseRuntimeTransition).not.toHaveBeenCalled();
+        action.resolve();
+        await expect(creation).resolves.toBe(false);
+        expect(releaseRuntimeTransition).toHaveBeenCalledOnce();
     });
 
     it('flushes pending CRDT writes after the store reset and before the async template action', async () => {

@@ -13,7 +13,7 @@ const {
     mockProjectActionHistoryToStore,
     mockResetCrdtProjectAuthority,
     mockStartCrdtAutoSave,
-    mockClearLoadedExternalPlugins,
+    mockUnloadLoadedExternalPlugins,
     mockEnsureTrackStrips,
     mockStopPlayback,
     mockNotifyUser,
@@ -40,7 +40,7 @@ const {
     mockProjectActionHistoryToStore: vi.fn(),
     mockResetCrdtProjectAuthority: vi.fn(),
     mockStartCrdtAutoSave: vi.fn(() => 'auto-save-handle'),
-    mockClearLoadedExternalPlugins: vi.fn(),
+    mockUnloadLoadedExternalPlugins: vi.fn(() => Promise.resolve()),
     mockEnsureTrackStrips: vi.fn(),
     mockStopPlayback: vi.fn(() => Promise.resolve()),
     mockNotifyUser: vi.fn(),
@@ -76,7 +76,9 @@ vi.mock('#/modules/CrdtDocument/useCases', () => ({
     resetCrdtProjectAuthority: mockResetCrdtProjectAuthority,
     startCrdtAutoSave: mockStartCrdtAutoSave,
 }));
-vi.mock('#/modules/PluginHost/useCases', () => ({ clearLoadedExternalPlugins: mockClearLoadedExternalPlugins }));
+vi.mock('#/modules/PluginHost/useCases', () => ({
+    unloadPlugin: mockUnloadLoadedExternalPlugins,
+}));
 vi.mock('#/modules/Transport/useCases', () => ({
     ensureTrackStrips: mockEnsureTrackStrips,
     stopPlayback: mockStopPlayback,
@@ -159,6 +161,7 @@ describe('replaceProjectData', () => {
         mockStopPlayback.mockResolvedValue(undefined);
         mockCompactProject.mockResolvedValue(undefined);
         mockStartCrdtAutoSave.mockReturnValue('handle');
+        mockUnloadLoadedExternalPlugins.mockResolvedValue(undefined);
     });
 
     it('aborts when transaction.prepare returns false', async () => {
@@ -222,6 +225,7 @@ describe('replaceProjectData', () => {
         }
         expect(mockStopPlayback).toHaveBeenCalled();
         expect(mockResetAudioGraph).toHaveBeenCalled();
+        expect(mockUnloadLoadedExternalPlugins).toHaveBeenCalledOnce();
         // Second argument is the point-of-no-return callback the abort path
         // uses to tell a recoverable failure from an unrecoverable one.
         expect(mockResetCrdtProjectAuthority).toHaveBeenCalledWith('Test Project', expect.any(Function));
@@ -238,6 +242,24 @@ describe('replaceProjectData', () => {
         );
     });
 
+    it('does not replace authority when superseded during native teardown', async () => {
+        const unloading = Promise.withResolvers<void>();
+        let isCurrent = true;
+        mockUnloadLoadedExternalPlugins.mockReturnValueOnce(unloading.promise);
+
+        const replacement = replaceProjectData({
+            context: 'loadRecentProject',
+            data: makeData(),
+            transaction: makeTransaction({ isCurrent: () => isCurrent }),
+        });
+        await vi.waitFor(() => expect(mockUnloadLoadedExternalPlugins).toHaveBeenCalledOnce());
+        isCurrent = false;
+        unloading.resolve();
+
+        await expect(replacement).resolves.toEqual({ status: 'aborted' });
+        expect(mockResetCrdtProjectAuthority).not.toHaveBeenCalled();
+        expect(mockEnsureTrackStrips).toHaveBeenCalledOnce();
+    });
     it('returns degraded=true when a committed step fails', async () => {
         mockHydrateArrangement.mockImplementation(() => {
             throw new Error('hydrate failed');

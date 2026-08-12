@@ -27,7 +27,7 @@ const {
     mockProjectActionHistoryToStore,
     mockResetCrdtProjectAuthority,
     mockStartCrdtAutoSave,
-    mockClearLoadedExternalPlugins,
+    mockUnloadLoadedExternalPlugins,
     mockEnsureTrackStrips,
     mockStopPlayback,
     mockNotifyUser,
@@ -43,7 +43,7 @@ const {
     mockProjectActionHistoryToStore: vi.fn(),
     mockResetCrdtProjectAuthority: vi.fn(),
     mockStartCrdtAutoSave: vi.fn(() => () => {}),
-    mockClearLoadedExternalPlugins: vi.fn(),
+    mockUnloadLoadedExternalPlugins: vi.fn(() => Promise.resolve()),
     mockEnsureTrackStrips: vi.fn(),
     mockStopPlayback: vi.fn(() => Promise.resolve()),
     mockNotifyUser: vi.fn(),
@@ -64,7 +64,7 @@ vi.mock('#/modules/CrdtDocument/useCases', () => ({
     resetCrdtProjectAuthority: mockResetCrdtProjectAuthority,
     startCrdtAutoSave: mockStartCrdtAutoSave,
 }));
-vi.mock('#/modules/PluginHost/useCases', () => ({ clearLoadedExternalPlugins: mockClearLoadedExternalPlugins }));
+vi.mock('#/modules/PluginHost/useCases', () => ({ unloadPlugin: mockUnloadLoadedExternalPlugins }));
 vi.mock('#/modules/Transport/useCases', () => ({
     ensureTrackStrips: mockEnsureTrackStrips,
     stopPlayback: mockStopPlayback,

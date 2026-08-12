@@ -8,17 +8,41 @@ import { externalLatencyReporters } from './externalLatencyReporters';
 import { loadedExternalInstances } from './loadedExternalInstances';
 import { serializePluginLifecycle } from './serializePluginLifecycle';
 
-/** Unload a plugin instance by its instance ID. */
-export function unloadPlugin(instanceId: string): ReturnType<typeof unloadPluginRepo> {
+function forgetPluginInstance(instanceId: string): void {
     loadedExternalInstances.delete(instanceId);
-    externalPluginActivationStore.update((state) => {
-        const current = state ?? defaultExternalPluginActivationState;
-        const byInstanceId = { ...current.byInstanceId };
-        delete byInstanceId[instanceId];
-        return { ...current, byInstanceId };
-    });
-    // The instance stops processing, so its latency sink must stop receiving —
-    // a late push must not revive compensation for an unloaded plugin.
     externalLatencyReporters.delete(instanceId);
-    return serializePluginLifecycle(instanceId, () => unloadPluginRepo(instanceId));
+    externalPluginActivationStore.update((state) => {
+        const byInstanceId = { ...(state ?? defaultExternalPluginActivationState).byInstanceId };
+        delete byInstanceId[instanceId];
+        return { ...(state ?? defaultExternalPluginActivationState), byInstanceId };
+    });
+}
+
+function reconcileUnloadResult(
+    result: Awaited<ReturnType<typeof unloadPluginRepo>>,
+    expectedInstanceId?: string
+): void {
+    const mismatchedSuccess = expectedInstanceId !== undefined && result[0].some((id) => id !== expectedInstanceId);
+    const missingOutcome = expectedInstanceId !== undefined && result[0].length === 0 && result[1].length === 0;
+    if (mismatchedSuccess || missingOutcome) {
+        throw new Error('Invalid keyed unload_plugin response');
+    }
+    for (const instanceId of result[0]) {
+        forgetPluginInstance(instanceId);
+    }
+    if (result[1].length > 0) {
+        throw new Error(result[1].join('; '));
+    }
+}
+
+export function unloadPlugin(instanceId?: string): Promise<void> {
+    if (instanceId === undefined) {
+        return unloadPluginRepo().then(reconcileUnloadResult);
+    }
+    return serializePluginLifecycle(instanceId, async () => {
+        if (!loadedExternalInstances.has(instanceId)) {
+            return;
+        }
+        reconcileUnloadResult(await unloadPluginRepo(instanceId), instanceId);
+    });
 }

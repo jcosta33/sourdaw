@@ -4,6 +4,7 @@ import { pathToFileURL } from 'node:url';
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+import { loadedExternalInstances } from '../loadedExternalInstances';
 import { loadPlugin } from '../loadPlugin';
 import { openPluginGui } from '../openPluginGui';
 import { unloadPlugin } from '../unloadPlugin';
@@ -38,8 +39,11 @@ vi.mock('../../../repositories/pluginBridge/openPluginGui', () => ({
 describe('Plugin Lifecycle Use Cases', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        loadedExternalInstances.clear();
         mocks.loadPluginRepo.mockResolvedValue(pluginInstance);
-        mocks.unloadPluginRepo.mockResolvedValue(undefined);
+        mocks.unloadPluginRepo.mockImplementation((instanceId?: string) =>
+            Promise.resolve([instanceId ? [instanceId] : [], []])
+        );
     });
 
     it('loadPlugin delegates to repository', async () => {
@@ -47,26 +51,39 @@ describe('Plugin Lifecycle Use Cases', () => {
         expect(mocks.loadPluginRepo).toHaveBeenCalledWith('p1', 'inst1');
     });
 
-    it('unloadPlugin delegates to repository', async () => {
-        await unloadPlugin('inst1');
-        expect(mocks.unloadPluginRepo).toHaveBeenCalledWith('inst1');
+    it('rejects mismatched keyed unload ownership', async () => {
+        loadedExternalInstances.add('inst1');
+        mocks.unloadPluginRepo.mockResolvedValueOnce([['other'], []]);
+        await expect(unloadPlugin('inst1')).rejects.toThrow('Invalid keyed unload_plugin response');
+        expect([...loadedExternalInstances]).toEqual(['inst1']);
     });
 
+    it('reconciles partial native bulk unload before rejecting', async () => {
+        loadedExternalInstances.add('removed');
+        loadedExternalInstances.add('survivor');
+        mocks.unloadPluginRepo.mockResolvedValueOnce([['removed'], ['survivor failed']]);
+        await expect(unloadPlugin()).rejects.toThrow('survivor failed');
+        expect([...loadedExternalInstances]).toEqual(['survivor']);
+    });
     it('serializes unload then load for the same instance', async () => {
-        const unloading = Promise.withResolvers<void>();
+        const unloaded = [['ordered-instance'], []];
+        const unloading = Promise.withResolvers<typeof unloaded>();
         mocks.unloadPluginRepo.mockReturnValueOnce(unloading.promise);
         mocks.loadPluginRepo.mockResolvedValueOnce(pluginInstance);
+        loadedExternalInstances.add('ordered-instance');
 
         const unloadResult = unloadPlugin('ordered-instance');
+        const duplicateUnload = unloadPlugin('ordered-instance');
         const loadResult = loadPlugin('p1', 'ordered-instance');
         await Promise.resolve();
 
         expect(mocks.unloadPluginRepo).toHaveBeenCalledWith('ordered-instance');
         expect(mocks.loadPluginRepo).not.toHaveBeenCalled();
 
-        unloading.resolve();
-        await Promise.all([unloadResult, loadResult]);
+        unloading.resolve(unloaded);
+        await Promise.all([unloadResult, duplicateUnload, loadResult]);
 
+        expect(mocks.unloadPluginRepo).toHaveBeenCalledTimes(1);
         expect(mocks.loadPluginRepo).toHaveBeenCalledWith('p1', 'ordered-instance');
         expect(mocks.unloadPluginRepo.mock.invocationCallOrder[0]).toBeLessThan(
             mocks.loadPluginRepo.mock.invocationCallOrder[0]!
@@ -80,12 +97,13 @@ describe('Plugin Lifecycle Use Cases', () => {
             order.push('outer-start');
             nestedResult = loadPlugin('p1', 'reentrant-instance');
             order.push('outer-return');
-            return Promise.resolve();
+            return Promise.resolve([['reentrant-instance'], []]);
         });
         mocks.loadPluginRepo.mockImplementationOnce(() => {
             order.push('nested-run');
             return Promise.resolve(pluginInstance);
         });
+        loadedExternalInstances.add('reentrant-instance');
 
         const outerResult = unloadPlugin('reentrant-instance');
         await Promise.resolve();
@@ -100,10 +118,11 @@ describe('Plugin Lifecycle Use Cases', () => {
     });
 
     it('allows a different instance to progress while an unload is pending and then fails', async () => {
-        const unloading = Promise.withResolvers<void>();
+        const unloading = Promise.withResolvers<never>();
         const failure = new Error('unload failed');
         mocks.unloadPluginRepo.mockReturnValueOnce(unloading.promise);
         mocks.loadPluginRepo.mockResolvedValueOnce(pluginInstance);
+        loadedExternalInstances.add('blocked-instance');
 
         const unloadResult = unloadPlugin('blocked-instance');
         const loadResult = loadPlugin('p1', 'independent-instance');
@@ -113,14 +132,16 @@ describe('Plugin Lifecycle Use Cases', () => {
 
         unloading.reject(failure);
         await expect(unloadResult).rejects.toBe(failure);
+        expect(loadedExternalInstances.has('blocked-instance')).toBe(true);
         await expect(loadResult).resolves.toBe(pluginInstance);
     });
 
     it('rejects queued same-instance work after failure and allows a later explicit retry', async () => {
-        const unloading = Promise.withResolvers<void>();
+        const unloading = Promise.withResolvers<never>();
         const failure = new Error('unload failed');
         mocks.unloadPluginRepo.mockReturnValueOnce(unloading.promise);
         mocks.loadPluginRepo.mockResolvedValueOnce(pluginInstance);
+        loadedExternalInstances.add('recovering-instance');
 
         const failedUnload = unloadPlugin('recovering-instance');
         const recoveredLoad = loadPlugin('p1', 'recovering-instance');

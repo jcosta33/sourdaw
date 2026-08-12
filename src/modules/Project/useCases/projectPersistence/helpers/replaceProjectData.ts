@@ -14,7 +14,7 @@ import {
     resetCrdtProjectAuthority,
     startCrdtAutoSave,
 } from '#/modules/CrdtDocument/useCases';
-import { clearLoadedExternalPlugins } from '#/modules/PluginHost/useCases';
+import { unloadPlugin as unloadLoadedExternalPlugins } from '#/modules/PluginHost/useCases';
 import { ensureTrackStrips, stopPlayback } from '#/modules/Transport/useCases';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
@@ -27,11 +27,11 @@ import { collectProjectAudioBufferIds } from './collectProjectAudioBufferIds';
 import { hydrateArrangementStoreFromProjectData } from './hydrateArrangementStoreFromProjectData';
 import { hydrateModuleStoresFromProjectData } from './hydrateModuleStoresFromProjectData';
 import { resetModuleStoresToDefault } from './resetModuleStoresToDefault';
+import { projectLoadEpoch, type ProjectLoadTransaction } from './runProjectLoadTransaction';
 import { stopActiveAutoSave } from './stopActiveAutoSave';
 import { verifyAudioBufferReferences } from './verifyAudioBufferReferences';
 
 import type { HydratableProjectData } from './isHydratableProjectData';
-import type { ProjectLoadTransaction } from './runProjectLoadTransaction';
 
 type ReplaceProjectDataInput = {
     // May be async: post-commit persistence is an observed IndexedDB
@@ -224,18 +224,24 @@ export async function replaceProjectData({
         return abortProjectReplacement();
     }
 
+    const releaseRuntimeTransition = await projectLoadEpoch.acquireRuntimeTransition();
     try {
         await stopPlayback();
         if (!transaction.isCurrent()) {
+            releaseRuntimeTransition();
             return abortProjectReplacement();
         }
-        // Tear down the previous graph's native-plugin activation guards so the
-        // incoming project re-activates its own instances on the next rebuild.
-        clearLoadedExternalPlugins();
         resetAudioGraph();
+        await unloadLoadedExternalPlugins();
+        if (!transaction.isCurrent()) {
+            restorePreviousAudioGraph(context);
+            releaseRuntimeTransition();
+            return abortProjectReplacement();
+        }
     } catch (error) {
         logPreparationFailure(context, error);
         restorePreviousAudioGraph(context);
+        releaseRuntimeTransition();
         return abortProjectReplacement();
     }
 
@@ -266,6 +272,8 @@ export async function replaceProjectData({
             }
         }
         return abortProjectReplacement();
+    } finally {
+        releaseRuntimeTransition();
     }
 
     let degraded = false;
