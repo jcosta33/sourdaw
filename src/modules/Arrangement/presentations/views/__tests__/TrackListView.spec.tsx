@@ -110,6 +110,7 @@ vi.mock('../../../stores/timelineViewStore', () => ({
         subscribeReact: () => () => {},
     },
     setScrollY: vi.fn(),
+    setTimelineViewportHeight: vi.fn(),
 }));
 
 vi.mock('#/modules/AiRuntime/useCases', () => ({

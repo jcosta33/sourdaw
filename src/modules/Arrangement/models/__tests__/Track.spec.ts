@@ -2,6 +2,12 @@ import { describe, expect, it } from 'vitest';
 
 import { createTrack, normalizeTrack } from '../Track';
 
+// F9: the full UUID, not the truncated 8-hex-char prefix
+// `crypto.randomUUID().slice(0, 8)` these ids used to carry — truncating
+// invited birthday collisions, per the lesson already documented for clip ids
+// in `clipIdCounter.ts`.
+const UUID_BODY = '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}';
+
 describe('createTrack', () => {
     it('uses a provided id and skips random track ids', () => {
         const time = createTrack({ id: 'fixed-id', name: 'A', kind: 'audio' });
@@ -17,11 +23,22 @@ describe('createTrack', () => {
         expect(time.outputId).toBe('hw_out');
     });
 
+    it('generates a full-UUID track id, not a truncated 8-hex-char one, when no id is supplied', () => {
+        const time = createTrack({ name: 'A', kind: 'audio' });
+        expect(time.id).toMatch(new RegExp(`^track-${UUID_BODY}$`, 'i'));
+    });
+
+    it('generates a full-UUID alternative id when none is supplied', () => {
+        const time = createTrack({ name: 'A', kind: 'bus' });
+        expect(time.activeAlternativeId).toMatch(new RegExp(`^alt-${UUID_BODY}$`, 'i'));
+    });
+
     it('adds a default synth device for MIDI tracks', () => {
         const time = createTrack({ name: 'Keys', kind: 'midi' });
         expect(time.devices).toHaveLength(1);
         expect(time.devices[0]!.type).toBe('builtin-synth');
         expect(time.devices[0]!.name).toBe('Synth');
+        expect(time.devices[0]!.id).toMatch(new RegExp(`^dev-synth-${UUID_BODY}$`, 'i'));
     });
 
     it('preserves application-owned replay color and alternative identity', () => {

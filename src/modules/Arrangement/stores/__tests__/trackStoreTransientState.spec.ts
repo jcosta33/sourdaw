@@ -122,7 +122,7 @@ describe('trackStore transient-state fallback', () => {
         };
         trackStore.set({
             tracks: [TrackDummy.create({ id: 'track-cached', name: 'Cached' })],
-            selectedTrackId: 'track-1',
+            selectedTrackId: 'probe-valid',
             ghostClips: [valid_ghost],
         });
         fake_doc.tracks = { tracks: [{ id: 'probe-valid', kind: 'audio', name: 'Probe' }] };
@@ -130,7 +130,13 @@ describe('trackStore transient-state fallback', () => {
         trackStore.hydrate();
 
         // Valid live transients survive; only durable truth came from the CRDT.
-        expect(trackStore.value?.selectedTrackId).toBe('track-1');
+        // `selectedTrackId` must reference a track that actually exists in the
+        // post-hydration snapshot — this was previously carried over blind
+        // (finding: a dangling `selectedTrackId` survives CRDT hydration even
+        // after the track it names is gone), so the fixture here selects the
+        // track that is genuinely present after hydration rather than an id
+        // that exists in neither the live nor the hydrated track list.
+        expect(trackStore.value?.selectedTrackId).toBe('probe-valid');
         expect(trackStore.value?.ghostClips).toEqual([valid_ghost]);
     });
 });

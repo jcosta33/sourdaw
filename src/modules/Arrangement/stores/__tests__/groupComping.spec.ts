@@ -6,8 +6,22 @@ import {
     getNextRegionId,
     getNextTakeSetId,
     groupCompingStore,
+    sanitizeCompGroups,
+    type CompGroupEntry,
     type GroupCompingState,
 } from '../groupComping';
+
+function makeGroup(id: string): CompGroupEntry {
+    return {
+        id,
+        name: `Group ${id}`,
+        trackIds: ['t1', 't2'],
+        takeSets: [{ id: 'ts1', name: 'Take 1', pass: 1, color: GROUP_COLORS[0]!, recordedAt: '2026-01-01' }],
+        activeTakeSetId: 'ts1',
+        compRegions: [{ id: 'gr1', startBeat: 0, endBeat: 4, takeSetId: 'ts1', crossfadeBeats: 0.125 }],
+        createdAt: '2026-01-01',
+    };
+}
 
 describe('groupComping store', () => {
     afterEach(() => {
@@ -67,6 +81,35 @@ describe('group comping id generators', () => {
         expect(region.startsWith('gr-')).toBe(true);
         // No overlap between the three namespaces.
         expect(new Set([group, takeSet, region]).size).toBe(3);
+    });
+});
+
+// F6 — groupCompingStore used to be memory-only; every comp group vanished on
+// reload. Now backed by `createAutomergeStorage`, so this covers the decode
+// contract hydration relies on.
+describe('sanitizeCompGroups', () => {
+    it('keeps a well-formed persisted group and copies its nested arrays', () => {
+        const persisted = [makeGroup('g1')];
+
+        const decoded = sanitizeCompGroups(persisted);
+
+        expect(decoded).toEqual(persisted);
+        expect(decoded[0]?.trackIds).not.toBe(persisted[0]?.trackIds);
+        expect(decoded[0]?.takeSets).not.toBe(persisted[0]?.takeSets);
+    });
+
+    it('drops rows that do not decode and keeps the ones that do', () => {
+        const decoded = sanitizeCompGroups([
+            { id: '', name: 'No id' },
+            makeGroup('g-ok'),
+            { ...makeGroup('g-ok'), name: 'Duplicate' },
+        ]);
+
+        expect(decoded.map((group) => group.id)).toEqual(['g-ok']);
+    });
+
+    it('decodes a non-array to no groups', () => {
+        expect(sanitizeCompGroups(undefined)).toEqual([]);
     });
 });
 

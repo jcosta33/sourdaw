@@ -8,6 +8,7 @@ import {
     setAutoScroll,
     toggleAutoScroll,
     setScrollY,
+    setTimelineViewportHeight,
 } from '../timelineViewStore';
 import { trackStore } from '../trackStore';
 
@@ -18,6 +19,7 @@ describe('timelineViewStore view helpers', () => {
             scrollY: 0,
             pixelsPerBeat: 12,
             autoScrollEnabled: true,
+            viewportHeight: 0,
         });
         trackStore.set({ tracks: [], selectedTrackId: null });
     });
@@ -58,23 +60,34 @@ describe('timelineViewStore view helpers', () => {
         expect(timelineViewStore.value?.scrollY).toBe(0);
     });
 
-    // Regression: setScrollY must clamp against the viewport height the caller
-    // passes, not its hardcoded 200px default. The gesture hook already knows
-    // the real canvas height; double-clamping against 200 produced a wrong
-    // scroll ceiling.
-    it('should clamp setScrollY using the caller-provided viewport height', () => {
+    // Regression (F7): setScrollY used to take an optional `viewportHeight`
+    // argument that defaulted to a hardcoded 200px, so two of its three
+    // callers — which omitted the argument — clamped against a viewport that
+    // did not match their real container. The viewport height is now part of
+    // the store's own state, written once by whichever view actually knows
+    // its real size, so every `setScrollY` call clamps against the same,
+    // caller-independent value.
+    it('should clamp setScrollY using the viewport height last reported via setTimelineViewportHeight', () => {
         trackStore.set({
             tracks: [{ id: 'a', kind: 'audio', height: 100 } as any, { id: 'b', kind: 'audio', height: 100 } as any],
             selectedTrackId: null,
         });
 
         // total content height = 200, viewport = 50 → maxY = 150.
-        setScrollY(500, 50);
+        setTimelineViewportHeight(50);
+        setScrollY(500);
         expect(timelineViewStore.value?.scrollY).toBe(150);
 
         // A larger viewport shrinks the scroll ceiling.
-        setScrollY(500, 80);
+        setTimelineViewportHeight(80);
+        setScrollY(500);
         expect(timelineViewStore.value?.scrollY).toBe(120);
+    });
+
+    it('should not write viewport height when the store is null', () => {
+        timelineViewStore.set(null);
+        setTimelineViewportHeight(50);
+        expect(timelineViewStore.value).toBeNull();
     });
 
     it('should not throw when store is null', () => {
@@ -101,6 +114,7 @@ describe('setScrollY track-height ceiling', () => {
             scrollY: 0,
             pixelsPerBeat: 12,
             autoScrollEnabled: true,
+            viewportHeight: 0,
         });
     });
 
@@ -121,7 +135,8 @@ describe('setScrollY track-height ceiling', () => {
         });
 
         // total scrollable height = 200 (audio only), viewport = 50 -> maxY 150.
-        setScrollY(500, 50);
+        setTimelineViewportHeight(50);
+        setScrollY(500);
         expect(timelineViewStore.value?.scrollY).toBe(150);
     });
 
@@ -134,14 +149,16 @@ describe('setScrollY track-height ceiling', () => {
         });
 
         // total = 64 (fallback) + 64 (explicit) = 128, viewport = 0 -> maxY 128.
-        setScrollY(500, 0);
+        setTimelineViewportHeight(0);
+        setScrollY(500);
         expect(timelineViewStore.value?.scrollY).toBe(128);
     });
 
     it('treats a null trackStore as an empty track list (ceiling 0)', () => {
         vi.spyOn(trackStore, 'value', 'get').mockReturnValue(null);
         // No tracks -> totalHeight 0 -> maxY 0 -> clamped to 0.
-        setScrollY(500, 50);
+        setTimelineViewportHeight(50);
+        setScrollY(500);
         expect(timelineViewStore.value?.scrollY).toBe(0);
         vi.restoreAllMocks();
     });
@@ -157,10 +174,11 @@ describe('setScrollY track-height ceiling', () => {
             scrollY: 0,
             pixelsPerBeat: 12,
             autoScrollEnabled: true,
+            viewportHeight: 50,
         });
         const writeSpy = vi.spyOn(timelineViewStore, 'set');
 
-        setScrollY(0, 50);
+        setScrollY(0);
 
         // ceiling 0 -> clamped 0 == current 0 -> no store write.
         expect(writeSpy).not.toHaveBeenCalled();
