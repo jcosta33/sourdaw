@@ -12,6 +12,7 @@ import {
     type Track,
     type TrackStoreState,
 } from '#/modules/Arrangement/stores';
+import { actionReplayRevisionStore } from '#/modules/Command/stores';
 import { setWebMidiRuntimeEventBus } from '#/modules/MIDI/useCases';
 import { projectLoadFailureStore, type ProjectLoadFailureState } from '#/modules/Project/stores';
 import { setNotificationEventBus } from '#/utils/Notification/notificationEventBus';
@@ -281,6 +282,7 @@ let projectLoadFailureState: ProjectLoadFailureState | null;
 let alphaNoticeDismissed: boolean;
 let trackStoreState: TrackStoreState;
 let selectedClipIdState: string | null;
+let workspaceState: WorkspaceState;
 
 describe('AppShell', () => {
     beforeEach(() => {
@@ -314,28 +316,27 @@ describe('AppShell', () => {
             if (store === projectLoadFailureStore) {
                 return projectLoadFailureState;
             }
-            // NB: the fallback turns a `null` default truthy, so any store that
-            // legitimately reads null must be listed above rather than fall
-            // through here.
-            return defaultValue || { past: [], future: [] };
+            if (store === workspaceStore) {
+                return workspaceState;
+            }
+            return defaultValue;
         });
 
-        vi.mocked(useWorkspaceState).mockReturnValue(
-            createWorkspaceState({
-                sidebarOpen: true,
-                inspectorOpen: false,
-                mixerOpen: false,
-                collaborationPanelOpen: false,
-                branchManagerOpen: false,
-                chatPanelOpen: false,
-                sidebarWidth: 200,
-                inspectorWidth: 200,
-                mixerHeight: 200,
-                chatPanelWidth: 200,
-                aiPanelWidth: 200,
-                virtualKeyboardOpen: false,
-            })
-        );
+        workspaceState = createWorkspaceState({
+            sidebarOpen: true,
+            inspectorOpen: false,
+            mixerOpen: false,
+            collaborationPanelOpen: false,
+            branchManagerOpen: false,
+            chatPanelOpen: false,
+            sidebarWidth: 200,
+            inspectorWidth: 200,
+            mixerHeight: 200,
+            chatPanelWidth: 200,
+            aiPanelWidth: 200,
+            virtualKeyboardOpen: false,
+        });
+        vi.mocked(useWorkspaceState).mockImplementation(() => workspaceState);
     });
 
     afterEach(() => {
@@ -382,6 +383,24 @@ describe('AppShell', () => {
         render(<AppShell>Content</AppShell>);
         expect(screen.getByTestId('app-shell')).toBeInTheDocument();
         expect(screen.getByTestId('sidebar')).toBeInTheDocument();
+    });
+
+    it('preserves falsy defaults for unlisted stores', () => {
+        expect(useStore(actionReplayRevisionStore, 0)).toBe(0);
+    });
+
+    it.each([
+        ['undo history', { undoHistoryOpen: true }, 'Undo History'],
+        ['command palette', { commandPaletteOpen: true }, 'Command Palette'],
+    ] as const)('renders and hides the %s from workspace truth', (_name, openState, accessibleName) => {
+        workspaceState = createWorkspaceState(openState);
+        const { unmount } = render(<AppShell>Content</AppShell>);
+        expect(screen.getByText(accessibleName)).toBeInTheDocument();
+
+        unmount();
+        workspaceState = createWorkspaceState();
+        render(<AppShell>Content</AppShell>);
+        expect(screen.queryByText(accessibleName)).not.toBeInTheDocument();
     });
 
     it('should not render sidebar when closed', () => {
