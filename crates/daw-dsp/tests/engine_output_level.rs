@@ -243,6 +243,35 @@ fn grinder_sine_level(amp_model: f32, fat: bool, frequency_hz: f32, amplitude: f
     measure(&rendered)
 }
 
+fn grinder_rig_capture_level(engine_mode: f32, fat: bool) -> Level {
+    use daw_dsp::grinder::GrinderInstance;
+
+    let mut instance = GrinderInstance::new(SAMPLE_RATE);
+    instance.set_param("engineMode", engine_mode);
+    instance.set_param("neuralPlacement", 1.0);
+    instance.set_param("neuralMix", 1.0);
+    instance.set_param("fat", if fat { 1.0 } else { 0.0 });
+
+    let mut rendered = Vec::with_capacity(MEASURED_BLOCKS * BLOCK);
+    for block in 0..(WARMUP_BLOCKS + MEASURED_BLOCKS) {
+        for frame in 0..BLOCK {
+            let sample_index = block * BLOCK + frame;
+            let phase = sample_index as f32 * 110.0 * std::f32::consts::TAU / SAMPLE_RATE;
+            let sample = phase.sin() * 0.12;
+            unsafe {
+                *instance.get_input_left_ptr().add(frame) = sample;
+                *instance.get_input_right_ptr().add(frame) = sample;
+            }
+        }
+        let output = unsafe { read_output(instance.process(BLOCK as u32), BLOCK) };
+        if block >= WARMUP_BLOCKS {
+            rendered.extend_from_slice(&output);
+        }
+    }
+
+    measure(&rendered)
+}
+
 /// Peak and RMS for each amp model at the fixed operating point above.
 const GRINDER_EXPECTED: [(&str, f32, f32, f32); 6] = [
     ("Clean Twin", CLEAN_TWIN, 0.26114, 0.07575),
@@ -341,6 +370,26 @@ fn grinder_fat_switch_increases_low_register_body_across_models_and_levels() {
                 );
             }
         }
+    }
+}
+
+#[test]
+fn grinder_fat_switch_reaches_capture_and_full_hybrid_rig_outputs() {
+    for (name, engine_mode) in [("Capture Rig", 1.0), ("Hybrid Rig at full capture mix", 2.0)] {
+        let neutral = grinder_rig_capture_level(engine_mode, false);
+        let fat = grinder_rig_capture_level(engine_mode, true);
+        let ratio = fat.rms / neutral.rms.max(f32::EPSILON);
+        assert!(
+            ratio >= 1.005,
+            "Grinder {name} Fat must increase low-register body (off RMS={}, on RMS={}, ratio={ratio})",
+            neutral.rms,
+            fat.rms
+        );
+        assert!(
+            fat.peak < GRINDER_LIMITER_THRESHOLD,
+            "Grinder {name} Fat peaks at {}, at or above {GRINDER_LIMITER_THRESHOLD}",
+            fat.peak
+        );
     }
 }
 

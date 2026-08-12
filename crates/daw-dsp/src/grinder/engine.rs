@@ -508,23 +508,22 @@ impl GrinderEngine {
                 // Post-amp pedals
                 signal = self.process_supported_pedal_chain(signal, true);
 
-                // Fat is an output-voicing switch, not additional drive into
-                // the nonlinear preamp. Keeping the lift after the amp and cab
-                // prevents saturation/grid conduction from turning it into a
-                // cut at some models and playing levels.
-                self.fat_low_state += self.fat_low_coeff * (signal - self.fat_low_state);
-                if self.fat_enabled {
-                    signal += self.fat_low_state * 0.22;
-                }
             } else {
                 self.power_amp_peak *= self.meter_decay_coeff;
-                self.fat_low_state += self.fat_low_coeff * (0.0 - self.fat_low_state);
             }
 
             if neural_mode == EngineMode::Hybrid && neural_placement == CapturePlacement::Rig {
                 if let Some(rig_capture) = rig_capture_signal {
                     signal = signal * (1.0 - neural_mix) + rig_capture * neural_mix;
                 }
+            }
+
+            // Fat is final output voicing, not extra drive into one engine
+            // branch. Apply it after circuit/capture selection and blending so
+            // the same reachable control works in Circuit, Capture, and Hybrid.
+            self.fat_low_state += self.fat_low_coeff * (signal - self.fat_low_state);
+            if self.fat_enabled {
+                signal += self.fat_low_state * 0.22;
             }
 
             // Output processing
