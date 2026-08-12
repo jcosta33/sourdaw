@@ -479,6 +479,13 @@ impl AudioScheduler {
                         // output = input (already in the block)
                         let _ = (left, right, n);
                     });
+                    // A bypassed effect discards incoming MIDI rather than
+                    // banking it: without this, notes queued via SendMidiNote
+                    // while bypassed would accumulate toward the fixed
+                    // 128-slot ceiling and then flush as one stale burst —
+                    // old note-ons with no note-offs behind them — the
+                    // instant the effect is un-bypassed.
+                    effect.pending_midi.clear();
                     continue;
                 }
 
@@ -911,6 +918,68 @@ mod tests {
         scheduler.process_audio_bridges();
         scheduler.process_block(&mut left, &mut right, 4);
         assert_eq!(received_event_count.load(Ordering::Relaxed), 1);
+    }
+
+    #[test]
+    fn a_bypassed_bridged_effect_discards_midi_queued_while_bypassed() {
+        let (mut command_tx, mut scheduler, _retired_rx) = create_scheduler();
+        let (bridge, mut handle) = crate::audio_bridge::create_audio_bridge(42);
+        let received_event_count = Arc::new(AtomicUsize::new(0));
+        let received_channel_sum = Arc::new(AtomicUsize::new(0));
+
+        command_tx
+            .push(GraphCommand::AddPluginWithBridge(
+                42,
+                Box::new(MidiRecordingPlugin {
+                    received_event_count: Arc::clone(&received_event_count),
+                    received_channel_sum,
+                }),
+                bridge,
+            ))
+            .unwrap();
+        scheduler.update_graph();
+
+        command_tx.push(GraphCommand::SetBypass(42, true)).unwrap();
+        scheduler.update_graph();
+
+        let mut left = [0.0; 4];
+        let mut right = [0.0; 4];
+
+        // Queue MIDI across several callbacks while bypassed. A bypassed
+        // effect should discard incoming MIDI, not accumulate it toward the
+        // 128-slot ceiling and flush it all the instant it is un-bypassed.
+        for note in 60..=65 {
+            command_tx
+                .push(GraphCommand::SendMidiNote(
+                    42,
+                    MidiNoteEvent {
+                        note,
+                        velocity: 100,
+                        channel: 0,
+                        is_note_on: true,
+                        probability_cutoff: crate::midi_fx::PROBABILITY_CUTOFF_RANGE,
+                        project_probability_seed: 0,
+                        clip_id_hash: 0,
+                        event_id_hash: 0,
+                        absolute_occurrence_index: 0,
+                    },
+                ))
+                .unwrap();
+            scheduler.update_graph();
+            assert!(handle.push_input(&[0.0; 4], &[0.0; 4]));
+            scheduler.process_audio_bridges();
+            scheduler.process_block(&mut left, &mut right, 4);
+        }
+
+        // Un-bypass and drive a fresh callback: no stale burst of the notes
+        // queued during bypass should reach the plugin.
+        command_tx.push(GraphCommand::SetBypass(42, false)).unwrap();
+        scheduler.update_graph();
+        assert!(handle.push_input(&[0.0; 4], &[0.0; 4]));
+        scheduler.process_audio_bridges();
+        scheduler.process_block(&mut left, &mut right, 4);
+
+        assert_eq!(received_event_count.load(Ordering::Relaxed), 0);
     }
 
     #[test]
