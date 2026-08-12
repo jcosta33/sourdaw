@@ -275,6 +275,7 @@ vi.mock('#/modules/MIDI/useCases', () => ({
 }));
 
 vi.mock('#/modules/PluginHost/useCases', () => ({
+    getExternalPluginContractVersionForCommand: () => 'external-plugin-v1:test',
     getPluginHostHandlers: sentinelHandlers('PluginHost'),
 }));
 

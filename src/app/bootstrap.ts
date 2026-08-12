@@ -121,7 +121,7 @@ import {
     setWebMidiRuntimeEventBus,
     getWebMidiInputHandlers,
 } from '#/modules/MIDI/useCases';
-import { getPluginHostHandlers } from '#/modules/PluginHost/useCases';
+import { getExternalPluginContractVersionForCommand, getPluginHostHandlers } from '#/modules/PluginHost/useCases';
 import {
     doesProductionBriefAllowActionBatch,
     getProjectHandlers,
@@ -190,7 +190,10 @@ setActionHistoryMetadataPort({
 productionBriefAdmissionPort.setGuard(doesProductionBriefAllowActionBatch);
 commandProjectRevisionPort.setProvider(captureProjectRevision);
 commandDeviceVersionsPort.setDeviceTypeResolver(getDeviceTypesForCommandDeviceIds);
-commandDeviceVersionsPort.setResolver(getDeviceContractVersionForCommand);
+commandDeviceVersionsPort.setResolver(
+    (deviceType) =>
+        getDeviceContractVersionForCommand(deviceType) ?? getExternalPluginContractVersionForCommand(deviceType)
+);
 commandTrackDefaultsPort.setTrackColorProvider(reserveNextTrackColorForCommand);
 syncActionReplayMetadata(actionHistoryStore.value?.entries ?? []);
 actionHistoryStore.subscribe((state) => {
