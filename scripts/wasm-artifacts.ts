@@ -21,7 +21,7 @@
  */
 
 import { createHash } from 'node:crypto';
-import { readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -381,8 +381,9 @@ function lockClosureFingerprint(crateName: string): string {
  * Hash every input that determines the compiled cdylib for `crateDir`: the crate
  * and its transitive workspace path-dependency closure (each dep's `src/**` +
  * `Cargo.toml`), the workspace-root `Cargo.toml` (`[profile.*]` affects emitted
- * bytes), and the Cargo.lock entries in the crate's resolved dependency closure
- * (the registry + path deps it actually builds against — not the whole lock).
+ * bytes), each crate's optional build script, and the Cargo.lock entries in the
+ * resolved dependency closure (the registry + path deps it actually builds
+ * against — not the whole lock).
  * `tests/`/`benches/` are excluded — they never reach the cdylib.
  */
 function hashCrateClosure(crateDir: string): string {
@@ -390,6 +391,10 @@ function hashCrateClosure(crateDir: string): string {
     for (const dir of pathDepClosure(crateDir)) {
         collectRustSources(absolute(join(dir, 'src')), files);
         files.push(absolute(join(dir, 'Cargo.toml')));
+        const buildScript = absolute(join(dir, 'build.rs'));
+        if (existsSync(buildScript)) {
+            files.push(buildScript);
+        }
     }
     files.push(absolute('Cargo.toml'));
     files.sort();

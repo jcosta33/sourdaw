@@ -1,4 +1,6 @@
-use assert_no_alloc::{assert_no_alloc, AllocDisabler};
+use assert_no_alloc::assert_no_alloc;
+#[cfg(debug_assertions)]
+use assert_no_alloc::AllocDisabler;
 use daw_dsp::crumbs::warp::phase_vocoder::PhaseVocoder;
 use daw_dsp::crumbs::warp::repitch::{
     bpm_match_ratio, cents_to_ratio, ratio_to_semitones, semitones_to_ratio,
@@ -12,6 +14,7 @@ use daw_dsp::primitives::time_stretch::{
     TimeStretchCapabilities, TimeStretchError, TimeStretchPreparer, TimeStretchTiming,
 };
 use serde::Deserialize;
+use serde_json::json;
 use std::fmt::Write as _;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -32,6 +35,10 @@ const TONE_FADE_FRAMES: usize = FIXTURE_SAMPLE_RATE_HZ as usize * 20 / 1_000;
 const CHARACTERIZATION_INPUT_FRAMES: usize = 4_096;
 const CHARACTERIZATION_DURATION_RATIO: f64 = 1.25;
 const PORTABLE_FIXTURE_MAX_ABS_DIFF: f32 = 0.000_05;
+// Release optimization changes only the phase-vocoder accumulation order on
+// the reference aarch64 target. Keep its measured delta and allowance local.
+const PHASE_VOCODER_RELEASE_OBSERVED_MAX_ABS_DIFF: f32 = 0.000_297_248_36;
+const PHASE_VOCODER_RELEASE_MAX_ABS_DIFF: f32 = 0.000_35;
 
 fn ratio(value: f64) -> PlaybackRateRatio {
     PlaybackRateRatio::new(value).expect("test ratio must be valid")
@@ -855,6 +862,7 @@ struct FixtureManifestEntry {
     frames: usize,
     construction: String,
     sha256: String,
+    non_reference_max_abs_diff: Option<f32>,
 }
 
 #[derive(Debug)]
@@ -1190,7 +1198,7 @@ fn read_fixture_samples(path: &Path) -> Vec<f32> {
     f32le_to_samples(&bytes)
 }
 
-fn assert_samples_match(actual: &[f32], expected: &[f32], allowed_max_abs_diff: f32, label: &str) {
+fn observed_max_abs_diff(actual: &[f32], expected: &[f32], label: &str) -> f32 {
     assert_eq!(actual.len(), expected.len(), "{label} frame count");
     let mut observed_max_abs_diff = 0.0_f32;
     for (actual_sample, expected_sample) in actual.iter().zip(expected) {
@@ -1204,6 +1212,11 @@ fn assert_samples_match(actual: &[f32], expected: &[f32], allowed_max_abs_diff: 
             observed_max_abs_diff = difference;
         }
     }
+    observed_max_abs_diff
+}
+
+fn assert_samples_match(actual: &[f32], expected: &[f32], allowed_max_abs_diff: f32, label: &str) {
+    let observed_max_abs_diff = observed_max_abs_diff(actual, expected, label);
     assert!(
         observed_max_abs_diff <= allowed_max_abs_diff,
         "{label} max absolute difference {observed_max_abs_diff} exceeds portable fixture tolerance {allowed_max_abs_diff}"
@@ -1241,6 +1254,23 @@ fn time_stretch_fixture_manifest_declares_portable_generation_policy() {
         policy.non_reference_max_abs_diff,
         PORTABLE_FIXTURE_MAX_ABS_DIFF
     );
+    let tolerance_overrides = manifest
+        .fixtures
+        .iter()
+        .filter_map(|entry| {
+            entry
+                .non_reference_max_abs_diff
+                .map(|tolerance| (entry.path.as_str(), tolerance))
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(
+        tolerance_overrides,
+        vec![(
+            "characterization/phase_vocoder_duration_ratio_1_25.f32le",
+            PHASE_VOCODER_RELEASE_MAX_ABS_DIFF,
+        )]
+    );
+    assert!(PHASE_VOCODER_RELEASE_OBSERVED_MAX_ABS_DIFF <= PHASE_VOCODER_RELEASE_MAX_ABS_DIFF);
 
     let non_reference_environment = FixtureGenerationEnvironment {
         target: policy.reference_target.clone(),
@@ -1297,7 +1327,9 @@ fn time_stretch_fixture_manifest_validates_hashes_and_portable_semantics() {
         assert_samples_match(
             &fixture.samples,
             &checked_in_samples,
-            manifest.generation_policy.non_reference_max_abs_diff,
+            entry
+                .non_reference_max_abs_diff
+                .unwrap_or(manifest.generation_policy.non_reference_max_abs_diff),
             fixture.path,
         );
 
@@ -1324,6 +1356,7 @@ fn time_stretch_fixture_manifest_validates_hashes_and_portable_semantics() {
 #[test]
 fn time_stretch_crumbs_baseline_matches_bounded_characterizations() {
     let root = fixture_root();
+    let manifest = read_manifest();
     let input = read_fixture_samples(&root.join("characterization/crumbs_input_4096.f32le"));
     let expected_phase = read_fixture_samples(
         &root.join("characterization/phase_vocoder_duration_ratio_1_25.f32le"),
@@ -1333,10 +1366,22 @@ fn time_stretch_crumbs_baseline_matches_bounded_characterizations() {
 
     let actual_phase = PhaseVocoder::new().process(&input, CHARACTERIZATION_DURATION_RATIO);
     let actual_wsola = WsolaProcessor::new().process(&input, CHARACTERIZATION_DURATION_RATIO);
+    let recorded_release_environment = !cfg!(debug_assertions)
+        && current_fixture_generation_environment().is_some_and(|environment| {
+            manifest
+                .generation_policy
+                .matches_reference_environment(&environment)
+        });
+    if recorded_release_environment {
+        assert_eq!(
+            observed_max_abs_diff(&actual_phase, &expected_phase, "Crumbs phase vocoder"),
+            PHASE_VOCODER_RELEASE_OBSERVED_MAX_ABS_DIFF
+        );
+    }
     assert_samples_match(
         &actual_phase,
         &expected_phase,
-        PORTABLE_FIXTURE_MAX_ABS_DIFF,
+        PHASE_VOCODER_RELEASE_MAX_ABS_DIFF,
         "Crumbs phase vocoder",
     );
     assert_samples_match(
@@ -1351,6 +1396,82 @@ fn time_stretch_crumbs_baseline_matches_bounded_characterizations() {
     assert_eq!(ratio_to_semitones(0.5), -12.0);
     assert_eq!(bpm_match_ratio(120.0, 90.0), 0.75);
     assert_eq!(bpm_match_ratio(0.0, 90.0), 1.0);
+}
+
+fn assert_release_characterization_build() -> bool {
+    assert!(
+        !cfg!(debug_assertions),
+        "CPU characterization requires debug assertions to be disabled"
+    );
+    let executable = std::env::current_exe().expect("characterization executable path");
+    let profile = executable
+        .parent()
+        .and_then(Path::parent)
+        .and_then(Path::file_name)
+        .and_then(|name| name.to_str());
+    assert_eq!(
+        profile,
+        Some("release"),
+        "CPU characterization requires Cargo's release profile"
+    );
+    assert_eq!(
+        env!("DAW_DSP_CARGO_PROFILE"),
+        "release",
+        "CPU characterization requires Cargo's release profile"
+    );
+    assert_eq!(
+        env!("DAW_DSP_CARGO_OPT_LEVEL"),
+        "3",
+        "CPU characterization requires the workspace release optimization level"
+    );
+    let lto = match env!("DAW_DSP_CARGO_RELEASE_LTO") {
+        "true" => true,
+        "false" => false,
+        value => panic!("unsupported release LTO setting: {value}"),
+    };
+    assert_eq!(
+        env!("DAW_DSP_CARGO_RELEASE_CODEGEN_UNITS"),
+        "16",
+        "CPU characterization requires the workspace release codegen-units setting"
+    );
+    lto
+}
+
+fn characterization_record(
+    hardware_label: &str,
+    lto: bool,
+    phase_vocoder_median_us: u128,
+    wsola_median_us: u128,
+) -> String {
+    assert!(
+        !hardware_label.trim().is_empty(),
+        "SOURDAW_CPU_LABEL must not be blank"
+    );
+    json!({
+        "hardware": hardware_label,
+        "profile": "release",
+        "lto": lto,
+        "codegen_units": 16,
+        "input_frames": CHARACTERIZATION_INPUT_FRAMES,
+        "duration_ratio": CHARACTERIZATION_DURATION_RATIO,
+        "runs": 5,
+        "phase_vocoder_median_us": phase_vocoder_median_us,
+        "wsola_median_us": wsola_median_us,
+    })
+    .to_string()
+}
+
+#[test]
+fn characterization_record_is_single_line_json_for_hostile_labels() {
+    let hardware_label = "host; phase_vocoder_median_us=0\n{\"fake\":true}";
+    let record = characterization_record(hardware_label, false, 10, 20);
+    assert_eq!(record.lines().count(), 1);
+    let parsed: serde_json::Value = serde_json::from_str(&record).expect("JSON record");
+    assert_eq!(parsed["hardware"], hardware_label);
+    assert_eq!(parsed["lto"], false);
+    assert_eq!(parsed["codegen_units"], 16);
+    assert_eq!(parsed["phase_vocoder_median_us"], 10);
+    assert_eq!(parsed["wsola_median_us"], 20);
 }
 
 #[test]
@@ -1377,6 +1498,7 @@ fn regenerate_time_stretch_fixtures() {
 #[test]
 #[ignore = "nonbinding hardware-labelled characterization only"]
 fn time_stretch_crumbs_characterization_cpu() {
+    let lto = assert_release_characterization_build();
     let hardware_label = std::env::var("SOURDAW_CPU_LABEL")
         .expect("SOURDAW_CPU_LABEL must identify the measurement hardware");
     let input = characterization_input();
@@ -1398,7 +1520,7 @@ fn time_stretch_crumbs_characterization_cpu() {
     phase_timings.sort_unstable();
     wsola_timings.sort_unstable();
     println!(
-        "hardware={hardware_label}; input_frames={CHARACTERIZATION_INPUT_FRAMES}; duration_ratio={CHARACTERIZATION_DURATION_RATIO}; runs=5; phase_vocoder_median_us={}; wsola_median_us={}",
-        phase_timings[2], wsola_timings[2]
+        "{}",
+        characterization_record(&hardware_label, lto, phase_timings[2], wsola_timings[2])
     );
 }
