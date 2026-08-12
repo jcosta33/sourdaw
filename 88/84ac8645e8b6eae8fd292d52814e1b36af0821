@@ -1,0 +1,36 @@
+src/modules/PluginHost/useCases/pluginLifecycle/__tests__/lifecycle.spec.ts
+  s_bc88af7d3b054c::t_6d12008b256ba8 58,65,69
+  s_bc88af7d3b054c::t_eabb79be8ab050 80,82
+  s_bc88af7d3b054c::t_07b079dbd2d9ed 81
+src/modules/Project/useCases/projectPersistence/__tests__/newProject.spec.ts
+  s_bc88af7d3b054c::t_95ba75a0d00e90 19
+src-tauri/src/commands/plugins.rs
+  s_bc88af7d3b054c::t_7b7120025dcbaa 15,465,468-475,485-488,1160-1161
+  s_bc88af7d3b054c::t_21498e9c7bc8fd 451,455-463,466-467,476-484,489-490,1162
+  s_bc88af7d3b054c::t_62cee05445c630 464
+  s_bc88af7d3b054c::t_88ff655d0d30f1 491-493
+  s_bc88af7d3b054c::t_4f7c73160ffcc8 1163-1165
+  s_bc88af7d3b054c::t_39ee98f6820e44 516,1137-1144
+src/modules/PluginHost/useCases/index.ts
+  s_bc88af7d3b054c::t_07b079dbd2d9ed 15
+src/modules/PluginHost/repositories/pluginBridge/unloadPlugin.ts
+  s_bc88af7d3b054c::t_07b079dbd2d9ed 3,7
+src/modules/PluginHost/useCases/pluginLifecycle/unloadPlugin.ts
+  s_bc88af7d3b054c::t_07b079dbd2d9ed 17-20
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "8884ac8645e8b6eae8fd292d52814e1b36af0821",
+  "prompts": {},
+  "sessions": {
+    "s_bc88af7d3b054c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f9b4a-11a2-7f61-8dfb-76eed0eb2a9c",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
