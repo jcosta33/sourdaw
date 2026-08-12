@@ -16,6 +16,23 @@ export type WorkflowCapabilityId = (typeof WORKFLOW_CAPABILITY_IDS)[number];
 
 export const WORKFLOW_CAPABILITY_TOOL_NAME = 'selectWorkflowCapability';
 
+export const WORKFLOW_CAPABILITY_ACTION_TOOL_NAMES = [
+    'setTrackOutput',
+    'removeDevice',
+    'createBus',
+    'addDevice',
+    'addSend',
+    'automateSendRanges',
+    'renderProjectSections',
+    'copyMidiArticulations',
+    'addAdjustmentRegion',
+    'removeShortMidiOverlaps',
+    'createDrumPreviewBranches',
+    'arpeggiate',
+    'setTrackGain',
+    'importStemSet',
+] as const;
+
 const workflowCapabilityDescriptions: Readonly<Record<WorkflowCapabilityId, string>> = {
     'drum-routing': 'Route the complete semantic drum set to its existing drum bus while preserving its return.',
     'backing-vocal-plate':

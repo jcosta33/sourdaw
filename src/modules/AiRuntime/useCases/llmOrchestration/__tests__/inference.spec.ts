@@ -7,7 +7,10 @@ import { HostedToolCallingProtocolError } from '../../../errors/HostedToolCallin
 import { NativeToolCallingProtocolError } from '../../../errors/NativeToolCallingProtocolError';
 import { ToolPlanningRejectedError } from '../../../errors/ToolPlanningRejectedError';
 import { type ToolSchema } from '../../../models/ToolDefinitions';
-import { createWorkflowCapabilityToolSchema } from '../../../models/WorkflowCapability';
+import {
+    createWorkflowCapabilityToolSchema,
+    WORKFLOW_CAPABILITY_ACTION_TOOL_NAMES,
+} from '../../../models/WorkflowCapability';
 import { generateToolCalls as generateCompatibleToolCalls } from '../generateToolCalls';
 import { generateToolPlanningOutcome as generateToolCalls } from '../inference';
 
@@ -322,7 +325,9 @@ describe('generateToolPlanningOutcome', () => {
         await generateToolCalls('sys', 'rephrase with no capability-id token', tools);
 
         const selectedTools = mocks.generateWebLlmToolCalls.mock.calls[0]?.[2] as ToolSchema[] | undefined;
-        expect(selectedTools?.map((tool) => tool.function.name)).toContain('selectWorkflowCapability');
+        expect(selectedTools?.map((tool) => tool.function.name)).toEqual(
+            expect.arrayContaining(['selectWorkflowCapability', ...WORKFLOW_CAPABILITY_ACTION_TOOL_NAMES])
+        );
         expect(selectedTools?.length).toBeLessThanOrEqual(30);
     });
 
