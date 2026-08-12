@@ -1,0 +1,54 @@
+crates/daw-dsp/benches/quantum-cost-table.md
+  s_bc88af7d3b054c::t_b54c68236340d4 398-402
+crates/daw-dsp/src/fermenter/mod.rs
+  s_bc88af7d3b054c::t_0bff872da018a1 188-190
+crates/daw-dsp/benches/wasm/deviceRecipes.js
+  s_bc88af7d3b054c::t_b54c68236340d4 543-544,546,556-557,561
+crates/daw-dsp/tests/fermenter_voice_ceiling.rs
+  s_bc88af7d3b054c::t_51a59eb92708f8 2-20
+  s_bc88af7d3b054c::t_b54c68236340d4 21-45,57
+  s_bc88af7d3b054c::t_ddf17a5ded9be0 1,46-56
+crates/daw-dsp/src/fermenter/synth.rs
+  s_bc88af7d3b054c::t_5909aeb4eb7d69 42,50,197-198,208-211,218,827-829,836-872
+  s_bc88af7d3b054c::t_cca63e21a8f398 10
+  s_bc88af7d3b054c::t_0bff872da018a1 191-196
+crates/daw-dsp/benches/quantum.rs
+  s_bc88af7d3b054c::t_b54c68236340d4 189-191,222-223,226-229,453-455,460,463-464
+  s_bc88af7d3b054c::t_15d79e02594cbb 1059,1067-1068
+crates/daw-dsp/tests/fermenter_voice_steal.rs
+  s_bc88af7d3b054c::t_15d79e02594cbb 37-38
+crates/daw-dsp/src/fermenter/layer.rs
+  s_bc88af7d3b054c::t_5909aeb4eb7d69 143-144,147,389,392,404-410
+  s_bc88af7d3b054c::t_0bff872da018a1 11,145-146,149-150,157,825,850,901,928,954,975
+  s_bc88af7d3b054c::t_cca63e21a8f398 284
+  s_bc88af7d3b054c::t_8d2b2067d54b5c 820-821
+  s_bc88af7d3b054c::t_f87ac253249027 411-412
+public/wasm/daw-dsp/daw_dsp.d.ts
+  s_bc88af7d3b054c::t_4acccd15485cb7 1,246-250,843-882,897-930
+public/wasm/daw-dsp/daw_dsp.js
+  s_bc88af7d3b054c::t_f61b8f457538cd 510-512
+public/wasm/daw-dsp/daw_dsp_bg.wasm.d.ts
+  s_bc88af7d3b054c::t_097d67d85d132b 1,42-81,96-129
+public/wasm/manifest.json
+  s_bc88af7d3b054c::t_5df817af5643d2 12,15-18,20-21
+src/modules/AudioEngine/wasm/daw_dsp.d.ts
+  s_bc88af7d3b054c::t_defa0bd13dba89 1,246-250,843-882,897-930
+src/modules/AudioEngine/wasm/daw_dsp.js
+  s_bc88af7d3b054c::t_1fa7f306c113fd 687-689
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "1920d7bcd7faa65ee1af81acd7a9973a9feacc7d",
+  "prompts": {},
+  "sessions": {
+    "s_bc88af7d3b054c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f9b4a-11a2-7f61-8dfb-76eed0eb2a9c",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
