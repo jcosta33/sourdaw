@@ -8,7 +8,6 @@ import { type ProjectContext, type ProjectContextTrack } from '../../models/Proj
 import { projectCanonicalTrackRole } from './projectCanonicalTrackRole';
 
 type DrumRoutingPromptScope =
-    | { status: 'none' }
     | { status: 'invalid'; reason: string }
     | {
           status: 'request';
@@ -44,18 +43,7 @@ function toProtectedTrack(track: ProjectContextTrack, role: string, evidence: st
     };
 }
 
-export function getDrumRoutingPromptScope(
-    prompt: string,
-    context: ProjectContext,
-    projectRevision?: string
-): DrumRoutingPromptScope {
-    const normalizedPrompt = normalizeText(prompt);
-    const isRequest =
-        normalizedPrompt === 'route every drum track except the parallel compression return into the drum bus';
-    if (!isRequest) {
-        return { status: 'none' };
-    }
-
+export function getDrumRoutingPromptScope(context: ProjectContext, projectRevision?: string): DrumRoutingPromptScope {
     const buses = context.tracks.filter((track) => track.kind === 'bus' && normalizeText(track.name) === 'drum bus');
     if (buses.length !== 1) {
         return { status: 'invalid', reason: 'MF-01 requires exactly one existing Drum Bus' };

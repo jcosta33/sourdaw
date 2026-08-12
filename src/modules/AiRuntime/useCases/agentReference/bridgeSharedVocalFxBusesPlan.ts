@@ -8,8 +8,8 @@ import { getSharedVocalFxBusesPromptScope } from './getSharedVocalFxBusesPromptS
 
 type BridgeSharedVocalFxBusesPlanInput = {
     calls: readonly ToolCallResult[];
-    context: Parameters<typeof getSharedVocalFxBusesPromptScope>[1];
-    prompt: string;
+    context: Parameters<typeof getSharedVocalFxBusesPromptScope>[0];
+    selected: boolean;
 };
 
 type BridgeSharedVocalFxBusesPlanResult =
@@ -49,19 +49,19 @@ function valuesEqual(left: unknown, right: unknown): boolean {
 export function bridgeSharedVocalFxBusesPlan({
     calls,
     context,
-    prompt,
+    selected,
 }: BridgeSharedVocalFxBusesPlanInput): BridgeSharedVocalFxBusesPlanResult {
-    const scope = getSharedVocalFxBusesPromptScope(prompt, context);
-    if (scope.status === 'none') {
+    if (!selected) {
         return { status: 'none' };
     }
+    const scope = getSharedVocalFxBusesPromptScope(context);
     if (scope.status === 'invalid') {
         return { status: 'rejected', reason: scope.reason };
     }
     if (!valuesEqual(calls, scope.capability.orderedToolPlan)) {
         return {
             status: 'rejected',
-            reason: 'Provider plan does not match the complete EX-08 shared vocal-effects workflow',
+            reason: 'Provider plan does not match the selected shared vocal-effects workflow',
         };
     }
 

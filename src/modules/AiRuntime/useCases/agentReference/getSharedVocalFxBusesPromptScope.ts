@@ -35,7 +35,6 @@ type EffectSource = {
 };
 
 export type SharedVocalFxBusesPromptScope =
-    | { status: 'none' }
     | { status: 'invalid'; reason: string }
     | {
           status: 'request';
@@ -48,10 +47,6 @@ function normalizeText(value: string): string {
         .toLocaleLowerCase()
         .replaceAll(/[^\p{L}\p{N}]+/gu, ' ')
         .trim();
-}
-
-function isExactRequest(prompt: string): boolean {
-    return normalizeText(prompt) === 'move vocal delays and reverbs to shared buses while preserving balance';
 }
 
 function isVocalTrack(track: ProjectContextTrack): boolean {
@@ -261,13 +256,9 @@ function getProtectedObjects(
 }
 
 export function getSharedVocalFxBusesPromptScope(
-    prompt: string,
     context: ProjectContext,
     baseRevision = 'unbound'
 ): SharedVocalFxBusesPromptScope {
-    if (!isExactRequest(prompt)) {
-        return { status: 'none' };
-    }
     const vocalTracks = context.tracks.filter(isVocalTrack);
     const ambiguousVocals = context.tracks.filter((track) => isVocalLikeTrack(track) && !isVocalTrack(track));
     if (vocalTracks.length === 0) {

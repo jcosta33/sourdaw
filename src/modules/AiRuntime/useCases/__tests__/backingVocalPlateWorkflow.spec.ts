@@ -40,8 +40,12 @@ import { confirmPendingChatActions } from '../confirmPendingChatActions';
 import { getPlannedActionAffectedIds } from '../getPlannedActionAffectedIds';
 import { sendChatMessage } from '../sendChatMessage';
 
+import { withWorkflowCapabilitySelection } from './workflowCapabilitySelectionFixture';
+
 const PROMPT =
     'Remove reverbs from all backing vocals, create one shared plate bus with EQ before plate reverb and a 250 Hz high-pass, create post-fader sends at -18 dB, automate them to -10 dB over the final four bars of every chorus, protect the lead vocal, render each chorus, and receipt every created, removed, routed, automated, and rendered object.';
+const PARAPHRASE =
+    'Consolidate the backing-vocal reverbs onto a filtered shared plate, automate the chorus sends and render each chorus, without changing the lead vocal.';
 
 type ProviderPlanCall = { name: string; arguments: Record<string, unknown> };
 type RenderOfflineMock = (options: {
@@ -243,7 +247,10 @@ function useHostedProviderFixture(createPlan: (userMessage: string) => ProviderP
         if (typeof init?.body !== 'string') {
             throw new TypeError('Expected hosted provider request body');
         }
-        const plan = createPlan(getHostedUserMessage(init.body));
+        const plan = withWorkflowCapabilitySelection(
+            'backing-vocal-plate',
+            createPlan(getHostedUserMessage(init.body))
+        );
         return Promise.resolve(
             new Response(
                 JSON.stringify({
@@ -359,7 +366,14 @@ describe('backing-vocal plate workflow', () => {
         vi.clearAllMocks();
         runtimeMocks.backend.value = 'webllm';
         runtimeMocks.generateWebLlmCompletion.mockImplementation((_systemPrompt: string, userMessage: string) =>
-            Promise.resolve(JSON.stringify(createProviderPlanFromUserMessage(userMessage)))
+            Promise.resolve(
+                JSON.stringify(
+                    withWorkflowCapabilitySelection(
+                        'backing-vocal-plate',
+                        createProviderPlanFromUserMessage(userMessage)
+                    )
+                )
+            )
         );
         vi.stubGlobal('fetch', runtimeMocks.fetch);
         cloudSession.clear();
@@ -438,6 +452,11 @@ describe('backing-vocal plate workflow', () => {
         cloudSession.clear();
         removeCrdtDoc('root');
         vi.unstubAllGlobals();
+    });
+
+    it('routes a semantic paraphrase to the backing-vocal plate capability', async () => {
+        await sendChatMessage(PARAPHRASE);
+        expect(getConfirmationId()).not.toBe('');
     });
 
     it('compiles EX-01 into one exact protected, dependency-ordered confirmation', async () => {
@@ -595,7 +614,9 @@ describe('backing-vocal plate workflow', () => {
                 name: String(call.name),
                 arguments: { ...call.arguments },
             }));
-            return Promise.resolve(JSON.stringify(transform(plan)));
+            return Promise.resolve(
+                JSON.stringify(withWorkflowCapabilitySelection('backing-vocal-plate', transform(plan)))
+            );
         });
 
         await sendChatMessage(PROMPT);

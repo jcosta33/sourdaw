@@ -113,6 +113,7 @@ export async function sendChatMessage(userText: string): Promise<void> {
                         context,
                         prompt: userText,
                         wholeProjectVibeMixPlan: result.wholeProjectVibeMixPlan,
+                        workflowCapabilityId: result.workflowCapabilityId,
                     });
                     const confirmation = proposePendingActionConfirmation({
                         id: confirmationId,

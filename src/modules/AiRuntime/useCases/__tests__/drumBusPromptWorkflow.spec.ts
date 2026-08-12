@@ -33,8 +33,12 @@ import {
 import { confirmPendingChatActions } from '../confirmPendingChatActions';
 import { sendChatMessage } from '../sendChatMessage';
 
+import { withWorkflowCapabilitySelection } from './workflowCapabilitySelectionFixture';
+
 const PROMPT = 'Create a Drum Bus and route Kick, Snare, and Hats into it, leaving Parallel Compression unchanged.';
 const MF01_PROMPT = 'Route every drum track except the parallel-compression return into the Drum Bus.';
+const MF01_PARAPHRASE =
+    'Send the complete drum kit to the existing Drum Bus, but leave its parallel compression return routed as it is.';
 const MF06_PROMPT = 'Create a sidechain from the kick to every bass compressor that supports sidechain input.';
 const EX06_PROMPT = 'Reduce kick/bass masking without replacing either basic sound.';
 
@@ -236,14 +240,18 @@ function createMf01ProviderPlanFromUserMessage(userMessage: string) {
         throw new TypeError('Expected MF-01 allowed action to match projected drum candidates');
     }
     return derivedTargetIds.map((trackId) => ({
-        name: allowedAction.type,
-        arguments: { trackId, outputId: allowedAction.outputId },
+        name: 'setTrackOutput',
+        arguments: { trackId, outputId: bus.id },
     }));
 }
 
 function useMf01WebLlmFixture(): void {
     runtimeMocks.generateWebLlmCompletion.mockImplementation((_systemPrompt, userMessage) =>
-        Promise.resolve(JSON.stringify(createMf01ProviderPlanFromUserMessage(userMessage)))
+        Promise.resolve(
+            JSON.stringify(
+                withWorkflowCapabilitySelection('drum-routing', createMf01ProviderPlanFromUserMessage(userMessage))
+            )
+        )
     );
 }
 
@@ -263,7 +271,7 @@ function useMf01HostedFixture({ reverse = false }: { reverse?: boolean } = {}): 
                         {
                             finish_reason: 'tool_calls',
                             message: {
-                                tool_calls: plan.map((call) => ({
+                                tool_calls: withWorkflowCapabilitySelection('drum-routing', plan).map((call) => ({
                                     function: { name: call.name, arguments: JSON.stringify(call.arguments) },
                                 })),
                             },
@@ -641,6 +649,13 @@ describe('drum bus prompt workflow', () => {
         ]);
     });
 
+    it('routes a semantic paraphrase to the complete drum-routing capability', async () => {
+        setMf01Project();
+        useMf01WebLlmFixture();
+        await sendChatMessage(MF01_PARAPHRASE);
+        expect(chatStore.value?.messages.some((message) => message.pendingActionConfirmationId)).toBe(true);
+    });
+
     it('grounds the complete dynamic drum scope into an existing Drum Bus for MF-01', async () => {
         setMf01Project();
         useMf01WebLlmFixture();
@@ -759,7 +774,9 @@ describe('drum bus prompt workflow', () => {
 
     it('fails closed when an editable audio track has no application-owned role evidence', async () => {
         setMf01Project({ 'track-room': (track) => ({ ...track, name: 'Audio 1' }) });
-        runtimeMocks.generateWebLlmCompletion.mockResolvedValue(JSON.stringify(mf01ProviderPlan.slice(0, 3)));
+        runtimeMocks.generateWebLlmCompletion.mockResolvedValue(
+            JSON.stringify(withWorkflowCapabilitySelection('drum-routing', mf01ProviderPlan.slice(0, 3)))
+        );
 
         await sendChatMessage(MF01_PROMPT);
 
@@ -849,7 +866,9 @@ describe('drum bus prompt workflow', () => {
         ['duplicate', [...mf01ProviderPlan.slice(0, 3), mf01ProviderPlan[0]]],
     ])('rejects MF-01 provider %s without project, runtime, receipt, or history residue', async (_label, plan) => {
         setMf01Project();
-        runtimeMocks.generateWebLlmCompletion.mockResolvedValue(JSON.stringify(plan));
+        runtimeMocks.generateWebLlmCompletion.mockResolvedValue(
+            JSON.stringify(withWorkflowCapabilitySelection('drum-routing', plan))
+        );
         const before = structuredClone(trackStore.value?.tracks);
 
         await sendChatMessage(MF01_PROMPT);
@@ -904,7 +923,9 @@ describe('drum bus prompt workflow', () => {
                     tracks: [...trackStore.value!.tracks, createTrack('bus-drums-2', 'Drum Bus', 'bus')],
                 });
             }
-            runtimeMocks.generateWebLlmCompletion.mockResolvedValue(JSON.stringify(mf01ProviderPlan));
+            runtimeMocks.generateWebLlmCompletion.mockResolvedValue(
+                JSON.stringify(withWorkflowCapabilitySelection('drum-routing', mf01ProviderPlan))
+            );
             const before = structuredClone(trackStore.value?.tracks);
 
             await sendChatMessage(MF01_PROMPT);
@@ -918,7 +939,9 @@ describe('drum bus prompt workflow', () => {
 
     it('rejects MF-01 post-proposal enlargement against the immutable protected return snapshot', async () => {
         setMf01Project();
-        runtimeMocks.generateWebLlmCompletion.mockResolvedValue(JSON.stringify(mf01ProviderPlan));
+        runtimeMocks.generateWebLlmCompletion.mockResolvedValue(
+            JSON.stringify(withWorkflowCapabilitySelection('drum-routing', mf01ProviderPlan))
+        );
         await sendChatMessage(MF01_PROMPT);
         const confirmation = getPendingActionConfirmation(
             chatStore.value?.messages.find((message) => message.pendingActionConfirmationId)
@@ -957,7 +980,9 @@ describe('drum bus prompt workflow', () => {
 
     it('aborts the whole MF-01 group before runtime when a later route guard conflicts', async () => {
         setMf01Project();
-        runtimeMocks.generateWebLlmCompletion.mockResolvedValue(JSON.stringify(mf01ProviderPlan));
+        runtimeMocks.generateWebLlmCompletion.mockResolvedValue(
+            JSON.stringify(withWorkflowCapabilitySelection('drum-routing', mf01ProviderPlan))
+        );
         await sendChatMessage(MF01_PROMPT);
         const confirmation = getPendingActionConfirmation(
             chatStore.value?.messages.find((message) => message.pendingActionConfirmationId)
@@ -1001,7 +1026,9 @@ describe('drum bus prompt workflow', () => {
 
     it('reconciles a transient MF-01 runtime failure to the committed whole-group route', async () => {
         setMf01Project();
-        runtimeMocks.generateWebLlmCompletion.mockResolvedValue(JSON.stringify(mf01ProviderPlan));
+        runtimeMocks.generateWebLlmCompletion.mockResolvedValue(
+            JSON.stringify(withWorkflowCapabilitySelection('drum-routing', mf01ProviderPlan))
+        );
         runtimeMocks.setTrackOutput
             .mockImplementationOnce(() => undefined)
             .mockImplementationOnce(() => {
@@ -1038,7 +1065,9 @@ describe('drum bus prompt workflow', () => {
 
     it('preserves a collaborator route and keeps the whole MF-01 group retryable on undo conflict', async () => {
         setMf01Project();
-        runtimeMocks.generateWebLlmCompletion.mockResolvedValue(JSON.stringify(mf01ProviderPlan));
+        runtimeMocks.generateWebLlmCompletion.mockResolvedValue(
+            JSON.stringify(withWorkflowCapabilitySelection('drum-routing', mf01ProviderPlan))
+        );
         await sendChatMessage(MF01_PROMPT);
         const confirmation = getPendingActionConfirmation(
             chatStore.value?.messages.find((message) => message.pendingActionConfirmationId)

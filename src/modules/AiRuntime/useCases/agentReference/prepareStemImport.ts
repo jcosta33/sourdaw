@@ -7,8 +7,6 @@ import { type StemImportRole } from '#/utils/handlerContract';
 
 import { discardPreparedStemImportResources } from './discardPreparedStemImportResources';
 
-const EXACT_PROMPT =
-    'import stems align them to project tempo name and group them classify likely instrument roles and create a sensible starting mix';
 const MAX_SOURCE_BYTES_PER_STEM = 256 * 1024 * 1024;
 const MAX_TOTAL_SOURCE_BYTES = 1024 * 1024 * 1024;
 const MAX_DECODED_BYTES_PER_STEM = 256 * 1024 * 1024;
@@ -46,11 +44,7 @@ function throwIfAborted(signal?: AbortSignal): void {
     }
 }
 
-export async function prepareStemImport(prompt: string, signal?: AbortSignal) {
-    if (normalize(prompt) !== EXACT_PROMPT) {
-        return null;
-    }
-
+export async function prepareStemImport(signal?: AbortSignal) {
     const files = await pickFiles({
         multiple: true,
         filters: [{ name: 'Audio stems', extensions: ['wav', 'aif', 'aiff', 'flac', 'mp3', 'ogg', 'm4a'] }],

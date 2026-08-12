@@ -37,7 +37,11 @@ import {
 import { confirmPendingChatActions } from '../confirmPendingChatActions';
 import { sendChatMessage } from '../sendChatMessage';
 
+import { withWorkflowCapabilitySelection } from './workflowCapabilitySelectionFixture';
+
 const PROMPT = 'Add a syncopated arpeggio while preserving voicing and harmonic rhythm.';
+const PARAPHRASE =
+    'Turn the selected chord clip into a syncopated arp without changing its voicing or harmonic pacing.';
 
 type ProviderCall = { name: string; arguments: Record<string, unknown> };
 
@@ -184,7 +188,10 @@ function useHostedFixture(): void {
         if (typeof init?.body !== 'string') {
             throw new TypeError('Expected hosted provider request body');
         }
-        const plan = runtimeMocks.transformPlan.value(createProviderPlan(getHostedUserMessage(init.body)));
+        const plan = withWorkflowCapabilitySelection(
+            'syncopated-arpeggio',
+            runtimeMocks.transformPlan.value(createProviderPlan(getHostedUserMessage(init.body)))
+        );
         return Promise.resolve(
             new Response(
                 JSON.stringify({
@@ -230,7 +237,14 @@ describe('EX-07 syncopated arpeggio prompt workflow', () => {
         runtimeMocks.backend.value = 'webllm';
         runtimeMocks.transformPlan.value = (plan) => plan;
         runtimeMocks.generateWebLlmCompletion.mockImplementation((_systemPrompt, userMessage) =>
-            Promise.resolve(JSON.stringify(runtimeMocks.transformPlan.value(createProviderPlan(userMessage))))
+            Promise.resolve(
+                JSON.stringify(
+                    withWorkflowCapabilitySelection(
+                        'syncopated-arpeggio',
+                        runtimeMocks.transformPlan.value(createProviderPlan(userMessage))
+                    )
+                )
+            )
         );
         vi.stubGlobal('fetch', runtimeMocks.fetch);
         cloudSession.clear();
@@ -286,6 +300,11 @@ describe('EX-07 syncopated arpeggio prompt workflow', () => {
         configureAutomergeStoragePort(null);
         resetCrdtProjectAuthority('EX-07 arpeggio workflow cleanup');
         removeCrdtDoc('root');
+    });
+
+    it('routes a semantic paraphrase to the syncopated-arpeggio capability', async () => {
+        await sendChatMessage(PARAPHRASE);
+        expect(getConfirmationId()).not.toBe('');
     });
 
     it.each(['webllm', 'hosted'] as const)(
