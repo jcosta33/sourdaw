@@ -59,6 +59,12 @@ export type ProductionBriefQuestion = {
     createdAt: number;
 };
 
+export type ProductionBriefSourceRunLink = {
+    id: string;
+    sourceRunId: string;
+    createdAt: number;
+};
+
 export type ProductionBrief = {
     schemaVersion: typeof PRODUCTION_BRIEF_SCHEMA_VERSION;
     id: string;
@@ -72,7 +78,7 @@ export type ProductionBrief = {
     locks: ProductionBriefLock[];
     decisions: ProductionDecision[];
     unresolvedQuestions: ProductionBriefQuestion[];
-    sourceRunLinks: string[];
+    sourceRunLinks: ProductionBriefSourceRunLink[];
     supersedesBriefId: string | null;
     supersededByBriefId: string | null;
     createdAt: number;
@@ -260,6 +266,14 @@ export function isProductionBrief(value: unknown): value is ProductionBrief {
             isNonEmptyString(question.statement) &&
             isFiniteNonNegative(question.createdAt)
     );
+    const sourceRunLinks = value.sourceRunLinks.filter(
+        (link): link is ProductionBriefSourceRunLink =>
+            isRecord(link) &&
+            hasOnlyKeys(link, ['id', 'sourceRunId', 'createdAt']) &&
+            isNonEmptyString(link.id) &&
+            isNonEmptyString(link.sourceRunId) &&
+            isFiniteNonNegative(link.createdAt)
+    );
     const identified = [
         ...references,
         ...hardConstraints,
@@ -269,6 +283,7 @@ export function isProductionBrief(value: unknown): value is ProductionBrief {
         ...locks,
         ...decisions,
         ...unresolvedQuestions,
+        ...sourceRunLinks,
     ];
     const decisionIds = new Set(decisions.map((decision) => decision.id));
     const decisionsHaveValidSupersession = decisions.every((decision) => {
@@ -291,7 +306,7 @@ export function isProductionBrief(value: unknown): value is ProductionBrief {
         locks.length === value.locks.length &&
         decisions.length === value.decisions.length &&
         unresolvedQuestions.length === value.unresolvedQuestions.length &&
-        value.sourceRunLinks.every(isNonEmptyString) &&
+        sourceRunLinks.length === value.sourceRunLinks.length &&
         decisionsHaveValidSupersession &&
         hasUniqueIds(identified)
     );

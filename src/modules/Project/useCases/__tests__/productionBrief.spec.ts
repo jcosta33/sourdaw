@@ -1,8 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { defaultTrackState } from '#/modules/Arrangement/stores';
-import { addClip, createTrack, setTrackStoreState } from '#/modules/Arrangement/useCases';
+import { addClip, addSection, createTrack, setTrackStoreState } from '#/modules/Arrangement/useCases';
 import { clearHandlerRegistry, registerHandlerMap } from '#/modules/Command/stores';
+import { clearUndoHistory, executeAppAction, redo, undo } from '#/modules/Command/useCases';
 
 import { handleSetProductionBrief } from '../../handlers/project/handleSetProductionBrief';
 import { createDefaultProductionBrief, isProductionBrief, type ProductionBrief } from '../../models/ProductionBrief';
@@ -32,6 +33,7 @@ describe('production brief', () => {
             startBeat: 0,
             endBeat: 8,
         });
+        clearUndoHistory();
         addClip({
             id: 'clip-2',
             trackId: 'track-guitar',
@@ -40,9 +42,20 @@ describe('production brief', () => {
             startBeat: 50,
             endBeat: 60,
         });
+        addSection(32, 48, 'Chorus One', 'section-chorus');
+        addSection(64, 80, 'Outro', 'section-outro');
+        addClip({
+            id: 'clip-3',
+            trackId: 'track-guitar',
+            name: 'Outro guitar fill',
+            type: 'audio',
+            startBeat: 70,
+            endBeat: 72,
+        });
     });
 
     afterEach(() => {
+        clearUndoHistory();
         clearHandlerRegistry();
     });
 
@@ -116,6 +129,14 @@ describe('production brief', () => {
                 payload: { expectedRevision: 1, brief: rewritten },
             })
         ).toEqual({ status: 'conflict' });
+        expect(projectStore.value?.productionBrief).toEqual(accepted);
+
+        const forged = {
+            type: 'setProductionBrief' as const,
+            payload: { expectedRevision: 1, brief: rewritten },
+        };
+        Object.assign(forged.payload, { allowLockedIntentChanges: true });
+        expect(handleSetProductionBrief.execute(forged)).toEqual({ status: 'conflict' });
         expect(projectStore.value?.productionBrief).toEqual(accepted);
     });
 
@@ -204,9 +225,12 @@ describe('production brief', () => {
         });
 
         expect(decisionId).toMatch(/^decision-/);
+        const sourceRunLink = projectStore.value?.productionBrief.sourceRunLinks[0];
+        expect(sourceRunLink?.id).toMatch(/^source-run-link-/);
+        expect(sourceRunLink?.createdAt).toBeTypeOf('number');
         expect(projectStore.value?.productionBrief).toMatchObject({
             revision: 1,
-            sourceRunLinks: ['run-accepted-intent'],
+            sourceRunLinks: [{ sourceRunId: 'run-accepted-intent' }],
             decisions: [
                 {
                     id: decisionId,
@@ -269,6 +293,33 @@ describe('production brief', () => {
         });
     });
 
+    it('uses unforgeable replay authority through Command undo and redo', async () => {
+        registerHandlerMap(getProjectHandlers());
+        const current = projectStore.value!.productionBrief;
+        const next: ProductionBrief = {
+            ...current,
+            revision: 1,
+            locks: [
+                {
+                    id: 'lock-drums',
+                    scope: { kind: 'track', trackId: 'track-drums' },
+                    statement: 'Keep drums fixed',
+                    createdAt: 110,
+                },
+            ],
+            updatedAt: 110,
+        };
+
+        await executeAppAction({
+            type: 'setProductionBrief',
+            payload: { expectedRevision: 0, brief: next },
+        });
+        await undo();
+        expect(projectStore.value?.productionBrief).toMatchObject({ revision: 2, locks: [] });
+        await redo();
+        expect(projectStore.value?.productionBrief).toMatchObject({ revision: 3, locks: next.locks });
+    });
+
     it('rejects batches that target explicit locks, locked decisions, or nested protected ranges', () => {
         const current = projectStore.value!;
         projectStore.set({
@@ -313,6 +364,31 @@ describe('production brief', () => {
         expect(
             doesProductionBriefAllowActionBatch([
                 {
+                    type: 'setProductionBrief',
+                    payload: {
+                        expectedRevision: current.productionBrief.revision,
+                        brief: {
+                            ...current.productionBrief,
+                            revision: current.productionBrief.revision + 1,
+                            locks: [
+                                ...current.productionBrief.locks,
+                                {
+                                    id: 'lock-guitar',
+                                    scope: { kind: 'track', trackId: 'track-guitar' },
+                                    statement: 'Keep guitar fixed',
+                                    createdAt: 114,
+                                },
+                            ],
+                            updatedAt: 114,
+                        },
+                    },
+                },
+                { type: 'setTrackGain', payload: { trackId: 'track-guitar', gain: 0.5, expectedGain: 1 } },
+            ])
+        ).toBe(false);
+        expect(
+            doesProductionBriefAllowActionBatch([
+                {
                     type: 'restoreAutomationLanePoints',
                     payload: {
                         laneId: 'lane-1',
@@ -336,6 +412,42 @@ describe('production brief', () => {
                 { type: 'trimClipEnd', payload: { clipId: 'clip-1', newEndBeat: 50 } },
             ])
         ).toBe(false);
+        projectStore.set({
+            ...projectStore.value!,
+            productionBrief: {
+                ...projectStore.value!.productionBrief,
+                locks: [
+                    ...projectStore.value!.productionBrief.locks,
+                    {
+                        id: 'lock-outro-section',
+                        scope: { kind: 'section', sectionId: 'section-outro' },
+                        statement: 'Keep Outro fixed',
+                        createdAt: 116,
+                    },
+                ],
+            },
+        });
+        expect(
+            doesProductionBriefAllowActionBatch([{ type: 'renameClip', payload: { clipId: 'clip-3', name: 'New' } }])
+        ).toBe(false);
+        projectStore.set({
+            ...projectStore.value!,
+            productionBrief: {
+                ...projectStore.value!.productionBrief,
+                locks: [
+                    ...projectStore.value!.productionBrief.locks,
+                    {
+                        id: 'lock-drums-track',
+                        scope: { kind: 'track', trackId: 'track-drums' },
+                        statement: 'Keep every drum-track descendant fixed',
+                        createdAt: 117,
+                    },
+                ],
+            },
+        });
+        expect(doesProductionBriefAllowActionBatch([{ type: 'removeClip', payload: { clipId: 'clip-1' } }])).toBe(
+            false
+        );
         expect(
             doesProductionBriefAllowActionBatch([
                 { type: 'setTrackGain', payload: { trackId: 'track-guitar', gain: 0.7, expectedGain: 1 } },

@@ -1,4 +1,4 @@
-import { trackStore } from '#/modules/Arrangement/stores';
+import { markerStore, trackStore } from '#/modules/Arrangement/stores';
 import { type AppAction } from '#/utils/handlerContract';
 
 import { type ProductionBriefScope } from '../models/ProductionBrief';
@@ -91,6 +91,29 @@ function projectedClipOverlapsRange(
     return false;
 }
 
+function actionOverlapsRange(action: AppAction, scope: Extract<ProductionBriefScope, { kind: 'range' }>): boolean {
+    return (
+        valueOverlapsRange(action.payload, scope) ||
+        referencedClipOverlapsRange(action, scope) ||
+        projectedClipOverlapsRange(action, scope)
+    );
+}
+
+function trackOwnedIds(trackId: string): Set<string> {
+    const track = trackStore.value?.tracks.find((candidate) => candidate.id === trackId);
+    if (!track) {
+        return new Set([trackId]);
+    }
+    return new Set([
+        track.id,
+        ...track.clips.map((clip) => clip.id),
+        ...track.alternatives.map((alternative) => alternative.id),
+        ...track.alternatives.flatMap((alternative) => alternative.clips.map((clip) => clip.id)),
+        ...track.devices.map((device) => device.id),
+        ...track.midiFx.map((device) => device.id),
+    ]);
+}
+
 function referencedClipOverlapsRange(
     action: AppAction,
     scope: Extract<ProductionBriefScope, { kind: 'range' }>
@@ -112,6 +135,10 @@ export function doesProductionBriefAllowActionBatch(actions: readonly AppAction[
         return true;
     }
 
+    if (actions.some((action) => action.type === 'setProductionBrief')) {
+        return false;
+    }
+
     const projectActions = actions.filter((action) => action.type !== 'setProductionBrief');
     const actionStrings = new Set<string>();
     for (const action of projectActions) {
@@ -128,18 +155,22 @@ export function doesProductionBriefAllowActionBatch(actions: readonly AppAction[
             return false;
         }
         if (scope.kind === 'range') {
-            return projectActions.every(
-                (action) =>
-                    !valueOverlapsRange(action.payload, scope) &&
-                    !referencedClipOverlapsRange(action, scope) &&
-                    !projectedClipOverlapsRange(action, scope)
-            );
+            return projectActions.every((action) => !actionOverlapsRange(action, scope));
         }
         if (scope.kind === 'track') {
-            return !actionStrings.has(scope.trackId);
+            const ownedIds = trackOwnedIds(scope.trackId);
+            return [...ownedIds].every((id) => !actionStrings.has(id));
         }
         if (scope.kind === 'section') {
-            return !actionStrings.has(scope.sectionId);
+            if (actionStrings.has(scope.sectionId)) {
+                return false;
+            }
+            const section = markerStore.value?.sections.find((candidate) => candidate.id === scope.sectionId);
+            if (!section) {
+                return true;
+            }
+            const sectionRange = { kind: 'range' as const, startBeat: section.startBeat, endBeat: section.endBeat };
+            return projectActions.every((action) => !actionOverlapsRange(action, sectionRange));
         }
         if (scope.kind === 'object') {
             return !actionStrings.has(scope.objectId);

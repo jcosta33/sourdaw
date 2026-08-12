@@ -80,7 +80,7 @@ export type ProjectContextProductionBrief = {
         createdAt: number;
     }>;
     unresolvedQuestions: Array<{ id: string; statement: string; createdAt: number }>;
-    sourceRunLinks: string[];
+    sourceRunLinks: Array<{ id: string; sourceRunId: string; createdAt: number }>;
     supersedesBriefId: string | null;
     supersededByBriefId: string | null;
     createdAt: number;

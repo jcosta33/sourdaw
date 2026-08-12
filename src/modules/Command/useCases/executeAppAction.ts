@@ -20,6 +20,7 @@ import { actionHistoryMetadataPort } from './actionHistoryMetadataPort';
 import { commitUndoEntry } from './commitUndoEntry';
 import { createUndoEntry } from './createUndoEntry';
 import { recordAction } from './macro/recording/recordAction';
+import { productionBriefAdmissionPort } from './productionBriefAdmissionPort';
 import { traceAppAction } from './traceAppAction';
 
 type ExecuteAppActionOptions = ExecuteOptions & {
@@ -100,6 +101,10 @@ export const executeAppAction: ExecuteAppAction = inject({ logger })(
 
             if (options?.shouldExecute && !options.shouldExecute()) {
                 return;
+            }
+
+            if (!productionBriefAdmissionPort.allows([action])) {
+                throw new AppActionConflictError(action.type);
             }
 
             if (handler.isNoop?.(action)) {

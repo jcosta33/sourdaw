@@ -3485,7 +3485,7 @@ describe('bridgeLlmToolCalls', () => {
                     locks: [],
                     decisions: [],
                     unresolvedQuestions: [],
-                    sourceRunLinks: ['run-3'],
+                    sourceRunLinks: [{ id: 'source-link-3', sourceRunId: 'run-3', createdAt: 102 }],
                     supersedesBriefId: null,
                     supersededByBriefId: null,
                     createdAt: 100,

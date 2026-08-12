@@ -23,7 +23,10 @@ export async function acceptCreativeIntent(input: AcceptCreativeIntentInput): Pr
     const decisionId = `decision-${crypto.randomUUID()}`;
     const createdAt = Math.max(Date.now(), brief.updatedAt);
     const sourceRunId = input.sourceRunId ?? null;
-    const sourceRunLinks = sourceRunId ? [...new Set([...brief.sourceRunLinks, sourceRunId])] : brief.sourceRunLinks;
+    const sourceRunLinks = [...brief.sourceRunLinks];
+    if (sourceRunId && !sourceRunLinks.some((link) => link.sourceRunId === sourceRunId)) {
+        sourceRunLinks.push({ id: `source-run-link-${crypto.randomUUID()}`, sourceRunId, createdAt });
+    }
     const nextBrief = {
         ...structuredClone(brief),
         revision: brief.revision + 1,

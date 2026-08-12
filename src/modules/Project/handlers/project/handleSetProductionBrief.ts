@@ -1,6 +1,10 @@
 import { createHandler } from '#/utils/createHandler';
 
 import { isProductionBrief, type ProductionBrief } from '../../models/ProductionBrief';
+import {
+    authorizeProductionBriefReplay,
+    isAuthorizedProductionBriefReplay,
+} from '../../stores/productionBriefReplayAuthority';
 import { projectStore } from '../../stores/projectStore';
 
 function isSameIntent(left: unknown, right: unknown): boolean {
@@ -62,7 +66,7 @@ export const handleSetProductionBrief = createHandler<'setProductionBrief'>({
             !isProductionBrief(next) ||
             project.productionBrief.revision !== action.payload.expectedRevision ||
             next.revision !== action.payload.expectedRevision + 1 ||
-            (!action.payload.allowLockedIntentChanges && !preservesLockedIntent(project.productionBrief, next))
+            (!isAuthorizedProductionBriefReplay(action) && !preservesLockedIntent(project.productionBrief, next))
         ) {
             return { status: 'conflict' };
         }
@@ -86,23 +90,22 @@ export const handleSetProductionBrief = createHandler<'setProductionBrief'>({
         }
         return {
             label,
-            inverseAction: {
+            inverseAction: authorizeProductionBriefReplay({
                 type: 'setProductionBrief',
                 payload: {
                     expectedRevision: next.revision,
                     brief: withReplayRevision(current, next.revision + 1),
-                    allowLockedIntentChanges: true,
                 },
-            },
-            redoAction: {
+            }),
+            redoAction: authorizeProductionBriefReplay({
                 type: 'setProductionBrief',
                 payload: {
                     expectedRevision: next.revision + 1,
                     brief: withReplayRevision(next, next.revision + 2),
-                    allowLockedIntentChanges: true,
                 },
-            },
+            }),
         };
     },
+    batchExecution: 'singleton',
     undoable: true,
 });

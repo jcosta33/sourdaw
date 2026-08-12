@@ -53,7 +53,7 @@ const productionBriefFixture = vi.hoisted(() => ({
     locks: [],
     decisions: [],
     unresolvedQuestions: [],
-    sourceRunLinks: ['run-2'],
+    sourceRunLinks: [{ id: 'source-link-2', sourceRunId: 'run-2', createdAt: 102 }],
     supersedesBriefId: null,
     supersededByBriefId: null,
     createdAt: 1,

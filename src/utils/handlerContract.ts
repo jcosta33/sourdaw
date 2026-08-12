@@ -1476,7 +1476,6 @@ export type AppAction =
           payload: {
               expectedRevision: number;
               brief: unknown;
-              allowLockedIntentChanges?: boolean;
           };
       }
     | {

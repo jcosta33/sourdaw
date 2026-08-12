@@ -248,7 +248,7 @@ describe('replaceProjectData', () => {
             ...createDefaultProductionBrief(1),
             revision: 2,
             vision: 'Intimate verses',
-            sourceRunLinks: ['run-2'],
+            sourceRunLinks: [{ id: 'source-link-2', sourceRunId: 'run-2', createdAt: 102 }],
             updatedAt: 2,
         };
         const data = makeData();
