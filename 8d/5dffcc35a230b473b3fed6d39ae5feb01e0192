@@ -1,0 +1,21 @@
+crates/proof-chamber/tests/algorithm_render_character.rs
+  s_bc88af7d3b054c::t_807a911dc9ab9e 47,205-212,217
+  s_bc88af7d3b054c::t_813b0f9effe1ce 42,51-113,220-238,243-244,246-251,253-259,261-268,270,272-296
+  s_bc88af7d3b054c::t_67df5a61c3aa69 1-41,43-46,48-50,114-204,213-216,218-219,239-242,245,252,260,269,271,297-299
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "8d5dffcc35a230b473b3fed6d39ae5feb01e0192",
+  "prompts": {},
+  "sessions": {
+    "s_bc88af7d3b054c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f9b4a-11a2-7f61-8dfb-76eed0eb2a9c",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
