@@ -1,0 +1,14 @@
+tests/e2e/fermenterFxMasterKnobsTestId.spec.ts
+  h_1228e573df1f42 1-57
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "0a02be2b77dbeb4971c6d7734634fa2912d00e46",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
