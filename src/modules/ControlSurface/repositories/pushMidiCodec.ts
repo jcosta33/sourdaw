@@ -581,7 +581,7 @@ function decodeChannelMessage(bytes: PushMidiBytes, status: number): PushMidiDec
 }
 
 function decode(bytes: PushMidiBytes): PushMidiDecodeResult {
-    if (bytes.length === 0) {
+    if (bytes.length === 0 || bytes.length > IDENTITY_REPLY_LENGTH) {
         return rejected('invalid-length');
     }
 

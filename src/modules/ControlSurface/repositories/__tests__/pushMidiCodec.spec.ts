@@ -221,6 +221,15 @@ describe('createPushMidiCodec', () => {
         sparseMessage[0] = 0x90;
         sparseMessage[2] = 1;
         expectRejected(codec.decode(sparseMessage), 'invalid-byte');
+        const oversizedSparseMessage = new Proxy([] as number[], {
+            get(_target, property) {
+                if (property === 'length') {
+                    return 24;
+                }
+                throw new Error('oversized input was scanned');
+            },
+        });
+        expectRejected(codec.decode(oversizedSparseMessage), 'invalid-length');
         expectRejected(codec.decode([0xc0, 1]), 'unsupported-status');
         expectRejected(codec.decode([0xf8]), 'reserved-message');
         expectRejected(codec.decode([0xf0, 0x00, 0x21, 0x1d, 0x01, 0x01, 0x1a, 0xf7]), 'reserved-message');
