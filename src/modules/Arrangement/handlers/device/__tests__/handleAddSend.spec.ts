@@ -83,6 +83,29 @@ describe('handleAddSend', () => {
         });
     });
 
+    it('describes the guarded inverse for an app-owned source created earlier in the batch', () => {
+        const desc = handleAddSend.describe({
+            type: 'addSend',
+            payload: {
+                trackId: 'new-source-bus',
+                busId: 'new-target-bus',
+                level: 0.25,
+                preFader: false,
+                expectedAbsent: true,
+            },
+        });
+
+        expect(desc.inverseAction).toEqual({
+            type: 'removeSend',
+            payload: {
+                trackId: 'new-source-bus',
+                busId: 'new-target-bus',
+                expectedLevel: 0.25,
+                expectedPreFader: false,
+            },
+        });
+    });
+
     it('does not make a stale existing send compensable', () => {
         mocks.getTrackStoreState.mockReturnValue({
             tracks: [{ id: 't1', kind: 'audio', sends: [{ busId: 'bus-1', level: 0.2 }] }],

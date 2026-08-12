@@ -41,10 +41,10 @@ export const handleAddSend = createHandler<'addSend'>({
     describe: (alpha) => {
         const label = 'Add send';
         const track = getTrackStoreState()?.tracks.find((time) => time.id === alpha.payload.trackId);
-        if (!track) {
+        if (!track && alpha.payload.expectedAbsent !== true) {
             return { label, inverseAction: null };
         }
-        const existing = track.sends.find((state) => state.busId === alpha.payload.busId);
+        const existing = track?.sends.find((state) => state.busId === alpha.payload.busId);
         return {
             label,
             inverseAction: existing

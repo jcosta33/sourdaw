@@ -29,6 +29,7 @@ import { getArticulationTransferPromptScope } from './agentReference/getArticula
 import { getBackingVocalPlatePromptScope } from './agentReference/getBackingVocalPlatePromptScope';
 import { getBassProcessingCopyPromptScope } from './agentReference/getBassProcessingCopyPromptScope';
 import { getDrumPreviewBranchesPromptScope } from './agentReference/getDrumPreviewBranchesPromptScope';
+import { getDrumRenderComparisonPromptScope } from './agentReference/getDrumRenderComparisonPromptScope';
 import { getDrumRoutingPromptScope } from './agentReference/getDrumRoutingPromptScope';
 import { getMidiOverlapTransformPromptScope } from './agentReference/getMidiOverlapTransformPromptScope';
 import { getSharedVocalFxBusesPromptScope } from './agentReference/getSharedVocalFxBusesPromptScope';
@@ -135,6 +136,7 @@ export const parsePromptToActions = inject({ logger })(
             // sendChatMessage remains responsible for confirmation and execution.
             try {
                 const drumRoutingScope = getDrumRoutingPromptScope(context, projectRevision);
+                const drumRenderComparisonScope = getDrumRenderComparisonPromptScope(context, projectRevision);
                 const drumPreviewBranchesScope = getDrumPreviewBranchesPromptScope(context, projectRevision);
                 const midiOverlapTransformScope = getMidiOverlapTransformPromptScope(context, projectRevision);
                 const backingVocalPlateScope = getBackingVocalPlatePromptScope(context, projectRevision);
@@ -144,6 +146,8 @@ export const parsePromptToActions = inject({ logger })(
                     articulationTransferScope.status === 'request' ? articulationTransferScope.capability : undefined;
                 const drumRoutingCapability =
                     drumRoutingScope.status === 'request' ? drumRoutingScope.capability : undefined;
+                const drumRenderComparisonCapability =
+                    drumRenderComparisonScope.status === 'request' ? drumRenderComparisonScope.capability : undefined;
                 const drumPreviewBranchesCapability =
                     drumPreviewBranchesScope.status === 'request' ? drumPreviewBranchesScope.capability : undefined;
                 const midiOverlapTransformCapability =
@@ -176,6 +180,7 @@ export const parsePromptToActions = inject({ logger })(
                         backingVocalPlateCapability,
                         bassProcessingCopyCapability,
                         drumRoutingCapability,
+                        drumRenderComparisonCapability,
                         drumPreviewBranchesCapability,
                         midiOverlapTransformCapability,
                         sidechainRoutingCapability,

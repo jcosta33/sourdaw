@@ -19,6 +19,7 @@ import { normalizeSafeProjectName } from '../../validators/normalizeSafeProjectN
 
 import { type BatchLocalActionIdentity } from './BatchLocalActionIdentity';
 import { bridgeBackingVocalPlatePlan } from './bridgeBackingVocalPlatePlan';
+import { bridgeDrumRenderComparisonPlan } from './bridgeDrumRenderComparisonPlan';
 import { bridgeSharedVocalFxBusesPlan } from './bridgeSharedVocalFxBusesPlan';
 import { getArticulationTransferPromptScope } from './getArticulationTransferPromptScope';
 import {
@@ -3930,6 +3931,22 @@ export function bridgeGroundedLlmToolCalls({
         return {
             actions: sharedVocalFxBusesPlan.actions,
             batchLocalActionIdentities: sharedVocalFxBusesPlan.identities,
+            rejections: [],
+        };
+    }
+    const drumRenderComparisonPlan = bridgeDrumRenderComparisonPlan({
+        calls,
+        context,
+        selected: workflowCapabilityId === 'drum-render-comparison',
+    });
+    if (drumRenderComparisonPlan.status === 'rejected') {
+        return { actions: [], rejections: [rejection(0, '<batch>', drumRenderComparisonPlan.reason)] };
+    }
+    if (drumRenderComparisonPlan.status === 'accepted') {
+        return {
+            actions: drumRenderComparisonPlan.actions,
+            appOwnedRenderTailSeconds: drumRenderComparisonPlan.renderTailSeconds,
+            batchLocalActionIdentities: drumRenderComparisonPlan.identities,
             rejections: [],
         };
     }
