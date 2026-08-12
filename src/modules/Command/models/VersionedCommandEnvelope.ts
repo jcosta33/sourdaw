@@ -20,6 +20,11 @@ export type CommandParameterUnit = {
     unit: string;
 };
 
+export type CommandApplicationAssignedId = {
+    argument: string;
+    value: string;
+};
+
 export type VersionedCommandEnvelope<Action extends AppAction = AppAction> = {
     schemaVersion: typeof VERSIONED_COMMAND_SCHEMA_VERSION;
     commandId: string;
@@ -37,6 +42,7 @@ export type VersionedCommandEnvelope<Action extends AppAction = AppAction> = {
     seed: number | null;
     normalizedProjectRevision: string;
     availableDeviceVersions: Readonly<Record<string, string>>;
+    applicationAssignedIds: readonly CommandApplicationAssignedId[];
 };
 
 export type VersionedCommandReceipt = {

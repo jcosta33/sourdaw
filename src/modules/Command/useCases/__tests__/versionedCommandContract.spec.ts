@@ -10,6 +10,7 @@ import { type AppAction } from '#/utils/handlerContract';
 
 import { clearHandlerRegistry, registerHandlerMap } from '../../stores/handlerRegistry';
 import { commandProjectRevisionPort } from '../commandProjectRevisionPort';
+import { createExecutionCommandEnvelope } from '../createExecutionCommandEnvelope';
 import { createVersionedCommandEnvelope } from '../createVersionedCommandEnvelope';
 import { createVersionedCommandReceipt } from '../createVersionedCommandReceipt';
 import { executeVersionedCommandBatch } from '../executeVersionedCommandBatch';
@@ -45,6 +46,7 @@ describe('versioned command contract', () => {
                 payload: { trackId: 'track-vocal', gain: 0.7, expectedGain: 1 },
             },
             availableDeviceVersions: { 'builtin-compressor': '1.4.0' },
+            applicationAssignedIds: [],
             dependencyIds: ['command-route-vocal'],
             expectedEffect: 'Lead Vocal gain changes from 1 linear gain to 0.7 linear gain.',
             groupId: 'group-vocal-mix',
@@ -81,6 +83,7 @@ describe('versioned command contract', () => {
             seed: null,
             normalizedProjectRevision: 'revision-1',
             availableDeviceVersions: { 'builtin-compressor': '1.4.0' },
+            applicationAssignedIds: [],
         });
 
         const serialized = serializeVersionedCommandEnvelope(envelope);
@@ -114,12 +117,26 @@ describe('versioned command contract', () => {
             parameterUnits: [{ argument: 'bpm', unit: 'beats-per-minute' }],
             normalizedProjectRevision: 'revision-1',
             availableDeviceVersions: {},
+            applicationAssignedIds: [],
         };
 
         expect(parseVersionedCommandEnvelope(JSON.stringify({ ...base, schemaVersion: 2 })).status).toBe('invalid');
         expect(
             parseVersionedCommandEnvelope(JSON.stringify({ ...base, arguments: { bpm: 120, providerMayCommit: true } }))
                 .status
+        ).toBe('invalid');
+        const undeclaredArguments = { bpm: 120, providerMayCommit: true };
+        expect(
+            parseVersionedCommandEnvelope(
+                JSON.stringify({
+                    ...base,
+                    arguments: undeclaredArguments,
+                    argumentsDigest: getVersionedCommandArgumentsDigest({
+                        operation: base.operation,
+                        arguments: undeclaredArguments,
+                    }),
+                })
+            ).status
         ).toBe('invalid');
         const invalidTypedArguments = { bpm: 'fast' };
         expect(
@@ -142,6 +159,88 @@ describe('versioned command contract', () => {
                     arguments: { clipId: 'clip-1', amount: 0.25 },
                     objectReferences: [{ argument: 'clipId', id: 'clip-1', scope: 'stable' }],
                     parameterUnits: [{ argument: 'amount', unit: 'normalized' }],
+                })
+            ).status
+        ).toBe('invalid');
+    });
+
+    it('materializes application-owned object identities before digesting and receipts them', () => {
+        vi.spyOn(crypto, 'randomUUID')
+            .mockReturnValueOnce('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa')
+            .mockReturnValueOnce('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb');
+        vi.spyOn(Date, 'now').mockReturnValue(1_786_435_200_003);
+
+        const command = createExecutionCommandEnvelope({
+            action: { type: 'addTrack', payload: { name: 'Lead Vocal', kind: 'audio' } },
+            expectedEffect: 'Add audio track "Lead Vocal"',
+            normalizedProjectRevision: 'revision-1',
+        });
+
+        expect(command.action).toEqual({
+            type: 'addTrack',
+            payload: {
+                id: 'track-command-aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+                name: 'Lead Vocal',
+                kind: 'audio',
+            },
+        });
+        expect(command.envelope.arguments).toEqual(command.action.payload);
+        expect(command.envelope.applicationAssignedIds).toEqual([
+            { argument: 'id', value: 'track-command-aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa' },
+        ]);
+        expect(createVersionedCommandReceipt({ envelope: command.envelope }).applicationAssigned.ids).toEqual([
+            { field: 'commandId', value: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb' },
+            { field: 'objectId', value: 'track-command-aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa' },
+        ]);
+    });
+
+    it('rejects recomputed nested argument extensions outside the canonical command shape', () => {
+        const stem = {
+            stemId: 'stem-kick',
+            sourceName: 'Kick.wav',
+            role: 'kick' as const,
+            sourceTempo: 120,
+            durationSeconds: 8,
+            sourceBytes: 1024,
+            decodedBytes: 4096,
+            audioBufferId: 'buffer-kick',
+            trackId: 'track-kick',
+            trackName: 'Kick',
+            trackGain: 1,
+            trackPan: 0,
+            clipId: 'clip-kick',
+        };
+        const command = createExecutionCommandEnvelope({
+            action: {
+                type: 'importStemSet',
+                payload: {
+                    selectionId: 'selection-1',
+                    groupName: 'Imported Stems',
+                    projectTempo: 120,
+                    folderId: 'folder-stems',
+                    stems: [stem, { ...stem, stemId: 'stem-bass', trackId: 'track-bass', clipId: 'clip-bass' }],
+                },
+            },
+            expectedEffect: 'Import the exact selected stems.',
+            normalizedProjectRevision: 'revision-1',
+        });
+        const tamperedArguments = {
+            ...command.envelope.arguments,
+            stems: [
+                { ...stem, providerMayCommit: true },
+                { ...stem, stemId: 'stem-bass' },
+            ],
+        };
+
+        expect(
+            parseVersionedCommandEnvelope(
+                JSON.stringify({
+                    ...command.envelope,
+                    arguments: tamperedArguments,
+                    argumentsDigest: getVersionedCommandArgumentsDigest({
+                        operation: command.envelope.operation,
+                        arguments: tamperedArguments,
+                    }),
                 })
             ).status
         ).toBe('invalid');

@@ -1,5 +1,6 @@
 import {
     VERSIONED_COMMAND_SCHEMA_VERSION,
+    type CommandApplicationAssignedId,
     type CommandObjectReference,
     type CommandParameterUnit,
     type CommandTimeReference,
@@ -8,6 +9,7 @@ import {
 
 import { executableAppActionDescriptorByType } from './executableAppActionRegistry';
 import { getVersionedCommandArgumentsDigest } from './getVersionedCommandArgumentsDigest';
+import { versionedCommandArgumentKeys } from './versionedCommandArgumentKeys';
 
 type ParseVersionedCommandEnvelopeResult =
     { status: 'valid'; envelope: VersionedCommandEnvelope } | { status: 'invalid'; reason: string };
@@ -36,7 +38,63 @@ const ENVELOPE_KEYS = [
     'seed',
     'normalizedProjectRevision',
     'availableDeviceVersions',
+    'applicationAssignedIds',
 ] as const;
+
+const IMPORT_STEM_SET_ARGUMENT_SCHEMA = {
+    type: 'object',
+    properties: {
+        selectionId: { type: 'string' },
+        groupName: { type: 'string', minLength: 1, maxLength: 80 },
+        projectTempo: { type: 'number' },
+        folderId: { type: 'string' },
+        folderColor: { type: 'string' },
+        folderAlternativeId: { type: 'string' },
+        stems: {
+            type: 'array',
+            minItems: 2,
+            maxItems: 32,
+            items: {
+                type: 'object',
+                properties: {
+                    stemId: { type: 'string' },
+                    sourceName: { type: 'string' },
+                    role: { type: 'string' },
+                    sourceTempo: { type: 'number' },
+                    durationSeconds: { type: 'number' },
+                    sourceBytes: { type: 'number' },
+                    decodedBytes: { type: 'number' },
+                    audioBufferId: { type: 'string' },
+                    assetHash: { type: 'string' },
+                    assetLeaseId: { type: 'string' },
+                    trackId: { type: 'string' },
+                    trackName: { type: 'string' },
+                    trackGain: { type: 'number' },
+                    trackPan: { type: 'number' },
+                    trackColor: { type: 'string' },
+                    trackAlternativeId: { type: 'string' },
+                    clipId: { type: 'string' },
+                },
+                required: [
+                    'stemId',
+                    'sourceName',
+                    'role',
+                    'sourceTempo',
+                    'durationSeconds',
+                    'sourceBytes',
+                    'decodedBytes',
+                    'audioBufferId',
+                    'trackId',
+                    'trackName',
+                    'trackGain',
+                    'trackPan',
+                    'clipId',
+                ],
+            },
+        },
+    },
+    required: ['selectionId', 'groupName', 'projectTempo', 'folderId', 'stems'],
+} as const;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
     return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -134,6 +192,9 @@ function matchesJsonSchema(value: unknown, schemaValue: unknown): boolean {
             return false;
         }
         const properties = isRecord(schemaValue.properties) ? schemaValue.properties : {};
+        if (!hasOnlyKeys(value, Object.keys(properties))) {
+            return false;
+        }
         const required = Array.isArray(schemaValue.required) ? schemaValue.required : [];
         if (!required.every((key) => typeof key === 'string' && Object.hasOwn(value, key))) {
             return false;
@@ -178,6 +239,15 @@ function isParameterUnit(value: unknown): value is CommandParameterUnit {
     );
 }
 
+function isApplicationAssignedId(value: unknown): value is CommandApplicationAssignedId {
+    return (
+        isRecord(value) &&
+        hasOnlyKeys(value, ['argument', 'value']) &&
+        isNonEmptyString(value.argument) &&
+        isNonEmptyString(value.value)
+    );
+}
+
 function hasValidArguments(operation: string, value: unknown): boolean {
     if (!isRecord(value) || !isJsonSafe(value)) {
         return false;
@@ -192,8 +262,15 @@ function hasValidArguments(operation: string, value: unknown): boolean {
             (value.seed === undefined || isFiniteNumber(value.seed))
         );
     }
+    if (operation === 'importStemSet') {
+        return matchesJsonSchema(value, IMPORT_STEM_SET_ARGUMENT_SCHEMA);
+    }
     const descriptor = executableAppActionDescriptorByType.get(operation);
     if (!descriptor) {
+        return false;
+    }
+    const allowedKeys = versionedCommandArgumentKeys[descriptor.actionType];
+    if (!hasOnlyKeys(value, allowedKeys)) {
         return false;
     }
     if (Object.keys(descriptor.parameters.properties).length === 0) {
@@ -315,6 +392,17 @@ function validateEnvelope(value: unknown): ParseVersionedCommandEnvelopeResult {
         )
     ) {
         return { status: 'invalid', reason: 'Available device versions are invalid' };
+    }
+    const argumentsValue = value.arguments;
+    if (
+        !Array.isArray(value.applicationAssignedIds) ||
+        !value.applicationAssignedIds.every(isApplicationAssignedId) ||
+        !isRecord(argumentsValue) ||
+        value.applicationAssignedIds.some(
+            ({ argument, value: assignedValue }) => argumentsValue[argument] !== assignedValue
+        )
+    ) {
+        return { status: 'invalid', reason: 'Application-assigned command IDs are invalid' };
     }
     return { status: 'valid', envelope: value as VersionedCommandEnvelope };
 }

@@ -28,6 +28,7 @@ import { createVersionedCommandReceipt } from './createVersionedCommandReceipt';
 import { findSingletonBatchAction } from './findSingletonBatchAction';
 import { getVersionedCommandArgumentsDigest } from './getVersionedCommandArgumentsDigest';
 import { recordAction } from './macro/recording/recordAction';
+import { materializeCommandApplicationIds } from './materializeCommandApplicationIds';
 import { productionBriefAdmissionPort } from './productionBriefAdmissionPort';
 import { traceAppAction } from './traceAppAction';
 
@@ -426,7 +427,12 @@ export const executeAppActionBatch: ExecuteAppActionBatch = inject({ logger })(
                     actions: [],
                 };
             }
-            for (const [index, action] of actions.entries()) {
+            for (const [index, requestedAction] of actions.entries()) {
+                const suppliedEnvelope = options?.commandEnvelopes?.[index];
+                const materialized = suppliedEnvelope
+                    ? { action: requestedAction, applicationAssignedIds: suppliedEnvelope.applicationAssignedIds }
+                    : materializeCommandApplicationIds(requestedAction);
+                const action = materialized.action;
                 const handler = getHandler(action);
                 if (!handler) {
                     return {
@@ -459,7 +465,6 @@ export const executeAppActionBatch: ExecuteAppActionBatch = inject({ logger })(
                         actions: [],
                     };
                 }
-                const suppliedEnvelope = options?.commandEnvelopes?.[index];
                 if (
                     suppliedEnvelope &&
                     (suppliedEnvelope.operation !== action.type ||
@@ -480,6 +485,7 @@ export const executeAppActionBatch: ExecuteAppActionBatch = inject({ logger })(
                     ? { action, envelope: suppliedEnvelope }
                     : createExecutionCommandEnvelope({
                           action,
+                          applicationAssignedIds: materialized.applicationAssignedIds,
                           expectedEffect: description?.label ?? action.type,
                           options,
                       });

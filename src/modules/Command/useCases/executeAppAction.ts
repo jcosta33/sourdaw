@@ -23,6 +23,7 @@ import { createExecutionCommandEnvelope } from './createExecutionCommandEnvelope
 import { createUndoEntry } from './createUndoEntry';
 import { getVersionedCommandArgumentsDigest } from './getVersionedCommandArgumentsDigest';
 import { recordAction } from './macro/recording/recordAction';
+import { materializeCommandApplicationIds } from './materializeCommandApplicationIds';
 import { productionBriefAdmissionPort } from './productionBriefAdmissionPort';
 import { traceAppAction } from './traceAppAction';
 
@@ -43,6 +44,10 @@ function collapseCommittedFailures(failures: readonly unknown[], message: string
 export const executeAppAction: ExecuteAppAction = inject({ logger })(
     ({ logger }) =>
         async function executeAppAction(action: AppAction, options?: ExecuteAppActionOptions): Promise<void> {
+            const materialized = options?.commandEnvelope
+                ? { action, applicationAssignedIds: options.commandEnvelope.applicationAssignedIds }
+                : materializeCommandApplicationIds(action);
+            action = materialized.action;
             traceAppAction(action.type, options?.source ?? 'manual');
 
             const handler = getHandler(action);
@@ -78,6 +83,7 @@ export const executeAppAction: ExecuteAppAction = inject({ logger })(
                     ? { action, envelope: options.commandEnvelope }
                     : createExecutionCommandEnvelope({
                           action,
+                          applicationAssignedIds: materialized.applicationAssignedIds,
                           expectedEffect: action.type,
                           options,
                       });
@@ -150,6 +156,7 @@ export const executeAppAction: ExecuteAppAction = inject({ logger })(
                 ? { action, envelope: options.commandEnvelope }
                 : createExecutionCommandEnvelope({
                       action,
+                      applicationAssignedIds: materialized.applicationAssignedIds,
                       expectedEffect: undoResult?.label ?? action.type,
                       options,
                   });

@@ -2,6 +2,7 @@ import { type AppAction } from '#/utils/handlerContract';
 
 import {
     VERSIONED_COMMAND_SCHEMA_VERSION,
+    type CommandApplicationAssignedId,
     type CommandObjectReference,
     type CommandParameterUnit,
     type CommandTimeReference,
@@ -12,6 +13,7 @@ import { getVersionedCommandArgumentsDigest } from './getVersionedCommandArgumen
 
 type CreateVersionedCommandEnvelopeInput<Action extends AppAction> = {
     action: Action;
+    applicationAssignedIds?: readonly CommandApplicationAssignedId[];
     availableDeviceVersions: Readonly<Record<string, string>>;
     dependencyIds?: readonly string[];
     expectedEffect: string;
@@ -54,5 +56,6 @@ export function createVersionedCommandEnvelope<Action extends AppAction>(
         seed,
         normalizedProjectRevision: input.normalizedProjectRevision,
         availableDeviceVersions: { ...input.availableDeviceVersions },
+        applicationAssignedIds: structuredClone(input.applicationAssignedIds ?? []),
     };
 }

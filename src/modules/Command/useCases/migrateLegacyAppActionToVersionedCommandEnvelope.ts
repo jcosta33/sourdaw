@@ -4,6 +4,7 @@ import { AppActionNotDispatchedError } from '../errors/AppActionExecutionError';
 import { getHandler } from '../stores/handlerRegistry';
 
 import { createExecutionCommandEnvelope } from './createExecutionCommandEnvelope';
+import { materializeCommandApplicationIds } from './materializeCommandApplicationIds';
 
 type MigrateLegacyAppActionToVersionedCommandEnvelopeInput = {
     action: AppAction;
@@ -15,13 +16,15 @@ type MigrateLegacyAppActionToVersionedCommandEnvelopeInput = {
 export function migrateLegacyAppActionToVersionedCommandEnvelope(
     input: MigrateLegacyAppActionToVersionedCommandEnvelopeInput
 ) {
-    const handler = getHandler(input.action);
+    const materialized = materializeCommandApplicationIds(input.action);
+    const handler = getHandler(materialized.action);
     if (!handler) {
         throw new AppActionNotDispatchedError(input.action.type);
     }
     return createExecutionCommandEnvelope({
-        action: input.action,
-        expectedEffect: input.expectedEffect ?? handler.describe(input.action).label,
+        action: materialized.action,
+        applicationAssignedIds: materialized.applicationAssignedIds,
+        expectedEffect: input.expectedEffect ?? handler.describe(materialized.action).label,
         normalizedProjectRevision: input.normalizedProjectRevision,
         options: input.options,
     }).envelope;

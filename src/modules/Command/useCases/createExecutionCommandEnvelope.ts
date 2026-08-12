@@ -1,13 +1,15 @@
 import { type AppAction, type ExecuteOptions } from '#/utils/handlerContract';
 import { generateSeed } from '#/utils/SeededRandom/SeededRandom';
 
-import { type VersionedCommandEnvelope } from '../models/VersionedCommandEnvelope';
+import { type CommandApplicationAssignedId, type VersionedCommandEnvelope } from '../models/VersionedCommandEnvelope';
 
 import { commandProjectRevisionPort } from './commandProjectRevisionPort';
 import { createVersionedCommandEnvelope } from './createVersionedCommandEnvelope';
+import { materializeCommandApplicationIds } from './materializeCommandApplicationIds';
 
 type CreateExecutionCommandEnvelopeInput = {
     action: AppAction;
+    applicationAssignedIds?: readonly CommandApplicationAssignedId[];
     dependencyIds?: readonly string[];
     expectedEffect: string;
     normalizedProjectRevision?: string;
@@ -159,10 +161,14 @@ export function createExecutionCommandEnvelope(input: CreateExecutionCommandEnve
     action: AppAction;
     envelope: VersionedCommandEnvelope;
 } {
-    const materialized = materializeSeed(input.action);
+    const identityMaterialized = input.applicationAssignedIds
+        ? { action: input.action, applicationAssignedIds: input.applicationAssignedIds }
+        : materializeCommandApplicationIds(input.action);
+    const materialized = materializeSeed(identityMaterialized.action);
     const source = input.options?.source ?? 'manual';
     const envelope = createVersionedCommandEnvelope({
         action: materialized.action,
+        applicationAssignedIds: identityMaterialized.applicationAssignedIds,
         availableDeviceVersions: inferAvailableDeviceVersions(materialized.action),
         dependencyIds: input.dependencyIds,
         expectedEffect: input.expectedEffect,

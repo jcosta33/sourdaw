@@ -16,6 +16,7 @@ export function createVersionedCommandReceipt(input: CreateVersionedCommandRecei
         applicationAssigned: {
             ids: [
                 { field: 'commandId', value: input.envelope.commandId },
+                ...input.envelope.applicationAssignedIds.map(({ value }) => ({ field: 'objectId' as const, value })),
                 ...(input.applicationAssignedIds ?? []).map((value) => ({ field: 'historyId' as const, value })),
             ],
             timestamps: [{ field: 'issuedAt', value: input.envelope.issuedAt }],
