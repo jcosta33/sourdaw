@@ -12,6 +12,7 @@ import {
     type Track,
     type TrackStoreState,
 } from '#/modules/Arrangement/stores';
+import { actionReplayRevisionStore } from '#/modules/Command/stores';
 import { setWebMidiRuntimeEventBus } from '#/modules/MIDI/useCases';
 import { projectLoadFailureStore, type ProjectLoadFailureState } from '#/modules/Project/stores';
 import { setNotificationEventBus } from '#/utils/Notification/notificationEventBus';
@@ -382,6 +383,10 @@ describe('AppShell', () => {
         render(<AppShell>Content</AppShell>);
         expect(screen.getByTestId('app-shell')).toBeInTheDocument();
         expect(screen.getByTestId('sidebar')).toBeInTheDocument();
+    });
+
+    it('preserves falsy defaults for unlisted stores', () => {
+        expect(useStore(actionReplayRevisionStore, 0)).toBe(0);
     });
 
     it.each([
