@@ -30,14 +30,14 @@ ADR numbers 0001 and 0002 are reserved and must not be reused.
 | [0014](0014-project-persistence-architecture.md)  | Project persistence architecture — project-as-directory (Option C) — **status: proposed**, pending owner ratification and gates M1–M10 |
 | [0015](0015-a-guard-must-be-able-to-fail.md)      | A guard must be able to fail, and a census must enumerate from a registry |
 | [0016](0016-ultracode-session-scope-and-standard.md) | Ultracode session scope — browser-capable work only, built properly, no compatibility shims |
-| [0017](0017-pre-fader-sends-survive-mute.md)      | Pre-fader sends survive mute; solo-in-place gates them — **status: proposed**, pending owner ratification |
-| [0018](0018-clip-release-is-not-a-toggle-concern.md) | Release actions belong to gate-style launches, not to toggle — **status: proposed** |
-| [0019](0019-retrospective-capture-bounds.md)      | Retrospective capture: event-bounded, inactivity-flushed, MIDI first — **status: proposed** |
-| [0020](0020-deferred-deallocation-off-the-audio-thread.md) | Retired allocations leave the audio thread over a return channel — **status: proposed** |
-| [0021](0021-plugin-isolation-by-binary-with-per-plugin-override.md) | One helper per plugin binary, with a per-plugin full-isolation override — **status: proposed** |
-| [0022](0022-no-comparative-realism-claims.md)     | Describe mechanisms, not resemblance: no comparative realism claims — **status: proposed** |
-| [0023](0023-allpass-fractional-delay-in-the-string-loop.md) | Allpass fractional delay in the Karplus-Strong loop, offset off zero — **status: proposed** |
-| [0024](0024-warp-modes-are-named-by-material.md)  | Warp modes are named by material, over three closed executors — **status: proposed** |
+| [0017](0017-pre-fader-sends-survive-mute.md)      | Pre-fader sends survive mute; solo-in-place gates them |
+| [0018](0018-clip-release-is-not-a-toggle-concern.md) | Release actions belong to gate-style launches, not to toggle |
+| [0019](0019-retrospective-capture-bounds.md)      | Retrospective capture: event-bounded, inactivity-flushed, MIDI first |
+| [0020](0020-deferred-deallocation-off-the-audio-thread.md) | Retired allocations leave the audio thread over a return channel |
+| [0021](0021-plugin-isolation-by-binary-with-per-plugin-override.md) | One helper per plugin binary, with a per-plugin full-isolation override |
+| [0022](0022-no-comparative-realism-claims.md)     | Describe mechanisms, not resemblance: no comparative realism claims |
+| [0023](0023-allpass-fractional-delay-in-the-string-loop.md) | Allpass fractional delay in the Karplus-Strong loop, offset off zero |
+| [0024](0024-warp-modes-are-named-by-material.md)  | Warp modes are named by material, over three closed executors |
 | [0025](0025-fermenter-fine-tune-is-continuous.md) | Fermenter fine tune is continuous; coarse tune remains stepped |
 
 Genuinely open decisions that are not yet ADRs live in the

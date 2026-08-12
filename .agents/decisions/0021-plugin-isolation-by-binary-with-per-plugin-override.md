@@ -1,6 +1,12 @@
+---
+type: architecture-decision-record
+status: accepted
+date: 2026-08-12
+---
+
 # 0021 — One helper per plugin binary, with a per-plugin full-isolation override
 
-**Status: proposed** — resolves `SPEC-native-plugin-isolation` DG-001, DG-002, DG-003 and
+**Accepted 2026-08-12.** Resolved from primary sources under the owner's standing direction that decision gates are research tasks. resolves `SPEC-native-plugin-isolation` DG-001, DG-002, DG-003 and
 `CHANGE-plugin-hosting-runtime-and-transport` DG-002, DG-003.
 
 ## Context

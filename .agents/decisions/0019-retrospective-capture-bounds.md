@@ -1,6 +1,12 @@
+---
+type: architecture-decision-record
+status: accepted
+date: 2026-08-12
+---
+
 # 0019 — Retrospective capture: events for MIDI, ~60 seconds for audio, one explicit target
 
-**Status: proposed** — resolves `SPEC-retrospective-capture` DG-001, DG-002, DG-003, DG-005 and DG-006.
+**Accepted 2026-08-12.** Resolved from primary sources under the owner's standing direction that decision gates are research tasks. resolves `SPEC-retrospective-capture` DG-001, DG-002, DG-003, DG-005 and DG-006.
 
 These gates block 68 acceptance criteria. Nothing retrospective exists in the tree:
 `startBackgroundCapture.ts` guards on `!state.enabled` and pushes a bookkeeping record into a store,

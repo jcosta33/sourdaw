@@ -1,6 +1,12 @@
+---
+type: architecture-decision-record
+status: accepted
+date: 2026-08-12
+---
+
 # 0020 — Retired allocations leave the audio thread over a return channel
 
-**Status: proposed** — resolves `SPEC-session-launcher-engine` DG-001.
+**Accepted 2026-08-12.** Resolved from primary sources under the owner's standing direction that decision gates are research tasks. resolves `SPEC-session-launcher-engine` DG-001.
 
 ## Context
 
