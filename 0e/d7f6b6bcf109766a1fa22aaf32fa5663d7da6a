@@ -1,0 +1,57 @@
+src/modules/PluginHost/useCases/pluginLifecycle/unloadPlugin.ts
+  s_bc88af7d3b054c::t_ea60d83299321b 14-16
+src/modules/Project/useCases/projectPersistence/newProject.ts
+  s_bc88af7d3b054c::t_ea60d83299321b 76-78
+src-tauri/src/host/native_bridge.rs
+  s_bc88af7d3b054c::t_c4c113893c8708 253-261,403-405
+  s_bc88af7d3b054c::t_4f469cf3596ea8 406,999-1009
+  s_bc88af7d3b054c::t_6f075af7ac39f7 407
+src/modules/Project/useCases/projectPersistence/helpers/replaceProjectData.ts
+  s_bc88af7d3b054c::t_ea60d83299321b 234-236
+src-tauri/src/commands/plugins.rs
+  s_bc88af7d3b054c::t_b90f65cc41644b 452
+  s_bc88af7d3b054c::t_ec2430775f4b48 434-450,454,458-461,463,473-474,480-481,488,492-499
+  s_bc88af7d3b054c::t_1af34701bbe96e 475-476,478-479,482-484,486-487
+  s_bc88af7d3b054c::t_32539b6d57b73b 1049-1057
+  s_bc88af7d3b054c::t_69c67b3b2b0884 503
+  s_bc88af7d3b054c::t_22aaeff74b2c5d 401-408,416,426,464-465,467,477,485,1073-1076
+  s_bc88af7d3b054c::t_cb1be59cc8feae 1060-1071,1077,1079-1086
+  s_bc88af7d3b054c::t_7edea5269925d1 15,17,44,226-227,378,388,391,409
+  s_bc88af7d3b054c::t_6211b0a4884776 453
+  s_bc88af7d3b054c::t_ebcf6c081d7cf8 1058-1059
+src/modules/Project/useCases/projectTemplates/templateDefinitions/__tests__/createFromTemplate.spec.ts
+  s_bc88af7d3b054c::t_a2277632e3828e 286
+  s_bc88af7d3b054c::t_14dc840d402eec 271
+  s_bc88af7d3b054c::t_03a5bd8be998c8 272-273,275-284
+  s_bc88af7d3b054c::t_ff62f577a6a401 285
+src/modules/Arrangement/useCases/device/addExternalDevice.ts
+  s_bc88af7d3b054c::t_80bacc9622514c 31
+src/modules/Project/useCases/projectPersistence/__tests__/newProject.spec.ts
+  s_bc88af7d3b054c::t_f5da5427c5249d 150-168
+  s_bc88af7d3b054c::t_14dc840d402eec 149
+src/modules/PluginHost/useCases/pluginLifecycle/__tests__/lifecycle.spec.ts
+  s_bc88af7d3b054c::t_27ada6e61d7856 54,59-70
+  s_bc88af7d3b054c::t_530aad4bcd193c 118,149,168,186
+  s_bc88af7d3b054c::t_0bb4cb678199e1 71-72
+src/modules/Project/useCases/projectTemplates/templateDefinitions/createFromTemplate.ts
+  s_bc88af7d3b054c::t_ea60d83299321b 86-88
+src/modules/Project/useCases/projectPersistence/helpers/__tests__/replaceProjectData.spec.ts
+  s_bc88af7d3b054c::t_153f0266ade0cb 249-265
+  s_bc88af7d3b054c::t_14dc840d402eec 248
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "0ed7f6b6bcf109766a1fa22aaf32fa5663d7da6a",
+  "prompts": {},
+  "sessions": {
+    "s_bc88af7d3b054c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f9b4a-11a2-7f61-8dfb-76eed0eb2a9c",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
