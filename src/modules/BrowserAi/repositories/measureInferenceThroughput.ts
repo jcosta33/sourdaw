@@ -121,6 +121,10 @@ export const measureInferenceThroughput = inject({ logger, readModel })(
                     modelId: PROBE_MODEL_ID,
                     modelData,
                 });
+                if (!executionProviders.includes('webgpu')) {
+                    logger.warn('[BrowserAi] Throughput probe session did not use WebGPU.');
+                    return { status: 'not-measured', reason: 'runtime-unavailable' };
+                }
             } catch (error) {
                 logger.warn(`[BrowserAi] Throughput probe could not create a session: ${String(error)}`);
                 return { status: 'not-measured', reason: 'runtime-unavailable' };

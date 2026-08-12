@@ -103,14 +103,15 @@ describe('measureInferenceThroughput', () => {
         });
     });
 
-    it('reports the providers used by the worker session', async () => {
+    it('refuses to publish a WebGPU measurement when the worker used only WASM', async () => {
         loadOnnxSession.mockResolvedValue(['wasm']);
         resolve_audio(ONE_SECOND_OF_AUDIO);
         pin_elapsed_ms(1000);
 
         const throughput = await measureInferenceThroughput();
 
-        expect(throughput).toMatchObject({ status: 'measured', executionProviders: ['wasm'] });
+        expect(throughput).toEqual({ status: 'not-measured', reason: 'runtime-unavailable' });
+        expect(runKokoroTts).not.toHaveBeenCalled();
     });
 
     it('should report a factor below one when the render is slower than real time', async () => {

@@ -176,7 +176,11 @@ export const inferenceWorkerBridge = {
         const requestId = crypto.randomUUID();
         const request: WorkerRequest = { type: 'create-session', requestId, modelId, modelData, options: {} };
         const response = await sendRequest(worker, workerState.onnx, request, [modelData]);
-        if (response.type !== 'session-created' || !isOnnxExecutionProviderList(response.executionProviders)) {
+        if (
+            response.type !== 'session-created' ||
+            response.modelId !== modelId ||
+            !isOnnxExecutionProviderList(response.executionProviders)
+        ) {
             throw new Error(`Unexpected ONNX session response: ${response.type}`);
         }
         return response.executionProviders;

@@ -201,6 +201,23 @@ describe('inferenceWorkerBridge — ONNX session lifecycle', () => {
 
         await expect(promise).rejects.toThrow('Unexpected ONNX session response');
     });
+
+    it('rejects a session response for a different model', async () => {
+        const promise = inferenceWorkerBridge.loadOnnxSession({
+            modelId: 'expected-model',
+            modelData: new ArrayBuffer(4),
+        });
+        await flush();
+        const worker = onnxWorker();
+        reply(worker, {
+            type: 'session-created',
+            requestId: lastRequestId(worker),
+            modelId: 'other-model',
+            executionProviders: ['webgpu', 'wasm'],
+        });
+
+        await expect(promise).rejects.toThrow('Unexpected ONNX session response');
+    });
 });
 
 describe('inferenceWorkerBridge — getLoadedOnnxSessions', () => {
