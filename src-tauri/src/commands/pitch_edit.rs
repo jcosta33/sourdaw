@@ -1,4 +1,6 @@
-use daw_dsp::knead::pitch_edit::{CompiledDeltaMap, NoteSegment, PitchContour, PitchPoint};
+use daw_dsp::knead::pitch_edit::{
+    CompiledDeltaMap, NoteSegment, PitchContour, PitchPoint, PITCH_DETECTION_ALGORITHM,
+};
 use daw_dsp::knead::psola::{psola_process_offline_inplace, PsolaConfig};
 use daw_dsp::knead::yin::{yin_frame, YinConfig};
 use hound::{WavReader, WavSpec, WavWriter};
@@ -114,7 +116,7 @@ pub async fn analyze_pitch(
             points,
             sample_rate: spec.sample_rate,
             hop_size: hop_size as u32,
-            algorithm: "pyin".to_string(),
+            algorithm: PITCH_DETECTION_ALGORITHM.to_string(),
         })
     })
     .await
