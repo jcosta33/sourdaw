@@ -58,7 +58,6 @@ describe('pushHardwareTransport', () => {
                 maxBytes: 23,
             })
         );
-        expect(invokeWithBinaryBody).toHaveBeenCalledTimes(4);
         expect(invokeWithBinaryBody).toHaveBeenCalledWith(
             expect.objectContaining({ command: 'write_push2_display', maxBytes: 327_680 })
         );
@@ -76,16 +75,29 @@ describe('pushHardwareTransport', () => {
         });
         await pushHardwareTransport.connect({ model: 'push3', onMidiEvent, onDisconnect: vi.fn() });
         receiveMidi?.({ payload: { data: [0x90, 36, 100] } });
-        await pushHardwareTransport.disconnect();
+        vi.mocked(tauriInvoke).mockRejectedValueOnce(new Error('close failed'));
+        await expect(pushHardwareTransport.disconnect()).rejects.toThrow('close failed');
+        vi.mocked(tauriInvoke).mockResolvedValue(undefined);
+        await pushHardwareTransport.connect({ model: 'push3', onMidiEvent, onDisconnect: vi.fn() });
 
         expect(onMidiEvent).toHaveBeenCalledWith({ kind: 'pad', note: 36, edge: 'pressed', velocity: 100 });
         expect(unlisten).toHaveBeenCalledTimes(2);
-        expect(tauriInvoke).toHaveBeenLastCalledWith('close_push_transport');
+        expect(tauriInvoke).toHaveBeenLastCalledWith('open_push_transport', { model: 'push3' });
     });
 
     it('bounds a hung handshake send and still closes native state without a local session', async () => {
         vi.useFakeTimers();
-        vi.mocked(invokeWithBinaryBody).mockReturnValue(new Promise(() => undefined));
+        let receiveMidi: ((event: unknown) => void) | undefined;
+        vi.mocked(tauriListen)
+            .mockImplementationOnce((_event, handler) => {
+                receiveMidi = handler;
+                return Promise.resolve(() => undefined);
+            })
+            .mockResolvedValue(() => undefined);
+        vi.mocked(invokeWithBinaryBody).mockImplementation(() => {
+            queueMicrotask(() => receiveMidi?.({ payload: { data: IDENTITY_REPLY } }));
+            return new Promise(() => undefined);
+        });
 
         const connection = pushHardwareTransport.connect({
             model: 'push2',

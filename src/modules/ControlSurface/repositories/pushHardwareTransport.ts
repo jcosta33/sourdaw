@@ -14,17 +14,11 @@ type ConnectPushHardwareInput = Readonly<{
     onDisconnect(): void;
 }>;
 
-type PushMidiEventEnvelope = Readonly<{
-    payload: Readonly<{
-        data: readonly number[];
-    }>;
-}>;
+type PushMidiEventEnvelope = Readonly<{ payload: Readonly<{ data: readonly number[] }> }>;
 
 type PendingReply = Readonly<{
     requestId: number;
     resolve(): void;
-    reject(error: Error): void;
-    timeout: ReturnType<typeof setTimeout>;
 }>;
 
 type ActiveSession = Readonly<{
@@ -69,10 +63,8 @@ function serialize<Result>(task: () => Promise<Result>): Promise<Result> {
 async function closeSession(session: ActiveSession | undefined): Promise<void> {
     session?.display?.disconnect();
     session?.codec.resetSession();
-    if (session) {
-        for (const stopListening of session.unlisten) {
-            stopListening();
-        }
+    for (const stopListening of session?.unlisten ?? []) {
+        stopListening();
     }
     await tauriInvoke('close_push_transport');
 }
@@ -105,7 +97,6 @@ async function connect({ model, onMidiEvent, onDisconnect }: ConnectPushHardware
                 if (accepted.status === 'accepted') {
                     const completed = pendingReply;
                     pendingReply = undefined;
-                    clearTimeout(completed.timeout);
                     completed.resolve();
                     return;
                 }
@@ -136,13 +127,16 @@ async function connect({ model, onMidiEvent, onDisconnect }: ConnectPushHardware
                 throw new Error(`Push 2 MIDI request rejected: ${started.reason}`);
             }
 
-            const reply = new Promise<void>((resolve, reject) => {
-                const timeout = setTimeout(() => {
+            const reply = new Promise<void>((resolve) => {
+                pendingReply = { requestId: started.requestId, resolve };
+            });
+            let timeout: ReturnType<typeof setTimeout> | undefined;
+            const deadline = new Promise<never>((_resolve, reject) => {
+                timeout = setTimeout(() => {
                     codec.cancelRequest(started.requestId);
                     pendingReply = undefined;
                     reject(new Error(`Push 2 ${request.kind} reply timed out`));
                 }, REPLY_TIMEOUT_MS);
-                pendingReply = { requestId: started.requestId, resolve, reject, timeout };
             });
             const send = invokeWithBinaryBody({
                 command: 'send_push_midi',
@@ -151,12 +145,13 @@ async function connect({ model, onMidiEvent, onDisconnect }: ConnectPushHardware
                 maxBytes: 23,
             });
             try {
-                await Promise.race([send.then(() => reply), reply]);
-            } catch (error) {
-                clearTimeout(pendingReply?.timeout);
-                codec.cancelRequest(started.requestId);
-                pendingReply = undefined;
-                throw error;
+                await Promise.race([Promise.all([send, reply]), deadline]);
+            } finally {
+                clearTimeout(timeout);
+                if (pendingReply?.requestId === started.requestId) {
+                    codec.cancelRequest(started.requestId);
+                    pendingReply = undefined;
+                }
             }
         }
 
@@ -199,7 +194,6 @@ async function connect({ model, onMidiEvent, onDisconnect }: ConnectPushHardware
             activeSession = { model, codec, display, unlisten };
         } catch (error) {
             if (pendingReply) {
-                clearTimeout(pendingReply.timeout);
                 codec.cancelRequest(pendingReply.requestId);
                 pendingReply = undefined;
             }
@@ -219,8 +213,8 @@ async function connect({ model, onMidiEvent, onDisconnect }: ConnectPushHardware
 async function disconnect(): Promise<void> {
     return serialize(async () => {
         const session = activeSession;
-        await closeSession(session);
         activeSession = undefined;
+        await closeSession(session);
     });
 }
 
