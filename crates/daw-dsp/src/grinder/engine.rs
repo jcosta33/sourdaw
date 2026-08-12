@@ -114,6 +114,9 @@ pub struct GrinderEngine {
     output_gain: SmoothedParam,
     output_mix: SmoothedParam,
     clean_blend: SmoothedParam,
+    fat_enabled: bool,
+    fat_low_state: f32,
+    fat_low_coeff: f32,
     limiter_threshold: f32,
     limiter_enabled: bool,
     bypassed: bool,
@@ -167,6 +170,9 @@ impl GrinderEngine {
             output_gain: SmoothedParam::new(1.0, 5.0, sample_rate),
             output_mix: SmoothedParam::new(1.0, 5.0, sample_rate),
             clean_blend: SmoothedParam::new(0.0, 5.0, sample_rate),
+            fat_enabled: false,
+            fat_low_state: 0.0,
+            fat_low_coeff: (2.0 * std::f32::consts::PI * 180.0 / sample_rate).min(0.35),
             limiter_threshold: db_to_linear(-0.3),
             limiter_enabled: true,
             bypassed: false,
@@ -199,10 +205,11 @@ impl GrinderEngine {
             }
 
             // Preamp
-            "channel" | "bright" | "fat" | "tubeBias" | "tubeAge" | "millerCapacitance"
+            "channel" | "bright" | "tubeBias" | "tubeAge" | "millerCapacitance"
             | "gridConduction" | "couplingCapCharge" | "ampModel" => {
                 self.preamp.set_param(name, value)
             }
+            "fat" => self.fat_enabled = value > 0.5,
 
             // Tone stack
             "toneStackType" | "brightCap" => self.tone_stack.set_param(name, value),
@@ -500,6 +507,7 @@ impl GrinderEngine {
 
                 // Post-amp pedals
                 signal = self.process_supported_pedal_chain(signal, true);
+
             } else {
                 self.power_amp_peak *= self.meter_decay_coeff;
             }
@@ -508,6 +516,14 @@ impl GrinderEngine {
                 if let Some(rig_capture) = rig_capture_signal {
                     signal = signal * (1.0 - neural_mix) + rig_capture * neural_mix;
                 }
+            }
+
+            // Fat is final output voicing, not extra drive into one engine
+            // branch. Apply it after circuit/capture selection and blending so
+            // the same reachable control works in Circuit, Capture, and Hybrid.
+            self.fat_low_state += self.fat_low_coeff * (signal - self.fat_low_state);
+            if self.fat_enabled {
+                signal += self.fat_low_state * 0.22;
             }
 
             // Output processing

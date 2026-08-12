@@ -1,4 +1,4 @@
-// @wasm-bindgen-dts crate-source: sha256:ce7e5e53f6ee00104a7a1bb8355ad6af3c2d05b0c11b069a60d6ea34cbbff0fb
+// @wasm-bindgen-dts crate-source: sha256:35ef6c2700a1a4335a6e140dbb29da2849f98c2e0247d46fcb0bf4d5c4d1ce2b
 /* tslint:disable */
 /* eslint-disable */
 export const memory: WebAssembly.Memory;
@@ -132,25 +132,6 @@ export const toasterinstance_set_pad_dry_routed: (a: number, b: number, c: numbe
 export const toasterinstance_set_pad_param: (a: number, b: number, c: number, d: number, e: number) => void;
 export const toasterinstance_set_param: (a: number, b: number, c: number, d: number) => void;
 export const toasterinstance_set_param_by_id: (a: number, b: number, c: number) => void;
-export const __wbg_fermenterinstance_free: (a: number, b: number) => void;
-export const fermenterinstance_active_voices: (a: number) => number;
-export const fermenterinstance_advance_silence: (a: number) => void;
-export const fermenterinstance_get_nan_flush_count: (a: number) => number;
-export const fermenterinstance_get_right_ptr: (a: number) => number;
-export const fermenterinstance_lifecycle_state: (a: number) => number;
-export const fermenterinstance_new: (a: number, b: number) => number;
-export const fermenterinstance_note_expression: (a: number, b: number, c: number, d: number, e: number, f: number) => void;
-export const fermenterinstance_note_off: (a: number, b: number) => void;
-export const fermenterinstance_note_off_on_channel: (a: number, b: number, c: number) => void;
-export const fermenterinstance_note_on: (a: number, b: number, c: number) => void;
-export const fermenterinstance_note_on_with_channel: (a: number, b: number, c: number, d: number) => void;
-export const fermenterinstance_process: (a: number, b: number) => number;
-export const fermenterinstance_push_note_expression: (a: number, b: number, c: number, d: number, e: number, f: number, g: number) => number;
-export const fermenterinstance_push_note_off: (a: number, b: number, c: number) => number;
-export const fermenterinstance_push_note_off_on_channel: (a: number, b: number, c: number, d: number) => number;
-export const fermenterinstance_push_note_on: (a: number, b: number, c: number, d: number, e: number) => number;
-export const fermenterinstance_set_param: (a: number, b: number, c: number, d: number) => void;
-export const fermenterinstance_set_param_by_id: (a: number, b: number, c: number) => void;
 export const __wbg_crustinstance_free: (a: number, b: number) => void;
 export const crustinstance_get_gr_db: (a: number) => number;
 export const crustinstance_get_input_db: (a: number) => number;
@@ -170,6 +151,25 @@ export const crustinstance_new: (a: number) => number;
 export const crustinstance_process: (a: number, b: number) => number;
 export const crustinstance_reset_true_peak: (a: number) => void;
 export const crustinstance_set_param: (a: number, b: number, c: number, d: number) => void;
+export const __wbg_fermenterinstance_free: (a: number, b: number) => void;
+export const fermenterinstance_active_voices: (a: number) => number;
+export const fermenterinstance_advance_silence: (a: number) => void;
+export const fermenterinstance_get_nan_flush_count: (a: number) => number;
+export const fermenterinstance_get_right_ptr: (a: number) => number;
+export const fermenterinstance_lifecycle_state: (a: number) => number;
+export const fermenterinstance_new: (a: number, b: number) => number;
+export const fermenterinstance_note_expression: (a: number, b: number, c: number, d: number, e: number, f: number) => void;
+export const fermenterinstance_note_off: (a: number, b: number) => void;
+export const fermenterinstance_note_off_on_channel: (a: number, b: number, c: number) => void;
+export const fermenterinstance_note_on: (a: number, b: number, c: number) => void;
+export const fermenterinstance_note_on_with_channel: (a: number, b: number, c: number, d: number) => void;
+export const fermenterinstance_process: (a: number, b: number) => number;
+export const fermenterinstance_push_note_expression: (a: number, b: number, c: number, d: number, e: number, f: number, g: number) => number;
+export const fermenterinstance_push_note_off: (a: number, b: number, c: number) => number;
+export const fermenterinstance_push_note_off_on_channel: (a: number, b: number, c: number, d: number) => number;
+export const fermenterinstance_push_note_on: (a: number, b: number, c: number, d: number, e: number) => number;
+export const fermenterinstance_set_param: (a: number, b: number, c: number, d: number) => void;
+export const fermenterinstance_set_param_by_id: (a: number, b: number, c: number) => void;
 export const __wbg_bacteriainstance_free: (a: number, b: number) => void;
 export const __wbg_grinderinstance_free: (a: number, b: number) => void;
 export const bacteriainstance_add_macro_mapping: (a: number, b: number, c: number, d: number, e: number) => void;
