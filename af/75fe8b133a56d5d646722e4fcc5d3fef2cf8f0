@@ -1,0 +1,36 @@
+src/modules/Command/useCases/commandProjectRevisionPort.ts
+  s_a40848e8f8cca9::t_02528f74a6b2d9 10,16-18,21
+src/modules/Command/useCases/executeVersionedCommandBatch.ts
+  s_a40848e8f8cca9::t_02528f74a6b2d9 32,35-36
+  s_a40848e8f8cca9::t_661c3dda72edaf 37
+src/modules/Command/useCases/commandDeviceVersionsPort.ts
+  s_a40848e8f8cca9::t_ff0d6952a4fec4 11
+  s_a40848e8f8cca9::t_02528f74a6b2d9 19,21-22,29-31,39-43,57-59,61-62,66
+src/modules/Arrangement/handlers/vca/__tests__/legacyVcaActionHistory.spec.ts
+  s_a40848e8f8cca9::t_0463a182bf4ef6 481-495,658-669
+  s_a40848e8f8cca9::t_02528f74a6b2d9 298-304
+  s_a40848e8f8cca9::t_5026c14da5c71d 670
+src/modules/Arrangement/stores/__tests__/deviceWriteBoundaryClosure.spec.ts
+  s_a40848e8f8cca9::t_02528f74a6b2d9 460-466
+src/modules/Command/useCases/__tests__/versionedCommandContract.spec.ts
+  s_a40848e8f8cca9::t_02528f74a6b2d9 818-852,854-865,867-868
+  s_a40848e8f8cca9::t_ff0d6952a4fec4 853,866
+src/modules/PluginHost/useCases/pluginLifecycle/__tests__/activateExternalPlugin.spec.ts
+  s_a40848e8f8cca9::t_1eab58f295448e 22,71,195
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "af75fe8b133a56d5d646722e4fcc5d3fef2cf8f0",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
