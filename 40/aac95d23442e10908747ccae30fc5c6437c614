@@ -1,0 +1,16 @@
+src-tauri/src/commands/plugins.rs
+  h_1228e573df1f42 46,269,467,1117,1119-1126
+src/modules/PluginHost/useCases/pluginLifecycle/__tests__/lifecycle.spec.ts
+  h_1228e573df1f42 140
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "40aac95d23442e10908747ccae30fc5c6437c614",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
