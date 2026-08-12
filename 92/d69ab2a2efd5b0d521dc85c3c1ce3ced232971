@@ -1,0 +1,39 @@
+src/modules/Arrangement/handlers/track/handleImportStemSet.ts
+  s_a40848e8f8cca9::t_77bd676a428d37 12,15-16,29-44,46-59,62,93-102,105,108,133
+src/modules/Arrangement/useCases/stemImport/importStemSetToProject.ts
+  s_a40848e8f8cca9::t_aafc464b80ac0a 6,39
+  s_a40848e8f8cca9::t_ecb27da61d0f35 7
+src/modules/AiRuntime/useCases/agentReference/prepareStemImport.ts
+  s_a40848e8f8cca9::t_aafc464b80ac0a 114-120
+src/modules/AiRuntime/useCases/__tests__/stemImportStartingMixWorkflow.spec.ts
+  s_a40848e8f8cca9::t_9ca5d2d5a07514 47-48,64-76,260,286,505-516,616-633,636,657-686
+  s_a40848e8f8cca9::t_77bd676a428d37 650
+  s_a40848e8f8cca9::t_2552df2a9c607b 634-635
+  s_a40848e8f8cca9::t_caa234a6933a99 637
+  s_a40848e8f8cca9::t_9a5622d67c9f81 687
+src/modules/Arrangement/useCases/stemImport/createImportedStemTracks.ts
+  s_a40848e8f8cca9::t_aafc464b80ac0a 1-57
+src/modules/Arrangement/useCases/stemImport/isImportedStemSetApplied.ts
+  s_a40848e8f8cca9::t_aafc464b80ac0a 1-25,34-44
+  s_a40848e8f8cca9::t_5a06a6580e7a5e 26-33
+src/modules/AiRuntime/useCases/confirmPendingChatActions.ts
+  s_a40848e8f8cca9::t_aafc464b80ac0a 327
+src/modules/AiRuntime/useCases/__tests__/cancelPendingChatActions.spec.ts
+  s_a40848e8f8cca9::t_d5015c822f76bf 56,74,95
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "92d69ab2a2efd5b0d521dc85c3c1ce3ced232971",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
