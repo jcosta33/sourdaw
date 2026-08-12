@@ -1,0 +1,45 @@
+src/modules/Command/useCases/__tests__/versionedCommandContract.spec.ts
+  s_a40848e8f8cca9::t_ca14066c3d81c0 13,30,38
+  s_a40848e8f8cca9::t_251acc3873f14c 188,206-210,226
+  s_a40848e8f8cca9::t_6b7bf20888fa3f 315-325
+  s_a40848e8f8cca9::t_211d0e57c4b8b2 307-314
+src/modules/Arrangement/useCases/index.ts
+  s_a40848e8f8cca9::t_49322ac43671ac 13
+src/modules/Command/useCases/parseVersionedCommandEnvelope.ts
+  s_a40848e8f8cca9::t_01727d72e82645 161,166-170
+  s_a40848e8f8cca9::t_394449c6626c5d 12,175-203,317,322-323,325-326,329-330
+  s_a40848e8f8cca9::t_6b7bf20888fa3f 318-320,327,331
+src/modules/Command/useCases/commandTrackDefaultsPort.ts
+  s_a40848e8f8cca9::t_91a0c49805e876 1-12
+src/modules/Command/useCases/index.ts
+  s_a40848e8f8cca9::t_91a0c49805e876 8
+src/modules/Arrangement/useCases/reserveNextTrackColorForCommand.ts
+  s_a40848e8f8cca9::t_49322ac43671ac 1-5
+src/modules/Arrangement/models/Track.ts
+  s_a40848e8f8cca9::t_49322ac43671ac 220-225,236
+src/modules/Command/useCases/materializeCommandApplicationIds.ts
+  s_a40848e8f8cca9::t_b103975c6c362f 118-121,157-160
+  s_a40848e8f8cca9::t_76cb497eb96c0e 17,47,61-67,87-89,97-105,110-117,122,137-139,147-156,161,181,188-189,191
+  s_a40848e8f8cca9::t_7110d6c32a8912 186-187,190
+  s_a40848e8f8cca9::t_91a0c49805e876 5-6
+src/app/__tests__/bootstrap.spec.ts
+  s_a40848e8f8cca9::t_037c3f14f2b23f 116,198
+src/app/bootstrap.ts
+  s_a40848e8f8cca9::t_486e7feeb65299 33,75,189
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "0be89bc171fdf931b17e9089db74b0fcf43ccb9e",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
