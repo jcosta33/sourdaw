@@ -9,6 +9,7 @@ import { captureProjectRevision } from '#/modules/CrdtDocument/useCases';
 import { type AppAction } from '#/utils/handlerContract';
 
 import { clearHandlerRegistry, registerHandlerMap } from '../../stores/handlerRegistry';
+import { commandDeviceVersionsPort } from '../commandDeviceVersionsPort';
 import { commandProjectRevisionPort } from '../commandProjectRevisionPort';
 import { commandTrackDefaultsPort } from '../commandTrackDefaultsPort';
 import { createExecutionCommandEnvelope } from '../createExecutionCommandEnvelope';
@@ -27,6 +28,7 @@ describe('versioned command contract', () => {
         clearHandlerRegistry();
         configureAutomergeStoragePort(null);
         commandProjectRevisionPort.setProvider(captureProjectRevision);
+        commandDeviceVersionsPort.setResolver((deviceType) => `descriptor-v1:${deviceType}`);
         commandTrackDefaultsPort.setTrackColorProvider(() => 'oklch(0.40 0.08 250)');
     });
 
@@ -35,6 +37,7 @@ describe('versioned command contract', () => {
         flushAutomergeStorageWrites();
         configureAutomergeStoragePort(null);
         commandProjectRevisionPort.setProvider(null);
+        commandDeviceVersionsPort.setResolver(null);
         commandTrackDefaultsPort.setTrackColorProvider(null);
         vi.restoreAllMocks();
     });
@@ -300,6 +303,27 @@ describe('versioned command contract', () => {
                 value: 'note-command-22222222-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
             },
         ]);
+        expect(command.envelope.objectReferences).toEqual([
+            { argument: 'clipId', id: 'clip-1', scope: 'stable' },
+            {
+                argument: 'notes[0].id',
+                id: 'note-command-11111111-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+                scope: 'stable',
+            },
+            {
+                argument: 'notes[1].id',
+                id: 'note-command-22222222-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+                scope: 'stable',
+            },
+        ]);
+        expect(command.envelope.time).toEqual([
+            { argument: 'notes[0].startBeat', domain: 'musical', unit: 'beats', value: 0 },
+            { argument: 'notes[1].startBeat', domain: 'musical', unit: 'beats', value: 1 },
+        ]);
+        expect(command.envelope.parameterUnits).toContainEqual({
+            argument: 'notes[1].velocity',
+            unit: 'unitless',
+        });
         expect(parseVersionedCommandEnvelope(serializeVersionedCommandEnvelope(command.envelope))).toEqual({
             status: 'valid',
             envelope: command.envelope,
@@ -320,6 +344,16 @@ describe('versioned command contract', () => {
                         ...command.envelope.applicationAssignedIds,
                         { argument: 'clipId', value: 'clip-1' },
                     ],
+                })
+            ).status
+        ).toBe('invalid');
+        expect(
+            parseVersionedCommandEnvelope(
+                serializeVersionedCommandEnvelope({
+                    ...command.envelope,
+                    parameterUnits: command.envelope.parameterUnits.map((entry) =>
+                        entry.argument === 'notes[1].velocity' ? { ...entry, unit: 'bananas' } : entry
+                    ),
                 })
             ).status
         ).toBe('invalid');
@@ -708,8 +742,8 @@ describe('versioned command contract', () => {
             normalizedProjectRevision: revision,
             objectReferences: [],
             parameterUnits: [
-                { argument: 'numerator', unit: 'beats-per-bar' },
-                { argument: 'denominator', unit: 'note-value' },
+                { argument: 'numerator', unit: 'unitless' },
+                { argument: 'denominator', unit: 'unitless' },
             ],
             reason: 'Set the song meter.',
             time: [],
@@ -763,5 +797,43 @@ describe('versioned command contract', () => {
             reason: 'Command batch base revision does not match current project state',
         });
         expect(observed).toEqual([]);
+    });
+
+    it('rejects execution after an application-owned device contract changes', async () => {
+        const command = createExecutionCommandEnvelope({
+            action: {
+                type: 'addDevice',
+                payload: {
+                    trackId: 'track-1',
+                    deviceType: 'builtin-compressor',
+                    deviceId: 'device-command-1',
+                },
+            },
+            expectedEffect: 'Add a compressor.',
+            normalizedProjectRevision: 'revision-live',
+        });
+        commandProjectRevisionPort.setProvider(() => 'revision-live');
+        expect(command.envelope.availableDeviceVersions).toEqual({
+            'builtin-compressor': 'descriptor-v1:builtin-compressor',
+        });
+        commandDeviceVersionsPort.setResolver(() => 'descriptor-v1:changed');
+
+        const result = await executeVersionedCommandBatch({
+            commands: [serializeVersionedCommandEnvelope(command.envelope)],
+        });
+
+        expect(result).toMatchObject({
+            status: 'conflicted',
+            reason: 'Command batch base revision does not match current project state',
+        });
+
+        commandDeviceVersionsPort.setResolver(() => undefined);
+        const unavailableResult = await executeVersionedCommandBatch({
+            commands: [serializeVersionedCommandEnvelope(command.envelope)],
+        });
+        expect(unavailableResult).toMatchObject({
+            status: 'conflicted',
+            reason: 'Command batch base revision does not match current project state',
+        });
     });
 });

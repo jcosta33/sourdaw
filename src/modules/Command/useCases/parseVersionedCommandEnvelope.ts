@@ -7,6 +7,7 @@ import {
     type VersionedCommandEnvelope,
 } from '../models/VersionedCommandEnvelope';
 
+import { compileCommandArgumentMetadata } from './commandArgumentMetadata';
 import { executableAppActionDescriptorByType } from './executableAppActionRegistry';
 import { getVersionedCommandArgumentsDigest } from './getVersionedCommandArgumentsDigest';
 import { COMMAND_APPLICATION_ID_RULES } from './materializeCommandApplicationIds';
@@ -201,44 +202,18 @@ function getRequiredApplicationAssignedIdArguments(
     return [rule.argument];
 }
 
-function hasCompleteReferenceMetadata(
+function hasCanonicalArgumentMetadata(
     argumentsValue: Record<string, unknown>,
-    references: readonly CommandObjectReference[]
-): boolean {
-    for (const [argument, value] of Object.entries(argumentsValue)) {
-        if (argument.endsWith('Id') && typeof value === 'string') {
-            if (!references.some((reference) => reference.argument === argument && reference.id === value)) {
-                return false;
-            }
-        }
-        if (argument.endsWith('Ids') && Array.isArray(value)) {
-            for (const id of value) {
-                if (
-                    typeof id === 'string' &&
-                    !references.some((reference) => reference.argument === argument && reference.id === id)
-                ) {
-                    return false;
-                }
-            }
-        }
-    }
-    return true;
-}
-
-function hasCompleteUnitMetadata(
-    argumentsValue: Record<string, unknown>,
+    references: readonly CommandObjectReference[],
     parameterUnits: readonly CommandParameterUnit[],
     time: readonly CommandTimeReference[]
 ): boolean {
-    return Object.entries(argumentsValue).every(([argument, value]) => {
-        if (argument === 'seed' || typeof value !== 'number') {
-            return true;
-        }
-        return (
-            parameterUnits.some((entry) => entry.argument === argument) ||
-            time.some((entry) => entry.argument === argument)
-        );
-    });
+    const expected = compileCommandArgumentMetadata(argumentsValue);
+    return (
+        JSON.stringify(references) === JSON.stringify(expected.objectReferences) &&
+        JSON.stringify(parameterUnits) === JSON.stringify(expected.parameterUnits) &&
+        JSON.stringify(time) === JSON.stringify(expected.time)
+    );
 }
 
 function validateEnvelope(value: unknown): ParseVersionedCommandEnvelopeResult {
@@ -284,8 +259,7 @@ function validateEnvelope(value: unknown): ParseVersionedCommandEnvelopeResult {
     }
     if (
         !isRecord(value.arguments) ||
-        !hasCompleteReferenceMetadata(value.arguments, value.objectReferences) ||
-        !hasCompleteUnitMetadata(value.arguments, value.parameterUnits, value.time)
+        !hasCanonicalArgumentMetadata(value.arguments, value.objectReferences, value.parameterUnits, value.time)
     ) {
         return { status: 'invalid', reason: 'Command argument metadata is incomplete' };
     }

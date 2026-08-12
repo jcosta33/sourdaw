@@ -40,6 +40,7 @@ pnpm typecheck
 pnpm typecheck:test
 pnpm typecheck:scripts
 run_lint_with_heartbeat
+pnpm test:command-schema
 pnpm test:collection-scope
 pnpm test:barrel-mocks
 pnpm test:run --reporter=dot --silent=passed-only

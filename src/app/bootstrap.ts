@@ -30,6 +30,7 @@ import {
     setTimeOperationDependencies,
     setVcaRuntimeProjectionDependencies,
     getSongStructureHandlers,
+    getDeviceContractVersionForCommand,
     reserveNextTrackColorForCommand,
 } from '#/modules/Arrangement/useCases';
 import { getAnalysisHandlers, setMixAnalysisDisplayLifecycle } from '#/modules/AudioAnalysis/useCases';
@@ -72,6 +73,7 @@ import {
     productionBriefAdmissionPort,
     setActionHistoryMetadataPort,
     commandProjectRevisionPort,
+    commandDeviceVersionsPort,
     commandTrackDefaultsPort,
     setCommandEventBus,
     syncActionReplayMetadata,
@@ -186,6 +188,7 @@ setActionHistoryMetadataPort({
 });
 productionBriefAdmissionPort.setGuard(doesProductionBriefAllowActionBatch);
 commandProjectRevisionPort.setProvider(captureProjectRevision);
+commandDeviceVersionsPort.setResolver(getDeviceContractVersionForCommand);
 commandTrackDefaultsPort.setTrackColorProvider(reserveNextTrackColorForCommand);
 syncActionReplayMetadata(actionHistoryStore.value?.entries ?? []);
 actionHistoryStore.subscribe((state) => {

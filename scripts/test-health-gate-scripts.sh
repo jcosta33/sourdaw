@@ -28,6 +28,9 @@ printf '%s\n' \
     'if [ "${1:-}" = "test:collection-scope" ]; then' \
     '    exit "${FAKE_COLLECTION_SCOPE_STATUS:-0}"' \
     'fi' \
+    'if [ "${1:-}" = "test:command-schema" ]; then' \
+    '    exit "${FAKE_COMMAND_SCHEMA_STATUS:-0}"' \
+    'fi' \
     'if [ "${1:-}" = "test:barrel-mocks" ]; then' \
     '    exit "${FAKE_BARREL_MOCKS_STATUS:-0}"' \
     'fi' \
@@ -100,12 +103,32 @@ printf '%s\n' \
     'pnpm typecheck:test' \
     'pnpm typecheck:scripts' \
     'pnpm lint --quiet' \
+    'pnpm test:command-schema' \
     'pnpm test:collection-scope' \
     'pnpm test:barrel-mocks' \
     'pnpm test:run --reporter=dot --silent=passed-only' \
     'pnpm build' \
     > "$temp_root/expected-web-success.log"
 diff -u "$temp_root/expected-web-success.log" "$temp_root/web-success.log"
+
+set +e
+PATH="$fake_bin:$PATH" \
+    COMMAND_LOG="$temp_root/command-schema-failure.log" \
+    FAKE_COMMAND_SCHEMA_STATUS=1 \
+    sh "$temp_root/scripts/health-gates-web.sh" >/dev/null 2>&1
+command_schema_status=$?
+set -e
+test "$command_schema_status" -eq 1
+printf '%s\n' \
+    'pnpm wasm:verify' \
+    'pnpm deps:validate' \
+    'pnpm typecheck' \
+    'pnpm typecheck:test' \
+    'pnpm typecheck:scripts' \
+    'pnpm lint --quiet' \
+    'pnpm test:command-schema' \
+    > "$temp_root/expected-command-schema-failure.log"
+diff -u "$temp_root/expected-command-schema-failure.log" "$temp_root/command-schema-failure.log"
 
 # A drifting vitest collection scope must fail the gate with the check's own exit
 # code, and must stop before the suite runs — running the suite over an unknown
@@ -125,6 +148,7 @@ printf '%s\n' \
     'pnpm typecheck:test' \
     'pnpm typecheck:scripts' \
     'pnpm lint --quiet' \
+    'pnpm test:command-schema' \
     'pnpm test:collection-scope' \
     > "$temp_root/expected-collection-scope-failure.log"
 diff -u "$temp_root/expected-collection-scope-failure.log" "$temp_root/collection-scope-failure.log"
@@ -147,6 +171,7 @@ printf '%s\n' \
     'pnpm typecheck:test' \
     'pnpm typecheck:scripts' \
     'pnpm lint --quiet' \
+    'pnpm test:command-schema' \
     'pnpm test:collection-scope' \
     'pnpm test:barrel-mocks' \
     > "$temp_root/expected-barrel-mocks-failure.log"

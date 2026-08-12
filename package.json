@@ -13,6 +13,7 @@
         "test:health-gates": "sh scripts/test-health-gate-scripts.sh",
         "test:run": "vitest run",
         "test:collection-scope": "node --experimental-strip-types scripts/checkVitestCollectionScope.ts",
+        "test:command-schema": "node scripts/generateVersionedCommandArgumentSchemas.mjs --check",
         "test:barrel-mocks": "node --experimental-strip-types scripts/checkBarrelMockCoverage.ts",
         "test:generate-usecase-specs": "node --experimental-strip-types scripts/generate-missing-use-case-specs.ts",
         "test:e2e": "playwright test",

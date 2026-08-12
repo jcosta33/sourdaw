@@ -5,6 +5,7 @@ import { AppActionConflictError } from '../errors/AppActionExecutionError';
 import { commandProjectRevisionPort } from './commandProjectRevisionPort';
 import { createVersionedCommandReceipt } from './createVersionedCommandReceipt';
 import { executeAppAction } from './executeAppAction';
+import { hasCurrentCommandDeviceVersions } from './hasCurrentCommandDeviceVersions';
 import { parseVersionedCommandEnvelope } from './parseVersionedCommandEnvelope';
 
 export async function executeVersionedCommandEnvelope(
@@ -15,7 +16,10 @@ export async function executeVersionedCommandEnvelope(
     if (parsed.status === 'invalid') {
         throw new Error(parsed.reason);
     }
-    if (commandProjectRevisionPort.capture() !== parsed.envelope.normalizedProjectRevision) {
+    if (
+        commandProjectRevisionPort.capture() !== parsed.envelope.normalizedProjectRevision ||
+        !hasCurrentCommandDeviceVersions(parsed.envelope)
+    ) {
         throw new AppActionConflictError(parsed.envelope.operation);
     }
     if (parsed.envelope.dependencyIds.length > 0) {

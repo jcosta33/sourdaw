@@ -4,6 +4,7 @@ import { type VersionedCommandEnvelope } from '../models/VersionedCommandEnvelop
 
 import { commandProjectRevisionPort } from './commandProjectRevisionPort';
 import { executeAppActionBatch } from './executeAppActionBatch';
+import { hasCurrentCommandDeviceVersions } from './hasCurrentCommandDeviceVersions';
 import { parseVersionedCommandEnvelope } from './parseVersionedCommandEnvelope';
 
 type ExecuteVersionedCommandBatchInput = {
@@ -31,7 +32,10 @@ export async function executeVersionedCommandBatch(input: ExecuteVersionedComman
     const currentRevision = commandProjectRevisionPort.capture();
     if (
         (input.normalizedProjectRevision !== undefined && input.normalizedProjectRevision !== currentRevision) ||
-        envelopes.some((envelope) => envelope.normalizedProjectRevision !== currentRevision)
+        envelopes.some(
+            (envelope) =>
+                envelope.normalizedProjectRevision !== currentRevision || !hasCurrentCommandDeviceVersions(envelope)
+        )
     ) {
         return {
             status: 'conflicted' as const,

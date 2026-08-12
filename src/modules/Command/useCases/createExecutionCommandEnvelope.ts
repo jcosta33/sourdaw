@@ -3,8 +3,11 @@ import { generateSeed } from '#/utils/SeededRandom/SeededRandom';
 
 import { type CommandApplicationAssignedId, type VersionedCommandEnvelope } from '../models/VersionedCommandEnvelope';
 
+import { compileCommandArgumentMetadata } from './commandArgumentMetadata';
+import { commandDeviceVersionsPort } from './commandDeviceVersionsPort';
 import { commandProjectRevisionPort } from './commandProjectRevisionPort';
 import { createVersionedCommandEnvelope } from './createVersionedCommandEnvelope';
+import { getCommandDeviceTypes } from './getCommandDeviceTypes';
 import { materializeCommandApplicationIds } from './materializeCommandApplicationIds';
 
 type CreateExecutionCommandEnvelopeInput = {
@@ -44,117 +47,15 @@ function materializeSeed(action: AppAction): { action: AppAction; seed?: number 
     return { action: cloned, seed };
 }
 
-function getPayloadRecord(action: AppAction): object {
-    if (!('payload' in action)) {
+function isRecord(value: unknown): value is Readonly<Record<string, unknown>> {
+    return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function getPayloadRecord(action: AppAction): Readonly<Record<string, unknown>> {
+    if (!('payload' in action) || !isRecord(action.payload)) {
         return {};
     }
-    const payload: unknown = action.payload;
-    if (typeof payload !== 'object' || payload === null || Array.isArray(payload)) {
-        return {};
-    }
-    return payload;
-}
-
-function inferObjectReferences(action: AppAction) {
-    const references: Array<{ argument: string; id: string; scope: 'stable' | 'batch-local' }> = [];
-    for (const [argument, value] of Object.entries(getPayloadRecord(action))) {
-        if (argument.endsWith('Id') && typeof value === 'string' && value.length > 0) {
-            references.push({
-                argument,
-                id: value,
-                scope: value.startsWith('$') ? 'batch-local' : 'stable',
-            });
-        }
-        if (argument.endsWith('Ids') && Array.isArray(value)) {
-            for (const id of value) {
-                if (typeof id === 'string' && id.length > 0) {
-                    references.push({
-                        argument,
-                        id,
-                        scope: id.startsWith('$') ? 'batch-local' : 'stable',
-                    });
-                }
-            }
-        }
-    }
-    return references;
-}
-
-function inferTime(action: AppAction) {
-    const time: Array<{
-        argument: string;
-        domain: 'musical' | 'absolute';
-        unit: 'beats' | 'seconds' | 'milliseconds' | 'samples';
-        value: number;
-    }> = [];
-    for (const [argument, value] of Object.entries(getPayloadRecord(action))) {
-        if (typeof value !== 'number' || !Number.isFinite(value)) {
-            continue;
-        }
-        if (/beat/i.test(argument)) {
-            time.push({ argument, domain: 'musical', unit: 'beats', value });
-            continue;
-        }
-        if (/milliseconds|Ms$/.test(argument)) {
-            time.push({ argument, domain: 'absolute', unit: 'milliseconds', value });
-            continue;
-        }
-        if (/seconds|Seconds$/.test(argument)) {
-            time.push({ argument, domain: 'absolute', unit: 'seconds', value });
-            continue;
-        }
-        if (/samples|Samples$/.test(argument)) {
-            time.push({ argument, domain: 'absolute', unit: 'samples', value });
-        }
-    }
-    return time;
-}
-
-function getUnit(argument: string): string {
-    if (/beat/i.test(argument)) {
-        return 'beats';
-    }
-    if (/gain|level/i.test(argument)) {
-        return 'linear-gain';
-    }
-    if (/pan/i.test(argument)) {
-        return 'pan-percent';
-    }
-    if (/bpm|tempo/i.test(argument)) {
-        return 'beats-per-minute';
-    }
-    if (/milliseconds|Ms$/.test(argument)) {
-        return 'milliseconds';
-    }
-    if (/seconds|Seconds$/.test(argument)) {
-        return 'seconds';
-    }
-    if (/semitone/i.test(argument)) {
-        return 'semitones';
-    }
-    if (/cent/i.test(argument)) {
-        return 'cents';
-    }
-    if (/percent/i.test(argument)) {
-        return 'percent';
-    }
-    return 'unitless';
-}
-
-function inferParameterUnits(action: AppAction) {
-    return Object.entries(getPayloadRecord(action))
-        .filter(([, value]) => typeof value === 'number' && Number.isFinite(value))
-        .map(([argument]) => ({ argument, unit: getUnit(argument) }));
-}
-
-function inferAvailableDeviceVersions(action: AppAction): Readonly<Record<string, string>> {
-    const versions: Record<string, string> = {};
-    for (const [argument, value] of Object.entries(getPayloadRecord(action))) {
-        if ((argument === 'deviceType' || argument === 'expectedDeviceType') && typeof value === 'string') {
-            versions[value] = 'unversioned';
-        }
-    }
-    return versions;
+    return action.payload;
 }
 
 export function createExecutionCommandEnvelope(input: CreateExecutionCommandEnvelopeInput): {
@@ -166,19 +67,21 @@ export function createExecutionCommandEnvelope(input: CreateExecutionCommandEnve
         : materializeCommandApplicationIds(input.action);
     const materialized = materializeSeed(identityMaterialized.action);
     const source = input.options?.source ?? 'manual';
+    const argumentsValue = getPayloadRecord(materialized.action);
+    const metadata = compileCommandArgumentMetadata(argumentsValue);
     const envelope = createVersionedCommandEnvelope({
         action: materialized.action,
         applicationAssignedIds: identityMaterialized.applicationAssignedIds,
-        availableDeviceVersions: inferAvailableDeviceVersions(materialized.action),
+        availableDeviceVersions: commandDeviceVersionsPort.capture(getCommandDeviceTypes(argumentsValue)),
         dependencyIds: input.dependencyIds,
         expectedEffect: input.expectedEffect,
         groupId: input.options?.groupId,
         normalizedProjectRevision: input.normalizedProjectRevision ?? commandProjectRevisionPort.capture(),
-        objectReferences: inferObjectReferences(materialized.action),
-        parameterUnits: inferParameterUnits(materialized.action),
+        objectReferences: metadata.objectReferences,
+        parameterUnits: metadata.parameterUnits,
         reason: `Execute ${materialized.action.type} from ${source}`,
         seed: materialized.seed,
-        time: inferTime(materialized.action),
+        time: metadata.time,
     });
     return { action: materialized.action, envelope };
 }
