@@ -1,0 +1,32 @@
+src/modules/Project/useCases/projectTemplates/templateDefinitions/createFromTemplate.ts
+  s_bc88af7d3b054c::t_e921d77e7e22ba 64,78-92,94,96,115,130,139
+src-tauri/src/commands/plugins.rs
+  s_bc88af7d3b054c::t_59e86b72a90fc8 1110,1116-1117
+  s_bc88af7d3b054c::t_3113c91b1e9068 1099,1102
+  s_bc88af7d3b054c::t_8103bf70957b48 436-447,464,469-474,519
+  s_bc88af7d3b054c::t_9a175ed5a34e13 1053
+  s_bc88af7d3b054c::t_b910cf7b005581 1069-1072,1105-1106,1111-1115,1120-1125
+  s_bc88af7d3b054c::t_68d68dc91e8a82 1089
+  s_bc88af7d3b054c::t_a5675adcd96ddd 1103-1104,1126-1127
+  s_bc88af7d3b054c::t_b82a181cd8a0f2 1063-1064,1066,1079,1084,1107-1109,1118-1119
+src/modules/Project/useCases/projectTemplates/templateDefinitions/__tests__/createFromTemplate.spec.ts
+  s_bc88af7d3b054c::t_59e86b72a90fc8 6,76,284,287,289-290,292-293
+  s_bc88af7d3b054c::t_de0af4566e92d7 283
+  s_bc88af7d3b054c::t_3113c91b1e9068 106,285-286,291,294
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "446f151e7a939049c2c993dd130821bb57fc9874",
+  "prompts": {},
+  "sessions": {
+    "s_bc88af7d3b054c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f9b4a-11a2-7f61-8dfb-76eed0eb2a9c",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
