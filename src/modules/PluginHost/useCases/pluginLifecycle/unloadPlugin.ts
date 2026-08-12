@@ -8,28 +8,33 @@ import { externalLatencyReporters } from './externalLatencyReporters';
 import { loadedExternalInstances } from './loadedExternalInstances';
 import { serializePluginLifecycle } from './serializePluginLifecycle';
 
-function clearRendererPluginOwnership(): void {
-    loadedExternalInstances.clear();
-    externalLatencyReporters.clear();
-    externalPluginActivationStore.set(defaultExternalPluginActivationState);
+function forgetPluginInstance(instanceId: string): void {
+    loadedExternalInstances.delete(instanceId);
+    externalLatencyReporters.delete(instanceId);
+    externalPluginActivationStore.update((state) => {
+        const byInstanceId = { ...(state ?? defaultExternalPluginActivationState).byInstanceId };
+        delete byInstanceId[instanceId];
+        return { ...(state ?? defaultExternalPluginActivationState), byInstanceId };
+    });
 }
-/** Unload a plugin instance by its instance ID. */
-export function unloadPlugin(instanceId?: string): ReturnType<typeof unloadPluginRepo> {
+
+function reconcileUnloadResult(result: Awaited<ReturnType<typeof unloadPluginRepo>>): void {
+    for (const instanceId of result[0]) {
+        forgetPluginInstance(instanceId);
+    }
+    if (result[1].length > 0) {
+        throw new Error(result[1].join('; '));
+    }
+}
+
+export function unloadPlugin(instanceId?: string): Promise<void> {
     if (instanceId === undefined) {
-        return unloadPluginRepo().then(clearRendererPluginOwnership);
+        return unloadPluginRepo().then(reconcileUnloadResult);
     }
     return serializePluginLifecycle(instanceId, async () => {
         if (!loadedExternalInstances.has(instanceId)) {
             return;
         }
-        await unloadPluginRepo(instanceId);
-        loadedExternalInstances.delete(instanceId);
-        externalPluginActivationStore.update((state) => {
-            const current = state ?? defaultExternalPluginActivationState;
-            const byInstanceId = { ...current.byInstanceId };
-            delete byInstanceId[instanceId];
-            return { ...current, byInstanceId };
-        });
-        externalLatencyReporters.delete(instanceId);
+        reconcileUnloadResult(await unloadPluginRepo(instanceId));
     });
 }

@@ -41,7 +41,9 @@ describe('Plugin Lifecycle Use Cases', () => {
         vi.clearAllMocks();
         loadedExternalInstances.clear();
         mocks.loadPluginRepo.mockResolvedValue(pluginInstance);
-        mocks.unloadPluginRepo.mockResolvedValue(undefined);
+        mocks.unloadPluginRepo.mockImplementation((instanceId?: string) =>
+            Promise.resolve([instanceId ? [instanceId] : [], []])
+        );
     });
 
     it('loadPlugin delegates to repository', async () => {
@@ -55,40 +57,32 @@ describe('Plugin Lifecycle Use Cases', () => {
         expect(mocks.unloadPluginRepo).toHaveBeenCalledWith('inst1');
     });
 
-    it('coalesces unloads while ownership remains published until native success', async () => {
-        const unloading = Promise.withResolvers<void>();
-        loadedExternalInstances.add('inst1');
-        mocks.unloadPluginRepo.mockReturnValueOnce(unloading.promise);
-        const first = unloadPlugin('inst1');
-        const second = unloadPlugin('inst1');
-        await Promise.resolve();
-        expect(loadedExternalInstances.has('inst1')).toBe(true);
-        unloading.resolve();
-        await expect(Promise.all([first, second])).resolves.toEqual([undefined, undefined]);
-        expect(mocks.unloadPluginRepo).toHaveBeenCalledTimes(1);
-        expect(loadedExternalInstances.has('inst1')).toBe(false);
-    });
-
-    it('delegates unload-all to native after renderer ownership is lost', async () => {
-        await unloadPlugin();
-        expect(mocks.unloadPluginRepo).toHaveBeenCalledWith();
+    it('reconciles partial native bulk unload before rejecting', async () => {
+        loadedExternalInstances.add('removed');
+        loadedExternalInstances.add('survivor');
+        mocks.unloadPluginRepo.mockResolvedValueOnce([['removed'], ['survivor failed']]);
+        await expect(unloadPlugin()).rejects.toThrow('survivor failed');
+        expect([...loadedExternalInstances]).toEqual(['survivor']);
     });
     it('serializes unload then load for the same instance', async () => {
-        const unloading = Promise.withResolvers<void>();
+        const unloaded = [['ordered-instance'], []];
+        const unloading = Promise.withResolvers<typeof unloaded>();
         mocks.unloadPluginRepo.mockReturnValueOnce(unloading.promise);
         mocks.loadPluginRepo.mockResolvedValueOnce(pluginInstance);
         loadedExternalInstances.add('ordered-instance');
 
         const unloadResult = unloadPlugin('ordered-instance');
+        const duplicateUnload = unloadPlugin('ordered-instance');
         const loadResult = loadPlugin('p1', 'ordered-instance');
         await Promise.resolve();
 
         expect(mocks.unloadPluginRepo).toHaveBeenCalledWith('ordered-instance');
         expect(mocks.loadPluginRepo).not.toHaveBeenCalled();
 
-        unloading.resolve();
-        await Promise.all([unloadResult, loadResult]);
+        unloading.resolve(unloaded);
+        await Promise.all([unloadResult, duplicateUnload, loadResult]);
 
+        expect(mocks.unloadPluginRepo).toHaveBeenCalledTimes(1);
         expect(mocks.loadPluginRepo).toHaveBeenCalledWith('p1', 'ordered-instance');
         expect(mocks.unloadPluginRepo.mock.invocationCallOrder[0]).toBeLessThan(
             mocks.loadPluginRepo.mock.invocationCallOrder[0]!
@@ -102,7 +96,7 @@ describe('Plugin Lifecycle Use Cases', () => {
             order.push('outer-start');
             nestedResult = loadPlugin('p1', 'reentrant-instance');
             order.push('outer-return');
-            return Promise.resolve();
+            return Promise.resolve([['reentrant-instance'], []]);
         });
         mocks.loadPluginRepo.mockImplementationOnce(() => {
             order.push('nested-run');
@@ -123,7 +117,7 @@ describe('Plugin Lifecycle Use Cases', () => {
     });
 
     it('allows a different instance to progress while an unload is pending and then fails', async () => {
-        const unloading = Promise.withResolvers<void>();
+        const unloading = Promise.withResolvers<never>();
         const failure = new Error('unload failed');
         mocks.unloadPluginRepo.mockReturnValueOnce(unloading.promise);
         mocks.loadPluginRepo.mockResolvedValueOnce(pluginInstance);
@@ -142,7 +136,7 @@ describe('Plugin Lifecycle Use Cases', () => {
     });
 
     it('rejects queued same-instance work after failure and allows a later explicit retry', async () => {
-        const unloading = Promise.withResolvers<void>();
+        const unloading = Promise.withResolvers<never>();
         const failure = new Error('unload failed');
         mocks.unloadPluginRepo.mockReturnValueOnce(unloading.promise);
         mocks.loadPluginRepo.mockResolvedValueOnce(pluginInstance);

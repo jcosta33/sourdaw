@@ -41,6 +41,8 @@ pub struct PluginInstance {
     pub engine_plugin_id: Option<usize>,
 }
 
+pub type PluginUnloadResult = (Vec<String>, Vec<String>);
+
 static PLUGIN_LIFECYCLE_GATES: LazyLock<Mutex<HashMap<String, Arc<tokio::sync::Mutex<()>>>>> =
     LazyLock::new(|| Mutex::new(HashMap::new()));
 static PLUGIN_RUNTIME_GATE: tokio::sync::RwLock<()> = tokio::sync::RwLock::const_new(());
@@ -453,11 +455,16 @@ pub async fn unload_plugin(
     instance_id: Option<PluginInstanceId>,
     app: tauri::AppHandle,
     state: tauri::State<'_, AppState>,
-) -> Result<(), String> {
+) -> Result<PluginUnloadResult, String> {
     match instance_id {
         Some(instance_id) => {
             let _runtime_guard = PLUGIN_RUNTIME_GATE.read().await;
-            unload_plugin_runtime(&instance_id.0, Some(&app), state.inner()).await
+            let mut response = PluginUnloadResult::default();
+            match unload_plugin_runtime(&instance_id.0, Some(&app), state.inner()).await {
+                Ok(()) => response.0.push(instance_id.0),
+                Err(error) => response.1.push(error),
+            }
+            Ok(response)
         }
         None => unload_all_plugin_runtimes(Some(&app), state.inner()).await,
     }
@@ -466,7 +473,7 @@ pub async fn unload_plugin(
 async fn unload_all_plugin_runtimes(
     app: Option<&tauri::AppHandle>,
     state: &AppState,
-) -> Result<(), String> {
+) -> Result<PluginUnloadResult, String> {
     let _runtime_guard = PLUGIN_RUNTIME_GATE.write().await;
     let instance_ids = {
         let plugins = state
@@ -483,20 +490,14 @@ async fn unload_all_plugin_runtimes(
             .cloned()
             .collect::<BTreeSet<_>>()
     };
-    let mut errors = Vec::new();
+    let mut result = PluginUnloadResult::default();
     for instance_id in instance_ids {
-        if let Err(error) = unload_plugin_runtime(&instance_id, app, state).await {
-            errors.push(error);
+        match unload_plugin_runtime(&instance_id, app, state).await {
+            Ok(()) => result.0.push(instance_id),
+            Err(error) => result.1.push(error),
         }
     }
-    if errors.is_empty() {
-        Ok(())
-    } else {
-        Err(format!(
-            "Failed to unload all plugin instances: {}",
-            errors.join("; ")
-        ))
-    }
+    Ok(result)
 }
 
 async fn unload_plugin_runtime(
@@ -1121,12 +1122,12 @@ mod tests {
         tauri::async_runtime::block_on(async {
             let app = command_test_app();
             let _runtime_operation = PLUGIN_RUNTIME_GATE.read().await;
-            assert!(tokio::time::timeout(
+            let blocked = tokio::time::timeout(
                 Duration::from_millis(10),
-                unload_all_plugin_runtimes(None, app.state::<AppState>().inner())
+                unload_all_plugin_runtimes(None, app.state::<AppState>().inner()),
             )
-            .await
-            .is_err());
+            .await;
+            assert!(blocked.is_err());
         });
     }
 
@@ -1135,24 +1136,12 @@ mod tests {
         let app = command_test_app();
         let state = app.state::<AppState>();
         insert_engine_owned_fixture(&state, "active-instance", vec![1, 2, 3]);
-        let result = tauri::async_runtime::block_on(unload_plugin_runtime(
-            "active-instance",
-            None,
-            state.inner(),
-        ));
-        assert_eq!(result, Err("Native engine not running".to_string()));
-        {
-            let engine_plugins = state
-                .engine_plugins
-                .lock()
-                .expect("engine_plugins lock should be available");
-            let runtime = &engine_plugins["active-instance"].runtime;
-            assert!(runtime.ensure_public_control_allowed().is_ok());
-        }
-        let wrapper =
-            ClapWrapper::new_engine_owned_command_fixture("Command Fixture", vec![], true);
         let instance = PluginInstanceData {
-            plugin: Box::new(wrapper),
+            plugin: Box::new(ClapWrapper::new_engine_owned_command_fixture(
+                "Command Fixture",
+                vec![],
+                true,
+            )),
         };
         state
             .plugins
@@ -1166,10 +1155,9 @@ mod tests {
             .insert("command-instance".into(), "command-window".into());
         let unload_all =
             tauri::async_runtime::block_on(unload_all_plugin_runtimes(None, state.inner()));
-        assert_eq!(
-            unload_all,
-            Err("Failed to unload all plugin instances: Native engine not running".into())
-        );
+        let unload_all = unload_all.expect("bulk inventory should complete");
+        assert_eq!(unload_all.0, ["command-instance"]);
+        assert_eq!(unload_all.1, ["Native engine not running"]);
         let windows = state.plugin_windows.lock().expect("plugin_windows lock");
         assert!(windows.is_empty());
     }

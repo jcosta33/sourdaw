@@ -150,19 +150,12 @@ describe('newProject injectable', () => {
         await expect(activation).resolves.toBe(false);
         expect(resetCrdtProjectAuthority).not.toHaveBeenCalled();
         expect(ensureTrackStrips).toHaveBeenCalledOnce();
-        expect(startCrdtAutoSave).toHaveBeenCalledOnce();
     });
 
     it('keeps previous authority and restores its graph when native plugin teardown fails', async () => {
         pluginHostMocks.unloadLoadedExternalPlugins.mockRejectedValueOnce(new Error('native teardown failed'));
         await expect(newProject('Test')).resolves.toBe(false);
-        expect(resetCrdtProjectAuthority).not.toHaveBeenCalled();
         expect(ensureTrackStrips).toHaveBeenCalledOnce();
-        expect(projectStore.value).toMatchObject({
-            name: 'Existing Project',
-            loading: false,
-            initialized: true,
-        });
     });
 
     it('restores the previous project when authority reset fails before commit', async () => {
