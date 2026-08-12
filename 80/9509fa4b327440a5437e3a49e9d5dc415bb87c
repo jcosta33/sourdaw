@@ -1,0 +1,14 @@
+tests/e2e/clipTrimFadeKeyboardTestId.spec.ts
+  h_1228e573df1f42 1-64
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "809509fa4b327440a5437e3a49e9d5dc415bb87c",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
