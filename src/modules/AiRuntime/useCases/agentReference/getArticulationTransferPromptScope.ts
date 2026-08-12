@@ -8,7 +8,6 @@ import { type ProjectContext, type ProjectContextSection } from '../../models/Pr
 import { projectMidiArticulationTransfer } from '../../transformers/projectMidiArticulationTransfer';
 
 type ArticulationTransferPromptScope =
-    | { status: 'none' }
     | { status: 'invalid'; reason: string }
     | {
           status: 'request';
@@ -31,13 +30,9 @@ function findSection(context: ProjectContext, ordinal: 'one' | 'two'): ProjectCo
 }
 
 export function getArticulationTransferPromptScope(
-    prompt: string,
     context: ProjectContext,
     projectRevision?: string
 ): ArticulationTransferPromptScope {
-    if (normalizeText(prompt) !== 'copy chorus one articulation to chorus two without copying pitches or velocities') {
-        return { status: 'none' };
-    }
     const sourceSection = findSection(context, 'one');
     const targetSection = findSection(context, 'two');
     if (!sourceSection || !targetSection || sourceSection.id === targetSection.id) {

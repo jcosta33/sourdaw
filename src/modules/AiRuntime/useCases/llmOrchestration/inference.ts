@@ -9,6 +9,7 @@ import { isToolPlanningRejectedError } from '../../errors/ToolPlanningRejectedEr
 import { type RunnableAiBackend } from '../../models/LlmOrchestrationTypes';
 import { WEBLLM_MODEL_ID } from '../../models/ModelInfo';
 import { DAW_TOOL_SCHEMAS, type ToolSchema } from '../../models/ToolDefinitions';
+import { WORKFLOW_CAPABILITY_ACTION_TOOL_NAMES, WORKFLOW_CAPABILITY_TOOL_NAME } from '../../models/WorkflowCapability';
 import { generateCloudToolCalls } from '../../repositories/cloudLlm/cloudInference/generateCloudToolCalls';
 import { getCloudProviderInfo } from '../../repositories/cloudLlm/getCloudProviderInfo';
 import { generateNativeCompletion } from '../../repositories/nativeEngine/completions';
@@ -208,10 +209,32 @@ export const generateToolPlanningOutcome = inject({ logger })(({ logger }) => {
                     if (!isWebLlmLoaded()) {
                         await waitForInference(initWebLlmEngine(undefined, { signal }), signal);
                     }
-                    const relevantTools = selectExecutableAppActionToolSchemasForPrompt({
-                        toolSchemas: availableTools,
+                    const workflowSelectionTools = availableTools.filter(
+                        (tool) => tool.function.name === WORKFLOW_CAPABILITY_TOOL_NAME
+                    );
+                    const actionTools = availableTools.filter(
+                        (tool) => tool.function.name !== WORKFLOW_CAPABILITY_TOOL_NAME
+                    );
+                    const selectedActionTools = selectExecutableAppActionToolSchemasForPrompt({
+                        toolSchemas: actionTools,
                         prompt: toolSelectionPrompt,
                     });
+                    const workflowActionToolNames = new Set<string>(WORKFLOW_CAPABILITY_ACTION_TOOL_NAMES);
+                    const workflowActionTools =
+                        workflowSelectionTools.length > 0
+                            ? actionTools.filter((tool) => workflowActionToolNames.has(tool.function.name))
+                            : [];
+                    const mandatoryToolNames = new Set(
+                        [...workflowSelectionTools, ...workflowActionTools].map((tool) => tool.function.name)
+                    );
+                    const promptActionTools = selectedActionTools.filter(
+                        (tool) => !mandatoryToolNames.has(tool.function.name)
+                    );
+                    const relevantTools = [
+                        ...workflowSelectionTools,
+                        ...workflowActionTools,
+                        ...promptActionTools,
+                    ].slice(0, 30);
                     logger.info(
                         `[AI Engine] (webllm) Using ${String(relevantTools.length)}/${String(availableTools.length)} tools`
                     );

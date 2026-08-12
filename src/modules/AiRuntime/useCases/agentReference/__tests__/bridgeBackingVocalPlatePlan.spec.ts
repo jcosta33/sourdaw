@@ -27,7 +27,7 @@ const context: ProjectContext = {
 
 describe('bridgeBackingVocalPlatePlan', () => {
     it.each(['automateSendRanges', 'renderProjectSections'])(
-        'keeps %s unavailable outside the exact EX-01 admission',
+        'keeps %s unavailable outside the selected workflow admission',
         (name) => {
             const calls = [
                 {
@@ -45,11 +45,9 @@ describe('bridgeBackingVocalPlatePlan', () => {
                 },
             ];
 
-            expect(
-                bridgeBackingVocalPlatePlan({ calls, context, prompt: 'Apply this operation to Chorus One' })
-            ).toEqual({
+            expect(bridgeBackingVocalPlatePlan({ calls, context, selected: false })).toEqual({
                 status: 'rejected',
-                reason: `${name} is available only through the exact EX-01 backing-vocal plate workflow`,
+                reason: `${name} is available only through the selected backing-vocal plate workflow`,
             });
         }
     );

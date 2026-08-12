@@ -29,7 +29,11 @@ import {
 import { confirmPendingChatActions } from '../confirmPendingChatActions';
 import { sendChatMessage } from '../sendChatMessage';
 
+import { withWorkflowCapabilitySelection } from './workflowCapabilitySelectionFixture';
+
 const PROMPT = 'Copy chorus-one articulation to chorus two without copying pitches or velocities.';
+const PARAPHRASE =
+    'Transfer note articulations from the first chorus into the matching second-chorus clips, leaving pitch and velocity intact.';
 
 const runtimeMocks = vi.hoisted(() => {
     const backend: { value: 'cloud' | 'webllm' } = { value: 'webllm' };
@@ -226,7 +230,10 @@ function useHostedFixture(): void {
         if (typeof init?.body !== 'string') {
             throw new TypeError('Expected hosted provider request body');
         }
-        const plan = runtimeMocks.transformPlan.value(createProviderPlan(getHostedUserMessage(init.body)));
+        const plan = withWorkflowCapabilitySelection(
+            'articulation-transfer',
+            runtimeMocks.transformPlan.value(createProviderPlan(getHostedUserMessage(init.body)))
+        );
         return Promise.resolve(
             new Response(
                 JSON.stringify({
@@ -260,7 +267,14 @@ describe('MF-03 articulation transfer prompt workflow', () => {
         runtimeMocks.backend.value = 'webllm';
         runtimeMocks.transformPlan.value = (plan) => plan;
         runtimeMocks.generateWebLlmCompletion.mockImplementation((_systemPrompt, userMessage) =>
-            Promise.resolve(JSON.stringify(runtimeMocks.transformPlan.value(createProviderPlan(userMessage))))
+            Promise.resolve(
+                JSON.stringify(
+                    withWorkflowCapabilitySelection(
+                        'articulation-transfer',
+                        runtimeMocks.transformPlan.value(createProviderPlan(userMessage))
+                    )
+                )
+            )
         );
         vi.stubGlobal('fetch', runtimeMocks.fetch);
         cloudSession.clear();
@@ -327,6 +341,11 @@ describe('MF-03 articulation transfer prompt workflow', () => {
         configureAutomergeStoragePort(null);
         resetCrdtProjectAuthority('MF-03 articulation workflow cleanup');
         removeCrdtDoc('root');
+    });
+
+    it('routes a semantic paraphrase to the articulation-transfer capability', async () => {
+        await sendChatMessage(PARAPHRASE);
+        expect(getConfirmationId()).not.toBe('');
     });
 
     it('copies only exact articulation state through confirmation and one Command write', async () => {

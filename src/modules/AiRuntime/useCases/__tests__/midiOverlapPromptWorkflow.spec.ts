@@ -36,8 +36,12 @@ import {
 import { confirmPendingChatActions } from '../confirmPendingChatActions';
 import { sendChatMessage } from '../sendChatMessage';
 
+import { withWorkflowCapabilitySelection } from './workflowCapabilitySelectionFixture';
+
 const PROMPT =
     'On every selected MIDI clip, shorten only overlaps strictly below 30 ms and leave overlaps exactly at or above 30 ms unchanged.';
+const PARAPHRASE =
+    'Across the selected MIDI clips, trim just the note collisions under thirty milliseconds and leave longer ones alone.';
 
 type ProviderCall = { name: string; arguments: Record<string, unknown> };
 
@@ -196,7 +200,10 @@ function useHostedFixture(): void {
         if (typeof init?.body !== 'string') {
             throw new TypeError('Expected hosted provider request body');
         }
-        const plan = runtimeMocks.transformPlan.value(createProviderPlan(getHostedUserMessage(init.body)));
+        const plan = withWorkflowCapabilitySelection(
+            'midi-overlap-shortening',
+            runtimeMocks.transformPlan.value(createProviderPlan(getHostedUserMessage(init.body)))
+        );
         return Promise.resolve(
             new Response(
                 JSON.stringify({
@@ -238,7 +245,14 @@ describe('EX-04 selected MIDI overlap prompt workflow', () => {
         runtimeMocks.backend.value = 'webllm';
         runtimeMocks.transformPlan.value = (plan) => plan;
         runtimeMocks.generateWebLlmCompletion.mockImplementation((_systemPrompt, userMessage) =>
-            Promise.resolve(JSON.stringify(runtimeMocks.transformPlan.value(createProviderPlan(userMessage))))
+            Promise.resolve(
+                JSON.stringify(
+                    withWorkflowCapabilitySelection(
+                        'midi-overlap-shortening',
+                        runtimeMocks.transformPlan.value(createProviderPlan(userMessage))
+                    )
+                )
+            )
         );
         vi.stubGlobal('fetch', runtimeMocks.fetch);
         cloudSession.clear();
@@ -312,6 +326,11 @@ describe('EX-04 selected MIDI overlap prompt workflow', () => {
         configureAutomergeStoragePort(null);
         resetCrdtProjectAuthority('EX-04 overlap workflow cleanup');
         removeCrdtDoc('root');
+    });
+
+    it('routes a semantic paraphrase to the MIDI-overlap capability', async () => {
+        await sendChatMessage(PARAPHRASE);
+        expect(getConfirmationId()).not.toBe('');
     });
 
     it('confirms and commits only sub-30 ms same-pitch/channel overlaps as one guarded history group', async () => {

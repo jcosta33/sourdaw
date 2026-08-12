@@ -4,6 +4,7 @@ import { type AppAction } from '#/utils/handlerContract';
 
 import { type ProjectContext } from '../models/ProjectContext';
 import { type WholeProjectVibeMixPlan } from '../models/WholeProjectVibeMixPlan';
+import { type WorkflowCapabilityId } from '../models/WorkflowCapability';
 
 import { getArticulationTransferPromptScope } from './agentReference/getArticulationTransferPromptScope';
 import { getBackingVocalPlatePromptScope } from './agentReference/getBackingVocalPlatePromptScope';
@@ -25,6 +26,7 @@ type DescribePendingActionConfirmationInput = {
     context: ProjectContext;
     prompt: string;
     wholeProjectVibeMixPlan?: WholeProjectVibeMixPlan;
+    workflowCapabilityId?: WorkflowCapabilityId;
 };
 
 const riskRank = {
@@ -117,7 +119,8 @@ function getProtectedUnchangedTracks(
     prompt: string,
     context: ProjectContext,
     actions: readonly AppAction[],
-    wholeProjectVibeMixPlan?: WholeProjectVibeMixPlan
+    wholeProjectVibeMixPlan?: WholeProjectVibeMixPlan,
+    workflowCapabilityId?: WorkflowCapabilityId
 ): Array<{ id: string; name: string }> {
     const protectedScopes = [
         ...prompt.matchAll(/\b(?:leave|leaving|keep|keeping|preserve|preserving)\s+(.+?)\s+unchanged\b/giu),
@@ -146,25 +149,28 @@ function getProtectedUnchangedTracks(
         }));
     }
     const planProtections = wholeProjectVibeMixPlan?.globalConstraints.map(({ id, name }) => ({ id, name })) ?? [];
-    const drumRoutingScope = getDrumRoutingPromptScope(prompt, context);
+    const drumRoutingScope = workflowCapabilityId === 'drum-routing' ? getDrumRoutingPromptScope(context) : null;
     const drumRoutingProtections =
-        drumRoutingScope.status === 'request'
+        drumRoutingScope?.status === 'request'
             ? [{ id: drumRoutingScope.protectedReturnId, name: drumRoutingScope.protectedReturnName }]
             : [];
-    const drumPreviewBranchesScope = getDrumPreviewBranchesPromptScope(prompt, context);
+    const drumPreviewBranchesScope =
+        workflowCapabilityId === 'drum-preview-branches' ? getDrumPreviewBranchesPromptScope(context) : null;
     const drumPreviewBranchProtections =
-        drumPreviewBranchesScope.status === 'request' ? drumPreviewBranchesScope.protectedObjects : [];
+        drumPreviewBranchesScope?.status === 'request' ? drumPreviewBranchesScope.protectedObjects : [];
     const sidechainRoutingScope = getSidechainRoutingPromptScope(prompt, context);
     const sidechainRoutingProtections =
         sidechainRoutingScope.status === 'request'
             ? sidechainRoutingScope.protectedTargets.map(({ id, name }) => ({ id, name }))
             : [];
-    const sharedVocalFxBusesScope = getSharedVocalFxBusesPromptScope(prompt, context);
+    const sharedVocalFxBusesScope =
+        workflowCapabilityId === 'shared-vocal-fx-buses' ? getSharedVocalFxBusesPromptScope(context) : null;
     const sharedVocalFxBusesProtections =
-        sharedVocalFxBusesScope.status === 'request' ? sharedVocalFxBusesScope.protectedObjects : [];
-    const articulationTransferScope = getArticulationTransferPromptScope(prompt, context);
+        sharedVocalFxBusesScope?.status === 'request' ? sharedVocalFxBusesScope.protectedObjects : [];
+    const articulationTransferScope =
+        workflowCapabilityId === 'articulation-transfer' ? getArticulationTransferPromptScope(context) : null;
     const articulationProtections =
-        articulationTransferScope.status === 'request'
+        articulationTransferScope?.status === 'request'
             ? [
                   ...articulationTransferScope.protectedClipIds.map((clipId) => ({
                       id: clipId,
@@ -178,18 +184,22 @@ function getProtectedUnchangedTracks(
                   })),
               ]
             : [];
-    const backingVocalPlateScope = getBackingVocalPlatePromptScope(prompt, context);
+    const backingVocalPlateScope =
+        workflowCapabilityId === 'backing-vocal-plate' ? getBackingVocalPlatePromptScope(context) : null;
     const backingVocalPlateProtections =
-        backingVocalPlateScope.status === 'request' ? backingVocalPlateScope.protectedObjects : [];
-    const bassProcessingCopyScope = getBassProcessingCopyPromptScope(prompt, context);
+        backingVocalPlateScope?.status === 'request' ? backingVocalPlateScope.protectedObjects : [];
+    const bassProcessingCopyScope =
+        workflowCapabilityId === 'bass-processing-copy' ? getBassProcessingCopyPromptScope(context) : null;
     const bassProcessingCopyProtections =
-        bassProcessingCopyScope.status === 'request' ? bassProcessingCopyScope.protectedObjects : [];
-    const midiOverlapTransformScope = getMidiOverlapTransformPromptScope(prompt, context);
+        bassProcessingCopyScope?.status === 'request' ? bassProcessingCopyScope.protectedObjects : [];
+    const midiOverlapTransformScope =
+        workflowCapabilityId === 'midi-overlap-shortening' ? getMidiOverlapTransformPromptScope(context) : null;
     const midiOverlapTransformProtections =
-        midiOverlapTransformScope.status === 'request' ? midiOverlapTransformScope.protectedObjects : [];
-    const syncopatedArpeggioScope = getSyncopatedArpeggioPromptScope(prompt, context);
+        midiOverlapTransformScope?.status === 'request' ? midiOverlapTransformScope.protectedObjects : [];
+    const syncopatedArpeggioScope =
+        workflowCapabilityId === 'syncopated-arpeggio' ? getSyncopatedArpeggioPromptScope(context) : null;
     const syncopatedArpeggioProtections =
-        syncopatedArpeggioScope.status === 'request' ? syncopatedArpeggioScope.protectedObjects : [];
+        syncopatedArpeggioScope?.status === 'request' ? syncopatedArpeggioScope.protectedObjects : [];
     const protections = [
         ...(actions.some((action) => action.type === 'importStemSet')
             ? context.tracks.map(({ id, name }) => ({ id, name }))
@@ -361,6 +371,7 @@ export function describePendingActionConfirmation({
     context,
     prompt,
     wholeProjectVibeMixPlan,
+    workflowCapabilityId,
 }: DescribePendingActionConfirmationInput) {
     const actionLabels = actions.map((action) => describeExactAction(action, actions, context));
     const affectedIds = [...new Set(actions.flatMap((action) => getPlannedActionAffectedIds(action)))];
@@ -383,7 +394,13 @@ export function describePendingActionConfirmation({
             reason: 'This applies the same change to multiple project targets.',
         };
     }
-    const protectedUnchanged = getProtectedUnchangedTracks(prompt, context, actions, wholeProjectVibeMixPlan);
+    const protectedUnchanged = getProtectedUnchangedTracks(
+        prompt,
+        context,
+        actions,
+        wholeProjectVibeMixPlan,
+        workflowCapabilityId
+    );
     const intendedChanges = actions
         .map((action, index) => `- **${action.type}**: ${actionLabels[index] ?? action.type}`)
         .join('\n');

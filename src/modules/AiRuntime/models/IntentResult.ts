@@ -1,5 +1,6 @@
 import { type ExecutableRuntimeAction } from './ExecutableRuntimeAction';
 import { type WholeProjectVibeMixPlan } from './WholeProjectVibeMixPlan';
+import { type WorkflowCapabilityId } from './WorkflowCapability';
 
 export type IntentResult = {
     actions: ExecutableRuntimeAction[];
@@ -11,4 +12,6 @@ export type IntentResult = {
     executionMode?: 'atomic';
     /** Structured, inert explanation for a bounded whole-project proposal. */
     wholeProjectVibeMixPlan?: WholeProjectVibeMixPlan;
+    preparationRequest?: 'stem-import';
+    workflowCapabilityId?: WorkflowCapabilityId;
 };

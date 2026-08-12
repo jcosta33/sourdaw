@@ -26,21 +26,13 @@ export type BassProcessingCopyRequestScope = {
     targetSection: ProjectContextSection;
 };
 
-export type BassProcessingCopyPromptScope =
-    { status: 'none' } | { status: 'invalid'; reason: string } | BassProcessingCopyRequestScope;
+export type BassProcessingCopyPromptScope = { status: 'invalid'; reason: string } | BassProcessingCopyRequestScope;
 
 function normalizeText(value: string): string {
     return value
         .toLocaleLowerCase()
         .replaceAll(/[^\p{L}\p{N}]+/gu, ' ')
         .trim();
-}
-
-function isExactRequest(prompt: string): boolean {
-    return (
-        normalizeText(prompt) ===
-        'copy the bass processing from chorus one to chorus two while preserving chorus two s existing distortion automation'
-    );
 }
 
 function findUniqueSection(context: ProjectContext, name: string): ProjectContextSection | null {
@@ -81,14 +73,9 @@ function isDistortionDevice(device: ProjectContextTrack['devices'][number]): boo
 }
 
 export function getBassProcessingCopyPromptScope(
-    prompt: string,
     context: ProjectContext,
     baseRevision = 'unbound'
 ): BassProcessingCopyPromptScope {
-    if (!isExactRequest(prompt)) {
-        return { status: 'none' };
-    }
-
     const sourceSection = findUniqueSection(context, 'Chorus One');
     const targetSection = findUniqueSection(context, 'Chorus Two');
     if (!sourceSection || !targetSection) {

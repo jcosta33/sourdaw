@@ -5,6 +5,7 @@ import {
 import { createPunchRegionPatch } from '#/modules/Transport/useCases';
 
 import { type ProjectContext } from '../../models/ProjectContext';
+import { type WorkflowCapabilityId } from '../../models/WorkflowCapability';
 import {
     bridgeLlmToolCalls,
     type LlmActionBridgeResult,
@@ -50,6 +51,7 @@ type BridgeGroundedLlmToolCallsInput = {
     markerSignatures?: readonly MarkerPlanningSignature[];
     sectionSignatures?: readonly SectionPlanningSignature[];
     prompt: string;
+    workflowCapabilityId?: WorkflowCapabilityId;
 };
 
 type GroundToolCallInput = {
@@ -66,6 +68,7 @@ type GroundToolCallInput = {
     sameActionCallCount: number;
     visibleGroundedCalls: readonly ToolCallResult[];
     visiblePlannedTrackCreations: readonly ToolCallResult[];
+    workflowCapabilityId?: WorkflowCapabilityId;
 };
 
 type PromptClause = {
@@ -123,6 +126,7 @@ type ResolveActionPromptScopeInput = {
     plannedActionNames: readonly string[];
     sameActionAssertedArguments: readonly Readonly<Record<string, unknown>>[];
     sameActionCallCount: number;
+    workflowCapabilityId?: WorkflowCapabilityId;
 };
 
 type DirectionalTargetReferences = {
@@ -1481,6 +1485,7 @@ function resolveActionPromptScope({
     plannedActionNames,
     sameActionAssertedArguments,
     sameActionCallCount,
+    workflowCapabilityId,
 }: ResolveActionPromptScopeInput): ActionPromptScope | null {
     const groundingRules = getExecutableAppActionGroundingRules(actionName);
     const cancellationPrompt = actionName === 'glueClips' ? maskGlueQuotedLabels(prompt) : prompt;
@@ -1517,8 +1522,8 @@ function resolveActionPromptScope({
     if (!groundingRules) {
         return null;
     }
-    if (actionName === 'setTrackOutput') {
-        const drumRoutingScope = getDrumRoutingPromptScope(prompt, context);
+    if (actionName === 'setTrackOutput' && workflowCapabilityId === 'drum-routing') {
+        const drumRoutingScope = getDrumRoutingPromptScope(context);
         if (
             drumRoutingScope.status === 'request' &&
             sameActionCallCount === drumRoutingScope.targetIds.length &&
@@ -1532,8 +1537,8 @@ function resolveActionPromptScope({
             return { text: prompt, masked: prompt, directional: false, matchedIntentPhrase: 'route' };
         }
     }
-    if (actionName === 'copyMidiArticulations') {
-        const articulationScope = getArticulationTransferPromptScope(prompt, context);
+    if (actionName === 'copyMidiArticulations' && workflowCapabilityId === 'articulation-transfer') {
+        const articulationScope = getArticulationTransferPromptScope(context);
         if (
             articulationScope.status === 'request' &&
             sameActionCallCount === articulationScope.clipPairs.length &&
@@ -3439,6 +3444,7 @@ function groundToolCall({
     sameActionCallCount,
     visibleGroundedCalls,
     visiblePlannedTrackCreations,
+    workflowCapabilityId,
 }: GroundToolCallInput): ToolCallResult | LlmActionRejection {
     if (call.name === 'stopPlayback' && !isExplicitStopPlaybackPrompt(prompt)) {
         return rejection(index, call.name, 'Provider action is not grounded in an explicit transport-stop request');
@@ -3464,6 +3470,7 @@ function groundToolCall({
         plannedActionNames,
         sameActionAssertedArguments,
         sameActionCallCount,
+        workflowCapabilityId,
     });
     if (!actionScope) {
         return rejection(index, call.name, 'Provider action is not grounded in the user request');
@@ -3512,9 +3519,14 @@ function groundToolCall({
         call.name === 'addDevice' ? (getBulkDeviceInsertionTrackScope(prompt, context)?.targetIds ?? null) : null;
     const bulkMutedEmptyTrackDeletionTargetIds =
         call.name === 'removeTrack' ? (getMutedEmptyTrackDeletionScope(prompt, context)?.targetIds ?? null) : null;
-    const drumRoutingScope = call.name === 'setTrackOutput' ? getDrumRoutingPromptScope(prompt, context) : null;
+    const drumRoutingScope =
+        call.name === 'setTrackOutput' && workflowCapabilityId === 'drum-routing'
+            ? getDrumRoutingPromptScope(context)
+            : null;
     const articulationTransferScope =
-        call.name === 'copyMidiArticulations' ? getArticulationTransferPromptScope(prompt, context) : null;
+        call.name === 'copyMidiArticulations' && workflowCapabilityId === 'articulation-transfer'
+            ? getArticulationTransferPromptScope(context)
+            : null;
     const sidechainRoutingScope =
         call.name === 'addSidechainRoute' ? getSidechainRoutingPromptScope(prompt, context) : null;
     for (const targetRule of groundingRules.targetRules) {
@@ -3895,6 +3907,7 @@ export function bridgeGroundedLlmToolCalls({
     markerSignatures = [],
     sectionSignatures = [],
     prompt,
+    workflowCapabilityId,
 }: BridgeGroundedLlmToolCallsInput): BridgeGroundedLlmToolCallsResult {
     if (calls.length > MAX_LLM_ACTIONS_PER_BATCH) {
         return bridgeLlmToolCalls({
@@ -3905,7 +3918,11 @@ export function bridgeGroundedLlmToolCalls({
             sectionSignatures,
         });
     }
-    const sharedVocalFxBusesPlan = bridgeSharedVocalFxBusesPlan({ calls, context, prompt });
+    const sharedVocalFxBusesPlan = bridgeSharedVocalFxBusesPlan({
+        calls,
+        context,
+        selected: workflowCapabilityId === 'shared-vocal-fx-buses',
+    });
     if (sharedVocalFxBusesPlan.status === 'rejected') {
         return { actions: [], rejections: [rejection(0, '<batch>', sharedVocalFxBusesPlan.reason)] };
     }
@@ -3916,7 +3933,11 @@ export function bridgeGroundedLlmToolCalls({
             rejections: [],
         };
     }
-    const backingVocalPlatePlan = bridgeBackingVocalPlatePlan({ calls, context, prompt });
+    const backingVocalPlatePlan = bridgeBackingVocalPlatePlan({
+        calls,
+        context,
+        selected: workflowCapabilityId === 'backing-vocal-plate',
+    });
     if (backingVocalPlatePlan.status === 'rejected') {
         return { actions: [], rejections: [rejection(0, '<batch>', backingVocalPlatePlan.reason)] };
     }
@@ -3929,7 +3950,10 @@ export function bridgeGroundedLlmToolCalls({
         };
     }
     let effectiveCalls = calls;
-    const bassProcessingCopyScope = getBassProcessingCopyPromptScope(prompt, context);
+    const bassProcessingCopyScope =
+        workflowCapabilityId === 'bass-processing-copy'
+            ? getBassProcessingCopyPromptScope(context)
+            : ({ status: 'none' } as const);
     const providerBassProcessingCalls = calls.filter((call) => call.name === 'addAdjustmentRegion');
     if (bassProcessingCopyScope.status === 'invalid') {
         return { actions: [], rejections: [rejection(0, '<batch>', bassProcessingCopyScope.reason)] };
@@ -3984,7 +4008,10 @@ export function bridgeGroundedLlmToolCalls({
         targetDeviceId: string;
         targetTrackId: string;
     }> = [];
-    const articulationTransferScope = getArticulationTransferPromptScope(prompt, context);
+    const articulationTransferScope =
+        workflowCapabilityId === 'articulation-transfer'
+            ? getArticulationTransferPromptScope(context)
+            : ({ status: 'none' } as const);
     if (articulationTransferScope.status === 'invalid') {
         return { actions: [], rejections: [rejection(0, '<batch>', articulationTransferScope.reason)] };
     }
@@ -4027,7 +4054,10 @@ export function bridgeGroundedLlmToolCalls({
             return providerTransfer ? [providerTransfer] : [];
         });
     }
-    const midiOverlapTransformScope = getMidiOverlapTransformPromptScope(prompt, context);
+    const midiOverlapTransformScope =
+        workflowCapabilityId === 'midi-overlap-shortening'
+            ? getMidiOverlapTransformPromptScope(context)
+            : ({ status: 'none' } as const);
     if (midiOverlapTransformScope.status === 'invalid') {
         return { actions: [], rejections: [rejection(0, '<batch>', midiOverlapTransformScope.reason)] };
     }
@@ -4060,7 +4090,10 @@ export function bridgeGroundedLlmToolCalls({
             return providerTransform ? [providerTransform] : [];
         });
     }
-    const syncopatedArpeggioScope = getSyncopatedArpeggioPromptScope(prompt, context);
+    const syncopatedArpeggioScope =
+        workflowCapabilityId === 'syncopated-arpeggio'
+            ? getSyncopatedArpeggioPromptScope(context)
+            : ({ status: 'none' } as const);
     const providerArpeggioCalls = calls.filter((call) => call.name === 'arpeggiate');
     if (syncopatedArpeggioScope.status === 'invalid') {
         return { actions: [], rejections: [rejection(0, '<batch>', syncopatedArpeggioScope.reason)] };
@@ -4090,7 +4123,10 @@ export function bridgeGroundedLlmToolCalls({
         }
         effectiveCalls = [providerAction];
     }
-    const drumPreviewBranchesScope = getDrumPreviewBranchesPromptScope(prompt, context);
+    const drumPreviewBranchesScope =
+        workflowCapabilityId === 'drum-preview-branches'
+            ? getDrumPreviewBranchesPromptScope(context)
+            : ({ status: 'none' } as const);
     if (drumPreviewBranchesScope.status === 'invalid') {
         return { actions: [], rejections: [rejection(0, '<batch>', drumPreviewBranchesScope.reason)] };
     }
@@ -4125,7 +4161,8 @@ export function bridgeGroundedLlmToolCalls({
         }
         effectiveCalls = [providerAction];
     }
-    const drumRoutingScope = getDrumRoutingPromptScope(prompt, context);
+    const drumRoutingScope =
+        workflowCapabilityId === 'drum-routing' ? getDrumRoutingPromptScope(context) : ({ status: 'none' } as const);
     if (drumRoutingScope.status === 'invalid') {
         return { actions: [], rejections: [rejection(0, '<batch>', drumRoutingScope.reason)] };
     }
@@ -4404,6 +4441,7 @@ export function bridgeGroundedLlmToolCalls({
                 sameActionCallCount,
                 visibleGroundedCalls: acceptedGroundedCalls,
                 visiblePlannedTrackCreations,
+                workflowCapabilityId,
             });
         }
         if ('reason' in grounded) {
