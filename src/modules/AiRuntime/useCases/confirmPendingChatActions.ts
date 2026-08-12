@@ -1,6 +1,6 @@
 import { logger } from '#/infra/logger/appLogger';
 import { getAgentSectionRenderArtifacts, retryAgentProjectSectionRenders } from '#/modules/AudioRendering/useCases';
-import { executeAppActionBatch, generateGroupId } from '#/modules/Command/useCases';
+import { executeAppActionBatch, executeVersionedCommandBatch, generateGroupId } from '#/modules/Command/useCases';
 import { captureProjectRevision, isDrumPreviewBranchPlanApplied } from '#/modules/CrdtDocument/useCases';
 
 import { AiProposalInvalidatedError } from '../errors/AiProposalInvalidatedError';
@@ -75,7 +75,12 @@ function getApprovalPreflightFailure(confirmation: PendingAppActionConfirmation)
         actionLabels: confirmation.actionLabels,
         protectedUnchanged: confirmation.protectedUnchanged,
     });
-    if (currentApproval !== JSON.stringify(approved)) {
+    const immutableApproval = JSON.stringify({
+        actions: approved.actions,
+        actionLabels: approved.actionLabels,
+        protectedUnchanged: approved.protectedUnchanged,
+    });
+    if (currentApproval !== immutableApproval) {
         return 'The executable action batch no longer matches the approved proposal.';
     }
 
@@ -156,7 +161,16 @@ function formatExecutionReceipt(
         .map((execution) => {
             const actualAffectedIds = getActualExecutionAffectedIds(execution, confirmation);
             const affectedIds = actualAffectedIds.length > 0 ? actualAffectedIds.join(', ') : 'none';
-            return `- **${execution.actionType}**: ${execution.label}\n  - Affected IDs: ${affectedIds}\n  - Outcome: ${execution.outcome}`;
+            const assignedIds = (execution.applicationAssigned?.ids ?? [])
+                .map(({ field, value }) => `${field}=${value}`)
+                .join(', ');
+            const assignedTimestamps = (execution.applicationAssigned?.timestamps ?? [])
+                .map(({ field, value }) => `${field}=${String(value)}`)
+                .join(', ');
+            const commandMetadata = execution.commandId
+                ? `\n  - Command: v${String(execution.commandSchemaVersion)} ${execution.commandId}\n  - Application-assigned IDs: ${assignedIds || 'none'}\n  - Application-assigned timestamps: ${assignedTimestamps || 'none'}`
+                : '';
+            return `- **${execution.actionType}**: ${execution.label}${commandMetadata}\n  - Affected IDs: ${affectedIds}\n  - Outcome: ${execution.outcome}`;
         })
         .join('\n');
     const protectedAffectedIds = new Set(
@@ -300,18 +314,30 @@ export async function confirmPendingChatActions(
         content: `Confirming:\n\n${confirmation.actionLabels.map((label) => `- ${label}`).join('\n')}`,
     });
 
-    const group = generateGroupId(confirmation.prompt);
+    const group = confirmation.groupId
+        ? { groupId: confirmation.groupId, groupLabel: confirmation.groupLabel }
+        : generateGroupId(confirmation.prompt);
     const aborter = new AbortController();
     setChatGenerating(true);
     setActiveAborter(aborter);
     let batchResult: Awaited<ReturnType<typeof executeAppActionBatch>>;
     try {
-        batchResult = await executeAppActionBatch(confirmation.approvalSnapshot.actions, {
+        const executionOptions = {
             ...group,
-            source: 'prompt',
+            source: 'prompt' as const,
             requireCompensation: confirmation.executionMode === 'atomic',
             shouldExecute: () => isConfirmationExecutionAuthorized(confirmation, aborter.signal),
-        });
+        };
+        const commandEnvelopes = confirmation.approvalSnapshot.commandEnvelopes;
+        if (commandEnvelopes) {
+            batchResult = await executeVersionedCommandBatch({
+                commands: commandEnvelopes,
+                normalizedProjectRevision: captureProjectRevision(),
+                options: executionOptions,
+            });
+        } else {
+            batchResult = await executeAppActionBatch(confirmation.approvalSnapshot.actions, executionOptions);
+        }
     } catch (error) {
         const reason = error instanceof Error ? error.message : String(error);
         updatePendingActionConfirmationStatus({
@@ -349,25 +375,31 @@ export async function confirmPendingChatActions(
         if (batchResult.status === 'executed' || batchResult.status === 'executed-with-warning') {
             executionKind = 'runtime';
         }
-        const approvedLabelByAction = new Map(
-            confirmation.approvalSnapshot.actions.map((action, index) => [
-                action,
-                confirmation.approvalSnapshot.actionLabels[index],
-            ])
+        const executedLabels: PendingActionExecution[] = batchResult.actions.map(
+            ({ action, label, receipt }, index) => {
+                const execution: PendingActionExecution = {
+                    actionType: action.type,
+                    label: confirmation.approvalSnapshot.actionLabels[index] ?? label,
+                    executionKind,
+                    affectedIds: getPlannedActionAffectedIds(action),
+                    ...(receipt
+                        ? {
+                              commandId: receipt.commandId,
+                              commandSchemaVersion: receipt.schemaVersion,
+                              applicationAssigned: {
+                                  ids: [...receipt.applicationAssigned.ids],
+                                  timestamps: [...receipt.applicationAssigned.timestamps],
+                              },
+                          }
+                        : {}),
+                    outcome: batchResult.status,
+                };
+                return {
+                    ...execution,
+                    affectedIds: getActualExecutionAffectedIds(execution, confirmation),
+                };
+            }
         );
-        const executedLabels: PendingActionExecution[] = batchResult.actions.map(({ action, label }) => {
-            const execution: PendingActionExecution = {
-                actionType: action.type,
-                label: approvedLabelByAction.get(action) ?? label,
-                executionKind,
-                affectedIds: getPlannedActionAffectedIds(action),
-                outcome: batchResult.status,
-            };
-            return {
-                ...execution,
-                affectedIds: getActualExecutionAffectedIds(execution, confirmation),
-            };
-        });
         const executionReceipt = formatExecutionReceipt(executedLabels, confirmation);
         let warning: string | undefined;
         if (batchResult.status === 'committed-with-warning' || batchResult.status === 'executed-with-warning') {

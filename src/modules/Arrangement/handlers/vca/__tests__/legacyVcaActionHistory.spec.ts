@@ -295,7 +295,13 @@ describe('legacy VCA action history', () => {
             prepare: () => {
                 setVcaGroupsState([
                     ...getVcaGroupsState(),
-                    { id: 'vca-12345678', name: 'Existing', gain: 1, muted: false, trackIds: [] },
+                    {
+                        id: 'vca-command-12345678-0000-4000-8000-000000000000',
+                        name: 'Existing',
+                        gain: 1,
+                        muted: false,
+                        trackIds: [],
+                    },
                 ]);
                 vi.spyOn(crypto, 'randomUUID').mockReturnValue('12345678-0000-4000-8000-000000000000');
             },
@@ -472,7 +478,21 @@ describe('legacy VCA action history', () => {
                 throw new Error('Expected updated dormant action target');
             }
             assertTrack(updated);
-            expect(macroStore.value?.currentRecording).toEqual([action]);
+            expect(macroStore.value?.currentRecording).toEqual([
+                expect.objectContaining({
+                    type: action.type,
+                    payload: expect.objectContaining(action.payload),
+                }),
+            ]);
+            if (action.type === 'armTrack') {
+                expect(macroStore.value?.currentRecording[0]).toEqual(
+                    expect.objectContaining({
+                        payload: expect.objectContaining({
+                            midiInputOwnerId: expect.stringMatching(/^arm-command-/),
+                        }),
+                    })
+                );
+            }
             expect(actionHistoryStore.value?.entries).toHaveLength(1);
             expect(undoStore.value?.past).toHaveLength(1);
         }
@@ -635,7 +655,19 @@ describe('legacy VCA action history', () => {
                 targetDeviceId: 'sidechain-device',
             }),
         ]);
-        expect(macroStore.value?.currentRecording).toEqual([action]);
+        expect(macroStore.value?.currentRecording).toEqual([
+            {
+                type: 'addSidechainRoute',
+                payload: {
+                    sourceTrackId: 'track-1',
+                    targetTrackId: 'track-2',
+                    targetDeviceId: 'sidechain-device',
+                    targetParameterId: 'threshold',
+                    gain: 1,
+                    routeId: expect.stringMatching(/^sidechain-command-/),
+                },
+            },
+        ]);
         expect(actionHistoryStore.value?.entries).toHaveLength(1);
         expect(undoStore.value?.past).toHaveLength(1);
         expect(undoStore.value?.past[0]).toEqual({ label: 'Add sidechain route' });

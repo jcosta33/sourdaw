@@ -49,12 +49,14 @@ describe('pendingActionConfirmationStore', () => {
             payload: { name: 'Drum Bus', busId: 'bus-drum' },
         };
         const protectedUnchanged = [{ id: 'track-parallel', name: 'Parallel Compression' }];
+        const commandEnvelopes = ['{"schemaVersion":1,"commandId":"command-1"}'];
         const proposed = proposePendingActionConfirmation({
             id: 'confirmation-2',
             prompt: 'create a Drum Bus',
             assistantMessageId: 'message-2',
             actions: [action],
             actionLabels: ['Create Drum Bus'],
+            commandEnvelopes,
             protectedUnchanged,
             executionMode: 'atomic',
             projectRevision: 'revision-2',
@@ -69,6 +71,7 @@ describe('pendingActionConfirmationStore', () => {
         }
 
         action.payload.name = 'Changed input';
+        commandEnvelopes[0] = 'changed input';
         inputProtectedTarget.name = 'Changed input';
         if (proposed.actions[0]?.type === 'createBus') {
             proposed.actions[0].payload.name = 'Changed read';
@@ -81,6 +84,7 @@ describe('pendingActionConfirmationStore', () => {
         expect(reread?.approvalSnapshot).toEqual({
             actions: [{ type: 'createBus', payload: { name: 'Drum Bus', busId: 'bus-drum' } }],
             actionLabels: ['Create Drum Bus'],
+            commandEnvelopes: ['{"schemaVersion":1,"commandId":"command-1"}'],
             protectedUnchanged: [{ id: 'track-parallel', name: 'Parallel Compression' }],
         });
     });

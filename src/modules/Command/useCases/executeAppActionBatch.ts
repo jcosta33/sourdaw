@@ -16,20 +16,26 @@ import {
 } from '#/utils/handlerContract';
 
 import { AppActionConflictError } from '../errors/AppActionExecutionError';
+import { type VersionedCommandEnvelope, type VersionedCommandReceipt } from '../models/VersionedCommandEnvelope';
 import { registerActionReplayCapability, revokeActionReplayCapability } from '../stores/actionReplayCapabilities';
 import { getHandler } from '../stores/handlerRegistry';
 
 import { actionHistoryMetadataPort } from './actionHistoryMetadataPort';
 import { commitUndoEntry } from './commitUndoEntry';
+import { createExecutionCommandEnvelope } from './createExecutionCommandEnvelope';
 import { createUndoEntry } from './createUndoEntry';
+import { createVersionedCommandReceipt } from './createVersionedCommandReceipt';
 import { findSingletonBatchAction } from './findSingletonBatchAction';
+import { getVersionedCommandArgumentsDigest } from './getVersionedCommandArgumentsDigest';
 import { recordAction } from './macro/recording/recordAction';
+import { materializeCommandApplicationIds } from './materializeCommandApplicationIds';
 import { productionBriefAdmissionPort } from './productionBriefAdmissionPort';
 import { traceAppAction } from './traceAppAction';
 
 type ExecutedBatchAction = {
     action: AppAction;
     label: string;
+    receipt?: VersionedCommandReceipt;
 };
 
 type ExecuteAppActionBatchResult =
@@ -42,6 +48,7 @@ type ExecuteAppActionBatchResult =
     | { status: 'rejected' | 'conflicted' | 'cancelled' | 'failed'; reason: string; actions: [] };
 
 type ExecuteAppActionBatchOptions = ExecuteOptions & {
+    commandEnvelopes?: readonly VersionedCommandEnvelope[];
     requireCompensation?: boolean;
     onCommitted?: (actions: readonly AppAction[]) => void;
 };
@@ -59,6 +66,7 @@ type PreparedBatchAction = {
     requiresAbortCompensation: boolean;
     handler: ActionHandler;
     description: HandlerDescribeResult | null;
+    envelope: VersionedCommandEnvelope;
     label: string;
 };
 
@@ -73,6 +81,16 @@ class AppActionBatchCancelledError extends Error {
 
 function failureReason(error: unknown): string {
     return error instanceof Error ? error.message : String(error);
+}
+
+function createExecutedBatchAction(prepared: PreparedBatchAction): ExecutedBatchAction {
+    return {
+        action: prepared.action,
+        label: prepared.label,
+        receipt: createVersionedCommandReceipt({
+            envelope: prepared.envelope,
+        }),
+    };
 }
 
 function assertExecutionAuthorized(shouldExecute: ExecuteOptions['shouldExecute'] | undefined): void {
@@ -113,7 +131,7 @@ async function executeRuntimeAction(
             };
         }
 
-        const actions = [{ action: prepared.action, label: prepared.label }];
+        const actions = [createExecutedBatchAction(prepared)];
         if (!result?.afterRuntimeExecution) {
             return { status: 'executed', actions };
         }
@@ -232,7 +250,15 @@ async function compensateAttemptedBatch(
             if (!inverseHandler) {
                 throw new Error(`No registered handler for inverse action: ${inverseAction.type}`);
             }
-            const result: HandlerExecutionResult | void = await scope(() => inverseHandler.execute(inverseAction));
+            const compensation = createExecutionCommandEnvelope({
+                action: inverseAction,
+                dependencyIds: [prepared.envelope.commandId],
+                expectedEffect: inverseHandler.describe(inverseAction).label,
+                options: { groupId: prepared.envelope.groupId, source: 'ai' },
+            });
+            const result: HandlerExecutionResult | void = await scope(() =>
+                inverseHandler.execute(compensation.action)
+            );
             if (result?.status === 'conflict' || result?.status === 'no-write') {
                 throw new Error(`Runtime compensation did not apply for ${inverseAction.type}`);
             }
@@ -247,7 +273,6 @@ function recordCommittedBatch(
     preparedActions: readonly PreparedBatchAction[],
     options: ExecuteOptions | undefined
 ): void {
-    const timestamp = Date.now();
     const historyActions = preparedActions.filter(
         ({ description, handler }) => !options?.skipUndo && handler.undoable && description !== null
     );
@@ -288,7 +313,7 @@ function recordCommittedBatch(
         }
     }
     for (const prepared of preparedActions) {
-        const { action, description, handler, label } = prepared;
+        const { action, description, envelope, handler, label } = prepared;
         if (!options?.skipMacroRecording) {
             recordAction(action);
         }
@@ -296,7 +321,7 @@ function recordCommittedBatch(
             continue;
         }
 
-        const entryId = crypto.randomUUID();
+        const entryId = envelope.commandId;
         const historyGroupId = handler.batchExecution === 'singleton' ? undefined : options?.groupId;
         let inverseAction = description.inverseAction ?? null;
         if (
@@ -333,7 +358,7 @@ function recordCommittedBatch(
             label,
             actionKind: action.type,
             source: options?.source ?? 'manual',
-            timestamp,
+            timestamp: envelope.issuedAt,
             groupId: historyGroupId,
             groupLabel: historyGroupLabel,
             reverted: false,
@@ -374,6 +399,13 @@ export const executeAppActionBatch: ExecuteAppActionBatch = inject({ logger })(
             if (actions.length === 0) {
                 return { status: 'no-op', actions: [] };
             }
+            if (options?.commandEnvelopes && options.commandEnvelopes.length !== actions.length) {
+                return {
+                    status: 'rejected',
+                    reason: 'Command envelope count does not match action count',
+                    actions: [],
+                };
+            }
 
             await waitForAutomergeSnapshotTransaction(options?.snapshotTransaction);
             if (options?.shouldExecute && !options.shouldExecute()) {
@@ -388,7 +420,19 @@ export const executeAppActionBatch: ExecuteAppActionBatch = inject({ logger })(
             }
 
             const preparedActions: PreparedBatchAction[] = [];
-            for (const action of actions) {
+            if (options?.commandEnvelopes && options.commandEnvelopes.length !== actions.length) {
+                return {
+                    status: 'rejected',
+                    reason: 'Command envelope count does not match the action batch',
+                    actions: [],
+                };
+            }
+            for (const [index, requestedAction] of actions.entries()) {
+                const suppliedEnvelope = options?.commandEnvelopes?.[index];
+                const materialized = suppliedEnvelope
+                    ? { action: requestedAction, applicationAssignedIds: suppliedEnvelope.applicationAssignedIds }
+                    : materializeCommandApplicationIds(requestedAction);
+                const action = materialized.action;
                 const handler = getHandler(action);
                 if (!handler) {
                     return {
@@ -421,14 +465,39 @@ export const executeAppActionBatch: ExecuteAppActionBatch = inject({ logger })(
                         actions: [],
                     };
                 }
+                if (
+                    suppliedEnvelope &&
+                    (suppliedEnvelope.operation !== action.type ||
+                        suppliedEnvelope.groupId !== options.groupId ||
+                        suppliedEnvelope.argumentsDigest !==
+                            getVersionedCommandArgumentsDigest({
+                                operation: action.type,
+                                arguments: action.payload ?? {},
+                            }))
+                ) {
+                    return {
+                        status: 'rejected',
+                        reason: `Command envelope does not match action ${action.type}`,
+                        actions: [],
+                    };
+                }
+                const command = suppliedEnvelope
+                    ? { action, envelope: suppliedEnvelope }
+                    : createExecutionCommandEnvelope({
+                          action,
+                          applicationAssignedIds: materialized.applicationAssignedIds,
+                          expectedEffect: description?.label ?? action.type,
+                          options,
+                      });
                 preparedActions.push({
-                    action,
+                    action: command.action,
                     afterAbort: null,
                     afterCommit: null,
                     afterAmbiguousCommit: null,
                     requiresAbortCompensation: handler.requiresAbortCompensation ?? true,
                     handler,
                     description,
+                    envelope: command.envelope,
                     label: description?.label ?? action.type,
                 });
             }
@@ -561,7 +630,7 @@ export const executeAppActionBatch: ExecuteAppActionBatch = inject({ logger })(
                 return { status: 'failed', reason, actions: [] };
             }
 
-            const executedBatchActions = executedActions.map(({ action, label }) => ({ action, label }));
+            const executedBatchActions = executedActions.map(createExecutedBatchAction);
             const warnings: string[] = [];
             const semanticCleanupWarning = clearBatchSemanticContext();
             if (semanticCleanupWarning) {

@@ -30,6 +30,9 @@ import {
     setTimeOperationDependencies,
     setVcaRuntimeProjectionDependencies,
     getSongStructureHandlers,
+    getDeviceContractVersionForCommand,
+    getDeviceTypesForCommandDeviceIds,
+    reserveNextTrackColorForCommand,
 } from '#/modules/Arrangement/useCases';
 import { getAnalysisHandlers, setMixAnalysisDisplayLifecycle } from '#/modules/AudioAnalysis/useCases';
 import {
@@ -70,6 +73,9 @@ import {
     getUndoTreeHandlers,
     productionBriefAdmissionPort,
     setActionHistoryMetadataPort,
+    commandProjectRevisionPort,
+    commandDeviceVersionsPort,
+    commandTrackDefaultsPort,
     setCommandEventBus,
     syncActionReplayMetadata,
 } from '#/modules/Command/useCases';
@@ -78,6 +84,7 @@ import { getControlSurfaceHandlers, setMidiLearnDependencies } from '#/modules/C
 import { actionHistoryStore } from '#/modules/CrdtDocument/stores';
 import {
     initBranchState,
+    captureProjectRevision,
     markActionHistoryEntryReverted,
     recordActionHistoryEntry,
     clearActionHistory as clearCrdtActionHistory,
@@ -114,7 +121,7 @@ import {
     setWebMidiRuntimeEventBus,
     getWebMidiInputHandlers,
 } from '#/modules/MIDI/useCases';
-import { getPluginHostHandlers } from '#/modules/PluginHost/useCases';
+import { getExternalPluginContractVersionForCommand, getPluginHostHandlers } from '#/modules/PluginHost/useCases';
 import {
     doesProductionBriefAllowActionBatch,
     getProjectHandlers,
@@ -181,6 +188,13 @@ setActionHistoryMetadataPort({
     clear: clearCrdtActionHistory,
 });
 productionBriefAdmissionPort.setGuard(doesProductionBriefAllowActionBatch);
+commandProjectRevisionPort.setProvider(captureProjectRevision);
+commandDeviceVersionsPort.setDeviceTypeResolver(getDeviceTypesForCommandDeviceIds);
+commandDeviceVersionsPort.setResolver(
+    (deviceType) =>
+        getDeviceContractVersionForCommand(deviceType) ?? getExternalPluginContractVersionForCommand(deviceType)
+);
+commandTrackDefaultsPort.setTrackColorProvider(reserveNextTrackColorForCommand);
 syncActionReplayMetadata(actionHistoryStore.value?.entries ?? []);
 actionHistoryStore.subscribe((state) => {
     syncActionReplayMetadata(state?.entries ?? []);

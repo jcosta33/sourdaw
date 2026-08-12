@@ -113,6 +113,9 @@ vi.mock('#/modules/Arrangement/useCases', () => ({
     clampDeviceParameterValue: noop,
     isDeviceParameterAutomatable: noop,
     quantiseDeviceParameterValue: noop,
+    getDeviceContractVersionForCommand: () => 'descriptor-v1:test',
+    getDeviceTypesForCommandDeviceIds: () => ({}),
+    reserveNextTrackColorForCommand: () => 'oklch(0.40 0.08 250)',
     getAllTracks: noop,
     getAutomationParameterRange: getAutomationParameterRangeMock,
     getPluginById: noop,
@@ -193,6 +196,9 @@ vi.mock('#/modules/Command/useCases', () => ({
         setGuard: noop,
     },
     setActionHistoryMetadataPort: noop,
+    commandProjectRevisionPort: { setProvider: noop },
+    commandDeviceVersionsPort: { setDeviceTypeResolver: noop, setResolver: noop },
+    commandTrackDefaultsPort: { setTrackColorProvider: noop },
     setCommandEventBus: noop,
     syncActionReplayMetadata: noop,
 }));
@@ -209,6 +215,7 @@ vi.mock('#/modules/ControlSurface/useCases', () => ({
 vi.mock('#/modules/CrdtDocument/stores', () => ({ actionHistoryStore: actionHistoryStoreMock }));
 
 vi.mock('#/modules/CrdtDocument/useCases', () => ({
+    captureProjectRevision: () => 'revision-1',
     getDrumPreviewBranchHandlers: sentinelHandlers('DrumPreviewBranch'),
     initBranchState: initBranchStateMock,
     markActionHistoryEntryReverted: noop,
@@ -268,6 +275,7 @@ vi.mock('#/modules/MIDI/useCases', () => ({
 }));
 
 vi.mock('#/modules/PluginHost/useCases', () => ({
+    getExternalPluginContractVersionForCommand: () => 'external-plugin-v1:test',
     getPluginHostHandlers: sentinelHandlers('PluginHost'),
 }));
 

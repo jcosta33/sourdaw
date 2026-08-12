@@ -28,6 +28,7 @@ export type GenerateChordProgressionOptions = {
     voicing?: ChordVoicing;
     octave?: number;
     rhythm?: 'whole' | 'half' | 'quarter' | 'syncopated';
+    seed?: number;
 };
 
 type GeneratedNote = {
@@ -209,7 +210,7 @@ function buildRhythmEvents(rhythm: 'whole' | 'half' | 'quarter' | 'syncopated', 
     }
 }
 
-export function generateChordProgression(options: GenerateChordProgressionOptions & { seed?: number }): {
+export function generateChordProgression(options: GenerateChordProgressionOptions): {
     notes: GeneratedNote[];
     seed: number;
 } {

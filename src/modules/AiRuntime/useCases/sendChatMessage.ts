@@ -1,4 +1,5 @@
 import { isAppError } from '#/infra/errors/isAppError';
+import { generateGroupId } from '#/modules/Command/useCases';
 
 import { AiProposalInvalidatedError } from '../errors/AiProposalInvalidatedError';
 import { isAiRuntimeConfigurationChangedError } from '../errors/AiRuntimeConfigurationChangedError';
@@ -28,6 +29,7 @@ import { llmStatusStore } from '../stores/llmStatusStore';
 import { proposePendingActionConfirmation } from '../stores/pendingActionConfirmationStore';
 
 import { createStemImportConfirmationResourceLease } from './agentReference/createStemImportConfirmationResourceLease';
+import { compilePendingActionCommandEnvelopes } from './compilePendingActionCommandEnvelopes';
 import { createThinkBlockParser } from './createThinkBlockParser';
 import { describePendingActionConfirmation } from './describePendingActionConfirmation';
 import { executePlannedActions } from './executePlannedActions';
@@ -115,16 +117,26 @@ export async function sendChatMessage(userText: string): Promise<void> {
                         wholeProjectVibeMixPlan: result.wholeProjectVibeMixPlan,
                         workflowCapabilityId: result.workflowCapabilityId,
                     });
+                    const commandGroup = generateGroupId(userText);
+                    const commandEnvelopes = compilePendingActionCommandEnvelopes({
+                        actions: result.actions,
+                        actionLabels: confirmationDescription.actionLabels,
+                        group: commandGroup,
+                        projectRevision,
+                    });
                     const confirmation = proposePendingActionConfirmation({
                         id: confirmationId,
                         prompt: userText,
                         assistantMessageId: assistantMsgId,
                         actions: result.actions,
                         actionLabels: confirmationDescription.actionLabels,
+                        commandEnvelopes,
                         affectedIds: confirmationDescription.affectedIds,
                         protectedUnchanged: confirmationDescription.protectedUnchanged,
                         risk: confirmationDescription.risk,
                         executionMode: result.executionMode,
+                        groupId: commandGroup.groupId,
+                        groupLabel: commandGroup.groupLabel,
                         projectRevision,
                         resourceLease: createStemImportConfirmationResourceLease(result.actions),
                     });

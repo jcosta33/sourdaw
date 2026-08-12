@@ -4,19 +4,31 @@
 export { describeAction } from './actionLabels';
 export { setActionHistoryMetadataPort } from './actionHistoryMetadataPort';
 export { CommandEventBus, setCommandEventBus } from './commandEventBus';
+export { commandProjectRevisionPort } from './commandProjectRevisionPort';
+export { commandDeviceVersionsPort } from './commandDeviceVersionsPort';
+export { commandTrackDefaultsPort } from './commandTrackDefaultsPort';
 export { createCallbackUndoEntry } from './createCallbackUndoEntry';
+export { createVersionedCommandEnvelope } from './createVersionedCommandEnvelope';
+export { createVersionedCommandReceipt } from './createVersionedCommandReceipt';
 export { getAppActionExecutionPolicy } from './getAppActionExecutionPolicy';
 export { getExecutableAppActionToolSchemas } from './getExecutableAppActionToolSchemas';
 export { getExecutableAppActionGroundingCatalog } from './getExecutableAppActionGroundingCatalog';
 export { getExecutableAppActionGroundingRules } from './getExecutableAppActionGroundingRules';
+export { getVersionedCommandSemanticFingerprint } from './getVersionedCommandSemanticFingerprint';
+export { getVersionedCommandArgumentsDigest } from './getVersionedCommandArgumentsDigest';
+export { parseVersionedCommandEnvelope } from './parseVersionedCommandEnvelope';
+export { migrateLegacyAppActionToVersionedCommandEnvelope } from './migrateLegacyAppActionToVersionedCommandEnvelope';
 export { requiresAppActionConfirmation } from './requiresAppActionConfirmation';
 export { selectExecutableAppActionToolSchemasForPrompt } from './selectExecutableAppActionToolSchemasForPrompt';
+export { serializeVersionedCommandEnvelope } from './serializeVersionedCommandEnvelope';
 export { createUndoEntry } from './createUndoEntry';
 
 export { generateGroupId } from './generateGroupId';
 
 export { executeAppAction } from './executeAppAction';
 export { executeAppActionBatch } from './executeAppActionBatch';
+export { executeVersionedCommandEnvelope } from './executeVersionedCommandEnvelope';
+export { executeVersionedCommandBatch } from './executeVersionedCommandBatch';
 export { productionBriefAdmissionPort } from './productionBriefAdmissionPort';
 export { createAppActionCommittedError } from './createAppActionCommittedError';
 export { isAppActionCommittedError } from './isAppActionCommittedError';
