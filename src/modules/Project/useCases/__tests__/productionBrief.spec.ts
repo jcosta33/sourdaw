@@ -726,5 +726,29 @@ describe('production brief', () => {
         expect(
             doesProductionBriefAllowActionBatch([{ type: 'removeClip', payload: { clipId: 'clip-prechorus' } }])
         ).toBe(false);
+
+        projectStore.set({
+            ...projectStore.value!,
+            productionBrief: {
+                ...projectStore.value!.productionBrief,
+                locks: [
+                    {
+                        id: 'lock-chorus-marker',
+                        scope: { kind: 'object', objectType: 'marker', objectId: 'marker-chorus' },
+                        statement: 'Keep the chorus marker fixed',
+                        createdAt: 122,
+                    },
+                    {
+                        id: 'lock-chorus-section',
+                        scope: { kind: 'object', objectType: 'section', objectId: 'section-chorus' },
+                        statement: 'Keep the chorus section fixed',
+                        createdAt: 123,
+                    },
+                ],
+            },
+        });
+        expect(
+            doesProductionBriefAllowActionBatch([{ type: 'deleteTime', payload: { startBeat: 16, endBeat: 20 } }])
+        ).toBe(false);
     });
 });

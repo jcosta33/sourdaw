@@ -404,6 +404,16 @@ function actionIndirectlyMutatesObject(action: AppAction, objectId: string): boo
             const boundary = action.type === 'insertTime' ? action.payload.atBeat : action.payload.startBeat;
             return automationObject.endBeat > boundary;
         }
+        const marker = markerStore.value?.markers.find((candidate) => candidate.id === objectId);
+        if (marker) {
+            const boundary = action.type === 'insertTime' ? action.payload.atBeat : action.payload.startBeat;
+            return marker.beat >= boundary;
+        }
+        const section = markerStore.value?.sections.find((candidate) => candidate.id === objectId);
+        if (section) {
+            const boundary = action.type === 'insertTime' ? action.payload.atBeat : action.payload.startBeat;
+            return section.endBeat > boundary;
+        }
     }
     if (action.type !== 'removeClip' || !workspaceStore.value?.rippleEditing) {
         return false;
