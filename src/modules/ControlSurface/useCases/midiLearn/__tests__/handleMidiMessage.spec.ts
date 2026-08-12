@@ -111,6 +111,32 @@ describe('handleMidiMessage', () => {
         expect(deps.engineSetTrackPan).toHaveBeenCalledWith('track1', -50);
     });
 
+    it('skips a trackGain mapping with no trackId instead of writing an undefined target (F-11)', () => {
+        midiLearnStore.set({
+            mappings: [{ ...baseMapping, trackId: undefined }],
+            isLearning: false,
+            learningTarget: null,
+        });
+
+        handleMidiMessage(0, 7, 127);
+
+        expect(deps.setTrackGainArrangement).not.toHaveBeenCalled();
+        expect(deps.engineSetTrackGain).not.toHaveBeenCalled();
+    });
+
+    it('skips a trackPan mapping with no trackId instead of writing an undefined target (F-11)', () => {
+        midiLearnStore.set({
+            mappings: [{ ...baseMapping, targetType: 'trackPan', trackId: undefined, minValue: -50, maxValue: 50 }],
+            isLearning: false,
+            learningTarget: null,
+        });
+
+        handleMidiMessage(0, 7, 0);
+
+        expect(deps.setTrackPanArrangement).not.toHaveBeenCalled();
+        expect(deps.engineSetTrackPan).not.toHaveBeenCalled();
+    });
+
     it('writes a deviceParam mapping only when both deviceId and paramId are set', () => {
         midiLearnStore.set({
             mappings: [{ ...baseMapping, targetType: 'deviceParam', deviceId: 'dev1', paramId: 'cutoff' }],
@@ -191,6 +217,37 @@ describe('handleMidiMessage', () => {
 
         expect(deps.recordAutomationValue).not.toHaveBeenCalled();
     });
+
+    it('records automation only for the fermenter track whose live parameter actually moved (F-1)', () => {
+        // Two tracks each carry a fermenter and are both armed to write. Only
+        // the first fermenter found (the one `setFermenterMappedParam` actually
+        // targets) may receive a recorded automation value — a second armed
+        // track must not get a value its live parameter never moved to.
+        const firstFermenterTrack = makeTrack({
+            id: 'track2',
+            automationMode: 'write',
+            devices: [{ id: 'ferm1', name: 'Fermenter', type: 'fermenter', bypassed: false, parameterValues: {} }],
+        });
+        const secondFermenterTrack = makeTrack({
+            id: 'track3',
+            automationMode: 'write',
+            devices: [{ id: 'ferm2', name: 'Fermenter', type: 'fermenter', bypassed: false, parameterValues: {} }],
+        });
+        deps.getAllTracks.mockReturnValue([firstFermenterTrack, secondFermenterTrack]);
+        deps.getTransportIsPlaying.mockReturnValue(true);
+        deps.getTransportPlayheadPosition.mockReturnValue(4);
+        midiLearnStore.set({
+            mappings: [{ ...baseMapping, targetType: 'fermenterGlobalParam', paramId: 'mix' }],
+            isLearning: false,
+            learningTarget: null,
+        });
+
+        handleMidiMessage(0, 7, 127);
+
+        expect(deps.setFermenterMappedParam).toHaveBeenCalledWith({ deviceId: 'ferm1', paramId: 'mix', value: 1 });
+        expect(deps.recordAutomationValue).toHaveBeenCalledTimes(1);
+        expect(deps.recordAutomationValue).toHaveBeenCalledWith('track2', 'ferm1:mix', 1, 4);
+    });
 });
 
 describe('scaleMidiValue', () => {
@@ -207,18 +264,21 @@ describe('scaleMidiValue', () => {
         expect(scaleMidiValue(64, 0, 1, 'linear')).toBeCloseTo(64 / 127);
     });
 
-    it('log mode is concave: midpoint sits above the linear midpoint', () => {
+    it('log mode is the convex audio taper: midpoint sits below the linear midpoint (F-2)', () => {
         const t = 64 / 127;
-        // sqrt(t) > t for t in (0,1), so a log fader reaches higher faster.
-        expect(scaleMidiValue(64, 0, 1, 'log')).toBeCloseTo(Math.sqrt(t));
-        expect(scaleMidiValue(64, 0, 1, 'log')).toBeGreaterThan(scaleMidiValue(64, 0, 1, 'linear'));
+        // t*t < t for t in (0,1): a "log" (audio-pot) gain taper stays low
+        // longer and covers more range near the top, matching how loudness is
+        // perceived — the opposite of the pre-fix sqrt(t) body.
+        expect(scaleMidiValue(64, 0, 1, 'log')).toBeCloseTo(t * t);
+        expect(scaleMidiValue(64, 0, 1, 'log')).toBeLessThan(scaleMidiValue(64, 0, 1, 'linear'));
     });
 
-    it('exp mode is convex: midpoint sits below the linear midpoint', () => {
+    it('exp mode is the concave inverse taper: midpoint sits above the linear midpoint (F-2)', () => {
         const t = 64 / 127;
-        // t*t < t for t in (0,1), so an exp fader stays low longer.
-        expect(scaleMidiValue(64, 0, 1, 'exp')).toBeCloseTo(t * t);
-        expect(scaleMidiValue(64, 0, 1, 'exp')).toBeLessThan(scaleMidiValue(64, 0, 1, 'linear'));
+        // sqrt(t) > t for t in (0,1): "exp" is log's inverse, reaching higher
+        // faster — fine control stays at the low end instead.
+        expect(scaleMidiValue(64, 0, 1, 'exp')).toBeCloseTo(Math.sqrt(t));
+        expect(scaleMidiValue(64, 0, 1, 'exp')).toBeGreaterThan(scaleMidiValue(64, 0, 1, 'linear'));
     });
 
     it('honours an asymmetric range such as pan [-50, 50]', () => {

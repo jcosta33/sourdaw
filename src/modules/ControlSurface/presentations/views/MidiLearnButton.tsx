@@ -12,6 +12,7 @@ import {
     type MidiLearnState,
 } from '../../stores/midiLearnStore';
 import { findMappingForTarget } from '../../useCases/midiLearn/findMappingForTarget';
+import { removeMapping } from '../../useCases/midiLearn/removeMapping';
 import { startMidiLearn } from '../../useCases/midiLearn/startMidiLearn';
 import { stopMidiLearn } from '../../useCases/midiLearn/stopMidiLearn';
 
@@ -62,9 +63,18 @@ export const MidiLearnButton = ({ targetType, trackId, deviceId, paramId }: Midi
 
         if (isLearningThis) {
             stopMidiLearn();
-        } else {
-            startMidiLearn(target);
+            return;
         }
+
+        // Alt+click on an already-mapped, non-learning control removes the
+        // single mapping instead of starting a new learn (F-10) — the panic
+        // clear-all was previously the only way to drop one binding.
+        if (event.altKey && existingMapping) {
+            removeMapping(existingMapping.id);
+            return;
+        }
+
+        startMidiLearn(target);
     };
 
     const label = getMidiLearnLabel(isLearningThis, existingMapping);
