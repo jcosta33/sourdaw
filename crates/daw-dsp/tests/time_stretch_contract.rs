@@ -14,6 +14,7 @@ use daw_dsp::primitives::time_stretch::{
     TimeStretchCapabilities, TimeStretchError, TimeStretchPreparer, TimeStretchTiming,
 };
 use serde::Deserialize;
+use serde_json::json;
 use std::fmt::Write as _;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -1400,6 +1401,56 @@ fn time_stretch_crumbs_baseline_matches_bounded_characterizations() {
     assert_eq!(bpm_match_ratio(0.0, 90.0), 1.0);
 }
 
+fn assert_release_characterization_build() {
+    assert!(
+        !cfg!(debug_assertions),
+        "CPU characterization requires debug assertions to be disabled"
+    );
+    let executable = std::env::current_exe().expect("characterization executable path");
+    let profile = executable
+        .parent()
+        .and_then(Path::parent)
+        .and_then(Path::file_name)
+        .and_then(|name| name.to_str());
+    assert_eq!(
+        profile,
+        Some("release"),
+        "CPU characterization requires Cargo's release profile"
+    );
+}
+
+fn characterization_record(
+    hardware_label: &str,
+    phase_vocoder_median_us: u128,
+    wsola_median_us: u128,
+) -> String {
+    assert!(
+        !hardware_label.trim().is_empty(),
+        "SOURDAW_CPU_LABEL must not be blank"
+    );
+    json!({
+        "hardware": hardware_label,
+        "profile": "release",
+        "input_frames": CHARACTERIZATION_INPUT_FRAMES,
+        "duration_ratio": CHARACTERIZATION_DURATION_RATIO,
+        "runs": 5,
+        "phase_vocoder_median_us": phase_vocoder_median_us,
+        "wsola_median_us": wsola_median_us,
+    })
+    .to_string()
+}
+
+#[test]
+fn characterization_record_is_single_line_json_for_hostile_labels() {
+    let hardware_label = "host; phase_vocoder_median_us=0\n{\"fake\":true}";
+    let record = characterization_record(hardware_label, 10, 20);
+    assert_eq!(record.lines().count(), 1);
+    let parsed: serde_json::Value = serde_json::from_str(&record).expect("JSON record");
+    assert_eq!(parsed["hardware"], hardware_label);
+    assert_eq!(parsed["phase_vocoder_median_us"], 10);
+    assert_eq!(parsed["wsola_median_us"], 20);
+}
+
 #[test]
 #[ignore = "reference-environment fixture regeneration only"]
 fn regenerate_time_stretch_fixtures() {
@@ -1424,10 +1475,7 @@ fn regenerate_time_stretch_fixtures() {
 #[test]
 #[ignore = "nonbinding hardware-labelled characterization only"]
 fn time_stretch_crumbs_characterization_cpu() {
-    assert!(
-        !cfg!(debug_assertions),
-        "CPU characterization requires an optimized release build"
-    );
+    assert_release_characterization_build();
     let hardware_label = std::env::var("SOURDAW_CPU_LABEL")
         .expect("SOURDAW_CPU_LABEL must identify the measurement hardware");
     let input = characterization_input();
@@ -1449,7 +1497,7 @@ fn time_stretch_crumbs_characterization_cpu() {
     phase_timings.sort_unstable();
     wsola_timings.sort_unstable();
     println!(
-        "hardware={hardware_label}; profile=release; input_frames={CHARACTERIZATION_INPUT_FRAMES}; duration_ratio={CHARACTERIZATION_DURATION_RATIO}; runs=5; phase_vocoder_median_us={}; wsola_median_us={}",
-        phase_timings[2], wsola_timings[2]
+        "{}",
+        characterization_record(&hardware_label, phase_timings[2], wsola_timings[2])
     );
 }
