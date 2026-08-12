@@ -103,6 +103,16 @@ describe('addExternalDevice', () => {
         );
     });
 
+    it('generates distinct native instance ids for plugins added in the same millisecond', () => {
+        const now = vi.spyOn(Date, 'now').mockReturnValue(123);
+
+        const first = addExternalDevice('audio-1', 'plugin-1', 'Plugin');
+        const second = addExternalDevice('audio-1', 'plugin-1', 'Plugin');
+
+        expect(first?.externalInstanceId).not.toBe(second?.externalInstanceId);
+        now.mockRestore();
+    });
+
     it('routes the injected latency sink to the registry under this device id', () => {
         const device = addExternalDevice('audio-1', 'plugin-1', 'Plugin');
 
