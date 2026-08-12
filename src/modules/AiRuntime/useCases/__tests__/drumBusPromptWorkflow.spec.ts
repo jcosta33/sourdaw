@@ -673,7 +673,16 @@ describe('drum bus prompt workflow', () => {
         const targetGain = 10 ** (-1.5 / 20);
         const sendLevel = 10 ** (-12 / 20);
         expect(confirmation?.actions).toEqual([
-            { type: 'createBus', payload: { name: 'Drum Bus', busId: drumBusId, initialGain: 1 } },
+            {
+                type: 'createBus',
+                payload: {
+                    name: 'Drum Bus',
+                    busId: drumBusId,
+                    initialGain: 1,
+                    expectedAbsentTrackNames: ['Drum Bus', 'Parallel Compression'],
+                    expectedTrackOutputs: [{ trackId: 'track-room', outputId: 'master' }],
+                },
+            },
             {
                 type: 'setTrackOutput',
                 payload: { trackId: 'track-kick', outputId: drumBusId, expectedOutputId: 'master' },
@@ -842,6 +851,67 @@ describe('drum bus prompt workflow', () => {
             'section-chorus-one',
         ]);
         expect(getTrack('track-room').outputId).toBe('master');
+    });
+
+    it('keeps grouped redo retryable when the protected room route changes after undo', async () => {
+        setEx11Project();
+        useEx11WebLlmFixture();
+        await sendChatMessage(EX11_PROMPT);
+        const confirmation = getPendingActionConfirmation(
+            chatStore.value?.messages.find((message) => message.pendingActionConfirmationId)
+                ?.pendingActionConfirmationId ?? ''
+        );
+        if (!confirmation) {
+            throw new Error('Expected EX-11 confirmation');
+        }
+        await confirmPendingChatActions({ confirmationId: confirmation.id });
+        await undo();
+        trackStore.set({
+            tracks: (trackStore.value?.tracks ?? []).map((track) =>
+                track.id === 'track-room' ? { ...track, outputId: 'track-bass' } : track
+            ),
+            selectedTrackId: null,
+            ghostClips: [],
+        });
+        const collaboratorState = structuredClone(trackStore.value?.tracks ?? []);
+        const futureBefore = structuredClone(undoStore.value?.future ?? []);
+
+        await redo();
+
+        expect(trackStore.value?.tracks).toEqual(collaboratorState);
+        expect(getAgentSectionRenderArtifacts()).toEqual([]);
+        expect(runtimeMocks.renderOffline).toHaveBeenCalledTimes(2);
+        expect(undoStore.value?.future).toEqual(futureBefore);
+    });
+
+    it('keeps grouped redo retryable when a collaborator claims a reserved bus name after undo', async () => {
+        setEx11Project();
+        useEx11WebLlmFixture();
+        await sendChatMessage(EX11_PROMPT);
+        const confirmation = getPendingActionConfirmation(
+            chatStore.value?.messages.find((message) => message.pendingActionConfirmationId)
+                ?.pendingActionConfirmationId ?? ''
+        );
+        if (!confirmation) {
+            throw new Error('Expected EX-11 confirmation');
+        }
+        await confirmPendingChatActions({ confirmationId: confirmation.id });
+        await undo();
+        const collaboratorBus = createTrack('track-collaborator-drum-bus', 'Drum Bus');
+        trackStore.set({
+            tracks: [...(trackStore.value?.tracks ?? []), collaboratorBus],
+            selectedTrackId: null,
+            ghostClips: [],
+        });
+        const collaboratorState = structuredClone(trackStore.value?.tracks ?? []);
+        const futureBefore = structuredClone(undoStore.value?.future ?? []);
+
+        await redo();
+
+        expect(trackStore.value?.tracks).toEqual(collaboratorState);
+        expect(getAgentSectionRenderArtifacts()).toEqual([]);
+        expect(runtimeMocks.renderOffline).toHaveBeenCalledTimes(2);
+        expect(undoStore.value?.future).toEqual(futureBefore);
     });
 
     it('rejects provider omission and target enlargement before confirmation', async () => {

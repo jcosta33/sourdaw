@@ -12,6 +12,8 @@ type CreateBusAction = {
         initialGain?: number;
         initialAlternativeId?: string;
         name: string;
+        expectedAbsentTrackNames?: readonly string[];
+        expectedTrackOutputs?: readonly { trackId: string; outputId: string }[];
     };
 };
 
@@ -43,8 +45,34 @@ function toAddTrackAction(action: CreateBusAction): Parameters<typeof handleAddT
     };
 }
 
+function normalizeTrackName(value: string): string {
+    return value
+        .toLocaleLowerCase()
+        .replaceAll(/[^\p{L}\p{N}]+/gu, ' ')
+        .trim();
+}
+
+function matchesExpectedScope(action: CreateBusAction): boolean {
+    const tracks = getTrackStoreState()?.tracks ?? [];
+    const absentNames = new Set((action.payload.expectedAbsentTrackNames ?? []).map(normalizeTrackName));
+    if (
+        absentNames.size > 0 &&
+        tracks.some((track) => typeof track.name === 'string' && absentNames.has(normalizeTrackName(track.name)))
+    ) {
+        return false;
+    }
+    return (action.payload.expectedTrackOutputs ?? []).every((expected) => {
+        const track = tracks.find((candidate) => candidate.id === expected.trackId);
+        return track?.outputId === expected.outputId;
+    });
+}
+
 export const handleCreateBus = createHandler<'createBus'>({
     execute: async (action) => {
+        if (!matchesExpectedScope(action)) {
+            pendingCreatedBusGuards.delete(action);
+            return { status: 'conflict' };
+        }
         const result = await handleAddTrack.execute(toAddTrackAction(action));
         if (result?.status !== 'written') {
             pendingCreatedBusGuards.delete(action);

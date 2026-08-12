@@ -97,7 +97,16 @@ export function bridgeDrumRenderComparisonPlan({
         status: 'accepted',
         actions,
         identities: [
-            { actionType: 'createBus', actionOrdinal: 0, busId: drumBusId, initialGain: 1 },
+            {
+                actionType: 'createBus',
+                actionOrdinal: 0,
+                busId: drumBusId,
+                initialGain: 1,
+                expectedAbsentTrackNames: [fixed.drumBusName, fixed.parallelBusName],
+                expectedTrackOutputs: [
+                    { trackId: scope.capability.room.trackId, outputId: scope.capability.room.currentOutputId },
+                ],
+            },
             { actionType: 'createBus', actionOrdinal: 1, busId: parallelBusId, initialGain: 1 },
             { actionType: 'addDevice', actionOrdinal: 0, deviceId: compressorDeviceId },
         ],

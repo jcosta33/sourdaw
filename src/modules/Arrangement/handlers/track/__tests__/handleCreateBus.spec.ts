@@ -186,6 +186,32 @@ describe('handleCreateBus', () => {
         expect(await handleCreateBus.execute(action)).toEqual({ status: 'conflict' });
     });
 
+    it('rejects application-owned name and protected-route guard conflicts before adding a bus', async () => {
+        mocks.getTrackStoreState.mockReturnValue({
+            tracks: [
+                { id: 'room', name: 'Drum Room', outputId: 'bass' },
+                { id: 'collaborator-bus', name: 'DRUM-BUS', outputId: 'master' },
+            ],
+        });
+        const guardedAction = {
+            type: 'createBus' as const,
+            payload: {
+                name: 'Drum Bus',
+                busId: 'bus-1',
+                expectedAbsentTrackNames: ['Drum Bus', 'Parallel Compression'],
+                expectedTrackOutputs: [{ trackId: 'room', outputId: 'master' }],
+            },
+        };
+
+        expect(await handleCreateBus.execute(guardedAction)).toEqual({ status: 'conflict' });
+        expect(mocks.execute).not.toHaveBeenCalled();
+
+        mocks.getTrackStoreState.mockReturnValue({ tracks: [{ id: 'room', name: 'Drum Room', outputId: 'master' }] });
+        mocks.execute.mockReturnValue({ status: 'written' });
+        expect(await handleCreateBus.execute(guardedAction)).toEqual({ status: 'conflict' });
+        expect(mocks.execute).toHaveBeenCalledOnce();
+    });
+
     it('delegates no-op detection for retry-safe receipts', () => {
         mocks.isNoop.mockReturnValue(true);
         const action = {
