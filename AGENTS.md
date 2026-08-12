@@ -25,7 +25,7 @@ After cross-module moves or bulk import changes, re-run `pnpm deps:validate` bef
 - **`src/components/`** — shared UI design system (shadcn/Radix `ui/`, `layout/`, DAW `daw/` family). No direct store/use-case imports.
 - **`src-tauri/`** + 9 workspace crates (`daw-core`, `daw-collab`, `daw-engine`, `daw-dsp`, `daw-io`, `daw-wasm-decoder`, `daw-plugin-host`, `proof-chamber`, `scoring`) — thin Tauri bridge and RT/native audio. Commands live only in `src-tauri`.
 - **`.agents/skills/`** — domain agent skills (architecture, web-audio-engine, …).
-- **`.agents/worktrees/<name>/`** — isolated git worktrees for parallel agent work (gitignored). Create with `git worktree add .agents/worktrees/<name> -b <branch>`. Operate only inside the assigned worktree; do not edit the main checkout for that work.
+- **`.agents/worktrees/<name>/`** — isolated lanes for parallel work (gitignored). Create from `origin/main`; lock with `git worktree lock --reason active:<owner> <path>` while assigned. Operate only inside that lane. Each campaign PR links its issue; record every merged PR in that issue before closing it. After every process exits, unlock the lane and run `pnpm lane:remove <path>` elsewhere. Other lanes remain owner-managed.
 - **Nested `AGENTS.md`** — subtree-specific guidance (with `CLAUDE.md`/`GEMINI.md` symlinks) lives in `src-tauri/`, `crates/daw-dsp/`, `src/components/`, `src/modules/AudioEngine/`, `src/modules/Collaboration/`. Read the local file when working in those subtrees.
 
 ## Device naming key (bakery metaphor)
@@ -116,6 +116,8 @@ Agent must-follow subset of [docs/07-conventions.md](./docs/07-conventions.md) a
 
 ## Pull requests and review
 
+**Delivery:** use `pnpm deliver <pr-number>`. It selects proportionate local checks, rejects drift or unresolved review, preserves stacked dependents, and merges the reviewed head. Add `--e2e <spec>` for a justified E2E target or `--full-e2e` only with explicit authority. Never merge or delete branches with raw `gh`.
+
 **Title:** conventional commits — `type(scope): subject`, matching `git log`. `feat` `fix` `chore` `docs` `test` `refactor` `perf` `build` `ci`. Scope is the module or crate.
 
 Enforced by `.githooks/commit-msg` for every harness and every human. Enable once per clone: `git config core.hooksPath .githooks`. Deliberate exception: `git commit --no-verify`.
@@ -135,6 +137,8 @@ gh api repos/:owner/:repo/pulls/<n>/comments -f body='…' -f commit_id=<sha> -f
 **Scale:** three review stances is the default, five the maximum. Past five, split the PR or ask. Finish the pool once — no quiet rotation, no ceremonial pass, no completion recap.
 
 **Cost:** review is a gate, not a research programme. Dispatching more than 10 subagents against one PR, or spending over an hour on one, needs explicit approval — report cumulative cost when asking.
+
+Command help: `pnpm deliver --help`; `pnpm lane:remove --help`.
 
 ## Safety (destructive actions)
 
