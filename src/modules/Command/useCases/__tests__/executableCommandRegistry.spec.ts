@@ -1261,7 +1261,7 @@ const EXPECTED_GROUNDING = [
     },
     {
         actionType: 'removeTrack',
-        intentPhrases: ['delete track', 'remove track', 'delete', 'remove'],
+        intentPhrases: ['delete track', 'remove track', 'deleting', 'removing', 'delete', 'remove'],
         targetRules: [{ argument: 'trackId', capability: 'removable-track' }],
         valueRules: [],
     },
