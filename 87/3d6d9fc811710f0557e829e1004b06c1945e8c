@@ -1,0 +1,37 @@
+src/modules/AiRuntime/useCases/agentReference/bridgeGroundedLlmToolCalls.ts
+  s_a40848e8f8cca9::t_6024708c86725c 3700
+src/modules/AiRuntime/useCases/planPromptActions.ts
+  s_a40848e8f8cca9::t_6024708c86725c 12,64-68
+  s_a40848e8f8cca9::t_81b80ba9a2616f 69-70
+src/modules/AiRuntime/models/IntentResult.ts
+  s_a40848e8f8cca9::t_6024708c86725c 2,22-23
+src/modules/AiRuntime/models/ActionPlanningMode.ts
+  s_a40848e8f8cca9::t_6024708c86725c 7-10
+src/modules/AiRuntime/useCases/__tests__/planPromptActions.spec.ts
+  s_a40848e8f8cca9::t_3694452b69b28a 7,29-32,43-49,55-56
+  s_a40848e8f8cca9::t_6ea1a3bff97f63 1,37-40,57
+  s_a40848e8f8cca9::t_8640975a521470 5,22-27
+  s_a40848e8f8cca9::t_193d9462dc4255 28
+  s_a40848e8f8cca9::t_850cc15b836e96 58-59
+src/modules/AiRuntime/useCases/__tests__/parsePromptToActions.spec.ts
+  s_a40848e8f8cca9::t_6ea1a3bff97f63 487
+  s_a40848e8f8cca9::t_3694452b69b28a 464-486,488-508,521,524,529
+src/modules/AiRuntime/useCases/parsePromptToActions.ts
+  s_a40848e8f8cca9::t_6024708c86725c 12,314-321,540-541,544
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "873d6d9fc811710f0557e829e1004b06c1945e8c",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
