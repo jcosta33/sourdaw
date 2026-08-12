@@ -14,7 +14,13 @@ type AddTrackAction = {
 
 type AddTrackDescription = {
     label: string;
-    inverseAction: { type: 'discardCreatedTrack'; payload: { trackId: string } };
+    inverseAction: {
+        type: 'discardCreatedTrack';
+        payload: {
+            trackId: string;
+            generatedMidiStateGuard?: { entityJson: string; midiByClipIdJson: string };
+        };
+    };
 };
 
 const mocks = vi.hoisted(() => ({
@@ -125,8 +131,59 @@ describe('handleCreateBus', () => {
         });
         expect(description).toEqual({
             label: 'Create bus "Drum Bus"',
-            inverseAction: { type: 'discardCreatedTrack', payload: { trackId: 'bus-1' } },
+            inverseAction: {
+                type: 'discardCreatedTrack',
+                payload: {
+                    trackId: 'bus-1',
+                    generatedMidiStateGuard: { entityJson: '', midiByClipIdJson: '{}' },
+                },
+            },
         });
+    });
+
+    it('captures the exact created bus snapshot into the discard inverse', async () => {
+        const createdBus = {
+            id: 'bus-1',
+            name: 'Reverb Bus',
+            kind: 'bus',
+            gain: 1,
+            color: 'oklch(0.7 0.1 200)',
+            activeAlternativeId: 'alt-created',
+            clips: [],
+            devices: [],
+            sends: [],
+        };
+        mocks.execute.mockReturnValue({ status: 'written' });
+        mocks.getTrackStoreState.mockReturnValue({ tracks: [createdBus] });
+        const action: Parameters<typeof handleCreateBus.describe>[0] = {
+            type: 'createBus',
+            payload: { name: 'Reverb Bus', busId: 'bus-1', initialGain: 1 },
+        };
+        const description = handleCreateBus.describe(action);
+
+        await handleCreateBus.execute(action);
+
+        expect(description.inverseAction).toEqual({
+            type: 'discardCreatedTrack',
+            payload: {
+                trackId: 'bus-1',
+                generatedMidiStateGuard: {
+                    entityJson: JSON.stringify(createdBus),
+                    midiByClipIdJson: '{}',
+                },
+            },
+        });
+    });
+
+    it('conflicts when a written add-track result has no committed bus snapshot', async () => {
+        mocks.execute.mockReturnValue({ status: 'written' });
+        mocks.getTrackStoreState.mockReturnValue({ tracks: [] });
+        const action = {
+            type: 'createBus' as const,
+            payload: { name: 'Missing Bus', busId: 'bus-1' },
+        };
+
+        expect(await handleCreateBus.execute(action)).toEqual({ status: 'conflict' });
     });
 
     it('delegates no-op detection for retry-safe receipts', () => {

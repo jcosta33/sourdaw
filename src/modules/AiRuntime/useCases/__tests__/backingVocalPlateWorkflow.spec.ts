@@ -1702,6 +1702,97 @@ describe('backing-vocal plate workflow', () => {
         expect(undoStore.value?.future).toEqual([]);
     });
 
+    it.each([
+        {
+            name: 'zero mix',
+            mutate: (tracks: Track[]) => {
+                const delay = tracks
+                    .find((track) => track.id === 'track-lead-vocal')
+                    ?.devices.find((device) => device.id === 'device-lead-delay');
+                if (!delay) {
+                    throw new Error('Expected Lead Delay');
+                }
+                delay.parameterValues['delay-mix'] = 0;
+            },
+        },
+        {
+            name: 'zero source gain',
+            mutate: (tracks: Track[]) => {
+                const lead = tracks.find((track) => track.id === 'track-lead-vocal');
+                if (!lead) {
+                    throw new Error('Expected Lead Vocal');
+                }
+                lead.gain = 0;
+            },
+        },
+    ])('keeps receipt labels aligned when $name makes one approved gain a no-op', async ({ mutate }) => {
+        installSharedVocalFxFixture();
+        const tracks = structuredClone(trackStore.value?.tracks ?? []);
+        mutate(tracks);
+        trackStore.set({ tracks, selectedTrackId: null, ghostClips: [] });
+        useWebSharedVocalFxFixture();
+        await sendChatMessage(SHARED_VOCAL_FX_PROMPT);
+        const confirmation = getPendingActionConfirmation(getConfirmationId());
+        if (!confirmation) {
+            throw new Error('Expected EX-08 confirmation');
+        }
+
+        await confirmPendingChatActions({ confirmationId: confirmation.id });
+
+        const executed = getPendingActionConfirmation(confirmation.id);
+        const doubleDelayRemoval = executed?.executedActions.find(
+            (execution) =>
+                execution.actionType === 'removeDevice' && execution.affectedIds.includes('device-lead-double-delay')
+        );
+        const expectedLabel =
+            'Remove device "Double Delay" (device-lead-double-delay, builtin-delay) from "Lead Vocal Double" (track-lead-double)';
+        expect(doubleDelayRemoval?.label).toBe(expectedLabel);
+        const receipt = chatStore.value?.messages.find(
+            (message) => message.pendingActionConfirmationId === confirmation.id
+        );
+        expect(receipt?.content).toContain(`- **removeDevice**: ${expectedLabel}`);
+    });
+
+    it('keeps grouped undo retryable when a collaborator edits a generated bus', async () => {
+        installSharedVocalFxFixture();
+        const originalTracks = structuredClone(trackStore.value?.tracks ?? []);
+        useWebSharedVocalFxFixture();
+        await sendChatMessage(SHARED_VOCAL_FX_PROMPT);
+        const confirmation = getPendingActionConfirmation(getConfirmationId());
+        if (!confirmation) {
+            throw new Error('Expected EX-08 confirmation');
+        }
+        await confirmPendingChatActions({ confirmationId: confirmation.id });
+        const delayBus = trackStore.value?.tracks.find((track) => track.name === 'Vocal Delay');
+        if (!delayBus) {
+            throw new Error('Expected committed Vocal Delay bus');
+        }
+        await executeAppAction(
+            {
+                type: 'setTrackGain',
+                payload: { trackId: delayBus.id, gain: 0.9, expectedGain: 1 },
+            },
+            { skipUndo: true, skipMacroRecording: true }
+        );
+        const collaboratedTracks = structuredClone(trackStore.value?.tracks ?? []);
+
+        await undo();
+
+        expect(trackStore.value?.tracks).toEqual(collaboratedTracks);
+        expect(undoStore.value?.past).toHaveLength(27);
+        expect(undoStore.value?.future).toEqual([]);
+
+        await executeAppAction(
+            {
+                type: 'setTrackGain',
+                payload: { trackId: delayBus.id, gain: 1, expectedGain: 0.9 },
+            },
+            { skipUndo: true, skipMacroRecording: true }
+        );
+        await undo();
+        expect(trackStore.value?.tracks).toEqual(originalTracks);
+    });
+
     it('rolls back the complete EX-08 batch and runtime when one parameter write fails', async () => {
         installSharedVocalFxFixture();
         const originalTracks = structuredClone(trackStore.value?.tracks ?? []);

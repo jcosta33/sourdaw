@@ -1,4 +1,5 @@
 import { createHandler } from '#/utils/createHandler';
+import { type GeneratedMidiStateGuard } from '#/utils/handlerContract';
 
 import { getTrackStoreState } from '../../useCases/getTrackStoreState';
 
@@ -13,6 +14,8 @@ type CreateBusAction = {
         name: string;
     };
 };
+
+const pendingCreatedBusGuards = new WeakMap<CreateBusAction, GeneratedMidiStateGuard>();
 
 function ensureBusId(action: CreateBusAction): string {
     if (action.payload.busId) {
@@ -44,21 +47,42 @@ export const handleCreateBus = createHandler<'createBus'>({
     execute: async (action) => {
         const result = await handleAddTrack.execute(toAddTrackAction(action));
         if (result?.status !== 'written') {
+            pendingCreatedBusGuards.delete(action);
             return result;
         }
         const busId = action.payload.busId;
         const createdBus = getTrackStoreState()?.tracks.find((track) => track.id === busId);
-        if (createdBus) {
-            action.payload.color = createdBus.color;
-            action.payload.initialAlternativeId = createdBus.activeAlternativeId;
+        if (!createdBus) {
+            pendingCreatedBusGuards.delete(action);
+            return { status: 'conflict' };
         }
+        action.payload.color = createdBus.color;
+        action.payload.initialAlternativeId = createdBus.activeAlternativeId;
+        const guard = pendingCreatedBusGuards.get(action);
+        if (guard) {
+            guard.entityJson = JSON.stringify(createdBus);
+        }
+        pendingCreatedBusGuards.delete(action);
         return result;
     },
     describe: (action) => {
         const description = handleAddTrack.describe(toAddTrackAction(action));
+        const generatedMidiStateGuard = {
+            entityJson: '',
+            midiByClipIdJson: JSON.stringify({}),
+        };
+        pendingCreatedBusGuards.set(action, generatedMidiStateGuard);
+        const inverseAction = description.inverseAction;
         return {
             ...description,
             label: `Create bus "${action.payload.name}"`,
+            inverseAction:
+                inverseAction?.type === 'discardCreatedTrack'
+                    ? {
+                          ...inverseAction,
+                          payload: { ...inverseAction.payload, generatedMidiStateGuard },
+                      }
+                    : inverseAction,
         };
     },
     isNoop: (action) => handleAddTrack.isNoop?.(toAddTrackAction(action)) ?? false,

@@ -346,10 +346,16 @@ export async function confirmPendingChatActions(
         if (batchResult.status === 'executed' || batchResult.status === 'executed-with-warning') {
             executionKind = 'runtime';
         }
-        const executedLabels: PendingActionExecution[] = batchResult.actions.map(({ action, label }, index) => {
+        const approvedLabelByAction = new Map(
+            confirmation.approvalSnapshot.actions.map((action, index) => [
+                action,
+                confirmation.approvalSnapshot.actionLabels[index],
+            ])
+        );
+        const executedLabels: PendingActionExecution[] = batchResult.actions.map(({ action, label }) => {
             const execution: PendingActionExecution = {
                 actionType: action.type,
-                label: confirmation.approvalSnapshot.actionLabels[index] ?? label,
+                label: approvedLabelByAction.get(action) ?? label,
                 executionKind,
                 affectedIds: getPlannedActionAffectedIds(action),
                 outcome: batchResult.status,
