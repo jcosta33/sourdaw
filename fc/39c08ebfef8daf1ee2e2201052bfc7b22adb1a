@@ -1,0 +1,33 @@
+src/modules/Arrangement/models/PluginDescriptors/FermenterDescriptor.ts
+  s_bc88af7d3b054c::t_c79ad55544df92 17-19
+src/modules/Fermenter/models/FermenterPatch.ts
+  s_bc88af7d3b054c::t_c79ad55544df92 378
+src/modules/Fermenter/presentations/components/__tests__/MacroMatrixEditor.spec.tsx
+  s_bc88af7d3b054c::t_17cf9a6f9c5031 196-201
+src/modules/Arrangement/models/PluginDescriptors/__tests__/fermenterParamMetadataWeld.spec.ts
+  s_bc88af7d3b054c::t_17cf9a6f9c5031 1-33
+src/modules/Fermenter/presentations/components/__tests__/OscillatorSection.spec.tsx
+  s_bc88af7d3b054c::t_17cf9a6f9c5031 15,20,29,123-133
+src/modules/Fermenter/useCases/__tests__/applyFermenterMacroMapping.spec.ts
+  s_bc88af7d3b054c::t_17cf9a6f9c5031 84-100
+.agents/decisions/README.md
+  s_bc88af7d3b054c::t_9edca7930950c3 41
+.agents/decisions/0025-fermenter-fine-tune-is-continuous.md
+  s_bc88af7d3b054c::t_9edca7930950c3 1-24
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "fc39c08ebfef8daf1ee2e2201052bfc7b22adb1a",
+  "prompts": {},
+  "sessions": {
+    "s_bc88af7d3b054c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f9b4a-11a2-7f61-8dfb-76eed0eb2a9c",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
