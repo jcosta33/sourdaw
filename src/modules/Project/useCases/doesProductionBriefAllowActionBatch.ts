@@ -375,6 +375,50 @@ function globalTimeActionOverlapsRange(
     return false;
 }
 
+function globalTimeActionMutatesTrack(action: AppAction): boolean {
+    return action.type === 'insertTime' || action.type === 'deleteTime';
+}
+
+function actionIndirectlyMutatesObject(action: AppAction, objectId: string): boolean {
+    if (action.type === 'insertTime' || action.type === 'deleteTime') {
+        const clip = findClip(objectId);
+        if (clip) {
+            const boundary = action.type === 'insertTime' ? action.payload.atBeat : action.payload.startBeat;
+            return clip.endBeat > boundary;
+        }
+        const automationLane = automationStore.value?.lanes.find((lane) => lane.id === objectId);
+        if (automationLane) {
+            return true;
+        }
+        const automationPoint = automationStore.value?.lanes
+            .flatMap((lane) => [...lane.points, ...(lane.trimPoints ?? []), ...(lane.ghostPoints ?? [])])
+            .find((point) => point.id === objectId);
+        if (automationPoint) {
+            const boundary = action.type === 'insertTime' ? action.payload.atBeat : action.payload.startBeat;
+            return automationPoint.beat >= boundary;
+        }
+        const automationObject = automationStore.value?.lanes
+            .flatMap((lane) => lane.objects)
+            .find((object) => object.id === objectId);
+        if (automationObject) {
+            const boundary = action.type === 'insertTime' ? action.payload.atBeat : action.payload.startBeat;
+            return automationObject.endBeat > boundary;
+        }
+    }
+    if (action.type !== 'removeClip' || !workspaceStore.value?.rippleEditing) {
+        return false;
+    }
+    const lockedClip = findClip(objectId);
+    const removedClip = findClip(action.payload.clipId);
+    return Boolean(
+        lockedClip &&
+        removedClip &&
+        lockedClip.trackId === removedClip.trackId &&
+        lockedClip.id !== removedClip.id &&
+        lockedClip.startBeat >= removedClip.endBeat
+    );
+}
+
 function actionOverlapsRange(action: AppAction, scope: Extract<ProductionBriefScope, { kind: 'range' }>): boolean {
     return (
         valueOverlapsRange(action.payload, scope) ||
@@ -469,6 +513,9 @@ export function doesProductionBriefAllowActionBatch(actions: readonly AppAction[
             if (projectActions.some((action) => action.type === 'createAdjustmentLayer')) {
                 return false;
             }
+            if (projectActions.some(globalTimeActionMutatesTrack)) {
+                return false;
+            }
             const ownedIds = trackOwnedIds(scope.trackId);
             return [...ownedIds].every((id) => !actionStrings.has(id));
         }
@@ -484,7 +531,10 @@ export function doesProductionBriefAllowActionBatch(actions: readonly AppAction[
             return projectActions.every((action) => !actionOverlapsRange(action, sectionRange));
         }
         if (scope.kind === 'object') {
-            return !actionStrings.has(scope.objectId);
+            return (
+                !actionStrings.has(scope.objectId) &&
+                projectActions.every((action) => !actionIndirectlyMutatesObject(action, scope.objectId))
+            );
         }
         return !actionStrings.has(scope.decisionId);
     });

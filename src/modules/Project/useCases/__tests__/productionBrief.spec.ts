@@ -695,4 +695,36 @@ describe('production brief', () => {
             ])
         ).toBe(true);
     });
+
+    it('rejects indirect time shifts of track- and object-locked content', () => {
+        const current = projectStore.value!;
+        projectStore.set({
+            ...current,
+            productionBrief: {
+                ...current.productionBrief,
+                locks: [
+                    {
+                        id: 'lock-guitar-track',
+                        scope: { kind: 'track', trackId: 'track-guitar' },
+                        statement: 'Keep the guitar timeline fixed',
+                        createdAt: 120,
+                    },
+                    {
+                        id: 'lock-chorus-clip',
+                        scope: { kind: 'object', objectType: 'clip', objectId: 'clip-chorus' },
+                        statement: 'Keep the chorus clip fixed',
+                        createdAt: 121,
+                    },
+                ],
+            },
+        });
+
+        expect(
+            doesProductionBriefAllowActionBatch([{ type: 'insertTime', payload: { atBeat: 16, durationBeats: 4 } }])
+        ).toBe(false);
+        toggleRippleEditing();
+        expect(
+            doesProductionBriefAllowActionBatch([{ type: 'removeClip', payload: { clipId: 'clip-prechorus' } }])
+        ).toBe(false);
+    });
 });
