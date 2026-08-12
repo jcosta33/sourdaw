@@ -395,11 +395,11 @@ invalidate the DSP crate's committed artifacts.
   `grandBouleEngineWorker.ts` is now supported by measurement rather than asserted.
 - **Two devices are bimodal**, and a mean-only bench would report both as trivially cheap.
 - **The wasm/native ratio is not a constant**, so wasm must be measured rather than extrapolated.
-- **Two constructed voice counts cannot be reached.** Fermenter is constructed with 32
-  (`fermenterProcessor.ts:170`) and tops out at 16 — `MasterSynth::new` discards its `max_voices` and
-  a `Layer` owns a fixed 16-voice pool. Levain is constructed with 64 (`levainProcessor.ts:155`,
-  `MAX_VOICES_WASM`) and settles at 32, because shipped legato returns `SyntheticGlide` for any note
-  within 12 semitones of a held one and reuses that voice.
+- **The recorded Fermenter row predates its voice-ceiling repair.** Production constructs 32 voices,
+  and the engine now enforces and can reach that instance-wide ceiling; remeasure the table before
+  comparing new numbers with its historical 16-voice row. Levain is constructed with 64
+  (`levainProcessor.ts:155`, `MAX_VOICES_WASM`) and settles at 32, because shipped legato returns
+  `SyntheticGlide` for any note within 12 semitones of a held one and reuses that voice.
 
 ## Caveats, in full
 

@@ -185,6 +185,9 @@ pub struct FermenterInstance {
 #[wasm_bindgen]
 impl FermenterInstance {
     #[wasm_bindgen(constructor)]
+    /// `max_voices` is the instance-wide playable note-voice ceiling, clamped
+    /// to 1..=64 across all layers. Each voice can render up to 16 unison
+    /// oscillators; bounded steal tails overlap only for de-clicking.
     pub fn new(sample_rate: f32, max_voices: u32) -> Self {
         let block_size = 128;
         Self {
