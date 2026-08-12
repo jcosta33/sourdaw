@@ -55,9 +55,27 @@ function materializeNestedNoteIds(action: Extract<AppAction, { type: 'addNotes' 
     return { action: cloned, applicationAssignedIds };
 }
 
+function materializeMidiInputOwnerId(
+    action: Extract<AppAction, { type: 'armTrack' }>
+): MaterializedCommandApplicationIds {
+    if (action.payload.midiInputOwnerId !== undefined) {
+        return { action, applicationAssignedIds: [] };
+    }
+    const cloned = structuredClone(action);
+    const value = `arm-command-${crypto.randomUUID()}`;
+    cloned.payload.midiInputOwnerId = value;
+    return {
+        action: cloned,
+        applicationAssignedIds: [{ argument: 'midiInputOwnerId', value }],
+    };
+}
+
 export function materializeCommandApplicationIds(action: AppAction): MaterializedCommandApplicationIds {
     if (action.type === 'addNotes') {
         return materializeNestedNoteIds(action);
+    }
+    if (action.type === 'armTrack') {
+        return materializeMidiInputOwnerId(action);
     }
 
     const rule = APPLICATION_ID_RULES[action.type];

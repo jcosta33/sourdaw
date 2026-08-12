@@ -20,6 +20,26 @@ const STOCHASTIC_OPERATIONS = new Set([
     'humanizeNotes',
 ]);
 
+// These actions still derive semantic output, nested identities, or external
+// model results after the serialized envelope has been fixed. They remain
+// available through their owning in-process workflows, but are not admitted at
+// the replayable serialized-command boundary until those results are fully
+// materialized into the command contract.
+const NONDETERMINISTIC_SERIALIZED_OPERATIONS = new Set([
+    'completeMidi',
+    'createPatternInstance',
+    'duplicateClip',
+    'duplicateClipToNextBar',
+    'duplicateTrack',
+    'generateAudio',
+    'generateBassline',
+    'generateChordProgression',
+    'generateDrumPattern',
+    'generateMelody',
+    'splitClip',
+    'variationMidi',
+]);
+
 const ENVELOPE_KEYS = [
     'schemaVersion',
     'commandId',
@@ -127,6 +147,16 @@ function hasValidArguments(operation: string, value: unknown): boolean {
     return validateVersionedCommandArguments(operation, value);
 }
 
+function isDeterministicSerializedOperation(operation: string, value: unknown): boolean {
+    if (NONDETERMINISTIC_SERIALIZED_OPERATIONS.has(operation)) {
+        return false;
+    }
+    if (operation === 'createTrackAlternative' && isRecord(value) && value.duplicateActive === true) {
+        return false;
+    }
+    return true;
+}
+
 function hasCompleteReferenceMetadata(
     argumentsValue: Record<string, unknown>,
     references: readonly CommandObjectReference[]
@@ -179,6 +209,9 @@ function validateEnvelope(value: unknown): ParseVersionedCommandEnvelopeResult {
     }
     if (!isNonEmptyString(value.operation) || !hasValidArguments(value.operation, value.arguments)) {
         return { status: 'invalid', reason: 'Command operation or arguments are not allowlisted' };
+    }
+    if (!isDeterministicSerializedOperation(value.operation, value.arguments)) {
+        return { status: 'invalid', reason: 'Command operation is not deterministic at the serialized boundary' };
     }
     if (
         !isNonEmptyString(value.argumentsDigest) ||

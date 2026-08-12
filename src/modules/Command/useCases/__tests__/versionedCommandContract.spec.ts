@@ -258,6 +258,82 @@ describe('versioned command contract', () => {
         ]);
     });
 
+    it('rejects commands whose semantic result still depends on post-envelope generation', () => {
+        const unsafeActions: AppAction[] = [
+            { type: 'completeMidi', payload: { clipId: 'clip-1' } },
+            { type: 'variationMidi', payload: { clipId: 'clip-1' } },
+            { type: 'generateBassline', payload: { clipId: 'clip-1' } },
+            { type: 'generateAudio', payload: { prompt: 'warm pad' } },
+            { type: 'generateDrumPattern', payload: { style: 'rock' } },
+            { type: 'generateMelody', payload: { style: 'ambient' } },
+            { type: 'generateChordProgression', payload: { style: 'pop' } },
+            { type: 'duplicateClip', payload: { clipId: 'clip-1' } },
+            { type: 'duplicateClipToNextBar', payload: { clipId: 'clip-1' } },
+            { type: 'duplicateTrack', payload: { trackId: 'track-1' } },
+            { type: 'splitClip', payload: { clipId: 'clip-1', beat: 2 } },
+            {
+                type: 'createTrackAlternative',
+                payload: { trackId: 'track-1', name: 'Take 2', duplicateActive: true },
+            },
+            {
+                type: 'createPatternInstance',
+                payload: { sourceClipId: 'clip-1', targetTrackId: 'track-1', startBeat: 0 },
+            },
+        ];
+
+        for (const action of unsafeActions) {
+            const command = createExecutionCommandEnvelope({
+                action,
+                expectedEffect: action.type,
+                normalizedProjectRevision: 'revision-1',
+            });
+            expect(parseVersionedCommandEnvelope(serializeVersionedCommandEnvelope(command.envelope))).toEqual({
+                status: 'invalid',
+                reason: 'Command operation is not deterministic at the serialized boundary',
+            });
+        }
+    });
+
+    it('materializes an arm routing owner before digesting while preserving explicit null', () => {
+        vi.spyOn(crypto, 'randomUUID')
+            .mockReturnValueOnce('44444444-dddd-4ddd-8ddd-dddddddddddd')
+            .mockReturnValueOnce('55555555-eeee-4eee-8eee-eeeeeeeeeeee');
+
+        const generated = createExecutionCommandEnvelope({
+            action: { type: 'armTrack', payload: { trackId: 'track-1', armed: true } },
+            expectedEffect: 'Arm track 1.',
+            normalizedProjectRevision: 'revision-1',
+        });
+        expect(generated.action).toEqual({
+            type: 'armTrack',
+            payload: {
+                trackId: 'track-1',
+                armed: true,
+                midiInputOwnerId: 'arm-command-44444444-dddd-4ddd-8ddd-dddddddddddd',
+            },
+        });
+        expect(generated.envelope.applicationAssignedIds).toEqual([
+            {
+                argument: 'midiInputOwnerId',
+                value: 'arm-command-44444444-dddd-4ddd-8ddd-dddddddddddd',
+            },
+        ]);
+
+        const explicitNull = createExecutionCommandEnvelope({
+            action: {
+                type: 'armTrack',
+                payload: { trackId: 'track-1', armed: false, midiInputOwnerId: null },
+            },
+            expectedEffect: 'Disarm track 1.',
+            normalizedProjectRevision: 'revision-1',
+        });
+        expect(explicitNull.action).toEqual({
+            type: 'armTrack',
+            payload: { trackId: 'track-1', armed: false, midiInputOwnerId: null },
+        });
+        expect(explicitNull.envelope.applicationAssignedIds).toEqual([]);
+    });
+
     it('rejects recomputed canonical arguments with invalid application-owned field types', () => {
         const command = createExecutionCommandEnvelope({
             action: {
