@@ -77,4 +77,33 @@ describe('triggerScene', () => {
         expect(next.slots.find((s) => s.id === 'slot-c')!.state).toBe('stopped');
         expect(next.slots.find((s) => s.id === 'slot-d')!.state).toBe('empty');
     });
+
+    it('stops an overdubbing slot in another scene, matching stopAllSlots (F6)', () => {
+        // Regression for F6: triggerScene previously demoted only
+        // state === 'playing' slots in other columns, leaving an overdubbing
+        // slot in a different scene running (red LED) after the switch.
+        const overdubbingElsewhere: LoopSlot = {
+            id: 'slot-e',
+            trackId: 't1',
+            row: 0,
+            column: 1,
+            state: 'overdubbing',
+            lengthBeats: 4,
+            layers: [{ id: 'L1', layerIndex: 0, recordedAt: '', muted: false, volume: 1 }],
+            loopCount: 0,
+            volume: 1,
+            quantize: true,
+            fadeBeats: 0.125,
+        };
+
+        loopStationStoreMock.value = {
+            ...emptyLoopState(),
+            slots: [overdubbingElsewhere],
+        };
+
+        triggerScene(3);
+
+        const next = vi.mocked(loopStationStore.set).mock.calls[0]![0] as LoopStationState;
+        expect(next.slots.find((s) => s.id === 'slot-e')!.state).toBe('stopped');
+    });
 });

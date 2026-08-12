@@ -162,4 +162,21 @@ describe('toggleRecord', () => {
         expect(next.slots[0]!.state).toBe('playing');
         expect(next.slots[0]!.layers).toEqual([layer]);
     });
+
+    it('does not resume a stopped slot with zero layers (stop-during-first-recording leaves a dead cell)', () => {
+        // Regression for F5: stopSlot maps recording -> stopped unconditionally,
+        // so a slot stopped mid-first-recording is 'stopped' with layers: [].
+        // toggleRecord must not promote that to 'playing' — unlike triggerSlot,
+        // which already guards on layers.length === 0.
+        loopStationStoreMock.value = {
+            ...emptyLoopState(),
+            slots: [baseSlot({ state: 'stopped', layers: [], lengthBeats: 0 })],
+        };
+
+        toggleRecord('s1');
+
+        const next = vi.mocked(loopStationStore.set).mock.calls[0]![0] as LoopStationState;
+        expect(next.slots[0]!.state).toBe('stopped');
+        expect(next.slots[0]!.layers).toEqual([]);
+    });
 });

@@ -45,6 +45,13 @@ export function toggleRecord(slotId: string): void {
                     return { ...state1, state: 'playing' as const, layers: [...state1.layers, newLayer] };
                 }
                 case 'stopped':
+                    // A slot stopped mid-first-recording (stopSlot maps any state to
+                    // 'stopped' unconditionally) has zero layers. Resuming that to
+                    // 'playing' would light a cell with nothing to play — mirror
+                    // triggerSlot's no-op guard instead.
+                    if (state1.layers.length === 0) {
+                        return state1;
+                    }
                     return { ...state1, state: 'playing' as const };
                 default:
                     return state1;
