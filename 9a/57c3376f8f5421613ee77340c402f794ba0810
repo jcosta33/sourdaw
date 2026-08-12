@@ -1,0 +1,14 @@
+tests/e2e/sessionLoopStationControlsDeep.spec.ts
+  h_1228e573df1f42 1-75
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "9a57c3376f8f5421613ee77340c402f794ba0810",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
