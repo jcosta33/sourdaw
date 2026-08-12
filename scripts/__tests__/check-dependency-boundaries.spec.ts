@@ -256,6 +256,39 @@ describe('check-dependency-boundaries', () => {
         expect(unresolvedRule.to.couldNotResolve).toBe(true);
     });
 
+    it('should enforce module contract barrels from the real app composition root', () => {
+        const appRule = mainConfig.forbidden.find(
+            (candidate: { name: string }) => candidate.name === 'app-to-modules-public-surface-only'
+        );
+        const typeAppRule = typeConfig.forbidden.find(
+            (candidate: { name: string }) => candidate.name === 'app-to-modules-public-surface-only-type-only'
+        );
+
+        expect(new RegExp(appRule.from.path).test('src/app/bootstrap.ts')).toBe(true);
+        expect(new RegExp(typeAppRule.from.path).test('src/app/registerDependencies.ts')).toBe(true);
+        expect(new RegExp(appRule.from.path).test('application/bootstrap.ts')).toBe(false);
+        expect(new RegExp(appRule.to.path).test('src/modules/Transport/handlers/getHandlers.ts')).toBe(true);
+        expect(
+            appRule.to.pathNot.some((pattern: string) =>
+                new RegExp(pattern).test('src/modules/Transport/useCases/index.ts')
+            )
+        ).toBe(true);
+    });
+
+    it('should exclude test-only helpers without hiding production orphans', () => {
+        const orphanRule = mainConfig.forbidden.find((candidate: { name: string }) => candidate.name === 'no-orphans');
+        const isExcluded = (filePath: string): boolean =>
+            orphanRule.from.pathNot.some((pattern: string) => new RegExp(pattern).test(filePath));
+
+        expect(
+            isExcluded('src/modules/AudioEngine/repositories/offlineScheduler/__tests__/offlineAutomationExemptions.ts')
+        ).toBe(true);
+        expect(isExcluded('src/modules/Transport/models/DeadModel.ts')).toBe(false);
+        expect(isExcluded('src/modules/Transport/events/DeadEvent.ts')).toBe(false);
+        expect(isExcluded('src/modules/Transport/types.ts')).toBe(false);
+        expect(isExcluded('src/modules/ControlSurface/repositories/pushMidiCodec.ts')).toBe(false);
+    });
+
     it('should isolate worklets from foreign modules and resolved Tauri packages', () => {
         const moduleRule = mainConfig.forbidden.find(
             (candidate: { name: string }) => candidate.name === 'worklets-no-module-runtime-imports'
@@ -2667,7 +2700,7 @@ describe('check-dependency-boundaries', () => {
 
         expect([...typeRuleNames]).toEqual(
             expect.arrayContaining([
-                'application-to-modules-public-surface-only-type-only',
+                'app-to-modules-public-surface-only-type-only',
                 'models-are-pure-type-only',
                 'no-relative-cross-module-imports-type-only',
                 'module-runtime-no-worklet-imports-type-only',

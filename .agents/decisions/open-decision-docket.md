@@ -155,10 +155,10 @@ code: no (all dormant).
 |---|---|---|---|
 | **Extension module** (whole) | Extension | Architecturally complete but **FROZEN** by its own store header (`stores/extension.ts:5-7`) until a Worker sandbox replaces the unsandboxed `new Function` eval; zero non-spec importers | Build the Worker/CSP sandbox + permission enforcement + barrels, or remove the module. **RESOLVED 2026-07-18 (#427): module deleted — user decision (unfreeze + delete), ADR-0011 W7.** |
 | **DDSP synthesis pipeline** | BrowserAi | TF.js worker is a stub returning `UNAVAILABLE` (`workers/tfjsInferenceWorker.ts:16,40`); PR #101 de-advertised the four DDSP instruments as unavailable instead of `ready`, but the synthesis pipeline itself remains unbuilt | Build the inference, or remove the pipeline |
-| **RAVE timbre-transfer** | AudioEngine | 9 `useCases/rave/*` dead (only `loadModel`/`setTransferBlend` wired); 4 currently flagged live as `no-orphans` warns | Wire the RAVE UI/flow, or remove the 9 use cases |
+| **RAVE timbre-transfer** | BrowserAi | Model discovery is OPFS-gated and no factory weights are available; placeholder encode/decode/transfer operations remain unshipped | Build model provisioning and real inference, or remove the placeholder pipeline |
 | **WAM plugin host** | Plugin | `loadWAMPlugin` never called by any production JS (`useCases/wamPluginHost/hostOperations/loadWAMPlugin.ts`) | Build host load/query + UI, or remove the host surface |
-| **Push hardware controller** | Plugin | No `repositories/` I/O; pads never driven by a device; O(n) hot path unexercised | Build the hardware I/O layer, or remove |
-| **MIDI hardware controller + scripting** | MIDI | `export/importHardwareMappings` dead; `controllerScriptingWorker` never instantiated (live `no-orphans` warn); profiles never populated | Build device wiring, or remove the subsystem |
+| **Push 2 hardware controller** | ControlSurface | Protocol/codec primitives exist, but no production hardware transport owns them; the two files remain visible `no-orphans` warnings | Build the connection lifecycle tracked by #1745; do not delete or exempt the primitives |
+| **MIDI hardware controller** | MIDI | `export/importHardwareMappings` dead; profiles never populated; the unshipped controller-scripting Worker was retired in #1746 | Build device wiring, or remove the remaining subsystem. Any future scripting surface requires a new trust-model decision |
 | **Native-Tauri CRDT backend + `.sdaw` import/merge** | CrdtDocument | `nativeCrdtPersistence/` parked; PR #110 fixed the misleading `getPersistenceBackend()` report so the active lifecycle reports browser/IndexedDB; `.sdaw` merge wired but no trigger | Build the native backend / `.sdaw` import UI, or remove |
 | **Toaster performance features** | Toaster | Note-Repeat / 16-Levels / Sound-Locks / Pattern-Morph / multi-pattern / polymetric — full impls, no UI/command entry; their sequencer reader branches are dead | Ship each (UI + command + e2e) or retire it with its branches |
 | **Yeast param-readback / introspection UI** | Yeast | StepPatternEditor edits never reach the Arpeggiator; all panel knobs uncontrolled; 12 introspection methods + reorder are unbuilt-feature groundwork. (`yeastPanic` is now wired via Transport `panicYeastRuntime` → Yeast `yeastPanic` — no longer part of this row) | Build the param-projection store + pattern/reorder wiring, or retire |
@@ -232,14 +232,12 @@ code: no (all dormant).
   Options: enable `tsPreCompilationDeps` on main + repoint/remove the stale
   anchor vs accept the blind spots. Blocks code: no. Source:
   `.dependency-cruiser.cjs:269,752,918`.
-- **Retire the live `no-orphans` warn backlog: 5 orphans remain.** The main
-  cruise reports exactly 5 `no-orphans` warnings — 4 RAVE use cases
-  (`src/modules/AudioEngine/useCases/rave/{timbreTransfer,interpolateLatent,encodeAudio,decodeLatent}.ts`,
-  tracked by the `.agents/specs/rave-timbre-transfer/` draft) and
-  `src/modules/ControlSurface/workers/controllerScriptingWorker.ts` (already a docket
-  trust-model item under MIDI). Wire or retire each; recorded here so the
-  warn-backlog finding can be retired without losing the list. Blocks code: no.
-  Source: `node scripts/check-dependency-boundaries.mjs` (main: 5 warnings).
+- **Retire the live `no-orphans` warn backlog: 2 orphans remain.** The main
+  cruise reports `src/modules/ControlSurface/repositories/pushDisplayProtocol.ts`
+  and `pushMidiCodec.ts`: both implement Push 2 protocol primitives, but no
+  production hardware transport owns them. Wire them through the real connection
+  lifecycle tracked by #1745; do not delete or exempt them. Blocks code: no.
+  Source: `node scripts/check-dependency-boundaries.mjs` (main: 2 warnings).
 - **Tests cruise exempts same-module barrel imports, contradicting the written
   same-module rule.** `.dependency-cruiser.tests.cjs` exempts same-module
   targets via `pathNot: '^$1$2'` in both the `cross-module-index-only` and
@@ -379,11 +377,11 @@ code: no (all dormant).
 - **Is MIDI export → re-import a supported round-trip** or one-shot ingestion?
   Blocks code: no. Source: `src/modules/MIDI/useCases/exportMidiFile.ts`,
   `useCases/importMidiFile.ts`.
-- **Trust model for controller scripting.** `new Function()` runs
-  user-supplied JS in a Worker with no rate-limit or schema validation on
-  posted setParam/sendMidi; intended scope (personal scripts vs shared
-  marketplace) is undecided. Blocks code: yes, for shipping the scripting
-  surface. Source: `src/modules/ControlSurface/workers/controllerScriptingWorker.ts:14-29`.
+- ~~**Trust model for controller scripting.**~~ **Closed 2026-08-12 (#1746):**
+  the isolated `new Function()` Worker had no production importer and was deleted
+  before shipment. Any future scripting feature must establish a new sandbox,
+  permission, and message-validation contract rather than revive the removed
+  surface. Blocks code: no.
 - **Ratchets / step-conditions**: undocumented pattern-logic gap (MidiNote has
   probability only). Options: add fields vs declare out of scope. Blocks code:
   no. Source: `src/modules/MIDI/models/MidiNote.ts`.

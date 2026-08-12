@@ -2,7 +2,7 @@
 
 A green `pnpm deps:validate` run is **not** proof the architecture is intact. Dependency-cruiser
 enforces resolved import **edges**; it does not understand re-export provenance, layering
-*direction*, or write-surface breadth, and by default it never sees type-only edges. This doc is the
+_direction_, or write-surface breadth, and by default it never sees type-only edges. This doc is the
 durable checklist of the ways a real boundary violation can slip past the tooling, and the concrete
 mechanism this repo uses to close each one.
 
@@ -15,17 +15,17 @@ boundary rule, check it against every row below.
 `pnpm deps:validate` (`scripts/check-dependency-boundaries.mjs`) runs four cruises, each with its
 own exact known-violations baseline (repaired debt cannot stay silently authorized):
 
-| Cruise | Config | Sees |
-| --- | --- | --- |
-| main | `.dependency-cruiser.cjs` | value edges |
-| reachability | `.dependency-cruiser.reachability.cjs` | transitive causal edges |
-| types | `.dependency-cruiser.types.cjs` | `type-only` edges (`tsPreCompilationDeps`) |
-| tests | `.dependency-cruiser.tests.cjs` | test-inclusive barrel boundaries |
+| Cruise       | Config                                 | Sees                                                    |
+| ------------ | -------------------------------------- | ------------------------------------------------------- |
+| main         | `.dependency-cruiser.cjs`              | value + tagged type-only edges (`tsPreCompilationDeps`) |
+| reachability | `.dependency-cruiser.reachability.cjs` | transitive causal edges                                 |
+| types        | `.dependency-cruiser.types.cjs`        | type-only-specific duplicate boundary rules             |
+| tests        | `.dependency-cruiser.tests.cjs`        | test-inclusive barrel boundaries                        |
 
 ## The six laundering patterns
 
 1. **Type-only imports are invisible.** With `tsPreCompilationDeps` unset, `import type` edges do
-   not exist, so a module can import another module's private model/handler *types* with zero
+   not exist, so a module can import another module's private model/handler _types_ with zero
    value-edge violations.
    → **Closed by** the dedicated **types cruise** (`.dependency-cruiser.types.cjs`,
    `tsPreCompilationDeps: 'specify'`), which re-runs the boundary rules against `type-only` edges as
@@ -40,7 +40,7 @@ own exact known-violations baseline (repaired debt cannot stay silently authoriz
    cruise), and ESLint `sourdaw/no-usecase-repository-reexport`.
 
 3. **Adapter / bridge-file laundering.** A rule anchored only to the vendor package
-   (`/@tauri-apps/`) misses callers that reach the same capability *through* a thin in-repo adapter.
+   (`/@tauri-apps/`) misses callers that reach the same capability _through_ a thin in-repo adapter.
    → **Closed by** widening the rule's `to` target to the adapter itself: `tauri-ipc-only-in-repositories`
    (`.dependency-cruiser.shared.cjs`) matches `(/@tauri-apps/ | ^src/utils/tauriBridge.ts$)`, so only
    module-root `repositories/` and the exact bridge adapter may originate IPC; every other caller of
@@ -55,20 +55,19 @@ own exact known-violations baseline (repaired debt cannot stay silently authoriz
    barrel is rejected outright by the architecture checker (0/50 modules have a root `index.ts`).
 
 5. **`from`-scope exclusions.** A cross-module rule scoped `from: ^src/modules/` never inspects an
-   importer that lives *outside* that prefix (`src/app`, `src/components`, `src/routes`,
+   importer that lives _outside_ that prefix (`src/app`, `src/components`, `src/routes`,
    `src/infra`, `src/utils`, `src/helpers`) but still reaches module internals.
    → **Closed by** a dedicated origin rule per non-module root, all carried into the types cruise:
    `external-module-contracts-only` (`^src/(app|components|routes)/`, barrels only) and the
    total-ban `infra-no-module-imports`, `utils-no-module-imports`, `helpers-no-module-imports`.
-   Two further origin rules — `application-to-modules-public-surface-only` (`^application/`) and
-   `shared-no-module-imports` (`^src/shared/`) — are **provisioned but dormant**: those directories
-   do not exist in the current tree (see the "FORWARD-LOOKING RULES" block in
-   `.dependency-cruiser.cjs`), so they enforce nothing today and only guard that layout the moment
-   it is added. Do not cite a dormant rule as an active closure.
+   `app-to-modules-public-surface-only` covers the live `^src/app/` composition root. The further
+   `shared-no-module-imports` (`^src/shared/`) rule is **provisioned but dormant** because that
+   directory does not exist; it enforces the boundary if the layout is introduced, but must not be
+   cited as an active closure today.
 
 6. **Violation classes with no rule at all.** The contract-barrel rule only checks that the import
-   *path* is a barrel — it says nothing about layering *direction* or write-surface breadth. A
-   `models/` file importing `useCases/`, a repository calling a use case, a `stores/` file that *is*
+   _path_ is a barrel — it says nothing about layering _direction_ or write-surface breadth. A
+   `models/` file importing `useCases/`, a repository calling a use case, a `stores/` file that _is_
    a use case, or a cross-module `store.set()` all pass.
    → **Closed by** direction/purity rules (`models-are-pure`, `events-are-pure`,
    `repositories-no-business`, `usecases-only-write-boundary-to-repositories`) and ESLint
@@ -79,7 +78,7 @@ own exact known-violations baseline (repaired debt cannot stay silently authoriz
 
 ## Rule of thumb
 
-Before trusting a green run, ask of any new boundary: *would a type-only edge evade it? a re-export?
+Before trusting a green run, ask of any new boundary: _would a type-only edge evade it? a re-export?
 a bridge file? an importer outside `src/modules/`? does it constrain direction, or only the import
-path?* If any answer is "yes/only-path," the rule is value-edge-shaped and needs a types-cruise twin
+path?_ If any answer is "yes/only-path," the rule is value-edge-shaped and needs a types-cruise twin
 and/or an ESLint companion.
