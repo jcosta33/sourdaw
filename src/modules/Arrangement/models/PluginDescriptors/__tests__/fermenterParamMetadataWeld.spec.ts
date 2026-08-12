@@ -17,19 +17,23 @@ describe('Fermenter parameter metadata weld', () => {
         expect(
             [...moduleParams.values()].map((param) => ({
                 id: param.id,
+                name: param.label,
                 min: param.min,
                 max: param.max,
                 defaultValue: param.default,
                 unit: param.unit,
+                scaling: param.scaling ?? 'linear',
                 type: param.step === 1 ? 'int' : 'float',
             }))
         ).toEqual(
             [...descriptorParams.values()].map((param) => ({
                 id: param.id,
+                name: param.name,
                 min: param.minValue,
                 max: param.maxValue,
                 defaultValue: param.defaultValue,
                 unit: param.unit,
+                scaling: param.scaling ?? 'linear',
                 type: param.type,
             }))
         );
