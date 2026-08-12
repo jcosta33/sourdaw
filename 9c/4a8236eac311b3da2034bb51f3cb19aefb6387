@@ -1,0 +1,19 @@
+tests/e2e/fermenterLfoKnobsTestId.spec.ts
+  s_bc88af7d3b054c::t_43e75073cd0bda 1-54
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "9c4a8236eac311b3da2034bb51f3cb19aefb6387",
+  "prompts": {},
+  "sessions": {
+    "s_bc88af7d3b054c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f9b4a-11a2-7f61-8dfb-76eed0eb2a9c",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
