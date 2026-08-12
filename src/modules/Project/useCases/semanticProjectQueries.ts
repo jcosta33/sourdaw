@@ -16,6 +16,7 @@ import {
 import { projectStore } from '../stores/projectStore';
 
 import { semanticProjectIndex } from './semanticProjectIndex';
+import { semanticRangeOverlaps } from './semanticRangeOverlap';
 
 const DEFAULT_PAGE_SIZE = 20;
 const MAX_RETAINED_DIFF_REVISIONS = 32;
@@ -140,7 +141,7 @@ function overlapsFilterRange(entity: SemanticIndexEntity, filters: SemanticProje
     }
     const startBeat = filters.startBeat ?? Number.NEGATIVE_INFINITY;
     const endBeat = filters.endBeat ?? Number.POSITIVE_INFINITY;
-    return entity.startBeat < endBeat && entity.endBeat >= startBeat;
+    return semanticRangeOverlaps(entity.startBeat, entity.endBeat, startBeat, endBeat);
 }
 
 function entityMatchesFilters(entity: SemanticIndexEntity, filters: SemanticProjectQueryFilters | undefined): boolean {
@@ -181,8 +182,7 @@ function entityMatchesFilters(entity: SemanticIndexEntity, filters: SemanticProj
             !section ||
             entity.startBeat === undefined ||
             entity.endBeat === undefined ||
-            entity.startBeat >= section.endBeat ||
-            entity.endBeat < section.startBeat
+            !semanticRangeOverlaps(entity.startBeat, entity.endBeat, section.startBeat, section.endBeat)
         ) {
             return false;
         }
@@ -333,8 +333,7 @@ function createSectionItems(
                 return (
                     entity.startBeat !== undefined &&
                     entity.endBeat !== undefined &&
-                    entity.startBeat < endBeat &&
-                    entity.endBeat >= startBeat
+                    semanticRangeOverlaps(entity.startBeat, entity.endBeat, startBeat, endBeat)
                 );
             }
             return {

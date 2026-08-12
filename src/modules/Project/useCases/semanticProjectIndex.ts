@@ -14,6 +14,8 @@ import {
 } from '../models/SemanticProjectQuery';
 import { projectStore } from '../stores/projectStore';
 
+import { semanticRangeOverlaps } from './semanticRangeOverlap';
+
 type PartitionName = keyof SemanticIndexDiagnostics;
 
 type PartitionCache = {
@@ -395,8 +397,7 @@ function isScopeForEntity(scope: unknown, entity: SemanticIndexEntity): boolean 
             section &&
             entity.startBeat !== undefined &&
             entity.endBeat !== undefined &&
-            entity.startBeat < section.endBeat &&
-            entity.endBeat >= section.startBeat
+            semanticRangeOverlaps(entity.startBeat, entity.endBeat, section.startBeat, section.endBeat)
         );
     }
     if (
@@ -416,7 +417,7 @@ function isScopeForEntity(scope: unknown, entity: SemanticIndexEntity): boolean 
         entity.startBeat !== undefined &&
         entity.endBeat !== undefined
     ) {
-        return entity.startBeat < scope.endBeat && entity.endBeat >= scope.startBeat;
+        return semanticRangeOverlaps(entity.startBeat, entity.endBeat, scope.startBeat, scope.endBeat);
     }
     if (scope.kind === 'decision' && 'decisionId' in scope && typeof scope.decisionId === 'string') {
         return entity.id === scope.decisionId;

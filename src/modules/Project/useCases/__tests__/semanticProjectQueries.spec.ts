@@ -52,6 +52,24 @@ function seedProject(): void {
             parameterValues: { threshold: -18 },
         },
     ];
+    bass.clips = [
+        {
+            id: 'clip-bass-chorus',
+            trackId: bass.id,
+            name: 'Chorus bass',
+            startBeat: 16,
+            endBeat: 24,
+            type: 'audio',
+            audioBufferId: 'buffer-bass',
+            assetHash: 'asset-bass',
+            fadeInBeats: 0,
+            fadeOutBeats: 0,
+            gain: 1,
+            color: '',
+            locked: false,
+            muted: false,
+        },
+    ];
     bass.sends = [{ busId: bus.id, level: 0.4, preFader: false }];
 
     setTrackStoreState({
@@ -266,6 +284,9 @@ describe('semantic project queries', () => {
         expect(objectIds({ parentId: 'track-drums', sectionId: 'section-verse', locked: true })).toContain(
             'clip-drums-verse'
         );
+        expect(objectIds({ stableId: 'marker-chorus', locked: true })).toEqual([]);
+        expect(objectIds({ stableId: 'marker-chorus', locked: false })).toEqual(['marker-chorus']);
+        expect(objectIds({ kind: 'clip', startBeat: 16, endBeat: 32 })).toEqual(['clip-bass-chorus']);
         expect(objectIds({ deviceCategory: 'effect', kind: 'device' })).toEqual(['device-bass-comp']);
         expect(objectIds({ routeFromId: 'track-drums', hasAutomation: true })).toContain('track-bass');
         expect(querySemanticProject({ type: 'routing-graph' }).items).toEqual(
@@ -278,6 +299,7 @@ describe('semantic project queries', () => {
         expect(querySemanticProject({ type: 'section', filters: { sectionId: 'section-chorus' } }).items).toEqual([
             expect.objectContaining({
                 id: 'section-chorus',
+                clipIds: ['clip-bass-chorus'],
                 automationLaneIds: ['lane-bass-gain'],
                 markerIds: ['marker-chorus'],
             }),
