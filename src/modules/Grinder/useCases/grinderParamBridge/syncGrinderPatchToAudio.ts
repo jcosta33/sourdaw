@@ -2,6 +2,7 @@ import { type resolveEligibleDeviceWriteTarget } from '#/modules/Arrangement/sto
 import { type DeviceRef } from '#/utils/createFindDeviceRef';
 
 import { type GrinderPatch, type GrinderPedal } from '../../models/GrinderPatch';
+import { GRINDER_PROJECT_PARAM_KEYS } from '../../models/GrinderProjectParameterMap';
 
 import { getCabIrSlot } from './getCabIrSlot';
 import { getNeuralModelSlot } from './getNeuralModelSlot';
@@ -29,64 +30,6 @@ type SyncGrinderPatchToAudioInput = {
     update_device_patch: (track_id: string, device_id: string, patch: Record<string, unknown>) => void;
     resolve_eligible_device_write_target: typeof resolveEligibleDeviceWriteTarget;
 };
-
-const AUDIO_SYNC_KEYS: readonly (keyof GrinderPatch)[] = [
-    'engineMode',
-    'inputImpedance',
-    'inputGain',
-    'gateEnabled',
-    'gateThreshold',
-    'gateAttack',
-    'gateRelease',
-    'ampModel',
-    'gain',
-    'channel',
-    'bright',
-    'fat',
-    'tubeBias',
-    'tubeAge',
-    'millerCapacitance',
-    'gridConduction',
-    'couplingCapCharge',
-    'toneStackType',
-    'bass',
-    'mid',
-    'treble',
-    'presence',
-    'resonance',
-    'brightCap',
-    'master',
-    'powerTubeType',
-    'rectifierType',
-    'sagAmount',
-    'sagRecovery',
-    'negFeedback',
-    'powerAmpBias',
-    'transformerDrive',
-    'transformerHysteresis',
-    'transformerLfSaturation',
-    'cabType',
-    'cabEnabled',
-    'cabResonanceFreq',
-    'cabResonanceQ',
-    'cabDamping',
-    'cabOpenBack',
-    'coneBreakup',
-    'backEmf',
-    'neuralEnabled',
-    'neuralPlacement',
-    'neuralTier',
-    'neuralMix',
-    'neuralCpuBudget',
-    'outputGain',
-    'outputMix',
-    'limiterEnabled',
-    'limiterThreshold',
-    'cleanBlend',
-    'routingMode',
-    'micBlend',
-    'roomAmount',
-] as const;
 
 function getOptionIndex<TOptions extends readonly string[]>(options: TOptions, value: string): number | null {
     const index = options.indexOf(value);
@@ -199,7 +142,7 @@ export function syncGrinderPatchToAudio(input: SyncGrinderPatchToAudioInput): vo
         sendNumericParamToDevice(input, 'cabIrSlot', cab_ir_slot);
     }
 
-    for (const key of AUDIO_SYNC_KEYS) {
+    for (const key of GRINDER_PROJECT_PARAM_KEYS) {
         const value = toAudioValue(key, patch[key]);
         if (value === null) {
             continue;
@@ -340,10 +283,12 @@ export function syncGrinderPatchToAudio(input: SyncGrinderPatchToAudioInput): vo
         sendNumericParamToDevice(input, entry.key, entry.value);
     }
 
-    if (patch.neuralModelSource === 'imported' && patch.neuralModelProfile) {
+    const importedModel = patch.neuralModelSource === 'imported' && patch.neuralModelProfile;
+    sendNumericParamToDevice(input, 'neuralModelMode', importedModel ? 1 : 0);
+    if (importedModel) {
         sendPatchToDevice(input, {
             neuralModelMode: 'imported',
-            profile: patch.neuralModelProfile,
+            profile: importedModel,
         });
     } else {
         sendPatchToDevice(input, { neuralModelMode: 'builtin' });

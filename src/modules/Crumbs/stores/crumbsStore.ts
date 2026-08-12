@@ -6,7 +6,11 @@
 
 import { createStore } from '#/infra/store/createStore';
 
-import { CRUMBS_PARAM_TARGETS, type CrumbsPersistedParamId } from '../models/CrumbsParameterMap';
+import {
+    CRUMBS_PARAM_TARGETS,
+    CRUMBS_PERSISTED_PARAM_IDS,
+    type CrumbsPersistedParamId,
+} from '../models/CrumbsParameterMap';
 
 import type {
     EnvelopeParams,
@@ -73,6 +77,22 @@ export const defaultCrumbsState: CrumbsState = {
 export const crumbsStore = createStore<Record<string, CrumbsState>>({
     initialData: {},
 });
+
+const activeParamPreviews = new Map<string, Set<CrumbsPersistedParamId>>();
+
+export function beginCrumbsParamPreview(instanceId: string, paramId: CrumbsPersistedParamId): void {
+    const active = activeParamPreviews.get(instanceId) ?? new Set<CrumbsPersistedParamId>();
+    active.add(paramId);
+    activeParamPreviews.set(instanceId, active);
+}
+
+export function endCrumbsParamPreview(instanceId: string, paramId: CrumbsPersistedParamId): void {
+    const active = activeParamPreviews.get(instanceId);
+    active?.delete(paramId);
+    if (active?.size === 0) {
+        activeParamPreviews.delete(instanceId);
+    }
+}
 
 export function ensureInstance(instanceId: string): void {
     crumbsStore.update((s) => {
@@ -313,7 +333,49 @@ export function applyCrumbsParamValue(instanceId: string, paramId: CrumbsPersist
     });
 }
 
+export function replaceCrumbsProjectParameters(
+    instanceId: string,
+    parameterValues: Readonly<Record<string, unknown>>
+): void {
+    crumbsStore.update((instances) => {
+        const current = instances?.[instanceId];
+        if (!instances || !current) {
+            return instances;
+        }
+
+        let next = current;
+        for (const paramId of CRUMBS_PERSISTED_PARAM_IDS) {
+            if (activeParamPreviews.get(instanceId)?.has(paramId)) {
+                continue;
+            }
+            const target = CRUMBS_PARAM_TARGETS[paramId];
+            const raw = parameterValues[paramId];
+            let value: number;
+            if (typeof raw === 'number' && Number.isFinite(raw)) {
+                value = paramId === 'stackCount' ? Math.trunc(raw) : raw;
+            } else if (target.kind === 'envelope') {
+                value = defaultCrumbsState.envelope[target.key];
+            } else if (target.kind === 'voiceStack') {
+                value = defaultCrumbsState.voiceStack[target.key];
+            } else {
+                value = defaultCrumbsState[target.key];
+            }
+
+            if (target.kind === 'envelope') {
+                next = { ...next, envelope: { ...next.envelope, [target.key]: value } };
+            } else if (target.kind === 'voiceStack') {
+                next = { ...next, voiceStack: { ...next.voiceStack, [target.key]: value } };
+            } else {
+                next = { ...next, [target.key]: value };
+            }
+        }
+
+        return { ...instances, [instanceId]: next };
+    });
+}
+
 export function removeInstance(instanceId: string): void {
+    activeParamPreviews.delete(instanceId);
     crumbsStore.update((s) => {
         if (!s) {
             return {};

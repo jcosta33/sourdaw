@@ -9,6 +9,8 @@ import { RotaryKnob } from '#/components/daw/RotaryKnob';
 import { CompressorCurve } from '#/components/daw/visualizers/CompressorCurve';
 import { DistortionCurve } from '#/components/daw/visualizers/DistortionCurve';
 import { useStore } from '#/infra/store/useStore';
+import { useStoreSelector } from '#/infra/store/useStoreSelector';
+import { trackStore, type TrackStoreState } from '#/modules/Arrangement/stores';
 
 import {
     GRINDER_CAB_LIBRARY,
@@ -45,6 +47,7 @@ import { setGrinderMicParamWithAudio } from '../../useCases/grinderParamBridge/s
 import { setGrinderParamWithAudio } from '../../useCases/grinderParamBridge/setGrinderParamWithAudio';
 import { setGrinderPedalParamWithAudio } from '../../useCases/grinderParamBridge/setGrinderPedalParamWithAudio';
 import { GRINDER_PRESETS } from '../../useCases/grinderPresets';
+import { hydrateGrinderPatchFromProject } from '../../useCases/hydrateGrinderPatchFromProject';
 import { importGrinderNeuralModels } from '../../useCases/importGrinderNeuralModels';
 import { removeGrinderNeuralModel } from '../../useCases/removeGrinderNeuralModel';
 import { restoreGrinderNeuralLibrary } from '../../useCases/restoreGrinderNeuralLibrary';
@@ -58,6 +61,16 @@ const SECTION_TABS: ReadonlyArray<{ id: GrinderUiSection; label: string; icon: t
     { id: 'neural', label: 'Neural', icon: Cpu },
     { id: 'lab', label: 'Lab', icon: Sparkles },
 ];
+
+function selectProjectParameterValues(state: TrackStoreState | null, deviceId: string): Record<string, number> | null {
+    for (const track of state?.tracks ?? []) {
+        const device = track.devices.find((candidate) => candidate.id === deviceId);
+        if (device) {
+            return device.parameterValues;
+        }
+    }
+    return null;
+}
 
 const ENGINE_MODES: ReadonlyArray<{ id: GrinderEngineMode; label: string; description: string }> = [
     { id: 'circuit', label: 'Circuit', description: 'Full amp controls, no capture in the loop' },
@@ -2055,8 +2068,17 @@ function StatusStrip({ deviceId }: { deviceId: string }): ReactElement {
 
 export const GrinderPanel = ({ deviceId }: { deviceId: string }): ReactElement => {
     const allInstances = useStore(grinderStore, {});
+    const projectParameterValues = useStoreSelector(trackStore, (state) =>
+        selectProjectParameterValues(state, deviceId)
+    );
     const state: GrinderState = allInstances?.[deviceId] ?? getGrinderState(deviceId);
     const patch = state.patch;
+
+    useEffect(() => {
+        if (projectParameterValues) {
+            hydrateGrinderPatchFromProject(deviceId);
+        }
+    }, [deviceId, projectParameterValues]);
 
     function replacePatch(next: GrinderPatch): void {
         loadGrinderPatchWithAudio(deviceId, next);

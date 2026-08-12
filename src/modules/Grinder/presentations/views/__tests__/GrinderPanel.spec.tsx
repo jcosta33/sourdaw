@@ -1,5 +1,8 @@
-import { render, screen, within } from '@testing-library/react';
+import { act, render, screen, waitFor, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+
+import { type Track, trackStore } from '#/modules/Arrangement/stores';
+import { createTrack } from '#/modules/Arrangement/useCases';
 
 import { DEFAULT_PATCH } from '../../../models/GrinderPatch';
 import { grinderNeuralLibraryStore } from '../../../stores/grinderNeuralLibraryStore';
@@ -16,6 +19,17 @@ vi.mock('../../../useCases/restoreGrinderNeuralLibrary', () => ({
 
 describe('GrinderPanel', () => {
     const device_id = 'test-device';
+
+    function grinderTrack(parameterValues: Record<string, number>, trackId = 'track-1'): Track {
+        return {
+            ...createTrack({ id: trackId, name: 'Guitar', kind: 'audio' }),
+            devices: [{ id: device_id, name: 'Grinder', type: 'grinder', bypassed: false, parameterValues }],
+        };
+    }
+
+    function setProjectTracks(tracks: Track[]): void {
+        trackStore.set({ tracks, selectedTrackId: tracks[0]?.id ?? null, ghostClips: [] });
+    }
 
     beforeEach(() => {
         grinderNeuralLibraryStore.set({
@@ -35,6 +49,7 @@ describe('GrinderPanel', () => {
                 basePatch: DEFAULT_PATCH,
             },
         });
+        trackStore.set({ tracks: [], selectedTrackId: null, ghostClips: [] });
     });
 
     it('should render an explicit gate enable toggle in the lab section', () => {
@@ -363,5 +378,40 @@ describe('GrinderPanel', () => {
         });
         render(<GrinderPanel deviceId={device_id} />);
         expect(screen.getByRole('slider', { name: 'Gain' })).toBeInTheDocument();
+    });
+
+    it('reconciles a mounted control when project truth changes or removes its value', async () => {
+        grinderStore.set({
+            [device_id]: {
+                patch: { ...DEFAULT_PATCH, uiSection: 'amp', gain: 8 },
+                basePatch: DEFAULT_PATCH,
+            },
+        });
+        setProjectTracks([grinderTrack({ gain: 8 })]);
+
+        render(<GrinderPanel deviceId={device_id} />);
+        const gain = screen.getByRole('slider', { name: 'Gain' });
+        expect(gain).toHaveAttribute('aria-valuenow', '8');
+
+        act(() => {
+            setProjectTracks([grinderTrack({ gain: 9 }, 'duplicate-a'), grinderTrack({ gain: 1 }, 'duplicate-b')]);
+        });
+        expect(gain).toHaveAttribute('aria-valuenow', '8');
+
+        const nestedProjectValues = { cabIrSlot: 1, neuralModelSlot: 2, mic1PositionX: 0.8, preCompressorEnabled: 1 };
+        act(() => {
+            setProjectTracks([grinderTrack({ gain: 99, channel: 1.5, ...nestedProjectValues })]);
+        });
+        await waitFor(() => expect(gain).toHaveAttribute('aria-valuenow', '10'));
+        expect(grinderStore.value?.[device_id]?.patch).toMatchObject({
+            channel: 1,
+            cabIrId: '2x12-open',
+            neuralModelId: 'vintage-stack-c',
+            mic1: { positionX: 0.8 },
+            prePedals: [{ type: 'compressor', enabled: true }],
+        });
+
+        act(() => setProjectTracks([grinderTrack({})]));
+        await waitFor(() => expect(gain).toHaveAttribute('aria-valuenow', String(DEFAULT_PATCH.gain)));
     });
 });

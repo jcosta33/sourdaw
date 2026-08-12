@@ -3,7 +3,7 @@ import { updateDeviceParam } from '#/modules/AudioEngine/useCases';
 import { executeAppAction } from '#/modules/Command/useCases';
 
 import { type CrumbsPersistedParamId } from '../models/CrumbsParameterMap';
-import { applyCrumbsParamValue } from '../stores/crumbsStore';
+import { applyCrumbsParamValue, beginCrumbsParamPreview, endCrumbsParamPreview } from '../stores/crumbsStore';
 
 import { cancelCrumbsParamPreview } from './crumbsParamBridge/cancelCrumbsParamPreview';
 import { setCrumbsParamImmediate } from './crumbsParamBridge/setCrumbsParamImmediate';
@@ -67,10 +67,16 @@ export function setCrumbsParamWithAudio(
     value: number,
     isTransient = false
 ): void {
+    if (!isTransient) {
+        endCrumbsParamPreview(deviceId, paramId);
+    }
     if (!Number.isFinite(value)) {
         return;
     }
 
+    if (isTransient) {
+        beginCrumbsParamPreview(deviceId, paramId);
+    }
     applyCrumbsParamValue(deviceId, paramId, value);
 
     if (isTransient) {
