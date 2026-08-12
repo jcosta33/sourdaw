@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { defaultTrackState } from '#/modules/Arrangement/stores';
 import { addClip, addSection, createTrack, setTrackStoreState } from '#/modules/Arrangement/useCases';
-import { addAutomationLane } from '#/modules/Automation/useCases';
+import { addAutomationLane, addAutomationPoint } from '#/modules/Automation/useCases';
 import { clearHandlerRegistry, registerHandlerMap } from '#/modules/Command/stores';
 import { clearUndoHistory, executeAppAction, redo, undo } from '#/modules/Command/useCases';
 
@@ -35,6 +35,13 @@ describe('production brief', () => {
             endBeat: 8,
         });
         addAutomationLane('track-drums', 'gain', 'Gain', 'lane-drums-gain');
+        addAutomationPoint('lane-drums-gain', {
+            id: 'point-drums-chorus',
+            beat: 40,
+            value: 0.7,
+            curve: 'linear',
+            tension: 0,
+        });
         clearUndoHistory();
         addClip({
             id: 'clip-2',
@@ -215,6 +222,69 @@ describe('production brief', () => {
         expect(projectStore.value?.productionBrief.decisions).toEqual(superseded.decisions);
     });
 
+    it('does not supersede a decision protected by an explicit decision lock', () => {
+        const current = projectStore.value!.productionBrief;
+        const acceptedDecision: ProductionBrief['decisions'][number] = {
+            id: 'decision-vocal-space',
+            scope: { kind: 'track', trackId: 'track-guitar' },
+            statement: 'Keep the guitar narrow',
+            rationale: null,
+            status: 'accepted',
+            sourceRunId: null,
+            relatedBatchId: null,
+            supersededByDecisionId: null,
+            createdAt: 110,
+        };
+        const locked: ProductionBrief = {
+            ...current,
+            revision: 1,
+            locks: [
+                {
+                    id: 'lock-vocal-space-decision',
+                    scope: { kind: 'decision', decisionId: acceptedDecision.id },
+                    statement: 'Keep the accepted guitar-space decision',
+                    createdAt: 111,
+                },
+            ],
+            decisions: [acceptedDecision],
+            updatedAt: 111,
+        };
+        expect(
+            handleSetProductionBrief.execute({
+                type: 'setProductionBrief',
+                payload: { expectedRevision: 0, brief: locked },
+            })
+        ).toEqual({ status: 'written' });
+
+        const replacement: ProductionBrief['decisions'][number] = {
+            ...acceptedDecision,
+            id: 'decision-vocal-space-wide',
+            statement: 'Make the guitar wide',
+            createdAt: 120,
+        };
+        const superseded: ProductionBrief = {
+            ...locked,
+            revision: 2,
+            decisions: [
+                {
+                    ...acceptedDecision,
+                    status: 'superseded',
+                    supersededByDecisionId: replacement.id,
+                },
+                replacement,
+            ],
+            updatedAt: 120,
+        };
+
+        expect(
+            handleSetProductionBrief.execute({
+                type: 'setProductionBrief',
+                payload: { expectedRevision: 1, brief: superseded },
+            })
+        ).toEqual({ status: 'conflict' });
+        expect(projectStore.value?.productionBrief).toEqual(locked);
+    });
+
     it('persists accepted creative intent through the application Command path', async () => {
         registerHandlerMap(getProjectHandlers());
 
@@ -386,6 +456,11 @@ describe('production brief', () => {
                     },
                 },
                 { type: 'setTrackGain', payload: { trackId: 'track-guitar', gain: 0.5, expectedGain: 1 } },
+            ])
+        ).toBe(false);
+        expect(
+            doesProductionBriefAllowActionBatch([
+                { type: 'setAutomationLaneEnabled', payload: { laneId: 'lane-drums-gain', enabled: false } },
             ])
         ).toBe(false);
         expect(

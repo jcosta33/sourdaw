@@ -92,11 +92,53 @@ function projectedClipOverlapsRange(
     return false;
 }
 
+function automationLaneOverlapsRange(
+    lane: NonNullable<typeof automationStore.value>['lanes'][number],
+    scope: Extract<ProductionBriefScope, { kind: 'range' }>
+): boolean {
+    const lanePoints = [...lane.points, ...(lane.trimPoints ?? []), ...(lane.ghostPoints ?? [])];
+    return (
+        lanePoints.some((point) => point.beat >= scope.startBeat && point.beat < scope.endBeat) ||
+        lane.objects.some((object) => intervalOverlapsRange(object.startBeat, object.endBeat, scope))
+    );
+}
+
+function referencedAutomationOverlapsRange(
+    action: AppAction,
+    scope: Extract<ProductionBriefScope, { kind: 'range' }>
+): boolean {
+    const identifiers = new Set<string>();
+    collectActionStrings(action.payload, identifiers);
+    return (
+        automationStore.value?.lanes.some((lane) => {
+            const referencedPoints = [...lane.points, ...(lane.trimPoints ?? []), ...(lane.ghostPoints ?? [])].filter(
+                (point) => point.id && identifiers.has(point.id)
+            );
+            if (referencedPoints.some((point) => point.beat >= scope.startBeat && point.beat < scope.endBeat)) {
+                return true;
+            }
+            const referencedObjects = lane.objects.filter((object) => identifiers.has(object.id));
+            if (referencedObjects.some((object) => intervalOverlapsRange(object.startBeat, object.endBeat, scope))) {
+                return true;
+            }
+            if (
+                !identifiers.has(lane.id) ||
+                action.type === 'addAutomationPoint' ||
+                action.type === 'removeAutomationPoint'
+            ) {
+                return false;
+            }
+            return automationLaneOverlapsRange(lane, scope);
+        }) ?? false
+    );
+}
+
 function actionOverlapsRange(action: AppAction, scope: Extract<ProductionBriefScope, { kind: 'range' }>): boolean {
     return (
         valueOverlapsRange(action.payload, scope) ||
         referencedClipOverlapsRange(action, scope) ||
-        projectedClipOverlapsRange(action, scope)
+        projectedClipOverlapsRange(action, scope) ||
+        referencedAutomationOverlapsRange(action, scope)
     );
 }
 

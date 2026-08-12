@@ -11,7 +11,11 @@ function isSameIntent(left: unknown, right: unknown): boolean {
     return JSON.stringify(left) === JSON.stringify(right);
 }
 
-function preservesDecisionHistory(current: ProductionBrief, next: ProductionBrief): boolean {
+function preservesDecisionHistory(
+    current: ProductionBrief,
+    next: ProductionBrief,
+    lockedDecisionIds: ReadonlySet<string>
+): boolean {
     const currentDecisionIds = new Set(current.decisions.map((decision) => decision.id));
     const nextDecisions = new Map(next.decisions.map((decision) => [decision.id, decision]));
     for (const decision of current.decisions) {
@@ -21,6 +25,9 @@ function preservesDecisionHistory(current: ProductionBrief, next: ProductionBrie
         }
         if (isSameIntent(decision, nextDecision)) {
             continue;
+        }
+        if (lockedDecisionIds.has(decision.id)) {
+            return false;
         }
         const supersedingDecisionId = nextDecision.supersededByDecisionId;
         const preservedAsSuperseded =
@@ -44,13 +51,16 @@ function preservesDecisionHistory(current: ProductionBrief, next: ProductionBrie
 
 function preservesLockedIntent(current: ProductionBrief, next: ProductionBrief): boolean {
     const nextLocks = new Map(next.locks.map((lock) => [lock.id, lock]));
+    const lockedDecisionIds = new Set(
+        current.locks.flatMap((lock) => (lock.scope.kind === 'decision' ? [lock.scope.decisionId] : []))
+    );
     for (const lock of current.locks) {
         if (!isSameIntent(lock, nextLocks.get(lock.id))) {
             return false;
         }
     }
 
-    return preservesDecisionHistory(current, next);
+    return preservesDecisionHistory(current, next, lockedDecisionIds);
 }
 
 function withReplayRevision(brief: ProductionBrief, revision: number): ProductionBrief {
