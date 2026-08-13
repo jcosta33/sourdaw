@@ -17,9 +17,14 @@ vi.mock('../../../useCases/midiLearn/stopMidiLearn', () => ({
     stopMidiLearn: vi.fn(),
 }));
 
+vi.mock('../../../useCases/midiLearn/removeMapping', () => ({
+    removeMapping: vi.fn(),
+}));
+
 import { useStore } from '#/infra/store/useStore';
 
 import { findMappingForTarget } from '../../../useCases/midiLearn/findMappingForTarget';
+import { removeMapping } from '../../../useCases/midiLearn/removeMapping';
 import { startMidiLearn } from '../../../useCases/midiLearn/startMidiLearn';
 import { stopMidiLearn } from '../../../useCases/midiLearn/stopMidiLearn';
 import { MidiLearnButton } from '../MidiLearnButton';
@@ -28,12 +33,14 @@ const mockedUseStore = vi.mocked(useStore);
 const mockedFindMapping = vi.mocked(findMappingForTarget);
 const mockedStartLearn = vi.mocked(startMidiLearn);
 const mockedStopLearn = vi.mocked(stopMidiLearn);
+const mockedRemoveMapping = vi.mocked(removeMapping);
 
 function renderButton(
     props: Partial<Parameters<typeof MidiLearnButton>[0]> = {},
     state: { isLearning?: boolean; learningTarget?: unknown } = {}
 ): void {
     mockedUseStore.mockReturnValue({
+        mappingsSchemaVersion: 1,
         mappings: [],
         isLearning: state.isLearning ?? false,
         learningTarget: (state.learningTarget as never) ?? null,
@@ -102,7 +109,12 @@ describe('MidiLearnButton — learning state', () => {
 
 describe('MidiLearnButton — existing mapping', () => {
     it('renders the CC number when a mapping exists', () => {
-        mockedUseStore.mockReturnValue({ mappings: [], isLearning: false, learningTarget: null });
+        mockedUseStore.mockReturnValue({
+            mappingsSchemaVersion: 1,
+            mappings: [],
+            isLearning: false,
+            learningTarget: null,
+        });
         mockedFindMapping.mockReturnValue({
             id: 'm1',
             channel: 3,
@@ -117,7 +129,12 @@ describe('MidiLearnButton — existing mapping', () => {
     });
 
     it('aria-label shows CC and channel (1-based) when a mapping exists', () => {
-        mockedUseStore.mockReturnValue({ mappings: [], isLearning: false, learningTarget: null });
+        mockedUseStore.mockReturnValue({
+            mappingsSchemaVersion: 1,
+            mappings: [],
+            isLearning: false,
+            learningTarget: null,
+        });
         mockedFindMapping.mockReturnValue({
             id: 'm1',
             channel: 2,
@@ -135,6 +152,7 @@ describe('MidiLearnButton — existing mapping', () => {
 
     it('shows "M" text when mapping exists but is learning (learning takes priority)', () => {
         mockedUseStore.mockReturnValue({
+            mappingsSchemaVersion: 1,
             mappings: [],
             isLearning: true,
             learningTarget: { targetType: 'trackGain', trackId: 't1', deviceId: undefined, paramId: undefined },
@@ -173,5 +191,38 @@ describe('MidiLearnButton — click behavior', () => {
         fireEvent.click(screen.getByRole('button'));
         expect(mockedStopLearn).toHaveBeenCalledTimes(1);
         expect(mockedStartLearn).not.toHaveBeenCalled();
+    });
+
+    it('removes the existing mapping on Alt+click instead of starting a new learn (F-10)', () => {
+        mockedUseStore.mockReturnValue({
+            mappingsSchemaVersion: 1,
+            mappings: [],
+            isLearning: false,
+            learningTarget: null,
+        });
+        mockedFindMapping.mockReturnValue({
+            id: 'm1',
+            channel: 3,
+            cc: 7,
+            targetType: 'trackGain',
+            trackId: 't1',
+            minValue: 0,
+            maxValue: 1,
+        });
+        render(<MidiLearnButton targetType="trackGain" trackId="t1" />);
+
+        fireEvent.click(screen.getByRole('button'), { altKey: true });
+
+        expect(mockedRemoveMapping).toHaveBeenCalledWith('m1');
+        expect(mockedStartLearn).not.toHaveBeenCalled();
+    });
+
+    it('starts a new learn on Alt+click when no mapping exists yet', () => {
+        renderButton();
+
+        fireEvent.click(screen.getByRole('button'), { altKey: true });
+
+        expect(mockedRemoveMapping).not.toHaveBeenCalled();
+        expect(mockedStartLearn).toHaveBeenCalledTimes(1);
     });
 });
