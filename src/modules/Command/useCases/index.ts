@@ -17,6 +17,7 @@ export { createVersionedCommandEnvelope } from './createVersionedCommandEnvelope
 export { compileVersionedCommandBatchEnvelope } from './compileVersionedCommandBatchEnvelope';
 export { createVersionedCommandReceipt } from './createVersionedCommandReceipt';
 export { getAppActionExecutionPolicy } from './getAppActionExecutionPolicy';
+export { getAgentActionRiskPolicy } from './getAgentActionRiskPolicy';
 export { getExecutableAppActionToolSchemas } from './getExecutableAppActionToolSchemas';
 export { getExecutableAppActionGroundingCatalog } from './getExecutableAppActionGroundingCatalog';
 export { getExecutableAppActionGroundingRules } from './getExecutableAppActionGroundingRules';

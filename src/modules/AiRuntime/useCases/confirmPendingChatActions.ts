@@ -26,6 +26,7 @@ import {
 
 import { getPlannedActionAffectedIds } from './getPlannedActionAffectedIds';
 import { notifyAiChange } from './notifyAiChange';
+import { validateAgentRiskApproval } from './validateAgentRiskApproval';
 
 type ConfirmPendingChatActionsInput = {
     confirmationId: string;
@@ -83,6 +84,19 @@ function getProtectedAffectedIds(
 
 function getApprovalPreflightFailure(confirmation: PendingAppActionConfirmation): string | null {
     const approved = confirmation.approvalSnapshot;
+    if (approved.commandBatch) {
+        if (!approved.agentApproval) {
+            return 'The command batch has no exact risk approval binding.';
+        }
+        const validation = validateAgentRiskApproval({
+            approval: approved.agentApproval,
+            commandBatch: approved.commandBatch,
+            currentRevision: captureProjectRevision(),
+        });
+        if (validation.status === 'invalid') {
+            return validation.reason;
+        }
+    }
     const protectedAffectedIds = getProtectedAffectedIds(confirmation.actions, approved.protectedUnchanged);
     if (protectedAffectedIds.length > 0) {
         return `The executable action batch targets protected IDs: ${protectedAffectedIds.join(', ')}.`;
@@ -344,7 +358,22 @@ export async function confirmPendingChatActions(
             ...group,
             source: 'prompt' as const,
             requireCompensation: confirmation.executionMode === 'atomic',
-            shouldExecute: () => isConfirmationExecutionAuthorized(confirmation, aborter.signal),
+            shouldExecute: () => {
+                if (!isConfirmationExecutionAuthorized(confirmation, aborter.signal)) {
+                    return false;
+                }
+                const approved = confirmation.approvalSnapshot;
+                if (!approved.commandBatch || !approved.agentApproval) {
+                    return approved.commandBatch === undefined;
+                }
+                return (
+                    validateAgentRiskApproval({
+                        approval: approved.agentApproval,
+                        commandBatch: approved.commandBatch,
+                        currentRevision: captureProjectRevision(),
+                    }).status === 'valid'
+                );
+            },
         };
         const commandEnvelopes = confirmation.approvalSnapshot.commandEnvelopes;
         const commandBatch = confirmation.approvalSnapshot.commandBatch;

@@ -467,6 +467,14 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         // references, and the exported function declaration; none hydrates or
         // writes a device.
         'src/modules/AiRuntime/useCases/compilePlannedActionCommandBatch.ts': 6,
+        // Count provenance: AC-013 compiles immutable approval and execution
+        // metadata. These references are imports, declarations, calls, and
+        // ReturnType projections around Command envelope compilers; none loads,
+        // hydrates, or writes a device or AudioEngine node.
+        'src/modules/AiRuntime/useCases/compileAgentActionExecution.ts': 10,
+        'src/modules/AiRuntime/useCases/compileAgentRiskApproval.ts': 1,
+        'src/modules/AiRuntime/useCases/describeAgentRiskApproval.ts': 3,
+        'src/modules/AiRuntime/useCases/validateAgentRiskApproval.ts': 7,
         'src/modules/AiRuntime/useCases/index.ts': 2,
         'src/modules/AiRuntime/useCases/sendChatMessage.ts': 3,
         // Count provenance: the versioned-command argument compiler and its two
