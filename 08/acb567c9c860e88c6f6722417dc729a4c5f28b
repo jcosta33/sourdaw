@@ -1,0 +1,25 @@
+src/modules/Command/useCases/__tests__/semanticProjectDiff.spec.ts
+  s_a40848e8f8cca9::t_ee86a91680fff5 306-308
+  s_a40848e8f8cca9::t_eab23a516ff330 72-78,497-501,512,514
+src/modules/Command/useCases/buildSemanticProjectDiff.ts
+  s_a40848e8f8cca9::t_99581c6ce5cb4d 185-189,328,379-382,399
+  s_a40848e8f8cca9::t_112fb4f89c59dd 400-402
+src/modules/Command/useCases/compileVersionedCommandBatchEnvelope.ts
+  s_a40848e8f8cca9::t_99581c6ce5cb4d 82-91,97-98,101-103,112-114,125,187
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "08acb567c9c860e88c6f6722417dc729a4c5f28b",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
