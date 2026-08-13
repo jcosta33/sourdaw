@@ -74,6 +74,32 @@ const mocks = vi.hoisted(() => {
     };
 });
 
+function setProjectContextWithClip(): void {
+    const context = mocks.getProjectContext();
+    mocks.getProjectContext.mockReturnValue({
+        ...context,
+        tracks: context.tracks.map((track) => {
+            if (track.id !== 'track-1') {
+                return track;
+            }
+            return {
+                ...track,
+                clipCount: 1,
+                clips: [
+                    {
+                        id: 'clip-1',
+                        name: 'Clip 1',
+                        type: 'audio',
+                        startBeat: 0,
+                        endBeat: 4,
+                        noteCount: 0,
+                    },
+                ],
+            };
+        }),
+    });
+}
+
 vi.mock('#/modules/CrdtDocument/useCases', () => ({
     captureProjectRevision: () => mocks.projectRevision.value,
 }));
@@ -976,6 +1002,7 @@ describe('sendChatMessage injectables', () => {
 
     it('does not persist or report a prefix when a later batch action fails', async () => {
         const later_failure = new Error('second action was not dispatched');
+        setProjectContextWithClip();
         mocks.chatStoreValue.value = {
             messages: [],
             isGenerating: false,
@@ -1012,6 +1039,7 @@ describe('sendChatMessage injectables', () => {
 
     it('reports an ambiguous partial commit without creating AI history or suggesting retry', async () => {
         const reason = 'Automerge storage transaction committed before a later document failed';
+        setProjectContextWithClip();
         mocks.chatStoreValue.value = {
             messages: [],
             isGenerating: false,
@@ -1048,6 +1076,7 @@ describe('sendChatMessage injectables', () => {
 
     it('reports a full committed batch with a distinct post-commit warning', async () => {
         const warning = 'batch history failed';
+        setProjectContextWithClip();
         const firstAction = { type: 'removeTrack', payload: { trackId: 'track-1' } } as const;
         const secondAction = { type: 'removeClip', payload: { clipId: 'clip-1' } } as const;
         mocks.chatStoreValue.value = {
