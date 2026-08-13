@@ -82,6 +82,7 @@ export const handleDiscardCreatedTrack = createHandler<'discardCreatedTrack'>({
         };
     },
     describe: () => ({ label: 'Discard created track' }),
+    previewExecution: 'isolated-project',
     requiresAbortCompensation: false,
     undoable: false,
 });

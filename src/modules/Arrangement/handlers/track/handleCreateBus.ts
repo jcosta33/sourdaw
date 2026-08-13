@@ -68,14 +68,18 @@ function matchesExpectedScope(action: CreateBusAction): boolean {
 }
 
 export const handleCreateBus = createHandler<'createBus'>({
+    previewExecution: 'isolated-project',
     validate: (action, context) =>
         matchesExpectedScope(action) && Boolean(handleAddTrack.validate?.(toAddTrackAction(action), context)),
-    execute: async (action) => {
+    execute: (action) => {
         if (!matchesExpectedScope(action)) {
             pendingCreatedBusGuards.delete(action);
             return { status: 'conflict' };
         }
-        const result = await handleAddTrack.execute(toAddTrackAction(action));
+        const result = handleAddTrack.execute(toAddTrackAction(action));
+        if (result instanceof Promise) {
+            throw new Error('The certified add-track handler returned asynchronously');
+        }
         if (result?.status !== 'written') {
             pendingCreatedBusGuards.delete(action);
             return result;

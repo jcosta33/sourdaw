@@ -2,6 +2,7 @@ export { DOC_PREFIX_ROOT, DOC_BRANCHES } from './crdtDocumentTypes';
 
 export { compactProject } from './compactProject';
 export { captureProjectRevision } from './captureProjectRevision';
+export { createCommandPreviewWorkspace } from './createCommandPreviewWorkspace';
 export { captureActiveBranchReference } from './captureActiveBranchReference';
 export { getDrumPreviewBranchHandlers } from './getDrumPreviewBranchHandlers';
 export { isDrumPreviewBranchPlanApplied } from './crdtBranching/isDrumPreviewBranchPlanApplied';

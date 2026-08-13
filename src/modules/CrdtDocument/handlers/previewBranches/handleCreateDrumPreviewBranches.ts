@@ -26,6 +26,7 @@ type CreateDrumPreviewBranchesHandlerInput = {
 
 export function createDrumPreviewBranchesHandler({ canMutateBranchMetadata }: CreateDrumPreviewBranchesHandlerInput) {
     return createHandler<'createDrumPreviewBranches'>({
+        previewExecution: 'unsupported-external',
         execute: async (action) => {
             if (!canMutateBranchMetadata()) {
                 return { status: 'conflict' };

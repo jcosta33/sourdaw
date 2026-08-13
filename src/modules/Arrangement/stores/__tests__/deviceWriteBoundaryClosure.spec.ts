@@ -444,6 +444,11 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
     },
     'load-compile-hydration': {
         'src/app/bootstrap.ts': 1,
+        // Count provenance: the AC-011 preflight calls the pure topology
+        // compiler for the live and isolated project projections. These three
+        // references are one import and two calls; the file holds no device or
+        // AudioEngine write.
+        'src/app/captureCommandBatchPreflightState.ts': 3,
         'src/app/registerDependencies.ts': 1,
         // Count provenance: new file entry, measured 1 — a doc-comment
         // cross-reference to `compileAutomationEvents`, naming the second of the
@@ -502,7 +507,12 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         'src/modules/AudioEngine/repositories/offlineScheduler/compileAutomationSegments.ts': 4,
         'src/modules/AudioEngine/repositories/offlineScheduler/scheduleAutomationOnParam.ts': 3,
         'src/modules/AudioEngine/useCases/buildDeviceChain.ts': 2,
+        // Count provenance: the AC-011 topology compiler only validates and
+        // projects immutable node IDs/edge counts. The implementation hit is
+        // its declaration; the barrel hits are its export name and module path.
+        'src/modules/AudioEngine/useCases/compileAudioGraphTopology.ts': 1,
         'src/modules/AudioEngine/useCases/deviceResolvers/createFaustDeviceNode.ts': 2,
+        'src/modules/AudioEngine/useCases/index.ts': 2,
         'src/modules/Bacteria/models/BacteriaPatch.ts': 3,
         'src/modules/Bacteria/presentations/views/BacteriaPanel.tsx': 3,
         'src/modules/Bacteria/useCases/bacteriaParamBridge/loadBacteriaPatchWithAudio.ts': 2,

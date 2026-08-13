@@ -12,6 +12,7 @@ const RECORDING_MODES: ReadonlySet<AutomationMode> = new Set(['write', 'touch', 
 
 type SetDeviceParameterOptions = {
     deleteParameter?: boolean;
+    projectOnly?: boolean;
 };
 
 export function setDeviceParameter(
@@ -56,8 +57,10 @@ export function setDeviceParameter(
     // what that meant.
     const clamped = clampDeviceParameterValue({ deviceType: targetDevice.type, paramId, value });
 
-    // Update audio engine (non-blocking)
-    updateDeviceParam(target.trackId, target.deviceId, paramId, clamped);
+    if (!options.projectOnly) {
+        // Update audio engine (non-blocking)
+        updateDeviceParam(target.trackId, target.deviceId, paramId, clamped);
+    }
 
     // Update only the affected track's store state (not all tracks)
     updateTrack(target.trackId, (currentTrack) => ({
@@ -83,7 +86,7 @@ export function setDeviceParameter(
 
     // Record automation if playing in a recording mode
     const transport = transportStore.value;
-    if (transport?.isPlaying && RECORDING_MODES.has(track.automationMode)) {
+    if (!options.projectOnly && transport?.isPlaying && RECORDING_MODES.has(track.automationMode)) {
         recordAutomationValue(target.trackId, `${target.deviceId}:${paramId}`, clamped, transport.playheadPosition);
     }
 

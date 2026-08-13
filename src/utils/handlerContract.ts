@@ -1730,15 +1730,13 @@ export type HandlerExecutionResult = {
 export type HandlerValidationContext = {
     readonly actions: readonly AppAction[];
     readonly actionIndex: number;
+    /** The same handler is projecting into an isolated CRDT workspace; live runtime effects must stay deferred. */
+    readonly executionMode?: 'isolated-preview';
 };
 
 /** One dispatchable action's handler. Built via `createHandler` and merged into a module
  *  handler map by each `get<Module>Handlers` factory. */
-export type ActionHandler<Action extends AppAction = AppAction> = {
-    execute: (
-        action: Action,
-        context?: HandlerValidationContext
-    ) => void | HandlerExecutionResult | Promise<void | HandlerExecutionResult>;
+type ActionHandlerCommon<Action extends AppAction> = {
     describe: (action: Action) => HandlerDescribeResult;
     /** Side-effect-free authoritative domain validation run for the whole batch before its first effect. */
     validate?: (action: Action, context: HandlerValidationContext) => boolean;
@@ -1758,6 +1756,30 @@ export type ActionHandler<Action extends AppAction = AppAction> = {
     batchRestriction?: 'domain-singleton' | 'missing-validation';
     undoable: boolean;
 };
+
+export type ActionHandler<Action extends AppAction = AppAction> = ActionHandlerCommon<Action> &
+    (
+        | {
+              /** Explicit certification that this synchronous project handler can run against an isolated CRDT projection. */
+              previewExecution: 'isolated-project';
+              execute: (action: Action, context?: HandlerValidationContext) => void | HandlerExecutionResult;
+          }
+        | {
+              previewExecution?: undefined;
+              execute: (
+                  action: Action,
+                  context?: HandlerValidationContext
+              ) => void | HandlerExecutionResult | Promise<void | HandlerExecutionResult>;
+          }
+        | {
+              /** Explicitly non-previewable because execution must cross a live runtime or external boundary. */
+              previewExecution: 'unsupported-external';
+              execute: (
+                  action: Action,
+                  context?: HandlerValidationContext
+              ) => void | HandlerExecutionResult | Promise<void | HandlerExecutionResult>;
+          }
+    );
 
 export type ExecuteOptions = {
     groupId?: string;

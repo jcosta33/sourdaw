@@ -38,6 +38,7 @@ export const handleSetAutomationMode = createHandler<'setAutomationMode'>({
                 : null,
         };
     },
+    previewExecution: 'isolated-project',
     requiresAbortCompensation: false,
     undoable: true,
 });

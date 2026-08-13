@@ -1,4 +1,4 @@
-import { getConflicts, type Doc } from '@automerge/automerge';
+import { change, clone, getConflicts, type Doc } from '@automerge/automerge';
 
 import { logger } from '#/infra/logger/appLogger';
 
@@ -13,6 +13,18 @@ type AutomergeStorageReadableDoc = {
 
 type AutomergeStorageMutableDoc = {
     [key: string]: unknown;
+};
+
+type AutomergeStoragePreviewContext = {
+    readonly documents: Map<AutomergeStorageDocId, Doc<AutomergeStorageMutableDoc>>;
+    readonly values: Map<object, unknown>;
+    released: boolean;
+};
+
+export type AutomergeStoragePreview = {
+    getDocument(docId: string): Readonly<Record<string, unknown>> | undefined;
+    release(): void;
+    scope<Result>(callback: () => Result): Result;
 };
 
 type AutomergeStorageMutationInput = {
@@ -208,6 +220,51 @@ let automergeStoragePort: AutomergeStoragePort | null = null;
 const pendingAutomergeStorageWrites = new Set<PendingAutomergeStorageWrite>();
 const openAutomergeStorageCommitOwners = new Set<object>();
 let activeAutomergeStorageTransaction: ActiveAutomergeStorageTransaction | undefined;
+let activeAutomergeStoragePreview: AutomergeStoragePreviewContext | null = null;
+
+function clonePreviewValue<Value>(value: Value): Value {
+    return value === undefined ? value : (JSON.parse(JSON.stringify(value)) as Value);
+}
+
+export function createAutomergeStoragePreview(
+    sourceDocuments: ReadonlyMap<string, Doc<AutomergeStorageMutableDoc>>
+): AutomergeStoragePreview {
+    const context: AutomergeStoragePreviewContext = {
+        documents: new Map([...sourceDocuments].map(([docId, document]) => [docId, clone(document)])),
+        values: new Map(),
+        released: false,
+    };
+
+    return {
+        getDocument(docId): Readonly<Record<string, unknown>> | undefined {
+            if (context.released) {
+                return undefined;
+            }
+            const document = context.documents.get(docId);
+            return document ? clonePreviewValue(document) : undefined;
+        },
+        release(): void {
+            context.released = true;
+            context.documents.clear();
+            context.values.clear();
+        },
+        scope<Result>(callback: () => Result): Result {
+            if (context.released) {
+                throw new Error('Automerge storage preview has been released');
+            }
+            if (activeAutomergeStoragePreview && activeAutomergeStoragePreview !== context) {
+                throw new Error('Another Automerge storage preview is already active');
+            }
+            const previous = activeAutomergeStoragePreview;
+            activeAutomergeStoragePreview = context;
+            try {
+                return callback();
+            } finally {
+                activeAutomergeStoragePreview = previous;
+            }
+        },
+    };
+}
 
 /**
  * How a coalesced document write ended, and what its failure says about the
@@ -684,6 +741,62 @@ export const createAutomergeStorage = <TData>(
     let cachedValue: TData | null = null;
     let committedCacheValue: TData | null = null;
     let committedCacheRevision = 0;
+    const previewIdentity = Object.freeze({});
+
+    const getPreviewValue = (context: AutomergeStoragePreviewContext): TData | null => {
+        if (!context.values.has(previewIdentity)) {
+            // Some domain decoders intentionally preserve ephemeral local fields by
+            // reading their owning store. Seed that recursive read with the live
+            // projection while the declared-head CRDT value is being decoded.
+            context.values.set(previewIdentity, cachedValue);
+            const document = context.documents.get(docId);
+            const rawValue = document?.[key];
+            let initialValue: TData | null = null;
+            if (rawValue !== undefined) {
+                let rawValues: readonly unknown[] = [rawValue];
+                if (document && (resolveConflicts || resolveCrdtConflicts)) {
+                    const conflicts = getConflicts(document, key);
+                    if (conflicts) {
+                        rawValues = Object.entries(conflicts)
+                            .sort(([leftActor], [rightActor]) => leftActor.localeCompare(rightActor))
+                            .map(([, conflictValue]) => conflictValue);
+                    }
+                }
+                const clonedValues = clonePreviewValue(rawValues);
+                const normalizedValues = fromCrdt
+                    ? clonedValues.map((value) => fromCrdt(value as TData))
+                    : (clonedValues as TData[]);
+                const firstValue = normalizedValues[0];
+                if (firstValue !== undefined) {
+                    initialValue = firstValue;
+                    if (resolveCrdtConflicts && clonedValues.length > 1) {
+                        initialValue = resolveCrdtConflicts(clonedValues);
+                    } else if (resolveConflicts && normalizedValues.length > 1) {
+                        initialValue = resolveConflicts(normalizedValues);
+                    }
+                }
+            } else if (hydrateMissing) {
+                initialValue = clonePreviewValue(hydrateMissing());
+            }
+            context.values.set(previewIdentity, initialValue);
+        }
+        return context.values.get(previewIdentity) as TData | null;
+    };
+
+    const setPreviewValue = (context: AutomergeStoragePreviewContext, value: TData | null): void => {
+        const document = context.documents.get(docId);
+        const mutation = createMutation(value, getPreviewValue(context));
+        if (!document || !mutation) {
+            throw new Error(`Automerge storage preview document is unavailable: ${docId}`);
+        }
+        context.documents.set(
+            docId,
+            change(document, (draft) => {
+                mutation.changeFn(draft);
+            })
+        );
+        context.values.set(previewIdentity, clonePreviewValue(value));
+    };
 
     // Slot absence is still authoritative once hydrate has observed a document.
     // Keep that fact separate from revision counters, which only advance for a
@@ -998,10 +1111,17 @@ export const createAutomergeStorage = <TData>(
 
     const adapter: StorageAdapter<TData> = {
         get(): TData | null {
+            if (activeAutomergeStoragePreview) {
+                return getPreviewValue(activeAutomergeStoragePreview);
+            }
             return cachedValue;
         },
 
         set(value: TData | null): void {
+            if (activeAutomergeStoragePreview) {
+                setPreviewValue(activeAutomergeStoragePreview, value);
+                return;
+            }
             const context = getWriteContext();
             const pending = pendingWritesByOwner.get(context.commitOwner) ?? createPendingWrite(context);
             cachedValue = value;
@@ -1011,6 +1131,10 @@ export const createAutomergeStorage = <TData>(
         },
 
         clear(): void {
+            if (activeAutomergeStoragePreview) {
+                setPreviewValue(activeAutomergeStoragePreview, null);
+                return;
+            }
             const context = getWriteContext();
             const pending = pendingWritesByOwner.get(context.commitOwner) ?? createPendingWrite(context);
             cachedValue = null;
@@ -1087,6 +1211,10 @@ export const createAutomergeStorage = <TData>(
             return true;
         },
 
+        isIsolated(): boolean {
+            return activeAutomergeStoragePreview !== null;
+        },
+
         subscribe(listener: () => void): () => void {
             deferredChangeListeners.add(listener);
             return () => {
@@ -1095,6 +1223,9 @@ export const createAutomergeStorage = <TData>(
         },
 
         hydrate(): boolean {
+            if (activeAutomergeStoragePreview) {
+                return false;
+            }
             const port = getAutomergeStoragePort();
             const doc = port?.getDoc(docId);
             if (!doc) {

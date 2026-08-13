@@ -88,6 +88,7 @@ export const handleRemoveDevice = createHandler<'removeDevice'>({
             },
         };
     },
+    previewExecution: 'isolated-project',
     requiresAbortCompensation: false,
     undoable: true,
 });

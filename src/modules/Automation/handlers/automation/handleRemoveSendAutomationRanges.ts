@@ -117,5 +117,6 @@ export const handleRemoveSendAutomationRanges = createHandler<'removeSendAutomat
         inverseAction: currentStateMatches(action) ? { type: 'automateSendRanges', payload: action.payload } : null,
     }),
     undoable: true,
+    previewExecution: 'isolated-project',
     requiresAbortCompensation: false,
 });

@@ -154,5 +154,6 @@ export const handleAutomateSendRanges = createHandler<'automateSendRanges'>({
         };
     },
     undoable: true,
+    previewExecution: 'isolated-project',
     requiresAbortCompensation: false,
 });

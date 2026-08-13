@@ -193,6 +193,7 @@ export const handleRestoreTrack = createHandler<'restoreTrack'>({
         };
     },
     describe: () => ({ label: 'Restore track' }),
+    previewExecution: 'isolated-project',
     requiresAbortCompensation: false,
     undoable: false,
 });

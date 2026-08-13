@@ -21,6 +21,7 @@ export const handleStretchAutomation = createHandler<'stretchAutomation'>({
             factor: alpha.payload.factor,
             anchorBeat: alpha.payload.anchorBeat,
         }),
+    previewExecution: 'isolated-project',
     requiresAbortCompensation: false,
     undoable: true,
 });

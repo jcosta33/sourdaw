@@ -6,6 +6,7 @@ export { setActionHistoryMetadataPort } from './actionHistoryMetadataPort';
 export { CommandEventBus, setCommandEventBus } from './commandEventBus';
 export { commandProjectRevisionPort } from './commandProjectRevisionPort';
 export { commandBatchPreflightPort } from './commandBatchPreflightPort';
+export { commandBatchPreviewPort } from './commandBatchPreviewPort';
 export { commandDeviceVersionsPort } from './commandDeviceVersionsPort';
 export { commandTrackDefaultsPort } from './commandTrackDefaultsPort';
 export { captureCommandTargetFingerprints } from './captureCommandTargetFingerprints';

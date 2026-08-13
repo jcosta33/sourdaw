@@ -63,5 +63,6 @@ export const handleAddNotes = createHandler<'addNotes'>({
         };
     },
     undoable: true,
+    previewExecution: 'isolated-project',
     requiresAbortCompensation: false,
 });

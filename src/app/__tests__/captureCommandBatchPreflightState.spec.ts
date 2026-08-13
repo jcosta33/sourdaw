@@ -214,6 +214,7 @@ describe('captureCommandBatchPreflightState', () => {
                     tracks: [
                         {
                             id: 'track-vocal',
+                            kind: 'audio',
                             gain: 1,
                             pan: 0,
                             outputId: 'bus-vocal',
@@ -223,6 +224,7 @@ describe('captureCommandBatchPreflightState', () => {
                         },
                         {
                             id: 'bus-vocal',
+                            kind: 'bus',
                             gain: 1,
                             pan: 0,
                             outputId: 'track-vocal',
@@ -232,6 +234,7 @@ describe('captureCommandBatchPreflightState', () => {
                         },
                         {
                             id: 'track-created',
+                            kind: 'audio',
                             gain: 1,
                             pan: 0,
                             outputId: 'master',
@@ -248,5 +251,88 @@ describe('captureCommandBatchPreflightState', () => {
         expect(state.targetFingerprints['track-created']).toContain('track-created');
         expect(state.projectInvariantsValid).toBe(true);
         expect(state.audioGraphValid).toBe(false);
+    });
+
+    it('rejects a staged output target that cannot compile to an audio node', () => {
+        const state = captureCommandBatchPreflightState({
+            assetReferences: [],
+            projectDocument: {
+                tracks: {
+                    tracks: [
+                        {
+                            id: 'track-vocal',
+                            kind: 'audio',
+                            gain: 1,
+                            pan: 0,
+                            outputId: 'folder-vocals',
+                            clips: [],
+                            devices: [],
+                            sends: [],
+                        },
+                        {
+                            id: 'folder-vocals',
+                            kind: 'folder',
+                            gain: 1,
+                            pan: 0,
+                            outputId: 'master',
+                            clips: [],
+                            devices: [],
+                            sends: [],
+                        },
+                    ],
+                },
+            },
+            targetIds: [],
+        });
+
+        expect(state.projectInvariantsValid).toBe(true);
+        expect(state.audioGraphValid).toBe(false);
+    });
+
+    it('accepts nodeless VCA tracks in live and staged graph compilation', () => {
+        const context = projectContext();
+        context.tracks.push({
+            ...context.tracks[0]!,
+            id: 'vca-drums',
+            name: 'Drum VCA',
+            kind: 'vca',
+            outputId: 'master',
+        });
+        mocks.getProjectContext.mockReturnValue(context);
+
+        const live = captureCommandBatchPreflightState({ assetReferences: [], targetIds: [] });
+        const staged = captureCommandBatchPreflightState({
+            assetReferences: [],
+            projectDocument: {
+                tracks: {
+                    tracks: [
+                        {
+                            id: 'track-vocal',
+                            kind: 'audio',
+                            gain: 1,
+                            pan: 0,
+                            outputId: 'master',
+                            clips: [],
+                            devices: [],
+                            sends: [],
+                        },
+                        {
+                            id: 'vca-drums',
+                            kind: 'vca',
+                            gain: 1,
+                            pan: 0,
+                            outputId: 'master',
+                            clips: [],
+                            devices: [],
+                            sends: [],
+                        },
+                    ],
+                },
+            },
+            targetIds: [],
+        });
+
+        expect(live.audioGraphValid).toBe(true);
+        expect(staged).toMatchObject({ audioGraphValid: true, projectInvariantsValid: true });
     });
 });

@@ -1,10 +1,10 @@
 import { getProjectContext } from '#/modules/AiRuntime/useCases';
 import { trackStore } from '#/modules/Arrangement/stores';
 import { audioBufferCache } from '#/modules/AudioEngine/stores';
+import { compileAudioGraphTopology } from '#/modules/AudioEngine/useCases';
 import { getAssetTransfer } from '#/modules/Collaboration/useCases';
 import { captureCommandTargetFingerprints } from '#/modules/Command/useCases';
 import { captureProjectRevision, DOC_PREFIX_ROOT, getCrdtDoc } from '#/modules/CrdtDocument/useCases';
-import { hasRoutingCycle } from '#/utils/routingCycle';
 
 type CaptureCommandBatchPreflightStateInput = {
     assetReferences: readonly { assetHash?: string; audioBufferId?: string }[];
@@ -151,11 +151,28 @@ function inspectStagedProjectDocument(document: Readonly<Record<string, unknown>
     const trackIds = new Set<string>();
     const clipIds = new Set<string>();
     const deviceOwners = new Map<string, string>();
-    const tracks: { id: string; outputId?: string; sends?: readonly { busId: string }[] }[] = [];
+    const tracks: Array<{
+        devices: Array<{ id: string; type: string }>;
+        id: string;
+        kind: 'audio' | 'midi' | 'bus' | 'master' | 'folder' | 'vca';
+        outputId?: string;
+        sends: Array<{ busId: string; level: number }>;
+    }> = [];
     let projectInvariantsValid = true;
     for (const rawTrack of rawTracks) {
         const track = asRecord(rawTrack);
-        if (!track || typeof track.id !== 'string' || track.id.length === 0 || trackIds.has(track.id)) {
+        if (
+            !track ||
+            typeof track.id !== 'string' ||
+            track.id.length === 0 ||
+            trackIds.has(track.id) ||
+            (track.kind !== 'audio' &&
+                track.kind !== 'midi' &&
+                track.kind !== 'bus' &&
+                track.kind !== 'master' &&
+                track.kind !== 'folder' &&
+                track.kind !== 'vca')
+        ) {
             projectInvariantsValid = false;
             continue;
         }
@@ -190,31 +207,41 @@ function inspectStagedProjectDocument(document: Readonly<Record<string, unknown>
             }
             clipIds.add(clip.id);
         }
+        const devices: Array<{ id: string; type: string }> = [];
         for (const rawDevice of rawDevices) {
             const device = asRecord(rawDevice);
-            if (!device || typeof device.id !== 'string' || device.id.length === 0 || deviceOwners.has(device.id)) {
+            if (
+                !device ||
+                typeof device.id !== 'string' ||
+                device.id.length === 0 ||
+                typeof device.type !== 'string' ||
+                deviceOwners.has(device.id)
+            ) {
                 projectInvariantsValid = false;
                 continue;
             }
             deviceOwners.set(device.id, track.id);
+            devices.push({ id: device.id, type: device.type });
         }
-        const sends: { busId: string }[] = [];
+        const sends: Array<{ busId: string; level: number }> = [];
         for (const rawSend of rawSends) {
             const send = asRecord(rawSend);
-            if (!send || typeof send.busId !== 'string' || send.busId.length === 0) {
+            if (!send || typeof send.busId !== 'string' || send.busId.length === 0 || !Number.isFinite(send.level)) {
                 projectInvariantsValid = false;
                 continue;
             }
-            sends.push({ busId: send.busId });
+            sends.push({ busId: send.busId, level: send.level as number });
         }
         tracks.push({
+            devices,
             id: track.id,
+            kind: track.kind,
             ...(typeof track.outputId === 'string' ? { outputId: track.outputId } : {}),
             sends,
         });
     }
 
-    const sidechainRoutes: { sourceTrackId: string; targetTrackId: string }[] = [];
+    const sidechainRoutes: Array<{ sourceTrackId: string; targetDeviceId: string; targetTrackId: string }> = [];
     for (const rawRoute of rawSidechainRoutes) {
         const route = asRecord(rawRoute);
         if (
@@ -229,7 +256,11 @@ function inspectStagedProjectDocument(document: Readonly<Record<string, unknown>
             projectInvariantsValid = false;
             continue;
         }
-        sidechainRoutes.push({ sourceTrackId: route.sourceTrackId, targetTrackId: route.targetTrackId });
+        sidechainRoutes.push({
+            sourceTrackId: route.sourceTrackId,
+            targetDeviceId: route.targetDeviceId,
+            targetTrackId: route.targetTrackId,
+        });
     }
     for (const track of tracks) {
         if (
@@ -237,7 +268,7 @@ function inspectStagedProjectDocument(document: Readonly<Record<string, unknown>
                 track.outputId !== 'master' &&
                 track.outputId !== 'hw_out' &&
                 !trackIds.has(track.outputId)) ||
-            track.sends?.some((send) => !trackIds.has(send.busId))
+            track.sends.some((send) => !trackIds.has(send.busId))
         ) {
             projectInvariantsValid = false;
         }
@@ -276,8 +307,9 @@ function inspectStagedProjectDocument(document: Readonly<Record<string, unknown>
         }
     }
 
+    const audioGraph = projectInvariantsValid ? compileAudioGraphTopology({ tracks, sidechainRoutes }) : null;
     return {
-        audioGraphValid: projectInvariantsValid && !hasRoutingCycle({ tracks, sidechainRoutes }),
+        audioGraphValid: audioGraph?.status === 'compiled',
         projectInvariantsValid,
     };
 }
@@ -297,12 +329,15 @@ export function captureCommandBatchPreflightState(input: CaptureCommandBatchPref
         targetFingerprints.hw_out = 'system-output:hw_out';
     }
     const tracks = context.tracks.map((track) => ({
+        devices: track.devices.map((device) => ({ id: device.id, type: device.type })),
         id: track.id,
+        kind: track.kind,
         outputId: track.outputId,
-        sends: track.sends,
+        sends: (track.sends ?? []).map((send) => ({ busId: send.busId, level: send.level })),
     }));
     const sidechainRoutes = (context.sidechainRoutes ?? []).map((route) => ({
         sourceTrackId: route.sourceTrackId,
+        targetDeviceId: route.targetDeviceId,
         targetTrackId: route.targetTrackId,
     }));
     const currentClipAssetHashes = new Set(
@@ -323,7 +358,9 @@ export function captureCommandBatchPreflightState(input: CaptureCommandBatchPref
     const stagedInspection = input.projectDocument ? inspectStagedProjectDocument(input.projectDocument) : null;
 
     return {
-        audioGraphValid: stagedInspection?.audioGraphValid ?? !hasRoutingCycle({ tracks, sidechainRoutes }),
+        audioGraphValid:
+            stagedInspection?.audioGraphValid ??
+            compileAudioGraphTopology({ tracks, sidechainRoutes }).status === 'compiled',
         availableAssetHashes: assetHashes.filter(
             (assetHash) => currentClipAssetHashes.has(assetHash) || assetTransfer?.hasAsset(assetHash) === true
         ),

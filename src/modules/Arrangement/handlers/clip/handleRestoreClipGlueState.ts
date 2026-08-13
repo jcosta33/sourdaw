@@ -7,6 +7,7 @@ export const handleRestoreClipGlueState = createHandler<'restoreClipGlueState'>(
         return restoreClipGlueState(action.payload) ? { status: 'written' } : { status: 'conflict' };
     },
     describe: () => ({ label: 'Restore clip glue state', inverseAction: null }),
+    previewExecution: 'isolated-project',
     requiresAbortCompensation: false,
     undoable: false,
 });

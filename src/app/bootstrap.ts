@@ -60,6 +60,7 @@ import { initBrowserAi, initRaveModels } from '#/modules/BrowserAi/useCases';
 import { canMutateBranchMetadata, leaveSession } from '#/modules/Collaboration/useCases';
 import {
     commandBatchPreflightPort,
+    commandBatchPreviewPort,
     commandDeviceVersionsPort,
     executeAppAction,
     registerProductionCommandHandlers,
@@ -75,6 +76,7 @@ import { actionHistoryStore } from '#/modules/CrdtDocument/stores';
 import {
     initBranchState,
     captureProjectRevision,
+    createCommandPreviewWorkspace,
     markActionHistoryEntryReverted,
     recordActionHistoryEntry,
     clearActionHistory as clearCrdtActionHistory,
@@ -169,6 +171,7 @@ setActionHistoryMetadataPort({
 productionBriefAdmissionPort.setGuard(doesProductionBriefAllowActionBatch);
 commandProjectRevisionPort.setProvider(captureProjectRevision);
 commandBatchPreflightPort.setProvider(captureCommandBatchPreflightState);
+commandBatchPreviewPort.setProvider(createCommandPreviewWorkspace);
 commandDeviceVersionsPort.setDeviceTypeResolver(getDeviceTypesForCommandDeviceIds);
 commandDeviceVersionsPort.setResolver(
     (deviceType) =>

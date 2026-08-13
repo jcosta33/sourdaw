@@ -72,6 +72,7 @@ export const handleSetTrackOutput = createHandler<'setTrackOutput'>({
             },
         };
     },
+    previewExecution: 'isolated-project',
     requiresAbortCompensation: false,
     undoable: true,
 });

@@ -16,6 +16,7 @@ export const handleReverseAutomation = createHandler<'reverseAutomation'>({
     // Pre-execute snapshot of the lane's points; undo restores them. See
     // describeLaneTransformUndo.
     describe: (alpha) => describeLaneTransformUndo(alpha.payload.laneId, 'Reverse automation', { type: 'reverse' }),
+    previewExecution: 'isolated-project',
     requiresAbortCompensation: false,
     undoable: true,
 });

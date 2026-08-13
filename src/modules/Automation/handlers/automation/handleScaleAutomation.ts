@@ -21,6 +21,7 @@ export const handleScaleAutomation = createHandler<'scaleAutomation'>({
             factor: alpha.payload.factor,
             anchor: alpha.payload.anchor,
         }),
+    previewExecution: 'isolated-project',
     requiresAbortCompensation: false,
     undoable: true,
 });
