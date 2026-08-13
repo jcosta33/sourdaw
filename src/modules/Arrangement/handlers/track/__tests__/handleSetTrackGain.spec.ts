@@ -16,6 +16,23 @@ vi.mock('../../../useCases/getTrackStoreState', () => ({
 }));
 
 describe('handleSetTrackGain', () => {
+    it('validates the expected gain without writing runtime or project state', () => {
+        mocks.getTrackStoreState.mockReturnValue({ tracks: [{ id: 'track-1', gain: 0.5 }] });
+
+        expect(
+            handleSetTrackGain.validate?.({
+                type: 'setTrackGain',
+                payload: { trackId: 'track-1', gain: 0.8, expectedGain: 0.5 },
+            })
+        ).toBe(true);
+        expect(
+            handleSetTrackGain.validate?.({
+                type: 'setTrackGain',
+                payload: { trackId: 'track-1', gain: 0.8, expectedGain: 0.4 },
+            })
+        ).toBe(false);
+        expect(mocks.setTrackGain).not.toHaveBeenCalled();
+    });
     beforeEach(() => {
         vi.clearAllMocks();
     });

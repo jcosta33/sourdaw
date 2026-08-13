@@ -556,7 +556,24 @@ export const executeAppActionBatch: ExecuteAppActionBatch = inject({ logger })(
             }
             const runtimeAction = runtimeActions[0];
             if (runtimeAction) {
+                if (runtimeAction.handler.validate && !runtimeAction.handler.validate(runtimeAction.action)) {
+                    return {
+                        status: 'conflicted',
+                        reason: `Action conflicts with current project state: ${runtimeAction.action.type}`,
+                        actions: [],
+                    };
+                }
                 return executeRuntimeAction(runtimeAction, options?.source, options?.shouldExecute);
+            }
+
+            for (const prepared of preparedActions) {
+                if (prepared.handler.validate && !prepared.handler.validate(prepared.action)) {
+                    return {
+                        status: 'conflicted',
+                        reason: `Action conflicts with current project state: ${prepared.action.type}`,
+                        actions: [],
+                    };
+                }
             }
 
             for (const prepared of preparedActions) {

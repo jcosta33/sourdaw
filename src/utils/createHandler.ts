@@ -16,6 +16,7 @@ export function createHandler<ActionType extends AppAction['type']>(config: {
         action: Extract<AppAction, { type: ActionType }>
     ) => void | HandlerExecutionResult | Promise<void | HandlerExecutionResult>;
     describe: (action: Extract<AppAction, { type: ActionType }>) => HandlerDescribeResult;
+    validate?: (action: Extract<AppAction, { type: ActionType }>) => boolean;
     materializeCommandArguments?: (action: Extract<AppAction, { type: ActionType }>) => void;
     prepareAbort?: (action: Extract<AppAction, { type: ActionType }>) => () => void | Promise<void>;
     isNoop?: (action: Extract<AppAction, { type: ActionType }>) => boolean;
@@ -27,6 +28,7 @@ export function createHandler<ActionType extends AppAction['type']>(config: {
         undoable: config.undoable,
         execute: config.execute,
         describe: config.describe,
+        validate: config.validate,
         materializeCommandArguments: config.materializeCommandArguments,
         prepareAbort: config.prepareAbort,
         isNoop: config.isNoop,
