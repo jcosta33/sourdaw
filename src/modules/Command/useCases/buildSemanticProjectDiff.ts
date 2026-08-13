@@ -182,7 +182,11 @@ function semanticFactKinds(command: VersionedCommandEnvelope): SemanticFactKind[
 }
 
 function destructiveClassification(command: VersionedCommandEnvelope): DestructiveClassification | null {
-    if (command.operation.startsWith('remove') || command.operation.startsWith('delete')) {
+    if (
+        command.operation.startsWith('remove') ||
+        command.operation.startsWith('delete') ||
+        command.operation === 'thinAutomation'
+    ) {
         return 'deletion';
     }
     if (REPLACEMENT_OPERATIONS.has(command.operation)) {
@@ -321,6 +325,7 @@ function factsForCommands(commands: readonly VersionedCommandEnvelope[]) {
 
 export function buildSemanticProjectDiff(input: BuildSemanticProjectDiffInput) {
     const commands = input.envelope.commands;
+    const dynamicAffectedTrackIds = input.envelope.dynamicEffects?.affectedTrackIds ?? [];
     const facts = factsForCommands(commands);
     const protectedUnchanged: SemanticFact[] = input.envelope.scope.protectedTargetIds.map((objectId) => ({
         commandId: null,
@@ -371,7 +376,10 @@ export function buildSemanticProjectDiff(input: BuildSemanticProjectDiffInput) {
             id,
             summary: groupCommands.map((command) => command.expectedEffect).join(' '),
             commandIds: groupCommands.map((command) => command.commandId),
-            affectedTrackIds: affectedTrackIds(groupCommands, input.projectDocument),
+            affectedTrackIds: unique([
+                ...affectedTrackIds(groupCommands, input.projectDocument),
+                ...(commands.length === 1 ? dynamicAffectedTrackIds : []),
+            ]).sort(),
             affectedTimeRanges: groupCommands.flatMap((command) => {
                 const range = commandTimeRange(command);
                 return range ? [range] : [];
@@ -388,7 +396,10 @@ export function buildSemanticProjectDiff(input: BuildSemanticProjectDiffInput) {
         batchId: input.envelope.batchId,
         summary: input.envelope.intent,
         intentGroups: groups,
-        affectedTrackIds: affectedTrackIds(commands, input.projectDocument),
+        affectedTrackIds: unique([
+            ...affectedTrackIds(commands, input.projectDocument),
+            ...dynamicAffectedTrackIds,
+        ]).sort(),
         affectedTimeRanges: ranges,
         estimatedAudioImpact: { level: impact, summary: impactSummary(impact) },
         warnings: unique(warningValues),

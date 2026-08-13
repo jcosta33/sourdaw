@@ -69,6 +69,13 @@ function previewBatch() {
         baseRevision: 'revision-1',
         batchId: 'batch-preview',
         commands: commands.map(serializeVersionedCommandEnvelope),
+        dynamicEffects: {
+            affectedTrackIds: [],
+            affectedClipIds: [],
+            affectedTargetIds: [],
+            automationPoints: 0,
+            deletedObjects: 0,
+        },
         intent: 'Prepare the mix and clean its structure.',
         mode: 'preview',
         projectId: 'project-1',
@@ -241,7 +248,6 @@ describe('semantic project diff', () => {
         if (parsedPreview.status === 'invalid') {
             throw new Error(parsedPreview.reason);
         }
-
         const partial = compilePartialCommandBatchAcceptance({
             batchId: 'batch-binding-partial',
             previewSelection: partialCommandBatchSelection.create(parsedPreview.envelope, [
@@ -297,6 +303,9 @@ describe('semantic project diff', () => {
         if (parsedPreview.status === 'invalid') {
             throw new Error(parsedPreview.reason);
         }
+        const diff = buildSemanticProjectDiff({ envelope: parsedPreview.envelope });
+        expect(diff.affectedTrackIds).toEqual(['track-solo-a', 'track-solo-b']);
+        expect(diff.intentGroups[0]?.affectedTrackIds).toEqual(['track-solo-a', 'track-solo-b']);
 
         const partial = compilePartialCommandBatchAcceptance({
             batchId: 'batch-dynamic-partial',
@@ -485,6 +494,11 @@ describe('semantic project diff', () => {
                 commandId: '90000000-0000-4000-8000-000000000005',
                 expectedEffect: 'Clear the chord track.',
             }),
+            command({
+                action: { type: 'thinAutomation', payload: { laneId: 'lane-1', tolerance: 0.05 } },
+                commandId: '90000000-0000-4000-8000-000000000006',
+                expectedEffect: 'Delete redundant automation points.',
+            }),
         ];
 
         const diff = buildSemanticProjectDiff({ envelope: { ...preview.envelope, commands } });
@@ -495,8 +509,9 @@ describe('semantic project diff', () => {
             'deletion',
             'deletion',
             'overwrite',
+            'deletion',
         ]);
-        expect(diff.warnings).toContain('5 destructive changes require explicit acceptance.');
+        expect(diff.warnings).toContain('6 destructive changes require explicit acceptance.');
     });
 
     it('rejects empty or unknown partial selections without producing authority', () => {
