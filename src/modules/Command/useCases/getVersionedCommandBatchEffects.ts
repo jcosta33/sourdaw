@@ -13,6 +13,13 @@ export type VersionedCommandBatchEffects = {
     renderJobs: number;
 };
 
+type VersionedCommandBatchDynamicEffects = {
+    affectedTrackIds?: readonly string[];
+    affectedClipIds?: readonly string[];
+    automationPoints?: number;
+    deletedObjects?: number;
+};
+
 const CREATE_OPERATIONS = new Set([
     'importStemSet',
     'addTrack',
@@ -21,6 +28,7 @@ const CREATE_OPERATIONS = new Set([
     'addClip',
     'duplicateClip',
     'duplicateClipToNextBar',
+    'splitClip',
     'glueClips',
     'createDrumPreviewBranches',
     'createVcaGroup',
@@ -129,6 +137,9 @@ function getDeletedObjectCount(command: VersionedCommandEnvelope): number {
     if (command.operation === 'glueClips') {
         return Math.max(1, arrayLength(command.arguments.clipIds));
     }
+    if (command.operation === 'thinAutomation') {
+        return 0;
+    }
     return DELETE_OPERATIONS.has(command.operation) ? 1 : 0;
 }
 
@@ -175,14 +186,15 @@ function addRequiredGrants(command: VersionedCommandEnvelope, requiredGrants: Se
 }
 
 export function getVersionedCommandBatchEffects(
-    commands: readonly VersionedCommandEnvelope[]
+    commands: readonly VersionedCommandEnvelope[],
+    dynamicEffects: VersionedCommandBatchDynamicEffects = {}
 ): VersionedCommandBatchEffects {
     const requiredGrants = new Set<CommandGrant>();
-    const affectedTrackIds = new Set<string>();
-    const affectedClipIds = new Set<string>();
+    const affectedTrackIds = new Set(dynamicEffects.affectedTrackIds ?? []);
+    const affectedClipIds = new Set(dynamicEffects.affectedClipIds ?? []);
     let createdTracks = 0;
-    let deletedObjects = 0;
-    let automationPoints = 0;
+    let deletedObjects = dynamicEffects.deletedObjects ?? 0;
+    let automationPoints = dynamicEffects.automationPoints ?? 0;
     let importedAssets = 0;
     let renderJobs = 0;
     for (const command of commands) {

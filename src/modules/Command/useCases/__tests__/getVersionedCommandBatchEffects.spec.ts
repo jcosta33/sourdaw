@@ -49,6 +49,12 @@ describe('getVersionedCommandBatchEffects', () => {
         ]);
     });
 
+    it('requires create authority for the right-hand clip produced by splitClip', () => {
+        const effects = getVersionedCommandBatchEffects([command({ operation: 'splitClip' })]);
+
+        expect(effects.requiredGrants).toContain('create');
+    });
+
     it('counts every independently governed batch budget', () => {
         const effects = getVersionedCommandBatchEffects([
             command({

@@ -12,7 +12,17 @@ import { AiProposalInvalidatedError } from '../errors/AiProposalInvalidatedError
 import { notifyAiChange } from './notifyAiChange';
 import { recordAiActionGroup } from './recordAiActionGroup';
 
-type ExecutePlannedActionsInput = {
+type CommandBatchInput =
+    | {
+          commandBatch: Pick<Parameters<typeof executeVersionedCommandBatchEnvelope>[0], 'authority' | 'serialized'>;
+          legacyExecution?: never;
+      }
+    | {
+          commandBatch?: never;
+          legacyExecution: true;
+      };
+
+type ExecutePlannedActionsInput = CommandBatchInput & {
     prompt: string;
     actions: readonly AppAction[];
     projectRevision: string;
@@ -20,7 +30,6 @@ type ExecutePlannedActionsInput = {
     signal?: AbortSignal;
     successVerb?: 'Executed' | 'Confirmed';
     group?: ReturnType<typeof generateGroupId>;
-    commandBatch?: Pick<Parameters<typeof executeVersionedCommandBatchEnvelope>[0], 'authority' | 'serialized'>;
 };
 
 type ExecutedAction = {

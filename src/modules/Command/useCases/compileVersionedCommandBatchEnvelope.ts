@@ -27,12 +27,28 @@ type CompileVersionedCommandBatchEnvelopeInput = {
     protectedRanges?: readonly CommandBatchRange[];
     batchLocalBindings?: readonly CommandBatchLocalBinding[];
     autoCommit?: boolean;
+    dynamicEffects?: {
+        affectedTrackIds?: readonly string[];
+        affectedClipIds?: readonly string[];
+        automationPoints?: number;
+        deletedObjects?: number;
+    };
 };
 
 type CompiledVersionedCommandBatchEnvelope = {
     serialized: string;
     authority: CommandBatchAuthority;
 };
+
+const DYNAMIC_EFFECT_OPERATIONS = new Set([
+    'clearSolos',
+    'scaleAutomation',
+    'stretchAutomation',
+    'invertAutomation',
+    'reverseAutomation',
+    'thinAutomation',
+    'quantizeAutomation',
+]);
 
 function parseCommands(serializedCommands: readonly string[]): VersionedCommandEnvelope[] {
     const commands: VersionedCommandEnvelope[] = [];
@@ -77,10 +93,15 @@ function buildEnvelope(input: CompileVersionedCommandBatchEnvelopeInput): Versio
     if (commands.length === 0) {
         throw new Error('Command batch requires at least one command');
     }
-    const effects = getVersionedCommandBatchEffects(commands);
+    if (commands.some((command) => DYNAMIC_EFFECT_OPERATIONS.has(command.operation)) && !input.dynamicEffects) {
+        throw new Error('Command batch requires application-owned dynamic effect bounds');
+    }
+    const effects = getVersionedCommandBatchEffects(commands, input.dynamicEffects);
     const protectedTargetIds = [...new Set(input.protectedTargetIds ?? [])];
     const scope = {
-        targetIds: getScopeTargetIds(commands).filter((targetId) => !protectedTargetIds.includes(targetId)),
+        targetIds: [
+            ...new Set([...getScopeTargetIds(commands), ...effects.affectedTrackIds, ...effects.affectedClipIds]),
+        ].filter((targetId) => !protectedTargetIds.includes(targetId)),
         targetRanges: getTargetRanges(commands),
         protectedTargetIds,
         protectedRanges: structuredClone(input.protectedRanges ?? []),

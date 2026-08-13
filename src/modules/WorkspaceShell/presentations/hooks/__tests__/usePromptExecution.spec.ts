@@ -6,6 +6,7 @@ import { useStore } from '#/infra/store/useStore';
 import { llmStatusStore } from '#/modules/AiRuntime/stores';
 import { type describePlannedAction } from '#/modules/AiRuntime/useCases';
 import {
+    compilePlannedActionCommandBatch,
     executePlannedActions,
     getProjectContext,
     parsePromptToActions,
@@ -31,6 +32,39 @@ vi.mock('#/infra/logger/appLogger', () => ({
 vi.mock('#/infra/store/useStore', () => ({ useStore: vi.fn() }));
 vi.mock('#/modules/AiRuntime/stores', () => ({ llmStatusStore: { value: { state: 'idle' } } }));
 vi.mock('#/modules/AiRuntime/useCases', () => ({
+    compilePlannedActionCommandBatch: vi.fn(() => ({
+        commandEnvelopes: ['command-envelope'],
+        commandBatch: {
+            serialized: 'command-batch',
+            authority: {
+                projectId: 'project-1',
+                baseRevision: 'revision-1',
+                scope: { targetIds: [], targetRanges: [], protectedTargetIds: [], protectedRanges: [] },
+                grants: {
+                    allowedOperationPrefixes: ['togglePlayback'],
+                    create: false,
+                    delete: false,
+                    routing: false,
+                    tempo: false,
+                    master: false,
+                    file: false,
+                    audioUpload: false,
+                    remoteGeneration: false,
+                    autoCommit: true,
+                },
+                budgets: {
+                    maxCommands: 1,
+                    maxCreatedTracks: 0,
+                    maxDeletedObjects: 0,
+                    maxAffectedTracks: 0,
+                    maxAffectedClips: 0,
+                    maxAutomationPoints: 0,
+                    maxImportedAssets: 0,
+                    maxRenderJobs: 0,
+                },
+            },
+        },
+    })),
     executePlannedActions: vi.fn(),
     describePlannedAction: vi.fn((input: Parameters<typeof describePlannedAction>[0]) => {
         const action = input.action;
@@ -63,6 +97,7 @@ vi.mock('#/modules/Arrangement/stores', () => ({
 }));
 vi.mock('#/modules/Command/useCases', () => ({
     describeAction: vi.fn((action: { type: string }) => action.type),
+    generateGroupId: vi.fn(() => ({ groupId: 'group-1', groupLabel: 'Prompt action' })),
     requiresAppActionConfirmation: vi.fn(() => false),
 }));
 vi.mock('#/modules/CrdtDocument/useCases', () => ({
@@ -234,6 +269,10 @@ describe('usePromptExecution', () => {
                 projectRevision: 'revision-1',
                 signal: expect.any(AbortSignal),
             })
+        );
+        expect(vi.mocked(executePlannedActions).mock.calls.at(-1)?.[0].commandBatch?.serialized).toBe('command-batch');
+        expect(vi.mocked(compilePlannedActionCommandBatch)).toHaveBeenCalledWith(
+            expect.objectContaining({ actions: [playAction], autoCommit: true, projectRevision: 'revision-1' })
         );
         expect(vi.mocked(notifyAiChange)).toHaveBeenCalledWith('Executed: Play', ['togglePlayback']);
         expect(result.current.isProcessing).toBe(false);

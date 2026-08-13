@@ -1,6 +1,5 @@
 import { isAppError } from '#/infra/errors/isAppError';
-import { compileVersionedCommandBatchEnvelope, generateGroupId } from '#/modules/Command/useCases';
-import { projectStore } from '#/modules/Project/stores';
+import { generateGroupId } from '#/modules/Command/useCases';
 
 import { AiProposalInvalidatedError } from '../errors/AiProposalInvalidatedError';
 import { isAiRuntimeConfigurationChangedError } from '../errors/AiRuntimeConfigurationChangedError';
@@ -30,7 +29,7 @@ import { llmStatusStore } from '../stores/llmStatusStore';
 import { proposePendingActionConfirmation } from '../stores/pendingActionConfirmationStore';
 
 import { createStemImportConfirmationResourceLease } from './agentReference/createStemImportConfirmationResourceLease';
-import { compilePendingActionCommandEnvelopes } from './compilePendingActionCommandEnvelopes';
+import { compilePlannedActionCommandBatch } from './compilePlannedActionCommandBatch';
 import { createThinkBlockParser } from './createThinkBlockParser';
 import { describePendingActionConfirmation } from './describePendingActionConfirmation';
 import { executePlannedActions } from './executePlannedActions';
@@ -117,21 +116,16 @@ export async function sendChatMessage(userText: string): Promise<void> {
                     workflowCapabilityId: result.workflowCapabilityId,
                 });
                 const commandGroup = generateGroupId(userText);
-                const commandEnvelopes = compilePendingActionCommandEnvelopes({
+                const { commandEnvelopes, commandBatch } = compilePlannedActionCommandBatch({
                     actions: result.actions,
                     actionLabels: confirmationDescription.actionLabels,
-                    group: commandGroup,
-                    projectRevision,
-                });
-                const commandBatch = compileVersionedCommandBatchEnvelope({
-                    runId: assistantMsgId,
-                    batchId: commandGroup.groupId,
-                    projectId: String(projectStore.value?.createdAt ?? 0),
-                    baseRevision: projectRevision,
-                    intent: userText,
-                    commands: commandEnvelopes,
-                    protectedTargetIds: confirmationDescription.protectedUnchanged.map((item) => item.id),
                     autoCommit: !result.requiresConfirmation,
+                    context,
+                    group: commandGroup,
+                    intent: userText,
+                    projectRevision,
+                    runId: assistantMsgId,
+                    protectedTargetIds: confirmationDescription.protectedUnchanged.map((item) => item.id),
                 });
 
                 if (result.requiresConfirmation) {
@@ -173,15 +167,17 @@ export async function sendChatMessage(userText: string): Promise<void> {
                     return;
                 }
 
-                const execution = await executePlannedActions({
+                const executionInput = {
                     prompt: userText,
                     actions: result.actions,
                     group: commandGroup,
-                    commandBatch,
                     projectRevision,
                     executionMode: result.executionMode,
                     signal: aborter.signal,
-                });
+                };
+                const execution = commandBatch
+                    ? await executePlannedActions({ ...executionInput, commandBatch })
+                    : await executePlannedActions({ ...executionInput, legacyExecution: true });
 
                 if (execution.status === 'committed') {
                     const receiptWarnings: string[] = [];
