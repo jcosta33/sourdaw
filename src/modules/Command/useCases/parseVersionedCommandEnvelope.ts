@@ -163,6 +163,9 @@ function isDeterministicSerializedOperation(operation: string, value: unknown): 
             isNonEmptyString(value.color)
         );
     }
+    if (operation === 'duplicateClip' || operation === 'duplicateClipToNextBar' || operation === 'duplicateTrack') {
+        return false;
+    }
     return true;
 }
 

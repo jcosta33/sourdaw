@@ -24,7 +24,7 @@ import {
     defaultTrackState,
     trackStore,
 } from '#/modules/Arrangement/stores';
-import { generateGroupId, requiresAppActionConfirmation } from '#/modules/Command/useCases';
+import { generateGroupId, isExecutableAppActionType, requiresAppActionConfirmation } from '#/modules/Command/useCases';
 import { captureProjectRevision } from '#/modules/CrdtDocument/useCases';
 
 const defaultLlmStatus: typeof llmStatusStore.value = { state: 'idle' };
@@ -239,16 +239,19 @@ export const usePromptExecution = (): PromptExecutionState => {
     const executeWithGroup = async (input: ExecutePromptActionGroupInput): Promise<void> => {
         const context = getProjectContext();
         const group = generateGroupId(input.prompt);
-        const { commandBatch } = compilePlannedActionCommandBatch({
-            actions: input.actions,
-            actionLabels: input.actions.map((action) => describePlannedAction({ action, context })),
-            autoCommit: true,
-            context,
-            group,
-            intent: input.prompt,
-            projectRevision: input.projectRevision,
-            runId: `prompt-execution-${crypto.randomUUID()}`,
-        });
+        const usesVersionedBatch = input.actions.every((action) => isExecutableAppActionType(action.type));
+        const commandBatch = usesVersionedBatch
+            ? compilePlannedActionCommandBatch({
+                  actions: input.actions,
+                  actionLabels: input.actions.map((action) => describePlannedAction({ action, context })),
+                  autoCommit: true,
+                  context,
+                  group,
+                  intent: input.prompt,
+                  projectRevision: input.projectRevision,
+                  runId: `prompt-execution-${crypto.randomUUID()}`,
+              }).commandBatch
+            : undefined;
         const execution = commandBatch
             ? await executePlannedActions({ ...input, group, commandBatch })
             : await executePlannedActions({ ...input, group, legacyExecution: true });

@@ -53,6 +53,7 @@ const DYNAMIC_EFFECT_OPERATIONS = new Set([
     'duplicateClipToNextBar',
     'duplicateTrack',
     'removeTrack',
+    'removeClip',
 ]);
 
 function parseCommands(serializedCommands: readonly string[]): VersionedCommandEnvelope[] {

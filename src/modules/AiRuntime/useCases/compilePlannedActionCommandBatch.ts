@@ -3,6 +3,7 @@ import { modulationStore } from '#/modules/Automation/stores';
 import { compileVersionedCommandBatchEnvelope, parseVersionedCommandEnvelope } from '#/modules/Command/useCases';
 import { midiStore } from '#/modules/MIDI/stores';
 import { projectStore } from '#/modules/Project/stores';
+import { workspaceStore } from '#/modules/WorkspaceShell/stores';
 import { type AppAction } from '#/utils/handlerContract';
 
 import { type ProjectContext } from '../models/ProjectContext';
@@ -197,6 +198,45 @@ function getDynamicEffects(input: CompilePlannedActionCommandBatchInput, command
             for (const id of cascadeObjectIds) {
                 affectedTargetIds.add(id);
             }
+            continue;
+        }
+        if (action.type === 'removeClip') {
+            const clipId = getStringField(payload, 'clipId');
+            const owner = input.context.tracks.find((track) => track.clips.some((clip) => clip.id === clipId));
+            const clip = owner?.clips.find((candidate) => candidate.id === clipId);
+            if (!clipId || !owner || !clip) {
+                throw new Error(`Cannot prove clip removal bounds for ${clipId ?? 'unknown clip'}`);
+            }
+            affectedTrackIds.add(owner.id);
+            affectedClipIds.add(clipId);
+            if (workspaceStore.value?.rippleEditing) {
+                for (const shifted of owner.clips.filter((candidate) => candidate.startBeat >= clip.endBeat)) {
+                    affectedClipIds.add(shifted.id);
+                    for (const lane of input.context.automationLanes ?? []) {
+                        if (lane.clipId === shifted.id) {
+                            affectedTargetIds.add(lane.id);
+                            automationPoints += lane.points.length;
+                        }
+                    }
+                }
+            }
+            for (const lane of input.context.automationLanes ?? []) {
+                if (lane.clipId === clipId) {
+                    affectedTargetIds.add(lane.id);
+                    automationPoints += lane.points.length;
+                    deletedObjects += 1 + lane.points.length;
+                }
+            }
+            const midiState = midiStore.value;
+            const events = [
+                ...(midiState?.notesByClipId[clipId] ?? []),
+                ...(midiState?.ccByClipId[clipId] ?? []),
+                ...(midiState?.pitchBendByClipId[clipId] ?? []),
+            ];
+            for (const event of events) {
+                affectedTargetIds.add(event.id);
+            }
+            deletedObjects += events.length;
             continue;
         }
         if (!AUTOMATION_TRANSFORM_TYPES.has(action.type)) {

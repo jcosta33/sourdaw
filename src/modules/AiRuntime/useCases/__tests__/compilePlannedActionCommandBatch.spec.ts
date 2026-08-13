@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { getArrangementHandlers } from '#/modules/Arrangement/useCases';
 import { getAutomationHandlers } from '#/modules/Automation/useCases';
 import { clearHandlerRegistry, registerHandlerMap } from '#/modules/Command/stores';
+import { midiStore } from '#/modules/MIDI/stores';
 import { type AppAction } from '#/utils/handlerContract';
 
 import { type ProjectContext } from '../../models/ProjectContext';
@@ -71,6 +72,7 @@ describe('compilePlannedActionCommandBatch', () => {
 
     afterEach(() => {
         clearHandlerRegistry();
+        midiStore.set(null);
     });
 
     it('binds clearSolos to the exact currently soloed track set', () => {
@@ -130,7 +132,7 @@ describe('compilePlannedActionCommandBatch', () => {
         expect(result.commandBatch.authority.grants.create).toBe(true);
     });
 
-    it('represents multiple duplicate operations as one bounded ordered batch', () => {
+    it('rejects duplicate operations until every nested identity is materialized', () => {
         const duplicateContext: ProjectContext = {
             ...baseContext,
             tracks: [
@@ -174,24 +176,19 @@ describe('compilePlannedActionCommandBatch', () => {
                 },
             ],
         };
-        const result = compile(
-            [
-                { type: 'duplicateClip', payload: { clipId: 'clip-1' } },
-                { type: 'duplicateClipToNextBar', payload: { clipId: 'clip-2' } },
-            ],
-            duplicateContext
-        );
-
-        expect(result.commandBatch.authority.budgets.maxCommands).toBe(2);
-        expect(result.commandBatch.authority.budgets.maxAffectedTracks).toBe(1);
-        expect(result.commandBatch.authority.budgets.maxAffectedClips).toBe(4);
-        expect(result.commandBatch.authority.budgets.maxAutomationPoints).toBe(2);
-        expect(result.commandBatch.authority.grants.create).toBe(true);
-        expect(result.commandBatch.serialized).toContain('targetClipId');
+        expect(() =>
+            compile(
+                [
+                    { type: 'duplicateClip', payload: { clipId: 'clip-1' } },
+                    { type: 'duplicateClipToNextBar', payload: { clipId: 'clip-2' } },
+                ],
+                duplicateContext
+            )
+        ).toThrow('Cannot prove dynamic bounds for duplicateClip');
     });
 
-    it('binds duplicateTrack to its source clips and automation size before hashing', () => {
-        const result = compile([{ type: 'duplicateTrack', payload: { trackId: 'track-1' } }], {
+    it('rejects duplicateTrack until its nested result identities are materialized', () => {
+        const duplicateTrackContext: ProjectContext = {
             ...baseContext,
             tracks: [
                 {
@@ -225,15 +222,65 @@ describe('compilePlannedActionCommandBatch', () => {
                     ],
                 },
             ],
-        });
+        };
+        expect(() =>
+            compile([{ type: 'duplicateTrack', payload: { trackId: 'track-1' } }], duplicateTrackContext)
+        ).toThrow('Cannot prove dynamic bounds for duplicateTrack');
+    });
 
+    it('binds clip removal to its MIDI and automation satellites', () => {
+        midiStore.set({
+            notesByClipId: {
+                'clip-remove': [{ id: 'note-1', pitch: 60, startBeat: 0, duration: 1, velocity: 100 }],
+            },
+            ccByClipId: { 'clip-remove': [{ id: 'cc-1', controller: 1, value: 64, beat: 0, channel: 0 }] },
+            pitchBendByClipId: { 'clip-remove': [{ id: 'pb-1', value: 0, beat: 0, channel: 0 }] },
+        });
+        const context: ProjectContext = {
+            ...baseContext,
+            tracks: [
+                {
+                    ...track('track-1', false),
+                    clipCount: 1,
+                    clips: [
+                        {
+                            id: 'clip-remove',
+                            name: 'Remove',
+                            type: 'midi',
+                            startBeat: 0,
+                            endBeat: 4,
+                            noteCount: 1,
+                        },
+                    ],
+                },
+            ],
+            automationLanes: [
+                {
+                    id: 'lane-remove',
+                    trackId: 'track-1',
+                    clipId: 'clip-remove',
+                    parameterId: 'gain',
+                    name: 'Gain',
+                    enabled: true,
+                    minValue: 0,
+                    maxValue: 1,
+                    points: [
+                        { beat: 0, value: 0.5, curve: 'linear' },
+                        { beat: 2, value: 0.8, curve: 'linear' },
+                    ],
+                },
+            ],
+        };
+
+        const result = compile([{ type: 'removeClip', payload: { clipId: 'clip-remove' } }], context);
         expect(result.commandBatch.authority.scope.targetIds).toEqual(
-            expect.arrayContaining(['track-1', 'clip-active', 'clip-hidden'])
+            expect.arrayContaining(['track-1', 'clip-remove', 'lane-remove', 'note-1', 'cc-1', 'pb-1'])
         );
         expect(result.commandBatch.authority.budgets).toMatchObject({
-            maxAffectedTracks: 2,
-            maxAffectedClips: 2,
+            maxAffectedTracks: 1,
+            maxAffectedClips: 1,
             maxAutomationPoints: 2,
+            maxDeletedObjects: 7,
         });
     });
 

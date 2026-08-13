@@ -382,6 +382,9 @@ describe('versioned command contract', () => {
 
     it('rejects commands whose semantic result still depends on post-envelope generation', () => {
         const unsafeActions: AppAction[] = [
+            { type: 'duplicateClip', payload: { clipId: 'clip-1', targetClipId: 'clip-copy' } },
+            { type: 'duplicateClipToNextBar', payload: { clipId: 'clip-1', targetClipId: 'clip-copy' } },
+            { type: 'duplicateTrack', payload: { trackId: 'track-1', targetTrackId: 'track-copy' } },
             { type: 'completeMidi', payload: { clipId: 'clip-1' } },
             { type: 'variationMidi', payload: { clipId: 'clip-1' } },
             { type: 'generateBassline', payload: { clipId: 'clip-1' } },
