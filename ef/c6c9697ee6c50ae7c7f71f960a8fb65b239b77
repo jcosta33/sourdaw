@@ -1,0 +1,68 @@
+src/modules/AiRuntime/useCases/__tests__/stemImportStartingMixWorkflow.spec.ts
+  s_a40848e8f8cca9::t_7b4db85e4643a7 22
+  s_a40848e8f8cca9::t_85cebcffe434be 324
+src/infra/store/storage/createAutomergeStorage.ts
+  s_a40848e8f8cca9::t_5e2e4e3aa36494 160-161,166,200-206,233-234,261-264,357,409-410,431-439,445-448,476,533
+  s_a40848e8f8cca9::t_e4d47d8b1c9181 451,534-536,564-569,571-573
+  s_a40848e8f8cca9::t_010e579764dd8f 570
+  s_a40848e8f8cca9::t_54c166c9f40b96 574-575
+src/modules/Command/useCases/commandBatchValidation.ts
+  s_a40848e8f8cca9::t_d183f818a4aff6 1-11
+src/modules/Command/useCases/executeVersionedCommandBatch.ts
+  s_a40848e8f8cca9::t_f10349748956a2 5,16-19
+src/app/captureCommandBatchPreflightState.ts
+  s_a40848e8f8cca9::t_784d99b2de96c2 198-201,300-304
+  s_a40848e8f8cca9::t_d77648c3345ae6 149-152
+  s_a40848e8f8cca9::t_ce1911685b5326 148,153-197,202-299,305-314,320,356,359,367-369
+  s_a40848e8f8cca9::t_3bdcd7469e71ee 6,11
+src/app/__tests__/captureCommandBatchPreflightState.spec.ts
+  s_a40848e8f8cca9::t_8691045d2233a9 12,37-40,149
+  s_a40848e8f8cca9::t_e7723d1b075926 167-210
+src/modules/Command/useCases/prepareCommandBatchPreflight.ts
+  s_a40848e8f8cca9::t_b4fb017531a514 133-135
+  s_a40848e8f8cca9::t_62cd403ba95e70 16,193
+  s_a40848e8f8cca9::t_b420ff447f5e84 8,148-150,192,194-200,202-203,205-238
+src/modules/Command/useCases/executeVersionedCommandBatchEnvelope.ts
+  s_a40848e8f8cca9::t_29d80e80ae5860 47
+src/modules/Command/useCases/__tests__/commandBatchContract.spec.ts
+  s_a40848e8f8cca9::t_85cebcffe434be 529
+src/modules/Command/useCases/executeAppActionBatch.ts
+  s_a40848e8f8cca9::t_3ee13866fd5af4 618-622
+  s_a40848e8f8cca9::t_b9f6a463bac430 655-657
+  s_a40848e8f8cca9::t_b4371937befc4b 5,24,54
+  s_a40848e8f8cca9::t_0ac8c413006e71 415-427
+  s_a40848e8f8cca9::t_784d99b2de96c2 414
+src/modules/Command/useCases/__tests__/commandBatchPreflight.spec.ts
+  s_a40848e8f8cca9::t_d15db29e6e7ffc 567
+  s_a40848e8f8cca9::t_14c89a9e0e03d0 487-490,571-574
+  s_a40848e8f8cca9::t_0b79f86240b67a 553-566,568-570,575-657,709,712
+  s_a40848e8f8cca9::t_9ff551f98c721a 729
+  s_a40848e8f8cca9::t_015b335b8f956b 27,54,117,180,237,309,362
+  s_a40848e8f8cca9::t_b4fb017531a514 3
+  s_a40848e8f8cca9::t_83ba528aa892e4 12-23,407,483
+  s_a40848e8f8cca9::t_7b4db85e4643a7 426-437
+  s_a40848e8f8cca9::t_784d99b2de96c2 513
+  s_a40848e8f8cca9::t_f60278bf1e9a97 30,397-406,408-425,438-482,484-486,491-512,514-552,658-708,710-711
+  s_a40848e8f8cca9::t_0c9a29674cfdc8 713
+src/modules/Command/useCases/commandBatchPreflightPort.ts
+  s_a40848e8f8cca9::t_4dfd5169e32798 13,22
+src/infra/store/storage/__tests__/createAutomergeStorage.spec.ts
+  s_a40848e8f8cca9::t_7d182f222448d6 6,432-460
+  s_a40848e8f8cca9::t_bfa921d1413ca7 461-462
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "efc6c9697ee6c50ae7c7f71f960a8fb65b239b77",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
