@@ -313,7 +313,7 @@ describe('compilePlannedActionCommandBatch', () => {
             maxAffectedTracks: 2,
             maxAffectedClips: 1,
             maxAutomationPoints: 2,
-            maxDeletedObjects: 7,
+            maxDeletedObjects: 8,
         });
     });
 });

@@ -122,13 +122,16 @@ function getDynamicEffects(input: CompilePlannedActionCommandBatchInput, command
                 cascadeObjectIds.add(device.id);
                 deletedObjects += 1;
             }
+            deletedObjects += removedTrack.sends?.length ?? 0;
             for (const survivor of input.context.tracks) {
-                if (
-                    survivor.id !== trackId &&
-                    (survivor.outputId === trackId || survivor.sends?.some((send) => send.busId === trackId))
-                ) {
+                if (survivor.id === trackId) {
+                    continue;
+                }
+                const removedSendCount = survivor.sends?.filter((send) => send.busId === trackId).length ?? 0;
+                if (survivor.outputId === trackId || removedSendCount > 0) {
                     cascadeTrackIds.add(survivor.id);
                 }
+                deletedObjects += removedSendCount;
             }
             for (const lane of input.context.automationLanes ?? []) {
                 if (lane.trackId === trackId) {
