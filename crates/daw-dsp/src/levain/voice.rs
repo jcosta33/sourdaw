@@ -302,6 +302,70 @@ impl SamplePlayback {
         self.speed = self.base_speed;
     }
 
+    /// Leave a sustain loop and let whatever remains of the recording play
+    /// out once.
+    ///
+    /// SFZ names the two loop behaviours separately, and this engine's forward
+    /// loop is the second of them. Under `loop_continuous` "the loop repeats if
+    /// the loop end is reached during the release phase"; under `loop_sustain`
+    /// the player "plays the loop while the note is held" and "during the
+    /// release phase, there's no looping" — playback runs on from wherever the
+    /// playhead is to the end of the sample, and whichever of the release
+    /// envelope or the sample data ends first ends the note. Every Levain bank
+    /// in this repo loops the *whole* sustain recording (`loopStart` 0,
+    /// `loopEnd` = frame count) with a zero-frame seam crossfade, so a release
+    /// that kept looping wraps the playhead straight back onto that
+    /// recording's own attack transient underneath the release fade.
+    ///
+    /// Audio-thread safe: field writes only.
+    #[inline]
+    pub fn exit_loop(&mut self) {
+        if self.loop_mode == LoopMode::NoLoop {
+            return;
+        }
+        self.loop_mode = LoopMode::NoLoop;
+        // A ping-pong loop can be travelling backwards when the note is let
+        // go. `NoLoop` only ever ends a stream by reaching `end`, so leave the
+        // playhead moving towards it.
+        if self.speed < 0.0 {
+            self.speed = -self.speed;
+        }
+    }
+
+    /// Place the playhead at `position`, folded into this stream's own range.
+    ///
+    /// Used by crossfade legato to start the incoming zone where the outgoing
+    /// voice already is, rather than at the zone's first frame. `position` is
+    /// in frames of *this* stream, which is what makes it musically right:
+    /// wherever the held note had got to, the slurred note is at least that
+    /// far past its own recorded onset, so the transition adds no second
+    /// attack. Positions past the end fold back into the loop when there is
+    /// one; a target zone that does not loop is a short or percussive
+    /// articulation, where re-articulating from the start is the correct
+    /// reading of a slur into it.
+    #[inline]
+    pub fn seek_to(&mut self, position: f64) {
+        let start = self.start as f64;
+        let end = self.end as f64;
+        if end <= start || position <= start {
+            self.position = start;
+            return;
+        }
+        if position < end {
+            self.position = position;
+            return;
+        }
+
+        let loop_start = self.loop_start as f64;
+        let loop_end = self.loop_end as f64;
+        let loop_span = loop_end - loop_start;
+        if self.loop_mode != LoopMode::NoLoop && loop_span > 0.0 {
+            self.position = loop_start + (position - loop_start) % loop_span;
+            return;
+        }
+        self.position = start;
+    }
+
     /// Read one sample with cubic Hermite interpolation.
     #[inline]
     pub fn read_sample(&mut self, pool: &SamplePool) -> f32 {
@@ -617,12 +681,25 @@ impl LevainVoice {
 
     /// Start releasing this voice. The tail keeps sounding, but the voice is no
     /// longer held, so per-note expression stops addressing it (audit MD-2).
+    ///
+    /// Every stream leaves its sustain loop here: with no recorded release
+    /// sample to hand over to, the modelled release is the recording's own
+    /// remaining tail under the release envelope, which is only reachable once
+    /// the loop stops holding the playhead back. See `SamplePlayback::exit_loop`.
     pub fn release(&mut self) {
         self.held = false;
         self.amp_env.release();
+        self.playback.exit_loop();
+        self.crossfade_playback.exit_loop();
+        self.layer_secondary.exit_loop();
     }
 
-    /// Begin a crossfade to a new sample (for dynamic layer transitions or legato).
+    /// Begin a crossfade from this voice's current stream into `new_zone` —
+    /// the crossfade-legato fallback for a slur with no recorded interval
+    /// sample. `target_start_position` is where the incoming zone's playhead
+    /// starts, in that zone's own frames; the caller passes the outgoing
+    /// stream's position so the new zone enters past its recorded onset
+    /// instead of re-articulating it.
     pub fn start_crossfade(
         &mut self,
         new_zone: &Zone,
@@ -630,6 +707,7 @@ impl LevainVoice {
         crossfade_time_secs: f32,
         sample_rate: f32,
         pool: &SamplePool,
+        target_start_position: f64,
     ) {
         // Move current playback to crossfade slot.
         self.crossfade_playback = self.playback.clone();
@@ -639,6 +717,7 @@ impl LevainVoice {
             db_to_linear(new_zone.gain_db),
             pool,
         );
+        self.playback.seek_to(target_start_position);
 
         self.crossfade_amount = 0.0;
         let samples = (crossfade_time_secs * sample_rate).max(1.0);

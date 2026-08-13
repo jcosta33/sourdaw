@@ -275,6 +275,30 @@ export async function loadInstrumentFromManifest({
             zoneId++;
         }
 
+        // Recorded interval samples, before the zone map is built: the engine
+        // prefers one of these over its crossfade fallback for any slur whose
+        // (interval, dynamic, transition type) it can match, so a transition
+        // registered after the first note-on would be a silently late override.
+        for (const transition of bank.legatoTransitions) {
+            signal?.throwIfAborted();
+            const sampleId = sampleIdMap.get(transition.file);
+            if (sampleId === undefined) {
+                throw new Error(
+                    `Decoded Levain bank ${bank.instrumentId}@${bank.version} has no id for ${transition.file}`
+                );
+            }
+            nodePort.postMessage({
+                type: 'addLegatoTransition',
+                loadToken,
+                sampleId,
+                interval: transition.interval,
+                transitionType: transition.transitionType,
+                dynamic: transition.dynamic,
+                crossfadeInMs: transition.crossfadeInMs,
+                crossfadeOutMs: transition.crossfadeOutMs,
+            });
+        }
+
         nodePort.postMessage({
             type: 'buildZoneMap',
             loadToken,

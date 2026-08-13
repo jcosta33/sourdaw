@@ -228,6 +228,72 @@ describe('loadInstrumentFromManifest', () => {
         expect(addZone).toMatchObject({ loopMode: 'forward', loopStart: 0, loopEnd: 1, loopCrossfade: 0 });
     });
 
+    it('registers each recorded legato transition against its own sample id before the zone map is built', async () => {
+        const port = makePort();
+        const manifest = {
+            ...MANIFEST,
+            legatoTransitions: [
+                {
+                    file: 'slur-up-2.wav',
+                    interval: 2,
+                    transitionType: 'slurred',
+                    dynamic: 'mf',
+                    crossfadeInMs: 40,
+                    crossfadeOutMs: 80,
+                },
+            ],
+        };
+        vi.stubGlobal(
+            'fetch',
+            vi.fn().mockResolvedValue({
+                ok: true,
+                status: 200,
+                json: () => Promise.resolve(manifest),
+            })
+        );
+
+        await loadInstrumentFromManifest({
+            manifestUrl: '/m.json',
+            basePath: '/base',
+            expectedInstrumentId: 'violin-1',
+            nodePort: port,
+        });
+
+        const messages = port.postMessage.mock.calls.map(([message]) => message as Record<string, unknown>);
+        const uploaded = messages.filter((message) => message.type === 'addSample');
+        // The transition's PCM is a second file the bank would otherwise never
+        // fetch: the zone list only names `a.wav`.
+        expect(uploaded).toHaveLength(2);
+        const transitionSampleId = uploaded[1]!.sampleId;
+
+        const registered = messages.filter((message) => message.type === 'addLegatoTransition');
+        expect(registered).toHaveLength(1);
+        expect(registered[0]).toMatchObject({
+            sampleId: transitionSampleId,
+            interval: 2,
+            transitionType: 'slurred',
+            dynamic: 'mf',
+            crossfadeInMs: 40,
+            crossfadeOutMs: 80,
+        });
+
+        const types = postedTypes(port);
+        expect(types.indexOf('addLegatoTransition')).toBeLessThan(types.indexOf('buildZoneMap'));
+    });
+
+    it('posts no legato transition for a bank that authors none', async () => {
+        const port = makePort();
+
+        await loadInstrumentFromManifest({
+            manifestUrl: '/m.json',
+            basePath: '/base',
+            expectedInstrumentId: 'violin-1',
+            nodePort: port,
+        });
+
+        expect(postedTypes(port)).not.toContain('addLegatoTransition');
+    });
+
     it('skips PCM upload when the worklet assigns this loader as a shared-bank follower', async () => {
         const port = makePort({ uploadRequired: false });
 

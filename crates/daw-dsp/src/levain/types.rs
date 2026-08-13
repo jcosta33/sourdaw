@@ -56,6 +56,90 @@ pub enum InstrumentFamily {
     Choir,
 }
 
+impl InstrumentFamily {
+    /// Classify a frontend `instrumentId` slug. Mirrors `getInstrumentFamily`
+    /// in `src/modules/Levain/models/LevainPatch.ts`, including its ordering
+    /// traps: choir before strings so `bass-voice` doesn't match `bass`, and
+    /// woodwinds before brass so `english-horn` doesn't match `horn`.
+    ///
+    /// This is a second classifier over the same input as
+    /// `realism::Instrument::from_id`, deliberately: that one picks body
+    /// resonance, sympathetic strings and breath colour per *instrument*,
+    /// while this one is the coarse family the release model needs.
+    pub fn from_instrument_id(id: &str) -> Self {
+        if matches!(id, "soprano" | "alto" | "tenor" | "bass-voice") {
+            return InstrumentFamily::Choir;
+        }
+        if id.contains("flute")
+            || id.contains("oboe")
+            || id.contains("clarinet")
+            || id.contains("bassoon")
+            || id.contains("piccolo")
+            || id == "english-horn"
+        {
+            return InstrumentFamily::Woodwinds;
+        }
+        if id.contains("violin")
+            || id.contains("viola")
+            || id.contains("cello")
+            || id == "double-bass"
+        {
+            return InstrumentFamily::Strings;
+        }
+        if id.contains("trumpet")
+            || id.contains("horn")
+            || id.contains("trombone")
+            || id.contains("tuba")
+        {
+            return InstrumentFamily::Brass;
+        }
+        InstrumentFamily::Percussion
+    }
+
+    /// Multiplicative scaling applied to a zone's own release time when the
+    /// bank ships no recorded release samples, so the modelled release stops
+    /// like the instrument rather than like a gate.
+    ///
+    /// **Why a ratio, and why in the engine.** The per-zone `release` in every
+    /// shipped manifest is emitted by `scripts/download-levain-samples.ts` from
+    /// articulation type alone — `sustain || tremolo ? 0.5 : 0.15` — so it
+    /// carries no instrument information at all, and a marimba and a horn get
+    /// the same number. The manifest is still the right *override* channel and
+    /// stays authoritative for a bank that authors real per-zone values, so the
+    /// family model scales that value rather than replacing it: the same
+    /// multiplicative-on-time convention `EnvelopeScaling` already documents
+    /// for the Attack/Release macros, which keeps a patch's relative shaping
+    /// (a staccato stays far shorter than a sustain) and moves the whole
+    /// instrument in one direction.
+    ///
+    /// **Where the numbers come from.** Measured off this repo's own shipped
+    /// recordings: the median time from envelope peak to −40 dB (10 ms RMS
+    /// window) over every distinct file of each bank's shortest recorded
+    /// articulation, which is exactly a recording of the instrument being
+    /// excited and then left to ring.
+    ///
+    /// | family     | measured basis                                    | median  | ÷ 0.5 s |
+    /// | ---------- | ------------------------------------------------- | ------- | ------- |
+    /// | Percussion | struck one-shots: marimba 2.31, glock 2.50, timp 1.74 | 2.31 s  | 4.6     |
+    /// | Strings    | pizzicato: cello 1.14, d-bass 1.67, viola 0.57, vln 0.72/0.39 | 0.72 s  | 1.4     |
+    /// | Brass      | staccato: horn 0.34, trombone 0.43, trumpet 0.54, tuba 0.45 | 0.45 s  | 0.9     |
+    /// | Woodwinds  | staccato: bassoon 0.39, clarinet 0.33, flute 0.36, oboe 0.38 | 0.36 s  | 0.7     |
+    ///
+    /// The divisor is the 0.5 s the generator writes for every sustaining
+    /// zone, which is what makes the ratio a correction of that constant.
+    /// **Choir is deliberately `1.0`**: no choir bank ships here, so there is
+    /// nothing to measure and a number would be an invention.
+    pub fn release_scale(self) -> f32 {
+        match self {
+            InstrumentFamily::Percussion => 4.6,
+            InstrumentFamily::Strings => 1.4,
+            InstrumentFamily::Brass => 0.9,
+            InstrumentFamily::Woodwinds => 0.7,
+            InstrumentFamily::Choir => 1.0,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum LoopMode {
     NoLoop,

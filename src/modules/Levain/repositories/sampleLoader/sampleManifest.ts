@@ -39,12 +39,42 @@ export type ManifestArticulation = {
     zones: readonly ManifestZone[];
 };
 
+/** Transition kinds the DSP's `TransitionType` can be addressed by, in its own order. */
+export const LEGATO_TRANSITION_TYPES = ['slurred', 'portamento', 'run', 'rip', 'fall'] as const;
+export type LegatoTransitionType = (typeof LEGATO_TRANSITION_TYPES)[number];
+
+/** Dynamic layers a transition can be recorded at, in `Dynamic`'s own order. */
+export const LEGATO_DYNAMICS = ['pp', 'p', 'mp', 'mf', 'f', 'ff'] as const;
+export type LegatoDynamic = (typeof LEGATO_DYNAMICS)[number];
+
+/**
+ * One recorded interval sample: the note-to-note transition a library records
+ * so a slur sounds like the player moving rather than like two notes
+ * crossfaded. SFZ models the same thing as a region with `trigger=legato`,
+ * which "will play on note-on, but only if there's a note going on".
+ *
+ * Optional, and no bank in this repo ships one. Registering a transition is
+ * what makes the engine prefer a recording over its crossfade fallback for
+ * that interval, so this is the channel real interval recordings arrive
+ * through when they exist.
+ */
+export type ManifestLegatoTransition = {
+    file: string;
+    /** Semitones, `newNote - oldNote`. Non-zero, within the DSP's ±12 lookup range. */
+    interval: number;
+    transitionType: LegatoTransitionType;
+    dynamic: LegatoDynamic;
+    crossfadeInMs: number;
+    crossfadeOutMs: number;
+};
+
 export type SampleManifest = {
     version: 1;
     instrumentId: InstrumentId;
     sampleRate: number;
     articulations: readonly ManifestArticulation[];
     micPositions: readonly string[];
+    legatoTransitions: readonly ManifestLegatoTransition[];
 };
 
 const MAX_F32 = 3.402_823_466_385_288_6e38;
@@ -53,6 +83,10 @@ const MAX_MICS = 8;
 const MAX_RR = 12;
 const MAX_ARTICULATIONS = Object.keys(ARTICULATION_ID_BY_TYPE).length;
 const MAX_ZONE_ARENA = 65_536;
+/** `LegatoTransitionStore::MAX_TRANSITIONS` — anything past this is dropped by the DSP. */
+const MAX_LEGATO_TRANSITIONS = 1024;
+/** `MAX_LEGATO_INTERVAL` — the widest interval the DSP's transition lookup covers. */
+const MAX_LEGATO_INTERVAL = 12;
 const MAX_ZONE_LIST_COUNT = 65_535;
 const VELOCITY_BUCKET_SIZE = 8;
 const SAMPLE_BANK_BASE_URL = new URL('https://sourdaw.invalid/bank/');
@@ -205,6 +239,49 @@ function parseZone(value: unknown, path: string): ManifestZone {
     });
 }
 
+function isLegatoTransitionType(value: unknown): value is LegatoTransitionType {
+    return LEGATO_TRANSITION_TYPES.some((candidate) => candidate === value);
+}
+
+function isLegatoDynamic(value: unknown): value is LegatoDynamic {
+    return LEGATO_DYNAMICS.some((candidate) => candidate === value);
+}
+
+function parseLegatoTransition(value: unknown, path: string): ManifestLegatoTransition {
+    if (!isRecord(value)) {
+        throw new TypeError(`${path} must be an object`);
+    }
+    if (!isSafeRelativeSamplePath(value.file)) {
+        throw new TypeError(`${path}.file must be a safe relative sample path`);
+    }
+    if (!isIntegerInRange(value.interval, -MAX_LEGATO_INTERVAL, MAX_LEGATO_INTERVAL) || value.interval === 0) {
+        throw new TypeError(
+            `${path}.interval must be a non-zero integer from -${MAX_LEGATO_INTERVAL} through ${MAX_LEGATO_INTERVAL}`
+        );
+    }
+    if (!isLegatoTransitionType(value.transitionType)) {
+        throw new TypeError(`${path}.transitionType must be one of ${LEGATO_TRANSITION_TYPES.join(', ')}`);
+    }
+    if (!isLegatoDynamic(value.dynamic)) {
+        throw new TypeError(`${path}.dynamic must be one of ${LEGATO_DYNAMICS.join(', ')}`);
+    }
+    if (!isNonNegativeF32(value.crossfadeInMs)) {
+        throw new TypeError(`${path}.crossfadeInMs must be a non-negative finite 32-bit float`);
+    }
+    if (!isNonNegativeF32(value.crossfadeOutMs)) {
+        throw new TypeError(`${path}.crossfadeOutMs must be a non-negative finite 32-bit float`);
+    }
+
+    return Object.freeze({
+        file: value.file,
+        interval: value.interval,
+        transitionType: value.transitionType,
+        dynamic: value.dynamic,
+        crossfadeInMs: value.crossfadeInMs,
+        crossfadeOutMs: value.crossfadeOutMs,
+    });
+}
+
 function parseArticulation(value: unknown, path: string): ManifestArticulation {
     if (!isRecord(value)) {
         throw new TypeError(`${path} must be an object`);
@@ -274,6 +351,23 @@ export function parseSampleManifest(value: unknown): SampleManifest {
         throw new TypeError(`Levain sample manifest contains more than ${MAX_ZONE_ARENA} zones`);
     }
 
+    if (value.legatoTransitions !== undefined && !Array.isArray(value.legatoTransitions)) {
+        throw new TypeError('Levain sample manifest legatoTransitions must be an array when present');
+    }
+    const rawLegatoTransitions: readonly unknown[] = Array.isArray(value.legatoTransitions)
+        ? value.legatoTransitions
+        : [];
+    if (rawLegatoTransitions.length > MAX_LEGATO_TRANSITIONS) {
+        throw new TypeError(
+            `Levain sample manifest legatoTransitions must contain at most ${MAX_LEGATO_TRANSITIONS} entries`
+        );
+    }
+    const legatoTransitions = Object.freeze(
+        rawLegatoTransitions.map((transition, index) =>
+            parseLegatoTransition(transition, `legatoTransitions[${index}]`)
+        )
+    );
+
     const micPositions = Object.freeze([...value.micPositions]);
     const articulations = Object.freeze(
         value.articulations.map((articulation, index) => parseArticulation(articulation, `articulations[${index}]`))
@@ -305,5 +399,6 @@ export function parseSampleManifest(value: unknown): SampleManifest {
         sampleRate,
         micPositions,
         articulations,
+        legatoTransitions,
     });
 }

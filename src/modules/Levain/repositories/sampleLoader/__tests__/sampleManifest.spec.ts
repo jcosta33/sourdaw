@@ -37,6 +37,61 @@ function createValidManifest() {
     };
 }
 
+describe('parseSampleManifest legato transitions', () => {
+    it('normalises a recorded transition and defaults a bank that authors none to an empty list', () => {
+        const withNone = parseSampleManifest(createValidManifest());
+        expect(withNone.legatoTransitions).toEqual([]);
+
+        const parsed = parseSampleManifest({
+            ...createValidManifest(),
+            legatoTransitions: [
+                {
+                    file: 'slur/up-2-mf.wav',
+                    interval: -12,
+                    transitionType: 'portamento',
+                    dynamic: 'ff',
+                    crossfadeInMs: 40,
+                    crossfadeOutMs: 80.5,
+                },
+            ],
+        });
+
+        expect(parsed.legatoTransitions).toEqual([
+            {
+                file: 'slur/up-2-mf.wav',
+                interval: -12,
+                transitionType: 'portamento',
+                dynamic: 'ff',
+                crossfadeInMs: 40,
+                crossfadeOutMs: 80.5,
+            },
+        ]);
+    });
+
+    it.each([
+        ['a zero interval, which is not a transition', { interval: 0 }],
+        ['an interval past the DSP lookup range', { interval: 13 }],
+        ['a transition type the DSP has no discriminant for', { transitionType: 'scoop' }],
+        ['a dynamic outside the six recorded layers', { dynamic: 'mff' }],
+        ['an absolute sample path', { file: '/etc/passwd' }],
+        ['a negative crossfade time', { crossfadeInMs: -1 }],
+    ])('rejects %s', (_case, override) => {
+        const transition = {
+            file: 'slur.wav',
+            interval: 2,
+            transitionType: 'slurred',
+            dynamic: 'mf',
+            crossfadeInMs: 40,
+            crossfadeOutMs: 80,
+            ...override,
+        };
+
+        expect(() => parseSampleManifest({ ...createValidManifest(), legatoTransitions: [transition] })).toThrow(
+            TypeError
+        );
+    });
+});
+
 describe('parseSampleManifest', () => {
     it('accepts every bundled Levain bank manifest', async () => {
         const root = path.join(process.cwd(), 'public/samples/levain');

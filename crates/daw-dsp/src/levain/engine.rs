@@ -103,6 +103,11 @@ pub struct LevainEngine {
     tone: ToneTilt,
     /// Attack/Release macro scaling applied over each zone's own ADSR.
     envelope_scaling: EnvelopeScaling,
+    /// Modelled-release scaling for the loaded instrument's family, held apart
+    /// from `envelope_scaling` so the Release macro and the family model
+    /// compose instead of overwriting one another
+    /// (`InstrumentFamily::release_scale`).
+    family_release_scale: f32,
 
     /// Audio settings.
     sample_rate: f32,
@@ -149,6 +154,7 @@ impl LevainEngine {
             realism: RealismEngine::new(sample_rate),
             tone: ToneTilt::new(sample_rate),
             envelope_scaling: EnvelopeScaling::IDENTITY,
+            family_release_scale: 1.0,
             sample_rate,
             master_gain: 0.8,
             num_articulations: 1,
@@ -262,7 +268,7 @@ impl LevainEngine {
         self.num_articulations = pending.num_articulations;
         self.num_mics = pending.num_mics;
         self.mic_mixer = MicMixer::new(pending.num_mics);
-        self.realism.configure_for(&pending.instrument_id);
+        self.apply_instrument(&pending.instrument_id);
         self.fallback.enabled = false;
         self.expression
             .crossfader
@@ -303,8 +309,33 @@ impl LevainEngine {
     /// Tell the engine which instrument id (e.g. `violin-1`, `cello`,
     /// `trumpet`) is now loaded. The realism layer uses this to pick its
     /// body modes, sympathetic strings, and breath/bow noise colour.
+    /// It also selects the modelled release: with no recorded release samples
+    /// in any shipped bank, how a note stops has to come from somewhere, and
+    /// the instrument id is the only thing that knows a marimba from a horn.
     pub fn set_instrument(&mut self, instrument_id: &str) {
+        self.apply_instrument(instrument_id);
+    }
+
+    /// Everything the loaded instrument id decides. `commit_sample_bank` calls
+    /// this rather than `realism.configure_for` directly, because committing a
+    /// staged bank is the only route the worklet drives — nothing in `src/`
+    /// calls the `set_instrument` export, so anything wired only to that would
+    /// be dead on arrival.
+    fn apply_instrument(&mut self, instrument_id: &str) {
         self.realism.configure_for(instrument_id);
+        self.family_release_scale =
+            InstrumentFamily::from_instrument_id(instrument_id).release_scale();
+        self.voice_pool
+            .set_envelope_scaling(self.effective_envelope_scaling());
+    }
+
+    /// The Attack/Release macros and the family release model, composed into
+    /// the one scaling a voice applies over its zone's ADSR.
+    fn effective_envelope_scaling(&self) -> EnvelopeScaling {
+        EnvelopeScaling {
+            attack: self.envelope_scaling.attack,
+            release: self.envelope_scaling.release * self.family_release_scale,
+        }
     }
 
     /// Build the zone lookup table. Must be called after all zones and samples are loaded.
@@ -478,12 +509,19 @@ impl LevainEngine {
                 if from_voice < self.voice_pool.voices.len()
                     && self.voice_pool.voices[from_voice].active
                 {
+                    // The incoming zone enters at the outgoing stream's own
+                    // playhead, so the slur adds no second attack. This is
+                    // the fallback for an interval the bank has no recorded
+                    // transition for; a registered transition takes the
+                    // `TrueTransition` arm above and never reaches here.
+                    let outgoing_position = self.voice_pool.voices[from_voice].playback.position;
                     self.voice_pool.voices[from_voice].start_crossfade(
                         &zone,
                         note,
                         glide_time,
                         self.sample_rate,
                         &self.sample_pool,
+                        outgoing_position,
                     );
                     self.voice_pool.voices[from_voice].note = note;
                     // A synthetic glide reuses the sounding voice, so it
@@ -687,11 +725,13 @@ impl LevainEngine {
             "tone" => self.tone.set_position(value),
             "attack" => {
                 self.envelope_scaling.attack = macro_time_scale(value);
-                self.voice_pool.set_envelope_scaling(self.envelope_scaling);
+                self.voice_pool
+                    .set_envelope_scaling(self.effective_envelope_scaling());
             }
             "release" => {
                 self.envelope_scaling.release = macro_time_scale(value);
-                self.voice_pool.set_envelope_scaling(self.envelope_scaling);
+                self.voice_pool
+                    .set_envelope_scaling(self.effective_envelope_scaling());
             }
 
             // ── Mic positions ─────────────────────────────────────────
@@ -1036,18 +1076,28 @@ mod tests {
                 sustain: 1.0,
                 release: 0.2,
             },
+            SAMPLE_FRAMES,
         )
     }
 
     /// The same single-zone sawtooth engine with a caller-chosen amplitude
-    /// envelope, so the Attack/Release macros have a per-zone ADSR to offset.
-    fn engine_with_sawtooth_envelope(max_voices: usize, amp_env: AdsrParams) -> LevainEngine {
+    /// envelope, so the Attack/Release macros have a per-zone ADSR to offset,
+    /// and a caller-chosen sample length. A released voice leaves its sustain
+    /// loop and plays out what is left of the recording (SFZ `loop_sustain`),
+    /// so a fixture that measures the *envelope's* fall has to hold enough
+    /// recording for the envelope, not the sample end, to be what ends the
+    /// note.
+    fn engine_with_sawtooth_envelope(
+        max_voices: usize,
+        amp_env: AdsrParams,
+        frames: u32,
+    ) -> LevainEngine {
         let mut engine = LevainEngine::new(SAMPLE_RATE, max_voices);
-        let data: Vec<f32> = (0..SAMPLE_FRAMES)
+        let data: Vec<f32> = (0..frames)
             .map(|frame| (frame % PERIOD_FRAMES) as f32 / PERIOD_FRAMES as f32 * 2.0 - 1.0)
             .collect();
         let sample_id = engine
-            .add_sample(data, SAMPLE_FRAMES, 1, SAMPLE_RATE)
+            .add_sample(data, frames, 1, SAMPLE_RATE)
             .expect("test sample should fit the bank");
         engine.add_zone(Zone {
             id: 0,
@@ -1063,10 +1113,10 @@ mod tests {
                 root_key: 60,
                 tune_cents: 0,
                 start: 0,
-                end: SAMPLE_FRAMES,
+                end: frames,
                 loop_mode: LoopMode::Forward,
                 loop_start: 0,
-                loop_end: SAMPLE_FRAMES,
+                loop_end: frames,
                 loop_crossfade: 0,
             },
             amp_env,
@@ -1146,6 +1196,11 @@ mod tests {
     /// 12 ms rise is still resolved to a tenth of itself.
     const ENVELOPE_NOTE: u8 = 84;
     const ENVELOPE_WINDOW: usize = 60;
+    /// Two octaves up runs the sample at 4x, and the longest fall these tests
+    /// measure is a 0.1 s release stretched fourfold and followed to a tenth
+    /// of its held level — about 0.92 s, or 177 k sample frames. An exact
+    /// multiple of `PERIOD_FRAMES` so the loop stays click-free while held.
+    const ENVELOPE_SAMPLE_FRAMES: u32 = 240 * 833;
 
     fn window_peaks(samples: &[f32]) -> Vec<f32> {
         samples
@@ -1191,6 +1246,7 @@ mod tests {
                 sustain: 1.0,
                 release: 0.2,
             },
+            ENVELOPE_SAMPLE_FRAMES,
         );
         if let Some(value) = attack {
             engine.set_param("attack", value);
@@ -1208,6 +1264,7 @@ mod tests {
                 sustain: 1.0,
                 release: 0.1,
             },
+            ENVELOPE_SAMPLE_FRAMES,
         );
         if let Some(value) = release {
             engine.set_param("release", value);
@@ -1330,6 +1387,7 @@ mod tests {
                 sustain: 1.0,
                 release: 0.1,
             },
+            ENVELOPE_SAMPLE_FRAMES,
         );
         engine.note_on(ENVELOPE_NOTE, 100);
         render(&mut engine, 8);
@@ -2022,5 +2080,189 @@ mod tests {
         render(&mut engine, 20);
         assert!(is_releasing(&engine, 62));
         assert!(is_releasing(&engine, 64));
+    }
+
+    // ── #1848: modelled release and crossfade legato, for banks that ship
+    //    no recorded release or interval samples ──────────────────────────
+
+    fn peak(samples: &[f32]) -> f32 {
+        samples
+            .iter()
+            .fold(0.0_f32, |acc, value| acc.max(value.abs()))
+    }
+
+    /// One zone whose sample is loud for `loud_frames` and then silent, looped
+    /// over its whole length — the shape every shipped Levain sustain zone has
+    /// (`loopStart` 0, `loopEnd` = frame count), with the silent half standing
+    /// in for the point past which there is nothing left to play.
+    fn engine_with_half_silent_loop(release: f32, loud_frames: u32) -> LevainEngine {
+        let mut engine = LevainEngine::new(SAMPLE_RATE, 8);
+        let data: Vec<f32> = (0..SAMPLE_FRAMES)
+            .map(|frame| {
+                if frame >= loud_frames {
+                    return 0.0;
+                }
+                (frame % PERIOD_FRAMES) as f32 / PERIOD_FRAMES as f32 * 2.0 - 1.0
+            })
+            .collect();
+        let sample_id = engine
+            .add_sample(data, SAMPLE_FRAMES, 1, SAMPLE_RATE)
+            .expect("test sample should fit the bank");
+        let mut zone = wide_zone(0, sample_id, VelRange { lo: 0, hi: 127 }, false);
+        zone.amp_env.release = release;
+        engine.add_zone(zone);
+        engine
+            .build_zone_map(1, 1)
+            .expect("test zone map should build");
+        engine
+    }
+
+    /// A forward loop is SFZ's `loop_sustain`, not `loop_continuous`: the loop
+    /// runs while the note is held, and "during the release phase, there's no
+    /// looping". Every shipped bank loops the *whole* sustain sample with a
+    /// zero-frame seam crossfade, so a release that kept looping wraps the
+    /// playhead back onto the recording's own attack under the release fade.
+    #[test]
+    fn release_leaves_the_sustain_loop_instead_of_wrapping_into_the_attack() {
+        // Loud for the first eighth of the sample, silent after. A note-off
+        // taken inside the silent part must stay silent; only a wrap back to
+        // frame 0 can make it sound again.
+        let loud_frames = SAMPLE_FRAMES / 8;
+        let mut engine = engine_with_half_silent_loop(5.0, loud_frames);
+
+        engine.note_on(60, 100);
+        let held = render(&mut engine, 4);
+        assert!(
+            peak(&held) > 0.1,
+            "the held note must sound before the release is measured; got {}",
+            peak(&held)
+        );
+
+        engine.note_off(60);
+        // Render past the loop end (SAMPLE_FRAMES = 4800 frames = 37.5 blocks),
+        // then measure the window a wrap would land the loud eighth in.
+        render(&mut engine, 34);
+        let after_the_loop_end = render(&mut engine, 4);
+
+        assert!(
+            peak(&after_the_loop_end) < peak(&held) * 0.02,
+            "a released voice must run out of the sustain loop and stop, not \
+             wrap back onto the sample's own attack: peak after the loop end \
+             is {} against {} while held",
+            peak(&after_the_loop_end),
+            peak(&held)
+        );
+    }
+
+    /// Crossfade legato with no interval sample: the incoming zone must enter
+    /// at the outgoing voice's own playhead, not at frame 0, or every slur
+    /// re-articulates the target zone's recorded onset.
+    #[test]
+    fn crossfade_legato_enters_the_new_zone_past_its_recorded_onset() {
+        // Loud onset over the first half, quiet body after — an exaggerated
+        // stand-in for a sustain sample's attack transient.
+        const ONSET_FRAMES: u32 = SAMPLE_FRAMES / 2;
+        const BODY_LEVEL: f32 = 0.15;
+
+        let mut engine = LevainEngine::new(SAMPLE_RATE, 8);
+        let data: Vec<f32> = (0..SAMPLE_FRAMES)
+            .map(|frame| {
+                let level = if frame < ONSET_FRAMES { 1.0 } else { BODY_LEVEL };
+                ((frame % PERIOD_FRAMES) as f32 / PERIOD_FRAMES as f32 * 2.0 - 1.0) * level
+            })
+            .collect();
+        let sample_id = engine
+            .add_sample(data, SAMPLE_FRAMES, 1, SAMPLE_RATE)
+            .expect("test sample should fit the bank");
+        engine.add_zone(wide_zone(0, sample_id, VelRange { lo: 0, hi: 127 }, false));
+        engine
+            .build_zone_map(1, 1)
+            .expect("test zone map should build");
+
+        // Hold 60 until its playhead is well inside the quiet body (24 blocks
+        // = 3072 frames, past the 2400-frame onset).
+        engine.note_on(60, 100);
+        render(&mut engine, 20);
+        let body = render(&mut engine, 4);
+
+        // Slur to 64. No transition sample is registered, so this is the
+        // crossfade-legato fallback.
+        engine.note_on(64, 100);
+        // Eight blocks covers the 30 ms fast-legato crossfade almost entirely
+        // while leaving the matched playhead short of the loop end.
+        let slur = render(&mut engine, 8);
+
+        assert!(
+            peak(&slur) < peak(&body) * 3.0,
+            "a crossfade slur must not re-articulate the target zone's onset: \
+             peak across the transition is {} against {} for the body the \
+             outgoing voice was already sounding, and the onset in this sample \
+             is {:.1}x the body",
+            peak(&slur),
+            peak(&body),
+            1.0 / BODY_LEVEL
+        );
+    }
+
+    /// A long non-looping zone, so the release envelope — not the end of the
+    /// sample — is what the tail measures.
+    ///
+    /// Loaded through the staged-bank path (`begin_sample_bank` …
+    /// `commit_sample_bank`), because that is the only route the worklet
+    /// actually drives: nothing in `src/` calls `LevainInstance::set_instrument`,
+    /// so an instrument-derived behaviour wired only to that export would never
+    /// reach a player.
+    fn engine_with_long_dry_zone(instrument_id: &str) -> LevainEngine {
+        const LONG_FRAMES: u32 = 96_000; // 2 s at 48 kHz
+        let mut engine = LevainEngine::new(SAMPLE_RATE, 8);
+        engine.begin_sample_bank(instrument_id);
+        let data: Vec<f32> = (0..LONG_FRAMES)
+            .map(|frame| (frame % PERIOD_FRAMES) as f32 / PERIOD_FRAMES as f32 * 2.0 - 1.0)
+            .collect();
+        let sample_id = engine
+            .add_sample(data, LONG_FRAMES, 1, SAMPLE_RATE)
+            .expect("test sample should fit the bank");
+        let mut zone = wide_zone(0, sample_id, VelRange { lo: 0, hi: 127 }, false);
+        zone.sample.end = LONG_FRAMES;
+        zone.sample.loop_mode = LoopMode::NoLoop;
+        // The release every shipped manifest carries for a sustaining
+        // articulation, emitted by `scripts/download-levain-samples.ts` from
+        // articulation type alone.
+        zone.amp_env.release = 0.5;
+        engine.add_zone(zone);
+        engine
+            .build_zone_map(1, 1)
+            .expect("test zone map should build");
+        assert!(
+            engine.commit_sample_bank(),
+            "the staged test bank should commit"
+        );
+        engine
+    }
+
+    /// A marimba is not a horn. Percussion and choir are the two families whose
+    /// realism preset is neutral (`Instrument::Other` — no body, sympathetic,
+    /// bow or breath contribution), so the difference between these two renders
+    /// is the modelled release and nothing else.
+    #[test]
+    fn release_time_follows_the_instrument_family() {
+        fn tail_rms(instrument_id: &str) -> f32 {
+            let mut engine = engine_with_long_dry_zone(instrument_id);
+            engine.note_on(60, 100);
+            render(&mut engine, 4);
+            engine.note_off(60);
+            render(&mut engine, 320); // ~0.85 s of release
+            rms(&render(&mut engine, 8))
+        }
+
+        let percussion = tail_rms("marimba");
+        let choir = tail_rms("soprano");
+
+        assert!(
+            percussion > choir * 3.0,
+            "an undamped percussion bar must ring on where a breath-stopped \
+             voice does not: marimba tail RMS {percussion} against soprano \
+             {choir} at the same point in the release"
+        );
     }
 }

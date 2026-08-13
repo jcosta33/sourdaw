@@ -84,6 +84,9 @@ class LevainInstanceMock {
     add_zone(...args: unknown[]): void {
         calls.push({ method: 'add_zone', args });
     }
+    add_legato_transition(...args: unknown[]): void {
+        calls.push({ method: 'add_legato_transition', args });
+    }
     build_zone_map(numArticulations: number, numMics: number): boolean {
         calls.push({ method: 'build_zone_map', args: [numArticulations, numMics] });
         return zoneMapShouldBuild;
@@ -650,6 +653,36 @@ describe('LevainProcessor message handling', () => {
         expect(zones[2]!.args[12]).toBe(0); // unknown → 0
         expect(zones[3]!.args[12]).toBe(0); // absent → 0
         expect(zones[3]!.args[11]).toBe(false); // isRelease default false
+    });
+
+    it('registers legato transitions with the DSP enum ordering and drops ones from a stale load', async () => {
+        const proc = await loadProcessor();
+        send(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });
+        send(proc, { type: 'beginSampleBank', bankKey: 'legato-bank', instrumentId: 'violin', loadToken: 1 });
+        calls.length = 0;
+
+        const base = {
+            type: 'addLegatoTransition',
+            loadToken: 1,
+            sampleId: 7,
+            interval: -3,
+            crossfadeInMs: 40,
+            crossfadeOutMs: 80,
+        };
+        send(proc, { ...base, transitionType: 'slurred', dynamic: 'pp' });
+        send(proc, { ...base, transitionType: 'portamento', dynamic: 'ff' });
+        send(proc, { ...base, transitionType: 'fall', dynamic: 'mf' });
+        // A transition left over from a superseded load must not reach the
+        // sounding bank's transition store.
+        send(proc, { ...base, loadToken: 99, transitionType: 'rip', dynamic: 'f' });
+
+        const registered = calls.filter((call) => call.method === 'add_legato_transition');
+        expect(registered).toHaveLength(3);
+        // add_legato_transition(interval, transitionType, dynamic, sampleId,
+        //                       crossfadeInMs, crossfadeOutMs)
+        expect(registered[0]!.args).toEqual([-3, 0, 0, 7, 40, 80]);
+        expect(registered[1]!.args).toEqual([-3, 1, 5, 7, 40, 80]);
+        expect(registered[2]!.args).toEqual([-3, 4, 3, 7, 40, 80]);
     });
 
     it('forwards buildZoneMap', async () => {
