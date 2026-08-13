@@ -1,6 +1,9 @@
 import { type AppAction } from '#/utils/handlerContract';
 
-import { type VersionedCommandBatchEnvelope } from '../models/VersionedCommandBatchEnvelope';
+import {
+    type CommandBatchDynamicEffects,
+    type VersionedCommandBatchEnvelope,
+} from '../models/VersionedCommandBatchEnvelope';
 import { type VersionedCommandEnvelope, type VersionedCommandReceipt } from '../models/VersionedCommandEnvelope';
 
 import { buildSemanticProjectDiff } from './buildSemanticProjectDiff';
@@ -91,24 +94,38 @@ function commandAffectedIds(command: VersionedCommandEnvelope): string[] {
         .toSorted();
 }
 
-function committedDynamicAffectedIds(input: {
+function committedDynamicEffects(input: {
     envelope: VersionedCommandBatchEnvelope;
     executedCommandIds: ReadonlySet<string>;
-}): string[] {
+}): CommandBatchDynamicEffects | undefined {
     const dynamicEffects = input.envelope.dynamicEffects;
     if (!dynamicEffects) {
-        return [];
+        return undefined;
     }
     if (dynamicEffects.commandEffects) {
-        return dynamicEffects.commandEffects
-            .filter(({ commandId }) => input.executedCommandIds.has(commandId))
-            .flatMap(({ effects }) => [
-                ...(effects.affectedTrackIds ?? []),
-                ...(effects.affectedClipIds ?? []),
-                ...(effects.affectedTargetIds ?? []),
-            ]);
+        const commandEffects = dynamicEffects.commandEffects.filter(({ commandId }) =>
+            input.executedCommandIds.has(commandId)
+        );
+        if (commandEffects.length === 0) {
+            return undefined;
+        }
+        return {
+            affectedTrackIds: [...new Set(commandEffects.flatMap(({ effects }) => effects.affectedTrackIds ?? []))],
+            affectedClipIds: [...new Set(commandEffects.flatMap(({ effects }) => effects.affectedClipIds ?? []))],
+            affectedTargetIds: [...new Set(commandEffects.flatMap(({ effects }) => effects.affectedTargetIds ?? []))],
+            automationPoints: commandEffects.reduce((sum, { effects }) => sum + (effects.automationPoints ?? 0), 0),
+            deletedObjects: commandEffects.reduce((sum, { effects }) => sum + (effects.deletedObjects ?? 0), 0),
+            commandEffects,
+        };
     }
     if (input.executedCommandIds.size !== input.envelope.commands.length) {
+        return undefined;
+    }
+    return dynamicEffects;
+}
+
+function dynamicAffectedIds(dynamicEffects: CommandBatchDynamicEffects | undefined): string[] {
+    if (!dynamicEffects) {
         return [];
     }
     return [
@@ -228,11 +245,14 @@ export function createVerifiedBatchReceipt(input: CreateVerifiedBatchReceiptInpu
         };
     });
     const appliedCommands = input.envelope.commands.filter((command) => executedCommandIds.has(command.commandId));
-    const dynamicAffectedIds =
+    const filteredDynamicEffects =
         input.result.status === 'committed' || input.result.status === 'committed-with-warning'
-            ? committedDynamicAffectedIds({ envelope: input.envelope, executedCommandIds })
-            : [];
-    const affectedIds = [...commandOutcomes.flatMap((command) => command.affectedIds), ...dynamicAffectedIds]
+            ? committedDynamicEffects({ envelope: input.envelope, executedCommandIds })
+            : undefined;
+    const affectedIds = [
+        ...commandOutcomes.flatMap((command) => command.affectedIds),
+        ...dynamicAffectedIds(filteredDynamicEffects),
+    ]
         .filter((value, index, values) => values.indexOf(value) === index)
         .toSorted();
     const createdBindings = appliedCommands
@@ -264,7 +284,7 @@ export function createVerifiedBatchReceipt(input: CreateVerifiedBatchReceiptInpu
     const semanticDiff =
         input.result.status === 'committed' || input.result.status === 'committed-with-warning'
             ? buildSemanticProjectDiff({
-                  envelope: { ...input.envelope, commands: appliedCommands },
+                  envelope: { ...input.envelope, commands: appliedCommands, dynamicEffects: filteredDynamicEffects },
                   recoveryByCommandId: Object.fromEntries(
                       commandOutcomes.map((command) => [
                           command.commandId,

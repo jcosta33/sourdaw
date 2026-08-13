@@ -76,6 +76,7 @@ function command(input: { action: AppAction; commandId: string; expectedEffect: 
 
 function compileBatch(
     input: {
+        dynamicAffectedTrackIds?: readonly string[];
         dynamicAffectedTargetIds?: readonly string[];
         protectedTargetIds?: readonly string[];
     } = {}
@@ -105,17 +106,22 @@ function compileBatch(
         intent: 'Balance vocal and guitar',
         mode: 'commit',
         projectId: 'project-receipt',
-        dynamicEffects: input.dynamicAffectedTargetIds
-            ? {
-                  affectedTargetIds: [...input.dynamicAffectedTargetIds],
-                  commandEffects: [
-                      {
-                          commandId: PAN_COMMAND_ID,
-                          effects: { affectedTargetIds: [...input.dynamicAffectedTargetIds] },
-                      },
-                  ],
-              }
-            : undefined,
+        dynamicEffects:
+            input.dynamicAffectedTargetIds || input.dynamicAffectedTrackIds
+                ? {
+                      affectedTrackIds: [...(input.dynamicAffectedTrackIds ?? [])],
+                      affectedTargetIds: [...(input.dynamicAffectedTargetIds ?? [])],
+                      commandEffects: [
+                          {
+                              commandId: PAN_COMMAND_ID,
+                              effects: {
+                                  affectedTrackIds: [...(input.dynamicAffectedTrackIds ?? [])],
+                                  affectedTargetIds: [...(input.dynamicAffectedTargetIds ?? [])],
+                              },
+                          },
+                      ],
+                  }
+                : undefined,
         protectedTargetIds: input.protectedTargetIds,
         runId: 'run-receipt',
     });
@@ -304,6 +310,7 @@ describe('verified batch receipt', () => {
             projectInvariantsValid: !(rejectPostconditions && stagedDocument !== undefined),
             targetFingerprints: {
                 'automation-lane-hidden': 'automation:automation-lane-hidden',
+                'track-dynamic-noop': 'track:track-dynamic-noop',
                 'track-guitar': 'track:track-guitar',
                 'track-protected':
                     protectedFingerprintChanged && stagedDocument !== undefined
@@ -542,7 +549,10 @@ describe('verified batch receipt', () => {
     it('does not report aggregate dynamic targets owned only by a no-op command', async () => {
         clearHandlerRegistry();
         registerTestHandlers({ panIsNoop: true });
-        const batch = compileBatch({ dynamicAffectedTargetIds: ['automation-lane-hidden'] });
+        const batch = compileBatch({
+            dynamicAffectedTrackIds: ['track-dynamic-noop'],
+            dynamicAffectedTargetIds: ['automation-lane-hidden'],
+        });
 
         const result = await executeVersionedCommandBatchEnvelope({
             authority: batch.authority,
@@ -554,6 +564,7 @@ describe('verified batch receipt', () => {
         expect(receiptFrom(result)).toMatchObject({
             affectedIds: ['track-vocal'],
             commandOutcomes: [{ outcome: 'committed' }, { outcome: 'no-op' }],
+            semanticDiff: { affectedTrackIds: ['track-vocal'] },
         });
     });
 
