@@ -1,0 +1,36 @@
+src/modules/WorkspaceShell/presentations/hooks/__tests__/usePromptExecution.spec.ts
+  s_a40848e8f8cca9::t_8ab8de9451d15f 101
+src/modules/WorkspaceShell/presentations/hooks/usePromptExecution.ts
+  s_a40848e8f8cca9::t_4cfa2639dccbcb 27,242-254
+src/modules/AiRuntime/useCases/compilePlannedActionCommandBatch.ts
+  s_a40848e8f8cca9::t_5df5d200e5256f 6,203-239
+  s_a40848e8f8cca9::t_3567fad6d7c69b 240-241
+src/modules/AiRuntime/useCases/__tests__/compilePlannedActionCommandBatch.spec.ts
+  s_a40848e8f8cca9::t_9feb91c1e59681 6,75,135,179-186,190-191,225-227,229-237,239-273,275,277,280-281,283
+  s_a40848e8f8cca9::t_4412c9ee727a04 187,228
+src/modules/Command/useCases/compileVersionedCommandBatchEnvelope.ts
+  s_a40848e8f8cca9::t_5df5d200e5256f 56
+src/modules/Command/useCases/index.ts
+  s_a40848e8f8cca9::t_4cfa2639dccbcb 19
+src/modules/Command/useCases/parseVersionedCommandEnvelope.ts
+  s_a40848e8f8cca9::t_4cfa2639dccbcb 166-167
+  s_a40848e8f8cca9::t_9f16c3c3b5e10d 168
+src/modules/Command/useCases/__tests__/versionedCommandContract.spec.ts
+  s_a40848e8f8cca9::t_4cfa2639dccbcb 385-387
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "6f92f50ea62102cd23dd35158f689c08750acb72",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
