@@ -1,6 +1,6 @@
 import { type HandlerValidationContext } from '#/utils/handlerContract';
 
-import { type Track } from '../models/Track';
+import { createTrack, type Track } from '../models/Track';
 import { getTrackStoreState } from '../useCases/getTrackStoreState';
 
 import { projectTrackThroughPriorBatchActions } from './projectTrackThroughPriorBatchActions';
@@ -12,40 +12,14 @@ function createPlannedTrack(input: {
     gain: number;
 }): Track {
     const alternativeId = `planned-alternative-${input.id}`;
-    return {
+    return createTrack({
         id: input.id,
         name: input.name,
         kind: input.kind,
-        muted: false,
-        soloed: false,
-        armed: false,
         gain: input.gain,
-        pan: 0,
         color: '#000000',
-        clips: [],
-        devices: [],
-        sends: [],
-        midiFx: [],
-        frozen: false,
-        freezeState: { status: 'unfrozen' },
-        parentId: null,
-        collapsed: false,
-        inputMonitoring: 'auto',
-        hidden: false,
-        disabled: false,
-        height: 80,
-        outputId: 'master',
-        automationMode: 'read',
-        groupId: null,
-        soloSafe: input.kind === 'bus',
-        notes: '',
-        inputId: null,
-        activeAlternativeId: alternativeId,
-        alternatives: [{ id: alternativeId, name: 'Alternative 1', clips: [] }],
-        vcaGroupId: null,
-        midiOutputTrackId: null,
-        followChordTrack: false,
-    };
+        initialAlternativeId: alternativeId,
+    });
 }
 
 export function getPlannedTrackState(context: HandlerValidationContext, trackId: string): Track | null {
