@@ -1,0 +1,32 @@
+src/modules/Command/useCases/__tests__/verifiedBatchReceipt.spec.ts
+  s_a40848e8f8cca9::t_c534d395d9c5f6 298
+  s_a40848e8f8cca9::t_3af4686e474e5d 498-499,512
+  s_a40848e8f8cca9::t_cb8614ae619385 77-82,108-111,129,132-167,175,177-222,271,300-301,303,426,500,502-507,510-511,513-537,559-577
+  s_a40848e8f8cca9::t_d2b2dbbb005538 168-174,176
+  s_a40848e8f8cca9::t_d7d7421e3e456a 302
+  s_a40848e8f8cca9::t_5904f0201ebe89 425
+  s_a40848e8f8cca9::t_532d5b2aab4742 578-579
+src/modules/Command/useCases/executeAppActionBatch.ts
+  s_a40848e8f8cca9::t_3af4686e474e5d 43-48,51-54,56,58-61,63,66-71,178,182-183,734,740,744,752,760,773-777,791-795,800,804-805
+  s_a40848e8f8cca9::t_4b308dac981edc 55,62
+src/modules/Command/useCases/__tests__/commandBatchPreflight.spec.ts
+  s_a40848e8f8cca9::t_adce8d98e6577d 233
+src/modules/Command/useCases/createVerifiedBatchReceipt.ts
+  s_a40848e8f8cca9::t_3af4686e474e5d 29-34,96-97,99-101,127-130,134-136,169-171,204-212,256-261,268,277
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "65aefe11bec34623e1c4f0320791b8e3746db74a",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
