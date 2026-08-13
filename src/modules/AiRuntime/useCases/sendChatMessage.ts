@@ -29,8 +29,7 @@ import { llmStatusStore } from '../stores/llmStatusStore';
 import { proposePendingActionConfirmation } from '../stores/pendingActionConfirmationStore';
 
 import { createStemImportConfirmationResourceLease } from './agentReference/createStemImportConfirmationResourceLease';
-import { compileAgentRiskApproval } from './compileAgentRiskApproval';
-import { compilePlannedActionCommandBatch } from './compilePlannedActionCommandBatch';
+import { compileAgentActionExecution } from './compileAgentActionExecution';
 import { createThinkBlockParser } from './createThinkBlockParser';
 import { describeAgentRiskApproval } from './describeAgentRiskApproval';
 import { describePendingActionConfirmation } from './describePendingActionConfirmation';
@@ -118,20 +117,21 @@ export async function sendChatMessage(userText: string): Promise<void> {
                     workflowCapabilityId: result.workflowCapabilityId,
                 });
                 const commandGroup = generateGroupId(userText);
-                const { commandEnvelopes, commandBatch } = compilePlannedActionCommandBatch({
+                const compiledActionExecution = compileAgentActionExecution({
                     actions: result.actions,
                     actionLabels: confirmationDescription.actionLabels,
-                    autoCommit: !result.requiresConfirmation,
                     context,
                     group: commandGroup,
                     intent: userText,
                     projectRevision,
+                    requiresConfirmation: result.requiresConfirmation,
                     runId: assistantMsgId,
                     protectedTargetIds: confirmationDescription.protectedUnchanged.map((item) => item.id),
                 });
+                const { commandEnvelopes, commandBatch } = compiledActionExecution;
 
-                if (result.requiresConfirmation) {
-                    const agentApproval = compileAgentRiskApproval({ commandBatch });
+                if (compiledActionExecution.requiresConfirmation) {
+                    const { agentApproval } = compiledActionExecution;
                     const confirmationId = `prompt-confirmation-${crypto.randomUUID()}`;
                     const confirmation = proposePendingActionConfirmation({
                         id: confirmationId,
@@ -182,9 +182,7 @@ export async function sendChatMessage(userText: string): Promise<void> {
                     executionMode: result.executionMode,
                     signal: aborter.signal,
                 };
-                const execution = commandBatch
-                    ? await executePlannedActions({ ...executionInput, commandBatch })
-                    : await executePlannedActions({ ...executionInput, legacyExecution: true });
+                const execution = await executePlannedActions({ ...executionInput, commandBatch });
 
                 if (execution.status === 'committed') {
                     const receiptWarnings: string[] = [];

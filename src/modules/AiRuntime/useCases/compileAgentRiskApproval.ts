@@ -12,6 +12,7 @@ type PendingCommandBatch = {
 
 type CompileAgentRiskApprovalInput = {
     commandBatch: PendingCommandBatch;
+    requireExplicitApproval?: boolean;
     signals?: Parameters<typeof getAgentActionRiskPolicy>[0]['signals'];
 };
 
@@ -67,7 +68,7 @@ export function compileAgentRiskApproval(input: CompileAgentRiskApprovalInput) {
         throw new Error(registryPolicy.reasons.join(' '));
     }
     let policy = registryPolicy;
-    if (registryPolicy.decision === 'allow') {
+    if (registryPolicy.decision === 'allow' && input.requireExplicitApproval !== false) {
         policy = {
             ...registryPolicy,
             decision: 'confirm',

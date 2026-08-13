@@ -5,6 +5,7 @@ import { clearHandlerRegistry, registerHandlerMap } from '#/modules/Command/stor
 import {
     commandBatchPreflightPort,
     getAgentActionRiskPolicy,
+    parseVersionedCommandBatchEnvelope,
     parseVersionedCommandEnvelope,
 } from '#/modules/Command/useCases';
 import { captureProjectRevision } from '#/modules/CrdtDocument/useCases';
@@ -16,6 +17,7 @@ import {
     getPendingActionConfirmation,
     proposePendingActionConfirmation,
 } from '../../stores/pendingActionConfirmationStore';
+import { compileAgentActionExecution } from '../compileAgentActionExecution';
 import { compileAgentRiskApproval } from '../compileAgentRiskApproval';
 import { compilePlannedActionCommandBatch } from '../compilePlannedActionCommandBatch';
 import { confirmPendingChatActions } from '../confirmPendingChatActions';
@@ -228,6 +230,96 @@ describe('agent risk approval', () => {
         expect(describeAgentRiskApproval(approval)).toBe(
             'Approval risk: bounded-reversible\nTrust mode: apply-reversible\nCost/data consequences: none\nAuthority reasons: The planning workflow requires explicit confirmation.'
         );
+    });
+
+    it('escalates an auto-commit registry batch after resolving its exact command scope', () => {
+        const revision = captureProjectRevision();
+        const context = {
+            tempo: 120,
+            timeSignature: [4, 4] as [number, number],
+            isPlaying: false,
+            isRecording: false,
+            isLooping: false,
+            loopStart: 0,
+            loopEnd: 16,
+            punchInEnabled: false,
+            punchInBeat: 0,
+            punchOutBeat: 16,
+            metronomeEnabled: false,
+            metronomeVolume: 0.5,
+            masterGain: 0.8,
+            tracks: [
+                {
+                    id: 'track-vocal',
+                    name: 'Vocal',
+                    kind: 'audio' as const,
+                    muted: false,
+                    soloed: false,
+                    soloSafe: false,
+                    armed: false,
+                    gain: 0.8,
+                    pan: 0,
+                    automationMode: 'read' as const,
+                    clipCount: 1,
+                    deviceCount: 0,
+                    clips: [
+                        {
+                            id: 'clip-source',
+                            name: 'Source',
+                            type: 'audio' as const,
+                            startBeat: 0,
+                            endBeat: 4,
+                            noteCount: 0,
+                        },
+                    ],
+                    devices: [],
+                },
+            ],
+            selectedTrackId: 'track-vocal',
+            selectedClipId: 'clip-source',
+            selectedClipIds: ['clip-source'],
+            activeView: 'arrange' as const,
+            playheadPosition: 0,
+        };
+
+        const compiled = compileAgentActionExecution({
+            actions: [
+                {
+                    type: 'setTrackGain',
+                    payload: { expectedGain: 0.8, gain: 0.7, trackId: 'track-vocal' },
+                },
+                {
+                    type: 'setTrackGain',
+                    payload: { expectedGain: 0.7, gain: 0.6, trackId: 'track-vocal' },
+                },
+            ],
+            actionLabels: ['Set Vocal gain from 0.8 to 0.7', 'Set Vocal gain from 0.7 to 0.6'],
+            context,
+            group: { groupId: 'group-gain', groupLabel: 'Set Vocal gain' },
+            intent: 'Set Vocal gain',
+            projectRevision: revision,
+            requiresConfirmation: false,
+            runId: 'run-gain',
+        });
+
+        expect(compiled.requiresConfirmation).toBe(true);
+        if (!compiled.requiresConfirmation) {
+            throw new Error('Expected exact batch risk to require confirmation');
+        }
+        expect(compiled.agentApproval.policy).toMatchObject({
+            decision: 'confirm',
+            requiredTrustMode: 'apply-reversible',
+            risk: 'broad-reversible',
+        });
+        const parsed = parseVersionedCommandBatchEnvelope(
+            compiled.commandBatch.serialized,
+            compiled.commandBatch.authority
+        );
+        expect(parsed.status).toBe('valid');
+        if (parsed.status !== 'valid') {
+            throw new Error(parsed.reason);
+        }
+        expect(parsed.envelope.grants.autoCommit).toBe(false);
     });
 
     it('invalidates any changed approval binding immediately before execution', async () => {
