@@ -6,6 +6,7 @@ import { buildSemanticProjectDiff } from './buildSemanticProjectDiff';
 import { commandBatchPreviewPort } from './commandBatchPreviewPort';
 import { findSingletonBatchAction } from './findSingletonBatchAction';
 import { getCommandHandler } from './getCommandHandler';
+import { partialCommandBatchSelection } from './partialCommandBatchSelection';
 import { prepareCommandBatchPreflight } from './prepareCommandBatchPreflight';
 
 type PreviewActionHandler = Extract<ActionHandler, { previewExecution: 'isolated-project' }>;
@@ -163,6 +164,10 @@ export function previewVersionedCommandBatchEnvelope(envelope: VersionedCommandB
             baseRevision: envelope.baseRevision,
             projectDocument,
             projectInvariantsValid: true as const,
+            partialAcceptance: partialCommandBatchSelection.create(
+                envelope,
+                executedActions.map(({ command }) => command.commandId)
+            ),
             semanticDiff: buildSemanticProjectDiff({
                 envelope: { ...envelope, commands: executedActions.map(({ command }) => command) },
                 projectDocument,

@@ -1,17 +1,15 @@
-import { type CommandBatchAuthority } from '../models/VersionedCommandBatchEnvelope';
 import { type VersionedCommandEnvelope } from '../models/VersionedCommandEnvelope';
 
 import { commandRequiresDynamicEffects } from './commandRequiresDynamicEffects';
 import { compileVersionedCommandBatchEnvelope } from './compileVersionedCommandBatchEnvelope';
-import { parseVersionedCommandBatchEnvelope } from './parseVersionedCommandBatchEnvelope';
+import { type PartialCommandBatchSelection, partialCommandBatchSelection } from './partialCommandBatchSelection';
 import { serializeVersionedCommandEnvelope } from './serializeVersionedCommandEnvelope';
 
 type CompilePartialCommandBatchAcceptanceInput = {
-    authority: CommandBatchAuthority;
     batchId: string;
+    previewSelection: PartialCommandBatchSelection;
     runId: string;
     selectedIntentGroupIds: readonly string[];
-    serialized: string;
 };
 
 function commandGroupId(command: VersionedCommandEnvelope): string {
@@ -58,16 +56,14 @@ export function compilePartialCommandBatchAcceptance(input: CompilePartialComman
     if (input.selectedIntentGroupIds.length === 0) {
         return { status: 'rejected' as const, reason: 'Partial acceptance requires at least one intent group' };
     }
-    const parsed = parseVersionedCommandBatchEnvelope(input.serialized, input.authority);
-    if (parsed.status === 'invalid') {
-        return { status: 'rejected' as const, reason: parsed.reason };
+    const preview = partialCommandBatchSelection.read(input.previewSelection);
+    if (!preview) {
+        return { status: 'rejected' as const, reason: 'Partial acceptance requires a successful preview outcome' };
     }
-    const envelope = parsed.envelope;
-    if (envelope.mode !== 'preview') {
-        return { status: 'rejected' as const, reason: 'Partial acceptance requires a preview batch' };
-    }
-    const availableGroupIds = new Set(envelope.commands.map(commandGroupId));
-    const unknownGroupId = input.selectedIntentGroupIds.find((groupId) => !availableGroupIds.has(groupId));
+    const envelope = preview.envelope;
+    const unknownGroupId = input.selectedIntentGroupIds.find(
+        (groupId) => !preview.availableIntentGroupIds.has(groupId)
+    );
     if (unknownGroupId) {
         return { status: 'rejected' as const, reason: `Unknown intent group: ${unknownGroupId}` };
     }
@@ -109,18 +105,25 @@ export function compilePartialCommandBatchAcceptance(input: CompilePartialComman
         ];
     });
     const hasDynamicEffects = remappedCommands.some((command) => commandRequiresDynamicEffects(command.operation));
+    const originalDynamicCommandIds = envelope.commands
+        .filter((command) => commandRequiresDynamicEffects(command.operation))
+        .map((command) => command.commandId);
+    const selectedDynamicCommandIds = selectedCommands
+        .filter((command) => commandRequiresDynamicEffects(command.operation))
+        .map((command) => command.commandId);
+    if (selectedDynamicCommandIds.length > 0 && selectedDynamicCommandIds.length !== originalDynamicCommandIds.length) {
+        return {
+            status: 'rejected' as const,
+            reason: 'Partial acceptance cannot partition dynamic effects across multiple intent groups',
+        };
+    }
     try {
         const compiled = compileVersionedCommandBatchEnvelope({
             baseRevision: envelope.baseRevision,
             batchId: input.batchId,
             batchLocalBindings,
             commands: remappedCommands.map(serializeVersionedCommandEnvelope),
-            dynamicEffects: hasDynamicEffects
-                ? {
-                      automationPoints: envelope.budgets.maxAutomationPoints,
-                      deletedObjects: envelope.budgets.maxDeletedObjects,
-                  }
-                : undefined,
+            dynamicEffects: hasDynamicEffects ? envelope.dynamicEffects : undefined,
             intent: envelope.intent,
             mode: 'commit',
             projectId: envelope.projectId,

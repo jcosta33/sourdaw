@@ -66,6 +66,14 @@ export type CommandBatchBudgets = {
     maxRenderJobs: number;
 };
 
+export type CommandBatchDynamicEffects = {
+    affectedTrackIds?: readonly string[];
+    affectedClipIds?: readonly string[];
+    affectedTargetIds?: readonly string[];
+    automationPoints?: number;
+    deletedObjects?: number;
+};
+
 export type CommandBatchAuthority = {
     projectId: string;
     baseRevision: string;
@@ -89,6 +97,7 @@ export type VersionedCommandBatchEnvelope = {
     postconditions: readonly CommandBatchCondition[];
     dependencies: readonly CommandBatchDependency[];
     batchLocalBindings: readonly CommandBatchLocalBinding[];
+    dynamicEffects?: CommandBatchDynamicEffects;
     grants: CommandBatchGrants;
     budgets: CommandBatchBudgets;
 };

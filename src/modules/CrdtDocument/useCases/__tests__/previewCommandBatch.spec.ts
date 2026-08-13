@@ -10,9 +10,11 @@ import {
     commandBatchPreviewPort,
     commandDeviceVersionsPort,
     commandProjectRevisionPort,
+    compilePartialCommandBatchAcceptance,
     compileVersionedCommandBatchEnvelope,
     createVersionedCommandEnvelope,
     executeVersionedCommandBatchEnvelope,
+    parseVersionedCommandBatchEnvelope,
     serializeVersionedCommandEnvelope,
 } from '#/modules/Command/useCases';
 import { tempoMapStore, transportStore } from '#/modules/Transport/stores';
@@ -112,6 +114,25 @@ describe('previewCommandBatch', () => {
         if (preview.status !== 'previewed') {
             throw new Error('Expected a production preview resource');
         }
+        const partial = compilePartialCommandBatchAcceptance({
+            batchId: 'batch-production-partial',
+            previewSelection: preview.partialAcceptance,
+            runId: 'run-production-partial',
+            selectedIntentGroupIds: [command.commandId],
+        });
+        expect(partial.status).toBe('compiled');
+        if (partial.status !== 'compiled') {
+            throw new Error(partial.reason);
+        }
+        const parsedPartial = parseVersionedCommandBatchEnvelope(partial.serialized, partial.authority);
+        expect(parsedPartial).toMatchObject({
+            status: 'valid',
+            envelope: {
+                batchId: 'batch-production-partial',
+                mode: 'commit',
+                commands: [expect.objectContaining({ operation: 'setTempo' })],
+            },
+        });
         preview.resource.release();
     });
 

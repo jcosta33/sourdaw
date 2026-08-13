@@ -72,21 +72,6 @@ const PROJECT_OPERATIONS = new Set<AppAction['type']>([
     'deleteTime',
     'duplicateTimeRange',
 ]);
-const DELETION_OPERATIONS = new Set<AppAction['type']>([
-    'removeTrack',
-    'removeClip',
-    'removeMarker',
-    'removeSection',
-    'removeDevice',
-    'removeSend',
-    'removeSidechainRoute',
-    'removeAdjustmentRegion',
-    'removeAutomationLane',
-    'removeAutomationPoint',
-    'deleteTrackAlternative',
-    'deleteGrooveTemplate',
-    'deleteDrumPreviewBranches',
-]);
 const REPLACEMENT_OPERATIONS = new Set<AppAction['type']>([
     'bounceInPlace',
     'flattenTrack',
@@ -197,7 +182,7 @@ function semanticFactKinds(command: VersionedCommandEnvelope): SemanticFactKind[
 }
 
 function destructiveClassification(command: VersionedCommandEnvelope): DestructiveClassification | null {
-    if (DELETION_OPERATIONS.has(command.operation)) {
+    if (command.operation.startsWith('remove') || command.operation.startsWith('delete')) {
         return 'deletion';
     }
     if (REPLACEMENT_OPERATIONS.has(command.operation)) {
@@ -206,7 +191,7 @@ function destructiveClassification(command: VersionedCommandEnvelope): Destructi
     if (CONSOLIDATION_OPERATIONS.has(command.operation)) {
         return 'consolidation';
     }
-    if (OVERWRITE_OPERATIONS.has(command.operation)) {
+    if (command.operation.startsWith('clear') || OVERWRITE_OPERATIONS.has(command.operation)) {
         return 'overwrite';
     }
     if (SOURCE_MUTATION_OPERATIONS.has(command.operation)) {
@@ -362,7 +347,7 @@ export function buildSemanticProjectDiff(input: BuildSemanticProjectDiffInput) {
     const warningValues = [...(input.warnings ?? [])];
     if (destructiveChanges.length > 0) {
         warningValues.push(
-            `${destructiveChanges.length} destructive change${destructiveChanges.length === 1 ? '' : 's'} requires explicit acceptance.`
+            `${destructiveChanges.length} destructive ${destructiveChanges.length === 1 ? 'change requires' : 'changes require'} explicit acceptance.`
         );
     }
     if (protectedUnchanged.length > 0) {

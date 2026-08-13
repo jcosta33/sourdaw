@@ -1,6 +1,7 @@
 import {
     VERSIONED_COMMAND_BATCH_SCHEMA_VERSION,
     type CommandBatchAuthority,
+    type CommandBatchDynamicEffects,
     type CommandBatchLocalBinding,
     type CommandBatchMode,
     type CommandBatchRange,
@@ -29,13 +30,7 @@ type CompileVersionedCommandBatchEnvelopeInput = {
     protectedRanges?: readonly CommandBatchRange[];
     batchLocalBindings?: readonly CommandBatchLocalBinding[];
     autoCommit?: boolean;
-    dynamicEffects?: {
-        affectedTrackIds?: readonly string[];
-        affectedClipIds?: readonly string[];
-        affectedTargetIds?: readonly string[];
-        automationPoints?: number;
-        deletedObjects?: number;
-    };
+    dynamicEffects?: CommandBatchDynamicEffects;
 };
 
 type CompiledVersionedCommandBatchEnvelope = {
@@ -176,6 +171,7 @@ function buildEnvelope(input: CompileVersionedCommandBatchEnvelopeInput): Versio
             .filter((command) => command.dependencyIds.length > 0)
             .map((command) => ({ commandId: command.commandId, dependsOn: [...command.dependencyIds] })),
         batchLocalBindings: structuredClone(input.batchLocalBindings ?? []),
+        dynamicEffects: input.dynamicEffects ? structuredClone(input.dynamicEffects) : undefined,
         grants,
         budgets,
     };

@@ -7,6 +7,7 @@ import { compilePartialCommandBatchAcceptance } from '../compilePartialCommandBa
 import { compileVersionedCommandBatchEnvelope } from '../compileVersionedCommandBatchEnvelope';
 import { createExecutionCommandEnvelope } from '../createExecutionCommandEnvelope';
 import { parseVersionedCommandBatchEnvelope } from '../parseVersionedCommandBatchEnvelope';
+import { partialCommandBatchSelection } from '../partialCommandBatchSelection';
 import { serializeVersionedCommandEnvelope } from '../serializeVersionedCommandEnvelope';
 
 const TEMPO_COMMAND_ID = '11111111-1111-4111-8111-111111111111';
@@ -78,7 +79,14 @@ function previewBatch() {
     if (parsed.status === 'invalid') {
         throw new Error(parsed.reason);
     }
-    return { ...compiled, envelope: parsed.envelope };
+    return {
+        ...compiled,
+        envelope: parsed.envelope,
+        previewSelection: partialCommandBatchSelection.create(
+            parsed.envelope,
+            parsed.envelope.commands.map((entry) => entry.commandId)
+        ),
+    };
 }
 
 describe('semantic project diff', () => {
@@ -143,11 +151,10 @@ describe('semantic project diff', () => {
         const originalSerialized = preview.serialized;
 
         const partial = compilePartialCommandBatchAcceptance({
-            authority: preview.authority,
             batchId: 'batch-partial',
+            previewSelection: preview.previewSelection,
             runId: 'run-partial',
             selectedIntentGroupIds: [GAIN_COMMAND_ID],
-            serialized: preview.serialized,
         });
 
         expect(partial.status).toBe('compiled');
@@ -230,13 +237,19 @@ describe('semantic project diff', () => {
             projectId: 'project-1',
             runId: 'run-binding-preview',
         });
+        const parsedPreview = parseVersionedCommandBatchEnvelope(compiled.serialized, compiled.authority);
+        if (parsedPreview.status === 'invalid') {
+            throw new Error(parsedPreview.reason);
+        }
 
         const partial = compilePartialCommandBatchAcceptance({
-            authority: compiled.authority,
             batchId: 'batch-binding-partial',
+            previewSelection: partialCommandBatchSelection.create(parsedPreview.envelope, [
+                BUS_COMMAND_ID,
+                SEND_COMMAND_ID,
+            ]),
             runId: 'run-binding-partial',
             selectedIntentGroupIds: [SEND_COMMAND_ID],
-            serialized: compiled.serialized,
         });
 
         expect(partial.status).toBe('compiled');
@@ -262,6 +275,57 @@ describe('semantic project diff', () => {
             id: '$fx',
             scope: 'batch-local',
         });
+    });
+
+    it('preserves exact application-owned dynamic targets and budgets for a selected dynamic group', () => {
+        const clearCommand = command({
+            action: { type: 'clearSolos' },
+            commandId: '77777777-7777-4777-8777-777777777777',
+            expectedEffect: 'Clear solos from the two currently soloed tracks.',
+        });
+        const renameCommand = command({
+            action: { type: 'renameTrack', payload: { trackId: 'track-other', name: 'Other' } },
+            commandId: '88888888-8888-4888-8888-888888888888',
+            expectedEffect: 'Rename the unrelated track.',
+        });
+        const compiled = compileVersionedCommandBatchEnvelope({
+            baseRevision: 'revision-1',
+            batchId: 'batch-dynamic-preview',
+            commands: [
+                { ...clearCommand, groupId: 'batch-dynamic-preview' },
+                { ...renameCommand, groupId: 'batch-dynamic-preview' },
+            ].map(serializeVersionedCommandEnvelope),
+            dynamicEffects: { affectedTrackIds: ['track-solo-a', 'track-solo-b'] },
+            intent: 'Clear solos and rename another track.',
+            mode: 'preview',
+            projectId: 'project-1',
+            runId: 'run-dynamic-preview',
+        });
+        const parsedPreview = parseVersionedCommandBatchEnvelope(compiled.serialized, compiled.authority);
+        if (parsedPreview.status === 'invalid') {
+            throw new Error(parsedPreview.reason);
+        }
+
+        const partial = compilePartialCommandBatchAcceptance({
+            batchId: 'batch-dynamic-partial',
+            previewSelection: partialCommandBatchSelection.create(parsedPreview.envelope, [clearCommand.commandId]),
+            runId: 'run-dynamic-partial',
+            selectedIntentGroupIds: [clearCommand.commandId],
+        });
+
+        expect(partial.status).toBe('compiled');
+        if (partial.status !== 'compiled') {
+            throw new Error(partial.reason);
+        }
+        const parsed = parseVersionedCommandBatchEnvelope(partial.serialized, partial.authority);
+        if (parsed.status === 'invalid') {
+            throw new Error(parsed.reason);
+        }
+        expect(parsed.envelope.scope.targetIds).toEqual(['track-solo-a', 'track-solo-b']);
+        expect(parsed.envelope.dynamicEffects).toEqual({
+            affectedTrackIds: ['track-solo-a', 'track-solo-b'],
+        });
+        expect(parsed.envelope.budgets.maxAffectedTracks).toBe(2);
     });
 
     it('classifies every governed destructive consequence with exact command, group, and object identity', () => {
@@ -336,35 +400,102 @@ describe('semantic project diff', () => {
         );
     });
 
+    it('classifies destructive command families without relying on an incomplete per-command removal list', () => {
+        const preview = previewBatch();
+        const commands = [
+            command({
+                action: { type: 'deleteTime', payload: { startBeat: 8, endBeat: 16 } },
+                commandId: '90000000-0000-4000-8000-000000000001',
+                expectedEffect: 'Delete eight beats from the timeline.',
+            }),
+            command({
+                action: { type: 'removeAllTracks' },
+                commandId: '90000000-0000-4000-8000-000000000002',
+                expectedEffect: 'Remove every track.',
+            }),
+            command({
+                action: { type: 'removeAdjustmentLayer', payload: { layerId: 'layer-1' } },
+                commandId: '90000000-0000-4000-8000-000000000003',
+                expectedEffect: 'Remove one adjustment layer.',
+            }),
+            command({
+                action: {
+                    type: 'removeTrackGainAutomationRange',
+                    payload: {
+                        trackIds: ['track-1'],
+                        sectionName: 'Verse',
+                        gainDb: -3,
+                        sectionId: 'section-verse',
+                        startBeat: 8,
+                        endBeat: 16,
+                        expectedTracks: [
+                            {
+                                trackId: 'track-1',
+                                trackName: 'Track 1',
+                                gain: 1,
+                                automationMode: 'read',
+                                frozen: false,
+                            },
+                        ],
+                        expectedSection: { name: 'Verse', startBeat: 8, endBeat: 16 },
+                    },
+                },
+                commandId: '90000000-0000-4000-8000-000000000004',
+                expectedEffect: 'Remove one track-gain automation range.',
+            }),
+            command({
+                action: { type: 'clearChordTrack' },
+                commandId: '90000000-0000-4000-8000-000000000005',
+                expectedEffect: 'Clear the chord track.',
+            }),
+        ];
+
+        const diff = buildSemanticProjectDiff({ envelope: { ...preview.envelope, commands } });
+
+        expect(diff.destructiveChanges.map((change) => change.classification)).toEqual([
+            'deletion',
+            'deletion',
+            'deletion',
+            'deletion',
+            'overwrite',
+        ]);
+        expect(diff.warnings).toContain('5 destructive changes require explicit acceptance.');
+    });
+
     it('rejects empty or unknown partial selections without producing authority', () => {
         const preview = previewBatch();
 
         expect(
             compilePartialCommandBatchAcceptance({
-                authority: preview.authority,
                 batchId: 'batch-empty',
+                previewSelection: preview.previewSelection,
                 runId: 'run-empty',
                 selectedIntentGroupIds: [],
-                serialized: preview.serialized,
             })
         ).toEqual({ status: 'rejected', reason: 'Partial acceptance requires at least one intent group' });
         expect(
             compilePartialCommandBatchAcceptance({
-                authority: preview.authority,
                 batchId: 'batch-unknown',
+                previewSelection: preview.previewSelection,
                 runId: 'run-unknown',
                 selectedIntentGroupIds: ['unknown'],
-                serialized: preview.serialized,
             })
         ).toEqual({ status: 'rejected', reason: 'Unknown intent group: unknown' });
         expect(
             compilePartialCommandBatchAcceptance({
-                authority: preview.authority,
-                batchId: 'batch-not-preview',
-                runId: 'run-not-preview',
+                batchId: 'batch-forged-preview',
+                previewSelection: { kind: 'successful-command-batch-preview' },
+                runId: 'run-forged-preview',
                 selectedIntentGroupIds: [GAIN_COMMAND_ID],
-                serialized: JSON.stringify({ ...preview.envelope, mode: 'commit' }),
             })
-        ).toEqual({ status: 'rejected', reason: 'Partial acceptance requires a preview batch' });
+        ).toEqual({ status: 'rejected', reason: 'Partial acceptance requires a successful preview outcome' });
+        expect(
+            compilePartialCommandBatchAcceptance({
+                batchId: 'batch-hidden-command',
+                previewSelection: partialCommandBatchSelection.create(preview.envelope, [GAIN_COMMAND_ID]),
+                runId: 'run-hidden-command',
+                selectedIntentGroupIds: [REMOVE_MARKER_COMMAND_ID],
+            })
+        ).toEqual({ status: 'rejected', reason: `Unknown intent group: ${REMOVE_MARKER_COMMAND_ID}` });
     });
 });
