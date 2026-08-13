@@ -1,0 +1,91 @@
+src/app/captureCommandBatchPreflightState.ts
+  s_a40848e8f8cca9::t_9118525117c9e6 160-162,184,195
+  s_a40848e8f8cca9::t_20dd48795b8a2e 5,151-152,156
+  s_a40848e8f8cca9::t_829c454835c2f8 16-17,21,28-31,39,150
+  s_a40848e8f8cca9::t_2383b1e7bcd1b7 1,3-4,6-15,18-20,22-27,32-38,40-43,47-122,146-149,157-159,163-183,185-194,196,198-200
+  s_a40848e8f8cca9::t_9140bbf5e947a6 2,44-46
+  s_a40848e8f8cca9::t_022caeb28ef425 123-145,153-155,197
+src/modules/Command/useCases/compileVersionedCommandBatchEnvelope.ts
+  s_a40848e8f8cca9::t_fa8eb4992aeca2 106-110,135-136,171-173
+  s_a40848e8f8cca9::t_88fcb975f1dcd3 179
+src/modules/Command/useCases/executeAppActionBatch.ts
+  s_a40848e8f8cca9::t_f823eb9545a721 52,608-620
+  s_a40848e8f8cca9::t_a9a83d0c4b4ab8 602-607,621
+  s_a40848e8f8cca9::t_2d970a6cde0e23 622
+src/modules/Command/useCases/prepareCommandBatchPreflight.ts
+  s_a40848e8f8cca9::t_9140bbf5e947a6 137
+  s_a40848e8f8cca9::t_a9a83d0c4b4ab8 140-146,192-198
+  s_a40848e8f8cca9::t_bcf756628a13f6 8,160-162,212-214
+  s_a40848e8f8cca9::t_f823eb9545a721 1-7,9-14,21-87,93-136,138-139,147-159,163-191,199-211,215-234
+  s_a40848e8f8cca9::t_c6aadd57b743d9 88-92
+  s_a40848e8f8cca9::t_700d3513ca696f 15-20
+src/modules/Command/useCases/executeVersionedCommandBatch.ts
+  s_a40848e8f8cca9::t_f823eb9545a721 15
+src/modules/Command/useCases/index.ts
+  s_a40848e8f8cca9::t_f823eb9545a721 8
+src/modules/Command/useCases/commandBatchPreflightPort.ts
+  s_a40848e8f8cca9::t_f823eb9545a721 1-24,26-36
+  s_a40848e8f8cca9::t_9140bbf5e947a6 25
+src/modules/Command/useCases/__tests__/commandBatchPreflight.spec.ts
+  s_a40848e8f8cca9::t_55684f1b270102 201,204-208,210,220,224,226-233,236,244
+  s_a40848e8f8cca9::t_88a348018faf46 281-284
+  s_a40848e8f8cca9::t_02169cb897538a 262-280,285-290,292-320
+  s_a40848e8f8cca9::t_4ff9c0cd312f2d 5,14,16-135,198-200,202-203,209,211-219,221-223,225,234-235,237-243,245-259
+  s_a40848e8f8cca9::t_9140bbf5e947a6 6
+  s_a40848e8f8cca9::t_c8ac3512c4fe6a 1-4,7-13,15,260-261,425-454,456-471
+  s_a40848e8f8cca9::t_5ed46c402fadf4 291
+  s_a40848e8f8cca9::t_52e8fc3650cd03 321-424
+  s_a40848e8f8cca9::t_f9b4d13674516b 136-197
+  s_a40848e8f8cca9::t_92971d905c2257 455
+src/modules/Command/useCases/executeVersionedCommandBatchEnvelope.ts
+  s_a40848e8f8cca9::t_f823eb9545a721 7,37-42,44,51
+src/utils/__tests__/routingCycle.spec.ts
+  s_a40848e8f8cca9::t_b381459f030754 3,66-91
+  s_a40848e8f8cca9::t_eed45cbb524a31 92
+src/utils/routingCycle.ts
+  s_a40848e8f8cca9::t_2383b1e7bcd1b7 123-160
+src/app/__tests__/captureCommandBatchPreflightState.spec.ts
+  s_a40848e8f8cca9::t_20dd48795b8a2e 32,123-127
+  s_a40848e8f8cca9::t_5660c319ffbff8 3
+  s_a40848e8f8cca9::t_d59ca28521069d 1-2,4-31,33-122,128-161
+src/app/bootstrap.ts
+  s_a40848e8f8cca9::t_b381459f030754 62-63,147,171
+src/modules/Command/useCases/materializeCommandApplicationIds.ts
+  s_a40848e8f8cca9::t_5cedc08bc3fca9 80-106,202-204
+src/modules/AiRuntime/useCases/__tests__/stemImportStartingMixWorkflow.spec.ts
+  s_a40848e8f8cca9::t_2053c5bcd753ee 324-328
+  s_a40848e8f8cca9::t_1015a020c2c8f8 9,314-323,329,370
+src/modules/Command/useCases/parseVersionedCommandBatchEnvelope.ts
+  s_a40848e8f8cca9::t_9140bbf5e947a6 372
+  s_a40848e8f8cca9::t_35fae776841ad1 366,369,371,373-383,385-387
+  s_a40848e8f8cca9::t_fa8eb4992aeca2 363-365,367-368,370,384
+  s_a40848e8f8cca9::t_2930166e0eb7a7 24,507-508
+  s_a40848e8f8cca9::t_4f3c93dfd4f181 590-591
+  s_a40848e8f8cca9::t_1433b60ba473ca 81-106,506
+src/modules/Command/useCases/__tests__/commandBatchContract.spec.ts
+  s_a40848e8f8cca9::t_0a2b3a1b399a2d 446-450
+  s_a40848e8f8cca9::t_35fae776841ad1 77-80,82-86
+  s_a40848e8f8cca9::t_1015a020c2c8f8 7,128,524-535
+src/app/__tests__/bootstrap.spec.ts
+  s_a40848e8f8cca9::t_20dd48795b8a2e 224
+  s_a40848e8f8cca9::t_1015a020c2c8f8 102,159-162,189,194,226
+src/modules/Command/useCases/parseVersionedCommandEnvelope.ts
+  s_a40848e8f8cca9::t_ee9ec0c3fe07ef 194-204,206-210
+  s_a40848e8f8cca9::t_ef836323f3f632 205
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "83be56e84ee3f1720ac3a787b52d089923b3841d",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
