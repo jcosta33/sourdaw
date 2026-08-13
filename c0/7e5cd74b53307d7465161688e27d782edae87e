@@ -1,0 +1,23 @@
+src/modules/AiRuntime/useCases/__tests__/compilePlannedActionCommandBatch.spec.ts
+  s_a40848e8f8cca9::t_644bda8dc309f2 133-175,181,185-187,191-236
+  s_a40848e8f8cca9::t_3c61f7e35a562b 237
+src/modules/AiRuntime/useCases/compilePlannedActionCommandBatch.ts
+  s_a40848e8f8cca9::t_72df9253d88be9 1,42,47,56-60
+  s_a40848e8f8cca9::t_644bda8dc309f2 61-100
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "c07e5cd74b53307d7465161688e27d782edae87e",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
