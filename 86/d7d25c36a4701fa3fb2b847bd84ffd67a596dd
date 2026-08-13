@@ -1,0 +1,58 @@
+src/modules/MIDI/useCases/webMidiInput/handleWebMidiMessage.ts
+  s_62e9c3dc3ba52a::t_c09e159baa675b 87
+  s_62e9c3dc3ba52a::t_2787c62c47fdbb 3
+src/modules/MIDI/repositories/webMidi/lifecycle/initWebMidi.ts
+  s_62e9c3dc3ba52a::t_933ac18b941ad0 4
+  s_62e9c3dc3ba52a::t_14cb4992f9d440 19
+src/modules/MIDI/repositories/webMidi/lifecycle/__tests__/selectMidiInputTauri.spec.ts
+  s_62e9c3dc3ba52a::t_4227e0a2c88107 146-148
+  s_62e9c3dc3ba52a::t_8166ef84cc0d0b 26,41,54,66,85-86,111,131,155-156,173,182,202,232
+src/modules/MIDI/repositories/webMidi/lifecycle/__tests__/webMidiLifecycle.spec.ts
+  s_62e9c3dc3ba52a::t_604ed6bea3062e 32
+  s_d8117aba5cfbfb::t_05da8a3b406f73 100,121,139,152,164,175,200,228,250,279,308,318,333,346,367
+src/modules/MIDI/models/WebMidiTypes.ts
+  s_62e9c3dc3ba52a::t_1b5e2a3c201af3 7-17,25-26
+  s_62e9c3dc3ba52a::t_7a634d57f60596 18-24
+src/modules/MIDI/repositories/webMidi/lifecycle/selectMidiInput.ts
+  s_62e9c3dc3ba52a::t_de43fa8722fecd 16-30
+  s_62e9c3dc3ba52a::t_a0f2d413f06173 13
+  s_62e9c3dc3ba52a::t_0913aa2dc89515 3
+  s_62e9c3dc3ba52a::t_68cd48f4fa9fbb 33
+src/modules/MIDI/repositories/webMidi/messageHandlers.ts
+  s_62e9c3dc3ba52a::t_a6ed7b633cef94 52
+  s_62e9c3dc3ba52a::t_cdbeb980caa932 7
+src/modules/MIDI/repositories/webMidi/lifecycle/selectMidiInputTauri.ts
+  s_62e9c3dc3ba52a::t_07adf3e6268d0a 67
+  s_62e9c3dc3ba52a::t_ec606dc10dbd57 120
+  s_62e9c3dc3ba52a::t_e365d74b214fc5 3
+src/modules/MIDI/repositories/webMidi/lifecycle/helpers.ts
+  s_62e9c3dc3ba52a::t_d1f2ba387e1b04 8
+  s_62e9c3dc3ba52a::t_c5401f486232f3 13-17
+  s_62e9c3dc3ba52a::t_bd4181920dee18 1
+src/modules/MIDI/repositories/webMidi/lifecycle/__tests__/selectMidiInput.spec.ts
+  s_62e9c3dc3ba52a::t_f180c52762b591 17,20
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "86d7d25c36a4701fa3fb2b847bd84ffd67a596dd",
+  "prompts": {},
+  "sessions": {
+    "s_62e9c3dc3ba52a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "92e0a2e7-8660-41e2-be8b-b2d644c6d0b7",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_d8117aba5cfbfb": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-a252c37c563b905d9",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
