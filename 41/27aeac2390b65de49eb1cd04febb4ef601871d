@@ -1,0 +1,33 @@
+src/app/__tests__/bootstrap.spec.ts
+  s_a40848e8f8cca9::t_d4bcf52bfb65a9 392-393
+  s_a40848e8f8cca9::t_7c2cbff4baf4a7 391
+src/app/__tests__/getProductionCommandHandlerMaps.spec.ts
+  s_a40848e8f8cca9::t_7e38cc4b952ee5 4
+  s_a40848e8f8cca9::t_733d01832ca34e 2-3,5-30
+  s_a40848e8f8cca9::t_5497d90bb21366 1
+src/app/getProductionCommandHandlerMaps.ts
+  s_a40848e8f8cca9::t_733d01832ca34e 1-70
+src/app/bootstrap.ts
+  s_a40848e8f8cca9::t_7e38cc4b952ee5 146
+  s_a40848e8f8cca9::t_733d01832ca34e 33,59-60,72,89,106,116,135,385
+src/modules/Command/useCases/__tests__/commandRegistryCompleteness.spec.ts
+  s_a40848e8f8cca9::t_00e98c77bfad7d 11-15,95-96,99-104
+src/modules/Command/useCases/executableAppActionRegistry.ts
+  s_a40848e8f8cca9::t_f1407612d42f01 1,2308-2309
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "4127aeac2390b65de49eb1cd04febb4ef601871d",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
