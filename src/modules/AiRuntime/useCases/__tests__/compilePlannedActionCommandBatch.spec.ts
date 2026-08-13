@@ -130,16 +130,109 @@ describe('compilePlannedActionCommandBatch', () => {
     });
 
     it('represents multiple duplicate operations as one bounded ordered batch', () => {
+        const duplicateContext: ProjectContext = {
+            ...baseContext,
+            tracks: [
+                {
+                    ...track('track-1', false),
+                    clips: [
+                        {
+                            id: 'clip-1',
+                            name: 'Clip 1',
+                            type: 'audio',
+                            startBeat: 0,
+                            endBeat: 4,
+                            noteCount: 0,
+                        },
+                        {
+                            id: 'clip-2',
+                            name: 'Clip 2',
+                            type: 'audio',
+                            startBeat: 4,
+                            endBeat: 8,
+                            noteCount: 0,
+                        },
+                    ],
+                    clipCount: 2,
+                },
+            ],
+            automationLanes: [
+                {
+                    id: 'lane-clip-1',
+                    trackId: 'track-1',
+                    clipId: 'clip-1',
+                    parameterId: 'gain',
+                    name: 'Clip gain',
+                    enabled: true,
+                    minValue: 0,
+                    maxValue: 1,
+                    points: [
+                        { beat: 0, value: 0.5, curve: 'linear' },
+                        { beat: 1, value: 0.6, curve: 'linear' },
+                    ],
+                },
+            ],
+        };
         const result = compile(
             [
                 { type: 'duplicateClip', payload: { clipId: 'clip-1' } },
                 { type: 'duplicateClipToNextBar', payload: { clipId: 'clip-2' } },
             ],
-            baseContext
+            duplicateContext
         );
 
         expect(result.commandBatch.authority.budgets.maxCommands).toBe(2);
+        expect(result.commandBatch.authority.budgets.maxAffectedTracks).toBe(1);
+        expect(result.commandBatch.authority.budgets.maxAffectedClips).toBe(4);
+        expect(result.commandBatch.authority.budgets.maxAutomationPoints).toBe(2);
         expect(result.commandBatch.authority.grants.create).toBe(true);
         expect(result.commandBatch.serialized).toContain('targetClipId');
+    });
+
+    it('binds duplicateTrack to its source clips and automation size before hashing', () => {
+        const result = compile([{ type: 'duplicateTrack', payload: { trackId: 'track-1' } }], {
+            ...baseContext,
+            tracks: [
+                {
+                    ...track('track-1', false),
+                    alternativeClipIds: ['clip-hidden'],
+                    clips: [
+                        {
+                            id: 'clip-active',
+                            name: 'Active',
+                            type: 'audio',
+                            startBeat: 0,
+                            endBeat: 4,
+                            noteCount: 0,
+                        },
+                    ],
+                    clipCount: 1,
+                },
+            ],
+            automationLanes: [
+                {
+                    id: 'lane-track',
+                    trackId: 'track-1',
+                    parameterId: 'gain',
+                    name: 'Gain',
+                    enabled: true,
+                    minValue: 0,
+                    maxValue: 1,
+                    points: [
+                        { beat: 0, value: 0.5, curve: 'linear' },
+                        { beat: 4, value: 0.8, curve: 'linear' },
+                    ],
+                },
+            ],
+        });
+
+        expect(result.commandBatch.authority.scope.targetIds).toEqual(
+            expect.arrayContaining(['track-1', 'clip-active', 'clip-hidden'])
+        );
+        expect(result.commandBatch.authority.budgets).toMatchObject({
+            maxAffectedTracks: 2,
+            maxAffectedClips: 2,
+            maxAutomationPoints: 2,
+        });
     });
 });

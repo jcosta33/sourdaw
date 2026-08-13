@@ -1,4 +1,4 @@
-import { compileVersionedCommandBatchEnvelope } from '#/modules/Command/useCases';
+import { compileVersionedCommandBatchEnvelope, parseVersionedCommandEnvelope } from '#/modules/Command/useCases';
 import { projectStore } from '#/modules/Project/stores';
 import { type AppAction } from '#/utils/handlerContract';
 
@@ -39,12 +39,12 @@ function getStringField(value: unknown, key: string): string | undefined {
     return typeof field === 'string' ? field : undefined;
 }
 
-function getDynamicEffects(input: CompilePlannedActionCommandBatchInput) {
+function getDynamicEffects(input: CompilePlannedActionCommandBatchInput, commandEnvelopes: readonly string[]) {
     const affectedTrackIds = new Set<string>();
     const affectedClipIds = new Set<string>();
     let automationPoints = 0;
     let deletedObjects = 0;
-    for (const action of input.actions) {
+    for (const [index, action] of input.actions.entries()) {
         if (action.type === 'clearSolos') {
             for (const track of input.context.tracks) {
                 if (track.soloed) {
@@ -53,7 +53,51 @@ function getDynamicEffects(input: CompilePlannedActionCommandBatchInput) {
             }
             continue;
         }
-        const payload = 'payload' in action ? action.payload : undefined;
+        const parsedCommand = parseVersionedCommandEnvelope(commandEnvelopes[index] ?? '');
+        if (parsedCommand.status !== 'valid') {
+            throw new Error(`Cannot prove dynamic bounds for ${action.type}`);
+        }
+        const payload = parsedCommand.envelope.arguments;
+        if (action.type === 'duplicateClip' || action.type === 'duplicateClipToNextBar') {
+            const sourceClipId = getStringField(payload, 'clipId');
+            const targetClipId = getStringField(payload, 'targetClipId');
+            const owner = input.context.tracks.find((track) => track.clips.some((clip) => clip.id === sourceClipId));
+            if (!sourceClipId || !targetClipId || !owner) {
+                throw new Error(`Cannot prove duplicate clip bounds for ${sourceClipId ?? 'unknown clip'}`);
+            }
+            affectedTrackIds.add(owner.id);
+            affectedClipIds.add(sourceClipId);
+            affectedClipIds.add(targetClipId);
+            for (const lane of input.context.automationLanes ?? []) {
+                if (lane.clipId === sourceClipId) {
+                    automationPoints += lane.points.length;
+                }
+            }
+            continue;
+        }
+        if (action.type === 'duplicateTrack') {
+            const sourceTrackId = getStringField(payload, 'trackId');
+            const targetTrackId = getStringField(payload, 'targetTrackId');
+            const source = input.context.tracks.find((track) => track.id === sourceTrackId);
+            if (!sourceTrackId || !targetTrackId || !source) {
+                throw new Error(`Cannot prove duplicate track bounds for ${sourceTrackId ?? 'unknown track'}`);
+            }
+            affectedTrackIds.add(sourceTrackId);
+            affectedTrackIds.add(targetTrackId);
+            const sourceClipIds = new Set([
+                ...source.clips.map((clip) => clip.id),
+                ...(source.alternativeClipIds ?? []),
+            ]);
+            for (const clipId of sourceClipIds) {
+                affectedClipIds.add(clipId);
+            }
+            for (const lane of input.context.automationLanes ?? []) {
+                if (lane.trackId === sourceTrackId || (lane.clipId !== undefined && sourceClipIds.has(lane.clipId))) {
+                    automationPoints += lane.points.length;
+                }
+            }
+            continue;
+        }
         if (!AUTOMATION_TRANSFORM_TYPES.has(action.type)) {
             continue;
         }
@@ -100,7 +144,7 @@ export function compilePlannedActionCommandBatch(input: CompilePlannedActionComm
             commands: commandEnvelopes,
             protectedTargetIds: input.protectedTargetIds,
             autoCommit: input.autoCommit,
-            dynamicEffects: getDynamicEffects(input),
+            dynamicEffects: getDynamicEffects(input, commandEnvelopes),
         }),
     };
 }
