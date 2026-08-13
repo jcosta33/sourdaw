@@ -1,0 +1,39 @@
+src/modules/Command/useCases/captureCommandTargetFingerprints.ts
+  s_a40848e8f8cca9::t_ce003b5d24c15a 6-9,36
+  s_a40848e8f8cca9::t_bc9f15eba6a0d9 1-5,10-35,37-63
+src/modules/Command/useCases/__tests__/commandBatchContract.spec.ts
+  s_a40848e8f8cca9::t_a735209987b672 384
+  s_a40848e8f8cca9::t_2251aa28d8eb15 385,388-421
+  s_a40848e8f8cca9::t_bf07b9ad8d6416 386-387
+src/modules/Command/useCases/index.ts
+  s_a40848e8f8cca9::t_bc9f15eba6a0d9 11
+src/modules/Command/useCases/parseVersionedCommandBatchEnvelope.ts
+  s_a40848e8f8cca9::t_9232c5e98d2c98 333-335,339-345
+  s_a40848e8f8cca9::t_b91a9a4d9fbb25 336-338
+src/app/captureCommandBatchPreflightState.ts
+  s_a40848e8f8cca9::t_bc9f15eba6a0d9 5
+  s_a40848e8f8cca9::t_b91a9a4d9fbb25 293-295
+src/app/__tests__/captureCommandBatchPreflightState.spec.ts
+  s_a40848e8f8cca9::t_2251aa28d8eb15 156-178,187-188
+  s_a40848e8f8cca9::t_a735209987b672 179-186
+src/modules/AiRuntime/useCases/__tests__/bassCompressorParameterPromptWorkflow.spec.ts
+  s_a40848e8f8cca9::t_bc9f15eba6a0d9 17-18,27,275-281,283-285
+  s_a40848e8f8cca9::t_942709203e0048 319
+  s_a40848e8f8cca9::t_fb6258d934b003 274,282
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "306af75d19d14d617d564f41306cff8ea2324df1",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
