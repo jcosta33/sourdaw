@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { createLocalStorageCommandBatchIdempotencyRepository } from '../createLocalStorageCommandBatchIdempotencyRepository';
 
@@ -40,6 +40,29 @@ function createRepository(requestExclusiveLock: RequestExclusiveLock = requestIm
 describe('createLocalStorageCommandBatchIdempotencyRepository', () => {
     beforeEach(() => {
         localStorage.removeItem(STORAGE_KEY);
+    });
+
+    afterEach(() => {
+        vi.unstubAllGlobals();
+    });
+
+    it('claims through an origin-wide exclusive Web Lock', async () => {
+        const request = vi.fn((_name: string, _options: LockOptions, task: () => unknown) => Promise.resolve(task()));
+        vi.stubGlobal('navigator', { ...navigator, locks: { request } });
+        const repository = createLocalStorageCommandBatchIdempotencyRepository();
+
+        await expect(
+            repository.claim({
+                projectId: 'project-1',
+                idempotencyKey: 'request-1',
+                contentHash: HASH_ONE,
+            })
+        ).resolves.toEqual({ status: 'claimed' });
+        expect(request).toHaveBeenCalledExactlyOnceWith(
+            'sourdaw:command-batch-idempotency',
+            { mode: 'exclusive' },
+            expect.any(Function)
+        );
     });
 
     it('survives repository recreation and returns the exact completed receipt', async () => {
