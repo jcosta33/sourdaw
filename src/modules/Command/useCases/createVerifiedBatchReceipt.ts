@@ -91,6 +91,33 @@ function commandAffectedIds(command: VersionedCommandEnvelope): string[] {
         .toSorted();
 }
 
+function committedDynamicAffectedIds(input: {
+    envelope: VersionedCommandBatchEnvelope;
+    executedCommandIds: ReadonlySet<string>;
+}): string[] {
+    const dynamicEffects = input.envelope.dynamicEffects;
+    if (!dynamicEffects) {
+        return [];
+    }
+    if (dynamicEffects.commandEffects) {
+        return dynamicEffects.commandEffects
+            .filter(({ commandId }) => input.executedCommandIds.has(commandId))
+            .flatMap(({ effects }) => [
+                ...(effects.affectedTrackIds ?? []),
+                ...(effects.affectedClipIds ?? []),
+                ...(effects.affectedTargetIds ?? []),
+            ]);
+    }
+    if (input.executedCommandIds.size !== input.envelope.commands.length) {
+        return [];
+    }
+    return [
+        ...(dynamicEffects.affectedTrackIds ?? []),
+        ...(dynamicEffects.affectedClipIds ?? []),
+        ...(dynamicEffects.affectedTargetIds ?? []),
+    ];
+}
+
 function actualBatchOutcome(result: BatchExecutionObservation) {
     if (
         result.status === 'committed-with-warning' &&
@@ -203,11 +230,7 @@ export function createVerifiedBatchReceipt(input: CreateVerifiedBatchReceiptInpu
     const appliedCommands = input.envelope.commands.filter((command) => executedCommandIds.has(command.commandId));
     const dynamicAffectedIds =
         input.result.status === 'committed' || input.result.status === 'committed-with-warning'
-            ? [
-                  ...(input.envelope.dynamicEffects?.affectedTrackIds ?? []),
-                  ...(input.envelope.dynamicEffects?.affectedClipIds ?? []),
-                  ...(input.envelope.dynamicEffects?.affectedTargetIds ?? []),
-              ]
+            ? committedDynamicAffectedIds({ envelope: input.envelope, executedCommandIds })
             : [];
     const affectedIds = [...commandOutcomes.flatMap((command) => command.affectedIds), ...dynamicAffectedIds]
         .filter((value, index, values) => values.indexOf(value) === index)

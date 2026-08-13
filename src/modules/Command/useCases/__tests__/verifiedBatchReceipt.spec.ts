@@ -106,7 +106,15 @@ function compileBatch(
         mode: 'commit',
         projectId: 'project-receipt',
         dynamicEffects: input.dynamicAffectedTargetIds
-            ? { affectedTargetIds: [...input.dynamicAffectedTargetIds] }
+            ? {
+                  affectedTargetIds: [...input.dynamicAffectedTargetIds],
+                  commandEffects: [
+                      {
+                          commandId: PAN_COMMAND_ID,
+                          effects: { affectedTargetIds: [...input.dynamicAffectedTargetIds] },
+                      },
+                  ],
+              }
             : undefined,
         protectedTargetIds: input.protectedTargetIds,
         runId: 'run-receipt',
@@ -528,6 +536,24 @@ describe('verified batch receipt', () => {
         expect(result.status).toBe('committed');
         expect(receiptFrom(result)).toMatchObject({
             affectedIds: ['automation-lane-hidden', 'track-guitar', 'track-vocal'],
+        });
+    });
+
+    it('does not report aggregate dynamic targets owned only by a no-op command', async () => {
+        clearHandlerRegistry();
+        registerTestHandlers({ panIsNoop: true });
+        const batch = compileBatch({ dynamicAffectedTargetIds: ['automation-lane-hidden'] });
+
+        const result = await executeVersionedCommandBatchEnvelope({
+            authority: batch.authority,
+            confirmed: true,
+            serialized: batch.serialized,
+        });
+
+        expect(result.status).toBe('committed');
+        expect(receiptFrom(result)).toMatchObject({
+            affectedIds: ['track-vocal'],
+            commandOutcomes: [{ outcome: 'committed' }, { outcome: 'no-op' }],
         });
     });
 

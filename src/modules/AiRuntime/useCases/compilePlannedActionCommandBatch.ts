@@ -43,23 +43,72 @@ function getStringField(value: unknown, key: string): string | undefined {
 }
 
 function getDynamicEffects(input: CompilePlannedActionCommandBatchInput, commandEnvelopes: readonly string[]) {
-    const affectedTrackIds = new Set<string>();
-    const affectedClipIds = new Set<string>();
-    const affectedTargetIds = new Set<string>();
-    let automationPoints = 0;
-    let deletedObjects = 0;
+    const aggregateAffectedTrackIds = new Set<string>();
+    const aggregateAffectedClipIds = new Set<string>();
+    const aggregateAffectedTargetIds = new Set<string>();
+    let aggregateAutomationPoints = 0;
+    let aggregateDeletedObjects = 0;
+    const commandEffects: Array<{
+        commandId: string;
+        effects: {
+            affectedTrackIds: string[];
+            affectedClipIds: string[];
+            affectedTargetIds: string[];
+            automationPoints: number;
+            deletedObjects: number;
+        };
+    }> = [];
     for (const [index, action] of input.actions.entries()) {
+        const parsedCommand = parseVersionedCommandEnvelope(commandEnvelopes[index] ?? '');
+        if (parsedCommand.status !== 'valid') {
+            throw new Error(`Cannot prove dynamic bounds for ${action.type}`);
+        }
+        const commandId = parsedCommand.envelope.commandId;
+        const affectedTrackIds = new Set<string>();
+        const affectedClipIds = new Set<string>();
+        const affectedTargetIds = new Set<string>();
+        let automationPoints = 0;
+        let deletedObjects = 0;
+        function recordDynamicEffects(): void {
+            for (const id of affectedTrackIds) {
+                aggregateAffectedTrackIds.add(id);
+            }
+            for (const id of affectedClipIds) {
+                aggregateAffectedClipIds.add(id);
+            }
+            for (const id of affectedTargetIds) {
+                aggregateAffectedTargetIds.add(id);
+            }
+            aggregateAutomationPoints += automationPoints;
+            aggregateDeletedObjects += deletedObjects;
+            if (
+                affectedTrackIds.size === 0 &&
+                affectedClipIds.size === 0 &&
+                affectedTargetIds.size === 0 &&
+                automationPoints === 0 &&
+                deletedObjects === 0
+            ) {
+                return;
+            }
+            commandEffects.push({
+                commandId,
+                effects: {
+                    affectedTrackIds: [...affectedTrackIds],
+                    affectedClipIds: [...affectedClipIds],
+                    affectedTargetIds: [...affectedTargetIds],
+                    automationPoints,
+                    deletedObjects,
+                },
+            });
+        }
         if (action.type === 'clearSolos') {
             for (const track of input.context.tracks) {
                 if (track.soloed) {
                     affectedTrackIds.add(track.id);
                 }
             }
+            recordDynamicEffects();
             continue;
-        }
-        const parsedCommand = parseVersionedCommandEnvelope(commandEnvelopes[index] ?? '');
-        if (parsedCommand.status !== 'valid') {
-            throw new Error(`Cannot prove dynamic bounds for ${action.type}`);
         }
         const payload = parsedCommand.envelope.arguments;
         if (action.type === 'duplicateClip' || action.type === 'duplicateClipToNextBar') {
@@ -77,6 +126,7 @@ function getDynamicEffects(input: CompilePlannedActionCommandBatchInput, command
                     automationPoints += lane.points.length;
                 }
             }
+            recordDynamicEffects();
             continue;
         }
         if (action.type === 'duplicateTrack') {
@@ -100,6 +150,7 @@ function getDynamicEffects(input: CompilePlannedActionCommandBatchInput, command
                     automationPoints += lane.points.length;
                 }
             }
+            recordDynamicEffects();
             continue;
         }
         if (action.type === 'removeTrack') {
@@ -197,6 +248,7 @@ function getDynamicEffects(input: CompilePlannedActionCommandBatchInput, command
             for (const id of cascadeObjectIds) {
                 affectedTargetIds.add(id);
             }
+            recordDynamicEffects();
             continue;
         }
         if (action.type === 'removeClip') {
@@ -236,13 +288,16 @@ function getDynamicEffects(input: CompilePlannedActionCommandBatchInput, command
                 affectedTargetIds.add(event.id);
             }
             deletedObjects += events.length;
+            recordDynamicEffects();
             continue;
         }
         if (!AUTOMATION_TRANSFORM_TYPES.has(action.type)) {
+            recordDynamicEffects();
             continue;
         }
         const laneId = getStringField(payload, 'laneId');
         if (!laneId) {
+            recordDynamicEffects();
             continue;
         }
         const lane = input.context.automationLanes?.find((candidate) => candidate.id === laneId);
@@ -257,13 +312,15 @@ function getDynamicEffects(input: CompilePlannedActionCommandBatchInput, command
         if (action.type === 'thinAutomation') {
             deletedObjects += lane.points.length;
         }
+        recordDynamicEffects();
     }
     return {
-        affectedTrackIds: [...affectedTrackIds],
-        affectedClipIds: [...affectedClipIds],
-        affectedTargetIds: [...affectedTargetIds],
-        automationPoints,
-        deletedObjects,
+        affectedTrackIds: [...aggregateAffectedTrackIds],
+        affectedClipIds: [...aggregateAffectedClipIds],
+        affectedTargetIds: [...aggregateAffectedTargetIds],
+        automationPoints: aggregateAutomationPoints,
+        deletedObjects: aggregateDeletedObjects,
+        commandEffects,
     };
 }
 

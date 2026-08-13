@@ -76,7 +76,9 @@ const DYNAMIC_EFFECT_KEYS = new Set([
     'affectedTargetIds',
     'automationPoints',
     'deletedObjects',
+    'commandEffects',
 ]);
+const COMMAND_DYNAMIC_EFFECT_KEYS = new Set(['commandId', 'effects']);
 const GRANTS_KEYS = new Set(['allowedOperationPrefixes', ...GRANT_KEYS]);
 const BUDGETS_KEYS = new Set(BUDGET_KEYS);
 const CONDITION_KINDS = new Set<CommandBatchConditionKind>([
@@ -327,6 +329,58 @@ function parseDynamicEffects(value: unknown): CommandBatchDynamicEffects | null 
             return null;
         }
     }
+    const commandEffectsValue = value.commandEffects;
+    if (commandEffectsValue !== undefined && !isBoundedArray(commandEffectsValue)) {
+        return null;
+    }
+    const commandEffects: NonNullable<CommandBatchDynamicEffects['commandEffects']>[number][] = [];
+    const attributedCommandIds = new Set<string>();
+    for (const commandEffect of commandEffectsValue ?? []) {
+        if (
+            !isRecord(commandEffect) ||
+            !hasOnlyKeys(commandEffect, COMMAND_DYNAMIC_EFFECT_KEYS) ||
+            typeof commandEffect.commandId !== 'string' ||
+            commandEffect.commandId.length === 0 ||
+            attributedCommandIds.has(commandEffect.commandId) ||
+            !isRecord(commandEffect.effects) ||
+            !hasOnlyKeys(
+                commandEffect.effects,
+                new Set([...DYNAMIC_EFFECT_KEYS].filter((key) => key !== 'commandEffects'))
+            )
+        ) {
+            return null;
+        }
+        for (const key of ['affectedTrackIds', 'affectedClipIds', 'affectedTargetIds'] as const) {
+            if (commandEffect.effects[key] !== undefined && !isUniqueNonEmptyStrings(commandEffect.effects[key])) {
+                return null;
+            }
+        }
+        for (const key of ['automationPoints', 'deletedObjects'] as const) {
+            if (
+                commandEffect.effects[key] !== undefined &&
+                (!Number.isSafeInteger(commandEffect.effects[key]) || (commandEffect.effects[key] as number) < 0)
+            ) {
+                return null;
+            }
+        }
+        attributedCommandIds.add(commandEffect.commandId);
+        commandEffects.push({
+            commandId: commandEffect.commandId,
+            effects: {
+                affectedTrackIds: commandEffect.effects.affectedTrackIds
+                    ? [...(commandEffect.effects.affectedTrackIds as string[])]
+                    : undefined,
+                affectedClipIds: commandEffect.effects.affectedClipIds
+                    ? [...(commandEffect.effects.affectedClipIds as string[])]
+                    : undefined,
+                affectedTargetIds: commandEffect.effects.affectedTargetIds
+                    ? [...(commandEffect.effects.affectedTargetIds as string[])]
+                    : undefined,
+                automationPoints: commandEffect.effects.automationPoints as number | undefined,
+                deletedObjects: commandEffect.effects.deletedObjects as number | undefined,
+            },
+        });
+    }
     const affectedTrackIds = value.affectedTrackIds as string[] | undefined;
     const affectedClipIds = value.affectedClipIds as string[] | undefined;
     const affectedTargetIds = value.affectedTargetIds as string[] | undefined;
@@ -336,6 +390,7 @@ function parseDynamicEffects(value: unknown): CommandBatchDynamicEffects | null 
         affectedTargetIds: affectedTargetIds ? [...affectedTargetIds] : undefined,
         automationPoints: value.automationPoints as number | undefined,
         deletedObjects: value.deletedObjects as number | undefined,
+        commandEffects: commandEffectsValue === undefined ? undefined : commandEffects,
     };
 }
 
@@ -586,7 +641,42 @@ function validateDynamicEffects(
     const invalidTarget = dynamicTargetIds.find(
         (targetId) => !declaredTargets.has(targetId) || protectedTargets.has(targetId)
     );
-    return invalidTarget ? `Dynamic command target is outside the declared batch scope: ${invalidTarget}` : null;
+    if (invalidTarget) {
+        return `Dynamic command target is outside the declared batch scope: ${invalidTarget}`;
+    }
+    if (!dynamicEffects.commandEffects) {
+        return null;
+    }
+    const commandIds = new Set(commands.map(({ commandId }) => commandId));
+    const unknownCommandId = dynamicEffects.commandEffects.find(
+        ({ commandId }) => !commandIds.has(commandId)
+    )?.commandId;
+    if (unknownCommandId) {
+        return `Dynamic effects reference an unknown command: ${unknownCommandId}`;
+    }
+    for (const key of ['affectedTrackIds', 'affectedClipIds', 'affectedTargetIds'] as const) {
+        const aggregateIds = [...(dynamicEffects[key] ?? [])].toSorted();
+        const attributedIds = [
+            ...new Set(dynamicEffects.commandEffects.flatMap(({ effects }) => effects[key] ?? [])),
+        ].toSorted();
+        if (
+            aggregateIds.length !== attributedIds.length ||
+            aggregateIds.some((id, index) => id !== attributedIds[index])
+        ) {
+            return `Dynamic ${key} do not match command attribution`;
+        }
+    }
+    for (const key of ['automationPoints', 'deletedObjects'] as const) {
+        const aggregateCount = dynamicEffects[key] ?? 0;
+        const attributedCount = dynamicEffects.commandEffects.reduce(
+            (sum, { effects }) => sum + (effects[key] ?? 0),
+            0
+        );
+        if (aggregateCount !== attributedCount) {
+            return `Dynamic ${key} do not match command attribution`;
+        }
+    }
+    return null;
 }
 
 export function parseVersionedCommandBatchEnvelope(
