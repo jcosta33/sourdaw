@@ -16,7 +16,10 @@ const getStateMock = vi.hoisted(() =>
 const requestMidiAccessMock = vi.hoisted(() => vi.fn<() => Promise<unknown>>());
 const setActiveInputMock = vi.hoisted(() => vi.fn<(input: TestMidiInput | null) => void>());
 const setMidiAccessMock = vi.hoisted(() => vi.fn<(access: MIDIAccess) => void>());
-const setStateMock = vi.hoisted(() => vi.fn<(next: Record<string, unknown>) => void>());
+const setStateMock = vi.hoisted(() =>
+    vi.fn<(next: Record<string, unknown>, options?: { persistSelection?: boolean }) => void>()
+);
+const readPersistedInputIdMock = vi.hoisted(() => vi.fn<() => string | null>(() => null));
 const setTauriModeMock = vi.hoisted(() => vi.fn<(enabled: boolean) => void>());
 
 // Must stub before importing the subject
@@ -58,7 +61,19 @@ vi.mock('../../setMidiAccess', () => ({
 }));
 
 vi.mock('../../setState', () => ({
-    setState: (next: Record<string, unknown>) => setStateMock(next),
+    // Forward the options argument only when the caller supplied one, so the
+    // single-argument assertions below stay readable.
+    setState: (next: Record<string, unknown>, options?: { persistSelection?: boolean }) => {
+        if (options === undefined) {
+            setStateMock(next);
+            return;
+        }
+        setStateMock(next, options);
+    },
+}));
+
+vi.mock('../../readPersistedInputId', () => ({
+    readPersistedInputId: () => readPersistedInputIdMock(),
 }));
 
 vi.mock('../../setTauriMode', () => ({
@@ -77,6 +92,7 @@ describe('initWebMidi', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         getStateMock.mockReturnValue({ isSupported: true, inputs: [], selectedInputId: null });
+        readPersistedInputIdMock.mockReturnValue(null);
     });
 
     it('should initialize via Web MIDI if supported', async () => {
@@ -113,6 +129,34 @@ describe('initWebMidi', () => {
         expect(setTauriModeMock).toHaveBeenCalledWith(true);
         expect(tauriInvoke).toHaveBeenCalledWith('list_midi_inputs');
         expect(selectMidiInputTauri).toHaveBeenCalledWith({ portIndex: 0, onMidiMessage });
+    });
+
+    it('rejects a malformed list_midi_inputs payload instead of opening a NaN port', async () => {
+        // The payload crosses IPC, so it is untrusted. A bare cast turned a
+        // missing `index` into `id: "undefined"` and then `Number(...)` -> NaN,
+        // which was handed straight to `open_midi_input`.
+        const onMidiMessage = vi.fn<(event: MIDIMessageEvent) => void>();
+        requestMidiAccessMock.mockRejectedValue(new Error('no access'));
+        vi.mocked(isTauri).mockReturnValue(true);
+        vi.mocked(tauriInvoke).mockResolvedValue([{ name: 'Tauri MIDI' }]);
+
+        const result = await initWebMidi({ onMidiMessage });
+
+        expect(result).toBe(false);
+        expect(selectMidiInputTauri).not.toHaveBeenCalled();
+        expect(setStateMock).toHaveBeenCalledWith({ isSupported: false });
+    });
+
+    it('rejects a list_midi_inputs payload that is not an array', async () => {
+        const onMidiMessage = vi.fn<(event: MIDIMessageEvent) => void>();
+        requestMidiAccessMock.mockRejectedValue(new Error('no access'));
+        vi.mocked(isTauri).mockReturnValue(true);
+        vi.mocked(tauriInvoke).mockResolvedValue({ devices: [] });
+
+        const result = await initWebMidi({ onMidiMessage });
+
+        expect(result).toBe(false);
+        expect(selectMidiInputTauri).not.toHaveBeenCalled();
     });
 
     it('should return false if neither is supported', async () => {
@@ -161,16 +205,73 @@ describe('initWebMidi', () => {
         requestMidiAccessMock.mockResolvedValue(mockAccess);
         getMidiAccessMock.mockReturnValue(mockAccess);
         getStateMock.mockReturnValue({ isSupported: true, inputs: [], selectedInputId: 'gone-input' });
+        readPersistedInputIdMock.mockReturnValue('gone-input');
         vi.mocked(attachInput).mockClear();
 
         await initWebMidi({ onMidiMessage });
         mockAccess.onstatechange?.();
 
         expect(attachInput).toHaveBeenCalledWith({ input, onMidiMessage });
-        expect(setStateMock).toHaveBeenCalledWith({
-            inputs: [expect.objectContaining({ id: 'in-2' })],
-            selectedInputId: 'in-2',
-        });
+        expect(setStateMock).toHaveBeenCalledWith(
+            {
+                inputs: [expect.objectContaining({ id: 'in-2' })],
+                selectedInputId: 'in-2',
+            },
+            { persistSelection: false }
+        );
+    });
+
+    it('does not overwrite the saved device preference when the selected input is unplugged', async () => {
+        // Unplugging a controller for a second used to rewrite localStorage to
+        // whatever enumerated first, and replugging did not restore it.
+        const onMidiMessage = vi.fn<(event: MIDIMessageEvent) => void>();
+        const input = { id: 'in-2', name: 'Other Keyboard' };
+        const mockAccess = {
+            inputs: new Map([['in-2', input]]),
+            onstatechange: null as (() => void) | null,
+        };
+        requestMidiAccessMock.mockResolvedValue(mockAccess);
+        getMidiAccessMock.mockReturnValue(mockAccess);
+        getStateMock.mockReturnValue({ isSupported: true, inputs: [], selectedInputId: 'preferred-input' });
+        readPersistedInputIdMock.mockReturnValue('preferred-input');
+
+        await initWebMidi({ onMidiMessage });
+        setStateMock.mockClear();
+        mockAccess.onstatechange?.();
+
+        const persistedSelectionWrites = setStateMock.mock.calls.filter(
+            ([next, options]) => 'selectedInputId' in next && options?.persistSelection !== false
+        );
+        expect(persistedSelectionWrites).toEqual([]);
+    });
+
+    it('restores the saved device when it reappears after a replug', async () => {
+        const onMidiMessage = vi.fn<(event: MIDIMessageEvent) => void>();
+        const preferred = { id: 'preferred-input', name: 'Keyboard' };
+        const standIn = { id: 'in-2', name: 'Other Keyboard' };
+        const mockAccess = {
+            inputs: new Map<string, unknown>([['in-2', standIn]]),
+            onstatechange: null as (() => void) | null,
+        };
+        requestMidiAccessMock.mockResolvedValue(mockAccess);
+        getMidiAccessMock.mockReturnValue(mockAccess);
+        // The session has fallen back to the stand-in; the saved preference is
+        // still the device that was unplugged.
+        getStateMock.mockReturnValue({ isSupported: true, inputs: [], selectedInputId: 'in-2' });
+        readPersistedInputIdMock.mockReturnValue('preferred-input');
+
+        await initWebMidi({ onMidiMessage });
+        vi.mocked(attachInput).mockClear();
+        setStateMock.mockClear();
+
+        // The preferred device comes back.
+        mockAccess.inputs.set('preferred-input', preferred);
+        mockAccess.onstatechange?.();
+
+        expect(attachInput).toHaveBeenCalledWith({ input: preferred, onMidiMessage });
+        // No `persistSelection: false` — restoring the saved device is a
+        // legitimate write of the preference back to itself.
+        expect(setStateMock).toHaveBeenCalledWith(expect.objectContaining({ selectedInputId: 'preferred-input' }));
     });
 
     it('should keep the selected input attached when it still exists on state change', async () => {
@@ -191,10 +292,15 @@ describe('initWebMidi', () => {
 
         // selected still exists -> no re-attach, selectedInputId retained
         expect(attachInput).not.toHaveBeenCalled();
-        expect(setStateMock).toHaveBeenLastCalledWith({
-            inputs: [expect.objectContaining({ id: 'in-1' })],
-            selectedInputId: 'in-1',
-        });
+        // The selection is unchanged, so this is a no-op re-statement rather
+        // than a user choice: it must not rewrite the stored preference.
+        expect(setStateMock).toHaveBeenLastCalledWith(
+            {
+                inputs: [expect.objectContaining({ id: 'in-1' })],
+                selectedInputId: 'in-1',
+            },
+            { persistSelection: false }
+        );
     });
 
     it('should return false and warn when MIDI is reported unsupported', async () => {

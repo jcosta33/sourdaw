@@ -1,10 +1,9 @@
 import { describe, it, expect } from 'vitest';
 
-import { type MidiNote } from '#/modules/MIDI/models/MidiEffectTypes';
-
+import { type MidiEffectNote } from '../../../../models/MidiEffectTypes';
 import { createCCMap } from '../createCCMap';
 
-function note(overrides: Partial<MidiNote> = {}): MidiNote {
+function note(overrides: Partial<MidiEffectNote> = {}): MidiEffectNote {
     return {
         pitch: 60,
         velocity: 100,

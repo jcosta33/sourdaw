@@ -532,10 +532,10 @@ describe('midiImportWorker', () => {
         });
 
         it('skips a system common message together with its data bytes', () => {
-            // 0xf2 (song position pointer) carries two data bytes. Consuming the
-            // wrong number of them shifts every subsequent read.
+            // 0xf3 (song select) carries exactly one data byte. Treating it as a
+            // channel-voice status reads two, swallowing the next event's delta.
             const body: number[] = [];
-            body.push(...varlen(0), 0xf2, 0x10, 0x00);
+            body.push(...varlen(0), 0xf3, 0x02);
             body.push(...varlen(0), 0x90, 67, 100, ...varlen(240), 0x80, 67, 0);
             body.push(...endOfTrack(0));
 

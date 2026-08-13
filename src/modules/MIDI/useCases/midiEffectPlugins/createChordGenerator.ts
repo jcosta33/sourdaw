@@ -1,12 +1,19 @@
-import { type MidiEffect, type MidiNote, CHORD_INTERVALS } from '../../models/MidiEffectTypes';
+import { CHORD_TYPES, type ChordType } from '../../models/ChordTypes';
+import { type MidiEffect, type MidiEffectNote } from '../../models/MidiEffectTypes';
+
+const MAJOR_TRIAD_INTERVALS: readonly number[] = [0, 4, 7];
+
+function isChordType(value: string): value is ChordType {
+    return Object.hasOwn(CHORD_TYPES, value);
+}
 
 export function createChordGenerator(chordType = 'major'): MidiEffect {
-    const intervals = CHORD_INTERVALS[chordType] ?? [0, 4, 7];
+    const intervals = isChordType(chordType) ? CHORD_TYPES[chordType] : MAJOR_TRIAD_INTERVALS;
     return {
         id: 'midi-fx-chord-gen',
         name: `Chord Generator (${chordType})`,
         process: (notes) => {
-            const result: MidiNote[] = [];
+            const result: MidiEffectNote[] = [];
             for (const note of notes) {
                 for (const interval of intervals) {
                     // Clamp to the MIDI pitch range like createTranspose and
