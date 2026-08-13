@@ -5,6 +5,7 @@ import { type CommandBatchAuthority } from '../models/VersionedCommandBatchEnvel
 import { executeVersionedCommandBatch } from './executeVersionedCommandBatch';
 import { parseVersionedCommandBatchEnvelope } from './parseVersionedCommandBatchEnvelope';
 import { prepareCommandBatchPreflight } from './prepareCommandBatchPreflight';
+import { previewVersionedCommandBatchEnvelope } from './previewVersionedCommandBatchEnvelope';
 import { resolveVersionedCommandBatchBindings } from './resolveVersionedCommandBatchBindings';
 import { serializeVersionedCommandEnvelope } from './serializeVersionedCommandEnvelope';
 
@@ -20,12 +21,10 @@ export async function executeVersionedCommandBatchEnvelope(input: ExecuteVersion
     if (parsed.status === 'invalid') {
         return { status: 'rejected' as const, reason: parsed.reason, actions: [] as [] };
     }
-    if (parsed.envelope.mode !== 'commit') {
-        return {
-            status: 'rejected' as const,
-            reason: 'Preview batches require the isolated preview executor',
-            actions: [] as [],
-        };
+    const resolvedCommands = resolveVersionedCommandBatchBindings(parsed.envelope);
+    const resolvedEnvelope = { ...parsed.envelope, commands: resolvedCommands };
+    if (parsed.envelope.mode === 'preview') {
+        return previewVersionedCommandBatchEnvelope(resolvedEnvelope);
     }
     if (!input.confirmed && !parsed.envelope.grants.autoCommit) {
         return {
@@ -34,8 +33,6 @@ export async function executeVersionedCommandBatchEnvelope(input: ExecuteVersion
             actions: [] as [],
         };
     }
-    const resolvedCommands = resolveVersionedCommandBatchBindings(parsed.envelope);
-    const resolvedEnvelope = { ...parsed.envelope, commands: resolvedCommands };
     return executeVersionedCommandBatch({
         commands: resolvedCommands.map((command) =>
             serializeVersionedCommandEnvelope({ ...command, groupId: parsed.envelope.batchId })

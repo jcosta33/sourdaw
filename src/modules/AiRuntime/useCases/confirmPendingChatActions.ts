@@ -349,12 +349,17 @@ export async function confirmPendingChatActions(
         const commandEnvelopes = confirmation.approvalSnapshot.commandEnvelopes;
         const commandBatch = confirmation.approvalSnapshot.commandBatch;
         if (commandBatch) {
-            batchResult = await executeVersionedCommandBatchEnvelope({
+            const versionedResult = await executeVersionedCommandBatchEnvelope({
                 authority: commandBatch.authority,
                 confirmed: true,
                 serialized: commandBatch.serialized,
                 options: executionOptions,
             });
+            if (versionedResult.status === 'previewed') {
+                versionedResult.resource.release();
+                throw new Error('A confirmed command batch cannot execute in preview mode');
+            }
+            batchResult = versionedResult;
         } else if (commandEnvelopes) {
             batchResult = await executeVersionedCommandBatch({
                 commands: commandEnvelopes,

@@ -682,7 +682,7 @@ describe('command batch contract', () => {
         });
     });
 
-    it('does not dispatch a preview batch through the live executor', async () => {
+    it('does not dispatch a preview batch when isolated preflight state is unavailable', async () => {
         const execute = vi.fn();
         registerHandlerMap({
             setTrackGain: { execute, describe: () => ({ label: 'Set gain', inverseAction: null }), undoable: false },
@@ -697,7 +697,7 @@ describe('command batch contract', () => {
 
         expect(result).toEqual({
             status: 'rejected',
-            reason: 'Preview batches require the isolated preview executor',
+            reason: 'Command batch preflight state is unavailable',
             actions: [],
         });
         expect(execute).not.toHaveBeenCalled();

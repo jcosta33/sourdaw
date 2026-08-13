@@ -78,6 +78,11 @@ export async function executePlannedActions(input: ExecutePlannedActionsInput): 
         ? await executeVersionedCommandBatchEnvelope({ ...input.commandBatch, options: executionOptions })
         : await executeAppActionBatch(input.actions, executionOptions);
 
+    if (batchResult.status === 'previewed') {
+        batchResult.resource.release();
+        return { status: 'failed', reason: 'A planned action batch cannot execute in preview mode' };
+    }
+
     if (batchResult.status === 'cancelled') {
         if (input.signal?.aborted === true) {
             return { status: 'cancelled' };
