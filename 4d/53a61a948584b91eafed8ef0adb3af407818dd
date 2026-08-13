@@ -1,0 +1,34 @@
+src/modules/SessionLauncher/presentations/views/__tests__/LoopStationPanel.spec.tsx
+  s_62e9c3dc3ba52a::t_e8d4b4a076f444 72-80
+  s_62e9c3dc3ba52a::t_6122eb702412bc 7
+  s_62e9c3dc3ba52a::t_b25c948b58cbc9 221-230,256,260,272-297,303-313,315-316,321-335
+src/modules/SessionLauncher/presentations/views/LoopStationPanel.tsx
+  s_62e9c3dc3ba52a::t_a97dddad6391f6 33
+  s_3120541fde8866::t_5baa125acf8eb0 95-103,111,274-278
+src/modules/SessionLauncher/presentations/helpers/loopStationProgress.ts
+  s_62e9c3dc3ba52a::t_451109953b875e 1-26
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "4d53a61a948584b91eafed8ef0adb3af407818dd",
+  "prompts": {},
+  "sessions": {
+    "s_3120541fde8866": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-a6cbda36a14185941",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_62e9c3dc3ba52a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "92e0a2e7-8660-41e2-be8b-b2d644c6d0b7",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
