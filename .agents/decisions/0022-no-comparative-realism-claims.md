@@ -6,7 +6,7 @@ date: 2026-08-12
 
 # 0022 — Describe mechanisms, not resemblance: no comparative realism claims
 
-**Accepted 2026-08-12.** Resolved from primary sources under the owner's standing direction that decision gates are research tasks. resolves `CHANGE-grand-boule-spec-closure` DG-001 and
+**Accepted 2026-08-12.** Resolved from primary sources under the owner's standing direction that decision gates are research tasks. Resolves `CHANGE-grand-boule-spec-closure` DG-001 and
 `CHANGE-toaster-flagship-drum-workstation` DG-004.
 
 ## Context

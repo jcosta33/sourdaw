@@ -6,7 +6,7 @@ date: 2026-08-12
 
 # 0018 — Release actions belong to gate-style launches, not to toggle
 
-**Accepted 2026-08-12.** Resolved from primary sources under the owner's standing direction that decision gates are research tasks. resolves `SPEC-session-launcher-engine` DG-002.
+**Accepted 2026-08-12.** Resolved from primary sources under the owner's standing direction that decision gates are research tasks. Resolves `SPEC-session-launcher-engine` DG-002.
 
 ## Context
 

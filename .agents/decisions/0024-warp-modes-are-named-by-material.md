@@ -6,7 +6,7 @@ date: 2026-08-12
 
 # 0024 — Warp modes are named by material, over three closed executors
 
-**Accepted 2026-08-12.** Resolved from primary sources under the owner's standing direction that decision gates are research tasks. resolves the algorithm-family and naming questions in both
+**Accepted 2026-08-12.** Resolved from primary sources under the owner's standing direction that decision gates are research tasks. Resolves the algorithm-family and naming questions in both
 `SPEC-time-stretch-engine` artifacts, and decides the fate of `crumbs/warp/granular.rs`.
 
 ## Context

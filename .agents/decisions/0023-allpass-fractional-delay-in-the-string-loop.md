@@ -6,7 +6,7 @@ date: 2026-08-12
 
 # 0023 — Allpass fractional delay in the Karplus-Strong loop, offset off zero
 
-**Accepted 2026-08-12.** Resolved from primary sources under the owner's standing direction that decision gates are research tasks. resolves the interpolation half of
+**Accepted 2026-08-12.** Resolved from primary sources under the owner's standing direction that decision gates are research tasks. Resolves the interpolation half of
 `CHANGE-fermenter-core-and-shipped-engine-conformance` DG-003.
 
 ## Context
