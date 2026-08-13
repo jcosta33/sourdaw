@@ -1,0 +1,36 @@
+src/modules/AiRuntime/useCases/__tests__/compilePlannedActionCommandBatch.spec.ts
+  s_a40848e8f8cca9::t_af1a68c59fc9ca 131-143
+  s_a40848e8f8cca9::t_f533c7d0c7f558 123,126-129
+  s_a40848e8f8cca9::t_94805f7fe96ec6 130
+src/modules/Arrangement/handlers/clip/handleGlueClips.ts
+  s_a40848e8f8cca9::t_f533c7d0c7f558 2,9-11
+  s_a40848e8f8cca9::t_7944b6765d521e 12-24,26-28,38
+src/modules/AiRuntime/useCases/compilePlannedActionCommandBatch.ts
+  s_a40848e8f8cca9::t_7944b6765d521e 1
+src/modules/Arrangement/handlers/clip/handleDuplicateClipToNextBar.ts
+  s_a40848e8f8cca9::t_7944b6765d521e 42-44
+src/modules/Arrangement/handlers/clip/handleDuplicateClip.ts
+  s_a40848e8f8cca9::t_7944b6765d521e 42-44
+src/modules/Arrangement/handlers/clip/handleSplitClip.ts
+  s_a40848e8f8cca9::t_7944b6765d521e 31-33
+src/modules/Arrangement/handlers/track/duplicateTrack.ts
+  s_a40848e8f8cca9::t_7944b6765d521e 20-22
+src/modules/Command/useCases/parseVersionedCommandEnvelope.ts
+  s_a40848e8f8cca9::t_2c854cad8f718a 145
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "4ad413e4b1f9f8ced0b2c68dc56df7e91c3bbb91",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
