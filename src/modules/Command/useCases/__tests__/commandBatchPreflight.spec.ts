@@ -4,6 +4,7 @@ import { configureAutomergeStoragePort, createAutomergeStorage } from '#/infra/s
 import { clearHandlerRegistry, registerHandlerMap } from '#/modules/Command/stores';
 
 import { commandBatchPreflightPort } from '../commandBatchPreflightPort';
+import { commandDeviceVersionsPort } from '../commandDeviceVersionsPort';
 import { commandProjectRevisionPort } from '../commandProjectRevisionPort';
 import { compileVersionedCommandBatchEnvelope } from '../compileVersionedCommandBatchEnvelope';
 import { createExecutionCommandEnvelope } from '../createExecutionCommandEnvelope';
@@ -26,6 +27,8 @@ describe('command batch preflight', () => {
         clearHandlerRegistry();
         configureAutomergeStoragePort(null);
         commandBatchPreflightPort.setProvider(null);
+        commandDeviceVersionsPort.setDeviceTypeResolver(null);
+        commandDeviceVersionsPort.setResolver(null);
         commandProjectRevisionPort.setProvider(null);
         vi.unstubAllGlobals();
     });
@@ -466,6 +469,83 @@ describe('command batch preflight', () => {
         await expect(execution).resolves.toEqual({
             status: 'rejected',
             reason: 'Command batch target does not exist: track-vocal',
+            actions: [],
+        });
+        expect(execute).not.toHaveBeenCalled();
+    });
+
+    it('revalidates device versions after the snapshot gate settles', async () => {
+        let releaseSnapshot!: () => void;
+        const snapshotSettled = new Promise<void>((resolve) => {
+            releaseSnapshot = resolve;
+        });
+        const doc: Record<string, unknown> = {};
+        configureAutomergeStoragePort({
+            getDoc: () => doc,
+            getSemanticMessage: () => undefined,
+            hasDoc: () => true,
+            mutateDoc: ({ changeFn }) => applyTransactionalMutation(doc, changeFn),
+            waitForSnapshotTransaction: () => snapshotSettled,
+        });
+        let deviceVersion = 'compressor-v1';
+        commandDeviceVersionsPort.setDeviceTypeResolver(() => ({}));
+        commandDeviceVersionsPort.setResolver(() => deviceVersion);
+        const execute = vi.fn(() => ({ status: 'written' as const }));
+        registerHandlerMap({
+            addDevice: {
+                execute,
+                describe: () => ({
+                    label: 'Add compressor',
+                    inverseAction: {
+                        type: 'removeDevice',
+                        payload: { trackId: 'track-vocal', deviceId: 'device-compressor' },
+                    },
+                }),
+                undoable: true,
+            },
+        });
+        commandProjectRevisionPort.setProvider(() => 'revision-1');
+        commandBatchPreflightPort.setProvider(() => ({
+            audioGraphValid: true,
+            availableAssetHashes: [],
+            availableAudioBufferIds: [],
+            lockedRanges: [],
+            projectId: 'project-1',
+            projectInvariantsValid: true,
+            targetFingerprints: { 'track-vocal': 'vocal' },
+        }));
+        const command = createExecutionCommandEnvelope({
+            action: {
+                type: 'addDevice',
+                payload: {
+                    trackId: 'track-vocal',
+                    deviceId: 'device-compressor',
+                    deviceType: 'builtin-compressor',
+                },
+            },
+            expectedEffect: 'Add compressor',
+            normalizedProjectRevision: 'revision-1',
+        });
+        const compiled = compileVersionedCommandBatchEnvelope({
+            runId: 'run-device-version-race',
+            batchId: 'batch-device-version-race',
+            projectId: 'project-1',
+            baseRevision: 'revision-1',
+            intent: 'Add compressor',
+            commands: [JSON.stringify(command.envelope)],
+        });
+        const execution = executeVersionedCommandBatchEnvelope({
+            authority: compiled.authority,
+            confirmed: true,
+            serialized: compiled.serialized,
+            options: { snapshotTransaction: {} },
+        });
+
+        deviceVersion = 'compressor-v2';
+        releaseSnapshot();
+
+        await expect(execution).resolves.toMatchObject({
+            status: 'conflicted',
             actions: [],
         });
         expect(execute).not.toHaveBeenCalled();

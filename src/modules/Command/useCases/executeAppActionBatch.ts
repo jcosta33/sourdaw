@@ -51,6 +51,7 @@ type ExecuteAppActionBatchResult =
 
 type ExecuteAppActionBatchOptions = ExecuteOptions & {
     commandEnvelopes?: readonly VersionedCommandEnvelope[];
+    preExecutionValidation?: () => string | null;
     prepareValidation?: () => CommandBatchValidationPreparation;
     requireCompensation?: boolean;
     onCommitted?: (actions: readonly AppAction[]) => void;
@@ -411,6 +412,18 @@ export const executeAppActionBatch: ExecuteAppActionBatch = inject({ logger })(
             }
 
             await waitForAutomergeSnapshotTransaction(options?.snapshotTransaction);
+            try {
+                const preExecutionFailure = options?.preExecutionValidation?.() ?? null;
+                if (preExecutionFailure) {
+                    return { status: 'conflicted', reason: preExecutionFailure, actions: [] };
+                }
+            } catch (error) {
+                return {
+                    status: 'rejected',
+                    reason: `Command batch validation failed: ${failureReason(error)}`,
+                    actions: [],
+                };
+            }
             let batchValidation: Extract<CommandBatchValidationPreparation, { status: 'ready' }> | null;
             try {
                 const preparedValidation = options?.prepareValidation?.();

@@ -14,12 +14,12 @@ import {
     undo,
 } from '#/modules/Command/useCases';
 import {
+    captureProjectRevision,
     createCrdtDoc,
     registerCrdtStorageRuntime,
     removeCrdtDoc,
     resetCrdtProjectAuthority,
 } from '#/modules/CrdtDocument/useCases';
-import { projectStore } from '#/modules/Project/stores';
 import { defaultTransportState, transportStore } from '#/modules/Transport/stores';
 
 import { cloudSession } from '../../repositories/cloudLlm/cloudSession';
@@ -321,7 +321,7 @@ describe('stem import and starting mix workflow', () => {
                 reference.audioBufferId ? [reference.audioBufferId] : []
             ),
             lockedRanges: [],
-            projectId: String(projectStore.value?.createdAt ?? 0),
+            projectId: captureProjectRevision(),
             projectInvariantsValid: true,
             targetFingerprints: Object.fromEntries(
                 targetIds

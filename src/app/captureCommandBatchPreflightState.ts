@@ -2,8 +2,7 @@ import { getProjectContext } from '#/modules/AiRuntime/useCases';
 import { trackStore } from '#/modules/Arrangement/stores';
 import { audioBufferCache } from '#/modules/AudioEngine/stores';
 import { getAssetTransfer } from '#/modules/Collaboration/useCases';
-import { DOC_PREFIX_ROOT, getCrdtDoc } from '#/modules/CrdtDocument/useCases';
-import { projectStore } from '#/modules/Project/stores';
+import { captureProjectRevision, DOC_PREFIX_ROOT, getCrdtDoc } from '#/modules/CrdtDocument/useCases';
 import { hasRoutingCycle } from '#/utils/routingCycle';
 
 type CaptureCommandBatchPreflightStateInput = {
@@ -364,7 +363,7 @@ export function captureCommandBatchPreflightState(input: CaptureCommandBatchPref
         lockedRanges: (context.productionBrief?.locks ?? []).flatMap((lock) =>
             lock.scope.kind === 'range' ? [{ startBeat: lock.scope.startBeat, endBeat: lock.scope.endBeat }] : []
         ),
-        projectId: String(projectStore.value?.createdAt ?? 0),
+        projectId: captureProjectRevision(),
         projectInvariantsValid:
             duplicateIds.size === 0 && (stagedInspection?.projectInvariantsValid ?? projectInvariantsAreValid(context)),
         targetFingerprints,

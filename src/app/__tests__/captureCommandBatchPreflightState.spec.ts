@@ -5,11 +5,11 @@ import { type getProjectContext } from '#/modules/AiRuntime/useCases';
 import { captureCommandBatchPreflightState } from '../captureCommandBatchPreflightState';
 
 const mocks = vi.hoisted(() => ({
+    captureProjectRevision: vi.fn(() => 'document-identity-a'),
     getAssetTransfer: vi.fn(),
     getCrdtDoc: vi.fn<(id: string) => unknown>(),
     getProjectContext: vi.fn(),
     hasAudioBuffer: vi.fn<(id: string) => boolean>(),
-    projectStore: { value: { createdAt: 42 } },
     trackStore: { value: { tracks: [] } },
 }));
 
@@ -30,12 +30,9 @@ vi.mock('#/modules/Collaboration/useCases', () => ({
 }));
 
 vi.mock('#/modules/CrdtDocument/useCases', () => ({
+    captureProjectRevision: mocks.captureProjectRevision,
     DOC_PREFIX_ROOT: 'root',
     getCrdtDoc: mocks.getCrdtDoc,
-}));
-
-vi.mock('#/modules/Project/stores', () => ({
-    projectStore: mocks.projectStore,
 }));
 
 function projectContext(): ReturnType<typeof getProjectContext> {
@@ -123,6 +120,7 @@ function projectContext(): ReturnType<typeof getProjectContext> {
 describe('captureCommandBatchPreflightState', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        mocks.captureProjectRevision.mockReturnValue('document-identity-a');
         mocks.getProjectContext.mockReturnValue(projectContext());
         mocks.getCrdtDoc.mockReturnValue({
             tracks: [
@@ -146,7 +144,7 @@ describe('captureCommandBatchPreflightState', () => {
             availableAssetHashes: ['sha256:vocal'],
             availableAudioBufferIds: ['buffer-vocal'],
             lockedRanges: [],
-            projectId: '42',
+            projectId: 'document-identity-a',
             projectInvariantsValid: true,
             targetFingerprints: {
                 hw_out: 'system-output:hw_out',
@@ -163,6 +161,16 @@ describe('captureCommandBatchPreflightState', () => {
         const state = captureCommandBatchPreflightState({ assetReferences: [], targetIds: [] });
 
         expect(state.audioGraphValid).toBe(false);
+    });
+
+    it('binds copied project metadata to the active document identity', () => {
+        const first = captureCommandBatchPreflightState({ assetReferences: [], targetIds: [] });
+        mocks.captureProjectRevision.mockReturnValue('document-identity-b');
+
+        const second = captureCommandBatchPreflightState({ assetReferences: [], targetIds: [] });
+
+        expect(first.projectId).toBe('document-identity-a');
+        expect(second.projectId).toBe('document-identity-b');
     });
 
     it('captures targets and routing from the staged root document when supplied', () => {
