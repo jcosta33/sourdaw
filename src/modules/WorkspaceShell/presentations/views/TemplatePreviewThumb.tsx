@@ -174,14 +174,20 @@ export const TemplatePreviewThumb = ({ templateId }: TemplatePreviewThumbProps):
         voiceRowMap.set(voice, idx);
     }
 
-    const totalBeats = preview.bars * 4;
+    // 4 is the *template's* meter, not the transport's. `TemplatePreview` carries no
+    // time signature and every shipped template calls `initProject` with `timeSig: [4, 4]`,
+    // so these loops are authored in 4/4. Reading `transportStore.timeSignatureNumerator`
+    // here would redraw a 4/4 thumbnail on a 3-beat grid whenever the currently-open
+    // project happened to be in 3/4. Give `TemplatePreview` a meter field before varying this.
+    const BEATS_PER_BAR = 4;
+    const totalBeats = preview.bars * BEATS_PER_BAR;
     const beatsWithGridlines = totalBeats;
     const beatWidth = VIEW_WIDTH / totalBeats;
 
     const gridLines: ReactElement[] = [];
     for (let i = 1; i < beatsWithGridlines; i++) {
         const x = i * beatWidth;
-        const isBarLine = i % 4 === 0;
+        const isBarLine = i % BEATS_PER_BAR === 0;
         gridLines.push(
             <line
                 key={`grid-${i}`}

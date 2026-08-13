@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { LaunchScreen } from '../LaunchScreen';
@@ -148,6 +148,40 @@ describe('LaunchScreen', () => {
         fireEvent.click(screen.getByRole('button', { name: /Import \.dawproject/ }));
 
         await waitFor(() => expect(mocks.pickAndImportDawProject).toHaveBeenCalledTimes(1));
+    });
+
+    // `pickAndImportDawProject` covers both the file picker and the import and only
+    // resolves when both are done. Before this, the slowest action on the launch
+    // screen reported nothing and stayed clickable for its whole duration.
+    it('marks the import button busy and refuses re-entry while an import is running', async () => {
+        let settleImport = (_ok: boolean): void => {};
+        mocks.pickAndImportDawProject.mockReturnValue(
+            new Promise<boolean>((resolve) => {
+                settleImport = resolve;
+            })
+        );
+        render(<LaunchScreen exiting={false} />);
+
+        const button = screen.getByRole('button', { name: /Import \.dawproject/ });
+        expect(button).not.toBeDisabled();
+
+        fireEvent.click(button);
+
+        const busyButton = await screen.findByRole('button', { name: /Importing \.dawproject/ });
+        expect(busyButton).toBeDisabled();
+        expect(busyButton).toHaveAttribute('aria-busy', 'true');
+
+        // A second click while in flight must not start a second import.
+        fireEvent.click(busyButton);
+        expect(mocks.pickAndImportDawProject).toHaveBeenCalledTimes(1);
+
+        await act(async () => {
+            settleImport(false);
+        });
+
+        await waitFor(() => {
+            expect(screen.getByRole('button', { name: /Import \.dawproject/ })).not.toBeDisabled();
+        });
     });
 
     it('dispatches dropped files and renders import failures', async () => {

@@ -578,6 +578,58 @@ describe('AppShell', () => {
             render(<AppShell>Content</AppShell>);
             expect(screen.queryByText('Skip to content')).not.toBeInTheDocument();
         });
+
+        it('removes the skip-link while the command palette is open', () => {
+            const { rerender } = render(<AppShell>Content</AppShell>);
+            // Present first, or its absence below proves nothing.
+            expect(screen.getByText('Skip to content')).toBeInTheDocument();
+
+            workspaceState = createWorkspaceState({ commandPaletteOpen: true });
+            rerender(<AppShell>Content</AppShell>);
+
+            expect(screen.queryByText('Skip to content')).not.toBeInTheDocument();
+        });
+
+        it('removes the skip-link while the shortcut cheat sheet is open', () => {
+            render(<AppShell>Content</AppShell>);
+            expect(screen.getByText('Skip to content')).toBeInTheDocument();
+
+            // The cheat sheet owns its own '?' toggle and puts up an
+            // aria-modal="true" overlay; AppShell only learns about it through
+            // the onOpenChange report.
+            act(() => {
+                // Dispatched on body, not window: the event bubbles to the
+                // cheat sheet's window listener either way, but the global
+                // shortcut contract calls `target.closest(...)`, which window
+                // does not implement.
+                fireEvent.keyDown(document.body, { key: '?' });
+            });
+            expect(screen.getByRole('dialog', { name: 'Keyboard shortcuts' })).toBeInTheDocument();
+
+            expect(screen.queryByText('Skip to content')).not.toBeInTheDocument();
+        });
+
+        it('restores the skip-link when the cheat sheet closes again', () => {
+            render(<AppShell>Content</AppShell>);
+
+            act(() => {
+                // Dispatched on body, not window: the event bubbles to the
+                // cheat sheet's window listener either way, but the global
+                // shortcut contract calls `target.closest(...)`, which window
+                // does not implement.
+                fireEvent.keyDown(document.body, { key: '?' });
+            });
+            expect(screen.queryByText('Skip to content')).not.toBeInTheDocument();
+
+            act(() => {
+                // Dispatched on body, not window: the event bubbles to the
+                // cheat sheet's window listener either way, but the global
+                // shortcut contract calls `target.closest(...)`, which window
+                // does not implement.
+                fireEvent.keyDown(document.body, { key: '?' });
+            });
+            expect(screen.getByText('Skip to content')).toBeInTheDocument();
+        });
     });
 
     describe('launch overlay state', () => {

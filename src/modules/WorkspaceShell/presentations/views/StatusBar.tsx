@@ -87,7 +87,13 @@ export const StatusBar = (): ReactElement => {
     };
 
     return (
-        <footer role="status" aria-label="Application status">
+        // A plain <footer aria-label> is a contentinfo landmark — reachable on demand,
+        // silent otherwise. role="status" here made the whole subtree an aria-live
+        // region while useStatusBarMetrics rewrites CPU / memory / latency / master-level
+        // text nodes at animation-frame rate, so a screen reader narrated meter noise
+        // continuously during playback. role="status" is now scoped to the one readout
+        // that changes at human pace and carries meaning: the clip-selection label.
+        <footer aria-label="Application status">
             <DawControlStrip className="h-6 justify-between rounded-none border-t border-black/50 px-3">
                 <div className="flex items-center gap-3">
                     {/*
@@ -103,6 +109,7 @@ export const StatusBar = (): ReactElement => {
                      * matching; the qualifier is what carries the meaning.
                      */}
                     <DawMetricCluster
+                        aria-hidden="true"
                         label="UI CPU"
                         title="Main-thread load estimate (idle time and frame overrun). Not audio-thread load — see the engine dot for missed render deadlines."
                         meter={<DawMeterBar className="w-10" fillRef={cpuBarRef} />}
@@ -118,6 +125,7 @@ export const StatusBar = (): ReactElement => {
 
                     <DawMetricCluster
                         ref={memContainerRef}
+                        aria-hidden="true"
                         label="MEM"
                         style={{ display: 'none' }}
                         value={
@@ -127,7 +135,18 @@ export const StatusBar = (): ReactElement => {
                         }
                     />
 
-                    <DawMetricCluster label="GPU" value={renderIife_13()} />
+                    {/*
+                     * "AI Model", not "GPU": this readout is the local LLM engine's
+                     * state (idle / loading % / ready / generating) from llmStatusStore.
+                     * Nothing in the status bar reports GPU utilisation, and the old
+                     * label invited reading a model-load percentage as one. No e2e
+                     * selector matched the "GPU" text, so the rename is free.
+                     */}
+                    <DawMetricCluster
+                        label="AI Model"
+                        title="Local AI model state — not GPU utilisation."
+                        value={renderIife_13()}
+                    />
 
                     {activeRenderCount > 0 ? (
                         <DawMetricCluster
@@ -141,6 +160,7 @@ export const StatusBar = (): ReactElement => {
                     ) : null}
 
                     <DawReadoutRow
+                        aria-hidden="true"
                         label="Rate"
                         value={
                             <span
@@ -154,6 +174,7 @@ export const StatusBar = (): ReactElement => {
                         labelClassName="text-muted-foreground/70"
                     />
                     <DawReadoutRow
+                        aria-hidden="true"
                         label="Latency"
                         value={
                             <span ref={latencyRef} className="font-mono tabular-nums text-[10px] text-muted-foreground">
@@ -165,6 +186,7 @@ export const StatusBar = (): ReactElement => {
                     />
 
                     <DawMetricCluster
+                        aria-hidden="true"
                         label="Out"
                         meter={
                             <DawMeterBar
@@ -188,7 +210,9 @@ export const StatusBar = (): ReactElement => {
                     />
                 </div>
 
-                {selectionLabel ? <span className="text-[10px] text-muted-foreground">{selectionLabel}</span> : null}
+                <span role="status" className="text-[10px] text-muted-foreground">
+                    {selectionLabel}
+                </span>
 
                 <div className="flex items-center gap-3">
                     {undoState.lastAction ? (

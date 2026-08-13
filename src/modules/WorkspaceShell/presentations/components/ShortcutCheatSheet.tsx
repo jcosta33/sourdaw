@@ -113,8 +113,25 @@ const SHORTCUT_GROUPS: ShortcutGroup[] = [
     },
 ];
 
-export const ShortcutCheatSheet = (): ReactElement | null => {
+type ShortcutCheatSheetProps = {
+    /**
+     * Notified whenever the sheet opens or closes. The sheet is an `aria-modal`
+     * overlay with a focus trap, so AppShell must know it is up in order to drop the
+     * skip-link from the tab order — otherwise a keyboard user can tab to
+     * "Skip to content" and jump to #main-content behind this dialog.
+     * This component is a leaf `presentations/components/`: it may not read workspace
+     * state or call use cases directly, so it reports upward instead.
+     */
+    onOpenChange?: (open: boolean) => void;
+};
+
+export const ShortcutCheatSheet = ({ onOpenChange }: ShortcutCheatSheetProps = {}): ReactElement | null => {
     const [open, setOpen] = useState(false);
+
+    const setOpenAndReport = (next: boolean): void => {
+        setOpen(next);
+        onOpenChange?.(next);
+    };
 
     useEffect(() => {
         const handler = (event: KeyboardEvent) => {
@@ -124,15 +141,15 @@ export const ShortcutCheatSheet = (): ReactElement | null => {
             }
             if (event.key === '?' || (event.key === '/' && event.shiftKey)) {
                 event.preventDefault();
-                setOpen((prev) => !prev);
+                setOpenAndReport(!open);
             }
             if (event.key === 'Escape' && open) {
-                setOpen(false);
+                setOpenAndReport(false);
             }
         };
         window.addEventListener('keydown', handler);
         return () => window.removeEventListener('keydown', handler);
-    }, [open]);
+    }, [open, onOpenChange]);
 
     if (!open) {
         return null;
@@ -141,7 +158,7 @@ export const ShortcutCheatSheet = (): ReactElement | null => {
     return (
         <div
             className="fixed inset-0 z-50 flex items-center justify-center bg-bg-scrim/90 px-4 backdrop-blur-[2px]"
-            onClick={() => setOpen(false)}
+            onClick={() => setOpenAndReport(false)}
         >
             <DawUtilityPanel
                 className="w-[560px] max-h-[80vh]"

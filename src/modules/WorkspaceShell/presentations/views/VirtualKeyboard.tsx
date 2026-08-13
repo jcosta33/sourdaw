@@ -9,7 +9,9 @@
  *   pointerdown calls setPointerCapture, so dragging off the key keeps it sounding until
  *   pointerup; re-entering the same held key does not re-trigger it. A global pointerup AND
  *   pointercancel handler releases the held note even when the gesture ends or is cancelled
- *   off the panel.
+ *   off the panel. Because capture retargets boundary events to the capture element, a
+ *   glissando is driven by `pointermove` + hit-testing (`glideToPoint`), not by
+ *   `pointerenter` on the neighbouring key — that never fires once a pointer is captured.
  * - Computer keyboard (ASDFGHJKL; = white keys, WETYUOP = black keys) fires notes only
  *   when the panel is focused. Keys are matched by physical position (event.code) so the
  *   layout works on non-QWERTY keyboards. Z/X = octave down/up.
@@ -310,6 +312,45 @@ export const VirtualKeyboard = ({ onClose }: VirtualKeyboardProps): ReactElement
      */
     const glideTo = (midiNote: number, event: React.PointerEvent<HTMLDivElement>) => {
         if (event.buttons !== 1 || mouseNote.current === null || mouseNote.current === midiNote) {
+            return;
+        }
+        triggerNoteOff(mouseNote.current);
+        mouseNote.current = midiNote;
+        triggerNoteOn(midiNote);
+    };
+
+    /**
+     * Resolve the key under a viewport point via hit-testing.
+     *
+     * `onWhitePointerDown` calls `setPointerCapture`, and per W3C Pointer Events a
+     * captured pointer retargets boundary events to the capture element — so no
+     * neighbouring key ever receives `pointerenter` and `onWhitePointerEnter` never
+     * fires. Capture is load-bearing (it is what guarantees the note is released even
+     * if the gesture ends off the panel), so gliding is driven off `pointermove`
+     * coordinates instead. `elementFromPoint` is a plain hit-test, unaffected by
+     * capture, and respects z-order, so an overlapping black key wins over the white
+     * key beneath it exactly as a real hover would.
+     */
+    const midiNoteAtPoint = (clientX: number, clientY: number): number | null => {
+        const hit = document.elementFromPoint(clientX, clientY);
+        const key = hit?.closest<HTMLElement>('[data-midi-note]');
+        if (!key) {
+            return null;
+        }
+        const parsed = Number(key.dataset.midiNote);
+        if (!Number.isInteger(parsed)) {
+            return null;
+        }
+        return parsed;
+    };
+
+    /** Glide the held note to whichever key the pointer is currently over. */
+    const glideToPoint = (event: React.PointerEvent<HTMLDivElement>) => {
+        if (event.buttons !== 1 || mouseNote.current === null) {
+            return;
+        }
+        const midiNote = midiNoteAtPoint(event.clientX, event.clientY);
+        if (midiNote === null || midiNote === mouseNote.current) {
             return;
         }
         triggerNoteOff(mouseNote.current);
@@ -677,6 +718,11 @@ export const VirtualKeyboard = ({ onClose }: VirtualKeyboardProps): ReactElement
                                         onPointerEnter={
                                             isValid ? (event) => onWhitePointerEnter(midiNote, event) : undefined
                                         }
+                                        // Pointer capture retargets every move to this key, so this
+                                        // handler — not the neighbour's pointerenter — is what drives
+                                        // a glissando that began on a white key.
+                                        onPointerMove={isValid ? glideToPoint : undefined}
+                                        data-midi-note={midiNote}
                                         aria-label={isC ? `C${displayOctave} (MIDI ${midiNote})` : `MIDI ${midiNote}`}
                                         aria-pressed={isPressed}
                                         role="button"
@@ -718,6 +764,8 @@ export const VirtualKeyboard = ({ onClose }: VirtualKeyboardProps): ReactElement
                                     onPointerDown={(event) => onBlackPointerDown(midiNote, event)}
                                     onPointerUp={(event) => onBlackPointerUp(midiNote, event)}
                                     onPointerEnter={(event) => onBlackPointerEnter(midiNote, event)}
+                                    onPointerMove={glideToPoint}
+                                    data-midi-note={midiNote}
                                     aria-label={`MIDI ${midiNote}`}
                                     aria-pressed={isPressed}
                                     role="button"
