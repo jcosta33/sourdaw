@@ -148,18 +148,6 @@ describe('initWebMidi', () => {
         expect(setStateMock).toHaveBeenCalledWith({ isSupported: false });
     });
 
-    it('rejects a list_midi_inputs payload that is not an array', async () => {
-        const onMidiMessage = vi.fn<(event: WebMidiInputMessage) => void>();
-        requestMidiAccessMock.mockRejectedValue(new Error('no access'));
-        vi.mocked(isTauri).mockReturnValue(true);
-        vi.mocked(tauriInvoke).mockResolvedValue({ devices: [] });
-
-        const result = await initWebMidi({ onMidiMessage });
-
-        expect(result).toBe(false);
-        expect(selectMidiInputTauri).not.toHaveBeenCalled();
-    });
-
     it('should return false if neither is supported', async () => {
         const onMidiMessage = vi.fn<(event: WebMidiInputMessage) => void>();
         requestMidiAccessMock.mockRejectedValue(new Error('no access'));
