@@ -1,0 +1,120 @@
+src/modules/AiRuntime/useCases/confirmPendingChatActions.ts
+  s_a40848e8f8cca9::t_fa237153e1a0c9 6,350-358
+src/modules/Command/useCases/getVersionedCommandBatchEffects.ts
+  s_a40848e8f8cca9::t_3fe79083c7d803 1-24,26-31,33-40,45-56,59-124,139-195,197-214
+  s_a40848e8f8cca9::t_4677c96fcf31cf 125-131,135-138,196
+  s_a40848e8f8cca9::t_e312357ee57643 25,32,41-44,57-58,132-134
+src/modules/Command/useCases/getVersionedCommandTargetReferences.ts
+  s_a40848e8f8cca9::t_a4b7347760c3c6 3,14-16
+  s_a40848e8f8cca9::t_cd7629433cb041 4,17-19
+  s_a40848e8f8cca9::t_73d2cdd5c4ced6 1-2,5-13,20-25
+src/modules/AiRuntime/stores/__tests__/pendingActionConfirmationStore.spec.ts
+  s_a40848e8f8cca9::t_de62b95e58fe33 53-87,95,111-112,126-160
+src/modules/AiRuntime/useCases/executePlannedActions.ts
+  s_a40848e8f8cca9::t_290e42c52c9dae 2-6,22-23,54,62,64,67-70
+src/modules/AiRuntime/useCases/__tests__/sendChatMessage.spec.ts
+  s_a40848e8f8cca9::t_ab60be6976e82d 47,105-115
+  s_a40848e8f8cca9::t_857f2bff36c035 5,175-185
+  s_a40848e8f8cca9::t_0ca2ad5eb7c976 59
+  s_a40848e8f8cca9::t_026eed6cd294a8 911-912
+  s_a40848e8f8cca9::t_00468813546850 6,154
+  s_a40848e8f8cca9::t_d3b4e4df31c54c 18-19
+  s_a40848e8f8cca9::t_cd7629433cb041 25-37,292-300
+src/modules/Command/useCases/executeVersionedCommandBatchEnvelope.ts
+  s_a40848e8f8cca9::t_d8a9fb7898f1c0 12,26-32
+  s_a40848e8f8cca9::t_e3611bfd568cc4 3-4,11,18
+  s_a40848e8f8cca9::t_7b4e0601feb8b4 38-39
+  s_a40848e8f8cca9::t_1edf88f818291b 7,37
+  s_a40848e8f8cca9::t_daf646199f85f0 1-2,5-6,8-10,13-17,19-25,33-36,40-47
+src/modules/AiRuntime/useCases/__tests__/confirmPendingChatActions.spec.ts
+  s_a40848e8f8cca9::t_de62b95e58fe33 11,185-231
+  s_a40848e8f8cca9::t_afdddad3d6426d 232
+src/modules/Command/useCases/parseVersionedCommandBatchEnvelope.ts
+  s_a40848e8f8cca9::t_3b30f2dfcd5ad5 6,70-78,163-168,184
+  s_a40848e8f8cca9::t_16f032ee5caa26 374-400,407-413,534
+  s_a40848e8f8cca9::t_2321563dca73a3 128-130,150,152,486-508
+  s_a40848e8f8cca9::t_c09c1fcf6202be 286
+  s_a40848e8f8cca9::t_73d2cdd5c4ced6 17,277-278
+  s_a40848e8f8cca9::t_cd7629433cb041 414
+  s_a40848e8f8cca9::t_e3611bfd568cc4 3,450-453,509-518
+  s_a40848e8f8cca9::t_0c56d7ed3def2f 1-2,4-5,7-15,18-20,22-44,79-87,92-96,98-99,107-110,112-119,121,123-127,131-132,141-149,153-162,169-183,185-199,201-218,220-235,241-262,264-276,279-285,287-290,292-293,295-302,304-309,321-326,345-373,415-419,426-428,430-432,447-449,454-459,465-485,519-526,530,532-533,536-561
+  s_a40848e8f8cca9::t_d8a9fb7898f1c0 21,97,303,333,429,535
+  s_a40848e8f8cca9::t_0905d2133ad516 100,111,135
+  s_a40848e8f8cca9::t_e0725739bda6d4 45-62,88-91,291,294,460-464
+  s_a40848e8f8cca9::t_8740f56a372edc 122,133-134,136-140,151,310-320
+  s_a40848e8f8cca9::t_6e91498223d8a5 327-332,334-344,531
+  s_a40848e8f8cca9::t_4385abbce9b604 16,420-425,433-446
+  s_a40848e8f8cca9::t_a0575e8cf91dc5 527-529
+  s_a40848e8f8cca9::t_980b4ede0b7016 401-406
+  s_a40848e8f8cca9::t_18a7e4d27ebdf8 63-69,101-106,120,200,219,236-240,263
+src/modules/AiRuntime/useCases/sendChatMessage.ts
+  s_a40848e8f8cca9::t_290e42c52c9dae 112-136,179-180
+  s_a40848e8f8cca9::t_fa237153e1a0c9 2-3,146
+src/modules/Command/useCases/__tests__/getVersionedCommandBatchEffects.spec.ts
+  s_a40848e8f8cca9::t_92700701fa64cb 68-74,86
+  s_a40848e8f8cca9::t_5747772df31749 1-67,75-85,87-94
+src/modules/AiRuntime/useCases/__tests__/stemImportStartingMixWorkflow.spec.ts
+  s_a40848e8f8cca9::t_bf989dc418fa5b 85-92
+src/modules/Command/useCases/serializeVersionedCommandBatchEnvelope.ts
+  s_a40848e8f8cca9::t_daf646199f85f0 1-5
+src/modules/Command/useCases/index.ts
+  s_a40848e8f8cca9::t_0905d2133ad516 12
+  s_a40848e8f8cca9::t_daf646199f85f0 23,29,38
+  s_a40848e8f8cca9::t_1edf88f818291b 24
+src/modules/Command/models/VersionedCommandBatchEnvelope.ts
+  s_a40848e8f8cca9::t_8740f56a372edc 14
+  s_a40848e8f8cca9::t_e3611bfd568cc4 69-76
+  s_a40848e8f8cca9::t_eb1157e44bbbbb 1-13,15-18,28,30-68,77-94
+  s_a40848e8f8cca9::t_3b30f2dfcd5ad5 19-27,29
+src/modules/Command/useCases/resolveVersionedCommandBatchBindings.ts
+  s_a40848e8f8cca9::t_25627535e72de6 7,11-38,46-55,60-63
+  s_a40848e8f8cca9::t_1edf88f818291b 1-6,8-10,39-45,56-59,64-85
+src/modules/Command/useCases/__tests__/commandBatchContract.spec.ts
+  s_a40848e8f8cca9::t_980b4ede0b7016 270-279,281-286,455-464
+  s_a40848e8f8cca9::t_fa12fc25db1026 6,107-116,265-269,280,510-511,513-514,548-552
+  s_a40848e8f8cca9::t_826525fdb68c2c 289,508,524-538
+  s_a40848e8f8cca9::t_cbee55d29f91dc 515-517
+  s_a40848e8f8cca9::t_1a0c770566991d 138-140,294,296,380,382,384,386,449,451,454
+  s_a40848e8f8cca9::t_db8ed3241835bc 475-485,493-503
+  s_a40848e8f8cca9::t_de88b305a8dfc4 13
+  s_a40848e8f8cca9::t_2ba5f3aaa9ed08 4-5,17,19-28,47
+  s_a40848e8f8cca9::t_79359ba8fceda4 9
+  s_a40848e8f8cca9::t_088da002faa42c 300-310,312-340,342-360,371-375
+  s_a40848e8f8cca9::t_d8a9fb7898f1c0 18,427,512
+  s_a40848e8f8cca9::t_26d400fa07da71 311,341
+  s_a40848e8f8cca9::t_8740f56a372edc 72,256
+  s_a40848e8f8cca9::t_bfa477cd83c465 12,398-407,409-426,428-448,452
+  s_a40848e8f8cca9::t_ba11e2d879dc82 486,504
+  s_a40848e8f8cca9::t_ed6174cde47e7b 1,3,7,10,118-122,453,465-474,487-492,505-507,509,518-523,539-547,553-557,559
+  s_a40848e8f8cca9::t_780e3c9cf61936 77
+  s_a40848e8f8cca9::t_25627535e72de6 408,450
+  s_a40848e8f8cca9::t_fdbfadd57ed192 32,53,56-59
+  s_a40848e8f8cca9::t_1580a22f3d8a93 361-370
+  s_a40848e8f8cca9::t_997fac3e526775 2,11,14,30-31,33-46,48-51,60-71,73-76,78,80-106,117,123-124,128-134,136-137,250-255,257-264,287-288,290-293,295,297-299,376-379,381,383,385,387-391,393-396,558,560-561
+  s_a40848e8f8cca9::t_464d5c9305f95a 8,141-249
+  s_a40848e8f8cca9::t_d14d519e1f740e 15-16,29,52,54-55,79,135,392,397
+  s_a40848e8f8cca9::t_a5077bc49565e8 125-127
+src/modules/Command/useCases/compileVersionedCommandBatchEnvelope.ts
+  s_a40848e8f8cca9::t_73d2cdd5c4ced6 12,52-53
+  s_a40848e8f8cca9::t_0905d2133ad516 1-11,14-51,54-144,151,158
+  s_a40848e8f8cca9::t_cee6b87520c16e 13,145-150,152-157
+src/modules/AiRuntime/stores/pendingActionConfirmationStore.ts
+  s_a40848e8f8cca9::t_a4b7347760c3c6 35,37
+  s_a40848e8f8cca9::t_fa237153e1a0c9 30-34,36,38-67,72,141,179
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "0efc12481790b90ab22ea1c494ce96b178cc1bb8",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
