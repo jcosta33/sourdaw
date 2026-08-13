@@ -3,11 +3,14 @@ import { createHandler } from '#/utils/createHandler';
 
 import { getTrackStoreState } from '../../useCases/getTrackStoreState';
 import { setTrackGain } from '../../useCases/setTrackGainPan/setTrackGain';
+import { getPlannedTrackState } from '../getPlannedTrackState';
 
 export const handleSetTrackGain = createHandler<'setTrackGain'>({
-    validate: (action) => {
-        const currentGain = getTrackStoreState()?.tracks.find((track) => track.id === action.payload.trackId)?.gain;
-        return currentGain === undefined || currentGain === action.payload.expectedGain;
+    validate: (action, context) => {
+        const currentGain =
+            getTrackStoreState()?.tracks.find((track) => track.id === action.payload.trackId)?.gain ??
+            getPlannedTrackState(context, action.payload.trackId)?.gain;
+        return currentGain === action.payload.expectedGain;
     },
     prepareAbort: () => captureAutomationRecordingRollback(),
     execute: (action) => {

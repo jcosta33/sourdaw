@@ -28,6 +28,11 @@ import {
 } from '../../stores/pendingActionConfirmationStore';
 import { confirmPendingChatActions } from '../confirmPendingChatActions';
 
+import {
+    configureAiWorkflowCommandPreflightFixture,
+    resetAiWorkflowCommandPreflightFixture,
+} from './aiWorkflowCommandPreflightFixture';
+
 const runtimeMocks = vi.hoisted(() => ({
     addDeviceToStrip: vi.fn(),
     clearReportedLatency: vi.fn(),
@@ -142,6 +147,7 @@ function propose(actions: ExecutableRuntimeAction[], id: string): void {
 
 describe('confirmed compound bus actions', () => {
     beforeEach(() => {
+        configureAiWorkflowCommandPreflightFixture();
         vi.clearAllMocks();
         configureAutomergeStoragePort(null);
         resetCrdtProjectAuthority('confirmed compound bus test');
@@ -168,6 +174,7 @@ describe('confirmed compound bus actions', () => {
     });
 
     afterEach(() => {
+        resetAiWorkflowCommandPreflightFixture();
         clearUndoHistory();
         resetActionReplayAuthority();
         clearHandlerRegistry();
@@ -207,7 +214,7 @@ describe('confirmed compound bus actions', () => {
         expect(runtimeMocks.engineRemoveSend).toHaveBeenCalledWith('track-vocals', BUS_ID);
     });
 
-    it('compensates runtime effects and leaves no project writes when a later dependent action conflicts', async () => {
+    it('rejects a later dependent conflict before any project or runtime effect', async () => {
         propose(createCompoundActions(true), 'confirmation-conflict');
 
         const result = await confirmPendingChatActions({ confirmationId: 'confirmation-conflict' });
@@ -215,8 +222,8 @@ describe('confirmed compound bus actions', () => {
         expect(result.status).toBe('failed');
         expect(trackStore.value?.tracks.some((track) => track.id === BUS_ID)).toBe(false);
         expect(trackStore.value?.tracks.find((track) => track.id === 'track-vocals')?.sends).toEqual([]);
-        expect(runtimeMocks.addDeviceToStrip).toHaveBeenCalledWith(BUS_ID, expect.any(String), 'builtin-reverb');
-        expect(runtimeMocks.removeDeviceFromStrip).toHaveBeenCalledWith(BUS_ID, expect.any(String));
+        expect(runtimeMocks.addDeviceToStrip).not.toHaveBeenCalled();
+        expect(runtimeMocks.removeDeviceFromStrip).not.toHaveBeenCalled();
         expect(runtimeMocks.engineSetSend).not.toHaveBeenCalled();
         expect(undoStore.value?.past).toEqual([]);
         expect(getPendingActionConfirmation('confirmation-conflict')?.status).toBe('failed');

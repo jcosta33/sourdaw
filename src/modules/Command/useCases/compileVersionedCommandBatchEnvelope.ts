@@ -8,6 +8,7 @@ import {
 } from '../models/VersionedCommandBatchEnvelope';
 import { type VersionedCommandEnvelope } from '../models/VersionedCommandEnvelope';
 
+import { getBatchLocalDependentTargetIds } from './getBatchLocalDependentTargetIds';
 import { getVersionedCommandBatchEffects } from './getVersionedCommandBatchEffects';
 import { getVersionedCommandTargetReferences } from './getVersionedCommandTargetReferences';
 import { parseVersionedCommandBatchEnvelope } from './parseVersionedCommandBatchEnvelope';
@@ -68,11 +69,14 @@ function parseCommands(serializedCommands: readonly string[]): VersionedCommandE
     return commands;
 }
 
-function getScopeTargetIds(commands: readonly VersionedCommandEnvelope[]): string[] {
+function getScopeTargetIds(
+    commands: readonly VersionedCommandEnvelope[],
+    excludedTargetIds: ReadonlySet<string>
+): string[] {
     const targetIds = new Set<string>();
     for (const command of commands) {
         for (const reference of getVersionedCommandTargetReferences(command)) {
-            if (reference.scope === 'stable') {
+            if (reference.scope === 'stable' && !excludedTargetIds.has(reference.id)) {
                 targetIds.add(reference.id);
             }
         }
@@ -108,6 +112,7 @@ function buildEnvelope(input: CompileVersionedCommandBatchEnvelopeInput): Versio
             command.operation === 'armTrack' ? [] : command.applicationAssignedIds.map((assigned) => assigned.value)
         )
     );
+    const batchLocalDependentTargetIds = getBatchLocalDependentTargetIds(commands, createdTargetIds);
     const protectedTargetIds = [...new Set(input.protectedTargetIds ?? [])];
     const dynamicTargetIds = new Set([
         ...(input.dynamicEffects?.affectedTrackIds ?? []),
@@ -120,7 +125,7 @@ function buildEnvelope(input: CompileVersionedCommandBatchEnvelopeInput): Versio
     }
     const targetIds = [
         ...new Set([
-            ...getScopeTargetIds(commands),
+            ...getScopeTargetIds(commands, batchLocalDependentTargetIds),
             ...effects.affectedTrackIds,
             ...effects.affectedClipIds,
             ...(input.dynamicEffects?.affectedTargetIds ?? []),

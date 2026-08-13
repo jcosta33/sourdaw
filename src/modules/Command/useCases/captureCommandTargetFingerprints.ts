@@ -13,6 +13,22 @@ function appendFingerprint(fingerprints: Map<string, string[]>, targetId: string
     fingerprints.set(targetId, matches);
 }
 
+function stableStringify(value: unknown): string {
+    if (Array.isArray(value)) {
+        return `[${value.map((item) => stableStringify(item)).join(',')}]`;
+    }
+    if (isRecord(value)) {
+        return `{${Object.keys(value)
+            .sort()
+            .map((key) => `${JSON.stringify(key)}:${stableStringify(value[key])}`)
+            .join(',')}}`;
+    }
+    if (value === undefined) {
+        return 'null';
+    }
+    return JSON.stringify(value);
+}
+
 function collectTargetFingerprints(
     value: unknown,
     targetIds: ReadonlySet<string>,
@@ -31,11 +47,11 @@ function collectTargetFingerprints(
     visited.add(value);
     const record = value as Record<string, unknown>;
     if (typeof record.id === 'string' && targetIds.has(record.id)) {
-        appendFingerprint(fingerprints, record.id, JSON.stringify(record));
+        appendFingerprint(fingerprints, record.id, stableStringify(record));
     }
     if (typeof record.id === 'string' && isRecord(record.parameterValues)) {
         for (const [parameterId, parameterValue] of Object.entries(record.parameterValues)) {
-            const parameterFingerprint = JSON.stringify({
+            const parameterFingerprint = stableStringify({
                 deviceId: record.id,
                 parameterId,
                 value: parameterValue,

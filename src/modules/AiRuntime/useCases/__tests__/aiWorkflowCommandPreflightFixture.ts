@@ -1,14 +1,20 @@
 import { trackStore } from '#/modules/Arrangement/stores';
 import { captureCommandTargetFingerprints, commandBatchPreflightPort } from '#/modules/Command/useCases';
-import { captureProjectRevision } from '#/modules/CrdtDocument/useCases';
+import { captureProjectRevision, getCrdtDoc } from '#/modules/CrdtDocument/useCases';
 
-export function configureAiWorkflowCommandPreflightFixture(): void {
-    commandBatchPreflightPort.setProvider(({ targetIds }) => {
+export function configureAiWorkflowCommandPreflightFixture(projectId?: string): void {
+    commandBatchPreflightPort.setProvider(({ projectDocument, targetIds }) => {
+        const documentFingerprints = captureCommandTargetFingerprints({
+            document: projectDocument ?? getCrdtDoc('root'),
+            targetIds,
+        });
+        const liveFingerprints = captureCommandTargetFingerprints({
+            document: { trackStore: trackStore.value },
+            targetIds,
+        });
         const targetFingerprints = {
-            ...captureCommandTargetFingerprints({
-                document: trackStore.value,
-                targetIds,
-            }),
+            ...liveFingerprints,
+            ...documentFingerprints,
         };
         for (const systemTargetId of ['master', 'hw_out']) {
             if (targetIds.includes(systemTargetId)) {
@@ -20,7 +26,7 @@ export function configureAiWorkflowCommandPreflightFixture(): void {
             availableAssetHashes: [],
             availableAudioBufferIds: [],
             lockedRanges: [],
-            projectId: captureProjectRevision(),
+            projectId: projectId ?? captureProjectRevision(),
             projectInvariantsValid: true,
             targetFingerprints,
         };

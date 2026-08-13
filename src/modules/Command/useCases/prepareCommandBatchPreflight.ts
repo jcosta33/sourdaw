@@ -175,17 +175,11 @@ export function prepareCommandBatchPreflight(
         return { status: 'rejected', reason: assetFailure };
     }
     const protectedFingerprints = Object.fromEntries(
-        envelope.scope.protectedTargetIds.map((targetId) => [targetId, before.targetFingerprints[targetId]])
+        envelope.scope.protectedTargetIds.flatMap((targetId) => {
+            const fingerprint = before.targetFingerprints[targetId];
+            return fingerprint === undefined ? [] : [[targetId, fingerprint]];
+        })
     );
-    const missingProtectedTarget = envelope.scope.protectedTargetIds.find(
-        (targetId) => protectedFingerprints[targetId] === undefined
-    );
-    if (missingProtectedTarget) {
-        return {
-            status: 'rejected',
-            reason: `Command batch protected target does not exist: ${missingProtectedTarget}`,
-        };
-    }
 
     return {
         status: 'ready',
@@ -201,9 +195,6 @@ export function prepareCommandBatchPreflight(
                 }
                 if (!after) {
                     return 'Command batch preflight state became unavailable';
-                }
-                if (after.projectId !== envelope.projectId) {
-                    return 'Command batch project changed before commit';
                 }
                 if (!after.projectInvariantsValid) {
                     return 'Command batch violated project invariants';
@@ -227,7 +218,7 @@ export function prepareCommandBatchPreflight(
                     if (condition.kind !== 'targets-unchanged') {
                         continue;
                     }
-                    const changed = (condition.targetIds ?? []).find(
+                    const changed = Object.keys(protectedFingerprints).find(
                         (targetId) => after.targetFingerprints[targetId] !== protectedFingerprints[targetId]
                     );
                     if (changed) {

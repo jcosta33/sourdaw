@@ -13,6 +13,8 @@ describe('createHandler', () => {
         });
 
         expect(handler.undoable).toBe(true);
+        expect(handler.batchExecution).toBe('singleton');
+        expect(handler.batchRestriction).toBe('missing-validation');
 
         const action = { type: 'setTempo' as const, payload: { bpm: 120 } };
         void handler.execute(action);
@@ -21,5 +23,29 @@ describe('createHandler', () => {
 
         expect(handler.describe(action)).toEqual({ label: 'Set tempo' });
         expect(describe).toHaveBeenCalledWith(action);
+    });
+
+    it('keeps only handlers with explicit side-effect-free validation batchable', () => {
+        const handler = createHandler<'setTempo'>({
+            undoable: true,
+            execute: vi.fn(),
+            describe: () => ({ label: 'Set tempo' }),
+            validate: () => true,
+        });
+
+        expect(handler.batchExecution).toBeUndefined();
+        expect(handler.batchRestriction).toBeUndefined();
+    });
+
+    it('distinguishes an explicit domain singleton from a missing validator', () => {
+        const handler = createHandler<'setTempo'>({
+            undoable: true,
+            execute: vi.fn(),
+            describe: () => ({ label: 'Set tempo' }),
+            batchExecution: 'singleton',
+        });
+
+        expect(handler.batchExecution).toBe('singleton');
+        expect(handler.batchRestriction).toBe('domain-singleton');
     });
 });

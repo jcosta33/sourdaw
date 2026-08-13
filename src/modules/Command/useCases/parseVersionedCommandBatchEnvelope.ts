@@ -13,6 +13,7 @@ import {
 } from '../models/VersionedCommandBatchEnvelope';
 import { type VersionedCommandEnvelope } from '../models/VersionedCommandEnvelope';
 
+import { getBatchLocalDependentTargetIds } from './getBatchLocalDependentTargetIds';
 import { getVersionedCommandBatchEffects } from './getVersionedCommandBatchEffects';
 import { getVersionedCommandTargetReferences } from './getVersionedCommandTargetReferences';
 import { parseVersionedCommandEnvelope } from './parseVersionedCommandEnvelope';
@@ -330,6 +331,12 @@ function parseCommands(value: unknown): VersionedCommandEnvelope[] | null {
 function validateCommandScope(commands: readonly VersionedCommandEnvelope[], scope: CommandBatchScope): string | null {
     const declaredTargets = new Set(scope.targetIds);
     const protectedTargets = new Set(scope.protectedTargetIds);
+    const createdTargetIds = new Set(
+        commands.flatMap((command) =>
+            command.operation === 'armTrack' ? [] : command.applicationAssignedIds.map((assigned) => assigned.value)
+        )
+    );
+    const batchLocalDependentTargetIds = getBatchLocalDependentTargetIds(commands, createdTargetIds);
     const overlapsProtectedRange = scope.targetRanges.some((targetRange) =>
         scope.protectedRanges.some((protectedRange) => {
             if (targetRange.startBeat === targetRange.endBeat) {
@@ -345,6 +352,9 @@ function validateCommandScope(commands: readonly VersionedCommandEnvelope[], sco
     }
     for (const command of commands) {
         for (const targetId of getCommandTargetIds(command)) {
+            if (batchLocalDependentTargetIds.has(targetId)) {
+                continue;
+            }
             if (!declaredTargets.has(targetId) || protectedTargets.has(targetId)) {
                 return `Command target ${targetId} is outside the declared batch scope`;
             }

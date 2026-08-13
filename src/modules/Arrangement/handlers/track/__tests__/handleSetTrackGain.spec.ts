@@ -20,16 +20,22 @@ describe('handleSetTrackGain', () => {
         mocks.getTrackStoreState.mockReturnValue({ tracks: [{ id: 'track-1', gain: 0.5 }] });
 
         expect(
-            handleSetTrackGain.validate?.({
-                type: 'setTrackGain',
-                payload: { trackId: 'track-1', gain: 0.8, expectedGain: 0.5 },
-            })
+            handleSetTrackGain.validate?.(
+                {
+                    type: 'setTrackGain',
+                    payload: { trackId: 'track-1', gain: 0.8, expectedGain: 0.5 },
+                },
+                { actions: [], actionIndex: 0 }
+            )
         ).toBe(true);
         expect(
-            handleSetTrackGain.validate?.({
-                type: 'setTrackGain',
-                payload: { trackId: 'track-1', gain: 0.8, expectedGain: 0.4 },
-            })
+            handleSetTrackGain.validate?.(
+                {
+                    type: 'setTrackGain',
+                    payload: { trackId: 'track-1', gain: 0.8, expectedGain: 0.4 },
+                },
+                { actions: [], actionIndex: 0 }
+            )
         ).toBe(false);
         expect(mocks.setTrackGain).not.toHaveBeenCalled();
     });

@@ -41,6 +41,10 @@ import { confirmPendingChatActions } from '../confirmPendingChatActions';
 import { getPlannedActionAffectedIds } from '../getPlannedActionAffectedIds';
 import { sendChatMessage } from '../sendChatMessage';
 
+import {
+    configureAiWorkflowCommandPreflightFixture,
+    resetAiWorkflowCommandPreflightFixture,
+} from './aiWorkflowCommandPreflightFixture';
 import { withWorkflowCapabilitySelection } from './workflowCapabilitySelectionFixture';
 
 const PROMPT =
@@ -364,6 +368,7 @@ function getExpectedPlateTailSeconds(): number {
 
 describe('backing-vocal plate workflow', () => {
     beforeEach(() => {
+        configureAiWorkflowCommandPreflightFixture();
         vi.clearAllMocks();
         runtimeMocks.backend.value = 'webllm';
         runtimeMocks.generateWebLlmCompletion.mockImplementation((_systemPrompt: string, userMessage: string) =>
@@ -440,6 +445,7 @@ describe('backing-vocal plate workflow', () => {
     });
 
     afterEach(() => {
+        resetAiWorkflowCommandPreflightFixture();
         clearUndoHistory();
         resetActionReplayAuthority();
         clearHandlerRegistry();

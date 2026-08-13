@@ -221,6 +221,84 @@ describe('command batch contract', () => {
         });
     });
 
+    it('keeps a created device parameter in scope without requiring it before the batch', () => {
+        const addDeviceCommand = actionCommand({
+            action: {
+                type: 'addDevice',
+                payload: {
+                    trackId: 'track-bus',
+                    deviceType: 'builtin-filter',
+                    deviceId: 'device-filter',
+                },
+            },
+            commandId: GAIN_COMMAND_ID,
+        });
+        const setParameterCommand = actionCommand({
+            action: {
+                type: 'setDeviceParameter',
+                payload: {
+                    deviceId: 'device-filter',
+                    expectedDeviceType: 'builtin-filter',
+                    paramId: 'filter-type',
+                    value: 1,
+                },
+            },
+            commandId: PAN_COMMAND_ID,
+            dependencyIds: [GAIN_COMMAND_ID],
+        });
+
+        const compiled = compileVersionedCommandBatchEnvelope({
+            runId: 'run-device-parameter',
+            batchId: 'batch-device-parameter',
+            projectId: 'project-1',
+            baseRevision: 'revision-1',
+            intent: 'Create and configure a filter',
+            commands: [JSON.stringify(addDeviceCommand), JSON.stringify(setParameterCommand)],
+        });
+        const parsed = parseVersionedCommandBatchEnvelope(compiled.serialized, compiled.authority);
+        if (parsed.status === 'invalid') {
+            throw new Error(parsed.reason);
+        }
+
+        expect(parsed.envelope.scope.targetIds).toEqual(['track-bus', 'device-filter']);
+        expect(parsed.envelope.preconditions).toContainEqual({ kind: 'targets-exist', targetIds: ['track-bus'] });
+        expect(parsed.envelope.preconditions).toContainEqual({ kind: 'targets-absent', targetIds: ['device-filter'] });
+    });
+
+    it('still requires an existing device parameter before the batch', () => {
+        const setParameterCommand = actionCommand({
+            action: {
+                type: 'setDeviceParameter',
+                payload: {
+                    deviceId: 'device-filter',
+                    expectedDeviceType: 'builtin-filter',
+                    paramId: 'filter-type',
+                    value: 1,
+                },
+            },
+            commandId: GAIN_COMMAND_ID,
+        });
+
+        const compiled = compileVersionedCommandBatchEnvelope({
+            runId: 'run-existing-device-parameter',
+            batchId: 'batch-existing-device-parameter',
+            projectId: 'project-1',
+            baseRevision: 'revision-1',
+            intent: 'Configure an existing filter',
+            commands: [JSON.stringify(setParameterCommand)],
+        });
+        const parsed = parseVersionedCommandBatchEnvelope(compiled.serialized, compiled.authority);
+        if (parsed.status === 'invalid') {
+            throw new Error(parsed.reason);
+        }
+
+        expect(parsed.envelope.scope.targetIds).toEqual(['device-filter', 'filter-type']);
+        expect(parsed.envelope.preconditions).toContainEqual({
+            kind: 'targets-exist',
+            targetIds: ['device-filter', 'filter-type'],
+        });
+    });
+
     it('requires application-owned cascade bounds for track removal', () => {
         const removeTrackCommand = actionCommand({
             action: {

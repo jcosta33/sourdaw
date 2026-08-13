@@ -3,6 +3,7 @@ import { type AppAction } from '#/utils/handlerContract';
 
 import { midiNotesEqual } from '../../transformers/midiNotesEqual';
 import { describeShortMidiOverlapRemoval } from '../../useCases/midiNoteTransforms/describeShortMidiOverlapRemoval';
+import { getRemoveShortMidiOverlapsStatus } from '../../useCases/midiNoteTransforms/getRemoveShortMidiOverlapsStatus';
 import { projectShortMidiOverlapRemoval } from '../../useCases/midiNoteTransforms/projectShortMidiOverlapRemoval';
 import { removeShortMidiOverlaps } from '../../useCases/midiNoteTransforms/removeShortMidiOverlaps';
 
@@ -58,6 +59,7 @@ function prepareRemoveShortMidiOverlaps(action: Extract<AppAction, { type: 'remo
 }
 
 export const handleRemoveShortMidiOverlaps = createHandler<'removeShortMidiOverlaps'>({
+    validate: (action) => getRemoveShortMidiOverlapsStatus(action.payload) !== 'conflict',
     execute: (action) => ({ status: removeShortMidiOverlaps(action.payload) }),
     describe: (action) => prepareRemoveShortMidiOverlaps(action).description,
     isNoop: (action) => prepareRemoveShortMidiOverlaps(action).isNoop,

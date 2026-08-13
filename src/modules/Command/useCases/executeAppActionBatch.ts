@@ -181,14 +181,19 @@ async function executePreparedBatch(
     shouldExecute: ExecuteOptions['shouldExecute'] | undefined
 ): Promise<PreparedBatchAction[]> {
     const executedActions: PreparedBatchAction[] = [];
-    for (const prepared of preparedActions) {
+    for (const [actionIndex, prepared] of preparedActions.entries()) {
         assertExecutionAuthorized(shouldExecute);
         if (prepared.handler.isNoop?.(prepared.action)) {
             continue;
         }
         prepared.afterAbort = prepared.handler.prepareAbort?.(prepared.action) ?? null;
         attemptedActions.push(prepared);
-        const result: HandlerExecutionResult | void = await scope(() => prepared.handler.execute(prepared.action));
+        const result: HandlerExecutionResult | void = await scope(() =>
+            prepared.handler.execute(prepared.action, {
+                actions: preparedActions.map((candidate) => candidate.action),
+                actionIndex,
+            })
+        );
         if (result?.status === 'no-write' || result?.status === 'conflict') {
             attemptedActions.pop();
             throw new AppActionConflictError(prepared.action.type);
@@ -556,7 +561,13 @@ export const executeAppActionBatch: ExecuteAppActionBatch = inject({ logger })(
             }
             const runtimeAction = runtimeActions[0];
             if (runtimeAction) {
-                if (runtimeAction.handler.validate && !runtimeAction.handler.validate(runtimeAction.action)) {
+                if (
+                    runtimeAction.handler.validate &&
+                    !runtimeAction.handler.validate(runtimeAction.action, {
+                        actions: [runtimeAction.action],
+                        actionIndex: 0,
+                    })
+                ) {
                     return {
                         status: 'conflicted',
                         reason: `Action conflicts with current project state: ${runtimeAction.action.type}`,
@@ -566,8 +577,12 @@ export const executeAppActionBatch: ExecuteAppActionBatch = inject({ logger })(
                 return executeRuntimeAction(runtimeAction, options?.source, options?.shouldExecute);
             }
 
-            for (const prepared of preparedActions) {
-                if (prepared.handler.validate && !prepared.handler.validate(prepared.action)) {
+            const validationActions = preparedActions.map((prepared) => prepared.action);
+            for (const [actionIndex, prepared] of preparedActions.entries()) {
+                if (
+                    prepared.handler.validate &&
+                    !prepared.handler.validate(prepared.action, { actions: validationActions, actionIndex })
+                ) {
                     return {
                         status: 'conflicted',
                         reason: `Action conflicts with current project state: ${prepared.action.type}`,

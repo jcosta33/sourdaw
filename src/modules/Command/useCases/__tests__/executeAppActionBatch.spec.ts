@@ -63,7 +63,7 @@ function createHandler<Action extends AppAction>(input: {
         describe: input.describe ?? ((action) => ({ label: 'Batch action', inverseAction: action })),
         executionKind: input.executionKind,
         isNoop: input.isNoop,
-        validate: input.validate,
+        validate: input.validate ?? (() => true),
         requiresAbortCompensation: input.requiresAbortCompensation,
         undoable: input.undoable ?? true,
     };

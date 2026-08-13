@@ -68,6 +68,8 @@ function matchesExpectedScope(action: CreateBusAction): boolean {
 }
 
 export const handleCreateBus = createHandler<'createBus'>({
+    validate: (action, context) =>
+        matchesExpectedScope(action) && Boolean(handleAddTrack.validate?.(toAddTrackAction(action), context)),
     execute: async (action) => {
         if (!matchesExpectedScope(action)) {
             pendingCreatedBusGuards.delete(action);

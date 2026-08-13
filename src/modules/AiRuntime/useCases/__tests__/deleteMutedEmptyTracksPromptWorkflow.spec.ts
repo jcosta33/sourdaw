@@ -30,6 +30,11 @@ import {
 import { confirmPendingChatActions } from '../confirmPendingChatActions';
 import { sendChatMessage } from '../sendChatMessage';
 
+import {
+    configureAiWorkflowCommandPreflightFixture,
+    resetAiWorkflowCommandPreflightFixture,
+} from './aiWorkflowCommandPreflightFixture';
+
 const PROMPT = 'Delete all muted empty tracks, but preserve buses and groups.';
 
 const providerPlan = [
@@ -202,6 +207,7 @@ function setProviderPlan(plan: readonly { name: string; arguments: Readonly<Reco
 
 describe('delete muted empty tracks prompt workflow', () => {
     beforeEach(() => {
+        configureAiWorkflowCommandPreflightFixture();
         vi.clearAllMocks();
         runtimeMocks.removeTrackStrip.mockReset();
         runtimeMocks.backend.value = 'webllm';
@@ -252,6 +258,7 @@ describe('delete muted empty tracks prompt workflow', () => {
     });
 
     afterEach(() => {
+        resetAiWorkflowCommandPreflightFixture();
         clearUndoHistory();
         resetActionReplayAuthority();
         clearHandlerRegistry();

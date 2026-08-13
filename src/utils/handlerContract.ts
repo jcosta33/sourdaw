@@ -1727,13 +1727,21 @@ export type HandlerExecutionResult = {
     status: 'written' | 'no-write' | 'conflict';
 } & HandlerDeferredEffects;
 
+export type HandlerValidationContext = {
+    readonly actions: readonly AppAction[];
+    readonly actionIndex: number;
+};
+
 /** One dispatchable action's handler. Built via `createHandler` and merged into a module
  *  handler map by each `get<Module>Handlers` factory. */
 export type ActionHandler<Action extends AppAction = AppAction> = {
-    execute: (action: Action) => void | HandlerExecutionResult | Promise<void | HandlerExecutionResult>;
+    execute: (
+        action: Action,
+        context?: HandlerValidationContext
+    ) => void | HandlerExecutionResult | Promise<void | HandlerExecutionResult>;
     describe: (action: Action) => HandlerDescribeResult;
     /** Side-effect-free authoritative domain validation run for the whole batch before its first effect. */
-    validate?: (action: Action) => boolean;
+    validate?: (action: Action, context: HandlerValidationContext) => boolean;
     /** Resolve deterministic application-owned payload fields, without project/runtime writes, before hashing. */
     materializeCommandArguments?: (action: Action) => void;
     /** Capture an owner-provided rollback for non-CRDT pre-commit state before dispatch begins. */
@@ -1746,6 +1754,8 @@ export type ActionHandler<Action extends AppAction = AppAction> = {
     executionKind?: 'project' | 'runtime';
     /** Actions whose preflight description depends on live state must not be combined with other batch writes. */
     batchExecution?: 'singleton';
+    /** Why this handler is singleton-only, so explicit domain restrictions take precedence in rejection messages. */
+    batchRestriction?: 'domain-singleton' | 'missing-validation';
     undoable: boolean;
 };
 
