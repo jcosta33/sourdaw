@@ -1,6 +1,7 @@
 import {
     VERSIONED_COMMAND_BATCH_SCHEMA_VERSION,
     type CommandBatchAuthority,
+    type CommandBatchDynamicEffects,
     type CommandBatchLocalBinding,
     type CommandBatchMode,
     type CommandBatchRange,
@@ -8,6 +9,7 @@ import {
 } from '../models/VersionedCommandBatchEnvelope';
 import { type VersionedCommandEnvelope } from '../models/VersionedCommandEnvelope';
 
+import { commandRequiresDynamicEffects } from './commandRequiresDynamicEffects';
 import { getBatchLocalDependentTargetIds } from './getBatchLocalDependentTargetIds';
 import { getVersionedCommandBatchEffects } from './getVersionedCommandBatchEffects';
 import { getVersionedCommandTargetReferences } from './getVersionedCommandTargetReferences';
@@ -28,34 +30,13 @@ type CompileVersionedCommandBatchEnvelopeInput = {
     protectedRanges?: readonly CommandBatchRange[];
     batchLocalBindings?: readonly CommandBatchLocalBinding[];
     autoCommit?: boolean;
-    dynamicEffects?: {
-        affectedTrackIds?: readonly string[];
-        affectedClipIds?: readonly string[];
-        affectedTargetIds?: readonly string[];
-        automationPoints?: number;
-        deletedObjects?: number;
-    };
+    dynamicEffects?: CommandBatchDynamicEffects;
 };
 
 type CompiledVersionedCommandBatchEnvelope = {
     serialized: string;
     authority: CommandBatchAuthority;
 };
-
-const DYNAMIC_EFFECT_OPERATIONS = new Set([
-    'clearSolos',
-    'scaleAutomation',
-    'stretchAutomation',
-    'invertAutomation',
-    'reverseAutomation',
-    'thinAutomation',
-    'quantizeAutomation',
-    'duplicateClip',
-    'duplicateClipToNextBar',
-    'duplicateTrack',
-    'removeTrack',
-    'removeClip',
-]);
 
 function parseCommands(serializedCommands: readonly string[]): VersionedCommandEnvelope[] {
     const commands: VersionedCommandEnvelope[] = [];
@@ -98,15 +79,28 @@ function getTargetRanges(commands: readonly VersionedCommandEnvelope[]): Command
     return ranges;
 }
 
+function hasDeclaredDynamicEffects(dynamicEffects: CommandBatchDynamicEffects | undefined): boolean {
+    return (
+        (dynamicEffects?.affectedTrackIds?.length ?? 0) > 0 ||
+        (dynamicEffects?.affectedClipIds?.length ?? 0) > 0 ||
+        (dynamicEffects?.affectedTargetIds?.length ?? 0) > 0 ||
+        (dynamicEffects?.automationPoints ?? 0) > 0 ||
+        (dynamicEffects?.deletedObjects ?? 0) > 0
+    );
+}
+
 function buildEnvelope(input: CompileVersionedCommandBatchEnvelopeInput): VersionedCommandBatchEnvelope {
     const commands = parseCommands(input.commands);
     if (commands.length === 0) {
         throw new Error('Command batch requires at least one command');
     }
-    if (commands.some((command) => DYNAMIC_EFFECT_OPERATIONS.has(command.operation)) && !input.dynamicEffects) {
+    const requiresDynamicEffects = commands.some((command) => commandRequiresDynamicEffects(command.operation));
+    if (requiresDynamicEffects && !input.dynamicEffects) {
         throw new Error('Command batch requires application-owned dynamic effect bounds');
     }
-    const effects = getVersionedCommandBatchEffects(commands, input.dynamicEffects);
+    const dynamicEffects =
+        requiresDynamicEffects || hasDeclaredDynamicEffects(input.dynamicEffects) ? input.dynamicEffects : undefined;
+    const effects = getVersionedCommandBatchEffects(commands, dynamicEffects);
     const createdTargetIds = new Set(
         commands.flatMap((command) =>
             command.operation === 'armTrack' ? [] : command.applicationAssignedIds.map((assigned) => assigned.value)
@@ -115,9 +109,9 @@ function buildEnvelope(input: CompileVersionedCommandBatchEnvelopeInput): Versio
     const batchLocalDependentTargetIds = getBatchLocalDependentTargetIds(commands, createdTargetIds);
     const protectedTargetIds = [...new Set(input.protectedTargetIds ?? [])];
     const dynamicTargetIds = new Set([
-        ...(input.dynamicEffects?.affectedTrackIds ?? []),
-        ...(input.dynamicEffects?.affectedClipIds ?? []),
-        ...(input.dynamicEffects?.affectedTargetIds ?? []),
+        ...(dynamicEffects?.affectedTrackIds ?? []),
+        ...(dynamicEffects?.affectedClipIds ?? []),
+        ...(dynamicEffects?.affectedTargetIds ?? []),
     ]);
     const protectedDynamicOverlap = protectedTargetIds.filter((targetId) => dynamicTargetIds.has(targetId));
     if (protectedDynamicOverlap.length > 0) {
@@ -128,7 +122,7 @@ function buildEnvelope(input: CompileVersionedCommandBatchEnvelopeInput): Versio
             ...getScopeTargetIds(commands, batchLocalDependentTargetIds),
             ...effects.affectedTrackIds,
             ...effects.affectedClipIds,
-            ...(input.dynamicEffects?.affectedTargetIds ?? []),
+            ...(dynamicEffects?.affectedTargetIds ?? []),
         ]),
     ];
     const scope = {
@@ -190,6 +184,7 @@ function buildEnvelope(input: CompileVersionedCommandBatchEnvelopeInput): Versio
             .filter((command) => command.dependencyIds.length > 0)
             .map((command) => ({ commandId: command.commandId, dependsOn: [...command.dependencyIds] })),
         batchLocalBindings: structuredClone(input.batchLocalBindings ?? []),
+        dynamicEffects: dynamicEffects ? structuredClone(dynamicEffects) : undefined,
         grants,
         budgets,
     };

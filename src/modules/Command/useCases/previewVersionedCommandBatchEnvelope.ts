@@ -2,9 +2,11 @@ import { type ActionHandler, type AppAction } from '#/utils/handlerContract';
 
 import { type VersionedCommandBatchEnvelope } from '../models/VersionedCommandBatchEnvelope';
 
+import { buildSemanticProjectDiff } from './buildSemanticProjectDiff';
 import { commandBatchPreviewPort } from './commandBatchPreviewPort';
 import { findSingletonBatchAction } from './findSingletonBatchAction';
 import { getCommandHandler } from './getCommandHandler';
+import { partialCommandBatchSelection } from './partialCommandBatchSelection';
 import { prepareCommandBatchPreflight } from './prepareCommandBatchPreflight';
 
 type PreviewActionHandler = Extract<ActionHandler, { previewExecution: 'isolated-project' }>;
@@ -33,10 +35,12 @@ export function previewVersionedCommandBatchEnvelope(envelope: VersionedCommandB
 
     const preparedActions = [] as Array<{
         action: AppAction;
+        command: VersionedCommandBatchEnvelope['commands'][number];
         handler: PreviewActionHandler;
         label: string;
+        recovery: 'inverse' | 'compensable' | 'irreversible';
     }>;
-    for (const action of actions) {
+    for (const [actionIndex, action] of actions.entries()) {
         const handler = getCommandHandler(action);
         if (!handler) {
             return {
@@ -52,9 +56,9 @@ export function previewVersionedCommandBatchEnvelope(envelope: VersionedCommandB
                 actions: [] as [],
             };
         }
-        let label: string;
+        let description: ReturnType<PreviewActionHandler['describe']>;
         try {
-            label = handler.describe(action).label;
+            description = handler.describe(action);
         } catch (error) {
             return {
                 status: 'rejected' as const,
@@ -62,7 +66,19 @@ export function previewVersionedCommandBatchEnvelope(envelope: VersionedCommandB
                 actions: [] as [],
             };
         }
-        preparedActions.push({ action, handler, label });
+        let recovery: 'inverse' | 'compensable' | 'irreversible' = 'irreversible';
+        if (description.inverseAction && handler.undoable) {
+            recovery = 'inverse';
+        } else if (description.inverseAction || handler.prepareAbort) {
+            recovery = 'compensable';
+        }
+        preparedActions.push({
+            action,
+            command: envelope.commands[actionIndex]!,
+            handler,
+            label: description.label,
+            recovery,
+        });
     }
 
     let workspace;
@@ -82,6 +98,7 @@ export function previewVersionedCommandBatchEnvelope(envelope: VersionedCommandB
             actions: [] as [],
         };
     }
+    const previewWorkspace = workspace;
 
     try {
         const validationActions = preparedActions.map(({ action }) => action);
@@ -141,6 +158,19 @@ export function previewVersionedCommandBatchEnvelope(envelope: VersionedCommandB
             return { status: 'conflicted' as const, reason: postconditionFailure, actions: [] as [] };
         }
 
+        const partialAcceptance = partialCommandBatchSelection.create(
+            envelope,
+            executedActions.map(({ command }) => command.commandId)
+        );
+        let released = false;
+        function release() {
+            partialCommandBatchSelection.revoke(partialAcceptance);
+            if (!released) {
+                released = true;
+                previewWorkspace.release();
+            }
+        }
+
         return {
             status: 'previewed' as const,
             actions: executedActions.map(({ action, label }) => ({ action, label })),
@@ -148,9 +178,17 @@ export function previewVersionedCommandBatchEnvelope(envelope: VersionedCommandB
             baseRevision: envelope.baseRevision,
             projectDocument,
             projectInvariantsValid: true as const,
+            partialAcceptance,
+            semanticDiff: buildSemanticProjectDiff({
+                envelope: { ...envelope, commands: executedActions.map(({ command }) => command) },
+                projectDocument,
+                recoveryByCommandId: Object.fromEntries(
+                    executedActions.map(({ command, recovery }) => [command.commandId, recovery])
+                ),
+            }),
             resource: {
                 baseRevision: envelope.baseRevision,
-                release: workspace.release,
+                release,
             },
         };
     } catch (error) {

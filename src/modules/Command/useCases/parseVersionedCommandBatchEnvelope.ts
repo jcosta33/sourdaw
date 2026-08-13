@@ -5,6 +5,7 @@ import {
     type CommandBatchCondition,
     type CommandBatchConditionKind,
     type CommandBatchDependency,
+    type CommandBatchDynamicEffects,
     type CommandBatchGrants,
     type CommandBatchLocalBinding,
     type CommandBatchRange,
@@ -13,6 +14,7 @@ import {
 } from '../models/VersionedCommandBatchEnvelope';
 import { type VersionedCommandEnvelope } from '../models/VersionedCommandEnvelope';
 
+import { commandRequiresDynamicEffects } from './commandRequiresDynamicEffects';
 import { getBatchLocalDependentTargetIds } from './getBatchLocalDependentTargetIds';
 import { getVersionedCommandBatchEffects } from './getVersionedCommandBatchEffects';
 import { getVersionedCommandTargetReferences } from './getVersionedCommandTargetReferences';
@@ -59,6 +61,7 @@ const BATCH_KEYS = new Set([
     'postconditions',
     'dependencies',
     'batchLocalBindings',
+    'dynamicEffects',
     'grants',
     'budgets',
 ]);
@@ -67,6 +70,13 @@ const RANGE_KEYS = new Set(['startBeat', 'endBeat']);
 const CONDITION_KEYS = new Set(['kind', 'targetIds', 'value']);
 const DEPENDENCY_KEYS = new Set(['commandId', 'dependsOn']);
 const BINDING_KEYS = new Set(['bindingId', 'producerArgument', 'producerCommandId']);
+const DYNAMIC_EFFECT_KEYS = new Set([
+    'affectedTrackIds',
+    'affectedClipIds',
+    'affectedTargetIds',
+    'automationPoints',
+    'deletedObjects',
+]);
 const GRANTS_KEYS = new Set(['allowedOperationPrefixes', ...GRANT_KEYS]);
 const BUDGETS_KEYS = new Set(BUDGET_KEYS);
 const CONDITION_KINDS = new Set<CommandBatchConditionKind>([
@@ -300,6 +310,35 @@ function parseBudgets(value: unknown): CommandBatchBudgets | null {
     return value as CommandBatchBudgets;
 }
 
+function parseDynamicEffects(value: unknown): CommandBatchDynamicEffects | null | undefined {
+    if (value === undefined) {
+        return undefined;
+    }
+    if (!isRecord(value) || !hasOnlyKeys(value, DYNAMIC_EFFECT_KEYS)) {
+        return null;
+    }
+    for (const key of ['affectedTrackIds', 'affectedClipIds', 'affectedTargetIds'] as const) {
+        if (value[key] !== undefined && !isUniqueNonEmptyStrings(value[key])) {
+            return null;
+        }
+    }
+    for (const key of ['automationPoints', 'deletedObjects'] as const) {
+        if (value[key] !== undefined && (!Number.isSafeInteger(value[key]) || (value[key] as number) < 0)) {
+            return null;
+        }
+    }
+    const affectedTrackIds = value.affectedTrackIds as string[] | undefined;
+    const affectedClipIds = value.affectedClipIds as string[] | undefined;
+    const affectedTargetIds = value.affectedTargetIds as string[] | undefined;
+    return {
+        affectedTrackIds: affectedTrackIds ? [...affectedTrackIds] : undefined,
+        affectedClipIds: affectedClipIds ? [...affectedClipIds] : undefined,
+        affectedTargetIds: affectedTargetIds ? [...affectedTargetIds] : undefined,
+        automationPoints: value.automationPoints as number | undefined,
+        deletedObjects: value.deletedObjects as number | undefined,
+    };
+}
+
 function getCommandTargetIds(command: VersionedCommandEnvelope): string[] {
     const targets = new Set<string>();
     for (const reference of getVersionedCommandTargetReferences(command)) {
@@ -501,11 +540,15 @@ function validateGrants(commands: readonly VersionedCommandEnvelope[], grants: C
     return null;
 }
 
-function validateBudgets(commands: readonly VersionedCommandEnvelope[], budgets: CommandBatchBudgets): string | null {
+function validateBudgets(
+    commands: readonly VersionedCommandEnvelope[],
+    budgets: CommandBatchBudgets,
+    dynamicEffects: CommandBatchDynamicEffects | undefined
+): string | null {
     if (commands.length > budgets.maxCommands) {
         return 'Command batch exceeds maxCommands';
     }
-    const effects = getVersionedCommandBatchEffects(commands);
+    const effects = getVersionedCommandBatchEffects(commands, dynamicEffects);
     const counts: Array<[keyof CommandBatchBudgets, number]> = [
         ['maxCreatedTracks', effects.createdTracks],
         ['maxDeletedObjects', effects.deletedObjects],
@@ -520,6 +563,30 @@ function validateBudgets(commands: readonly VersionedCommandEnvelope[], budgets:
         return `Command batch exceeds ${exceeded[0]}`;
     }
     return null;
+}
+
+function validateDynamicEffects(
+    commands: readonly VersionedCommandEnvelope[],
+    scope: CommandBatchScope,
+    dynamicEffects: CommandBatchDynamicEffects | undefined
+): string | null {
+    if (commands.some((command) => commandRequiresDynamicEffects(command.operation)) && !dynamicEffects) {
+        return 'Command batch requires application-owned dynamic effect bounds';
+    }
+    if (!dynamicEffects) {
+        return null;
+    }
+    const declaredTargets = new Set(scope.targetIds);
+    const protectedTargets = new Set(scope.protectedTargetIds);
+    const dynamicTargetIds = [
+        ...(dynamicEffects.affectedTrackIds ?? []),
+        ...(dynamicEffects.affectedClipIds ?? []),
+        ...(dynamicEffects.affectedTargetIds ?? []),
+    ];
+    const invalidTarget = dynamicTargetIds.find(
+        (targetId) => !declaredTargets.has(targetId) || protectedTargets.has(targetId)
+    );
+    return invalidTarget ? `Dynamic command target is outside the declared batch scope: ${invalidTarget}` : null;
 }
 
 export function parseVersionedCommandBatchEnvelope(
@@ -559,6 +626,7 @@ export function parseVersionedCommandBatchEnvelope(
     const postconditions = parseConditions(value.postconditions);
     const dependencies = parseDependencies(value.dependencies);
     const batchLocalBindings = parseBindings(value.batchLocalBindings);
+    const dynamicEffects = parseDynamicEffects(value.dynamicEffects);
     const grants = parseGrants(value.grants);
     const budgets = parseBudgets(value.budgets);
     if (!scope) {
@@ -578,6 +646,9 @@ export function parseVersionedCommandBatchEnvelope(
     }
     if (!batchLocalBindings) {
         return { status: 'invalid', reason: 'Command batch local bindings are malformed' };
+    }
+    if (dynamicEffects === null) {
+        return { status: 'invalid', reason: 'Command batch dynamic effects are malformed' };
     }
     if (!grants) {
         return { status: 'invalid', reason: 'Command batch grants are malformed' };
@@ -607,10 +678,11 @@ export function parseVersionedCommandBatchEnvelope(
     }
     const failure =
         validateCommandScope(commands, scope) ??
+        validateDynamicEffects(commands, scope, dynamicEffects) ??
         validateDependencies(commands, dependencies) ??
         validateBatchLocalBindings(commands, batchLocalBindings) ??
         validateGrants(commands, grants) ??
-        validateBudgets(commands, budgets) ??
+        validateBudgets(commands, budgets, dynamicEffects) ??
         validateConditions(preconditions, postconditions, scope, value.baseRevision);
     if (failure) {
         return { status: 'invalid', reason: failure };
@@ -632,6 +704,7 @@ export function parseVersionedCommandBatchEnvelope(
             postconditions,
             dependencies,
             batchLocalBindings,
+            dynamicEffects,
             grants,
             budgets,
         },

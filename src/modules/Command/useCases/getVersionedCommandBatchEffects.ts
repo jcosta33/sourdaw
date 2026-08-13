@@ -1,3 +1,4 @@
+import { type CommandBatchDynamicEffects } from '../models/VersionedCommandBatchEnvelope';
 import { type VersionedCommandEnvelope } from '../models/VersionedCommandEnvelope';
 
 type CommandGrant = 'create' | 'delete' | 'routing' | 'tempo' | 'master' | 'file' | 'audioUpload' | 'remoteGeneration';
@@ -11,14 +12,6 @@ export type VersionedCommandBatchEffects = {
     automationPoints: number;
     importedAssets: number;
     renderJobs: number;
-};
-
-type VersionedCommandBatchDynamicEffects = {
-    affectedTrackIds?: readonly string[];
-    affectedClipIds?: readonly string[];
-    affectedTargetIds?: readonly string[];
-    automationPoints?: number;
-    deletedObjects?: number;
 };
 
 const CREATE_OPERATIONS = new Set([
@@ -188,7 +181,7 @@ function addRequiredGrants(command: VersionedCommandEnvelope, requiredGrants: Se
 
 export function getVersionedCommandBatchEffects(
     commands: readonly VersionedCommandEnvelope[],
-    dynamicEffects: VersionedCommandBatchDynamicEffects = {}
+    dynamicEffects: CommandBatchDynamicEffects = {}
 ): VersionedCommandBatchEffects {
     const requiredGrants = new Set<CommandGrant>();
     const affectedTrackIds = new Set(dynamicEffects.affectedTrackIds ?? []);

@@ -10,9 +10,11 @@ import {
     commandBatchPreviewPort,
     commandDeviceVersionsPort,
     commandProjectRevisionPort,
+    compilePartialCommandBatchAcceptance,
     compileVersionedCommandBatchEnvelope,
     createVersionedCommandEnvelope,
     executeVersionedCommandBatchEnvelope,
+    parseVersionedCommandBatchEnvelope,
     serializeVersionedCommandEnvelope,
 } from '#/modules/Command/useCases';
 import { tempoMapStore, transportStore } from '#/modules/Transport/stores';
@@ -96,13 +98,53 @@ describe('previewCommandBatch', () => {
         expect(preview).toMatchObject({
             status: 'previewed',
             projectDocument: { transport: { tempo: 120 } },
+            semanticDiff: {
+                schemaVersion: 1,
+                baseRevision: revision,
+                batchId: 'batch-production-preview',
+                summary: 'Preview tempo change',
+                estimatedAudioImpact: { level: 'structural' },
+                facts: {
+                    project: [expect.objectContaining({ commandId: command.commandId })],
+                },
+            },
         });
         expect(transportStore.value?.tempo).toBe(100);
         expect(automergeRepository.getDoc<Record<string, unknown>>('root')?.transport).toMatchObject({ tempo: 100 });
         if (preview.status !== 'previewed') {
             throw new Error('Expected a production preview resource');
         }
+        const partial = compilePartialCommandBatchAcceptance({
+            batchId: 'batch-production-partial',
+            previewSelection: preview.partialAcceptance,
+            runId: 'run-production-partial',
+            selectedIntentGroupIds: [command.commandId],
+        });
+        expect(partial.status).toBe('compiled');
+        if (partial.status !== 'compiled') {
+            throw new Error(partial.reason);
+        }
+        const parsedPartial = parseVersionedCommandBatchEnvelope(partial.serialized, partial.authority);
+        expect(parsedPartial).toMatchObject({
+            status: 'valid',
+            envelope: {
+                batchId: 'batch-production-partial',
+                mode: 'commit',
+                commands: [expect.objectContaining({ operation: 'setTempo' })],
+            },
+        });
         preview.resource.release();
+        expect(
+            compilePartialCommandBatchAcceptance({
+                batchId: 'batch-released-preview',
+                previewSelection: preview.partialAcceptance,
+                runId: 'run-released-preview',
+                selectedIntentGroupIds: [command.commandId],
+            })
+        ).toEqual({
+            status: 'rejected',
+            reason: 'Partial acceptance requires a successful preview outcome',
+        });
     });
 
     it('previews a registered production addTrack command without publishing the track', async () => {
