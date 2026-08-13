@@ -1,5 +1,9 @@
 import { logger } from '#/infra/logger/appLogger';
-import { executeAppActionBatch, generateGroupId } from '#/modules/Command/useCases';
+import {
+    executeAppActionBatch,
+    executeVersionedCommandBatchEnvelope,
+    generateGroupId,
+} from '#/modules/Command/useCases';
 import { captureProjectRevision } from '#/modules/CrdtDocument/useCases';
 import { type AppAction } from '#/utils/handlerContract';
 
@@ -15,6 +19,8 @@ type ExecutePlannedActionsInput = {
     executionMode?: 'atomic';
     signal?: AbortSignal;
     successVerb?: 'Executed' | 'Confirmed';
+    group?: ReturnType<typeof generateGroupId>;
+    commandBatch?: Pick<Parameters<typeof executeVersionedCommandBatchEnvelope>[0], 'authority' | 'serialized'>;
 };
 
 type ExecutedAction = {
@@ -45,7 +51,7 @@ function failureReason(error: unknown): string {
 }
 
 export async function executePlannedActions(input: ExecutePlannedActionsInput): Promise<ExecutePlannedActionsResult> {
-    const group = generateGroupId(input.prompt);
+    const group = input.group ?? generateGroupId(input.prompt);
     let revisionInvalidated = false;
 
     function shouldExecute(): boolean {
@@ -53,12 +59,15 @@ export async function executePlannedActions(input: ExecutePlannedActionsInput): 
         return input.signal?.aborted !== true && !revisionInvalidated;
     }
 
-    const batchResult = await executeAppActionBatch(input.actions, {
+    const executionOptions = {
         ...group,
-        source: 'prompt',
+        source: 'prompt' as const,
         requireCompensation: input.executionMode === 'atomic',
         shouldExecute,
-    });
+    };
+    const batchResult = input.commandBatch
+        ? await executeVersionedCommandBatchEnvelope({ ...input.commandBatch, options: executionOptions })
+        : await executeAppActionBatch(input.actions, executionOptions);
 
     if (batchResult.status === 'cancelled') {
         if (input.signal?.aborted === true) {

@@ -1,5 +1,6 @@
 import { isAppError } from '#/infra/errors/isAppError';
-import { generateGroupId } from '#/modules/Command/useCases';
+import { compileVersionedCommandBatchEnvelope, generateGroupId } from '#/modules/Command/useCases';
+import { projectStore } from '#/modules/Project/stores';
 
 import { AiProposalInvalidatedError } from '../errors/AiProposalInvalidatedError';
 import { isAiRuntimeConfigurationChangedError } from '../errors/AiRuntimeConfigurationChangedError';
@@ -108,22 +109,33 @@ export async function sendChatMessage(userText: string): Promise<void> {
                     isCommandAction: true,
                 });
 
+                const confirmationDescription = describePendingActionConfirmation({
+                    actions: result.actions,
+                    context,
+                    prompt: userText,
+                    wholeProjectVibeMixPlan: result.wholeProjectVibeMixPlan,
+                    workflowCapabilityId: result.workflowCapabilityId,
+                });
+                const commandGroup = generateGroupId(userText);
+                const commandEnvelopes = compilePendingActionCommandEnvelopes({
+                    actions: result.actions,
+                    actionLabels: confirmationDescription.actionLabels,
+                    group: commandGroup,
+                    projectRevision,
+                });
+                const commandBatch = compileVersionedCommandBatchEnvelope({
+                    runId: assistantMsgId,
+                    batchId: commandGroup.groupId,
+                    projectId: String(projectStore.value?.createdAt ?? 0),
+                    baseRevision: projectRevision,
+                    intent: userText,
+                    commands: commandEnvelopes,
+                    protectedTargetIds: confirmationDescription.protectedUnchanged.map((item) => item.id),
+                    autoCommit: !result.requiresConfirmation,
+                });
+
                 if (result.requiresConfirmation) {
                     const confirmationId = `prompt-confirmation-${crypto.randomUUID()}`;
-                    const confirmationDescription = describePendingActionConfirmation({
-                        actions: result.actions,
-                        context,
-                        prompt: userText,
-                        wholeProjectVibeMixPlan: result.wholeProjectVibeMixPlan,
-                        workflowCapabilityId: result.workflowCapabilityId,
-                    });
-                    const commandGroup = generateGroupId(userText);
-                    const commandEnvelopes = compilePendingActionCommandEnvelopes({
-                        actions: result.actions,
-                        actionLabels: confirmationDescription.actionLabels,
-                        group: commandGroup,
-                        projectRevision,
-                    });
                     const confirmation = proposePendingActionConfirmation({
                         id: confirmationId,
                         prompt: userText,
@@ -131,6 +143,7 @@ export async function sendChatMessage(userText: string): Promise<void> {
                         actions: result.actions,
                         actionLabels: confirmationDescription.actionLabels,
                         commandEnvelopes,
+                        commandBatch,
                         affectedIds: confirmationDescription.affectedIds,
                         protectedUnchanged: confirmationDescription.protectedUnchanged,
                         risk: confirmationDescription.risk,
@@ -163,6 +176,8 @@ export async function sendChatMessage(userText: string): Promise<void> {
                 const execution = await executePlannedActions({
                     prompt: userText,
                     actions: result.actions,
+                    group: commandGroup,
+                    commandBatch,
                     projectRevision,
                     executionMode: result.executionMode,
                     signal: aborter.signal,

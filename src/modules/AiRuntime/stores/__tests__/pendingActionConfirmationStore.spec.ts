@@ -50,6 +50,41 @@ describe('pendingActionConfirmationStore', () => {
         };
         const protectedUnchanged = [{ id: 'track-parallel', name: 'Parallel Compression' }];
         const commandEnvelopes = ['{"schemaVersion":1,"commandId":"command-1"}'];
+        const commandBatch = {
+            serialized: '{"schemaVersion":1,"batchId":"batch-1"}',
+            authority: {
+                projectId: 'project-1',
+                baseRevision: 'revision-2',
+                scope: {
+                    targetIds: ['bus-drum'],
+                    targetRanges: [],
+                    protectedTargetIds: ['track-parallel'],
+                    protectedRanges: [],
+                },
+                grants: {
+                    allowedOperationPrefixes: ['createBus'],
+                    create: true,
+                    delete: false,
+                    routing: false,
+                    tempo: false,
+                    master: false,
+                    file: false,
+                    audioUpload: false,
+                    remoteGeneration: false,
+                    autoCommit: false,
+                },
+                budgets: {
+                    maxCommands: 1,
+                    maxCreatedTracks: 1,
+                    maxDeletedObjects: 0,
+                    maxAffectedTracks: 1,
+                    maxAffectedClips: 0,
+                    maxAutomationPoints: 0,
+                    maxImportedAssets: 0,
+                    maxRenderJobs: 0,
+                },
+            },
+        };
         const proposed = proposePendingActionConfirmation({
             id: 'confirmation-2',
             prompt: 'create a Drum Bus',
@@ -57,6 +92,7 @@ describe('pendingActionConfirmationStore', () => {
             actions: [action],
             actionLabels: ['Create Drum Bus'],
             commandEnvelopes,
+            commandBatch,
             protectedUnchanged,
             executionMode: 'atomic',
             projectRevision: 'revision-2',
@@ -72,6 +108,8 @@ describe('pendingActionConfirmationStore', () => {
 
         action.payload.name = 'Changed input';
         commandEnvelopes[0] = 'changed input';
+        commandBatch.serialized = 'changed input';
+        commandBatch.authority.scope.targetIds[0] = 'changed-input';
         inputProtectedTarget.name = 'Changed input';
         if (proposed.actions[0]?.type === 'createBus') {
             proposed.actions[0].payload.name = 'Changed read';
@@ -85,6 +123,41 @@ describe('pendingActionConfirmationStore', () => {
             actions: [{ type: 'createBus', payload: { name: 'Drum Bus', busId: 'bus-drum' } }],
             actionLabels: ['Create Drum Bus'],
             commandEnvelopes: ['{"schemaVersion":1,"commandId":"command-1"}'],
+            commandBatch: {
+                serialized: '{"schemaVersion":1,"batchId":"batch-1"}',
+                authority: {
+                    projectId: 'project-1',
+                    baseRevision: 'revision-2',
+                    scope: {
+                        targetIds: ['bus-drum'],
+                        targetRanges: [],
+                        protectedTargetIds: ['track-parallel'],
+                        protectedRanges: [],
+                    },
+                    grants: {
+                        allowedOperationPrefixes: ['createBus'],
+                        create: true,
+                        delete: false,
+                        routing: false,
+                        tempo: false,
+                        master: false,
+                        file: false,
+                        audioUpload: false,
+                        remoteGeneration: false,
+                        autoCommit: false,
+                    },
+                    budgets: {
+                        maxCommands: 1,
+                        maxCreatedTracks: 1,
+                        maxDeletedObjects: 0,
+                        maxAffectedTracks: 1,
+                        maxAffectedClips: 0,
+                        maxAutomationPoints: 0,
+                        maxImportedAssets: 0,
+                        maxRenderJobs: 0,
+                    },
+                },
+            },
             protectedUnchanged: [{ id: 'track-parallel', name: 'Parallel Compression' }],
         });
     });
