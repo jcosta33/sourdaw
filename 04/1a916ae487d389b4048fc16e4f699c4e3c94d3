@@ -1,0 +1,19 @@
+src/modules/Command/useCases/versionedCommandArgumentKeys.ts
+  s_62e9c3dc3ba52a::t_4850194232c734 3734-3819,4017,4033,4050,4057-4058,4061,4092,4105-4108,4118-4119,4164,4174,4182,4187,4189,4237,4242,4260,4265,4289,4294,4569-4571,4576,4580-4582,4586-4589,4591,4596,4598-4599,4601-4602,4605-4617,4621-4622,4625,4627-4629,4633-4634,4636
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "041a916ae487d389b4048fc16e4f699c4e3c94d3",
+  "prompts": {},
+  "sessions": {
+    "s_62e9c3dc3ba52a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "92e0a2e7-8660-41e2-be8b-b2d644c6d0b7",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
