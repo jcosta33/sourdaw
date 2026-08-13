@@ -1,0 +1,70 @@
+src/modules/AiRuntime/useCases/confirmPendingChatActions.ts
+  s_a40848e8f8cca9::t_f0ca9574c5671f 29,87-99,361-376
+src/modules/Command/useCases/getAgentActionRiskPolicy.ts
+  s_a40848e8f8cca9::t_0568e7dd2001c1 110
+  s_a40848e8f8cca9::t_4f7a3b238182bd 111-113,115
+  s_a40848e8f8cca9::t_5bd0c1236fb8a9 39-42
+  s_a40848e8f8cca9::t_2882d8c6bf4c00 35,43-44,117
+  s_a40848e8f8cca9::t_9b96e30fcbbda3 1-4,10-34,36-38,46-83,92-107,114,116,118-120
+  s_a40848e8f8cca9::t_ef2f47778f8ddb 5-9,84-91,108-109
+  s_a40848e8f8cca9::t_8ddad7df592057 45
+src/modules/AiRuntime/useCases/describeAgentRiskApproval.ts
+  s_a40848e8f8cca9::t_5bd0c1236fb8a9 13-14
+  s_a40848e8f8cca9::t_10b4f09a699961 15
+  s_a40848e8f8cca9::t_58452124dd3c74 1-12,16
+src/modules/AiRuntime/useCases/validateAgentRiskApproval.ts
+  s_a40848e8f8cca9::t_9b96e30fcbbda3 1-40
+docs/architecture/decisions/0033-agent-risk-approval-contract.md
+  s_a40848e8f8cca9::t_2bb873169a2631 12
+  s_a40848e8f8cca9::t_5349d327b5824a 1-11,13-20
+src/modules/AiRuntime/useCases/compileAgentRiskApproval.ts
+  s_a40848e8f8cca9::t_9b96e30fcbbda3 1-27,37-50,62-63,65,68,77-86
+  s_a40848e8f8cca9::t_d393332fd9c367 56,66-67
+  s_a40848e8f8cca9::t_ef2f47778f8ddb 51-55,57-61,64
+  s_a40848e8f8cca9::t_3d09697d7ca92b 69-76
+  s_a40848e8f8cca9::t_ffe1dc3f2b7139 28-36
+src/modules/AiRuntime/useCases/__tests__/confirmPendingChatActions.spec.ts
+  s_a40848e8f8cca9::t_dfa0e1d6333c3b 34,231
+src/modules/AiRuntime/useCases/__tests__/agentRiskApproval.spec.ts
+  s_a40848e8f8cca9::t_ef2f47778f8ddb 151-160
+  s_a40848e8f8cca9::t_92fb0d5b693cf5 272-277,282-287,289-292,294-298
+  s_a40848e8f8cca9::t_61fc6fda81c1e3 2,5-7,9-10,12-15,17-19,21,23-25,27-32,36,76,78-79,85-101,103,118-121,123-138,171,179-192,198-218,221-227,231-246,249,251-262,270-271,279-281,293,335-336
+  s_a40848e8f8cca9::t_3c75678658528d 16,250,263-269
+  s_a40848e8f8cca9::t_aab8731d7023ae 122
+  s_a40848e8f8cca9::t_d393332fd9c367 219-220,229
+  s_a40848e8f8cca9::t_aff89c9d2665fb 288,299-334
+  s_a40848e8f8cca9::t_58452124dd3c74 22,228,230
+  s_a40848e8f8cca9::t_f59d1e86a28aad 102,247-248
+  s_a40848e8f8cca9::t_8616bc338084d3 8,20,33-35,37-75,77,80-84
+  s_a40848e8f8cca9::t_2882d8c6bf4c00 166-170
+  s_a40848e8f8cca9::t_4f8b03b7426437 1,11,26,104-117,278
+  s_a40848e8f8cca9::t_5bd0c1236fb8a9 3-4
+  s_a40848e8f8cca9::t_8ddad7df592057 139-150,161-165,172-178,193
+  s_a40848e8f8cca9::t_98259b04ad5a86 194-197
+src/modules/AiRuntime/useCases/sendChatMessage.ts
+  s_a40848e8f8cca9::t_f0ca9574c5671f 32,134,144
+  s_a40848e8f8cca9::t_58452124dd3c74 35,172
+  s_a40848e8f8cca9::t_10b4f09a699961 147-150
+src/modules/Command/useCases/index.ts
+  s_a40848e8f8cca9::t_9b96e30fcbbda3 20
+src/modules/AiRuntime/stores/pendingActionConfirmationStore.ts
+  s_a40848e8f8cca9::t_c6f174c9f7cfd7 48-55
+  s_a40848e8f8cca9::t_8322cabde1ad0d 47
+  s_a40848e8f8cca9::t_f0ca9574c5671f 30-46,56-58,102,172,211
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "274bbdd9f60d379c422aa2fb565f79faf1d8360e",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
