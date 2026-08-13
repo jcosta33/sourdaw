@@ -1730,6 +1730,8 @@ export type HandlerExecutionResult = {
 export type HandlerValidationContext = {
     readonly actions: readonly AppAction[];
     readonly actionIndex: number;
+    /** The same handler is projecting into an isolated CRDT workspace; live runtime effects must stay deferred. */
+    readonly executionMode?: 'isolated-preview';
 };
 
 /** One dispatchable action's handler. Built via `createHandler` and merged into a module

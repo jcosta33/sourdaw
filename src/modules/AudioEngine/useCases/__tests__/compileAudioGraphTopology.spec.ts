@@ -38,4 +38,16 @@ describe('compileAudioGraphTopology', () => {
             })
         ).toEqual({ status: 'invalid', reason: 'Track output has no audio node: source -> folder' });
     });
+
+    it('compiles a valid project containing a nodeless VCA track', () => {
+        expect(
+            compileAudioGraphTopology({
+                tracks: [
+                    { id: 'source', kind: 'audio', outputId: 'master', devices: [], sends: [] },
+                    { id: 'vca-drums', kind: 'vca', outputId: 'master', devices: [], sends: [] },
+                ],
+                sidechainRoutes: [],
+            })
+        ).toEqual({ status: 'compiled', edgeCount: 1, nodeIds: ['source'] });
+    });
 });

@@ -28,6 +28,9 @@ export type AudioGraphCompilationResult =
     | { readonly status: 'invalid'; readonly reason: string };
 
 function createsAudioNode(track: AudioGraphTrack): boolean {
+    if (track.kind === 'vca') {
+        return false;
+    }
     return track.kind !== 'folder' || track.devices.some((device) => device.type === 'toaster');
 }
 
@@ -39,7 +42,8 @@ export function compileAudioGraphTopology(input: CompileAudioGraphTopologyInput)
                 track.kind !== 'midi' &&
                 track.kind !== 'bus' &&
                 track.kind !== 'master' &&
-                track.kind !== 'folder'
+                track.kind !== 'folder' &&
+                track.kind !== 'vca'
         )
     ) {
         return { status: 'invalid', reason: 'Audio graph contains an unsupported track kind' };

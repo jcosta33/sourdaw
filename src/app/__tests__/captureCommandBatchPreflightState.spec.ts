@@ -288,4 +288,51 @@ describe('captureCommandBatchPreflightState', () => {
         expect(state.projectInvariantsValid).toBe(true);
         expect(state.audioGraphValid).toBe(false);
     });
+
+    it('accepts nodeless VCA tracks in live and staged graph compilation', () => {
+        const context = projectContext();
+        context.tracks.push({
+            ...context.tracks[0]!,
+            id: 'vca-drums',
+            name: 'Drum VCA',
+            kind: 'vca',
+            outputId: 'master',
+        });
+        mocks.getProjectContext.mockReturnValue(context);
+
+        const live = captureCommandBatchPreflightState({ assetReferences: [], targetIds: [] });
+        const staged = captureCommandBatchPreflightState({
+            assetReferences: [],
+            projectDocument: {
+                tracks: {
+                    tracks: [
+                        {
+                            id: 'track-vocal',
+                            kind: 'audio',
+                            gain: 1,
+                            pan: 0,
+                            outputId: 'master',
+                            clips: [],
+                            devices: [],
+                            sends: [],
+                        },
+                        {
+                            id: 'vca-drums',
+                            kind: 'vca',
+                            gain: 1,
+                            pan: 0,
+                            outputId: 'master',
+                            clips: [],
+                            devices: [],
+                            sends: [],
+                        },
+                    ],
+                },
+            },
+            targetIds: [],
+        });
+
+        expect(live.audioGraphValid).toBe(true);
+        expect(staged).toMatchObject({ audioGraphValid: true, projectInvariantsValid: true });
+    });
 });

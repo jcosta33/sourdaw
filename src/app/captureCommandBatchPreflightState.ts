@@ -154,7 +154,7 @@ function inspectStagedProjectDocument(document: Readonly<Record<string, unknown>
     const tracks: Array<{
         devices: Array<{ id: string; type: string }>;
         id: string;
-        kind: 'audio' | 'midi' | 'bus' | 'master' | 'folder';
+        kind: 'audio' | 'midi' | 'bus' | 'master' | 'folder' | 'vca';
         outputId?: string;
         sends: Array<{ busId: string; level: number }>;
     }> = [];
@@ -170,7 +170,8 @@ function inspectStagedProjectDocument(document: Readonly<Record<string, unknown>
                 track.kind !== 'midi' &&
                 track.kind !== 'bus' &&
                 track.kind !== 'master' &&
-                track.kind !== 'folder')
+                track.kind !== 'folder' &&
+                track.kind !== 'vca')
         ) {
             projectInvariantsValid = false;
             continue;

@@ -83,9 +83,10 @@ function executionGuardsMatch(
     );
 }
 
-function handleGuardedSetDeviceParameter(action: {
-    payload: { deviceId: string; paramId: string; value: number; deleteParameter?: boolean };
-}) {
+function handleGuardedSetDeviceParameter(
+    action: { payload: { deviceId: string; paramId: string; value: number; deleteParameter?: boolean } },
+    context?: HandlerValidationContext
+) {
     if (!executionGuardsMatch(action)) {
         return { status: 'conflict' as const };
     }
@@ -93,6 +94,11 @@ function handleGuardedSetDeviceParameter(action: {
     if (action.payload.deleteParameter) {
         didWrite = setDeviceParameter(action.payload.deviceId, action.payload.paramId, action.payload.value, {
             deleteParameter: true,
+            ...(context?.executionMode === 'isolated-preview' ? { projectOnly: true } : {}),
+        });
+    } else if (context?.executionMode === 'isolated-preview') {
+        didWrite = setDeviceParameter(action.payload.deviceId, action.payload.paramId, action.payload.value, {
+            projectOnly: true,
         });
     } else {
         didWrite = setDeviceParameter(action.payload.deviceId, action.payload.paramId, action.payload.value);
@@ -272,7 +278,7 @@ export const handleSetDeviceParameter = createHandler<'setDeviceParameter'>({
                     : undefined,
         };
     },
-    previewExecution: 'unsupported-external',
+    previewExecution: 'isolated-project',
     undoable: true,
     requiresAbortCompensation: false,
 });

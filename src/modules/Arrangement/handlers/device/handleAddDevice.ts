@@ -56,22 +56,34 @@ function resolveDeviceIndex(action: AddDeviceAction, context?: HandlerValidation
 
 export const handleAddDevice = createHandler<'addDevice'>({
     validate: (action, context) => resolveDeviceIndex(action, context).status === 'resolved',
-    execute: (action) => {
+    execute: (action, context) => {
         const resolution = resolveDeviceIndex(action);
         if (resolution.status === 'conflict') {
             return { status: 'conflict' };
         }
         const deviceId = ensureDeviceId(action);
-        const addDeviceArguments: [string, string, undefined, string, number?] = [
-            action.payload.trackId,
-            action.payload.deviceType,
-            undefined,
-            deviceId,
-        ];
-        if (resolution.deviceIndex !== undefined) {
-            addDeviceArguments[4] = resolution.deviceIndex;
+        let addedDevice;
+        if (context?.executionMode === 'isolated-preview') {
+            addedDevice = addDevice(
+                action.payload.trackId,
+                action.payload.deviceType,
+                undefined,
+                deviceId,
+                resolution.deviceIndex,
+                undefined,
+                { projectOnly: true }
+            );
+        } else if (resolution.deviceIndex !== undefined) {
+            addedDevice = addDevice(
+                action.payload.trackId,
+                action.payload.deviceType,
+                undefined,
+                deviceId,
+                resolution.deviceIndex
+            );
+        } else {
+            addedDevice = addDevice(action.payload.trackId, action.payload.deviceType, undefined, deviceId);
         }
-        const addedDevice = addDevice(...addDeviceArguments);
         return toHandlerExecutionResult(addedDevice !== null);
     },
     describe: (action) => {
@@ -105,7 +117,7 @@ export const handleAddDevice = createHandler<'addDevice'>({
             abortAddedDeviceRuntime({ trackId: action.payload.trackId, deviceId });
         };
     },
-    previewExecution: 'unsupported-external',
+    previewExecution: 'isolated-project',
     requiresAbortCompensation: false,
     undoable: true,
 });

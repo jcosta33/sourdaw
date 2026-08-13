@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createStore } from '#/infra/store/createStore';
 import { createAutomergeStorage, flushAutomergeStorageWrites } from '#/infra/store/storage/createAutomergeStorage';
 import { defaultTrackState, trackStore } from '#/modules/Arrangement/stores';
-import { getArrangementHandlers } from '#/modules/Arrangement/useCases';
+import { createTrack, getArrangementHandlers } from '#/modules/Arrangement/useCases';
 import { clearHandlerRegistry, registerHandlerMap } from '#/modules/Command/stores';
 import {
     commandBatchPreflightPort,
@@ -19,11 +19,13 @@ import { tempoMapStore, transportStore } from '#/modules/Transport/stores';
 import { defaultTransportState, getTransportHandlers } from '#/modules/Transport/useCases';
 
 const runtimeMocks = vi.hoisted(() => ({
+    addDeviceToStrip: vi.fn(),
     updateDeviceParam: vi.fn(),
 }));
 
 vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/AudioEngine/useCases')>()),
+    addDeviceToStrip: runtimeMocks.addDeviceToStrip,
     updateDeviceParam: runtimeMocks.updateDeviceParam,
 }));
 
@@ -177,7 +179,19 @@ describe('previewCommandBatch', () => {
         preview.resource.release();
     });
 
-    it('rejects a production device-parameter handler before touching the live audio engine', async () => {
+    it('previews a production device-parameter handler without touching the live audio engine', async () => {
+        const track = createTrack({ id: 'track-audio', name: 'Audio', kind: 'audio' });
+        track.devices.push({
+            id: 'device-compressor',
+            name: 'Compressor',
+            type: 'builtin-compressor',
+            bypassed: false,
+            parameterValues: { 'comp-threshold': -24 },
+        });
+        automergeRepository.changeDoc('root', (document: Record<string, unknown>) => {
+            document.tracks = { ...defaultTrackState, tracks: [track] };
+        });
+        trackStore.hydrate();
         registerHandlerMap({ setDeviceParameter: getArrangementHandlers().setDeviceParameter });
         commandBatchPreflightPort.setProvider(() => ({
             audioGraphValid: true,
@@ -223,12 +237,104 @@ describe('previewCommandBatch', () => {
             serialized: batch.serialized,
         });
 
-        expect(preview).toEqual({
-            status: 'rejected',
-            reason: 'Action cannot execute inside an isolated preview: setDeviceParameter',
-            actions: [],
+        expect(preview).toMatchObject({
+            status: 'previewed',
+            projectDocument: {
+                tracks: {
+                    tracks: [
+                        expect.objectContaining({
+                            id: 'track-audio',
+                            devices: [
+                                expect.objectContaining({
+                                    id: 'device-compressor',
+                                    parameterValues: { 'comp-threshold': -18 },
+                                }),
+                            ],
+                        }),
+                    ],
+                },
+            },
         });
         expect(runtimeMocks.updateDeviceParam).not.toHaveBeenCalled();
+        expect(trackStore.value?.tracks[0]?.devices[0]?.parameterValues['comp-threshold']).toBe(-24);
+        if (preview.status !== 'previewed') {
+            throw new Error('Expected a device parameter preview resource');
+        }
+        preview.resource.release();
+    });
+
+    it('previews a production add-device handler without creating a live device node', async () => {
+        const track = createTrack({ id: 'track-audio', name: 'Audio', kind: 'audio' });
+        automergeRepository.changeDoc('root', (document: Record<string, unknown>) => {
+            document.tracks = { ...defaultTrackState, tracks: [track] };
+        });
+        trackStore.hydrate();
+        registerHandlerMap({ addDevice: getArrangementHandlers().addDevice });
+        commandBatchPreflightPort.setProvider(() => ({
+            audioGraphValid: true,
+            availableAssetHashes: [],
+            availableAudioBufferIds: [],
+            lockedRanges: [],
+            projectId: 'project-preview',
+            projectInvariantsValid: true,
+            targetFingerprints: { 'track-audio': 'track:track-audio' },
+        }));
+        const revision = captureProjectRevision();
+        const command = createVersionedCommandEnvelope({
+            action: {
+                type: 'addDevice',
+                payload: {
+                    trackId: 'track-audio',
+                    deviceType: 'builtin-compressor',
+                    deviceId: 'device-preview',
+                },
+            },
+            applicationAssignedIds: [{ argument: 'deviceId', value: 'device-preview' }],
+            availableDeviceVersions: {},
+            expectedEffect: 'A compressor is added to the audio track.',
+            normalizedProjectRevision: revision,
+            objectReferences: [
+                { argument: 'trackId', id: 'track-audio', scope: 'stable' },
+                { argument: 'deviceId', id: 'device-preview', scope: 'stable' },
+            ],
+            parameterUnits: [],
+            reason: 'Preview adding a compressor.',
+            time: [],
+        });
+        const batch = compileVersionedCommandBatchEnvelope({
+            baseRevision: revision,
+            batchId: 'batch-production-add-device-preview',
+            commands: [serializeVersionedCommandEnvelope(command)],
+            intent: 'Preview adding a compressor',
+            mode: 'preview',
+            projectId: 'project-preview',
+            runId: 'run-production-add-device-preview',
+        });
+
+        const preview = await executeVersionedCommandBatchEnvelope({
+            authority: batch.authority,
+            serialized: batch.serialized,
+        });
+
+        expect(preview).toMatchObject({
+            status: 'previewed',
+            projectDocument: {
+                tracks: {
+                    tracks: [
+                        expect.objectContaining({
+                            id: 'track-audio',
+                            devices: [expect.objectContaining({ id: 'device-preview', type: 'builtin-compressor' })],
+                        }),
+                    ],
+                },
+            },
+        });
+        expect(runtimeMocks.addDeviceToStrip).not.toHaveBeenCalled();
+        expect(trackStore.value?.tracks[0]?.devices).toEqual([]);
+        if (preview.status !== 'previewed') {
+            throw new Error('Expected an add-device preview resource');
+        }
+        preview.resource.release();
     });
 
     afterEach(() => {

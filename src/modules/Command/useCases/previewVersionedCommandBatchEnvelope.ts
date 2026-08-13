@@ -89,7 +89,11 @@ export function previewVersionedCommandBatchEnvelope(envelope: VersionedCommandB
             const valid = workspace.scope(
                 () =>
                     !prepared.handler.validate ||
-                    prepared.handler.validate(prepared.action, { actions: validationActions, actionIndex })
+                    prepared.handler.validate(prepared.action, {
+                        actions: validationActions,
+                        actionIndex,
+                        executionMode: 'isolated-preview',
+                    })
             );
             if (!valid) {
                 workspace.release();
@@ -108,7 +112,11 @@ export function previewVersionedCommandBatchEnvelope(envelope: VersionedCommandB
                 continue;
             }
             const result = workspace.scope(() =>
-                prepared.handler.execute(prepared.action, { actions: validationActions, actionIndex })
+                prepared.handler.execute(prepared.action, {
+                    actions: validationActions,
+                    actionIndex,
+                    executionMode: 'isolated-preview',
+                })
             );
             if (result?.status === 'no-write' || result?.status === 'conflict') {
                 workspace.release();
