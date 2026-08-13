@@ -30,7 +30,7 @@ const baseContext: ProjectContext = {
     playheadPosition: 0,
 };
 
-function compile(actions: readonly AppAction[], context: ProjectContext) {
+function compile(actions: readonly AppAction[], context: ProjectContext, protectedTargetIds?: readonly string[]) {
     return compilePlannedActionCommandBatch({
         actions,
         actionLabels: actions.map((action) => action.type),
@@ -39,6 +39,7 @@ function compile(actions: readonly AppAction[], context: ProjectContext) {
         group: { groupId: 'group-1', groupLabel: 'Prompt action' },
         intent: 'Apply the requested changes',
         projectRevision: 'revision-1',
+        protectedTargetIds,
         runId: 'run-1',
     });
 }
@@ -233,6 +234,86 @@ describe('compilePlannedActionCommandBatch', () => {
             maxAffectedTracks: 2,
             maxAffectedClips: 2,
             maxAutomationPoints: 2,
+        });
+    });
+
+    it('binds the complete track-removal cascade and rejects protected survivor rewrites', () => {
+        const removalContext: ProjectContext = {
+            ...baseContext,
+            tracks: [
+                {
+                    ...track('track-remove', false),
+                    clipCount: 1,
+                    deviceCount: 1,
+                    clips: [
+                        {
+                            id: 'clip-remove',
+                            name: 'Removed clip',
+                            type: 'audio',
+                            startBeat: 0,
+                            endBeat: 4,
+                            noteCount: 0,
+                        },
+                    ],
+                    devices: [{ id: 'device-remove', type: 'builtin-eq', bypassed: false }],
+                },
+                {
+                    ...track('track-survivor', false),
+                    outputId: 'track-remove',
+                    sends: [{ busId: 'track-remove', level: 0.5, preFader: false }],
+                },
+            ],
+            automationLanes: [
+                {
+                    id: 'lane-remove',
+                    trackId: 'track-remove',
+                    parameterId: 'gain',
+                    name: 'Gain',
+                    enabled: true,
+                    minValue: 0,
+                    maxValue: 1,
+                    points: [
+                        { beat: 0, value: 0.5, curve: 'linear' },
+                        { beat: 4, value: 0.8, curve: 'linear' },
+                    ],
+                },
+            ],
+            sidechainRoutes: [
+                {
+                    id: 'route-remove',
+                    sourceTrackId: 'track-survivor',
+                    targetTrackId: 'track-remove',
+                    targetDeviceId: 'device-remove',
+                    targetParameterId: 'threshold',
+                    gain: 1,
+                },
+            ],
+        };
+        const action: AppAction = {
+            type: 'removeTrack',
+            payload: { trackId: 'track-remove', expectedClipIds: ['clip-remove'] },
+        };
+
+        expect(() => compile([action], removalContext, ['track-survivor'])).toThrow(
+            'Track removal targets protected objects: track-survivor'
+        );
+
+        const result = compile([action], removalContext);
+        expect(result.commandBatch.authority.scope.targetIds).toEqual(
+            expect.arrayContaining([
+                'track-remove',
+                'track-survivor',
+                'clip-remove',
+                'device-remove',
+                'lane-remove',
+                'route-remove',
+            ])
+        );
+        expect(result.commandBatch.authority.budgets).toMatchObject({
+            maxAffectedTracks: 2,
+            maxAffectedClips: 1,
+            maxAutomationPoints: 2,
+            maxDeletedObjects: 7,
         });
     });
 });

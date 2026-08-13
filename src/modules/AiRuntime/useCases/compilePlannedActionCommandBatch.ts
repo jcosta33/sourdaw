@@ -1,4 +1,7 @@
+import { takeLaneStore } from '#/modules/Arrangement/stores';
+import { modulationStore } from '#/modules/Automation/stores';
 import { compileVersionedCommandBatchEnvelope, parseVersionedCommandEnvelope } from '#/modules/Command/useCases';
+import { midiStore } from '#/modules/MIDI/stores';
 import { projectStore } from '#/modules/Project/stores';
 import { type AppAction } from '#/utils/handlerContract';
 
@@ -42,6 +45,7 @@ function getStringField(value: unknown, key: string): string | undefined {
 function getDynamicEffects(input: CompilePlannedActionCommandBatchInput, commandEnvelopes: readonly string[]) {
     const affectedTrackIds = new Set<string>();
     const affectedClipIds = new Set<string>();
+    const affectedTargetIds = new Set<string>();
     let automationPoints = 0;
     let deletedObjects = 0;
     for (const [index, action] of input.actions.entries()) {
@@ -98,6 +102,100 @@ function getDynamicEffects(input: CompilePlannedActionCommandBatchInput, command
             }
             continue;
         }
+        if (action.type === 'removeTrack') {
+            const trackId = getStringField(payload, 'trackId');
+            const removedTrack = input.context.tracks.find((track) => track.id === trackId);
+            if (!trackId || !removedTrack) {
+                throw new Error(`Cannot prove track removal bounds for ${trackId ?? 'unknown track'}`);
+            }
+            const cascadeTrackIds = new Set([trackId]);
+            const cascadeClipIds = new Set<string>();
+            const cascadeObjectIds = new Set<string>();
+            const clipIds = new Set([
+                ...removedTrack.clips.map((clip) => clip.id),
+                ...(removedTrack.alternativeClipIds ?? []),
+            ]);
+            for (const clipId of clipIds) {
+                cascadeClipIds.add(clipId);
+            }
+            for (const device of removedTrack.devices) {
+                cascadeObjectIds.add(device.id);
+                deletedObjects += 1;
+            }
+            for (const survivor of input.context.tracks) {
+                if (
+                    survivor.id !== trackId &&
+                    (survivor.outputId === trackId || survivor.sends?.some((send) => send.busId === trackId))
+                ) {
+                    cascadeTrackIds.add(survivor.id);
+                }
+            }
+            for (const lane of input.context.automationLanes ?? []) {
+                if (lane.trackId === trackId) {
+                    cascadeObjectIds.add(lane.id);
+                    automationPoints += lane.points.length;
+                    deletedObjects += 1 + lane.points.length;
+                }
+            }
+            for (const route of input.context.sidechainRoutes ?? []) {
+                if (route.sourceTrackId === trackId || route.targetTrackId === trackId) {
+                    cascadeObjectIds.add(route.id);
+                    cascadeTrackIds.add(route.sourceTrackId);
+                    cascadeTrackIds.add(route.targetTrackId);
+                    deletedObjects += 1;
+                }
+            }
+            const midiState = midiStore.value;
+            for (const clipId of clipIds) {
+                const events = [
+                    ...(midiState?.notesByClipId[clipId] ?? []),
+                    ...(midiState?.ccByClipId[clipId] ?? []),
+                    ...(midiState?.pitchBendByClipId[clipId] ?? []),
+                ];
+                for (const event of events) {
+                    cascadeObjectIds.add(event.id);
+                }
+                deletedObjects += events.length;
+            }
+            for (const lane of takeLaneStore.value?.lanes ?? []) {
+                if (lane.trackId !== trackId) {
+                    continue;
+                }
+                cascadeObjectIds.add(lane.id);
+                for (const take of lane.takes) {
+                    cascadeObjectIds.add(take.id);
+                }
+                deletedObjects += 1 + lane.takes.length + lane.activeCompRegions.length;
+            }
+            for (const modulator of modulationStore.value?.modulators ?? []) {
+                if (modulator.trackId === trackId) {
+                    cascadeObjectIds.add(modulator.id);
+                    deletedObjects += 1 + modulator.mappings.length;
+                    continue;
+                }
+                const removedMappings = modulator.mappings.filter((mapping) => mapping.targetTrackId === trackId);
+                if (removedMappings.length > 0) {
+                    cascadeObjectIds.add(modulator.id);
+                    cascadeTrackIds.add(modulator.trackId);
+                    deletedObjects += removedMappings.length;
+                }
+            }
+            const cascadeTargetIds = new Set([...cascadeTrackIds, ...cascadeClipIds, ...cascadeObjectIds]);
+            const protectedOverlap = (input.protectedTargetIds ?? []).filter((id) => cascadeTargetIds.has(id));
+            if (protectedOverlap.length > 0) {
+                throw new Error(`Track removal targets protected objects: ${protectedOverlap.join(', ')}`);
+            }
+            for (const id of cascadeTrackIds) {
+                affectedTrackIds.add(id);
+            }
+            for (const id of cascadeClipIds) {
+                affectedClipIds.add(id);
+            }
+            for (const id of cascadeObjectIds) {
+                affectedTargetIds.add(id);
+            }
+            continue;
+        }
         if (!AUTOMATION_TRANSFORM_TYPES.has(action.type)) {
             continue;
         }
@@ -121,6 +219,7 @@ function getDynamicEffects(input: CompilePlannedActionCommandBatchInput, command
     return {
         affectedTrackIds: [...affectedTrackIds],
         affectedClipIds: [...affectedClipIds],
+        affectedTargetIds: [...affectedTargetIds],
         automationPoints,
         deletedObjects,
     };

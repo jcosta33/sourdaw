@@ -30,6 +30,7 @@ type CompileVersionedCommandBatchEnvelopeInput = {
     dynamicEffects?: {
         affectedTrackIds?: readonly string[];
         affectedClipIds?: readonly string[];
+        affectedTargetIds?: readonly string[];
         automationPoints?: number;
         deletedObjects?: number;
     };
@@ -48,6 +49,10 @@ const DYNAMIC_EFFECT_OPERATIONS = new Set([
     'reverseAutomation',
     'thinAutomation',
     'quantizeAutomation',
+    'duplicateClip',
+    'duplicateClipToNextBar',
+    'duplicateTrack',
+    'removeTrack',
 ]);
 
 function parseCommands(serializedCommands: readonly string[]): VersionedCommandEnvelope[] {
@@ -98,10 +103,16 @@ function buildEnvelope(input: CompileVersionedCommandBatchEnvelopeInput): Versio
     }
     const effects = getVersionedCommandBatchEffects(commands, input.dynamicEffects);
     const protectedTargetIds = [...new Set(input.protectedTargetIds ?? [])];
+    const targetIds = [
+        ...new Set([
+            ...getScopeTargetIds(commands),
+            ...effects.affectedTrackIds,
+            ...effects.affectedClipIds,
+            ...(input.dynamicEffects?.affectedTargetIds ?? []),
+        ]),
+    ];
     const scope = {
-        targetIds: [
-            ...new Set([...getScopeTargetIds(commands), ...effects.affectedTrackIds, ...effects.affectedClipIds]),
-        ].filter((targetId) => !protectedTargetIds.includes(targetId)),
+        targetIds: targetIds.filter((targetId) => !protectedTargetIds.includes(targetId)),
         targetRanges: getTargetRanges(commands),
         protectedTargetIds,
         protectedRanges: structuredClone(input.protectedRanges ?? []),

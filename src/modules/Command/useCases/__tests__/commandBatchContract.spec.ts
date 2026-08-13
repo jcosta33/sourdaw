@@ -212,7 +212,7 @@ describe('command batch contract', () => {
         });
     });
 
-    it('keeps guarded object references out of the writable target scope', () => {
+    it('requires application-owned cascade bounds for track removal', () => {
         const removeTrackCommand = actionCommand({
             action: {
                 type: 'removeTrack',
@@ -233,7 +233,10 @@ describe('command batch contract', () => {
             baseRevision: 'revision-1',
             intent: 'Remove the empty track',
             commands: [JSON.stringify(removeTrackCommand)],
-            protectedTargetIds: ['clip-guard', 'alternative-clip-guard'],
+            dynamicEffects: {
+                affectedTrackIds: ['track-empty'],
+                affectedClipIds: ['clip-guard', 'alternative-clip-guard'],
+            },
         });
         const parsed = parseVersionedCommandBatchEnvelope(compiled.serialized, compiled.authority);
         if (parsed.status === 'invalid') {
@@ -241,9 +244,9 @@ describe('command batch contract', () => {
         }
 
         expect(parsed.envelope.scope).toEqual({
-            targetIds: ['track-empty'],
+            targetIds: ['track-empty', 'clip-guard', 'alternative-clip-guard'],
             targetRanges: [],
-            protectedTargetIds: ['clip-guard', 'alternative-clip-guard'],
+            protectedTargetIds: [],
             protectedRanges: [],
         });
         expect(parsed.envelope.budgets).toMatchObject({ maxCommands: 1, maxDeletedObjects: 3 });

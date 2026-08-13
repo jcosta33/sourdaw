@@ -16,6 +16,7 @@ export type VersionedCommandBatchEffects = {
 type VersionedCommandBatchDynamicEffects = {
     affectedTrackIds?: readonly string[];
     affectedClipIds?: readonly string[];
+    affectedTargetIds?: readonly string[];
     automationPoints?: number;
     deletedObjects?: number;
 };
