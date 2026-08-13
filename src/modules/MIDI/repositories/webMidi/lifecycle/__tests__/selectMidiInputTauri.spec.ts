@@ -184,4 +184,61 @@ describe('selectMidiInputTauri', () => {
         expect(onMidiMessageMock).toHaveBeenCalledTimes(1);
         expect(onMidiMessageMock.mock.calls[0]![0].timeStamp).toBeUndefined();
     });
+
+    describe('overlapping selections', () => {
+        /**
+         * The unlisten registry is read at call start and written three awaits
+         * later. Two selections in flight at once must not have the earlier one
+         * finish last and overwrite the newer registration — that leaves both
+         * listeners subscribed to the single `midi-message` channel while the
+         * registry can only ever cancel one of them.
+         */
+        it('does not let a superseded selection register a listener at all', async () => {
+            const winningUnlisten = vi.fn();
+            const onMidiMessageMock = vi.fn<(event: MIDIMessageEvent) => void>();
+
+            // Hold the first select inside `open_midi_input` while the second
+            // one runs to completion, then release it.
+            let releaseFirstOpen: (() => void) | undefined;
+            tauriInvokeMock.mockImplementationOnce(
+                async () =>
+                    new Promise<void>((resolve) => {
+                        releaseFirstOpen = resolve;
+                    })
+            );
+            tauriListenMock.mockResolvedValue(winningUnlisten);
+
+            const first = selectMidiInputTauri({ portIndex: 0, onMidiMessage: onMidiMessageMock });
+            await selectMidiInputTauri({ portIndex: 1, onMidiMessage: onMidiMessageMock });
+
+            expect(tauriListenMock).toHaveBeenCalledTimes(1);
+            expect(setTauriEventUnlistenMock).toHaveBeenLastCalledWith(winningUnlisten);
+
+            releaseFirstOpen?.();
+            await first;
+
+            // The superseded call must not subscribe a second listener to the
+            // single `midi-message` channel, nor touch the registry again.
+            expect(tauriListenMock).toHaveBeenCalledTimes(1);
+            expect(setTauriEventUnlistenMock).toHaveBeenLastCalledWith(winningUnlisten);
+        });
+
+        it('cancels its own listener when a newer selection wins during subscribe', async () => {
+            const lateUnlisten = vi.fn();
+            const onMidiMessageMock = vi.fn<(event: MIDIMessageEvent) => void>();
+
+            // A second selection lands and completes while the first is still
+            // inside `tauriListen` — the late-subscribe window.
+            tauriListenMock.mockImplementationOnce(async () => {
+                await selectMidiInputTauri({ portIndex: 1, onMidiMessage: onMidiMessageMock });
+                return lateUnlisten;
+            });
+
+            await selectMidiInputTauri({ portIndex: 0, onMidiMessage: onMidiMessageMock });
+
+            // Its own registration is torn down rather than left dangling on
+            // the shared channel, where it would double every note.
+            expect(lateUnlisten).toHaveBeenCalledTimes(1);
+        });
+    });
 });

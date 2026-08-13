@@ -9,7 +9,10 @@ export function createChordGenerator(chordType = 'major'): MidiEffect {
             const result: MidiNote[] = [];
             for (const note of notes) {
                 for (const interval of intervals) {
-                    result.push({ ...note, pitch: note.pitch + interval });
+                    // Clamp to the MIDI pitch range like createTranspose and
+                    // createVelocityCurve do; a maj7 on pitch 120 would
+                    // otherwise emit 131 downstream.
+                    result.push({ ...note, pitch: Math.max(0, Math.min(127, note.pitch + interval)) });
                 }
             }
             return result;

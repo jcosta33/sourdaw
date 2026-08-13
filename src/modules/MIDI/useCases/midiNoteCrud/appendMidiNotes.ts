@@ -73,7 +73,10 @@ export function appendMidiNotes({ clipId, notes }: AppendMidiNotesInput): void {
 
     const appendedNotes = validatedNotes.map((note) => ({
         ...note,
-        id: `note-${crypto.randomUUID().slice(0, 8)}`,
+        // Full UUID, like every other note-id mint in this module. Truncating
+        // to 32 bits made repeated pastes into one clip birthday-bound: two
+        // notes sharing an id merge under selection, removeNotesByIds and undo.
+        id: `note-${crypto.randomUUID()}`,
     }));
     const existing = midiState.notesByClipId[clipId] ?? [];
 

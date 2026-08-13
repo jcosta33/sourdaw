@@ -46,12 +46,16 @@ class MidiReader {
         return value;
     }
 
+    /**
+     * SMF meta text (track names, markers) is conventionally UTF-8. Decoding
+     * byte-by-byte through `String.fromCharCode` is Latin-1 and garbles every
+     * multi-byte name. Chunk ids ('MThd', 'MTrk') are ASCII, which UTF-8 is a
+     * superset of, so the same reader serves both.
+     */
     readString(len: number): string {
-        let state = '';
-        for (let index = 0; index < len; index++) {
-            state += String.fromCharCode(this.readUint8());
-        }
-        return state;
+        const bytes = new Uint8Array(this.data.buffer, this.data.byteOffset + this.pos, len);
+        this.pos += len;
+        return new TextDecoder().decode(bytes);
     }
 
     readVarLen(): number {
@@ -68,6 +72,10 @@ class MidiReader {
         this.pos += node;
     }
 
+    seek(position: number): void {
+        this.pos = position;
+    }
+
     get position(): number {
         return this.pos;
     }
@@ -75,6 +83,34 @@ class MidiReader {
     get length(): number {
         return this.data.byteLength;
     }
+}
+
+const DEFAULT_TEMPO_BPM = 120;
+const MIN_NOTE_DURATION_BEATS = 0.01;
+const PITCHES_PER_CHANNEL = 128;
+
+/**
+ * Active notes are keyed by channel *and* pitch. Keying on pitch alone
+ * mis-pairs durations whenever the same pitch sounds on two channels at once —
+ * routine in format-0 files, where every channel shares one track.
+ */
+function activeNoteKey(channel: number, pitch: number): number {
+    return channel * PITCHES_PER_CHANNEL + pitch;
+}
+
+/**
+ * Data-byte count for the System Common messages. These are illegal inside an
+ * MTrk chunk, but a real file that carries one must not have it swallowed as
+ * channel data — that desyncs the byte stream for the rest of the track.
+ */
+function systemCommonDataByteCount(statusByte: number): number {
+    if (statusByte === 0xf2) {
+        return 2;
+    }
+    if (statusByte === 0xf1 || statusByte === 0xf3) {
+        return 1;
+    }
+    return 0;
 }
 
 function parseMidiFile(buffer: ArrayBuffer): { tracks: ParsedTrack[]; ticksPerBeat: number; tempo: number } {
@@ -85,16 +121,37 @@ function parseMidiFile(buffer: ArrayBuffer): { tracks: ParsedTrack[]; ticksPerBe
         throw new Error('Not a valid MIDI file');
     }
 
-    reader.readUint32(); // header length
+    const headerLength = reader.readUint32();
+    const headerBodyStart = reader.position;
     const format = reader.readUint16();
     const numTracks = reader.readUint16();
-    const ticksPerBeat = reader.readUint16();
+    const division = reader.readUint16();
+    // SMF 1.0 fixes the header body at 6 bytes but permits longer headers, whose
+    // trailing bytes a reader must skip. Without this the first chunk id is read
+    // from the middle of the header and every track is lost.
+    reader.skip(Math.max(0, headerLength - (reader.position - headerBodyStart)));
 
     if (format > 1) {
         throw new Error(`MIDI format ${format} not supported`);
     }
 
-    let globalTempo = 120;
+    // Bit 15 of the division word selects SMPTE (frames/second) timing instead
+    // of ticks-per-quarter-note. Reading it as PPQN yields meaningless beats.
+    if ((division & 0x8000) !== 0) {
+        throw new Error('SMPTE-encoded MIDI timing is not supported');
+    }
+    // A zero division would make every startBeat and duration Infinity.
+    if (division === 0) {
+        throw new Error('Invalid MIDI file: zero ticks per beat');
+    }
+    const ticksPerBeat = division;
+
+    let globalTempo = DEFAULT_TEMPO_BPM;
+    // The result protocol carries a single tempo, so a tempo map has to collapse.
+    // Collapsing to the *first* tempo keeps the value the file starts at;
+    // collapsing to the last imported the file at whatever tempo happened to
+    // appear last in the map.
+    let tempoResolved = false;
     const parsedTracks: ParsedTrack[] = [];
 
     for (let time = 0; time < numTracks; time++) {
@@ -128,7 +185,10 @@ function parseMidiFile(buffer: ArrayBuffer): { tracks: ParsedTrack[]; ticksPerBe
                     trackName = reader.readString(metaLen);
                 } else if (metaType === 0x51 && metaLen === 3) {
                     const microsPerBeat = (reader.readUint8() << 16) | (reader.readUint8() << 8) | reader.readUint8();
-                    globalTempo = Math.round(60_000_000 / microsPerBeat);
+                    if (!tempoResolved && microsPerBeat > 0) {
+                        globalTempo = Math.round(60_000_000 / microsPerBeat);
+                        tempoResolved = true;
+                    }
                 }
 
                 reader.skip(Math.max(0, metaLen - (reader.position - metaStart)));
@@ -141,6 +201,17 @@ function parseMidiFile(buffer: ArrayBuffer): { tracks: ParsedTrack[]; ticksPerBe
                 continue;
             }
 
+            // Everything left at or above 0xf1 is System Common or System
+            // Real-Time. Adopting one as running status and then reading a data
+            // byte for it consumes the next event's delta time.
+            if (statusByte >= 0xf1) {
+                reader.skip(systemCommonDataByteCount(statusByte));
+                if (statusByte <= 0xf6) {
+                    runningStatus = 0; // System Common cancels running status.
+                }
+                continue;
+            }
+
             let data1: number;
             let data2: number;
 
@@ -148,6 +219,11 @@ function parseMidiFile(buffer: ArrayBuffer): { tracks: ParsedTrack[]; ticksPerBe
                 runningStatus = statusByte;
                 data1 = reader.readUint8();
             } else {
+                if (runningStatus === 0) {
+                    // A data byte with no established status byte cannot be
+                    // interpreted; consuming operands for it would desync.
+                    continue;
+                }
                 data1 = statusByte;
                 statusByte = runningStatus;
             }
@@ -160,24 +236,42 @@ function parseMidiFile(buffer: ArrayBuffer): { tracks: ParsedTrack[]; ticksPerBe
                 data2 = reader.readUint8();
             }
 
+            const channel = statusByte & 0x0f;
+            const key = activeNoteKey(channel, data1);
+
             if (eventType === 0x90 && data2 > 0) {
-                activeNotes.set(data1, { tick, velocity: data2 });
+                activeNotes.set(key, { tick, velocity: data2 });
             } else if (eventType === 0x80 || (eventType === 0x90 && data2 === 0)) {
-                const start = activeNotes.get(data1);
+                const start = activeNotes.get(key);
                 if (start) {
-                    const startBeat = start.tick / ticksPerBeat;
-                    const duration = (tick - start.tick) / ticksPerBeat;
                     notes.push({
                         id: crypto.randomUUID(),
                         pitch: data1,
-                        startBeat,
-                        duration: Math.max(0.01, duration),
+                        startBeat: start.tick / ticksPerBeat,
+                        duration: Math.max(MIN_NOTE_DURATION_BEATS, (tick - start.tick) / ticksPerBeat),
                         velocity: start.velocity,
                     });
-                    activeNotes.delete(data1);
+                    activeNotes.delete(key);
                 }
             }
         }
+
+        // A note-on with no matching note-off is still a note the file asked
+        // for; close it at the end of the track rather than discarding it.
+        for (const [key, start] of activeNotes) {
+            notes.push({
+                id: crypto.randomUUID(),
+                pitch: key % PITCHES_PER_CHANNEL,
+                startBeat: start.tick / ticksPerBeat,
+                duration: Math.max(MIN_NOTE_DURATION_BEATS, (tick - start.tick) / ticksPerBeat),
+                velocity: start.velocity,
+            });
+        }
+        activeNotes.clear();
+
+        // Resynchronise on the declared chunk length so a track that reads long
+        // or short cannot carry its desync into the next chunk id.
+        reader.seek(chunkEnd);
 
         if (notes.length > 0) {
             parsedTracks.push({ name: trackName, notes, endTick: tick });

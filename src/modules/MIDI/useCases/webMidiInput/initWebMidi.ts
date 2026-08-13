@@ -31,7 +31,13 @@ function subscribeToTrackSelection(): void {
         const selectedTrack = trackState?.tracks.find((track) => track.id === selectedId);
         if (selectedTrack?.kind === 'midi') {
             setMidiInputTrack(selectedId);
+            return;
         }
+        // Selecting an audio track — or a track id that is not in the store —
+        // must drop the live input target too. Leaving the previous MIDI track
+        // armed keeps the controller playing an instrument the user can no
+        // longer see selected, and keeps recording into it.
+        setMidiInputTrack(null);
     });
 }
 
