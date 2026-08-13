@@ -457,7 +457,8 @@ export const executeAppActionBatch: ExecuteAppActionBatch = inject({ logger })(
                 if (
                     options?.requireCompensation &&
                     handler.executionKind !== 'runtime' &&
-                    !description?.inverseAction
+                    !description?.inverseAction &&
+                    !handler.isNoop?.(action)
                 ) {
                     return {
                         status: 'rejected',

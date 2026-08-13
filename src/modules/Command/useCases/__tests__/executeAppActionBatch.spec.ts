@@ -769,6 +769,24 @@ describe('executeAppActionBatch', () => {
         expect(execute).not.toHaveBeenCalled();
     });
 
+    it('accepts a canonical no-op without requiring an inverse inside an atomic batch', async () => {
+        const execute = vi.fn();
+        registerHandlerMap({
+            setEditingTool: createHandler<SetEditingToolAction>({
+                execute,
+                describe: () => ({ label: 'Set editing tool', inverseAction: null }),
+                isNoop: () => true,
+            }),
+        });
+
+        const result = await executeAppActionBatch([{ type: 'setEditingTool', payload: { tool: 'marquee' } }], {
+            requireCompensation: true,
+        });
+
+        expect(result).toEqual({ status: 'no-op', actions: [] });
+        expect(execute).not.toHaveBeenCalled();
+    });
+
     it('executes a singleton runtime handler outside project history even when atomic compensation is requested', async () => {
         let authorized = true;
         const shouldExecute = vi.fn(() => authorized);
