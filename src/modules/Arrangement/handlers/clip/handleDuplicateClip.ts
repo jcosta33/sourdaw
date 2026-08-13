@@ -39,6 +39,9 @@ function isDuplicateClipNoop(action: DuplicateClipAction): boolean {
 }
 
 export const handleDuplicateClip = createHandler<'duplicateClip'>({
+    materializeCommandArguments: (action) => {
+        ensureTargetClipId(action);
+    },
     execute: (alpha) => {
         return toHandlerExecutionResult(
             duplicateClip({

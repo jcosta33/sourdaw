@@ -82,6 +82,14 @@ vi.mock('#/modules/Command/useCases', async (importOriginal) => {
             }
             return original.executeVersionedCommandBatch(...args);
         },
+        executeVersionedCommandBatchEnvelope: (
+            ...args: Parameters<typeof original.executeVersionedCommandBatchEnvelope>
+        ) => {
+            if (mocks.executeBatchError.value) {
+                return Promise.reject(mocks.executeBatchError.value);
+            }
+            return original.executeVersionedCommandBatchEnvelope(...args);
+        },
     };
 });
 

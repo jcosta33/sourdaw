@@ -29,14 +29,6 @@ const STOCHASTIC_OPERATIONS = new Set([
 // available through their owning in-process workflows, but are not admitted at
 // the replayable serialized-command boundary until those results are fully
 // materialized into the command contract.
-const NONDETERMINISTIC_EXECUTABLE_OPERATIONS = new Set([
-    'duplicateClip',
-    'duplicateClipToNextBar',
-    'duplicateTrack',
-    'glueClips',
-    'splitClip',
-]);
-
 const ADDITIONAL_SERIALIZED_OPERATIONS = new Set(['addNotes']);
 
 const ENVELOPE_KEYS = [
@@ -150,10 +142,7 @@ function hasValidArguments(operation: string, value: unknown): boolean {
 }
 
 function isDeterministicSerializedOperation(operation: string, value: unknown): boolean {
-    if (
-        (!isExecutableAppActionType(operation) && !ADDITIONAL_SERIALIZED_OPERATIONS.has(operation)) ||
-        NONDETERMINISTIC_EXECUTABLE_OPERATIONS.has(operation)
-    ) {
+    if (!isExecutableAppActionType(operation) && !ADDITIONAL_SERIALIZED_OPERATIONS.has(operation)) {
         return false;
     }
     if (!isRecord(value)) {
@@ -173,6 +162,9 @@ function isDeterministicSerializedOperation(operation: string, value: unknown): 
             isNonEmptyString(value.initialAlternativeId) &&
             isNonEmptyString(value.color)
         );
+    }
+    if (operation === 'duplicateClip' || operation === 'duplicateClipToNextBar' || operation === 'duplicateTrack') {
+        return false;
     }
     return true;
 }

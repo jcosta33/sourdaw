@@ -382,6 +382,9 @@ describe('versioned command contract', () => {
 
     it('rejects commands whose semantic result still depends on post-envelope generation', () => {
         const unsafeActions: AppAction[] = [
+            { type: 'duplicateClip', payload: { clipId: 'clip-1', targetClipId: 'clip-copy' } },
+            { type: 'duplicateClipToNextBar', payload: { clipId: 'clip-1', targetClipId: 'clip-copy' } },
+            { type: 'duplicateTrack', payload: { trackId: 'track-1', targetTrackId: 'track-copy' } },
             { type: 'completeMidi', payload: { clipId: 'clip-1' } },
             { type: 'variationMidi', payload: { clipId: 'clip-1' } },
             { type: 'generateBassline', payload: { clipId: 'clip-1' } },
@@ -389,10 +392,6 @@ describe('versioned command contract', () => {
             { type: 'generateDrumPattern', payload: { style: 'rock' } },
             { type: 'generateMelody', payload: { style: 'ambient' } },
             { type: 'generateChordProgression', payload: { style: 'pop' } },
-            { type: 'duplicateClip', payload: { clipId: 'clip-1' } },
-            { type: 'duplicateClipToNextBar', payload: { clipId: 'clip-1' } },
-            { type: 'duplicateTrack', payload: { trackId: 'track-1' } },
-            { type: 'splitClip', payload: { clipId: 'clip-1', beat: 2 } },
             { type: 'deleteTime', payload: { startBeat: 4, endBeat: 8 } },
             { type: 'duplicateTimeRange', payload: { startBeat: 4, endBeat: 8 } },
             {

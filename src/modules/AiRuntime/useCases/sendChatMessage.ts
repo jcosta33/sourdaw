@@ -29,7 +29,7 @@ import { llmStatusStore } from '../stores/llmStatusStore';
 import { proposePendingActionConfirmation } from '../stores/pendingActionConfirmationStore';
 
 import { createStemImportConfirmationResourceLease } from './agentReference/createStemImportConfirmationResourceLease';
-import { compilePendingActionCommandEnvelopes } from './compilePendingActionCommandEnvelopes';
+import { compilePlannedActionCommandBatch } from './compilePlannedActionCommandBatch';
 import { createThinkBlockParser } from './createThinkBlockParser';
 import { describePendingActionConfirmation } from './describePendingActionConfirmation';
 import { executePlannedActions } from './executePlannedActions';
@@ -108,22 +108,28 @@ export async function sendChatMessage(userText: string): Promise<void> {
                     isCommandAction: true,
                 });
 
+                const confirmationDescription = describePendingActionConfirmation({
+                    actions: result.actions,
+                    context,
+                    prompt: userText,
+                    wholeProjectVibeMixPlan: result.wholeProjectVibeMixPlan,
+                    workflowCapabilityId: result.workflowCapabilityId,
+                });
+                const commandGroup = generateGroupId(userText);
+                const { commandEnvelopes, commandBatch } = compilePlannedActionCommandBatch({
+                    actions: result.actions,
+                    actionLabels: confirmationDescription.actionLabels,
+                    autoCommit: !result.requiresConfirmation,
+                    context,
+                    group: commandGroup,
+                    intent: userText,
+                    projectRevision,
+                    runId: assistantMsgId,
+                    protectedTargetIds: confirmationDescription.protectedUnchanged.map((item) => item.id),
+                });
+
                 if (result.requiresConfirmation) {
                     const confirmationId = `prompt-confirmation-${crypto.randomUUID()}`;
-                    const confirmationDescription = describePendingActionConfirmation({
-                        actions: result.actions,
-                        context,
-                        prompt: userText,
-                        wholeProjectVibeMixPlan: result.wholeProjectVibeMixPlan,
-                        workflowCapabilityId: result.workflowCapabilityId,
-                    });
-                    const commandGroup = generateGroupId(userText);
-                    const commandEnvelopes = compilePendingActionCommandEnvelopes({
-                        actions: result.actions,
-                        actionLabels: confirmationDescription.actionLabels,
-                        group: commandGroup,
-                        projectRevision,
-                    });
                     const confirmation = proposePendingActionConfirmation({
                         id: confirmationId,
                         prompt: userText,
@@ -131,6 +137,7 @@ export async function sendChatMessage(userText: string): Promise<void> {
                         actions: result.actions,
                         actionLabels: confirmationDescription.actionLabels,
                         commandEnvelopes,
+                        commandBatch,
                         affectedIds: confirmationDescription.affectedIds,
                         protectedUnchanged: confirmationDescription.protectedUnchanged,
                         risk: confirmationDescription.risk,
@@ -160,13 +167,17 @@ export async function sendChatMessage(userText: string): Promise<void> {
                     return;
                 }
 
-                const execution = await executePlannedActions({
+                const executionInput = {
                     prompt: userText,
                     actions: result.actions,
+                    group: commandGroup,
                     projectRevision,
                     executionMode: result.executionMode,
                     signal: aborter.signal,
-                });
+                };
+                const execution = commandBatch
+                    ? await executePlannedActions({ ...executionInput, commandBatch })
+                    : await executePlannedActions({ ...executionInput, legacyExecution: true });
 
                 if (execution.status === 'committed') {
                     const receiptWarnings: string[] = [];

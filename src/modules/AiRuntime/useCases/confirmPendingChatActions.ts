@@ -3,6 +3,7 @@ import { getAgentSectionRenderArtifacts, retryAgentProjectSectionRenders } from 
 import {
     executeAppActionBatch,
     executeVersionedCommandBatch,
+    executeVersionedCommandBatchEnvelope,
     generateGroupId,
     parseVersionedCommandEnvelope,
 } from '#/modules/Command/useCases';
@@ -346,7 +347,15 @@ export async function confirmPendingChatActions(
             shouldExecute: () => isConfirmationExecutionAuthorized(confirmation, aborter.signal),
         };
         const commandEnvelopes = confirmation.approvalSnapshot.commandEnvelopes;
-        if (commandEnvelopes) {
+        const commandBatch = confirmation.approvalSnapshot.commandBatch;
+        if (commandBatch) {
+            batchResult = await executeVersionedCommandBatchEnvelope({
+                authority: commandBatch.authority,
+                confirmed: true,
+                serialized: commandBatch.serialized,
+                options: executionOptions,
+            });
+        } else if (commandEnvelopes) {
             batchResult = await executeVersionedCommandBatch({
                 commands: commandEnvelopes,
                 normalizedProjectRevision: captureProjectRevision(),

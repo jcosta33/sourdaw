@@ -27,10 +27,49 @@ type PendingActionProtectedObject = {
     name: string;
 };
 
+type PendingCommandBatchAuthority = {
+    projectId: string;
+    baseRevision: string;
+    scope: {
+        targetIds: readonly string[];
+        targetRanges: ReadonlyArray<{ startBeat: number; endBeat: number }>;
+        protectedTargetIds: readonly string[];
+        protectedRanges: ReadonlyArray<{ startBeat: number; endBeat: number }>;
+    };
+    grants: {
+        allowedOperationPrefixes: readonly string[];
+        create: boolean;
+        delete: boolean;
+        routing: boolean;
+        tempo: boolean;
+        master: boolean;
+        file: boolean;
+        audioUpload: boolean;
+        remoteGeneration: boolean;
+        autoCommit: boolean;
+    };
+    budgets: {
+        maxCommands: number;
+        maxCreatedTracks: number;
+        maxDeletedObjects: number;
+        maxAffectedTracks: number;
+        maxAffectedClips: number;
+        maxAutomationPoints: number;
+        maxImportedAssets: number;
+        maxRenderJobs: number;
+    };
+};
+
+type PendingCommandBatch = {
+    serialized: string;
+    authority: PendingCommandBatchAuthority;
+};
+
 type PendingActionApprovalSnapshot = {
     actions: ExecutableRuntimeAction[];
     actionLabels: string[];
     commandEnvelopes?: string[];
+    commandBatch?: PendingCommandBatch;
     protectedUnchanged: PendingActionProtectedObject[];
 };
 
@@ -99,6 +138,7 @@ type ProposePendingActionConfirmationInput = {
     actions: ExecutableRuntimeAction[];
     actionLabels: string[];
     commandEnvelopes?: string[];
+    commandBatch?: PendingCommandBatch;
     affectedIds?: string[];
     protectedUnchanged?: PendingActionProtectedObject[];
     risk?: PendingActionRisk;
@@ -136,6 +176,7 @@ export function proposePendingActionConfirmation(
         actions: structuredClone(input.actions),
         actionLabels: structuredClone(input.actionLabels),
         commandEnvelopes: input.commandEnvelopes ? [...input.commandEnvelopes] : undefined,
+        commandBatch: input.commandBatch ? structuredClone(input.commandBatch) : undefined,
         protectedUnchanged: structuredClone(input.protectedUnchanged ?? []),
     };
     const confirmation: PendingAppActionConfirmation = {
