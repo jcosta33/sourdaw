@@ -1,0 +1,46 @@
+src/modules/Command/useCases/executeVersionedCommandBatchEnvelope.ts
+  s_a40848e8f8cca9::t_4dc540edfc1e98 5,63-79
+src/modules/Command/useCases/__tests__/commandBatchIdempotency.spec.ts
+  s_a40848e8f8cca9::t_4dc540edfc1e98 124,285,294
+  s_a40848e8f8cca9::t_a1373819f65a5c 13,235,241-256
+  s_62e9c3dc3ba52a::t_211122bfeed134 257-258
+src/modules/Collaboration/useCases/collaboration/__tests__/canExecuteCommandBatch.spec.ts
+  s_a40848e8f8cca9::t_0a918440eab33e 1-2,4-47
+  s_a40848e8f8cca9::t_2354991539e976 3
+src/modules/Collaboration/useCases/collaboration/canExecuteCommandBatch.ts
+  s_a40848e8f8cca9::t_4dc540edfc1e98 1-6
+src/app/__tests__/bootstrap.spec.ts
+  s_a40848e8f8cca9::t_e5545569d6b319 55,69,191,472-474
+src/modules/Command/useCases/commandBatchExecutionAuthorityPort.ts
+  s_a40848e8f8cca9::t_4dc540edfc1e98 1-12
+src/modules/Collaboration/useCases/index.ts
+  s_a40848e8f8cca9::t_4dc540edfc1e98 10
+src/modules/Command/useCases/configureCommandBatchIdempotency.ts
+  s_a40848e8f8cca9::t_4dc540edfc1e98 3,6-10,12
+src/app/bootstrap.ts
+  s_a40848e8f8cca9::t_4dc540edfc1e98 60,167
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "8a0f0a7b1f0beb5440da71a81f4ff8f5e6131c93",
+  "prompts": {},
+  "sessions": {
+    "s_62e9c3dc3ba52a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "92e0a2e7-8660-41e2-be8b-b2d644c6d0b7",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
