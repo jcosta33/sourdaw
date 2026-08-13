@@ -153,6 +153,39 @@ describe('captureCommandBatchPreflightState', () => {
         expect(state.targetFingerprints['track-vocal']).toContain('track-vocal');
     });
 
+    it('captures device parameters by plain and device-qualified target identity', () => {
+        mocks.getCrdtDoc.mockReturnValue({
+            tracks: [
+                {
+                    id: 'track-bass-di',
+                    devices: [
+                        {
+                            id: 'device-compressor',
+                            parameterValues: {
+                                'comp-attack': 12,
+                                'comp-threshold': -24,
+                            },
+                        },
+                    ],
+                },
+            ],
+        });
+
+        const state = captureCommandBatchPreflightState({
+            assetReferences: [],
+            targetIds: ['comp-threshold', 'device-compressor:comp-attack'],
+        });
+
+        expect(state.targetFingerprints['comp-threshold']).toBe(
+            JSON.stringify([
+                JSON.stringify({ deviceId: 'device-compressor', parameterId: 'comp-threshold', value: -24 }),
+            ])
+        );
+        expect(state.targetFingerprints['device-compressor:comp-attack']).toBe(
+            JSON.stringify([JSON.stringify({ deviceId: 'device-compressor', parameterId: 'comp-attack', value: 12 })])
+        );
+    });
+
     it('reports a cycle already present in the complete routing graph', () => {
         const context = projectContext();
         context.tracks[1]!.outputId = 'track-vocal';

@@ -2,6 +2,7 @@ import { getProjectContext } from '#/modules/AiRuntime/useCases';
 import { trackStore } from '#/modules/Arrangement/stores';
 import { audioBufferCache } from '#/modules/AudioEngine/stores';
 import { getAssetTransfer } from '#/modules/Collaboration/useCases';
+import { captureCommandTargetFingerprints } from '#/modules/Command/useCases';
 import { captureProjectRevision, DOC_PREFIX_ROOT, getCrdtDoc } from '#/modules/CrdtDocument/useCases';
 import { hasRoutingCycle } from '#/utils/routingCycle';
 
@@ -10,36 +11,6 @@ type CaptureCommandBatchPreflightStateInput = {
     projectDocument?: Readonly<Record<string, unknown>>;
     targetIds: readonly string[];
 };
-
-function collectTargetFingerprints(
-    value: unknown,
-    targetIds: ReadonlySet<string>,
-    fingerprints: Map<string, string[]>,
-    visited: WeakSet<object>
-): void {
-    if (Array.isArray(value)) {
-        for (const item of value) {
-            collectTargetFingerprints(item, targetIds, fingerprints, visited);
-        }
-        return;
-    }
-    if (typeof value !== 'object' || value === null) {
-        return;
-    }
-    if (visited.has(value)) {
-        return;
-    }
-    visited.add(value);
-    const record = value as Record<string, unknown>;
-    if (typeof record.id === 'string' && targetIds.has(record.id)) {
-        const matches = fingerprints.get(record.id) ?? [];
-        matches.push(JSON.stringify(record));
-        fingerprints.set(record.id, matches);
-    }
-    for (const child of Object.values(record)) {
-        collectTargetFingerprints(child, targetIds, fingerprints, visited);
-    }
-}
 
 function hasUniqueNonEmptyIds(values: readonly { id: string }[]): boolean {
     return (
@@ -314,17 +285,14 @@ function inspectStagedProjectDocument(document: Readonly<Record<string, unknown>
 export function captureCommandBatchPreflightState(input: CaptureCommandBatchPreflightStateInput) {
     const context = getProjectContext();
     const targetIds = new Set(input.targetIds);
-    const fingerprintMatches = new Map<string, string[]>();
-    const visited = new WeakSet<object>();
     const projectDoc = input.projectDocument ?? getCrdtDoc(DOC_PREFIX_ROOT);
-    collectTargetFingerprints(projectDoc, targetIds, fingerprintMatches, visited);
     const allIds = new Set<string>();
     const duplicateIds = new Set<string>();
     const duplicateScanVisited = new WeakSet<object>();
     findDuplicateIds(projectDoc, allIds, duplicateIds, duplicateScanVisited);
-    const targetFingerprints = Object.fromEntries(
-        [...fingerprintMatches].map(([targetId, matches]) => [targetId, JSON.stringify(matches.sort())])
-    );
+    const targetFingerprints = {
+        ...captureCommandTargetFingerprints({ document: projectDoc, targetIds: input.targetIds }),
+    };
     if (targetIds.has('hw_out')) {
         targetFingerprints.hw_out = 'system-output:hw_out';
     }

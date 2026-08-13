@@ -330,6 +330,19 @@ function parseCommands(value: unknown): VersionedCommandEnvelope[] | null {
 function validateCommandScope(commands: readonly VersionedCommandEnvelope[], scope: CommandBatchScope): string | null {
     const declaredTargets = new Set(scope.targetIds);
     const protectedTargets = new Set(scope.protectedTargetIds);
+    const overlapsProtectedRange = scope.targetRanges.some((targetRange) =>
+        scope.protectedRanges.some((protectedRange) => {
+            if (targetRange.startBeat === targetRange.endBeat) {
+                return (
+                    targetRange.startBeat >= protectedRange.startBeat && targetRange.startBeat < protectedRange.endBeat
+                );
+            }
+            return targetRange.startBeat < protectedRange.endBeat && protectedRange.startBeat < targetRange.endBeat;
+        })
+    );
+    if (overlapsProtectedRange) {
+        return 'Command target range overlaps a protected range';
+    }
     for (const command of commands) {
         for (const targetId of getCommandTargetIds(command)) {
             if (!declaredTargets.has(targetId) || protectedTargets.has(targetId)) {

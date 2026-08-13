@@ -14,6 +14,8 @@ import {
 import { clearHandlerRegistry, macroStore, registerHandlerMap, undoStore } from '#/modules/Command/stores';
 import {
     clearUndoHistory,
+    captureCommandTargetFingerprints,
+    commandBatchPreflightPort,
     executeAppActionBatch,
     redo,
     resetActionReplayAuthority,
@@ -22,6 +24,7 @@ import {
 } from '#/modules/Command/useCases';
 import {
     createCrdtDoc,
+    captureProjectRevision,
     registerCrdtStorageRuntime,
     removeCrdtDoc,
     resetCrdtProjectAuthority,
@@ -268,6 +271,18 @@ describe('Bass DI compressor parameter prompt workflow', () => {
         removeCrdtDoc('root');
         createCrdtDoc('root');
         registerCrdtStorageRuntime();
+        commandBatchPreflightPort.setProvider(({ targetIds }) => ({
+            audioGraphValid: true,
+            availableAssetHashes: [],
+            availableAudioBufferIds: [],
+            lockedRanges: [],
+            projectId: captureProjectRevision(),
+            projectInvariantsValid: true,
+            targetFingerprints: captureCommandTargetFingerprints({
+                document: trackStore.value,
+                targetIds,
+            }),
+        }));
         clearHandlerRegistry();
         registerHandlerMap(getArrangementHandlers());
         clearUndoHistory();
@@ -301,6 +316,7 @@ describe('Bass DI compressor parameter prompt workflow', () => {
         clearHandlerRegistry();
         clearAiHistory();
         clearPendingActionConfirmations();
+        commandBatchPreflightPort.setProvider(null);
         trackStore.set({ tracks: [], selectedTrackId: null, ghostClips: [] });
         configureAutomergeStoragePort(null);
         cloudSession.clear();

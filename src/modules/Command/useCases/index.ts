@@ -8,6 +8,7 @@ export { commandProjectRevisionPort } from './commandProjectRevisionPort';
 export { commandBatchPreflightPort } from './commandBatchPreflightPort';
 export { commandDeviceVersionsPort } from './commandDeviceVersionsPort';
 export { commandTrackDefaultsPort } from './commandTrackDefaultsPort';
+export { captureCommandTargetFingerprints } from './captureCommandTargetFingerprints';
 export { createCallbackUndoEntry } from './createCallbackUndoEntry';
 export { createVersionedCommandEnvelope } from './createVersionedCommandEnvelope';
 export { compileVersionedCommandBatchEnvelope } from './compileVersionedCommandBatchEnvelope';

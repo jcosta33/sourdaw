@@ -381,7 +381,44 @@ describe('command batch contract', () => {
         });
         expect(parseVersionedCommandBatchEnvelope(JSON.stringify(protectedInput))).toEqual({
             status: 'invalid',
-            reason: 'Command time 12 beats is outside the declared batch scope',
+            reason: 'Command target range overlaps a protected range',
+        });
+    });
+
+    it('rejects a target interval that crosses a protected range between its endpoints', () => {
+        const section = actionCommand({
+            action: {
+                type: 'addSection',
+                payload: { sectionId: 'section-1', startBeat: 0, endBeat: 16, name: 'Verse' },
+            },
+            commandId: '55555555-5555-4555-8555-555555555555',
+        });
+        const input = batch({
+            commands: [section],
+            dependencies: [],
+            postconditions: [{ kind: 'project-invariants-valid' }, { kind: 'audio-graph-valid' }],
+            scope: {
+                targetIds: ['section-1'],
+                targetRanges: [{ startBeat: 0, endBeat: 16 }],
+                protectedTargetIds: [],
+                protectedRanges: [{ startBeat: 8, endBeat: 12 }],
+            },
+            preconditions: [
+                { kind: 'project-revision', value: 'revision-1' },
+                { kind: 'targets-absent', targetIds: ['section-1'] },
+                { kind: 'ranges-unlocked' },
+            ],
+            grants: {
+                ...batch().grants,
+                allowedOperationPrefixes: ['addSection'],
+                create: true,
+            },
+            budgets: { ...batch().budgets, maxCommands: 1 },
+        });
+
+        expect(parseVersionedCommandBatchEnvelope(JSON.stringify(input))).toEqual({
+            status: 'invalid',
+            reason: 'Command target range overlaps a protected range',
         });
     });
 
