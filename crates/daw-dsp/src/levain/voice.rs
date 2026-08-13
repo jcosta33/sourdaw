@@ -23,6 +23,12 @@ fn cubic_hermite(y0: f32, y1: f32, y2: f32, y3: f32, t: f32) -> f32 {
     ((c3 * t + c2) * t + c1) * t + c0
 }
 
+/// Convert a decibel value to a linear amplitude multiplier.
+#[inline]
+fn db_to_linear(db: f32) -> f32 {
+    10f32.powf(db / 20.0)
+}
+
 // ---------------------------------------------------------------------------
 // One-pole smoother
 // ---------------------------------------------------------------------------
@@ -337,7 +343,27 @@ impl SamplePlayback {
         let y2 = get(pos_floor + 1);
         let y3 = get(pos_floor + 2);
 
-        let sample = cubic_hermite(y0, y1, y2, y3, frac);
+        let mut sample = cubic_hermite(y0, y1, y2, y3, frac);
+
+        // Equal-power loop-seam crossfade (audit F14): as playback approaches
+        // `loop_end` inside the last `loop_crossfade` frames of a forward
+        // loop, blend in the content the *next* iteration would start with —
+        // the mirror offset from `loop_start` — instead of jumping straight
+        // to the raw waveform at the seam. The field was stored on every
+        // voice and never read, so any loop whose start and end weren't
+        // already waveform-continuous clicked on every repeat.
+        if self.loop_mode == LoopMode::Forward && self.loop_crossfade > 0 {
+            let crossfade_start = self.loop_end.saturating_sub(self.loop_crossfade);
+            if pos_floor >= crossfade_start as usize && pos_floor < self.loop_end as usize {
+                let progress =
+                    (pos_floor as u32 - crossfade_start) as f32 / self.loop_crossfade as f32;
+                let shadow_frame = self.loop_start + (pos_floor as u32 - crossfade_start);
+                let shadow = get(shadow_frame as usize);
+                let angle = progress.clamp(0.0, 1.0) * std::f32::consts::FRAC_PI_2;
+                let (gain_shadow, gain_tail) = angle.sin_cos();
+                sample = sample * gain_tail + shadow * gain_shadow;
+            }
+        }
 
         // Advance position.
         self.position += self.speed;
@@ -402,12 +428,27 @@ pub struct LevainVoice {
 
     /// Primary sample playback stream (current articulation).
     pub playback: SamplePlayback,
-    /// Secondary stream for dynamic layer crossfading or legato transitions.
+    /// Secondary stream for legato transitions (true-legato transition
+    /// sample) or a synthetic-glide target zone.
     pub crossfade_playback: SamplePlayback,
     /// Crossfade progress (0.0 = fully primary, 1.0 = fully secondary).
     pub crossfade_amount: f32,
     pub crossfade_rate: f32,
     pub crossfading: bool,
+
+    /// Third stream for the CC1 mod-wheel dynamic-layer crossfade, distinct
+    /// from `crossfade_playback` (owned by legato) so the two features never
+    /// fight over one stream slot. Active for the life of a note whenever its
+    /// trigger velocity landed near the boundary between two authored
+    /// dynamic layers.
+    pub layer_secondary: SamplePlayback,
+    pub layer_active: bool,
+    layer_gain_primary: f32,
+    layer_gain_secondary: f32,
+    /// Indices into the engine's per-block `layer_gains` for the primary
+    /// zone and `layer_secondary` above.
+    pub dynamic_layer_primary_idx: usize,
+    pub dynamic_layer_secondary_idx: usize,
 
     /// Amplitude envelope.
     pub amp_env: AdsrEnvelope,
@@ -478,6 +519,12 @@ impl LevainVoice {
             crossfade_amount: 0.0,
             crossfade_rate: 0.0,
             crossfading: false,
+            layer_secondary: SamplePlayback::new(),
+            layer_active: false,
+            layer_gain_primary: 1.0,
+            layer_gain_secondary: 0.0,
+            dynamic_layer_primary_idx: 0,
+            dynamic_layer_secondary_idx: 0,
             amp_env: AdsrEnvelope::new(sample_rate),
             amp_env_patch: AdsrParams::default(),
             envelope_scaling: EnvelopeScaling::IDENTITY,
@@ -521,9 +568,13 @@ impl LevainVoice {
         self.samples_since_on = 0;
 
         self.playback
-            .configure_with_pool(&zone.sample, note, 1.0, pool);
+            .configure_with_pool(&zone.sample, note, db_to_linear(zone.gain_db), pool);
         self.crossfading = false;
         self.crossfade_amount = 0.0;
+        self.layer_active = false;
+        self.layer_gain_primary = 1.0;
+        self.layer_gain_secondary = 0.0;
+        self.layer_secondary.active = false;
 
         self.amp_env_patch = zone.amp_env;
         self.amp_env
@@ -582,14 +633,60 @@ impl LevainVoice {
     ) {
         // Move current playback to crossfade slot.
         self.crossfade_playback = self.playback.clone();
-        self.playback
-            .configure_with_pool(&new_zone.sample, note, 1.0, pool);
+        self.playback.configure_with_pool(
+            &new_zone.sample,
+            note,
+            db_to_linear(new_zone.gain_db),
+            pool,
+        );
 
         self.crossfade_amount = 0.0;
         let samples = (crossfade_time_secs * sample_rate).max(1.0);
         self.crossfade_rate = 1.0 / samples;
         self.crossfading = true;
         self.zone_id = new_zone.id;
+    }
+
+    /// Begin a true-legato transition. `playback` already holds the freshly
+    /// triggered sustain zone (set by `trigger()` just before this call); the
+    /// looked-up transition sample goes into the secondary stream and starts
+    /// at full weight, so the note begins by sounding the transition and
+    /// eases into its own sustain — the mirror image of `start_crossfade`,
+    /// which fades a *new* primary in against whatever was already sounding.
+    /// Without this, a true-legato result had nothing to crossfade but the
+    /// sustain zone against itself.
+    pub fn start_legato_transition(
+        &mut self,
+        transition_sample: &SampleRef,
+        note: u8,
+        crossfade_time_secs: f32,
+        sample_rate: f32,
+        pool: &SamplePool,
+    ) {
+        self.crossfade_playback
+            .configure_with_pool(transition_sample, note, 1.0, pool);
+        self.crossfade_amount = 0.0;
+        let samples = (crossfade_time_secs * sample_rate).max(1.0);
+        self.crossfade_rate = 1.0 / samples;
+        self.crossfading = true;
+    }
+
+    /// Attach a second, velocity-adjacent zone that CC1 can blend towards
+    /// (audit F6). Independent of `crossfade_playback`, which legato owns, so
+    /// the two features never contend for one stream slot.
+    pub fn set_dynamic_layer(&mut self, zone: &Zone, note: u8, pool: &SamplePool) {
+        self.layer_secondary
+            .configure_with_pool(&zone.sample, note, db_to_linear(zone.gain_db), pool);
+        self.layer_active = true;
+    }
+
+    /// Update this block's CC1-derived blend weights for the primary zone and
+    /// the attached dynamic layer. Set once per block by the engine from its
+    /// `layer_gains`; a no-op unless `set_dynamic_layer` attached a second
+    /// stream.
+    pub fn update_dynamic_layer_gains(&mut self, primary: f32, secondary: f32) {
+        self.layer_gain_primary = primary;
+        self.layer_gain_secondary = secondary;
     }
 
     /// Advance this voice's vibrato LFO by one block and write the
@@ -670,7 +767,7 @@ impl LevainVoice {
 
         let primary = self.playback.read_sample(pool);
 
-        let sample = if self.crossfading {
+        let mut sample = if self.crossfading {
             let secondary = self.crossfade_playback.read_sample(pool);
             self.crossfade_amount += self.crossfade_rate;
 
@@ -687,6 +784,14 @@ impl LevainVoice {
         } else {
             primary
         };
+
+        // CC1 mod-wheel dynamic-layer crossfade (audit F6): blend in the
+        // velocity-adjacent zone attached by `set_dynamic_layer`, weighted by
+        // this block's equal-power layer gains.
+        if self.layer_active {
+            let layer_sample = self.layer_secondary.read_sample(pool);
+            sample = sample * self.layer_gain_primary + layer_sample * self.layer_gain_secondary;
+        }
 
         // Check if sample playback is finished.
         if !self.playback.active && !self.crossfading {

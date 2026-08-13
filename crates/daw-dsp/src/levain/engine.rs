@@ -12,7 +12,7 @@ use super::articulation::ArticulationState;
 use super::expression::ExpressionState;
 use super::fallback::FallbackToneEngine;
 use super::humanize::Humanizer;
-use super::legato::{LegatoEngine, LegatoResult};
+use super::legato::{LegatoEngine, LegatoResult, LegatoTransitionStore};
 use super::mic::MicMixer;
 use super::performance::{AutoArticulation, AutoDivisi, EnsembleTiming};
 use super::realism::RealismEngine;
@@ -27,6 +27,10 @@ thread_local! {
         RefCell::new(HashMap::new());
 }
 
+/// Maximum staggered pedal releases in flight at once (matches
+/// `PedalDeferredRelease`'s own `MAX_DEFERRED`).
+const MAX_STAGGERED_RELEASES: usize = 128;
+
 struct PendingSampleBank {
     zone_map: ZoneMap,
     sample_pool: Arc<SamplePool>,
@@ -34,6 +38,10 @@ struct PendingSampleBank {
     num_articulations: usize,
     num_mics: usize,
     built: bool,
+    /// Legato transition samples staged alongside the zone map so a bank
+    /// reload can't have transitions from the new bank pointing at zones (or
+    /// sample ids) still belonging to the sounding one.
+    legato_transitions: Vec<LegatoTransition>,
 }
 
 impl PendingSampleBank {
@@ -45,6 +53,7 @@ impl PendingSampleBank {
             num_articulations: 0,
             num_mics: 0,
             built: false,
+            legato_transitions: Vec::new(),
         }
     }
 }
@@ -108,6 +117,12 @@ pub struct LevainEngine {
 
     /// Scratch buffer for dynamic layer gains.
     layer_gains: [f32; MAX_VEL_LAYERS],
+
+    /// Pedal-release note-offs waiting for their staggered delay to elapse:
+    /// (note, cc1_at_noteoff, remaining_samples). Fixed-size so staggering
+    /// costs no audio-thread allocation.
+    pending_staggered_releases: [(u8, f32, u32); MAX_STAGGERED_RELEASES],
+    pending_staggered_count: usize,
 }
 
 impl LevainEngine {
@@ -139,6 +154,8 @@ impl LevainEngine {
             num_articulations: 1,
             num_mics: 1,
             layer_gains: [0.0; MAX_VEL_LAYERS],
+            pending_staggered_releases: [(0, 0.0, 0); MAX_STAGGERED_RELEASES],
+            pending_staggered_count: 0,
         }
     }
 
@@ -152,6 +169,11 @@ impl LevainEngine {
         self.auto_divisi.clear();
         self.fallback.enabled = true;
         self.realism.reset();
+        // Legato transitions reference sample ids from the bank being
+        // cleared; carrying them into whatever loads next would let a
+        // transition resolve to the wrong (or now-invalid) sample.
+        self.legato.transitions = LegatoTransitionStore::new();
+        self.pending_staggered_count = 0;
     }
 
     // -----------------------------------------------------------------------
@@ -245,6 +267,10 @@ impl LevainEngine {
         self.expression
             .crossfader
             .configure(3, ExpressionConfig::default().cc1_curve);
+        self.legato.transitions = LegatoTransitionStore::new();
+        for transition in pending.legato_transitions {
+            self.legato.transitions.add(transition);
+        }
         true
     }
 
@@ -259,6 +285,19 @@ impl LevainEngine {
             return;
         }
         self.zone_map.add_zone(zone);
+    }
+
+    /// Register a legato transition sample so `note_on`'s true-legato lookup
+    /// (audit F7) can find it by `(interval, dynamic, transition_type)`.
+    /// Staged alongside a pending bank the same way `add_zone` is, so a
+    /// reload can't leave a transition pointing at the previous bank's
+    /// zones. Call from the main thread while loading, like `add_zone`.
+    pub fn add_legato_transition(&mut self, transition: LegatoTransition) {
+        if let Some(pending) = self.pending_sample_bank.as_mut() {
+            pending.legato_transitions.push(transition);
+            return;
+        }
+        self.legato.transitions.add(transition);
     }
 
     /// Tell the engine which instrument id (e.g. `violin-1`, `cello`,
@@ -384,27 +423,46 @@ impl LevainEngine {
                 voice.trigger(note, channel, velocity, &zone, art, gain, &self.sample_pool);
                 voice.vibrato_phase = vibrato_phase;
                 voice.vibrato_rate_scale = vibrato_rate_scale;
+                self.attach_dynamic_layer(voice_idx, art, note, zone_id, velocity);
             }
             LegatoResult::TrueTransition {
                 from_voice,
-                crossfade_in,
+                transition,
+                crossfade_out,
                 ..
             } => {
-                // Fade out the old voice.
+                // Fade out the old voice. Its own release curve is the
+                // "into the transition" ramp `crossfade_in` names — this
+                // voice pool has no independent stream to apply a second,
+                // separately-timed crossfade to that departing voice.
                 if from_voice < self.voice_pool.voices.len() {
                     self.voice_pool.voices[from_voice].release();
                 }
-                // Trigger new voice with the sustain zone, then crossfade.
-                // TODO: when transition sample zones are populated, look up the
-                // transition zone by sample_id and play that instead of the sustain zone.
                 let voice = &mut self.voice_pool.voices[voice_idx];
                 voice.trigger(note, channel, velocity, &zone, art, gain, &self.sample_pool);
                 voice.vibrato_phase = vibrato_phase;
                 voice.vibrato_rate_scale = vibrato_rate_scale;
-                voice.start_crossfade(
-                    &zone,
+                // Audit F7: play the looked-up transition sample and
+                // crossfade into the sustain zone `trigger()` just set up,
+                // instead of crossfading that zone against itself.
+                // `root_key: note` plays it at its recorded pitch —
+                // transition samples are captured per interval, unlike a
+                // single-note zone that needs root-key pitch correction.
+                let transition_sample = SampleRef {
+                    sample_id: transition.sample_id,
+                    root_key: note,
+                    tune_cents: 0,
+                    start: 0,
+                    end: 0,
+                    loop_mode: LoopMode::NoLoop,
+                    loop_start: 0,
+                    loop_end: 0,
+                    loop_crossfade: 0,
+                };
+                voice.start_legato_transition(
+                    &transition_sample,
                     note,
-                    crossfade_in,
+                    crossfade_out,
                     self.sample_rate,
                     &self.sample_pool,
                 );
@@ -464,8 +522,8 @@ impl LevainEngine {
             return;
         }
 
-        // Fire release trigger if available.
-        let (_should_trigger, _release_vol) = self.release_tracker.note_off(note, cc1);
+        // Fire release trigger if available (audit F5).
+        self.trigger_release_if_available(note, cc1);
         self.fallback.note_off(note);
         self.voice_pool
             .release_note_matching(note, self.pending_note_off_channel);
@@ -529,21 +587,29 @@ impl LevainEngine {
         // with staggered timing to avoid coordinated stop.
         if cc == 64 && was_pedal_held && !self.expression.sustain_pedal {
             // Collect notes to release (can't borrow self mutably in the closure).
-            let mut notes_to_release = [(0u8, 0.0f32); 128];
+            let mut notes_to_release = [(0u8, 0.0f32, 0u32); 128];
             let mut release_count = 0usize;
             self.pedal_deferred
-                .release_pedal(self.sample_rate, |note, cc1, _stagger| {
+                .release_pedal(self.sample_rate, |note, cc1, stagger| {
                     if release_count < 128 {
-                        notes_to_release[release_count] = (note, cc1);
+                        notes_to_release[release_count] = (note, cc1, stagger);
                         release_count += 1;
                     }
                 });
-            for i in 0..release_count {
-                let (note, cc1) = notes_to_release[i];
-                self.auto_divisi.note_off(note);
-                let _ = self.release_tracker.note_off(note, cc1);
-                self.voice_pool.release_note(note);
-                self.legato.note_off(note);
+            // Audit F14: `stagger` used to be discarded (`_stagger`), so
+            // every deferred note released in the same instant the pedal
+            // lifted regardless of the timing `PedalDeferredRelease`
+            // computed. A zero stagger (always the first note) still fires
+            // synchronously; the rest queue into `pending_staggered_releases`
+            // and fire from `process_block` once their delay elapses.
+            for &(note, cc1, stagger) in notes_to_release.iter().take(release_count) {
+                if stagger == 0 {
+                    self.fire_deferred_release(note, cc1);
+                } else if self.pending_staggered_count < MAX_STAGGERED_RELEASES {
+                    self.pending_staggered_releases[self.pending_staggered_count] =
+                        (note, cc1, stagger);
+                    self.pending_staggered_count += 1;
+                }
             }
         }
     }
@@ -671,6 +737,23 @@ impl LevainEngine {
         self.legato.advance(len);
         self.release_tracker.advance(len);
 
+        // Fire any staggered pedal releases whose delay has elapsed this
+        // block (audit F14). Swap-remove so clearing an entry doesn't skip
+        // the one that takes its place.
+        let mut staggered_idx = 0;
+        while staggered_idx < self.pending_staggered_count {
+            let (note, cc1, remaining) = self.pending_staggered_releases[staggered_idx];
+            if remaining as usize <= len {
+                self.fire_deferred_release(note, cc1);
+                self.pending_staggered_count -= 1;
+                self.pending_staggered_releases[staggered_idx] =
+                    self.pending_staggered_releases[self.pending_staggered_count];
+            } else {
+                self.pending_staggered_releases[staggered_idx].2 = remaining - len as u32;
+                staggered_idx += 1;
+            }
+        }
+
         // Get expression gain for this block.
         let expr_gain = self.expression.expression_gain();
 
@@ -701,6 +784,18 @@ impl LevainEngine {
         self.expression
             .crossfader
             .get_layer_gains(&mut self.layer_gains);
+
+        // CC1 mod-wheel dynamic-layer crossfade (audit F6): push this
+        // block's gains into every voice that has a second, velocity-
+        // adjacent zone attached by `attach_dynamic_layer`.
+        for voice in self.voice_pool.voices.iter_mut() {
+            if voice.layer_active {
+                voice.update_dynamic_layer_gains(
+                    self.layer_gains[voice.dynamic_layer_primary_idx],
+                    self.layer_gains[voice.dynamic_layer_secondary_idx],
+                );
+            }
+        }
 
         // Gate the realism layer's continuous bow/breath noise on whether
         // anything is actually sounding this block. A real instrument makes
@@ -748,6 +843,144 @@ impl LevainEngine {
     pub fn active_voice_count(&self) -> usize {
         self.voice_pool.active_count() + self.fallback.active_count()
     }
+
+    // -----------------------------------------------------------------------
+    // Release triggers, staggered pedal release, dynamic-layer crossfade
+    // -----------------------------------------------------------------------
+
+    /// Fire a note's release-trigger zone if the tracker judges one audible
+    /// (audit F5). `should_trigger`/`release_vol` used to be computed and
+    /// discarded; this looks up the matching `is_release` zone through the
+    /// same lookup/trigger path `note_on` uses and plays it at
+    /// `release_vol`, narrowed to this note's own current articulation and
+    /// trigger velocity so the release layer matches what was sounding.
+    fn trigger_release_if_available(&mut self, note: u8, cc1: f32) {
+        let (should_trigger, release_vol) = self.release_tracker.note_off(note, cc1);
+        if !should_trigger {
+            return;
+        }
+
+        let articulation = self.articulation.current;
+        let velocity = self
+            .voice_pool
+            .voices
+            .iter()
+            .find(|voice| voice.active && voice.note == note)
+            .map_or(100, |voice| voice.velocity);
+
+        let candidates = self.zone_map.lookup(articulation, 0, note, velocity);
+        let release_zone_id = candidates.iter().copied().find(|&id| {
+            self.zone_map
+                .get_zone(id)
+                .is_some_and(|zone| zone.is_release)
+        });
+        let Some(zone_id) = release_zone_id else {
+            return;
+        };
+        let Some(zone) = self.zone_map.get_zone(zone_id).copied() else {
+            return;
+        };
+
+        let voice_idx = self.voice_pool.allocate();
+        let voice = &mut self.voice_pool.voices[voice_idx];
+        voice.trigger(
+            note,
+            0,
+            velocity,
+            &zone,
+            articulation,
+            release_vol,
+            &self.sample_pool,
+        );
+        // A release trigger is a decorative one-shot, not a held note: it
+        // must not be addressable by per-note (MPE) expression or bent by a
+        // later legato transition at the same pitch.
+        voice.held = false;
+    }
+
+    /// Run the note-off steps a pedal release defers, once fired — either
+    /// immediately (zero stagger) or from `process_block` once a staggered
+    /// entry's delay elapses (audit F14).
+    fn fire_deferred_release(&mut self, note: u8, cc1: f32) {
+        self.auto_divisi.note_off(note);
+        self.trigger_release_if_available(note, cc1);
+        self.voice_pool.release_note(note);
+        self.legato.note_off(note);
+    }
+
+    /// Look up a velocity-adjacent zone for the CC1 dynamic-layer crossfade
+    /// (audit F6). The engine's dynamic-layer count partitions 0..1 evenly
+    /// the same way `DynamicCrossfader::configure` does, so the note's own
+    /// trigger velocity names which partition it nominally belongs to, and
+    /// the immediate neighbour — if a genuinely different zone exists there
+    /// — is the zone CC1 can blend towards. Returns `None` when the bank
+    /// only authored one zone across that neighbourhood (the common case),
+    /// so behaviour is unchanged unless a bank genuinely offers more than
+    /// one velocity layer.
+    fn find_adjacent_layer_zone(
+        &self,
+        articulation: ArticulationId,
+        note: u8,
+        primary_zone_id: ZoneId,
+        velocity: u8,
+    ) -> Option<(usize, usize, ZoneId)> {
+        let num_layers = self.expression.crossfader.num_layers;
+        if num_layers < 2 {
+            return None;
+        }
+        let vel_norm = velocity as f32 / 127.0;
+        let primary_idx = ((vel_norm * num_layers as f32) as usize).min(num_layers - 1);
+
+        let neighbours = [
+            (primary_idx + 1 < num_layers).then_some(primary_idx + 1),
+            (primary_idx > 0).then(|| primary_idx - 1),
+        ];
+
+        for neighbour_idx in neighbours.into_iter().flatten() {
+            let representative_velocity =
+                (((neighbour_idx as f32 + 0.5) / num_layers as f32) * 127.0)
+                    .round()
+                    .clamp(0.0, 127.0) as u8;
+            let candidates =
+                self.zone_map
+                    .lookup(articulation, 0, note, representative_velocity);
+            let found = candidates.iter().copied().find(|&id| {
+                id != primary_zone_id
+                    && self
+                        .zone_map
+                        .get_zone(id)
+                        .is_some_and(|zone| !zone.is_release)
+            });
+            if let Some(zone_id) = found {
+                return Some((primary_idx, neighbour_idx, zone_id));
+            }
+        }
+        None
+    }
+
+    /// Attach the velocity-adjacent zone (if any) found by
+    /// `find_adjacent_layer_zone` to a freshly triggered voice.
+    fn attach_dynamic_layer(
+        &mut self,
+        voice_idx: usize,
+        articulation: ArticulationId,
+        note: u8,
+        primary_zone_id: ZoneId,
+        velocity: u8,
+    ) {
+        let Some((primary_idx, secondary_idx, adjacent_zone_id)) =
+            self.find_adjacent_layer_zone(articulation, note, primary_zone_id, velocity)
+        else {
+            return;
+        };
+        let Some(adjacent_zone) = self.zone_map.get_zone(adjacent_zone_id).copied() else {
+            return;
+        };
+        let voice = &mut self.voice_pool.voices[voice_idx];
+        voice.set_dynamic_layer(&adjacent_zone, note, &self.sample_pool);
+        voice.dynamic_layer_primary_idx = primary_idx;
+        voice.dynamic_layer_secondary_idx = secondary_idx;
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -777,7 +1010,8 @@ mod tests {
 
     use super::LevainEngine;
     use crate::levain::types::{
-        AdsrParams, KeyRange, LoopMode, SampleRef, VelRange, Zone, MAX_ARTICULATIONS,
+        AdsrParams, Dynamic, KeyRange, LegatoTransition, LoopMode, SampleRef, TransitionType,
+        VelRange, Zone, MAX_ARTICULATIONS,
     };
 
     const SAMPLE_RATE: f32 = 48_000.0;
@@ -1449,5 +1683,344 @@ mod tests {
              is 200 Hz and the fallback sine at MIDI 60 is 261.6 Hz, so this \
              output is not the sampler voice the zone map should have selected."
         );
+    }
+
+    // ── Audit #1833: release triggers, CC1 layer crossfade, true legato,
+    //    loop-seam crossfade, staggered pedal release ─────────────────────
+
+    fn wide_zone(id: u32, sample_id: u32, vel: VelRange, is_release: bool) -> Zone {
+        Zone {
+            id,
+            key: KeyRange { lo: 0, hi: 127 },
+            vel,
+            articulation: 0,
+            rr_pos: 0,
+            rr_len: 1,
+            mic: 0,
+            is_release,
+            sample: SampleRef {
+                sample_id,
+                root_key: 60,
+                tune_cents: 0,
+                start: 0,
+                end: SAMPLE_FRAMES,
+                loop_mode: LoopMode::Forward,
+                loop_start: 0,
+                loop_end: SAMPLE_FRAMES,
+                loop_crossfade: 0,
+            },
+            amp_env: AdsrParams {
+                attack: 0.001,
+                decay: 0.001,
+                sustain: 1.0,
+                release: 0.2,
+            },
+            gain_db: 0.0,
+        }
+    }
+
+    /// F5 — release triggers were computed (`should_trigger`/`release_vol`)
+    /// and immediately discarded, so a bank authored with a release-trigger
+    /// zone (bow lift, damper noise, key-off breath) never sounded it.
+    #[test]
+    fn note_off_fires_the_matching_release_trigger_zone() {
+        let mut engine = LevainEngine::new(SAMPLE_RATE, 8);
+        let data: Vec<f32> = (0..SAMPLE_FRAMES)
+            .map(|frame| (frame % PERIOD_FRAMES) as f32 / PERIOD_FRAMES as f32 * 2.0 - 1.0)
+            .collect();
+        let sample_id = engine
+            .add_sample(data, SAMPLE_FRAMES, 1, SAMPLE_RATE)
+            .expect("test sample should fit the bank");
+        let full_vel = VelRange { lo: 0, hi: 127 };
+        engine.add_zone(wide_zone(0, sample_id, full_vel, false));
+        engine.add_zone(wide_zone(1, sample_id, full_vel, true));
+        engine
+            .build_zone_map(1, 1)
+            .expect("zone map should build");
+
+        engine.note_on(60, 100);
+        // Hold long enough that `ReleaseTracker`'s duration scale clears its
+        // 0.01 audibility floor at the engine's default CC1 (0.5).
+        render(&mut engine, 400);
+        let before = engine.active_voice_count();
+
+        engine.note_off(60);
+
+        // The sustain voice's own release tail keeps it active, so a fixed
+        // voice count on its own wouldn't distinguish "released" from
+        // "released and a new release-trigger voice fired". Comparing
+        // against `before` does: a release trigger must add a voice, not
+        // just change one already sounding.
+        assert_eq!(
+            engine.active_voice_count(),
+            before + 1,
+            "note_off on a held note with an is_release zone available must \
+             allocate an additional voice for the release trigger"
+        );
+    }
+
+    /// F6 — `get_layer_gains` was computed every block and never read, so
+    /// the CC1 mod wheel never crossfaded between a note's velocity-adjacent
+    /// dynamic layers; only CC7/CC11 reached audio.
+    #[test]
+    fn cc1_dynamic_layer_gains_blend_toward_the_velocity_adjacent_zone() {
+        fn single_zone_engine(freq_hz: f32) -> LevainEngine {
+            let mut engine = LevainEngine::new(SAMPLE_RATE, 8);
+            let data: Vec<f32> = (0..SAMPLE_FRAMES)
+                .map(|frame| {
+                    (std::f32::consts::TAU * freq_hz * frame as f32 / SAMPLE_RATE).sin()
+                })
+                .collect();
+            let sample_id = engine
+                .add_sample(data, SAMPLE_FRAMES, 1, SAMPLE_RATE)
+                .expect("test sample should fit the bank");
+            engine.add_zone(wide_zone(0, sample_id, VelRange { lo: 0, hi: 127 }, false));
+            engine
+                .build_zone_map(1, 1)
+                .expect("zone map should build");
+            engine
+        }
+
+        let mut low_only = single_zone_engine(110.0);
+        low_only.note_on(60, 32);
+        let low_crossings = zero_crossings(&render(&mut low_only, 24)[1024..]);
+
+        let mut high_only = single_zone_engine(440.0);
+        high_only.note_on(60, 32);
+        let high_crossings = zero_crossings(&render(&mut high_only, 24)[1024..]);
+        assert!(
+            low_crossings < high_crossings,
+            "test fixture sanity: the reference tones must differ in zero-crossing \
+             rate, got low {low_crossings} vs high {high_crossings}"
+        );
+
+        // Two velocity-layer zones at the same note: 110 Hz below velocity
+        // 64, 440 Hz at or above it. A soft (velocity 32) trigger selects the
+        // low zone alone under the pre-fix behaviour, regardless of CC1.
+        let mut dual = LevainEngine::new(SAMPLE_RATE, 8);
+        let low_data: Vec<f32> = (0..SAMPLE_FRAMES)
+            .map(|frame| (std::f32::consts::TAU * 110.0 * frame as f32 / SAMPLE_RATE).sin())
+            .collect();
+        let high_data: Vec<f32> = (0..SAMPLE_FRAMES)
+            .map(|frame| (std::f32::consts::TAU * 440.0 * frame as f32 / SAMPLE_RATE).sin())
+            .collect();
+        let low_sample = dual
+            .add_sample(low_data, SAMPLE_FRAMES, 1, SAMPLE_RATE)
+            .expect("low sample should fit the bank");
+        let high_sample = dual
+            .add_sample(high_data, SAMPLE_FRAMES, 1, SAMPLE_RATE)
+            .expect("high sample should fit the bank");
+        dual.add_zone(wide_zone(0, low_sample, VelRange { lo: 0, hi: 63 }, false));
+        dual.add_zone(wide_zone(
+            1,
+            high_sample,
+            VelRange { lo: 64, hi: 127 },
+            false,
+        ));
+        dual.build_zone_map(1, 1).expect("zone map should build");
+
+        dual.note_on(60, 32);
+        let dual_crossings = zero_crossings(&render(&mut dual, 24)[1024..]);
+
+        // CC1 is left at the engine's default (0.5) — dead centre of the mid
+        // dynamic layer with 3 configured layers. That position gives the
+        // low zone's own layer gain 0 and the high zone (its neighbour) a
+        // full gain, so a working fix should render this soft-velocity note
+        // sounding much closer to the high reference than the low one.
+        let midpoint = (low_crossings + high_crossings) / 2;
+        assert!(
+            dual_crossings > midpoint,
+            "CC1 left at its default position must blend in audible energy from \
+             the velocity-adjacent dynamic layer: low-only {low_crossings}, \
+             high-only {high_crossings}, dual-zone {dual_crossings}"
+        );
+    }
+
+    /// F7 — a true-legato transition triggered the sustain zone and then
+    /// crossfaded it against itself (`start_crossfade(&zone, ...)` with the
+    /// same `zone` just triggered), so a recorded transition sample could
+    /// never sound.
+    #[test]
+    fn true_legato_transition_plays_the_looked_up_transition_sample() {
+        let mut engine = LevainEngine::new(SAMPLE_RATE, 8);
+
+        let sustain_data: Vec<f32> = (0..SAMPLE_FRAMES)
+            .map(|frame| (frame % PERIOD_FRAMES) as f32 / PERIOD_FRAMES as f32 * 2.0 - 1.0)
+            .collect();
+        // 8 kHz — far enough from the 200 Hz sustain tone that the two are
+        // unmistakable by zero-crossing rate alone.
+        let transition_period = 6u32;
+        let transition_data: Vec<f32> = (0..SAMPLE_FRAMES)
+            .map(|frame| {
+                (frame % transition_period) as f32 / transition_period as f32 * 2.0 - 1.0
+            })
+            .collect();
+
+        let sustain_sample = engine
+            .add_sample(sustain_data, SAMPLE_FRAMES, 1, SAMPLE_RATE)
+            .expect("sustain sample should fit the bank");
+        let transition_sample = engine
+            .add_sample(transition_data, SAMPLE_FRAMES, 1, SAMPLE_RATE)
+            .expect("transition sample should fit the bank");
+
+        engine.add_zone(wide_zone(
+            0,
+            sustain_sample,
+            VelRange { lo: 0, hi: 127 },
+            false,
+        ));
+        engine
+            .build_zone_map(1, 1)
+            .expect("zone map should build");
+
+        engine.add_legato_transition(LegatoTransition {
+            interval: 4, // 64 - 60
+            transition_type: TransitionType::Slurred,
+            dynamic: Dynamic::MF, // cc1_to_dynamic(0.5), the engine's default
+            sample_id: transition_sample,
+            crossfade_in_ms: 0.0,
+            crossfade_out_ms: 0.0,
+        });
+
+        // Hold 60, then slur into 64 well inside the legato engine's 100 ms
+        // fast threshold at velocity 100 (>= the Slurred/Portamento split),
+        // so `note_on` derives exactly the (interval, dynamic, type) this
+        // transition was registered under.
+        engine.note_on(60, 100);
+        render(&mut engine, 4);
+        engine.note_on(64, 100);
+
+        let rendered = render(&mut engine, 1);
+        let crossings = zero_crossings(&rendered);
+        let self_crossfade_estimate = (2.0 * 200.0 * 128.0 / SAMPLE_RATE).round();
+        assert!(
+            crossings as f32 > self_crossfade_estimate * 4.0,
+            "the true-legato transition sample must sound immediately after the \
+             slur; got {crossings} zero crossings in the first block, versus \
+             roughly {self_crossfade_estimate} for a 200 Hz sustain zone \
+             crossfaded against itself"
+        );
+    }
+
+    /// F14 — `loop_crossfade` is stored on every voice and was never read, so
+    /// a loop whose start and end aren't waveform-continuous clicks on every
+    /// repeat despite the doc promising an equal-power seam crossfade.
+    #[test]
+    fn loop_crossfade_smooths_the_seam_instead_of_clicking() {
+        fn render_stepped_loop(loop_crossfade: u32) -> Vec<f32> {
+            let mut engine = LevainEngine::new(SAMPLE_RATE, 4);
+            let loop_len = 480u32; // 10 ms at 48 kHz
+            // A ramp that is continuous everywhere except the wrap from just
+            // under +1.0 back to -1.0 isolates the loop-seam discontinuity:
+            // it is the *only* click in the waveform, so `max_delta` below
+            // measures the seam and nothing else.
+            let data: Vec<f32> = (0..loop_len)
+                .map(|i| (i as f32 / loop_len as f32) * 2.0 - 1.0)
+                .collect();
+            let sample_id = engine
+                .add_sample(data, loop_len, 1, SAMPLE_RATE)
+                .expect("test sample should fit the bank");
+            engine.add_zone(Zone {
+                id: 0,
+                key: KeyRange { lo: 0, hi: 127 },
+                vel: VelRange { lo: 0, hi: 127 },
+                articulation: 0,
+                rr_pos: 0,
+                rr_len: 1,
+                mic: 0,
+                is_release: false,
+                sample: SampleRef {
+                    sample_id,
+                    root_key: 60,
+                    tune_cents: 0,
+                    start: 0,
+                    end: loop_len,
+                    loop_mode: LoopMode::Forward,
+                    loop_start: 0,
+                    loop_end: loop_len,
+                    loop_crossfade,
+                },
+                amp_env: AdsrParams {
+                    attack: 0.0001,
+                    decay: 0.0001,
+                    sustain: 1.0,
+                    release: 0.2,
+                },
+                gain_db: 0.0,
+            });
+            engine
+                .build_zone_map(1, 1)
+                .expect("zone map should build");
+            engine.note_on(60, 100);
+            render(&mut engine, 40)
+        }
+
+        fn max_delta(samples: &[f32]) -> f32 {
+            samples
+                .windows(2)
+                .map(|pair| (pair[1] - pair[0]).abs())
+                .fold(0.0_f32, f32::max)
+        }
+
+        let click_without = max_delta(&render_stepped_loop(0)[1024..]);
+        let click_with = max_delta(&render_stepped_loop(96)[1024..]);
+
+        assert!(
+            click_with < click_without * 0.5,
+            "loop_crossfade must smooth the seam discontinuity: \
+             {click_without} -> {click_with}"
+        );
+    }
+
+    /// F14 — `PedalDeferredRelease::release_pedal` computes staggered timing
+    /// per note and the callback discarded it as `_stagger`, so every
+    /// deferred note-off fired in the same instant the pedal lifted.
+    #[test]
+    fn pedal_release_staggers_deferred_note_offs() {
+        let mut engine = engine_with_sawtooth_zone_voices(4);
+        // Three overlapping notes on one zone would otherwise trigger the
+        // (unrelated) legato engine's synthetic glide, which reuses a voice
+        // rather than allocating one per note — isolate the pedal-stagger
+        // behaviour this test targets.
+        engine.set_param("legato_enabled", 0.0);
+        engine.handle_cc(64, 127); // sustain pedal down
+        engine.note_on(60, 100);
+        engine.note_on(62, 100);
+        engine.note_on(64, 100);
+        engine.note_off(60);
+        engine.note_off(62);
+        engine.note_off(64);
+        render(&mut engine, 1);
+
+        let is_releasing = |engine: &LevainEngine, note: u8| {
+            engine
+                .voice_pool
+                .voices
+                .iter()
+                .any(|v| v.active && v.note == note && v.amp_env.is_releasing())
+        };
+        assert!(!is_releasing(&engine, 60));
+        assert!(!is_releasing(&engine, 62));
+        assert!(!is_releasing(&engine, 64));
+
+        engine.handle_cc(64, 0); // lift the pedal
+
+        // The first deferred note-off (zero stagger) fires synchronously
+        // with the CC message; the audit finding is that the others used to
+        // as well, instead of waiting out their computed stagger.
+        assert!(
+            is_releasing(&engine, 60),
+            "the first deferred note-off must fire immediately"
+        );
+        assert!(
+            !is_releasing(&engine, 62) || !is_releasing(&engine, 64),
+            "later deferred note-offs must be staggered rather than releasing \
+             in the same instant as the first"
+        );
+
+        // The largest computed stagger is well under 30 ms; render past it.
+        render(&mut engine, 20);
+        assert!(is_releasing(&engine, 62));
+        assert!(is_releasing(&engine, 64));
     }
 }

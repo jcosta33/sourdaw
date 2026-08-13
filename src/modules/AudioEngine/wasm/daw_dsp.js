@@ -1476,6 +1476,21 @@ export class LevainInstance {
         return ret >>> 0;
     }
     /**
+     * Register a recorded true-legato transition sample (audit F7). Bank
+     * loading calls this once per authored transition; the engine looks
+     * these up by (interval, dynamic, transition type) when a note-on
+     * overlaps a held note closely enough to classify as legato.
+     * @param {number} interval
+     * @param {number} transition_type
+     * @param {number} dynamic
+     * @param {number} sample_id
+     * @param {number} crossfade_in_ms
+     * @param {number} crossfade_out_ms
+     */
+    add_legato_transition(interval, transition_type, dynamic, sample_id, crossfade_in_ms, crossfade_out_ms) {
+        wasm.levaininstance_add_legato_transition(this.__wbg_ptr, interval, transition_type, dynamic, sample_id, crossfade_in_ms, crossfade_out_ms);
+    }
+    /**
      * Add a sample to the uniquely-owned loading bank. `data` is interleaved
      * f32 PCM. Returns `None` if the bank is already shared or exceeds limits.
      * @param {Float32Array} data
