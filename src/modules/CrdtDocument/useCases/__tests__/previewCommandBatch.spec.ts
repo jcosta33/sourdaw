@@ -2,6 +2,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { createStore } from '#/infra/store/createStore';
 import { createAutomergeStorage, flushAutomergeStorageWrites } from '#/infra/store/storage/createAutomergeStorage';
+import { defaultTrackState, trackStore } from '#/modules/Arrangement/stores';
+import { getArrangementHandlers } from '#/modules/Arrangement/useCases';
 import { clearHandlerRegistry, registerHandlerMap } from '#/modules/Command/stores';
 import {
     commandBatchPreflightPort,
@@ -79,6 +81,7 @@ describe('previewCommandBatch', () => {
             serialized: batch.serialized,
         });
 
+        expect(preview.status, JSON.stringify(preview)).toBe('previewed');
         expect(preview).toMatchObject({
             status: 'previewed',
             projectDocument: { transport: { tempo: 120 } },
@@ -87,6 +90,80 @@ describe('previewCommandBatch', () => {
         expect(automergeRepository.getDoc<Record<string, unknown>>('root')?.transport).toMatchObject({ tempo: 100 });
         if (preview.status !== 'previewed') {
             throw new Error('Expected a production preview resource');
+        }
+        preview.resource.release();
+    });
+
+    it('previews a registered production addTrack command without publishing the track', async () => {
+        automergeRepository.changeDoc('root', (document: Record<string, unknown>) => {
+            document.tracks = defaultTrackState;
+        });
+        trackStore.hydrate();
+        registerHandlerMap({ addTrack: getArrangementHandlers().addTrack });
+        commandBatchPreflightPort.setProvider(() => ({
+            audioGraphValid: true,
+            availableAssetHashes: [],
+            availableAudioBufferIds: [],
+            lockedRanges: [],
+            projectId: 'project-preview',
+            projectInvariantsValid: true,
+            targetFingerprints: {},
+        }));
+        const revision = captureProjectRevision();
+        const command = createVersionedCommandEnvelope({
+            action: {
+                type: 'addTrack',
+                payload: {
+                    color: 'oklch(0.40 0.08 250)',
+                    id: 'track-preview',
+                    initialAlternativeId: 'alternative-preview',
+                    kind: 'audio',
+                    name: 'Preview Audio',
+                },
+            },
+            applicationAssignedIds: [
+                { argument: 'id', value: 'track-preview' },
+                { argument: 'initialAlternativeId', value: 'alternative-preview' },
+            ],
+            availableDeviceVersions: {},
+            expectedEffect: 'One audio track is added.',
+            normalizedProjectRevision: revision,
+            objectReferences: [
+                { argument: 'id', id: 'track-preview', scope: 'stable' },
+                { argument: 'initialAlternativeId', id: 'alternative-preview', scope: 'stable' },
+            ],
+            parameterUnits: [],
+            reason: 'Preview adding one track.',
+            time: [],
+        });
+        const batch = compileVersionedCommandBatchEnvelope({
+            baseRevision: revision,
+            batchId: 'batch-production-add-track-preview',
+            commands: [serializeVersionedCommandEnvelope(command)],
+            intent: 'Preview adding one track',
+            mode: 'preview',
+            projectId: 'project-preview',
+            runId: 'run-production-add-track-preview',
+        });
+
+        const preview = await executeVersionedCommandBatchEnvelope({
+            authority: batch.authority,
+            serialized: batch.serialized,
+        });
+
+        expect(preview.status, JSON.stringify(preview)).toBe('previewed');
+        expect(preview).toMatchObject({
+            status: 'previewed',
+            projectDocument: {
+                tracks: {
+                    tracks: [expect.objectContaining({ id: 'track-preview', name: 'Preview Audio' })],
+                },
+            },
+        });
+        expect(trackStore.value).toEqual(defaultTrackState);
+        expect(automergeRepository.getDoc<Record<string, unknown>>('root')?.tracks).toEqual(defaultTrackState);
+        if (preview.status !== 'previewed') {
+            throw new Error('Expected an addTrack preview resource');
         }
         preview.resource.release();
     });

@@ -745,6 +745,10 @@ export const createAutomergeStorage = <TData>(
 
     const getPreviewValue = (context: AutomergeStoragePreviewContext): TData | null => {
         if (!context.values.has(previewIdentity)) {
+            // Some domain decoders intentionally preserve ephemeral local fields by
+            // reading their owning store. Seed that recursive read with the live
+            // projection while the declared-head CRDT value is being decoded.
+            context.values.set(previewIdentity, cachedValue);
             const document = context.documents.get(docId);
             const rawValue = document?.[key];
             let initialValue: TData | null = null;

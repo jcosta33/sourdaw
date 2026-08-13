@@ -31,6 +31,23 @@ type HandlerConfig<ActionType extends AppAction['type']> = {
       }
     | {
           previewExecution?: undefined;
+          requiresAbortCompensation: false;
+          execute: (
+              action: Extract<AppAction, { type: ActionType }>,
+              context?: HandlerValidationContext
+          ) => void | HandlerExecutionResult;
+      }
+    | {
+          previewExecution: 'unsupported-async';
+          requiresAbortCompensation: false;
+          execute: (
+              action: Extract<AppAction, { type: ActionType }>,
+              context?: HandlerValidationContext
+          ) => void | HandlerExecutionResult | Promise<void | HandlerExecutionResult>;
+      }
+    | {
+          previewExecution?: undefined;
+          requiresAbortCompensation?: true | undefined;
           execute: (
               action: Extract<AppAction, { type: ActionType }>,
               context?: HandlerValidationContext
@@ -60,8 +77,11 @@ export function createHandler<ActionType extends AppAction['type']>(
         batchExecution,
         batchRestriction,
     };
-    if (config.previewExecution === 'isolated-project') {
-        return { ...common, execute: config.execute, previewExecution: config.previewExecution };
+    if (config.previewExecution === 'isolated-project' || config.requiresAbortCompensation === false) {
+        if (config.previewExecution === 'unsupported-async') {
+            return { ...common, execute: config.execute, previewExecution: config.previewExecution };
+        }
+        return { ...common, execute: config.execute, previewExecution: 'isolated-project' };
     }
     return { ...common, execute: config.execute, previewExecution: undefined };
 }

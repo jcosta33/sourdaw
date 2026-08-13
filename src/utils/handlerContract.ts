@@ -1769,6 +1769,14 @@ export type ActionHandler<Action extends AppAction = AppAction> = ActionHandlerC
                   context?: HandlerValidationContext
               ) => void | HandlerExecutionResult | Promise<void | HandlerExecutionResult>;
           }
+        | {
+              /** Explicitly non-previewable because execution must cross an asynchronous or external boundary. */
+              previewExecution: 'unsupported-async';
+              execute: (
+                  action: Action,
+                  context?: HandlerValidationContext
+              ) => void | HandlerExecutionResult | Promise<void | HandlerExecutionResult>;
+          }
     );
 
 export type ExecuteOptions = {

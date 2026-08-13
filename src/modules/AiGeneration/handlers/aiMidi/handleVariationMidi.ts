@@ -88,6 +88,7 @@ function createWrittenResult(state: VariationMidiState) {
 }
 
 export const handleVariationMidi = createHandler<'variationMidi'>({
+    previewExecution: 'unsupported-async',
     execute: async (alpha) => {
         const existingState = variationMidiStates.get(alpha);
         const source = createMidiGenerationSourceGuard(alpha.payload.clipId);
