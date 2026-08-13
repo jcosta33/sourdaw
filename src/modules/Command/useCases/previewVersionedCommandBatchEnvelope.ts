@@ -98,6 +98,7 @@ export function previewVersionedCommandBatchEnvelope(envelope: VersionedCommandB
             actions: [] as [],
         };
     }
+    const previewWorkspace = workspace;
 
     try {
         const validationActions = preparedActions.map(({ action }) => action);
@@ -157,6 +158,19 @@ export function previewVersionedCommandBatchEnvelope(envelope: VersionedCommandB
             return { status: 'conflicted' as const, reason: postconditionFailure, actions: [] as [] };
         }
 
+        const partialAcceptance = partialCommandBatchSelection.create(
+            envelope,
+            executedActions.map(({ command }) => command.commandId)
+        );
+        let released = false;
+        function release() {
+            partialCommandBatchSelection.revoke(partialAcceptance);
+            if (!released) {
+                released = true;
+                previewWorkspace.release();
+            }
+        }
+
         return {
             status: 'previewed' as const,
             actions: executedActions.map(({ action, label }) => ({ action, label })),
@@ -164,10 +178,7 @@ export function previewVersionedCommandBatchEnvelope(envelope: VersionedCommandB
             baseRevision: envelope.baseRevision,
             projectDocument,
             projectInvariantsValid: true as const,
-            partialAcceptance: partialCommandBatchSelection.create(
-                envelope,
-                executedActions.map(({ command }) => command.commandId)
-            ),
+            partialAcceptance,
             semanticDiff: buildSemanticProjectDiff({
                 envelope: { ...envelope, commands: executedActions.map(({ command }) => command) },
                 projectDocument,
@@ -177,7 +188,7 @@ export function previewVersionedCommandBatchEnvelope(envelope: VersionedCommandB
             }),
             resource: {
                 baseRevision: envelope.baseRevision,
-                release: workspace.release,
+                release,
             },
         };
     } catch (error) {

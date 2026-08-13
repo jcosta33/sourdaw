@@ -283,20 +283,12 @@ describe('semantic project diff', () => {
             commandId: '77777777-7777-4777-8777-777777777777',
             expectedEffect: 'Clear solos from the two currently soloed tracks.',
         });
-        const renameCommand = command({
-            action: { type: 'renameTrack', payload: { trackId: 'track-other', name: 'Other' } },
-            commandId: '88888888-8888-4888-8888-888888888888',
-            expectedEffect: 'Rename the unrelated track.',
-        });
         const compiled = compileVersionedCommandBatchEnvelope({
             baseRevision: 'revision-1',
             batchId: 'batch-dynamic-preview',
-            commands: [
-                { ...clearCommand, groupId: 'batch-dynamic-preview' },
-                { ...renameCommand, groupId: 'batch-dynamic-preview' },
-            ].map(serializeVersionedCommandEnvelope),
+            commands: [{ ...clearCommand, groupId: 'batch-dynamic-preview' }].map(serializeVersionedCommandEnvelope),
             dynamicEffects: { affectedTrackIds: ['track-solo-a', 'track-solo-b'] },
-            intent: 'Clear solos and rename another track.',
+            intent: 'Clear solos.',
             mode: 'preview',
             projectId: 'project-1',
             runId: 'run-dynamic-preview',
@@ -326,6 +318,51 @@ describe('semantic project diff', () => {
             affectedTrackIds: ['track-solo-a', 'track-solo-b'],
         });
         expect(parsed.envelope.budgets.maxAffectedTracks).toBe(2);
+    });
+
+    it('rejects a dynamic-effects subset when the preview carries only aggregate ownership', () => {
+        const gainCommand = command({
+            action: { type: 'setTrackGain', payload: { trackId: 'track-main', gain: 0.8, expectedGain: 1 } },
+            commandId: '88888888-8888-4888-8888-888888888881',
+            expectedEffect: 'Lower the main track.',
+        });
+        const renameCommand = command({
+            action: { type: 'renameTrack', payload: { trackId: 'track-other', name: 'Other' } },
+            commandId: '88888888-8888-4888-8888-888888888882',
+            expectedEffect: 'Rename the other track.',
+        });
+        const compiled = compileVersionedCommandBatchEnvelope({
+            baseRevision: 'revision-1',
+            batchId: 'batch-aggregate-preview',
+            commands: [
+                { ...gainCommand, groupId: 'batch-aggregate-preview' },
+                { ...renameCommand, groupId: 'batch-aggregate-preview' },
+            ].map(serializeVersionedCommandEnvelope),
+            dynamicEffects: { affectedTargetIds: ['track-collateral'] },
+            intent: 'Edit two tracks with collateral effects.',
+            mode: 'preview',
+            projectId: 'project-1',
+            runId: 'run-aggregate-preview',
+        });
+        const parsed = parseVersionedCommandBatchEnvelope(compiled.serialized, compiled.authority);
+        if (parsed.status === 'invalid') {
+            throw new Error(parsed.reason);
+        }
+
+        expect(
+            compilePartialCommandBatchAcceptance({
+                batchId: 'batch-aggregate-partial',
+                previewSelection: partialCommandBatchSelection.create(parsed.envelope, [
+                    gainCommand.commandId,
+                    renameCommand.commandId,
+                ]),
+                runId: 'run-aggregate-partial',
+                selectedIntentGroupIds: [gainCommand.commandId],
+            })
+        ).toEqual({
+            status: 'rejected',
+            reason: 'Partial acceptance cannot partition aggregate dynamic effects across intent groups',
+        });
     });
 
     it('classifies every governed destructive consequence with exact command, group, and object identity', () => {

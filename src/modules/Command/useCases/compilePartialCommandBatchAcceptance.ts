@@ -1,6 +1,5 @@
 import { type VersionedCommandEnvelope } from '../models/VersionedCommandEnvelope';
 
-import { commandRequiresDynamicEffects } from './commandRequiresDynamicEffects';
 import { compileVersionedCommandBatchEnvelope } from './compileVersionedCommandBatchEnvelope';
 import { type PartialCommandBatchSelection, partialCommandBatchSelection } from './partialCommandBatchSelection';
 import { serializeVersionedCommandEnvelope } from './serializeVersionedCommandEnvelope';
@@ -104,17 +103,15 @@ export function compilePartialCommandBatchAcceptance(input: CompilePartialComman
             },
         ];
     });
-    const hasDynamicEffects = remappedCommands.some((command) => commandRequiresDynamicEffects(command.operation));
-    const originalDynamicCommandIds = envelope.commands
-        .filter((command) => commandRequiresDynamicEffects(command.operation))
-        .map((command) => command.commandId);
-    const selectedDynamicCommandIds = selectedCommands
-        .filter((command) => commandRequiresDynamicEffects(command.operation))
-        .map((command) => command.commandId);
-    if (selectedDynamicCommandIds.length > 0 && selectedDynamicCommandIds.length !== originalDynamicCommandIds.length) {
+    const hasDynamicEffects = envelope.dynamicEffects !== undefined;
+    const dynamicEffectsAreFullySelected = envelope.commands.every(
+        (command) =>
+            preview.availableIntentGroupIds.has(command.commandId) && includedGroupIds.has(commandGroupId(command))
+    );
+    if (hasDynamicEffects && !dynamicEffectsAreFullySelected) {
         return {
             status: 'rejected' as const,
-            reason: 'Partial acceptance cannot partition dynamic effects across multiple intent groups',
+            reason: 'Partial acceptance cannot partition aggregate dynamic effects across intent groups',
         };
     }
     try {

@@ -5,6 +5,7 @@ export type PartialCommandBatchSelection = Readonly<{
 }>;
 
 type PartialCommandBatchSelectionState = {
+    active: boolean;
     availableIntentGroupIds: ReadonlySet<string>;
     envelope: VersionedCommandBatchEnvelope;
 };
@@ -18,12 +19,20 @@ export const partialCommandBatchSelection = {
     ): PartialCommandBatchSelection {
         const selection = Object.freeze({ kind: 'successful-command-batch-preview' as const });
         selectionState.set(selection, {
+            active: true,
             availableIntentGroupIds: new Set(availableIntentGroupIds),
             envelope: structuredClone(envelope),
         });
         return selection;
     },
     read(selection: PartialCommandBatchSelection): PartialCommandBatchSelectionState | null {
-        return selectionState.get(selection) ?? null;
+        const state = selectionState.get(selection);
+        return state?.active ? state : null;
+    },
+    revoke(selection: PartialCommandBatchSelection): void {
+        const state = selectionState.get(selection);
+        if (state) {
+            state.active = false;
+        }
     },
 };

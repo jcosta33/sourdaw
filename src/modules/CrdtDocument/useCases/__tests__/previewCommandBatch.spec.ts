@@ -134,6 +134,17 @@ describe('previewCommandBatch', () => {
             },
         });
         preview.resource.release();
+        expect(
+            compilePartialCommandBatchAcceptance({
+                batchId: 'batch-released-preview',
+                previewSelection: preview.partialAcceptance,
+                runId: 'run-released-preview',
+                selectedIntentGroupIds: [command.commandId],
+            })
+        ).toEqual({
+            status: 'rejected',
+            reason: 'Partial acceptance requires a successful preview outcome',
+        });
     });
 
     it('previews a registered production addTrack command without publishing the track', async () => {
