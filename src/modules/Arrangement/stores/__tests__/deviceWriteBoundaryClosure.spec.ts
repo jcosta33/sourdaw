@@ -474,9 +474,13 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         // `compileCommandArgumentMetadata` references, not device compilation,
         // hydration, or engine writes.
         'src/modules/Command/useCases/commandArgumentMetadata.ts': 1,
+        // Count provenance: partial acceptance calls the canonical batch compiler;
+        // all four compile* references are import, declaration, and call metadata.
+        // It neither hydrates devices nor writes project or engine state.
+        'src/modules/Command/useCases/compilePartialCommandBatchAcceptance.ts': 4,
         'src/modules/Command/useCases/compileVersionedCommandBatchEnvelope.ts': 1,
         'src/modules/Command/useCases/createExecutionCommandEnvelope.ts': 2,
-        'src/modules/Command/useCases/index.ts': 2,
+        'src/modules/Command/useCases/index.ts': 4,
         'src/modules/Command/useCases/parseVersionedCommandEnvelope.ts': 2,
         'src/modules/Command/useCases/resolveVersionedCommandBatchBindings.ts': 2,
         // Count provenance: doc-comment cross-reference to `compileAutomationEvents`
