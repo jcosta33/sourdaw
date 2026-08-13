@@ -1,0 +1,35 @@
+src/modules/Command/useCases/reconcileProjectCommandBatchEffects.ts
+  s_a40848e8f8cca9::t_f03856bb0b20b8 1-91
+  s_a40848e8f8cca9::t_077af9e9e412b4 92-94
+src/modules/Command/useCases/recordProjectCommandBatchIdempotencyCheckpoint.ts
+  s_a40848e8f8cca9::t_f03856bb0b20b8 10,31-33,49
+src/modules/Command/models/CommandBatchIdempotency.ts
+  s_a40848e8f8cca9::t_f03856bb0b20b8 37
+src/modules/Command/stores/commandBatchIdempotencyStore.ts
+  s_a40848e8f8cca9::t_f03856bb0b20b8 23,32
+src/modules/Command/useCases/getProjectCommandBatchIdempotencyCheckpoint.ts
+  s_a40848e8f8cca9::t_d7f91e596b8b3a 10
+  s_a40848e8f8cca9::t_f03856bb0b20b8 31-36
+src/modules/Command/useCases/__tests__/commandBatchIdempotency.spec.ts
+  s_a40848e8f8cca9::t_b8549b5e6cd238 52
+  s_a40848e8f8cca9::t_d24bfe6f0b9f36 63
+  s_a40848e8f8cca9::t_fd463be7c61d2b 1,7,15,112,129,131,184-191,200-203,231,337-339,354
+src/modules/Command/useCases/executeVersionedCommandBatchEnvelope.ts
+  s_a40848e8f8cca9::t_1aa47f2e039330 16,106-151,317,365
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "07136eb075794aec4a2169af74b16e150647b0a0",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
