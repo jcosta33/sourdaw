@@ -28,3 +28,15 @@ export type CommandBatchIdempotencyRepository = {
         serializedReceipt: string;
     }) => Promise<void>;
 };
+
+export type ProjectCommandBatchIdempotencyRecord = {
+    id: string;
+    projectId: string;
+    idempotencyKey: string;
+    contentHash: string;
+    serializedReceipt: string;
+};
+
+export type ProjectCommandBatchIdempotencyState = {
+    records: ProjectCommandBatchIdempotencyRecord[];
+};

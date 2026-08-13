@@ -101,6 +101,7 @@ describe('command batch idempotency', () => {
     const durableStorageKey = 'sourdaw:command-batch-idempotency:v1';
     let mutationCount: number;
     let projectDocument: Record<string, unknown>;
+    let rejectProjectReceiptFinalization: boolean;
     let rejectReceiptPersistence: boolean;
     let runtimeEffectGate: Promise<void> | null;
     let runtimeEffectCount: number;
@@ -116,6 +117,7 @@ describe('command batch idempotency', () => {
         localStorage.removeItem(durableStorageKey);
         clearHandlerRegistry();
         mutationCount = 0;
+        rejectProjectReceiptFinalization = false;
         rejectReceiptPersistence = false;
         runtimeEffectGate = null;
         runtimeEffectCount = 0;
@@ -163,6 +165,9 @@ describe('command batch idempotency', () => {
             getSemanticMessage: () => undefined,
             hasDoc: () => true,
             mutateDoc: ({ changeFn }) => {
+                if (rejectProjectReceiptFinalization && mutationCount === 1) {
+                    throw new Error('project receipt finalization unavailable');
+                }
                 const draft = structuredClone(projectDocument);
                 changeFn(draft);
                 projectDocument = draft;
@@ -229,8 +234,8 @@ describe('command batch idempotency', () => {
             actions: [],
             receipt: 'receipt' in first ? first.receipt : undefined,
         });
-        expect(projectDocument).toEqual({ trackGain: { value: 0.8 } });
-        expect(mutationCount).toBe(1);
+        expect(projectDocument).toMatchObject({ trackGain: { value: 0.8 } });
+        expect(mutationCount).toBe(2);
         expect(runtimeEffectCount).toBe(1);
     });
 
@@ -258,7 +263,7 @@ describe('command batch idempotency', () => {
             actions: [],
             receipt: 'receipt' in first ? first.receipt : undefined,
         });
-        expect(mutationCount).toBe(1);
+        expect(mutationCount).toBe(2);
         expect(runtimeEffectCount).toBe(1);
     });
 
@@ -289,12 +294,13 @@ describe('command batch idempotency', () => {
             reason: 'Idempotency key was already used for different batch content',
             receipt: { outcome: 'rejected' },
         });
-        expect(projectDocument).toEqual({ trackGain: { value: 0.8 } });
-        expect(mutationCount).toBe(1);
+        expect(projectDocument).toMatchObject({ trackGain: { value: 0.8 } });
+        expect(mutationCount).toBe(2);
         expect(runtimeEffectCount).toBe(1);
     });
 
-    it('keeps a failed durable completion pending and warns without replaying effects', async () => {
+    it('recovers the committed receipt when durable completion fails without replaying effects', async () => {
+        rejectProjectReceiptFinalization = true;
         rejectReceiptPersistence = true;
         const batch = compileBatch();
 
@@ -303,21 +309,24 @@ describe('command batch idempotency', () => {
             confirmed: true,
             serialized: batch.serialized,
         });
+        commandBatchIdempotencyPort.setRepository({
+            lookup: () => Promise.resolve({ status: 'missing' }),
+            claim: () => Promise.resolve({ status: 'claimed' }),
+            complete: () => Promise.resolve(),
+        });
         const retry = await executeVersionedCommandBatchEnvelope({
             authority: batch.authority,
             confirmed: true,
             serialized: batch.serialized,
         });
 
-        expect(first).toMatchObject({
-            status: 'committed-with-warning',
-            warning: expect.stringContaining('Verified idempotency receipt could not be persisted'),
-            receipt: { outcome: 'committed-with-warning' },
-        });
-        expect(retry).toMatchObject({
-            status: 'ambiguous',
-            reason: 'An identical command batch is already in progress',
-            receipt: { outcome: 'ambiguous' },
+        expect(first.status).toBe('committed-with-warning');
+        expect('warning' in first ? first.warning : '').toContain('post-commit receipt finalization was interrupted');
+        expect('receipt' in first ? first.receipt.outcome : null).toBe('committed-with-warning');
+        expect(retry).toEqual({
+            status: 'idempotent-replay',
+            actions: [],
+            receipt: 'receipt' in first ? first.receipt : undefined,
         });
         expect(mutationCount).toBe(1);
         expect(runtimeEffectCount).toBe(1);
@@ -341,7 +350,7 @@ describe('command batch idempotency', () => {
             reason: 'Commit batch requires confirmation or the auto-commit grant',
         });
         expect(confirmed.status).toBe('committed');
-        expect(mutationCount).toBe(1);
+        expect(mutationCount).toBe(2);
         expect(runtimeEffectCount).toBe(1);
     });
 
@@ -371,7 +380,7 @@ describe('command batch idempotency', () => {
             status: 'ambiguous',
             reason: 'An identical command batch is already in progress',
         });
-        expect(mutationCount).toBe(1);
+        expect(mutationCount).toBe(2);
         expect(runtimeEffectCount).toBe(1);
     });
 

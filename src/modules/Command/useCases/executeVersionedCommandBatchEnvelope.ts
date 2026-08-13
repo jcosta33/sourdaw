@@ -7,10 +7,13 @@ import { commandProjectRevisionPort } from './commandProjectRevisionPort';
 import { createVerifiedBatchReceipt } from './createVerifiedBatchReceipt';
 import { executeVersionedCommandBatch } from './executeVersionedCommandBatch';
 import { getCommandBatchContentHash } from './getCommandBatchContentHash';
+import { getProjectCommandBatchIdempotencyCheckpoint } from './getProjectCommandBatchIdempotencyCheckpoint';
 import { parseStoredVerifiedBatchReceipt } from './parseStoredVerifiedBatchReceipt';
 import { parseVersionedCommandBatchEnvelope } from './parseVersionedCommandBatchEnvelope';
+import { persistProjectCommandBatchIdempotencyCheckpoint } from './persistProjectCommandBatchIdempotencyCheckpoint';
 import { prepareCommandBatchPreflight } from './prepareCommandBatchPreflight';
 import { previewVersionedCommandBatchEnvelope } from './previewVersionedCommandBatchEnvelope';
+import { recordProjectCommandBatchIdempotencyCheckpoint } from './recordProjectCommandBatchIdempotencyCheckpoint';
 import { resolveVersionedCommandBatchBindings } from './resolveVersionedCommandBatchBindings';
 import { serializeVersionedCommandEnvelope } from './serializeVersionedCommandEnvelope';
 
@@ -20,6 +23,12 @@ type ExecuteVersionedCommandBatchEnvelopeInput = {
     serialized: string;
     options?: ExecuteOptions;
 };
+
+const PROJECT_COMMIT_RECOVERY_WARNING =
+    'The atomic project commit is durable, but post-commit receipt finalization was interrupted.';
+const PROJECT_RECEIPT_REVISION_WARNING =
+    'Resulting project heads are omitted because the verified receipt is itself journaled in project truth.';
+const activeIdempotencyClaims = new Set<string>();
 
 export async function executeVersionedCommandBatchEnvelope(input: ExecuteVersionedCommandBatchEnvelopeInput) {
     const parsed = parseVersionedCommandBatchEnvelope(input.serialized, input.authority);
@@ -45,9 +54,54 @@ export async function executeVersionedCommandBatchEnvelope(input: ExecuteVersion
         );
     }
     let idempotencyContentHash: string | null = null;
+    const projectCommitRecovery: { receipt: ReturnType<typeof createVerifiedBatchReceipt> | null } = {
+        receipt: null,
+    };
     if (commandBatchIdempotencyPort.isConfigured()) {
         try {
             idempotencyContentHash = await getCommandBatchContentHash(parsed.envelope);
+            const activeClaimId = `${parsed.envelope.projectId}\u0000${parsed.envelope.idempotencyKey}`;
+            const projectCheckpoint = activeIdempotencyClaims.has(activeClaimId)
+                ? { status: 'missing' as const }
+                : getProjectCommandBatchIdempotencyCheckpoint({
+                      projectId: parsed.envelope.projectId,
+                      idempotencyKey: parsed.envelope.idempotencyKey,
+                      contentHash: idempotencyContentHash,
+                  });
+            if (projectCheckpoint.status === 'conflict') {
+                const result = {
+                    status: 'rejected' as const,
+                    reason: 'Idempotency key was already used for different batch content',
+                    actions: [] as [],
+                };
+                return {
+                    ...result,
+                    receipt: createVerifiedBatchReceipt({
+                        envelope: resolvedEnvelope,
+                        observedBaseRevision,
+                        receiptWarnings,
+                        resultingRevision: observedBaseRevision,
+                        result,
+                    }),
+                };
+            }
+            if (projectCheckpoint.status === 'complete') {
+                const receipt = parseStoredVerifiedBatchReceipt({
+                    baseRevision: parsed.envelope.baseRevision,
+                    batchId: parsed.envelope.batchId,
+                    commands: parsed.envelope.commands,
+                    runId: parsed.envelope.runId,
+                    serializedReceipt: projectCheckpoint.serializedReceipt,
+                });
+                if (!receipt) {
+                    return {
+                        status: 'rejected' as const,
+                        reason: 'Stored project idempotency receipt is invalid',
+                        actions: [] as [],
+                    };
+                }
+                return { status: 'idempotent-replay' as const, actions: [] as [], receipt };
+            }
             const prior = await commandBatchIdempotencyPort.lookup({
                 projectId: parsed.envelope.projectId,
                 idempotencyKey: parsed.envelope.idempotencyKey,
@@ -163,6 +217,7 @@ export async function executeVersionedCommandBatchEnvelope(input: ExecuteVersion
                     }),
                 };
             }
+            activeIdempotencyClaims.add(`${parsed.envelope.projectId}\u0000${parsed.envelope.idempotencyKey}`);
         } catch (error) {
             const result = {
                 status: 'rejected' as const,
@@ -181,18 +236,48 @@ export async function executeVersionedCommandBatchEnvelope(input: ExecuteVersion
             };
         }
     }
-    const result = await executeVersionedCommandBatch({
-        commands: resolvedCommands.map((command) =>
-            serializeVersionedCommandEnvelope({ ...command, groupId: parsed.envelope.batchId })
-        ),
-        normalizedProjectRevision: parsed.envelope.baseRevision,
-        options: {
-            ...input.options,
-            groupId: parsed.envelope.batchId,
-            prepareValidation: () => prepareCommandBatchPreflight(resolvedEnvelope),
-            requireCompensation: true,
-        },
-    });
+    let result: Awaited<ReturnType<typeof executeVersionedCommandBatch>>;
+    try {
+        result = await executeVersionedCommandBatch({
+            commands: resolvedCommands.map((command) =>
+                serializeVersionedCommandEnvelope({ ...command, groupId: parsed.envelope.batchId })
+            ),
+            normalizedProjectRevision: parsed.envelope.baseRevision,
+            options: {
+                ...input.options,
+                groupId: parsed.envelope.batchId,
+                onProjectCommitPrepared: (committedResult) => {
+                    if (idempotencyContentHash === null) {
+                        return;
+                    }
+                    const recoveryResult = {
+                        status: 'committed-with-warning' as const,
+                        actions: committedResult.actions,
+                        warning: PROJECT_COMMIT_RECOVERY_WARNING,
+                        warningDetails: [{ kind: 'observer' as const, message: PROJECT_COMMIT_RECOVERY_WARNING }],
+                    };
+                    projectCommitRecovery.receipt = createVerifiedBatchReceipt({
+                        envelope: resolvedEnvelope,
+                        observedBaseRevision,
+                        receiptWarnings: [...receiptWarnings, PROJECT_RECEIPT_REVISION_WARNING],
+                        resultingRevision: null,
+                        result: recoveryResult,
+                    });
+                    recordProjectCommandBatchIdempotencyCheckpoint({
+                        projectId: parsed.envelope.projectId,
+                        idempotencyKey: parsed.envelope.idempotencyKey,
+                        contentHash: idempotencyContentHash,
+                        serializedReceipt: JSON.stringify(projectCommitRecovery.receipt),
+                    });
+                },
+                prepareValidation: () => prepareCommandBatchPreflight(resolvedEnvelope),
+                requireCompensation: true,
+            },
+        });
+    } catch (error) {
+        activeIdempotencyClaims.delete(`${parsed.envelope.projectId}\u0000${parsed.envelope.idempotencyKey}`);
+        throw error;
+    }
     let resultingRevision: string | null = null;
     try {
         if (commandProjectRevisionPort.isConfigured()) {
@@ -205,7 +290,7 @@ export async function executeVersionedCommandBatchEnvelope(input: ExecuteVersion
             `Resulting project revision could not be captured: ${error instanceof Error ? error.message : String(error)}`
         );
     }
-    const finalized = {
+    let finalized = {
         ...result,
         receipt: createVerifiedBatchReceipt({
             envelope: resolvedEnvelope,
@@ -216,6 +301,34 @@ export async function executeVersionedCommandBatchEnvelope(input: ExecuteVersion
         }),
     };
     if (idempotencyContentHash !== null) {
+        if (result.status === 'committed' || result.status === 'committed-with-warning') {
+            try {
+                const projectReceipt = createVerifiedBatchReceipt({
+                    envelope: resolvedEnvelope,
+                    observedBaseRevision,
+                    receiptWarnings: [...receiptWarnings, PROJECT_RECEIPT_REVISION_WARNING],
+                    resultingRevision: null,
+                    result,
+                });
+                persistProjectCommandBatchIdempotencyCheckpoint({
+                    projectId: parsed.envelope.projectId,
+                    idempotencyKey: parsed.envelope.idempotencyKey,
+                    contentHash: idempotencyContentHash,
+                    serializedReceipt: JSON.stringify(projectReceipt),
+                });
+                finalized = { ...finalized, receipt: projectReceipt };
+            } catch {
+                if (projectCommitRecovery.receipt) {
+                    finalized = {
+                        status: 'committed-with-warning' as const,
+                        actions: result.actions,
+                        warning: PROJECT_COMMIT_RECOVERY_WARNING,
+                        warningDetails: [{ kind: 'observer' as const, message: PROJECT_COMMIT_RECOVERY_WARNING }],
+                        receipt: projectCommitRecovery.receipt,
+                    };
+                }
+            }
+        }
         try {
             await commandBatchIdempotencyPort.complete({
                 projectId: parsed.envelope.projectId,
@@ -224,29 +337,11 @@ export async function executeVersionedCommandBatchEnvelope(input: ExecuteVersion
                 serializedReceipt: JSON.stringify(finalized.receipt),
             });
         } catch (error) {
-            const warning = `Verified idempotency receipt could not be persisted: ${error instanceof Error ? error.message : String(error)}. Do not retry this batch.`;
+            activeIdempotencyClaims.delete(`${parsed.envelope.projectId}\u0000${parsed.envelope.idempotencyKey}`);
             if (result.status === 'committed' || result.status === 'committed-with-warning') {
-                const warningDetails = [
-                    ...(result.status === 'committed-with-warning' ? (result.warningDetails ?? []) : []),
-                    { kind: 'observer' as const, message: warning },
-                ];
-                const warnedResult = {
-                    status: 'committed-with-warning' as const,
-                    actions: result.actions,
-                    warning: warningDetails.map(({ message }) => message).join('; '),
-                    warningDetails,
-                };
-                return {
-                    ...warnedResult,
-                    receipt: createVerifiedBatchReceipt({
-                        envelope: resolvedEnvelope,
-                        observedBaseRevision,
-                        receiptWarnings,
-                        resultingRevision,
-                        result: warnedResult,
-                    }),
-                };
+                return finalized;
             }
+            const warning = `Verified idempotency receipt could not be persisted: ${error instanceof Error ? error.message : String(error)}.`;
             return {
                 ...finalized,
                 receipt: createVerifiedBatchReceipt({
@@ -259,5 +354,6 @@ export async function executeVersionedCommandBatchEnvelope(input: ExecuteVersion
             };
         }
     }
+    activeIdempotencyClaims.delete(`${parsed.envelope.projectId}\u0000${parsed.envelope.idempotencyKey}`);
     return finalized;
 }

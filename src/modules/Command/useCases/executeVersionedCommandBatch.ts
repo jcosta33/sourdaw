@@ -1,6 +1,6 @@
 import { type AppAction, type ExecuteOptions } from '#/utils/handlerContract';
 
-import { type VersionedCommandEnvelope } from '../models/VersionedCommandEnvelope';
+import { type VersionedCommandEnvelope, type VersionedCommandReceipt } from '../models/VersionedCommandEnvelope';
 
 import { type CommandBatchValidationPreparation } from './commandBatchValidation';
 import { commandProjectRevisionPort } from './commandProjectRevisionPort';
@@ -14,6 +14,10 @@ type ExecuteVersionedCommandBatchInput = {
     commands: readonly string[];
     normalizedProjectRevision?: string;
     options?: ExecuteOptions & {
+        onProjectCommitPrepared?: (result: {
+            status: 'committed';
+            actions: readonly { action: AppAction; label: string; receipt?: VersionedCommandReceipt }[];
+        }) => void;
         prepareValidation?: () => CommandBatchValidationPreparation;
         requireCompensation?: boolean;
     };
