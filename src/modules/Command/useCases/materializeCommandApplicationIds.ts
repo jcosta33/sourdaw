@@ -42,6 +42,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 function materializeNestedNoteIds(action: Extract<AppAction, { type: 'addNotes' }>): MaterializedCommandApplicationIds {
     const cloned = structuredClone(action);
     const applicationAssignedIds: CommandApplicationAssignedId[] = [];
+    let changed = false;
     for (const [index, note] of cloned.payload.notes.entries()) {
         if (typeof note.id === 'string' && note.id !== '') {
             applicationAssignedIds.push({ argument: `notes[${String(index)}].id`, value: note.id });
@@ -49,9 +50,10 @@ function materializeNestedNoteIds(action: Extract<AppAction, { type: 'addNotes' 
         }
         const value = `note-command-${crypto.randomUUID()}`;
         note.id = value;
+        changed = true;
         applicationAssignedIds.push({ argument: `notes[${String(index)}].id`, value });
     }
-    return { action: cloned, applicationAssignedIds };
+    return { action: changed ? cloned : action, applicationAssignedIds };
 }
 
 function materializeMidiInputOwnerId(
@@ -80,8 +82,10 @@ function materializeTrackCreationIds(
 ): MaterializedCommandApplicationIds {
     const cloned = structuredClone(action);
     const applicationAssignedIds: CommandApplicationAssignedId[] = [];
+    let changed = false;
     if (!cloned.payload.id) {
         cloned.payload.id = `track-command-${crypto.randomUUID()}`;
+        changed = true;
         applicationAssignedIds.push({ argument: 'id', value: cloned.payload.id });
     }
     if (cloned.payload.id && !applicationAssignedIds.some((entry) => entry.argument === 'id')) {
@@ -89,6 +93,7 @@ function materializeTrackCreationIds(
     }
     if (!cloned.payload.initialAlternativeId) {
         cloned.payload.initialAlternativeId = `alternative-command-${crypto.randomUUID()}`;
+        changed = true;
         applicationAssignedIds.push({
             argument: 'initialAlternativeId',
             value: cloned.payload.initialAlternativeId,
@@ -105,6 +110,7 @@ function materializeTrackCreationIds(
     }
     if (cloned.payload.kind === 'midi' && !cloned.payload.initialDeviceId) {
         cloned.payload.initialDeviceId = `device-command-${crypto.randomUUID()}`;
+        changed = true;
         applicationAssignedIds.push({ argument: 'initialDeviceId', value: cloned.payload.initialDeviceId });
     }
     if (
@@ -118,11 +124,10 @@ function materializeTrackCreationIds(
         const color = commandTrackDefaultsPort.reserveTrackColor();
         if (color !== undefined) {
             cloned.payload.color = color;
+            changed = true;
         }
     }
-    return applicationAssignedIds.length === 0
-        ? { action, applicationAssignedIds }
-        : { action: cloned, applicationAssignedIds };
+    return { action: changed ? cloned : action, applicationAssignedIds };
 }
 
 function materializeBusCreationIds(
@@ -130,8 +135,10 @@ function materializeBusCreationIds(
 ): MaterializedCommandApplicationIds {
     const cloned = structuredClone(action);
     const applicationAssignedIds: CommandApplicationAssignedId[] = [];
+    let changed = false;
     if (!cloned.payload.busId) {
         cloned.payload.busId = `bus-command-${crypto.randomUUID()}`;
+        changed = true;
         applicationAssignedIds.push({ argument: 'busId', value: cloned.payload.busId });
     }
     if (cloned.payload.busId && !applicationAssignedIds.some((entry) => entry.argument === 'busId')) {
@@ -139,6 +146,7 @@ function materializeBusCreationIds(
     }
     if (!cloned.payload.initialAlternativeId) {
         cloned.payload.initialAlternativeId = `alternative-command-${crypto.randomUUID()}`;
+        changed = true;
         applicationAssignedIds.push({
             argument: 'initialAlternativeId',
             value: cloned.payload.initialAlternativeId,
@@ -157,11 +165,10 @@ function materializeBusCreationIds(
         const color = commandTrackDefaultsPort.reserveTrackColor();
         if (color !== undefined) {
             cloned.payload.color = color;
+            changed = true;
         }
     }
-    return applicationAssignedIds.length === 0
-        ? { action, applicationAssignedIds }
-        : { action: cloned, applicationAssignedIds };
+    return { action: changed ? cloned : action, applicationAssignedIds };
 }
 
 export function materializeCommandApplicationIds(action: AppAction): MaterializedCommandApplicationIds {

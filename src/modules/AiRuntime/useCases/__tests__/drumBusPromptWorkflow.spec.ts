@@ -11,6 +11,7 @@ import {
 import { clearHandlerRegistry, macroStore, registerHandlerMap, undoStore } from '#/modules/Command/stores';
 import {
     clearUndoHistory,
+    commandTrackDefaultsPort,
     redo,
     resetActionReplayAuthority,
     setActionHistoryMetadataPort,
@@ -589,6 +590,7 @@ describe('drum bus prompt workflow', () => {
         clearHandlerRegistry();
         registerHandlerMap(getArrangementHandlers());
         registerHandlerMap(getAudioRenderingHandlers());
+        commandTrackDefaultsPort.setTrackColorProvider(() => 'oklch(0.40 0.08 250)');
         clearUndoHistory();
         resetActionReplayAuthority();
         setActionHistoryMetadataPort(noActionHistoryMetadataPort);
@@ -619,6 +621,7 @@ describe('drum bus prompt workflow', () => {
         clearUndoHistory();
         resetActionReplayAuthority();
         clearHandlerRegistry();
+        commandTrackDefaultsPort.setTrackColorProvider(null);
         clearAiHistory();
         clearPendingActionConfirmations();
         clearAgentSectionRenderArtifacts();

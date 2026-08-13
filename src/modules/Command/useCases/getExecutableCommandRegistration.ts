@@ -39,6 +39,9 @@ export function getExecutableCommandRegistration<ActionType extends ExecutableAp
         get noOpDetector() {
             return getRegisteredHandler().isNoop;
         },
+        get materializeCommandArguments() {
+            return getRegisteredHandler().materializeCommandArguments;
+        },
         get inverseOrCompensation() {
             const handler = getRegisteredHandler();
             return {

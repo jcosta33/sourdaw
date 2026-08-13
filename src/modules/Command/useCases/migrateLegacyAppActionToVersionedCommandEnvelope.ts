@@ -21,6 +21,7 @@ export function migrateLegacyAppActionToVersionedCommandEnvelope(
     if (!handler) {
         throw new AppActionNotDispatchedError(input.action.type);
     }
+    handler.materializeCommandArguments?.(materialized.action);
     return createExecutionCommandEnvelope({
         action: materialized.action,
         applicationAssignedIds: materialized.applicationAssignedIds,

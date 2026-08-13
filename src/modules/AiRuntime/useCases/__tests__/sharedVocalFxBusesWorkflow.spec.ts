@@ -8,6 +8,7 @@ import { getAutomationHandlers } from '#/modules/Automation/useCases';
 import { clearHandlerRegistry, macroStore, registerHandlerMap, undoStore } from '#/modules/Command/stores';
 import {
     clearUndoHistory,
+    commandTrackDefaultsPort,
     executeAppAction,
     redo,
     resetActionReplayAuthority,
@@ -465,6 +466,7 @@ describe('shared vocal FX buses workflow', () => {
         clearHandlerRegistry();
         registerHandlerMap(getArrangementHandlers());
         registerHandlerMap(getAutomationHandlers());
+        commandTrackDefaultsPort.setTrackColorProvider(() => 'oklch(0.40 0.08 250)');
         clearUndoHistory();
         resetActionReplayAuthority();
         setActionHistoryMetadataPort(noActionHistoryMetadataPort);
@@ -488,6 +490,7 @@ describe('shared vocal FX buses workflow', () => {
         clearUndoHistory();
         resetActionReplayAuthority();
         clearHandlerRegistry();
+        commandTrackDefaultsPort.setTrackColorProvider(null);
         clearAiHistory();
         clearPendingActionConfirmations();
         trackStore.set({ tracks: [], selectedTrackId: null, ghostClips: [] });
