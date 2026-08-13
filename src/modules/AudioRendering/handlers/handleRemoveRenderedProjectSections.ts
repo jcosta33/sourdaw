@@ -26,6 +26,7 @@ function currentArtifactsMatch(action: RemoveRenderedProjectSectionsAction): boo
 }
 
 export const handleRemoveRenderedProjectSections = createHandler<'removeRenderedProjectSections'>({
+    validate: currentArtifactsMatch,
     execute: (action) => {
         if (!currentArtifactsMatch(action)) {
             return { status: 'conflict' };
@@ -43,5 +44,6 @@ export const handleRemoveRenderedProjectSections = createHandler<'removeRendered
             : null,
     }),
     undoable: true,
+    previewExecution: 'isolated-project',
     requiresAbortCompensation: false,
 });

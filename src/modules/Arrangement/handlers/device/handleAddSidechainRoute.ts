@@ -69,6 +69,12 @@ function resolveRoute(action: AddSidechainRouteAction): RouteResolution {
 }
 
 export const handleAddSidechainRoute = createHandler<'addSidechainRoute'>({
+    validate: (action) => resolveRoute(action).status !== 'conflict',
+    materializeCommandArguments: (action) => {
+        if (resolveRoute(action).status === 'conflict') {
+            throw new Error('Sidechain route arguments conflict with current project state');
+        }
+    },
     execute: (action) => {
         const resolution = resolveRoute(action);
         if (resolution.status === 'absent') {
@@ -103,6 +109,7 @@ export const handleAddSidechainRoute = createHandler<'addSidechainRoute'>({
         };
     },
     isNoop: (action) => resolveRoute(action).status === 'absent',
+    previewExecution: 'isolated-project',
     requiresAbortCompensation: false,
     undoable: true,
 });

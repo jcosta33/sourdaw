@@ -1,8 +1,8 @@
-import { executableAppActionDescriptors } from './executableAppActionRegistry';
+import { getExecutableCommandRegistrations } from './getExecutableCommandRegistrations';
 
 export function getExecutableAppActionGroundingCatalog() {
-    return executableAppActionDescriptors.map((descriptor) => ({
-        actionType: descriptor.actionType,
-        intentPhrases: structuredClone(descriptor.intentPhrases),
+    return getExecutableCommandRegistrations().map((registration) => ({
+        actionType: registration.actionType,
+        intentPhrases: structuredClone(registration.intentPhrases),
     }));
 }

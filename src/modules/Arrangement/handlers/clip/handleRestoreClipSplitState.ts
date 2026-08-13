@@ -20,6 +20,7 @@ export const handleRestoreClipSplitState = createHandler<'restoreClipSplitState'
         return midiRestored ? { status: 'written' } : { status: 'conflict' };
     },
     describe: () => ({ label: 'Restore clip split state', inverseAction: null }),
+    previewExecution: 'isolated-project',
     requiresAbortCompensation: false,
     undoable: false,
 });

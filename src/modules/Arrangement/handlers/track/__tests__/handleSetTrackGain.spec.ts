@@ -16,6 +16,47 @@ vi.mock('../../../useCases/getTrackStoreState', () => ({
 }));
 
 describe('handleSetTrackGain', () => {
+    it('validates the expected gain without writing runtime or project state', () => {
+        mocks.getTrackStoreState.mockReturnValue({ tracks: [{ id: 'track-1', gain: 0.5 }] });
+
+        expect(
+            handleSetTrackGain.validate?.(
+                {
+                    type: 'setTrackGain',
+                    payload: { trackId: 'track-1', gain: 0.8, expectedGain: 0.5 },
+                },
+                { actions: [], actionIndex: 0 }
+            )
+        ).toBe(true);
+        expect(
+            handleSetTrackGain.validate?.(
+                {
+                    type: 'setTrackGain',
+                    payload: { trackId: 'track-1', gain: 0.8, expectedGain: 0.4 },
+                },
+                { actions: [], actionIndex: 0 }
+            )
+        ).toBe(false);
+        expect(mocks.setTrackGain).not.toHaveBeenCalled();
+    });
+
+    it('validates a chained write against the prior planned gain', () => {
+        mocks.getTrackStoreState.mockReturnValue({ tracks: [{ id: 'track-1', gain: 1 }] });
+        const actions = [
+            {
+                type: 'setTrackGain' as const,
+                payload: { trackId: 'track-1', gain: 0.8, expectedGain: 1 },
+            },
+            {
+                type: 'setTrackGain' as const,
+                payload: { trackId: 'track-1', gain: 0.6, expectedGain: 0.8 },
+            },
+        ];
+
+        expect(handleSetTrackGain.validate?.(actions[1]!, { actions, actionIndex: 1 })).toBe(true);
+        expect(mocks.setTrackGain).not.toHaveBeenCalled();
+    });
+
     beforeEach(() => {
         vi.clearAllMocks();
     });

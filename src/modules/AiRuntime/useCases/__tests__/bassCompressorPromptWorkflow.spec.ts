@@ -29,6 +29,11 @@ import {
 import { confirmPendingChatActions } from '../confirmPendingChatActions';
 import { sendChatMessage } from '../sendChatMessage';
 
+import {
+    configureAiWorkflowCommandPreflightFixture,
+    resetAiWorkflowCommandPreflightFixture,
+} from './aiWorkflowCommandPreflightFixture';
+
 const PROMPT = 'Insert a compressor after EQ on every bass track, excluding frozen tracks.';
 const BASS_DI_DEVICE_IDS = ['device-bass-di-eq', 'device-bass-di-saturator'];
 const BASS_AMP_DEVICE_IDS = ['device-bass-amp-preamp', 'device-bass-amp-eq', 'device-bass-amp-chorus'];
@@ -164,6 +169,7 @@ function getHostedRequestBody(): string {
 
 describe('bass compressor prompt workflow', () => {
     beforeEach(() => {
+        configureAiWorkflowCommandPreflightFixture();
         vi.clearAllMocks();
         runtimeMocks.removeDeviceFromStrip.mockReset();
         runtimeMocks.backend.value = 'webllm';
@@ -230,6 +236,7 @@ describe('bass compressor prompt workflow', () => {
     });
 
     afterEach(() => {
+        resetAiWorkflowCommandPreflightFixture();
         clearUndoHistory();
         resetActionReplayAuthority();
         clearHandlerRegistry();

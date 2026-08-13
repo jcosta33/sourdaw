@@ -50,12 +50,13 @@ describe('handleGenerateChordProgression', () => {
                 key: 2,
                 voicing: 'open',
                 bars: 4,
+                seed: 789,
             },
         });
 
         expect(mocks.applyChordProgressionToTrack).toHaveBeenCalledWith(
             't1',
-            { style: 'jazz', key: 2, scale: 'minor', voicing: 'open', bars: 4 },
+            { style: 'jazz', key: 2, scale: 'minor', voicing: 'open', bars: 4, seed: 789 },
             4
         );
     });

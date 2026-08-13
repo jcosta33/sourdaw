@@ -1,6 +1,17 @@
+---
+type: adr
+id: 0017
+title: Pre-fader sends survive mute; solo-in-place gates them
+status: accepted
+date: 2026-08-12
+owner: The Sourdaw team
+sources:
+  - AUDIT-effects-routing FX-8 (workspace artifact, retired after promotion)
+---
+
 # 0017 — Pre-fader sends survive mute; solo-in-place gates them
 
-**Status: proposed** — pending product-owner ratification.
+**Accepted 2026-08-12.** Resolved from primary sources under the owner's standing direction that decision gates are research tasks. Supersedes nothing.
 
 Promoted from a workspace audit (`AUDIT-effects-routing`, finding FX-8) because the research and the
 reasoning existed nowhere else and the artifact was being retired.

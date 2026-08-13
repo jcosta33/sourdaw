@@ -19,7 +19,14 @@ export const handleGenerateChordProgression = createGenerationHandler<'generateC
 
         return applyChordProgressionToTrack(
             trackId,
-            { style: style as ChordProgressionStyle, key, scale, bars: action.payload.bars, voicing },
+            {
+                style: style as ChordProgressionStyle,
+                key,
+                scale,
+                bars: action.payload.bars,
+                voicing,
+                seed: action.payload.seed,
+            },
             playheadBeat
         );
     },

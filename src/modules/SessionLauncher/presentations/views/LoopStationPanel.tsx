@@ -1,4 +1,4 @@
-import { type ReactElement, useEffect, useState } from 'react';
+import { type ReactElement, useEffect, useRef, useState } from 'react';
 
 import { Circle, Eraser, Link2, Lock, Play, Plus, Square, Undo2, Unlock, Unlink } from 'lucide-react';
 
@@ -30,6 +30,7 @@ import { toggleRecord } from '../../useCases/loopStation/toggleRecord';
 import { toggleSync } from '../../useCases/loopStation/toggleSync';
 import { triggerSlot } from '../../useCases/loopStation/triggerSlot';
 import { undoLastLayer } from '../../useCases/loopStation/undoLastLayer';
+import { formatBarBeat, formatLoopProgress } from '../helpers/loopStationProgress';
 
 const emptyLoopState: LoopStationState = {
     slots: [],
@@ -76,38 +77,84 @@ function getSlot(slots: LoopSlot[], trackId: string, row: number): LoopSlot | un
     return slots.find((slot) => slot.trackId === trackId && slot.row === row);
 }
 
-function formatBarBeat(positionBeats: number, numerator: number): string {
-    if (numerator <= 0) {
-        return '1.1';
-    }
-    const safeBeat = Math.max(0, positionBeats);
-    const bar = Math.floor(safeBeat / numerator) + 1;
-    const beat = Math.floor(safeBeat % numerator) + 1;
-    return `${bar}.${beat}`;
-}
+type LoopSlotProgressReadoutProps = {
+    slot: LoopSlot;
+    numerator: number;
+    discretePlayheadPosition: number;
+};
 
-function formatLoopProgress(slot: LoopSlot, positionBeats: number, numerator: number): string {
-    if (slot.lengthBeats <= 0) {
-        return `—`;
-    }
-    const localBeat = ((positionBeats % slot.lengthBeats) + slot.lengthBeats) % slot.lengthBeats;
-    return formatBarBeat(localBeat, numerator);
-}
+/**
+ * Isolates the per-frame ticking progress readout from the rest of the cell
+ * (F10). The grid can hold many occupied cells; previously the parent lifted
+ * the ticking playhead position into React state and passed it down as
+ * `positionBeats` on every cell, which made each cell's element depend on a
+ * value that changes every animation frame — invalidating that reactive
+ * scope and re-invoking the whole cell body (including its five `Button`s)
+ * once per frame, for every occupied cell, active or not.
+ *
+ * This leaf instead reads the non-reactive `playheadPositionRef` directly via
+ * its own rAF loop (mirroring `PlayheadDisplay`, the existing pattern in this
+ * codebase for exactly this problem) and writes the formatted text straight
+ * to its own DOM node, so ticking never touches React state or the parent
+ * cell's props. `isActive` is derived from this slot's own state, not a
+ * panel-wide flag — only a slot that is itself playing/recording/overdubbing
+ * ticks every frame; every other occupied cell only recomputes when
+ * `discretePlayheadPosition` changes (start/stop/seek), so per-frame work
+ * scales with active slots, not with grid size.
+ */
+const LoopSlotProgressReadout = ({
+    slot,
+    numerator,
+    discretePlayheadPosition,
+}: LoopSlotProgressReadoutProps): ReactElement => {
+    const progressRef = useRef<HTMLSpanElement>(null);
+    const isActive = slot.state === 'playing' || slot.state === 'recording' || slot.state === 'overdubbing';
+
+    useEffect(() => {
+        const updateOnce = (): void => {
+            const text = formatLoopProgress(slot, playheadPositionRef.current, numerator);
+            if (progressRef.current) {
+                progressRef.current.textContent = text;
+            }
+        };
+        updateOnce();
+        if (!isActive) {
+            return undefined;
+        }
+        let raf = 0;
+        const tick = (): void => {
+            updateOnce();
+            raf = window.requestAnimationFrame(tick);
+        };
+        raf = window.requestAnimationFrame(tick);
+        return () => window.cancelAnimationFrame(raf);
+    }, [slot, numerator, isActive, discretePlayheadPosition]);
+
+    return (
+        <span
+            ref={progressRef}
+            data-testid="loop-slot-progress"
+            className="ml-auto font-mono text-[9px] text-muted-foreground tabular-nums"
+        >
+            {formatLoopProgress(slot, discretePlayheadPosition, numerator)}
+        </span>
+    );
+};
 
 type LoopStationSlotCellProps = {
     trackId: string;
     row: number;
     slot: LoopSlot | undefined;
-    positionBeats: number;
     numerator: number;
+    discretePlayheadPosition: number;
 };
 
 const LoopStationSlotCell = ({
     trackId,
     row,
     slot,
-    positionBeats,
     numerator,
+    discretePlayheadPosition,
 }: LoopStationSlotCellProps): ReactElement => {
     if (!slot) {
         return (
@@ -128,7 +175,6 @@ const LoopStationSlotCell = ({
     const variant = SLOT_STATE_VARIANT[slot.state];
     const stateLabel = SLOT_STATE_LABEL[slot.state];
     const hasContent = slot.layers.length > 0 || slot.state !== 'empty';
-    const progress = formatLoopProgress(slot, positionBeats, numerator);
 
     return (
         <div
@@ -208,7 +254,11 @@ const LoopStationSlotCell = ({
                 >
                     <Eraser className="size-2.5" />
                 </Button>
-                <span className="ml-auto font-mono text-[9px] text-muted-foreground tabular-nums">{progress}</span>
+                <LoopSlotProgressReadout
+                    slot={slot}
+                    numerator={numerator}
+                    discretePlayheadPosition={discretePlayheadPosition}
+                />
             </div>
         </div>
     );
@@ -221,14 +271,25 @@ export const LoopStationPanel = (): ReactElement => {
     const tracks: TrackRef[] = trackState.tracks.map(toTrackRef);
     const rowCount = Math.max(8, loopState.sceneCount);
 
+    // Whether *any* slot is active, purely to gate the header's own "Bar X.X"
+    // ticking below (F10). Each cell's own progress readout derives its
+    // activity from its own slot's state instead of this panel-wide flag, so
+    // per-frame ticking is bounded by how many slots are actually active, not
+    // by grid size.
+    const isActive = loopState.slots.some(
+        (slot) => slot.state === 'playing' || slot.state === 'recording' || slot.state === 'overdubbing'
+    );
+    const discretePlayheadPosition = transport.playheadPosition;
+
+    // Drives only the header's "Bar X.X" readout below. Per-cell progress
+    // reads `playheadPositionRef` directly via its own isolated rAF loop
+    // (`LoopSlotProgressReadout`) instead of subscribing to this state, so a
+    // tick here no longer invalidates every cell's props on every frame.
     const [tickPosition, setTickPosition] = useState(0);
 
     useEffect(() => {
-        const isActive = loopState.slots.some(
-            (slot) => slot.state === 'playing' || slot.state === 'recording' || slot.state === 'overdubbing'
-        );
         if (!isActive) {
-            setTickPosition(transport.playheadPosition);
+            setTickPosition(discretePlayheadPosition);
             return undefined;
         }
         let raf = 0;
@@ -238,7 +299,7 @@ export const LoopStationPanel = (): ReactElement => {
         };
         raf = window.requestAnimationFrame(tick);
         return () => window.cancelAnimationFrame(raf);
-    }, [loopState.slots, transport.playheadPosition]);
+    }, [isActive, discretePlayheadPosition]);
 
     const fixedLoopLength = loopState.fixedLoopLength;
     const [fixedInput, setFixedInput] = useState<string>(String(fixedLoopLength));
@@ -367,8 +428,8 @@ export const LoopStationPanel = (): ReactElement => {
                                         trackId={track.id}
                                         row={row}
                                         slot={getSlot(loopState.slots, track.id, row)}
-                                        positionBeats={tickPosition}
                                         numerator={transport.timeSignatureNumerator}
+                                        discretePlayheadPosition={discretePlayheadPosition}
                                     />
                                 ))}
                             </div>

@@ -2,8 +2,31 @@ import { createHandler } from '#/utils/createHandler';
 
 import { removeDevice } from '../../useCases/device/removeDevice';
 import { getTrackStoreState } from '../../useCases/getTrackStoreState';
+import { getPlannedTrackState } from '../getPlannedTrackState';
 
 export const handleRemoveDevice = createHandler<'removeDevice'>({
+    validate: (action, context) => {
+        if (!action.payload.expectedTrackId && !action.payload.expectedDeviceIds) {
+            return true;
+        }
+        if (!action.payload.expectedTrackId || !action.payload.expectedDeviceIds) {
+            return false;
+        }
+        const foreignOwnerExists = (getTrackStoreState()?.tracks ?? []).some(
+            (track) =>
+                track.id !== action.payload.expectedTrackId &&
+                track.devices.some((device) => device.id === action.payload.deviceId)
+        );
+        const owner = getPlannedTrackState(context, action.payload.expectedTrackId);
+        const currentDeviceIds = owner?.devices.map((device) => device.id);
+        return (
+            !foreignOwnerExists &&
+            owner !== null &&
+            owner.devices.some((device) => device.id === action.payload.deviceId) &&
+            action.payload.expectedDeviceIds.length === currentDeviceIds?.length &&
+            action.payload.expectedDeviceIds.every((deviceId, index) => currentDeviceIds[index] === deviceId)
+        );
+    },
     execute: (alpha) => {
         if (alpha.payload.expectedTrackId || alpha.payload.expectedDeviceIds) {
             const owners = (getTrackStoreState()?.tracks ?? []).filter((track) =>
@@ -65,6 +88,7 @@ export const handleRemoveDevice = createHandler<'removeDevice'>({
             },
         };
     },
+    previewExecution: 'isolated-project',
     requiresAbortCompensation: false,
     undoable: true,
 });

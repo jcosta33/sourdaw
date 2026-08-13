@@ -39,6 +39,7 @@ describe('executePlannedActions', () => {
         });
 
         const result = await executePlannedActions({
+            legacyExecution: true,
             prompt: 'Mute vocals',
             actions: [action],
             projectRevision: 'revision-1',
@@ -76,6 +77,7 @@ describe('executePlannedActions', () => {
         });
 
         const result = await executePlannedActions({
+            legacyExecution: true,
             prompt: 'Start playback',
             actions: [runtimeAction],
             projectRevision: 'revision-1',
@@ -107,6 +109,7 @@ describe('executePlannedActions', () => {
         });
 
         const result = await executePlannedActions({
+            legacyExecution: true,
             prompt: 'Start playback',
             actions: [runtimeAction],
             projectRevision: 'revision-1',
@@ -131,6 +134,7 @@ describe('executePlannedActions', () => {
         });
 
         const result = await executePlannedActions({
+            legacyExecution: true,
             prompt: 'Mute vocals',
             actions: [action],
             projectRevision: 'revision-1',
@@ -154,6 +158,7 @@ describe('executePlannedActions', () => {
         });
 
         const result = await executePlannedActions({
+            legacyExecution: true,
             prompt: 'Mute vocals',
             actions: [action],
             projectRevision: 'revision-1',
@@ -177,6 +182,7 @@ describe('executePlannedActions', () => {
         vi.mocked(executeAppActionBatch).mockResolvedValue({ status: 'failed', reason: refusal, actions: [] });
 
         const result = await executePlannedActions({
+            legacyExecution: true,
             prompt: 'Set the tempo to 111',
             actions: [{ type: 'setTempo', payload: { bpm: 111 } }],
             projectRevision: 'revision-1',
@@ -199,6 +205,7 @@ describe('executePlannedActions', () => {
         });
 
         const result = await executePlannedActions({
+            legacyExecution: true,
             prompt: 'Mute vocals',
             actions: [action],
             projectRevision: 'revision-1',
@@ -221,6 +228,7 @@ describe('executePlannedActions', () => {
         });
 
         const result = await executePlannedActions({
+            legacyExecution: true,
             prompt: 'Mute vocals',
             actions: [action],
             projectRevision: 'revision-1',
@@ -247,6 +255,7 @@ describe('executePlannedActions', () => {
         });
 
         const result = await executePlannedActions({
+            legacyExecution: true,
             prompt: 'Mute vocals',
             actions: [action],
             projectRevision: 'revision-1',

@@ -34,7 +34,8 @@ export function addDevice(
     displayName?: string,
     deviceId?: string,
     deviceIndex?: number,
-    initialInternalParameterValues?: Readonly<Record<string, number>>
+    initialInternalParameterValues?: Readonly<Record<string, number>>,
+    options: { projectOnly?: boolean } = {}
 ): Device | null {
     const state = getTrackState();
     if (!state) {
@@ -96,6 +97,10 @@ export function addDevice(
         ...time,
         devices: [...time.devices.slice(0, insertionIndex), device, ...time.devices.slice(insertionIndex)],
     }));
+
+    if (options.projectOnly) {
+        return device;
+    }
 
     if (!plugin) {
         return device;

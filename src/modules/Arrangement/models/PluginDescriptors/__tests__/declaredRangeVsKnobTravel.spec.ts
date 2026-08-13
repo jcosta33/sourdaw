@@ -1820,7 +1820,7 @@ describe('declared parameter range agrees with the knob that drives it', () => {
         // other 77 are two-way only, for the shapes named in
         // `ENGINE_CLAMP_COVERAGE.notDerivable`. Distribution is pinned
         // separately, by identity, in `threeWayPerDevice`.
-        expect(CENSUS.threeWay.length).toBe(116);
+        expect(CENSUS.threeWay.length).toBe(117);
 
         // The findings themselves, **by identity**. This was a bare count, which
         // is the wrong shape for a list of named defects: one row leaving while
@@ -1914,7 +1914,7 @@ describe('declared parameter range agrees with the knob that drives it', () => {
         expect(Object.fromEntries(CENSUS.threeWayPerDevice)).toStrictEqual({
             fermenter: 53,
             gluten: 21,
-            bacteria: 19,
+            bacteria: 20,
             'dutch-oven': 12,
             // Only four of Grinder's 25 compared parameters reach leg 3: most of
             // its arms are the transformed-value shape `(value / 10.0).clamp(…)`

@@ -6,6 +6,7 @@ import { findMappingForTarget } from '../findMappingForTarget';
 describe('findMappingForTarget', () => {
     beforeEach(() => {
         midiLearnStore.set({
+            mappingsSchemaVersion: 1,
             mappings: [],
             isLearning: false,
             learningTarget: null,
@@ -19,6 +20,7 @@ describe('findMappingForTarget', () => {
 
     it('should return undefined when no mapping matches', () => {
         midiLearnStore.set({
+            mappingsSchemaVersion: 1,
             mappings: [
                 {
                     id: 'm1',
@@ -50,6 +52,7 @@ describe('findMappingForTarget', () => {
             maxValue: 1,
         };
         midiLearnStore.set({
+            mappingsSchemaVersion: 1,
             mappings: [mapping],
             isLearning: false,
             learningTarget: null,

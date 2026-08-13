@@ -28,6 +28,17 @@ function prepareAction(action: SplitClipAction) {
 }
 
 export const handleSplitClip = createHandler<'splitClip'>({
+    validate: (action) =>
+        prepareClipSplit({
+            clipId: action.payload.clipId,
+            splitBeat: action.payload.beat,
+            rightClipId: action.payload.rightClipId ?? '__split-preflight__',
+            resolvedSplitBeat: action.payload.resolvedBeat,
+            targetNoteIds: action.payload.targetNoteIds,
+        }) !== null,
+    materializeCommandArguments: (action) => {
+        prepareAction(action);
+    },
     execute: (action) => {
         return toHandlerExecutionResult(
             splitClip(
@@ -71,6 +82,7 @@ export const handleSplitClip = createHandler<'splitClip'>({
             },
         };
     },
+    previewExecution: 'isolated-project',
     requiresAbortCompensation: false,
     undoable: true,
 });

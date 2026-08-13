@@ -149,22 +149,19 @@ export const SessionView = (): ReactElement => {
                                     };
 
                                     return (
-                                        <div
+                                        <button
+                                            type="button"
                                             key={clipId ?? `empty-${sceneIndex}`}
                                             className={cn(
-                                                'flex h-10 cursor-pointer items-center justify-center border-b border-border-hairline transition-colors',
+                                                'flex h-10 w-full cursor-pointer items-center justify-center border-b border-border-hairline transition-colors',
                                                 renderIife_8()
                                             )}
-                                            onClick={() => {
-                                                if (clipId) {
-                                                    handleLaunchSlot(track.id, sceneIndex);
-                                                }
-                                            }}
-                                            role="gridcell"
+                                            onClick={() => handleLaunchSlot(track.id, sceneIndex)}
+                                            disabled={!clipId}
                                             aria-label={`${track.name} scene ${sceneIndex + 1}${clipId ? ' - clip loaded' : ' - empty'}`}
                                         >
                                             {renderIife_9()}
-                                        </div>
+                                        </button>
                                     );
                                 })}
                             </div>

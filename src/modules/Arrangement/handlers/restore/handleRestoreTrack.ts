@@ -18,6 +18,7 @@ import { setTrackState } from '../../useCases/setTrackState';
  * `undoable: false` — invoked only by undo machinery; must not create new undo entries.
  */
 export const handleRestoreTrack = createHandler<'restoreTrack'>({
+    validate: (action) => restoreStateMatches(action),
     execute: (alpha) => {
         const {
             trackSnapshot,
@@ -40,7 +41,7 @@ export const handleRestoreTrack = createHandler<'restoreTrack'>({
         } = alpha.payload;
 
         const state = getTrackStoreState();
-        if (!state || state.tracks.some((track) => track.id === alpha.payload.trackId)) {
+        if (!state || !restoreStateMatches(alpha)) {
             return { status: 'conflict' };
         }
         const batchRestoreTrackIds = new Set(batchRestoreTracks.map((track) => track.trackId));
@@ -192,6 +193,7 @@ export const handleRestoreTrack = createHandler<'restoreTrack'>({
         };
     },
     describe: () => ({ label: 'Restore track' }),
+    previewExecution: 'isolated-project',
     requiresAbortCompensation: false,
     undoable: false,
 });
@@ -213,5 +215,22 @@ function hasExpectedRoutingState(current: RoutingState, expected: RoutingState):
             send.level === expectedSend.level &&
             send.preFader === expectedSend.preFader
         );
+    });
+}
+
+function restoreStateMatches(
+    action: Extract<import('#/utils/handlerContract').AppAction, { type: 'restoreTrack' }>
+): boolean {
+    const state = getTrackStoreState();
+    if (!state || state.tracks.some((track) => track.id === action.payload.trackId)) {
+        return false;
+    }
+    const batchRestoreTrackIds = new Set(action.payload.batchRestoreTracks?.map((track) => track.trackId) ?? []);
+    return action.payload.routingPatches.every((patch) => {
+        if (batchRestoreTrackIds.has(patch.trackId)) {
+            return true;
+        }
+        const current = state.tracks.find((track) => track.id === patch.trackId);
+        return current !== undefined && hasExpectedRoutingState(current, patch.expected);
     });
 }

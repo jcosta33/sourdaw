@@ -4,6 +4,7 @@ import { type AppAction } from '#/utils/handlerContract';
 import { copyMidiArticulationsToNotes } from '../../transformers/copyMidiArticulationsToNotes';
 import { midiNotesEqual } from '../../transformers/midiNotesEqual';
 import { copyMidiArticulations } from '../../useCases/midiNoteTransforms/copyMidiArticulations';
+import { getCopyMidiArticulationsStatus } from '../../useCases/midiNoteTransforms/getCopyMidiArticulationsStatus';
 
 function describeCopy(action: Extract<AppAction, { type: 'copyMidiArticulations' }>) {
     const nextTargetNotes = copyMidiArticulationsToNotes({
@@ -47,6 +48,7 @@ function describeCopy(action: Extract<AppAction, { type: 'copyMidiArticulations'
 
 export const handleCopyMidiArticulations = createHandler<'copyMidiArticulations'>({
     execute: (action) => ({ status: copyMidiArticulations(action.payload) }),
+    validate: (action) => getCopyMidiArticulationsStatus(action.payload) !== 'conflict',
     describe: describeCopy,
     isNoop: (action) => {
         const nextTargetNotes = copyMidiArticulationsToNotes({

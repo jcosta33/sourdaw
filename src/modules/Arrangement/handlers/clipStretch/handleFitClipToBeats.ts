@@ -82,6 +82,7 @@ export const handleFitClipToBeats = createHandler<'fitClipToBeats'>({
             ? statesMatch(readStretchState(clip), getNextStretchState(clip, action.payload.targetBeats))
             : false;
     },
+    previewExecution: 'isolated-project',
     requiresAbortCompensation: false,
     undoable: true,
 });

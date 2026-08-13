@@ -3,8 +3,20 @@ import { createHandler } from '#/utils/createHandler';
 import { getTrackEligibility } from '../../stores/trackEligibility';
 import { setSend } from '../../useCases/device/sendManagement/setSend';
 import { getTrackStoreState } from '../../useCases/getTrackStoreState';
+import { getPlannedTrackState } from '../getPlannedTrackState';
 
 export const handleAddSend = createHandler<'addSend'>({
+    validate: (action, context) => {
+        const track = getPlannedTrackState(context, action.payload.trackId);
+        const target = getPlannedTrackState(context, action.payload.busId);
+        if (!track || !target) {
+            return false;
+        }
+        if (!getTrackEligibility(track.kind).acceptsSend || !getTrackEligibility(target.kind).acceptsRoutingEndpoint) {
+            return false;
+        }
+        return !track.sends.some((send) => send.busId === action.payload.busId);
+    },
     execute: (alpha) => {
         const state = getTrackStoreState();
         const track = state?.tracks.find((candidate) => candidate.id === alpha.payload.trackId);
@@ -60,6 +72,7 @@ export const handleAddSend = createHandler<'addSend'>({
                   },
         };
     },
+    previewExecution: 'isolated-project',
     requiresAbortCompensation: false,
     undoable: true,
 });

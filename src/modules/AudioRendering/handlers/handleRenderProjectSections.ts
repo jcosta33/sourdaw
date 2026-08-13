@@ -50,6 +50,10 @@ function artifactsDoNotConflict(jobs: readonly RenderProjectSectionJobSnapshot[]
 }
 
 export const handleRenderProjectSections = createHandler<'renderProjectSections'>({
+    validate: (action) => {
+        const jobs = getJobs(action);
+        return jobs !== null && artifactsDoNotConflict(jobs);
+    },
     execute: (action) => {
         const jobs = getJobs(action);
         if (!jobs || !artifactsDoNotConflict(jobs)) {
@@ -79,5 +83,6 @@ export const handleRenderProjectSections = createHandler<'renderProjectSections'
         };
     },
     undoable: true,
+    previewExecution: 'isolated-project',
     requiresAbortCompensation: false,
 });

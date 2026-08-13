@@ -17,6 +17,9 @@ function ensureTargetTrackId(action: DuplicateTrackAction): string {
 }
 
 export const handleDuplicateTrack = createHandler<'duplicateTrack'>({
+    materializeCommandArguments: (action) => {
+        ensureTargetTrackId(action);
+    },
     execute: (action) => {
         const tracks = getTrackStoreState()?.tracks;
         const source = tracks?.find((track) => track.id === action.payload.trackId);
@@ -81,6 +84,7 @@ export const handleDuplicateTrack = createHandler<'duplicateTrack'>({
         const targetTrackId = action.payload.targetTrackId;
         return targetTrackId !== undefined && tracks.some((track) => track.id === targetTrackId);
     },
+    previewExecution: 'isolated-project',
     requiresAbortCompensation: false,
     undoable: true,
 });

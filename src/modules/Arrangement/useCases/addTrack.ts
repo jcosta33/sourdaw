@@ -12,6 +12,7 @@ type AddTrackInput = {
     gain?: number;
     id?: string;
     initialAlternativeId?: string;
+    initialDeviceId?: string;
     name: string;
     kind: TrackKind;
     select?: boolean;

@@ -50,5 +50,6 @@ export const handleAddClip = createHandler<'addClip'>({
         };
     },
     undoable: true,
+    previewExecution: 'isolated-project',
     requiresAbortCompensation: false,
 });

@@ -57,6 +57,28 @@ enum PluginCore {
     Native(Box<dyn NativePlugin>),
 }
 
+/// Map a `SetParam` name/value pair onto the matching `KneadEngine` setter.
+///
+/// Returns `false` for an unrecognized name so the caller can diagnose it
+/// instead of reporting success while doing nothing.
+fn apply_knead_param(engine: &mut KneadEngine, name: &str, value: f32) -> bool {
+    match name {
+        "shift_semitones" => {
+            engine.set_shift_semitones(value);
+            true
+        }
+        "retune_speed_ms" => {
+            engine.set_retune_speed_ms(value);
+            true
+        }
+        "formant_preserve" => {
+            engine.set_formant_preserve(value != 0.0);
+            true
+        }
+        _ => false,
+    }
+}
+
 struct ActiveEffect {
     id: usize,
     instance: PluginCore,
@@ -264,12 +286,23 @@ impl AudioScheduler {
                 GraphCommand::AddEffect(id, plugin_type) => {
                     let instance = match plugin_type.as_str() {
                         "knead" => Some(PluginCore::Knead(KneadEngine::new(self.sample_rate))),
-                        _ => None,
+                        _ => {
+                            self.midi_rt_diagnostics
+                                .record_unsupported_effect_addition(1);
+                            None
+                        }
                     };
                     if let Some(inst) = instance {
-                        self.effects.push(ActiveEffect::new(id, inst));
+                        if self.effect_id_exists(id) {
+                            self.midi_rt_diagnostics.record_effect_id_collision(1);
+                            Some(RetiredGraphObjects::effect(ActiveEffect::new(id, inst)))
+                        } else {
+                            self.effects.push(ActiveEffect::new(id, inst));
+                            None
+                        }
+                    } else {
+                        None
                     }
-                    None
                 }
                 GraphCommand::RemoveEffect(id) | GraphCommand::RemovePlugin(id) => {
                     self.remove_effect(id).map(RetiredGraphObjects::effect)
@@ -280,9 +313,21 @@ impl AudioScheduler {
                         self.remove_audio_bridge(id),
                     )
                 }
-                GraphCommand::SetParam(id, _name, _value) => {
-                    if let Some(_effect) = self.effects.iter_mut().find(|e| e.id == id) {
-                        // TODO: Map string parameters to Knead methods
+                GraphCommand::SetParam(id, name, value) => {
+                    if let Some(effect) = self.effects.iter_mut().find(|e| e.id == id) {
+                        match &mut effect.instance {
+                            PluginCore::Knead(engine) => {
+                                if !apply_knead_param(engine, &name, value) {
+                                    self.midi_rt_diagnostics.record_unmapped_set_param_call(1);
+                                }
+                            }
+                            PluginCore::Native(_) => {
+                                // `SetParam` only has a mapped target for the
+                                // built-in Knead effect today; a native
+                                // plugin's parameters are not routed here.
+                                self.midi_rt_diagnostics.record_unmapped_set_param_call(1);
+                            }
+                        }
                     }
                     None
                 }
@@ -293,15 +338,31 @@ impl AudioScheduler {
                     None
                 }
                 GraphCommand::AddPlugin(id, plugin) => {
-                    self.effects
-                        .push(ActiveEffect::new(id, PluginCore::Native(plugin)));
-                    None
+                    if self.effect_id_exists(id) {
+                        self.midi_rt_diagnostics.record_effect_id_collision(1);
+                        Some(RetiredGraphObjects::effect(ActiveEffect::new(
+                            id,
+                            PluginCore::Native(plugin),
+                        )))
+                    } else {
+                        self.effects
+                            .push(ActiveEffect::new(id, PluginCore::Native(plugin)));
+                        None
+                    }
                 }
                 GraphCommand::AddPluginWithBridge(id, plugin, bridge) => {
-                    self.effects
-                        .push(ActiveEffect::new(id, PluginCore::Native(plugin)));
-                    self.audio_bridges.push(bridge);
-                    None
+                    if self.effect_id_exists(id) {
+                        self.midi_rt_diagnostics.record_effect_id_collision(1);
+                        RetiredGraphObjects::effect_with_bridge(
+                            Some(ActiveEffect::new(id, PluginCore::Native(plugin))),
+                            Some(bridge),
+                        )
+                    } else {
+                        self.effects
+                            .push(ActiveEffect::new(id, PluginCore::Native(plugin)));
+                        self.audio_bridges.push(bridge);
+                        None
+                    }
                 }
                 GraphCommand::AddMidiFx(id, fx_kind) => {
                     if let Some(effect) = self.effects.iter_mut().find(|e| e.id == id) {
@@ -363,6 +424,10 @@ impl AudioScheduler {
         }
     }
 
+    fn effect_id_exists(&self, id: usize) -> bool {
+        self.effects.iter().any(|effect| effect.id == id)
+    }
+
     fn remove_effect(&mut self, id: usize) -> Option<ActiveEffect> {
         let index = self.effects.iter().position(|effect| effect.id == id)?;
         Some(self.effects.remove(index))
@@ -414,6 +479,13 @@ impl AudioScheduler {
                         // output = input (already in the block)
                         let _ = (left, right, n);
                     });
+                    // A bypassed effect discards incoming MIDI rather than
+                    // banking it: without this, notes queued via SendMidiNote
+                    // while bypassed would accumulate toward the fixed
+                    // 128-slot ceiling and then flush as one stale burst —
+                    // old note-ons with no note-offs behind them — the
+                    // instant the effect is un-bypassed.
+                    effect.pending_midi.clear();
                     continue;
                 }
 
@@ -424,7 +496,7 @@ impl AudioScheduler {
                     let transport = self.transport;
                     let sample_rate = self.sample_rate;
 
-                    bridge.try_process(|left, right, num_samples| {
+                    let processed = bridge.try_process(|left, right, num_samples| {
                         probability_evaluator.process_midi_with_diagnostics(
                             pending_midi,
                             &transport,
@@ -455,7 +527,14 @@ impl AudioScheduler {
                         }
                     });
 
-                    pending_midi.clear();
+                    // Only clear pending MIDI when the closure actually ran and
+                    // consumed it. When the input ring was empty this cycle
+                    // (the CPAL callback beating the worklet's push, guaranteed
+                    // at bridge startup and on any cadence jitter), the events
+                    // must survive to the next cycle rather than being dropped.
+                    if processed {
+                        pending_midi.clear();
+                    }
                 }
             }
         }
@@ -472,15 +551,23 @@ impl AudioScheduler {
             // followers and delay lines) and emit its output on a second,
             // uncontrolled path straight into the CPAL device buffer.
             //
-            // `pending_midi` is cleared rather than left alone: the bridge path
-            // skips its own clear on the bypassed branch, so dropping through
-            // without clearing here would let events accumulate unboundedly.
+            // `pending_midi` is deliberately left untouched here: ownership of
+            // clearing it belongs entirely to `process_audio_bridges`, which
+            // already ran earlier in this same callback and already decided
+            // whether to clear (a block was processed) or not (the input ring
+            // was empty this cycle, or the effect is bypassed). Clearing again
+            // here would wipe out exactly the events `process_audio_bridges`
+            // just chose to keep for the next cycle, undoing that fix within
+            // the same callback. Accumulation while bypassed or unfed is
+            // bounded by the fixed 128-slot buffer itself — `try_push` refuses
+            // once full and records `scheduler_event_buffer_overflows` — so
+            // leaving it alone is a deliberate, observable tradeoff, not an
+            // unbounded leak.
             if self
                 .audio_bridges
                 .iter()
                 .any(|bridge| bridge.plugin_id == effect.id)
             {
-                effect.pending_midi.clear();
                 continue;
             }
 
@@ -773,6 +860,129 @@ mod tests {
     }
 
     #[test]
+    fn bridged_plugin_midi_survives_a_callback_that_finds_the_input_ring_empty() {
+        let (mut command_tx, mut scheduler, _retired_rx) = create_scheduler();
+        let (bridge, mut handle) = crate::audio_bridge::create_audio_bridge(42);
+        let received_event_count = Arc::new(AtomicUsize::new(0));
+        let received_channel_sum = Arc::new(AtomicUsize::new(0));
+
+        command_tx
+            .push(GraphCommand::AddPluginWithBridge(
+                42,
+                Box::new(MidiRecordingPlugin {
+                    received_event_count: Arc::clone(&received_event_count),
+                    received_channel_sum,
+                }),
+                bridge,
+            ))
+            .unwrap();
+        scheduler.update_graph();
+
+        command_tx
+            .push(GraphCommand::SendMidiNote(
+                42,
+                MidiNoteEvent {
+                    note: 60,
+                    velocity: 100,
+                    channel: 0,
+                    is_note_on: true,
+                    probability_cutoff: crate::midi_fx::PROBABILITY_CUTOFF_RANGE,
+                    project_probability_seed: 0,
+                    clip_id_hash: 0,
+                    event_id_hash: 0,
+                    absolute_occurrence_index: 0,
+                },
+            ))
+            .unwrap();
+        scheduler.update_graph();
+
+        let mut left = [0.0; 4];
+        let mut right = [0.0; 4];
+
+        // Drive both calls in sequence, the way audio_thread.rs's CPAL
+        // callback does every cycle: process_audio_bridges() first, then
+        // process_block() over the standalone chain's zeroed scratch. The
+        // CPAL callback beats the worklet's input push here — the bridge's
+        // input ring is empty, so try_process's closure never runs this
+        // cycle — and process_block must not wipe the note that
+        // process_audio_bridges deliberately left queued for next cycle.
+        scheduler.process_audio_bridges();
+        scheduler.process_block(&mut left, &mut right, 4);
+        assert_eq!(received_event_count.load(Ordering::Relaxed), 0);
+
+        // A later callback: the worklet's audio has now arrived. The note
+        // queued on the earlier, empty-ring cycle must still be delivered —
+        // an unconditional clear in either process_audio_bridges or
+        // process_block would have discarded it forever on the first cycle.
+        assert!(handle.push_input(&[0.0; 4], &[0.0; 4]));
+        scheduler.process_audio_bridges();
+        scheduler.process_block(&mut left, &mut right, 4);
+        assert_eq!(received_event_count.load(Ordering::Relaxed), 1);
+    }
+
+    #[test]
+    fn a_bypassed_bridged_effect_discards_midi_queued_while_bypassed() {
+        let (mut command_tx, mut scheduler, _retired_rx) = create_scheduler();
+        let (bridge, mut handle) = crate::audio_bridge::create_audio_bridge(42);
+        let received_event_count = Arc::new(AtomicUsize::new(0));
+        let received_channel_sum = Arc::new(AtomicUsize::new(0));
+
+        command_tx
+            .push(GraphCommand::AddPluginWithBridge(
+                42,
+                Box::new(MidiRecordingPlugin {
+                    received_event_count: Arc::clone(&received_event_count),
+                    received_channel_sum,
+                }),
+                bridge,
+            ))
+            .unwrap();
+        scheduler.update_graph();
+
+        command_tx.push(GraphCommand::SetBypass(42, true)).unwrap();
+        scheduler.update_graph();
+
+        let mut left = [0.0; 4];
+        let mut right = [0.0; 4];
+
+        // Queue MIDI across several callbacks while bypassed. A bypassed
+        // effect should discard incoming MIDI, not accumulate it toward the
+        // 128-slot ceiling and flush it all the instant it is un-bypassed.
+        for note in 60..=65 {
+            command_tx
+                .push(GraphCommand::SendMidiNote(
+                    42,
+                    MidiNoteEvent {
+                        note,
+                        velocity: 100,
+                        channel: 0,
+                        is_note_on: true,
+                        probability_cutoff: crate::midi_fx::PROBABILITY_CUTOFF_RANGE,
+                        project_probability_seed: 0,
+                        clip_id_hash: 0,
+                        event_id_hash: 0,
+                        absolute_occurrence_index: 0,
+                    },
+                ))
+                .unwrap();
+            scheduler.update_graph();
+            assert!(handle.push_input(&[0.0; 4], &[0.0; 4]));
+            scheduler.process_audio_bridges();
+            scheduler.process_block(&mut left, &mut right, 4);
+        }
+
+        // Un-bypass and drive a fresh callback: no stale burst of the notes
+        // queued during bypass should reach the plugin.
+        command_tx.push(GraphCommand::SetBypass(42, false)).unwrap();
+        scheduler.update_graph();
+        assert!(handle.push_input(&[0.0; 4], &[0.0; 4]));
+        scheduler.process_audio_bridges();
+        scheduler.process_block(&mut left, &mut right, 4);
+
+        assert_eq!(received_event_count.load(Ordering::Relaxed), 0);
+    }
+
+    #[test]
     fn remove_plugin_with_bridge_removes_plugin_and_bridge_atomically() {
         let (mut command_tx, mut scheduler, mut retired_rx) = create_scheduler();
         let (bridge, _handle) = crate::audio_bridge::create_audio_bridge(42);
@@ -830,6 +1040,126 @@ mod tests {
             let thread_id = dropped_rx.recv().unwrap();
             assert!(thread_id == live_reclaimer || thread_id == shutdown_reclaimer);
         }
+    }
+
+    #[test]
+    fn add_plugin_with_a_colliding_id_is_rejected_and_does_not_duplicate_the_effect() {
+        let (mut command_tx, mut scheduler, _retired_rx) = create_scheduler();
+        command_tx
+            .push(GraphCommand::AddEffect(7, "knead".to_string()))
+            .unwrap();
+        scheduler.update_graph();
+        assert_eq!(scheduler.effects.len(), 1);
+
+        let (dropped_tx, _dropped_rx) = mpsc::channel();
+        push_drop_tracking_plugin(&mut command_tx, 7, &dropped_tx, false);
+        scheduler.update_graph();
+
+        // The colliding plugin must not create a second entry sharing id 7 —
+        // that second entry is exactly what would let SetParam/SetBypass/
+        // SendMidiNote misroute to whichever one `.find` reaches first.
+        assert_eq!(scheduler.effects.len(), 1);
+        match &scheduler.effects[0].instance {
+            PluginCore::Knead(_) => {}
+            PluginCore::Native(_) => panic!("existing effect must not be displaced"),
+        }
+        assert_eq!(
+            scheduler
+                .midi_rt_diagnostics
+                .snapshot()
+                .effect_id_collisions,
+            1
+        );
+    }
+
+    #[test]
+    fn add_plugin_with_bridge_with_a_colliding_id_retires_both_without_inserting() {
+        let (mut command_tx, mut scheduler, mut retired_rx) = create_scheduler();
+        command_tx
+            .push(GraphCommand::AddEffect(7, "knead".to_string()))
+            .unwrap();
+        scheduler.update_graph();
+
+        let (bridge, _handle) = crate::audio_bridge::create_audio_bridge(7);
+        command_tx
+            .push(GraphCommand::AddPluginWithBridge(
+                7,
+                Box::new(FakeNativePlugin { value: 0.25 }),
+                bridge,
+            ))
+            .unwrap();
+        scheduler.update_graph();
+
+        assert_eq!(scheduler.effects.len(), 1);
+        assert!(scheduler.audio_bridges.is_empty());
+        assert_eq!(
+            scheduler
+                .midi_rt_diagnostics
+                .snapshot()
+                .effect_id_collisions,
+            1
+        );
+        let retired = retired_rx.pop().expect("the rejected plugin and bridge");
+        assert!(retired.effect.is_some());
+        assert!(retired.audio_bridge.is_some());
+    }
+
+    #[test]
+    fn set_param_maps_known_names_onto_the_knead_engine_and_diagnoses_unknown_ones() {
+        let (mut command_tx, mut scheduler, _retired_rx) = create_scheduler();
+        command_tx
+            .push(GraphCommand::AddEffect(7, "knead".to_string()))
+            .unwrap();
+        scheduler.update_graph();
+
+        command_tx
+            .push(GraphCommand::SetParam(
+                7,
+                "shift_semitones".to_string(),
+                3.0,
+            ))
+            .unwrap();
+        scheduler.update_graph();
+
+        match &scheduler.effects[0].instance {
+            PluginCore::Knead(engine) => assert_eq!(engine.shift_semitones, 3.0),
+            PluginCore::Native(_) => panic!("expected the knead effect"),
+        }
+
+        command_tx
+            .push(GraphCommand::SetParam(
+                7,
+                "not_a_real_param".to_string(),
+                1.0,
+            ))
+            .unwrap();
+        scheduler.update_graph();
+
+        assert_eq!(
+            scheduler
+                .midi_rt_diagnostics
+                .snapshot()
+                .unmapped_set_param_calls,
+            1
+        );
+    }
+
+    #[test]
+    fn add_effect_with_an_unsupported_plugin_type_is_diagnosed_not_silently_dropped() {
+        let (mut command_tx, mut scheduler, _retired_rx) = create_scheduler();
+        command_tx
+            .push(GraphCommand::AddEffect(7, "not-a-real-effect".to_string()))
+            .unwrap();
+        scheduler.update_graph();
+
+        assert!(scheduler.effects.is_empty());
+        assert_eq!(
+            scheduler
+                .midi_rt_diagnostics
+                .snapshot()
+                .unsupported_effect_additions,
+            1
+        );
     }
 
     #[test]

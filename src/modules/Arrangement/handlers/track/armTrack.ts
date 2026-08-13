@@ -110,6 +110,7 @@ export const handleArmTrack = createHandler<'armTrack'>({
                 : null,
         };
     },
+    previewExecution: 'isolated-project',
     requiresAbortCompensation: false,
     // `docs/manual/02-concepts.md` names arming as *the* mixer control that
     // records, so that a user seeing "Arm track" in the history panel does not

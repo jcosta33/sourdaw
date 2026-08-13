@@ -3,6 +3,8 @@ export type StorageAdapter<TData> = {
     set(value: TData | null): void;
     clear(): void;
     isSupported(): boolean;
+    /** True while this adapter is writing to an isolated command-preview projection. */
+    isIsolated?(): boolean;
     /** Non-throwing `set`. Returns true only when the value is DURABLE —
      *  committed, at the moment of the call, to a backing store that outlives
      *  the session.

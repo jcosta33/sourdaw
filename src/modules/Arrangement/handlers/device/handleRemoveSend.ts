@@ -4,6 +4,15 @@ import { removeSend } from '../../useCases/device/sendManagement/removeSend';
 import { getTrackStoreState } from '../../useCases/getTrackStoreState';
 
 export const handleRemoveSend = createHandler<'removeSend'>({
+    validate: (action) => {
+        const existing = getTrackStoreState()
+            ?.tracks.find((track) => track.id === action.payload.trackId)
+            ?.sends.find((send) => send.busId === action.payload.busId);
+        return (
+            (action.payload.expectedLevel === undefined || existing?.level === action.payload.expectedLevel) &&
+            (action.payload.expectedPreFader === undefined || existing?.preFader === action.payload.expectedPreFader)
+        );
+    },
     execute: (alpha) => {
         const existing = getTrackStoreState()
             ?.tracks.find((track) => track.id === alpha.payload.trackId)
@@ -46,6 +55,7 @@ export const handleRemoveSend = createHandler<'removeSend'>({
                 : null,
         };
     },
+    previewExecution: 'isolated-project',
     requiresAbortCompensation: false,
     undoable: true,
 });

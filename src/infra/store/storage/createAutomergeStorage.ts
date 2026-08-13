@@ -1,4 +1,4 @@
-import { getConflicts, type Doc } from '@automerge/automerge';
+import { change, clone, getConflicts, type Doc } from '@automerge/automerge';
 
 import { logger } from '#/infra/logger/appLogger';
 
@@ -13,6 +13,18 @@ type AutomergeStorageReadableDoc = {
 
 type AutomergeStorageMutableDoc = {
     [key: string]: unknown;
+};
+
+type AutomergeStoragePreviewContext = {
+    readonly documents: Map<AutomergeStorageDocId, Doc<AutomergeStorageMutableDoc>>;
+    readonly values: Map<object, unknown>;
+    released: boolean;
+};
+
+export type AutomergeStoragePreview = {
+    getDocument(docId: string): Readonly<Record<string, unknown>> | undefined;
+    release(): void;
+    scope<Result>(callback: () => Result): Result;
 };
 
 type AutomergeStorageMutationInput = {
@@ -157,10 +169,13 @@ type ActiveAutomergeStorageTransaction = {
  */
 type AutomergeStorageTransactionScope = <Result>(callback: () => Result) => Result;
 
+type AutomergeStorageDocumentValidator = (doc: AutomergeStorageReadableDoc) => string | null;
+
 type AutomergeStorageTransactionControl = {
     readonly scope: AutomergeStorageTransactionScope;
     abort(): void;
     commit(): void;
+    validateDocument(docId: AutomergeStorageDocId, validator: AutomergeStorageDocumentValidator): void;
 };
 
 type AutomergeStorageTransactionOutcome<Result> =
@@ -194,10 +209,62 @@ export class AutomergeStorageTransactionCommittedError extends Error {
     }
 }
 
+export class AutomergeStorageTransactionValidationError extends Error {
+    constructor(message: string) {
+        super(message);
+        this.name = 'AutomergeStorageTransactionValidationError';
+    }
+}
+
 let automergeStoragePort: AutomergeStoragePort | null = null;
 const pendingAutomergeStorageWrites = new Set<PendingAutomergeStorageWrite>();
 const openAutomergeStorageCommitOwners = new Set<object>();
 let activeAutomergeStorageTransaction: ActiveAutomergeStorageTransaction | undefined;
+let activeAutomergeStoragePreview: AutomergeStoragePreviewContext | null = null;
+
+function clonePreviewValue<Value>(value: Value): Value {
+    return value === undefined ? value : (JSON.parse(JSON.stringify(value)) as Value);
+}
+
+export function createAutomergeStoragePreview(
+    sourceDocuments: ReadonlyMap<string, Doc<AutomergeStorageMutableDoc>>
+): AutomergeStoragePreview {
+    const context: AutomergeStoragePreviewContext = {
+        documents: new Map([...sourceDocuments].map(([docId, document]) => [docId, clone(document)])),
+        values: new Map(),
+        released: false,
+    };
+
+    return {
+        getDocument(docId): Readonly<Record<string, unknown>> | undefined {
+            if (context.released) {
+                return undefined;
+            }
+            const document = context.documents.get(docId);
+            return document ? clonePreviewValue(document) : undefined;
+        },
+        release(): void {
+            context.released = true;
+            context.documents.clear();
+            context.values.clear();
+        },
+        scope<Result>(callback: () => Result): Result {
+            if (context.released) {
+                throw new Error('Automerge storage preview has been released');
+            }
+            if (activeAutomergeStoragePreview && activeAutomergeStoragePreview !== context) {
+                throw new Error('Another Automerge storage preview is already active');
+            }
+            const previous = activeAutomergeStoragePreview;
+            activeAutomergeStoragePreview = context;
+            try {
+                return callback();
+            } finally {
+                activeAutomergeStoragePreview = previous;
+            }
+        },
+    };
+}
 
 /**
  * How a coalesced document write ended, and what its failure says about the
@@ -220,7 +287,8 @@ type AutomergeStorageCommitOutcome =
 
 /** One Automerge change is the atomic commit boundary for keys sharing a document and owner. */
 function commitAutomergeStorageMutations(
-    mutations: readonly AutomergeStorageMutationInput[]
+    mutations: readonly AutomergeStorageMutationInput[],
+    validateDocument?: AutomergeStorageDocumentValidator
 ): AutomergeStorageCommitOutcome {
     const firstMutation = mutations[0];
     if (!firstMutation) {
@@ -246,6 +314,10 @@ function commitAutomergeStorageMutations(
             changeFn: (doc) => {
                 for (const mutation of mutations) {
                     mutation.changeFn(doc);
+                }
+                const validationFailure = validateDocument?.(doc) ?? null;
+                if (validationFailure) {
+                    throw new AutomergeStorageTransactionValidationError(validationFailure);
                 }
                 application.appliedChangeFn = true;
             },
@@ -339,6 +411,7 @@ export function runWithAutomergeStorageTransaction<Result>(
     activeAutomergeStorageTransaction = transaction;
     openAutomergeStorageCommitOwners.add(transaction.commitOwner);
     let terminalState: 'open' | 'committed' | 'aborted' = 'open';
+    const documentValidators = new Map<AutomergeStorageDocId, AutomergeStorageDocumentValidator>();
     let outcome: AutomergeStorageTransactionOutcome<Result>;
 
     const scope: AutomergeStorageTransactionScope = (scopedCallback) => {
@@ -390,7 +463,8 @@ export function runWithAutomergeStorageTransaction<Result>(
                 flushMatchingAutomergeStorageWrites(
                     (pending) =>
                         pending.commitOwner === transaction.commitOwner &&
-                        pending.snapshotTransaction === transaction.snapshotTransaction
+                        pending.snapshotTransaction === transaction.snapshotTransaction,
+                    documentValidators
                 );
             } catch (error) {
                 if (error instanceof AutomergeStorageFlushError && error.committedDocumentCount > 0) {
@@ -411,14 +485,27 @@ export function runWithAutomergeStorageTransaction<Result>(
             }
             terminalState = 'committed';
         },
+        validateDocument(docId, validator): void {
+            if (terminalState !== 'open') {
+                throw new Error(`Automerge storage transaction has already settled (${terminalState})`);
+            }
+            if (documentValidators.has(docId)) {
+                throw new Error(`Automerge storage transaction already has a validator for document: ${docId}`);
+            }
+            documentValidators.set(docId, validator);
+        },
     };
 
     return { ...outcome, ...control };
 }
 
-function flushMatchingAutomergeStorageWrites(matches: (pending: PendingAutomergeStorageWrite) => boolean): void {
+function flushMatchingAutomergeStorageWrites(
+    matches: (pending: PendingAutomergeStorageWrite) => boolean,
+    documentValidators: ReadonlyMap<AutomergeStorageDocId, AutomergeStorageDocumentValidator> = new Map()
+): void {
     let firstError: unknown;
     let committedDocumentCount = 0;
+    const validatedDocumentIds = new Set<AutomergeStorageDocId>();
     const groups = new Map<string, Map<object, PendingAutomergeStorageWrite[]>>();
 
     for (const pending of [...pendingAutomergeStorageWrites]) {
@@ -443,7 +530,7 @@ function flushMatchingAutomergeStorageWrites(matches: (pending: PendingAutomerge
         }
     }
 
-    for (const ownerGroups of groups.values()) {
+    for (const [docId, ownerGroups] of groups) {
         for (const writes of ownerGroups.values()) {
             const mutations: AutomergeStorageMutationInput[] = [];
             const abandonedWrites: PendingAutomergeStorageWrite[] = [];
@@ -500,7 +587,10 @@ function flushMatchingAutomergeStorageWrites(matches: (pending: PendingAutomerge
                 continue;
             }
 
-            const outcome = commitAutomergeStorageMutations(mutations);
+            const outcome = commitAutomergeStorageMutations(mutations, documentValidators.get(docId));
+            if (documentValidators.has(docId)) {
+                validatedDocumentIds.add(docId);
+            }
             if (outcome.status === 'rolled-back') {
                 // Nothing reached the document, so this group did not commit
                 // and must not make a later document's failure look like a
@@ -525,6 +615,18 @@ function flushMatchingAutomergeStorageWrites(matches: (pending: PendingAutomerge
             for (const write of writes) {
                 write.didCommit();
             }
+        }
+    }
+
+    const port = getAutomergeStoragePort();
+    for (const [docId, validateDocument] of documentValidators) {
+        if (validatedDocumentIds.has(docId)) {
+            continue;
+        }
+        const document = port?.getDoc(docId);
+        const validationFailure = validateDocument(document ?? {});
+        if (validationFailure) {
+            firstError ??= new AutomergeStorageTransactionValidationError(validationFailure);
         }
     }
 
@@ -639,6 +741,62 @@ export const createAutomergeStorage = <TData>(
     let cachedValue: TData | null = null;
     let committedCacheValue: TData | null = null;
     let committedCacheRevision = 0;
+    const previewIdentity = Object.freeze({});
+
+    const getPreviewValue = (context: AutomergeStoragePreviewContext): TData | null => {
+        if (!context.values.has(previewIdentity)) {
+            // Some domain decoders intentionally preserve ephemeral local fields by
+            // reading their owning store. Seed that recursive read with the live
+            // projection while the declared-head CRDT value is being decoded.
+            context.values.set(previewIdentity, cachedValue);
+            const document = context.documents.get(docId);
+            const rawValue = document?.[key];
+            let initialValue: TData | null = null;
+            if (rawValue !== undefined) {
+                let rawValues: readonly unknown[] = [rawValue];
+                if (document && (resolveConflicts || resolveCrdtConflicts)) {
+                    const conflicts = getConflicts(document, key);
+                    if (conflicts) {
+                        rawValues = Object.entries(conflicts)
+                            .sort(([leftActor], [rightActor]) => leftActor.localeCompare(rightActor))
+                            .map(([, conflictValue]) => conflictValue);
+                    }
+                }
+                const clonedValues = clonePreviewValue(rawValues);
+                const normalizedValues = fromCrdt
+                    ? clonedValues.map((value) => fromCrdt(value as TData))
+                    : (clonedValues as TData[]);
+                const firstValue = normalizedValues[0];
+                if (firstValue !== undefined) {
+                    initialValue = firstValue;
+                    if (resolveCrdtConflicts && clonedValues.length > 1) {
+                        initialValue = resolveCrdtConflicts(clonedValues);
+                    } else if (resolveConflicts && normalizedValues.length > 1) {
+                        initialValue = resolveConflicts(normalizedValues);
+                    }
+                }
+            } else if (hydrateMissing) {
+                initialValue = clonePreviewValue(hydrateMissing());
+            }
+            context.values.set(previewIdentity, initialValue);
+        }
+        return context.values.get(previewIdentity) as TData | null;
+    };
+
+    const setPreviewValue = (context: AutomergeStoragePreviewContext, value: TData | null): void => {
+        const document = context.documents.get(docId);
+        const mutation = createMutation(value, getPreviewValue(context));
+        if (!document || !mutation) {
+            throw new Error(`Automerge storage preview document is unavailable: ${docId}`);
+        }
+        context.documents.set(
+            docId,
+            change(document, (draft) => {
+                mutation.changeFn(draft);
+            })
+        );
+        context.values.set(previewIdentity, clonePreviewValue(value));
+    };
 
     // Slot absence is still authoritative once hydrate has observed a document.
     // Keep that fact separate from revision counters, which only advance for a
@@ -953,10 +1111,17 @@ export const createAutomergeStorage = <TData>(
 
     const adapter: StorageAdapter<TData> = {
         get(): TData | null {
+            if (activeAutomergeStoragePreview) {
+                return getPreviewValue(activeAutomergeStoragePreview);
+            }
             return cachedValue;
         },
 
         set(value: TData | null): void {
+            if (activeAutomergeStoragePreview) {
+                setPreviewValue(activeAutomergeStoragePreview, value);
+                return;
+            }
             const context = getWriteContext();
             const pending = pendingWritesByOwner.get(context.commitOwner) ?? createPendingWrite(context);
             cachedValue = value;
@@ -966,6 +1131,10 @@ export const createAutomergeStorage = <TData>(
         },
 
         clear(): void {
+            if (activeAutomergeStoragePreview) {
+                setPreviewValue(activeAutomergeStoragePreview, null);
+                return;
+            }
             const context = getWriteContext();
             const pending = pendingWritesByOwner.get(context.commitOwner) ?? createPendingWrite(context);
             cachedValue = null;
@@ -1042,6 +1211,10 @@ export const createAutomergeStorage = <TData>(
             return true;
         },
 
+        isIsolated(): boolean {
+            return activeAutomergeStoragePreview !== null;
+        },
+
         subscribe(listener: () => void): () => void {
             deferredChangeListeners.add(listener);
             return () => {
@@ -1050,6 +1223,9 @@ export const createAutomergeStorage = <TData>(
         },
 
         hydrate(): boolean {
+            if (activeAutomergeStoragePreview) {
+                return false;
+            }
             const port = getAutomergeStoragePort();
             const doc = port?.getDoc(docId);
             if (!doc) {

@@ -5,9 +5,15 @@ import { type ExecutableRuntimeAction } from '../models/ExecutableRuntimeAction'
 
 export type PendingActionExecution = {
     actionType: string;
+    commandId?: string;
+    commandSchemaVersion?: number;
     label: string;
     executionKind: 'project' | 'runtime';
     affectedIds: string[];
+    applicationAssigned?: {
+        ids: Array<{ field: string; value: string }>;
+        timestamps: Array<{ field: string; value: number }>;
+    };
     outcome: 'committed' | 'committed-with-warning' | 'executed' | 'executed-with-warning';
 };
 
@@ -21,9 +27,79 @@ type PendingActionProtectedObject = {
     name: string;
 };
 
+type PendingAgentRiskApproval = {
+    schemaVersion: 1;
+    actionHashes: string[];
+    sourceRevision: string;
+    targetFingerprints: Readonly<Record<string, string>>;
+    consequences: {
+        audioUpload: boolean;
+        fileAccess: boolean;
+        maxImportedAssets: number;
+        maxRenderJobs: number;
+        remoteGeneration: boolean;
+    };
+    localActorId: string;
+    policy: {
+        decision: 'allow' | 'confirm';
+        reasons: string[];
+        requiredTrustMode:
+            'analyze-only' | 'create-branch' | 'apply-reversible' | 'replace-selection' | 'destructive-commit';
+        risk:
+            | 'read-only'
+            | 'bounded-reversible'
+            | 'broad-reversible'
+            | 'destructive-reversible'
+            | 'authority-sensitive'
+            | 'external-effect'
+            | 'unclassified';
+    };
+};
+
+type PendingCommandBatchAuthority = {
+    projectId: string;
+    baseRevision: string;
+    scope: {
+        targetIds: readonly string[];
+        targetRanges: ReadonlyArray<{ startBeat: number; endBeat: number }>;
+        protectedTargetIds: readonly string[];
+        protectedRanges: ReadonlyArray<{ startBeat: number; endBeat: number }>;
+    };
+    grants: {
+        allowedOperationPrefixes: readonly string[];
+        create: boolean;
+        delete: boolean;
+        routing: boolean;
+        tempo: boolean;
+        master: boolean;
+        file: boolean;
+        audioUpload: boolean;
+        remoteGeneration: boolean;
+        autoCommit: boolean;
+    };
+    budgets: {
+        maxCommands: number;
+        maxCreatedTracks: number;
+        maxDeletedObjects: number;
+        maxAffectedTracks: number;
+        maxAffectedClips: number;
+        maxAutomationPoints: number;
+        maxImportedAssets: number;
+        maxRenderJobs: number;
+    };
+};
+
+type PendingCommandBatch = {
+    serialized: string;
+    authority: PendingCommandBatchAuthority;
+};
+
 type PendingActionApprovalSnapshot = {
     actions: ExecutableRuntimeAction[];
     actionLabels: string[];
+    commandEnvelopes?: string[];
+    commandBatch?: PendingCommandBatch;
+    agentApproval?: PendingAgentRiskApproval;
     protectedUnchanged: PendingActionProtectedObject[];
 };
 
@@ -50,6 +126,8 @@ export type PendingAppActionConfirmation = PendingActionConfirmationBase & {
     actions: ExecutableRuntimeAction[];
     approvalSnapshot: PendingActionApprovalSnapshot;
     executionMode: 'atomic' | undefined;
+    groupId?: string;
+    groupLabel?: string;
 };
 
 export type PendingActionConfirmationState = {
@@ -89,10 +167,15 @@ type ProposePendingActionConfirmationInput = {
     assistantMessageId: string;
     actions: ExecutableRuntimeAction[];
     actionLabels: string[];
+    commandEnvelopes?: string[];
+    commandBatch?: PendingCommandBatch;
+    agentApproval?: PendingAgentRiskApproval;
     affectedIds?: string[];
     protectedUnchanged?: PendingActionProtectedObject[];
     risk?: PendingActionRisk;
     executionMode?: 'atomic';
+    groupId?: string;
+    groupLabel?: string;
     projectRevision: string;
     resourceLease?: PendingActionResourceLease;
 };
@@ -123,6 +206,9 @@ export function proposePendingActionConfirmation(
     const approvalSnapshot: PendingActionApprovalSnapshot = {
         actions: structuredClone(input.actions),
         actionLabels: structuredClone(input.actionLabels),
+        commandEnvelopes: input.commandEnvelopes ? [...input.commandEnvelopes] : undefined,
+        commandBatch: input.commandBatch ? structuredClone(input.commandBatch) : undefined,
+        agentApproval: input.agentApproval ? structuredClone(input.agentApproval) : undefined,
         protectedUnchanged: structuredClone(input.protectedUnchanged ?? []),
     };
     const confirmation: PendingAppActionConfirmation = {
@@ -133,6 +219,8 @@ export function proposePendingActionConfirmation(
         actions: structuredClone(approvalSnapshot.actions),
         approvalSnapshot,
         executionMode: input.executionMode,
+        groupId: input.groupId,
+        groupLabel: input.groupLabel,
         actionLabels: structuredClone(approvalSnapshot.actionLabels),
         affectedIds: [...(input.affectedIds ?? [])],
         protectedUnchanged: structuredClone(approvalSnapshot.protectedUnchanged),

@@ -1,5 +1,5 @@
 import { createHandler } from '#/utils/createHandler';
-import { type AdjustmentLayerSnapshot } from '#/utils/handlerContract';
+import { type AdjustmentLayerSnapshot, type AppAction, type HandlerValidationContext } from '#/utils/handlerContract';
 
 import { adjustmentLayerStore, getNextRegionId, type AdjustmentLayer } from '../../stores/adjustmentLayer';
 import { trackStore } from '../../stores/trackStore';
@@ -52,26 +52,98 @@ function matchesExpectedLayer(layer: AdjustmentLayer, expected: AdjustmentLayerS
     });
 }
 
-export const handleAddAdjustmentRegion = createHandler<'addAdjustmentRegion'>({
-    execute: (a) => {
-        const currentLayer = adjustmentLayerStore.value?.layers.find((layer) => layer.id === a.payload.layerId);
-        if (a.payload.expectedLayer) {
-            if (!currentLayer || !matchesExpectedLayer(currentLayer, a.payload.expectedLayer)) {
-                return { status: 'conflict' as const };
-            }
-            const tracks = trackStore.value?.tracks ?? [];
-            const tracksChanged = (a.payload.expectedTracks ?? []).some((expected) => {
-                const track = tracks.find((candidate) => candidate.id === expected.trackId);
-                return !track || track.frozen !== expected.frozen;
+function expectedLayerAtExecution(
+    action: Extract<AppAction, { type: 'addAdjustmentRegion' }>,
+    context?: HandlerValidationContext
+): AdjustmentLayerSnapshot | undefined {
+    if (!action.payload.expectedLayer) {
+        return undefined;
+    }
+    const expectedLayer = structuredClone(action.payload.expectedLayer);
+    let expectedRegions = [...expectedLayer.regions];
+    if (!context) {
+        return expectedLayer;
+    }
+    for (const priorAction of context.actions.slice(0, context.actionIndex)) {
+        if (
+            priorAction.type !== 'addAdjustmentRegion' ||
+            priorAction.payload.layerId !== action.payload.layerId ||
+            !priorAction.payload.regionId
+        ) {
+            continue;
+        }
+        if (!expectedRegions.some((region) => region.id === priorAction.payload.regionId)) {
+            expectedRegions.push({
+                id: priorAction.payload.regionId,
+                startBeat: priorAction.payload.startBeat,
+                endBeat: priorAction.payload.endBeat,
+                blend: priorAction.payload.blend ?? 1,
+                fadeInBeats: priorAction.payload.fadeInBeats ?? 0.25,
+                fadeOutBeats: priorAction.payload.fadeOutBeats ?? 0.25,
             });
-            const regionIdInUse =
-                a.payload.regionId !== undefined &&
-                (adjustmentLayerStore.value?.layers ?? []).some((layer) =>
-                    layer.regions.some((region) => region.id === a.payload.regionId)
-                );
-            if (tracksChanged || regionIdInUse) {
-                return { status: 'conflict' as const };
-            }
+        }
+        expectedRegions = expectedRegions.toSorted((alpha, beta) => alpha.startBeat - beta.startBeat);
+    }
+    return { ...expectedLayer, regions: expectedRegions };
+}
+
+function expectedLayerAtValidation(
+    action: Extract<AppAction, { type: 'addAdjustmentRegion' }>,
+    context: HandlerValidationContext
+): AdjustmentLayerSnapshot | undefined {
+    if (!action.payload.expectedLayer) {
+        return undefined;
+    }
+    const priorRegionIds = new Set(
+        context.actions
+            .slice(0, context.actionIndex)
+            .filter(
+                (priorAction) =>
+                    priorAction.type === 'addAdjustmentRegion' &&
+                    priorAction.payload.layerId === action.payload.layerId &&
+                    priorAction.payload.regionId !== undefined
+            )
+            .map((priorAction) =>
+                priorAction.type === 'addAdjustmentRegion' ? priorAction.payload.regionId : undefined
+            )
+            .filter((regionId): regionId is string => regionId !== undefined)
+    );
+    return {
+        ...structuredClone(action.payload.expectedLayer),
+        regions: action.payload.expectedLayer.regions.filter((region) => !priorRegionIds.has(region.id)),
+    };
+}
+
+function currentStateMatches(
+    action: Extract<AppAction, { type: 'addAdjustmentRegion' }>,
+    expectedLayer = action.payload.expectedLayer
+): boolean {
+    if (!expectedLayer) {
+        return true;
+    }
+    const currentLayer = adjustmentLayerStore.value?.layers.find((layer) => layer.id === action.payload.layerId);
+    if (!currentLayer || !matchesExpectedLayer(currentLayer, expectedLayer)) {
+        return false;
+    }
+    const tracks = trackStore.value?.tracks ?? [];
+    const tracksChanged = (action.payload.expectedTracks ?? []).some((expected) => {
+        const track = tracks.find((candidate) => candidate.id === expected.trackId);
+        return !track || track.frozen !== expected.frozen;
+    });
+    const regionIdInUse =
+        action.payload.regionId !== undefined &&
+        (adjustmentLayerStore.value?.layers ?? []).some((layer) =>
+            layer.regions.some((region) => region.id === action.payload.regionId)
+        );
+    return !tracksChanged && !regionIdInUse;
+}
+
+export const handleAddAdjustmentRegion = createHandler<'addAdjustmentRegion'>({
+    validate: (action, context) => currentStateMatches(action, expectedLayerAtValidation(action, context)),
+    execute: (a, context) => {
+        const expectedLayer = expectedLayerAtExecution(a, context);
+        if (!currentStateMatches(a, expectedLayer)) {
+            return { status: 'conflict' as const };
         }
         a.payload.regionId ??= getNextRegionId();
         addAdjustmentRegion({

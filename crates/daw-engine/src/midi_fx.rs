@@ -217,9 +217,23 @@ impl MidiFx for VelocityScaler {
     }
 
     fn set_param(&mut self, name: &str, value: f32) {
+        // min/max are independently settable but must stay ordered: `process_midi`
+        // calls `i16::clamp(min, max)` every note-on, and that panics on the
+        // audio thread the moment min > max. Restoring the invariant here,
+        // rather than at the call site, keeps every caller safe by construction.
         match name {
-            "min" => self.min = value.clamp(0.0, 127.0) as u8,
-            "max" => self.max = value.clamp(0.0, 127.0) as u8,
+            "min" => {
+                self.min = value.clamp(0.0, 127.0) as u8;
+                if self.min > self.max {
+                    self.max = self.min;
+                }
+            }
+            "max" => {
+                self.max = value.clamp(0.0, 127.0) as u8;
+                if self.max < self.min {
+                    self.min = self.max;
+                }
+            }
             "scale" => self.scale = value,
             "offset" => self.offset = value as i16,
             _ => {}
@@ -534,6 +548,42 @@ fn note_on(note: u8) -> MidiNoteEvent {
         clip_id_hash: 0,
         event_id_hash: 0,
         absolute_occurrence_index: 0,
+    }
+}
+
+#[cfg(test)]
+mod velocity_scaler_tests {
+    use super::*;
+
+    #[test]
+    fn set_param_ordering_that_inverts_min_and_max_does_not_panic_on_the_next_note_on() {
+        let mut scaler = VelocityScaler::default();
+        // A UI or automation lane can send these independently: min pushed
+        // above the current max is a routine sequence, not an edge case.
+        scaler.set_param("min", 100.0);
+        scaler.set_param("max", 50.0);
+
+        let mut events = MidiEventBuffer::new();
+        assert!(events.try_push(note_on(60)));
+
+        // i16::clamp panics when min > max; this must not panic on the RT path.
+        scaler.process_midi(&mut events, &TransportState::default(), 48_000.0, 128);
+
+        let processed = events.as_slice()[0];
+        assert!(processed.velocity >= scaler.min.min(scaler.max));
+        assert!(processed.velocity <= scaler.min.max(scaler.max));
+    }
+
+    #[test]
+    fn set_param_never_leaves_min_greater_than_max() {
+        let mut scaler = VelocityScaler::default();
+        scaler.set_param("max", 30.0);
+        scaler.set_param("min", 90.0);
+        assert!(scaler.min <= scaler.max);
+
+        scaler.set_param("min", 10.0);
+        scaler.set_param("max", 5.0);
+        assert!(scaler.min <= scaler.max);
     }
 }
 

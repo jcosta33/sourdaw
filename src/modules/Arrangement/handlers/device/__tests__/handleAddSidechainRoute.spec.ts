@@ -57,6 +57,24 @@ describe('handleAddSidechainRoute', () => {
         });
     });
 
+    it('preserves the canonical absent-target no-op while materializing command arguments', () => {
+        mocks.getTrackStoreState.mockReturnValue({
+            tracks: [{ id: 'target', devices: [], clips: [] }],
+        });
+        const action: Extract<AppAction, { type: 'addSidechainRoute' }> = {
+            type: 'addSidechainRoute',
+            payload: { sourceTrackId: 'source', targetTrackId: 'target', routeId: 'route-1' },
+        };
+
+        expect(() => handleAddSidechainRoute.materializeCommandArguments?.(action)).not.toThrow();
+        expect(handleAddSidechainRoute.isNoop?.(action)).toBe(true);
+        expect(action.payload).toEqual({
+            sourceTrackId: 'source',
+            targetTrackId: 'target',
+            routeId: 'route-1',
+        });
+    });
+
     it('accepts only the exact supported device type', () => {
         mocks.getTrackStoreState.mockReturnValue({
             tracks: [{ id: 'target', devices: [{ id: 'lookalike', type: 'my-sidechain-helper' }], clips: [] }],

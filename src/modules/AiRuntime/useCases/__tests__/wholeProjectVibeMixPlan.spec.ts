@@ -33,6 +33,11 @@ import { confirmPendingChatActions } from '../confirmPendingChatActions';
 import { planPromptActions } from '../planPromptActions';
 import { sendChatMessage } from '../sendChatMessage';
 
+import {
+    configureAiWorkflowCommandPreflightFixture,
+    resetAiWorkflowCommandPreflightFixture,
+} from './aiWorkflowCommandPreflightFixture';
+
 const PROMPT =
     'Make the second chorus hit harder without changing any lead-vocal state, the tempo map, or the master chain.';
 
@@ -235,6 +240,7 @@ function expectExactGainAutomation(): void {
 
 describe('whole-project vibe-mix planning', () => {
     beforeEach(() => {
+        configureAiWorkflowCommandPreflightFixture();
         vi.clearAllMocks();
         runtimeMocks.backend.value = 'webllm';
         runtimeMocks.generateWebLlmCompletion.mockImplementation((_systemPrompt: string, userMessage: string) =>
@@ -352,6 +358,7 @@ describe('whole-project vibe-mix planning', () => {
     });
 
     afterEach(() => {
+        resetAiWorkflowCommandPreflightFixture();
         clearUndoHistory();
         resetActionReplayAuthority();
         clearHandlerRegistry();

@@ -3,6 +3,8 @@ import { midiLearnStore } from '../../stores/midiLearnStore';
 import { getMidiLearnDependencies } from './getMidiLearnDependencies';
 import { scaleMidiValue } from './scaleMidiValue';
 
+import type { Track } from '#/modules/Arrangement/stores';
+
 /**
  * Apply one incoming controller value to every mapping learned for it.
  *
@@ -29,13 +31,17 @@ export function handleMidiMessage(channel: number, cc: number, value: number, no
 
         switch (mapping.targetType) {
             case 'trackGain': {
-                deps.setTrackGainArrangement(mapping.trackId, scaled);
-                deps.engineSetTrackGain(mapping.trackId, scaled);
+                if (mapping.trackId) {
+                    deps.setTrackGainArrangement(mapping.trackId, scaled);
+                    deps.engineSetTrackGain(mapping.trackId, scaled);
+                }
                 break;
             }
             case 'trackPan': {
-                deps.setTrackPanArrangement(mapping.trackId, scaled);
-                deps.engineSetTrackPan(mapping.trackId, scaled);
+                if (mapping.trackId) {
+                    deps.setTrackPanArrangement(mapping.trackId, scaled);
+                    deps.engineSetTrackPan(mapping.trackId, scaled);
+                }
                 break;
             }
             case 'deviceParam': {
@@ -46,39 +52,40 @@ export function handleMidiMessage(channel: number, cc: number, value: number, no
             }
             case 'fermenterGlobalParam': {
                 if (mapping.paramId) {
+                    // Find the single track/device pair `setFermenterMappedParam`
+                    // below will actually target. Recording automation for a
+                    // different armed track would write a value into its lane
+                    // that its live parameter never moved to (F-1).
+                    let targetTrack: Track | undefined;
                     let fermenterDeviceId: string | undefined;
                     for (const track of deps.getAllTracks()) {
                         const fermenter = track.devices.find((device) => device.type === 'fermenter');
                         if (fermenter) {
+                            targetTrack = track;
                             fermenterDeviceId = fermenter.id;
                             break;
                         }
                     }
-                    if (fermenterDeviceId) {
+
+                    if (targetTrack && fermenterDeviceId) {
                         deps.setFermenterMappedParam({
                             deviceId: fermenterDeviceId,
                             paramId: mapping.paramId,
                             value: scaled,
                         });
-                    }
 
-                    if (deps.getTransportIsPlaying()) {
-                        for (const track of deps.getAllTracks()) {
-                            if (
-                                track.automationMode === 'write' ||
-                                track.automationMode === 'touch' ||
-                                track.automationMode === 'latch'
-                            ) {
-                                const fermenterDevice = track.devices.find((device) => device.type === 'fermenter');
-                                if (fermenterDevice) {
-                                    deps.recordAutomationValue(
-                                        track.id,
-                                        `${fermenterDevice.id}:${mapping.paramId}`,
-                                        scaled,
-                                        deps.getTransportPlayheadPosition()
-                                    );
-                                }
-                            }
+                        const isArmedToRecord =
+                            targetTrack.automationMode === 'write' ||
+                            targetTrack.automationMode === 'touch' ||
+                            targetTrack.automationMode === 'latch';
+
+                        if (deps.getTransportIsPlaying() && isArmedToRecord) {
+                            deps.recordAutomationValue(
+                                targetTrack.id,
+                                `${fermenterDeviceId}:${mapping.paramId}`,
+                                scaled,
+                                deps.getTransportPlayheadPosition()
+                            );
                         }
                     }
                 }

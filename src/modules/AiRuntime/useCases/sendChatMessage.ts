@@ -1,4 +1,5 @@
 import { isAppError } from '#/infra/errors/isAppError';
+import { generateGroupId } from '#/modules/Command/useCases';
 
 import { AiProposalInvalidatedError } from '../errors/AiProposalInvalidatedError';
 import { isAiRuntimeConfigurationChangedError } from '../errors/AiRuntimeConfigurationChangedError';
@@ -28,7 +29,9 @@ import { llmStatusStore } from '../stores/llmStatusStore';
 import { proposePendingActionConfirmation } from '../stores/pendingActionConfirmationStore';
 
 import { createStemImportConfirmationResourceLease } from './agentReference/createStemImportConfirmationResourceLease';
+import { compileAgentActionExecution } from './compileAgentActionExecution';
 import { createThinkBlockParser } from './createThinkBlockParser';
+import { describeAgentRiskApproval } from './describeAgentRiskApproval';
 import { describePendingActionConfirmation } from './describePendingActionConfirmation';
 import { executePlannedActions } from './executePlannedActions';
 import { getProjectContext } from './getProjectContext';
@@ -106,25 +109,48 @@ export async function sendChatMessage(userText: string): Promise<void> {
                     isCommandAction: true,
                 });
 
-                if (result.requiresConfirmation) {
+                const confirmationDescription = describePendingActionConfirmation({
+                    actions: result.actions,
+                    context,
+                    prompt: userText,
+                    wholeProjectVibeMixPlan: result.wholeProjectVibeMixPlan,
+                    workflowCapabilityId: result.workflowCapabilityId,
+                });
+                const commandGroup = generateGroupId(userText);
+                const compiledActionExecution = compileAgentActionExecution({
+                    actions: result.actions,
+                    actionLabels: confirmationDescription.actionLabels,
+                    context,
+                    group: commandGroup,
+                    intent: userText,
+                    projectRevision,
+                    requiresConfirmation: result.requiresConfirmation,
+                    runId: assistantMsgId,
+                    protectedTargetIds: confirmationDescription.protectedUnchanged.map((item) => item.id),
+                });
+                const { commandEnvelopes, commandBatch } = compiledActionExecution;
+
+                if (compiledActionExecution.requiresConfirmation) {
+                    const { agentApproval } = compiledActionExecution;
                     const confirmationId = `prompt-confirmation-${crypto.randomUUID()}`;
-                    const confirmationDescription = describePendingActionConfirmation({
-                        actions: result.actions,
-                        context,
-                        prompt: userText,
-                        wholeProjectVibeMixPlan: result.wholeProjectVibeMixPlan,
-                        workflowCapabilityId: result.workflowCapabilityId,
-                    });
                     const confirmation = proposePendingActionConfirmation({
                         id: confirmationId,
                         prompt: userText,
                         assistantMessageId: assistantMsgId,
                         actions: result.actions,
                         actionLabels: confirmationDescription.actionLabels,
+                        commandEnvelopes,
+                        commandBatch,
+                        agentApproval,
                         affectedIds: confirmationDescription.affectedIds,
                         protectedUnchanged: confirmationDescription.protectedUnchanged,
-                        risk: confirmationDescription.risk,
+                        risk: {
+                            level: agentApproval.policy.risk,
+                            reason: agentApproval.policy.reasons.join(' ') || null,
+                        },
                         executionMode: result.executionMode,
+                        groupId: commandGroup.groupId,
+                        groupLabel: commandGroup.groupLabel,
                         projectRevision,
                         resourceLease: createStemImportConfirmationResourceLease(result.actions),
                     });
@@ -143,18 +169,20 @@ export async function sendChatMessage(userText: string): Promise<void> {
                         isStreaming: false,
                         pendingActionConfirmationId: confirmationId,
                         pendingActionConfirmationStatus: 'proposed',
-                        content: confirmationDescription.content,
+                        content: `${confirmationDescription.content}\n\n${describeAgentRiskApproval(agentApproval)}`,
                     });
                     return;
                 }
 
-                const execution = await executePlannedActions({
+                const executionInput = {
                     prompt: userText,
                     actions: result.actions,
+                    group: commandGroup,
                     projectRevision,
                     executionMode: result.executionMode,
                     signal: aborter.signal,
-                });
+                };
+                const execution = await executePlannedActions({ ...executionInput, commandBatch });
 
                 if (execution.status === 'committed') {
                     const receiptWarnings: string[] = [];

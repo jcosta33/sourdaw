@@ -2,8 +2,13 @@ import { createHandler } from '#/utils/createHandler';
 
 import { getTrackStoreState } from '../../useCases/getTrackStoreState';
 import { muteTrack } from '../../useCases/toggleTrackState/muteTrack';
+import { getPlannedTrackState } from '../getPlannedTrackState';
 
 export const handleMuteTrack = createHandler<'muteTrack'>({
+    validate: (action, context) => {
+        const currentMuted = getPlannedTrackState(context, action.payload.trackId)?.muted;
+        return currentMuted === action.payload.expectedMuted;
+    },
     execute: (action) => {
         const currentMuted = getTrackStoreState()?.tracks.find((track) => track.id === action.payload.trackId)?.muted;
         if (currentMuted !== action.payload.expectedMuted) {

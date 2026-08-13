@@ -1,4 +1,4 @@
-import { type ReactElement, type DragEvent, useRef, useState } from 'react';
+import { type ReactElement, type DragEvent, useEffect, useRef, useState } from 'react';
 
 import {
     Plus,
@@ -22,8 +22,6 @@ import { cn } from '#/utils/Styles/cn';
 
 import { setlistStore, type SetlistState } from '../../stores/setlistStore';
 import { addSetlistItem } from '../../useCases/setlist/addSetlistItem';
-import { getRemainingDuration } from '../../useCases/setlist/getRemainingDuration';
-import { getSetlistProgress } from '../../useCases/setlist/getSetlistProgress';
 import { goToItem } from '../../useCases/setlist/goToItem';
 import { nextItem } from '../../useCases/setlist/nextItem';
 import { previousItem } from '../../useCases/setlist/previousItem';
@@ -55,14 +53,20 @@ type SetlistProgressDisplay = {
     remainingLabel: string;
 };
 
-const buildProgressDisplay = (hasItems: boolean): SetlistProgressDisplay => {
-    if (!hasItems) {
+// Derives directly from the `state` already subscribed via useStore rather
+// than re-reading setlistStore.value (F11) — a non-reactive path that would
+// silently desync if that subscription were ever narrowed.
+const buildProgressDisplay = (state: SetlistState): SetlistProgressDisplay => {
+    if (state.items.length === 0) {
         return { currentLabel: '0 of 0', remainingLabel: '0:00 remaining' };
     }
-    const progress = getSetlistProgress();
-    const remaining = getRemainingDuration();
+    const current = state.currentIndex + 1;
+    const total = state.items.length;
+    const remaining = state.items
+        .slice(state.currentIndex)
+        .reduce((sum, item) => sum + item.estimatedDuration + item.gapSeconds, 0);
     return {
-        currentLabel: `${progress.current} of ${progress.total}`,
+        currentLabel: `${current} of ${total}`,
         remainingLabel: `${formatDuration(remaining)} remaining`,
     };
 };
@@ -73,9 +77,10 @@ export const SetlistPanel = (): ReactElement => {
     const dragFromIndexRef = useRef<number | null>(null);
     const [editingNameItemId, setEditingNameItemId] = useState<string | null>(null);
     const [editingSetlistName, setEditingSetlistName] = useState(false);
+    const [countInText, setCountInText] = useState<string>(String(state.countInBars));
 
     const hasItems = state.items.length > 0;
-    const progress = buildProgressDisplay(hasItems);
+    const progress = buildProgressDisplay(state);
 
     const handleDragStart = (index: number): void => {
         dragFromIndexRef.current = index;
@@ -121,10 +126,25 @@ export const SetlistPanel = (): ReactElement => {
         addSetlistItem(`Song ${state.items.length + 1}`);
     };
 
+    useEffect(() => {
+        setCountInText(String(state.countInBars));
+    }, [state.countInBars]);
+
     const handleCountInChange = (raw: string): void => {
+        // Hold the transient text locally so an out-of-range keystroke stays
+        // visible instead of silently snapping back to the committed value
+        // (the input was previously controlled directly on state.countInBars).
+        setCountInText(raw);
         const parsed = Number.parseInt(raw, 10);
         if (Number.isFinite(parsed) && parsed >= 0 && parsed <= 8) {
             setCountIn(parsed);
+        }
+    };
+
+    const handleCountInBlur = (): void => {
+        const parsed = Number.parseInt(countInText, 10);
+        if (!Number.isFinite(parsed) || parsed < 0 || parsed > 8) {
+            setCountInText(String(state.countInBars));
         }
     };
 
@@ -220,8 +240,9 @@ export const SetlistPanel = (): ReactElement => {
                             type="number"
                             min={0}
                             max={8}
-                            value={state.countInBars}
+                            value={countInText}
                             onChange={(event) => handleCountInChange(event.target.value)}
+                            onBlur={handleCountInBlur}
                             aria-label="Count-in bars"
                         />
                         <span>bars</span>
@@ -345,16 +366,16 @@ export const SetlistPanel = (): ReactElement => {
                                                         : 'text-muted-foreground hover:text-foreground'
                                                 )}
                                                 aria-pressed={item.autoStop}
-                                                aria-label={`Count-in before: ${item.autoStop ? 'on' : 'off'}`}
+                                                aria-label={`AS: Auto-stop ${item.autoStop ? 'on' : 'off'}`}
                                                 onClick={(event) => {
                                                     event.stopPropagation();
                                                     updateSetlistItem(item.id, { autoStop: !item.autoStop });
                                                 }}
                                             >
-                                                CI
+                                                AS
                                             </button>
                                         </TooltipTrigger>
-                                        <TooltipContent>Count-in / auto-stop before this item</TooltipContent>
+                                        <TooltipContent>Auto-stop after this item finishes</TooltipContent>
                                     </Tooltip>
 
                                     <div className="flex shrink-0 items-center gap-0.5 opacity-0 group-hover:opacity-100">

@@ -8,8 +8,24 @@ import { publishTrackRemoved } from '../../useCases/publishTrackRemoved';
 import { removeTrack } from '../../useCases/removeTrack';
 import { removeTrackModulationReferences } from '../../useCases/removeTrackModulationReferences';
 import { isGeneratedMidiStateCurrent } from '../isGeneratedMidiStateCurrent';
+import { projectTrackThroughPriorBatchActions } from '../projectTrackThroughPriorBatchActions';
 
 export const handleDiscardCreatedTrack = createHandler<'discardCreatedTrack'>({
+    validate: (action, context) => {
+        const guard = action.payload.generatedMidiStateGuard;
+        if (!guard) {
+            return true;
+        }
+        const track = getTrackStoreState()?.tracks.find((candidate) => candidate.id === action.payload.trackId);
+        if (track && guard.midiByClipIdJson === '{}') {
+            return JSON.stringify(projectTrackThroughPriorBatchActions(track, context)) === guard.entityJson;
+        }
+        return isGeneratedMidiStateCurrent({
+            entityId: action.payload.trackId,
+            entityType: 'track',
+            guard,
+        });
+    },
     execute: (action) => {
         const guard = action.payload.generatedMidiStateGuard;
         if (
@@ -66,6 +82,7 @@ export const handleDiscardCreatedTrack = createHandler<'discardCreatedTrack'>({
         };
     },
     describe: () => ({ label: 'Discard created track' }),
+    previewExecution: 'isolated-project',
     requiresAbortCompensation: false,
     undoable: false,
 });

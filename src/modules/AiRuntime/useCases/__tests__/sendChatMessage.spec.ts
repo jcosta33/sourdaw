@@ -1,4 +1,9 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+import { getArrangementHandlers } from '#/modules/Arrangement/useCases';
+import { clearHandlerRegistry, registerHandlerMap } from '#/modules/Command/stores';
+import { createVerifiedBatchReceipt, parseVersionedCommandBatchEnvelope } from '#/modules/Command/useCases';
+import { getTransportHandlers } from '#/modules/Transport/useCases';
 
 import { AiRuntimeConfigurationChangedError } from '../../errors/AiRuntimeConfigurationChangedError';
 import { type ChatMessage, type ChatState } from '../../models/Chat';
@@ -10,10 +15,25 @@ import { sendChatMessage } from '../sendChatMessage';
 
 type MockBackend = 'native' | 'cloud' | 'webllm' | 'none';
 type ExecuteAppActionBatch = (typeof import('#/modules/Command/useCases'))['executeAppActionBatch'];
+type ExecuteVersionedCommandBatchEnvelope =
+    (typeof import('#/modules/Command/useCases'))['executeVersionedCommandBatchEnvelope'];
 type AppAction = Parameters<ExecuteAppActionBatch>[0][number];
 type MockWebLlmEngine = {
     interruptGenerate: () => void;
     chat: { completions: { create: (payload: Record<string, unknown>) => Promise<unknown> } };
+};
+type ProposedConfirmationInput = {
+    id: string;
+    commandBatch?: {
+        serialized: string;
+        authority: {
+            projectId: string;
+            baseRevision: string;
+            scope: { targetIds: readonly string[] };
+            grants: { delete: boolean; autoCommit: boolean };
+            budgets: { maxCommands: number; maxDeletedObjects: number };
+        };
+    };
 };
 
 const mocks = vi.hoisted(() => {
@@ -24,6 +44,7 @@ const mocks = vi.hoisted(() => {
         projectRevision: { value: 'revision-1' },
         executeAppAction: vi.fn<() => Promise<void>>().mockResolvedValue(undefined),
         executeAppActionBatch: vi.fn<ExecuteAppActionBatch>(),
+        executeVersionedCommandBatchEnvelope: vi.fn<ExecuteVersionedCommandBatchEnvelope>(),
         describeAction: vi.fn((_action: AppAction) => 'Remove track'),
         generateGroupId: vi.fn(() => ({ groupId: 'group-1', groupLabel: 'delete drums' })),
         parsePromptToActions:
@@ -35,7 +56,7 @@ const mocks = vi.hoisted(() => {
         appendChatMessage: vi.fn<(message: ChatMessage) => void>(),
         updateChatMessage: vi.fn<(messageId: string, updates: Partial<ChatMessage>) => void>(),
         setActiveAborter: vi.fn<(aborter: AbortController | null) => void>(),
-        proposePendingActionConfirmation: vi.fn<(input: { id: string }) => { id: string } | null>(),
+        proposePendingActionConfirmation: vi.fn<(input: ProposedConfirmationInput) => { id: string } | null>(),
         nativeEngineReady: { value: true },
         backend,
         cloudAvailable: { value: false },
@@ -52,6 +73,32 @@ const mocks = vi.hoisted(() => {
             >(),
     };
 });
+
+function setProjectContextWithClip(): void {
+    const context = mocks.getProjectContext();
+    mocks.getProjectContext.mockReturnValue({
+        ...context,
+        tracks: context.tracks.map((track) => {
+            if (track.id !== 'track-1') {
+                return track;
+            }
+            return {
+                ...track,
+                clipCount: 1,
+                clips: [
+                    {
+                        id: 'clip-1',
+                        name: 'Clip 1',
+                        type: 'audio',
+                        startBeat: 0,
+                        endBeat: 4,
+                        noteCount: 0,
+                    },
+                ],
+            };
+        }),
+    });
+}
 
 vi.mock('#/modules/CrdtDocument/useCases', () => ({
     captureProjectRevision: () => mocks.projectRevision.value,
@@ -81,13 +128,17 @@ vi.mock('../../repositories/webLlm/getActiveModelId', () => ({
     getActiveModelId: () => 'webllm-model',
 }));
 
-vi.mock('#/modules/Command/useCases', async (import_original) => ({
-    ...(await import_original<typeof import('#/modules/Command/useCases')>()),
-    executeAppAction: mocks.executeAppAction,
-    executeAppActionBatch: mocks.executeAppActionBatch,
-    describeAction: mocks.describeAction,
-    generateGroupId: mocks.generateGroupId,
-}));
+vi.mock('#/modules/Command/useCases', async (import_original) => {
+    const original = await import_original<typeof import('#/modules/Command/useCases')>();
+    return {
+        ...original,
+        executeAppAction: mocks.executeAppAction,
+        executeAppActionBatch: mocks.executeAppActionBatch,
+        executeVersionedCommandBatchEnvelope: mocks.executeVersionedCommandBatchEnvelope,
+        describeAction: mocks.describeAction,
+        generateGroupId: mocks.generateGroupId,
+    };
+});
 
 vi.mock('../parsePromptToActions', () => ({
     parsePromptToActions: mocks.parsePromptToActions,
@@ -124,6 +175,9 @@ vi.mock('../../stores/aiActionHistoryStore', () => ({
 describe('sendChatMessage injectables', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        clearHandlerRegistry();
+        registerHandlerMap(getArrangementHandlers());
+        registerHandlerMap(getTransportHandlers());
         mocks.proposePendingActionConfirmation.mockImplementation(({ id }) => ({ id }));
         mocks.chatStoreValue.value = null;
         mocks.nativeEngineReady.value = true;
@@ -144,6 +198,26 @@ describe('sendChatMessage injectables', () => {
                 })),
             })
         );
+        mocks.executeVersionedCommandBatchEnvelope.mockImplementation(async (input) => {
+            const parsed = parseVersionedCommandBatchEnvelope(input.serialized, input.authority);
+            if (parsed.status === 'invalid') {
+                throw new Error(parsed.reason);
+            }
+            const actions = parsed.envelope.commands.map((command) => ({
+                type: command.operation,
+                payload: command.arguments,
+            })) as Parameters<ExecuteAppActionBatch>[0];
+            const result = await mocks.executeAppActionBatch(actions, input.options);
+            return {
+                ...result,
+                receipt: createVerifiedBatchReceipt({
+                    envelope: parsed.envelope,
+                    observedBaseRevision: parsed.envelope.baseRevision,
+                    resultingRevision: parsed.envelope.baseRevision,
+                    result,
+                }),
+            };
+        });
         mocks.describeAction.mockReturnValue('Remove track');
         mocks.generateGroupId.mockReturnValue({ groupId: 'group-1', groupLabel: 'delete drums' });
         mocks.parsePromptToActions.mockResolvedValue({
@@ -165,13 +239,34 @@ describe('sendChatMessage injectables', () => {
             metronomeEnabled: false,
             metronomeVolume: 0.5,
             masterGain: 0.8,
-            tracks: [],
+            tracks: [
+                {
+                    id: 'track-1',
+                    name: 'Track 1',
+                    kind: 'audio',
+                    muted: false,
+                    soloed: false,
+                    soloSafe: false,
+                    armed: false,
+                    gain: 0.8,
+                    pan: 0,
+                    automationMode: 'read',
+                    clipCount: 0,
+                    deviceCount: 0,
+                    clips: [],
+                    devices: [],
+                },
+            ],
             selectedTrackId: null,
             selectedClipId: null,
             selectedClipIds: [],
             activeView: 'arrange',
             playheadPosition: 0,
         });
+    });
+
+    afterEach(() => {
+        clearHandlerRegistry();
     });
 
     it('returns early when chat store is empty', async () => {
@@ -246,6 +341,15 @@ describe('sendChatMessage injectables', () => {
                 actionLabels: ['Remove track "Drums"'],
             })
         );
+        const proposedBatch = mocks.proposePendingActionConfirmation.mock.calls[0]?.[0].commandBatch;
+        expect(typeof proposedBatch?.serialized).toBe('string');
+        expect(proposedBatch?.authority.projectId).not.toBe('');
+        expect(proposedBatch?.authority).toMatchObject({
+            baseRevision: 'revision-1',
+            scope: { targetIds: ['track-1'] },
+            grants: { delete: true, autoCommit: false },
+            budgets: { maxCommands: 1, maxDeletedObjects: 1 },
+        });
         const confirmationUpdate = mocks.updateChatMessage.mock.calls[0]?.[1];
         expect(confirmationUpdate?.isStreaming).toBe(false);
         expect(confirmationUpdate?.content).toContain('requires confirmation');
@@ -856,6 +960,8 @@ describe('sendChatMessage injectables', () => {
 
         await sendChatMessage('start playback');
 
+        expect(mocks.executeVersionedCommandBatchEnvelope).toHaveBeenCalledTimes(1);
+        expect(mocks.executeAppActionBatch).toHaveBeenCalledTimes(1);
         expect(mocks.notifyAiChange).toHaveBeenCalledWith(
             'Executed: start playback. Executed with follow-up warning: transport event unavailable',
             ['setPlayback']
@@ -905,6 +1011,7 @@ describe('sendChatMessage injectables', () => {
 
     it('does not persist or report a prefix when a later batch action fails', async () => {
         const later_failure = new Error('second action was not dispatched');
+        setProjectContextWithClip();
         mocks.chatStoreValue.value = {
             messages: [],
             isGenerating: false,
@@ -941,6 +1048,7 @@ describe('sendChatMessage injectables', () => {
 
     it('reports an ambiguous partial commit without creating AI history or suggesting retry', async () => {
         const reason = 'Automerge storage transaction committed before a later document failed';
+        setProjectContextWithClip();
         mocks.chatStoreValue.value = {
             messages: [],
             isGenerating: false,
@@ -977,6 +1085,7 @@ describe('sendChatMessage injectables', () => {
 
     it('reports a full committed batch with a distinct post-commit warning', async () => {
         const warning = 'batch history failed';
+        setProjectContextWithClip();
         const firstAction = { type: 'removeTrack', payload: { trackId: 'track-1' } } as const;
         const secondAction = { type: 'removeClip', payload: { clipId: 'clip-1' } } as const;
         mocks.chatStoreValue.value = {

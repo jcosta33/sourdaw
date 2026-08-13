@@ -1,6 +1,17 @@
+---
+type: adr
+id: 0023
+title: Allpass fractional delay in the Karplus-Strong loop, offset off zero
+status: accepted
+date: 2026-08-12
+owner: The Sourdaw team
+sources:
+  - .agents/artifacts/sourdaw/CHANGE-fermenter-core-and-shipped-engine-conformance.md
+---
+
 # 0023 — Allpass fractional delay in the Karplus-Strong loop, offset off zero
 
-**Status: proposed** — resolves the interpolation half of
+**Accepted 2026-08-12.** Resolved from primary sources under the owner's standing direction that decision gates are research tasks. Resolves the interpolation half of
 `CHANGE-fermenter-core-and-shipped-engine-conformance` DG-003.
 
 ## Context
@@ -53,9 +64,16 @@ for the Extended Karplus-Strong specifically, `η ∈ [−1/11, 2/3]` for delays
 **Replace linear interpolation with a first-order allpass, with the fractional delay constrained to
 `Δ ∈ [0.1, 1.1]`.**
 
-Version-gate it. The change is audible in a specific direction: the fractional-delay error currently
-damps the loop, so removing it makes existing patches **ring longer**. That is a re-render of saved
-work, and ADR 0017 already established that silently re-mixing existing projects is not acceptable.
+Apply it outright. No version gate, no legacy branch.
+
+The change is audible in a specific direction: the fractional-delay error currently damps the loop,
+so removing it makes existing patches **ring longer**. An earlier draft of this record proposed
+version-gating for that reason, citing ADR 0017 as precedent that silently re-mixing saved work is
+unacceptable. Both halves of that were wrong. ADR 0017 declined to change behaviour at all, so the
+question never arose there and it establishes no general no-remix principle. And ADR 0016 ruling 3 is
+already accepted and directly on point: "no compatibility shims, no version-gated legacy behaviour,
+no permanent branches preserving a known-wrong result." It kills a version-gated legacy gain branch
+on the identical reasoning. There are no users; correctness wins outright.
 
 ## Correcting an earlier reading
 

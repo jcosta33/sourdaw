@@ -53,6 +53,7 @@ function createHandler<Action extends AppAction>(input: {
     describe?: ActionHandler<Action>['describe'];
     executionKind?: ActionHandler<Action>['executionKind'];
     isNoop?: ActionHandler<Action>['isNoop'];
+    validate?: ActionHandler<Action>['validate'];
     requiresAbortCompensation?: boolean;
     undoable?: boolean;
 }): ActionHandler<Action> {
@@ -62,6 +63,7 @@ function createHandler<Action extends AppAction>(input: {
         describe: input.describe ?? ((action) => ({ label: 'Batch action', inverseAction: action })),
         executionKind: input.executionKind,
         isNoop: input.isNoop,
+        validate: input.validate ?? (() => true),
         requiresAbortCompensation: input.requiresAbortCompensation,
         undoable: input.undoable ?? true,
     };
@@ -173,6 +175,33 @@ describe('executeAppActionBatch', () => {
             },
         ]);
         expect(mocks.commitUndoEntry).toHaveBeenCalledTimes(2);
+    });
+
+    it('validates the whole batch before the first handler effect', async () => {
+        const firstEffect = vi.fn();
+        const secondEffect = vi.fn();
+        const editingAction: SetEditingToolAction = { type: 'setEditingTool', payload: { tool: 'marquee' } };
+        const snapAction: SetSnapValueAction = { type: 'setSnapValue', payload: { value: 0.5 } };
+        registerHandlerMap({
+            setEditingTool: createHandler<SetEditingToolAction>({
+                execute: firstEffect,
+                validate: () => true,
+            }),
+            setSnapValue: createHandler<SetSnapValueAction>({
+                execute: secondEffect,
+                validate: () => false,
+            }),
+        });
+
+        const result = await executeAppActionBatch([editingAction, snapAction]);
+
+        expect(result).toEqual({
+            status: 'conflicted',
+            reason: 'Action conflicts with current project state: setSnapValue',
+            actions: [],
+        });
+        expect(firstEffect).not.toHaveBeenCalled();
+        expect(secondEffect).not.toHaveBeenCalled();
     });
 
     it('records original identities and indices on sibling restore inverses from one atomic batch', async () => {
@@ -377,7 +406,7 @@ describe('executeAppActionBatch', () => {
 
         const result = await executeAppActionBatch([{ type: 'setEditingTool', payload: { tool: 'marquee' } }]);
 
-        expect(result).toEqual({
+        expect(result).toMatchObject({
             status: 'committed-with-warning',
             actions: [
                 {
@@ -769,6 +798,24 @@ describe('executeAppActionBatch', () => {
         expect(execute).not.toHaveBeenCalled();
     });
 
+    it('accepts a canonical no-op without requiring an inverse inside an atomic batch', async () => {
+        const execute = vi.fn();
+        registerHandlerMap({
+            setEditingTool: createHandler<SetEditingToolAction>({
+                execute,
+                describe: () => ({ label: 'Set editing tool', inverseAction: null }),
+                isNoop: () => true,
+            }),
+        });
+
+        const result = await executeAppActionBatch([{ type: 'setEditingTool', payload: { tool: 'marquee' } }], {
+            requireCompensation: true,
+        });
+
+        expect(result).toEqual({ status: 'no-op', actions: [] });
+        expect(execute).not.toHaveBeenCalled();
+    });
+
     it('executes a singleton runtime handler outside project history even when atomic compensation is requested', async () => {
         let authorized = true;
         const shouldExecute = vi.fn(() => authorized);
@@ -791,7 +838,7 @@ describe('executeAppActionBatch', () => {
             source: 'prompt',
         });
 
-        expect(result).toEqual({
+        expect(result).toMatchObject({
             status: 'executed',
             actions: [{ action: { type: 'setPlayback', payload: { playing: true } }, label: 'Start playback' }],
         });
@@ -869,7 +916,7 @@ describe('executeAppActionBatch', () => {
 
         const result = await executeAppActionBatch([{ type: 'setPlayback', payload: { playing: true } }]);
 
-        expect(result).toEqual({
+        expect(result).toMatchObject({
             status: 'executed-with-warning',
             actions: [{ action: { type: 'setPlayback', payload: { playing: true } }, label: 'Batch action' }],
             warning: 'setPlayback follow-up effect failed: event unavailable',
@@ -915,7 +962,7 @@ describe('executeAppActionBatch', () => {
         }
         rejectTeardown(teardownFailure);
 
-        await expect(pending).resolves.toEqual({
+        await expect(pending).resolves.toMatchObject({
             status: 'executed-with-warning',
             actions: [{ action: { type: 'stopPlayback' }, label: 'Batch action' }],
             warning: 'stopPlayback follow-up effect failed: recording flush failed',
@@ -936,7 +983,7 @@ describe('executeAppActionBatch', () => {
 
         const result = await executeAppActionBatch([{ type: 'setPlayback', payload: { playing: true } }]);
 
-        expect(result).toEqual({
+        expect(result).toMatchObject({
             status: 'executed-with-warning',
             actions: [{ action: { type: 'setPlayback', payload: { playing: true } }, label: 'Batch action' }],
             warning: 'setPlayback follow-up effect failed: event unavailable',

@@ -150,6 +150,7 @@ export const handleImportStemSet = createHandler<'importStemSet'>({
         };
     },
     isNoop: isImportedStemSetApplied,
+    previewExecution: 'isolated-project',
     requiresAbortCompensation: false,
     undoable: true,
 });
@@ -194,6 +195,7 @@ export const handleDiscardImportedStemSet = createHandler<'discardImportedStemSe
         };
     },
     describe: () => ({ label: 'Discard imported stem set' }),
+    previewExecution: 'isolated-project',
     requiresAbortCompensation: false,
     undoable: false,
 });

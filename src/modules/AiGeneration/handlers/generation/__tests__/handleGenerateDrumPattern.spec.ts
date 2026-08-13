@@ -48,10 +48,15 @@ describe('handleGenerateDrumPattern', () => {
                 style: 'house',
                 bars: 2,
                 density: 0.8,
+                seed: 123,
             },
         });
 
-        expect(mocks.applyDrumPatternToTrack).toHaveBeenCalledWith('t1', { style: 'house', bars: 2, density: 0.8 }, 8);
+        expect(mocks.applyDrumPatternToTrack).toHaveBeenCalledWith(
+            't1',
+            { style: 'house', bars: 2, density: 0.8, seed: 123 },
+            8
+        );
     });
 
     it('falls back to default style for invalid inputs', () => {

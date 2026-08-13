@@ -217,24 +217,29 @@ export type Send = {
 
 let trackColorCounter = 0;
 
+export function reserveNextTrackColor(): string {
+    const color = TRACK_COLOR_PALETTE[trackColorCounter % TRACK_COLOR_PALETTE.length]!;
+    trackColorCounter++;
+    return color;
+}
+
 export function createTrack(input: {
     color?: string;
     gain?: number;
     id?: string;
     initialAlternativeId?: string;
+    initialDeviceId?: string;
     name: string;
     kind: TrackKind;
     parentId?: string;
 }): Track {
-    const defaultColor = TRACK_COLOR_PALETTE[trackColorCounter % TRACK_COLOR_PALETTE.length]!;
-    trackColorCounter++;
-    const color = input.color ?? defaultColor;
+    const color = input.color ?? reserveNextTrackColor();
 
     const defaultDevices: Device[] =
         input.kind === 'midi'
             ? [
                   {
-                      id: `dev-synth-${crypto.randomUUID()}`,
+                      id: input.initialDeviceId ?? `dev-synth-${crypto.randomUUID()}`,
                       name: 'Synth',
                       type: 'builtin-synth',
                       bypassed: false,

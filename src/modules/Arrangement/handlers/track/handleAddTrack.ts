@@ -10,6 +10,7 @@ type AddTrackAction = {
         gain?: number;
         id?: string;
         initialAlternativeId?: string;
+        initialDeviceId?: string;
         name: string;
         kind: string;
         select?: boolean;
@@ -25,34 +26,41 @@ function ensureTrackId(action: AddTrackAction): string {
     return trackId;
 }
 
+function executeAddTrackAction(action: AddTrackAction) {
+    ensureTrackId(action);
+    const track = addTrack({ ...action.payload, suppressAddedEvent: true });
+    if (!track) {
+        return { status: 'no-write' as const };
+    }
+    return {
+        status: 'written' as const,
+        afterCommit: () =>
+            publishTrackAdded({
+                trackId: track.id,
+                name: track.name,
+                kind: track.kind,
+            }),
+        afterAmbiguousCommit: async () => {
+            const committedTrack = getTrackStoreState()?.tracks.find((candidate) => candidate.id === track.id);
+            if (!committedTrack) {
+                return;
+            }
+            await publishTrackAdded({
+                trackId: committedTrack.id,
+                name: committedTrack.name,
+                kind: committedTrack.kind,
+            });
+        },
+    };
+}
+
 export const handleAddTrack = createHandler<'addTrack'>({
-    execute: (action) => {
-        ensureTrackId(action);
-        const track = addTrack({ ...action.payload, suppressAddedEvent: true });
-        if (!track) {
-            return { status: 'no-write' };
-        }
-        return {
-            status: 'written',
-            afterCommit: () =>
-                publishTrackAdded({
-                    trackId: track.id,
-                    name: track.name,
-                    kind: track.kind,
-                }),
-            afterAmbiguousCommit: async () => {
-                const committedTrack = getTrackStoreState()?.tracks.find((candidate) => candidate.id === track.id);
-                if (!committedTrack) {
-                    return;
-                }
-                await publishTrackAdded({
-                    trackId: committedTrack.id,
-                    name: committedTrack.name,
-                    kind: committedTrack.kind,
-                });
-            },
-        };
+    validate: (action) => {
+        const trackId = ensureTrackId(action);
+        const state = getTrackStoreState();
+        return state !== null && !state.tracks.some((track) => track.id === trackId);
     },
+    execute: executeAddTrackAction,
     describe: (action) => {
         const trackId = ensureTrackId(action);
         const state = getTrackStoreState();
@@ -70,6 +78,7 @@ export const handleAddTrack = createHandler<'addTrack'>({
         const trackId = action.payload.id;
         return trackId !== undefined && state.tracks.some((track) => track.id === trackId);
     },
+    previewExecution: 'isolated-project',
     requiresAbortCompensation: false,
     undoable: true,
 });

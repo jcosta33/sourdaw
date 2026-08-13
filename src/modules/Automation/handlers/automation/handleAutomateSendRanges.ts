@@ -32,8 +32,47 @@ function getMaterializedPayload(action: AutomateSendRangesAction): MaterializedP
     };
 }
 
-function currentStateMatches(payload: MaterializedPayload): boolean {
-    const bus = trackStore.value?.tracks.find((track) => track.id === payload.busId);
+function getPlannedBus(payload: MaterializedPayload, priorActions: readonly AppAction[]) {
+    let bus: { id: string; kind: string; name: string } | undefined = trackStore.value?.tracks.find(
+        (track) => track.id === payload.busId
+    );
+    for (const action of priorActions) {
+        if (action.type === 'createBus' && action.payload.busId === payload.busId) {
+            bus = { id: payload.busId, kind: 'bus', name: action.payload.name };
+        }
+        if (
+            (action.type === 'discardCreatedTrack' || action.type === 'removeTrack') &&
+            action.payload.trackId === payload.busId
+        ) {
+            bus = undefined;
+        }
+    }
+    return bus;
+}
+
+function getPlannedSend(trackId: string, busId: string, priorActions: readonly AppAction[]) {
+    const track = trackStore.value?.tracks.find((candidate) => candidate.id === trackId);
+    let send = track?.sends.find((candidate) => candidate.busId === busId);
+    for (const action of priorActions) {
+        if (action.type === 'addSend' && action.payload.trackId === trackId && action.payload.busId === busId) {
+            send = {
+                busId,
+                level: action.payload.level,
+                preFader: action.payload.preFader ?? false,
+            };
+        }
+        if (action.type === 'setSend' && action.payload.trackId === trackId && action.payload.busId === busId && send) {
+            send = { ...send, level: action.payload.level };
+        }
+        if (action.type === 'removeSend' && action.payload.trackId === trackId && action.payload.busId === busId) {
+            send = undefined;
+        }
+    }
+    return send;
+}
+
+function currentStateMatches(payload: MaterializedPayload, priorActions: readonly AppAction[] = []): boolean {
+    const bus = getPlannedBus(payload, priorActions);
     const transport = transportStore.value;
     if (
         bus?.kind !== 'bus' ||
@@ -65,7 +104,7 @@ function currentStateMatches(payload: MaterializedPayload): boolean {
     }
     return payload.expectedTracks.every((expected, index) => {
         const track = trackStore.value?.tracks.find((candidate) => candidate.id === expected.trackId);
-        const send = track?.sends.find((candidate) => candidate.busId === payload.busId);
+        const send = getPlannedSend(expected.trackId, payload.busId, priorActions);
         const laneId = `auto-send-${encodeURIComponent(expected.trackId)}-${encodeURIComponent(payload.busId)}`;
         return (
             payload.trackIds[index] === expected.trackId &&
@@ -84,6 +123,10 @@ function currentStateMatches(payload: MaterializedPayload): boolean {
 }
 
 export const handleAutomateSendRanges = createHandler<'automateSendRanges'>({
+    validate: (action, context) => {
+        const payload = getMaterializedPayload(action);
+        return payload !== null && currentStateMatches(payload, context.actions.slice(0, context.actionIndex));
+    },
     execute: (action) => {
         const payload = getMaterializedPayload(action);
         if (!payload || !currentStateMatches(payload)) {
@@ -111,5 +154,6 @@ export const handleAutomateSendRanges = createHandler<'automateSendRanges'>({
         };
     },
     undoable: true,
+    previewExecution: 'isolated-project',
     requiresAbortCompensation: false,
 });

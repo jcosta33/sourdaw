@@ -102,6 +102,7 @@ function currentStateMatches(action: RemoveSendAutomationRangesAction): boolean 
 }
 
 export const handleRemoveSendAutomationRanges = createHandler<'removeSendAutomationRanges'>({
+    validate: (action) => currentStateMatches(action),
     execute: (action) => {
         if (!currentStateMatches(action)) {
             return { status: 'conflict' };
@@ -116,5 +117,6 @@ export const handleRemoveSendAutomationRanges = createHandler<'removeSendAutomat
         inverseAction: currentStateMatches(action) ? { type: 'automateSendRanges', payload: action.payload } : null,
     }),
     undoable: true,
+    previewExecution: 'isolated-project',
     requiresAbortCompensation: false,
 });

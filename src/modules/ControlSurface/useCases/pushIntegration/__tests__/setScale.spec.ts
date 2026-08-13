@@ -23,4 +23,14 @@ describe('setScale', () => {
         setScale(3, 'minor');
         expect(pushStore.value).toBeNull();
     });
+
+    it('should wrap a negative root note into 0-11 using a positive modulo (F-7)', () => {
+        setScale(-1, 'minor');
+        expect(pushStore.value?.rootNote).toBe(11);
+    });
+
+    it('should wrap a negative root note that is an exact negative multiple of 12', () => {
+        setScale(-12, 'minor');
+        expect(pushStore.value?.rootNote).toBe(0);
+    });
 });

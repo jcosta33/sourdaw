@@ -45,6 +45,17 @@ export function toggleRecord(slotId: string): void {
                     return { ...state1, state: 'playing' as const, layers: [...state1.layers, newLayer] };
                 }
                 case 'stopped':
+                    // A slot stopped mid-first-recording (stopSlot maps any state to
+                    // 'stopped' unconditionally) has zero layers. That is
+                    // behaviourally the same as 'empty' — nothing recorded yet —
+                    // so Record should start recording, same as the 'empty' case.
+                    // Returning it unchanged would strand the slot: Record has no
+                    // disabled guard (unlike Play/Undo, which both gate on
+                    // layers.length === 0), so every future press would be a
+                    // silent no-op with only Clear able to recover it.
+                    if (state1.layers.length === 0) {
+                        return { ...state1, state: 'recording' as const };
+                    }
                     return { ...state1, state: 'playing' as const };
                 default:
                     return state1;

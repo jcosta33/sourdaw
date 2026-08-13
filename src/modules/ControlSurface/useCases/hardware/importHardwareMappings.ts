@@ -88,6 +88,11 @@ export function importHardwareMappings(profileId: string, json: string): void {
         return;
     }
 
+    if (!state.profiles.some((param) => param.id === profileId)) {
+        notifyUser(`Failed to import hardware mappings: unknown profile "${profileId}"`, 'error');
+        return;
+    }
+
     const mappings: ControllerMapping[] = parsed;
     hardwareControllerStore.set({
         ...state,

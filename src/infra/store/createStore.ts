@@ -199,6 +199,9 @@ export const createStore = <TData>(options: StoreOptions<TData> = {}): Store<TDa
 
         set(value: TData | null): void {
             storage.set(value);
+            if (storage.isIsolated?.()) {
+                return;
+            }
             queueStoreNotification(notify);
         },
 
@@ -228,6 +231,9 @@ export const createStore = <TData>(options: StoreOptions<TData> = {}): Store<TDa
 
         clear(): void {
             storage.clear();
+            if (storage.isIsolated?.()) {
+                return;
+            }
             queueStoreNotification(notify);
         },
 

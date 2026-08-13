@@ -37,6 +37,10 @@ import {
 import { confirmPendingChatActions } from '../confirmPendingChatActions';
 import { sendChatMessage } from '../sendChatMessage';
 
+import {
+    configureAiWorkflowCommandPreflightFixture,
+    resetAiWorkflowCommandPreflightFixture,
+} from './aiWorkflowCommandPreflightFixture';
 import { withWorkflowCapabilitySelection } from './workflowCapabilitySelectionFixture';
 
 const PROMPT =
@@ -284,6 +288,7 @@ function getConfirmationId(): string {
 
 describe('bass-processing section copy workflow', () => {
     beforeEach(() => {
+        configureAiWorkflowCommandPreflightFixture();
         vi.clearAllMocks();
         vi.spyOn(audioEngine, 'applyAdjustmentLayerTick').mockImplementation(() => undefined);
         vi.spyOn(audioEngine, 'resetAdjustmentLayers').mockImplementation(() => undefined);
@@ -416,6 +421,7 @@ describe('bass-processing section copy workflow', () => {
     });
 
     afterEach(() => {
+        resetAiWorkflowCommandPreflightFixture();
         clearUndoHistory();
         resetActionReplayAuthority();
         clearHandlerRegistry();

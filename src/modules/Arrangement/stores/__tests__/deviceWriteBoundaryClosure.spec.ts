@@ -444,6 +444,11 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
     },
     'load-compile-hydration': {
         'src/app/bootstrap.ts': 1,
+        // Count provenance: the AC-011 preflight calls the pure topology
+        // compiler for the live and isolated project projections. These three
+        // references are one import and two calls; the file holds no device or
+        // AudioEngine write.
+        'src/app/captureCommandBatchPreflightState.ts': 3,
         'src/app/registerDependencies.ts': 1,
         // Count provenance: new file entry, measured 1 — a doc-comment
         // cross-reference to `compileAutomationEvents`, naming the second of the
@@ -452,6 +457,40 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         // `quantiseDeviceParameterValue` is a separate function: rounding inside
         // the clamp would dead-zone both recurrences. The model holds no write.
         'src/modules/Arrangement/models/DeviceParameterLaw.ts': 1,
+        // Count provenance: the versioned-command preview compiler and its two
+        // chat-planning call sites create immutable Command envelopes only; they
+        // neither hydrate a device nor write engine state.
+        'src/modules/AiRuntime/useCases/compilePendingActionCommandEnvelopes.ts': 1,
+        // Count provenance: the batch compiler, public barrel, and Workspace
+        // caller compile immutable Command metadata only. The six compiler-file
+        // hits are three preview-compiler references, two batch-envelope compiler
+        // references, and the exported function declaration; none hydrates or
+        // writes a device.
+        'src/modules/AiRuntime/useCases/compilePlannedActionCommandBatch.ts': 6,
+        // Count provenance: AC-013 compiles immutable approval and execution
+        // metadata. These references are imports, declarations, calls, and
+        // ReturnType projections around Command envelope compilers; none loads,
+        // hydrates, or writes a device or AudioEngine node.
+        'src/modules/AiRuntime/useCases/compileAgentActionExecution.ts': 10,
+        'src/modules/AiRuntime/useCases/compileAgentRiskApproval.ts': 1,
+        'src/modules/AiRuntime/useCases/describeAgentRiskApproval.ts': 3,
+        'src/modules/AiRuntime/useCases/validateAgentRiskApproval.ts': 7,
+        'src/modules/AiRuntime/useCases/index.ts': 2,
+        'src/modules/AiRuntime/useCases/sendChatMessage.ts': 3,
+        // Count provenance: the versioned-command argument compiler and its two
+        // callers only project immutable envelope metadata. These are bare
+        // `compileCommandArgumentMetadata` references, not device compilation,
+        // hydration, or engine writes.
+        'src/modules/Command/useCases/commandArgumentMetadata.ts': 1,
+        // Count provenance: partial acceptance calls the canonical batch compiler;
+        // all four compile* references are import, declaration, and call metadata.
+        // It neither hydrates devices nor writes project or engine state.
+        'src/modules/Command/useCases/compilePartialCommandBatchAcceptance.ts': 4,
+        'src/modules/Command/useCases/compileVersionedCommandBatchEnvelope.ts': 1,
+        'src/modules/Command/useCases/createExecutionCommandEnvelope.ts': 2,
+        'src/modules/Command/useCases/index.ts': 4,
+        'src/modules/Command/useCases/parseVersionedCommandEnvelope.ts': 2,
+        'src/modules/Command/useCases/resolveVersionedCommandBatchBindings.ts': 2,
         // Count provenance: doc-comment cross-reference to `compileAutomationEvents`
         // in the editor-readout evaluator's AU-1 delegation note (#747) — the
         // transformer computes curve values only, holds no device writes.
@@ -480,7 +519,12 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         'src/modules/AudioEngine/repositories/offlineScheduler/compileAutomationSegments.ts': 4,
         'src/modules/AudioEngine/repositories/offlineScheduler/scheduleAutomationOnParam.ts': 3,
         'src/modules/AudioEngine/useCases/buildDeviceChain.ts': 2,
+        // Count provenance: the AC-011 topology compiler only validates and
+        // projects immutable node IDs/edge counts. The implementation hit is
+        // its declaration; the barrel hits are its export name and module path.
+        'src/modules/AudioEngine/useCases/compileAudioGraphTopology.ts': 1,
         'src/modules/AudioEngine/useCases/deviceResolvers/createFaustDeviceNode.ts': 2,
+        'src/modules/AudioEngine/useCases/index.ts': 2,
         'src/modules/Bacteria/models/BacteriaPatch.ts': 3,
         'src/modules/Bacteria/presentations/views/BacteriaPanel.tsx': 3,
         'src/modules/Bacteria/useCases/bacteriaParamBridge/loadBacteriaPatchWithAudio.ts': 2,
@@ -541,6 +585,7 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         'src/modules/Toaster/useCases/toasterSubscriber.ts': 2,
         'src/modules/Toaster/useCases/trigger16Level.ts': 5,
         'src/modules/Toaster/presentations/views/ToasterPanel.tsx': 2,
+        'src/modules/WorkspaceShell/presentations/hooks/usePromptExecution.ts': 2,
         // Count provenance: doc-comment cross-reference to the sibling offline
         // compiler `compileAutomationEvents` from the AU-1 shared curve kernel
         // (#747) — a pure curve-math utility, not a device-write sink.

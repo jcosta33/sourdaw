@@ -159,6 +159,45 @@ pub(crate) fn spawn_audio_thread_with_diagnostics(
     })
 }
 
+/// Write the engine's internal stereo pair (`left`/`right`, always rendered
+/// by `AudioScheduler::process_block`) into a device-interleaved output
+/// chunk, adapting to whatever channel count the device actually exposes.
+///
+/// No shipping DAW refuses to open on a non-stereo device: Reaper lets the
+/// output channel range be set to whatever the device exposes, and Logic
+/// Pro takes the Core Audio default and routes to any available channel,
+/// including a mono target. A mono device downmixes as the average of both
+/// channels (the conventional stereo-to-mono fold); a device reporting more
+/// than two channels gets the stereo pair on channels 0/1 with the rest
+/// left silent, rather than the caller being refused a stream outright.
+#[inline]
+fn write_interleaved(
+    chunk: &mut [f32],
+    left: &[f32],
+    right: &[f32],
+    channels: usize,
+    frames: usize,
+) {
+    if channels == 1 {
+        for (i, sample) in chunk.iter_mut().enumerate() {
+            if i < frames {
+                *sample = (left[i] + right[i]) * 0.5;
+            }
+        }
+        return;
+    }
+
+    for (i, frame) in chunk.chunks_exact_mut(channels).enumerate() {
+        if i < frames {
+            frame[0] = left[i];
+            frame[1] = right[i];
+            for sample in frame.iter_mut().skip(2) {
+                *sample = 0.0;
+            }
+        }
+    }
+}
+
 fn build_audio_stream(
     command_rx: Consumer<GraphCommand>,
     retired_tx: rtrb::Producer<RetiredGraphObjects>,
@@ -172,6 +211,11 @@ fn build_audio_stream(
     let config = device
         .default_output_config()
         .map_err(|e| format!("Failed to get default output config: {}", e))?;
+
+    let channels = config.channels() as usize;
+    if channels == 0 {
+        return Err("Audio output device reports zero channels".to_string());
+    }
 
     let sample_rate = config.sample_rate() as f32;
     let mut scheduler = AudioScheduler::with_midi_rt_diagnostics(
@@ -204,8 +248,8 @@ fn build_audio_stream(
                         // 3. Process the native effects chain (for standalone native rendering).
                         // Scratch is fixed-size and captured by the callback, so no heap
                         // allocation occurs per buffer.
-                        for chunk in data.chunks_mut(MAX_CALLBACK_FRAMES * 2) {
-                            let frames = chunk.len() / 2;
+                        for chunk in data.chunks_mut(MAX_CALLBACK_FRAMES * channels) {
+                            let frames = chunk.len() / channels;
                             let left = &mut left_scratch[..frames];
                             let right = &mut right_scratch[..frames];
                             left.fill(0.0);
@@ -213,16 +257,13 @@ fn build_audio_stream(
 
                             // Silent input — native chain only processes bridged plugins above.
                             // Standalone native rendering (without Web Audio) would inject
-                            // timeline audio here.
+                            // timeline audio here. process_block always renders a stereo
+                            // pair regardless of the device's channel layout.
                             scheduler.process_block(left, right, frames);
 
-                            // Interleave output for CPAL (silent unless standalone mode)
-                            for (i, frame) in chunk.chunks_exact_mut(2).enumerate() {
-                                if i < frames {
-                                    frame[0] = left[i];
-                                    frame[1] = right[i];
-                                }
-                            }
+                            // Adapt the rendered stereo pair to the device's actual
+                            // channel count (silent unless standalone mode).
+                            write_interleaved(chunk, left, right, channels, frames);
                         }
 
                         scheduler.publish_midi_rt_diagnostics();
@@ -296,6 +337,42 @@ mod tests {
             let _ = self.entered_tx.send(thread_name);
             let _ = self.release_rx.recv();
         }
+    }
+
+    #[test]
+    fn a_stereo_device_interleaves_left_and_right_unchanged() {
+        let left = [0.25_f32, 0.5, 0.75];
+        let right = [-0.25_f32, -0.5, -0.75];
+        let mut chunk = [0.0_f32; 6];
+
+        super::write_interleaved(&mut chunk, &left, &right, 2, 3);
+
+        assert_eq!(chunk, [0.25, -0.25, 0.5, -0.5, 0.75, -0.75]);
+    }
+
+    #[test]
+    fn a_mono_device_downmixes_as_the_average_of_both_channels() {
+        let left = [1.0_f32, 0.0];
+        let right = [-1.0_f32, 0.5];
+        let mut chunk = [0.0_f32; 2];
+
+        super::write_interleaved(&mut chunk, &left, &right, 1, 2);
+
+        // (1.0 + -1.0) / 2 = 0.0, (0.0 + 0.5) / 2 = 0.25
+        assert_eq!(chunk, [0.0, 0.25]);
+    }
+
+    #[test]
+    fn a_multichannel_device_gets_the_stereo_pair_on_the_first_two_channels_and_silence_elsewhere()
+    {
+        let left = [0.6_f32];
+        let right = [0.3_f32];
+        // A 6-channel (5.1) device: one frame is 6 interleaved samples.
+        let mut chunk = [9.0_f32; 6];
+
+        super::write_interleaved(&mut chunk, &left, &right, 6, 1);
+
+        assert_eq!(chunk, [0.6, 0.3, 0.0, 0.0, 0.0, 0.0]);
     }
 
     #[test]

@@ -20,6 +20,7 @@ export const handleThinAutomation = createHandler<'thinAutomation'>({
             type: 'thin',
             tolerance: alpha.payload.tolerance,
         }),
+    previewExecution: 'isolated-project',
     requiresAbortCompensation: false,
     undoable: true,
 });
