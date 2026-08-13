@@ -1,11 +1,10 @@
 import { act, render, screen, fireEvent } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
-import { Button } from '#/components/ui/button';
 import { TooltipProvider } from '#/components/ui/tooltip';
 import { playheadPositionRef } from '#/modules/Transport/stores';
-import { cn } from '#/utils/Styles/cn';
 
+import { formatLoopProgress } from '../../helpers/loopStationProgress';
 import { LoopStationPanel } from '../LoopStationPanel';
 
 type LoopSlotMock = {
@@ -70,16 +69,15 @@ vi.mock('#/modules/Transport/stores', () => ({
     playheadPositionRef: { current: 0 },
 }));
 
-// Wrap (not replace) the real Button/cn so the rest of the suite keeps
-// exercising real rendering, while the F10 regression test below can assert
-// call counts to prove a per-frame tick no longer re-invokes the cell body.
-vi.mock('#/components/ui/button', async (importOriginal) => {
-    const actual = await importOriginal<typeof import('#/components/ui/button')>();
-    return { ...actual, Button: vi.fn(actual.Button) };
-});
-vi.mock('#/utils/Styles/cn', async (importOriginal) => {
-    const actual = await importOriginal<typeof import('#/utils/Styles/cn')>();
-    return { cn: vi.fn(actual.cn) };
+// Wrap (not replace) the real formatLoopProgress so the rest of the suite
+// keeps exercising real rendering while the F10 regression test below can
+// assert call counts. This is the one function that actually consumes the
+// ticking playhead value — Button/cn call counts cannot discriminate this
+// defect, because neither call site ever depended on the ticking value with
+// or without the fix (the React Compiler memoizes them either way).
+vi.mock('../../helpers/loopStationProgress', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('../../helpers/loopStationProgress')>();
+    return { ...actual, formatLoopProgress: vi.fn(actual.formatLoopProgress) };
 });
 
 vi.mock('#/modules/Arrangement/stores', async (importOriginal) => ({
@@ -220,16 +218,16 @@ describe('LoopStationPanel', () => {
         // playhead position as a prop (`positionBeats`), which made every
         // occupied cell's element depend on a value that changes every
         // animation frame — invalidating that reactive scope and re-invoking
-        // the whole cell body (its five Buttons, its cn() calls) once per
-        // frame, for every occupied cell, active or not. The fix isolates
-        // the ticking readout into its own leaf (`LoopSlotProgressReadout`)
-        // that writes straight to its own DOM node. This test drives real
-        // rAF ticks with a genuinely changing playhead value (confirmed via
-        // the progress text itself) and asserts the cell body's Button/cn
-        // calls do not grow — the discriminating signal a flat call count
-        // against the *unmodified* component could not have shown, since
-        // those spies were never wired to the changing prop in the first
-        // place.
+        // the whole cell body once per frame, for every occupied cell,
+        // active or not. `formatLoopProgress` is the one function that
+        // actually consumes the ticking value: pre-fix it fires once per
+        // occupied cell per frame regardless of that cell's own state;
+        // post-fix it fires once per *active* slot per frame (via the
+        // isolated leaf's own rAF effect), plus once per cell on a discrete
+        // playhead change. A grid with several occupied slots and exactly
+        // one active one tells these apart — Button/cn call counts cannot,
+        // because neither call site ever depended on the ticking value
+        // either way.
         let rafCallbacks: FrameRequestCallback[];
 
         beforeEach(() => {
@@ -255,11 +253,11 @@ describe('LoopStationPanel', () => {
             });
         };
 
-        it('does not re-invoke the occupied cell body on a genuinely ticking playhead', () => {
+        it('bounds formatLoopProgress growth to the active slot count, not the occupied cell count', () => {
             mocks.trackState.tracks = [{ id: 't1', name: 'Drums', color: null }];
             mocks.loopState.slots = [
                 {
-                    id: 'slot-1',
+                    id: 'slot-active',
                     trackId: 't1',
                     row: 0,
                     column: 0,
@@ -271,27 +269,70 @@ describe('LoopStationPanel', () => {
                     quantize: true,
                     fadeBeats: 0,
                 },
+                {
+                    id: 'slot-stopped',
+                    trackId: 't1',
+                    row: 1,
+                    column: 0,
+                    state: 'stopped',
+                    lengthBeats: 4,
+                    layers: [{ id: 'layer-2', layerIndex: 0, recordedAt: '', muted: false, volume: 1 }],
+                    loopCount: 0,
+                    volume: 1,
+                    quantize: true,
+                    fadeBeats: 0,
+                },
+                {
+                    id: 'slot-empty',
+                    trackId: 't1',
+                    row: 2,
+                    column: 0,
+                    state: 'empty',
+                    lengthBeats: 0,
+                    layers: [],
+                    loopCount: 0,
+                    volume: 1,
+                    quantize: true,
+                    fadeBeats: 0,
+                },
             ];
             playheadPositionRef.current = 0;
 
             renderPanel();
 
-            const progressNode = screen.getByTestId('loop-slot-progress');
-            const initialProgressText = progressNode.textContent;
-            const callsAtMount = vi.mocked(Button).mock.calls.length;
-            const cnCallsAtMount = vi.mocked(cn).mock.calls.length;
+            // Three occupied cells (rows 0-2), one of them ('slot-active')
+            // actually playing. Any remaining rows up to the grid's minimum
+            // of 8 are unoccupied "create slot" cells that never call
+            // formatLoopProgress at all.
+            const progressNodes = screen.getAllByTestId('loop-slot-progress');
+            expect(progressNodes).toHaveLength(3);
+            const [activeProgress, stoppedProgress, emptyProgress] = progressNodes;
+            const activeTextAtMount = activeProgress!.textContent;
+            const stoppedTextAtMount = stoppedProgress!.textContent;
+            const emptyTextAtMount = emptyProgress!.textContent;
+            const callsAtMount = vi.mocked(formatLoopProgress).mock.calls.length;
 
-            // Drive several real ticks with a genuinely changing value —
-            // this is the part the earlier (refuted) probe skipped, which
-            // is why it could not tell a fixed grid from a broken one.
-            for (let i = 1; i <= 5; i += 1) {
+            const frameCount = 5;
+            for (let i = 1; i <= frameCount; i += 1) {
                 playheadPositionRef.current = i * 0.5;
                 tick();
             }
 
-            expect(progressNode.textContent).not.toBe(initialProgressText);
-            expect(vi.mocked(Button).mock.calls.length).toBe(callsAtMount);
-            expect(vi.mocked(cn).mock.calls.length).toBe(cnCallsAtMount);
+            const callsAfterTicks = vi.mocked(formatLoopProgress).mock.calls.length;
+
+            // Only the active slot's isolated readout re-invokes
+            // formatLoopProgress on each of the 5 ticks (its own rAF loop).
+            // Pre-fix, every occupied cell re-rendered on every tick, so
+            // this delta would be 3 * frameCount (15), not frameCount (5).
+            expect(callsAfterTicks - callsAtMount).toBe(frameCount);
+
+            // Functional correctness: the active cell's displayed text
+            // actually changed; the two inactive occupied cells' did not,
+            // since nothing discrete (start/stop/seek) happened between
+            // ticks.
+            expect(activeProgress!.textContent).not.toBe(activeTextAtMount);
+            expect(stoppedProgress!.textContent).toBe(stoppedTextAtMount);
+            expect(emptyProgress!.textContent).toBe(emptyTextAtMount);
         });
     });
 });
