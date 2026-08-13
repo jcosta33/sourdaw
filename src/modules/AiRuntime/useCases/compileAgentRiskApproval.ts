@@ -5,6 +5,8 @@ import {
     parseVersionedCommandBatchEnvelope,
 } from '#/modules/Command/useCases';
 
+import { getExactAgentActionHash } from './getExactAgentActionHash';
+
 type PendingCommandBatch = {
     serialized: string;
     authority: Parameters<typeof parseVersionedCommandBatchEnvelope>[1];
@@ -77,7 +79,9 @@ export function compileAgentRiskApproval(input: CompileAgentRiskApprovalInput) {
     }
     return {
         schemaVersion: 1 as const,
-        actionHashes: envelope.commands.map((command) => command.argumentsDigest),
+        actionHashes: envelope.commands.map((command) =>
+            getExactAgentActionHash({ operation: command.operation, arguments: command.arguments })
+        ),
         sourceRevision: envelope.baseRevision,
         targetFingerprints: structuredClone(preflight.targetFingerprints),
         consequences,

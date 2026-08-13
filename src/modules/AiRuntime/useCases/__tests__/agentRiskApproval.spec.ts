@@ -22,6 +22,7 @@ import { compileAgentRiskApproval } from '../compileAgentRiskApproval';
 import { compilePlannedActionCommandBatch } from '../compilePlannedActionCommandBatch';
 import { confirmPendingChatActions } from '../confirmPendingChatActions';
 import { describeAgentRiskApproval } from '../describeAgentRiskApproval';
+import { getExactAgentActionHash } from '../getExactAgentActionHash';
 import { validateAgentRiskApproval } from '../validateAgentRiskApproval';
 
 const baseCollaborationState = structuredClone(collaborationStore.value!);
@@ -206,7 +207,7 @@ describe('agent risk approval', () => {
 
         expect(approval).toEqual({
             schemaVersion: 1,
-            actionHashes: [command.argumentsDigest],
+            actionHashes: [getExactAgentActionHash({ operation: command.operation, arguments: command.arguments })],
             sourceRevision: revision,
             targetFingerprints: { 'track-vocal': targetFingerprint },
             consequences: {
@@ -230,6 +231,8 @@ describe('agent risk approval', () => {
         expect(describeAgentRiskApproval(approval)).toBe(
             'Approval risk: bounded-reversible\nTrust mode: apply-reversible\nCost/data consequences: none\nAuthority reasons: The planning workflow requires explicit confirmation.'
         );
+        expect(approval.actionHashes[0]).not.toBe(command.argumentsDigest);
+        expect(approval.actionHashes[0]).toMatch(/^canonical-json-utf8:[0-9a-f]+$/);
     });
 
     it('escalates an auto-commit registry batch after resolving its exact command scope', () => {
