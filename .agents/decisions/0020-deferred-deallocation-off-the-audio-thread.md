@@ -1,6 +1,17 @@
+---
+type: adr
+id: 0020
+title: Retired allocations leave the audio thread over a return channel
+status: accepted
+date: 2026-08-12
+owner: The Sourdaw team
+sources:
+  - .agents/artifacts/sourdaw/SPEC-session-launcher-engine.md
+---
+
 # 0020 — Retired allocations leave the audio thread over a return channel
 
-**Status: proposed** — resolves `SPEC-session-launcher-engine` DG-001.
+**Accepted 2026-08-12.** Resolved from primary sources under the owner's standing direction that decision gates are research tasks. Resolves `SPEC-session-launcher-engine` DG-001.
 
 ## Context
 
@@ -36,10 +47,16 @@ carries RT-read snapshots in `midi/diagnostics.rs` and `daw-core/src/tuning.rs`.
 not `rtrb`; using an `rtrb` return channel there would be a new crate-local dependency even though it
 is already present in the workspace lockfile. `basedrop` is not in the tree.
 
-**And there is a live violation.** `crates/daw-engine/src/scheduler.rs:144-149` handles
-`RemoveEffect`/`RemovePlugin` with `self.effects.retain(|e| e.id != id)`. `ActiveEffect` owns
-`PluginCore::Native(Box<dyn NativePlugin>)` and `Vec<Box<dyn MidiFx>>`, so `retain` frees heap
-allocations on the audio thread. `RemoveMidiFx` does the same through `Vec::remove`. Filed as #1622.
+**This began as a live violation, and was fixed before this record was accepted.**
+`crates/daw-engine/src/scheduler.rs` handled `RemoveEffect`/`RemovePlugin` with
+`self.effects.retain(|e| e.id != id)`. `ActiveEffect` owns `PluginCore::Native(Box<dyn NativePlugin>)`
+and `Vec<Box<dyn MidiFx>>`, so `retain` freed heap allocations on the audio thread, and `RemoveMidiFx`
+did the same through `Vec::remove`. Filed as #1622, closed 2026-08-11 by commit `586ddc2e7`
+("fix(daw-engine): defer plugin destruction"), which deleted those `retain`/`Vec::remove` calls and
+replaced them with the retire-over-`rtrb`/background-drop pattern this record prescribes. The
+follow-up `d1203bd23` ("fix(daw-engine): contain retirement failures") added the panic containment and
+background draining in `impl Drop for RetiredGraphObjects`, which is what stands in `scheduler.rs`
+today. The decision below is therefore a statement of what already ships, not an outstanding repair.
 
 ## Decision
 
@@ -50,9 +67,9 @@ Size the return ring so that a full ring degrades to *keeping the current genera
 dropping on the callback. A full ring must never become a reason to allocate or free in the audio
 thread.
 
-The launcher's implementation must fix `scheduler.rs:144-149` rather than route around it. Adding a
-second correct path beside an existing incorrect one is how a codebase ends up with two idioms and
-one bug.
+The launcher's implementation uses the scheduler's retirement path rather than routing around it.
+Adding a second correct path beside an existing one is how a codebase ends up with two idioms and one
+bug.
 
 ## Alternatives rejected
 

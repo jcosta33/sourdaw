@@ -1,6 +1,18 @@
+---
+type: adr
+id: 0022
+title: 'Describe mechanisms, not resemblance: no comparative realism claims'
+status: accepted
+date: 2026-08-12
+owner: The Sourdaw team
+sources:
+  - .agents/artifacts/sourdaw/CHANGE-grand-boule-spec-closure.md
+  - .agents/artifacts/sourdaw/CHANGE-toaster-flagship-drum-workstation.md
+---
+
 # 0022 — Describe mechanisms, not resemblance: no comparative realism claims
 
-**Status: proposed** — resolves `CHANGE-grand-boule-spec-closure` DG-001 and
+**Accepted 2026-08-12.** Resolved from primary sources under the owner's standing direction that decision gates are research tasks. Resolves `CHANGE-grand-boule-spec-closure` DG-001 and
 `CHANGE-toaster-flagship-drum-workstation` DG-004.
 
 ## Context

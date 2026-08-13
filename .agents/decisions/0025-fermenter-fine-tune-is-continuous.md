@@ -1,10 +1,15 @@
 ---
-type: architecture-decision-record
+type: adr
+id: 0025
+title: Fermenter fine tune is continuous
 status: accepted
 date: 2026-08-08
+owner: The Sourdaw team
+sources:
+  - .agents/decisions/0016-ultracode-session-scope-and-standard.md
 ---
 
-# Fermenter fine tune is continuous
+# 0025 — Fermenter fine tune is continuous
 
 ## Decision
 
