@@ -1,7 +1,12 @@
 ---
-type: architecture-decision-record
+type: adr
+id: 0024
+title: Warp modes are named by material, over three closed executors
 status: accepted
 date: 2026-08-12
+owner: The Sourdaw team
+sources:
+  - .agents/artifacts/sourdaw/SPEC-time-stretch-engine.md
 ---
 
 # 0024 — Warp modes are named by material, over three closed executors

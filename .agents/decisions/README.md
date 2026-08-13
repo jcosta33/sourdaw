@@ -27,7 +27,7 @@ ADR numbers 0001 and 0002 are reserved and must not be reused.
 | [0011](0011-ddd-module-boundary-redraw.md)        | DDD module boundary redraw — decompose 7 god-modules into a 54 bounded-context set |
 | [0012](0012-neither-target-degrades-the-other.md) | Neither target may be degraded to accommodate the other; share only at full quality |
 | [0013](0013-retire-the-flat-json-project-snapshot.md) | Retire the flat-JSON project snapshot and its base64 audio — **supersedes 0008** |
-| [0014](0014-project-persistence-architecture.md)  | Project persistence architecture — project-as-directory (Option C) — **status: proposed**, pending owner ratification and gates M1–M10 |
+| [0014](0014-project-persistence-architecture.md)  | Project persistence architecture — project-as-directory (Option C) — accepted 2026-08-04; gates M1–M10 remain implementation milestones |
 | [0015](0015-a-guard-must-be-able-to-fail.md)      | A guard must be able to fail, and a census must enumerate from a registry |
 | [0016](0016-ultracode-session-scope-and-standard.md) | Ultracode session scope — browser-capable work only, built properly, no compatibility shims |
 | [0017](0017-pre-fader-sends-survive-mute.md)      | Pre-fader sends survive mute; solo-in-place gates them |

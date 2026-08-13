@@ -1,7 +1,12 @@
 ---
-type: architecture-decision-record
+type: adr
+id: 0018
+title: Release actions belong to gate-style launches, not to toggle
 status: accepted
 date: 2026-08-12
+owner: The Sourdaw team
+sources:
+  - .agents/artifacts/sourdaw/SPEC-session-launcher-engine.md
 ---
 
 # 0018 — Release actions belong to gate-style launches, not to toggle

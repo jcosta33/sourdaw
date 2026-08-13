@@ -1,7 +1,12 @@
 ---
-type: architecture-decision-record
+type: adr
+id: 0017
+title: Pre-fader sends survive mute; solo-in-place gates them
 status: accepted
 date: 2026-08-12
+owner: The Sourdaw team
+sources:
+  - AUDIT-effects-routing FX-8 (workspace artifact, retired after promotion)
 ---
 
 # 0017 — Pre-fader sends survive mute; solo-in-place gates them

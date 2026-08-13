@@ -1,7 +1,13 @@
 ---
-type: architecture-decision-record
+type: adr
+id: 0022
+title: 'Describe mechanisms, not resemblance: no comparative realism claims'
 status: accepted
 date: 2026-08-12
+owner: The Sourdaw team
+sources:
+  - .agents/artifacts/sourdaw/CHANGE-grand-boule-spec-closure.md
+  - .agents/artifacts/sourdaw/CHANGE-toaster-flagship-drum-workstation.md
 ---
 
 # 0022 — Describe mechanisms, not resemblance: no comparative realism claims

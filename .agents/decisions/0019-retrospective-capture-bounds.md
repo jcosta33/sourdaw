@@ -1,12 +1,20 @@
 ---
-type: architecture-decision-record
+type: adr
+id: 0019
+title: 'Retrospective capture: events for MIDI, ~60 seconds for audio, one explicit target'
 status: accepted
 date: 2026-08-12
+owner: The Sourdaw team
+sources:
+  - .agents/artifacts/sourdaw/SPEC-retrospective-capture.md
 ---
 
 # 0019 — Retrospective capture: events for MIDI, ~60 seconds for audio, one explicit target
 
-**Accepted 2026-08-12.** Resolved from primary sources under the owner's standing direction that decision gates are research tasks. Resolves `SPEC-retrospective-capture` DG-001, DG-002, DG-003, DG-005 and DG-006.
+**Accepted 2026-08-12.** Resolved from primary sources under the owner's standing direction that decision gates are research tasks. Resolves the open questions in
+[`.agents/specs/retrospective-capture/spec.md`](../specs/retrospective-capture/spec.md), which numbers
+them `Q-001`–`Q-006`. The `DG-` labels in the sections below are this record's own working ids and do
+not appear in that spec.
 
 These gates block 68 acceptance criteria. Nothing retrospective exists in the tree:
 `startBackgroundCapture.ts` guards on `!state.enabled` and pushes a bookkeeping record into a store,
