@@ -20,7 +20,7 @@ function isValidRecord(value: unknown): value is ProjectCommandBatchIdempotencyR
     if (!isRecord(value)) {
         return false;
     }
-    const keys = ['id', 'projectId', 'idempotencyKey', 'contentHash', 'serializedReceipt'];
+    const keys = ['id', 'projectId', 'idempotencyKey', 'contentHash', 'state', 'serializedReceipt'];
     if (Object.keys(value).length !== keys.length || !keys.every((key) => Object.hasOwn(value, key))) {
         return false;
     }
@@ -29,6 +29,7 @@ function isValidRecord(value: unknown): value is ProjectCommandBatchIdempotencyR
         typeof value.projectId !== 'string' ||
         typeof value.idempotencyKey !== 'string' ||
         typeof value.contentHash !== 'string' ||
+        (value.state !== 'effects-pending' && value.state !== 'complete') ||
         typeof value.serializedReceipt !== 'string'
     ) {
         return false;

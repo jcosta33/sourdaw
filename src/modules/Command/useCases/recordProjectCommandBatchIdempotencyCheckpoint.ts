@@ -7,6 +7,7 @@ type RecordProjectCommandBatchIdempotencyCheckpointInput = {
     projectId: string;
     idempotencyKey: string;
     contentHash: string;
+    state: 'effects-pending' | 'complete';
     serializedReceipt: string;
 };
 
@@ -27,7 +28,9 @@ export function recordProjectCommandBatchIdempotencyCheckpoint(
     if (existing.length > 0) {
         commandBatchIdempotencyStore.set({
             records: state.records.map((record) =>
-                record.id === id ? { ...record, serializedReceipt: input.serializedReceipt } : record
+                record.id === id
+                    ? { ...record, state: input.state, serializedReceipt: input.serializedReceipt }
+                    : record
             ),
         });
         return;
@@ -43,6 +46,7 @@ export function recordProjectCommandBatchIdempotencyCheckpoint(
                 projectId: input.projectId,
                 idempotencyKey: input.idempotencyKey,
                 contentHash: input.contentHash,
+                state: input.state,
                 serializedReceipt: input.serializedReceipt,
             },
         ],

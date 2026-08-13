@@ -13,6 +13,7 @@ import { parseVersionedCommandBatchEnvelope } from './parseVersionedCommandBatch
 import { persistProjectCommandBatchIdempotencyCheckpoint } from './persistProjectCommandBatchIdempotencyCheckpoint';
 import { prepareCommandBatchPreflight } from './prepareCommandBatchPreflight';
 import { previewVersionedCommandBatchEnvelope } from './previewVersionedCommandBatchEnvelope';
+import { reconcileProjectCommandBatchEffects } from './reconcileProjectCommandBatchEffects';
 import { recordProjectCommandBatchIdempotencyCheckpoint } from './recordProjectCommandBatchIdempotencyCheckpoint';
 import { resolveVersionedCommandBatchBindings } from './resolveVersionedCommandBatchBindings';
 import { serializeVersionedCommandEnvelope } from './serializeVersionedCommandEnvelope';
@@ -99,6 +100,52 @@ export async function executeVersionedCommandBatchEnvelope(input: ExecuteVersion
                         reason: 'Stored project idempotency receipt is invalid',
                         actions: [] as [],
                     };
+                }
+                return { status: 'idempotent-replay' as const, actions: [] as [], receipt };
+            }
+            if (projectCheckpoint.status === 'pending') {
+                const receipt = parseStoredVerifiedBatchReceipt({
+                    baseRevision: parsed.envelope.baseRevision,
+                    batchId: parsed.envelope.batchId,
+                    commands: parsed.envelope.commands,
+                    runId: parsed.envelope.runId,
+                    serializedReceipt: projectCheckpoint.serializedReceipt,
+                });
+                if (!receipt) {
+                    return {
+                        status: 'rejected' as const,
+                        reason: 'Stored project idempotency receipt is invalid',
+                        actions: [] as [],
+                    };
+                }
+                const reconciliation = await reconcileProjectCommandBatchEffects({
+                    envelope: resolvedEnvelope,
+                    serializedReceipt: projectCheckpoint.serializedReceipt,
+                });
+                if (reconciliation.status === 'failed') {
+                    return {
+                        status: 'ambiguous' as const,
+                        reason: reconciliation.reason,
+                        actions: [] as [],
+                        receipt,
+                    };
+                }
+                persistProjectCommandBatchIdempotencyCheckpoint({
+                    projectId: parsed.envelope.projectId,
+                    idempotencyKey: parsed.envelope.idempotencyKey,
+                    contentHash: idempotencyContentHash,
+                    state: 'complete',
+                    serializedReceipt: projectCheckpoint.serializedReceipt,
+                });
+                try {
+                    await commandBatchIdempotencyPort.complete({
+                        projectId: parsed.envelope.projectId,
+                        idempotencyKey: parsed.envelope.idempotencyKey,
+                        contentHash: idempotencyContentHash,
+                        serializedReceipt: projectCheckpoint.serializedReceipt,
+                    });
+                } catch {
+                    // Project truth is the durable authority; the local cache may heal on a later retry.
                 }
                 return { status: 'idempotent-replay' as const, actions: [] as [], receipt };
             }
@@ -267,6 +314,7 @@ export async function executeVersionedCommandBatchEnvelope(input: ExecuteVersion
                         projectId: parsed.envelope.projectId,
                         idempotencyKey: parsed.envelope.idempotencyKey,
                         contentHash: idempotencyContentHash,
+                        state: 'effects-pending',
                         serializedReceipt: JSON.stringify(projectCommitRecovery.receipt),
                     });
                 },
@@ -314,6 +362,7 @@ export async function executeVersionedCommandBatchEnvelope(input: ExecuteVersion
                     projectId: parsed.envelope.projectId,
                     idempotencyKey: parsed.envelope.idempotencyKey,
                     contentHash: idempotencyContentHash,
+                    state: 'complete',
                     serializedReceipt: JSON.stringify(projectReceipt),
                 });
                 finalized = { ...finalized, receipt: projectReceipt };

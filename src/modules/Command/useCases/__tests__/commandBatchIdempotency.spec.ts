@@ -1,8 +1,10 @@
+import { from } from '@automerge/automerge';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
     configureAutomergeStoragePort,
     createAutomergeStorage,
+    createAutomergeStoragePreview,
     flushAutomergeStorageWrites,
 } from '#/infra/store/storage/createAutomergeStorage';
 import { clearHandlerRegistry, registerHandlerMap } from '#/modules/Command/stores';
@@ -10,6 +12,7 @@ import { type ActionHandler, type AppAction } from '#/utils/handlerContract';
 
 import { commandBatchIdempotencyPort } from '../commandBatchIdempotencyPort';
 import { commandBatchPreflightPort } from '../commandBatchPreflightPort';
+import { commandBatchPreviewPort } from '../commandBatchPreviewPort';
 import { commandProjectRevisionPort } from '../commandProjectRevisionPort';
 import { compileVersionedCommandBatchEnvelope } from '../compileVersionedCommandBatchEnvelope';
 import { configureCommandBatchIdempotency } from '../configureCommandBatchIdempotency';
@@ -46,7 +49,7 @@ function revision(head: number): string {
 }
 
 function createHandler(input: {
-    execute: ActionHandler<SetTrackGainAction>['execute'];
+    execute: Extract<ActionHandler<SetTrackGainAction>, { previewExecution: 'isolated-project' }>['execute'];
 }): ActionHandler<SetTrackGainAction> {
     return {
         describe: () => ({
@@ -57,6 +60,7 @@ function createHandler(input: {
             label: 'Set vocal gain',
         }),
         execute: input.execute,
+        previewExecution: 'isolated-project',
         undoable: true,
         validate: () => true,
     };
@@ -105,6 +109,7 @@ describe('command batch idempotency', () => {
     let rejectReceiptPersistence: boolean;
     let runtimeEffectGate: Promise<void> | null;
     let runtimeEffectCount: number;
+    let runtimeGain: number;
 
     beforeEach(() => {
         vi.clearAllMocks();
@@ -121,7 +126,9 @@ describe('command batch idempotency', () => {
         rejectReceiptPersistence = false;
         runtimeEffectGate = null;
         runtimeEffectCount = 0;
+        runtimeGain = 1;
         projectDocument = { trackGain: { value: 1 } };
+        const baseProjectDocument = structuredClone(projectDocument);
         const records = new Map<string, { contentHash: string; serializedReceipt?: string }>();
         commandBatchIdempotencyPort.setRepository({
             lookup: ({ projectId, idempotencyKey, contentHash }) => {
@@ -174,6 +181,14 @@ describe('command batch idempotency', () => {
                 mutationCount += 1;
             },
         });
+        commandBatchPreviewPort.setProvider(() => {
+            const preview = createAutomergeStoragePreview(new Map([['root', from(baseProjectDocument)]]));
+            return {
+                getProjectDocument: () => preview.getDocument('root') ?? {},
+                release: preview.release,
+                scope: preview.scope,
+            };
+        });
         const gainStorage = createAutomergeStorage<{ value: number }>('root', 'trackGain');
         expect(gainStorage.hydrate?.()).toBe(true);
         registerHandlerMap({
@@ -182,6 +197,10 @@ describe('command batch idempotency', () => {
                     gainStorage.set({ value: 0.8 });
                     async function applyRuntimeEffect() {
                         await runtimeEffectGate;
+                        if (runtimeGain === 0.8) {
+                            return;
+                        }
+                        runtimeGain = 0.8;
                         runtimeEffectCount += 1;
                     }
                     return {
@@ -209,6 +228,7 @@ describe('command batch idempotency', () => {
         flushAutomergeStorageWrites();
         configureAutomergeStoragePort(null);
         commandBatchPreflightPort.setProvider(null);
+        commandBatchPreviewPort.setProvider(null);
         commandBatchIdempotencyPort.setRepository(null);
         commandProjectRevisionPort.setProvider(null);
         localStorage.removeItem(durableStorageKey);
@@ -314,6 +334,9 @@ describe('command batch idempotency', () => {
             claim: () => Promise.resolve({ status: 'claimed' }),
             complete: () => Promise.resolve(),
         });
+        rejectProjectReceiptFinalization = false;
+        runtimeEffectCount = 0;
+        runtimeGain = 1;
         const retry = await executeVersionedCommandBatchEnvelope({
             authority: batch.authority,
             confirmed: true,
@@ -328,7 +351,7 @@ describe('command batch idempotency', () => {
             actions: [],
             receipt: 'receipt' in first ? first.receipt : undefined,
         });
-        expect(mutationCount).toBe(1);
+        expect(mutationCount).toBe(2);
         expect(runtimeEffectCount).toBe(1);
     });
 

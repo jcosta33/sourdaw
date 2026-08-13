@@ -34,6 +34,7 @@ export type ProjectCommandBatchIdempotencyRecord = {
     projectId: string;
     idempotencyKey: string;
     contentHash: string;
+    state: 'effects-pending' | 'complete';
     serializedReceipt: string;
 };
 

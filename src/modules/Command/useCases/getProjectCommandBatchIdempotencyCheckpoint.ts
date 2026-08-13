@@ -7,7 +7,7 @@ type GetProjectCommandBatchIdempotencyCheckpointInput = {
 };
 
 type GetProjectCommandBatchIdempotencyCheckpointOutput =
-    { status: 'missing' } | { status: 'complete'; serializedReceipt: string } | { status: 'conflict' };
+    { status: 'missing' } | { status: 'pending' | 'complete'; serializedReceipt: string } | { status: 'conflict' };
 
 export function getProjectCommandBatchIdempotencyCheckpoint(
     input: GetProjectCommandBatchIdempotencyCheckpointInput
@@ -28,5 +28,10 @@ export function getProjectCommandBatchIdempotencyCheckpoint(
         return { status: 'conflict' };
     }
     const serializedReceipt = matches[0]?.serializedReceipt;
-    return serializedReceipt ? { status: 'complete', serializedReceipt } : { status: 'conflict' };
+    if (!serializedReceipt) {
+        return { status: 'conflict' };
+    }
+    return matches.every((record) => record.state === 'complete')
+        ? { status: 'complete', serializedReceipt }
+        : { status: 'pending', serializedReceipt };
 }
