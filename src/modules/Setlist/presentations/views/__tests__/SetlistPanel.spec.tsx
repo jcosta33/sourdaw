@@ -3,6 +3,8 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { setlistStore, type SetlistItem, type SetlistState } from '../../../stores/setlistStore';
 import { addSetlistItem } from '../../../useCases/setlist/addSetlistItem';
+import { getRemainingDuration } from '../../../useCases/setlist/getRemainingDuration';
+import { getSetlistProgress } from '../../../useCases/setlist/getSetlistProgress';
 import { goToItem } from '../../../useCases/setlist/goToItem';
 import { nextItem } from '../../../useCases/setlist/nextItem';
 import { previousItem } from '../../../useCases/setlist/previousItem';
@@ -49,6 +51,17 @@ vi.mock('../../../useCases/setlist/previousItem', () => ({
 vi.mock('../../../useCases/setlist/goToItem', () => ({
     goToItem: vi.fn(),
 }));
+// Wrap (rather than replace) the real implementations so existing readout
+// assertions keep exercising real computed values while F11's regression
+// test can additionally assert these are never called during render.
+vi.mock('../../../useCases/setlist/getSetlistProgress', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('../../../useCases/setlist/getSetlistProgress')>();
+    return { getSetlistProgress: vi.fn(actual.getSetlistProgress) };
+});
+vi.mock('../../../useCases/setlist/getRemainingDuration', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('../../../useCases/setlist/getRemainingDuration')>();
+    return { getRemainingDuration: vi.fn(actual.getRemainingDuration) };
+});
 
 function makeItem(overrides: Partial<SetlistItem> = {}): SetlistItem {
     return {
@@ -161,6 +174,22 @@ describe('SetlistPanel', () => {
             // remaining = 60 + 3 + 57 + 3 = 123s → 2:03
             expect(screen.getByText('2:03 remaining')).toBeTruthy();
         });
+
+        it('derives the progress/remaining readout from the subscribed state, not a fresh store read (F11)', () => {
+            // Regression: buildProgressDisplay called getSetlistProgress() /
+            // getRemainingDuration(), both of which read setlistStore.value
+            // directly instead of the `state` already subscribed via useStore —
+            // a non-reactive read path. The panel should derive these values
+            // from `state` and never call the store-reading use cases.
+            seed({
+                items: [makeItem({ id: 'a', name: 'Opener', estimatedDuration: 120 })],
+            });
+            render(<SetlistPanel />);
+            expect(getSetlistProgress).not.toHaveBeenCalled();
+            expect(getRemainingDuration).not.toHaveBeenCalled();
+            // The readout is still computed correctly via the inline derivation.
+            expect(screen.getByText('1 of 1')).toBeTruthy();
+        });
     });
 
     describe('current-item marker', () => {
@@ -252,6 +281,27 @@ describe('SetlistPanel', () => {
             fireEvent.change(input, { target: { value: '9' } });
             fireEvent.change(input, { target: { value: 'abc' } });
             expect(setCountIn).not.toHaveBeenCalled();
+        });
+
+        it('keeps the typed out-of-range text visible instead of silently snapping back (F12)', () => {
+            // Regression: the input was controlled directly on state.countInBars,
+            // so an invalid keystroke was dropped with no feedback and the field
+            // just reverted to the last committed value.
+            seed({ countInBars: 2 });
+            render(<SetlistPanel />);
+            const input = screen.getByLabelText('Count-in bars') as HTMLInputElement;
+            fireEvent.change(input, { target: { value: '9' } });
+            expect(input.value).toBe('9');
+            expect(setCountIn).not.toHaveBeenCalled();
+        });
+
+        it('reverts the field to the last committed value on blur when still invalid', () => {
+            seed({ countInBars: 2 });
+            render(<SetlistPanel />);
+            const input = screen.getByLabelText('Count-in bars') as HTMLInputElement;
+            fireEvent.change(input, { target: { value: '9' } });
+            fireEvent.blur(input);
+            expect(input.value).toBe('2');
         });
     });
 
@@ -348,7 +398,7 @@ describe('SetlistPanel', () => {
         it('reflects autoStop off via aria-pressed false and muted styling class', () => {
             seed({ items: [makeItem({ id: 'a', name: 'Opener', autoStop: false })] });
             render(<SetlistPanel />);
-            const toggle = screen.getByRole('button', { name: 'Count-in before: off' });
+            const toggle = screen.getByRole('button', { name: 'AS: Auto-stop off' });
             expect(toggle.getAttribute('aria-pressed')).toBe('false');
             expect(toggle.className).not.toContain('accent-mint');
         });
@@ -356,7 +406,7 @@ describe('SetlistPanel', () => {
         it('reflects autoStop on via aria-pressed true and mint styling class', () => {
             seed({ items: [makeItem({ id: 'a', name: 'Opener', autoStop: true })] });
             render(<SetlistPanel />);
-            const toggle = screen.getByRole('button', { name: 'Count-in before: on' });
+            const toggle = screen.getByRole('button', { name: 'AS: Auto-stop on' });
             expect(toggle.getAttribute('aria-pressed')).toBe('true');
             expect(toggle.className).toContain('accent-mint');
         });
@@ -364,8 +414,31 @@ describe('SetlistPanel', () => {
         it('flips autoStop through updateSetlistItem when clicked', () => {
             seed({ items: [makeItem({ id: 'a', name: 'Opener', autoStop: false })] });
             render(<SetlistPanel />);
-            fireEvent.click(screen.getByRole('button', { name: 'Count-in before: off' }));
+            fireEvent.click(screen.getByRole('button', { name: 'AS: Auto-stop off' }));
             expect(updateSetlistItem).toHaveBeenCalledWith('a', { autoStop: true });
+        });
+
+        it('names the setting it actually controls (F9) — not "Count-in", which the click handler never touches', () => {
+            // Regression: aria-label previously read "Count-in before: …" while
+            // aria-pressed and the click handler both act on item.autoStop
+            // (documented in setlistStore.ts as "Auto-stop after this item
+            // finishes"). A screen-reader user was told the wrong setting.
+            seed({ items: [makeItem({ id: 'a', name: 'Opener', autoStop: false })] });
+            render(<SetlistPanel />);
+            expect(screen.queryByRole('button', { name: /Count-in before/i })).toBeNull();
+        });
+
+        it('keeps the visible glyph a literal substring of the accessible name (F9, WCAG 2.5.3)', () => {
+            // Regression: the visible glyph read "CI" (count-in) while the
+            // aria-label already said "Auto-stop" — sighted users were misled
+            // by the exact thing the label named, and voice-control users
+            // saying "click AS" would not have matched an accessible name that
+            // never contained the visible label text.
+            seed({ items: [makeItem({ id: 'a', name: 'Opener', autoStop: false })] });
+            render(<SetlistPanel />);
+            const toggle = screen.getByRole('button', { name: 'AS: Auto-stop off' });
+            expect(toggle.textContent).toBe('AS');
+            expect(toggle.getAttribute('aria-label')).toContain(toggle.textContent);
         });
     });
 

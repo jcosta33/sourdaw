@@ -55,17 +55,27 @@ describe('addSetlistItem', () => {
         mockSetlistStore.value = state;
 
         addSetlistItem('Song', 60);
-        expect(mockSetlistStore.set).toHaveBeenCalledWith(
-            expect.objectContaining({
-                items: expect.arrayContaining([
-                    expect.objectContaining({
-                        id: 'new-id',
-                        name: 'Song',
-                    }) as unknown as import('../../../stores/setlistStore').SetlistItem,
-                ]) as unknown as import('../../../stores/setlistStore').SetlistItem[],
-                totalDuration: 60,
-            })
-        );
+
+        const expectedItem: SetlistItem = {
+            id: 'new-id',
+            name: 'Song',
+            projectPath: null,
+            bpm: null,
+            timeSignature: null,
+            estimatedDuration: 60,
+            notes: '',
+            programChange: null,
+            color: SETLIST_ITEM_COLORS[0]!,
+            autoStop: true,
+            gapSeconds: 2,
+            markers: [],
+        };
+        const expectedState: SetlistState = {
+            ...state,
+            items: [expectedItem],
+            totalDuration: 60,
+        };
+        expect(mockSetlistStore.set).toHaveBeenCalledWith(expectedState);
     });
 
     it('does nothing when the store has no value', () => {

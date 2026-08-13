@@ -162,4 +162,57 @@ describe('toggleRecord', () => {
         expect(next.slots[0]!.state).toBe('playing');
         expect(next.slots[0]!.layers).toEqual([layer]);
     });
+
+    it('restarts recording on a stopped slot with zero layers rather than resuming to playing (F5)', () => {
+        // Regression for F5: stopSlot maps recording -> stopped unconditionally,
+        // so a slot stopped mid-first-recording is 'stopped' with layers: [].
+        // That is behaviourally 'empty' (nothing recorded), so Record should
+        // start recording — not promote to 'playing' with nothing to play, and
+        // not leave the slot unchanged either (Record has no disabled guard,
+        // unlike Play/Undo, so an unchanged 'stopped' would strand the cell:
+        // every future Record press is a silent no-op and only Clear escapes).
+        loopStationStoreMock.value = {
+            ...emptyLoopState(),
+            slots: [baseSlot({ state: 'stopped', layers: [], lengthBeats: 0 })],
+        };
+
+        toggleRecord('s1');
+
+        const next = vi.mocked(loopStationStore.set).mock.calls[0]![0] as LoopStationState;
+        expect(next.slots[0]!.state).toBe('recording');
+        expect(next.slots[0]!.layers).toEqual([]);
+    });
+
+    it('recovers a stop-during-first-recording slot through the full Record sequence (F5)', () => {
+        // End-to-end regression: add a slot, stop it mid-first-recording
+        // (zero layers), then drive Record repeatedly and confirm the slot is
+        // not stranded — it must retrace the same path as a genuinely empty
+        // slot: recording -> playing (layer 1) -> overdubbing -> playing
+        // (layer 2), with no press ever returning the state unchanged.
+        loopStationStoreMock.value = {
+            ...emptyLoopState(),
+            slots: [baseSlot({ state: 'stopped', layers: [], lengthBeats: 0 })],
+        };
+
+        toggleRecord('s1');
+        let next = vi.mocked(loopStationStore.set).mock.calls[0]![0] as LoopStationState;
+        expect(next.slots[0]!.state).toBe('recording');
+        loopStationStoreMock.value = next;
+
+        toggleRecord('s1');
+        next = vi.mocked(loopStationStore.set).mock.calls[1]![0] as LoopStationState;
+        expect(next.slots[0]!.state).toBe('playing');
+        expect(next.slots[0]!.layers).toHaveLength(1);
+        loopStationStoreMock.value = next;
+
+        toggleRecord('s1');
+        next = vi.mocked(loopStationStore.set).mock.calls[2]![0] as LoopStationState;
+        expect(next.slots[0]!.state).toBe('overdubbing');
+        loopStationStoreMock.value = next;
+
+        toggleRecord('s1');
+        next = vi.mocked(loopStationStore.set).mock.calls[3]![0] as LoopStationState;
+        expect(next.slots[0]!.state).toBe('playing');
+        expect(next.slots[0]!.layers).toHaveLength(2);
+    });
 });
