@@ -1,0 +1,39 @@
+crates/daw-dsp/src/levain/engine.rs
+  s_62e9c3dc3ba52a::t_0d1a8fa59668b9 2268-2273,2279-2280,2282,2284-2287,2289-2290,2292-2304,2336-2349,2355-2357,2375,2378,2391,2393,2399-2400
+  s_62e9c3dc3ba52a::t_88dd5efd4ff64b 2305-2310,2312-2317,2321,2324-2333
+  s_62e9c3dc3ba52a::t_c19505118ebd38 2354,2359
+  s_62e9c3dc3ba52a::t_7c80fc85638f45 2274-2278,2281,2283,2288,2291
+  s_62e9c3dc3ba52a::t_73728b9333652a 2311,2318-2320,2322-2323,2334-2335
+  s_62e9c3dc3ba52a::t_9462b2cf103d91 2350-2353,2358,2360-2374,2376-2377,2379-2390,2392,2394-2398
+crates/daw-dsp/tests/device_process_rt.rs
+  s_62e9c3dc3ba52a::t_11212ea2c96007 1439-1514
+crates/daw-dsp/src/levain/voice.rs
+  s_62e9c3dc3ba52a::t_749f7f6d366fbf 354-364
+  s_62e9c3dc3ba52a::t_4c22eb61d30baa 327-337
+  s_62e9c3dc3ba52a::t_9b875f5e6d283e 897-907,909-910
+  s_62e9c3dc3ba52a::t_03b1de3f50051b 908
+public/wasm/daw-dsp/daw_dsp.d.ts
+  s_62e9c3dc3ba52a::t_32f83fed5a680a 1,829-863,983-1016
+public/wasm/daw-dsp/daw_dsp_bg.wasm.d.ts
+  s_62e9c3dc3ba52a::t_d1fa93ebc7bda5 1,21-55,175-208
+public/wasm/manifest.json
+  s_62e9c3dc3ba52a::t_1ab1c8619a2195 12,16-18,21
+src/modules/AudioEngine/wasm/daw_dsp.d.ts
+  s_62e9c3dc3ba52a::t_e705e8f8670bd5 1,829-863,983-1016
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "31662ea69cfdcdec80f7e299de9b1c32d7446174",
+  "prompts": {},
+  "sessions": {
+    "s_62e9c3dc3ba52a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "92e0a2e7-8660-41e2-be8b-b2d644c6d0b7",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
