@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { logger } from '#/infra/logger/appLogger';
-import { executeAppActionBatch } from '#/modules/Command/useCases';
+import { executeAppActionBatch, executeVersionedCommandBatchEnvelope } from '#/modules/Command/useCases';
 import { captureProjectRevision } from '#/modules/CrdtDocument/useCases';
 
 import { executePlannedActions } from '../executePlannedActions';
@@ -13,6 +13,7 @@ vi.mock('#/infra/logger/appLogger', () => ({
 }));
 vi.mock('#/modules/Command/useCases', () => ({
     executeAppActionBatch: vi.fn(),
+    executeVersionedCommandBatchEnvelope: vi.fn(),
     generateGroupId: vi.fn(() => ({ groupId: 'group-1', groupLabel: 'Mute vocals' })),
 }));
 vi.mock('#/modules/CrdtDocument/useCases', () => ({
@@ -68,6 +69,77 @@ describe('executePlannedActions', () => {
             status: 'committed',
             actions: [{ actionType: 'togglePlayback', label: 'Toggle playback' }],
         });
+    });
+
+    it('returns a durable idempotent replay without duplicating AI history or notifications', async () => {
+        vi.mocked(executeVersionedCommandBatchEnvelope).mockResolvedValue({
+            status: 'idempotent-replay',
+            actions: [],
+            receipt: {
+                schemaVersion: 1,
+                runId: 'run-1',
+                batchId: 'batch-1',
+                outcome: 'committed',
+                atomicity: 'atomic',
+                base: {
+                    normalizedRevision: 'revision-1',
+                    documentIdentityEpoch: null,
+                    mutationEpoch: null,
+                    documents: [],
+                },
+                observedBase: null,
+                resulting: null,
+                commandOutcomes: [],
+                affectedIds: [],
+                createdBindings: [],
+                warnings: [],
+                errors: [],
+                links: { render: [], analysis: [] },
+                compensation: { available: false, commandIds: [] },
+                semanticDiff: null,
+                modelSummary: 'Committed previously.',
+            },
+        });
+
+        const result = await executePlannedActions({
+            commandBatch: {
+                authority: {
+                    projectId: 'project-1',
+                    baseRevision: 'revision-1',
+                    scope: { targetIds: [], targetRanges: [], protectedTargetIds: [], protectedRanges: [] },
+                    grants: {
+                        allowedOperationPrefixes: [],
+                        create: false,
+                        delete: false,
+                        routing: false,
+                        tempo: false,
+                        master: false,
+                        file: false,
+                        audioUpload: false,
+                        remoteGeneration: false,
+                        autoCommit: false,
+                    },
+                    budgets: {
+                        maxCommands: 1,
+                        maxCreatedTracks: 0,
+                        maxDeletedObjects: 0,
+                        maxAffectedTracks: 0,
+                        maxAffectedClips: 0,
+                        maxAutomationPoints: 0,
+                        maxImportedAssets: 0,
+                        maxRenderJobs: 0,
+                    },
+                },
+                serialized: '{}',
+            },
+            prompt: 'Mute vocals',
+            actions: [action],
+            projectRevision: 'revision-1',
+        });
+
+        expect(result).toEqual({ status: 'committed', actions: [] });
+        expect(recordAiActionGroup).not.toHaveBeenCalled();
+        expect(notifyAiChange).not.toHaveBeenCalled();
     });
 
     it('reports a runtime-only command as executed rather than committed', async () => {

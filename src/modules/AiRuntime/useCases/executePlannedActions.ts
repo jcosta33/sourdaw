@@ -83,6 +83,10 @@ export async function executePlannedActions(input: ExecutePlannedActionsInput): 
         return { status: 'failed', reason: 'A planned action batch cannot execute in preview mode' };
     }
 
+    if (batchResult.status === 'idempotent-replay') {
+        return { status: 'committed', actions: [] };
+    }
+
     if (batchResult.status === 'cancelled') {
         if (input.signal?.aborted === true) {
             return { status: 'cancelled' };

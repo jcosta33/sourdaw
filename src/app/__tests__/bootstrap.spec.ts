@@ -34,6 +34,7 @@ const {
     noop,
     sentinelHandlers,
     registerProductionCommandHandlersMock,
+    configureCommandBatchIdempotencyMock,
     initBrowserAiMock,
     initRaveModelsMock,
     registerGlobalErrorHandlersMock,
@@ -63,6 +64,7 @@ const {
         noop,
         sentinelHandlers,
         registerProductionCommandHandlersMock: vi.fn<(maps: HandlerMapSentinel[]) => void>(),
+        configureCommandBatchIdempotencyMock: vi.fn(),
         initBrowserAiMock: vi.fn(() => Promise.resolve()),
         initRaveModelsMock: vi.fn(() => Promise.resolve()),
         registerGlobalErrorHandlersMock: vi.fn(() => vi.fn()),
@@ -193,6 +195,7 @@ vi.mock('#/modules/Collaboration/useCases', () => ({
 vi.mock('#/modules/Command/useCases', () => ({
     commandBatchPreflightPort: { setProvider: noop },
     commandBatchPreviewPort: { setProvider: noop },
+    configureCommandBatchIdempotency: configureCommandBatchIdempotencyMock,
     executeAppAction: noop,
     registerProductionCommandHandlers: registerProductionCommandHandlersMock,
     getMacroHandlers: sentinelHandlers('Macro'),
@@ -460,6 +463,10 @@ describe('bootstrap', () => {
 
     it('wires global error handlers to the app runtime logger', () => {
         expect(registerGlobalErrorHandlersMock).toHaveBeenCalledExactlyOnceWith({ logger: loggerMock });
+    });
+
+    it('configures durable command-batch idempotency exactly once', () => {
+        expect(configureCommandBatchIdempotencyMock).toHaveBeenCalledExactlyOnceWith();
     });
 
     it('registers the exact forward and restore global-time owner preparations', () => {

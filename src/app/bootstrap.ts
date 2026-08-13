@@ -61,6 +61,7 @@ import { canMutateBranchMetadata, leaveSession } from '#/modules/Collaboration/u
 import {
     commandBatchPreflightPort,
     commandBatchPreviewPort,
+    configureCommandBatchIdempotency,
     commandDeviceVersionsPort,
     executeAppAction,
     registerProductionCommandHandlers,
@@ -163,6 +164,7 @@ logCapabilities();
 initBranchState();
 
 registerCrdtStorageRuntime();
+configureCommandBatchIdempotency();
 setActionHistoryMetadataPort({
     record: recordActionHistoryEntry,
     markReverted: markActionHistoryEntryReverted,

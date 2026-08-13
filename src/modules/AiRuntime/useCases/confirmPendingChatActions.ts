@@ -5,6 +5,7 @@ import {
     executeVersionedCommandBatch,
     executeVersionedCommandBatchEnvelope,
     generateGroupId,
+    getVersionedCommandBatchIdempotentReplay,
     parseVersionedCommandEnvelope,
 } from '#/modules/Command/useCases';
 import { captureProjectRevision, isDrumPreviewBranchPlanApplied } from '#/modules/CrdtDocument/useCases';
@@ -323,6 +324,24 @@ export async function confirmPendingChatActions(
         return { status: 'not_pending', currentStatus: confirmation.status };
     }
 
+    const approvedCommandBatch = confirmation.approvalSnapshot.commandBatch;
+    if (approvedCommandBatch) {
+        const priorReceipt = await getVersionedCommandBatchIdempotentReplay({
+            authority: approvedCommandBatch.authority,
+            serialized: approvedCommandBatch.serialized,
+        });
+        if (priorReceipt) {
+            settlePendingActionResourceLease({ confirmationId: confirmation.id, disposition: 'retain' });
+            updatePendingActionConfirmationStatus({ confirmationId: confirmation.id, status: 'executed' });
+            updateChatMessage(confirmation.assistantMessageId, {
+                pendingActionConfirmationStatus: 'executed',
+                content:
+                    'This exact command batch was already applied. The prior verified receipt was returned without replaying project or runtime effects.',
+            });
+            return { status: 'executed' };
+        }
+    }
+
     if (captureProjectRevision() !== confirmation.projectRevision) {
         return invalidatePendingConfirmation(confirmation);
     }
@@ -352,7 +371,9 @@ export async function confirmPendingChatActions(
     const aborter = new AbortController();
     setChatGenerating(true);
     setActiveAborter(aborter);
-    let batchResult: Awaited<ReturnType<typeof executeAppActionBatch>>;
+    let batchResult:
+        | Awaited<ReturnType<typeof executeAppActionBatch>>
+        | Awaited<ReturnType<typeof executeVersionedCommandBatchEnvelope>>;
     try {
         const executionOptions = {
             ...group,
@@ -415,6 +436,17 @@ export async function confirmPendingChatActions(
     } finally {
         setActiveAborter(null);
         setChatGenerating(false);
+    }
+
+    if (batchResult.status === 'idempotent-replay') {
+        settlePendingActionResourceLease({ confirmationId: confirmation.id, disposition: 'retain' });
+        updatePendingActionConfirmationStatus({ confirmationId: confirmation.id, status: 'executed' });
+        updateChatMessage(confirmation.assistantMessageId, {
+            pendingActionConfirmationStatus: 'executed',
+            content:
+                'This exact command batch was already applied. The prior verified receipt was returned without replaying project or runtime effects.',
+        });
+        return { status: 'executed' };
     }
 
     if (batchResult.status === 'cancelled') {

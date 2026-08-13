@@ -9,6 +9,7 @@ import { clearHandlerRegistry, registerHandlerMap, undoStore } from '#/modules/C
 import {
     clearUndoHistory,
     compileVersionedCommandBatchEnvelope,
+    configureCommandBatchIdempotency,
     migrateLegacyAppActionToVersionedCommandEnvelope,
     serializeVersionedCommandEnvelope,
     commandProjectRevisionPort,
@@ -43,6 +44,12 @@ type SetTempoAction = Extract<AppAction, { type: 'setTempo' }>;
 
 describe('confirmPendingChatActions transaction admission', () => {
     beforeEach(() => {
+        vi.stubGlobal('navigator', {
+            ...navigator,
+            locks: {
+                request: (_name: string, _options: LockOptions, task: () => unknown) => Promise.resolve(task()),
+            },
+        });
         configureAiWorkflowCommandPreflightFixture();
         clearHandlerRegistry();
         clearUndoHistory();
@@ -69,6 +76,8 @@ describe('confirmPendingChatActions transaction admission', () => {
     });
 
     afterEach(() => {
+        vi.unstubAllGlobals();
+        localStorage.removeItem('sourdaw:command-batch-idempotency:v1');
         resetAiWorkflowCommandPreflightFixture();
         flushAutomergeStorageWrites();
         configureAutomergeStoragePort(null);
@@ -193,10 +202,12 @@ describe('confirmPendingChatActions transaction admission', () => {
 
     it('executes the approved outer command batch instead of the legacy envelope array', async () => {
         configureAiWorkflowCommandPreflightFixture('project-1');
+        configureCommandBatchIdempotency();
         const ownedStorage = createAutomergeStorage<{ bpm: number }>('owned', 'transport');
+        const execute = vi.fn((action: SetTempoAction) => ownedStorage.set({ bpm: action.payload.bpm }));
         registerHandlerMap({
             setTempo: {
-                execute: (action: SetTempoAction) => ownedStorage.set({ bpm: action.payload.bpm }),
+                execute,
                 describe: () => ({
                     label: 'Set tempo',
                     inverseAction: { type: 'setTempo', payload: { bpm: 120 } },
@@ -239,5 +250,24 @@ describe('confirmPendingChatActions transaction admission', () => {
             status: 'executed',
         });
         expect(getCrdtDoc<Record<string, unknown>>('owned')).toMatchObject({ transport: { bpm: 132 } });
+
+        proposePendingActionConfirmation({
+            id: 'confirmation-batch-retry',
+            prompt: 'set tempo to 132',
+            assistantMessageId: 'assistant-1',
+            actions: [action],
+            actionLabels: ['Set tempo to 132 BPM'],
+            commandBatch,
+            agentApproval: compileAgentRiskApproval({ commandBatch }),
+            executionMode: 'atomic',
+            groupId: 'group-batch',
+            groupLabel: 'Set tempo batch',
+            projectRevision,
+        });
+        await expect(confirmPendingChatActions({ confirmationId: 'confirmation-batch-retry' })).resolves.toEqual({
+            status: 'executed',
+        });
+        expect(execute).toHaveBeenCalledTimes(1);
+        expect(chatStore.value?.messages[0]?.content).toContain('prior verified receipt');
     });
 });
