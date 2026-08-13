@@ -10,7 +10,7 @@ export function createDeleteDrumPreviewBranchesHandler({
     canMutateBranchMetadata,
 }: CreateDeleteDrumPreviewBranchesHandlerInput) {
     return createHandler<'deleteDrumPreviewBranches'>({
-        previewExecution: 'unsupported-async',
+        previewExecution: 'unsupported-external',
         execute: async (action) => {
             if (!canMutateBranchMetadata()) {
                 return { status: 'conflict' };

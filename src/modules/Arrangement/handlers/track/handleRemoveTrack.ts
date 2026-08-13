@@ -252,6 +252,7 @@ export const handleRemoveTrack = createHandler<'removeTrack'>({
             },
         };
     },
+    previewExecution: 'isolated-project',
     requiresAbortCompensation: false,
     undoable: true,
 });

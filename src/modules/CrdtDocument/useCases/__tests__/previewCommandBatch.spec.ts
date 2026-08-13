@@ -18,6 +18,15 @@ import {
 import { tempoMapStore, transportStore } from '#/modules/Transport/stores';
 import { defaultTransportState, getTransportHandlers } from '#/modules/Transport/useCases';
 
+const runtimeMocks = vi.hoisted(() => ({
+    updateDeviceParam: vi.fn(),
+}));
+
+vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/AudioEngine/useCases')>()),
+    updateDeviceParam: runtimeMocks.updateDeviceParam,
+}));
+
 import { automergeRepository } from '../../repositories/automergeRepository';
 import { captureProjectRevision } from '../captureProjectRevision';
 import { createCommandPreviewWorkspace } from '../createCommandPreviewWorkspace';
@@ -166,6 +175,60 @@ describe('previewCommandBatch', () => {
             throw new Error('Expected an addTrack preview resource');
         }
         preview.resource.release();
+    });
+
+    it('rejects a production device-parameter handler before touching the live audio engine', async () => {
+        registerHandlerMap({ setDeviceParameter: getArrangementHandlers().setDeviceParameter });
+        commandBatchPreflightPort.setProvider(() => ({
+            audioGraphValid: true,
+            availableAssetHashes: [],
+            availableAudioBufferIds: [],
+            lockedRanges: [],
+            projectId: 'project-preview',
+            projectInvariantsValid: true,
+            targetFingerprints: {
+                'comp-threshold': 'parameter:comp-threshold',
+                'device-compressor': 'device:device-compressor',
+            },
+        }));
+        const revision = captureProjectRevision();
+        const command = createVersionedCommandEnvelope({
+            action: {
+                type: 'setDeviceParameter',
+                payload: { deviceId: 'device-compressor', paramId: 'comp-threshold', value: -18 },
+            },
+            availableDeviceVersions: {},
+            expectedEffect: 'Compressor threshold becomes -18 dB.',
+            normalizedProjectRevision: revision,
+            objectReferences: [
+                { argument: 'deviceId', id: 'device-compressor', scope: 'stable' },
+                { argument: 'paramId', id: 'comp-threshold', scope: 'stable' },
+            ],
+            parameterUnits: [{ argument: 'value', unit: 'unitless' }],
+            reason: 'Preview a compressor parameter change.',
+            time: [],
+        });
+        const batch = compileVersionedCommandBatchEnvelope({
+            baseRevision: revision,
+            batchId: 'batch-production-device-parameter-preview',
+            commands: [serializeVersionedCommandEnvelope(command)],
+            intent: 'Preview a compressor parameter change',
+            mode: 'preview',
+            projectId: 'project-preview',
+            runId: 'run-production-device-parameter-preview',
+        });
+
+        const preview = await executeVersionedCommandBatchEnvelope({
+            authority: batch.authority,
+            serialized: batch.serialized,
+        });
+
+        expect(preview).toEqual({
+            status: 'rejected',
+            reason: 'Action cannot execute inside an isolated preview: setDeviceParameter',
+            actions: [],
+        });
+        expect(runtimeMocks.updateDeviceParam).not.toHaveBeenCalled();
     });
 
     afterEach(() => {

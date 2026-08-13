@@ -177,6 +177,7 @@ export const handleReplayGeneratedMidi = createHandler<'replayGeneratedMidi'>({
         };
     },
     describe: () => ({ label: 'Replay generated MIDI' }),
+    previewExecution: 'isolated-project',
     requiresAbortCompensation: false,
     undoable: false,
 });

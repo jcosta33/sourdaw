@@ -57,6 +57,7 @@ export const handleRestoreClipPlacement = createHandler<'restoreClipPlacement'>(
               ) && clipAutomationMoveStateMatches(action.payload.clipId, action.payload.replacement.automationLanes)
             : false;
     },
+    previewExecution: 'isolated-project',
     requiresAbortCompensation: false,
     undoable: false,
 });

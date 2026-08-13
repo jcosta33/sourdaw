@@ -84,6 +84,7 @@ export const handleDuplicateTrack = createHandler<'duplicateTrack'>({
         const targetTrackId = action.payload.targetTrackId;
         return targetTrackId !== undefined && tracks.some((track) => track.id === targetTrackId);
     },
+    previewExecution: 'isolated-project',
     requiresAbortCompensation: false,
     undoable: true,
 });

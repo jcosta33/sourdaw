@@ -63,6 +63,7 @@ export const handleRemoveShortMidiOverlaps = createHandler<'removeShortMidiOverl
     execute: (action) => ({ status: removeShortMidiOverlaps(action.payload) }),
     describe: (action) => prepareRemoveShortMidiOverlaps(action).description,
     isNoop: (action) => prepareRemoveShortMidiOverlaps(action).isNoop,
+    previewExecution: 'isolated-project',
     requiresAbortCompensation: false,
     undoable: true,
 });

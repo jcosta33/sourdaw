@@ -272,6 +272,7 @@ export const handleSetDeviceParameter = createHandler<'setDeviceParameter'>({
                     : undefined,
         };
     },
+    previewExecution: 'unsupported-external',
     undoable: true,
     requiresAbortCompensation: false,
 });

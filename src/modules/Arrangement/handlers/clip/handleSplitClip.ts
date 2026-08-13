@@ -82,6 +82,7 @@ export const handleSplitClip = createHandler<'splitClip'>({
             },
         };
     },
+    previewExecution: 'isolated-project',
     requiresAbortCompensation: false,
     undoable: true,
 });

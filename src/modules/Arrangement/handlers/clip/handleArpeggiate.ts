@@ -102,6 +102,7 @@ export const handleArpeggiate = createHandler<'arpeggiate'>({
             },
         };
     },
+    previewExecution: 'isolated-project',
     requiresAbortCompensation: false,
     undoable: true,
 });

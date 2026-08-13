@@ -93,6 +93,7 @@ export const handleRemoveSidechainRoute = createHandler<'removeSidechainRoute'>(
         };
     },
     isNoop: (action) => resolveRoute(action).status === 'absent',
+    previewExecution: 'isolated-project',
     requiresAbortCompensation: false,
     undoable: true,
 });

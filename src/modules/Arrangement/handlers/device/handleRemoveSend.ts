@@ -55,6 +55,7 @@ export const handleRemoveSend = createHandler<'removeSend'>({
                 : null,
         };
     },
+    previewExecution: 'isolated-project',
     requiresAbortCompensation: false,
     undoable: true,
 });

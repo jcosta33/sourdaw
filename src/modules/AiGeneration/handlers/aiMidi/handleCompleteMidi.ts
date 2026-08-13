@@ -152,7 +152,7 @@ function createWrittenResult(input: {
 }
 
 export const handleCompleteMidi = createHandler<'completeMidi'>({
-    previewExecution: 'unsupported-async',
+    previewExecution: 'unsupported-external',
     execute: async (alpha) => {
         const existingState = completeMidiStates.get(alpha);
         const source = createMidiGenerationSourceGuard(alpha.payload.clipId);

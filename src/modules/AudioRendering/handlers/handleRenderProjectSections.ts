@@ -83,5 +83,6 @@ export const handleRenderProjectSections = createHandler<'renderProjectSections'
         };
     },
     undoable: true,
+    previewExecution: 'isolated-project',
     requiresAbortCompensation: false,
 });

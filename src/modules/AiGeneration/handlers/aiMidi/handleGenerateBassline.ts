@@ -163,7 +163,7 @@ function createWrittenResult(input: {
 }
 
 export const handleGenerateBassline = createHandler<'generateBassline'>({
-    previewExecution: 'unsupported-async',
+    previewExecution: 'unsupported-external',
     execute: async (alpha) => {
         const existingState = generateBasslineStates.get(alpha);
         const source = createMidiGenerationSourceGuard(alpha.payload.clipId);

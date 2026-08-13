@@ -54,6 +54,7 @@ export const handleGlueClips = createHandler<'glueClips'>({
             },
         };
     },
+    previewExecution: 'isolated-project',
     requiresAbortCompensation: false,
     undoable: true,
 });

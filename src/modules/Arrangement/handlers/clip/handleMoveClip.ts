@@ -84,6 +84,7 @@ export const handleMoveClip = createHandler<'moveClip'>({
         );
         return placementsMatch(current, next);
     },
+    previewExecution: 'isolated-project',
     requiresAbortCompensation: false,
     undoable: true,
 });

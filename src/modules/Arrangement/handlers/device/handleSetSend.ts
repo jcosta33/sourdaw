@@ -90,6 +90,7 @@ export const handleSetSend = createHandler<'setSend'>({
             },
         };
     },
+    previewExecution: 'isolated-project',
     requiresAbortCompensation: false,
     undoable: true,
 });

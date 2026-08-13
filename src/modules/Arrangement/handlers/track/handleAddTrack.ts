@@ -76,6 +76,7 @@ export const handleAddTrack = createHandler<'addTrack'>({
         const trackId = action.payload.id;
         return trackId !== undefined && state.tracks.some((track) => track.id === trackId);
     },
+    previewExecution: 'isolated-project',
     requiresAbortCompensation: false,
     undoable: true,
 });

@@ -141,3 +141,4 @@ export { getTrackPeakLevel } from './trackAudioControls/getTrackPeakLevel';
 export { analyzePitchForClip } from './audioAnalysis/analyzePitchForClip';
 export { commitPitchEdit } from './audioAnalysis/commitPitchEdit';
 export { processPitchEditWasm } from './audioAnalysis/processPitchEditWasm';
+export { compileAudioGraphTopology } from './compileAudioGraphTopology';

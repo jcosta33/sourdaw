@@ -44,5 +44,6 @@ export const handleRemoveRenderedProjectSections = createHandler<'removeRendered
             : null,
     }),
     undoable: true,
+    previewExecution: 'isolated-project',
     requiresAbortCompensation: false,
 });

@@ -72,6 +72,7 @@ export const handleAddSend = createHandler<'addSend'>({
                   },
         };
     },
+    previewExecution: 'isolated-project',
     requiresAbortCompensation: false,
     undoable: true,
 });

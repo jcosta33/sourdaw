@@ -65,6 +65,7 @@ export const handleRestoreDevice = createHandler<'restoreDevice'>({
         };
     },
     describe: () => ({ label: 'Restore device' }),
+    previewExecution: 'unsupported-external',
     requiresAbortCompensation: false,
     undoable: false,
 });

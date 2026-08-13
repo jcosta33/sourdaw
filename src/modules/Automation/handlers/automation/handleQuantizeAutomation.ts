@@ -20,6 +20,7 @@ export const handleQuantizeAutomation = createHandler<'quantizeAutomation'>({
             type: 'quantize',
             gridSize: alpha.payload.gridSize,
         }),
+    previewExecution: 'isolated-project',
     requiresAbortCompensation: false,
     undoable: true,
 });
