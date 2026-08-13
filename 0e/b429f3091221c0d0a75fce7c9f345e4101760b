@@ -1,0 +1,88 @@
+src/modules/MIDI/useCases/midiNoteCrud/__tests__/duplicateClipNotes.spec.ts
+  s_62e9c3dc3ba52a::t_98ba702c30be5b 88
+  s_62e9c3dc3ba52a::t_8f4f992063e9fe 102-104
+src/modules/MIDI/useCases/strumNotes/__tests__/strumNotes.spec.ts
+  s_62e9c3dc3ba52a::t_bfdcb7cab28d6a 73-124
+src/modules/MIDI/useCases/midiNoteCrud/__tests__/prepareMidiGlobalTimeTransaction.spec.ts
+  s_62e9c3dc3ba52a::t_087e76868733e3 210-212
+  s_62e9c3dc3ba52a::t_483d27b97b0182 258-260
+src/modules/MIDI/useCases/midiEffectPlugins/effectFactories/__tests__/createVelocityCurve.spec.ts
+  s_62e9c3dc3ba52a::t_2f1682505ee104 3
+  s_62e9c3dc3ba52a::t_70e4ef58e4a23a 6
+src/modules/MIDI/useCases/midiEffectPlugins/effectFactories/__tests__/createNoteQuantizer.spec.ts
+  s_62e9c3dc3ba52a::t_4f1677ae21a491 3
+  s_62e9c3dc3ba52a::t_81bbcaad747ff2 6
+src/modules/MIDI/stores/grooveTemplateAutomergeStorage.ts
+  s_62e9c3dc3ba52a::t_7c5fb0500d0f17 115-126,139-152
+  s_62e9c3dc3ba52a::t_66624f22dbbeaf 153
+src/modules/MIDI/repositories/webMidi/lifecycle/destroyWebMidi.ts
+  s_62e9c3dc3ba52a::t_1402f802cc3f3c 19-28
+src/modules/MIDI/useCases/midiEffectPlugins/effectFactories/__tests__/createMidiDelay.spec.ts
+  s_62e9c3dc3ba52a::t_03d949ac0187ae 6
+  s_62e9c3dc3ba52a::t_6dee2955837b02 3
+src/modules/MIDI/useCases/midiEffectPlugins/effectFactories/__tests__/createCCMap.spec.ts
+  s_62e9c3dc3ba52a::t_7281844c15644b 6
+  s_62e9c3dc3ba52a::t_050807eff4b048 3
+src/modules/MIDI/repositories/webMidi/lifecycle/__tests__/webMidiLifecycle.spec.ts
+  s_62e9c3dc3ba52a::t_2e79de274e2ff0 64-72
+  s_62e9c3dc3ba52a::t_6c9600b1ffe255 295-302
+  s_62e9c3dc3ba52a::t_168e45679ddf84 73-76
+  s_62e9c3dc3ba52a::t_189f9990f5dce5 272-274
+  s_62e9c3dc3ba52a::t_8cf14843bbd0f8 19-22
+  s_62e9c3dc3ba52a::t_d15a4e6c05f69e 134-161
+  s_62e9c3dc3ba52a::t_97d51b65076a66 208,215-271
+  s_62e9c3dc3ba52a::t_908d222ec1e06b 303
+  s_62e9c3dc3ba52a::t_ea503110faaf52 95
+src/modules/MIDI/useCases/midiEffectPlugins/effectFactories/__tests__/createTranspose.spec.ts
+  s_62e9c3dc3ba52a::t_026f8de776ff39 6
+  s_62e9c3dc3ba52a::t_f678eb932698b0 3
+src/modules/MIDI/useCases/midiEffectPlugins/__tests__/createChordGenerator.spec.ts
+  s_62e9c3dc3ba52a::t_29d32c37f0a11c 6
+  s_62e9c3dc3ba52a::t_ad809f673abba7 40-48
+  s_62e9c3dc3ba52a::t_fbae4c66752b97 3
+src/modules/MIDI/repositories/webMidi/lifecycle/initWebMidi.ts
+  s_62e9c3dc3ba52a::t_218329b9dfd333 147-150
+  s_62e9c3dc3ba52a::t_c8b073ec0a1792 62-76,88-90,95-101
+  s_62e9c3dc3ba52a::t_1618b9d8c19c7e 21-41
+  s_62e9c3dc3ba52a::t_5a864a847e838b 7
+src/modules/MIDI/useCases/midiNoteCrud/__tests__/splitMidiNotesAtBeat.spec.ts
+  s_62e9c3dc3ba52a::t_3b6df34d7b793d 51-55
+  s_62e9c3dc3ba52a::t_7c51d652ffa0b4 83-86
+src/modules/MIDI/repositories/webMidi/__tests__/stateAccessors.spec.ts
+  s_62e9c3dc3ba52a::t_f82cd7ff68d50f 45,61-73,76
+src/modules/MIDI/stores/__tests__/grooveTemplateCollaboration.spec.ts
+  s_62e9c3dc3ba52a::t_7bf373e40043eb 494-573,575-579,581-582
+  s_62e9c3dc3ba52a::t_33dffc793312f9 18-24
+  s_62e9c3dc3ba52a::t_a09d8b3d36dd4a 574,580
+src/modules/MIDI/useCases/strumNotes/strumNotes.ts
+  s_62e9c3dc3ba52a::t_d69e468c9da535 17-21,29-30
+  s_62e9c3dc3ba52a::t_7af4956968ad18 59,63-67
+  s_62e9c3dc3ba52a::t_16bfab31bd9d45 1-2
+src/modules/MIDI/workers/__tests__/midiImportWorker.spec.ts
+  s_62e9c3dc3ba52a::t_cc08c56f148940 535-536,538
+src/modules/MIDI/repositories/webMidi/setState.ts
+  s_62e9c3dc3ba52a::t_6fb2e1c44d2113 6-18,20
+src/modules/MIDI/useCases/midiEffectPlugins/__tests__/createScaleFilter.spec.ts
+  s_62e9c3dc3ba52a::t_c4e4939b811acc 6
+  s_62e9c3dc3ba52a::t_0c7f1f81ddb711 3
+src/modules/MIDI/models/MidiEffectTypes.ts
+  s_62e9c3dc3ba52a::t_cf799708e46d61 1-7,18
+src/modules/MIDI/useCases/midiEffectPlugins/createChordGenerator.ts
+  s_62e9c3dc3ba52a::t_12ff22770e4373 1-8,11,16
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "0eb429f3091221c0d0a75fce7c9f345e4101760b",
+  "prompts": {},
+  "sessions": {
+    "s_62e9c3dc3ba52a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "92e0a2e7-8660-41e2-be8b-b2d644c6d0b7",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
