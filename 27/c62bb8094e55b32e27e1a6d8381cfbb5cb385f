@@ -1,0 +1,44 @@
+.agents/decisions/0018-clip-release-is-not-a-toggle-concern.md
+  s_62e9c3dc3ba52a::t_86a5f9f7ec6879 2-4,7-9
+.agents/decisions/0019-retrospective-capture-bounds.md
+  s_62e9c3dc3ba52a::t_e304db6078b9fe 14-17
+  s_62e9c3dc3ba52a::t_5188ed90be17f2 2-4,7-9
+.agents/decisions/0021-plugin-isolation-by-binary-with-per-plugin-override.md
+  s_62e9c3dc3ba52a::t_0ac484d38b5cc8 20-21
+  s_62e9c3dc3ba52a::t_ca688b7fde9f7d 110
+  s_62e9c3dc3ba52a::t_b07726217e0b27 2-4,7-10
+.agents/decisions/README.md
+  s_62e9c3dc3ba52a::t_261df6b1d9f937 30
+.agents/decisions/0017-pre-fader-sends-survive-mute.md
+  s_62e9c3dc3ba52a::t_2aee54805831ce 2-4,7-8
+  s_62e9c3dc3ba52a::t_6ac105a2ccb6a5 9
+.agents/decisions/0020-deferred-deallocation-off-the-audio-thread.md
+  s_62e9c3dc3ba52a::t_24d56ab0e7e13e 2-4,7-9
+  s_62e9c3dc3ba52a::t_438c62e2009f20 50-57
+  s_62e9c3dc3ba52a::t_07508b56340a5f 68-70
+.agents/decisions/0024-warp-modes-are-named-by-material.md
+  s_62e9c3dc3ba52a::t_af7b506406ef79 2-4,7-9
+.agents/decisions/0022-no-comparative-realism-claims.md
+  s_62e9c3dc3ba52a::t_2323725cb939d1 2-4,7-10
+.agents/decisions/0023-allpass-fractional-delay-in-the-string-loop.md
+  s_62e9c3dc3ba52a::t_1d7d7b87cb70d2 2-4,7-9
+  s_62e9c3dc3ba52a::t_96e74726a99fd9 67-76
+.agents/decisions/0025-fermenter-fine-tune-is-continuous.md
+  s_62e9c3dc3ba52a::t_e9820007948b8e 2-4,7-9,12
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "27c62bb8094e55b32e27e1a6d8381cfbb5cb385f",
+  "prompts": {},
+  "sessions": {
+    "s_62e9c3dc3ba52a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "92e0a2e7-8660-41e2-be8b-b2d644c6d0b7",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
